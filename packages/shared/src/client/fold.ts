@@ -1,0 +1,75 @@
+import type { DorkState, ClientEvent } from "../events";
+
+export type Block =
+  | { kind: "user"; id: string; text: string }
+  | { kind: "assistant"; id: string; text: string; streaming: boolean }
+  | { kind: "tool"; id: string; name: string; summary: string; status: "running" | "ok" | "error"; preview?: string }
+  | { kind: "notice"; id: string; level: "info" | "error"; text: string };
+
+export interface DorkView {
+  lastSeq: number;
+  state: DorkState | null;
+  blocks: Block[];
+  prUrl: string | null;
+  rateLimitedUntil: number | null;
+}
+
+export const emptyView = (): DorkView => ({ lastSeq: 0, state: null, blocks: [], prUrl: null, rateLimitedUntil: null });
+
+/** Pure + idempotent: events at or below lastSeq are ignored, so replays can never duplicate output. */
+export function fold(view: DorkView, e: ClientEvent): DorkView {
+  if (e.seq <= view.lastSeq) return view;
+  const v: DorkView = { ...view, lastSeq: e.seq, blocks: [...view.blocks] };
+  const notice = (level: "info" | "error", text: string) => v.blocks.push({ kind: "notice", id: `n${e.seq}`, level, text });
+  const find = (pred: (b: Block) => boolean) => v.blocks.findIndex(pred);
+
+  switch (e.type) {
+    case "user_message":
+      v.blocks.push({ kind: "user", id: `u${e.seq}`, text: e.text });
+      break;
+    case "assistant_delta": {
+      const i = find((b) => b.kind === "assistant" && b.id === e.messageId);
+      if (i < 0) v.blocks.push({ kind: "assistant", id: e.messageId, text: e.text, streaming: true });
+      else {
+        const b = v.blocks[i] as Extract<Block, { kind: "assistant" }>;
+        v.blocks[i] = { ...b, text: b.text + e.text };
+      }
+      break;
+    }
+    case "assistant_message": {
+      const i = find((b) => b.kind === "assistant" && b.id === e.messageId);
+      const done: Block = { kind: "assistant", id: e.messageId, text: e.text, streaming: false };
+      if (i < 0) v.blocks.push(done);
+      else v.blocks[i] = done; // the complete message replaces streamed partials
+      break;
+    }
+    case "tool_use":
+      v.blocks.push({ kind: "tool", id: e.toolId, name: e.name, summary: e.summary, status: "running" });
+      break;
+    case "tool_result": {
+      const i = find((b) => b.kind === "tool" && b.id === e.toolId);
+      if (i >= 0) v.blocks[i] = { ...(v.blocks[i] as Extract<Block, { kind: "tool" }>), status: e.ok ? "ok" : "error", preview: e.preview };
+      break;
+    }
+    case "status":
+      v.state = e.state;
+      break;
+    case "turn_complete":
+      v.blocks = v.blocks.map((b) => (b.kind === "assistant" && b.streaming ? { ...b, streaming: false } : b));
+      break;
+    case "pr_opened":
+    case "pr_merged":
+      v.prUrl = e.url;
+      notice("info", `${e.type === "pr_opened" ? "PR opened" : "PR merged"}: ${e.url}`);
+      break;
+    case "rate_limited":
+      v.rateLimitedUntil = e.resetsAt ?? null;
+      notice("error", e.resetsAt ? `Rate limited until ${new Date(e.resetsAt).toISOString()}` : "Rate limited");
+      break;
+    case "agent_exited":
+    case "error":
+      notice("error", e.message);
+      break;
+  }
+  return v;
+}

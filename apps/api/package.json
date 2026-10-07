@@ -1,0 +1,25 @@
+{
+  "name": "@dorks/api",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "vitest run",
+    "db:migrate": "wrangler d1 migrations apply DB --local",
+    "deploy": "wrangler deploy --minify",
+    "cf-typegen": "wrangler types --strict-vars=false",
+    "typecheck": "wrangler types --strict-vars=false && tsc --noEmit"
+  },
+  "dependencies": {
+    "@dorks/shared": "workspace:*",
+    "better-auth": "^1.7.7",
+    "hono": "^4.13.13",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@types/node": "^26.6.4",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.148.0"
+  }
+}
