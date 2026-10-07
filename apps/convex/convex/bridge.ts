@@ -1,14 +1,14 @@
 import { fromBridge, type ClientEventBody, type CommandFrame, type ToBridge } from "@dorks/shared";
 import { ConvexError, v } from "convex/values";
 import { aad, decrypt, keyringFromEnv } from "../../api/src/lib/crypto";
-import { createInstallationToken } from "../../api/src/lib/github";
+import { agentTokenScope, createInstallationToken } from "../../api/src/lib/github";
 import { createNormalizer } from "../../api/src/normalize";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { action, internalQuery, mutation, query } from "./_generated/server";
+import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { verifyBridgeSecret } from "./lib/bridgeAuth";
-import { append, dispatch, enqueueConfigure, finishPause, runtimeOf } from "./lib/dispatch";
+import { append, dispatch, enqueueConfigure, finishPause, runtimeOf, setTimer } from "./lib/dispatch";
 
 // The in-box bridge speaks packages/shared/src/bridge.ts through these functions instead of a WebSocket:
 //   subscribe  `commands`   <- DO->bridge frames (user_message / interrupt / flush; configure & gh_token as fetch markers)
@@ -139,10 +139,19 @@ export const push = mutation({
 });
 
 // ---------------------------------------------------------------- secrets: actions only
+/** Secrets are only minted for a dork whose box should be up and which the user has not archived. */
+const TOKEN_STATES = ["creating", "waking", "working", "idle"];
+export const mayMintSecrets = (dork: Pick<Doc<"dorks">, "state" | "archived">) => !dork.archived && TOKEN_STATES.includes(dork.state);
+
+/** A failed token refresh must not wait for the next 45-minute tick: the 60-minute token would expire first. */
+export const GH_RETRY_MS = 2 * 60_000;
+
+/** Null = refused (wrong state or archived): the caller hands out nothing. */
 export const configInfo = internalQuery({
   args: creds,
   handler: async (ctx, { dorkId, secret }) => {
     const dork = await authed(ctx, dorkId, secret);
+    if (!mayMintSecrets(dork)) return null;
     const s = await ctx.db.query("userSettings").withIndex("by_user", (q) => q.eq("userId", dork.userId)).unique();
     const secrets = await ctx.db.query("userSecrets").withIndex("by_user_name", (q) => q.eq("userId", dork.userId)).collect();
     return {
@@ -155,10 +164,12 @@ export const configInfo = internalQuery({
 
 const ring = () => keyringFromEnv({ ENCRYPTION_KEY: process.env.ENCRYPTION_KEY! });
 
-async function githubToken(info: { githubInstallationId: number | null }): Promise<string> {
+/** The box runs untrusted agent code, so the token is limited to this dork's repo and to push + PR permissions (see github.ts). */
+async function githubToken(info: { githubInstallationId: number | null; repo: string }): Promise<string> {
   if (!info.githubInstallationId) throw new OnboardingError("GitHub App not installed");
   if (process.env.BOX_PROVIDER === "sim") return "sim-github-token"; // local dev: no real GitHub App
-  return (await createInstallationToken({ GITHUB_APP_ID: process.env.GITHUB_APP_ID!, GITHUB_APP_PRIVATE_KEY: process.env.GITHUB_APP_PRIVATE_KEY! }, info.githubInstallationId)).token;
+  const env = { GITHUB_APP_ID: process.env.GITHUB_APP_ID!, GITHUB_APP_PRIVATE_KEY: process.env.GITHUB_APP_PRIVATE_KEY! };
+  return (await createInstallationToken(env, info.githubInstallationId, fetch, agentTokenScope(info.repo))).token;
 }
 class OnboardingError extends Error {}
 
@@ -167,6 +178,10 @@ export const configure = action({
   args: creds,
   handler: async (ctx, args): Promise<ToBridge | null> => {
     const info = await ctx.runQuery(internal.bridge.configInfo, args);
+    if (!info) {
+      console.error("configure refused", args.dorkId);
+      return null;
+    }
     try {
       if (!info.claudeTokenEnc) throw new OnboardingError("Claude token not set");
       const cliSecrets: Record<string, string> = {};
@@ -191,11 +206,26 @@ export const ghToken = action({
   args: creds,
   handler: async (ctx, args): Promise<ToBridge | null> => {
     const info = await ctx.runQuery(internal.bridge.configInfo, args);
+    if (!info) {
+      console.error("gh token refused", args.dorkId);
+      return null;
+    }
     try {
       return { t: "gh_token", token: await githubToken(info) };
     } catch {
       console.error("gh token refresh failed", args.dorkId);
-      return null; // the next refresh tick retries; the old token is valid until it expires
+      await ctx.runMutation(internal.bridge.retryGhToken, { dorkId: args.dorkId }); // the old token is still valid for a while: try again soon
+      return null;
     }
+  },
+});
+
+/** Re-arms the `gh_token` timer to fire in ~2 minutes (the timer handler then queues a fresh marker and re-arms the normal 45-minute tick). */
+export const retryGhToken = internalMutation({
+  args: { dorkId: v.id("dorks") },
+  handler: async (ctx, { dorkId }) => {
+    const dork = await ctx.db.get(dorkId);
+    if (!dork || dork.deleting || dork.archived || (dork.state !== "working" && dork.state !== "idle")) return;
+    await setTimer(ctx, dorkId, "gh_token", GH_RETRY_MS);
   },
 });

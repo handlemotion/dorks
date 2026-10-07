@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createAppJwt, createInstallationToken, parsePullRequestEvent, verifyWebhook } from "../src/lib/github";
+import { agentTokenScope, createAppJwt, createInstallationToken, parsePullRequestEvent, verifyWebhook } from "../src/lib/github";
 
 async function keyPair() {
   const kp = (await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"])) as CryptoKeyPair;
@@ -33,6 +33,26 @@ describe("github", () => {
     expect(t.token).toBe("ghs_x");
     expect(seen!.url).toContain("/app/installations/42/access_tokens");
     expect(seen!.headers.get("user-agent")).toBeTruthy();
+    expect(await seen!.text()).toBe(""); // unscoped when no scope is given
+  });
+
+  it("scopes an installation token to one repo with push + PR permissions only", async () => {
+    const { pem } = await keyPair();
+    let seen: Request | undefined;
+    const fake = (async (url: string, init: RequestInit) => {
+      seen = new Request(url, init);
+      return Response.json({ token: "ghs_x", expires_at: "2030-01-01T00:00:00Z" }, { status: 201 });
+    }) as unknown as typeof fetch;
+    await createInstallationToken({ GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem }, 42, fake, agentTokenScope("octo/hello.world"));
+    expect(seen!.headers.get("content-type")).toBe("application/json");
+    expect(await seen!.json()).toEqual({ repositories: ["hello.world"], permissions: { contents: "write", pull_requests: "write" } });
+    expect(() => agentTokenScope("no-slash")).toThrow(/owner\/name/);
+  });
+
+  it("surfaces GitHub rejections (e.g. 422 for a permission the App lacks) without leaking the body", async () => {
+    const { pem } = await keyPair();
+    const fake = (async () => Response.json({ message: "secret-ish" }, { status: 422 })) as unknown as typeof fetch;
+    await expect(createInstallationToken({ GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem }, 42, fake, agentTokenScope("o/r"))).rejects.toThrow(/422$/);
   });
 
   it("verifies webhook signatures", async () => {
