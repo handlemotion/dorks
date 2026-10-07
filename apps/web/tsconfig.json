@@ -1,5 +1,5 @@
 {
-  "include": ["**/*.ts", "**/*.tsx"],
+  "include": ["**/*.ts", "**/*.tsx", "../convex/types/*.d.ts"],
   "compilerOptions": {
     "target": "ES2022",
     "jsx": "react-jsx",
@@ -25,7 +25,7 @@
     "skipLibCheck": true,
     "strict": true,
     "noUnusedLocals": true,
-    "noUnusedParameters": true,
+    "noUnusedParameters": false, // normalize.ts (carried over from apps/api) is pulled in through the Convex api types
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   }

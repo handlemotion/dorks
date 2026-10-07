@@ -29,3 +29,16 @@ export const fromBridge = z.discriminatedUnion("t", [
   z.object({ t: z.literal("flushed") }),
 ]);
 export type FromBridge = z.infer<typeof fromBridge>;
+
+/**
+ * Convex transport only. `bridge.commands` is a reactive query, so its results must not carry secrets: `configure` and
+ * `gh_token` appear as fetch markers, and the bridge calls the `bridge.configure` / `bridge.ghToken` actions to get the real frames above.
+ */
+export const commandFrame = z.discriminatedUnion("t", [
+  z.object({ t: z.literal("user_message"), id: z.string(), text: z.string() }),
+  z.object({ t: z.literal("interrupt") }),
+  z.object({ t: z.literal("flush") }),
+  z.object({ t: z.literal("fetch_configure") }),
+  z.object({ t: z.literal("fetch_gh_token") }),
+]);
+export type CommandFrame = z.infer<typeof commandFrame>;
