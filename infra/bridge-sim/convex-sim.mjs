@@ -23,30 +23,64 @@ const seenMsg = new Set();
 const handled = new Set(); // command ids already processed (the subscription re-emits until the ack lands)
 
 // ---- outbound: ordered queue, flushed at most every DELTA_BATCH_MS; deltas coalesce into one raw event
+// Delivery is lossless: a batch is retried (capped backoff) until the backend accepts it, and the backend only accepts events
+// numbered exactly stored+1 (bridge.push returns { ok: false, expectedBseq } on a gap), so unconfirmed events stay in `history`
+// and are replayed from `expectedBseq`. Limits: bridge.push takes at most 500 frames per call.
+const MAX_FRAMES_PER_PUSH = 400;
+const MAX_BACKOFF_MS = 15_000;
 let queue = [];
+let history = []; // event frames not yet confirmed by the backend, ascending bseq
 let deltaText = "";
 let timer = null;
 let pushing = Promise.resolve();
+const eventFrame = (raw) => {
+  const frame = { t: "event", bseq: ++bseq, raw };
+  queue.push(frame);
+  history.push(frame);
+};
+const deltaRaw = (text) => ({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text } } });
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function pushAll(frames) {
+  for (let i = 0; i < frames.length; i += MAX_FRAMES_PER_PUSH) await pushChunk(frames.slice(i, i + MAX_FRAMES_PER_PUSH));
+}
+async function pushChunk(chunk) {
+  let lastGap = 0;
+  for (let attempt = 0; ; attempt++) {
+    let r;
+    try {
+      r = await client.mutation(api.bridge.push, { ...creds, frames: chunk });
+    } catch (e) {
+      log(`push failed (attempt ${attempt + 1}), retrying:`, String(e.data?.code ?? e.message ?? e).slice(0, 120));
+      await wait(Math.min(500 * 2 ** attempt, MAX_BACKOFF_MS));
+      continue;
+    }
+    if (r?.ok === false && typeof r.expectedBseq === "number") {
+      // Gap: the backend stopped at expectedBseq. Resend everything from there, then this batch's control frames (idempotent).
+      log("gap: backend expects bseq", r.expectedBseq);
+      if (r.expectedBseq === lastGap) await wait(Math.min(500 * 2 ** attempt, MAX_BACKOFF_MS)); // not advancing: do not hot-loop
+      lastGap = r.expectedBseq;
+      const replay = history.filter((f) => f.bseq >= r.expectedBseq);
+      if (!replay.length || replay[0].bseq !== r.expectedBseq) log(`cannot replay from ${r.expectedBseq} (oldest unconfirmed: ${history[0]?.bseq})`);
+      return pushAll([...replay, ...chunk.filter((f) => f.t !== "event")]);
+    }
+    const top = chunk.reduce((m, f) => (f.t === "event" ? Math.max(m, f.bseq) : m), 0);
+    history = history.filter((f) => f.bseq > top); // confirmed
+    return r;
+  }
+}
+
 const flushNow = () => {
   clearTimeout(timer);
   timer = null;
   if (deltaText) {
-    queue.push({ t: "event", bseq: ++bseq, raw: { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: deltaText } } } });
+    eventFrame(deltaRaw(deltaText));
     deltaText = "";
   }
   if (!queue.length) return pushing;
   const frames = queue;
   queue = [];
-  pushing = pushing.then(async () => {
-    for (let attempt = 0; ; attempt++) {
-      try {
-        return await client.mutation(api.bridge.push, { ...creds, frames });
-      } catch (e) {
-        if (attempt > 4) return log("push failed, dropping batch:", String(e.message ?? e).slice(0, 120));
-        await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));
-      }
-    }
-  });
+  pushing = pushing.then(() => pushAll(frames));
   return pushing;
 };
 const schedule = () => (timer ??= setTimeout(flushNow, DELTA_BATCH_MS));
@@ -56,10 +90,10 @@ const ev = (raw) => {
     return schedule();
   }
   if (deltaText) { // keep order: pending text goes out before whatever comes next
-    queue.push({ t: "event", bseq: ++bseq, raw: { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: deltaText } } } });
+    eventFrame(deltaRaw(deltaText));
     deltaText = "";
   }
-  queue.push({ t: "event", bseq: ++bseq, raw });
+  eventFrame(raw);
   schedule();
 };
 const sendNow = (frame) => { queue.push(frame); return flushNow(); };
