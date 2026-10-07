@@ -18,6 +18,7 @@ import type * as lib_box from "../lib/box.js";
 import type * as lib_bridgeAuth from "../lib/bridgeAuth.js";
 import type * as lib_dispatch from "../lib/dispatch.js";
 import type * as lib_githubInstall from "../lib/githubInstall.js";
+import type * as lib_upstash from "../lib/upstash.js";
 import type * as lifecycle from "../lifecycle.js";
 import type * as mail from "../mail.js";
 import type * as settings from "../settings.js";
@@ -41,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   "lib/bridgeAuth": typeof lib_bridgeAuth;
   "lib/dispatch": typeof lib_dispatch;
   "lib/githubInstall": typeof lib_githubInstall;
+  "lib/upstash": typeof lib_upstash;
   lifecycle: typeof lifecycle;
   mail: typeof mail;
   settings: typeof settings;
