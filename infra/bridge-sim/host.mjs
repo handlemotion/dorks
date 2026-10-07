@@ -1,6 +1,7 @@
 // Stands in for Upstash Box hosting in local dev: watches the sim box table and runs/kills one convex-sim.mjs per running box.
 // A "paused" box = killed process (its state lives in Convex, like a real paused box keeps only disk).
 //   CONVEX_URL=… SIM_HOST_KEY=… BRIDGE_SECRET_KEY=… node host.mjs
+// Opt in to the real in-box bridge (infra/bridge) instead of convex-sim.mjs: BRIDGE_IMPL=real (CLAUDE_BIN=<claude> to override the fake CLI).
 import { spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -12,6 +13,7 @@ const sim = fileURLToPath(new URL("./convex-sim.mjs", import.meta.url));
 const secretFor = (dorkId) => createHmac("sha256", BRIDGE_SECRET_KEY).update(`bridge|${dorkId}`).digest("hex");
 const procs = new Map(); // box name -> { gen, child }
 const client = new ConvexClient(CONVEX_URL);
+const real = process.env.BRIDGE_IMPL === "real" ? (await import("../bridge/scripts/sim-host.mjs")).prepareRealBridge() : null;
 
 client.onUpdate(anyApi.simbox.all, { hostKey: SIM_HOST_KEY }, (boxes) => {
   const names = new Set(boxes.map((b) => b.name));
@@ -22,7 +24,9 @@ client.onUpdate(anyApi.simbox.all, { hostKey: SIM_HOST_KEY }, (boxes) => {
     if (cur) { cur.child.kill("SIGKILL"); procs.delete(b.name); console.log(`[host] ${b.name.slice(-6)} paused`); }
     if (!b.running) continue;
     console.log(`[host] ${b.name.slice(-6)} running (gen ${b.gen})`);
-    const child = spawn("node", [sim], { stdio: "inherit", env: { ...process.env, DORK_ID: b.name, BRIDGE_URL: CONVEX_URL, BRIDGE_SECRET: secretFor(b.name) } });
+    const child = real
+      ? spawn(process.execPath, [real.cli], { stdio: "inherit", env: real.envFor(b.name, secretFor(b.name), CONVEX_URL) })
+      : spawn("node", [sim], { stdio: "inherit", env: { ...process.env, DORK_ID: b.name, BRIDGE_URL: CONVEX_URL, BRIDGE_SECRET: secretFor(b.name) } });
     procs.set(b.name, { gen: b.gen, child });
   }
 });
