@@ -25,6 +25,16 @@ export const onboarding = query({
   },
 });
 
+/** Names only (sorted), for the settings screen: values and ciphertext never leave the backend. */
+export const secretNames = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await requireUserId(ctx);
+    const rows = await ctx.db.query("userSecrets").withIndex("by_user_name", (q) => q.eq("userId", userId)).collect();
+    return rows.map((r) => r.name).sort();
+  },
+});
+
 export const setClaudeToken = mutation({
   args: { token: v.string() },
   handler: async (ctx, { token }) => {
