@@ -1,0 +1,185 @@
+import type { FromBridge } from "@dorks/shared";
+import type { PushResult, Transport } from "./transport";
+import { errTag, type Log } from "./redact";
+
+interface Item {
+  frame: FromBridge;
+  /** Set for `event` frames. */
+  bseq?: number;
+  sent: boolean;
+  bytes: number;
+}
+
+export interface OutboxOptions {
+  batchMs: number;
+  maxFrames?: number;
+  maxBytes?: number;
+  /** Already-delivered events kept around so a gap report from the backend can be replayed. */
+  retainEvents?: number;
+  backoffBaseMs?: number;
+  backoffCapMs?: number;
+  onFatal: (err: unknown) => void;
+  rand?: () => number;
+}
+
+/**
+ * Ordered, retry-forever outbound queue. Frames leave in order, one batch in flight at a time; a failed batch is retried with
+ * capped exponential backoff and never dropped. Events (which carry a bseq) are retained after delivery so that:
+ *   - after a reconnect, everything above the backend's `afterBridgeSeq` is replayed ({@link rewindAfter});
+ *   - a push that answers `{ expectedBseq }` (the backend saw a gap) is replayed from that seq. Backends that return
+ *     nothing are treated as success, so this is feature-detected, not required.
+ * Control frames (ack/ready/agent_exited/flushed) are retained only until delivered.
+ */
+export class Outbox {
+  private items: Item[] = [];
+  private cursor = 0; // every item before this index is `sent`
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private running = false;
+  private stopped = false;
+  private attempt = 0;
+  private waiters: (() => void)[] = [];
+  private readonly o: Required<Omit<OutboxOptions, "onFatal">> & Pick<OutboxOptions, "onFatal">;
+
+  constructor(private transport: Transport, private log: Log, opts: OutboxOptions) {
+    this.o = { maxFrames: 100, maxBytes: 512 * 1024, retainEvents: 2000, backoffBaseMs: 500, backoffCapMs: 30_000, rand: Math.random, ...opts };
+  }
+
+  push(frame: FromBridge) {
+    const bytes = JSON.stringify(frame).length;
+    this.items.push({ frame, bseq: frame.t === "event" ? frame.bseq : undefined, sent: false, bytes });
+    this.kick();
+  }
+
+  /** Number of frames not yet delivered. */
+  get pending() {
+    let n = 0;
+    for (let i = this.cursor; i < this.items.length; i++) if (!this.items[i].sent) n++;
+    return n;
+  }
+
+  /** Send soon (debounced by batchMs so bursts share one mutation). */
+  kick() {
+    if (this.stopped || this.timer || this.running) return;
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      void this.run();
+    }, this.o.batchMs);
+  }
+
+  /** Send now, without waiting out the debounce. */
+  flushNow() {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    void this.run();
+  }
+
+  /** Resolves once everything queued so far has been delivered. */
+  drained(): Promise<void> {
+    if (this.pending === 0 && !this.running) return Promise.resolve();
+    return new Promise((r) => this.waiters.push(r));
+  }
+
+  stop() {
+    this.stopped = true;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    this.resolveWaiters();
+  }
+
+  /** After a (re)connect: the backend has stored events up to `seq`; resend every retained event above it. */
+  rewindAfter(seq: number) {
+    this.rewindToIndex(this.items.findIndex((i) => i.bseq !== undefined && i.bseq > seq));
+    this.kick();
+  }
+
+  /** Backend reported a gap: it wants `expectedBseq` next. */
+  private rewindFrom(expectedBseq: number) {
+    const idx = this.items.findIndex((i) => i.bseq !== undefined && i.bseq >= expectedBseq);
+    if (idx < 0) return; // the backend is ahead of everything we hold: nothing to resend
+    const first = this.items.find((i) => i.bseq !== undefined);
+    if (first && first.bseq! > expectedBseq) this.log("replay window no longer holds seq", expectedBseq, "- resuming from", first.bseq);
+    this.rewindToIndex(idx);
+  }
+
+  private rewindToIndex(idx: number) {
+    if (idx < 0) return;
+    for (let i = idx; i < this.items.length; i++) this.items[i].sent = false;
+    this.cursor = Math.min(this.cursor, idx);
+  }
+
+  private async run() {
+    if (this.running || this.stopped) return;
+    this.running = true;
+    try {
+      while (!this.stopped) {
+        const batch = this.nextBatch();
+        if (!batch.length) break;
+        let res: PushResult;
+        try {
+          res = await this.transport.push(batch.map((b) => b.frame));
+        } catch (e) {
+          if (this.transport.isFatal(e)) {
+            this.stopped = true;
+            return void this.o.onFatal(e);
+          }
+          await this.backoff(errTag(e));
+          continue;
+        }
+        const expected = (res as { expectedBseq?: unknown } | null | undefined)?.expectedBseq;
+        if (typeof expected === "number" && Number.isInteger(expected)) {
+          this.log("backend reported a gap, replaying from", expected);
+          this.rewindFrom(expected);
+          await this.backoff("gap"); // bounded even if the backend keeps disagreeing
+          continue;
+        }
+        this.attempt = 0;
+        for (const b of batch) b.sent = true;
+        this.advance();
+      }
+    } finally {
+      this.running = false;
+      if (this.pending === 0) this.resolveWaiters();
+      else if (!this.stopped && !this.timer) this.kick();
+    }
+  }
+
+  private nextBatch(): Item[] {
+    const out: Item[] = [];
+    let bytes = 0;
+    for (let i = this.cursor; i < this.items.length && out.length < this.o.maxFrames; i++) {
+      const it = this.items[i];
+      if (it.sent) continue;
+      if (out.length && bytes + it.bytes > this.o.maxBytes) break;
+      out.push(it);
+      bytes += it.bytes;
+    }
+    return out;
+  }
+
+  private advance() {
+    while (this.cursor < this.items.length && this.items[this.cursor].sent) this.cursor++;
+    // Trim the delivered prefix: control frames immediately, events beyond the replay window.
+    let retained = 0;
+    for (let i = this.cursor - 1; i >= 0; i--) if (this.items[i].bseq !== undefined) retained++;
+    let drop = 0;
+    while (drop < this.cursor && (this.items[drop].bseq === undefined || retained > this.o.retainEvents)) {
+      if (this.items[drop].bseq !== undefined) retained--;
+      drop++;
+    }
+    if (drop) {
+      this.items.splice(0, drop);
+      this.cursor -= drop;
+    }
+  }
+
+  private async backoff(why: string) {
+    const ms = Math.min(this.o.backoffCapMs, this.o.backoffBaseMs * 2 ** this.attempt++);
+    const jittered = Math.round(ms * (0.5 + this.o.rand() / 2));
+    if (this.attempt === 1 || this.attempt % 10 === 0) this.log(`push failed (${why}), retrying; ${this.pending} frames queued, attempt ${this.attempt}`);
+    await new Promise((r) => setTimeout(r, jittered));
+  }
+
+  private resolveWaiters() {
+    for (const w of this.waiters.splice(0)) w();
+  }
+}
