@@ -1,0 +1,29 @@
+{
+  "name": "@dorks/convex",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "convex dev",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@better-auth/expo": "1.6.33",
+    "@convex-dev/better-auth": "0.12.5",
+    "@dorks/shared": "workspace:*",
+    "better-auth": "1.6.33",
+    "convex": "^1.46.0",
+    "react": "19.2.3",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "puppeteer-core": "^25.12.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.11"
+  },
+  "exports": {
+    "./api": "./convex/_generated/api.js",
+    "./client": "./client/index.ts"
+  }
+}

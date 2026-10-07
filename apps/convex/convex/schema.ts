@@ -1,0 +1,69 @@
+import { defineSchema, defineTable } from "convex/server";
+import { v } from "convex/values";
+import { dorkState } from "./validators";
+
+export default defineSchema({
+  // Encrypted at rest (AES-GCM envelope, key in env). Never returned by any query.
+  userSettings: defineTable({
+    userId: v.string(),
+    claudeTokenEnc: v.optional(v.string()),
+    githubInstallationId: v.optional(v.number()),
+    workstationSnapshotId: v.optional(v.string()),
+    sleepMinutes: v.number(),
+  }).index("by_user", ["userId"]),
+  userSecrets: defineTable({
+    userId: v.string(),
+    name: v.string(),
+    valueEnc: v.string(),
+  }).index("by_user_name", ["userId", "name"]),
+
+  // Client-visible row (list + header of the thread view). Nothing here changes per delta, so subscriptions stay quiet mid-turn.
+  dorks: defineTable({
+    userId: v.string(),
+    title: v.string(),
+    repo: v.string(),
+    branch: v.string(),
+    state: dorkState,
+    archived: v.boolean(),
+    boxId: v.optional(v.string()),
+    claudeSessionId: v.optional(v.string()),
+    preview: v.optional(v.string()),
+    prUrl: v.optional(v.string()),
+    deleting: v.optional(v.boolean()),
+    lastActivityAt: v.number(),
+  })
+    .index("by_user_activity", ["userId", "lastActivityAt"])
+    .index("by_user_archived_activity", ["userId", "archived", "lastActivityAt"]),
+
+  // Server-only bookkeeping, one row per dork. Never exposed to clients.
+  dorkRuntime: defineTable({
+    dorkId: v.id("dorks"),
+    bridgeSeq: v.number(), // last bridge event number stored (replaces `meta.bridge_seq`)
+    streamMsgId: v.string(), // normalizer carry-over between batches
+    sleepMinutes: v.number(),
+    bridgeSeenAt: v.number(),
+    bridgeLost: v.boolean(),
+    timers: v.record(v.string(), v.id("_scheduled_functions")), // name -> pending scheduled run (sleep | watchdog | gh_token | bridge_watch | flush)
+  }).index("by_dork", ["dorkId"]),
+
+  // Append-only per-dork log. `seq` is dense per dork (1..n); that is the only ordering clients need.
+  events: defineTable({
+    dorkId: v.id("dorks"),
+    seq: v.number(),
+    ts: v.number(),
+    body: v.any(), // ClientEventBody, validated with the shared zod schema on write
+  }).index("by_dork_seq", ["dorkId", "seq"]),
+
+  // Durable outbox + control frames for the bridge. Holds no secrets: `configure`/`gh_token` are markers that
+  // make the bridge call an action, which returns the secrets over the authenticated call (never stored/queried).
+  commands: defineTable({
+    dorkId: v.id("dorks"),
+    kind: v.union(v.literal("user_message"), v.literal("configure"), v.literal("gh_token"), v.literal("interrupt"), v.literal("flush")),
+    cid: v.string(), // command id the bridge acks (user_message id is what bridge dedupes on)
+    text: v.optional(v.string()),
+    acked: v.boolean(),
+  }).index("by_dork_acked", ["dorkId", "acked"]),
+
+  // Dev/sim only: what a real BoxProvider (Upstash) would hold remotely.
+  simBoxes: defineTable({ name: v.string(), running: v.boolean(), gen: v.number() }).index("by_name", ["name"]),
+});

@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "lib": ["ESNext", "DOM"],
+    "types": ["node"],
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true
+  },
+  "include": ["convex", "test", "scripts", "types", "../api/src/lifecycle/machine.ts", "../api/src/normalize.ts", "../api/src/lib/crypto.ts", "../api/src/lib/github.ts", "../api/src/lib/box.ts", "../api/src/lib/domain.ts"],
+  "exclude": ["convex/_generated"]
+}
