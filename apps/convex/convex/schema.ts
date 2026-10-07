@@ -45,6 +45,12 @@ export default defineSchema({
     bridgeLost: v.boolean(),
     ghFailures: v.optional(v.number()), // consecutive failed GitHub token refreshes (bridge.ts); absent/0 = healthy
     timers: v.record(v.string(), v.id("_scheduled_functions")), // name -> pending scheduled run (sleep | watchdog | gh_token | bridge_watch | flush)
+    // Box-operation generation. Bumped whenever a create/resume/pause is launched; the box actions carry it back so a result
+    // from a superseded operation (a resume that lost to a pause, a create that was retried) cannot move a newer attempt.
+    opGen: v.optional(v.number()),
+    // The active intent to pause the box, if any. `flushing`: waiting for the bridge's `flushed`; `pausing`: boxes.pause is in
+    // flight; `cancelled`: a message arrived while it was in flight (the pause will still land, so the dork must wake again).
+    pause: v.optional(v.object({ gen: v.number(), phase: v.union(v.literal("flushing"), v.literal("pausing"), v.literal("cancelled")) })),
   }).index("by_dork", ["dorkId"]),
 
   // Append-only per-dork log. `seq` is dense per dork (1..n); that is the only ordering clients need.

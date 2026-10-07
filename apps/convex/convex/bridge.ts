@@ -8,7 +8,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { verifyBridgeSecret } from "./lib/bridgeAuth";
-import { append, dispatch, enqueueConfigure, finishPause, runtimeOf, setTimer } from "./lib/dispatch";
+import { append, bridgeSeen, dispatch, enqueueConfigure, finishPause, runtimeOf, setTimer } from "./lib/dispatch";
 
 // The in-box bridge speaks packages/shared/src/bridge.ts through these functions instead of a WebSocket:
 //   subscribe  `commands`   <- DO->bridge frames (user_message / interrupt / flush; configure & gh_token as fetch markers)
@@ -31,10 +31,9 @@ export const connect = mutation({
     const dork = await authed(ctx, dorkId, secret);
     // A bridge that connects while we believe the box is asleep must not wake anything.
     if (dork.state === "sleeping") throw new ConvexError({ code: "sleeping", message: "sleeping" });
-    const rt = await runtimeOf(ctx, dorkId);
-    await ctx.db.patch(rt._id, { bridgeSeenAt: Date.now(), bridgeLost: false });
+    await bridgeSeen(ctx, dork);
     await enqueueConfigure(ctx, dorkId);
-    return { afterBridgeSeq: rt.bridgeSeq };
+    return { afterBridgeSeq: (await runtimeOf(ctx, dorkId)).bridgeSeq };
   },
 });
 
@@ -61,19 +60,36 @@ export const heartbeat = mutation({
   args: creds,
   handler: async (ctx, { dorkId, secret }) => {
     const dork = await authed(ctx, dorkId, secret);
-    const rt = await runtimeOf(ctx, dorkId);
-    await ctx.db.patch(rt._id, { bridgeSeenAt: Date.now(), bridgeLost: false });
-    // Back after a blip while working/idle: same path as the old "agent_ready after reconnect" (cancels the watchdog).
-    if (rt.bridgeLost && (dork.state === "working" || dork.state === "idle")) await dispatch(ctx, dorkId, { t: "agent_ready" });
+    await bridgeSeen(ctx, dork); // back after a blip while working/idle cancels the watchdog the loss armed
   },
 });
 
+// Per-call limits (H9): one push is one transaction, and a hostile or buggy bridge must not be able to fill it.
+export const MAX_FRAMES_PER_PUSH = 500;
+export const MAX_EVENT_BYTES = 256 * 1024;
+const encoder = new TextEncoder();
+
+/**
+ * Bridge -> backend frames, batched. Events must arrive numbered exactly `bridgeSeq + 1`, `+ 2`, ... (anything `<= bridgeSeq` is a
+ * replay and is skipped). On a gap, processing stops at the gap (earlier frames in the call are kept) and the result is
+ * `{ ok: false, expectedBseq }`: the bridge must resend its events from `expectedBseq` on. Otherwise the result is `{ ok: true }`.
+ * Too many frames or an oversized event reject the whole call with a ConvexError (`too_many_frames` / `event_too_large`).
+ */
 export const push = mutation({
   args: { ...creds, frames: v.array(v.any()) },
-  handler: async (ctx, { dorkId, secret, frames }) => {
-    await authed(ctx, dorkId, secret);
+  handler: async (ctx, { dorkId, secret, frames }): Promise<{ ok: true } | { ok: false; expectedBseq: number }> => {
+    const dork = await authed(ctx, dorkId, secret);
+    if (frames.length > MAX_FRAMES_PER_PUSH) throw new ConvexError({ code: "too_many_frames", message: `at most ${MAX_FRAMES_PER_PUSH} frames per push` });
+    for (const raw of frames) {
+      const payload = (raw as { raw?: unknown } | null)?.raw;
+      if (payload !== undefined && encoder.encode(JSON.stringify(payload)).length > MAX_EVENT_BYTES) {
+        throw new ConvexError({ code: "event_too_large", message: `an event exceeds ${MAX_EVENT_BYTES} bytes` });
+      }
+    }
+    await bridgeSeen(ctx, dork);
     const rt = await runtimeOf(ctx, dorkId);
     let { bridgeSeq, streamMsgId } = rt;
+    let gap = false;
     // The normalizer is stateful (in-flight message id) but a mutation is not: seed it from the last batch.
     const normalize = createNormalizer();
     if (streamMsgId) normalize({ type: "stream_event", event: { type: "message_start", message: { id: streamMsgId } } });
@@ -86,12 +102,14 @@ export const push = mutation({
     let touched = false;
 
     for (const raw of frames) {
+      if (gap) break;
       const parsed = fromBridge.safeParse(raw);
       if (!parsed.success) continue;
       const f = parsed.data;
       switch (f.t) {
         case "event": {
           if (f.bseq <= bridgeSeq) break; // replay overlap after a reconnect
+          if (f.bseq !== bridgeSeq + 1) { gap = true; break; } // never skip ahead: the transcript must stay gapless
           bridgeSeq = f.bseq;
           const r = f.raw as { type?: string; event?: { type?: string; message?: { id?: string } } };
           if (r?.type === "stream_event" && r.event?.type === "message_start") streamMsgId = r.event.message?.id ?? "";
@@ -133,8 +151,9 @@ export const push = mutation({
       }
     }
     await flush();
-    await ctx.db.patch(rt._id, { bridgeSeq, streamMsgId, bridgeSeenAt: Date.now(), bridgeLost: false });
+    await ctx.db.patch(rt._id, { bridgeSeq, streamMsgId });
     if (preview !== undefined || touched) await ctx.db.patch(dorkId, { ...(preview !== undefined ? { preview } : {}), lastActivityAt: Date.now() });
+    return gap ? { ok: false, expectedBseq: bridgeSeq + 1 } : { ok: true };
   },
 });
 

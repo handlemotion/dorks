@@ -14,23 +14,23 @@ const safe = (e: unknown, what: string) => {
 const MAX_ORPHAN_ATTEMPTS = 6;
 
 export const create = internalAction({
-  args: { dorkId: v.id("dorks") },
-  handler: async (ctx, { dorkId }) => {
+  args: { dorkId: v.id("dorks"), gen: v.number() }, // gen: the operation generation, echoed back so stale results are ignored
+  handler: async (ctx, { dorkId, gen }) => {
     try {
       const info = await ctx.runQuery(internal.lifecycle.boxInfo, { dorkId });
       if (!info || info.deleting) return; // deleted before we started: do not create a box nobody will clean up
-      if (!info.snapshotId) return void (await ctx.runMutation(internal.lifecycle.opFailed, { dorkId, message: "No base snapshot configured" }));
+      if (!info.snapshotId) return void (await ctx.runMutation(internal.lifecycle.opFailed, { dorkId, gen, message: "No base snapshot configured" }));
       // Only bridge connection details go in the create-time env (it is frozen into snapshots); secrets arrive via bridge.configure.
       const box = await getBox(ctx).createFromSnapshot(info.snapshotId, {
         name: dorkId,
         initCommand: "dorks-bridge",
         env: { DORK_ID: dorkId, BRIDGE_URL: process.env.CONVEX_CLOUD_URL!, BRIDGE_SECRET: await bridgeSecret(dorkId) },
       });
-      const recorded = await ctx.runMutation(internal.lifecycle.boxCreated, { dorkId, boxId: box.id, sleepMinutes: info.sleepMinutes });
+      const recorded = await ctx.runMutation(internal.lifecycle.boxCreated, { dorkId, gen, boxId: box.id, sleepMinutes: info.sleepMinutes });
       // The dork was deleted while the box was being created, so `destroy` saw no boxId. Delete what we just made.
       if (recorded === "orphaned") await ctx.runAction(internal.boxes.deleteOrphan, { boxId: box.id, attempt: 0 });
     } catch (e) {
-      await ctx.runMutation(internal.lifecycle.opFailed, { dorkId, message: safe(e, "create_box") });
+      await ctx.runMutation(internal.lifecycle.opFailed, { dorkId, gen, message: safe(e, "create_box") });
     }
   },
 });
@@ -50,28 +50,28 @@ export const deleteOrphan = internalAction({
 });
 
 export const resume = internalAction({
-  args: { dorkId: v.id("dorks") },
-  handler: async (ctx, { dorkId }) => {
+  args: { dorkId: v.id("dorks"), gen: v.number() }, // gen: the operation generation, echoed back so stale results are ignored
+  handler: async (ctx, { dorkId, gen }) => {
     try {
       const info = await ctx.runQuery(internal.lifecycle.boxInfo, { dorkId });
       if (!info?.boxId) throw new Error("no box");
       await getBox(ctx).resume(info.boxId);
       await ctx.runMutation(internal.lifecycle.boxResumed, { dorkId });
     } catch (e) {
-      await ctx.runMutation(internal.lifecycle.opFailed, { dorkId, message: safe(e, "resume_box") });
+      await ctx.runMutation(internal.lifecycle.opFailed, { dorkId, gen, message: safe(e, "resume_box") });
     }
   },
 });
 
 export const pause = internalAction({
-  args: { dorkId: v.id("dorks") },
-  handler: async (ctx, { dorkId }) => {
+  args: { dorkId: v.id("dorks"), gen: v.number() }, // gen: the operation generation, echoed back so stale results are ignored
+  handler: async (ctx, { dorkId, gen }) => {
     try {
       const info = await ctx.runQuery(internal.lifecycle.boxInfo, { dorkId });
       if (info?.boxId) await getBox(ctx).pause(info.boxId);
-      await ctx.runMutation(internal.lifecycle.boxPaused, { dorkId });
+      await ctx.runMutation(internal.lifecycle.boxPaused, { dorkId, gen });
     } catch (e) {
-      await ctx.runMutation(internal.lifecycle.opFailed, { dorkId, message: safe(e, "pause_box") });
+      await ctx.runMutation(internal.lifecycle.opFailed, { dorkId, gen, message: safe(e, "pause_box") });
     }
   },
 });

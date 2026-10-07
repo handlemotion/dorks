@@ -95,6 +95,7 @@ export async function dispatch(ctx: MutationCtx, dorkId: Id<"dorks">, input: Inp
     await ctx.db.patch(dorkId, { state: r.state, archived: r.archived, lastActivityAt: Date.now() });
   }
   if (r.state !== before.state) await append(ctx, dorkId, { type: "status", state: r.state });
+  if (input.t === "paused" && r.state === "sleeping") await clearControlRows(ctx, dorkId); // nothing may replay into the next wake
   for (const effect of r.effects) await runEffect(ctx, dorkId, effect);
   return r;
 }
@@ -103,14 +104,20 @@ async function runEffect(ctx: MutationCtx, dorkId: Id<"dorks">, effect: Effect) 
   switch (effect) {
     case "create_box":
     case "resume_box": {
+      // A new box operation supersedes any pause, and control rows left by the previous run must not replay into this one.
+      await dropPause(ctx, dorkId);
+      await clearControlRows(ctx, dorkId);
       const rt = await runtimeOf(ctx, dorkId);
-      await ctx.db.patch(rt._id, { bridgeSeenAt: Date.now(), bridgeLost: false }); // grace period for the new bridge to dial in
+      const gen = (rt.opGen ?? 0) + 1;
+      await ctx.db.patch(rt._id, { opGen: gen, bridgeSeenAt: Date.now(), bridgeLost: false }); // grace period for the new bridge to dial in
       await setTimer(ctx, dorkId, "bridge_watch", HEARTBEAT_MS);
-      await ctx.scheduler.runAfter(0, effect === "create_box" ? internal.boxes.create : internal.boxes.resume, { dorkId });
+      await ctx.scheduler.runAfter(0, effect === "create_box" ? internal.boxes.create : internal.boxes.resume, { dorkId, gen });
       return;
     }
     case "pause_box":
       return beginPause(ctx, dorkId);
+    case "cancel_pause":
+      return cancelPause(ctx, dorkId);
     case "deliver_outbox":
       return; // declarative: bridge.commands re-emits every unacked message while the dork is working/idle
     case "interrupt_agent":
@@ -133,20 +140,73 @@ async function runEffect(ctx: MutationCtx, dorkId: Id<"dorks">, effect: Effect) 
   }
 }
 
+/** Control frames (flush, interrupt, configure, gh_token) are only meaningful to the bridge that was running when they were queued. */
+export async function clearControlRows(ctx: MutationCtx, dorkId: Id<"dorks">) {
+  const open = await ctx.db.query("commands").withIndex("by_dork_acked", (q) => q.eq("dorkId", dorkId).eq("acked", false)).collect();
+  for (const c of open) if (c.kind !== "user_message") await ctx.db.delete(c._id);
+}
+
+/**
+ * Bridge liveness. Every bridge call (connect, heartbeat, push) goes through here: clearing `bridgeLost` while the dork is
+ * working/idle must also tell the machine, or the watchdog armed by `bridge_lost` stays armed and kills a healthy dork.
+ */
+export async function bridgeSeen(ctx: MutationCtx, dork: Doc<"dorks">) {
+  const rt = await runtimeOf(ctx, dork._id);
+  await ctx.db.patch(rt._id, { bridgeSeenAt: Date.now(), bridgeLost: false });
+  if (rt.bridgeLost && (dork.state === "working" || dork.state === "idle")) await dispatch(ctx, dork._id, { t: "agent_ready" });
+}
+
+// ---------------------------------------------------------------- pausing
+// A pause is an intent with a generation (`rt.pause`), separate from the effect that carries it out: the flush and the box call
+// both take time, and a message (or a newer box operation) may arrive in between. Every step re-checks the intent.
+
 /** Ask a live bridge to flush, then pause the box on `flushed` (or after a timeout). A silent bridge is paused directly. */
 async function beginPause(ctx: MutationCtx, dorkId: Id<"dorks">) {
   const rt = await runtimeOf(ctx, dorkId);
+  if (rt.pause && rt.pause.phase !== "cancelled") return; // already flushing / pausing
   const live = !rt.bridgeLost && Date.now() - rt.bridgeSeenAt < BRIDGE_STALE_MS;
+  const gen = (rt.opGen ?? 0) + 1;
+  await ctx.db.patch(rt._id, { opGen: gen, pause: { gen, phase: live ? "flushing" : "pausing" } });
   if (live) {
-    if (rt.timers.flush) return; // already flushing
     await enqueue(ctx, dorkId, "flush");
     await setTimer(ctx, dorkId, "flush", FLUSH_TIMEOUT_MS);
   } else {
-    await ctx.scheduler.runAfter(0, internal.boxes.pause, { dorkId });
+    await ctx.scheduler.runAfter(0, internal.boxes.pause, { dorkId, gen });
   }
 }
 
+/** Flush done (or timed out): pause the box, but only if the pause is still wanted. */
 export async function finishPause(ctx: MutationCtx, dorkId: Id<"dorks">) {
+  const rt = await runtimeOf(ctx, dorkId);
+  if (rt.pause?.phase !== "flushing") return; // cancelled meanwhile, or already launched (duplicate `flushed`)
   await cancelTimer(ctx, dorkId, "flush");
-  await ctx.scheduler.runAfter(0, internal.boxes.pause, { dorkId });
+  await deleteFlushRows(ctx, dorkId);
+  await ctx.db.patch(rt._id, { pause: { gen: rt.pause.gen, phase: "pausing" } });
+  await ctx.scheduler.runAfter(0, internal.boxes.pause, { dorkId, gen: rt.pause.gen });
+}
+
+/**
+ * Someone needs the box awake. Before the box call is launched this fully undoes the pause; once `boxes.pause` is in flight it
+ * cannot be recalled, so it is marked cancelled and `boxPaused` wakes the dork again when it lands.
+ */
+export async function cancelPause(ctx: MutationCtx, dorkId: Id<"dorks">) {
+  const rt = await runtimeOf(ctx, dorkId);
+  if (!rt.pause || rt.pause.phase === "cancelled") return;
+  if (rt.pause.phase === "pausing") return void (await ctx.db.patch(rt._id, { pause: { gen: rt.pause.gen, phase: "cancelled" } }));
+  await cancelTimer(ctx, dorkId, "flush");
+  await deleteFlushRows(ctx, dorkId);
+  await ctx.db.patch(rt._id, { pause: undefined });
+}
+
+/** A new box operation replaces the intent outright (its generation bump makes any in-flight pause result stale). */
+async function dropPause(ctx: MutationCtx, dorkId: Id<"dorks">) {
+  const rt = await runtimeOf(ctx, dorkId);
+  if (!rt.pause) return;
+  await cancelTimer(ctx, dorkId, "flush");
+  await ctx.db.patch(rt._id, { pause: undefined });
+}
+
+async function deleteFlushRows(ctx: MutationCtx, dorkId: Id<"dorks">) {
+  const open = await ctx.db.query("commands").withIndex("by_dork_acked", (q) => q.eq("dorkId", dorkId).eq("acked", false)).collect();
+  for (const c of open) if (c.kind === "flush") await ctx.db.delete(c._id);
 }

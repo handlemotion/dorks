@@ -94,6 +94,15 @@ Order: (1) move carried files into a shared package, fix typing leak; (2) real U
 - **Bridge-lost watchdog path** end to end (needs 90s + 3min waits; covered by machine unit tests only).
 - Convex's own limits under concurrent writers (OCC retries on a hot dork were not stress-tested).
 
+## Bridge `push` contract (lifecycle correctness pass)
+
+`bridge.push({ dorkId, secret, frames })` returns `{ ok: true }` or `{ ok: false, expectedBseq: number }`.
+
+- Events must be numbered exactly `bridgeSeq + 1`, `+ 2`, ... Anything `<= bridgeSeq` is a replay and is skipped.
+- On a gap, processing stops at the gap (frames before it in the same call are kept; the gap event and everything after it, including `ack`/`ready`/`flushed`, are not processed) and `expectedBseq` is returned. The bridge must resend its events from `expectedBseq` (control frames are idempotent and may be resent). A bridge must never drop a batch.
+- Limits, rejected with a `ConvexError` whose `data.code` is `too_many_frames` (more than 500 frames per call) or `event_too_large` (an event's `raw` over 256KB serialized). The whole call is rejected, nothing from it is stored, so a bridge must split or truncate rather than retry the same payload.
+- Older bridges that ignore the return value keep working; they just cannot recover from a gap.
+
 ## Run it
 
 ```sh
