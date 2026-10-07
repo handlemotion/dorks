@@ -30,6 +30,7 @@ export type Effect =
   | "create_box"
   | "resume_box"
   | "pause_box" // flush the bridge, then box.pause()
+  | "cancel_pause" // drop a pending/in-flight pause: someone needs the box awake
   | "deliver_outbox"
   | "interrupt_agent"
   | "arm_sleep"
@@ -49,6 +50,8 @@ export interface Result {
 
 const AWAKE: DorkState[] = ["creating", "working", "idle", "waking"];
 const STOPPED: Effect[] = ["cancel_sleep", "cancel_watchdog", "cancel_gh_refresh"];
+// A dork in `error` is not serving anyone, so its box must not keep running (and billing).
+const FAILED = (c: Ctx): Effect[] => (c.hasBox ? [...STOPPED, "pause_box"] : STOPPED);
 
 export function reduce(c: Ctx, i: Input): Result {
   const stay = (effects: Effect[] = []): Result => ({ state: c.state, archived: c.archived, effects });
@@ -67,7 +70,7 @@ export function reduce(c: Ctx, i: Input): Result {
         case "working":
           return stay(["deliver_outbox"]); // steer mid-turn
         case "idle":
-          return go("working", ["cancel_sleep", "deliver_outbox"]);
+          return go("working", ["cancel_sleep", "cancel_pause", "deliver_outbox"]); // a sleep flush may be in flight
         case "sleeping":
           return go("waking", ["resume_box", "arm_watchdog"]);
         case "error":
@@ -104,7 +107,7 @@ export function reduce(c: Ctx, i: Input): Result {
     case "agent_exited":
     case "op_failed":
     case "watchdog":
-      return AWAKE.includes(c.state) ? go("error", STOPPED) : stay();
+      return AWAKE.includes(c.state) ? go("error", FAILED(c)) : stay();
 
     case "archive": {
       if (c.archived) return stay();
