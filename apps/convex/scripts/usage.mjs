@@ -18,7 +18,7 @@ const cookie = r.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
 const mk = () => { const c = new ConvexClient(CONVEX_URL); c.setAuth(async () => (await (await fetch(CONVEX_SITE_URL + "/api/auth/convex/token", { headers: { cookie, origin: "http://localhost:3000" } })).json()).token); return c; };
 const web = mk(), ios = mk();
 await web.mutation(api.settings.setClaudeToken, { token: "sk-usage" });
-await web.mutation(api.settings.setGithubInstallation, { installationId: 1 });
+await web.action(api.settings.linkGithubInstallation, { installationId: 1, code: "sim" });
 const dorkId = await web.mutation(api.dorks.create, { repo: "o/r", message: "first" });
 
 let counting = false;

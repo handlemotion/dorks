@@ -55,7 +55,7 @@ const B = await mkClient(other);
 // ------------------------------------------------------------------ onboarding
 await A.mutation(api.settings.setClaudeToken, { token: CLAUDE_TOKEN });
 await A.mutation(api.settings.setCliSecret, { name: "CF_TOKEN", value: CLI_SECRET });
-await A.mutation(api.settings.setGithubInstallation, { installationId: 1 });
+await A.action(api.settings.linkGithubInstallation, { installationId: 1, code: "sim" });
 await A.mutation(api.settings.setSleepMinutes, { minutes: 0.1 }); // 6s
 const onboarding = await A.query(api.settings.onboarding, {});
 seenByClients.push(onboarding);

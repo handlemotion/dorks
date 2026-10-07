@@ -48,7 +48,7 @@ const cookie = r.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
 const node = new ConvexClient(CONVEX_URL);
 node.setAuth(async () => (await (await fetch(CONVEX_SITE_URL + "/api/auth/convex/token", { headers: { cookie, origin: "http://localhost:3000" } })).json()).token);
 await node.mutation(api.settings.setClaudeToken, { token: "sk-ant-oat01-web-e2e" });
-await node.mutation(api.settings.setGithubInstallation, { installationId: 1 });
+await node.action(api.settings.linkGithubInstallation, { installationId: 1, code: "sim" });
 await node.mutation(api.settings.setSleepMinutes, { minutes: 5 });
 
 await page.type('input[aria-label="first message"]', "build the web demo");

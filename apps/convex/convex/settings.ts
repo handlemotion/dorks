@@ -1,8 +1,10 @@
 import { ConvexError, v } from "convex/values";
 import { aad, encrypt, keyringFromEnv } from "../../api/src/lib/crypto";
-import { mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
+import { action, internalMutation, mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireUserId } from "./auth";
+import { verifyInstallationOwnership } from "./lib/githubInstall";
 
 const ring = () => keyringFromEnv({ ENCRYPTION_KEY: process.env.ENCRYPTION_KEY! });
 
@@ -45,11 +47,39 @@ export const setCliSecret = mutation({
   },
 });
 
-/** Stand-in for the GitHub App install callback. */
-export const setGithubInstallation = mutation({
-  args: { installationId: v.number() },
-  handler: async (ctx, { installationId }) => {
-    const row = await settingsRow(ctx, await requireUserId(ctx));
+/**
+ * GitHub App install callback (OAuth-during-install). The client forwards the `code` and `installation_id` GitHub redirected
+ * with; we only store the installation if that user's own token can see it. A bare id is never trusted, otherwise any user could
+ * claim another org's installation and mint tokens for its repos.
+ */
+export const linkGithubInstallation = action({
+  args: { installationId: v.number(), code: v.string() },
+  handler: async (ctx, { installationId, code }) => {
+    const userId = await requireUserId(ctx);
+    if (!Number.isSafeInteger(installationId) || installationId <= 0) throw new ConvexError({ code: "invalid", message: "bad installation id" });
+    // Local dev/e2e only (BOX_PROVIDER=sim, already the "no real GitHub App" switch in bridge.ts): code "sim" skips GitHub.
+    const simulated = process.env.BOX_PROVIDER === "sim" && code === "sim";
+    if (!simulated) {
+      const clientId = process.env.GITHUB_APP_CLIENT_ID;
+      const clientSecret = process.env.GITHUB_APP_CLIENT_SECRET;
+      if (!clientId || !clientSecret) throw new ConvexError({ code: "not_configured", message: "GitHub App OAuth is not configured" });
+      let ok = false;
+      try {
+        ok = await verifyInstallationOwnership(code, installationId, { clientId, clientSecret });
+      } catch (e) {
+        console.error("github install verification failed", e instanceof Error ? e.message.slice(0, 200) : "unknown");
+        throw new ConvexError({ code: "github_error", message: "could not verify the GitHub installation" });
+      }
+      if (!ok) throw new ConvexError({ code: "forbidden", message: "installation is not authorized for this GitHub account" });
+    }
+    await ctx.runMutation(internal.settings.storeGithubInstallation, { userId, installationId });
+  },
+});
+
+export const storeGithubInstallation = internalMutation({
+  args: { userId: v.string(), installationId: v.number() },
+  handler: async (ctx, { userId, installationId }) => {
+    const row = await settingsRow(ctx, userId);
     await ctx.db.patch(row._id, { githubInstallationId: installationId });
   },
 });

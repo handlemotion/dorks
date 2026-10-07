@@ -46,17 +46,26 @@ export const timer = internalMutation({
 export const opFailed = internalMutation({
   args: { dorkId: v.id("dorks"), message: v.string() },
   handler: async (ctx, { dorkId, message }) => {
+    const dork = await ctx.db.get(dorkId);
+    if (!dork || dork.deleting) return; // deleted while the effect ran: nothing left to fail
     await append(ctx, dorkId, { type: "error", message });
     await dispatch(ctx, dorkId, { t: "op_failed" });
   },
 });
 
+/**
+ * Records the freshly created box. Returns "orphaned" if the dork was deleted (or already purged) while `createFromSnapshot`
+ * was in flight: nothing can track that box any more, so the caller must delete it.
+ */
 export const boxCreated = internalMutation({
   args: { dorkId: v.id("dorks"), boxId: v.string(), sleepMinutes: v.number() },
-  handler: async (ctx, { dorkId, boxId, sleepMinutes }) => {
+  handler: async (ctx, { dorkId, boxId, sleepMinutes }): Promise<"ok" | "orphaned"> => {
+    const dork = await ctx.db.get(dorkId);
+    if (!dork || dork.deleting) return "orphaned";
     const rt = await runtimeOf(ctx, dorkId);
     await ctx.db.patch(rt._id, { sleepMinutes });
     await ctx.db.patch(dorkId, { boxId });
+    return "ok";
   },
 });
 
@@ -82,6 +91,6 @@ export const boxInfo = internalQuery({
     const dork = await ctx.db.get(dorkId);
     if (!dork) return null;
     const s = await ctx.db.query("userSettings").withIndex("by_user", (q) => q.eq("userId", dork.userId)).unique();
-    return { boxId: dork.boxId ?? null, userId: dork.userId, snapshotId: s?.workstationSnapshotId ?? process.env.BASE_SNAPSHOT_ID ?? "", sleepMinutes: s?.sleepMinutes ?? 5 };
+    return { boxId: dork.boxId ?? null, deleting: !!dork.deleting, userId: dork.userId, snapshotId: s?.workstationSnapshotId ?? process.env.BASE_SNAPSHOT_ID ?? "", sleepMinutes: s?.sleepMinutes ?? 5 };
   },
 });

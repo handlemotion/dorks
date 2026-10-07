@@ -11,12 +11,14 @@ const safe = (e: unknown, what: string) => {
   return `${what} failed`;
 };
 
+const MAX_ORPHAN_ATTEMPTS = 6;
+
 export const create = internalAction({
   args: { dorkId: v.id("dorks") },
   handler: async (ctx, { dorkId }) => {
     try {
       const info = await ctx.runQuery(internal.lifecycle.boxInfo, { dorkId });
-      if (!info) return;
+      if (!info || info.deleting) return; // deleted before we started: do not create a box nobody will clean up
       if (!info.snapshotId) return void (await ctx.runMutation(internal.lifecycle.opFailed, { dorkId, message: "No base snapshot configured" }));
       // Only bridge connection details go in the create-time env (it is frozen into snapshots); secrets arrive via bridge.configure.
       const box = await getBox(ctx).createFromSnapshot(info.snapshotId, {
@@ -24,9 +26,25 @@ export const create = internalAction({
         initCommand: "dorks-bridge",
         env: { DORK_ID: dorkId, BRIDGE_URL: process.env.CONVEX_CLOUD_URL!, BRIDGE_SECRET: await bridgeSecret(dorkId) },
       });
-      await ctx.runMutation(internal.lifecycle.boxCreated, { dorkId, boxId: box.id, sleepMinutes: info.sleepMinutes });
+      const recorded = await ctx.runMutation(internal.lifecycle.boxCreated, { dorkId, boxId: box.id, sleepMinutes: info.sleepMinutes });
+      // The dork was deleted while the box was being created, so `destroy` saw no boxId. Delete what we just made.
+      if (recorded === "orphaned") await ctx.runAction(internal.boxes.deleteOrphan, { boxId: box.id, attempt: 0 });
     } catch (e) {
       await ctx.runMutation(internal.lifecycle.opFailed, { dorkId, message: safe(e, "create_box") });
+    }
+  },
+});
+
+/** Deletes a box that no dork row points at. Provider deletes are idempotent; failures retry with backoff so it cannot leak silently. */
+export const deleteOrphan = internalAction({
+  args: { boxId: v.string(), attempt: v.number() },
+  handler: async (ctx, { boxId, attempt }) => {
+    try {
+      await getBox(ctx).delete(boxId);
+    } catch (e) {
+      safe(e, "delete_orphan_box");
+      if (attempt < MAX_ORPHAN_ATTEMPTS) await ctx.scheduler.runAfter(15_000 * 2 ** attempt, internal.boxes.deleteOrphan, { boxId, attempt: attempt + 1 });
+      else console.error("orphan box could not be deleted; remove it manually", boxId);
     }
   },
 });
