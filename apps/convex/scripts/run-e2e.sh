@@ -13,5 +13,5 @@ sleep 2
 SECRETS_OUT=$OUT/needles.json node scripts/e2e.mjs | tee $OUT/e2e.log
 sleep 2
 rm -f $OUT/export.zip; npx convex export --path $OUT/export.zip >/dev/null 2>&1
-rm -rf $OUT/export && mkdir -p $OUT/export && (cd $OUT/export && unzip -q ../export.zip)
+rm -rf $OUT/export && mkdir -p $OUT/export && { (cd $OUT/export && unzip -q ../export.zip) || [ $? -le 2 ]; }  # unzip exits 1-2 on Convex's export zip (warnings)
 node scripts/scan-secrets.mjs $OUT
