@@ -1,0 +1,11 @@
+{
+  "name": "dorks",
+  "private": true,
+  "packageManager": "pnpm@12.4.2",
+  "scripts": {
+    "dev:api": "pnpm --filter @dorks/api dev",
+    "dev:web": "pnpm --filter @dorks/web dev",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r --if-present test"
+  }
+}
