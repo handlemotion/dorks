@@ -13,7 +13,7 @@ export const list = query({
   handler: async (ctx, { dorkId, paginationOpts }) => {
     const userId = await requireUserId(ctx);
     const dork = await ctx.db.get(dorkId);
-    if (!dork || dork.userId !== userId) return { page: [] as ClientEvent[], isDone: true, continueCursor: "" };
+    if (!dork || dork.userId !== userId || dork.deleting) return { page: [] as ClientEvent[], isDone: true, continueCursor: "" };
     const r = await ctx.db.query("events").withIndex("by_dork_seq", (q) => q.eq("dorkId", dorkId)).order("desc").paginate(paginationOpts);
     return { ...r, page: r.page.map((e) => ({ ...e.body, seq: e.seq, dorkId: e.dorkId, ts: e.ts }) as ClientEvent) };
   },

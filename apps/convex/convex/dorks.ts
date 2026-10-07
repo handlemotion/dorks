@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -7,6 +7,11 @@ import { requireUserId } from "./auth";
 import { append, dispatch, enqueue, fail, MAX_MESSAGE_CHARS, runtimeOf } from "./lib/dispatch";
 
 const REPO = /^[\w.-]+\/[\w.-]+$/;
+export const MAX_TITLE_CHARS = 120;
+export const MAX_ACTIVE_DORKS = 20;
+
+/** `owner/name` where neither side is `.` or `..` (the repo ends up in clone URLs and API paths). */
+const validRepo = (repo: string) => REPO.test(repo) && repo.split("/").every((seg) => seg !== "." && seg !== "..");
 
 async function owned(ctx: MutationCtx, dorkId: Id<"dorks">): Promise<Doc<"dorks">> {
   const userId = await requireUserId(ctx);
@@ -50,12 +55,16 @@ export const create = mutation({
   args: { repo: v.string(), message: v.string(), title: v.optional(v.string()) },
   handler: async (ctx, { repo, message, title }) => {
     const userId = await requireUserId(ctx);
-    if (!REPO.test(repo)) fail("invalid", "repo must be owner/name");
+    if (!validRepo(repo)) fail("invalid", "repo must be owner/name");
+    if (title !== undefined && title.trim().length > MAX_TITLE_CHARS) fail("invalid", "title too long");
     const text = checkText(message);
+    const active = await ctx.db.query("dorks").withIndex("by_user_archived_activity", (q) => q.eq("userId", userId).eq("archived", false))
+      .filter((q) => q.neq(q.field("deleting"), true)).take(MAX_ACTIVE_DORKS);
+    if (active.length >= MAX_ACTIVE_DORKS) throw new ConvexError({ code: "limit", message: `at most ${MAX_ACTIVE_DORKS} active dorks; archive or delete one first` });
     const s = await ctx.db.query("userSettings").withIndex("by_user", (q) => q.eq("userId", userId)).unique();
     if (!s?.claudeTokenEnc || !s.githubInstallationId) fail("onboarding_incomplete", "finish onboarding first");
     const dorkId = await ctx.db.insert("dorks", {
-      userId, title: (title?.trim() || text).slice(0, 120), repo, branch: `agent/${crypto.randomUUID().slice(0, 8)}`,
+      userId, title: (title?.trim() || text).slice(0, MAX_TITLE_CHARS), repo, branch: `agent/${crypto.randomUUID().slice(0, 8)}`,
       state: "creating", archived: false, lastActivityAt: Date.now(),
     });
     await ctx.db.insert("dorkRuntime", { dorkId, bridgeSeq: 0, streamMsgId: "", sleepMinutes: s!.sleepMinutes, bridgeSeenAt: 0, bridgeLost: false, timers: {} });
@@ -96,7 +105,7 @@ export const rename = mutation({
   handler: async (ctx, { dorkId, title }) => {
     await owned(ctx, dorkId);
     const t = title.trim();
-    if (!t || t.length > 120) fail("invalid", "bad title");
+    if (!t || t.length > MAX_TITLE_CHARS) fail("invalid", "bad title");
     await ctx.db.patch(dorkId, { title: t });
   },
 });
