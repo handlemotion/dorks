@@ -23,7 +23,7 @@ afterEach(async () => {
   for (const c of cleanup.splice(0)) await c();
 });
 
-async function setup(opts: { env?: Record<string, string>; resume?: string | null; branch?: string; deltas?: number; connectError?: unknown; afterBridgeSeq?: number } = {}) {
+async function setup(opts: { onSleeping?: () => void; env?: Record<string, string>; resume?: string | null; branch?: string; deltas?: number; connectError?: unknown; afterBridgeSeq?: number } = {}) {
   const remote = makeRemote();
   const state = tmp("state-");
   const work = tmp("work-");
@@ -59,7 +59,7 @@ async function setup(opts: { env?: Record<string, string>; resume?: string | nul
     repo: { fullName: "acme/demo", branch: opts.branch ?? "dork/abc" },
     resumeSessionId: opts.resume ?? null,
   };
-  const bridge = new Bridge({ cfg, transport: t, log: makeLogger("t", redactor, (l) => logs.push(l)), redactor, baseEnv: hostEnv, selfCommand: [process.execPath, cli] });
+  const bridge = new Bridge({ cfg, transport: t, log: makeLogger("t", redactor, (l) => logs.push(l)), redactor, baseEnv: hostEnv, selfCommand: [process.execPath, cli], onSleeping: opts.onSleeping });
   cleanup.push(() => bridge.stop(500));
   return { bridge, t, remote, work, state, report, logs, redactor, hostEnv };
 }
@@ -339,6 +339,15 @@ describe("bridge with a fake claude CLI", () => {
   it("connect refused with `sleeping` rejects start() so the CLI can exit 0", async () => {
     const s = await setup({ connectError: { data: { code: "sleeping" } } });
     await expect(s.bridge.start()).rejects.toBeInstanceOf(SleepingError);
+  });
+
+  it("a reconnect refused with `sleeping` asks the process to exit cleanly", async () => {
+    let slept = 0;
+    const s = await setup({ onSleeping: () => slept++ });
+    await s.bridge.start();
+    s.t.connectError = { data: { code: "sleeping" } };
+    s.t.reconnect();
+    await waitFor(() => slept === 1, "onSleeping");
   });
 
   it("after a reconnect the bridge re-handshakes, continues numbering from afterBridgeSeq and replays what the backend lacks", async () => {

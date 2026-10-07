@@ -63,12 +63,11 @@ export class ConvexTransport implements Transport {
 
   onReconnect(cb: () => void) {
     let last = this.client.connectionState().connectionCount;
-    let wasUp = this.client.connectionState().isWebSocketConnected;
     return this.client.subscribeToConnectionState((s) => {
-      const reconnected = s.isWebSocketConnected && (!wasUp || s.connectionCount !== last) && s.connectionCount > last;
-      wasUp = s.isWebSocketConnected;
-      if (s.connectionCount !== last) last = s.connectionCount;
-      if (reconnected) cb();
+      if (s.connectionCount <= last) return;
+      const firstConnect = last === 0; // the initial connect is not a reconnect
+      last = s.connectionCount;
+      if (!firstConnect && s.isWebSocketConnected) cb();
     });
   }
 

@@ -22,8 +22,10 @@ export interface BridgeDeps {
   baseEnv?: NodeJS.ProcessEnv;
   /** [node, cli.mjs]: what git's credential helper should invoke. */
   selfCommand?: [string, string];
-  /** Called when the backend refuses us for good. */
+  /** Called when the backend refuses us for good (exit 1). */
   onFatal?: () => void;
+  /** Called when a reconnect is refused with `sleeping`: the box should be paused, exit 0. */
+  onSleeping?: () => void;
 }
 
 /** Thrown from start() when the backend says the box should be asleep: the process exits 0. */
@@ -73,7 +75,7 @@ export class Bridge {
     await this.creds.start();
     await this.handshake(true);
     this.unsubs.push(this.t.subscribeCommands((cmds) => this.onCommands(cmds), () => this.log("commands subscription error")));
-    this.unsubs.push(this.t.onReconnect(() => void this.handshake(false).catch((e) => e instanceof SleepingError && this.d.onFatal?.())));
+    this.unsubs.push(this.t.onReconnect(() => void this.handshake(false).catch((e) => e instanceof SleepingError && this.d.onSleeping?.())));
     this.hb = setInterval(() => {
       this.t.heartbeat().catch((e) => this.t.isFatal(e) && this.fatal());
     }, this.cfg.heartbeatMs);

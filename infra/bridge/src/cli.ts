@@ -26,7 +26,7 @@ async function main() {
     await bridge?.stop().catch(() => {});
     process.exit(code);
   };
-  bridge = new Bridge({ cfg, transport, log, redactor, onFatal: () => void exit(1) });
+  bridge = new Bridge({ cfg, transport, log, redactor, onFatal: () => void exit(1), onSleeping: () => void exit(0) });
   process.on("SIGTERM", () => void exit(0));
   process.on("SIGINT", () => void exit(0));
   try {
