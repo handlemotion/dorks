@@ -44,6 +44,7 @@ export function prepareRealBridge({ repos = ["jaantonio/demo"] } = {}) {
         DORKS_GIT_BASE_URL: `file://${remotes}`,
         DORKS_STATE_DIR: join(root, "state", short), // survives a "pause" (killed process), like a paused box's disk
         DORKS_WORKDIR: join(root, "work", short),
+        CLAUDE_CONFIG_DIR: join(root, "claude", short), // session transcripts: like the box disk, they survive a "pause"
         HEARTBEAT_MS: process.env.HEARTBEAT_MS,
         DELTA_BATCH_MS: process.env.DELTA_BATCH_MS,
       };

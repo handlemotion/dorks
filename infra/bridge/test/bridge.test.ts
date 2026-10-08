@@ -463,5 +463,32 @@ describe("bridge with a fake claude CLI", () => {
     expect((res!.raw as any).is_error).toBe(true); // the turn was interrupted before we reported flushed
     expect(s.t.frames.indexOf(res!)).toBeLessThan(s.t.frames.indexOf(flushed));
   });
+
+  it("sleep/wake: a new bridge process resumes the session the previous one wrote to disk", async () => {
+    const s = await setup();
+    await s.bridge.start();
+    configure(s.t);
+    await waitFor(() => s.t.of("ready").length, "ready");
+    s.t.emit([msg("m1", "first")]);
+    const init = await waitFor(() => s.t.events().find((e) => (e.raw as any).subtype === "init"), "init");
+    const sid = (init.raw as any).session_id as string;
+    await waitFor(() => s.t.events().some((e) => (e.raw as any).state === "idle"), "idle");
+    await s.bridge.stop(500);
+
+    const t2 = new FakeTransport();
+    t2.configureFrame = { ...s.t.configureFrame!, resumeSessionId: sid };
+    const redactor = new Redactor();
+    const b2 = new Bridge({ cfg: loadConfig(s.hostEnv), transport: t2, log: makeLogger("t2", redactor, () => {}), redactor, baseEnv: s.hostEnv, selfCommand: [process.execPath, cli] });
+    cleanup.push(() => b2.stop(500));
+    await b2.start();
+    t2.emit([{ cid: "c2", frame: { t: "fetch_configure" } }]);
+    await waitFor(() => t2.of("ready").length, "ready after wake");
+    // the second child rewrites the report file when it starts
+    const rep = await waitFor(async () => {
+      const r = await readReport(s.report);
+      return r.argv.includes("--resume") && r;
+    }, "second child started with --resume");
+    expect(rep.argv).toEqual(expect.arrayContaining(["--resume", sid]));
+  });
 });
 

@@ -24,9 +24,10 @@ if (process.env.FAKE_CLAUDE_REPORT) writeFileSync(process.env.FAKE_CLAUDE_REPORT
 
 const out = (o) => process.stdout.write(`${JSON.stringify({ ...o, session_id: sessionId })}\n`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const transcript = process.env.CLAUDE_CONFIG_DIR && join(process.env.CLAUDE_CONFIG_DIR, "projects", "-fake");
-if (transcript) mkdirSync(transcript, { recursive: true });
-const record = (o) => transcript && appendFileSync(join(transcript, `${sessionId}.jsonl`), `${JSON.stringify(o)}\n`);
+// like the real CLI: <config dir>/projects/<encoded cwd>/<session>.jsonl (the bridge only resumes sessions it finds there)
+const transcript = join(process.env.CLAUDE_CONFIG_DIR || join(process.env.HOME || "/tmp", ".claude"), "projects", "-fake");
+mkdirSync(transcript, { recursive: true });
+const record = (o) => appendFileSync(join(transcript, `${sessionId}.jsonl`), `${JSON.stringify(o)}\n`);
 
 if (resume && process.env.FAKE_CLAUDE_NO_SESSION === "start") {
   out({ type: "result", subtype: "error_during_execution", is_error: true, duration_ms: 0, result: `No conversation found with session ID: ${resume}` });
