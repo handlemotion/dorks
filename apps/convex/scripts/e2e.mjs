@@ -19,11 +19,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const waitFor = async (fn, what, ms = 30_000) => { const t0 = Date.now(); for (;;) { const v = await fn(); if (v) return v; if (Date.now() - t0 > ms) throw new Error(`timeout: ${what}`); await sleep(100); } };
 const post = (p, body, headers = {}) => fetch(CONVEX_SITE_URL + p, { method: "POST", headers: { ...H, ...headers }, body: JSON.stringify(body) });
 // Limits are per hour and persist in the backend, so every run uses fresh addresses for the burst checks below. Caps default to
-// the production values; set OTP_SEND_PER_EMAIL / OTP_SEND_PER_IP / OTP_VERIFY_PER_EMAIL on the deployment and here to change them.
+// the production values; set OTP_SEND_PER_EMAIL / OTP_SEND_PER_IP on the deployment and here to change them. A run spends ~40 of the
+// 100/h global send budget, so run-e2e.sh clears the counters first; calling this file directly twice in an hour can hit OTP_SEND_GLOBAL.
 const RUN = Date.now().toString(36);
 const SEND_CAP = Number(process.env.OTP_SEND_PER_EMAIL ?? 5);
 const IP_CAP = Number(process.env.OTP_SEND_PER_IP ?? 30);
-const VERIFY_CAP = Number(process.env.OTP_VERIFY_PER_EMAIL ?? 10);
 const OTP = "/api/auth/email-otp/send-verification-otp";
 
 await startMockResend();
@@ -59,10 +59,10 @@ check("foreign sign-in refused", (await post("/api/auth/sign-in/email-otp", { em
   const vEmail = `verify-${RUN}@jaantonio.com`;
   await post(OTP, { email: vEmail, type: "sign-in" });
   const vs = [];
-  for (let i = 0; i < VERIFY_CAP + 3; i++) vs.push((await post("/api/auth/sign-in/email-otp", { email: vEmail, otp: "000000" })).status);
-  check(`verify burst: guesses past ${VERIFY_CAP}/h get 429`, vs.slice(0, VERIFY_CAP).every((s) => s !== 429) && vs.slice(VERIFY_CAP).every((s) => s === 429), vs.join(","));
+  for (let i = 0; i < 15; i++) vs.push((await post("/api/auth/sign-in/email-otp", { email: vEmail, otp: "000000" })).status);
+  check("wrong guesses are never rate limited (an outsider cannot lock a user out by guessing)", vs.every((s) => s !== 429), vs.join(","));
   const right = codeFor(vEmail);
-  check("even the right code is refused while limited", (await post("/api/auth/sign-in/email-otp", { email: vEmail, otp: right })).status === 429);
+  check("the code is already void after 3 wrong guesses (better-auth's own cap)", (await post("/api/auth/sign-in/email-otp", { email: vEmail, otp: right })).status !== 200);
 
   // Per IP: the local backend adds no x-forwarded-for, so the test supplies one (the limiter trusts the last hop).
   const ip = `10.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`;
@@ -70,7 +70,8 @@ check("foreign sign-in refused", (await post("/api/auth/sign-in/email-otp", { em
   for (let i = 0; i < IP_CAP + 2; i++) ipStatuses.push((await post(OTP, { email: `ip-${RUN}-${i}@jaantonio.com`, type: "sign-in" }, { "x-forwarded-for": `203.0.113.9, ${ip}` })).status);
   check(`per-IP cap: ${IP_CAP} sends across different mailboxes, then 429`, ipStatuses.slice(0, IP_CAP).every((s) => s === 200) && ipStatuses.slice(IP_CAP).every((s) => s === 429), ipStatuses.slice(-4).join(","));
   const spoof = await post(OTP, { email: `ip2-${RUN}@jaantonio.com`, type: "sign-in" }, { "x-forwarded-for": `${ip}, 198.51.100.7` });
-  check("forging an earlier x-forwarded-for hop does not dodge or hit another IP's budget", spoof.status === 200);
+  // Documents the trust model rather than proving protection: the IP key is the LAST hop, so a caller who controls the whole header gets any key.
+  check("per-IP key is the last x-forwarded-for hop (earlier hops are ignored)", spoof.status === 200);
 }
 
 async function signIn(email) {

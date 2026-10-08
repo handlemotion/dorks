@@ -11,6 +11,7 @@ node ../../infra/bridge-sim/host.mjs > $OUT/host.log 2>&1 & HOST=$!
 npx convex logs > $OUT/convex.log 2>&1 & LOGS=$!
 trap 'kill $HOST $LOGS 2>/dev/null || true' EXIT
 sleep 2
+npx convex run rateLimit:reset >/dev/null # sign-in budgets are per hour and persist; start every run fresh
 SECRETS_OUT=$OUT/needles.json node scripts/e2e.mjs | tee $OUT/e2e.log
 sleep 2
 rm -f $OUT/export.zip; npx convex export --path $OUT/export.zip >/dev/null 2>&1

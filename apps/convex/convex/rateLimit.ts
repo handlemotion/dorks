@@ -2,6 +2,9 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation } from "./_generated/server";
 
+/** Counters older than this are swept, so no window may be longer. */
+export const MAX_WINDOW_MS = 24 * 3_600_000;
+
 /**
  * Fixed-window counters in a table. Better-auth's own limiter keeps counts in per-isolate memory, which does nothing on Convex.
  * `hit` is all-or-nothing: if any key is over its limit nothing is counted, so a blocked flood does not write and a request
@@ -32,8 +35,18 @@ export const hit = internalMutation({
 export const sweep = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const stale = await ctx.db.query("rateLimits").withIndex("by_window_start", (q) => q.lt("windowStart", Date.now() - 24 * 3_600_000)).take(500);
+    const stale = await ctx.db.query("rateLimits").withIndex("by_window_start", (q) => q.lt("windowStart", Date.now() - MAX_WINDOW_MS)).take(500);
     for (const row of stale) await ctx.db.delete(row._id);
     if (stale.length === 500) await ctx.scheduler.runAfter(0, internal.rateLimit.sweep, {});
+  },
+});
+
+/** Dev/CI only (internal, so reachable with `npx convex run` and admin rights, never from a client): start every window fresh. */
+export const reset = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const rows = await ctx.db.query("rateLimits").take(500);
+    for (const row of rows) await ctx.db.delete(row._id);
+    if (rows.length === 500) await ctx.scheduler.runAfter(0, internal.rateLimit.reset, {});
   },
 });

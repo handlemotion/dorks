@@ -4,7 +4,7 @@ import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { internal } from "../convex/_generated/api";
 import schema from "../convex/schema";
-import { clientIp, createAuth, rateKeyForEmail } from "../convex/auth";
+import { clientIp, createAuth, otpLimits, rateKeyForEmail, sendChecks } from "../convex/auth";
 
 const modules = import.meta.glob("../convex/**/*.*s");
 const H = 3_600_000;
@@ -51,6 +51,16 @@ describe("rateLimit.hit", () => {
   });
 });
 
+describe("rateLimit.reset", () => {
+  it("clears every counter", async () => {
+    const t = convexTest(schema, modules);
+    for (const k of ["a", "b", "c"]) await t.mutation(internal.rateLimit.hit, { checks: [check(k, 1)] });
+    await t.mutation(internal.rateLimit.reset, {});
+    expect(await t.run((ctx) => ctx.db.query("rateLimits").collect().then((r) => r.length))).toBe(0);
+    expect((await t.mutation(internal.rateLimit.hit, { checks: [check("a", 1)] })).ok).toBe(true);
+  });
+});
+
 describe("auth helpers", () => {
   it("one mailbox, one key: case, whitespace and +tags collapse", () => {
     expect(rateKeyForEmail(" Rodrigo+spam@JaAntonio.com ")).toBe("rodrigo@jaantonio.com");
@@ -63,6 +73,41 @@ describe("auth helpers", () => {
     expect(clientIp(new Headers({ "x-forwarded-for": "203.0.113.9" }))).toBe("203.0.113.9");
     expect(clientIp(new Headers())).toBeUndefined();
     expect(clientIp(undefined)).toBeUndefined();
+  });
+
+  it("every send is checked against the global key, whatever the caller does with headers", () => {
+    const l = { windowMs: H, sendPerEmail: 5, sendPerIp: 30, sendGlobal: 100 };
+    const keys = (ip?: string) => sendChecks("rand-1@jaantonio.com", ip, l).map((c) => c.key);
+    expect(keys(undefined)).toEqual(["otp-send:email:rand-1@jaantonio.com", "otp-send:global"]); // no header: no IP key, global still there
+    expect(keys("1.2.3.4")).toEqual(["otp-send:email:rand-1@jaantonio.com", "otp-send:ip:1.2.3.4", "otp-send:global"]);
+    expect(sendChecks("x@jaantonio.com", undefined, l).at(-1)).toEqual({ key: "otp-send:global", limit: 100 });
+  });
+
+  it("the global budget caps total sends across many mailboxes and spoofed IPs", async () => {
+    const t = convexTest(schema, modules);
+    const l = { windowMs: H, sendPerEmail: 5, sendPerIp: 30, sendGlobal: 10 };
+    const results = [];
+    for (let i = 0; i < 15; i++) {
+      const checks = sendChecks(`rand-${i}@jaantonio.com`, i % 2 ? `9.9.9.${i}` : undefined, l).map((c) => ({ ...c, windowMs: H }));
+      results.push((await t.mutation(internal.rateLimit.hit, { checks })).ok);
+    }
+    expect(results.filter(Boolean)).toHaveLength(10);
+    expect(results.slice(10).every((ok) => !ok)).toBe(true);
+  });
+
+  it("limits come from env with sane defaults; the window is clamped so the sweep cannot drop live counters", () => {
+    const keys = ["OTP_WINDOW_MS", "OTP_SEND_PER_EMAIL", "OTP_SEND_PER_IP", "OTP_SEND_GLOBAL"];
+    const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+    try {
+      for (const k of keys) delete process.env[k];
+      expect(otpLimits()).toEqual({ windowMs: H, sendPerEmail: 5, sendPerIp: 30, sendGlobal: 100 });
+      process.env.OTP_SEND_GLOBAL = "7";
+      process.env.OTP_SEND_PER_EMAIL = "junk";
+      process.env.OTP_WINDOW_MS = String(30 * H);
+      expect(otpLimits()).toMatchObject({ sendGlobal: 7, sendPerEmail: 5, windowMs: 24 * H });
+    } finally {
+      for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+    }
   });
 
   it("createAuth fails fast, naming the missing variable", () => {

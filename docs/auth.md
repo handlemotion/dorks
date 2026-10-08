@@ -4,7 +4,7 @@ Sign-in is email OTP via `@convex-dev/better-auth` (`apps/convex/convex/auth.ts`
 
 ## Required Convex env
 
-`createAuth` throws on the first auth request if either is missing, so a misconfigured deployment fails loudly instead of limping along.
+`http.ts` builds the auth when the module loads, so a missing `SITE_URL` or `BETTER_AUTH_SECRET` fails the **deploy** (`Failed to analyze http.js: SITE_URL is not set…`), including the first `convex dev` on a fresh project and preview deployments: set both before pushing. `createAuth` repeats the check per request as a backstop.
 
 | Variable | Why |
 |---|---|
@@ -29,16 +29,21 @@ Use the address Metro prints. better-auth also matches wildcards, so `exp://192.
 
 ## Rate limits
 
-Counters live in the `rateLimits` table (`convex/rateLimit.ts`; stale rows swept by `convex/crons.ts`), enforced in `hooks.before`. Better-auth's built-in limiter is memory-per-isolate and production-only, so it does nothing on Convex. Over the limit the response is `429` (`TOO_MANY_REQUESTS`).
+Counters live in the `rateLimits` table (`convex/rateLimit.ts`; stale rows swept by `convex/crons.ts`), enforced in `hooks.before`. Better-auth's built-in limiter is memory-per-isolate and production-only, so it does nothing on Convex. Over the limit the response is `429` (`TOO_MANY_REQUESTS`). Only code **sends** are limited:
 
-| Budget (per hour) | Default | Env override |
+| Send budget (per window) | Default | Env override |
 |---|---|---|
-| code sends per mailbox | 5 | `OTP_SEND_PER_EMAIL` |
-| code sends per IP | 30 | `OTP_SEND_PER_IP` |
-| code checks per mailbox | 10 | `OTP_VERIFY_PER_EMAIL` |
-| window length (ms) | 3600000 | `OTP_WINDOW_MS` |
+| per mailbox | 5 / hour | `OTP_SEND_PER_EMAIL` |
+| per IP (best effort) | 30 / hour | `OTP_SEND_PER_IP` |
+| global, all callers | 100 / hour | `OTP_SEND_GLOBAL` |
+| window length (ms, max 24 h) | 3600000 | `OTP_WINDOW_MS` |
 
-- A mailbox is the lowercased address with any `+tag` removed, so `a+1@` and `A+2@` share a budget with `a@`.
-- Covered routes: `send-verification-otp`, `request-password-reset`, `/forget-password/email-otp` (these all mail a code) and `sign-in/email-otp`, `check-verification-otp`, `verify-email`, `reset-password` (these check one).
-- The IP is the last hop of `x-forwarded-for`. Self-hosted Convex passes the header through unchanged and adds none, so the IP limit only works behind a proxy that sets it; Convex Cloud's behaviour has not been verified. The per-mailbox limits do not depend on it.
-- `scripts/e2e.mjs` uses a fresh address per run and reads the caps from the same env names (set them in both places if you change them).
+- **Global** is the only budget a caller cannot dodge: it bounds Resend volume even when someone mails `rand-N@jaantonio.com` in a loop with spoofed or missing IP headers. Trade-off: that same caller can use the whole budget up and block everyone's sign-in until the window ends. Raise it if the team grows.
+- **Per mailbox** is a mailbox, not a string: lowercased, `+tag` removed, so `a+1@` and `A+2@` share a budget with `a@`. Trade-off: anyone can spend a colleague's 5 sends and lock that colleague out of sign-in for up to an hour.
+- **Per IP** is best effort. The IP is the last hop of `x-forwarded-for`. Self-hosted Convex passes the header through unchanged and adds none, so a caller controls it there; **Convex Cloud's behaviour has not been verified** (it may add nothing, or append one shared proxy address, which would put every user in one budget). Do not rely on it.
+- **Code checks are not rate limited.** Better-auth voids a code after 3 wrong guesses and each new code needs a (limited) send, so guessing is already bounded; a check cap would only enable lockouts.
+- Covered send routes: `send-verification-otp`, `request-password-reset`, `/forget-password/email-otp` (password-reset routes mail a code to any existing user too). All code routes, including checks, also get the allowed-domain check.
+
+### Tests and CI
+
+`scripts/run-e2e.sh` clears the counters (`npx convex run rateLimit:reset`, an internal function) before it starts, and `e2e.mjs` / `web-e2e.mjs` use a fresh address per run, so reruns on one backend do not hit a cap. One `e2e.mjs` run spends about 40 of the 100 global sends; calling it directly more than twice an hour without the reset can hit `OTP_SEND_GLOBAL`. If you change a cap, set the same env name on the deployment and in the shell running the e2e.
