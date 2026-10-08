@@ -4,9 +4,10 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { Bridge, SleepingError } from "../src/bridge";
+import { rpcCall } from "../src/rpc";
 import { loadConfig } from "../src/config";
 import { makeLogger, Redactor } from "../src/redact";
-import { builtCli, FAKE_CLAUDE, FakeTransport, makeRemote, sleep, tmp, waitFor } from "./helpers";
+import { builtCli, FAKE_CLAUDE, fakeView, FakeTransport, makeRemote, sleep, tmp, waitFor } from "./helpers";
 
 const execFileP = promisify(execFile);
 const BRIDGE_SECRET = "b".repeat(64);
@@ -99,31 +100,39 @@ describe("bridge with a fake claude CLI", () => {
     const dir = join(s.work, "acme/demo");
     const cfgText = readFileSync(join(dir, ".git/config"), "utf8");
     expect(cfgText).not.toContain(GH_TOKEN);
-    expect(cfgText).toContain("credential");
+    expect(cfgText).not.toContain("credential"); // the helper is configured once, globally, for every repo
+    const global = readFileSync(join(s.hostEnv.HOME!, ".gitconfig"), "utf8");
+    expect(global).not.toContain(GH_TOKEN);
+    expect(global).toContain('[credential "https://github.com"]');
+    expect(global).toContain("credential --sock");
     expect(execFileSync("git", ["remote", "get-url", "origin"], { cwd: dir }).toString().trim()).toBe(`${s.remote.baseUrl}/acme/demo.git`);
     // nothing under the state or work dirs holds the token
     const walk = (d: string): string[] => readdirSync(d).flatMap((n) => (statSync(join(d, n)).isDirectory() ? walk(join(d, n)) : statSync(join(d, n)).isSocket() ? [] : [join(d, n)]));
-    for (const f of [...walk(s.state), ...walk(s.work)]) expect(readFileSync(f).includes(GH_TOKEN), f).toBe(false);
+    for (const f of [...walk(s.state), ...walk(s.work), ...walk(s.hostEnv.HOME!)]) expect(readFileSync(f).includes(GH_TOKEN), f).toBe(false);
   });
 
-  it("credential helper: git gets the in-memory token via the bridge, only for github.com, and a refresh swaps it", async () => {
+  it("credential helper: git gets the in-memory token via the bridge in any repo, only for github.com, and a refresh swaps it", async () => {
     const s = await setup();
     await s.bridge.start();
     configure(s.t);
     await waitFor(() => s.t.of("ready").length, "ready");
     const dir = join(s.work, "acme/demo");
+    const other = join(s.work, "someone/else"); // a repo the agent cloned itself: it has no config of its own
+    mkdirSync(other, { recursive: true });
+    execFileSync("git", ["init", "-q"], { cwd: other });
     // async on purpose: the credential server lives in this process, so a blocking exec would deadlock
-    const fill = async (host: string) => {
-      const p = execFileP("git", ["credential", "fill"], { cwd: dir, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_ASKPASS: "", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } });
+    const fill = async (host: string, cwd = dir) => {
+      const p = execFileP("git", ["credential", "fill"], { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_ASKPASS: "", GIT_CONFIG_GLOBAL: join(s.hostEnv.HOME!, ".gitconfig"), GIT_CONFIG_NOSYSTEM: "1" } });
       p.child.stdin!.end(`protocol=https\nhost=${host}\n\n`);
       return (await p).stdout;
     };
     expect(await fill("github.com")).toContain(`password=${GH_TOKEN}`);
+    expect(await fill("github.com", other)).toContain(`username=x-access-token\npassword=${GH_TOKEN}`);
     await expect(fill("evil.example.com")).rejects.toThrow(); // helper declines, git would prompt (disabled) and fail
     s.t.token = "ghs_refreshedToken123";
     s.t.emit([{ cid: "gh1", frame: { t: "fetch_gh_token" } }]);
     await waitFor(() => s.t.of("ack").some((a) => a.id === "gh1"), "gh ack");
-    expect(await fill("github.com")).toContain("password=ghs_refreshedToken123");
+    expect(await fill("github.com", other)).toContain("password=ghs_refreshedToken123");
     expect(existsSync(join(s.state, "cred.sock"))).toBe(true);
   });
 
@@ -492,3 +501,166 @@ describe("bridge with a fake claude CLI", () => {
   });
 });
 
+describe("autonomy: notify frames", () => {
+  const ENVELOPE = '<dorks-event source="github" kinds="ci_failed,comment" prs="acme/demo#12">\nCI failed on acme/demo#12 (attempt 1 of 2).\n  indented "quoted" line\n</dorks-event>';
+  const notify = (id: string, text = ENVELOPE) => ({ cid: id, frame: { t: "notify" as const, id, text, kinds: ["ci_failed" as const, "comment" as const], prs: [{ repo: "acme/demo", number: 12 }] } });
+  const lastResult = (t: FakeTransport) => (t.events().filter((e) => (e.raw as any).type === "result").at(-1)?.raw as any)?.result;
+
+  it("writes the text to the agent verbatim as a user turn and acks it like a user message", async () => {
+    const s = await setup();
+    await s.bridge.start();
+    configure(s.t);
+    await waitFor(() => s.t.of("ready").length, "ready");
+    s.t.emit([notify("n1")]);
+    await waitFor(() => rawTypes(s.t).includes("result"), "turn");
+    expect(lastResult(s.t)).toBe(`Done: ${ENVELOPE}`);
+    expect(s.t.of("ack").filter((a) => a.id === "n1")).toHaveLength(1);
+  });
+
+  it("dedupes a re-delivered notify by id, including across a bridge restart (shared journal)", async () => {
+    const s = await setup();
+    await s.bridge.start();
+    configure(s.t);
+    await waitFor(() => s.t.of("ready").length, "ready");
+    s.t.emit([notify("n1")]);
+    s.t.emit([notify("n1")]);
+    await waitFor(() => rawTypes(s.t).includes("result"), "turn");
+    await sleep(150);
+    expect(rawTypes(s.t).filter((x) => x === "result")).toHaveLength(1);
+    expect(readFileSync(join(s.state, "messages.log"), "utf8").split("\n")).toContain("n1");
+    await s.bridge.stop(500);
+
+    const t2 = new FakeTransport();
+    t2.configureFrame = s.t.configureFrame;
+    const redactor = new Redactor();
+    const b2 = new Bridge({ cfg: loadConfig({ ...s.hostEnv }), transport: t2, log: makeLogger("t2", redactor, () => {}), redactor, baseEnv: s.hostEnv, selfCommand: [process.execPath, cli] });
+    cleanup.push(() => b2.stop(500));
+    await b2.start();
+    t2.emit([{ cid: "cfg2", frame: { t: "fetch_configure" } }, notify("n1")]);
+    await waitFor(() => t2.of("ack").some((a) => a.id === "n1"), "re-ack");
+    await sleep(150);
+    expect(rawTypes(t2)).not.toContain("result");
+  });
+
+  it("an unacked notify waits for the agent and is delivered once configure finishes", async () => {
+    const s = await setup();
+    await s.bridge.start();
+    s.t.emit([notify("n1")]);
+    await sleep(50);
+    expect(s.t.of("ack")).toHaveLength(0);
+    s.t.emit([notify("n1"), { cid: "cfg1", frame: { t: "fetch_configure" } }]);
+    await waitFor(() => s.t.of("ack").some((a) => a.id === "n1"), "ack");
+    await waitFor(() => rawTypes(s.t).includes("result"), "turn");
+  });
+
+  it("logs the kinds and PRs, never the text", async () => {
+    const s = await setup();
+    await s.bridge.start();
+    configure(s.t);
+    await waitFor(() => s.t.of("ready").length, "ready");
+    s.t.emit([notify("n1", "<dorks-event>please-do-not-log-this-body</dorks-event>")]);
+    await waitFor(() => rawTypes(s.t).includes("result"), "turn");
+    const line = s.logs.find((l) => l.includes("notify delivered"));
+    expect(line).toContain("ci_failed,comment");
+    expect(line).toContain("acme/demo#12");
+    expect(s.logs.join("\n")).not.toContain("please-do-not-log-this-body");
+  });
+});
+
+describe("autonomy: local RPC", () => {
+  const sockOf = (s: { state: string }) => join(s.state, "cred.sock");
+  const ready = async (opts: Parameters<typeof setup>[0] = {}) => {
+    const s = await setup(opts);
+    await s.bridge.start();
+    configure(s.t);
+    await waitFor(() => s.t.of("ready").length, "ready");
+    return s;
+  };
+
+  it("token: serves the current GitHub token for github.com only; unavailable before configure; refresh swaps it", async () => {
+    const s = await setup();
+    await s.bridge.start();
+    await expect(rpcCall(sockOf(s), "token", { host: "github.com" })).rejects.toMatchObject({ code: "unavailable" });
+    configure(s.t);
+    await waitFor(() => s.t.of("ready").length, "ready");
+    expect(await rpcCall(sockOf(s), "token", { host: "github.com" })).toEqual({ token: GH_TOKEN });
+    await expect(rpcCall(sockOf(s), "token", { host: "evil.example.com" })).rejects.toMatchObject({ code: "denied" });
+    await expect(rpcCall(sockOf(s), "token", {})).rejects.toMatchObject({ code: "invalid" });
+    s.t.token = "ghs_refreshedToken123";
+    s.t.emit([{ cid: "gh1", frame: { t: "fetch_gh_token" } }]);
+    await waitFor(() => s.t.of("ack").some((a) => a.id === "gh1"), "gh ack");
+    expect(await rpcCall(sockOf(s), "token", { host: "github.com" })).toEqual({ token: "ghs_refreshedToken123" });
+  });
+
+  it("pr.sub / pr.unsub go to the backend with their source, and pr.list reads its own writes", async () => {
+    const s = await ready();
+    const ref = { repo: "acme/demo", number: 12 };
+    expect(await rpcCall(sockOf(s), "pr.list")).toEqual([]);
+    expect(await rpcCall(sockOf(s), "pr.sub", { ...ref, source: "auto" })).toEqual(ref);
+    expect(await rpcCall(sockOf(s), "pr.sub", { repo: "acme/other", number: 3 })).toEqual({ repo: "acme/other", number: 3 }); // agent is the default source
+    expect(s.t.prCalls).toEqual([
+      { op: "sub", ref, source: "auto" },
+      { op: "sub", ref: { repo: "acme/other", number: 3 }, source: "agent" },
+    ]);
+    expect((await rpcCall<any[]>(sockOf(s), "pr.list")).map((v) => `${v.repo}#${v.number}:${v.source}`)).toEqual(["acme/demo#12:auto", "acme/other#3:agent"]);
+    await rpcCall(sockOf(s), "pr.unsub", ref);
+    expect(s.t.prCalls.at(-1)).toEqual({ op: "unsub", ref });
+    expect((await rpcCall<any[]>(sockOf(s), "pr.list")).map((v) => v.number)).toEqual([3]);
+  });
+
+  it("validates input before it reaches the backend", async () => {
+    const s = await ready();
+    for (const params of [{}, { repo: "acme", number: 1 }, { repo: "acme/demo", number: 0 }, { repo: "acme/demo", number: 1.5 }, { repo: "acme/demo", number: "12" }, { repo: "../etc", number: 1 }, { repo: "a/b/c", number: 1 }, { repo: "acme/demo", number: 1, source: "user" }, null]) {
+      await expect(rpcCall(sockOf(s), "pr.sub", params), JSON.stringify(params)).rejects.toMatchObject({ code: "invalid" });
+    }
+    await expect(rpcCall(sockOf(s), "pr.unsub", { repo: "acme/demo" })).rejects.toMatchObject({ code: "invalid" });
+    expect(s.t.prCalls).toEqual([]);
+  });
+
+  it("backend failures surface as coded errors without leaking details", async () => {
+    const s = await ready();
+    s.t.prError = { data: { code: "not_found" }, message: "secret internal detail" };
+    const refused = (await rpcCall(sockOf(s), "pr.sub", { repo: "acme/demo", number: 1 }).catch((e) => e)) as Error;
+    expect(refused).toMatchObject({ code: "failed", message: "the backend refused the request (not_found)" });
+    s.t.prError = new Error("ECONNRESET with secret detail");
+    const down = (await rpcCall(sockOf(s), "pr.unsub", { repo: "acme/demo", number: 1 }).catch((e) => e)) as Error;
+    expect(down).toMatchObject({ code: "unavailable", message: "could not reach the backend" });
+    expect(JSON.stringify([refused.message, down.message, s.logs])).not.toContain("secret");
+  });
+
+  it("pr.list waits for the first copy of the subscriptions, then serves the cache", async () => {
+    const s = await setup();
+    s.t.pushInitialSubscriptions = false;
+    await s.bridge.start();
+    const pending = rpcCall<any[]>(sockOf(s), "pr.list");
+    await sleep(100);
+    s.t.setSubscriptions([fakeView({ repo: "acme/demo", number: 1 })]);
+    expect((await pending).map((v) => v.number)).toEqual([1]);
+  });
+
+  it("ignores a malformed list and keeps the last good one; reconnecting re-opens the subscription and picks up changes", async () => {
+    const s = await ready();
+    s.t.setSubscriptions([fakeView({ repo: "acme/demo", number: 1 })]);
+    s.t.setSubscriptions([{ repo: 1 }] as any);
+    expect((await rpcCall<any[]>(sockOf(s), "pr.list")).map((v) => v.number)).toEqual([1]);
+    expect(s.logs.join("\n")).toContain("malformed subscription list");
+
+    expect(s.t.subscriptionsWatchers).toBe(1);
+    s.t.pushInitialSubscriptions = false; // the backend is slow to answer after the reconnect; the stale copy is still served
+    s.t.reconnect();
+    await waitFor(() => s.t.subscriptionsWatchers === 2, "re-subscribed");
+    s.t.setSubscriptions([fakeView({ repo: "acme/demo", number: 1 }), fakeView({ repo: "acme/demo", number: 2 })]);
+    expect((await rpcCall<any[]>(sockOf(s), "pr.list")).map((v) => v.number)).toEqual([1, 2]);
+  });
+
+  it("the agent's environment carries the socket path, and DORKS_REAL_GH, but no other DORKS_* variable", async () => {
+    const s = await setup({ host: { DORKS_REAL_GH: "/opt/gh/bin/gh" } });
+    await s.bridge.start();
+    configure(s.t);
+    await waitFor(() => s.t.of("ready").length, "ready");
+    const rep = await readReport(s.report);
+    expect(rep.env.DORKS_SOCK).toBe(sockOf(s));
+    expect(rep.env.DORKS_REAL_GH).toBe("/opt/gh/bin/gh");
+    expect(rep.envKeys.filter((k: string) => k.startsWith("DORKS_")).sort()).toEqual(["DORKS_REAL_GH", "DORKS_SOCK"]);
+  });
+});

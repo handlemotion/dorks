@@ -22,6 +22,9 @@ interface GitCtx {
   runAs?: Identity | null;
 }
 
+/** The URL prefixes `credential.<url>.helper` is set for: github.com, and the clone base when it is some other http(s) host. */
+const helperScopes = (gitBaseUrl: string) => [...new Set(["https://github.com", gitBaseUrl].filter((u) => /^https?:\/\//.test(u)))];
+
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
 function runGit(args: string[], cwd: string | undefined, env: NodeJS.ProcessEnv, id?: Identity | null): Promise<{ code: number; stdout: string }> {
@@ -75,11 +78,14 @@ export async function prepareRepo(ctx: GitCtx, repo: { fullName: string; branch:
     if ((await git(["fetch", "--quiet", "origin"])).code !== 0) ctx.log("fetch failed; continuing with the checkout on disk");
   }
 
-  // Persist the helper for the agent's own git commands (push etc.). It holds a socket path, not a secret.
-  await run(["config", "--local", "--replace-all", "credential.helper", ""], dir, env);
-  await run(["config", "--local", "--add", "credential.helper", ctx.helper], dir, env);
+  // Persist the helper for the agent's own git commands (push etc.) in the user's global config, scoped to the git host, so any repo
+  // it clones under the workdir can push, not just this one. It holds a socket path, not a secret.
+  for (const scope of helperScopes(ctx.gitBaseUrl)) {
+    await run(["config", "--global", "--replace-all", `credential.${scope}.helper`, ""], dir, env); // the empty value resets earlier helpers
+    await run(["config", "--global", "--add", `credential.${scope}.helper`, ctx.helper], dir, env);
+  }
   for (const [k, v] of [["user.name", "dorks"], ["user.email", "dorks@users.noreply.github.com"]] as const) {
-    if (!(await run(["config", k], dir, env)).stdout.trim()) await run(["config", "--local", k, v], dir, env);
+    if (!(await run(["config", k], dir, env)).stdout.trim()) await run(["config", "--global", k, v], dir, env);
   }
 
   const exists = async (ref: string) => (await run(["show-ref", "--verify", "--quiet", ref], dir, env)).code === 0;
