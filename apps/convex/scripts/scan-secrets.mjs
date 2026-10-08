@@ -6,6 +6,7 @@ const needles = JSON.parse(readFileSync(`${out}/needles.json`, "utf8"));
 needles.encryptionKey = execSync("npx convex env get ENCRYPTION_KEY", { encoding: "utf8" }).trim();
 needles.authSecret = execSync("npx convex env get BETTER_AUTH_SECRET", { encoding: "utf8" }).trim();
 needles.bridgeKey = execSync("npx convex env get BRIDGE_SECRET_KEY", { encoding: "utf8" }).trim();
+needles.webhookSecret = execSync("npx convex env get GITHUB_WEBHOOK_SECRET", { encoding: "utf8" }).trim();
 let bad = 0;
 const targets = { "table export (all tables incl. auth component)": `${out}/export`, "convex function logs": `${out}/convex.log`, "bridge host log": `${out}/host.log`, "backend container logs": "docker" };
 for (const [label, path] of Object.entries(targets)) {
