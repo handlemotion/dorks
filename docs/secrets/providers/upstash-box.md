@@ -1,6 +1,6 @@
 # Upstash Box (the per-dork sandbox)
 
-Provides: `UPSTASH_BOX_API_KEY` (`shared`, secret) and `BASE_SNAPSHOT_ID` (`shared`, prod). The real Box provider is **not implemented yet** (`apps/api/src/lib/box.ts` `unconfiguredBox`; the Convex `getBox` falls back to it unless `BOX_PROVIDER=sim`), so these are placeholders for that work.
+Provides: `UPSTASH_BOX_API_KEY` (`shared`, secret) and `BASE_SNAPSHOT_ID` (`shared`, prod). The real Box provider is implemented in `apps/convex/convex/lib/upstash.ts` and used whenever `BOX_PROVIDER` is not `sim`. Building the base snapshot and picking optional settings are documented in [docs/upstash-box.md](../../upstash-box.md); use that for the snapshot steps and the steps below for where to store the values.
 
 Official docs (checked 2026-10-07): [Box quickstart](https://upstash.com/docs/box/overall/quickstart), [Snapshots](https://upstash.com/docs/box/overall/snapshots).
 
