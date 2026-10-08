@@ -32,3 +32,9 @@ Sign-in only works for `ALLOWED_EMAIL_DOMAIN` (default `jaantonio.com`). Use the
 - **backend-e2e**: starts a self-hosted Convex backend (`ghcr.io/get-convex/convex-backend`, pinned by digest) with `--network host`, deploys `apps/convex` with `npx convex dev --once`, sets throwaway Convex env vars, then runs `apps/convex/scripts/run-e2e.sh` (acceptance + secret scan) and `apps/convex/scripts/web-e2e.mjs` (headless Chrome against `apps/web` dev). On failure the logs and screenshots in `/tmp/dorks-e2e` are uploaded as the `dorks-e2e-logs` artifact (the raw table export is not).
 
 Reproduce locally by following the steps in the workflow; `CHROME_PATH` overrides the Chrome binary used by `web-e2e.mjs`.
+
+Keep CI in step with the backend as other branches land:
+
+- Any new required Convex env var (the GitHub App and Upstash settings, say) must be added to the `set_env` list in the "Deploy functions and set throwaway env" step, using throwaway or sim values only.
+- Rate limits keyed by IP or email can trip the e2e, which sends many sign-in codes from `127.0.0.1` within seconds. If the auth work adds env-configurable caps, set CI-specific overrides in the same step.
+- A new workspace package (such as `infra/bridge`) is picked up by `pnpm -r` once it is in `pnpm-workspace.yaml`; commit its lockfile changes or `--frozen-lockfile` fails.
