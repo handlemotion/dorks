@@ -64,6 +64,7 @@ const ENDS_PRS = /\bgh\b[^;&|\n]*\bpr\s+(?:merge|close)\b/;
 /** What gh prints on success: "✓ Closed pull request owner/name#12 (title)", "✓ Squashed and merged pull request owner/name#12 (title)". `--auto` prints something else. */
 const ENDED = /\b(?:closed|merged) pull request ([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)#(\d{1,9})\b/gi;
 const MAX_LISTED = 8;
+const MAX_TITLE = 120;
 
 const text = (v: unknown) => (typeof v === "string" ? v : "");
 const asInput = (v: unknown): HookInput => (v && typeof v === "object" && !Array.isArray(v) ? (v as HookInput) : {});
@@ -144,14 +145,17 @@ export class HookService {
   private async postToolUse(input: HookInput): Promise<HookOutput> {
     if (input.tool_name !== "Bash") return null;
     const command = text(asInput(input.tool_input).command);
+    const creates = CREATES_PRS.test(command);
+    const ends = ENDS_PRS.test(command);
+    if (!creates && !ends) return null; // every Bash call passes through here: no waiting on the subscription list for the ones that do not matter
     const output = toolOutput(input.tool_response);
     const known = await this.d.prs.list();
 
-    if (CREATES_PRS.test(command)) {
+    if (creates) {
       // The shim normally got there first; subscribing is idempotent, but skipping what is already listed saves the round trip.
       for (const ref of findPrUrls(output)) if (!known?.some((s) => samePr(s, ref))) await this.d.prs.subscribe(ref, "auto");
     }
-    if (ENDS_PRS.test(command)) {
+    if (ends) {
       for (const m of output.matchAll(ENDED)) {
         const ref = toRef(m[1], m[2]);
         if (ref && known?.some((s) => samePr(s, ref))) await this.d.prs.unsubscribe(ref);
@@ -197,7 +201,8 @@ function describe(s: SubscriptionView) {
   if (s.state !== "open") parts.push(s.state);
   if (s.status === "stalled") parts.push(`STALLED after ${s.ciFixAttempts}/${CI_FIX_MAX_ATTEMPTS} CI fix attempts: a human has to act, do not retry`);
   else if (s.ciFixAttempts > 0) parts.push(`CI fix attempts ${s.ciFixAttempts}/${CI_FIX_MAX_ATTEMPTS}`);
-  return `- ${prLabel(s)}${s.title ? ` "${s.title}"` : ""}: ${parts.join(", ")}`;
+  const title = s.title?.replace(/\s+/g, " ").trim().slice(0, MAX_TITLE); // anyone can set a PR's title: keep it to one line of bounded length
+  return `- ${prLabel(s)}${title ? ` "${title}"` : ""}: ${parts.join(", ")}`;
 }
 
 /** `subs` is null when the backend has not answered yet. */
