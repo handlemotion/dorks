@@ -2,7 +2,7 @@
 
 Scanned 2026-10-07 across `apps/*`, `infra/`, `docs/`, wrangler/Convex/Expo config. There is no CI, Dockerfile or `.github/` yet. Env and naming rules: [README](README.md).
 
-**Status** is what `scripts/seed-secrets.sh` creates in `secrets/.env.dev` / `.env.prod`: `filled` = a real generated/configured value, `dummy` = `REPLACE_ME__<PROVIDER>` that a human must replace (guide linked), `config` = non-secret value with a sensible default, `-` = deliberately not created in that env. Both files exist (see [README](README.md)); the **Folder** column is now just the owning unit.
+**Status** is what `scripts/seed-secrets.sh` creates in `secrets/.env.dorks_dev` / `.env.dorks_prod`: `filled` = a real generated/configured value, `dummy` = `REPLACE_ME__<PROVIDER>` that a human must replace (guide linked), `config` = non-secret value with a sensible default, `-` = deliberately not created in that env. Both files exist (see [README](README.md)); the **Folder** column is now just the owning unit.
 
 Backends: **convex** is the target (spike verdict GO, [convex-spike.md](../convex-spike.md)); **api** is the legacy Worker + Durable Object + D1 that is being retired. Anything api reads is also read by convex, so it lives in `shared`.
 
@@ -61,4 +61,4 @@ Backends: **convex** is the target (spike verdict GO, [convex-spike.md](../conve
 ## Gaps worth knowing
 
 - `GITHUB_WEBHOOK_SECRET` and `EXPO_ACCESS_TOKEN` are declared required by the api Worker's wrangler config but no running code path consumes them yet (the PR webhook route and push sender are planned). They are in the inventory so the shape is ready. `UPSTASH_BOX_API_KEY` is now read by Convex.
-- `.dev.vars.example` historically shipped `BETTER_AUTH_SECRET=dev-only-change-me-...` and `GITHUB_WEBHOOK_SECRET=dev-webhook-secret`. Those placeholders are removed; dev gets real random values from `secrets/.env.dev`.
+- `.dev.vars.example` historically shipped `BETTER_AUTH_SECRET=dev-only-change-me-...` and `GITHUB_WEBHOOK_SECRET=dev-webhook-secret`. Those placeholders are removed; dev gets real random values from `secrets/.env.dorks_dev`.

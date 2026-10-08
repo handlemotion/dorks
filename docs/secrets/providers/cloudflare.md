@@ -14,6 +14,6 @@ Official docs (checked 2026-10-07): [Workers CI/CD with GitHub Actions](https://
    scripts/set-secret.sh prod CLOUDFLARE_API_TOKEN
    printf %s "<account id>" | scripts/set-secret.sh prod CLOUDFLARE_ACCOUNT_ID
    ```
-5. In CI, store the prod dotenvx key (`DOTENV_PRIVATE_KEY_PROD`) as a CI secret and run `pnpm exec dotenvx run --strict -f secrets/.env.prod -- wrangler deploy` from the repo root.
+5. In CI, store the prod dotenvx key (`DOTENV_PRIVATE_KEY_DORKS_PROD`) as a CI secret and run `pnpm exec dotenvx run --strict -f secrets/.env.dorks_prod -- wrangler deploy` from the repo root.
 
 Unverified: the exact menu labels in the current Cloudflare dashboard vary (docs show both account-level and profile-level token pages); follow whichever your dashboard shows.

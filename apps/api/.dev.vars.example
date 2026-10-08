@@ -1,4 +1,4 @@
-# Names only. Real values live in secrets/.env.dev (encrypted) and are loaded by `pnpm dev:api`: see docs/secrets/README.md.
+# Names only. Real values live in secrets/.env.dorks_dev (encrypted) and are loaded by `pnpm dev:api`: see docs/secrets/README.md.
 # No-dotenvx fallback: cp .dev.vars.example .dev.vars (gitignored) and fill in; ENCRYPTION_KEY is base64 of 32 random bytes.
 BETTER_AUTH_SECRET=
 ENCRYPTION_KEY=

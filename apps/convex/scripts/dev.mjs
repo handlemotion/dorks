@@ -27,7 +27,7 @@ for (const n of set) {
   if (r.status !== 0) failed.push(n);
 }
 console.log(`[convex dev] env synced: ${set.length - failed.length} set` + (failed.length ? `, FAILED: ${failed.join(", ")}` : ""));
-if (missing.length) console.log(`[convex dev] not in secrets/.env.dev (left as-is on the deployment): ${missing.join(", ")}`);
+if (missing.length) console.log(`[convex dev] not in secrets/.env.dorks_dev (left as-is on the deployment): ${missing.join(", ")}`);
 
 const dev = spawn("npx", ["convex", "dev", ...process.argv.slice(2)], { stdio: "inherit" });
 dev.on("exit", (code, sig) => process.exit(code ?? (sig ? 1 : 0)));

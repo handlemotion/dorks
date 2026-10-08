@@ -28,7 +28,7 @@ The sender domain is the root of `ALLOWED_EMAIL_DOMAIN` (`jaantonio.com`), becau
 ## 3. Insert
 
 ```sh
-scripts/set-secret.sh prod RESEND_API_KEY   # prompts silently; commit secrets/.env.prod
+scripts/set-secret.sh prod RESEND_API_KEY   # prompts silently; commit secrets/.env.dorks_prod
 ```
 
 Repeat with `dev` and the dev key if you want real mail in dev. Then set it on the Convex production deployment too ([Convex guide, step 4](convex.md)).
