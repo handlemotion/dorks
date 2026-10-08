@@ -14,7 +14,7 @@ const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s
 
 export const PREVIEW_MAX = 2048;
 
-export function summarizeTool(name: string, input: unknown): string {
+export function summarizeTool(input: unknown): string {
   const i = obj(input) ?? {};
   const pick = str(i.command) ?? str(i.file_path) ?? str(i.path) ?? str(i.pattern) ?? str(i.url) ?? str(i.description);
   return clip(pick ?? JSON.stringify(i), 200);
@@ -57,7 +57,7 @@ export function createNormalizer() {
         for (const b of Array.isArray(msg?.content) ? (msg.content as unknown[]) : []) {
           const block = obj(b);
           if (block?.type === "text" && str(block.text) && !m.parent_tool_use_id) ev({ type: "assistant_message", messageId, text: block.text as string });
-          if (block?.type === "tool_use") ev({ type: "tool_use", toolId: String(block.id), name: String(block.name), summary: summarizeTool(String(block.name), block.input) });
+          if (block?.type === "tool_use") ev({ type: "tool_use", toolId: String(block.id), name: String(block.name), summary: summarizeTool(block.input) });
         }
         break;
       }

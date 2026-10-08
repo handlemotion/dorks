@@ -1,6 +1,6 @@
 # Expo push notifications
 
-Provides: `EXPO_ACCESS_TOKEN` (`shared`, secret). **Optional and not used by running code yet**: push sending is planned (the api Worker lists it as a required secret; the Convex migration plans a push action).
+Provides: `EXPO_ACCESS_TOKEN` (`shared`, secret). **Optional and not used by running code yet**: push sending is planned (a Convex push action is planned).
 
 Official docs (checked 2026-10-07): [Sending notifications / enhanced push security](https://docs.expo.dev/push-notifications/sending-notifications/), [Programmatic access (tokens)](https://docs.expo.dev/accounts/programmatic-access).
 

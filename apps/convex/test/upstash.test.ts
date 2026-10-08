@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
-import { BoxNotFoundError } from "../../api/src/lib/box";
+import { BoxNotFoundError } from "../core/box";
 import { DORKS_NETWORK_POLICY, dorkLabel, execStartScript, upstashBox, UpstashBoxError } from "../convex/lib/upstash";
 
 const KEY = "ubk_SECRET_API_KEY_123";

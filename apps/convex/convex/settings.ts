@@ -1,5 +1,5 @@
 import { ConvexError, v } from "convex/values";
-import { aad, encrypt, keyringFromEnv } from "../../api/src/lib/crypto";
+import { aad, encrypt, keyringFromEnv } from "../core/crypto";
 import { internal } from "./_generated/api";
 import { action, internalMutation, mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";

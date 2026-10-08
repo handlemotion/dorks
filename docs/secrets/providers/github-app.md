@@ -28,7 +28,7 @@ On the app's settings page (**Developer settings -> GitHub Apps -> Edit**):
 - **App ID** (top of **General**) -> `GITHUB_APP_ID`.
 - **Client ID** (also on **General**; different from the App ID) -> `GITHUB_APP_CLIENT_ID`.
 - **Client secrets -> Generate a new client secret** -> `GITHUB_APP_CLIENT_SECRET` (shown once).
-- **Private keys -> Generate a private key** (a.k.a. Credentials -> Key pairs -> New key) downloads a `.pem`. GitHub gives **PKCS#1** (`BEGIN RSA PRIVATE KEY`); this codebase requires **PKCS#8** (`apps/api/src/lib/github.ts` rejects PKCS#1). Convert:
+- **Private keys -> Generate a private key** (a.k.a. Credentials -> Key pairs -> New key) downloads a `.pem`. GitHub gives **PKCS#1** (`BEGIN RSA PRIVATE KEY`); this codebase requires **PKCS#8** (`apps/convex/core/github.ts` rejects PKCS#1). Convert:
   ```sh
   openssl pkcs8 -topk8 -nocrypt -in downloaded.pem -out app.pkcs8.pem
   ```

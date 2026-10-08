@@ -7,7 +7,6 @@
     "dev:convex": "dotenvx run --strict -f secrets/.env.dorks_dev -- pnpm --filter @dorks/convex dev",
     "dev:web": "dotenvx run --strict -f secrets/.env.dorks_dev -- pnpm --filter @dorks/web dev",
     "dev:ios": "dotenvx run --strict -f secrets/.env.dorks_dev -- pnpm --filter @dorks/ios start",
-    "dev:api": "dotenvx run --strict -f secrets/.env.dorks_dev -- pnpm --filter @dorks/api dev",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --if-present test"
   },

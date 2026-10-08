@@ -1,6 +1,6 @@
 import type { DorkState } from "@dorks/shared";
 
-// Pure lifecycle machine: (ctx, input) -> next state + effects. No I/O. The Dork Durable Object is the driver.
+// Pure lifecycle machine: (ctx, input) -> next state + effects. No I/O. `convex/lib/dispatch.ts` is the driver.
 // Every (state, input) pair is handled explicitly; unknown combinations are no-ops, never throws.
 
 export interface Ctx {
