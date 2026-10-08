@@ -1,5 +1,5 @@
 import { subscriptionView, type PrRef, type SubscriptionView } from "@dorks/shared";
-import { toRef } from "./pr-ref";
+import { samePr, toRef } from "./pr-ref";
 import { errTag, type Log } from "./redact";
 import { RpcError, type RpcMethods } from "./rpc";
 import type { Transport } from "./transport";
@@ -33,13 +33,13 @@ export class PrSubscriptions {
       const source = (params as { source?: unknown }).source ?? "agent";
       if (source !== "auto" && source !== "agent") throw new RpcError("invalid", "source must be 'auto' or 'agent'");
       await this.backend(() => this.t.subscribePr(ref, source));
-      await this.settled((l) => l.some((s) => same(s, ref)));
+      await this.settled((l) => l.some((s) => samePr(s, ref)));
       return ref;
     },
     "pr.unsub": async (params) => {
       const ref = refParams(params);
       await this.backend(() => this.t.unsubscribePr(ref));
-      await this.settled((l) => !l.some((s) => same(s, ref)));
+      await this.settled((l) => !l.some((s) => samePr(s, ref)));
       return ref;
     },
     "pr.list": async () => {
@@ -101,5 +101,3 @@ export class PrSubscriptions {
     });
   }
 }
-
-const same = (s: SubscriptionView, r: PrRef) => s.repo === r.repo && s.number === r.number;

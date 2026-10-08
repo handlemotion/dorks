@@ -608,6 +608,18 @@ describe("autonomy: local RPC", () => {
     expect((await rpcCall<any[]>(sockOf(s), "pr.list")).map((v) => v.number)).toEqual([3]);
   });
 
+  it("matches repos case-insensitively: the backend stores them lowercase, URLs keep their casing", async () => {
+    const s = await ready();
+    s.t.setSubscriptions([fakeView({ repo: "acme/demo", number: 12 })]);
+    const mixed = { repo: "Acme/Demo", number: 12 };
+    const t0 = Date.now();
+    await rpcCall(sockOf(s), "pr.sub", mixed); // already in the list under its lowercase name: no waiting for a change that never comes
+    expect(Date.now() - t0).toBeLessThan(1000);
+    await rpcCall(sockOf(s), "pr.unsub", mixed);
+    expect(Date.now() - t0).toBeLessThan(1000);
+    expect(s.t.subscriptions).toEqual([]);
+  });
+
   it("validates input before it reaches the backend", async () => {
     const s = await ready();
     for (const params of [{}, { repo: "acme", number: 1 }, { repo: "acme/demo", number: 0 }, { repo: "acme/demo", number: 1.5 }, { repo: "acme/demo", number: "12" }, { repo: "../etc", number: 1 }, { repo: "a/b/c", number: 1 }, { repo: "acme/demo", number: 1, source: "user" }, null]) {

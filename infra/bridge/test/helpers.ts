@@ -142,12 +142,13 @@ export class FakeTransport implements Transport {
     this.prCalls.push({ op: "sub", ref, source });
     if (this.prHang) return new Promise<void>(() => {});
     if (this.prError) throw this.prError;
-    if (!this.subscriptions.some((s) => s.repo === ref.repo && s.number === ref.number)) this.setSubscriptions([...this.subscriptions, fakeView(ref, source)]);
+    const repo = ref.repo.toLowerCase(); // the backend stores repos lowercase
+    if (!this.subscriptions.some((s) => s.repo === repo && s.number === ref.number)) this.setSubscriptions([...this.subscriptions, fakeView({ ...ref, repo }, source)]);
   };
   unsubscribePr = async (ref: PrRef) => {
     this.prCalls.push({ op: "unsub", ref });
     if (this.prError) throw this.prError;
-    this.setSubscriptions(this.subscriptions.filter((s) => !(s.repo === ref.repo && s.number === ref.number)));
+    this.setSubscriptions(this.subscriptions.filter((s) => !(s.repo === ref.repo.toLowerCase() && s.number === ref.number)));
   };
   subscribeSubscriptions(cb: (views: unknown) => void) {
     this.subscriptionsWatchers++;
