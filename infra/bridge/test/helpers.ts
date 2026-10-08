@@ -77,7 +77,7 @@ export class FakeTransport implements Transport {
   push = async (frames: FromBridge[]) => {
     if (this.pushImpl) {
       const r = await this.pushImpl(frames);
-      if (!(r && typeof r === "object" && "expectedBseq" in r)) this.pushes.push(frames);
+      if (!(r && typeof r === "object" && ("expectedBseq" in r || (r as { ok?: unknown }).ok === false))) this.pushes.push(frames); // rejected batches are not stored
       return r;
     }
     this.pushes.push(frames);
@@ -98,6 +98,7 @@ export class FakeTransport implements Transport {
   }
   isFatal = (e: unknown) => (e as { data?: { code?: string } })?.data?.code === "forbidden";
   isSleeping = (e: unknown) => (e as { data?: { code?: string } })?.data?.code === "sleeping";
+  errorCode = (e: unknown) => (e as { data?: { code?: string } })?.data?.code;
   close = async () => void (this.closed = true);
 
   emit(cmds: CommandEntry[]) {

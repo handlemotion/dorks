@@ -20,6 +20,12 @@ export interface OutboxOptions {
   backoffCapMs?: number;
   onFatal: (err: unknown) => void;
   rand?: () => number;
+  /** Largest event the backend accepts (it rejects a bigger one with `event_too_large`). */
+  maxEventBytes?: number;
+  /** Retained events were renumbered (the backend's expected seq predates the replay window); `last` is the new highest bseq. */
+  onRenumbered?: (last: number) => void;
+  /** The backend is ahead of everything we hold: future events must be numbered above `seq`. */
+  onBackendAhead?: (seq: number) => void;
 }
 
 /**
@@ -38,10 +44,10 @@ export class Outbox {
   private stopped = false;
   private attempt = 0;
   private waiters: (() => void)[] = [];
-  private readonly o: Required<Omit<OutboxOptions, "onFatal">> & Pick<OutboxOptions, "onFatal">;
+  private readonly o: Required<Omit<OutboxOptions, "onFatal" | "onRenumbered" | "onBackendAhead">> & Pick<OutboxOptions, "onFatal" | "onRenumbered" | "onBackendAhead">;
 
   constructor(private transport: Transport, private log: Log, opts: OutboxOptions) {
-    this.o = { maxFrames: 100, maxBytes: 512 * 1024, retainEvents: 2000, backoffBaseMs: 500, backoffCapMs: 30_000, rand: Math.random, ...opts };
+    this.o = { maxFrames: 100, maxBytes: 512 * 1024, retainEvents: 2000, backoffBaseMs: 500, backoffCapMs: 30_000, rand: Math.random, maxEventBytes: 200 * 1024, ...opts };
   }
 
   push(frame: FromBridge) {
@@ -94,16 +100,35 @@ export class Outbox {
 
   /** Backend reported a gap: it wants `expectedBseq` next. */
   private rewindFrom(expectedBseq: number) {
+    const events = this.items.filter((i) => i.bseq !== undefined);
     const idx = this.items.findIndex((i) => i.bseq !== undefined && i.bseq >= expectedBseq);
-    if (idx < 0) return; // the backend is ahead of everything we hold: nothing to resend
-    const first = this.items.find((i) => i.bseq !== undefined);
-    if (first && first.bseq! > expectedBseq) this.log("replay window no longer holds seq", expectedBseq, "- resuming from", first.bseq);
+    if (idx < 0) {
+      // Everything we hold is below what the backend wants: it is ahead of us. Nothing to resend; number future events above it.
+      this.o.onBackendAhead?.(expectedBseq - 1);
+      return;
+    }
+    if (events[0].bseq! > expectedBseq) {
+      // The events the backend is missing have left the replay window, so they can never be resent. Resending the older-numbered
+      // ones would be rejected forever: renumber what we still hold so the stream continues at the seq the backend expects.
+      this.log("replay window no longer holds seq", expectedBseq, "- renumbering the", events.length, "retained events from it");
+      let n = expectedBseq;
+      for (const it of this.items) {
+        if (it.bseq === undefined) continue;
+        it.bseq = n++;
+        it.frame = { ...(it.frame as Extract<FromBridge, { t: "event" }>), bseq: it.bseq };
+      }
+      this.rewindToIndex(this.items.findIndex((i) => i.bseq !== undefined));
+      this.o.onRenumbered?.(n - 1);
+      return;
+    }
     this.rewindToIndex(idx);
   }
 
   private rewindToIndex(idx: number) {
     if (idx < 0) return;
-    for (let i = idx; i < this.items.length; i++) this.items[i].sent = false;
+    // Only events are resent. A control frame that was delivered (ack/ready/agent_exited/flushed) stays delivered; one that was in a
+    // rejected batch was never marked sent, so it is still queued in its place.
+    for (let i = idx; i < this.items.length; i++) if (this.items[i].bseq !== undefined) this.items[i].sent = false;
     this.cursor = Math.min(this.cursor, idx);
   }
 
@@ -122,14 +147,26 @@ export class Outbox {
             this.stopped = true;
             return void this.o.onFatal(e);
           }
-          await this.backoff(errTag(e));
+          const code = this.transport.errorCode(e);
+          if (code === "too_many_frames" && batch.length > 1) {
+            this.o.maxFrames = Math.max(1, Math.floor(batch.length / 2)); // the backend's per-push cap is below ours: split
+            this.log("push batch too large, splitting to", this.o.maxFrames, "frames");
+            continue;
+          }
+          if (code === "event_too_large" && this.stubOversized(batch)) continue;
+          await this.backoff(code ?? errTag(e));
           continue;
         }
-        const expected = (res as { expectedBseq?: unknown } | null | undefined)?.expectedBseq;
+        const r = res as { ok?: unknown; expectedBseq?: unknown } | null | undefined;
+        const expected = r?.expectedBseq;
         if (typeof expected === "number" && Number.isInteger(expected)) {
           this.log("backend reported a gap, replaying from", expected);
           this.rewindFrom(expected);
           await this.backoff("gap"); // bounded even if the backend keeps disagreeing
+          continue;
+        }
+        if (r?.ok === false) {
+          await this.backoff("rejected"); // refused without telling us where to resume: retry, never drop
           continue;
         }
         this.attempt = 0;
@@ -141,6 +178,24 @@ export class Outbox {
       if (this.pending === 0) this.resolveWaiters();
       else if (!this.stopped && !this.timer) this.kick();
     }
+  }
+
+  /**
+   * The backend refused an event as too large. Replace the oversized event(s) of this batch with a stub that keeps the same bseq (so
+   * numbering stays dense and the stream is not blocked behind it). Returns false when nothing in the batch can be shrunk.
+   */
+  private stubOversized(batch: Item[]): boolean {
+    const events = batch.filter((i) => i.bseq !== undefined && i.frame.t === "event" && !(i.frame.raw as { truncated?: boolean } | null)?.truncated);
+    if (!events.length) return false;
+    let victims = events.filter((i) => i.bytes > this.o.maxEventBytes);
+    if (!victims.length) victims = [events.reduce((a, b) => (b.bytes > a.bytes ? b : a))];
+    for (const it of victims) {
+      const raw = (it.frame as Extract<FromBridge, { t: "event" }>).raw as { type?: string } | null;
+      it.frame = { t: "event", bseq: it.bseq!, raw: { type: raw?.type, truncated: true } };
+      it.bytes = JSON.stringify(it.frame).length;
+    }
+    this.log("replaced", victims.length, "oversized event(s) with stubs, keeping their seq");
+    return true;
   }
 
   private nextBatch(): Item[] {

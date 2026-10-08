@@ -25,6 +25,8 @@ export interface Transport {
   /** True when an error means the backend will never accept this bridge (wrong secret / dork deleted): retrying is pointless. */
   isFatal(err: unknown): boolean;
   isSleeping(err: unknown): boolean;
+  /** The backend's error code (ConvexError data.code), if any: `event_too_large`, `too_many_frames`, ... */
+  errorCode(err: unknown): string | undefined;
   close(): Promise<void>;
 }
 
@@ -73,5 +75,6 @@ export class ConvexTransport implements Transport {
 
   isFatal = (e: unknown) => code(e) === "forbidden";
   isSleeping = (e: unknown) => code(e) === "sleeping";
+  errorCode = (e: unknown) => (typeof code(e) === "string" ? (code(e) as string) : undefined);
   close = () => this.client.close();
 }

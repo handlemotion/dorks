@@ -94,11 +94,14 @@ describe("Outbox", () => {
     const t = new FakeTransport();
     const o = mk(t, { retainEvents: 2 });
     o.push({ t: "ack", id: "c1" });
-    for (let i = 1; i <= 6; i++) o.push(ev(i));
+    for (let i = 1; i <= 6; i++) {
+      o.push(ev(i));
+      if (i === 5) o.push({ t: "ack", id: "c-mid" }); // between retained events
+    }
     await o.drained();
     o.rewindAfter(0); // window only holds 5,6
     await o.drained();
-    expect(t.of("ack")).toHaveLength(1);
+    expect(t.of("ack").map((a) => a.id)).toEqual(["c1", "c-mid"]);
     expect(seqs(t)).toEqual([1, 2, 3, 4, 5, 6, 5, 6]);
   });
 
@@ -127,4 +130,130 @@ describe("Outbox", () => {
     o.stop();
     expect(calls).toBeLessThan(30);
   });
+
+  it("a gap replay resends events only: control frames between events are not repeated", async () => {
+    const t = new FakeTransport();
+    const o = mk(t);
+    o.push(ev(1));
+    o.push(ev(2));
+    o.push({ t: "agent_exited", code: 1, stderrTail: "" });
+    o.push({ t: "flushed" });
+    o.push(ev(3));
+    await o.drained();
+    // backend (rejecting a gapped batch whole) asks for 2 again
+    let once = true;
+    t.pushImpl = async (frames) => {
+      if (once && frames.some((f) => f.t === "event" && f.bseq === 4)) {
+        once = false;
+        return { ok: false, expectedBseq: 2 };
+      }
+      return { ok: true };
+    };
+    o.push(ev(4));
+    await o.drained();
+    expect(seqs(t)).toEqual([1, 2, 3, 2, 3, 4]);
+    expect(t.of("agent_exited")).toHaveLength(1);
+    expect(t.of("flushed")).toHaveLength(1);
+  });
+
+  it("control frames in a rejected (gapped) batch are not lost: they go out with the replay", async () => {
+    const t = new FakeTransport();
+    const o = mk(t);
+    o.push(ev(1));
+    await o.drained();
+    let once = true;
+    t.pushImpl = async () => {
+      if (once) {
+        once = false;
+        return { ok: false, expectedBseq: 1 };
+      }
+      return { ok: true };
+    };
+    o.push(ev(2));
+    o.push({ t: "ack", id: "m1" }); // same batch as ev(2): rejected as a whole, so never applied
+    await o.drained();
+    expect(seqs(t)).toEqual([1, 1, 2]);
+    expect(t.of("ack")).toHaveLength(1);
+  });
+
+  it("when the backend's expected seq predates the replay window it renumbers instead of retrying forever", async () => {
+    const t = new FakeTransport();
+    const renumbered: number[] = [];
+    let stored = 0; // a tiny backend: accepts exactly the next seq
+    t.pushImpl = async (frames) => {
+      for (const f of frames) {
+        if (f.t !== "event") continue;
+        if (f.bseq !== stored + 1) return { ok: false, expectedBseq: stored + 1 };
+        stored = f.bseq;
+      }
+      return { ok: true };
+    };
+    const o = mk(t, { retainEvents: 2, onRenumbered: (n: number) => renumbered.push(n) });
+    for (let i = 1; i <= 6; i++) o.push(ev(i));
+    await o.drained();
+    expect(stored).toBe(6);
+    // the backend loses 4..6 (restored from a snapshot at seq 3); the window only holds 5,6
+    stored = 3;
+    const before = t.pushes.length;
+    o.push(ev(7));
+    await o.drained();
+    expect(stored).toBe(6); // 5,6,7 renumbered to 4,5,6
+    expect(renumbered).toEqual([6]);
+    expect(t.pushes.length - before).toBeLessThan(10);
+  });
+
+  it("a backend that is ahead of everything we hold moves our numbering up instead of looping", async () => {
+    const t = new FakeTransport();
+    const ahead: number[] = [];
+    let first = true;
+    t.pushImpl = async () => {
+      if (first) {
+        first = false;
+        return { ok: false, expectedBseq: 50 };
+      }
+      return { ok: true };
+    };
+    const o = mk(t, { onBackendAhead: (n: number) => ahead.push(n) });
+    o.push(ev(1));
+    await o.drained();
+    expect(ahead).toEqual([49]);
+  });
+
+  it("event_too_large: the offending event is replaced by a stub with the same bseq, and the stream moves on", async () => {
+    const t = new FakeTransport();
+    t.pushImpl = async (frames) => {
+      for (const f of frames) if (f.t === "event" && JSON.stringify(f.raw).length > 1000) throw { data: { code: "event_too_large" } };
+    };
+    const o = mk(t);
+    o.push(ev(1));
+    o.push({ t: "event", bseq: 2, raw: { type: "user", blob: "x".repeat(5000) } });
+    o.push(ev(3));
+    await o.drained();
+    expect(seqs(t)).toEqual([1, 2, 3]);
+    expect(t.events()[1].raw).toEqual({ type: "user", truncated: true });
+  });
+
+  it("too_many_frames: the batch is split until the backend accepts it, nothing dropped", async () => {
+    const t = new FakeTransport();
+    t.pushImpl = async (frames) => {
+      if (frames.length > 7) throw { data: { code: "too_many_frames" } };
+    };
+    const o = mk(t);
+    for (let i = 1; i <= 40; i++) o.push(ev(i));
+    await o.drained();
+    expect(seqs(t)).toEqual(Array.from({ length: 40 }, (_, i) => i + 1));
+    expect(Math.max(...t.pushes.map((p) => p.length))).toBeLessThanOrEqual(7);
+  });
+
+  it("{ok:false} without expectedBseq is retried with backoff, never treated as delivered", async () => {
+    const t = new FakeTransport();
+    let n = 0;
+    t.pushImpl = async () => (n++ < 3 ? { ok: false } : { ok: true });
+    const o = mk(t);
+    o.push(ev(1));
+    await o.drained();
+    expect(seqs(t)).toEqual([1]);
+    expect(n).toBe(4);
+  });
 });
+

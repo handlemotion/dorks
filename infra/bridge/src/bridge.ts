@@ -57,7 +57,12 @@ export class Bridge {
     this.t = d.transport;
     this.log = d.log;
     this.redactor = d.redactor;
-    this.outbox = new Outbox(this.t, this.log, { batchMs: this.cfg.batchMs, onFatal: () => this.fatal() });
+    this.outbox = new Outbox(this.t, this.log, {
+      batchMs: this.cfg.batchMs,
+      onFatal: () => this.fatal(),
+      onRenumbered: (last) => this.pipeline.setSeq(last),
+      onBackendAhead: (seq) => this.pipeline.continueFrom(seq),
+    });
     this.pipeline = new EventPipeline(this.outbox, this.cfg.deltaBatchMs);
     const host = (() => {
       try {

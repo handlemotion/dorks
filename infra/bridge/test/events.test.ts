@@ -67,4 +67,25 @@ describe("EventPipeline", () => {
     const a = prepare({ type: "assistant", message: { id: "m", content: [{ type: "text", text: "y".repeat(20_000) }] } }) as any;
     expect(a.message.content[0].text.length).toBe(20_000);
   });
+
+  it("drops tool_use_result (the tool's full output) and caps any single event", () => {
+    const huge = "z".repeat(900_000);
+    const r = prepare({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t", content: "ok" }] }, tool_use_result: { file: { content: huge }, originalFile: huge } }) as any;
+    expect(r.tool_use_result).toBeUndefined();
+    expect(JSON.stringify(r).length).toBeLessThan(2000);
+    // many big blocks in one assistant message: still under the backend's per-event cap
+    const a = prepare({ type: "assistant", message: { id: "m", content: Array.from({ length: 30 }, (_, i) => ({ type: "text", text: "t".repeat(60_000) + i })) } }) as any;
+    expect(JSON.stringify(a).length).toBeLessThanOrEqual(200 * 1024);
+    const stub = prepare({ type: "assistant", message: { id: "m", content: Array.from({ length: 400 }, () => ({ type: "tool_use", id: "x".repeat(1000), name: "n", input: {} })) } }) as any;
+    expect(JSON.stringify(stub).length).toBeLessThanOrEqual(200 * 1024);
+  });
+
+  it("flushes text before it can outgrow the cap", async () => {
+    const { t, o, p } = setup(10_000);
+    for (let i = 0; i < 5; i++) p.ingest(delta("q".repeat(30_000)));
+    p.flushDelta();
+    await o.drained();
+    expect(t.events().length).toBeGreaterThan(1);
+    for (const e of t.events()) expect(JSON.stringify(e).length).toBeLessThan(100_000);
+  });
 });

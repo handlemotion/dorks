@@ -5,13 +5,26 @@ type Json = Record<string, unknown>;
 const obj = (v: unknown): Json | undefined => (v && typeof v === "object" && !Array.isArray(v) ? (v as Json) : undefined);
 
 const CLIP = 16 * 1024;
-const clip = (s: string) => (s.length > CLIP ? `${s.slice(0, CLIP)}…` : s);
-const clipDeep = (v: unknown): unknown => {
-  if (typeof v === "string") return clip(v);
-  if (Array.isArray(v)) return v.map(clipDeep);
+/** Hard cap for one event as sent; the backend rejects a single event over 256 KB (`event_too_large`) and a rejected event blocks the stream. */
+export const MAX_EVENT_BYTES = 200 * 1024;
+const clipTo = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
+const clipDeep = (v: unknown, n = CLIP): unknown => {
+  if (typeof v === "string") return clipTo(v, n);
+  if (Array.isArray(v)) return v.map((x) => clipDeep(x, n));
   const o = obj(v);
-  return o ? Object.fromEntries(Object.entries(o).map(([k, x]) => [k, clipDeep(x)])) : v;
+  return o ? Object.fromEntries(Object.entries(o).map(([k, x]) => [k, clipDeep(x, n)])) : v;
 };
+const size = (v: unknown) => JSON.stringify(v).length;
+
+/** Shrinks an oversized event: clip every string harder until it fits, finally a stub. Assistant text is only touched past the cap. */
+function capSize(m: Json): Json {
+  if (size(m) <= MAX_EVENT_BYTES) return m;
+  for (const n of [64 * 1024, 16 * 1024, 4 * 1024, 1024]) {
+    const c = clipDeep(m, n) as Json;
+    if (size(c) <= MAX_EVENT_BYTES) return c;
+  }
+  return { type: m.type, truncated: true };
+}
 
 const isTextDelta = (raw: Json) => {
   const e = obj(raw.event);
@@ -42,19 +55,21 @@ export function prepare(raw: unknown): Json | null {
     case "user": {
       // Tool inputs/results can be huge and the backend previews a few KB: clip those. Text is kept whole; thinking is unused.
       const msg = obj(m.message);
-      if (!Array.isArray(msg?.content)) return m;
+      // `tool_use_result` is the tool's full structured output (whole files, full stdout): the backend never reads it.
+      const { tool_use_result: _drop, ...rest } = m;
+      if (!Array.isArray(msg?.content)) return capSize(rest);
       const content = (msg.content as unknown[])
         .filter((b) => obj(b)?.type !== "thinking" && obj(b)?.type !== "redacted_thinking")
         .map((b) => {
           const blk = obj(b);
           return blk?.type === "tool_use" || blk?.type === "tool_result" ? (clipDeep(blk) as Json) : b;
         });
-      return { ...m, message: { ...msg, content } };
+      return capSize({ ...rest, message: { ...msg, content } });
     }
     case "result":
-      return { type: "result", subtype: m.subtype, is_error: m.is_error, duration_ms: m.duration_ms, result: typeof m.result === "string" ? clip(m.result) : undefined, session_id: m.session_id };
+      return { type: "result", subtype: m.subtype, is_error: m.is_error, duration_ms: m.duration_ms, result: typeof m.result === "string" ? clipTo(m.result, CLIP) : undefined, session_id: m.session_id };
     case "rate_limit_event":
-      return m;
+      return capSize(m);
     default:
       return null;
   }
@@ -81,6 +96,11 @@ export class EventPipeline {
     this.seq = Math.max(this.seq, afterBridgeSeq);
   }
 
+  /** Renumbering after the backend's expected seq fell outside the replay window. */
+  setSeq(n: number) {
+    this.seq = n;
+  }
+
   ingest(raw: unknown) {
     const m = prepare(raw);
     if (!m) return;
@@ -91,7 +111,8 @@ export class EventPipeline {
       if (this.delta && this.delta.key !== key) this.flushDelta();
       if (this.delta) this.delta.text += text;
       else this.delta = { raw: m, text, key };
-      this.timer ??= setTimeout(() => this.flushDelta(true), this.deltaBatchMs);
+      if (this.delta.text.length > 64 * 1024) this.flushDelta(true); // keep any single event far below the backend's cap
+      else this.timer ??= setTimeout(() => this.flushDelta(true), this.deltaBatchMs);
       return;
     }
     this.flushDelta();
