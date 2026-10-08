@@ -16,12 +16,14 @@ How it fits together:
    install the App on their own org and send a victim the resulting callback URL. So the page links automatically only when
    `state` matches this tab's `sessionStorage` **and** nothing is linked yet; otherwise it asks the user to confirm "Link
    installation N" (and says it will replace the existing one). The `code` is removed from the address bar as soon as the page loads.
-4. When a box asks for secrets, `bridge.configure` / `bridge.ghToken` mint an installation token **scoped to that dork's repository
-   with `contents: write` + `pull_requests: write` only**. The box runs untrusted agent code, so the token never covers the
-   installation's other repos or permissions. GitHub reports which `owner/name` repos the token covers; a token for a same-named repo under
-   a different owner is refused. Tokens last 1 hour and are refreshed every 45 minutes. A refresh that fails on a 5xx, rate limit or network
-   error is retried with backoff (2, 4, 8, then every 10 minutes). Other failures (installation removed, repo deselected, bad key) are not
+4. When a box asks for secrets, `bridge.configure` / `bridge.ghToken` mint an **installation-wide** token (no `repositories` filter:
+   the agent may work in any repo the installation reaches, see `docs/autonomy.md`) with `contents`, `pull_requests`, `issues` and
+   `workflows` **write** and `checks`, `actions` and `statuses` **read** only. The box runs untrusted agent code, so the token never
+   carries more than these permissions. Tokens last 1 hour and are refreshed every 45 minutes. A refresh that fails on a 5xx, rate limit or network
+   error is retried with backoff (2, 4, 8, then every 10 minutes). Other failures (installation removed, permissions not accepted, bad key) are not
    retried early. After 3 consecutive failures (immediately for a permanent one) one error event is added to the dork's transcript.
+   Separately, subscribing a dork to a PR makes the backend read that PR with a short-lived `pull_requests: read` token of the
+   owner's installation (it never reaches a box). A PR the installation cannot see ends the subscription.
 
 ## 1. Register the App
 
@@ -36,7 +38,7 @@ owned by an org).
 | **Request user authorization (OAuth) during installation** | **checked.** Required: without it GitHub sends no `code`, ownership cannot be verified, and linking fails |
 | Expire user authorization tokens | leave on (default); the token is used once and discarded |
 | Setup URL | not used (disabled while OAuth-during-install is on) |
-| Webhook → Active | **unchecked for now.** The PR webhook is a later change. When it lands: check Active, URL `https://<convex site>/github/webhook` (placeholder, the route does not exist yet), set a webhook secret, and subscribe to **Pull request** events |
+| Webhook → Active | **unchecked for now.** The PR webhook is a later change. When it lands: check Active, URL `https://<convex site>/github/webhook` (placeholder, the route does not exist yet), set a webhook secret, and subscribe to **Pull request**, **Pull request review**, **Pull request review comment**, **Issue comment**, **Check suite** and **Push** events (the autonomy slice B2 consumes them) |
 | Where can this App be installed? | **Any account** if people install it from accounts other than the App owner's; otherwise **Only on this account** |
 
 **Repository permissions** (everything else: *No access*):
@@ -44,16 +46,24 @@ owned by an org).
 | Permission | Access | Why |
 |---|---|---|
 | Contents | Read and write | `git push` of the agent branch |
-| Pull requests | Read and write | open the PR (and receive `pull_request` webhooks later) |
+| Pull requests | Read and write | open the PR, comment on and reply in review threads (and receive `pull_request` webhooks later) |
+| Issues | Read and write | PR conversation comments are issue comments (`gh pr comment`, and `issue_comment` webhooks later) |
+| Workflows | Read and write | the agent may fix CI config (`.github/workflows/**`) when a run fails |
+| Checks | Read-only | CI results (`check_suite` webhooks later) |
+| Actions | Read-only | `gh run view --log-failed` |
+| Commit statuses | Read-only | CI results reported as statuses |
 | Metadata | Read-only | mandatory, granted automatically |
 
-No account or organization permissions. Do **not** grant *Workflows*: with it a prompt-injected agent could push CI changes that
-run with repo secrets, and pushes that touch `.github/workflows/**` will be rejected (this is intended).
+No account or organization permissions. Granting *Workflows* is a deliberate trade-off (docs/autonomy.md decision 6): a
+prompt-injected agent can push CI changes that run with repo secrets, so keep branch protection and required reviews on repos
+the App can reach.
 
-The token request asks for exactly `contents: write` and `pull_requests: write` (`AGENT_TOKEN_PERMISSIONS` in
-`apps/api/src/lib/github.ts`). GitHub answers **422** if the request asks for more than the App itself has, so the two
-permissions above must be granted on the App. If you change the set, change both places. Installations created before a permission
-change must accept the new permissions on GitHub before tokens work.
+The token request asks for exactly these permissions (`AGENT_TOKEN_PERMISSIONS` in `apps/api/src/lib/github.ts`). GitHub answers
+**422** if the request asks for more than the App itself has, so all of them must be granted on the App. If you change the set,
+change both places. **Installations must accept new permissions:** when you add permissions to an App that is already installed,
+GitHub emails the account owner and keeps the old permission set until they approve the update (App settings -> Install App ->
+the installation's *Review request*, or `https://github.com/settings/installations/<id>`). Until then token requests fail with
+422 and dorks show `GitHub App permissions are out of date; accept the new permissions on the installation`.
 
 After creating the App:
 
@@ -116,12 +126,12 @@ GitHub's response body). The dork shows:
 
 | Message | Cause |
 |---|---|
-| `GitHub App can't access <owner/name>; add it to the installation` | GitHub answered 404/422: the installation is set to "Only select repositories" and this repo is not selected, or the App was removed from it. Add the repo to the installation on GitHub. |
-| `GitHub App is not installed on the owner of <owner/name>; install it there` | the linked installation belongs to a different account than the repo's owner |
+| `GitHub App permissions are out of date; accept the new permissions on the installation` | GitHub answered 422: the App has not been granted every permission in `AGENT_TOKEN_PERMISSIONS`, or the installation owner has not accepted the update yet |
+| `GitHub App installation not found; install the App again` | GitHub answered 404: the installation was removed |
 | `GitHub access is failing…` | token refreshes keep failing; pushes stop working when the current token expires |
 
-A 422 can also mean the App itself lacks one of the two permissions above, but a repo that is not part of the installation is the more
-common cause.
+The token is installation-wide, so a repo the installation does not cover is no longer caught when the token is minted: it shows up
+when the bridge clones it (or when the agent tries to push to it).
 
 ## What needs a human
 
