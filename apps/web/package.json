@@ -6,8 +6,7 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "../../scripts/with-secrets.sh web -- vite dev --port 3000",
-    "dev:local": "vite dev --port 3000",
+    "dev": "vite dev --port 3000",
     "generate-routes": "tsr generate",
     "build": "vite build",
     "preview": "npm run build && vite preview",

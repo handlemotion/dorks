@@ -14,7 +14,7 @@ GitHub Apps have no test mode. Register **two apps**: `dorks-dev` (callback to `
 2. Name (<= 34 chars, globally unique), Homepage URL = the web origin.
 3. **Callback URL**: the web page that handles the install redirect (the web origin plus the route that calls `settings.linkGithubInstallation`; that route does not exist yet, so set it when it does).
 4. Tick **Request user authorization (OAuth) during installation**. The code (`apps/convex/convex/lib/githubInstall.ts`) exchanges the returned `code` and rejects installation IDs the user cannot see. This option removes the Setup URL field; that is expected. Leave **Expire user authorization tokens** on.
-5. **Webhook**: Active on. URL = the Convex site URL's webhook route (planned; use a placeholder until it exists). **Webhook secret**: print it locally with `DORKS_ENV=<env> scripts/with-secrets.sh api -- sh -c 'printf %s "$GITHUB_WEBHOOK_SECRET"'` (do not paste it anywhere but GitHub's field; needs that env's key). SSL verification on.
+5. **Webhook**: Active on. URL = the Convex site URL's webhook route (planned; use a placeholder until it exists). **Webhook secret**: print it locally with `pnpm exec dotenvx get GITHUB_WEBHOOK_SECRET -f secrets/.env.<env>` (do not paste it anywhere but GitHub's field; needs that env's key). SSL verification on.
 6. Permissions (inferred from code: installation tokens for repo access and `pull_request` events; review against the final box workflow): Repository **Contents: Read & write**, **Pull requests: Read & write**, **Metadata: Read-only**. Subscribe to **Pull request**.
 7. **Where can this app be installed?** Prod: **Any account** if users install on their own orgs, otherwise **Only on this account**.
 8. **Create GitHub App**.

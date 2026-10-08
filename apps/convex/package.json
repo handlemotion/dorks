@@ -3,8 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "../../scripts/with-secrets.sh convex -- node scripts/dev.mjs",
-    "dev:local": "convex dev",
+    "dev": "node scripts/dev.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

@@ -10,7 +10,7 @@ worker-configuration.d.ts
 # local env files (secrets come from secrets/.env.* via dotenvx; these are the no-dotenvx fallback). Only *.example files are tracked.
 .env*
 !.env.example
-# encrypted secrets (dotenvx); the private keys in secrets/.env.keys stay ignored
+# encrypted secrets (dotenvx); the private keys in .env.keys stay ignored
 !secrets/.env.dev
 !secrets/.env.prod
 .dev.vars*

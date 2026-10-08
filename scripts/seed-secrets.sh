@@ -4,7 +4,7 @@
 #
 #   scripts/seed-secrets.sh [--dry-run]
 #
-# Generated values are piped straight into dotenvx (never printed). First run creates secrets/.env.keys (gitignored):
+# Generated values are piped straight into dotenvx (never printed). First run creates .env.keys (gitignored):
 # save DOTENV_PRIVATE_KEY_DEV / _PROD in the password manager, then see docs/secrets/README.md.
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

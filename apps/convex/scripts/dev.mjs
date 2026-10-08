@@ -1,4 +1,4 @@
-// `convex dev` with function env vars synced from the process env (injected by dotenvx via scripts/with-secrets.sh).
+// `convex dev` with function env vars synced from the process env (injected by dotenvx; run from the repo root via `pnpm dev:convex`).
 //
 // Convex functions read `process.env.X` from the *deployment's* env, not from the shell that runs
 // `convex dev`, so each var the functions use is pushed with `convex env set`. The names are found
