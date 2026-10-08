@@ -10,7 +10,7 @@ import { codeFor, inbox, startMockResend } from "./mock-resend.mjs";
 const { CONVEX_URL, CONVEX_SITE_URL, SIM_HOST_KEY, BRIDGE_SECRET_KEY } = process.env;
 const ORIGIN = "http://localhost:3000";
 const H = { "content-type": "application/json", origin: ORIGIN };
-const CLAUDE_TOKEN = "sk-ant-oat01-SUPERSECRET-e2e";
+const CLAUDE_TOKEN = process.env.E2E_CLAUDE_TOKEN ?? "sk-ant-oat01-SUPERSECRET-e2e"; // set E2E_CLAUDE_TOKEN to run the loop against the real CLI
 const CLI_SECRET = "cf-secret-e2e";
 const results = [];
 const seenByClients = []; // every query result any client saw (scanned for secrets at the end)
