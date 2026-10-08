@@ -5,13 +5,11 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { requireUserId } from "./auth";
 import { append, dispatch, enqueue, fail, MAX_MESSAGE_CHARS, runtimeOf } from "./lib/dispatch";
+import { validRepo } from "./lib/repo";
+import { endDorkSubscriptions, subscriptionsOfDork } from "./lib/subscriptions";
 
-const REPO = /^[\w.-]+\/[\w.-]+$/;
 export const MAX_TITLE_CHARS = 120;
 export const MAX_ACTIVE_DORKS = 20;
-
-/** `owner/name` where neither side is `.` or `..` (the repo ends up in clone URLs and API paths). */
-const validRepo = (repo: string) => REPO.test(repo) && repo.split("/").every((seg) => seg !== "." && seg !== "..");
 
 /** Archived dorks cost nothing; every active one can hold a box, so creating and unarchiving share one cap. */
 async function assertActiveSlot(ctx: MutationCtx, userId: string) {
@@ -20,7 +18,7 @@ async function assertActiveSlot(ctx: MutationCtx, userId: string) {
   if (active.length >= MAX_ACTIVE_DORKS) fail("limit", `at most ${MAX_ACTIVE_DORKS} active dorks; archive or delete one first`);
 }
 
-async function owned(ctx: MutationCtx, dorkId: Id<"dorks">): Promise<Doc<"dorks">> {
+export async function owned(ctx: MutationCtx, dorkId: Id<"dorks">): Promise<Doc<"dorks">> {
   const userId = await requireUserId(ctx);
   const dork = await ctx.db.get(dorkId);
   if (!dork || dork.userId !== userId || dork.deleting) return fail("not_found", "not found");
@@ -121,6 +119,7 @@ export const remove = mutation({
   handler: async (ctx, { dorkId }) => {
     await owned(ctx, dorkId);
     await ctx.db.patch(dorkId, { deleting: true });
+    await endDorkSubscriptions(ctx, dorkId);
     await ctx.scheduler.runAfter(0, internal.boxes.destroy, { dorkId });
   },
 });
@@ -142,6 +141,8 @@ export const purge = internalMutation({
     for (const e of events) await ctx.db.delete(e._id);
     if (events.length === 500) return void (await ctx.scheduler.runAfter(0, internal.dorks.purge, { dorkId }));
     for (const c of await ctx.db.query("commands").withIndex("by_dork_acked", (q) => q.eq("dorkId", dorkId)).collect()) await ctx.db.delete(c._id);
+    for (const r of await ctx.db.query("inbox").withIndex("by_dork_delivered", (q) => q.eq("dorkId", dorkId)).collect()) await ctx.db.delete(r._id);
+    for (const s of await subscriptionsOfDork(ctx, dorkId)) await ctx.db.delete(s._id);
     if (rt) await ctx.db.delete(rt._id);
     await ctx.db.delete(dorkId);
   },

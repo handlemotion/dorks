@@ -19,12 +19,17 @@ import type * as lib_box from "../lib/box.js";
 import type * as lib_bridgeAuth from "../lib/bridgeAuth.js";
 import type * as lib_dispatch from "../lib/dispatch.js";
 import type * as lib_githubInstall from "../lib/githubInstall.js";
+import type * as lib_notify from "../lib/notify.js";
+import type * as lib_notifyRender from "../lib/notifyRender.js";
+import type * as lib_repo from "../lib/repo.js";
+import type * as lib_subscriptions from "../lib/subscriptions.js";
 import type * as lib_upstash from "../lib/upstash.js";
 import type * as lifecycle from "../lifecycle.js";
 import type * as mail from "../mail.js";
 import type * as rateLimit from "../rateLimit.js";
 import type * as settings from "../settings.js";
 import type * as simbox from "../simbox.js";
+import type * as subscriptions from "../subscriptions.js";
 import type * as validators from "../validators.js";
 
 import type {
@@ -45,12 +50,17 @@ declare const fullApi: ApiFromModules<{
   "lib/bridgeAuth": typeof lib_bridgeAuth;
   "lib/dispatch": typeof lib_dispatch;
   "lib/githubInstall": typeof lib_githubInstall;
+  "lib/notify": typeof lib_notify;
+  "lib/notifyRender": typeof lib_notifyRender;
+  "lib/repo": typeof lib_repo;
+  "lib/subscriptions": typeof lib_subscriptions;
   "lib/upstash": typeof lib_upstash;
   lifecycle: typeof lifecycle;
   mail: typeof mail;
   rateLimit: typeof rateLimit;
   settings: typeof settings;
   simbox: typeof simbox;
+  subscriptions: typeof subscriptions;
   validators: typeof validators;
 }>;
 

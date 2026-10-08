@@ -67,16 +67,32 @@ export async function cancelTimer(ctx: MutationCtx, dorkId: Id<"dorks">, name: s
 
 // ---------------------------------------------------------------- machine driver
 export async function machineCtx(ctx: MutationCtx, dork: Doc<"dorks">) {
-  return { state: dork.state, archived: dork.archived, hasBox: !!dork.boxId, queued: await queued(ctx, dork._id) };
+  const open = await unackedMessages(ctx, dork._id);
+  return {
+    state: dork.state, archived: dork.archived, hasBox: !!dork.boxId, queued: open.length > 0,
+    notifyHeld: !open.some((c) => c.kind === "user_message") && open.some((c) => c.kind === "notify" && !c.released),
+  };
+}
+
+/** Unacked user messages and notifies: the outbox the bridge still owes an ack for. */
+async function unackedMessages(ctx: MutationCtx, dorkId: Id<"dorks">) {
+  const open = await ctx.db.query("commands").withIndex("by_dork_acked", (q) => q.eq("dorkId", dorkId).eq("acked", false)).collect();
+  return open.filter((c) => c.kind === "user_message" || c.kind === "notify");
 }
 
 export async function queued(ctx: MutationCtx, dorkId: Id<"dorks">) {
-  const open = await ctx.db.query("commands").withIndex("by_dork_acked", (q) => q.eq("dorkId", dorkId).eq("acked", false)).collect();
-  return open.some((c) => c.kind === "user_message");
+  return (await unackedMessages(ctx, dorkId)).length > 0;
+}
+
+/** True while a user message waits for its ack: user messages always go out before notifications. */
+export async function userMessagePending(ctx: MutationCtx, dorkId: Id<"dorks">) {
+  return (await unackedMessages(ctx, dorkId)).some((c) => c.kind === "user_message");
 }
 
 export async function enqueue(ctx: MutationCtx, dorkId: Id<"dorks">, kind: Doc<"commands">["kind"], text?: string) {
   const cid = crypto.randomUUID();
+  // A user message goes first, and its turn must not be interrupted either: a notify released earlier waits for the next turn boundary again.
+  if (kind === "user_message") for (const c of await unackedMessages(ctx, dorkId)) if (c.kind === "notify" && c.released) await ctx.db.patch(c._id, { released: false });
   await ctx.db.insert("commands", { dorkId, kind, cid, text, acked: false });
   return cid;
 }
@@ -124,6 +140,9 @@ async function runEffect(ctx: MutationCtx, dorkId: Id<"dorks">, effect: Effect) 
       return cancelPause(ctx, dorkId);
     case "deliver_outbox":
       return; // declarative: bridge.commands re-emits every unacked message while the dork is working/idle
+    case "release_notify":
+      for (const c of await unackedMessages(ctx, dorkId)) if (c.kind === "notify" && !c.released) await ctx.db.patch(c._id, { released: true });
+      return;
     case "interrupt_agent":
       await enqueue(ctx, dorkId, "interrupt");
       return;
@@ -144,10 +163,10 @@ async function runEffect(ctx: MutationCtx, dorkId: Id<"dorks">, effect: Effect) 
   }
 }
 
-/** Control frames (flush, interrupt, configure, gh_token) are only meaningful to the bridge that was running when they were queued. */
+/** Control frames (flush, interrupt, configure, gh_token) are only meaningful to the bridge that was running when they were queued. Messages and notifies are not. */
 export async function clearControlRows(ctx: MutationCtx, dorkId: Id<"dorks">) {
   const open = await ctx.db.query("commands").withIndex("by_dork_acked", (q) => q.eq("dorkId", dorkId).eq("acked", false)).collect();
-  for (const c of open) if (c.kind !== "user_message") await ctx.db.delete(c._id);
+  for (const c of open) if (c.kind !== "user_message" && c.kind !== "notify") await ctx.db.delete(c._id);
 }
 
 /**

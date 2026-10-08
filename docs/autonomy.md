@@ -61,13 +61,23 @@ Tables:
 
 - `prSubscriptions { dorkId, userId, repo, number, url, title?, headRef?, baseRef?, headSha?, source, status, ci, review,
   mergeable, ciFixAttempts, state, lastEventAt }`.
-  - Indexes: `by_repo_number`, `by_repo_head` (check events carry a SHA or branch, not a PR number), `by_dork`.
-  - It maps 1:1 to `subscriptionView`.
-- `inbox { dorkId, subscriptionId, kind, summary, deliveryId, createdAt, delivered }` is the debounce buffer. A per-dork
-  timer folds the pending rows into one `notify` command.
+  - Indexes: `by_repo_number`, `by_repo_head` (check events carry a SHA or branch, not a PR number), `by_dork` (`dorkId, repo, number`).
+  - It maps 1:1 to `subscriptionView` (`lib/subscriptions.ts toView`). `repo` is stored lowercase; the lookups
+    (`subscriptionsForPr`, `subscriptionsForHead`) lowercase their argument and skip `ended` rows.
+  - A new subscription is filled in by an action (`subscriptions.hydrate`: title, refs, sha, state, mergeable) with a
+    `pull_requests: read` installation token of the owner. A PR the installation cannot see (404) ends the subscription, and so does
+    one that is already closed or merged. The ingress must also check that an event's `installation.id` is the one the owner linked
+    before it routes the event to that owner's dorks.
+  - At most 50 live subscriptions per dork. Only a human (`source: "user"`) resubscribing resets `ciFixAttempts`; an agent
+    reviving an ended subscription keeps the budget.
+- `inbox { dorkId, subscriptionId, kind, summary, deliveryId?, createdAt, delivered }` is the debounce buffer.
+  `enqueueNotification(ctx, dorkId, subscriptionId, kind, summary, deliveryId?)` (`lib/notify.ts`) inserts a row and arms the per-dork
+  `notify` timer (45 s, from the first event, not sliding). When it fires, the pending rows are folded into one `notify` command
+  and one `notify` transcript card (`lib/notifyRender.ts` renders the envelope). Delivered rows are swept after a day.
 - `githubDeliveries { deliveryId, receivedAt }` dedupes `X-GitHub-Delivery`. It is pruned by cron.
 - `userSettings.commentPolicy` (optional, default `all`) and `userSettings.githubLogin` (stored at install-link time).
-- `commands.kind` gains `"notify"` (fields: `text`, plus `meta` holding kinds and prs).
+- `commands.kind` gains `"notify"` (fields: `text`, `meta` holding kinds and prs, and `released`).
+- `settings.setCommentPolicy` stores the policy; `commentAllowed(policy, login, appBotLogin)` (`lib/subscriptions.ts`) is the check.
 
 Lifecycle machine (`apps/api/src/lifecycle/machine.ts`) input `notify`, by state:
 
@@ -80,8 +90,14 @@ Lifecycle machine (`apps/api/src/lifecycle/machine.ts`) input `notify`, by state
 
 Other rules:
 
-- `turn_idle` with a held notify delivers it (`deliver_outbox`).
+- `turn_idle` with a held notify delivers it (`release_notify`, `deliver_outbox`). The dork stays `working`: the notify starts the next turn.
 - Pending user messages are always delivered before notifications (`bridge.commands` orders them first and withholds notify while a user message is unacked).
+- An unacked notify counts as `queued`, so the dork neither idles nor sleeps under it, and a pause that lands wakes it again.
+- Mechanics: a notify command is `released` or held. It is held if the dork is `working` or a user message is unacked when it is
+  folded; sending a user message holds a released one again. `bridge.commands` emits a notify only if it is released (or the dork is idle) and no user
+  message is unacked, and only while the box is deliverable (working/idle, no pause in flight). `release_notify` (a turn boundary
+  with no user message ahead, or a fresh agent on `agent_ready`) releases the held ones. The machine learns about them through
+  `Ctx.notifyHeld`. Control-row clearing on pause/resume keeps notify rows, like user messages.
 
 Bridge-facing functions (all take `{ dorkId, secret }`):
 
@@ -90,7 +106,7 @@ Bridge-facing functions (all take `{ dorkId, secret }`):
 | `bridge.subscribe { repo, number, source: "auto" \| "agent" }` | mutation | Idempotent. Hydrates PR metadata through a scheduled action (App token). Appends a `subscription` event. |
 | `bridge.unsubscribe { repo, number }` | mutation | Sets `status: ended`. Appends an event. |
 | `bridge.subscriptions` | query (reactive) | `SubscriptionView[]` for this dork's non-ended subscriptions. The bridge caches it for hooks and the CLI. |
-| `bridge.configure` / `bridge.ghToken` | (unchanged) | The token becomes installation-wide (no `repositories` filter). Permissions: `contents, pull_requests, issues, workflows: write`; `checks, actions, statuses: read`. |
+| `bridge.configure` / `bridge.ghToken` | (unchanged) | The token becomes installation-wide (no `repositories` filter). Permissions: `contents, pull_requests, issues, workflows: write`; `checks, actions, statuses: read`. The old "can't access <repo>" error goes away with the filter (nothing reports a repo-level problem when the token is minted); a 422 now means permissions out of date. |
 
 User-facing functions (signed-in user; no UI in this slice):
 
