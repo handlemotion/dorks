@@ -24,6 +24,8 @@ const gh = vi.hoisted(() => ({
   mergeable: [] as (boolean | null)[], // answers handed out by getPullRequest, in order (the last one repeats)
   failComment: null as null | { status: number },
   failPull: null as null | { status: number },
+  suites: [] as { status: string; conclusion: string | null; checkRuns: number }[], // what GitHub reports for the head's check suites
+  failSuites: null as null | { status: number },
 }));
 vi.mock("../../api/src/lib/github", async (orig) => {
   const actual = await orig<typeof import("../../api/src/lib/github")>();
@@ -31,6 +33,10 @@ vi.mock("../../api/src/lib/github", async (orig) => {
     ...actual,
     createInstallationToken: async (_env: unknown, installationId: unknown, _f: unknown, scope: unknown) => (gh.tokens.push({ installationId, scope }), { token: "ghs_x", expiresAt: "2030-01-01T00:00:00Z" }),
     getPullRequest: async () => (gh.failPull ? Promise.reject(new actual.GithubHttpError(gh.failPull.status, "pull request lookup")) : { title: "t", headRef: "agent/x", headSha: "c0ffee1", baseRef: "main", repo: f.REPO, state: "open", mergeable: gh.mergeable.length > 1 ? gh.mergeable.shift()! : gh.mergeable[0] ?? null }),
+    listCheckSuites: async () => {
+      if (gh.failSuites) throw new actual.GithubHttpError(gh.failSuites.status, "check suites lookup");
+      return gh.suites;
+    },
     createIssueComment: async (_t: string, repo: string, number: number, body: string) => {
       if (gh.failComment) throw new actual.GithubHttpError(gh.failComment.status, "comment");
       gh.comments.push({ repo, number, body });
@@ -42,6 +48,7 @@ const modules = import.meta.glob("../convex/**/*.*s");
 const makeT = () => convexTest(schema, modules);
 type T = ReturnType<typeof makeT>;
 const NOW = 1_700_000_000_000;
+const done = (conclusion: string | null = "success", status = "completed") => ({ status, conclusion, checkRuns: 3 });
 const SECRET = "whsec_test";
 const OWNER = "owner-login";
 
@@ -89,6 +96,18 @@ const fire = (t: T, dorkId: Id<"dorks">) => t.mutation(internal.lifecycle.timer,
 
 const failSuite = (t: T, o: { id?: number; sha?: string } = {}) => deliver(t, "check_suite", f.checkSuiteEvent("failure", { id: o.id ?? 1, headSha: o.sha }));
 const passSuite = (t: T, o: { id?: number; sha?: string } = {}) => deliver(t, "check_suite", f.checkSuiteEvent("success", { id: o.id ?? 1, headSha: o.sha }));
+/** Runs (and consumes) the pending `confirmGreen` actions the webhook scheduled, as the scheduler would. */
+async function confirm(t: T) {
+  for (const job of await scheduled(t, "github:confirmGreen")) {
+    await t.run((ctx) => ctx.scheduler.cancel(job._id));
+    await t.action(internal.github.confirmGreen, job.args[0] as never);
+  }
+}
+/** A suite passes and CI is asked whether the whole head is green. */
+const greenSuite = async (t: T, o: { id?: number; sha?: string } = {}) => {
+  await passSuite(t, o);
+  await confirm(t);
+};
 const syncTo = (t: T, headSha: string, sender: f.Sender = f.bot) => deliver(t, "pull_request", f.pullRequestEvent("synchronize", { headSha }, { sender }));
 
 beforeEach(() => {
@@ -100,6 +119,8 @@ beforeEach(() => {
   gh.mergeable = [];
   gh.failComment = null;
   gh.failPull = null;
+  gh.suites = [done()];
+  gh.failSuites = null;
   Object.assign(process.env, { GITHUB_WEBHOOK_SECRET: SECRET, GITHUB_APP_SLUG: f.SLUG, BASE_SNAPSHOT_ID: "snap-1", BRIDGE_SECRET_KEY: "k" });
   delete process.env.BOX_PROVIDER;
 });
@@ -362,6 +383,7 @@ describe("CI", () => {
     expect((await sub(t, id)).ciFixAttempts).toBe(1);
     await failSuite(t, { id: 9, sha: "c0ffee1" }); // the old head
     await passSuite(t, { id: 10, sha: "c0ffee1" });
+    expect(await scheduled(t, "github:confirmGreen")).toHaveLength(0);
     expect(await sub(t, id)).toMatchObject({ ci: "pending", ciFixAttempts: 1 });
     expect(await pendingKinds(t, dorkId)).toEqual([]);
   });
@@ -381,13 +403,14 @@ describe("CI", () => {
     const id = await subscribeTo(t, dorkId, { ciFixAttempts: 1 });
     await failSuite(t, { id: 1 });
     await failSuite(t, { id: 2 });
-    await passSuite(t, { id: 1 });
+    await greenSuite(t, { id: 1 });
     expect(await sub(t, id)).toMatchObject({ ci: "failing", ciFailing: [2], ciFixAttempts: 1 });
-    await passSuite(t, { id: 2 });
+    expect(gh.tokens).toEqual([]); // a red suite is already known: nothing to confirm
+    await greenSuite(t, { id: 2 });
     expect(await sub(t, id)).toMatchObject({ ci: "passing", ciFailing: [], ciFixAttempts: 0, ciNotified: false });
 
     await t.run((ctx) => ctx.db.patch(id, { status: "stalled", ciFixAttempts: 2 }));
-    await passSuite(t, { id: 3 });
+    await greenSuite(t, { id: 3 });
     expect(await sub(t, id)).toMatchObject({ status: "active", ciFixAttempts: 0 });
     expect((await eventsOf(t, dorkId)).at(-1)).toEqual({ type: "subscription", repo: "octo/hello", number: 12, status: "active", reason: "CI passed" });
   });
@@ -436,12 +459,12 @@ describe("ready", () => {
     const t = makeT();
     const dorkId = await seed(t);
     const id = await subscribeTo(t, dorkId);
-    await passSuite(t);
+    await greenSuite(t);
     expect(await pendingKinds(t, dorkId)).toEqual([]); // green alone is not ready
     await deliver(t, "pull_request_review", f.reviewEvent("approved", { body: "" }));
     expect(await sub(t, id)).toMatchObject({ review: "approved", readySha: "c0ffee1" });
     expect(await pendingKinds(t, dorkId)).toEqual(["ready"]); // a bare approval says nothing else
-    await passSuite(t, { id: 2 });
+    await greenSuite(t, { id: 2 });
     await deliver(t, "pull_request_review", f.reviewEvent("approved", { body: "" }));
     expect(await pendingKinds(t, dorkId)).toEqual(["ready"]); // still just one
 
@@ -449,7 +472,7 @@ describe("ready", () => {
     expect((await notifies(t, dorkId))[0].text).toContain("Do not merge");
 
     await syncTo(t, "beef002"); // a new head must go green again, and the approval stands
-    await passSuite(t, { id: 3, sha: "beef002" });
+    await greenSuite(t, { id: 3, sha: "beef002" });
     expect(await pendingKinds(t, dorkId)).toEqual(["ready"]);
     expect((await sub(t, id)).readySha).toBe("beef002");
   });
@@ -460,7 +483,7 @@ describe("ready", () => {
     await subscribeTo(t, dorkId);
     await deliver(t, "pull_request_review", f.reviewEvent("approved", { body: "LGTM" }));
     expect(await pendingKinds(t, dorkId)).toEqual(["review"]);
-    await passSuite(t);
+    await greenSuite(t);
     expect(await pendingKinds(t, dorkId)).toEqual(["review", "ready"]);
   });
 
@@ -469,12 +492,12 @@ describe("ready", () => {
     const dorkId = await seed(t);
     const id = await subscribeTo(t, dorkId);
     await deliver(t, "pull_request_review", f.reviewEvent("changes_requested"));
-    await passSuite(t);
+    await greenSuite(t);
     expect(await sub(t, id)).toMatchObject({ review: "changes_requested", ci: "passing" });
     expect(await pendingKinds(t, dorkId)).toEqual(["review"]);
 
     await t.run((ctx) => ctx.db.patch(id, { review: "approved", ci: "failing", ciFailing: [7] }));
-    await passSuite(t, { id: 1 });
+    await greenSuite(t, { id: 1 });
     expect(await pendingKinds(t, dorkId)).toEqual(["review"]); // suite 7 is still red
   });
 
@@ -633,5 +656,149 @@ describe("base branch", () => {
     const id = await subscribeTo(t, dorkId, { status: "ended" });
     await t.mutation(internal.github.setMergeable, { subscriptionId: id, baseSha: "x", mergeable: false });
     expect(await inboxOf(t, dorkId)).toEqual([]);
+  });
+});
+
+describe("green needs every suite of the head", () => {
+  it("a fast green suite does not reset the attempts, un-stall or send ready while another suite is still running", async () => {
+    const t = makeT();
+    const dorkId = await seed(t);
+    const id = await subscribeTo(t, dorkId, { ciFixAttempts: 1, review: "approved" });
+    gh.suites = [done(), done(null, "in_progress")];
+    await greenSuite(t);
+    expect(gh.tokens).toEqual([{ installationId: f.INSTALLATION, scope: { permissions: { checks: "read" } } }]);
+    expect(await sub(t, id)).toMatchObject({ ci: "pending", ciFixAttempts: 1 });
+    expect(await pendingKinds(t, dorkId)).toEqual([]);
+
+    // The slow suite fails: this is still the 2nd (last) attempt, not a fresh 1st one.
+    await failSuite(t, { id: 2 });
+    await fire(t, dorkId);
+    expect((await notifies(t, dorkId))[0].text).toContain("ci_failed (attempt 2 of 2)");
+  });
+
+  it("the same cycle repeated cannot bypass the cap: the stall still comes", async () => {
+    const t = makeT();
+    const dorkId = await seed(t);
+    const id = await subscribeTo(t, dorkId, { ciFixAttempts: 2 });
+    gh.suites = [done(), done(null, "in_progress")];
+    await greenSuite(t);
+    await failSuite(t, { id: 2 });
+    expect(await sub(t, id)).toMatchObject({ status: "stalled", ciFixAttempts: 2 });
+  });
+
+  it("does not turn green while the API shows a failed suite, even if the webhook for it has not arrived", async () => {
+    const t = makeT();
+    const dorkId = await seed(t);
+    const id = await subscribeTo(t, dorkId, { ciFixAttempts: 1, status: "stalled" });
+    gh.suites = [done(), done("failure")];
+    await greenSuite(t);
+    expect(await sub(t, id)).toMatchObject({ status: "stalled", ci: "pending", ciFixAttempts: 1 });
+  });
+
+  it("when the slow suite finally passes, its own event re-runs the check and CI turns green", async () => {
+    const t = makeT();
+    const dorkId = await seed(t);
+    const id = await subscribeTo(t, dorkId, { ciFixAttempts: 1, review: "approved" });
+    gh.suites = [done(), done(null, "in_progress")];
+    await greenSuite(t, { id: 1 });
+    expect((await sub(t, id)).ci).toBe("pending");
+    gh.suites = [done(), done()];
+    await greenSuite(t, { id: 2 });
+    expect(await sub(t, id)).toMatchObject({ ci: "passing", ciFixAttempts: 0, readySha: "c0ffee1" });
+    expect(await pendingKinds(t, dorkId)).toEqual(["ready"]);
+  });
+
+  it("all suites completed and green: resets the attempts, un-stalls, and sends ready when approved (not when unreviewed)", async () => {
+    const t = makeT();
+    const dorkId = await seed(t);
+    const approved = await subscribeTo(t, dorkId, { ciFixAttempts: 2, status: "stalled", review: "approved" });
+    gh.suites = [done(), done("neutral"), done("skipped")];
+    await greenSuite(t);
+    expect(await sub(t, approved)).toMatchObject({ ci: "passing", status: "active", ciFixAttempts: 0, readySha: "c0ffee1" });
+    expect(await pendingKinds(t, dorkId)).toEqual(["ready"]);
+
+    const t2 = makeT();
+    const d2 = await seed(t2);
+    const unreviewed = await subscribeTo(t2, d2, { ciFixAttempts: 1 });
+    await greenSuite(t2);
+    expect(await sub(t2, unreviewed)).toMatchObject({ ci: "passing", ciFixAttempts: 0 });
+    expect(await pendingKinds(t2, d2)).toEqual([]);
+  });
+
+  it("suites without check runs, and cancelled ones, do not hold green back", async () => {
+    const t = makeT();
+    const dorkId = await seed(t);
+    const id = await subscribeTo(t, dorkId, { ciFixAttempts: 1 });
+    gh.suites = [done(), { status: "queued", conclusion: null, checkRuns: 0 }, done("cancelled")];
+    await greenSuite(t);
+    expect(await sub(t, id)).toMatchObject({ ci: "passing", ciFixAttempts: 0 });
+  });
+
+  it("a rerun that fixes the only red suite clears the failure and confirms", async () => {
+    const t = makeT();
+    const dorkId = await seed(t);
+    const id = await subscribeTo(t, dorkId, { ciFixAttempts: 1 });
+    await failSuite(t, { id: 1 });
+    expect(await sub(t, id)).toMatchObject({ ci: "failing", ciFailing: [1] });
+    await passSuite(t, { id: 1 });
+    expect(await sub(t, id)).toMatchObject({ ci: "pending", ciFailing: [] }); // not red any more, not proven green yet
+    await confirm(t);
+    expect(await sub(t, id)).toMatchObject({ ci: "passing", ciFixAttempts: 0 });
+  });
+
+  it("a head that moved on while the check ran is ignored, and so is a confirmation for an ended PR", async () => {
+    const t = makeT();
+    const dorkId = await seed(t);
+    const id = await subscribeTo(t, dorkId, { ciFixAttempts: 1, review: "approved" });
+    await passSuite(t); // schedules the confirmation for c0ffee1
+    await syncTo(t, "beef002"); // a push lands before it runs
+    await confirm(t);
+    expect(gh.tokens).toEqual([]); // not even asked
+    expect(await sub(t, id)).toMatchObject({ headSha: "beef002", ci: "pending", ciFixAttempts: 1 });
+    await t.mutation(internal.github.setGreen, { subscriptionId: id, headSha: "c0ffee1" }); // and if it had got as far as applying
+    expect(await sub(t, id)).toMatchObject({ ci: "pending", ciFixAttempts: 1 });
+    expect(await pendingKinds(t, dorkId)).toEqual([]);
+
+    await t.run((ctx) => ctx.db.patch(id, { status: "ended" }));
+    await t.mutation(internal.github.setGreen, { subscriptionId: id, headSha: "beef002" });
+    expect((await sub(t, id)).ci).toBe("pending");
+  });
+
+  it("applying green twice for a head is harmless: one ready", async () => {
+    const t = makeT();
+    const dorkId = await seed(t);
+    const id = await subscribeTo(t, dorkId, { review: "approved" });
+    await greenSuite(t, { id: 1 });
+    await t.mutation(internal.github.setGreen, { subscriptionId: id, headSha: "c0ffee1" });
+    expect(await pendingKinds(t, dorkId)).toEqual(["ready"]);
+  });
+
+  it("retries a transient GitHub failure a bounded number of times, and not a permanent one", async () => {
+    const t = makeT();
+    const dorkId = await seed(t);
+    const id = await subscribeTo(t, dorkId);
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const args = { subscriptionId: id, headSha: "c0ffee1", installationId: f.INSTALLATION, repo: f.REPO };
+    gh.failSuites = { status: 502 };
+    await t.action(internal.github.confirmGreen, { ...args, attempt: 0 });
+    const [retry] = await scheduled(t, "github:confirmGreen");
+    expect(retry.args[0]).toMatchObject({ attempt: 1 });
+    await t.run((ctx) => ctx.scheduler.cancel(retry._id));
+    await t.action(internal.github.confirmGreen, { ...args, attempt: 3 }); // the budget is spent
+    expect(await scheduled(t, "github:confirmGreen")).toHaveLength(0);
+    gh.failSuites = { status: 403 };
+    await t.action(internal.github.confirmGreen, { ...args, attempt: 0 });
+    expect(await scheduled(t, "github:confirmGreen")).toHaveLength(0);
+    expect((await sub(t, id)).ci).toBe("pending");
+    err.mockRestore();
+  });
+
+  it("skips GitHub in sim mode", async () => {
+    const t = makeT();
+    const dorkId = await seed(t);
+    const id = await subscribeTo(t, dorkId);
+    process.env.BOX_PROVIDER = "sim";
+    await t.action(internal.github.confirmGreen, { subscriptionId: id, headSha: "c0ffee1", installationId: f.INSTALLATION, repo: f.REPO, attempt: 0 });
+    expect(gh.tokens).toEqual([]);
   });
 });

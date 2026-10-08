@@ -94,6 +94,23 @@ export async function getPullRequest(token: string, repo: string, number: number
   };
 }
 
+export interface CheckSuiteInfo {
+  status: string;
+  conclusion: string | null;
+  /** Number of check runs in the suite; a suite without any has nothing to wait for. */
+  checkRuns: number;
+}
+
+/** `GET /repos/{repo}/commits/{sha}/check-suites`: every check suite of a commit, whichever app created it (first 100). */
+export async function listCheckSuites(token: string, repo: string, sha: string, fetcher: typeof fetch = fetch): Promise<CheckSuiteInfo[]> {
+  const res = await fetcher(`https://api.github.com/repos/${repo}/commits/${sha}/check-suites?per_page=100`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": UA },
+  });
+  if (!res.ok) throw new GithubHttpError(res.status, "check suites lookup");
+  const j = (await res.json()) as { check_suites: { status: string; conclusion: string | null; latest_check_runs_count: number }[] };
+  return j.check_suites.map((s) => ({ status: s.status, conclusion: s.conclusion, checkRuns: s.latest_check_runs_count }));
+}
+
 /** `POST /repos/{repo}/issues/{number}/comments`: a PR conversation comment, posted as whoever owns the token (the App's bot for an installation token). */
 export async function createIssueComment(token: string, repo: string, number: number, body: string, fetcher: typeof fetch = fetch): Promise<void> {
   const res = await fetcher(`https://api.github.com/repos/${repo}/issues/${number}/comments`, {

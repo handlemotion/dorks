@@ -1,10 +1,10 @@
 import { v } from "convex/values";
-import { createInstallationToken, createIssueComment, getPullRequest, GithubHttpError } from "../../api/src/lib/github";
+import { createInstallationToken, createIssueComment, getPullRequest, GithubHttpError, listCheckSuites } from "../../api/src/lib/github";
 import { internal } from "./_generated/api";
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 import { isTransientGithubError } from "./bridge";
-import { githubEvent } from "./lib/githubEvents";
-import { applyMergeable, ingestEvent, MERGEABLE_POLL_DELAYS_MS } from "./lib/githubIngest";
+import { githubEvent, suiteOutcome } from "./lib/githubEvents";
+import { applyGreen, applyMergeable, ingestEvent, MERGEABLE_POLL_DELAYS_MS } from "./lib/githubIngest";
 
 // GitHub webhook ingress (the route is in http.ts): routing a delivery to subscriptions, and the actions it schedules.
 
@@ -53,6 +53,48 @@ export const checkMergeable = internalAction({
     }
     const delay = MERGEABLE_POLL_DELAYS_MS[attempt + 1];
     if (again.length && delay !== undefined) await ctx.scheduler.runAfter(delay, internal.github.checkMergeable, { installationId, repo, baseSha, prs: again, attempt: attempt + 1 });
+  },
+});
+
+// ---------------------------------------------------------------- green CI
+const CONFIRM_RETRY_MS = [5_000, 15_000, 45_000]; // transient GitHub failures
+
+export const isCurrentHead = internalQuery({
+  args: { subscriptionId: v.id("prSubscriptions"), headSha: v.string() },
+  handler: async (ctx, { subscriptionId, headSha }) => {
+    const sub = await ctx.db.get(subscriptionId);
+    return !!sub && sub.status !== "ended" && sub.headSha === headSha; // false: the head moved on or the PR ended
+  },
+});
+
+export const setGreen = internalMutation({
+  args: { subscriptionId: v.id("prSubscriptions"), headSha: v.string() },
+  handler: async (ctx, { subscriptionId, headSha }) => {
+    const sub = await ctx.db.get(subscriptionId);
+    if (sub) await applyGreen(ctx, sub, headSha);
+  },
+});
+
+/**
+ * A check suite of the head passed. That says nothing about the head's other suites (every workflow run is its own), so read them all:
+ * only when every suite is completed and none failed is CI green (`applyGreen`). If some are still running this does nothing: their own
+ * `completed` event runs it again. Suites that never had a check run, and cancelled / stale / action_required ones, do not block.
+ */
+export const confirmGreen = internalAction({
+  args: { subscriptionId: v.id("prSubscriptions"), headSha: v.string(), installationId: v.number(), repo: v.string(), attempt: v.number() },
+  handler: async (ctx, { subscriptionId, headSha, installationId, repo, attempt }) => {
+    if (process.env.BOX_PROVIDER === "sim") return; // local dev: no real GitHub App
+    if (!(await ctx.runQuery(internal.github.isCurrentHead, { subscriptionId, headSha }))) return;
+    try {
+      const { token } = await createInstallationToken(appEnv(), installationId, fetch, { permissions: { checks: "read" } });
+      const suites = (await listCheckSuites(token, repo, headSha)).filter((s) => s.checkRuns > 0);
+      if (suites.every((s) => s.status === "completed" && suiteOutcome(s.conclusion) !== "fail")) await ctx.runMutation(internal.github.setGreen, { subscriptionId, headSha });
+    } catch (e) {
+      console.error("check suite confirmation failed", repo, e instanceof GithubHttpError ? e.status : "unexpected");
+      if (isTransientGithubError(e) && attempt < CONFIRM_RETRY_MS.length) {
+        await ctx.scheduler.runAfter(CONFIRM_RETRY_MS[attempt], internal.github.confirmGreen, { subscriptionId, headSha, installationId, repo, attempt: attempt + 1 });
+      }
+    }
   },
 });
 

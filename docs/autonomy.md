@@ -128,10 +128,10 @@ Webhook (`http.ts` route `POST /github/webhook`):
   repo + head branch **and** the current head SHA, which also keeps a fork's same-named branch out.
 - CI: a failing suite is handed to the agent while `ciFixAttempts < CI_FIX_MAX_ATTEMPTS`. A push after a delivered failure is an attempt. The failure
   after the last attempt stalls the subscription (transcript event + one PR comment from the App via an action), and nothing about CI is
-  delivered while stalled. Attempts reset on green CI, a comment from a person that passes the policy, a user message to the dork
+  delivered while stalled. Attempts reset on green CI (confirmed by an action that reads every check suite of the head: a passing suite alone is not green), a comment from a person that passes the policy, a user message to the dork
   (`dorks.sendMessage`) and `subscriptions.resume`. `ready` needs green CI and an approval, once per head SHA.
 - Code: `lib/githubEvents.ts` (pure parsing + the self-filter test), `lib/githubIngest.ts` (routing and state changes, one mutation per delivery),
-  `github.ts` (`ingest`, the mergeability poll, the stall comment).
+  `github.ts` (`ingest`, the green confirmation, the mergeability poll, the stall comment).
 - Coalesce per dork with a 45 s debounce. Hold CI digests until the suite completes.
 - Rendering is done by the backend: one `<dorks-event>` envelope per delivery, one section per PR, then instructions.
   - CI failure: "fetch the failing logs with `gh run view --log-failed`, reproduce locally, fix, run the checks locally, then push. This is attempt n of 2."

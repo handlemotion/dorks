@@ -148,8 +148,11 @@ an App needs only *Checks: read* to subscribe to `check_suite` (and `check_run`)
 installation (docs/autonomy.md, open check 5). If it turns out not to hold, subscribe the App to **Check run** and **Workflow run** as well and map `check_run.completed` /
 `workflow_run.completed` the same way; no new permission is needed (*Actions: read*, already granted, covers `workflow_run`). CI that reports only through the commit *statuses* API
 (no check runs) sends `status` events, which are not handled.
-Known limits: a PR with several workflows turns green as soon as no *known* suite is red, so a slow workflow can still fail afterwards (that failure is then handled normally); suites for a commit
-other than the PR's current head, and cancelled / `action_required` / stale suites, are ignored.
+Green is confirmed, not inferred: every workflow run is its own suite, so a passing `check_suite.completed` only schedules an action that reads all check suites of the head
+(`GET /repos/{repo}/commits/{sha}/check-suites`, *Checks: read*). Only when every suite is completed and none failed does CI turn green: that resets the CI fix attempts, un-stalls and
+can deliver `ready`. If a suite is still running, nothing changes and that suite's own `completed` event runs the check again, so a fast green workflow cannot reset the attempt budget
+while a slow one is still running or red. Suites with no check runs, and cancelled / stale / `action_required` ones, do not hold green back. Suites for a commit other than the PR's
+current head are ignored.
 
 Debugging: the App's **Advanced** tab lists recent deliveries with their status codes and lets you redeliver one (the same delivery id: a redelivery of a handled one is ignored by design;
 use a fresh event to test).

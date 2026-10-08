@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentTokenScope, createAppJwt, createInstallationToken, createIssueComment, GithubHttpError, getPullRequest, parsePullRequestEvent, verifyWebhook } from "../src/lib/github";
+import { agentTokenScope, createAppJwt, createInstallationToken, createIssueComment, GithubHttpError, listCheckSuites, getPullRequest, parsePullRequestEvent, verifyWebhook } from "../src/lib/github";
 
 async function keyPair() {
   const kp = (await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"])) as CryptoKeyPair;
@@ -87,6 +87,24 @@ describe("github", () => {
 
     it("throws a status-only GithubHttpError on non-2xx", async () => {
       await expect(getPullRequest("t", "o/r", 1, serve({ message: "secret-ish" }, 404).fake)).rejects.toMatchObject({ status: 404, message: "GitHub pull request lookup failed: 404" });
+    });
+  });
+
+  describe("listCheckSuites", () => {
+    it("lists the commit's suites with their status, conclusion and run count", async () => {
+      const seen: Request[] = [];
+      const body = { total_count: 2, check_suites: [{ id: 1, status: "completed", conclusion: "success", latest_check_runs_count: 3, app: { slug: "github-actions" } }, { id: 2, status: "in_progress", conclusion: null, latest_check_runs_count: 1 }] };
+      const fake = (async (url: string, init: RequestInit) => (seen.push(new Request(url, init)), Response.json(body))) as unknown as typeof fetch;
+      expect(await listCheckSuites("ghs_t", "octo/hello", "abc123", fake)).toEqual([
+        { status: "completed", conclusion: "success", checkRuns: 3 }, { status: "in_progress", conclusion: null, checkRuns: 1 },
+      ]);
+      expect(seen[0].url).toBe("https://api.github.com/repos/octo/hello/commits/abc123/check-suites?per_page=100");
+      expect(seen[0].headers.get("authorization")).toBe("Bearer ghs_t");
+    });
+
+    it("throws a status-only GithubHttpError on non-2xx", async () => {
+      const fake = (async () => Response.json({ message: "nope" }, { status: 404 })) as unknown as typeof fetch;
+      await expect(listCheckSuites("t", "o/r", "abc", fake)).rejects.toMatchObject({ status: 404, message: "GitHub check suites lookup failed: 404" });
     });
   });
 

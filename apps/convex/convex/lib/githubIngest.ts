@@ -146,10 +146,13 @@ async function onCheckSuite(ctx: MutationCtx, sub: Subscription, event: Extract<
   const others = (sub.ciFailing ?? []).filter((id) => id !== event.suiteId);
 
   if (event.outcome === "pass") {
-    if (others.length) return void (await updateSubscription(ctx, sub._id, { ciFailing: others })); // another suite of this head is still red
-    await updateSubscription(ctx, sub._id, { ci: "passing", ciFailing: [], ciNotified: false, ciFixAttempts: 0, status: sub.status === "stalled" ? "active" : sub.status });
-    if (sub.status === "stalled") await append(ctx, sub.dorkId, { type: "subscription", repo: sub.repo, number: sub.number, status: "active", reason: "CI passed" });
-    return maybeReady(ctx, sub._id, deliveryId);
+    // One green suite proves nothing: another workflow of this head may still be running or red. Only the action below, which reads
+    // every suite of the head, may apply the green transition.
+    await updateSubscription(ctx, sub._id, { ciFailing: others, ...(!others.length && sub.ci === "failing" ? { ci: "pending" } : {}) });
+    if (!others.length && sub.headSha) {
+      await ctx.scheduler.runAfter(0, internal.github.confirmGreen, { subscriptionId: sub._id, headSha: sub.headSha, installationId: event.installationId, repo: event.repo, attempt: 0 });
+    }
+    return;
   }
 
   const failing = [...others, event.suiteId].slice(-MAX_TRACKED_SUITES);
@@ -169,11 +172,23 @@ async function onCheckSuite(ctx: MutationCtx, sub: Subscription, event: Extract<
  * `ready` once per head: CI is green and the PR is approved. Whether the repo requires reviews is not knowable without admin
  * permissions, so a PR nobody reviewed is never "ready" (the agent would post a standby note on every green push).
  */
-async function maybeReady(ctx: MutationCtx, subscriptionId: Subscription["_id"], deliveryId: string) {
+async function maybeReady(ctx: MutationCtx, subscriptionId: Subscription["_id"], deliveryId?: string) {
   const sub = (await ctx.db.get(subscriptionId))!;
   if (sub.status !== "active" || sub.ci !== "passing" || sub.review !== "approved" || !sub.headSha || sub.readySha === sub.headSha) return;
   await updateSubscription(ctx, sub._id, { readySha: sub.headSha });
   await enqueueNotification(ctx, sub.dorkId, sub._id, "ready", `CI passed on ${short(sub.headSha)} and the PR is approved.`, deliveryId);
+}
+
+/**
+ * Every check suite of the head is completed and none failed (confirmed by `github.confirmGreen`): CI is green. Resets the attempt budget,
+ * un-stalls, and delivers `ready` if the PR is approved. Idempotent per head SHA; a head that moved on meanwhile is ignored.
+ */
+export async function applyGreen(ctx: MutationCtx, sub: Subscription, headSha: string) {
+  if (sub.status === "ended" || sub.headSha !== headSha || sub.ciFailing?.length) return; // stale, or a red suite was reported while the action ran
+  const stalled = sub.status === "stalled";
+  await updateSubscription(ctx, sub._id, { ci: "passing", ciFailing: [], ciNotified: false, ciFixAttempts: 0, status: stalled ? "active" : sub.status });
+  if (stalled) await append(ctx, sub.dorkId, { type: "subscription", repo: sub.repo, number: sub.number, status: "active", reason: "CI passed" });
+  await maybeReady(ctx, sub._id);
 }
 
 /** The mergeability poll found a definite answer for a PR whose base moved to `baseSha`. */
