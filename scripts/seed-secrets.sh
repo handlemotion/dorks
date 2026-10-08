@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Create every inventory secret in secrets/.env.dev and secrets/.env.prod. Idempotent: names already present are skipped,
+# Create every inventory secret in secrets/.env.dorks_dev and secrets/.env.dorks_prod. Idempotent: names already present are skipped,
 # so re-running never rotates a generated value. Source of truth for what exists: docs/secrets/inventory.md.
 #
 #   scripts/seed-secrets.sh [--dry-run]
 #
 # Generated values are piped straight into dotenvx (never printed). First run creates .env.keys (gitignored):
-# save DOTENV_PRIVATE_KEY_DEV / _PROD in the password manager, then see docs/secrets/README.md.
+# save DOTENV_PRIVATE_KEY_DORKS_DEV / _PROD in the password manager, then see docs/secrets/README.md.
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 dry=0; [[ "${1:-}" == "--dry-run" ]] && dry=1
@@ -42,7 +42,7 @@ SECRETS=(
 
 created=0 skipped=0
 for env in dev prod; do
-  file="$root/secrets/.env.$env"
+  file="$root/secrets/.env.dorks_$env"
   echo "== $env"
   for row in "${SECRETS[@]}"; do
     IFS='|' read -r unit name kind dev_v prod_v <<<"$row"

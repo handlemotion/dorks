@@ -8,7 +8,7 @@ pnpm workspace. `pnpm install`, then:
 - `cd apps/ios && pnpm start` — Expo
 - `pnpm typecheck`
 
-Secrets are dotenvx-encrypted files in `secrets/`; see [Local development](docs/secrets/README.md#local-development). With `DOTENV_PRIVATE_KEY_DEV` set, `pnpm dev` starts Convex + web with secrets loaded (`pnpm dev:ios`, `pnpm dev:api` for the others).
+Secrets are dotenvx-encrypted files in `secrets/`; see [Local development](docs/secrets/README.md#local-development). With `DOTENV_PRIVATE_KEY_DORKS_DEV` set, `pnpm dev` starts Convex + web with secrets loaded (`pnpm dev:ios`, `pnpm dev:api` for the others).
 
 ## Local dev (legacy API)
 

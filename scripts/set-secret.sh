@@ -22,5 +22,5 @@ else
 fi
 [[ -n "$val" ]] || { echo "empty value, nothing set" >&2; exit 1; }
 
-"$root/node_modules/.bin/dotenvx" set "$name" "$val" -f "$root/secrets/.env.$env_name" -fk "$root/.env.keys" >/dev/null
-echo "set $name in secrets/.env.$env_name" >&2
+"$root/node_modules/.bin/dotenvx" set "$name" "$val" -f "$root/secrets/.env.dorks_$env_name" -fk "$root/.env.keys" >/dev/null
+echo "set $name in secrets/.env.dorks_$env_name" >&2
