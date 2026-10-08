@@ -37,13 +37,17 @@
 
 ## Adding or changing a secret
 
-```sh
-scripts/set-secret.sh prod RESEND_API_KEY                  # prompts silently; no private key needed
-scripts/set-secret.sh dev  NEW_KEY --generate b64          # random 32 bytes (b64|hex), never printed
-printf %s "$VALUE" | scripts/set-secret.sh prod SOME_NAME  # from stdin
-```
+Work from a normal local clone (dotenvx is a root dev dependency: `pnpm install`). Same as editing any `.env`:
 
-Then commit `secrets/.env.*`. For a brand-new secret also: read it in code by exact name, add a row to [inventory.md](inventory.md) and the name to the unit's `.env.example`, and add it to the table in `scripts/seed-secrets.sh`. Multi-line values (PEM) work: pipe the file in.
+1. Open `secrets/.env.dev` or `secrets/.env.prod`, put the real value in plaintext on its line (replace the `encrypted:...` value, or add a new `NAME=value` line).
+2. `pnpm exec dotenvx encrypt -f secrets/.env.prod` encrypts only the plaintext lines and leaves the rest alone. No private key needed.
+3. Commit and open a PR. **Never commit between steps 1 and 2**: until then the value is plaintext; if that ever lands in git, treat the secret as leaked.
+
+One-liner instead of the editor: `pnpm exec dotenvx set NAME "value" -f secrets/.env.prod` (the value lands in shell history). Optional silent prompt or random value: `scripts/set-secret.sh prod NAME` / `scripts/set-secret.sh dev NAME --generate b64`.
+
+Read a value: `pnpm exec dotenvx get NAME -f secrets/.env.prod` (prod needs `dx login`). List names only: `grep -o '^[A-Z_0-9]*=' secrets/.env.prod`. Delete: `pnpm exec dotenvx del NAME -f secrets/.env.prod`.
+
+For a brand-new secret also: read it in code by exact name, add a row to [inventory.md](inventory.md) and the name to the unit's `.env.example`, and add it to the table in `scripts/seed-secrets.sh`. Multi-line values (PEM) work.
 
 ## Who reads them
 
