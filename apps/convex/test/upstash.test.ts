@@ -452,31 +452,28 @@ describe("ready deadline", () => {
 describe("execStartScript (run for real with sh)", () => {
   const dirs: string[] = [];
   afterEach(() => {
-    for (const d of dirs.splice(0)) {
-      try {
-        const pid = readFileSync(`${d}/dorks-start.pid`, "utf8").trim();
-        process.kill(Number(pid), "SIGKILL");
-      } catch {}
-      rmSync(d, { recursive: true, force: true });
-    }
+    execFileSync("sh", ["-c", "pkill -f '[s]leep 31337' || true"]);
+    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
   });
   const run = (script: string) => execFileSync("sh", ["-c", script], { stdio: "pipe" });
-  // Processes whose whole command line ends in the started command (wrapper shells running the test script end differently).
-  const sleepers = () => execFileSync("sh", ["-c", "ps -eo args= | grep -c '[s]leep 31337$' || true"]).toString().trim();
+  const settle = () => new Promise((r) => setTimeout(r, 300));
+  const pidOf = (dir: string) => readFileSync(`${dir}/dorks-start.pid`, "utf8").trim();
+  const cmdline = (pid: string) => readFileSync(`/proc/${pid}/cmdline`, "utf8").replaceAll("\0", " ");
+  // Not counting processes: how many wrapper shells exist differs between dash and bash. A second launch always rewrites the pidfile.
 
   it.skipIf(process.platform !== "linux")("is idempotent: a second run does not start a second process", async () => {
     const dir = mkdtempSync(`${tmpdir()}/dorks-start-`);
     dirs.push(dir);
     const script = execStartScript("sleep 31337", dir);
     run(script);
-    await new Promise((r) => setTimeout(r, 200));
-    const pid = readFileSync(`${dir}/dorks-start.pid`, "utf8");
-    expect(Number(sleepers())).toBe(1);
+    await settle();
+    const pid = pidOf(dir);
+    expect(cmdline(pid)).toContain("sleep 31337");
     run(script);
     run(script);
-    await new Promise((r) => setTimeout(r, 200));
-    expect(readFileSync(`${dir}/dorks-start.pid`, "utf8")).toBe(pid);
-    expect(Number(sleepers())).toBe(1);
+    await settle();
+    expect(pidOf(dir)).toBe(pid); // unchanged: nothing was relaunched
+    expect(cmdline(pid)).toContain("sleep 31337"); // and the original is still the live one
   });
 
   it.skipIf(process.platform !== "linux")("a stale pidfile pointing at an unrelated live process does not block the start", async () => {
@@ -484,8 +481,9 @@ describe("execStartScript (run for real with sh)", () => {
     dirs.push(dir);
     writeFileSync(`${dir}/dorks-start.pid`, String(process.pid)); // alive, but not our command (PID reuse after a pause)
     run(execStartScript("sleep 31337", dir));
-    await new Promise((r) => setTimeout(r, 200));
-    expect(Number(sleepers())).toBe(1);
-    expect(readFileSync(`${dir}/dorks-start.pid`, "utf8").trim()).not.toBe(String(process.pid));
+    await settle();
+    const pid = pidOf(dir);
+    expect(pid).not.toBe(String(process.pid));
+    expect(cmdline(pid)).toContain("sleep 31337");
   });
 });
