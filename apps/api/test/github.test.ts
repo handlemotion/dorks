@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentTokenScope, createAppJwt, createInstallationToken, parsePullRequestEvent, verifyWebhook } from "../src/lib/github";
+import { agentTokenScope, createAppJwt, createInstallationToken, GithubHttpError, parsePullRequestEvent, verifyWebhook } from "../src/lib/github";
 
 async function keyPair() {
   const kp = (await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"])) as CryptoKeyPair;
@@ -53,6 +53,14 @@ describe("github", () => {
     const { pem } = await keyPair();
     const fake = (async () => Response.json({ message: "secret-ish" }, { status: 422 })) as unknown as typeof fetch;
     await expect(createInstallationToken({ GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem }, 42, fake, agentTokenScope("o/r"))).rejects.toThrow(/422$/);
+    await expect(createInstallationToken({ GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem }, 42, fake)).rejects.toMatchObject({ status: 422 });
+    await expect(createInstallationToken({ GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem }, 42, fake)).rejects.toBeInstanceOf(GithubHttpError);
+  });
+
+  it("reports the repositories a scoped token covers as owner/name", async () => {
+    const { pem } = await keyPair();
+    const fake = (async () => Response.json({ token: "ghs_x", expires_at: "2030-01-01T00:00:00Z", repositories: [{ full_name: "octo/hello" }] }, { status: 201 })) as unknown as typeof fetch;
+    expect((await createInstallationToken({ GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem }, 42, fake, agentTokenScope("octo/hello"))).repositories).toEqual(["octo/hello"]);
   });
 
   it("verifies webhook signatures", async () => {

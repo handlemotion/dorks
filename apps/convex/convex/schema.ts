@@ -43,6 +43,7 @@ export default defineSchema({
     sleepMinutes: v.number(),
     bridgeSeenAt: v.number(),
     bridgeLost: v.boolean(),
+    ghFailures: v.optional(v.number()), // consecutive failed GitHub token refreshes (bridge.ts); absent/0 = healthy
     timers: v.record(v.string(), v.id("_scheduled_functions")), // name -> pending scheduled run (sleep | watchdog | gh_token | bridge_watch | flush)
   }).index("by_dork", ["dorkId"]),
 

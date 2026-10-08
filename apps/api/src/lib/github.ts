@@ -41,12 +41,19 @@ export const agentTokenScope = (fullName: string): TokenScope => {
   return { repositories: [name], permissions: { ...AGENT_TOKEN_PERMISSIONS } };
 };
 
+/** GitHub answered non-2xx. Carries only the status: the response body is never surfaced. */
+export class GithubHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`GitHub installation token failed: ${status}`);
+  }
+}
+
 export async function createInstallationToken(
   env: Pick<Env, "GITHUB_APP_ID" | "GITHUB_APP_PRIVATE_KEY">,
   installationId: number | string,
   fetcher: typeof fetch = fetch,
   scope?: TokenScope,
-): Promise<{ token: string; expiresAt: string }> {
+): Promise<{ token: string; expiresAt: string; /** `owner/name` of the repos the token covers, when GitHub reports them (it does for a scoped token) */ repositories?: string[] }> {
   const jwt = await createAppJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
   const res = await fetcher(`https://api.github.com/app/installations/${installationId}/access_tokens`, {
     method: "POST",
@@ -56,9 +63,9 @@ export async function createInstallationToken(
     },
     ...(scope ? { body: JSON.stringify({ repositories: scope.repositories, permissions: scope.permissions }) } : {}),
   });
-  if (!res.ok) throw new Error(`GitHub installation token failed: ${res.status}`);
-  const j = (await res.json()) as { token: string; expires_at: string };
-  return { token: j.token, expiresAt: j.expires_at };
+  if (!res.ok) throw new GithubHttpError(res.status);
+  const j = (await res.json()) as { token: string; expires_at: string; repositories?: { full_name: string }[] };
+  return { token: j.token, expiresAt: j.expires_at, ...(j.repositories ? { repositories: j.repositories.map((r) => r.full_name) } : {}) };
 }
 
 /** Constant-time check of X-Hub-Signature-256 over the raw body. */
