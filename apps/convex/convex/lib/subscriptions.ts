@@ -33,6 +33,12 @@ export async function subscriptionsForHead(ctx: QueryCtx, repo: string, headRef:
   return rows.filter((s) => s.status !== "ended");
 }
 
+/** PRs that target `baseRef` (a push to it may have made them conflict). Same-repo only by construction: a base always lives in the repo the PR is opened against. */
+export async function subscriptionsForBase(ctx: QueryCtx, repo: string, baseRef: string): Promise<Subscription[]> {
+  const rows = await ctx.db.query("prSubscriptions").withIndex("by_repo_base", (q) => q.eq("repo", normalizeRepo(repo)).eq("baseRef", baseRef)).collect();
+  return rows.filter((s) => s.status !== "ended");
+}
+
 export async function subscriptionsOfDork(ctx: QueryCtx, dorkId: Id<"dorks">): Promise<Subscription[]> {
   return ctx.db.query("prSubscriptions").withIndex("by_dork", (q) => q.eq("dorkId", dorkId)).collect();
 }
@@ -107,6 +113,14 @@ export async function resume(ctx: MutationCtx, dork: Doc<"dorks">, repo: string,
   const wasStalled = sub.status === "stalled";
   await updateSubscription(ctx, sub._id, { status: "active", ciFixAttempts: 0 });
   if (wasStalled) await append(ctx, dork._id, { type: "subscription", repo: sub.repo, number, status: "active", reason: "resumed" });
+}
+
+/** A human is involved (comment, message): the CI attempt budget starts over and a stalled subscription resumes. */
+export async function resetCiAttempts(ctx: MutationCtx, sub: Subscription, reason: string) {
+  const stalled = sub.status === "stalled";
+  if (!stalled && sub.ciFixAttempts === 0) return;
+  await updateSubscription(ctx, sub._id, { ciFixAttempts: 0, status: stalled ? "active" : sub.status });
+  if (stalled) await append(ctx, sub.dorkId, { type: "subscription", repo: sub.repo, number: sub.number, status: "active", reason });
 }
 
 /** Deleting a dork stops its subscriptions at once (the purge that follows removes the rows). No transcript event: the transcript goes too. */

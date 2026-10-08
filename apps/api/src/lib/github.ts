@@ -94,6 +94,16 @@ export async function getPullRequest(token: string, repo: string, number: number
   };
 }
 
+/** `POST /repos/{repo}/issues/{number}/comments`: a PR conversation comment, posted as whoever owns the token (the App's bot for an installation token). */
+export async function createIssueComment(token: string, repo: string, number: number, body: string, fetcher: typeof fetch = fetch): Promise<void> {
+  const res = await fetcher(`https://api.github.com/repos/${repo}/issues/${number}/comments`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": UA, "Content-Type": "application/json" },
+    body: JSON.stringify({ body }),
+  });
+  if (!res.ok) throw new GithubHttpError(res.status, "comment");
+}
+
 /** Constant-time check of X-Hub-Signature-256 over the raw body. */
 export async function verifyWebhook(secret: string, rawBody: string, signatureHeader: string | null): Promise<boolean> {
   const m = /^sha256=([0-9a-f]{64})$/.exec(signatureHeader ?? "");

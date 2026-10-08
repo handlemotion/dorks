@@ -104,9 +104,15 @@ export default defineSchema({
     ciFixAttempts: v.number(),
     state: v.union(v.literal("open"), v.literal("closed"), v.literal("merged")),
     lastEventAt: v.number(),
+    // Webhook bookkeeping (lib/githubIngest.ts), not part of `subscriptionView`.
+    ciFailing: v.optional(v.array(v.number())), // check suites of the current head that failed and have not passed since
+    ciNotified: v.optional(v.boolean()), // a `ci_failed` for the current head was queued: the next push counts as a fix attempt
+    readySha: v.optional(v.string()), // head SHA a `ready` was already queued for
+    conflictSha: v.optional(v.string()), // base SHA a `conflict` was already queued for
   })
     .index("by_repo_number", ["repo", "number"])
     .index("by_repo_head", ["repo", "headRef"]) // check events carry a SHA or branch, not a PR number
+    .index("by_repo_base", ["repo", "baseRef"]) // pushes to a base branch re-check every PR that targets it
     .index("by_dork", ["dorkId", "repo", "number"]),
 
   // Debounce buffer between the webhook and the agent: one row per notable event, folded into one `notify` command by the

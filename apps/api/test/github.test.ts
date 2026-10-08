@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentTokenScope, createAppJwt, createInstallationToken, GithubHttpError, getPullRequest, parsePullRequestEvent, verifyWebhook } from "../src/lib/github";
+import { agentTokenScope, createAppJwt, createInstallationToken, createIssueComment, GithubHttpError, getPullRequest, parsePullRequestEvent, verifyWebhook } from "../src/lib/github";
 
 async function keyPair() {
   const kp = (await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"])) as CryptoKeyPair;
@@ -87,6 +87,23 @@ describe("github", () => {
 
     it("throws a status-only GithubHttpError on non-2xx", async () => {
       await expect(getPullRequest("t", "o/r", 1, serve({ message: "secret-ish" }, 404).fake)).rejects.toMatchObject({ status: 404, message: "GitHub pull request lookup failed: 404" });
+    });
+  });
+
+  describe("createIssueComment", () => {
+    it("posts the body to the issue comments endpoint with the token", async () => {
+      const seen: Request[] = [];
+      const fake = (async (url: string, init: RequestInit) => (seen.push(new Request(url, init)), Response.json({ id: 1 }, { status: 201 }))) as unknown as typeof fetch;
+      await createIssueComment("ghs_t", "octo/hello", 7, "CI is red", fake);
+      expect(seen[0].url).toBe("https://api.github.com/repos/octo/hello/issues/7/comments");
+      expect(seen[0].method).toBe("POST");
+      expect(seen[0].headers.get("authorization")).toBe("Bearer ghs_t");
+      expect(await seen[0].json()).toEqual({ body: "CI is red" });
+    });
+
+    it("throws a status-only GithubHttpError on non-2xx", async () => {
+      const fake = (async () => Response.json({ message: "secret-ish" }, { status: 403 })) as unknown as typeof fetch;
+      await expect(createIssueComment("t", "o/r", 1, "x", fake)).rejects.toMatchObject({ status: 403, message: "GitHub comment failed: 403" });
     });
   });
 
