@@ -20,7 +20,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: pnpm/action-setup@d9184bf108216479bc5a137cc391f4d7b14c870b # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           cache: true # pnpm version comes from "packageManager" in the root package.json
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -30,6 +32,7 @@ jobs:
       - run: pnpm -r typecheck
       - name: Throwaway apps/api/.dev.vars
         run: |
+          # shellcheck disable=SC2016
           node -e '
             const c = require("crypto");
             console.log(`BETTER_AUTH_SECRET=${c.randomBytes(32).toString("hex")}`);
@@ -48,7 +51,9 @@ jobs:
       CONVEX_SITE_URL: http://127.0.0.1:3211
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: pnpm/action-setup@d9184bf108216479bc5a137cc391f4d7b14c870b # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           cache: true
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -81,6 +86,7 @@ jobs:
           echo "::add-mask::$key"
           printf 'CONVEX_SELF_HOSTED_URL=http://127.0.0.1:3210\nCONVEX_SELF_HOSTED_ADMIN_KEY=%s\n' "$key" > .env.local
           npx convex dev --once
+          git diff --exit-code -- convex/_generated # generated code must be committed, not drift
           rnd() { node -e 'console.log(require("crypto").randomBytes(32).toString(process.argv[1]))' "$1"; }
           set_env() { npx convex env set "$1" "$2" >/dev/null; }
           for name in BETTER_AUTH_SECRET BRIDGE_SECRET_KEY SIM_HOST_KEY; do set_env "$name" "$(rnd hex)"; done
@@ -96,7 +102,7 @@ jobs:
         working-directory: apps/convex
         run: ./scripts/run-e2e.sh
 
-      - uses: browser-actions/setup-chrome@39ce663831f86d2ea36cbda0a8143709cdfcc410 # v2.2.0
+      - uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
         id: chrome
       - name: Web e2e
         working-directory: apps/convex
@@ -106,20 +112,23 @@ jobs:
         run: |
           mkdir -p "$OUT"
           trap 'kill $(jobs -p) 2>/dev/null || true' EXIT
-          (cd ../web && VITE_CONVEX_URL="$CONVEX_URL" VITE_CONVEX_SITE_URL="$CONVEX_SITE_URL" pnpm dev > "$OUT/web-dev.log" 2>&1) &
+          (cd ../web && VITE_CONVEX_URL="$CONVEX_URL" VITE_CONVEX_SITE_URL="$CONVEX_SITE_URL" exec pnpm dev > "$OUT/web-dev.log" 2>&1) &
           SIM_HOST_KEY="$(npx convex env get SIM_HOST_KEY)" BRIDGE_SECRET_KEY="$(npx convex env get BRIDGE_SECRET_KEY)" SIM_DELTAS=100 \
             node ../../infra/bridge-sim/host.mjs > "$OUT/web-host.log" 2>&1 &
           for _ in $(seq 90); do
             curl -sf -o /dev/null http://localhost:3000/dorks && break
             sleep 1
           done
+          curl -sf -o /dev/null http://localhost:3000/dorks || { tail -50 "$OUT/web-dev.log"; exit 1; }
           node scripts/web-e2e.mjs
 
       - name: Collect backend container logs
-        if: failure()
-        run: docker logs convex-local > "$OUT/backend-container.log" 2>&1 || true
+        if: ${{ !success() }}
+        run: |
+          mkdir -p "$OUT"
+          docker logs convex-local > "$OUT/backend-container.log" 2>&1 || true
       - name: Upload e2e logs
-        if: failure()
+        if: ${{ !success() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dorks-e2e-logs
