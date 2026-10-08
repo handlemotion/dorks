@@ -78,6 +78,11 @@ export default defineSchema({
     acked: v.boolean(),
   }).index("by_dork_acked", ["dorkId", "acked"]),
 
+  // Fixed-window counters for sign-in rate limiting (see rateLimit.ts). `key` embeds the limited thing (email or IP).
+  rateLimits: defineTable({ key: v.string(), windowStart: v.number(), count: v.number() })
+    .index("by_key", ["key"])
+    .index("by_window_start", ["windowStart"]),
+
   // Dev/sim only: what a real BoxProvider (Upstash) would hold remotely.
   simBoxes: defineTable({ name: v.string(), running: v.boolean(), gen: v.number() }).index("by_name", ["name"]),
 });

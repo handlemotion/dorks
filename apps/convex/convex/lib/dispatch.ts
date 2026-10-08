@@ -15,7 +15,7 @@ export const PAUSE_STUCK_MS = 2 * 60_000; // a `pausing` intent older than this 
 export const PAUSE_RETRY_BASE_MS = 15_000; // failed pause from `error`: retry after 15s, 30s, 60s, ...
 export const MAX_PAUSE_RETRIES = 6;
 
-export type ErrorCode = "archived" | "invalid" | "deleting" | "conflict" | "failed" | "not_found" | "onboarding_incomplete";
+export type ErrorCode = "archived" | "invalid" | "deleting" | "conflict" | "failed" | "not_found" | "onboarding_incomplete" | "limit";
 export const fail = (code: ErrorCode, message: string): never => {
   throw new ConvexError({ code, message });
 };

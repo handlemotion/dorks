@@ -11,6 +11,7 @@
 import type * as auth from "../auth.js";
 import type * as boxes from "../boxes.js";
 import type * as bridge from "../bridge.js";
+import type * as crons from "../crons.js";
 import type * as dorks from "../dorks.js";
 import type * as events from "../events.js";
 import type * as http from "../http.js";
@@ -21,6 +22,7 @@ import type * as lib_githubInstall from "../lib/githubInstall.js";
 import type * as lib_upstash from "../lib/upstash.js";
 import type * as lifecycle from "../lifecycle.js";
 import type * as mail from "../mail.js";
+import type * as rateLimit from "../rateLimit.js";
 import type * as settings from "../settings.js";
 import type * as simbox from "../simbox.js";
 import type * as validators from "../validators.js";
@@ -35,6 +37,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   boxes: typeof boxes;
   bridge: typeof bridge;
+  crons: typeof crons;
   dorks: typeof dorks;
   events: typeof events;
   http: typeof http;
@@ -45,6 +48,7 @@ declare const fullApi: ApiFromModules<{
   "lib/upstash": typeof lib_upstash;
   lifecycle: typeof lifecycle;
   mail: typeof mail;
+  rateLimit: typeof rateLimit;
   settings: typeof settings;
   simbox: typeof simbox;
   validators: typeof validators;
