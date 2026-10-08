@@ -104,6 +104,7 @@ describe("H1: a bridge blip must not kill a healthy dork", () => {
 });
 
 describe("H2: a message during a sleep pause must not pause the box under a live turn", () => {
+  const frames = async (t: T, id: Id<"dorks">) => (await t.query(api.bridge.commands, await creds(id))).filter((c) => c.frame.t === "user_message").map((c) => c.frame.t);
   const sleepFlush = async (t: T) => {
     const id = await seed(t, "idle");
     await timer(t, id, "sleep");
@@ -152,10 +153,25 @@ describe("H2: a message during a sleep pause must not pause the box under a live
     await push(t, id, [{ t: "flushed" }]); // boxes.pause is now scheduled
     await sendMessage(t, id);
     expect((await rtOf(t, id)).pause?.phase).toBe("cancelled");
+    // The box is about to go down: the bridge must not be handed (and ack) the message now, or the turn dies with the box.
+    expect(await frames(t, id)).toEqual([]);
     await settle(t);
     expect(box.calls).toEqual(["pause", "resume"]);
     expect(await stateOf(t, id)).toBe("waking");
     expect(await kinds(t, id)).toContain("user_message");
+    await t.mutation(api.bridge.connect, await creds(id));
+    await push(t, id, [{ t: "ready" }]); // the fresh bridge comes up: now it gets the message
+    expect(await stateOf(t, id)).toBe("working");
+    expect(await frames(t, id)).toContain("user_message");
+  });
+
+  it("messages are held back while the pause's box call is in flight (not only after a cancel)", async () => {
+    const t = convexTest(schema, modules);
+    const id = await sleepFlush(t);
+    await t.run((ctx) => enqueue(ctx, id, "user_message", "unacked")); // sent before the pause, never delivered
+    await push(t, id, [{ t: "flushed" }]);
+    expect((await rtOf(t, id)).pause?.phase).toBe("pausing");
+    expect(await frames(t, id)).toEqual([]);
   });
 
   it("queued work found when a pause lands wakes the dork again", async () => {
@@ -301,15 +317,34 @@ describe("R4: strict bseq", () => {
     expect(await stored(t, id)).toBe(3);
   });
 
-  it("a gap stops processing and reports the expected bseq; the bridge replays and nothing is lost", async () => {
+  it("a call containing a gap applies nothing; the bridge resends from expectedBseq and nothing is lost or doubled", async () => {
     const t = convexTest(schema, modules);
     const id = await seed(t, "working");
-    expect(await push(t, id, [ev(1), ev(2), ev(5), ev(6), { t: "ready" }])).toEqual({ ok: false, expectedBseq: 3 });
-    expect((await rtOf(t, id)).bridgeSeq).toBe(2); // frames before the gap are kept, nothing after it is processed
-    expect(await stored(t, id)).toBe(2);
-    expect(await push(t, id, [ev(3), ev(4), ev(5), ev(6)])).toEqual({ ok: true });
+    expect(await push(t, id, [ev(1), ev(2), ev(5), ev(6), { t: "ready" }])).toEqual({ ok: false, expectedBseq: 1 });
+    expect((await rtOf(t, id)).bridgeSeq).toBe(0);
+    expect(await stored(t, id)).toBe(0);
+    expect(await push(t, id, [ev(1), ev(2), ev(3), ev(4), ev(5), ev(6)])).toEqual({ ok: true });
     expect(await stored(t, id)).toBe(6);
     expect((await eventsOf(t, id)).map((e) => e.seq)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it("a gap after already-stored events reports bridgeSeq + 1, and control frames before the gap are not applied twice", async () => {
+    const t = convexTest(schema, modules);
+    const id = await seed(t, "working", { bridgeSeq: 2 });
+    const exited = { t: "agent_exited", code: 1, stderrTail: "" };
+    expect(await push(t, id, [exited, ev(2), ev(3), ev(5)])).toEqual({ ok: false, expectedBseq: 3 });
+    expect((await eventsOf(t, id)).filter((e) => e.body.type === "agent_exited")).toHaveLength(0);
+    expect(await stateOf(t, id)).toBe("working");
+    expect(await push(t, id, [exited, ev(3), ev(4), ev(5)])).toEqual({ ok: true }); // the bridge resends the whole tail
+    expect((await eventsOf(t, id)).filter((e) => e.body.type === "agent_exited")).toHaveLength(1);
+  });
+
+  it("a truncation stub in place of an oversized event keeps the numbering moving", async () => {
+    const t = convexTest(schema, modules);
+    const id = await seed(t, "working");
+    expect(await push(t, id, [ev(1), { t: "event", bseq: 2, raw: { type: "truncated", truncated: true, was: "user" } }, ev(3)])).toEqual({ ok: true });
+    expect((await rtOf(t, id)).bridgeSeq).toBe(3);
+    expect(await stored(t, id)).toBe(2);
   });
 
   it("a hostile bseq cannot mute the dork", async () => {
@@ -411,5 +446,164 @@ describe("R5: box results are tied to the operation that produced them", () => {
     expect(await t.mutation(internal.lifecycle.boxCreated, { dorkId: id, boxId: "box-old", sleepMinutes: 5, gen: 1 })).toBe("orphaned");
     expect((await dorkOf(t, id))!.boxId).toBe("box-new");
     expect(await t.mutation(internal.lifecycle.boxCreated, { dorkId: id, boxId: "box-new", sleepMinutes: 5, gen: 2 })).toBe("ok");
+  });
+});
+
+describe("review fixes", () => {
+  const errors = async (t: T, id: Id<"dorks">) => (await eventsOf(t, id)).filter((e) => e.body.type === "error");
+  const advance = async (t: T, ms: number) => {
+    vi.advanceTimersByTime(ms);
+    await settle(t);
+  };
+
+  describe("error with a queued message does not loop resume/pause", () => {
+    it("a wake that never produces a bridge ends in sleeping, once", async () => {
+      const t = convexTest(schema, modules);
+      const id = await seed(t, "sleeping");
+      await sendMessage(t, id); // waking, the message stays queued (the bridge never comes up)
+      await settle(t);
+      await timer(t, id, "watchdog"); // -> error -> flush (nobody answers) -> pause -> sleeping, message still queued
+      await advance(t, 11_000);
+      expect(await stateOf(t, id)).toBe("sleeping");
+      await advance(t, 600_000);
+      expect(box.calls).toEqual(["resume", "pause"]); // not resume, pause, resume, pause, ...
+      expect(await errors(t, id)).toHaveLength(1);
+      expect(await kinds(t, id)).toEqual(["user_message"]); // still there for the next wake
+      await sendMessage(t, id, "again");
+      expect(await stateOf(t, id)).toBe("waking"); // the next message wakes it
+    });
+  });
+
+  describe("a lost pause does not block later ones", () => {
+    it("a `pausing` intent older than the stuck window is replaced", async () => {
+      const t = convexTest(schema, modules);
+      const id = await seed(t, "idle");
+      await t.run(async (ctx) => {
+        const rt = await ctx.db.query("dorkRuntime").withIndex("by_dork", (q) => q.eq("dorkId", id)).unique();
+        await ctx.db.patch(rt!._id, { opGen: 3, pause: { gen: 3, phase: "pausing", since: Date.now() } }); // boxes.pause died silently
+      });
+      await timer(t, id, "sleep");
+      await settle(t);
+      expect(box.calls).toEqual([]); // still within the window: trusted
+      vi.setSystemTime(NOW + 121_000);
+      await timer(t, id, "sleep");
+      await settle(t);
+      expect(box.calls).toEqual(["pause"]);
+      expect(await stateOf(t, id)).toBe("sleeping");
+    });
+  });
+
+  describe("a failed pause from error is retried with backoff, capped", () => {
+    it("retries until the box pauses", async () => {
+      const t = convexTest(schema, modules);
+      const id = await seed(t, "working", { bridgeSeenAt: 0 });
+      box.failPauses = 3;
+      await timer(t, id, "watchdog");
+      await settle(t);
+      expect(box.calls).toEqual(["pause"]);
+      expect((await rtOf(t, id)).timers.pause_retry).toBeDefined();
+      for (const wait of [15_000, 30_000, 60_000]) await advance(t, wait);
+      expect(box.calls).toEqual(["pause", "pause", "pause", "pause"]);
+      expect(await stateOf(t, id)).toBe("sleeping");
+      expect((await rtOf(t, id)).timers.pause_retry).toBeUndefined();
+    });
+
+    it("gives up after the cap and leaves error visible", async () => {
+      const t = convexTest(schema, modules);
+      const id = await seed(t, "working", { bridgeSeenAt: 0 });
+      box.failPauses = 1000;
+      await timer(t, id, "watchdog");
+      await settle(t);
+      for (let i = 0; i < 12; i++) await advance(t, 15 * 60_000);
+      expect(box.calls).toHaveLength(1 + 6); // the first attempt + MAX_PAUSE_RETRIES
+      expect(await stateOf(t, id)).toBe("error");
+    });
+
+    it("a message cancels the pending retry (it starts a wake instead)", async () => {
+      const t = convexTest(schema, modules);
+      const id = await seed(t, "working", { bridgeSeenAt: 0 });
+      box.failPauses = 1;
+      await timer(t, id, "watchdog");
+      await settle(t);
+      expect((await rtOf(t, id)).timers.pause_retry).toBeDefined();
+      await sendMessage(t, id);
+      expect(await stateOf(t, id)).toBe("waking");
+      expect((await rtOf(t, id)).timers.pause_retry).toBeUndefined();
+    });
+  });
+
+  describe("a box that lands after the dork gave up is paused", () => {
+    it("a create that finishes after the watchdog (error, no box yet)", async () => {
+      const t = convexTest(schema, modules);
+      const id = await seed(t, "creating", { boxId: null, opGen: 1, bridgeSeenAt: 0 });
+      await timer(t, id, "watchdog");
+      expect(await stateOf(t, id)).toBe("error");
+      expect(await t.mutation(internal.lifecycle.boxCreated, { dorkId: id, boxId: "box-late", sleepMinutes: 5, gen: 1 })).toBe("ok");
+      await settle(t);
+      expect(box.calls).toEqual(["pause"]);
+      expect((await dorkOf(t, id))!.boxId).toBe("box-late");
+      expect(await stateOf(t, id)).toBe("sleeping");
+    });
+
+    it("a resume that finishes after the dork went to error, even after its pause already landed", async () => {
+      const t = convexTest(schema, modules);
+      const id = await seed(t, "waking", { opGen: 1, bridgeSeenAt: 0 });
+      await timer(t, id, "watchdog"); // error + pause (gen 2)
+      await settle(t);
+      expect(await stateOf(t, id)).toBe("sleeping"); // the pause beat the slow resume
+      await t.mutation(internal.lifecycle.boxResumed, { dorkId: id }); // now the resume lands: the box is running again
+      await settle(t);
+      expect(box.calls).toEqual(["pause", "pause"]);
+      expect(await stateOf(t, id)).toBe("sleeping");
+    });
+
+    it("a resume that lands while the dork's own pause is still in flight pauses again (the old one may finish first)", async () => {
+      const t = convexTest(schema, modules);
+      const id = await seed(t, "waking", { opGen: 1, bridgeSeenAt: 0 });
+      await timer(t, id, "watchdog"); // error + pause (gen 2), box action scheduled but not run yet
+      expect((await rtOf(t, id)).pause?.phase).toBe("pausing");
+      await t.mutation(internal.lifecycle.boxResumed, { dorkId: id });
+      await settle(t);
+      expect(box.calls).toEqual(["pause", "pause"]); // one issued after the resume landed, so it is ordered after it
+      expect(await stateOf(t, id)).toBe("sleeping");
+    });
+
+    it("a resume the dork is still waiting for just queues configure", async () => {
+      const t = convexTest(schema, modules);
+      const id = await seed(t, "waking");
+      await t.mutation(internal.lifecycle.boxResumed, { dorkId: id });
+      await settle(t);
+      expect(box.calls).toEqual([]);
+      expect(await kinds(t, id)).toEqual(["configure"]);
+    });
+  });
+
+  describe("`flushed` names the flush it answers", () => {
+    it("a straggler from a cancelled flush cannot end the next one early", async () => {
+      const t = convexTest(schema, modules);
+      const id = await seed(t, "idle");
+      await timer(t, id, "sleep");
+      const first = (await openCmds(t, id)).find((c) => c.kind === "flush")!.cid;
+      await sendMessage(t, id); // cancels
+      await input(t, id, { t: "archive" }); // a new pause, a new flush
+      const second = (await openCmds(t, id)).find((c) => c.kind === "flush")!.cid;
+      expect(second).not.toBe(first);
+      await push(t, id, [{ t: "flushed", id: first }]);
+      await settle(t);
+      expect(box.calls).toEqual([]);
+      expect((await rtOf(t, id)).pause?.phase).toBe("flushing");
+      await push(t, id, [{ t: "flushed", id: second }]);
+      await settle(t);
+      expect(box.calls).toEqual(["pause"]);
+    });
+
+    it("a `flushed` without an id (older bridge) still answers the current flush", async () => {
+      const t = convexTest(schema, modules);
+      const id = await seed(t, "idle");
+      await timer(t, id, "sleep");
+      await push(t, id, [{ t: "flushed" }]);
+      await settle(t);
+      expect(box.calls).toEqual(["pause"]);
+    });
   });
 });

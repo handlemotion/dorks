@@ -11,6 +11,9 @@ export const FLUSH_TIMEOUT_MS = 10_000;
 export const HEARTBEAT_MS = 30_000;
 export const BRIDGE_STALE_MS = 90_000;
 export const MAX_MESSAGE_CHARS = 50_000;
+export const PAUSE_STUCK_MS = 2 * 60_000; // a `pausing` intent older than this is assumed lost (the action died without reporting)
+export const PAUSE_RETRY_BASE_MS = 15_000; // failed pause from `error`: retry after 15s, 30s, 60s, ...
+export const MAX_PAUSE_RETRIES = 6;
 
 export type ErrorCode = "archived" | "invalid" | "deleting" | "conflict" | "failed" | "not_found" | "onboarding_incomplete";
 export const fail = (code: ErrorCode, message: string): never => {
@@ -106,10 +109,11 @@ async function runEffect(ctx: MutationCtx, dorkId: Id<"dorks">, effect: Effect) 
     case "resume_box": {
       // A new box operation supersedes any pause, and control rows left by the previous run must not replay into this one.
       await dropPause(ctx, dorkId);
+      await cancelTimer(ctx, dorkId, "pause_retry");
       await clearControlRows(ctx, dorkId);
       const rt = await runtimeOf(ctx, dorkId);
       const gen = (rt.opGen ?? 0) + 1;
-      await ctx.db.patch(rt._id, { opGen: gen, bridgeSeenAt: Date.now(), bridgeLost: false }); // grace period for the new bridge to dial in
+      await ctx.db.patch(rt._id, { opGen: gen, pauseRetries: 0, bridgeSeenAt: Date.now(), bridgeLost: false }); // grace period for the new bridge to dial in
       await setTimer(ctx, dorkId, "bridge_watch", HEARTBEAT_MS);
       await ctx.scheduler.runAfter(0, effect === "create_box" ? internal.boxes.create : internal.boxes.resume, { dorkId, gen });
       return;
@@ -160,28 +164,50 @@ export async function bridgeSeen(ctx: MutationCtx, dork: Doc<"dorks">) {
 // A pause is an intent with a generation (`rt.pause`), separate from the effect that carries it out: the flush and the box call
 // both take time, and a message (or a newer box operation) may arrive in between. Every step re-checks the intent.
 
-/** Ask a live bridge to flush, then pause the box on `flushed` (or after a timeout). A silent bridge is paused directly. */
-async function beginPause(ctx: MutationCtx, dorkId: Id<"dorks">) {
+/**
+ * Ask a live bridge to flush, then pause the box on `flushed` (or after a timeout). A silent bridge is paused directly.
+ * An intent already in progress is kept, unless `force` (the box is known to be running again, so an older pause cannot be
+ * trusted) or its box call has been in flight so long that it must have died.
+ */
+export async function beginPause(ctx: MutationCtx, dorkId: Id<"dorks">, force = false) {
   const rt = await runtimeOf(ctx, dorkId);
-  if (rt.pause && rt.pause.phase !== "cancelled") return; // already flushing / pausing
-  const live = !rt.bridgeLost && Date.now() - rt.bridgeSeenAt < BRIDGE_STALE_MS;
+  const now = Date.now();
+  if (rt.pause && rt.pause.phase !== "cancelled") {
+    const lost = rt.pause.phase === "pausing" && now - (rt.pause.since ?? 0) > PAUSE_STUCK_MS;
+    if (!force && !lost) return; // already flushing / pausing
+    await cancelTimer(ctx, dorkId, "flush");
+    await deleteFlushRows(ctx, dorkId);
+  }
+  const live = !rt.bridgeLost && now - rt.bridgeSeenAt < BRIDGE_STALE_MS;
   const gen = (rt.opGen ?? 0) + 1;
-  await ctx.db.patch(rt._id, { opGen: gen, pause: { gen, phase: live ? "flushing" : "pausing" } });
   if (live) {
-    await enqueue(ctx, dorkId, "flush");
+    const flushCid = await enqueue(ctx, dorkId, "flush");
+    await ctx.db.patch(rt._id, { opGen: gen, pause: { gen, phase: "flushing", since: now, flushCid } });
     await setTimer(ctx, dorkId, "flush", FLUSH_TIMEOUT_MS);
   } else {
+    await ctx.db.patch(rt._id, { opGen: gen, pause: { gen, phase: "pausing", since: now } });
     await ctx.scheduler.runAfter(0, internal.boxes.pause, { dorkId, gen });
   }
 }
 
+/** A pause that failed (or was lost) leaves a box running under `error`: try again later, with backoff, up to a cap. */
+export async function schedulePauseRetry(ctx: MutationCtx, dorkId: Id<"dorks">) {
+  const rt = await runtimeOf(ctx, dorkId);
+  const n = rt.pauseRetries ?? 0;
+  if (n >= MAX_PAUSE_RETRIES) return void console.error("box could not be paused after retries; pause it manually", dorkId);
+  await ctx.db.patch(rt._id, { pauseRetries: n + 1 });
+  await setTimer(ctx, dorkId, "pause_retry", PAUSE_RETRY_BASE_MS * 2 ** n);
+}
+
 /** Flush done (or timed out): pause the box, but only if the pause is still wanted. */
-export async function finishPause(ctx: MutationCtx, dorkId: Id<"dorks">) {
+export async function finishPause(ctx: MutationCtx, dorkId: Id<"dorks">, flushedCid?: string) {
   const rt = await runtimeOf(ctx, dorkId);
   if (rt.pause?.phase !== "flushing") return; // cancelled meanwhile, or already launched (duplicate `flushed`)
+  // A `flushed` that names another flush is a straggler from a pause that was cancelled; it must not end this one early.
+  if (flushedCid !== undefined && rt.pause.flushCid !== undefined && flushedCid !== rt.pause.flushCid) return;
   await cancelTimer(ctx, dorkId, "flush");
   await deleteFlushRows(ctx, dorkId);
-  await ctx.db.patch(rt._id, { pause: { gen: rt.pause.gen, phase: "pausing" } });
+  await ctx.db.patch(rt._id, { pause: { gen: rt.pause.gen, phase: "pausing", since: Date.now() } });
   await ctx.scheduler.runAfter(0, internal.boxes.pause, { dorkId, gen: rt.pause.gen });
 }
 
@@ -192,7 +218,7 @@ export async function finishPause(ctx: MutationCtx, dorkId: Id<"dorks">) {
 export async function cancelPause(ctx: MutationCtx, dorkId: Id<"dorks">) {
   const rt = await runtimeOf(ctx, dorkId);
   if (!rt.pause || rt.pause.phase === "cancelled") return;
-  if (rt.pause.phase === "pausing") return void (await ctx.db.patch(rt._id, { pause: { gen: rt.pause.gen, phase: "cancelled" } }));
+  if (rt.pause.phase === "pausing") return void (await ctx.db.patch(rt._id, { pause: { gen: rt.pause.gen, phase: "cancelled", since: rt.pause.since } }));
   await cancelTimer(ctx, dorkId, "flush");
   await deleteFlushRows(ctx, dorkId);
   await ctx.db.patch(rt._id, { pause: undefined });

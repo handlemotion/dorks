@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
-import { append, BRIDGE_STALE_MS, dispatch, enqueue, enqueueConfigure, finishPause, GH_REFRESH_MS, HEARTBEAT_MS, isAwake, queued, runtimeOf, setTimer } from "./lib/dispatch";
+import { append, beginPause, BRIDGE_STALE_MS, cancelTimer, dispatch, enqueue, enqueueConfigure, finishPause, GH_REFRESH_MS, HEARTBEAT_MS, isAwake, queued, runtimeOf, schedulePauseRetry, setTimer } from "./lib/dispatch";
 
 /** Fired by the scheduler (see lib/dispatch.ts setTimer). Replaces Dork.runTimer + the alarm multiplexer. */
 export const timer = internalMutation({
@@ -27,6 +27,10 @@ export const timer = internalMutation({
         break;
       case "flush":
         await finishPause(ctx, dorkId); // flush timeout (a no-op if the pause was cancelled meanwhile)
+        break;
+      case "pause_retry":
+        // A pause failed while in `error`; the box may still be running. (A message since then started a new op, which cancels this.)
+        if (dork.state === "error" && dork.boxId) await beginPause(ctx, dorkId);
         break;
       case "bridge_watch": {
         // Convex has no socket-close signal, so liveness is "heartbeat seen recently".
@@ -63,6 +67,9 @@ export const opFailed = internalMutation({
     }
     await append(ctx, dorkId, { type: "error", message });
     await dispatch(ctx, dorkId, { t: "op_failed" });
+    // In `error` with a box and no pause under way (the pause that error triggers has itself failed): keep trying, capped.
+    const after = await ctx.db.get(dorkId);
+    if (after?.state === "error" && after.boxId && !(await runtimeOf(ctx, dorkId)).pause) await schedulePauseRetry(ctx, dorkId);
   },
 });
 
@@ -81,14 +88,24 @@ export const boxCreated = internalMutation({
     if (gen !== (rt.opGen ?? 0)) console.error("recording the box of a superseded create", dorkId);
     await ctx.db.patch(rt._id, { sleepMinutes });
     await ctx.db.patch(dorkId, { boxId });
+    // The create outlived its dork's patience (watchdog -> error while there was no box to pause): the box now runs under `error`.
+    if (dork.state === "error") await beginPause(ctx, dorkId, true);
     return "ok";
   },
 });
 
-/** Box resumed. If the bridge never lost its connection (agent crashed, box stayed up) no new connect will trigger `configure`. */
+/**
+ * Box resumed. If the bridge never lost its connection (agent crashed, box stayed up) no new connect will trigger `configure`.
+ * If the dork gave up on this resume meanwhile (watchdog -> error, possibly already paused -> sleeping) the box is running
+ * unwanted, and any pause issued before this point may have finished before the resume did: pause again, ordered after it.
+ * (No generation check is needed: a newer resume leaves the dork in `waking`, which this does not touch.)
+ */
 export const boxResumed = internalMutation({
   args: { dorkId: v.id("dorks") },
   handler: async (ctx, { dorkId }) => {
+    const dork = await ctx.db.get(dorkId);
+    if (!dork || dork.deleting) return;
+    if (dork.state === "error" || dork.state === "sleeping") return beginPause(ctx, dorkId, true);
     await enqueueConfigure(ctx, dorkId); // idempotent on the bridge side
   },
 });
@@ -105,10 +122,12 @@ export const boxPaused = internalMutation({
     const rt = await runtimeOf(ctx, dorkId);
     if (gen !== (rt.opGen ?? 0)) return void console.error("ignoring pause of a superseded box operation", dorkId);
     const cancelled = rt.pause?.phase === "cancelled";
-    await ctx.db.patch(rt._id, { opGen: gen + 1, pause: undefined });
+    await ctx.db.patch(rt._id, { opGen: gen + 1, pause: undefined, pauseRetries: 0 });
+    await cancelTimer(ctx, dorkId, "pause_retry");
     await dispatch(ctx, dorkId, { t: "paused" });
+    // Never from `error`: its pause is the failure's cleanup, and re-waking a dork whose wake just failed would loop forever.
     const after = await ctx.db.get(dorkId);
-    if (after && !after.archived && after.state === "sleeping" && (cancelled || (await queued(ctx, dorkId)))) await dispatch(ctx, dorkId, { t: "user_message" });
+    if (dork.state !== "error" && after && !after.archived && after.state === "sleeping" && (cancelled || (await queued(ctx, dorkId)))) await dispatch(ctx, dorkId, { t: "user_message" });
   },
 });
 

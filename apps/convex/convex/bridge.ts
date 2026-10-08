@@ -42,7 +42,10 @@ export const commands = query({
   handler: async (ctx, { dorkId, secret }): Promise<{ cid: string; frame: CommandFrame }[]> => {
     const dork = await authed(ctx, dorkId, secret);
     if (dork.state === "sleeping") return [];
-    const deliverMessages = dork.state === "working" || dork.state === "idle"; // before `ready` the agent is not up
+    // Before `ready` the agent is not up. And once the box call of a pause is in flight (or was cancelled but still lands), a
+    // delivered message could be acked and then lost with the box: hold it back, the re-wake after the pause delivers it.
+    const rt = await ctx.db.query("dorkRuntime").withIndex("by_dork", (q) => q.eq("dorkId", dorkId)).unique();
+    const deliverMessages = (dork.state === "working" || dork.state === "idle") && (!rt?.pause || rt.pause.phase === "flushing");
     const open = await ctx.db.query("commands").withIndex("by_dork_acked", (q) => q.eq("dorkId", dorkId).eq("acked", false)).collect();
     const out: { cid: string; frame: CommandFrame }[] = [];
     for (const c of open) {
@@ -71,8 +74,8 @@ const encoder = new TextEncoder();
 
 /**
  * Bridge -> backend frames, batched. Events must arrive numbered exactly `bridgeSeq + 1`, `+ 2`, ... (anything `<= bridgeSeq` is a
- * replay and is skipped). On a gap, processing stops at the gap (earlier frames in the call are kept) and the result is
- * `{ ok: false, expectedBseq }`: the bridge must resend its events from `expectedBseq` on. Otherwise the result is `{ ok: true }`.
+ * replay and is skipped). If the call contains a gap, NOTHING in it is applied and the result is `{ ok: false, expectedBseq }`
+ * (`bridgeSeq + 1`): the bridge must resend everything from its event `expectedBseq` on. Otherwise the result is `{ ok: true }`.
  * Too many frames or an oversized event reject the whole call with a ConvexError (`too_many_frames` / `event_too_large`).
  */
 export const push = mutation({
@@ -86,10 +89,23 @@ export const push = mutation({
         throw new ConvexError({ code: "event_too_large", message: `an event exceeds ${MAX_EVENT_BYTES} bytes` });
       }
     }
-    await bridgeSeen(ctx, dork);
+    await bridgeSeen(ctx, dork); // liveness counts even when the batch is refused below
     const rt = await runtimeOf(ctx, dorkId);
     let { bridgeSeq, streamMsgId } = rt;
-    let gap = false;
+
+    // Validate the whole batch before applying any of it: events must continue the stored numbering exactly (frames already
+    // stored are skipped as replays). A gap refuses the call atomically, so the bridge can resend everything after its last
+    // confirmed event without any frame (an `agent_exited`, say) being applied twice.
+    const parsedFrames = frames.flatMap((raw) => {
+      const parsed = fromBridge.safeParse(raw);
+      return parsed.success ? [parsed.data] : [];
+    });
+    let next = bridgeSeq + 1;
+    for (const f of parsedFrames) {
+      if (f.t !== "event" || f.bseq < next) continue;
+      if (f.bseq !== next) return { ok: false, expectedBseq: bridgeSeq + 1 };
+      next++;
+    }
     // The normalizer is stateful (in-flight message id) but a mutation is not: seed it from the last batch.
     const normalize = createNormalizer();
     if (streamMsgId) normalize({ type: "stream_event", event: { type: "message_start", message: { id: streamMsgId } } });
@@ -101,15 +117,10 @@ export const push = mutation({
     let preview: string | undefined;
     let touched = false;
 
-    for (const raw of frames) {
-      if (gap) break;
-      const parsed = fromBridge.safeParse(raw);
-      if (!parsed.success) continue;
-      const f = parsed.data;
+    for (const f of parsedFrames) {
       switch (f.t) {
         case "event": {
           if (f.bseq <= bridgeSeq) break; // replay overlap after a reconnect
-          if (f.bseq !== bridgeSeq + 1) { gap = true; break; } // never skip ahead: the transcript must stay gapless
           bridgeSeq = f.bseq;
           const r = f.raw as { type?: string; event?: { type?: string; message?: { id?: string } } };
           if (r?.type === "stream_event" && r.event?.type === "message_start") streamMsgId = r.event.message?.id ?? "";
@@ -146,14 +157,14 @@ export const push = mutation({
           await dispatch(ctx, dorkId, { t: "agent_exited" });
           break;
         case "flushed":
-          await finishPause(ctx, dorkId);
+          await finishPause(ctx, dorkId, f.id);
           break;
       }
     }
     await flush();
     await ctx.db.patch(rt._id, { bridgeSeq, streamMsgId });
     if (preview !== undefined || touched) await ctx.db.patch(dorkId, { ...(preview !== undefined ? { preview } : {}), lastActivityAt: Date.now() });
-    return gap ? { ok: false, expectedBseq: bridgeSeq + 1 } : { ok: true };
+    return { ok: true };
   },
 });
 
