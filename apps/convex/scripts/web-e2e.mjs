@@ -13,7 +13,7 @@ const check = (n, ok, x = "") => { results.push(ok); console.log(`${ok ? "PASS" 
 await startMockResend();
 
 const email = `web${Date.now() % 100000}@jaantonio.com`;
-const browser = await puppeteer.launch({ executablePath: "/usr/bin/google-chrome", args: ["--no-sandbox", "--disable-gpu"], headless: true });
+const browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH ?? "/usr/bin/google-chrome", args: ["--no-sandbox", "--disable-gpu"], headless: true });
 const page = await browser.newPage();
 await page.setViewport({ width: 900, height: 900 });
 const errors = [];

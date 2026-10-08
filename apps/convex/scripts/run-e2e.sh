@@ -3,7 +3,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export CONVEX_URL=${CONVEX_URL:-http://127.0.0.1:3210} CONVEX_SITE_URL=${CONVEX_SITE_URL:-http://127.0.0.1:3211}
-export SIM_HOST_KEY=$(npx convex env get SIM_HOST_KEY) BRIDGE_SECRET_KEY=$(npx convex env get BRIDGE_SECRET_KEY)
+SIM_HOST_KEY=$(npx convex env get SIM_HOST_KEY); BRIDGE_SECRET_KEY=$(npx convex env get BRIDGE_SECRET_KEY)
+export SIM_HOST_KEY BRIDGE_SECRET_KEY
 export HEARTBEAT_MS=${HEARTBEAT_MS:-30000}
 OUT=${OUT:-/tmp/dorks-e2e}; mkdir -p $OUT
 node ../../infra/bridge-sim/host.mjs > $OUT/host.log 2>&1 & HOST=$!
@@ -13,5 +14,5 @@ sleep 2
 SECRETS_OUT=$OUT/needles.json node scripts/e2e.mjs | tee $OUT/e2e.log
 sleep 2
 rm -f $OUT/export.zip; npx convex export --path $OUT/export.zip >/dev/null 2>&1
-rm -rf $OUT/export && mkdir -p $OUT/export && (cd $OUT/export && unzip -q ../export.zip)
+rm -rf $OUT/export && mkdir -p $OUT/export && { (cd $OUT/export && unzip -q ../export.zip) || [ $? -le 2 ]; }  # unzip exits 1-2 on Convex's export zip (warnings)
 node scripts/scan-secrets.mjs $OUT
