@@ -8,7 +8,7 @@ import { DORKS_NETWORK_POLICY, upstashBox } from "./upstash";
  * Actions are stateless, so the sim keeps its "remote" state in the simBoxes table (the same way a real provider holds it remotely).
  *
  * upstash env: UPSTASH_BOX_API_KEY (required); optional UPSTASH_BOX_BASE_URL, UPSTASH_BOX_START_MODE=init|exec,
- * UPSTASH_BOX_NETWORK_POLICY=dorks (egress allow-list, see docs/upstash-box.md).
+ * UPSTASH_BOX_NETWORK_POLICY=dorks (egress allow-list, see docs/upstash-box.md). CONVEX_CLOUD_URL scopes the box labels per deployment.
  */
 export function getBox(ctx: ActionCtx): BoxProvider {
   if (process.env.BOX_PROVIDER === "sim") return simBox(ctx);
@@ -17,6 +17,7 @@ export function getBox(ctx: ActionCtx): BoxProvider {
     if (!apiKey) return unconfiguredBox;
     return upstashBox({
       apiKey,
+      labelScope: process.env.CONVEX_CLOUD_URL ?? "",
       baseUrl: process.env.UPSTASH_BOX_BASE_URL || undefined,
       startMode: process.env.UPSTASH_BOX_START_MODE === "exec" ? "exec" : "init",
       networkPolicy: process.env.UPSTASH_BOX_NETWORK_POLICY === "dorks" ? DORKS_NETWORK_POLICY : undefined,

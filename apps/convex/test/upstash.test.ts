@@ -1,19 +1,24 @@
-import { describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { afterEach, describe, expect, it } from "vitest";
 import { BoxNotFoundError } from "../../api/src/lib/box";
 import { DORKS_NETWORK_POLICY, dorkLabel, execStartScript, upstashBox, UpstashBoxError } from "../convex/lib/upstash";
 
 const KEY = "ubk_SECRET_API_KEY_123";
 const DORK = "kh7abcdefghijklmnopqrstuvwxyz0123";
+const SCOPE = "https://dev-1.convex.cloud";
 const OPTS = { name: DORK, initCommand: "dorks-bridge", env: { DORK_ID: DORK, BRIDGE_URL: "https://x.convex.cloud", BRIDGE_SECRET: "s3cr3t-bridge" } };
 
 type FakeBox = { id: string; name?: string; labels: string[]; status: string; created_at: number };
 
 /** In-memory stand-in for the Box REST API (shapes from @upstash/box 0.7.9). Records every request. */
-function fake(init: Partial<{ creatingPolls: number; failWith: (method: string, path: string) => Response | undefined; refusePauseWhenPaused: boolean; refuseResumeWhenRunning: boolean }> = {}) {
+function fake(init: Partial<{ resumeLag: number; creatingPolls: number; failWith: (method: string, path: string) => Response | undefined; refusePauseWhenPaused: boolean; refuseResumeWhenRunning: boolean }> = {}) {
   const boxes = new Map<string, FakeBox>();
   const reqs: { method: string; path: string; body?: any; key?: string }[] = [];
   let n = 0;
   let polls = 0;
+  let lag = 0; // GETs left before a resumed box reports running
   const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { "content-type": "application/json" } });
   const f = (async (url: string | URL | Request, o?: RequestInit) => {
     const u = new URL(String(url));
@@ -38,6 +43,7 @@ function fake(init: Partial<{ creatingPolls: number; failWith: (method: string, 
     const b = boxes.get(m[1]);
     if (!b) return json({ error: "Box not found" }, 404);
     if (method === "GET" && !m[2]) {
+      if (lag > 0 && --lag === 0) b.status = "running";
       if (b.status === "creating" && ++polls >= (init.creatingPolls ?? 0)) b.status = "idle";
       return json(b);
     }
@@ -49,23 +55,44 @@ function fake(init: Partial<{ creatingPolls: number; failWith: (method: string, 
     }
     if (method === "POST" && m[2] === "/resume") {
       if (b.status !== "paused" && init.refuseResumeWhenRunning) return json({ error: "box is not paused" }, 409);
-      b.status = "running";
+      if (init.resumeLag && b.status === "paused") lag = init.resumeLag;
+      else b.status = "running";
       return json({});
     }
-    if (method === "POST" && m[2] === "/exec") return json({ exit_code: 0, output: "" });
+    if (method === "POST" && m[2] === "/exec") {
+      if (b.status !== "running" && b.status !== "idle") return json({ error: "box is not running" }, 409);
+      return json({ exit_code: 0, output: "" });
+    }
     return json({ error: "unhandled" }, 500);
   }) as typeof fetch;
   return { fetch: f, boxes, reqs, count: (method: string, re: RegExp) => reqs.filter((r) => r.method === method && re.test(r.path)).length };
 }
 
-const make = (fk: ReturnType<typeof fake>, extra = {}) => upstashBox({ apiKey: KEY, baseUrl: "https://box.test", fetch: fk.fetch, sleep: async () => {}, ...extra });
+const make = (fk: ReturnType<typeof fake>, extra = {}) => upstashBox({ apiKey: KEY, baseUrl: "https://box.test", labelScope: SCOPE, fetch: fk.fetch, sleep: async () => {}, ...extra });
 
 describe("labels", () => {
   it("fit the provider's constraints (<=20 chars of [A-Za-z0-9._:-]) and differ per dork", async () => {
-    const a = await dorkLabel(DORK);
+    const a = await dorkLabel(SCOPE, DORK);
     expect(a).toMatch(/^[A-Za-z0-9._:-]{1,20}$/);
-    expect(a).toBe(await dorkLabel(DORK));
-    expect(a).not.toBe(await dorkLabel(DORK + "x"));
+    expect(a).toBe(await dorkLabel(SCOPE, DORK));
+    expect(a).not.toBe(await dorkLabel(SCOPE, DORK + "x"));
+  });
+
+  it("are scoped per deployment: the same dork id in dev and prod gets different labels", async () => {
+    expect(await dorkLabel("https://prod-9.convex.cloud", DORK)).not.toBe(await dorkLabel(SCOPE, DORK));
+  });
+
+  it("a deployment never adopts or deletes another deployment's box", async () => {
+    const fk = fake();
+    const prod = await make(fk, { labelScope: "https://prod-9.convex.cloud" }).createFromSnapshot("snap_1", OPTS);
+    fk.boxes.get(prod.id)!.status = "error"; // the thing a dev create would otherwise sweep away
+    const dev = await make(fk).createFromSnapshot("snap_1", OPTS);
+    expect(dev.id).not.toBe(prod.id);
+    expect(fk.boxes.has(prod.id)).toBe(true);
+  });
+
+  it("the provider refuses to run without a scope", () => {
+    expect(() => upstashBox({ apiKey: KEY, labelScope: "" })).toThrow(/labelScope/);
   });
 });
 
@@ -75,7 +102,7 @@ describe("createFromSnapshot", () => {
     const { id } = await make(fk).createFromSnapshot("snap_1", OPTS);
     const post = fk.reqs.find((r) => r.method === "POST")!;
     expect(post.path).toBe("/v2/box/from-snapshot");
-    expect(post.body).toMatchObject({ snapshot_id: "snap_1", name: DORK, labels: [await dorkLabel(DORK)], init_command: "dorks-bridge", env_vars: OPTS.env });
+    expect(post.body).toMatchObject({ snapshot_id: "snap_1", name: DORK, labels: [await dorkLabel(SCOPE, DORK)], init_command: "dorks-bridge", env_vars: OPTS.env });
     expect(post.key).toBe(KEY);
     expect(post.path).not.toContain(KEY);
     expect(fk.boxes.has(id)).toBe(true);
@@ -127,7 +154,7 @@ describe("createFromSnapshot", () => {
 
   it("two creators racing converge on one box: the loser deletes itself", async () => {
     const fk = fake();
-    const label = await dorkLabel(DORK);
+    const label = await dorkLabel(SCOPE, DORK);
     // The other creator's box appears between our empty list and our create (older created_at wins).
     let injected = false;
     const racing = (async (url: any, o?: RequestInit) => {
@@ -139,7 +166,7 @@ describe("createFromSnapshot", () => {
       }
       return res;
     }) as typeof fetch;
-    const { id } = await upstashBox({ apiKey: KEY, baseUrl: "https://box.test", fetch: racing, sleep: async () => {} }).createFromSnapshot("snap_1", OPTS);
+    const { id } = await upstashBox({ apiKey: KEY, baseUrl: "https://box.test", labelScope: SCOPE, fetch: racing, sleep: async () => {} }).createFromSnapshot("snap_1", OPTS);
     expect(id).toBe("box_other");
     expect([...fk.boxes.keys()]).toEqual(["box_other"]);
   });
@@ -207,9 +234,52 @@ describe("resume", () => {
     await expect(make(fake()).resume("box_gone")).rejects.toBeInstanceOf(BoxNotFoundError);
   });
 
-  it("recognises 'not found' in the body even on a non-404 status", async () => {
-    const fk = fake({ failWith: () => new Response(JSON.stringify({ error: "box not found" }), { status: 400 }) });
-    await expect(make(fk).resume("box_1")).rejects.toBeInstanceOf(BoxNotFoundError);
+  it("'not found' text on a non-404 status is NOT a missing box (5xx pages, 'image not found', 400s)", async () => {
+    for (const status of [400, 500, 502, 503]) {
+      for (const text of [JSON.stringify({ error: "runtime image not found" }), "<html>upstream service not found</html>", JSON.stringify({ error: "box does not exist" })]) {
+        const fk = fake({ failWith: () => new Response(text, { status }) });
+        const err = await make(fk).resume("box_1").then(() => null, (e) => e);
+        expect(err, `${status} ${text}`).toBeInstanceOf(UpstashBoxError);
+        expect(err).not.toBeInstanceOf(BoxNotFoundError);
+        expect(err.message).toMatch(/^upstash \w+: HTTP \d+$/);
+      }
+    }
+  });
+
+  it("a 404 is only 'gone' if the box itself is confirmed missing while the API answers", async () => {
+    // Wrong base URL / renamed route: every path 404s, including the list endpoint -> configuration error, not a missing box.
+    const everything404 = fake({ failWith: () => new Response("<html>Cannot POST</html>", { status: 404 }) });
+    const err = await make(everything404).resume("box_1").then(() => null, (e) => e);
+    expect(err).toBeInstanceOf(UpstashBoxError);
+    expect(err).not.toBeInstanceOf(BoxNotFoundError);
+    expect(err.message).toMatch(/UPSTASH_BOX_BASE_URL/);
+    // The same for pause and delete: a misconfigured URL must not read as "already gone" (silent leak).
+    await expect(make(everything404).delete("box_1")).rejects.toThrow(/UPSTASH_BOX_BASE_URL/);
+    await expect(make(everything404).pause("box_1")).rejects.toThrow(/UPSTASH_BOX_BASE_URL/);
+  });
+
+  it("a 404 on the resume POST while the box exists is not 'gone'", async () => {
+    const fk = fake({ failWith: (m, p) => (m === "POST" && p.endsWith("/resume") ? new Response("{}", { status: 404 }) : undefined) });
+    const p = make(fk);
+    const { id } = await p.createFromSnapshot("snap_1", OPTS);
+    fk.boxes.get(id)!.status = "paused";
+    const err = await p.resume(id).then(() => null, (e) => e);
+    expect(err).toBeInstanceOf(UpstashBoxError);
+    expect(err).not.toBeInstanceOf(BoxNotFoundError);
+    expect(fk.boxes.has(id)).toBe(true);
+  });
+
+  it("410 and a deleted-status box count as gone", async () => {
+    const fk = fake({ failWith: (m, p) => (m === "POST" && p.endsWith("/resume") ? new Response("{}", { status: 410 }) : undefined) });
+    const p = make(fk);
+    const { id } = await p.createFromSnapshot("snap_1", OPTS);
+    fk.boxes.delete(id);
+    await expect(p.resume(id)).rejects.toBeInstanceOf(BoxNotFoundError);
+    const fk2 = fake({ refuseResumeWhenRunning: true });
+    const p2 = make(fk2);
+    const b = await p2.createFromSnapshot("snap_1", OPTS);
+    fk2.boxes.get(b.id)!.status = "deleted";
+    await expect(p2.resume(b.id)).rejects.toBeInstanceOf(BoxNotFoundError);
   });
 
   it("still fails when a refused resume leaves the box in a bad state", async () => {
@@ -315,12 +385,107 @@ describe("errors", () => {
     const boom = (async () => {
       throw new Error(`connect failed for ${KEY}`);
     }) as typeof fetch;
-    const err = await upstashBox({ apiKey: KEY, fetch: boom }).delete("box_1").then(() => null, (e) => e);
+    const err = await upstashBox({ apiKey: KEY, labelScope: SCOPE, fetch: boom }).delete("box_1").then(() => null, (e) => e);
     expect(err.message).toBe("upstash delete: network error (Error)");
   });
 
   it("rate limits are reported as such", async () => {
     const fk = fake({ failWith: () => new Response("{}", { status: 429 }) });
     await expect(make(fk).resume("box_1")).rejects.toThrow(/rate limited/);
+  });
+});
+
+describe("exec start mode", () => {
+  const exec = { startMode: "exec" as const };
+
+  it("a retry that finds its box idle (crashed before the first start) still starts the bridge", async () => {
+    const fk = fake();
+    const p = make(fk, exec);
+    const a = await p.createFromSnapshot("snap_1", OPTS);
+    fk.reqs.length = 0; // pretend the process died right after the first create; the start never happened
+    const b = await p.createFromSnapshot("snap_1", OPTS);
+    expect(b.id).toBe(a.id);
+    expect(fk.count("POST", /from-snapshot/)).toBe(0);
+    expect(fk.count("POST", new RegExp(`/${a.id}/exec$`))).toBe(1);
+  });
+
+  it("waits until the box reports running before it execs after a resume", async () => {
+    const fk = fake({ resumeLag: 3 }); // exec answers 409 while the box is still paused
+    const p = make(fk, exec);
+    const { id } = await p.createFromSnapshot("snap_1", OPTS);
+    fk.boxes.get(id)!.status = "paused";
+    await p.resume(id);
+    const order = fk.reqs.filter((r) => new RegExp(`/${id}(/exec|/resume)?$`).test(r.path)).map((r) => `${r.method} ${r.path.split(id)[1] || "/"}`);
+    expect(order.indexOf("POST /resume")).toBeGreaterThan(-1);
+    expect(order.lastIndexOf("GET /")).toBeGreaterThan(order.indexOf("POST /resume"));
+    expect(order.at(-1)).toBe("POST /exec");
+    expect(fk.boxes.get(id)!.status).toBe("running");
+  });
+
+  it("gives up if the box never comes up after resume", async () => {
+    const fk = fake({ resumeLag: 1_000_000 });
+    let t = 0;
+    const p = make(fk, { ...exec, now: () => t, sleep: async (ms: number) => void (t += ms) });
+    const { id } = await p.createFromSnapshot("snap_1", OPTS);
+    fk.boxes.get(id)!.status = "paused";
+    await expect(p.resume(id)).rejects.toThrow(/not running/);
+    expect(fk.count("POST", /\/exec$/)).toBe(1); // only the create-time start
+  });
+});
+
+describe("ready deadline", () => {
+  it("is wall-clock: slow polls cannot stretch it, and the half-made box is deleted", async () => {
+    let t = 0;
+    const fk = fake({ creatingPolls: 1_000_000 });
+    // every request "takes" 20s of wall clock, on top of the 2s sleeps
+    const slow = (async (u: any, o?: RequestInit) => {
+      t += 20_000;
+      return fk.fetch(u, o);
+    }) as typeof fetch;
+    const p = upstashBox({ apiKey: KEY, baseUrl: "https://box.test", labelScope: SCOPE, fetch: slow, now: () => t, sleep: async (ms) => void (t += ms) });
+    await expect(p.createFromSnapshot("snap_1", OPTS)).rejects.toThrow(/still creating after 240s/);
+    expect(fk.count("GET", /\/v2\/box\/box_1$/)).toBeLessThan(15); // ~240s / (20s request + 2s sleep); a count-only loop would poll 120 times
+    expect(fk.boxes.size).toBe(0);
+  });
+});
+
+describe("execStartScript (run for real with sh)", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs.splice(0)) {
+      try {
+        const pid = readFileSync(`${d}/dorks-start.pid`, "utf8").trim();
+        process.kill(Number(pid), "SIGKILL");
+      } catch {}
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+  const run = (script: string) => execFileSync("sh", ["-c", script], { stdio: "pipe" });
+  // Processes whose whole command line ends in the started command (wrapper shells running the test script end differently).
+  const sleepers = () => execFileSync("sh", ["-c", "ps -eo args= | grep -c '[s]leep 31337$' || true"]).toString().trim();
+
+  it.skipIf(process.platform !== "linux")("is idempotent: a second run does not start a second process", async () => {
+    const dir = mkdtempSync(`${tmpdir()}/dorks-start-`);
+    dirs.push(dir);
+    const script = execStartScript("sleep 31337", dir);
+    run(script);
+    await new Promise((r) => setTimeout(r, 200));
+    const pid = readFileSync(`${dir}/dorks-start.pid`, "utf8");
+    expect(Number(sleepers())).toBe(1);
+    run(script);
+    run(script);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(readFileSync(`${dir}/dorks-start.pid`, "utf8")).toBe(pid);
+    expect(Number(sleepers())).toBe(1);
+  });
+
+  it.skipIf(process.platform !== "linux")("a stale pidfile pointing at an unrelated live process does not block the start", async () => {
+    const dir = mkdtempSync(`${tmpdir()}/dorks-start-`);
+    dirs.push(dir);
+    writeFileSync(`${dir}/dorks-start.pid`, String(process.pid)); // alive, but not our command (PID reuse after a pause)
+    run(execStartScript("sleep 31337", dir));
+    await new Promise((r) => setTimeout(r, 200));
+    expect(Number(sleepers())).toBe(1);
+    expect(readFileSync(`${dir}/dorks-start.pid`, "utf8").trim()).not.toBe(String(process.pid));
   });
 });
