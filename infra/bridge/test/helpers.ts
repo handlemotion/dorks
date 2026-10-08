@@ -21,11 +21,17 @@ export async function waitFor<T>(fn: () => T | undefined | false | Promise<T | u
   }
 }
 
-/** Builds dist/cli.mjs once (the credential helper runs it as a child of git). */
+let built: string | null = null;
+/**
+ * Builds the bundle once per test process (the credential helper and the hooks run it as a child). Into a directory of its own: test files
+ * run in parallel workers, and rebuilding a shared dist/cli.mjs while another worker executes it hands that worker a half-written file.
+ */
 export function builtCli() {
+  if (built) return built;
   const root = fileURLToPath(new URL("..", import.meta.url));
-  execFileSync(process.execPath, [join(root, "scripts/build.mjs")], { stdio: "pipe" });
-  return join(root, "dist/cli.mjs");
+  const out = join(tmp("cli-"), "cli.mjs");
+  execFileSync(process.execPath, [join(root, "scripts/build.mjs")], { stdio: "pipe", env: { ...process.env, DORKS_BUILD_OUT: out } });
+  return (built = out);
 }
 
 /**
