@@ -118,8 +118,9 @@ Webhook (`http.ts` route `POST /github/webhook`):
 - **`notify` frames** are written to stdin like `user_message`, and deduped and journaled the same way.
 - **Local RPC**: the existing credential socket grows into a small JSON-lines RPC (`<state>/cred/cred.sock`, owned by the Claude
   user). Methods: `token`, `pr.sub`, `pr.unsub`, `pr.list`, `hook.stop`, `hook.postToolUse`, `hook.sessionStart`.
-  `pr.*` call the Convex functions above. `pr.list` reads the cached reactive `bridge.subscriptions`.
-- **`dorks` CLI** (the same binary): `dorks pr sub <url|owner/name#n>`, `dorks pr unsub …`, `dorks pr list [--json]`,
+  `pr.*` call the Convex functions above. `pr.list` reads the cached reactive `bridge.subscriptions`. The bridge sets `DORKS_SOCK`
+  (the socket path) in Claude's environment so the CLI, the shim and the hooks find it.
+- **`dorks` CLI** (the same binary, run as `dorks`: the role is chosen by the name it is invoked as, see `infra/bridge/README.md`): `dorks pr sub <url|owner/name#n>`, `dorks pr unsub …`, `dorks pr list [--json]`,
   `dorks hook <event>` (reads hook JSON on stdin, prints hook JSON on stdout).
 - **`gh` shim** (installed ahead of the real `gh` on `PATH` in the snapshot; the real one is found through `DORKS_REAL_GH`):
   - It gets the token from the socket, sets `GH_TOKEN`, and execs the real `gh`, so everything works, including the `gh stack` extension.
@@ -127,14 +128,16 @@ Webhook (`http.ts` route `POST /github/webhook`):
   - It never blocks or alters output.
 - **Multi-repo**: `configure` still names the starting repo. Any other `github.com` repo the agent clones uses the same
   credential helper, configured globally for the Claude user (`credential.https://github.com.helper`).
-- **Hooks** are written by the bridge to `<state>/claude-settings.json` and passed with `claude --settings <file>`, which merges
-  with the repo's own settings. All of them run `dorks hook <event>`.
+- **Hooks** are written by the bridge to `<state>/claude-settings.json` and passed with `claude --settings <file>`. `--settings` sits above the
+  user's and the project's settings and hooks from every source run, so the repo's own `.claude/settings.json` hooks still fire. All of them are command
+  hooks running `dorks hook <stop|post-tool-use|session-start>` (through the bundle's absolute path, so they do not depend on `PATH`). The command reads the hook
+  JSON on stdin, calls `hook.stop` / `hook.postToolUse` / `hook.sessionStart` on `DORKS_SOCK` and prints the answer; **it fails open** (any error: exit 0, no output).
 
 | Hook | Behaviour |
 |---|---|
-| `Stop` | If any repo under the workdir has commits that aren't pushed, or a pushed branch with no open PR, block once per condition (`stop_hook_active`) with a reason. The reason asks the agent to validate locally (tests, typecheck, lint for what it changed), push, and open a PR with `gh pr create`, or to explain why not. Otherwise allow the stop. |
-| `PostToolUse` (Bash) | Detects `gh pr create` URLs (a backup for the shim) and `gh pr merge` / `gh pr close`, then subscribes or unsubscribes. |
-| `SessionStart` (`resume`, `compact`, `startup`) | Adds `additionalContext` listing the subscribed PRs (repo#n, CI, review, mergeable, attempts) and a reminder of how autonomy works. |
+| `Stop` | Scans the repos under the workdir with local git reads. If a branch has commits its remote counterpart doesn't, or has commits beyond the default branch and was never pushed, or was pushed and has no PR (cached subscriptions first, then `gh pr list --head`; any PR state counts; unknown never blocks), it blocks with a reason. The reason asks the agent to validate locally (tests, typecheck, lint for what changed, using the repo's scripts), push, and open a PR with `gh pr create`, or to explain why it is intentionally not pushing. Otherwise it allows the stop, whether or not subscriptions are active. It cannot loop: `stop_hook_active` always allows, a condition is raised once per session (persisted, forgotten when it clears), and a turn answering a `ready` notification is not gated. |
+| `PostToolUse` (Bash) | Detects `gh pr create` / `gh stack submit` URLs in the tool result (a backup for the shim, which cannot watch a terminal; idempotent) and `gh pr merge` / `gh pr close` results, then subscribes (`auto`) or unsubscribes. Returns nothing. |
+| `SessionStart` (`startup`, `resume`, `compact`) | Adds `additionalContext` listing the subscribed PRs (`repo#n`, title, CI, review, mergeable, attempts n/2, stalled) and a reminder of how autonomy works. |
 
 ## Slices
 

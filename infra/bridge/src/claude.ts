@@ -16,6 +16,8 @@ export interface AgentOptions {
   permissionMode: string;
   resumeSessionId: string | null;
   extraArgs: string[];
+  /** Hooks for the CLI (`--settings`); merged with the repo's own settings, see hooks.ts. */
+  settingsFile?: string;
   runAs?: Identity | null;
   redactor: Redactor;
   log: Log;
@@ -58,11 +60,12 @@ const STDERR_TAIL = 2048;
  *   --verbose                       required by stream-json output
  *   --include-partial-messages      emit stream_event deltas so text streams token by token
  *   --permission-mode <mode>        see README: bypassPermissions, because nobody can answer a prompt in an unattended box
+ *   --settings <file>               the autonomy hooks (hooks.ts); applied above user/project settings, whose hooks still run
  *   --resume <id>                   continue the stored session after a sleep/wake or restart
  * Not used on purpose: --bare (it never reads OAuth, and we authenticate with CLAUDE_CODE_OAUTH_TOKEN), --no-session-persistence
  * (the transcript on disk is what makes resume work).
  */
-export function claudeArgs(o: { permissionMode: string; resumeSessionId: string | null; extraArgs?: string[] }): string[] {
+export function claudeArgs(o: { permissionMode: string; resumeSessionId: string | null; extraArgs?: string[]; settingsFile?: string }): string[] {
   return [
     "-p",
     "--input-format", "stream-json",
@@ -70,6 +73,7 @@ export function claudeArgs(o: { permissionMode: string; resumeSessionId: string 
     "--verbose",
     "--include-partial-messages",
     "--permission-mode", o.permissionMode,
+    ...(o.settingsFile ? ["--settings", o.settingsFile] : []),
     ...(o.resumeSessionId ? ["--resume", o.resumeSessionId] : []),
     ...(o.extraArgs ?? []),
   ];
