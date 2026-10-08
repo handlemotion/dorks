@@ -60,7 +60,7 @@ export class SimBox implements BoxProvider {
     const id = `box-${this.boxes.size + 1}-${opts.name}`;
     if (this.announce) {
       const e = (opts as { env?: Record<string, string> }).env;
-      console.log(`[sim box] start bridge: node infra/bridge-sim/sim.mjs ${e?.DORK_ID} ${e?.BRIDGE_SECRET}`);
+      console.log(`[sim box] start bridge: DORK_ID=${e?.DORK_ID} BRIDGE_SECRET=<derived> node infra/bridge-sim/convex-sim.mjs`);
     }
     this.boxes.set(id, { name: opts.name, running: true });
     return { id };

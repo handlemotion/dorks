@@ -9,7 +9,6 @@ import { cloudflare } from '@cloudflare/vite-plugin'
 
 const config = defineConfig({
   resolve: { tsconfigPaths: true },
-  server: { proxy: { '/api': 'http://localhost:8787' } },
   plugins: [
     devtools(),
     cloudflare({ viteEnvironment: { name: 'ssr' } }),

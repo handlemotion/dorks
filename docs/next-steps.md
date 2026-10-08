@@ -158,7 +158,7 @@ Critical path: P0-1/2 → (P0-3 ‖ P0-4 ‖ P0-7) → P0-5 → P0-6 → P0-8. A
 
 | # | Item | Size |
 |---|---|---|
-| P2-1 | Delete `apps/api` (routes, DO, D1 migrations, tests, `shared/client/stream.ts`) per the spike's retire list; drop wrangler DO/D1 config | S |
+| P2-1 | ~~Delete `apps/api`~~ done: carried files now live in `apps/convex/core/`, the Worker/DO/D1 and `shared/client/stream.ts` are gone | S |
 | P2-2 | Key rotation: `ENCRYPTION_KEY_V2` keyring, versioned bridge HMAC (H7, H8) | S |
 | P2-3 | Lint (eslint or biome) across the workspace; remove the template `expo lint` script or configure it | S |
 | P2-4 | Log hygiene: return expected errors as values or filter `ConvexError` noise (H11) | XS |

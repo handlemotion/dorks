@@ -1,8 +1,8 @@
 import { fromBridge, type ClientEventBody, type CommandFrame, type ToBridge } from "@dorks/shared";
 import { ConvexError, v } from "convex/values";
-import { aad, decrypt, keyringFromEnv } from "../../api/src/lib/crypto";
-import { agentTokenScope, createInstallationToken, GithubHttpError } from "../../api/src/lib/github";
-import { createNormalizer } from "../../api/src/normalize";
+import { aad, decrypt, keyringFromEnv } from "../core/crypto";
+import { agentTokenScope, createInstallationToken, GithubHttpError } from "../core/github";
+import { createNormalizer } from "../core/normalize";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";

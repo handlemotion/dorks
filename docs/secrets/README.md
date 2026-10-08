@@ -67,7 +67,6 @@ For a brand-new secret also: read it in code by exact name, add a row to [invent
 | Local dev servers | `dotenvx run --strict -f secrets/.env.dorks_dev -- <cmd>` via the root `pnpm dev*` scripts (see [Local development](#local-development)) |
 | Convex functions | Read the _deployment's_ env. Dev: `apps/convex/scripts/dev.mjs` pushes them. Prod: you set them on the production deployment ([Convex guide](providers/convex.md)) |
 | Web / iOS builds | `VITE_*` / `EXPO_PUBLIC_*` injected at build time |
-| Legacy api Worker | `wrangler.jsonc` `secrets.required` names; prod via `wrangler secret put` |
 | CI / deploys | `CONVEX_DEPLOY_KEY`, `CLOUDFLARE_*` (no CI exists yet; give CI the prod key as a CI secret) |
 
 ## Open decision: syncing to hosting providers
@@ -88,17 +87,15 @@ pnpm dev
 | `pnpm dev:convex` | `convex dev` after syncing function env (`apps/convex/scripts/dev.mjs`) | |
 | `pnpm dev:web` | Vite on :3000 | |
 | `pnpm dev:ios` | Expo | |
-| `pnpm dev:api` | legacy Hono + Durable Object on wrangler :8787 | |
 
 Run from the repo root: the root scripts are `dotenvx run --strict -f secrets/.env.dorks_dev -- pnpm --filter ... dev`, the pattern dotenvx documents. Run anything else with the same prefix, e.g. prod build: `pnpm exec dotenvx run --strict -f secrets/.env.dorks_prod -- pnpm --filter @dorks/web build` (needs the prod key). Always keep `--strict`: without it a missing key injects ciphertext and exits 0. dotenvx looks for `.env.keys` in the current directory, so run from the root (or pass `-fk <path>`).
 
 How each process gets env:
 
-- **api (wrangler)**: `secrets.required` in `wrangler.jsonc` makes wrangler read those names from the process env. Non-secret `vars` stay in `wrangler.jsonc`. A leftover `apps/api/.dev.vars` takes priority over the process env; delete it.
 - **web (Vite)** / **ios (Expo)**: `VITE_*` / `EXPO_PUBLIC_*` are read from the process env at dev/build time (public values). After changing them for Expo, restart with `--clear`.
 - **convex**: functions read the deployment's env, so `apps/convex/scripts/dev.mjs` pushes every `process.env.NAME` the functions use (scanned from `convex/`, `CONVEX_*` excluded) with `convex env set`, values via stdin. Names missing from `secrets/.env.dorks_dev` are listed and left alone. Deployment selection (`CONVEX_DEPLOYMENT` or self-hosted URL/admin key) is `convex dev`'s own gitignored `apps/convex/.env.local`.
 
-Running without dotenvx: run the app's own script from its folder (`cd apps/web && pnpm dev`) and supply env yourself via the gitignored `apps/api/.dev.vars`, `apps/web/.env.local`, `apps/ios/.env.local`, or `npx convex env set`.
+Running without dotenvx: run the app's own script from its folder (`cd apps/web && pnpm dev`) and supply env yourself via the gitignored `apps/web/.env.local`, `apps/ios/.env.local`, or `npx convex env set`.
 
 ### Troubleshooting
 

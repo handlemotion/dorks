@@ -1,4 +1,4 @@
-import { BoxNotFoundError, type BoxProvider } from "../../../api/src/lib/box";
+import { BoxNotFoundError, type BoxProvider } from "../../core/box";
 
 // Upstash Box REST provider. Endpoints and bodies follow the official SDK (@upstash/box 0.7.9, github.com/upstash/box), because
 // the REST reference is not published as docs; see docs/upstash-box.md for sources and the items still marked UNKNOWN.

@@ -6,15 +6,15 @@ import { internal, api } from "../convex/_generated/api";
 import type { DataModel, Id } from "../convex/_generated/dataModel";
 import schema from "../convex/schema";
 import { bridgeSecret } from "../convex/lib/bridgeAuth";
-import { aad, encrypt, keyringFromEnv } from "../../api/src/lib/crypto";
+import { aad, encrypt, keyringFromEnv } from "../core/crypto";
 
 const gh = vi.hoisted(() => ({
   calls: [] as { installationId: unknown; scope: unknown }[],
   fail: null as null | { status: number } | "network",
   repositories: undefined as undefined | "match" | string[],
 }));
-vi.mock("../../api/src/lib/github", async (orig) => {
-  const actual = await orig<typeof import("../../api/src/lib/github")>();
+vi.mock("../core/github", async (orig) => {
+  const actual = await orig<typeof import("../core/github")>();
   return {
     ...actual,
     createInstallationToken: async (_env: unknown, installationId: unknown, _f: unknown, scope: { repositories: string[] }) => {

@@ -13,5 +13,3 @@ worker-configuration.d.ts
 # encrypted secrets (dotenvx); the private keys in .env.keys stay ignored
 !secrets/.env.dorks_dev
 !secrets/.env.dorks_prod
-.dev.vars*
-!.dev.vars.example

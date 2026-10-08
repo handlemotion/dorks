@@ -3,7 +3,7 @@ import { ConvexError } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
-import { reduce, type Effect, type Input, type Result } from "../../../api/src/lifecycle/machine";
+import { reduce, type Effect, type Input, type Result } from "../../core/machine";
 
 export const WATCHDOG_MS = 3 * 60_000; // creating/waking must reach `ready` (or a lost bridge must return) within this
 export const GH_REFRESH_MS = 45 * 60_000; // installation tokens last 1h
