@@ -59,8 +59,7 @@ function requireEnv(name: string) {
 }
 
 export const createAuth = (ctx: GenericCtx<DataModel>) => {
-  // `registerRoutes` (http.ts) builds the auth at module load, so a missing variable fails the deploy ("Failed to analyze http.js"),
-  // not the first request. The same check runs per request as a backstop.
+  // Checked per request, not at import or deploy: http.ts registers routes lazily so env can be set after the first push.
   const siteUrl = requireEnv("SITE_URL"); // otherwise it is silently dropped from trustedOrigins and web sign-in just fails
   const secret = requireEnv("BETTER_AUTH_SECRET");
   return betterAuth({

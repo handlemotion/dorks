@@ -4,7 +4,7 @@ Sign-in is email OTP via `@convex-dev/better-auth` (`apps/convex/convex/auth.ts`
 
 ## Required Convex env
 
-`http.ts` builds the auth when the module loads, so a missing `SITE_URL` or `BETTER_AUTH_SECRET` fails the **deploy** (`Failed to analyze http.js: SITE_URL is not set…`), including the first `convex dev` on a fresh project and preview deployments: set both before pushing. `createAuth` repeats the check per request as a backstop.
+`createAuth` throws on every auth request if `SITE_URL` or `BETTER_AUTH_SECRET` is missing, naming the variable (sign-in fails loudly, with a 500, instead of silently dropping the origin). Routes are registered lazily (`registerRoutesLazy`), so a deploy succeeds without them: CI and fresh projects can push first and run `convex env set` after.
 
 | Variable | Why |
 |---|---|
