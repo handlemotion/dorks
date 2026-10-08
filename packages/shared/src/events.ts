@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { notifyKind, prRef } from "./autonomy";
 
 export const dorkState = z.enum(["creating", "working", "idle", "sleeping", "waking", "error"]);
 
@@ -14,6 +15,10 @@ export const clientEvent = z.discriminatedUnion("type", [
   z.object({ ...base, type: z.literal("turn_complete"), durationMs: z.number() }),
   z.object({ ...base, type: z.literal("pr_opened"), url: z.string(), number: z.number() }),
   z.object({ ...base, type: z.literal("pr_merged"), url: z.string(), number: z.number() }),
+  // An autonomy notification was handed to the agent (the transcript's event card). `text` is the human-readable digest, without the envelope.
+  z.object({ ...base, type: z.literal("notify"), kinds: z.array(notifyKind), prs: z.array(prRef), text: z.string() }),
+  // A PR subscription changed (subscribed, ended, or stalled after CI_FIX_MAX_ATTEMPTS).
+  z.object({ ...base, type: z.literal("subscription"), repo: z.string(), number: z.number(), status: z.enum(["active", "stalled", "ended"]), reason: z.string().optional() }),
   z.object({ ...base, type: z.literal("rate_limited"), resetsAt: z.number().optional() }),
   z.object({ ...base, type: z.literal("agent_exited"), message: z.string() }),
   z.object({ ...base, type: z.literal("error"), message: z.string() }),

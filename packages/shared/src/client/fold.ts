@@ -62,6 +62,12 @@ export function fold(view: DorkView, e: ClientEvent): DorkView {
       v.prUrl = e.url;
       notice("info", `${e.type === "pr_opened" ? "PR opened" : "PR merged"}: ${e.url}`);
       break;
+    case "notify":
+      notice("info", e.text);
+      break;
+    case "subscription":
+      notice(e.status === "stalled" ? "error" : "info", `${e.repo}#${e.number}: ${e.status}${e.reason ? ` (${e.reason})` : ""}`);
+      break;
     case "rate_limited":
       v.rateLimitedUntil = e.resetsAt ?? null;
       notice("error", e.resetsAt ? `Rate limited until ${new Date(e.resetsAt).toISOString()}` : "Rate limited");
