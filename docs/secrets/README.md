@@ -12,10 +12,10 @@
 | --- | --- | --- |
 | Encrypted values (committed) | `secrets/.env.dev` | `secrets/.env.prod` |
 | Private key (never committed) | `DOTENV_PRIVATE_KEY_DEV` | `DOTENV_PRIVATE_KEY_PROD` |
-| Who holds it | Conductor repo env, every agent/workspace, devs | **You / password manager / CI only** |
+| Where it lives | Conductor repo env (every agent/workspace) | **[Dotenvx Armor](https://dotenvx.com/docs/custody/armor/)** (armored key `032 B7D`, moved 2026-10-08). Not in git, not on disk, not in Conductor |
 
 - The public key is inside each file, so anyone can **add or overwrite** values without being able to **read** them (validated). That is how agents can seed prod without seeing it. Because overwriting is possible, review every `secrets/.env.prod` diff in PRs.
-- Locally the keys can sit in `.env.keys` at the repo root (gitignored, dotenvx writes it on first `set`). Conductor/CI use the env vars instead.
+- A key can also sit in `.env.keys` at the repo root (gitignored; dotenvx writes it on first `set`). Dev uses the Conductor env var; prod lives in Armor.
 - A leaked **dev** key decrypts all git history of dev values. Keep dev values low-value (sim mode, dev tokens); real third-party prod credentials go only in `.env.prod`.
 - Rotating a key means decrypting the file (`dotenvx decrypt -f secrets/.env.prod`), deleting its entry in `.env.keys`, and re-encrypting (`dotenvx encrypt -f ...`, which makes a new keypair). If the old key may have leaked, also rotate the underlying secrets: old git history stays decryptable with the old key.
 - `staging` is not used: one production target, no CI.
@@ -27,15 +27,13 @@
 - Dummy values for things a human must obtain are `REPLACE_ME__<PROVIDER>` (status `dummy` in the inventory). A dummy in prod means that feature is not ready.
 - **Real values are never committed in plaintext, pasted into issues/chat, or logged.** `.env*` is gitignored except `*.example` and the two encrypted files.
 
-## One-time setup (human steps)
+## One-time setup (done for dorks, 2026-10-08)
 
-`scripts/seed-secrets.sh` has already created both files (generated values + dummies). You need to place the keys:
-
-1. Find the keys (`.env.keys` at the repo root, if it still exists; it is gitignored and may not sync). Do not paste them into chat.
-2. Save **both** keys in your password manager (1Password etc.).
-3. In Conductor, add `DOTENV_PRIVATE_KEY_DEV` to the environment for this repo, the same way the other repo env vars are set (local: `.conductor/settings.local.toml` under `[environment_variables]`; cloud: the cloud environment config). **Do not add the prod key to Conductor.**
-4. Merge to `main` (encrypted files must reach `main` for other workspaces and cloud boxes), then delete `.env.keys` from any shared machine.
-5. Fill the dummies with the provider guides (see "Adding or changing a secret").
+- **Dev:** `DOTENV_PRIVATE_KEY_DEV` is a Conductor env var for this repo, so every workspace and agent decrypts `secrets/.env.dev`.
+- **Prod:** the prod key was moved into Dotenvx Armor with `dx armor up -f secrets/.env.prod` (`alias dx="npx -y @dotenvx/dotenvx"`; `armor up` uploads the key and deletes the local copy, the encrypted file is untouched). To read prod you must be logged in (`dx login`) on that machine. Verify any time: `dx run --strict -f secrets/.env.prod -- node -e 'console.log("ok")'`.
+- **Other machine or teammate:** `dx login`, then the same `dx run` works with no key file. Give new people access to the key in the Armor dashboard (Armored Keys -> access).
+- If Armor is ever unavailable: `dx armor down -f secrets/.env.prod` writes the key back to `.env.keys` (keep it out of git).
+- Fill the `REPLACE_ME__*` dummies with the provider guides (below).
 
 ## Adding or changing a secret
 
@@ -90,7 +88,7 @@ Running without dotenvx: run the app's own script from its folder (`cd apps/web 
 ### Troubleshooting
 
 - **`no decryption key`**: set `DOTENV_PRIVATE_KEY_DEV` (see One-time setup) or put `.env.keys` at the repo root.
-- **`DECRYPTION_FAILED`**: wrong key for that file (dev key cannot read prod), or the file was re-encrypted: get the current key from the password manager.
+- **`DECRYPTION_FAILED`**: wrong key for that file (dev key cannot read prod), or the file was re-encrypted: for prod run `dx login` (the key is in Armor); for dev check the Conductor env var.
 - **A value looks like `encrypted:...` at runtime**: something ran `dotenvx` without `--strict`. Use the root `pnpm dev*` scripts or add `--strict`.
 - **Convex says an env var is not set**: it was reported under "not in secrets/.env.dev" by `convex dev`; add it with `scripts/set-secret.sh dev NAME` and restart.
 - **Changes not picked up**: values are read once at process start; restart the dev server.
