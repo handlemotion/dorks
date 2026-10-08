@@ -1,8 +1,9 @@
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, renameSync } from "node:fs";
+import { chownSync, existsSync, mkdirSync, rmSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { CHILD_ENV_DENY } from "./config";
 import type { Log } from "./redact";
+import { asIdentity, type Identity } from "./runas";
 
 export class SetupError extends Error {
   constructor(readonly step: string) {
@@ -17,22 +18,26 @@ interface GitCtx {
   helper: string;
   log: Log;
   env?: NodeJS.ProcessEnv;
+  /** Run git as this user (see runas.ts) so the working tree is theirs. */
+  runAs?: Identity | null;
 }
 
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
-function run(args: string[], cwd: string | undefined, env: NodeJS.ProcessEnv): Promise<{ code: number; stdout: string }> {
+function runGit(args: string[], cwd: string | undefined, env: NodeJS.ProcessEnv, id?: Identity | null): Promise<{ code: number; stdout: string }> {
   return new Promise((resolve) => {
-    execFile("git", args, { cwd, env, maxBuffer: 16 * 1024 * 1024, timeout: 15 * 60_000 }, (err, stdout) => {
+    const [bin, argv] = asIdentity(id, "git", args);
+    execFile(bin, argv, { cwd: cwd ?? (id ? "/" : undefined), env, maxBuffer: 16 * 1024 * 1024, timeout: 15 * 60_000 }, (err, stdout) => {
       const code = err ? (typeof (err as { code?: unknown }).code === "number" ? ((err as { code: number }).code) : 1) : 0;
       resolve({ code, stdout: String(stdout ?? "") });
     });
   });
 }
 
-const gitEnv = (base: NodeJS.ProcessEnv): NodeJS.ProcessEnv => {
+const gitEnv = (base: NodeJS.ProcessEnv, id?: Identity | null): NodeJS.ProcessEnv => {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(base)) if (!CHILD_ENV_DENY.some((re) => re.test(k))) env[k] = v;
+  if (id) Object.assign(env, { HOME: id.home, USER: id.user, LOGNAME: id.user });
   env.GIT_TERMINAL_PROMPT = "0";
   env.GIT_ASKPASS = "";
   env.GCM_INTERACTIVE = "never";
@@ -43,7 +48,9 @@ const gitEnv = (base: NodeJS.ProcessEnv): NodeJS.ProcessEnv => {
 export async function prepareRepo(ctx: GitCtx, repo: { fullName: string; branch: string }): Promise<string> {
   const { fullName, branch } = repo;
   if (!REPO_RE.test(fullName) || fullName.includes("..")) throw new SetupError("invalid repo name");
-  const env = gitEnv(ctx.env ?? process.env);
+  const id = ctx.runAs;
+  const env = gitEnv(ctx.env ?? process.env, id);
+  const run = (args: string[], cwd: string | undefined, e: NodeJS.ProcessEnv) => runGit(args, cwd, e, id);
   const dir = join(ctx.workDir, fullName);
   const url = `${ctx.gitBaseUrl}/${fullName}.git`; // clean URL: no credentials, ever
   // First entry resets any helper configured system/globally so only ours answers.
@@ -58,6 +65,7 @@ export async function prepareRepo(ctx: GitCtx, repo: { fullName: string; branch:
     rmSync(tmp, { recursive: true, force: true });
     rmSync(dir, { recursive: true, force: true }); // leftover of an interrupted clone; the dork's real work only ever lives in a complete clone
     mkdirSync(dirname(dir), { recursive: true });
+    if (id) for (const d of [ctx.workDir, dirname(dir)]) chownSync(d, id.uid, id.gid); // the clone is made by that user, inside these
     ctx.log("cloning", fullName);
     if ((await run([...helperCfg, "clone", "--quiet", url, tmp], undefined, env)).code !== 0) throw new SetupError("git clone");
     renameSync(tmp, dir);

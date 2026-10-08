@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, chownSync, mkdirSync, rmSync } from "node:fs";
 import { connect, createServer, type Server } from "node:net";
 import { dirname } from "node:path";
 
@@ -10,7 +10,8 @@ export class CredentialServer {
   private token: string | null = null;
   private server: Server | null = null;
 
-  constructor(readonly sockPath: string, private allowedHosts: string[]) {}
+  /** `owner`: the unprivileged user that runs git/claude (CLAUDE_RUN_AS); the socket and its dir belong to them so only they can ask. */
+  constructor(readonly sockPath: string, private allowedHosts: string[], private owner?: { uid: number; gid: number } | null) {}
 
   setToken(t: string) {
     this.token = t;
@@ -19,6 +20,7 @@ export class CredentialServer {
   async start() {
     mkdirSync(dirname(this.sockPath), { recursive: true, mode: 0o700 });
     chmodSync(dirname(this.sockPath), 0o700);
+    if (this.owner) chownSync(dirname(this.sockPath), this.owner.uid, this.owner.gid);
     rmSync(this.sockPath, { force: true }); // stale socket from a killed bridge
     this.server = createServer((sock) => {
       let buf = "";
@@ -43,6 +45,7 @@ export class CredentialServer {
       this.server!.listen(this.sockPath, () => res());
     });
     chmodSync(this.sockPath, 0o600);
+    if (this.owner) chownSync(this.sockPath, this.owner.uid, this.owner.gid);
   }
 
   close() {

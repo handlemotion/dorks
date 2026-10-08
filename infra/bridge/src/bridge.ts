@@ -1,11 +1,12 @@
 import { commandFrame, type FromBridge } from "@dorks/shared";
 import { createHash } from "node:crypto";
-import { appendFileSync, closeSync, fsyncSync, mkdirSync, openSync, readFileSync } from "node:fs";
+import { appendFileSync, chmodSync, closeSync, fsyncSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { Agent, childEnv, configDirOf, findTranscripts } from "./claude";
 import type { Config } from "./config";
 import { CredentialServer, helperCommand } from "./credentials";
+import { resolveIdentity, type Identity } from "./runas";
 import { EventPipeline } from "./events";
 import { prepareRepo, SetupError } from "./git";
 import { Outbox } from "./outbox";
@@ -34,6 +35,7 @@ export class Bridge {
   readonly outbox: Outbox;
   readonly pipeline: EventPipeline;
   private creds: CredentialServer;
+  private runAs: Identity | null;
   private agent: Agent | null = null;
   private agentKey = "";
   private lastSessionId: string | null = null;
@@ -73,12 +75,17 @@ export class Bridge {
         return "";
       }
     })();
-    this.creds = new CredentialServer(join(this.cfg.stateDir, "cred.sock"), ["github.com", host].filter(Boolean));
+    this.runAs = this.cfg.runAs ? resolveIdentity(this.cfg.runAs) : null;
+    // With privilege separation the socket lives in a directory only the Claude user can enter (the state dir itself stays root-only,
+    // traversable so that path resolves).
+    this.creds = new CredentialServer(join(this.cfg.stateDir, this.runAs ? "cred/cred.sock" : "cred.sock"), ["github.com", host].filter(Boolean), this.runAs);
     this.written = this.loadWritten();
   }
 
   // ------------------------------------------------------------------ lifecycle
   async start() {
+    mkdirSync(this.cfg.stateDir, { recursive: true, mode: 0o700 });
+    if (this.runAs) chmodSync(this.cfg.stateDir, 0o711); // others may traverse to cred/, not list or read
     await this.creds.start();
     await this.handshake(true);
     this.unsubs.push(this.t.subscribeCommands((cmds) => this.onCommands(cmds), () => this.log("commands subscription error")));
@@ -285,7 +292,7 @@ export class Bridge {
     let dir: string;
     try {
       dir = await prepareRepo(
-        { gitBaseUrl: this.cfg.gitBaseUrl, workDir: this.cfg.workDir, helper: helperCommand(...(this.d.selfCommand ?? [process.execPath, process.argv[1]!]), this.creds.sockPath), log: this.log, env: this.d.baseEnv },
+        { gitBaseUrl: this.cfg.gitBaseUrl, workDir: this.cfg.workDir, helper: helperCommand(...(this.d.selfCommand ?? [process.execPath, process.argv[1]!]), this.creds.sockPath), log: this.log, env: this.d.baseEnv, runAs: this.runAs },
         cfg.repo,
       );
     } catch (e) {
@@ -295,7 +302,7 @@ export class Bridge {
       return this.pipeline.control({ t: "agent_exited", code: null, stderrTail: `setup failed: ${step}` }, true);
     }
 
-    const env = childEnv(this.d.baseEnv ?? process.env, cfg.env, this.log);
+    const env = childEnv(this.d.baseEnv ?? process.env, cfg.env, this.log, this.runAs);
     this.agentCtx = { dir, env };
     this.agentKey = key;
     let resume = this.lastSessionId ?? cfg.resumeSessionId;
@@ -321,6 +328,7 @@ export class Bridge {
       permissionMode: this.cfg.permissionMode,
       resumeSessionId: resume,
       extraArgs: this.cfg.claudeExtraArgs,
+      runAs: this.runAs,
       redactor: this.redactor,
       log: this.log,
       onRaw: (raw) => {
@@ -363,7 +371,7 @@ export class Bridge {
   private persistWritten(id: string) {
     try {
       mkdirSync(this.cfg.stateDir, { recursive: true, mode: 0o700 });
-      appendFileSync(this.journal(), `${id}\n`);
+      appendFileSync(this.journal(), `${id}\n`, { mode: 0o600 });
     } catch {
       /* in-memory dedupe still applies */
     }

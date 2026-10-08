@@ -1,3 +1,4 @@
+import { readFileSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -11,6 +12,8 @@ export interface Config {
   /** Appended to the claude argv (space separated). Escape hatch, e.g. `--model sonnet`. */
   claudeExtraArgs: string[];
   permissionMode: string;
+  /** Run claude (and its git setup) as this unprivileged user; the bridge must then be root. See runas.ts. */
+  runAs: string | null;
   /** Base URL repos are cloned from: `<gitBaseUrl>/<owner>/<repo>.git`. */
   gitBaseUrl: string;
   /** Holds the credential socket + the dedupe journal. Not secrets at rest: the token only ever lives in memory. */
@@ -28,9 +31,30 @@ const num = (v: string | undefined, d: number) => {
   return v !== undefined && v !== "" && Number.isFinite(n) && n >= 0 ? n : d;
 };
 
+/**
+ * The bridge secret comes from a file (BRIDGE_SECRET_FILE, mode 0400) that is unlinked right after reading, so it never sits in the
+ * process environment (/proc/<pid>/environ) where a same-uid child could read it. BRIDGE_SECRET in env is the fallback.
+ */
+function readSecret(env: NodeJS.ProcessEnv): string | undefined {
+  const file = env.BRIDGE_SECRET_FILE;
+  if (!file) return env.BRIDGE_SECRET;
+  try {
+    const v = readFileSync(file, "utf8").trim();
+    try {
+      unlinkSync(file);
+    } catch {
+      /* read-only mount etc.: the file is still 0400 */
+    }
+    return v || env.BRIDGE_SECRET;
+  } catch {
+    return env.BRIDGE_SECRET; // file already consumed (restart after a pause): the entrypoint must provide it again, or env
+  }
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const { DORK_ID: dorkId, BRIDGE_URL: bridgeUrl, BRIDGE_SECRET: bridgeSecret } = env;
-  if (!dorkId || !bridgeUrl || !bridgeSecret) throw new Error("DORK_ID, BRIDGE_URL and BRIDGE_SECRET are required");
+  const { DORK_ID: dorkId, BRIDGE_URL: bridgeUrl } = env;
+  const bridgeSecret = readSecret(env);
+  if (!dorkId || !bridgeUrl || !bridgeSecret) throw new Error("DORK_ID, BRIDGE_URL and BRIDGE_SECRET (or BRIDGE_SECRET_FILE) are required");
   const stateDir = env.DORKS_STATE_DIR || join(homedir(), ".dorks-bridge");
   return {
     dorkId,
@@ -39,6 +63,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     claudeBin: env.CLAUDE_BIN || "claude",
     claudeExtraArgs: (env.DORKS_CLAUDE_ARGS ?? "").split(/\s+/).filter(Boolean),
     permissionMode: env.DORKS_PERMISSION_MODE || "bypassPermissions",
+    runAs: env.CLAUDE_RUN_AS || null,
     gitBaseUrl: (env.DORKS_GIT_BASE_URL || "https://github.com").replace(/\/+$/, ""),
     stateDir,
     workDir: env.DORKS_WORKDIR || join(homedir(), "work"),
@@ -51,4 +76,4 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 }
 
 /** Variables that must never reach the Claude child (or anything it spawns): the bridge's own identity and the dev host's keys. */
-export const CHILD_ENV_DENY = [/^BRIDGE_/, /^DORK_ID$/, /^DORKS_/, /^SIM_HOST_KEY$/, /^CONVEX_/, /^CLAUDE_BIN$/];
+export const CHILD_ENV_DENY = [/^BRIDGE_/, /^CLAUDE_RUN_AS$/, /^DORK_ID$/, /^DORKS_/, /^SIM_HOST_KEY$/, /^CONVEX_/, /^CLAUDE_BIN$/];

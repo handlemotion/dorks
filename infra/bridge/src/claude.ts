@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { CHILD_ENV_DENY } from "./config";
+import { asIdentity, type Identity } from "./runas";
 import type { Log } from "./redact";
 import { errTag, type Redactor } from "./redact";
 
@@ -15,6 +16,7 @@ export interface AgentOptions {
   permissionMode: string;
   resumeSessionId: string | null;
   extraArgs: string[];
+  runAs?: Identity | null;
   redactor: Redactor;
   log: Log;
   onRaw: (raw: unknown) => void;
@@ -74,13 +76,14 @@ export function claudeArgs(o: { permissionMode: string; resumeSessionId: string 
 }
 
 /** Builds the child's env: the bridge's own env minus its identity, plus the user's CLI secrets and the token. */
-export function childEnv(base: NodeJS.ProcessEnv, cfgEnv: Record<string, string>, log?: Log): NodeJS.ProcessEnv {
+export function childEnv(base: NodeJS.ProcessEnv, cfgEnv: Record<string, string>, log?: Log, id?: Identity | null): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(base)) if (!CHILD_ENV_DENY.some((re) => re.test(k))) env[k] = v;
   for (const [k, v] of Object.entries(cfgEnv)) {
     if (CHILD_ENV_DENY.some((re) => re.test(k))) log?.("ignoring configured env var with a reserved name:", k);
     else env[k] = v;
   }
+  if (id) Object.assign(env, { HOME: id.home, USER: id.user, LOGNAME: id.user });
   env.CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS = "1"; // without it the stream never says the turn is over (session_state_changed idle)
   env.GIT_TERMINAL_PROMPT = "0"; // a credential prompt would hang an unattended box
   return env;
@@ -104,7 +107,8 @@ export class Agent {
   constructor(private o: AgentOptions) {
     this.sessionId = o.resumeSessionId;
     this.holding = !!o.resumeSessionId;
-    this.child = spawn(o.bin, claudeArgs(o), { cwd: o.cwd, env: o.env, stdio: ["pipe", "pipe", "pipe"] });
+    const [bin, args] = asIdentity(o.runAs, o.bin, claudeArgs(o));
+    this.child = spawn(bin, args, { cwd: o.cwd, env: o.env, stdio: ["pipe", "pipe", "pipe"] });
     this.child.stdout.setEncoding("utf8");
     this.child.stdout.on("data", (d: string) => this.onStdout(d));
     // stderr can echo env or tokens: keep a tail for the exit report (scrubbed), never log it.

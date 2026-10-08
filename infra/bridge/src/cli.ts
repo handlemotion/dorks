@@ -17,6 +17,9 @@ async function main() {
   if (cmd === "--version" || cmd === "version") return console.log("dorks-bridge 0.1.0");
 
   const cfg = loadConfig();
+  // Best effort: the kernel keeps the initial environ readable to same-uid processes, but nothing in this process re-exports it.
+  delete process.env.BRIDGE_SECRET;
+  delete process.env.BRIDGE_SECRET_FILE;
   const redactor = new Redactor();
   redactor.add(cfg.bridgeSecret);
   const log = makeLogger(cfg.dorkId.slice(-6), redactor);
