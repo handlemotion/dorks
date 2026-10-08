@@ -10,10 +10,19 @@ Official docs (checked 2026-10-07): [Workers CI/CD with GitHub Actions](https://
 2. Under **Permission policies**, choose the **Edit Cloudflare Workers** template/permission. Restrict **Account Resources** to the single dorks account. (The api also uses D1 and Durable Objects: add **D1: Edit** if migrations are deployed by CI.) Copy the token; it is shown once.
 3. Account ID: dashboard -> **Workers & Pages** overview (right side), or **Find account and zone IDs** in Cloudflare docs.
 4. Insert:
-   ```sh
-   scripts/set-secret.sh prod CLOUDFLARE_API_TOKEN
-   printf %s "<account id>" | scripts/set-secret.sh prod CLOUDFLARE_ACCOUNT_ID
-   ```
-5. In CI, store the prod dotenvx key (`DOTENV_PRIVATE_KEY_DORKS_PROD`) as a CI secret and run `pnpm exec dotenvx run --strict -f secrets/.env.dorks_prod -- wrangler deploy` from the repo root.
+   In the Doppler dashboard, `dorks` -> `prd`: set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+5. Deploy: `doppler run -p dorks -c prd -- wrangler deploy` from the app folder (humans only; the `prd` config is not for agents). For CI, give it a Doppler service token scoped to `prd` as the one CI secret (`DOPPLER_TOKEN`).
+
+## Pushing runtime secrets to the Workers
+
+Doppler has no managed Cloudflare Workers sync for this setup; its documented path is the CLI. Only `apps/api` (legacy) declares required secrets (`secrets.required` in its `wrangler.jsonc`); `apps/web` has none. From `apps/api`, a human runs:
+
+```sh
+doppler secrets download -p dorks -c prd --no-file --format json \
+  | jq '{BETTER_AUTH_SECRET, ENCRYPTION_KEY, UPSTASH_BOX_API_KEY, GITHUB_APP_PRIVATE_KEY, GITHUB_WEBHOOK_SECRET, RESEND_API_KEY, EXPO_ACCESS_TOKEN}' \
+  | wrangler secret bulk
+```
+
+The `jq` filter is the `secrets.required` list. Values only travel through the pipe. Unverified: not run against a real Worker (no Cloudflare credentials yet); `wrangler secret bulk` reading JSON from stdin is documented by Cloudflare.
 
 Unverified: the exact menu labels in the current Cloudflare dashboard vary (docs show both account-level and profile-level token pages); follow whichever your dashboard shows.

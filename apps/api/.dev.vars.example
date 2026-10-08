@@ -1,5 +1,5 @@
-# Names only. Real values live in secrets/.env.dorks_dev (encrypted) and are loaded by `pnpm dev:api`: see docs/secrets/README.md.
-# No-dotenvx fallback: cp .dev.vars.example .dev.vars (gitignored) and fill in; ENCRYPTION_KEY is base64 of 32 random bytes.
+# Names only. Real values live in Doppler `dorks`/`dev` and are loaded by `pnpm dev:api`: see docs/secrets/README.md.
+# Manual fallback without Doppler: cp .dev.vars.example .dev.vars (gitignored) and fill in; ENCRYPTION_KEY is base64 of 32 random bytes.
 BETTER_AUTH_SECRET=
 ENCRYPTION_KEY=
 UPSTASH_BOX_API_KEY=

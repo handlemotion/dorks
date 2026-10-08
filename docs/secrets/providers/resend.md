@@ -27,8 +27,4 @@ The sender domain is the root of `ALLOWED_EMAIL_DOMAIN` (`jaantonio.com`), becau
 
 ## 3. Insert
 
-```sh
-scripts/set-secret.sh prod RESEND_API_KEY   # prompts silently; commit secrets/.env.dorks_prod
-```
-
-Repeat with `dev` and the dev key if you want real mail in dev. Then set it on the Convex production deployment too ([Convex guide, step 4](convex.md)).
+In the Doppler dashboard: project `dorks` -> `prd` -> `RESEND_API_KEY` -> paste -> Save. Repeat in `dev` if you want real mail in dev (or ask an agent to run `doppler secrets set RESEND_API_KEY -p dorks -c dev` after you paste the value into the prompt yourself). Then push it to the Convex production deployment ([Convex guide, step 4](convex.md)).
