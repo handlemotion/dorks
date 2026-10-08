@@ -6,7 +6,7 @@ import { internal } from "./_generated/api";
 import { requireUserId } from "./auth";
 import { append, dispatch, enqueue, fail, MAX_MESSAGE_CHARS, runtimeOf } from "./lib/dispatch";
 import { validRepo } from "./lib/repo";
-import { endDorkSubscriptions, subscriptionsOfDork } from "./lib/subscriptions";
+import { endDorkSubscriptions, resetCiAttempts, subscriptionsOfDork } from "./lib/subscriptions";
 
 export const MAX_TITLE_CHARS = 120;
 export const MAX_ACTIVE_DORKS = 20;
@@ -84,6 +84,7 @@ export const sendMessage = mutation({
     await persistMessage(ctx, dork, checkText(text));
     const r = await dispatch(ctx, dorkId, { t: "user_message" });
     if (r?.rejected) fail("archived", "dork is archived"); // rolls back the persisted message
+    for (const sub of await subscriptionsOfDork(ctx, dorkId)) if (sub.status !== "ended") await resetCiAttempts(ctx, sub, "resumed by your message"); // a human is back: CI gets a fresh budget
   },
 });
 
