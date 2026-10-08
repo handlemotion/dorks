@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { reduce, type Ctx, type Input, type Effect } from "../src/lifecycle/machine";
 
 const STATES = dorkState.options as DorkState[];
-const INPUTS: Input["t"][] = ["start", "user_message", "agent_ready", "turn_idle", "sleep_due", "paused", "bridge_lost", "agent_exited", "op_failed", "watchdog", "archive", "unarchive", "interrupt"];
+const INPUTS: Input["t"][] = ["start", "user_message", "notify", "agent_ready", "turn_idle", "sleep_due", "paused", "bridge_lost", "agent_exited", "op_failed", "watchdog", "archive", "unarchive", "interrupt"];
 const ctx = (state: DorkState, o: Partial<Ctx> = {}): Ctx => ({ state, archived: false, hasBox: true, queued: false, ...o });
 const run = (c: Ctx, t: Input["t"]) => reduce(c, { t } as Input);
 
@@ -28,6 +28,32 @@ describe("machine: spec behaviours", () => {
   });
   it("sleep_due is ignored with a pending message", () => {
     expect(run(ctx("idle", { queued: true }), "sleep_due").effects).toEqual([]);
+  });
+  it("notify: wakes a sleeping dork or one in error like a message, delivers when idle, holds while working", () => {
+    expect(run(ctx("sleeping"), "notify")).toMatchObject({ state: "waking", effects: ["resume_box", "arm_watchdog"] });
+    expect(run(ctx("error"), "notify")).toMatchObject({ state: "waking", effects: ["resume_box", "arm_watchdog"] });
+    expect(run(ctx("error", { hasBox: false }), "notify")).toMatchObject({ state: "creating", effects: ["create_box", "arm_watchdog"] });
+    expect(run(ctx("idle"), "notify")).toMatchObject({ state: "working", effects: ["cancel_sleep", "cancel_pause", "deliver_outbox"] });
+    expect(run(ctx("working"), "notify")).toMatchObject({ state: "working", effects: [] }); // never delivered mid-turn
+    expect(run(ctx("creating"), "notify").effects).toEqual([]);
+    expect(run(ctx("waking"), "notify").effects).toEqual([]); // delivered on ready
+  });
+  it("notify is refused for an archived dork in every state", () => {
+    for (const s of STATES) expect(run(ctx(s, { archived: true }), "notify").rejected).toBe("archived");
+  });
+  it("turn_idle releases a held notify and keeps the dork working; with a user message ahead of it, it waits another turn", () => {
+    expect(run(ctx("working", { queued: true, notifyHeld: true }), "turn_idle")).toMatchObject({ state: "working", effects: ["release_notify", "deliver_outbox"] });
+    // a user message is ahead: the caller reports notifyHeld false until it is acked
+    expect(run(ctx("working", { queued: true, notifyHeld: false }), "turn_idle")).toMatchObject({ state: "working", effects: ["deliver_outbox"] });
+  });
+  it("a notify in flight (released, unacked) keeps the dork from idling or sleeping", () => {
+    expect(run(ctx("working", { queued: true }), "turn_idle").state).toBe("working");
+    expect(run(ctx("idle", { queued: true }), "sleep_due").effects).toEqual([]);
+  });
+  it("a notify queued while the box was down is delivered, and released, once the agent is ready", () => {
+    expect(run(ctx("waking", { queued: true }), "agent_ready")).toMatchObject({ state: "working", effects: expect.arrayContaining(["deliver_outbox"]) });
+    expect(run(ctx("waking", { queued: true }), "agent_ready").effects).not.toContain("release_notify");
+    expect(run(ctx("waking", { queued: true, notifyHeld: true }), "agent_ready").effects).toEqual(["cancel_watchdog", "arm_gh_refresh", "release_notify", "deliver_outbox"]);
   });
   it("archive pauses immediately (interrupting a running turn); unarchive never wakes", () => {
     expect(run(ctx("working"), "archive")).toMatchObject({ archived: true, effects: ["interrupt_agent", "pause_box"] });
@@ -82,8 +108,8 @@ describe("machine: spec behaviours", () => {
 
 describe("machine: totality + invariants", () => {
   it("handles every state x input x flag combination without throwing", () => {
-    for (const s of STATES) for (const t of INPUTS) for (const archived of [false, true]) for (const hasBox of [false, true]) for (const queued of [false, true]) {
-      const r = run({ state: s, archived, hasBox, queued }, t);
+    for (const s of STATES) for (const t of INPUTS) for (const archived of [false, true]) for (const hasBox of [false, true]) for (const queued of [false, true]) for (const notifyHeld of [false, true]) {
+      const r = run({ state: s, archived, hasBox, queued, notifyHeld }, t);
       expect(STATES).toContain(r.state);
     }
   });
@@ -98,15 +124,16 @@ describe("machine: totality + invariants", () => {
         const t = INPUTS[Math.floor(rnd() * INPUTS.length)];
         const prev = c;
         const r = reduce(c, { t } as Input);
-        if (t === "user_message" && !r.rejected) outbox++;
+        if ((t === "user_message" || t === "notify") && !r.rejected) outbox++;
         const fx: Effect[] = r.effects;
         // invariants
-        if (prev.archived && t === "user_message") expect(r.rejected).toBe("archived");
+        if (prev.archived && (t === "user_message" || t === "notify")) expect(r.rejected).toBe("archived");
         if (fx.includes("resume_box")) expect(["sleeping", "error"]).toContain(prev.state);
         if (fx.includes("create_box")) expect(prev.hasBox).toBe(false);
         if (r.state === "error" && prev.state !== "error") expect(fx.includes("pause_box")).toBe(prev.hasBox); // never leave a box running under `error`
         if (t === "unarchive") expect(fx).toEqual([]); // never wakes
         if (r.state === "sleeping") expect(fx.includes("deliver_outbox")).toBe(false);
+        if (t === "notify" && prev.state === "working") expect(fx).toEqual([]); // a notify never lands mid-turn
         if (prev.archived && fx.includes("resume_box")) throw new Error("archived dork woke");
         // simulate driver bookkeeping
         const hasBox = prev.hasBox || fx.includes("create_box");
