@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { internalAction, internalMutation } from "./_generated/server";
+import { internalAction } from "./_generated/server";
 import { isBoxNotFound } from "../../api/src/lib/box";
 import { getBox } from "./lib/box";
 import { bridgeSecret } from "./lib/bridgeAuth";
@@ -63,22 +63,12 @@ export const resume = internalAction({
         // `error` + !hasBox path recreates it from the snapshot on the next message, instead of failing resume forever.
         if (!isBoxNotFound(e)) throw e;
         console.error("resume_box: box no longer exists, clearing boxId");
-        await ctx.runMutation(internal.boxes.forgetBox, { dorkId });
-        return void (await ctx.runMutation(internal.lifecycle.opFailed, { dorkId, message: "The sandbox no longer exists; it will be recreated on your next message" }));
+        return void (await ctx.runMutation(internal.lifecycle.boxGone, { dorkId, boxId: info.boxId, message: "The sandbox no longer exists; it will be recreated on your next message" }));
       }
       await ctx.runMutation(internal.lifecycle.boxResumed, { dorkId });
     } catch (e) {
       await ctx.runMutation(internal.lifecycle.opFailed, { dorkId, message: safe(e, "resume_box") });
     }
-  },
-});
-
-/** Drops the stored box id after the provider reported the box gone. Call before `opFailed` so the machine sees `hasBox: false`. */
-export const forgetBox = internalMutation({
-  args: { dorkId: v.id("dorks") },
-  handler: async (ctx, { dorkId }) => {
-    const dork = await ctx.db.get(dorkId);
-    if (dork?.boxId) await ctx.db.patch(dorkId, { boxId: undefined });
   },
 });
 

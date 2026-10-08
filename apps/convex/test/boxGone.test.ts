@@ -6,7 +6,7 @@ import { internal } from "../convex/_generated/api";
 import schema from "../convex/schema";
 
 // H3: resume fails because the provider no longer has the box. The stale boxId must be cleared so the next message recreates it.
-const provider = vi.hoisted(() => ({ resumeError: undefined as unknown, created: [] as string[] }));
+const provider = vi.hoisted(() => ({ resumeError: undefined as unknown, duringResume: undefined as undefined | (() => Promise<unknown>), created: [] as string[] }));
 vi.mock("../convex/lib/box", () => ({
   getBox: () => ({
     async createFromSnapshot(_s: string, o: { name: string }) {
@@ -14,6 +14,7 @@ vi.mock("../convex/lib/box", () => ({
       return { id: `new-box-${provider.created.length}` };
     },
     async resume() {
+      await provider.duringResume?.();
       if (provider.resumeError) throw provider.resumeError;
     },
     async pause() {},
@@ -27,16 +28,17 @@ const modules = import.meta.glob("../convex/**/*.*s");
 async function seed(t: T, state: "sleeping" | "waking" = "waking") {
   return t.run(async (ctx) => {
     await ctx.db.insert("userSettings", { userId: "u1", sleepMinutes: 5 });
-    const dorkId = await ctx.db.insert("dorks", { userId: "u1", title: "t", repo: "o/r", branch: "agent/x", state, archived: false, boxId: "box-old", lastActivityAt: 1 });
+    const dorkId = await ctx.db.insert("dorks", { userId: "u1", title: "t", repo: "o/r", branch: "agent/x", state, archived: false, boxId: "box-old", claudeSessionId: "sess-old", lastActivityAt: 1 });
     await ctx.db.insert("dorkRuntime", { dorkId, bridgeSeq: 0, streamMsgId: "", sleepMinutes: 5, bridgeSeenAt: 0, bridgeLost: false, timers: {} });
     return dorkId;
   });
 }
-const row = (t: T, id: any) => t.run((ctx) => ctx.db.get(id)) as Promise<{ boxId?: string; state: string } | null>;
+const row = (t: T, id: any) => t.run((ctx) => ctx.db.get(id)) as Promise<{ boxId?: string; claudeSessionId?: string; state: string } | null>;
 const errors = (t: T, id: any) => t.run(async (ctx) => (await (ctx.db as any).query("events").withIndex("by_dork_seq", (q: any) => q.eq("dorkId", id)).collect() as { body: any }[]).map((e) => e.body).filter((b: any) => b.type === "error"));
 
 beforeEach(() => {
   provider.resumeError = undefined;
+  provider.duringResume = undefined;
   provider.created = [];
   process.env.BASE_SNAPSHOT_ID = "snap-1";
   process.env.BRIDGE_SECRET_KEY = "test-bridge-key";
@@ -56,6 +58,7 @@ describe("resume when the box no longer exists", () => {
 
       const after = await row(t, dorkId);
       expect(after?.boxId).toBeUndefined();
+      expect(after?.claudeSessionId).toBeUndefined(); // that session lived on the lost box's disk
       expect(after?.state).toBe("error");
       expect(await errors(t, dorkId)).toEqual([{ type: "error", message: expect.stringContaining("no longer exists") }]);
 
@@ -84,12 +87,44 @@ describe("resume when the box no longer exists", () => {
     expect((await row(t, dorkId))?.boxId).toBe("box-old");
   });
 
-  it("forgetBox on a dork without a box, or a deleted dork, is a no-op", async () => {
+  it("a stale resume cannot clear a newer box: boxGone for a different boxId is a complete no-op", async () => {
     const t = convexTest(schema, modules);
     const dorkId = await seed(t);
-    await t.mutation(internal.boxes.forgetBox, { dorkId });
-    await t.mutation(internal.boxes.forgetBox, { dorkId });
+    await t.mutation(internal.lifecycle.boxGone, { dorkId, boxId: "box-older", message: "x" });
+    const after = await row(t, dorkId);
+    expect(after).toMatchObject({ boxId: "box-old", claudeSessionId: "sess-old", state: "waking" });
+    expect(await errors(t, dorkId)).toEqual([]);
+  });
+
+  it("clearing the box, the error event and the state change happen in one mutation", async () => {
+    const t = convexTest(schema, modules);
+    const dorkId = await seed(t);
+    await t.mutation(internal.lifecycle.boxGone, { dorkId, boxId: "box-old", message: "gone" });
+    const after = await row(t, dorkId);
+    expect(after?.state).toBe("error");
+    expect(after?.boxId).toBeUndefined();
+    expect(after?.claudeSessionId).toBeUndefined();
+    expect(await errors(t, dorkId)).toHaveLength(1);
+    await t.mutation(internal.lifecycle.boxGone, { dorkId, boxId: "box-old", message: "gone" }); // replay: boxId already cleared
+    expect(await errors(t, dorkId)).toHaveLength(1);
+  });
+
+  it("boxGone on a deleting or purged dork is a no-op", async () => {
+    const t = convexTest(schema, modules);
+    const dorkId = await seed(t);
+    await t.run((ctx) => ctx.db.patch(dorkId, { deleting: true }));
+    await t.mutation(internal.lifecycle.boxGone, { dorkId, boxId: "box-old", message: "x" });
+    expect((await row(t, dorkId))?.boxId).toBe("box-old");
     await t.run((ctx) => ctx.db.delete(dorkId));
-    await t.mutation(internal.boxes.forgetBox, { dorkId });
+    await t.mutation(internal.lifecycle.boxGone, { dorkId, boxId: "box-old", message: "x" });
+  });
+
+  it("the resume action passes the box it resumed, so a dork re-pointed mid-flight keeps its new box", async () => {
+    const t = convexTest(schema, modules);
+    const dorkId = await seed(t);
+    provider.resumeError = new Error("upstash resume: box not found (HTTP 404)");
+    provider.duringResume = () => t.run((ctx) => ctx.db.patch(dorkId, { boxId: "box-newer" }));
+    await t.action(internal.boxes.resume, { dorkId });
+    expect((await row(t, dorkId))?.boxId).toBe("box-newer");
   });
 });
