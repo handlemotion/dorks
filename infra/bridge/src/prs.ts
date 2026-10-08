@@ -32,22 +32,37 @@ export class PrSubscriptions {
       const ref = refParams(params);
       const source = (params as { source?: unknown }).source ?? "agent";
       if (source !== "auto" && source !== "agent") throw new RpcError("invalid", "source must be 'auto' or 'agent'");
-      await this.backend(() => this.t.subscribePr(ref, source));
-      await this.settled((l) => l.some((s) => samePr(s, ref)));
+      await this.subscribe(ref, source);
       return ref;
     },
     "pr.unsub": async (params) => {
       const ref = refParams(params);
-      await this.backend(() => this.t.unsubscribePr(ref));
-      await this.settled((l) => !l.some((s) => samePr(s, ref)));
+      await this.unsubscribe(ref);
       return ref;
     },
     "pr.list": async () => {
-      if (!this.cache) await this.settled(() => true, FIRST_LIST_WAIT_MS);
-      if (!this.cache) throw new RpcError("unavailable", "the subscription list has not loaded yet (is the bridge connected?)");
-      return this.cache;
+      const list = await this.list();
+      if (!list) throw new RpcError("unavailable", "the subscription list has not loaded yet (is the bridge connected?)");
+      return list;
     },
   };
+
+  /** Idempotent, like the backend. Resolves once the cached list shows the change, so a `list` right after reads its own write. */
+  async subscribe(ref: PrRef, source: "auto" | "agent") {
+    await this.backend(() => this.t.subscribePr(ref, source));
+    await this.settled((l) => l.some((s) => samePr(s, ref)));
+  }
+
+  async unsubscribe(ref: PrRef) {
+    await this.backend(() => this.t.unsubscribePr(ref));
+    await this.settled((l) => !l.some((s) => samePr(s, ref)));
+  }
+
+  /** The cached subscriptions (waiting briefly for the first copy); null when the backend has not answered yet. */
+  async list(): Promise<SubscriptionView[] | null> {
+    if (!this.cache) await this.settled(() => true, FIRST_LIST_WAIT_MS);
+    return this.cache;
+  }
 
   /** (Re)opens the reactive `bridge.subscriptions` query. Called once the bridge is connected and again after each reconnect. */
   start() {
