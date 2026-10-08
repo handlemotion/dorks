@@ -27,6 +27,8 @@ const handled = new Set(); // command ids already processed (the subscription re
 // numbered exactly stored+1 (bridge.push returns { ok: false, expectedBseq } on a gap), so unconfirmed events stay in `history`
 // and are replayed from `expectedBseq`. Limits: bridge.push takes at most 500 frames per call.
 const MAX_FRAMES_PER_PUSH = 400;
+const MAX_EVENT_BYTES = 256 * 1024; // the backend rejects a push holding a bigger event (`event_too_large`)
+const BASE_BACKOFF_MS = Number(process.env.PUSH_BACKOFF_MS ?? 500);
 const MAX_BACKOFF_MS = 15_000;
 let queue = [];
 let history = []; // event frames not yet confirmed by the backend, ascending bseq
@@ -35,11 +37,19 @@ let timer = null;
 let pushing = Promise.resolve();
 const eventFrame = (raw) => {
   const frame = { t: "event", bseq: ++bseq, raw };
+  if (eventBytes(frame) > MAX_EVENT_BYTES) truncate(frame);
   queue.push(frame);
   history.push(frame);
 };
 const deltaRaw = (text) => ({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text } } });
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const eventBytes = (f) => new TextEncoder().encode(JSON.stringify(f.raw)).length;
+// An event that can never be accepted is replaced in place by a stub with the same bseq: dropping it would leave a gap, and
+// retrying it would wedge every frame queued behind it (turn_idle, acks, flushed).
+const truncate = (f) => {
+  log(`event ${f.bseq} too large, sending a truncation stub`);
+  f.raw = { type: "truncated", truncated: true, was: String(f.raw?.type ?? "unknown") };
+};
 
 async function pushAll(frames) {
   for (let i = 0; i < frames.length; i += MAX_FRAMES_PER_PUSH) await pushChunk(frames.slice(i, i + MAX_FRAMES_PER_PUSH));
@@ -51,14 +61,28 @@ async function pushChunk(chunk) {
     try {
       r = await client.mutation(api.bridge.push, { ...creds, frames: chunk });
     } catch (e) {
-      log(`push failed (attempt ${attempt + 1}), retrying:`, String(e.data?.code ?? e.message ?? e).slice(0, 120));
-      await wait(Math.min(500 * 2 ** attempt, MAX_BACKOFF_MS));
+      const code = e?.data?.code;
+      if (code === "too_many_frames" && chunk.length > 1) { // split and send in order
+        const half = chunk.length >> 1;
+        await pushChunk(chunk.slice(0, half));
+        return pushChunk(chunk.slice(half));
+      }
+      if (code === "event_too_large") {
+        const big = chunk.filter((f) => f.t === "event" && eventBytes(f) > MAX_EVENT_BYTES);
+        const victims = big.length ? big : chunk.filter((f) => f.t === "event").sort((a, b) => eventBytes(b) - eventBytes(a)).slice(0, 1);
+        if (victims.length) {
+          victims.forEach(truncate);
+          continue;
+        }
+      }
+      log(`push failed (attempt ${attempt + 1}), retrying:`, String(code ?? e.message ?? e).slice(0, 120));
+      await wait(Math.min(BASE_BACKOFF_MS * 2 ** attempt, MAX_BACKOFF_MS));
       continue;
     }
     if (r?.ok === false && typeof r.expectedBseq === "number") {
       // Gap: the backend stopped at expectedBseq. Resend everything from there, then this batch's control frames (idempotent).
       log("gap: backend expects bseq", r.expectedBseq);
-      if (r.expectedBseq === lastGap) await wait(Math.min(500 * 2 ** attempt, MAX_BACKOFF_MS)); // not advancing: do not hot-loop
+      if (r.expectedBseq === lastGap) await wait(Math.min(BASE_BACKOFF_MS * 2 ** attempt, MAX_BACKOFF_MS)); // not advancing: do not hot-loop
       lastGap = r.expectedBseq;
       const replay = history.filter((f) => f.bseq >= r.expectedBseq);
       if (!replay.length || replay[0].bseq !== r.expectedBseq) log(`cannot replay from ${r.expectedBseq} (oldest unconfirmed: ${history[0]?.bseq})`);
@@ -132,7 +156,7 @@ async function onCommand({ cid, frame: f }) {
       return runTurn(f.text);
     }
     case "interrupt": log("interrupt"); return void sendNow({ t: "ack", id: cid });
-    case "flush": log("flush"); await flushNow(); return void sendNow({ t: "ack", id: cid }).then(() => sendNow({ t: "flushed" }));
+    case "flush": log("flush"); await flushNow(); return void sendNow({ t: "ack", id: cid }).then(() => sendNow({ t: "flushed", id: cid }));
     case "fetch_gh_token": { const r = await client.action(api.bridge.ghToken, creds); log("gh token refreshed:", r ? "ok" : "failed"); return void sendNow({ t: "ack", id: cid }); }
   }
 }
@@ -147,4 +171,4 @@ try {
 }
 client.onUpdate(api.bridge.commands, creds, (cmds) => { for (const c of cmds) onCommand(c).catch((e) => log("command failed:", String(e.message).slice(0, 120))); }, (e) => log("subscription error:", String(e.message).slice(0, 120)));
 setInterval(() => client.mutation(api.bridge.heartbeat, creds).catch(() => {}), HEARTBEAT_MS).unref();
-process.on("SIGTERM", async () => { await flushNow(); process.exit(0); });
+process.on("SIGTERM", async () => { await Promise.race([flushNow(), wait(2000)]); process.exit(0); }); // bounded: a backend that is down must not make the sim unkillable
