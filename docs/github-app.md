@@ -6,15 +6,22 @@ account on the web Settings page. This doc is everything needed to register the 
 How it fits together:
 
 1. The user opens `/settings` and follows **Install GitHub App** to `https://github.com/apps/<slug>/installations/new`.
+   The link carries a random `state` that Settings also keeps in `sessionStorage`.
 2. GitHub installs the App, then (because OAuth-during-install is on) redirects the browser to the **callback URL** with
-   `?code=…&installation_id=…&setup_action=install`.
+   `?code=…&installation_id=…&state=…&setup_action=install`.
 3. `/github/callback` (web) calls the Convex action `settings.linkGithubInstallation`. It exchanges `code` for a user token
    with the App's client id/secret and only stores the installation if `GET /user/installations` lists that id. A bare
    `installation_id` is never trusted (otherwise anyone could claim another org's installation).
+   That check proves the *code's owner* can see the installation, not that the signed-in user asked for it: an attacker could
+   install the App on their own org and send a victim the resulting callback URL. So the page links automatically only when
+   `state` matches this tab's `sessionStorage` **and** nothing is linked yet; otherwise it asks the user to confirm "Link
+   installation N" (and says it will replace the existing one). The `code` is removed from the address bar as soon as the page loads.
 4. When a box asks for secrets, `bridge.configure` / `bridge.ghToken` mint an installation token **scoped to that dork's repository
    with `contents: write` + `pull_requests: write` only**. The box runs untrusted agent code, so the token never covers the
-   installation's other repos or permissions. Tokens last 1 hour and are refreshed every 45 minutes (retried after ~2 minutes if a
-   refresh fails).
+   installation's other repos or permissions. GitHub reports which `owner/name` repos the token covers; a token for a same-named repo under
+   a different owner is refused. Tokens last 1 hour and are refreshed every 45 minutes. A refresh that fails on a 5xx, rate limit or network
+   error is retried with backoff (2, 4, 8, then every 10 minutes). Other failures (installation removed, repo deselected, bad key) are not
+   retried early. After 3 consecutive failures (immediately for a permanent one) one error event is added to the dork's transcript.
 
 ## 1. Register the App
 
@@ -105,7 +112,16 @@ To exercise the real flow locally, register a second App whose callback URL is t
 | `invalid` | malformed `installation_id` |
 
 Token minting problems at box time show up in the Convex logs as `configure failed` / `gh token refresh failed` (never the token or
-GitHub's response body). A `422` from GitHub there almost always means the App lacks one of the two permissions above.
+GitHub's response body). The dork shows:
+
+| Message | Cause |
+|---|---|
+| `GitHub App can't access <owner/name>; add it to the installation` | GitHub answered 404/422: the installation is set to "Only select repositories" and this repo is not selected, or the App was removed from it. Add the repo to the installation on GitHub. |
+| `GitHub App is not installed on the owner of <owner/name>; install it there` | the linked installation belongs to a different account than the repo's owner |
+| `GitHub access is failing…` | token refreshes keep failing; pushes stop working when the current token expires |
+
+A 422 can also mean the App itself lacks one of the two permissions above, but a repo that is not part of the installation is the more
+common cause.
 
 ## What needs a human
 
