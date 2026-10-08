@@ -157,7 +157,7 @@ export const push = mutation({
           await dispatch(ctx, dorkId, { t: "agent_exited" });
           break;
         case "flushed":
-          await finishPause(ctx, dorkId, f.id);
+          await finishPause(ctx, dorkId, f.cid);
           break;
       }
     }

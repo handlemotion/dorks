@@ -20,7 +20,7 @@ const run = (env: Record<string, string>) =>
 const dense = (r: Result) => r.stored.length >= 6 && r.stored.length === r.maxSeen && r.stored.every((s, i) => s === i + 1);
 
 describe("bridge-sim delivery", () => {
-  it("happy path: dense numbering, flushed echoes the flush command id", async () => {
+  it("happy path: dense numbering, flushed echoes the flush command cid", async () => {
     const r = await run({});
     expect(dense(r)).toBe(true);
     expect(r.gaps).toBe(0);

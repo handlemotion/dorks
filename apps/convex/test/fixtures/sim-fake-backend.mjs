@@ -43,7 +43,7 @@ ConvexClient.prototype.mutation = async function (ref, args) {
     next++;
   }
   for (const f of frames) {
-    if (f.t !== "event") control.push(f.id ? `${f.t}:${f.id}` : f.t);
+    if (f.t !== "event") control.push(f.id || f.cid ? `${f.t}:${f.id ?? f.cid}` : f.t);
     else if (f.bseq === stored.length + 1) {
       stored.push(f.bseq);
       sizes.push(JSON.stringify(f.raw).length);

@@ -588,16 +588,16 @@ describe("review fixes", () => {
       await input(t, id, { t: "archive" }); // a new pause, a new flush
       const second = (await openCmds(t, id)).find((c) => c.kind === "flush")!.cid;
       expect(second).not.toBe(first);
-      await push(t, id, [{ t: "flushed", id: first }]);
+      await push(t, id, [{ t: "flushed", cid: first }]);
       await settle(t);
       expect(box.calls).toEqual([]);
       expect((await rtOf(t, id)).pause?.phase).toBe("flushing");
-      await push(t, id, [{ t: "flushed", id: second }]);
+      await push(t, id, [{ t: "flushed", cid: second }]);
       await settle(t);
       expect(box.calls).toEqual(["pause"]);
     });
 
-    it("a `flushed` without an id (older bridge) still answers the current flush", async () => {
+    it("a `flushed` without a cid (older bridge) still answers the current flush", async () => {
       const t = convexTest(schema, modules);
       const id = await seed(t, "idle");
       await timer(t, id, "sleep");

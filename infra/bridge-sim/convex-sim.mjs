@@ -156,7 +156,7 @@ async function onCommand({ cid, frame: f }) {
       return runTurn(f.text);
     }
     case "interrupt": log("interrupt"); return void sendNow({ t: "ack", id: cid });
-    case "flush": log("flush"); await flushNow(); return void sendNow({ t: "ack", id: cid }).then(() => sendNow({ t: "flushed", id: cid }));
+    case "flush": log("flush"); await flushNow(); return void sendNow({ t: "ack", id: cid }).then(() => sendNow({ t: "flushed", cid }));
     case "fetch_gh_token": { const r = await client.action(api.bridge.ghToken, creds); log("gh token refreshed:", r ? "ok" : "failed"); return void sendNow({ t: "ack", id: cid }); }
   }
 }
