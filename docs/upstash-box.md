@@ -40,11 +40,13 @@ Base URL `https://us-east-1.box.upstash.com` (override: `UPSTASH_BOX_BASE_URL`).
 **Error codes: not documented anywhere.** The SDK only distinguishes "response not OK" and reads `error` from the body; the only status codes mentioned in the docs are `400` once the free-plan LLM budget is exhausted (pricing page). The provider therefore classifies by:
 
 - `401`/`403` → auth error (`UpstashBoxError`, message names `UPSTASH_BOX_API_KEY`, never the key).
-- `404`, **or** a body matching "not found" / "does not exist" → `BoxNotFoundError`.
+- `404` / `410` → `BoxNotFoundError`, but only **after confirmation** (below). Body text is never used: a 5xx gateway page or a 400 saying "runtime image not found" is just an HTTP error, not a missing box.
 - `429` → rate limited.
 - anything else → `upstash <op>: HTTP <status>`.
 
-Response bodies are used for that classification and then discarded; they never reach an error message, a log line or an event (a provider error can echo the request, which contains `BRIDGE_SECRET`). The API key is only ever in the request header. UNKNOWN: the exact status the API returns for pause-on-paused / resume-on-running (409? 400? 200?). The provider does not depend on it: on any non-auth failure it reads the box status and accepts the call if the box is already in the target state (tested with a fake that refuses both).
+Response bodies of failed calls are discarded unread; they never reach an error message, a log line or an event (a provider error can echo the request, which contains `BRIDGE_SECRET`). The API key is only ever in the request header. **"Gone" is confirmed, not assumed.** After a 404 on resume/pause/delete the provider does `GET /v2/box/{id}`; only if that is also 404 *and* the API otherwise answers (`GET /v2/box?label=dorks-probe` succeeds) is the box declared gone. If the list endpoint 404s too, it is reported as a configuration error naming `UPSTASH_BOX_BASE_URL` (a mistyped base URL or a renamed route would otherwise look like "every box vanished", clear every `boxId`, and make delete silently succeed and leak boxes). A 404 on the POST while the box exists is an error, not "gone".
+
+UNKNOWN: the exact status the API returns for pause-on-paused / resume-on-running (409? 400? 200?). The provider does not depend on it: on any non-auth failure it reads the box status and accepts the call if the box is already in the target state (tested with a fake that refuses both).
 
 Env vars: `env_vars` at create. Blocked names: `PATH, HOME, LD_PRELOAD, LD_LIBRARY_PATH, NODE_OPTIONS` ([security](https://upstash.com/docs/box/overall/security)); ours (`DORK_ID`, `BRIDGE_URL`, `BRIDGE_SECRET`) are fine. They are visible to every process in the box, including the agent; `BRIDGE_SECRET` is per-dork and derived (`HMAC(BRIDGE_SECRET_KEY, dorkId)`), so it only authorizes that dork's bridge calls. Real secrets (Claude token, GitHub token) still arrive via `bridge.configure`, not env.
 
@@ -87,7 +89,13 @@ if [ -f /tmp/dorks-start.pid ] && kill -0 "$(cat /tmp/dorks-start.pid)" 2>/dev/n
 nohup setsid sh -c 'dorks-bridge' >/tmp/dorks-start.log 2>&1 & echo $! > /tmp/dorks-start.pid
 ```
 
-The guard makes it safe to call on an already-running bridge (resume is idempotent). `exec` is synchronous (`{exit_code, output}`), so the child must be fully detached (`nohup setsid`, redirected stdio). UNKNOWN B2: **do detached children survive the exec call returning** (the platform might kill the process group when the exec session ends), and do they inherit `env_vars`? Test: `exec` the script with `dorks-bridge` replaced by `sleep 300`, then a second `exec` of `pgrep -a sleep; env | grep DORK_ID`. If children do not survive, exec mode is not viable and `init_command` (or a paid plan) is the only way; use `exec/session` (live sessions) only as a last resort.
+(Shown simplified; the real script also requires `/proc/$pid/cmdline` of the recorded pid to contain the command, because the pidfile survives a pause but PIDs restart and an unrelated process could otherwise be mistaken for the bridge. It is exercised against a real `sh` in the unit tests.) The guard makes it safe to call on an already-running bridge (resume is idempotent), and it is also run when `createFromSnapshot` finds its box again by label, so a crash between create and the first start is repaired by the retry.
+
+After `resume` the provider **polls `GET /v2/box/{id}` until the box is `running`/`idle` (60s cap) before it execs**, because the SDK does not wait after resume (UNKNOWN B3 below). `exec` is synchronous (`{exit_code, output}`), so the child must be fully detached (`nohup setsid`, redirected stdio).
+
+UNKNOWN B3: **can an exec sent right after `POST .../resume` reach a box that is not running yet?** The SDK's `resume()` does not poll. The provider waits for the status itself, but it is unverified whether `idle`/`running` is reported only once exec works. Test: loop `resume` → immediate `exec echo ok` on a paused box 20 times with and without the status wait, and count failures.
+
+UNKNOWN B2: **do detached children survive the exec call returning** (the platform might kill the process group when the exec session ends), and do they inherit `env_vars`? Test: `exec` the script with `dorks-bridge` replaced by `sleep 300`, then a second `exec` of `pgrep -a sleep; env | grep DORK_ID`. If children do not survive, exec mode is not viable and `init_command` (or a paid plan) is the only way; use `exec/session` (live sessions) only as a last resort.
 
 Exec mode costs one extra HTTP call per create/resume and, unlike init mode, leaves a gap where the box is up but the bridge is not (the watchdog covers it).
 
@@ -100,7 +108,7 @@ Exec mode costs one extra HTTP call per create/resume and, unlike init mode, lea
 - Free plan: 10 concurrent boxes. UNKNOWN whether paused boxes count toward that limit; if they do, a free account caps us at 10 dorks.
 - Snapshots are independent of the box and persist after the box is deleted ([snapshots](https://upstash.com/docs/box/overall/snapshots)).
 
-We must therefore treat "box gone" as a normal event. That is the H3 path: if `resume` finds the box missing (404/"not found"), `boxes.resume` clears `dork.boxId` (`boxes.forgetBox`), appends "The sandbox no longer exists; it will be recreated on your next message", and the machine's `error` + `!hasBox` takes `create_box` on the next user message. **The new box starts from the base snapshot: uncommitted workspace changes and the on-disk Claude session are lost** (anything pushed to the branch survives; `claudeSessionId` points at a session that no longer exists, which the bridge/lifecycle owner must tolerate).
+We must therefore treat "box gone" as a normal event. That is the H3 path: if `resume` finds the box missing (a confirmed 404/410, see above), `boxes.resume` calls `lifecycle.boxGone`, which clears `dork.boxId`, appends "The sandbox no longer exists; it will be recreated on your next message", and the machine's `error` + `!hasBox` takes `create_box` on the next user message. **The new box starts from the base snapshot: uncommitted workspace changes and the on-disk Claude session are lost** (anything pushed to the branch survives). The same mutation (`lifecycle.boxGone`) also clears `claudeSessionId`, since that session lived on the lost box's disk and the bridge would otherwise `--resume` a session that does not exist. It is gated on the stored `boxId` equalling the one that failed, so a stale resume can never clear a newer box, and it clears the id, appends the error and dispatches `op_failed` in one transaction.
 
 Test for C1: create a throwaway box, pause it, and `GET /v2/box/{id}` at +1 day, +7 days, +14 days, +30 days (record `status`, `last_activity_at`); resume at each point. Also ask Upstash support for the policy in writing. Test for C2: on a free account create 11 boxes, pause 1 and see whether the 11th create succeeds.
 
@@ -108,10 +116,10 @@ Test for C1: create a throwaway box, pause it, and `GET /v2/box/{id}` at +1 day,
 
 Names are display-only (the SDK's `Box.getByName` is just `GET /v2/box/{nameOrId}`, and nothing documents uniqueness), so the name cannot be the idempotency key. The key is a **label** plus a list-by-label lookup before creating. `createFromSnapshot(snapshotId, { name })`:
 
-1. `label = "d:" + hex(SHA-256(name)).slice(0, 18)`. The obvious `dork:<dorkId>` is 37 chars and **violates the 20-char label limit**; 18 hex chars is 72 bits of hash, so collisions are not a practical concern. `name` is still sent as the box's display name (so the console shows the dork id).
+1. `label = "d:" + hex(SHA-256(CONVEX_CLOUD_URL + "\n" + name)).slice(0, 18)`. The deployment URL is part of the hash so that dev and prod sharing one Upstash account (e.g. dev seeded from a prod export, which can keep document ids) never adopt, or sweep up errored, boxes belonging to the other. **Changing this scope later orphans existing boxes, so fix it before the first real deploy.** The provider refuses to run without it. The obvious `dork:<dorkId>` is 37 chars and **violates the 20-char label limit**; 18 hex chars is 72 bits of hash, so collisions are not a practical concern. `name` is still sent as the box's display name (so the console shows the dork id).
 2. `GET /v2/box?label=<label>`. Results are re-filtered client-side (`labels.includes(label)`, `status !== "deleted"`) so an over-broad filter can never make us act on someone else's box.
 3. Found a live box → return it, never create. If it is `creating`, wait until ready. If it is `paused` (we crashed after create, then the platform auto-paused it) → resume it, because nothing else would. If it is in `error` → delete it and fall through to create a fresh one.
-4. Not found → `POST /v2/box/from-snapshot` with `labels: [label]` (labels are set atomically with creation, so there is no window where the box exists unlabelled), the env and `init_command`. Wait for `creating → idle`; if it fails to become ready, delete it (best effort) so a retry starts clean.
+4. Not found → `POST /v2/box/from-snapshot` with `labels: [label]` (labels are set atomically with creation, so there is no window where the box exists unlabelled), the env and `init_command`. Wait for `creating → idle` (wall-clock deadline of 240s, since each poll may itself take up to 30s and the Convex action limit is 10 minutes); if it fails to become ready, delete it (best effort) so a retry starts clean.
 5. Re-list by label. If two creators raced (both saw an empty list), the **oldest `created_at`, then smallest id, wins** and the loser deletes its own box and returns the winner's id. Both sides compute the same winner without coordinating. In practice the Convex action is at-most-once per effect, so this is a belt-and-braces guard.
 
 Remaining gap: if the process dies between step 4's POST returning and the caller recording `boxId` (`lifecycle.boxCreated`), the retry takes step 3 and adopts the box. If the dork is deleted in that window `boxes.create` already deletes the orphan. UNKNOWN D1: the list endpoint's consistency (does a box show in `GET /v2/box?label=` immediately after create returns?). Test: create via the API and list in a tight loop; if there is lag, add a short delay before the step-5 re-list. UNKNOWN D2: whether `GET /v2/box` paginates or caps the result size (irrelevant with a per-dork label, which matches at most a few boxes).
@@ -155,6 +163,7 @@ A tighter option for later: allowlist the exact deployment hostname instead of `
 |---|---|
 | `BOX_PROVIDER=upstash` | Select this provider (`sim` stays the dev default). |
 | `UPSTASH_BOX_API_KEY` | Required. Without it every box call fails with "box provider not configured". |
+| `CONVEX_CLOUD_URL` | Set by Convex itself; used as the box-label scope (see (d)). |
 | `BASE_SNAPSHOT_ID` | The base snapshot to restore ([`infra/snapshot/README.md`](../infra/snapshot/README.md)). Per-user override: `userSettings.workstationSnapshotId`. |
 | `UPSTASH_BOX_START_MODE` | `init` (default) or `exec` (fallback, see (b)). |
 | `UPSTASH_BOX_NETWORK_POLICY` | `dorks` to apply the allow-list above. Unset = allow-all. |
@@ -171,6 +180,7 @@ Run these once against a throwaway account (Free plan first), with a throwaway s
 | A3 | Init command env | `init_command: "env > /tmp/init-env.txt"`; read via exec. |
 | B1 | Free plan accepts `init_command` on `from-snapshot` | See (b). Also the paused→resume re-run (mtime of `/tmp/ran`). |
 | B2 | Detached exec children survive; inherit env | See (b). |
+| B3 | Exec right after resume reaches a running box | Loop resume → immediate exec, with/without the status wait; count failures. |
 | C1 | Paused-box retention | Pause, query at +1/7/14/30 days; ask Upstash. |
 | C2 | Do paused boxes count toward the Free 10-box cap? | Create 11, pause 1. |
 | D1 | List-by-label consistency right after create | Create + tight list loop. |
