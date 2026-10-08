@@ -15,7 +15,7 @@ export const setRunning = internalMutation({
   args: { id: v.string(), running: v.boolean() },
   handler: async (ctx, { id, running }) => {
     const box = await ctx.db.get(ctx.db.normalizeId("simBoxes", id) ?? ("" as never));
-    if (!box) throw new Error("no such box");
+    if (!box) throw new Error("sim box not found");
     if (box.running !== running) await ctx.db.patch(box._id, { running, gen: box.gen + 1 });
   },
 });

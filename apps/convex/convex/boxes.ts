@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
+import { isBoxNotFound } from "../../api/src/lib/box";
 import { getBox } from "./lib/box";
 import { bridgeSecret } from "./lib/bridgeAuth";
 
@@ -55,7 +56,15 @@ export const resume = internalAction({
     try {
       const info = await ctx.runQuery(internal.lifecycle.boxInfo, { dorkId });
       if (!info?.boxId) throw new Error("no box");
-      await getBox(ctx).resume(info.boxId);
+      try {
+        await getBox(ctx).resume(info.boxId);
+      } catch (e) {
+        // The provider no longer has this box (deleted out of band, retention expired). Forget the id so the machine's
+        // `error` + !hasBox path recreates it from the snapshot on the next message, instead of failing resume forever.
+        if (!isBoxNotFound(e)) throw e;
+        console.error("resume_box: box no longer exists, clearing boxId");
+        return void (await ctx.runMutation(internal.lifecycle.boxGone, { dorkId, boxId: info.boxId, message: "The sandbox no longer exists; it will be recreated on your next message" }));
+      }
       await ctx.runMutation(internal.lifecycle.boxResumed, { dorkId });
     } catch (e) {
       await ctx.runMutation(internal.lifecycle.opFailed, { dorkId, message: safe(e, "resume_box") });

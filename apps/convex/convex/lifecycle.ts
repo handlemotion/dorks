@@ -54,6 +54,22 @@ export const opFailed = internalMutation({
 });
 
 /**
+ * The provider says `boxId` no longer exists. Forget it (and the Claude session that lived on its disk, which a recreated box does
+ * not have) and fail the op, atomically, so the machine's `error` + !hasBox path recreates the box on the next message.
+ * No-op if the dork now points at a different box: a stale resume must not clobber a newer one.
+ */
+export const boxGone = internalMutation({
+  args: { dorkId: v.id("dorks"), boxId: v.string(), message: v.string() },
+  handler: async (ctx, { dorkId, boxId, message }) => {
+    const dork = await ctx.db.get(dorkId);
+    if (!dork || dork.deleting || dork.boxId !== boxId) return;
+    await ctx.db.patch(dorkId, { boxId: undefined, claudeSessionId: undefined });
+    await append(ctx, dorkId, { type: "error", message });
+    await dispatch(ctx, dorkId, { t: "op_failed" });
+  },
+});
+
+/**
  * Records the freshly created box. Returns "orphaned" if the dork was deleted (or already purged) while `createFromSnapshot`
  * was in flight: nothing can track that box any more, so the caller must delete it.
  */
