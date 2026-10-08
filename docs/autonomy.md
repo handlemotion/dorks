@@ -118,8 +118,9 @@ Webhook (`http.ts` route `POST /github/webhook`):
 - **`notify` frames** are written to stdin like `user_message`, and deduped and journaled the same way.
 - **Local RPC**: the existing credential socket grows into a small JSON-lines RPC (`<state>/cred/cred.sock`, owned by the Claude
   user). Methods: `token`, `pr.sub`, `pr.unsub`, `pr.list`, `hook.stop`, `hook.postToolUse`, `hook.sessionStart`.
-  `pr.*` call the Convex functions above. `pr.list` reads the cached reactive `bridge.subscriptions`.
-- **`dorks` CLI** (the same binary): `dorks pr sub <url|owner/name#n>`, `dorks pr unsub …`, `dorks pr list [--json]`,
+  `pr.*` call the Convex functions above. `pr.list` reads the cached reactive `bridge.subscriptions`. The bridge sets `DORKS_SOCK`
+  (the socket path) in Claude's environment so the CLI, the shim and the hooks find it.
+- **`dorks` CLI** (the same binary, run as `dorks`: the role is chosen by the name it is invoked as, see `infra/bridge/README.md`): `dorks pr sub <url|owner/name#n>`, `dorks pr unsub …`, `dorks pr list [--json]`,
   `dorks hook <event>` (reads hook JSON on stdin, prints hook JSON on stdout).
 - **`gh` shim** (installed ahead of the real `gh` on `PATH` in the snapshot; the real one is found through `DORKS_REAL_GH`):
   - It gets the token from the socket, sets `GH_TOKEN`, and execs the real `gh`, so everything works, including the `gh stack` extension.
