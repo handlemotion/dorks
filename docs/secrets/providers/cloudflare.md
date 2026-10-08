@@ -10,10 +10,17 @@ Official docs (checked 2026-10-07): [Workers CI/CD with GitHub Actions](https://
 2. Under **Permission policies**, choose the **Edit Cloudflare Workers** template/permission. Restrict **Account Resources** to the single dorks account. Copy the token; it is shown once.
 3. Account ID: dashboard -> **Workers & Pages** overview (right side), or **Find account and zone IDs** in Cloudflare docs.
 4. Insert:
-   ```sh
-   scripts/set-secret.sh prod CLOUDFLARE_API_TOKEN
-   printf %s "<account id>" | scripts/set-secret.sh prod CLOUDFLARE_ACCOUNT_ID
-   ```
-5. In CI, store the prod dotenvx key (`DOTENV_PRIVATE_KEY_DORKS_PROD`) as a CI secret and run `pnpm exec dotenvx run --strict -f secrets/.env.dorks_prod -- wrangler deploy` from the repo root.
+   In the Doppler dashboard, `dorks` -> `prd`: set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+5. Deploy: `doppler run -p dorks -c prd -- wrangler deploy` from the app folder (humans only; the `prd` config is not for agents). For CI, give it a Doppler service token scoped to `prd` as the one CI secret (`DOPPLER_TOKEN`).
+
+## Pushing runtime secrets to a Worker
+
+No Worker declares secrets today (`apps/web` has none; runtime secrets live on the Convex deployment). Doppler has no managed Cloudflare Workers sync; if a Worker ever needs some, its documented path is the CLI, run by a human from the Worker's folder:
+
+```sh
+doppler secrets download -p dorks -c prd --no-file --format json | jq '{NAME_A, NAME_B}' | wrangler secret bulk
+```
+
+The `jq` filter picks the names the Worker needs. Values only travel through the pipe. Unverified: not run against a real Worker (no Cloudflare credentials yet).
 
 Unverified: the exact menu labels in the current Cloudflare dashboard vary (docs show both account-level and profile-level token pages); follow whichever your dashboard shows.

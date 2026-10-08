@@ -1,106 +1,72 @@
 # Secrets
 
-**Encrypted env files in git are the source of truth** ([dotenvx](https://dotenvx.com/docs), v2.33 validated 2026-10-08). Every secret and env var dorks needs lives in `secrets/.env.dorks_dev` and `secrets/.env.dorks_prod`, each value encrypted individually. The files are committed; only the private keys stay out of git. No account, no service, no network.
+**[Doppler](https://docs.doppler.com) is the source of truth** for every secret and env var dorks needs: project `dorks`, configs `dev` and `prd`. Nothing is stored in git.
 
 - [inventory.md](inventory.md): every variable (name, unit, envs, used by, generated vs external, status).
-- [providers/](providers/): step-by-step guides to get each external value ([Resend](providers/resend.md), [GitHub App](providers/github-app.md), [Upstash Box](providers/upstash-box.md), [Expo push](providers/expo-push.md), [Convex](providers/convex.md), [Cloudflare](providers/cloudflare.md)).
-- [reuse-in-other-repos.md](reuse-in-other-repos.md): the same setup for any repo.
+- [providers/](providers/): how to get each external value ([Resend](providers/resend.md), [GitHub App](providers/github-app.md), [Upstash Box](providers/upstash-box.md), [Expo push](providers/expo-push.md), [Convex](providers/convex.md), [Cloudflare](providers/cloudflare.md)).
+- [reuse-in-other-repos.md](reuse-in-other-repos.md): the same setup for another repo.
 
-## Multi-repo rule: the repo name is in the file name
+## The setup, and why
 
-Secrets keys are per machine (Conductor env, your shell), so two repos both using `DOTENV_PRIVATE_KEY_DEV` would collide. dotenvx derives the key variable from the **file name** (`.env.<suffix>` -> `DOTENV_PRIVATE_KEY_<SUFFIX>`, verified 2026-10-08; hyphens are kept, so use underscores). So every repo names its files `secrets/.env.<repo>_<env>`:
-
-| Repo | Files | Key variables |
-| --- | --- | --- |
-| dorks | `secrets/.env.dorks_dev`, `secrets/.env.dorks_prod` | `DOTENV_PRIVATE_KEY_DORKS_DEV`, `DOTENV_PRIVATE_KEY_DORKS_PROD` |
-| another repo `kirk` | `secrets/.env.kirk_dev`, ... | `DOTENV_PRIVATE_KEY_KIRK_DEV`, ... |
-
-The keys of all repos can then live side by side in one machine's env. dotenvx also tries every `DOTENV_PRIVATE_KEY*` variable it finds, so a mismatch fails loudly (`--strict`) instead of using the wrong key. Existing machines that still export the old `DOTENV_PRIVATE_KEY_DEV` keep working; rename the variable to `DOTENV_PRIVATE_KEY_DORKS_DEV` for hygiene.
-
-## Files and keys
-
-| | dev | prod |
-| --- | --- | --- |
-| Encrypted values (committed) | `secrets/.env.dorks_dev` | `secrets/.env.dorks_prod` |
-| Private key (never committed) | `DOTENV_PRIVATE_KEY_DORKS_DEV` | `DOTENV_PRIVATE_KEY_DORKS_PROD` |
-| Where it lives | Conductor repo env (every agent/workspace) | **[Dotenvx Armor](https://dotenvx.com/docs/custody/armor/)** (armored key `032 B7D`, moved 2026-10-08). Not in git, not on disk, not in Conductor |
-
-- The public key is inside each file, so anyone can **add or overwrite** values without being able to **read** them (validated). That is how agents can seed prod without seeing it. Because overwriting is possible, review every `secrets/.env.dorks_prod` diff in PRs.
-- A key can also sit in `.env.keys` at the repo root (gitignored; dotenvx writes it on first `set`). Dev uses the Conductor env var; prod lives in Armor.
-- A leaked **dev** key decrypts all git history of dev values. Keep dev values low-value (sim mode, dev tokens); real third-party prod credentials go only in `.env.prod`.
-- Rotating a key means decrypting the file (`dotenvx decrypt -f secrets/.env.dorks_prod`), deleting its entry in `.env.keys`, and re-encrypting (`dotenvx encrypt -f ...`, which makes a new keypair). If the old key may have leaked, also rotate the underlying secrets: old git history stays decryptable with the old key.
-- `staging` is not used: one production target, no CI.
-
-## Naming and layout
-
-- **Secret names are exactly the env var name the code reads.** Names are unique across units, so there is one file per env instead of per-unit folders. The inventory's "unit" column records which app owns/reads each value (`shared`, `convex`, `web`, `ios`, `api`).
-- Public build-time values (`VITE_*`, `EXPO_PUBLIC_*`) are config, not secrets, but live here too so there is one place to look. They ship to browsers/devices: never put a real secret behind those prefixes.
-- Dummy values for things a human must obtain are `REPLACE_ME__<PROVIDER>` (status `dummy` in the inventory). A dummy in prod means that feature is not ready.
-- **Real values are never committed in plaintext, pasted into issues/chat, or logged.** `.env*` is gitignored except `*.example` and the two encrypted files.
-
-## One-time setup (done for dorks, 2026-10-08)
-
-- **Dev:** `DOTENV_PRIVATE_KEY_DORKS_DEV` is a Conductor env var for this repo, so every workspace and agent decrypts `secrets/.env.dorks_dev`.
-- **Prod:** the prod key was moved into Dotenvx Armor with `dx armor up -f secrets/.env.dorks_prod` (`alias dx="npx -y @dotenvx/dotenvx"`; `armor up` uploads the key and deletes the local copy, the encrypted file is untouched). To read prod you must be logged in (`dx login`) on that machine. Verify any time: `dx run --strict -f secrets/.env.dorks_prod -- node -e 'console.log("ok")'`.
-- **Other machine or teammate:** `dx login`, then the same `dx run` works with no key file. Give new people access to the key in the Armor dashboard (Armored Keys -> access).
-- If Armor is ever unavailable: `dx armor down -f secrets/.env.dorks_prod` writes the key back to `.env.keys` (keep it out of git).
-- Fill the `REPLACE_ME__*` dummies with the provider guides (below).
-
-## Adding or changing a secret
-
-Work from a normal local clone (dotenvx is a root dev dependency: `pnpm install`). Same as editing any `.env`:
-
-1. Open `secrets/.env.dorks_dev` or `secrets/.env.dorks_prod`, put the real value in plaintext on its line (replace the `encrypted:...` value, or add a new `NAME=value` line).
-2. `pnpm exec dotenvx encrypt -f secrets/.env.dorks_prod` encrypts only the plaintext lines and leaves the rest alone. No private key needed.
-3. Commit and open a PR. **Never commit between steps 1 and 2**: until then the value is plaintext; if that ever lands in git, treat the secret as leaked.
-
-One-liner instead of the editor: `pnpm exec dotenvx set NAME "value" -f secrets/.env.dorks_prod` (the value lands in shell history). Optional silent prompt or random value: `scripts/set-secret.sh prod NAME` / `scripts/set-secret.sh dev NAME --generate b64`.
-
-Read a value: `pnpm exec dotenvx get NAME -f secrets/.env.dorks_prod` (prod needs `dx login`). List names only: `grep -o '^[A-Z_0-9]*=' secrets/.env.dorks_prod`. Delete: `pnpm exec dotenvx del NAME -f secrets/.env.dorks_prod`.
-
-For a brand-new secret also: read it in code by exact name, add a row to [inventory.md](inventory.md) and the name to the unit's `.env.example`, and add it to the table in `scripts/seed-secrets.sh`. Multi-line values (PEM) work.
-
-## Who reads them
-
-| Consumer | How it gets values |
+| Decision | Why |
 | --- | --- |
-| Local dev servers | `dotenvx run --strict -f secrets/.env.dorks_dev -- <cmd>` via the root `pnpm dev*` scripts (see [Local development](#local-development)) |
-| Convex functions | Read the _deployment's_ env. Dev: `apps/convex/scripts/dev.mjs` pushes them. Prod: you set them on the production deployment ([Convex guide](providers/convex.md)) |
-| Web / iOS builds | `VITE_*` / `EXPO_PUBLIC_*` injected at build time |
-| CI / deploys | `CONVEX_DEPLOY_KEY`, `CLOUDFLARE_*` (no CI exists yet; give CI the prod key as a CI secret) |
+| **One Doppler service account (`Conductor`), token in `DOPPLER_TOKEN`**, set once per machine in Conductor's Shared env | Zero per-workspace setup: a fresh workspace has the CLI (cloud image) and the token, so `pnpm dev` just works. One credential per machine serves every repo. |
+| **Project and config are explicit on the command line** (`doppler run -p dorks -c dev -- ...`) | A service-account token has no built-in project/config, and a repo-level `doppler.yaml` is only read by `doppler setup`, which writes per-machine state (`~/.doppler`); `doppler run` alone ignores it (tested, CLI 3.77). Flags need no setup step and cannot collide across repos. So there is no `doppler.yaml` in the repo. |
+| **No `DOPPLER_PROJECT` / `DOPPLER_CONFIG` env vars** | They would be machine-global, so two repos sharing one machine would collide. Per-repo flags in `package.json` do not. |
+| **Names are the exact env var the code reads**, unique across units | One flat config per env instead of per-app configs; the inventory's "unit" column records the owner. |
+| `dev` and `prd` only | One production target; no staging. |
 
-## Open decision: syncing to hosting providers
+Multi-repo layout: each repo has its own Doppler **project** (same names `dev`/`prd`), and its scripts name it (`-p <repo>`). The shared `DOPPLER_TOKEN` is granted access to each project in Doppler; no repo holds a credential. Recipe: [reuse-in-other-repos.md](reuse-in-other-repos.md).
 
-Not decided; nothing is configured. Prod values are copied by hand using the provider guides. If wanted later: a small script can run `dotenvx run -f secrets/.env.dorks_prod -- ...` to push to Convex (`convex env set`) and Cloudflare (`wrangler secret put`), with no extra service. Hosted managers offer first-party syncs (e.g. Infisical documents a Cloudflare Workers sync); we gave those up in exchange for no SaaS dependency.
+Doppler also injects its built-ins (`DOPPLER_PROJECT`, `DOPPLER_CONFIG`, `DOPPLER_ENVIRONMENT`) into every `doppler run`; ignore them.
 
 ## Local development
 
 ```sh
-pnpm install     # installs dotenvx
-# have DOTENV_PRIVATE_KEY_DORKS_DEV in the environment (Conductor sets it), or .env.keys at the repo root
-pnpm dev
+pnpm install
+pnpm dev          # Convex + web with Doppler `dev` secrets
 ```
 
-| Command | Starts | Notes |
-| --- | --- | --- |
-| `pnpm dev` | Convex + web in parallel | |
-| `pnpm dev:convex` | `convex dev` after syncing function env (`apps/convex/scripts/dev.mjs`) | |
-| `pnpm dev:web` | Vite on :3000 | |
-| `pnpm dev:ios` | Expo | |
+Needs the Doppler CLI and `DOPPLER_TOKEN` in the environment (Conductor workspaces already have both).
 
-Run from the repo root: the root scripts are `dotenvx run --strict -f secrets/.env.dorks_dev -- pnpm --filter ... dev`, the pattern dotenvx documents. Run anything else with the same prefix, e.g. prod build: `pnpm exec dotenvx run --strict -f secrets/.env.dorks_prod -- pnpm --filter @dorks/web build` (needs the prod key). Always keep `--strict`: without it a missing key injects ciphertext and exits 0. dotenvx looks for `.env.keys` in the current directory, so run from the root (or pass `-fk <path>`).
+| Command | Starts |
+| --- | --- |
+| `pnpm dev` | Convex + web in parallel |
+| `pnpm dev:convex` | `convex dev` after syncing function env (`apps/convex/scripts/sync-env.mjs`) |
+| `pnpm dev:web` | Vite on :3000 |
+| `pnpm dev:ios` | Expo |
+
+Anything else: `doppler run -p dorks -c dev -- <cmd>` from the repo root.
 
 How each process gets env:
 
-- **web (Vite)** / **ios (Expo)**: `VITE_*` / `EXPO_PUBLIC_*` are read from the process env at dev/build time (public values). After changing them for Expo, restart with `--clear`.
-- **convex**: functions read the deployment's env, so `apps/convex/scripts/dev.mjs` pushes every `process.env.NAME` the functions use (scanned from `convex/`, `CONVEX_*` excluded) with `convex env set`, values via stdin. Names missing from `secrets/.env.dorks_dev` are listed and left alone. Deployment selection (`CONVEX_DEPLOYMENT` or self-hosted URL/admin key) is `convex dev`'s own gitignored `apps/convex/.env.local`.
+- **web (Vite)** / **ios (Expo)**: `VITE_*` / `EXPO_PUBLIC_*` are read from the process env at dev/build time (public values; after changing them for Expo, restart with `--clear`).
+- **convex**: functions read the _deployment's_ env, not the shell. `sync-env.mjs` pushes every `process.env.NAME` the functions use (scanned from `convex/`, `CONVEX_*` excluded) with `convex env set`, values via stdin. Names missing from Doppler, or still `REPLACE_ME__*`, are listed and left alone on the deployment. Deployment selection is `convex dev`'s own gitignored `apps/convex/.env.local`.
+- **CI** uses no Doppler and no real secrets (inline generated values in `.github/workflows/ci.yml`).
 
-Running without dotenvx: run the app's own script from its folder (`cd apps/web && pnpm dev`) and supply env yourself via the gitignored `apps/web/.env.local`, `apps/ios/.env.local`, or `npx convex env set`.
+Values are read once at process start; restart after changing one. Changes in Doppler apply to the next `doppler run`.
 
 ### Troubleshooting
 
-- **`no decryption key`**: set `DOTENV_PRIVATE_KEY_DORKS_DEV` (see One-time setup) or put `.env.keys` at the repo root.
-- **`DECRYPTION_FAILED`**: wrong key for that file (dev key cannot read prod), or the file was re-encrypted: for prod run `dx login` (the key is in Armor); for dev check the Conductor env var.
-- **A value looks like `encrypted:...` at runtime**: something ran `dotenvx` without `--strict`. Use the root `pnpm dev*` scripts or add `--strict`.
-- **Convex says an env var is not set**: it was reported under "not in secrets/.env.dorks_dev" by `convex dev`; add it with `scripts/set-secret.sh dev NAME` and restart.
-- **Changes not picked up**: values are read once at process start; restart the dev server.
+- **`Doppler Error: ... token`** or `You must specify a config`: `DOPPLER_TOKEN` is missing or revoked in this environment (or the `-p/-c` flags were dropped).
+- **Convex says an env var is not set**: it was listed as missing or placeholder by `convex dev`. Add it (see below) and restart.
+
+## Agent rules
+
+- **Never print, log, echo, read or commit secret values.** No `doppler secrets get`, `secrets download`, `doppler run -- printenv/env`, `cat .env*`, or anything that sends values to the terminal, a file or chat. Names only: `doppler secrets -p dorks -c dev --only-names`.
+- **No prod.** Never run any command with `-c prd` (read or write). Prod values are edited by a human in the Doppler dashboard.
+- **Add or change a dev secret** (value must not be echoed):
+  - generated: `node -e 'process.stdout.write(require("crypto").randomBytes(32).toString("base64"))' | doppler secrets set NAME -p dorks -c dev --no-interactive` (`hex` for hex);
+  - config value: `printf %s 'value' | doppler secrets set NAME -p dorks -c dev --no-interactive`;
+  - external value only a human has: set `REPLACE_ME__<PROVIDER>` and ask the human to fill it in the dashboard.
+  Check that the name exists first (`--only-names`); do not overwrite an existing value you did not create.
+- **New env var in code:** read it by its exact name; add a row to [inventory.md](inventory.md) and the name to the unit's `.env.example`; create it in `dev` as above (and name it in the PR so a human creates it in `prd`).
+- `VITE_*` / `EXPO_PUBLIC_*` ship to clients: never put a real secret behind those prefixes.
+
+## Humans: prod
+
+Edit `prd` in the Doppler dashboard (project `dorks`). Do not paste values into issues or chat. The `Conductor` token's reach into `prd` is a decision still open (the token can currently list `prd` names); prod values must not be read by agents either way.
+
+- **Convex prod env:** `pnpm push:convex-env` ([Convex guide](providers/convex.md)).
+- **Cloudflare Workers:** Doppler's documented path is a CLI pipe into `wrangler secret bulk` ([Cloudflare guide](providers/cloudflare.md)).
+- **Placeholders:** values that a human must obtain are `REPLACE_ME__<PROVIDER>`. A placeholder in `prd` means that feature is not ready; the Convex push skips them.

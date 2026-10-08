@@ -2,7 +2,7 @@
 
 Scanned 2026-10-07 across `apps/*`, `infra/`, `docs/`, wrangler/Convex/Expo config. There is no CI, Dockerfile or `.github/` yet. Env and naming rules: [README](README.md).
 
-**Status** is what `scripts/seed-secrets.sh` creates in `secrets/.env.dorks_dev` / `.env.dorks_prod`: `filled` = a real generated/configured value, `dummy` = `REPLACE_ME__<PROVIDER>` that a human must replace (guide linked), `config` = non-secret value with a sensible default, `-` = deliberately not created in that env. Both files exist (see [README](README.md)); the **Folder** column is now just the owning unit.
+**Status** is what was seeded into the Doppler `dev` / `prd` configs of project `dorks` (2026-10-08): `filled` = a real generated/configured value, `dummy` = `REPLACE_ME__<PROVIDER>` that a human must replace (guide linked), `config` = non-secret value with a sensible default, `-` = deliberately not created in that env. The **Unit** column is the owning app.
 
 Backend: **convex** (spike verdict GO, [convex-spike.md](../convex-spike.md)); the old Worker API was removed. `shared` marks values read by more than one unit.
 
@@ -10,15 +10,15 @@ Backend: **convex** (spike verdict GO, [convex-spike.md](../convex-spike.md)); t
 
 | Name | Unit | Envs | Secret? | Used by (code) | Source | dev status | prod status |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `BETTER_AUTH_SECRET` | `shared` | dev, prod | yes | convex `convex/auth.ts:21`; api `src/auth.ts:16` | generated (32 random bytes, base64) | filled | filled |
-| `ENCRYPTION_KEY` | `shared` | dev, prod | yes | convex `convex/bridge.ts:156`, `convex/settings.ts:9`; api `src/lib/crypto.ts:19`. AES-GCM key, **must decode to 32 bytes** | generated (32 random bytes, base64) | filled | filled |
-| `RESEND_API_KEY` | `shared` | dev, prod | yes | convex `convex/mail.ts:3` (required, throws if unset); api `src/lib/mailer.ts:29` (empty = log OTP to console) | external: [Resend](providers/resend.md) | dummy | dummy |
-| `BOX_PROVIDER` | `shared` | dev, prod | no | convex `lib/box.ts:10`, `bridge.ts:160`, `settings.ts:61`, `simbox.ts:35`; api `lifecycle/deps.ts:66` | config: `sim` (dev), `upstash` (prod; any non-`sim` value means real provider, which is not implemented yet) | config | config |
-| `BASE_SNAPSHOT_ID` | `shared` | dev, prod | no | convex `lifecycle.ts:94`; api `lifecycle/deps.ts:71`. Box snapshot new dorks start from | dev: `sim-snapshot`; prod external: [Upstash Box](providers/upstash-box.md) | config | dummy |
-| `GITHUB_APP_ID` | `shared` | dev, prod | no (identifier) | convex `bridge.ts:161`; api `lib/github.ts` | external: [GitHub App](providers/github-app.md) | dummy (unused while `BOX_PROVIDER=sim`) | dummy |
-| `GITHUB_APP_PRIVATE_KEY` | `shared` | dev, prod | yes | convex `bridge.ts:161`; api `lib/github.ts`. **Must be PKCS#8 PEM**, not GitHub's downloaded PKCS#1 | external: [GitHub App](providers/github-app.md) | dummy | dummy |
+| `BETTER_AUTH_SECRET` | `shared` | dev, prod | yes | convex `convex/auth.ts:21` | generated (32 random bytes, base64) | filled | filled |
+| `ENCRYPTION_KEY` | `shared` | dev, prod | yes | convex `convex/bridge.ts:156`, `convex/settings.ts:9`. AES-GCM key, **must decode to 32 bytes** | generated (32 random bytes, base64) | filled | filled |
+| `RESEND_API_KEY` | `shared` | dev, prod | yes | convex `convex/mail.ts:3` (required, throws if unset) | external: [Resend](providers/resend.md) | dummy | dummy |
+| `BOX_PROVIDER` | `shared` | dev, prod | no | convex `lib/box.ts:10`, `bridge.ts:160`, `settings.ts:61`, `simbox.ts:35` | config: `sim` (dev), `upstash` (prod; any non-`sim` value means real provider, which is not implemented yet) | config | config |
+| `BASE_SNAPSHOT_ID` | `shared` | dev, prod | no | convex `lifecycle.ts:94`. Box snapshot new dorks start from | dev: `sim-snapshot`; prod external: [Upstash Box](providers/upstash-box.md) | config | dummy |
+| `GITHUB_APP_ID` | `shared` | dev, prod | no (identifier) | convex `bridge.ts:161` | external: [GitHub App](providers/github-app.md) | dummy (unused while `BOX_PROVIDER=sim`) | dummy |
+| `GITHUB_APP_PRIVATE_KEY` | `shared` | dev, prod | yes | convex `bridge.ts:161`. **Must be PKCS#8 PEM**, not GitHub's downloaded PKCS#1 | external: [GitHub App](providers/github-app.md) | dummy | dummy |
 | `GITHUB_WEBHOOK_SECRET` | `shared` | dev, prod | yes | verifier `verifyWebhook` in `convex/core/github.ts` (route not built yet; planned as a Convex `httpAction`) | generated (32 random bytes, hex); **you paste it into the GitHub App's webhook settings** | filled | filled |
-| `UPSTASH_BOX_API_KEY` | `shared` | dev, prod | yes | convex `lib/box.ts:16` (**required when `BOX_PROVIDER` is not `sim`**)| external: [Upstash Box](providers/upstash-box.md) | dummy | dummy |
+| `UPSTASH_BOX_API_KEY` | `shared` | dev, prod | yes | convex `lib/box.ts:16` (**required when `BOX_PROVIDER` is not `sim`**) | external: [Upstash Box](providers/upstash-box.md) | dummy | dummy |
 | `EXPO_ACCESS_TOKEN` | `shared` | dev, prod | yes | not read yet (push sending is planned in convex) | external: [Expo](providers/expo-push.md) (optional feature) | dummy | dummy |
 | `BRIDGE_SECRET_KEY` | `convex` | dev, prod | yes | convex `lib/bridgeAuth.ts:7`; HMAC key deriving each box bridge's secret. Rotating it invalidates running boxes' bridge secrets | generated (32 random bytes, hex) | filled | filled |
 | `GITHUB_APP_CLIENT_ID` | `convex` | dev, prod | no (identifier) | convex `settings.ts:63` (install-ownership check) | external: [GitHub App](providers/github-app.md) | dummy | dummy |
@@ -39,13 +39,13 @@ Backend: **convex** (spike verdict GO, [convex-spike.md](../convex-spike.md)); t
 | `CLOUDFLARE_API_TOKEN` | `shared` | prod only | yes | `wrangler deploy` for `apps/web` (no CI yet) | external: [Cloudflare](providers/cloudflare.md) | `-` | dummy |
 | `CLOUDFLARE_ACCOUNT_ID` | `shared` | prod only | no (identifier) | same | external: [Cloudflare](providers/cloudflare.md) | `-` | dummy |
 
-## Not in `secrets/` (and why)
+## Not in Doppler (and why)
 
 | Name | Why |
 | --- | --- |
 | `CONVEX_CLOUD_URL`, `CONVEX_SITE_URL` | Built into every Convex deployment; never set by hand. |
 | `CONVEX_DEPLOYMENT` (dev), `CONVEX_SELF_HOSTED_URL`, `CONVEX_SELF_HOSTED_ADMIN_KEY` | Per-developer deployment selection written by `convex dev` into the gitignored `apps/convex/.env.local`. A dummy here would override that. Add real values (dev) only once a shared dev deployment exists. |
-| `UPSTASH_BOX_BASE_URL`, `UPSTASH_BOX_START_MODE` (`init`\|`exec`), `UPSTASH_BOX_NETWORK_POLICY` (`dorks`) | Optional Upstash Box tuning read by convex `lib/box.ts`; defaults are fine. Details in [docs/upstash-box.md](../upstash-box.md). Create in `secrets/` only when you change them. |
+| `UPSTASH_BOX_BASE_URL`, `UPSTASH_BOX_START_MODE` (`init`\|`exec`), `UPSTASH_BOX_NETWORK_POLICY` (`dorks`) | Optional Upstash Box tuning read by convex `lib/box.ts`; defaults are fine. Details in [docs/upstash-box.md](../upstash-box.md). Create in Doppler only when you change them. |
 | `OTP_SEND_PER_EMAIL` (5), `OTP_SEND_PER_IP` (30), `OTP_SEND_GLOBAL` (100), `OTP_WINDOW_MS` (1h) | Optional sign-in-code rate limits (convex `auth.ts`); defaults in parentheses. Set on the Convex deployment only to change them. |
 | `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `E2E_CLAUDE_TOKEN` | Only read by tests (`infra/bridge`, e2e scripts). The user's Claude token is a per-user value stored encrypted in the database, not a deploy secret. |
 | `BRIDGE_*`, `DORKS_*`, `CLAUDE_*`, `FAKE_CLAUDE_*`, `GIT_*`, `CF_TOKEN`, `WEB_URL`, `CHROME_PATH` | Set inside the box by the bridge or by test/CI scripts. CI (`.github/workflows/ci.yml`) uses inline env only, no repo secrets. |
@@ -54,7 +54,7 @@ Backend: **convex** (spike verdict GO, [convex-spike.md](../convex-spike.md)); t
 | `SHOTS`, `SECRETS_OUT`, `DELTA_BATCH_MS`, `HEARTBEAT_MS`, `SIM_DELTAS`, `SIM_DELTA_GAP_MS`, `DORK_ID`, `BRIDGE_URL`, `BRIDGE_SECRET`, `CONVEX_URL` (scripts) | Test/sim script knobs and values derived at run time (e.g. `BRIDGE_SECRET` is `HMAC(BRIDGE_SECRET_KEY, dorkId)` handed to a box at creation). |
 | `EXPO_OS` | Set by Expo itself. |
 | EAS / App Store credentials | No `eas.json` or store config in the repo yet. Add a `ios` guide when iOS builds are set up. |
-| `staging` environment | Not needed, see [README](README.md#environments). |
+| `staging` environment | Not needed, see [README](README.md). |
 
 ## Gaps worth knowing
 

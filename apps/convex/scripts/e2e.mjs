@@ -43,7 +43,7 @@ await startMockResend();
   check("no mail captured beyond the per-email cap", delivered === SEND_CAP, `${delivered} mails`);
   const limited = await post(OTP, { email, type: "sign-in" });
   check("429 body says too many attempts", limited.status === 429 && /too many/i.test((await limited.json()).message ?? ""));
-  const alias = `Burst-${RUN}+x@JAANTONIO.com`;
+  const alias = `Burst-${RUN}+x@DORKS.build`;
   check("case and +tag variants of the same mailbox share the budget", (await post(OTP, { email: alias, type: "sign-in" })).status === 429);
   check("password-reset route cannot bypass the send cap", (await post("/api/auth/email-otp/request-password-reset", { email })).status === 429);
   check("a different mailbox is unaffected", (await post(OTP, { email: `calm-${RUN}@dorks.build`, type: "sign-in" })).status === 200);

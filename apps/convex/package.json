@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "sync-env": "node scripts/sync-env.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

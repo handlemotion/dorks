@@ -7,7 +7,7 @@ pnpm workspace. `pnpm install`, then:
 - `cd apps/ios && pnpm start` — Expo
 - `pnpm typecheck`
 
-Secrets are dotenvx-encrypted files in `secrets/`; see [Local development](docs/secrets/README.md#local-development). With `DOTENV_PRIVATE_KEY_DORKS_DEV` set, `pnpm dev` starts Convex + web with secrets loaded (`pnpm dev:ios` for Expo).
+Secrets live in Doppler (project `dorks`); see [docs/secrets/README.md](docs/secrets/README.md). With `DOPPLER_TOKEN` set (Conductor workspaces have it), `pnpm dev` starts Convex + web with the `dev` config (`pnpm dev:ios` for Expo).
 
 ## Sign-in
 

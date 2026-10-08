@@ -3,14 +3,12 @@
   "private": true,
   "packageManager": "pnpm@12.4.2",
   "scripts": {
-    "dev": "dotenvx run --strict -f secrets/.env.dorks_dev -- pnpm --parallel --filter @dorks/convex --filter @dorks/web dev",
-    "dev:convex": "dotenvx run --strict -f secrets/.env.dorks_dev -- pnpm --filter @dorks/convex dev",
-    "dev:web": "dotenvx run --strict -f secrets/.env.dorks_dev -- pnpm --filter @dorks/web dev",
-    "dev:ios": "dotenvx run --strict -f secrets/.env.dorks_dev -- pnpm --filter @dorks/ios start",
+    "dev": "doppler run -p dorks -c dev -- pnpm --parallel --filter @dorks/convex --filter @dorks/web dev",
+    "dev:convex": "doppler run -p dorks -c dev -- pnpm --filter @dorks/convex dev",
+    "dev:web": "doppler run -p dorks -c dev -- pnpm --filter @dorks/web dev",
+    "dev:ios": "doppler run -p dorks -c dev -- pnpm --filter @dorks/ios start",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r --if-present test"
-  },
-  "devDependencies": {
-    "@dotenvx/dotenvx": "^2.33.0"
+    "test": "pnpm -r --if-present test",
+    "push:convex-env": "doppler run -p dorks -c prd -- pnpm --filter @dorks/convex sync-env"
   }
 }

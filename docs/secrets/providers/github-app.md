@@ -16,7 +16,7 @@ GitHub Apps have no test mode. Register **two apps**: `dorks-dev` (callback to `
 2. Name (<= 34 chars, globally unique), Homepage URL = the web origin.
 3. **Callback URL**: `http://localhost:3000/github/callback` and `https://<prod web host>/github/callback` (GitHub accepts several).
 4. Tick **Request user authorization (OAuth) during installation**. The code (`apps/convex/convex/lib/githubInstall.ts`) exchanges the returned `code` and rejects installation IDs the user cannot see. This option removes the Setup URL field; that is expected. Leave **Expire user authorization tokens** on.
-5. **Webhook**: leave **Active unchecked for now** (the PR webhook route is not built). When it lands, use the generated `GITHUB_WEBHOOK_SECRET` from `secrets/` as the webhook secret.
+5. **Webhook**: leave **Active unchecked for now** (the PR webhook route is not built). When it lands, use the generated `GITHUB_WEBHOOK_SECRET` from Doppler (`GITHUB_WEBHOOK_SECRET`, dashboard `dorks` -> `prd`) as the webhook secret.
 6. Permissions: Repository **Contents: Read & write** and **Pull requests: Read & write** only (Metadata is automatic). **Do not grant Workflows** (see docs/github-app.md for why).
 7. **Where can this app be installed?** Prod: **Any account** if users install on their own orgs, otherwise **Only on this account**.
 8. **Create GitHub App**.
@@ -36,13 +36,11 @@ On the app's settings page (**Developer settings -> GitHub Apps -> Edit**):
 
 ## 3. Insert
 
+In the Doppler dashboard (`dorks` -> `prd`, and `dev` if you want it there), set `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_PRIVATE_KEY` (paste the whole PKCS#8 PEM). Or from a terminal, with the PEM via stdin:
+
 ```sh
-E=prod   # or dev
-scripts/set-secret.sh $E GITHUB_APP_ID
-scripts/set-secret.sh $E GITHUB_APP_CLIENT_ID
-scripts/set-secret.sh $E GITHUB_APP_CLIENT_SECRET
-scripts/set-secret.sh $E GITHUB_APP_PRIVATE_KEY < app.pkcs8.pem   # multi-line PEM via stdin
+doppler secrets set GITHUB_APP_PRIVATE_KEY -p dorks -c prd < app.pkcs8.pem
 shred -u app.pkcs8.pem downloaded.pem 2>/dev/null || rm -f app.pkcs8.pem downloaded.pem
 ```
 
-Rotation: generate the new key, update `secrets/` and the Convex deployment, then delete the old key in GitHub (apps can hold up to 25 keys; they never expire).
+Rotation: generate the new key, update Doppler and push to the Convex deployment, then delete the old key in GitHub (apps can hold up to 25 keys; they never expire).
