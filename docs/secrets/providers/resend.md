@@ -1,6 +1,6 @@
 # Resend (sign-in code email)
 
-Provides: `RESEND_API_KEY` (`shared`, secret). Related config: `ALLOWED_EMAIL_DOMAIN` (`shared`), which is also the sender domain: mail goes out as `dorks <auth@<ALLOWED_EMAIL_DOMAIN>>` (`apps/convex/convex/mail.ts`).
+Provides: `RESEND_API_KEY` (`shared`, secret). Mail goes out as `dorks <auth@dorks.build>` (hard-coded in `apps/convex/convex/mail.ts`).
 
 Official docs (checked 2026-10-07): [API keys](https://www.resend.com/docs/create-an-api-key), [Add a domain](https://www.resend.com/docs/add-a-domain).
 
@@ -10,7 +10,7 @@ Resend has no test/live key split. Use two keys in one team (or two teams): name
 
 ## 1. Verify the sender domain (once, prod key needs it)
 
-The sender domain is the root of `ALLOWED_EMAIL_DOMAIN` (`jaantonio.com`), because the code sends from `auth@jaantonio.com`. Resend recommends a subdomain; if you want one, change the code's `from` and the domain config together.
+The sender domain is `dorks.build` itself, because the code sends from `auth@dorks.build`. Resend recommends a subdomain; if you want one, change the `from` in `mail.ts`.
 
 1. Resend dashboard -> **Domains** (https://resend.com/domains) -> **Add Domain**.
 2. Enter the domain, pick the region closest to recipients, optionally set a custom Return-Path subdomain (defaults to `send`).
@@ -27,8 +27,4 @@ The sender domain is the root of `ALLOWED_EMAIL_DOMAIN` (`jaantonio.com`), becau
 
 ## 3. Insert
 
-```sh
-scripts/set-secret.sh prod RESEND_API_KEY   # prompts silently; commit secrets/.env.dorks_prod
-```
-
-Repeat with `dev` and the dev key if you want real mail in dev. Then set it on the Convex production deployment too ([Convex guide, step 4](convex.md)).
+In the Doppler dashboard: project `dorks` -> `prd` -> `RESEND_API_KEY` -> paste -> Save. Repeat in `dev` if you want real mail in dev (or ask an agent to run `doppler secrets set RESEND_API_KEY -p dorks -c dev` after you paste the value into the prompt yourself). Then push it to the Convex production deployment ([Convex guide, step 4](convex.md)).

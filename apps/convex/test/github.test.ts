@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentTokenScope, createAppJwt, createInstallationToken, GithubHttpError, parsePullRequestEvent, verifyWebhook } from "../src/lib/github";
+import { agentTokenScope, createAppJwt, createInstallationToken, GithubHttpError, parsePullRequestEvent, verifyWebhook } from "../core/github";
 
 async function keyPair() {
   const kp = (await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"])) as CryptoKeyPair;

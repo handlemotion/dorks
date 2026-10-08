@@ -69,7 +69,7 @@ Tables:
 - `userSettings.commentPolicy` (optional, default `all`) and `userSettings.githubLogin` (stored at install-link time).
 - `commands.kind` gains `"notify"` (fields: `text`, plus `meta` holding kinds and prs).
 
-Lifecycle machine (`apps/api/src/lifecycle/machine.ts`) input `notify`, by state:
+Lifecycle machine (`apps/convex/core/machine.ts`) input `notify`, by state:
 
 | State | Effect |
 |---|---|

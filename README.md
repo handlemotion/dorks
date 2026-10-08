@@ -3,32 +3,25 @@
 pnpm workspace. `pnpm install`, then:
 
 - `pnpm dev` — Convex + web; `pnpm dev:convex`, `pnpm dev:web`, `pnpm dev:ios` individually
-- `pnpm dev:api` — Hono + `Dork` Durable Object on wrangler (:8787)
-- `pnpm dev:web` — TanStack Start on Workers via Vite (:3000, proxies `/api` → :8787)
+- `pnpm dev:web` — TanStack Start on Workers via Vite (:3000)
 - `cd apps/ios && pnpm start` — Expo
 - `pnpm typecheck`
 
-Secrets are dotenvx-encrypted files in `secrets/`; see [Local development](docs/secrets/README.md#local-development). With `DOTENV_PRIVATE_KEY_DORKS_DEV` set, `pnpm dev` starts Convex + web with secrets loaded (`pnpm dev:ios`, `pnpm dev:api` for the others).
+Secrets live in Doppler (project `dorks`); see [docs/secrets/README.md](docs/secrets/README.md). With `DOPPLER_TOKEN` set (Conductor workspaces have it), `pnpm dev` starts Convex + web with the `dev` config (`pnpm dev:ios` for Expo).
 
-## Local dev (legacy API)
+## Sign-in
 
-```sh
-pnpm --filter @dorks/api db:migrate               # local D1
-pnpm dev:api & pnpm dev:web
-```
-
-With `RESEND_API_KEY` empty, sign-in codes are printed in the API log (`[dev mailer]`).
-Sign-in only works for `ALLOWED_EMAIL_DOMAIN` (default `jaantonio.com`). Use the web origin (:3000) so Better Auth's origin check passes.
+Sign-in is open to any email address. Use the web origin (:3000) so Better Auth's origin check passes. Codes are emailed through Resend (`RESEND_API_KEY`); for local dev without Resend, point Convex at the mock (`RESEND_API_URL`, `apps/convex/scripts/mock-resend.mjs`).
 
 ## Tests
 
-`pnpm test` runs the API suite inside workerd (real D1 + Durable Objects) and the shared client suite.
+`pnpm test` runs the Convex suite (lifecycle machine, normalizer, crypto, GitHub, functions via `convex-test`), the bridge suite and the shared client suite.
 
 ## CI
 
 `.github/workflows/ci.yml` runs on pull requests and pushes to `main`. It uses no real secrets: every key is generated per run.
 
-- **checks**: `pnpm install --frozen-lockfile`, `pnpm -r typecheck`, `pnpm -r --if-present test` (with a throwaway `apps/api/.dev.vars`).
+- **checks**: `pnpm install --frozen-lockfile`, `pnpm -r typecheck`, `pnpm -r --if-present test`.
 - **backend-e2e**: starts a self-hosted Convex backend (`ghcr.io/get-convex/convex-backend`, pinned by digest) with `--network host`, deploys `apps/convex` with `npx convex dev --once`, sets throwaway Convex env vars, then runs `apps/convex/scripts/run-e2e.sh` (acceptance + secret scan) and `apps/convex/scripts/web-e2e.mjs` (headless Chrome against `apps/web` dev). On failure the logs and screenshots in `/tmp/dorks-e2e` are uploaded as the `dorks-e2e-logs` artifact (the raw table export is not).
 
 Reproduce locally by following the steps in the workflow; `CHROME_PATH` overrides the Chrome binary used by `web-e2e.mjs`.

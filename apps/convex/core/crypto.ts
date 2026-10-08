@@ -16,7 +16,7 @@ export interface Keyring {
 }
 
 /** Single key from the ENCRYPTION_KEY secret (version 1). Add versions here to rotate. */
-export const keyringFromEnv = (env: Pick<Env, "ENCRYPTION_KEY">): Keyring => ({ current: 1, keys: { 1: env.ENCRYPTION_KEY } });
+export const keyringFromEnv = (env: { ENCRYPTION_KEY: string }): Keyring => ({ current: 1, keys: { 1: env.ENCRYPTION_KEY } });
 
 async function importKey(b64key: string) {
   const raw = Uint8Array.from(atob(b64key), (c) => c.charCodeAt(0));

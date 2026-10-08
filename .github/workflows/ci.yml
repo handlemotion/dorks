@@ -30,15 +30,6 @@ jobs:
           node-version: 24
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r typecheck
-      - name: Throwaway apps/api/.dev.vars
-        run: |
-          # shellcheck disable=SC2016
-          node -e '
-            const c = require("crypto");
-            console.log(`BETTER_AUTH_SECRET=${c.randomBytes(32).toString("hex")}`);
-            console.log(`ENCRYPTION_KEY=${c.randomBytes(32).toString("base64")}`);
-            console.log(`GITHUB_WEBHOOK_SECRET=${c.randomBytes(16).toString("hex")}`);
-          ' > apps/api/.dev.vars
       - run: pnpm -r --if-present test
 
   backend-e2e:

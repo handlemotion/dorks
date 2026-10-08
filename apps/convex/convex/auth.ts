@@ -7,19 +7,17 @@ import { expo } from "@better-auth/expo";
 import { components, internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import authConfig from "./auth.config";
-import { isAllowedEmail } from "../../api/src/lib/domain";
 import { sendOtpMail } from "./mail";
 import { MAX_WINDOW_MS } from "./rateLimit";
 
 export const authComponent = createClient<DataModel>(components.betterAuth);
 
-// email-otp routes that mail a code (rate limited) or check one (domain check only). Password-reset routes also mail a code to
+// email-otp routes that mail a code (rate limited) or check one. Password-reset routes also mail a code to
 // any existing user, so leaving them out would let the send limit be bypassed. change-email routes are off (`changeEmail.enabled` unset).
 // Checks are not rate limited: better-auth already voids a code after 3 wrong guesses, and a per-mailbox cap would only let
 // anyone lock a known colleague out.
 const SEND_PATHS = ["/email-otp/send-verification-otp", "/email-otp/request-password-reset", "/forget-password/email-otp"];
 const VERIFY_PATHS = ["/sign-in/email-otp", "/email-otp/check-verification-otp", "/email-otp/verify-email", "/email-otp/reset-password"];
-const allowed = (email: unknown) => isAllowedEmail(email, process.env.ALLOWED_EMAIL_DOMAIN ?? "jaantonio.com");
 
 const limit = (name: string, fallback: number) => {
   const n = Number(process.env[name]);
@@ -72,24 +70,14 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
         const sending = SEND_PATHS.includes(c.path);
         if (!sending && !VERIFY_PATHS.includes(c.path)) return;
         const email = (c.body as { email?: unknown } | undefined)?.email;
-        if (!allowed(email)) throw new APIError("FORBIDDEN", { message: "Email domain not allowed" });
+        if (typeof email !== "string") throw new APIError("BAD_REQUEST", { message: "Email required" });
         if (!sending) return;
         if (!("runMutation" in ctx)) throw new Error("rate limiting needs a mutation-capable context");
         const l = otpLimits();
-        const checks = sendChecks(email as string, clientIp(c.request?.headers ?? c.headers), l).map((k) => ({ ...k, windowMs: l.windowMs }));
+        const checks = sendChecks(email, clientIp(c.request?.headers ?? c.headers), l).map((k) => ({ ...k, windowMs: l.windowMs }));
         const r = await ctx.runMutation(internal.rateLimit.hit, { checks });
         if (!r.ok) throw new APIError("TOO_MANY_REQUESTS", { message: `Too many attempts. Try again in ${Math.ceil(r.retryAfterMs / 60_000)} min.` });
       }),
-    },
-    databaseHooks: {
-      user: {
-        create: {
-          before: async (user) => {
-            if (!allowed(user.email)) throw new APIError("FORBIDDEN", { message: "Email domain not allowed" });
-            return { data: user };
-          },
-        },
-      },
     },
     plugins: [
       expo(), // native app: Expo SecureStore session + dorks:// deep link

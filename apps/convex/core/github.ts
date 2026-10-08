@@ -49,7 +49,7 @@ export class GithubHttpError extends Error {
 }
 
 export async function createInstallationToken(
-  env: Pick<Env, "GITHUB_APP_ID" | "GITHUB_APP_PRIVATE_KEY">,
+  env: { GITHUB_APP_ID: string; GITHUB_APP_PRIVATE_KEY: string },
   installationId: number | string,
   fetcher: typeof fetch = fetch,
   scope?: TokenScope,

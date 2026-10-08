@@ -1,6 +1,6 @@
 # Auth setup (Convex backend)
 
-Sign-in is email OTP via `@convex-dev/better-auth` (`apps/convex/convex/auth.ts`). Only addresses on `ALLOWED_EMAIL_DOMAIN` (default `jaantonio.com`) can request a code or create an account.
+Sign-in is email OTP via `@convex-dev/better-auth` (`apps/convex/convex/auth.ts`). Any email address can request a code and create an account (no domain allowlist); the send rate limits below are the abuse control.
 
 ## Required Convex env
 
@@ -8,14 +8,14 @@ Sign-in is email OTP via `@convex-dev/better-auth` (`apps/convex/convex/auth.ts`
 
 | Variable | Why |
 |---|---|
-| `SITE_URL` | Web origin (e.g. `https://dorks.example.com`). Becomes a trusted origin and the cross-domain redirect target. Unset, it used to be silently dropped and web sign-in just failed. |
+| `SITE_URL` | Web origin (e.g. `https://dorks.build`). Becomes a trusted origin and the cross-domain redirect target. Unset, it used to be silently dropped and web sign-in just failed. |
 | `BETTER_AUTH_SECRET` | Signs sessions. Random hex. |
 | `RESEND_API_KEY` | Mails the codes (`convex/mail.ts`). |
 | `EXTRA_TRUSTED_ORIGINS` | Optional, comma separated. See below. |
 
 ## Resend sending domain
 
-Codes are sent `from: dorks <auth@${ALLOWED_EMAIL_DOMAIN}>` (`convex/mail.ts`). Resend refuses to send unless that domain is verified in the Resend account (SPF/DKIM DNS records), so for `jaantonio.com` the domain `jaantonio.com` itself must be verified, not just any domain. A send from an unverified domain fails with a Resend 4xx and the user never gets a code.
+Codes are sent `from: dorks <auth@dorks.build>` (`convex/mail.ts`). Resend refuses to send unless `dorks.build` itself is verified in the Resend account (SPF/DKIM DNS records). A send from an unverified domain fails with a Resend 4xx and the user never gets a code.
 
 ## Expo Go on a device
 
@@ -38,11 +38,11 @@ Counters live in the `rateLimits` table (`convex/rateLimit.ts`; stale rows swept
 | global, all callers | 100 / hour | `OTP_SEND_GLOBAL` |
 | window length (ms, max 24 h) | 3600000 | `OTP_WINDOW_MS` |
 
-- **Global** is the only budget a caller cannot dodge: it bounds Resend volume even when someone mails `rand-N@jaantonio.com` in a loop with spoofed or missing IP headers. Trade-off: that same caller can use the whole budget up and block everyone's sign-in until the window ends. Raise it if the team grows.
+- **Global** is the only budget a caller cannot dodge: it bounds Resend volume even when someone mails `rand-N@example.com` in a loop with spoofed or missing IP headers. Trade-off: that same caller can use the whole budget up and block everyone's sign-in until the window ends. Raise it if the team grows.
 - **Per mailbox** is a mailbox, not a string: lowercased, `+tag` removed, so `a+1@` and `A+2@` share a budget with `a@`. Trade-off: anyone can spend a colleague's 5 sends and lock that colleague out of sign-in for up to an hour.
 - **Per IP** is best effort. The IP is the last hop of `x-forwarded-for`. Self-hosted Convex passes the header through unchanged and adds none, so a caller controls it there; **Convex Cloud's behaviour has not been verified** (it may add nothing, or append one shared proxy address, which would put every user in one budget). Do not rely on it.
 - **Code checks are not rate limited.** Better-auth voids a code after 3 wrong guesses and each new code needs a (limited) send, so guessing is already bounded; a check cap would only enable lockouts.
-- Covered send routes: `send-verification-otp`, `request-password-reset`, `/forget-password/email-otp` (password-reset routes mail a code to any existing user too). All code routes, including checks, also get the allowed-domain check.
+- Covered send routes: `send-verification-otp`, `request-password-reset`, `/forget-password/email-otp` (password-reset routes mail a code to any existing user too).
 
 ### Tests and CI
 

@@ -1,6 +1,6 @@
 import { dorkState, type DorkState } from "@dorks/shared";
 import { describe, expect, it } from "vitest";
-import { reduce, type Ctx, type Input, type Effect } from "../src/lifecycle/machine";
+import { reduce, type Ctx, type Input, type Effect } from "../core/machine";
 
 const STATES = dorkState.options as DorkState[];
 const INPUTS: Input["t"][] = ["start", "user_message", "agent_ready", "turn_idle", "sleep_due", "paused", "bridge_lost", "agent_exited", "op_failed", "watchdog", "archive", "unarchive", "interrupt"];

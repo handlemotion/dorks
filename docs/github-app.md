@@ -51,7 +51,7 @@ No account or organization permissions. Do **not** grant *Workflows*: with it a 
 run with repo secrets, and pushes that touch `.github/workflows/**` will be rejected (this is intended).
 
 The token request asks for exactly `contents: write` and `pull_requests: write` (`AGENT_TOKEN_PERMISSIONS` in
-`apps/api/src/lib/github.ts`). GitHub answers **422** if the request asks for more than the App itself has, so the two
+`apps/convex/core/github.ts`). GitHub answers **422** if the request asks for more than the App itself has, so the two
 permissions above must be granted on the App. If you change the set, change both places. Installations created before a permission
 change must accept the new permissions on GitHub before tokens work.
 

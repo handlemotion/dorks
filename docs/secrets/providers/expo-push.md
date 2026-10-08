@@ -1,6 +1,6 @@
 # Expo push notifications
 
-Provides: `EXPO_ACCESS_TOKEN` (`shared`, secret). **Optional and not used by running code yet**: push sending is planned (the api Worker lists it as a required secret; the Convex migration plans a push action).
+Provides: `EXPO_ACCESS_TOKEN` (`shared`, secret). **Optional and not used by running code yet**: push sending is planned (a Convex push action is planned).
 
 Official docs (checked 2026-10-07): [Sending notifications / enhanced push security](https://docs.expo.dev/push-notifications/sending-notifications/), [Programmatic access (tokens)](https://docs.expo.dev/accounts/programmatic-access).
 
@@ -17,6 +17,4 @@ Expo accounts are not split into test/live. Use one token per environment (`dork
 1. Sign in at https://expo.dev, open https://expo.dev/settings/access-tokens, create an access token (prefer a robot/organization token over a personal one so it outlives people).
 2. Enable enhanced push security from the EAS dashboard (the docs link to the access-tokens page for this; the exact toggle label was not confirmed).
 3. Insert:
-   ```sh
-   scripts/set-secret.sh prod EXPO_ACCESS_TOKEN
-   ```
+   In the Doppler dashboard, `dorks` -> `prd`: set `EXPO_ACCESS_TOKEN`.

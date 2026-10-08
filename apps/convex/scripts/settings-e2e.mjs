@@ -16,7 +16,7 @@ const results = [];
 const check = (n, ok, x = "") => { results.push(ok); console.log(`${ok ? "PASS" : "FAIL"}  ${n}${x ? "  — " + x : ""}`); };
 await startMockResend();
 
-const email = `settings${Date.now() % 100000}@jaantonio.com`;
+const email = `settings${Date.now() % 100000}@dorks.build`;
 const browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH ?? "/usr/bin/google-chrome", args: ["--no-sandbox", "--disable-gpu"], headless: true });
 const page = await browser.newPage();
 await page.setViewport({ width: 900, height: 1000 });

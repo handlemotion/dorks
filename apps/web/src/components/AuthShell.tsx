@@ -38,7 +38,7 @@ function SignIn() {
       <h1>Sign in</h1>
       {!sent ? (
         <>
-          <input aria-label="email" placeholder="you@jaantonio.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input aria-label="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
           <button onClick={send}>Send code</button>
         </>
       ) : (

@@ -39,7 +39,7 @@ function SignIn() {
       <Text style={s.h1}>Sign in</Text>
       {!sent ? (
         <>
-          <TextInput accessibilityLabel="email" style={s.input} autoCapitalize="none" keyboardType="email-address" placeholder="you@jaantonio.com" value={email} onChangeText={setEmail} />
+          <TextInput accessibilityLabel="email" style={s.input} autoCapitalize="none" keyboardType="email-address" placeholder="you@example.com" value={email} onChangeText={setEmail} />
           <Button title="Send code" onPress={async () => { setError(''); const r = await authClient.emailOtp.sendVerificationOtp({ email, type: 'sign-in' }); if (r.error) setError(r.error.message ?? 'Could not send a code'); else setSent(true); }} />
         </>
       ) : (
