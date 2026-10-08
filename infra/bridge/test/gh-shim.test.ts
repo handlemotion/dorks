@@ -19,9 +19,9 @@ function realGhDir() {
   return dir;
 }
 
-async function gh(args: string[], env: NodeJS.ProcessEnv, opts: { path?: string[] } = {}) {
+async function gh(args: string[], env: NodeJS.ProcessEnv, opts: { path?: string[]; input?: string } = {}) {
   const report = join(tmp("report-"), "gh.json");
-  const r = await runAs(cli, "gh", args, { FAKE_GH_REPORT: report, ...env }, opts.path ?? [realGhDir()]);
+  const r = await runAs(cli, "gh", args, { FAKE_GH_REPORT: report, ...env }, opts.path ?? [realGhDir()], opts.input);
   let seen: { argv: string[]; token: string | null; hasSocket: boolean } | null = null;
   try {
     seen = JSON.parse(readFileSync(report, "utf8"));
@@ -39,6 +39,12 @@ describe("gh shim", () => {
     expect(r).toMatchObject({ code: 4, stdout: "out\nline2\n", stderr: "warn\n" });
     expect(b.calls).toEqual([{ method: "token", params: { host: "github.com" } }]);
     expect(JSON.stringify(r.seen!.argv)).not.toContain(TOKEN);
+  });
+
+  it("hands stdin to gh as is", async () => {
+    const b = await fakeBridge();
+    const r = await gh(["issue", "create", "--body-file", "-"], { ...b.env, FAKE_GH_ECHO_STDIN: "1" }, { input: "body from the agent\n" });
+    expect(r).toMatchObject({ code: 0, stdout: "stdin:body from the agent\n" });
   });
 
   it("replaces a stale GH_TOKEN from the environment with the current one", async () => {

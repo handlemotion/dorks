@@ -32,15 +32,16 @@ export function builtCli() {
  * Runs `target` (the bundle, or any script) under `name` through a symlink, the way the snapshot installs `dorks` and `gh`.
  * Async on purpose: the RPC server under test lives in this process, so a blocking exec would deadlock.
  */
-export function runAs(target: string, name: string, args: string[], env: NodeJS.ProcessEnv, pathDirs: string[] = []) {
+export function runAs(target: string, name: string, args: string[], env: NodeJS.ProcessEnv, pathDirs: string[] = [], input = "") {
   const bin = tmp("bin-");
   symlinkSync(target, join(bin, name));
   const nodeDir = tmp("node-"); // PATH has `node` (the shebang needs it) and nothing else: a gh installed on the dev machine must not leak in
   symlinkSync(process.execPath, join(nodeDir, "node"));
   return new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
-    execFile(join(bin, name), args, { env: { ...env, PATH: [bin, ...pathDirs, nodeDir].join(":") } }, (err, stdout, stderr) => {
+    const child = execFile(join(bin, name), args, { env: { ...env, PATH: [bin, ...pathDirs, nodeDir].join(":") } }, (err, stdout, stderr) => {
       resolve({ code: err ? ((err as { code?: unknown }).code as number) : 0, stdout, stderr });
     });
+    child.stdin!.end(input);
   });
 }
 

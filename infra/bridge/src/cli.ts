@@ -1,4 +1,4 @@
-import { realpathSync } from "node:fs";
+import { realpathSync, writeSync } from "node:fs";
 import { basename } from "node:path";
 import { runCredentialHelper } from "./credentials";
 import { runDorks } from "./dorks";
@@ -11,7 +11,9 @@ import { runGhShim } from "./gh-shim";
 //   dorks … / dorks-bridge dorks …       the agent CLI (dorks.ts)
 //   gh …    / dorks-bridge gh …          the gh shim (gh-shim.ts)
 // The snapshot installs the bundle once and symlinks `dorks` and `gh` to it (infra/snapshot).
-const io = { out: (s: string) => void process.stdout.write(s), err: (s: string) => void process.stderr.write(s) };
+// Synchronous writes to the raw descriptors: the `process.stdout` / `process.stderr` streams can switch a shared pipe to non-blocking
+// mode, which the real gh (a child of the shim, inheriting the same descriptors) must not be exposed to.
+const io = { out: (s: string) => void writeSync(1, s), err: (s: string) => void writeSync(2, s) };
 
 async function main() {
   const invokedAs = basename(process.argv[1] ?? "").replace(/\.[cm]?js$/, "");

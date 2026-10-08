@@ -2,6 +2,7 @@ import { spawn, type StdioOptions } from "node:child_process";
 import { accessSync, constants, realpathSync } from "node:fs";
 import { constants as osConstants } from "node:os";
 import { delimiter, join } from "node:path";
+import { isatty } from "node:tty";
 import { describeRpcError, socketOf, type Io } from "./dorks";
 import { findPrUrls, prLabel } from "./pr-ref";
 import { rpcCall } from "./rpc";
@@ -57,19 +58,21 @@ export async function runGhShim(argv: string[], env: NodeJS.ProcessEnv, self: st
   }
 
   const rule = argv.includes("-h") || argv.includes("--help") ? undefined : CREATES_PRS.find((r) => r.args.every((a, i) => argv[i] === a));
-  const capture = !!rule && !process.stdout.isTTY; // a pipe changes what gh prints on a terminal; only watch when output is not interactive
+  const capture = !!rule && !isatty(1); // a pipe changes what gh prints on a terminal; only watch when output is not interactive
   const stdio: StdioOptions = ["inherit", capture ? "pipe" : "inherit", capture && rule!.stderrToo ? "pipe" : "inherit"];
   const child = spawn(gh, argv, { env: childEnv, stdio });
   let seen = "";
-  const watch = (stream: NodeJS.ReadableStream | null, sink: NodeJS.WritableStream) => {
-    stream?.on("data", (d: Buffer) => seen.length < CAPTURE_MAX && (seen += d.toString("utf8")));
-    stream?.pipe(sink, { end: false });
+  const watch = (stream: NodeJS.ReadableStream | null, sink: "stdout" | "stderr") => {
+    if (!stream) return;
+    stream.on("data", (d: Buffer) => seen.length < CAPTURE_MAX && (seen += d.toString("utf8")));
+    stream.pipe(process[sink], { end: false });
   };
-  watch(child.stdout, process.stdout);
-  watch(child.stderr, process.stderr);
+  watch(child.stdout, "stdout");
+  watch(child.stderr, "stderr");
 
-  // A terminal delivers ^C to gh itself; otherwise relay the signals so killing the shim stops gh.
-  const relay = (["SIGTERM", "SIGHUP", ...(process.stdin.isTTY ? [] : ["SIGINT"])] as NodeJS.Signals[]).map((sig) => {
+  // A terminal delivers ^C to gh itself; otherwise relay the signals so killing the shim stops gh. (isatty, not process.stdin: touching
+  // that can switch the descriptor we share with gh to non-blocking mode.)
+  const relay = (["SIGTERM", "SIGHUP", ...(isatty(0) ? [] : ["SIGINT"])] as NodeJS.Signals[]).map((sig) => {
     const h = () => child.kill(sig);
     process.on(sig, h);
     return () => process.off(sig, h);
