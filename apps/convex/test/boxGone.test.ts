@@ -33,6 +33,8 @@ async function seed(t: T, state: "sleeping" | "waking" = "waking") {
     return dorkId;
   });
 }
+// The generation a box action is dispatched with (see dorkRuntime.opGen); a missing field means 0.
+const opGen = (t: T, id: any) => t.run(async (ctx) => ((await (ctx.db as any).query("dorkRuntime").withIndex("by_dork", (q: any) => q.eq("dorkId", id)).unique())?.opGen ?? 0) as number);
 const row = (t: T, id: any) => t.run((ctx) => ctx.db.get(id)) as Promise<{ boxId?: string; claudeSessionId?: string; state: string } | null>;
 const errors = (t: T, id: any) => t.run(async (ctx) => (await (ctx.db as any).query("events").withIndex("by_dork_seq", (q: any) => q.eq("dorkId", id)).collect() as { body: any }[]).map((e) => e.body).filter((b: any) => b.type === "error"));
 
@@ -54,7 +56,7 @@ describe("resume when the box no longer exists", () => {
       const t = convexTest(schema, modules);
       const dorkId = await seed(t);
       provider.resumeError = err;
-      await t.action(internal.boxes.resume, { dorkId });
+      await t.action(internal.boxes.resume, { dorkId, gen: await opGen(t, dorkId) });
 
       const after = await row(t, dorkId);
       expect(after?.boxId).toBeUndefined();
@@ -63,7 +65,7 @@ describe("resume when the box no longer exists", () => {
       expect(await errors(t, dorkId)).toEqual([{ type: "error", message: expect.stringContaining("no longer exists") }]);
 
       // Same path the user's next message takes (machine: error + !hasBox -> create_box).
-      await t.action(internal.boxes.create, { dorkId });
+      await t.action(internal.boxes.create, { dorkId, gen: await opGen(t, dorkId) });
       expect((await row(t, dorkId))?.boxId).toBe("new-box-1");
       expect(provider.created).toEqual([dorkId]);
     });
@@ -73,7 +75,7 @@ describe("resume when the box no longer exists", () => {
     const t = convexTest(schema, modules);
     const dorkId = await seed(t);
     provider.resumeError = new Error("upstash resume: HTTP 503");
-    await t.action(internal.boxes.resume, { dorkId });
+    await t.action(internal.boxes.resume, { dorkId, gen: await opGen(t, dorkId) });
     const after = await row(t, dorkId);
     expect(after?.boxId).toBe("box-old");
     expect(after?.state).toBe("error");
@@ -83,7 +85,7 @@ describe("resume when the box no longer exists", () => {
     const t = convexTest(schema, modules);
     const dorkId = await seed(t);
     provider.resumeError = new Error("upstash resume: unauthorized (HTTP 401); check UPSTASH_BOX_API_KEY");
-    await t.action(internal.boxes.resume, { dorkId });
+    await t.action(internal.boxes.resume, { dorkId, gen: await opGen(t, dorkId) });
     expect((await row(t, dorkId))?.boxId).toBe("box-old");
   });
 
@@ -124,7 +126,7 @@ describe("resume when the box no longer exists", () => {
     const dorkId = await seed(t);
     provider.resumeError = new Error("upstash resume: box not found (HTTP 404)");
     provider.duringResume = () => t.run((ctx) => ctx.db.patch(dorkId, { boxId: "box-newer" }));
-    await t.action(internal.boxes.resume, { dorkId });
+    await t.action(internal.boxes.resume, { dorkId, gen: await opGen(t, dorkId) });
     expect((await row(t, dorkId))?.boxId).toBe("box-newer");
   });
 });
