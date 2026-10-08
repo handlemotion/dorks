@@ -1,6 +1,6 @@
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { Bridge, SleepingError } from "../src/bridge";
@@ -23,7 +23,7 @@ afterEach(async () => {
   for (const c of cleanup.splice(0)) await c();
 });
 
-async function setup(opts: { onSleeping?: () => void; env?: Record<string, string>; resume?: string | null; branch?: string; deltas?: number; connectError?: unknown; afterBridgeSeq?: number } = {}) {
+async function setup(opts: { host?: Record<string, string>; transcript?: boolean; onSleeping?: () => void; env?: Record<string, string>; resume?: string | null; branch?: string; deltas?: number; connectError?: unknown; afterBridgeSeq?: number } = {}) {
   const remote = makeRemote();
   const state = tmp("state-");
   const work = tmp("work-");
@@ -45,7 +45,14 @@ async function setup(opts: { onSleeping?: () => void; env?: Record<string, strin
     DELTA_BATCH_MS: "20",
     DORKS_BATCH_MS: "5",
     HEARTBEAT_MS: "60000",
+    ...(opts.host ?? {}),
   };
+  if (opts.resume && opts.transcript !== false) {
+    // the session exists on this box's disk (like after a sleep/wake), so resume is allowed
+    const dir = join(opts.env?.CLAUDE_CONFIG_DIR ?? join(hostEnv.HOME!, ".claude"), "projects", "-work");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, `${opts.resume}.jsonl`), "{}\n");
+  }
   const cfg = loadConfig(hostEnv);
   const redactor = new Redactor();
   redactor.add(BRIDGE_SECRET);
@@ -385,4 +392,76 @@ describe("bridge with a fake claude CLI", () => {
     for (const secret of [BRIDGE_SECRET, OAUTH, CLI_SECRET, GH_TOKEN]) expect(all).not.toContain(secret);
     expect(all.length).toBeGreaterThan(0);
   });
+
+  it("resume: a session id with no transcript on this box starts fresh instead of crash-looping, and the waiting message is answered", async () => {
+    const s = await setup({ resume: "99999999-aaaa-bbbb-cccc-dddddddddddd", transcript: false });
+    await s.bridge.start();
+    const m = msg("m1", "hello after a box rebuild");
+    s.t.emit([m, { cid: "cfg1", frame: { t: "fetch_configure" } }]);
+    await waitFor(() => rawTypes(s.t).includes("result"), "turn answered");
+    const rep = await readReport(s.report);
+    expect(rep.argv).not.toContain("--resume");
+    expect(s.t.of("agent_exited")).toHaveLength(0);
+    expect(JSON.stringify(s.t.events())).toContain("Done: hello after a box rebuild");
+  });
+
+  it("resume: if the CLI still says 'No conversation found' (exit at start), retry fresh once; nothing from the failed run is forwarded", async () => {
+    const s = await setup({ resume: "88888888-aaaa-bbbb-cccc-dddddddddddd", env: { FAKE_CLAUDE_NO_SESSION: "start" } });
+    await s.bridge.start();
+    s.t.emit([msg("m1", "retry me"), { cid: "cfg1", frame: { t: "fetch_configure" } }]);
+    await waitFor(() => rawTypes(s.t).includes("assistant"), "answered on a fresh session", 15000);
+    expect(s.t.of("agent_exited")).toHaveLength(0);
+    expect(JSON.stringify(s.t.events())).not.toContain("No conversation found");
+    expect(JSON.stringify(s.t.events())).toContain("Done: retry me");
+  });
+
+  it("resume: a message already written to the doomed resumed CLI is replayed on the fresh session", async () => {
+    const s = await setup({ resume: "77777777-aaaa-bbbb-cccc-dddddddddddd", env: { FAKE_CLAUDE_NO_SESSION: "message" } });
+    await s.bridge.start();
+    configure(s.t);
+    await waitFor(() => s.t.of("ready").length, "ready");
+    s.t.emit([msg("m1", "do not lose me")]);
+    await waitFor(() => JSON.stringify(s.t.events()).includes("Done: do not lose me"), "replayed and answered", 15000);
+    expect(s.t.of("agent_exited")).toHaveLength(0);
+    expect(JSON.stringify(s.t.events())).not.toContain("No conversation found");
+    expect(s.t.of("ack").filter((a) => a.id === "m1")).toHaveLength(1);
+  });
+
+  it("a transient configure failure is retried, not stranded", async () => {
+    const s = await setup();
+    s.t.configureFailures = 2;
+    await s.bridge.start();
+    configure(s.t);
+    await waitFor(() => s.t.of("ready").length, "ready after retries", 15000);
+    expect(s.t.configureCalls).toBe(3);
+    expect(s.t.of("ack").map((a) => a.id)).toContain("cfg1");
+  });
+
+  it("an interrupt that arrives while configure is still running is applied after the agent is up, not dropped", async () => {
+    const s = await setup({ deltas: 400 });
+    s.t.configureDelayMs = 300;
+    await s.bridge.start();
+    s.t.emit([{ cid: "cfg1", frame: { t: "fetch_configure" } }, { cid: "int1", frame: { t: "interrupt" } }]);
+    await sleep(100);
+    expect(s.t.of("ack").some((a) => a.id === "int1")).toBe(false); // deferred, not acked-and-dropped
+    await waitFor(() => s.t.of("ack").some((a) => a.id === "int1"), "interrupt handled once the agent is up");
+    const order = s.t.frames.map((f) => (f.t === "ack" ? `ack:${f.id}` : f.t));
+    expect(order.indexOf("ack:int1")).toBeGreaterThan(order.indexOf("ready"));
+  });
+
+  it("flush that times out waiting for the turn interrupts it first, and echoes the flush cid in flushed", async () => {
+    const s = await setup({ deltas: 1000, host: { DORKS_FLUSH_IDLE_WAIT_MS: "150" } });
+    await s.bridge.start();
+    configure(s.t);
+    await waitFor(() => s.t.of("ready").length, "ready");
+    s.t.emit([msg("m1", "very long job")]);
+    await waitFor(() => rawTypes(s.t).includes("stream_event"), "streaming");
+    s.t.emit([msg("m1", "very long job"), { cid: "fl9", frame: { t: "flush" } }]);
+    const flushed = await waitFor(() => s.t.of("flushed")[0], "flushed", 15000);
+    expect((flushed as { cid?: string }).cid).toBe("fl9");
+    const res = s.t.events().find((e) => (e.raw as any).type === "result");
+    expect((res!.raw as any).is_error).toBe(true); // the turn was interrupted before we reported flushed
+    expect(s.t.frames.indexOf(res!)).toBeLessThan(s.t.frames.indexOf(flushed));
+  });
 });
+

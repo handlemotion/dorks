@@ -10,6 +10,7 @@
 //   FAKE_CLAUDE_REPORT=<file>                 at startup, write {argv, cwd, envKeys, env} as JSON
 //   message text "crash"      -> exit(3) mid-turn;   "permission" -> ask the host for permission and report the answer
 //   message text "noise"      -> emit events the bridge must not forward
+//   FAKE_CLAUDE_NO_SESSION=start|message   with --resume: behave like the real CLI for an unknown session id ("No conversation found", exit 1)
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
@@ -27,6 +28,11 @@ const transcript = process.env.CLAUDE_CONFIG_DIR && join(process.env.CLAUDE_CONF
 if (transcript) mkdirSync(transcript, { recursive: true });
 const record = (o) => transcript && appendFileSync(join(transcript, `${sessionId}.jsonl`), `${JSON.stringify(o)}\n`);
 
+if (resume && process.env.FAKE_CLAUDE_NO_SESSION === "start") {
+  out({ type: "result", subtype: "error_during_execution", is_error: true, duration_ms: 0, result: `No conversation found with session ID: ${resume}` });
+  process.stderr.write(`No conversation found with session ID: ${resume}\n`);
+  process.exit(1);
+}
 let inited = false;
 let turn = 0;
 let aborted = false;
@@ -35,6 +41,11 @@ const queue = [];
 const pendingControl = new Map();
 
 async function runTurn(text) {
+  if (resume && process.env.FAKE_CLAUDE_NO_SESSION === "message") {
+    out({ type: "system", subtype: "session_state_changed", state: "running", uuid: randomUUID() });
+    out({ type: "result", subtype: "error_during_execution", is_error: true, duration_ms: 0, result: `No conversation found with session ID: ${resume}` });
+    process.exit(1);
+  }
   busy = true;
   aborted = false;
   const n = ++turn;

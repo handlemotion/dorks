@@ -20,6 +20,7 @@ export interface Config {
   deltaBatchMs: number;
   batchMs: number;
   flushIdleWaitMs: number;
+  flushInterruptWaitMs: number;
 }
 
 const num = (v: string | undefined, d: number) => {
@@ -45,6 +46,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     deltaBatchMs: num(env.DELTA_BATCH_MS, 150),
     batchMs: num(env.DORKS_BATCH_MS, 50),
     flushIdleWaitMs: num(env.DORKS_FLUSH_IDLE_WAIT_MS, 20_000),
+    flushInterruptWaitMs: num(env.DORKS_FLUSH_INTERRUPT_WAIT_MS, 5_000),
   };
 }
 

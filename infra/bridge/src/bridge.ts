@@ -1,10 +1,9 @@
-import { commandFrame } from "@dorks/shared";
+import { commandFrame, type FromBridge } from "@dorks/shared";
 import { createHash } from "node:crypto";
-import { appendFileSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync } from "node:fs";
+import { appendFileSync, closeSync, fsyncSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
-import { homedir } from "node:os";
 import { join } from "node:path";
-import { Agent, childEnv } from "./claude";
+import { Agent, childEnv, configDirOf, findTranscripts } from "./claude";
 import type { Config } from "./config";
 import { CredentialServer, helperCommand } from "./credentials";
 import { EventPipeline } from "./events";
@@ -47,6 +46,9 @@ export class Bridge {
   private hb: ReturnType<typeof setInterval> | null = null;
   private closed = false;
   private handshaking: Promise<void> | null = null;
+  private configuring = 0; // configure jobs in flight (an interrupt arriving meanwhile is deferred, not dropped)
+  private configAttempts = new Map<string, number>();
+  private agentCtx: { dir: string; env: NodeJS.ProcessEnv } | null = null;
   private readonly cfg: Config;
   private readonly t: Transport;
   private readonly log: Log;
@@ -155,12 +157,16 @@ export class Bridge {
       }
       if (this.handled.has(c.cid)) continue;
       if (f.t === "interrupt") {
+        // Not queued behind a long flush. While configure is still starting the agent there is nothing to interrupt yet, but
+        // dropping it would lose the user's Stop: leave it pending, process() runs again when the agent is up.
+        if (!this.agent?.alive && this.configuring > 0) continue;
         this.handled.add(c.cid);
-        void this.interrupt(c.cid); // not queued behind a long configure/flush
+        void this.interrupt(c.cid);
         continue;
       }
       this.handled.add(c.cid);
-      this.enqueue(() => (f.t === "fetch_configure" ? this.configure(c.cid) : f.t === "flush" ? this.flush(c.cid) : this.refreshToken(c.cid)));
+      if (f.t === "fetch_configure") this.configuring++; // counted from the moment it is queued, so a later interrupt in this snapshot defers
+      this.enqueue(() => (f.t === "fetch_configure" ? this.configureWithRetry(c.cid) : f.t === "flush" ? this.flush(c.cid, (f as { cid?: string }).cid ?? c.cid) : this.refreshToken(c.cid)));
     }
   }
 
@@ -203,29 +209,31 @@ export class Bridge {
     this.pipeline.control({ t: "ack", id: cid }, true);
   }
 
-  private async flush(cid: string) {
-    if (this.agent?.alive && !(await this.agent.waitIdle(this.cfg.flushIdleWaitMs))) this.log("flush: agent still mid-turn, persisting what is on disk");
+  private async flush(cid: string, flushCid: string) {
+    if (this.agent?.alive && !(await this.agent.waitIdle(this.cfg.flushIdleWaitMs))) {
+      // Still mid-turn after the grace period: stop the turn so the transcript is consistent before the box pauses.
+      this.log("flush: agent still mid-turn, interrupting it");
+      await this.agent.interrupt().catch(() => {});
+      await this.agent.waitIdle(this.cfg.flushInterruptWaitMs);
+    }
     this.pipeline.flushDelta();
     await this.persistSession();
     this.pipeline.control({ t: "ack", id: cid });
-    this.pipeline.control({ t: "flushed" }, true);
+    // The shared protocol is gaining an optional `cid` on `flushed` (echo of the flush command); older backends strip it.
+    this.pipeline.control({ t: "flushed", cid: flushCid } as Exclude<FromBridge, { t: "event" }>, true);
   }
 
   /** The CLI appends its transcript as it goes; make sure the OS has it (and the working tree) on disk before the box pauses. */
   private async persistSession() {
     const id = this.agent?.sessionId ?? this.lastSessionId;
-    const root = join(this.agentEnvConfigDir(), "projects");
     try {
-      if (id && existsSync(root)) {
-        for (const d of readdirSync(root)) {
-          const f = join(root, d, `${id}.jsonl`);
-          if (existsSync(f)) {
-            const fd = openSync(f, "r");
-            try {
-              fsyncSync(fd);
-            } finally {
-              closeSync(fd);
-            }
+      if (id && this.agentCtx) {
+        for (const f of findTranscripts(configDirOf(this.agentCtx.env), id)) {
+          const fd = openSync(f, "r");
+          try {
+            fsyncSync(fd);
+          } finally {
+            closeSync(fd);
           }
         }
       }
@@ -235,12 +243,25 @@ export class Bridge {
     await new Promise<void>((r) => execFile("sync", () => r())); // whole-fs flush; best effort (missing binary is fine)
   }
 
-  private agentEnvConfigDir() {
-    return this.agentCfgDir ?? join(homedir(), ".claude");
-  }
-  private agentCfgDir: string | null = null;
-
   // ------------------------------------------------------------------ configure
+  /** A transient failure fetching the config (network blip, action timeout) must not strand the command: retry it with backoff. */
+  private async configureWithRetry(cid: string) {
+    try {
+      await this.configure(cid);
+      this.configAttempts.delete(cid);
+    } catch (e) {
+      const n = (this.configAttempts.get(cid) ?? 0) + 1;
+      this.configAttempts.set(cid, n);
+      const wait = Math.min(30_000, 500 * 2 ** (n - 1));
+      this.log(`configure failed (${this.t.errorCode(e) ?? errTag(e)}), retrying in ${wait}ms`);
+      this.handled.delete(cid);
+      const timer = setTimeout(() => !this.closed && this.process(), wait);
+      timer.unref();
+    } finally {
+      this.configuring--;
+    }
+  }
+
   private async configure(cid: string) {
     const cfg = await this.t.configure();
     if (!cfg) return this.log("configure refused (the backend recorded why)");
@@ -275,10 +296,25 @@ export class Bridge {
     }
 
     const env = childEnv(this.d.baseEnv ?? process.env, cfg.env, this.log);
-    this.agentCfgDir = env.CLAUDE_CONFIG_DIR ?? null;
-    const resume = this.lastSessionId ?? cfg.resumeSessionId;
+    this.agentCtx = { dir, env };
     this.agentKey = key;
-    this.agent = new Agent({
+    let resume = this.lastSessionId ?? cfg.resumeSessionId;
+    // The backend remembers a session id, but the box may have been recreated without its disk: --resume would fail and the
+    // user's message with it. Only resume what is really on disk.
+    if (resume && findTranscripts(configDirOf(env), resume).length === 0) {
+      this.log("session transcript not found on this box, starting a fresh session");
+      this.lastSessionId = null;
+      resume = null;
+    }
+    this.startAgent(resume, []);
+    this.pipeline.control({ t: "ack", id: cid });
+    this.pipeline.control({ t: "ready" }, true);
+    this.process(); // messages that arrived before the agent was up, and interrupts deferred during configure
+  }
+
+  private startAgent(resume: string | null, resend: string[]) {
+    const { dir, env } = this.agentCtx!;
+    const agent = new Agent({
       bin: this.cfg.claudeBin,
       cwd: dir,
       env,
@@ -288,20 +324,27 @@ export class Bridge {
       redactor: this.redactor,
       log: this.log,
       onRaw: (raw) => {
-        const sid = this.agent?.sessionId;
+        const sid = agent.sessionId;
         if (sid) this.lastSessionId = sid;
         this.pipeline.ingest(raw);
       },
-      onExit: ({ code, stderrTail }) => {
-        this.agent = null;
+      onExit: ({ code, stderrTail, resumeMissing, pending }) => {
+        if (this.agent === agent) this.agent = null;
+        if (resumeMissing) {
+          // Raced the preflight (or the transcript was unreadable): retry once on a fresh session, replaying what it never answered.
+          this.log("resume failed: no such conversation; starting a fresh session");
+          this.lastSessionId = null;
+          this.startAgent(null, pending);
+          this.process(); // messages the doomed CLI never read
+          return;
+        }
         this.log("agent exited, code", code);
         this.pipeline.control({ t: "agent_exited", code, stderrTail }, true);
       },
     });
+    this.agent = agent;
     this.log("agent started", resume ? "(resuming a session)" : "(new session)");
-    this.pipeline.control({ t: "ack", id: cid });
-    this.pipeline.control({ t: "ready" }, true);
-    this.process(); // messages that arrived before the agent was up
+    for (const text of resend) void agent.sendUserMessage(text).catch(() => this.log("could not resend a message to the new session"));
   }
 
   // ------------------------------------------------------------------ dedupe journal

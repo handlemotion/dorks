@@ -53,6 +53,8 @@ export class FakeTransport implements Transport {
   pushImpl: ((frames: FromBridge[]) => Promise<PushResult>) | null = null;
   configureFrame: ConfigureFrame | null = null;
   configureCalls = 0;
+  configureFailures = 0;
+  configureDelayMs = 0;
   token: string | null = "tok-initial-123456";
   heartbeats = 0;
   private cmdCb: ((c: CommandEntry[]) => void) | null = null;
@@ -85,6 +87,8 @@ export class FakeTransport implements Transport {
   heartbeat = async () => void this.heartbeats++;
   configure = async () => {
     this.configureCalls++;
+    if (this.configureDelayMs) await new Promise((r) => setTimeout(r, this.configureDelayMs));
+    if (this.configureFailures-- > 0) throw new Error("network blip");
     return this.configureFrame;
   };
   ghToken = async () => this.token;
