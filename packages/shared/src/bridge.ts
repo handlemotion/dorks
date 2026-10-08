@@ -1,4 +1,13 @@
 import { z } from "zod";
+import { notifyKind, prRef } from "./autonomy";
+
+/**
+ * An autonomy notification (docs/autonomy.md). Delivered and acked exactly like `user_message` (same dedupe by id), but the backend
+ * only releases it at a turn boundary (never mid-turn) and never ahead of a pending user message. `text` is already wrapped in the
+ * `<dorks-event>` envelope; the bridge writes it to stdin verbatim. `kinds`/`prs` are metadata for the bridge's hooks and logs.
+ */
+const notifyFrame = () =>
+  z.object({ t: z.literal("notify"), id: z.string(), text: z.string(), kinds: z.array(notifyKind), prs: z.array(prRef) });
 
 /** DO -> bridge (inside the box). */
 export const toBridge = z.discriminatedUnion("t", [
@@ -14,6 +23,7 @@ export const toBridge = z.discriminatedUnion("t", [
     resumeSessionId: z.string().nullable(),
   }),
   z.object({ t: z.literal("user_message"), id: z.string(), text: z.string() }), // bridge dedupes by id
+  notifyFrame(),
   z.object({ t: z.literal("interrupt") }),
   z.object({ t: z.literal("flush") }),
   z.object({ t: z.literal("gh_token"), token: z.string() }),
@@ -38,6 +48,7 @@ export type FromBridge = z.infer<typeof fromBridge>;
  */
 export const commandFrame = z.discriminatedUnion("t", [
   z.object({ t: z.literal("user_message"), id: z.string(), text: z.string() }),
+  notifyFrame(),
   z.object({ t: z.literal("interrupt") }),
   z.object({ t: z.literal("flush") }),
   z.object({ t: z.literal("fetch_configure") }),
