@@ -12,7 +12,7 @@ export const HEARTBEAT_MS = 30_000;
 export const BRIDGE_STALE_MS = 90_000;
 export const MAX_MESSAGE_CHARS = 50_000;
 
-export type ErrorCode = "archived" | "invalid" | "deleting" | "conflict" | "failed" | "not_found" | "onboarding_incomplete";
+export type ErrorCode = "archived" | "invalid" | "deleting" | "conflict" | "failed" | "not_found" | "onboarding_incomplete" | "limit";
 export const fail = (code: ErrorCode, message: string): never => {
   throw new ConvexError({ code, message });
 };

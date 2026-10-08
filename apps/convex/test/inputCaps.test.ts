@@ -3,6 +3,7 @@
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../convex/_generated/api";
+import type { Id } from "../convex/_generated/dataModel";
 import schema from "../convex/schema";
 import { MAX_ACTIVE_DORKS } from "../convex/dorks";
 import { MAX_CLAUDE_TOKEN_CHARS, MAX_SECRET_BYTES, MAX_SECRETS_PER_USER } from "../convex/settings";
@@ -96,6 +97,43 @@ describe("dorks.create caps", () => {
     await u1.mutation(api.dorks.create, { repo: "o/r", message: "archiving frees a slot" });
     await t.run((ctx) => ctx.db.insert("userSettings", { userId: "u2", sleepMinutes: 5, claudeTokenEnc: "enc", githubInstallationId: 2 }));
     await t.withIdentity({ subject: "u2" }).mutation(api.dorks.create, { repo: "o/r", message: "hi" });
+  });
+});
+
+describe("unarchive shares the active dork cap", () => {
+  const withRuntime = (t: ReturnType<typeof convexTest>, dorkId: Id<"dorks">) =>
+    t.run((ctx) => ctx.db.insert("dorkRuntime", { dorkId, bridgeSeq: 0, streamMsgId: "", sleepMinutes: 5, bridgeSeenAt: 0, bridgeLost: false, timers: {} }));
+
+  it("refuses at the cap, allows once a slot frees up, and never counts the dork being unarchived", async () => {
+    const { t, u1 } = await setup();
+    const active: Id<"dorks">[] = [];
+    for (let i = 0; i < MAX_ACTIVE_DORKS; i++) active.push(await insertDork(t));
+    const archived = await insertDork(t, { archived: true, state: "sleeping" });
+    await withRuntime(t, archived);
+    expect(await rejects(u1.mutation(api.dorks.setArchived, { dorkId: archived, archived: false }))).toBe("limit");
+    expect(await t.run((ctx) => ctx.db.get(archived).then((d) => d?.archived))).toBe(true); // nothing changed
+    await t.run((ctx) => ctx.db.patch(active[0], { archived: true }));
+    await u1.mutation(api.dorks.setArchived, { dorkId: archived, archived: false });
+    expect(await t.run((ctx) => ctx.db.get(archived).then((d) => d?.archived))).toBe(false);
+  });
+
+  it("the create-archive-create-unarchive loop cannot exceed the cap", async () => {
+    const { t, u1 } = await setup();
+    const active: Id<"dorks">[] = [];
+    for (let i = 0; i < MAX_ACTIVE_DORKS; i++) active.push(await insertDork(t));
+    await withRuntime(t, active[0]);
+    await u1.mutation(api.dorks.setArchived, { dorkId: active[0], archived: true });
+    await u1.mutation(api.dorks.create, { repo: "o/r", message: "takes the freed slot" });
+    expect(await rejects(u1.mutation(api.dorks.setArchived, { dorkId: active[0], archived: false }))).toBe("limit");
+    expect(await t.run((ctx) => ctx.db.query("dorks").collect().then((r) => r.filter((d) => !d.archived).length))).toBe(MAX_ACTIVE_DORKS);
+  });
+
+  it("re-asserting 'not archived' on an active dork at the cap is not blocked by the cap", async () => {
+    const { t, u1 } = await setup();
+    const active: Id<"dorks">[] = [];
+    for (let i = 0; i < MAX_ACTIVE_DORKS; i++) active.push(await insertDork(t));
+    await withRuntime(t, active[0]);
+    expect(await rejects(u1.mutation(api.dorks.setArchived, { dorkId: active[0], archived: false }))).not.toBe("limit");
   });
 });
 

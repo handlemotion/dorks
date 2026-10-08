@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 import { action, internalMutation, mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireUserId } from "./auth";
+import { fail } from "./lib/dispatch";
 import { verifyInstallationOwnership } from "./lib/githubInstall";
 
 export const MAX_CLAUDE_TOKEN_CHARS = 4 * 1024;
@@ -61,7 +62,7 @@ export const setCliSecret = mutation({
     if (existing) await ctx.db.patch(existing._id, { valueEnc });
     else {
       const held = await ctx.db.query("userSecrets").withIndex("by_user_name", (q) => q.eq("userId", userId)).take(MAX_SECRETS_PER_USER);
-      if (held.length >= MAX_SECRETS_PER_USER) throw new ConvexError({ code: "limit", message: `at most ${MAX_SECRETS_PER_USER} secrets` });
+      if (held.length >= MAX_SECRETS_PER_USER) fail("limit", `at most ${MAX_SECRETS_PER_USER} secrets`);
       await ctx.db.insert("userSecrets", { userId, name, valueEnc });
     }
   },
