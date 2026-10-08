@@ -2,6 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
 import { useEffect, useState } from 'react'
 import { api } from '@dorks/convex/client'
+import { INSTALL_STATE_KEY } from '../lib/githubInstall'
 import { AuthShell } from '../components/AuthShell'
 import { usePending } from '../lib/pending'
 
@@ -62,14 +63,22 @@ function ClaudeToken() {
 }
 
 function GithubApp({ linked }: { linked: boolean }) {
+  // CSRF-style binding: GitHub echoes `state` back to the callback, which only links automatically if it matches what this browser
+  // generated. Otherwise anyone could send a signed-in user a callback URL for the *attacker's* installation.
+  const [state, setState] = useState('')
+  useEffect(() => {
+    const s = crypto.randomUUID()
+    sessionStorage.setItem(INSTALL_STATE_KEY, s)
+    setState(s)
+  }, [])
   return (
     <section>
       <h2>GitHub</h2>
       <p data-testid="github-status">{linked ? 'GitHub App installed.' : 'GitHub App not installed.'}</p>
-      {GITHUB_APP_SLUG ? (
-        <a href={`https://github.com/apps/${encodeURIComponent(GITHUB_APP_SLUG)}/installations/new`}>{linked ? 'Install on more repositories / reinstall' : 'Install GitHub App'}</a>
-      ) : (
+      {!GITHUB_APP_SLUG ? (
         <p role="alert" style={{ color: 'crimson' }}>VITE_GITHUB_APP_SLUG is not set, so the install link is unavailable.</p>
+      ) : (
+        state && <a href={`https://github.com/apps/${encodeURIComponent(GITHUB_APP_SLUG)}/installations/new?state=${state}`}>{linked ? 'Install on more repositories / reinstall' : 'Install GitHub App'}</a>
       )}
     </section>
   )

@@ -20,7 +20,7 @@ function Dorks() {
   const dorks = useDorks(showArchived)
   const onboarding = useQuery(api.settings.onboarding)
   return (
-    <div>
+    <div data-onboarding={onboarding ? (onboarding.claudeToken && onboarding.github ? 'complete' : 'incomplete') : 'loading'}>
       <header style={{ display: 'flex', justifyContent: 'space-between' }}>
         <h1>Dorks</h1>
         <span><Link to="/settings">Settings</Link> <button onClick={() => authClient.signOut()}>Sign out</button></span>
