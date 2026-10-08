@@ -3,9 +3,15 @@
   "private": true,
   "packageManager": "pnpm@12.4.2",
   "scripts": {
-    "dev:api": "pnpm --filter @dorks/api dev",
-    "dev:web": "pnpm --filter @dorks/web dev",
+    "dev": "dotenvx run --strict -f secrets/.env.dev -- pnpm --parallel --filter @dorks/convex --filter @dorks/web dev",
+    "dev:convex": "dotenvx run --strict -f secrets/.env.dev -- pnpm --filter @dorks/convex dev",
+    "dev:web": "dotenvx run --strict -f secrets/.env.dev -- pnpm --filter @dorks/web dev",
+    "dev:ios": "dotenvx run --strict -f secrets/.env.dev -- pnpm --filter @dorks/ios start",
+    "dev:api": "dotenvx run --strict -f secrets/.env.dev -- pnpm --filter @dorks/api dev",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --if-present test"
+  },
+  "devDependencies": {
+    "@dotenvx/dotenvx": "^2.33.0"
   }
 }
