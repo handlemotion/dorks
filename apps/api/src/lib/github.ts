@@ -23,10 +23,15 @@ export async function createAppJwt(appId: string, pkcs8Pem: string, nowSec = Mat
 }
 
 /**
- * Minimal permissions for "push an agent/* branch and open a PR": contents:write (git push) + pull_requests:write (create the PR).
- * `metadata:read` is implicit on every token. Must be a subset of what the App itself is granted (see docs/github-app.md), else GitHub answers 422.
+ * What the agent needs to push a branch, open a PR and keep it healthy (docs/autonomy.md): contents (git push), pull_requests and
+ * issues (PR comments and replies), workflows (CI config fixes) write; checks, actions and statuses read (CI results and
+ * `gh run view --log-failed`). `metadata:read` is implicit on every token. Must be a subset of what the App itself is granted
+ * (see docs/github-app.md), else GitHub answers 422.
  */
-export const AGENT_TOKEN_PERMISSIONS = { contents: "write", pull_requests: "write" } as const;
+export const AGENT_TOKEN_PERMISSIONS = {
+  contents: "write", pull_requests: "write", issues: "write", workflows: "write",
+  checks: "read", actions: "read", statuses: "read",
+} as const;
 
 export interface TokenScope {
   /** Repository names (without owner) the token may touch. Omitting the scope yields a token for every repo of the installation. */
@@ -34,17 +39,13 @@ export interface TokenScope {
   permissions?: Record<string, "read" | "write">;
 }
 
-/** Token for a box that runs untrusted agent code: one repo, push + PR only. `fullName` is `owner/name`. */
-export const agentTokenScope = (fullName: string): TokenScope => {
-  const name = fullName.split("/")[1];
-  if (!name) throw new Error("repo must be owner/name");
-  return { repositories: [name], permissions: { ...AGENT_TOKEN_PERMISSIONS } };
-};
+/** Token for a box: every repo of the installation (the agent may work in any of them), with the permissions above. */
+export const agentTokenScope = (): TokenScope => ({ permissions: { ...AGENT_TOKEN_PERMISSIONS } });
 
 /** GitHub answered non-2xx. Carries only the status: the response body is never surfaced. */
 export class GithubHttpError extends Error {
-  constructor(readonly status: number) {
-    super(`GitHub installation token failed: ${status}`);
+  constructor(readonly status: number, what = "installation token") {
+    super(`GitHub ${what} failed: ${status}`);
   }
 }
 
@@ -66,6 +67,58 @@ export async function createInstallationToken(
   if (!res.ok) throw new GithubHttpError(res.status);
   const j = (await res.json()) as { token: string; expires_at: string; repositories?: { full_name: string }[] };
   return { token: j.token, expiresAt: j.expires_at, ...(j.repositories ? { repositories: j.repositories.map((r) => r.full_name) } : {}) };
+}
+
+export interface PullRequestInfo {
+  title: string;
+  headRef: string;
+  headSha: string;
+  baseRef: string;
+  state: "open" | "closed" | "merged";
+  /** null = GitHub has not computed it yet. */
+  mergeable: boolean | null;
+  /** Canonical `owner/name` of the base repo. */
+  repo: string;
+}
+
+/** `GET /repos/{repo}/pulls/{number}` with an installation token. 404 = the installation cannot see the PR. */
+export async function getPullRequest(token: string, repo: string, number: number, fetcher: typeof fetch = fetch): Promise<PullRequestInfo> {
+  const res = await fetcher(`https://api.github.com/repos/${repo}/pulls/${number}`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": UA },
+  });
+  if (!res.ok) throw new GithubHttpError(res.status, "pull request lookup");
+  const j = (await res.json()) as { title: string; state: "open" | "closed"; merged?: boolean; mergeable: boolean | null; head: { ref: string; sha: string }; base: { ref: string; repo: { full_name: string } } };
+  return {
+    title: j.title, headRef: j.head.ref, headSha: j.head.sha, baseRef: j.base.ref, repo: j.base.repo.full_name,
+    state: j.merged ? "merged" : j.state, mergeable: j.mergeable ?? null,
+  };
+}
+
+export interface CheckSuiteInfo {
+  status: string;
+  conclusion: string | null;
+  /** Number of check runs in the suite; a suite without any has nothing to wait for. */
+  checkRuns: number;
+}
+
+/** `GET /repos/{repo}/commits/{sha}/check-suites`: every check suite of a commit, whichever app created it (first 100). */
+export async function listCheckSuites(token: string, repo: string, sha: string, fetcher: typeof fetch = fetch): Promise<CheckSuiteInfo[]> {
+  const res = await fetcher(`https://api.github.com/repos/${repo}/commits/${sha}/check-suites?per_page=100`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": UA },
+  });
+  if (!res.ok) throw new GithubHttpError(res.status, "check suites lookup");
+  const j = (await res.json()) as { check_suites: { status: string; conclusion: string | null; latest_check_runs_count: number }[] };
+  return j.check_suites.map((s) => ({ status: s.status, conclusion: s.conclusion, checkRuns: s.latest_check_runs_count }));
+}
+
+/** `POST /repos/{repo}/issues/{number}/comments`: a PR conversation comment, posted as whoever owns the token (the App's bot for an installation token). */
+export async function createIssueComment(token: string, repo: string, number: number, body: string, fetcher: typeof fetch = fetch): Promise<void> {
+  const res = await fetcher(`https://api.github.com/repos/${repo}/issues/${number}/comments`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": UA, "Content-Type": "application/json" },
+    body: JSON.stringify({ body }),
+  });
+  if (!res.ok) throw new GithubHttpError(res.status, "comment");
 }
 
 /** Constant-time check of X-Hub-Signature-256 over the raw body. */
