@@ -6,7 +6,7 @@ import { dirname } from "node:path";
 // that runs Claude can call it. One request per line, answered in order on the same connection:
 //   -> {"method":"pr.sub","params":{…}}
 //   <- {"ok":true,"result":…}   |   {"ok":false,"error":{"code":"invalid","message":"…"}}
-// Clients: the git credential helper, the `dorks` CLI, the `gh` shim and (next) the Claude Code hooks. Methods are a plain table,
+// Clients: the git credential helper, the `dorks` CLI, the `gh` shim and the Claude Code hooks (`dorks hook`). Methods are a plain table,
 // so a new caller only needs a new entry (see Bridge.rpcMethods).
 
 /** Server-side codes are the first five; `unreachable` and `protocol` are produced by {@link rpcCall} itself. */

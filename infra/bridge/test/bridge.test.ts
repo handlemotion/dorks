@@ -1,6 +1,6 @@
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { Bridge, SleepingError } from "../src/bridge";
@@ -608,6 +608,18 @@ describe("autonomy: local RPC", () => {
     expect((await rpcCall<any[]>(sockOf(s), "pr.list")).map((v) => v.number)).toEqual([3]);
   });
 
+  it("matches repos case-insensitively: the backend stores them lowercase, URLs keep their casing", async () => {
+    const s = await ready();
+    s.t.setSubscriptions([fakeView({ repo: "acme/demo", number: 12 })]);
+    const mixed = { repo: "Acme/Demo", number: 12 };
+    const t0 = Date.now();
+    await rpcCall(sockOf(s), "pr.sub", mixed); // already in the list under its lowercase name: no waiting for a change that never comes
+    expect(Date.now() - t0).toBeLessThan(1000);
+    await rpcCall(sockOf(s), "pr.unsub", mixed);
+    expect(Date.now() - t0).toBeLessThan(1000);
+    expect(s.t.subscriptions).toEqual([]);
+  });
+
   it("validates input before it reaches the backend", async () => {
     const s = await ready();
     for (const params of [{}, { repo: "acme", number: 1 }, { repo: "acme/demo", number: 0 }, { repo: "acme/demo", number: 1.5 }, { repo: "acme/demo", number: "12" }, { repo: "../etc", number: 1 }, { repo: "a/b/c", number: 1 }, { repo: "acme/demo", number: 1, source: "user" }, null]) {
@@ -662,5 +674,111 @@ describe("autonomy: local RPC", () => {
     expect(rep.env.DORKS_SOCK).toBe(sockOf(s));
     expect(rep.env.DORKS_REAL_GH).toBe("/opt/gh/bin/gh");
     expect(rep.envKeys.filter((k: string) => k.startsWith("DORKS_")).sort()).toEqual(["DORKS_REAL_GH", "DORKS_SOCK"]);
+  });
+});
+
+describe("autonomy: hooks", () => {
+  const sockOf = (s: { state: string }) => join(s.state, "cred.sock");
+  const ready = async (opts: Parameters<typeof setup>[0] = {}) => {
+    const s = await setup(opts);
+    await s.bridge.start();
+    configure(s.t);
+    await waitFor(() => s.t.of("ready").length, "ready");
+    return s;
+  };
+  const settingsOf = (s: { state: string }) => JSON.parse(readFileSync(join(s.state, "claude-settings.json"), "utf8"));
+  /** Runs a hook the way Claude Code does: the settings file's command through a shell, the hook JSON on stdin, DORKS_SOCK in the environment. */
+  const runHook = async (s: Awaited<ReturnType<typeof ready>>, event: "Stop" | "PostToolUse" | "SessionStart", input: object) => {
+    const hook = settingsOf(s).hooks[event][0].hooks[0];
+    const p = execFileP("sh", ["-c", hook.command], { env: { PATH: process.env.PATH, DORKS_SOCK: sockOf(s) } });
+    p.child.stdin!.end(JSON.stringify({ session_id: "sess1", hook_event_name: event, ...input }));
+    const { stdout } = await p;
+    return stdout ? JSON.parse(stdout) : null;
+  };
+  const dir = (s: { work: string }) => join(s.work, "acme/demo");
+  const commit = (s: { work: string; remote: ReturnType<typeof makeRemote> }, file: string) => {
+    writeFileSync(join(dir(s), file), "x\n");
+    s.remote.sh(dir(s), "add", ".");
+    s.remote.sh(dir(s), "commit", "-q", "-m", file);
+  };
+  const notify = (id: string, kinds: ("ready" | "ci_failed")[]) => ({ cid: id, frame: { t: "notify" as const, id, text: "<dorks-event>…</dorks-event>", kinds, prs: [{ repo: "acme/demo", number: 12 }] } });
+
+  it("writes the hook settings before the agent starts and passes them with --settings; the repo's own settings are left alone", async () => {
+    const s = await ready();
+    const file = join(s.state, "claude-settings.json");
+    const rep = await readReport(s.report);
+    expect(rep.argv.slice(rep.argv.indexOf("--settings"), rep.argv.indexOf("--settings") + 2)).toEqual(["--settings", file]);
+    expect(statSync(file).mode & 0o777).toBe(0o644);
+    const hooks = settingsOf(s).hooks;
+    expect(Object.keys(hooks).sort()).toEqual(["PostToolUse", "SessionStart", "Stop"]);
+    expect(hooks.Stop[0].hooks[0].command).toBe(`'${process.execPath}' '${cli}' dorks hook stop`);
+    expect(hooks.PostToolUse[0].matcher).toBe("Bash");
+    expect(hooks.SessionStart[0].matcher).toBe("startup|resume|compact");
+    expect(existsSync(join(dir(s), ".claude"))).toBe(false); // nothing is written into the repo
+  });
+
+  it("keeps --settings on a resumed session", async () => {
+    const s = await ready({ resume: "11111111-2222-3333-4444-555555555555" });
+    const rep = await readReport(s.report);
+    expect(rep.argv).toEqual(expect.arrayContaining(["--resume", "11111111-2222-3333-4444-555555555555", "--settings", join(s.state, "claude-settings.json")]));
+  });
+
+  it("Stop: the command from the settings file blocks on unpushed work once, then lets the agent stop", async () => {
+    const s = await ready();
+    expect(await runHook(s, "Stop", { stop_hook_active: false })).toBeNull(); // the fresh dork branch has no commits yet
+    commit(s, "a.txt");
+    const blocked = await runHook(s, "Stop", { stop_hook_active: false });
+    expect(blocked.decision).toBe("block");
+    expect(blocked.reason).toContain("branch dork/abc: 1 commit not pushed anywhere (no upstream)");
+    expect(await runHook(s, "Stop", { stop_hook_active: true })).toBeNull();
+    expect(await runHook(s, "Stop", { stop_hook_active: false })).toBeNull(); // raised already
+    expect(s.logs.join("\n")).toContain("hook stop: blocked for unpublished");
+  });
+
+  it("Stop: pushing and opening a PR clears it; the turn answering a `ready` notification is not gated", async () => {
+    const s = await ready();
+    commit(s, "a.txt");
+    s.t.emit([notify("n1", ["ready"])]);
+    await waitFor(() => s.t.of("ack").some((a) => a.id === "n1"), "ready notify delivered");
+    expect(await runHook(s, "Stop", {})).toBeNull();
+    s.t.emit([notify("n2", ["ci_failed"])]);
+    await waitFor(() => s.t.of("ack").some((a) => a.id === "n2"), "ci notify delivered");
+    expect((await runHook(s, "Stop", {})).decision).toBe("block");
+  });
+
+  it("Stop: a pushed branch counts as covered once a subscription names it as its head (the backend's lowercase repo)", async () => {
+    const s = await ready();
+    commit(s, "a.txt");
+    s.remote.sh(dir(s), "push", "-q", "-u", "origin", "dork/abc");
+    s.t.setSubscriptions([{ ...fakeView({ repo: "acme/demo", number: 12 }), headRef: "dork/abc" }]);
+    expect(await runHook(s, "Stop", {})).toBeNull();
+  });
+
+  it("PostToolUse: subscribes to the PR `gh pr create` printed", async () => {
+    const s = await ready();
+    const out = await runHook(s, "PostToolUse", { tool_name: "Bash", tool_input: { command: "gh pr create --fill" }, tool_response: { stdout: "https://github.com/Acme/Demo/pull/12\n", stderr: "" } });
+    expect(out).toBeNull();
+    expect(s.t.prCalls).toEqual([{ op: "sub", ref: { repo: "Acme/Demo", number: 12 }, source: "auto" }]);
+    // the shim and the hook race benignly: the second one finds it listed and does nothing
+    await runHook(s, "PostToolUse", { tool_name: "Bash", tool_input: { command: "gh pr create --fill" }, tool_response: { stdout: "https://github.com/acme/demo/pull/12\n", stderr: "" } });
+    expect(s.t.prCalls).toHaveLength(1);
+    await runHook(s, "PostToolUse", { tool_name: "Bash", tool_input: { command: "gh pr merge 12 --squash" }, tool_response: { stdout: "", stderr: "✓ Squashed and merged pull request acme/demo#12 (t)\n" } });
+    expect(s.t.prCalls.at(-1)).toEqual({ op: "unsub", ref: { repo: "acme/demo", number: 12 } });
+    expect(s.t.subscriptions).toEqual([]);
+  });
+
+  it("SessionStart: adds the subscribed PRs from the backend's list", async () => {
+    const s = await ready();
+    s.t.setSubscriptions([{ ...fakeView({ repo: "acme/demo", number: 12 }), title: "Fix login", ci: "failing" }]);
+    const out = await runHook(s, "SessionStart", { source: "resume" });
+    expect(out.hookSpecificOutput.hookEventName).toBe("SessionStart");
+    expect(out.hookSpecificOutput.additionalContext).toContain('- acme/demo#12 "Fix login": CI failing');
+  });
+
+  it("Stop: a work dir with no repositories in it is not an error", async () => {
+    const s = await ready();
+    rmSync(s.work, { recursive: true, force: true }); // the scan finds no repositories: not an error
+    expect(await runHook(s, "Stop", {})).toBeNull();
+    expect(JSON.stringify(s.logs)).not.toContain(GH_TOKEN);
   });
 });

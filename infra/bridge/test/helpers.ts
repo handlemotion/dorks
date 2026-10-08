@@ -21,11 +21,17 @@ export async function waitFor<T>(fn: () => T | undefined | false | Promise<T | u
   }
 }
 
-/** Builds dist/cli.mjs once (the credential helper runs it as a child of git). */
+let built: string | null = null;
+/**
+ * Builds the bundle once per test process (the credential helper and the hooks run it as a child). Into a directory of its own: test files
+ * run in parallel workers, and rebuilding a shared dist/cli.mjs while another worker executes it hands that worker a half-written file.
+ */
 export function builtCli() {
+  if (built) return built;
   const root = fileURLToPath(new URL("..", import.meta.url));
-  execFileSync(process.execPath, [join(root, "scripts/build.mjs")], { stdio: "pipe" });
-  return join(root, "dist/cli.mjs");
+  const out = join(tmp("cli-"), "cli.mjs");
+  execFileSync(process.execPath, [join(root, "scripts/build.mjs")], { stdio: "pipe", env: { ...process.env, DORKS_BUILD_OUT: out } });
+  return (built = out);
 }
 
 /**
@@ -142,12 +148,13 @@ export class FakeTransport implements Transport {
     this.prCalls.push({ op: "sub", ref, source });
     if (this.prHang) return new Promise<void>(() => {});
     if (this.prError) throw this.prError;
-    if (!this.subscriptions.some((s) => s.repo === ref.repo && s.number === ref.number)) this.setSubscriptions([...this.subscriptions, fakeView(ref, source)]);
+    const repo = ref.repo.toLowerCase(); // the backend stores repos lowercase
+    if (!this.subscriptions.some((s) => s.repo === repo && s.number === ref.number)) this.setSubscriptions([...this.subscriptions, fakeView({ ...ref, repo }, source)]);
   };
   unsubscribePr = async (ref: PrRef) => {
     this.prCalls.push({ op: "unsub", ref });
     if (this.prError) throw this.prError;
-    this.setSubscriptions(this.subscriptions.filter((s) => !(s.repo === ref.repo && s.number === ref.number)));
+    this.setSubscriptions(this.subscriptions.filter((s) => !(s.repo === ref.repo.toLowerCase() && s.number === ref.number)));
   };
   subscribeSubscriptions(cb: (views: unknown) => void) {
     this.subscriptionsWatchers++;

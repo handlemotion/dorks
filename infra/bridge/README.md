@@ -60,7 +60,7 @@ Required (provided by the box): `DORK_ID`, `BRIDGE_URL`, and `BRIDGE_SECRET_FILE
 | `DORKS_PERMISSION_MODE` | `bypassPermissions` | Passed to `--permission-mode`. See "Permission mode". |
 | `DORKS_CLAUDE_ARGS` | _(none)_ | Extra argv for the CLI, whitespace-separated (e.g. `--model sonnet`). |
 | `DORKS_WORKDIR` | `~/work` | Repos are cloned to `<workdir>/<owner>/<repo>`. |
-| `DORKS_STATE_DIR` | `~/.dorks-bridge` | `cred.sock` (the local RPC socket, 0600, dir 0700) and `messages.log` (ids of user messages and notifications already written, for dedupe across a bridge restart). No secrets. Must survive a pause (it is on the box disk). |
+| `DORKS_STATE_DIR` | `~/.dorks-bridge` | `cred.sock` (the local RPC socket, 0600, dir 0700), `messages.log` (ids of user messages and notifications already written, for dedupe across a bridge restart), `claude-settings.json` (the hooks handed to `claude --settings`, 0644 so the Claude user can read it) and `stop-gate.json` (which Stop-gate conditions were already raised in the session). No secrets. Must survive a pause (it is on the box disk). |
 | `DORKS_GIT_BASE_URL` | `https://github.com` | Clone base: `<base>/<owner>/<repo>.git`. Local/e2e use `file://…`. |
 | `HEARTBEAT_MS` | `30000` | `bridge.heartbeat` interval. |
 | `DELTA_BATCH_MS` | `150` | Text deltas are coalesced into one event per window. |
@@ -130,7 +130,7 @@ Local work is never reset.
 | `pr.sub` / `pr.unsub` | `{ repo: "owner/name", number, source?: "auto" \| "agent" }` / `{ repo, number }` → the ref. Validated here, then `bridge.subscribe` / `bridge.unsubscribe`; the call waits (≤ 2 s) until the cached list reflects it, so `sub` then `list` reads its own write. A backend that does not answer within 10 s gives `unavailable` (the Convex client would otherwise queue the mutation while offline). |
 | `pr.list` | → `SubscriptionView[]`: the cached result of the reactive `bridge.subscriptions` query, opened once the bridge is connected and re-opened after every reconnect. Waits ≤ 5 s for the first copy; a malformed list is ignored and the last good one is kept. |
 
-The hook methods (`hook.*`) slot into the same table.
+| `hook.stop` / `hook.postToolUse` / `hook.sessionStart` | The hook's JSON input (as Claude Code sends it) → the hook's JSON output, or `null` for "no opinion". See "Hooks". |
 
 One bundle, several entry points, chosen by the name it is invoked as (`argv[1]`, so symlinks work) or, as `dorks-bridge`, by its first argument:
 
@@ -155,11 +155,42 @@ the Claude child's environment (they are children of it).
   `dorks: …` line on stderr and never changes gh's exit code; without `DORKS_SOCK` (not in a box) it is a silent pass-through. Do not install the shim as
   a *copy*: it finds itself by real path, so use the symlink.
 
+**Hooks** (`src/hooks.ts`, `src/hook-cli.ts`, `src/work-scan.ts`). Claude Code calls back into the bridge at three points. At `start()` the bridge writes
+`<state>/claude-settings.json`, and the agent is started with `claude --settings <that file>`:
+
+```json
+{ "hooks": {
+  "Stop":         [{ "hooks": [{ "type": "command", "command": "'<node>' '<cli.mjs>' dorks hook stop", "timeout": 30 }] }],
+  "PostToolUse":  [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "… dorks hook post-tool-use", "timeout": 15 }] }],
+  "SessionStart": [{ "matcher": "startup|resume|compact", "hooks": [{ "type": "command", "command": "… dorks hook session-start", "timeout": 10 }] }]
+} }
+```
+
+`--settings` is applied above the user's and the project's settings files, and hooks from every source run, so a repo's own `.claude/settings.json` hooks still
+fire next to these (checked with the real CLI, and asserted in the live test). The command goes through the bundle's absolute path (the same `[node, cli.mjs]`
+as the git credential helper) in its `dorks` role, so it does not depend on `PATH` inside the hook's shell. `dorks hook <stop|post-tool-use|session-start>` reads the hook
+JSON on stdin, calls `hook.stop` / `hook.postToolUse` / `hook.sessionStart` on `DORKS_SOCK` and prints the answer. **It fails open:** no socket, an unreachable or
+slow bridge, an error answer, unreadable input or any exception ends in exit 0 with no output, which Claude Code reads as "no opinion", so a broken hook never wedges
+the agent. A handler that throws on the bridge side does the same (one `hook … failed: <error name>` log line).
+
+| Hook | What the bridge does |
+|---|---|
+| `Stop` | The "done" gate. Scans the git repositories under the workdir (`<workdir>/*/*`, up to three levels, not into repos, `node_modules` or dot dirs) with local git reads only: **unpushed** (a branch with commits its upstream, or `origin/<branch>` if pushed without `-u`, does not have), **unpublished** (a branch with no remote counterpart and commits beyond the default branch; a branch that merely tracks the default branch counts as having no upstream), and **no PR** (a pushed branch with commits beyond the default branch and no pull request: first the cached subscriptions by `headRef`, else `gh pr list --head` through the real `gh` with the bridge's token; "any state", so merged or closed branches are not nagged about; unknown when gh or the network fails, which never blocks). A branch whose remote branch is gone is skipped. If anything is **new** it answers `{"decision":"block","reason":…}`: validate locally (tests, typecheck, lint for what changed, using the repo's scripts), push, open a PR with `gh pr create`, or explain why it is intentionally not pushing. Otherwise it answers nothing, whether or not subscriptions are active. |
+| `PostToolUse` (`Bash`) | Backs up the shim, which only watches gh when stdout is not a terminal. After a command that matches `gh … pr create` / `gh stack submit` it subscribes (`source: "auto"`) to the PR URLs in the tool's stdout and stderr, unless the list already has them. After `gh … pr merge` / `pr close` it unsubscribes from `Closed|Merged|Squashed and merged|Rebased and merged pull request owner/name#n` as gh prints it (not `--auto`, which only queues). Repos are compared case-insensitively. It never returns anything, so the tool result is untouched. |
+| `SessionStart` | `hookSpecificOutput.additionalContext`: the subscribed PRs (`repo#n "title": CI, review, mergeable, CI fix attempts n/2, STALLED`) and a short "how autonomy works here" guide (the `<dorks-event>` turns, validate locally before pushing, `dorks pr sub/unsub/list`, post a standby note when ready, never merge). |
+
+**The Stop gate cannot loop.** `stop_hook_active: true` (Claude Code is already continuing because a Stop hook blocked) always allows the stop. Beyond that,
+a condition (`kind`, repository directory, branch) is raised **once per session**: the set of raised conditions is persisted in `stop-gate.json` (the bridge restarts
+whenever the box wakes) and keyed by `session_id`. A condition is forgotten as soon as a Stop finds it cleared, so work that goes unpushed again later (a CI
+fix, say) is raised again, while an ignored or "intentionally not pushing" one is not repeated. Conditions found while `stop_hook_active` was true were not raised
+and are caught at the next Stop. The turn that answers a `ready` notification is not gated (the bridge remembers the kinds of the last `notify` it wrote; a user
+message resets that). Claude Code adds its own cap on consecutive Stop blocks.
+
 **Claude CLI argv** (checked against the Claude Code docs and a live run of 2.1.293):
 
 ```
 claude -p --input-format stream-json --output-format stream-json --verbose --include-partial-messages
-       --permission-mode bypassPermissions [--resume <id>]
+       --permission-mode bypassPermissions --settings <state>/claude-settings.json [--resume <id>]
 ```
 
 `--verbose` is required for stream-json output; `--include-partial-messages` makes `stream_event` text deltas flow. Not used: `--bare` (it
@@ -210,6 +241,10 @@ pnpm --filter @dorks/bridge typecheck
 text + `tool_use`, `tool_result`, `result`, idle), honours `--resume`, interrupts and EOF, and has hooks for crashes, stderr echo and permission
 requests. Its events follow the Agent SDK types and a live unauthenticated run of the real CLI; no paid session was recorded.
 
+`test/hooks.test.ts` covers the Stop gate on git fixtures (clones of local bare remotes: unpushed, unpublished, no PR, once per condition, restart, `stop_hook_active`,
+`ready`), PostToolUse, SessionStart, the settings file, the argv and the gh lookup; `test/hook-cli.test.ts` runs the built `dorks hook` against a stand-in socket,
+including every fail-open path; and `bridge.test.ts` ("autonomy: hooks") runs the commands from the written settings file through a shell against a real bridge.
+
 `test/fixtures/fake-gh.mjs` stands in for the real gh in the shim tests (it reports its argv and `GH_TOKEN`, prints what the test asks for and exits
 with the code it is given). The `dorks` and shim tests run the **built bundle** under the names `dorks` / `gh` (symlinks, like the snapshot) against an
 in-process stand-in for the bridge's RPC socket; the bridge-level tests use the fake transport (`subscribePr`, `unsubscribePr`, a settable
@@ -231,11 +266,12 @@ This is the same 37-check acceptance run plus the secret scan; the turn produces
 ### Trying it with a real Claude token locally
 
 1. Get a token: `claude setup-token` (needs a Claude subscription) and `export CLAUDE_CODE_OAUTH_TOKEN=…` (or `ANTHROPIC_API_KEY`).
-2. Bridge-level check, no Convex needed (three short turns: reply, a Bash tool call, then resume in a new bridge process):
+2. Bridge-level check, no Convex needed: three short turns (reply, a Bash tool call, then resume in a new bridge process), and one turn proving the hooks
+   (SessionStart's context reaches the model, the Stop gate blocks an unpushed commit exactly once and the turn still ends, a repo hook still runs next to them):
    ```sh
    pnpm --filter @dorks/bridge test live
    ```
-   (`LIVE_CLAUDE_ARGS="--model haiku"` to pick a model; `CLAUDE_BIN` for a non-default binary.)
+   (`LIVE_CLAUDE_ARGS="--model haiku"` to pick a model; `CLAUDE_BIN` for a non-default binary; `ANTHROPIC_BASE_URL` is passed through.)
 3. Full loop through Convex with the real CLI: `apps/convex/scripts/e2e.mjs` takes the Claude token from `E2E_CLAUDE_TOKEN` (default: a
    placeholder). With the local Convex set up:
    ```sh
@@ -255,7 +291,10 @@ This is the same 37-check acceptance run plus the secret scan; the turn produces
   env minimal, or set `CLAUDE_RUN_AS` and give that user its own clean environment.
 - Pending, unsent events are lost if the bridge process itself crashes (see "Outbound buffer").
 - The gh shim only reads PR URLs when its stdout is not a terminal (a pipe changes what gh prints on a TTY). The agent's tools are never TTYs; a human running
-  `gh pr create` by hand in a terminal is not auto-subscribed (`dorks pr sub` does it).
+  `gh pr create` by hand in a terminal is not auto-subscribed (`dorks pr sub` does it). The `PostToolUse` hook reads the tool result instead, so `gh pr create` is
+  caught in either case when the agent runs it.
+- The Stop gate looks at commits and branches, not at uncommitted changes, and only at repositories under the workdir. Whether a pushed branch has a PR needs the
+  real `gh` and network; without them that one check stays silent.
 
 ## Open items
 

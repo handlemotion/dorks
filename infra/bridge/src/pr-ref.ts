@@ -38,3 +38,6 @@ export function findPrUrls(text: string): PrRef[] {
 }
 
 export const prLabel = (r: PrRef) => `${r.repo}#${r.number}`;
+
+/** The backend stores `repo` lowercase (GitHub names are case-insensitive), while URLs and remotes keep the author's casing. */
+export const samePr = (a: PrRef, b: PrRef) => a.number === b.number && a.repo.toLowerCase() === b.repo.toLowerCase();
