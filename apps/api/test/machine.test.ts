@@ -17,8 +17,8 @@ describe("machine: spec behaviours", () => {
     expect(run(ctx("idle"), "sleep_due").effects).toEqual(["pause_box"]);
     expect(run(ctx("idle"), "paused").state).toBe("sleeping");
   });
-  it("a new message cancels the sleep timer", () => {
-    expect(run(ctx("idle"), "user_message")).toMatchObject({ state: "working", effects: ["cancel_sleep", "deliver_outbox"] });
+  it("a new message cancels the sleep timer and any pause in progress", () => {
+    expect(run(ctx("idle"), "user_message")).toMatchObject({ state: "working", effects: ["cancel_sleep", "cancel_pause", "deliver_outbox"] });
   });
   it("mid-turn messages steer without changing state", () => {
     expect(run(ctx("working"), "user_message")).toMatchObject({ state: "working", effects: ["deliver_outbox"] });
@@ -55,6 +55,21 @@ describe("machine: spec behaviours", () => {
         expect(r.effects).toEqual(expect.arrayContaining(["cancel_sleep", "cancel_watchdog", "cancel_gh_refresh"]));
       }
   });
+  it("entering error with a box pauses it (no leaked billing); without a box there is nothing to pause", () => {
+    for (const s of ["creating", "waking", "working", "idle"] as DorkState[])
+      for (const t of ["op_failed", "watchdog", "agent_exited"] as const) {
+        expect(run(ctx(s), t).effects).toContain("pause_box");
+        expect(run(ctx(s, { hasBox: false }), t).effects).not.toContain("pause_box");
+      }
+  });
+  it("error -> pause lands -> sleeping; the next message wakes it", () => {
+    const paused = run(ctx("error"), "paused");
+    expect(paused.state).toBe("sleeping");
+    expect(run(ctx(paused.state), "user_message")).toMatchObject({ state: "waking", effects: ["resume_box", "arm_watchdog"] });
+  });
+  it("a failure while already in error does not pause again", () => {
+    for (const t of ["op_failed", "watchdog", "agent_exited"] as const) expect(run(ctx("error"), t).effects).toEqual([]);
+  });
   it("a lost bridge in an awake state arms the watchdog; asleep it is expected", () => {
     expect(run(ctx("working"), "bridge_lost").effects).toEqual(["arm_watchdog"]);
     expect(run(ctx("sleeping"), "bridge_lost").effects).toEqual([]);
@@ -89,6 +104,7 @@ describe("machine: totality + invariants", () => {
         if (prev.archived && t === "user_message") expect(r.rejected).toBe("archived");
         if (fx.includes("resume_box")) expect(["sleeping", "error"]).toContain(prev.state);
         if (fx.includes("create_box")) expect(prev.hasBox).toBe(false);
+        if (r.state === "error" && prev.state !== "error") expect(fx.includes("pause_box")).toBe(prev.hasBox); // never leave a box running under `error`
         if (t === "unarchive") expect(fx).toEqual([]); // never wakes
         if (r.state === "sleeping") expect(fx.includes("deliver_outbox")).toBe(false);
         if (prev.archived && fx.includes("resume_box")) throw new Error("archived dork woke");

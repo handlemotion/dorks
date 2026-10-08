@@ -26,7 +26,9 @@ export const fromBridge = z.discriminatedUnion("t", [
   z.object({ t: z.literal("ready") }), // repo cloned + claude running
   z.object({ t: z.literal("ack"), id: z.string() }), // user_message id received
   z.object({ t: z.literal("agent_exited"), code: z.number().nullable(), stderrTail: z.string() }),
-  z.object({ t: z.literal("flushed") }),
+  // `cid` is the cid of the `flush` command this answers (the same id the bridge acks). Optional for compatibility: a `flushed`
+  // without it is accepted as the answer to the current flush, but a stale one can then end a later flush early.
+  z.object({ t: z.literal("flushed"), cid: z.string().optional() }),
 ]);
 export type FromBridge = z.infer<typeof fromBridge>;
 

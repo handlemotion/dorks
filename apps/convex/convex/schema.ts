@@ -43,7 +43,21 @@ export default defineSchema({
     sleepMinutes: v.number(),
     bridgeSeenAt: v.number(),
     bridgeLost: v.boolean(),
+    ghFailures: v.optional(v.number()), // consecutive failed GitHub token refreshes (bridge.ts); absent/0 = healthy
     timers: v.record(v.string(), v.id("_scheduled_functions")), // name -> pending scheduled run (sleep | watchdog | gh_token | bridge_watch | flush)
+    // Box-operation generation. Bumped whenever a create/resume/pause is launched; the box actions carry it back so a result
+    // from a superseded operation (a resume that lost to a pause, a create that was retried) cannot move a newer attempt.
+    opGen: v.optional(v.number()),
+    // The active intent to pause the box, if any. `flushing`: waiting for the bridge's `flushed` (for `flushCid`); `pausing`:
+    // boxes.pause is in flight (`since` bounds how long we trust that); `cancelled`: a message arrived while it was in flight
+    // (the pause will still land, so the dork must wake again).
+    pause: v.optional(v.object({
+      gen: v.number(),
+      phase: v.union(v.literal("flushing"), v.literal("pausing"), v.literal("cancelled")),
+      since: v.optional(v.number()),
+      flushCid: v.optional(v.string()),
+    })),
+    pauseRetries: v.optional(v.number()), // failed pauses retried from `error` (capped, reset when a pause lands or a new op starts)
   }).index("by_dork", ["dorkId"]),
 
   // Append-only per-dork log. `seq` is dense per dork (1..n); that is the only ordering clients need.
@@ -63,6 +77,11 @@ export default defineSchema({
     text: v.optional(v.string()),
     acked: v.boolean(),
   }).index("by_dork_acked", ["dorkId", "acked"]),
+
+  // Fixed-window counters for sign-in rate limiting (see rateLimit.ts). `key` embeds the limited thing (email or IP).
+  rateLimits: defineTable({ key: v.string(), windowStart: v.number(), count: v.number() })
+    .index("by_key", ["key"])
+    .index("by_window_start", ["windowStart"]),
 
   // Dev/sim only: what a real BoxProvider (Upstash) would hold remotely.
   simBoxes: defineTable({ name: v.string(), running: v.boolean(), gen: v.number() }).index("by_name", ["name"]),

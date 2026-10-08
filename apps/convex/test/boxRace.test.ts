@@ -53,7 +53,7 @@ describe("delete vs create race", () => {
   it("normal create records the box", async () => {
     const t = convexTest(schema, modules);
     const dorkId = await seed(t);
-    await t.action(internal.boxes.create, { dorkId });
+    await t.action(internal.boxes.create, { dorkId, gen: 0 });
     expect(await t.run((ctx) => ctx.db.get(dorkId).then((d) => d?.boxId))).toBe(`box-${dorkId}`);
     expect(provider.deleted).toEqual([]);
   });
@@ -66,7 +66,7 @@ describe("delete vs create race", () => {
       await t.run((ctx) => ctx.db.patch(dorkId, { deleting: true }));
       await t.action(internal.boxes.destroy, { dorkId });
     };
-    await t.action(internal.boxes.create, { dorkId });
+    await t.action(internal.boxes.create, { dorkId, gen: 0 });
     expect(await t.run((ctx) => ctx.db.get(dorkId))).toBeNull(); // purged
     expect(provider.created).toEqual([dorkId]);
     expect(provider.deleted).toEqual([`box-${dorkId}`]); // the orphan was cleaned up
@@ -78,7 +78,7 @@ describe("delete vs create race", () => {
     provider.duringCreate = async () => {
       await t.run((ctx) => ctx.db.patch(dorkId, { deleting: true }));
     };
-    await t.action(internal.boxes.create, { dorkId });
+    await t.action(internal.boxes.create, { dorkId, gen: 0 });
     expect(provider.deleted).toEqual([`box-${dorkId}`]);
     expect(await t.run((ctx) => ctx.db.get(dorkId).then((d) => d?.boxId))).toBeFalsy(); // never recorded
   });
@@ -87,7 +87,7 @@ describe("delete vs create race", () => {
     const t = convexTest(schema, modules);
     const dorkId = await seed(t);
     await t.run((ctx) => ctx.db.patch(dorkId, { deleting: true }));
-    await t.action(internal.boxes.create, { dorkId });
+    await t.action(internal.boxes.create, { dorkId, gen: 0 });
     expect(provider.created).toEqual([]);
   });
 

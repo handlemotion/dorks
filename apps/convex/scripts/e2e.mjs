@@ -10,14 +10,21 @@ import { codeFor, inbox, startMockResend } from "./mock-resend.mjs";
 const { CONVEX_URL, CONVEX_SITE_URL, SIM_HOST_KEY, BRIDGE_SECRET_KEY } = process.env;
 const ORIGIN = "http://localhost:3000";
 const H = { "content-type": "application/json", origin: ORIGIN };
-const CLAUDE_TOKEN = "sk-ant-oat01-SUPERSECRET-e2e";
+const CLAUDE_TOKEN = process.env.E2E_CLAUDE_TOKEN ?? "sk-ant-oat01-SUPERSECRET-e2e"; // set E2E_CLAUDE_TOKEN to run the loop against the real CLI
 const CLI_SECRET = "cf-secret-e2e";
 const results = [];
 const seenByClients = []; // every query result any client saw (scanned for secrets at the end)
 const check = (name, ok, extra = "") => { results.push({ name, ok }); console.log(`${ok ? "PASS" : "FAIL"}  ${name}${extra ? "  — " + extra : ""}`); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const waitFor = async (fn, what, ms = 30_000) => { const t0 = Date.now(); for (;;) { const v = await fn(); if (v) return v; if (Date.now() - t0 > ms) throw new Error(`timeout: ${what}`); await sleep(100); } };
-const post = (p, body) => fetch(CONVEX_SITE_URL + p, { method: "POST", headers: H, body: JSON.stringify(body) });
+const post = (p, body, headers = {}) => fetch(CONVEX_SITE_URL + p, { method: "POST", headers: { ...H, ...headers }, body: JSON.stringify(body) });
+// Limits are per hour and persist in the backend, so every run uses fresh addresses for the burst checks below. Caps default to
+// the production values; set OTP_SEND_PER_EMAIL / OTP_SEND_PER_IP on the deployment and here to change them. A run spends ~40 of the
+// 100/h global send budget, so run-e2e.sh clears the counters first; calling this file directly twice in an hour can hit OTP_SEND_GLOBAL.
+const RUN = Date.now().toString(36);
+const SEND_CAP = Number(process.env.OTP_SEND_PER_EMAIL ?? 5);
+const IP_CAP = Number(process.env.OTP_SEND_PER_IP ?? 30);
+const OTP = "/api/auth/email-otp/send-verification-otp";
 
 await startMockResend();
 
@@ -29,6 +36,44 @@ for (const email of ["eve@evil.com", "a@jaantonio.com.evil.com", "a@evil.com@jaa
 check("no mail sent to foreign addresses", inbox.length === 0);
 check("foreign sign-in refused", (await post("/api/auth/sign-in/email-otp", { email: "eve@evil.com", otp: "123456" })).status === 403);
 
+// ---- rate limits (H4). Run before anything else signs in so a burst can't have been pre-counted.
+{
+  const burst = async (email, n, path = OTP, headers = {}) => {
+    const statuses = [];
+    for (let i = 0; i < n; i++) statuses.push((await post(path, { email, type: "sign-in" }, headers)).status);
+    return statuses;
+  };
+  const email = `burst-${RUN}@jaantonio.com`;
+  const before = inbox.length;
+  const st = await burst(email, SEND_CAP + 5);
+  const delivered = inbox.length - before;
+  check(`send burst: first ${SEND_CAP} succeed, the rest get 429`, st.slice(0, SEND_CAP).every((s) => s === 200) && st.slice(SEND_CAP).every((s) => s === 429), st.join(","));
+  check("no mail captured beyond the per-email cap", delivered === SEND_CAP, `${delivered} mails`);
+  const limited = await post(OTP, { email, type: "sign-in" });
+  check("429 body says too many attempts", limited.status === 429 && /too many/i.test((await limited.json()).message ?? ""));
+  const alias = `Burst-${RUN}+x@JAANTONIO.com`;
+  check("case and +tag variants of the same mailbox share the budget", (await post(OTP, { email: alias, type: "sign-in" })).status === 429);
+  check("password-reset route cannot bypass the send cap", (await post("/api/auth/email-otp/request-password-reset", { email })).status === 429);
+  check("a different mailbox is unaffected", (await post(OTP, { email: `calm-${RUN}@jaantonio.com`, type: "sign-in" })).status === 200);
+
+  const vEmail = `verify-${RUN}@jaantonio.com`;
+  await post(OTP, { email: vEmail, type: "sign-in" });
+  const vs = [];
+  for (let i = 0; i < 15; i++) vs.push((await post("/api/auth/sign-in/email-otp", { email: vEmail, otp: "000000" })).status);
+  check("wrong guesses are never rate limited (an outsider cannot lock a user out by guessing)", vs.every((s) => s !== 429), vs.join(","));
+  const right = codeFor(vEmail);
+  check("the code is already void after 3 wrong guesses (better-auth's own cap)", (await post("/api/auth/sign-in/email-otp", { email: vEmail, otp: right })).status !== 200);
+
+  // Per IP: the local backend adds no x-forwarded-for, so the test supplies one (the limiter trusts the last hop).
+  const ip = `10.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`;
+  const ipStatuses = [];
+  for (let i = 0; i < IP_CAP + 2; i++) ipStatuses.push((await post(OTP, { email: `ip-${RUN}-${i}@jaantonio.com`, type: "sign-in" }, { "x-forwarded-for": `203.0.113.9, ${ip}` })).status);
+  check(`per-IP cap: ${IP_CAP} sends across different mailboxes, then 429`, ipStatuses.slice(0, IP_CAP).every((s) => s === 200) && ipStatuses.slice(IP_CAP).every((s) => s === 429), ipStatuses.slice(-4).join(","));
+  const spoof = await post(OTP, { email: `ip2-${RUN}@jaantonio.com`, type: "sign-in" }, { "x-forwarded-for": `${ip}, 198.51.100.7` });
+  // Documents the trust model rather than proving protection: the IP key is the LAST hop, so a caller who controls the whole header gets any key.
+  check("per-IP key is the last x-forwarded-for hop (earlier hops are ignored)", spoof.status === 200);
+}
+
 async function signIn(email) {
   await post("/api/auth/email-otp/send-verification-otp", { email, type: "sign-in" });
   const code = await waitFor(() => codeFor(email), "otp mail");
@@ -38,11 +83,12 @@ async function signIn(email) {
   const tok = async () => (await (await fetch(CONVEX_SITE_URL + "/api/auth/convex/token", { headers: { cookie, origin: ORIGIN } })).json()).token;
   return { email, tok };
 }
-const wrong = await post("/api/auth/sign-in/email-otp", { email: "rodrigo@jaantonio.com", otp: "000000" });
+// Unique per run: the 5 sends/hour budget would otherwise run out after a few local re-runs against the same backend.
+const wrong = await post("/api/auth/sign-in/email-otp", { email: `rodrigo-${RUN}@jaantonio.com`, otp: "000000" });
 check("wrong code rejected", wrong.status === 400 || wrong.status === 401, `status ${wrong.status}`);
-const me = await signIn("rodrigo@jaantonio.com");
+const me = await signIn(`rodrigo-${RUN}@jaantonio.com`);
 check("allowed email gets a code (Resend request shape) and a session", true, `mail from=${inbox.at(-1).from}`);
-const other = await signIn("other@jaantonio.com");
+const other = await signIn(`other-${RUN}@jaantonio.com`);
 
 const mkClient = async (who) => {
   const c = new ConvexClient(CONVEX_URL);
@@ -60,6 +106,13 @@ await A.mutation(api.settings.setSleepMinutes, { minutes: 0.1 }); // 6s
 const onboarding = await A.query(api.settings.onboarding, {});
 seenByClients.push(onboarding);
 check("onboarding query returns booleans only", onboarding.claudeToken === true && !JSON.stringify(onboarding).includes(CLAUDE_TOKEN));
+const code = async (p) => (await p.then(() => null, (e) => e))?.data?.code;
+check("claude token over 4KB rejected", (await code(A.mutation(api.settings.setClaudeToken, { token: "x".repeat(4097) }))) === "invalid");
+check("cli secret over 16KB rejected", (await code(A.mutation(api.settings.setCliSecret, { name: "BIG", value: "x".repeat(16 * 1024 + 1) }))) === "invalid");
+check("NaN / Infinity sleep minutes rejected", (await code(A.mutation(api.settings.setSleepMinutes, { minutes: NaN }))) === "invalid" && (await code(A.mutation(api.settings.setSleepMinutes, { minutes: Infinity }))) === "invalid");
+check("rejected sleep minutes left the stored value alone", (await A.query(api.settings.onboarding, {})).sleepMinutes === 0.1);
+for (const repo of ["./x", "o/..", "../r", "a b/c"]) check(`repo refused: ${repo}`, (await code(A.mutation(api.dorks.create, { repo, message: "hi" }))) === "invalid");
+check("title over 120 chars refused", (await code(A.mutation(api.dorks.create, { repo: "o/r", message: "hi", title: "t".repeat(121) }))) === "invalid");
 let err = await B.mutation(api.dorks.create, { repo: "o/r", message: "hi" }).then(() => null, (e) => e);
 check("create blocked until onboarding is done", err?.data?.code === "onboarding_incomplete", err?.data?.code);
 

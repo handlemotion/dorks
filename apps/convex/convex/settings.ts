@@ -4,7 +4,12 @@ import { internal } from "./_generated/api";
 import { action, internalMutation, mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireUserId } from "./auth";
+import { fail } from "./lib/dispatch";
 import { verifyInstallationOwnership } from "./lib/githubInstall";
+
+export const MAX_CLAUDE_TOKEN_CHARS = 4 * 1024;
+export const MAX_SECRET_BYTES = 16 * 1024;
+export const MAX_SECRETS_PER_USER = 50;
 
 const ring = () => keyringFromEnv({ ENCRYPTION_KEY: process.env.ENCRYPTION_KEY! });
 
@@ -25,11 +30,22 @@ export const onboarding = query({
   },
 });
 
+/** Names only (sorted), for the settings screen: values and ciphertext never leave the backend. */
+export const secretNames = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await requireUserId(ctx);
+    const rows = await ctx.db.query("userSecrets").withIndex("by_user_name", (q) => q.eq("userId", userId)).collect();
+    return rows.map((r) => r.name).sort();
+  },
+});
+
 export const setClaudeToken = mutation({
   args: { token: v.string() },
   handler: async (ctx, { token }) => {
     const userId = await requireUserId(ctx);
     if (!token.trim()) throw new ConvexError({ code: "invalid", message: "empty token" });
+    if (token.trim().length > MAX_CLAUDE_TOKEN_CHARS) throw new ConvexError({ code: "invalid", message: "token too long" });
     const row = await settingsRow(ctx, userId);
     await ctx.db.patch(row._id, { claudeTokenEnc: (await encrypt(ring(), token.trim(), aad.claudeToken(userId))).value });
   },
@@ -40,10 +56,15 @@ export const setCliSecret = mutation({
   handler: async (ctx, { name, value }) => {
     const userId = await requireUserId(ctx);
     if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(name)) throw new ConvexError({ code: "invalid", message: "bad secret name" });
+    if (new TextEncoder().encode(value).length > MAX_SECRET_BYTES) throw new ConvexError({ code: "invalid", message: "secret value too large" });
     const valueEnc = (await encrypt(ring(), value, aad.secret(userId, name))).value;
     const existing = await ctx.db.query("userSecrets").withIndex("by_user_name", (q) => q.eq("userId", userId).eq("name", name)).unique();
     if (existing) await ctx.db.patch(existing._id, { valueEnc });
-    else await ctx.db.insert("userSecrets", { userId, name, valueEnc });
+    else {
+      const held = await ctx.db.query("userSecrets").withIndex("by_user_name", (q) => q.eq("userId", userId)).take(MAX_SECRETS_PER_USER);
+      if (held.length >= MAX_SECRETS_PER_USER) fail("limit", `at most ${MAX_SECRETS_PER_USER} secrets`);
+      await ctx.db.insert("userSecrets", { userId, name, valueEnc });
+    }
   },
 });
 
@@ -87,7 +108,10 @@ export const storeGithubInstallation = internalMutation({
 export const setSleepMinutes = mutation({
   args: { minutes: v.number() },
   handler: async (ctx, { minutes }) => {
-    const row = await settingsRow(ctx, await requireUserId(ctx));
+    const userId = await requireUserId(ctx);
+    // NaN slips through Math.min/max, then `runAfter(NaN)` throws inside bridge.push and wedges the dork in `working`.
+    if (!Number.isFinite(minutes)) throw new ConvexError({ code: "invalid", message: "minutes must be a finite number" });
+    const row = await settingsRow(ctx, userId);
     await ctx.db.patch(row._id, { sleepMinutes: Math.min(Math.max(minutes, 0.05), 24 * 60) });
   },
 });
