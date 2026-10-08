@@ -2,17 +2,17 @@
 
 pnpm workspace. `pnpm install`, then:
 
+- `pnpm dev` — Convex + web; `pnpm dev:convex`, `pnpm dev:web`, `pnpm dev:ios` individually
 - `pnpm dev:api` — Hono + `Dork` Durable Object on wrangler (:8787)
 - `pnpm dev:web` — TanStack Start on Workers via Vite (:3000, proxies `/api` → :8787)
 - `cd apps/ios && pnpm start` — Expo
 - `pnpm typecheck`
 
-Secrets for local dev go in `apps/api/.dev.vars` (gitignored).
+Secrets are dotenvx-encrypted files in `secrets/`; see [Local development](docs/secrets/README.md#local-development). With `DOTENV_PRIVATE_KEY_DEV` set, `pnpm dev` starts Convex + web with secrets loaded (`pnpm dev:ios`, `pnpm dev:api` for the others).
 
-## Local dev
+## Local dev (legacy API)
 
 ```sh
-cp apps/api/.dev.vars.example apps/api/.dev.vars   # then fill ENCRYPTION_KEY (base64 32 bytes)
 pnpm --filter @dorks/api db:migrate               # local D1
 pnpm dev:api & pnpm dev:web
 ```

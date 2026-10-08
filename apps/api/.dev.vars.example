@@ -1,8 +1,9 @@
-# cp .dev.vars.example .dev.vars   (gitignored). Empty RESEND_API_KEY => OTP codes are logged to the console (dev only).
-BETTER_AUTH_SECRET=dev-only-change-me-dev-only-change-me
+# Names only. Real values live in secrets/.env.dev (encrypted) and are loaded by `pnpm dev:api`: see docs/secrets/README.md.
+# No-dotenvx fallback: cp .dev.vars.example .dev.vars (gitignored) and fill in; ENCRYPTION_KEY is base64 of 32 random bytes.
+BETTER_AUTH_SECRET=
 ENCRYPTION_KEY=
 UPSTASH_BOX_API_KEY=
 GITHUB_APP_PRIVATE_KEY=
-GITHUB_WEBHOOK_SECRET=dev-webhook-secret
+GITHUB_WEBHOOK_SECRET=
 RESEND_API_KEY=
 EXPO_ACCESS_TOKEN=

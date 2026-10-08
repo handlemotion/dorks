@@ -2,12 +2,13 @@
   "name": "@dorks/api",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "../../scripts/with-secrets.sh api -- wrangler dev",
     "test": "vitest run",
     "db:migrate": "wrangler d1 migrations apply DB --local",
     "deploy": "wrangler deploy --minify",
     "cf-typegen": "wrangler types --strict-vars=false",
-    "typecheck": "wrangler types --strict-vars=false && tsc --noEmit"
+    "typecheck": "wrangler types --strict-vars=false && tsc --noEmit",
+    "dev:local": "wrangler dev"
   },
   "dependencies": {
     "@dorks/shared": "workspace:*",
