@@ -13,6 +13,10 @@ export class GithubToken {
     this.token = t;
   }
 
+  get() {
+    return this.token;
+  }
+
   /** The `token` RPC method: `{ host }` → `{ token }`, only for the hosts we hold a token for. */
   rpc = (params: unknown): { token: string } => {
     const host = (params as { host?: unknown } | null)?.host;
@@ -23,11 +27,11 @@ export class GithubToken {
   };
 }
 
-const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+export const shellQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
 /** The value for `credential.helper`: git runs it through `sh`, appending the operation (`get`/`store`/`erase`). */
 export function helperCommand(node: string, cli: string, sockPath: string) {
-  return `!${q(node)} ${q(cli)} credential --sock ${q(sockPath)}`;
+  return `!${shellQuote(node)} ${shellQuote(cli)} credential --sock ${shellQuote(sockPath)}`;
 }
 
 /** `dorks-bridge credential --sock <path> <get|store|erase>`: git's credential-helper protocol on stdin/stdout. */

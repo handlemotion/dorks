@@ -27,17 +27,17 @@ const helperScopes = (gitBaseUrl: string) => [...new Set(["https://github.com", 
 
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
-function runGit(args: string[], cwd: string | undefined, env: NodeJS.ProcessEnv, id?: Identity | null): Promise<{ code: number; stdout: string }> {
+export function runGit(args: string[], cwd: string | undefined, env: NodeJS.ProcessEnv, id?: Identity | null, timeoutMs = 15 * 60_000): Promise<{ code: number; stdout: string }> {
   return new Promise((resolve) => {
     const [bin, argv] = asIdentity(id, "git", args);
-    execFile(bin, argv, { cwd: cwd ?? (id ? "/" : undefined), env, maxBuffer: 16 * 1024 * 1024, timeout: 15 * 60_000 }, (err, stdout) => {
+    execFile(bin, argv, { cwd: cwd ?? (id ? "/" : undefined), env, maxBuffer: 16 * 1024 * 1024, timeout: timeoutMs }, (err, stdout) => {
       const code = err ? (typeof (err as { code?: unknown }).code === "number" ? ((err as { code: number }).code) : 1) : 0;
       resolve({ code, stdout: String(stdout ?? "") });
     });
   });
 }
 
-const gitEnv = (base: NodeJS.ProcessEnv, id?: Identity | null): NodeJS.ProcessEnv => {
+export const gitEnv = (base: NodeJS.ProcessEnv, id?: Identity | null): NodeJS.ProcessEnv => {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(base)) if (!CHILD_ENV_DENY.some((re) => re.test(k))) env[k] = v;
   if (id) Object.assign(env, { HOME: id.home, USER: id.user, LOGNAME: id.user });

@@ -13,7 +13,12 @@ import { runGhShim } from "./gh-shim";
 // The snapshot installs the bundle once and symlinks `dorks` and `gh` to it (infra/snapshot).
 // Synchronous writes to the raw descriptors: the `process.stdout` / `process.stderr` streams can switch a shared pipe to non-blocking
 // mode, which the real gh (a child of the shim, inheriting the same descriptors) must not be exposed to.
-const io = { out: (s: string) => void writeSync(1, s), err: (s: string) => void writeSync(2, s) };
+const readStdin = async () => {
+  let s = "";
+  for await (const c of process.stdin) s += c;
+  return s;
+};
+const io = { out: (s: string) => void writeSync(1, s), err: (s: string) => void writeSync(2, s), readInput: readStdin };
 
 async function main() {
   const invokedAs = basename(process.argv[1] ?? "").replace(/\.[cm]?js$/, "");

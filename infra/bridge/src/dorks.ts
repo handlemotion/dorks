@@ -1,5 +1,6 @@
 import type { PrRef, SubscriptionView } from "@dorks/shared";
 import { parsePrRef, prLabel } from "./pr-ref";
+import { runHook } from "./hook-cli";
 import { RpcError, rpcCall } from "./rpc";
 
 // `dorks`: the agent-facing CLI. It is the bridge binary run under another name (see cli.ts) and talks to the running bridge over the
@@ -10,10 +11,16 @@ export interface Io {
   err: (s: string) => void;
 }
 
+export interface DorksIo extends Io {
+  /** All of stdin (only `dorks hook` reads it). */
+  readInput: () => Promise<string>;
+}
+
 const USAGE = `usage:
   dorks pr sub <pr>        get notified about CI, reviews, comments and conflicts on a PR
   dorks pr unsub <pr>      stop being notified about a PR
   dorks pr list [--json]   the PRs this dork is subscribed to
+  dorks hook <event>       (run by Claude Code, not by hand) stop | post-tool-use | session-start
 <pr> is https://github.com/owner/name/pull/12 or owner/name#12`;
 
 /** The socket path for a client of the bridge's RPC, or null when this process is not inside a dork box. */
@@ -28,12 +35,13 @@ function listLine(s: SubscriptionView) {
   return `${prLabel(s)}  ${s.state}  ${parts.join(", ")}${s.title ? `  ${s.title}` : ""}\n  ${s.url}`;
 }
 
-export async function runDorks(argv: string[], env: NodeJS.ProcessEnv, io: Io): Promise<number> {
+export async function runDorks(argv: string[], env: NodeJS.ProcessEnv, io: DorksIo): Promise<number> {
   const [group, verb, ...rest] = argv;
   if (!group || group === "help" || group === "--help" || group === "-h") {
     (group ? io.out : io.err)(USAGE + "\n");
     return group ? 0 : 2;
   }
+  if (group === "hook") return runHook(verb, env, io.readInput, io.out);
   if (group !== "pr" || !["sub", "unsub", "list"].includes(verb ?? "")) {
     io.err(`dorks: unknown command "${argv.slice(0, 2).join(" ")}"\n${USAGE}\n`);
     return 2;
