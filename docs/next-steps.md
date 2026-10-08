@@ -10,6 +10,21 @@ Two lifecycle races, both reproduced below, will show up as soon as a real bridg
 > Note: `origin/main` already contains the spike (squash-merged as #2, `a5a624b`; tree identical to `spike/convex`).
 > So "Convex vs main" no longer means picking a branch. It means deciding when to delete `apps/api`.
 
+## Status (2026-10-08)
+
+The P0 items that could be delegated, plus the two highest-value P1 items, are now open PRs against `main`. Each one was implemented by a Sonnet 5.5 agent, reviewed by Opus 5.5, fixed, and verified locally:
+
+| Merge order | PR | Plan items |
+|---|---|---|
+| 1 | #4 CI | P0-2 (CI part) |
+| 2 | #5 Lifecycle correctness | P0-4: H1, H2, R1, R2, R4, R5, H9 |
+| 3 | #6 Auth rate limit + input caps | P1-1, P1-7, H4, H10 |
+| 4 | #7 GitHub App + onboarding UI | P0-7, P0-8, H6, R7, R8 (web) |
+| 5 | #8 Upstash Box provider | P0-6, H3 |
+| 6 | #9 Real in-box bridge | P0-5 |
+
+Still open, and each needs a human: P0-1 (README switch to the Convex flow), P0-3 (Convex cloud deployment and Resend domain), GitHub App registration, an Upstash key, the base snapshot build, and the iOS/push/webhook items in P1.
+
 ---
 
 ## 1. What runs locally today (actually run, this sandbox)
