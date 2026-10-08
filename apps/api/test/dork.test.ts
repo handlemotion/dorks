@@ -211,29 +211,31 @@ describe("lifecycle: failure and recovery", () => {
     const h = await harness();
     await h.stub.create("go");
     await h.runTimer("watchdog"); // bridge never showed up
-    expect((await h.status()).state).toBe("error");
+    expect((await h.status()).state).toBe("sleeping"); // error pauses the box (no leaked billing), then the dork sleeps
     expect((await h.events()).some((e) => e.type === "error" && /timed out/.test((e as { message: string }).message))).toBe(true);
+    expect(h.box.calls).toEqual(["create", "pause"]);
     await h.stub.sendMessage("retry");
     expect((await h.status()).state).toBe("waking"); // box exists -> resume, not create
-    expect(h.box.calls).toEqual(["create", "resume"]);
+    expect(h.box.calls).toEqual(["create", "pause", "resume"]);
   });
 
-  it("agent crash -> error -> next message restarts the agent on the live bridge", async () => {
+  it("agent crash -> error -> box paused -> next message wakes it on a fresh bridge", async () => {
     const h = await harness();
     await h.stub.create("go");
     const b = await h.bridge();
     autoBridge(b);
     await waitFor(async () => expect((await h.status()).state).toBe("idle"));
     b.send({ t: "agent_exited", code: 1, stderrTail: "boom" });
-    await waitFor(async () => expect((await h.status()).state).toBe("error"));
+    await waitFor(async () => expect((await h.status()).state).toBe("sleeping")); // error flushes and pauses the box
     expect((await h.events()).some((e) => e.type === "agent_exited")).toBe(true);
+    expect(h.box.calls).toEqual(["create", "pause"]);
 
-    const configs = () => b.frames.filter((f) => f.t === "configure").length;
-    const before = configs();
     await h.stub.sendMessage("keep going");
-    await waitFor(() => expect(configs()).toBe(before + 1)); // re-configured over the existing bridge socket
+    expect(h.box.calls).toEqual(["create", "pause", "resume"]);
+    const b2 = await h.bridge();
+    autoBridge(b2);
     await waitFor(async () => expect((await h.status()).state).toBe("idle"));
-    expect(b.frames.some((f) => f.t === "configure" && f.resumeSessionId === "claude-session-1")).toBe(true);
+    expect(b2.frames.some((f) => f.t === "configure" && f.resumeSessionId === "claude-session-1")).toBe(true);
   });
 
   it("a failed pause leaves error, not a false 'sleeping'", async () => {
@@ -242,7 +244,9 @@ describe("lifecycle: failure and recovery", () => {
     const b = await h.bridge();
     autoBridge(b);
     await waitFor(async () => expect((await h.status()).state).toBe("idle"));
-    h.box.failNext.add("pause");
+    h.box.pause = async () => {
+      throw new Error("injected pause failure"); // stays down: the retry from `error` fails too
+    };
     await h.runTimer("sleep");
     expect((await h.status()).state).toBe("error");
   });

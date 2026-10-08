@@ -94,6 +94,18 @@ Order: (1) move carried files into a shared package, fix typing leak; (2) real U
 - **Bridge-lost watchdog path** end to end (needs 90s + 3min waits; covered by machine unit tests only).
 - Convex's own limits under concurrent writers (OCC retries on a hot dork were not stress-tested).
 
+## Bridge `push` contract (lifecycle correctness pass)
+
+`bridge.push({ dorkId, secret, frames })` returns `{ ok: true }` or `{ ok: false, expectedBseq: number }`.
+
+- Events must be numbered exactly `bridgeSeq + 1`, `+ 2`, ... Anything `<= bridgeSeq` is a replay and is skipped.
+- The whole call is validated before any of it is applied. If it contains a gap, **nothing in it is applied** (no events, no `ack`/`ready`/`agent_exited`/`flushed`) and `expectedBseq` is `bridgeSeq + 1`: the next event the backend will take. The bridge must resend everything from its event `expectedBseq` on, plus any control frames it had in that call. Because nothing was applied, no frame is ever applied twice. (Liveness still counts: the call refreshes the heartbeat.)
+- A bridge must never drop a batch: retry with capped backoff, and keep events until a call returns `{ ok: true }`.
+- Limits, rejected with a `ConvexError` whose `data.code` is `too_many_frames` (more than 500 frames per call) or `event_too_large` (an event's `raw` over 256KB serialized). The whole call is rejected and nothing from it is stored, so a bridge must not retry the same payload. On `too_many_frames` split the batch. On `event_too_large` replace that event's `raw` with a small stub such as `{ type: "truncated", truncated: true }` and **keep its bseq** (the backend ignores unknown event types), so the numbering stays gapless.
+- `flushed` should carry `cid`: the cid of the `flush` command it answers (the same id the bridge acks). It is optional for compatibility; without it a stale `flushed` from a cancelled pause can end a later flush early.
+- While a pause is under way (the box call is in flight, or cancelled but still landing) `bridge.commands` withholds `user_message` frames, so a message is never acked by a box that is about to go down. They are delivered after the next `ready`.
+- Older bridges that ignore the return value keep working; they just cannot recover from a gap.
+
 ## Run it
 
 ```sh
