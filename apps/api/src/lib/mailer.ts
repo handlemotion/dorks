@@ -26,8 +26,8 @@ export function resendMailer(apiKey: string, from: string): Mailer {
   };
 }
 
-export function createMailer(env: Pick<Env, "RESEND_API_KEY" | "ALLOWED_EMAIL_DOMAIN">): Mailer {
+export function createMailer(env: Pick<Env, "RESEND_API_KEY">): Mailer {
   return env.RESEND_API_KEY
-    ? resendMailer(env.RESEND_API_KEY, `dorks <auth@${env.ALLOWED_EMAIL_DOMAIN}>`)
+    ? resendMailer(env.RESEND_API_KEY, "dorks <auth@dorks.build>")
     : consoleMailer;
 }

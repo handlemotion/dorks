@@ -21,21 +21,8 @@ describe("auth", () => {
     expect((await call("/api/health")).status).toBe(200);
   });
 
-  it("refuses to send a code to a foreign domain", async () => {
-    const res = await post("/api/auth/email-otp/send-verification-otp", { email: "eve@evil.com", type: "sign-in" });
-    expect(res.status).toBe(403);
-    expect(sent["eve@evil.com"]).toBeUndefined();
-  });
-
-  it("refuses sign-in and lookalike domains", async () => {
-    for (const email of ["a@jaantonio.com.evil.com", "a@evil.com@jaantonio.com", "@jaantonio.com"]) {
-      expect((await post("/api/auth/email-otp/send-verification-otp", { email, type: "sign-in" })).status).toBe(403);
-    }
-    expect((await post("/api/auth/sign-in/email-otp", { email: "eve@evil.com", otp: "123456" })).status).toBe(403);
-  });
-
   it("completes the code flow for an allowed email and yields a session", async () => {
-    const email = "rodrigo@jaantonio.com";
+    const email = "rodrigo@dorks.build";
     expect((await post("/api/auth/email-otp/send-verification-otp", { email, type: "sign-in" })).status).toBe(200);
     expect(sent[email]).toMatch(/^\d{6}$/);
 
@@ -50,7 +37,7 @@ describe("auth", () => {
   });
 
   it("rejects a wrong code", async () => {
-    const email = "wrong@jaantonio.com";
+    const email = "wrong@dorks.build";
     await post("/api/auth/email-otp/send-verification-otp", { email, type: "sign-in" });
     expect((await post("/api/auth/sign-in/email-otp", { email, otp: "000000" })).status).toBe(400);
   });

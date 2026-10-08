@@ -19,8 +19,8 @@ describe("dorks API", () => {
   beforeAll(async () => {
     (env as any).BOX_PROVIDER = "sim"; // in-memory box
     (env as any).BASE_SNAPSHOT_ID = "snap-test";
-    alice = await signIn(app, sent, "alice@jaantonio.com");
-    bob = await signIn(app, sent, "bob@jaantonio.com");
+    alice = await signIn(app, sent, "alice@dorks.build");
+    bob = await signIn(app, sent, "bob@dorks.build");
   });
 
   it("requires a session", async () => {

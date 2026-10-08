@@ -13,7 +13,6 @@
 	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["Dork"] }],
 
 	"vars": {
-		"ALLOWED_EMAIL_DOMAIN": "jaantonio.com",
 		"APP_URL": "http://localhost:3000",
 		"BASE_SNAPSHOT_ID": "",
 		"GITHUB_APP_ID": "",

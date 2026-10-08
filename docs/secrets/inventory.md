@@ -13,7 +13,6 @@ Backends: **convex** is the target (spike verdict GO, [convex-spike.md](../conve
 | `BETTER_AUTH_SECRET` | `shared` | dev, prod | yes | convex `convex/auth.ts:21`; api `src/auth.ts:16` | generated (32 random bytes, base64) | filled | filled |
 | `ENCRYPTION_KEY` | `shared` | dev, prod | yes | convex `convex/bridge.ts:156`, `convex/settings.ts:9`; api `src/lib/crypto.ts:19`. AES-GCM key, **must decode to 32 bytes** | generated (32 random bytes, base64) | filled | filled |
 | `RESEND_API_KEY` | `shared` | dev, prod | yes | convex `convex/mail.ts:3` (required, throws if unset); api `src/lib/mailer.ts:29` (empty = log OTP to console) | external: [Resend](providers/resend.md) | dummy | dummy |
-| `ALLOWED_EMAIL_DOMAIN` | `shared` | dev, prod | no | convex `convex/auth.ts:16`, `convex/mail.ts:4` (default `jaantonio.com`); api `wrangler.jsonc` var. Also the **sender domain** (`auth@<domain>`) | config `jaantonio.com` | config | config |
 | `BOX_PROVIDER` | `shared` | dev, prod | no | convex `lib/box.ts:10`, `bridge.ts:160`, `settings.ts:61`, `simbox.ts:35`; api `lifecycle/deps.ts:66` | config: `sim` (dev), `upstash` (prod; any non-`sim` value means real provider, which is not implemented yet) | config | config |
 | `BASE_SNAPSHOT_ID` | `shared` | dev, prod | no | convex `lifecycle.ts:94`; api `lifecycle/deps.ts:71`. Box snapshot new dorks start from | dev: `sim-snapshot`; prod external: [Upstash Box](providers/upstash-box.md) | config | dummy |
 | `GITHUB_APP_ID` | `shared` | dev, prod | no (identifier) | convex `bridge.ts:161`; api `lib/github.ts` | external: [GitHub App](providers/github-app.md) | dummy (unused while `BOX_PROVIDER=sim`) | dummy |
@@ -24,7 +23,7 @@ Backends: **convex** is the target (spike verdict GO, [convex-spike.md](../conve
 | `BRIDGE_SECRET_KEY` | `convex` | dev, prod | yes | convex `lib/bridgeAuth.ts:7`; HMAC key deriving each box bridge's secret. Rotating it invalidates running boxes' bridge secrets | generated (32 random bytes, hex) | filled | filled |
 | `GITHUB_APP_CLIENT_ID` | `convex` | dev, prod | no (identifier) | convex `settings.ts:63` (install-ownership check) | external: [GitHub App](providers/github-app.md) | dummy | dummy |
 | `GITHUB_APP_CLIENT_SECRET` | `convex` | dev, prod | yes | convex `settings.ts:64` | external: [GitHub App](providers/github-app.md) | dummy | dummy |
-| `SITE_URL` | `convex` | dev, prod | no | convex `auth.ts:23,43` (trusted origin + cross-domain site; the **web origin**) | config: `http://localhost:3000` (dev); prod = the deployed web origin | config | dummy (`REPLACE_ME__WEB_ORIGIN`) |
+| `SITE_URL` | `convex` | dev, prod | no | convex `auth.ts:23,43` (trusted origin + cross-domain site; the **web origin**) | config: `http://localhost:3000` (dev); prod = `https://dorks.build` (once the app is deployed there) | config | dummy (`REPLACE_ME__WEB_ORIGIN`) |
 | `SIM_HOST_KEY` | `convex` | dev only | yes (dev) | convex `simbox.ts:35`, `scripts/e2e.mjs`, `infra/bridge-sim/host.mjs`. Only honoured when `BOX_PROVIDER=sim` | generated (32 random bytes, hex) | filled | `-` |
 | `VITE_CONVEX_URL` | `web` | dev, prod | no (ships to browsers) | web `src/lib/convex.ts:6` | config: `http://127.0.0.1:3210` (local Convex); prod = `https://<deployment>.convex.cloud` ([Convex](providers/convex.md)) | config | dummy |
 | `VITE_CONVEX_SITE_URL` | `web` | dev, prod | no (ships to browsers) | web `src/lib/convex.ts:10` | config: `http://127.0.0.1:3211`; prod = `https://<deployment>.convex.site` | config | dummy |
@@ -52,7 +51,7 @@ Backends: **convex** is the target (spike verdict GO, [convex-spike.md](../conve
 | `BRIDGE_*`, `DORKS_*`, `CLAUDE_*`, `FAKE_CLAUDE_*`, `GIT_*`, `CF_TOKEN`, `WEB_URL`, `CHROME_PATH` | Set inside the box by the bridge or by test/CI scripts. CI (`.github/workflows/ci.yml`) uses inline env only, no repo secrets. |
 | `EXTRA_TRUSTED_ORIGINS` | Optional comma list of extra auth origins (convex `auth.ts:23`). Create in `convex` only when needed. |
 | `RESEND_API_URL` | Dev/e2e override pointing Resend calls at the local mock (`apps/convex/scripts/mock-resend.mjs`). Set on the dev deployment only. |
-| `APP_URL`, `API_PUBLIC_URL`, `ALLOWED_EMAIL_DOMAIN`, `GITHUB_APP_ID`, `BASE_SNAPSHOT_ID`, `BOX_PROVIDER` as wrangler `vars` | The legacy api keeps non-secret vars in `wrangler.jsonc`. Dies with `apps/api`. |
+| `APP_URL`, `API_PUBLIC_URL`, `GITHUB_APP_ID`, `BASE_SNAPSHOT_ID`, `BOX_PROVIDER` as wrangler `vars` | The legacy api keeps non-secret vars in `wrangler.jsonc`. Dies with `apps/api`. |
 | `SHOTS`, `SECRETS_OUT`, `DELTA_BATCH_MS`, `HEARTBEAT_MS`, `SIM_DELTAS`, `SIM_DELTA_GAP_MS`, `DORK_ID`, `BRIDGE_URL`, `BRIDGE_SECRET`, `CONVEX_URL` (scripts) | Test/sim script knobs and values derived at run time (e.g. `BRIDGE_SECRET` is `HMAC(BRIDGE_SECRET_KEY, dorkId)` handed to a box at creation). |
 | `EXPO_OS` | Set by Expo itself. |
 | EAS / App Store credentials | No `eas.json` or store config in the repo yet. Add a `ios` guide when iOS builds are set up. |

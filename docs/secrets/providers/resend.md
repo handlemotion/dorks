@@ -1,6 +1,6 @@
 # Resend (sign-in code email)
 
-Provides: `RESEND_API_KEY` (`shared`, secret). Related config: `ALLOWED_EMAIL_DOMAIN` (`shared`), which is also the sender domain: mail goes out as `dorks <auth@<ALLOWED_EMAIL_DOMAIN>>` (`apps/convex/convex/mail.ts`).
+Provides: `RESEND_API_KEY` (`shared`, secret). Mail goes out as `dorks <auth@dorks.build>` (hard-coded in `apps/convex/convex/mail.ts`).
 
 Official docs (checked 2026-10-07): [API keys](https://www.resend.com/docs/create-an-api-key), [Add a domain](https://www.resend.com/docs/add-a-domain).
 
@@ -10,7 +10,7 @@ Resend has no test/live key split. Use two keys in one team (or two teams): name
 
 ## 1. Verify the sender domain (once, prod key needs it)
 
-The sender domain is the root of `ALLOWED_EMAIL_DOMAIN` (`jaantonio.com`), because the code sends from `auth@jaantonio.com`. Resend recommends a subdomain; if you want one, change the code's `from` and the domain config together.
+The sender domain is `dorks.build` itself, because the code sends from `auth@dorks.build`. Resend recommends a subdomain; if you want one, change the `from` in `mail.ts`.
 
 1. Resend dashboard -> **Domains** (https://resend.com/domains) -> **Add Domain**.
 2. Enter the domain, pick the region closest to recipients, optionally set a custom Return-Path subdomain (defaults to `send`).

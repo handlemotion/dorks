@@ -28,14 +28,6 @@ const OTP = "/api/auth/email-otp/send-verification-otp";
 
 await startMockResend();
 
-// ------------------------------------------------------------------ 1. auth
-for (const email of ["eve@evil.com", "a@jaantonio.com.evil.com", "a@evil.com@jaantonio.com", "@jaantonio.com"]) {
-  const r = await post("/api/auth/email-otp/send-verification-otp", { email, type: "sign-in" });
-  check(`send code refused: ${email}`, r.status === 403, `status ${r.status}`);
-}
-check("no mail sent to foreign addresses", inbox.length === 0);
-check("foreign sign-in refused", (await post("/api/auth/sign-in/email-otp", { email: "eve@evil.com", otp: "123456" })).status === 403);
-
 // ---- rate limits (H4). Run before anything else signs in so a burst can't have been pre-counted.
 {
   const burst = async (email, n, path = OTP, headers = {}) => {
@@ -43,7 +35,7 @@ check("foreign sign-in refused", (await post("/api/auth/sign-in/email-otp", { em
     for (let i = 0; i < n; i++) statuses.push((await post(path, { email, type: "sign-in" }, headers)).status);
     return statuses;
   };
-  const email = `burst-${RUN}@jaantonio.com`;
+  const email = `burst-${RUN}@dorks.build`;
   const before = inbox.length;
   const st = await burst(email, SEND_CAP + 5);
   const delivered = inbox.length - before;
@@ -54,9 +46,9 @@ check("foreign sign-in refused", (await post("/api/auth/sign-in/email-otp", { em
   const alias = `Burst-${RUN}+x@JAANTONIO.com`;
   check("case and +tag variants of the same mailbox share the budget", (await post(OTP, { email: alias, type: "sign-in" })).status === 429);
   check("password-reset route cannot bypass the send cap", (await post("/api/auth/email-otp/request-password-reset", { email })).status === 429);
-  check("a different mailbox is unaffected", (await post(OTP, { email: `calm-${RUN}@jaantonio.com`, type: "sign-in" })).status === 200);
+  check("a different mailbox is unaffected", (await post(OTP, { email: `calm-${RUN}@dorks.build`, type: "sign-in" })).status === 200);
 
-  const vEmail = `verify-${RUN}@jaantonio.com`;
+  const vEmail = `verify-${RUN}@dorks.build`;
   await post(OTP, { email: vEmail, type: "sign-in" });
   const vs = [];
   for (let i = 0; i < 15; i++) vs.push((await post("/api/auth/sign-in/email-otp", { email: vEmail, otp: "000000" })).status);
@@ -67,9 +59,9 @@ check("foreign sign-in refused", (await post("/api/auth/sign-in/email-otp", { em
   // Per IP: the local backend adds no x-forwarded-for, so the test supplies one (the limiter trusts the last hop).
   const ip = `10.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`;
   const ipStatuses = [];
-  for (let i = 0; i < IP_CAP + 2; i++) ipStatuses.push((await post(OTP, { email: `ip-${RUN}-${i}@jaantonio.com`, type: "sign-in" }, { "x-forwarded-for": `203.0.113.9, ${ip}` })).status);
+  for (let i = 0; i < IP_CAP + 2; i++) ipStatuses.push((await post(OTP, { email: `ip-${RUN}-${i}@dorks.build`, type: "sign-in" }, { "x-forwarded-for": `203.0.113.9, ${ip}` })).status);
   check(`per-IP cap: ${IP_CAP} sends across different mailboxes, then 429`, ipStatuses.slice(0, IP_CAP).every((s) => s === 200) && ipStatuses.slice(IP_CAP).every((s) => s === 429), ipStatuses.slice(-4).join(","));
-  const spoof = await post(OTP, { email: `ip2-${RUN}@jaantonio.com`, type: "sign-in" }, { "x-forwarded-for": `${ip}, 198.51.100.7` });
+  const spoof = await post(OTP, { email: `ip2-${RUN}@dorks.build`, type: "sign-in" }, { "x-forwarded-for": `${ip}, 198.51.100.7` });
   // Documents the trust model rather than proving protection: the IP key is the LAST hop, so a caller who controls the whole header gets any key.
   check("per-IP key is the last x-forwarded-for hop (earlier hops are ignored)", spoof.status === 200);
 }
@@ -84,11 +76,11 @@ async function signIn(email) {
   return { email, tok };
 }
 // Unique per run: the 5 sends/hour budget would otherwise run out after a few local re-runs against the same backend.
-const wrong = await post("/api/auth/sign-in/email-otp", { email: `rodrigo-${RUN}@jaantonio.com`, otp: "000000" });
+const wrong = await post("/api/auth/sign-in/email-otp", { email: `rodrigo-${RUN}@dorks.build`, otp: "000000" });
 check("wrong code rejected", wrong.status === 400 || wrong.status === 401, `status ${wrong.status}`);
-const me = await signIn(`rodrigo-${RUN}@jaantonio.com`);
+const me = await signIn(`rodrigo-${RUN}@dorks.build`);
 check("allowed email gets a code (Resend request shape) and a session", true, `mail from=${inbox.at(-1).from}`);
-const other = await signIn(`other-${RUN}@jaantonio.com`);
+const other = await signIn(`other-${RUN}@dorks.build`);
 
 const mkClient = async (who) => {
   const c = new ConvexClient(CONVEX_URL);

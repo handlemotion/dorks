@@ -18,7 +18,7 @@ pnpm dev:api & pnpm dev:web
 ```
 
 With `RESEND_API_KEY` empty, sign-in codes are printed in the API log (`[dev mailer]`).
-Sign-in only works for `ALLOWED_EMAIL_DOMAIN` (default `jaantonio.com`). Use the web origin (:3000) so Better Auth's origin check passes.
+Sign-in is open to any email address. Use the web origin (:3000) so Better Auth's origin check passes.
 
 ## Tests
 
