@@ -45,3 +45,18 @@ describe("normalize", () => {
     expect(bodies(n({ type: "rate_limit_event", rate_limit_info: { status: "allowed" } }))).toEqual([]);
   });
 });
+
+describe("normalize output matches the shared event schema", () => {
+  it("produces bodies that clientEvent accepts", async () => {
+    const { clientEvent } = await import("@dorks/shared");
+    const n = createNormalizer();
+    n({ type: "stream_event", event: { type: "message_start", message: { id: "m1" } } });
+    const out = [
+      ...bodies(n({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "Hi" } } })),
+      ...bodies(n({ type: "assistant", message: { id: "m1", content: [{ type: "text", text: "ok" }, { type: "tool_use", id: "t1", name: "Bash", input: { command: "ls" } }] } })),
+      ...bodies(n({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", is_error: false, content: "x" }] } })),
+    ];
+    expect(out.length).toBeGreaterThan(0);
+    for (const body of out) expect(clientEvent.safeParse({ seq: 1, dorkId: "d", ts: 1, ...body }).success).toBe(true);
+  });
+});
