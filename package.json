@@ -7,7 +7,7 @@
     "dev:backend": "bash scripts/dev-backend.sh",
     "dev:sim": "doppler run -p dorks -c dev -- env CONVEX_URL=http://127.0.0.1:3210 node infra/bridge-sim/host.mjs",
     "dev:mail": "node apps/convex/scripts/dev-mail.mjs",
-    "dev:convex":"doppler run -p dorks -c dev -- pnpm --filter @dorks/convex dev",
+    "dev:convex": "doppler run -p dorks -c dev -- pnpm --filter @dorks/convex dev",
     "dev:web": "doppler run -p dorks -c dev -- pnpm --filter @dorks/web dev",
     "dev:ios": "doppler run -p dorks -c dev -- pnpm --filter @dorks/ios start",
     "typecheck": "pnpm -r typecheck",
