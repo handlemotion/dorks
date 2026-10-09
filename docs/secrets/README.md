@@ -14,7 +14,7 @@
 | **Project and config are explicit on the command line** (`doppler run -p dorks -c dev -- ...`) | A service-account token has no built-in project/config, and a repo-level `doppler.yaml` is only read by `doppler setup`, which writes per-machine state (`~/.doppler`); `doppler run` alone ignores it (tested, CLI 3.77). Flags need no setup step and cannot collide across repos. So there is no `doppler.yaml` in the repo. |
 | **No `DOPPLER_PROJECT` / `DOPPLER_CONFIG` env vars** | They would be machine-global, so two repos sharing one machine would collide. Per-repo flags in `package.json` do not. |
 | **Names are the exact env var the code reads**, unique across units | One flat config per env instead of per-app configs; the inventory's "unit" column records the owner. |
-| `dev` and `prd` only | One production target; no staging. |
+| `dev` and `prd` for the app, plus a sync-only `ci` | One production target; no staging. `ci` exists because GitHub rejects secret names starting with `GITHUB_` and every PR run can read synced secrets, so syncing `prd` whole is not an option. It holds only what CI needs, as references to `prd` (one value, no drift), and is the one thing synced to GitHub Actions (dashboard: Integrations, GitHub, config `ci`). |
 
 Multi-repo layout: each repo has its own Doppler **project** (same names `dev`/`prd`), and its scripts name it (`-p <repo>`). The shared `DOPPLER_TOKEN` is granted access to each project in Doppler; no repo holds a credential. Recipe: [reuse-in-other-repos.md](reuse-in-other-repos.md).
 
@@ -42,7 +42,7 @@ How each process gets env:
 
 - **web (Vite)** / **ios (Expo)**: `VITE_*` / `EXPO_PUBLIC_*` are read from the process env at dev/build time (public values; after changing them for Expo, restart with `--clear`).
 - **convex**: functions read the _deployment's_ env, not the shell. `sync-env.mjs` pushes every `process.env.NAME` the functions use (scanned from `convex/`, `CONVEX_*` excluded) with `convex env set`, values via stdin. Names missing from Doppler, or still `REPLACE_ME__*`, are listed and left alone on the deployment. Deployment selection is `convex dev`'s own gitignored `apps/convex/.env.local`.
-- **CI** uses no Doppler. It has one real secret, the GitHub Actions repository secret `CENTRAL_LICENSE_KEY` (needed by `pnpm install`, see the inventory); every other value is generated inline in `.github/workflows/ci.yml`.
+- **CI** does not run Doppler. Its one real secret, `CENTRAL_LICENSE_KEY` (needed by `pnpm install`, see the inventory), reaches GitHub through the Doppler `ci` environment synced to repository secrets; every other value is generated inline in `.github/workflows/ci.yml`.
 
 Values are read once at process start; restart after changing one. Changes in Doppler apply to the next `doppler run`.
 
