@@ -10,73 +10,84 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AboutRouteImport } from './routes/about'
-import { Route as DorksRouteImport } from './routes/dorks'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as GithubCallbackRouteImport } from './routes/github.callback'
+import { Route as AppRouteImport } from './routes/_app'
+import { Route as AppDorksRouteImport } from './routes/_app/dorks'
+import { Route as AppSettingsRouteImport } from './routes/_app/settings'
+import { Route as DevSidebarRouteImport } from './routes/dev.sidebar'
+import { Route as AppGithubCallbackRouteImport } from './routes/_app/github.callback'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AboutRoute = AboutRouteImport.update({
-  id: '/about',
-  path: '/about',
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DorksRoute = DorksRouteImport.update({
+const AppDorksRoute = AppDorksRouteImport.update({
   id: '/dorks',
   path: '/dorks',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AppRoute,
 } as any)
-const SettingsRoute = SettingsRouteImport.update({
+const AppSettingsRoute = AppSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => AppRoute,
+} as any)
+const DevSidebarRoute = DevSidebarRouteImport.update({
+  id: '/dev/sidebar',
+  path: '/dev/sidebar',
   getParentRoute: () => rootRouteImport,
 } as any)
-const GithubCallbackRoute = GithubCallbackRouteImport.update({
+const AppGithubCallbackRoute = AppGithubCallbackRouteImport.update({
   id: '/github/callback',
   path: '/github/callback',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AppRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/about': typeof AboutRoute
-  '/dorks': typeof DorksRoute
-  '/settings': typeof SettingsRoute
-  '/github/callback': typeof GithubCallbackRoute
+  '/dorks': typeof AppDorksRoute
+  '/settings': typeof AppSettingsRoute
+  '/dev/sidebar': typeof DevSidebarRoute
+  '/github/callback': typeof AppGithubCallbackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/about': typeof AboutRoute
-  '/dorks': typeof DorksRoute
-  '/settings': typeof SettingsRoute
-  '/github/callback': typeof GithubCallbackRoute
+  '/dorks': typeof AppDorksRoute
+  '/settings': typeof AppSettingsRoute
+  '/dev/sidebar': typeof DevSidebarRoute
+  '/github/callback': typeof AppGithubCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/about': typeof AboutRoute
-  '/dorks': typeof DorksRoute
-  '/settings': typeof SettingsRoute
-  '/github/callback': typeof GithubCallbackRoute
+  '/_app': typeof AppRouteWithChildren
+  '/_app/dorks': typeof AppDorksRoute
+  '/_app/settings': typeof AppSettingsRoute
+  '/dev/sidebar': typeof DevSidebarRoute
+  '/_app/github/callback': typeof AppGithubCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about' | '/dorks' | '/settings' | '/github/callback'
+  fullPaths: '/' | '/dorks' | '/settings' | '/dev/sidebar' | '/github/callback'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/dorks' | '/settings' | '/github/callback'
-  id: '__root__' | '/' | '/about' | '/dorks' | '/settings' | '/github/callback'
+  to: '/' | '/dorks' | '/settings' | '/dev/sidebar' | '/github/callback'
+  id:
+    | '__root__'
+    | '/'
+    | '/_app'
+    | '/_app/dorks'
+    | '/_app/settings'
+    | '/dev/sidebar'
+    | '/_app/github/callback'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AboutRoute: typeof AboutRoute
-  DorksRoute: typeof DorksRoute
-  SettingsRoute: typeof SettingsRoute
-  GithubCallbackRoute: typeof GithubCallbackRoute
+  AppRoute: typeof AppRouteWithChildren
+  DevSidebarRoute: typeof DevSidebarRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -88,43 +99,62 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/about': {
-      id: '/about'
-      path: '/about'
-      fullPath: '/about'
-      preLoaderRoute: typeof AboutRouteImport
+    '/_app': {
+      id: '/_app'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/dorks': {
-      id: '/dorks'
+    '/_app/dorks': {
+      id: '/_app/dorks'
       path: '/dorks'
       fullPath: '/dorks'
-      preLoaderRoute: typeof DorksRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AppDorksRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/settings': {
-      id: '/settings'
+    '/_app/settings': {
+      id: '/_app/settings'
       path: '/settings'
       fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
+      preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/dev/sidebar': {
+      id: '/dev/sidebar'
+      path: '/dev/sidebar'
+      fullPath: '/dev/sidebar'
+      preLoaderRoute: typeof DevSidebarRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/github/callback': {
-      id: '/github/callback'
+    '/_app/github/callback': {
+      id: '/_app/github/callback'
       path: '/github/callback'
       fullPath: '/github/callback'
-      preLoaderRoute: typeof GithubCallbackRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AppGithubCallbackRouteImport
+      parentRoute: typeof AppRoute
     }
   }
 }
 
+interface AppRouteChildren {
+  AppDorksRoute: typeof AppDorksRoute
+  AppSettingsRoute: typeof AppSettingsRoute
+  AppGithubCallbackRoute: typeof AppGithubCallbackRoute
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppDorksRoute: AppDorksRoute,
+  AppSettingsRoute: AppSettingsRoute,
+  AppGithubCallbackRoute: AppGithubCallbackRoute,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AboutRoute: AboutRoute,
-  DorksRoute: DorksRoute,
-  SettingsRoute: SettingsRoute,
-  GithubCallbackRoute: GithubCallbackRoute,
+  AppRoute: AppRouteWithChildren,
+  DevSidebarRoute: DevSidebarRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

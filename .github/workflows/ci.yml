@@ -12,7 +12,8 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# No real secrets anywhere in this workflow: every key below is generated per run.
+# The only real secret is CENTRAL_LICENSE_KEY (a GitHub Actions repository secret), used by the install steps because the
+# @central-icons-react package checks its license in a preinstall script. Every other key below is generated per run.
 jobs:
   checks:
     name: Typecheck and unit tests
@@ -29,6 +30,8 @@ jobs:
         with:
           node-version: 24
       - run: pnpm install --frozen-lockfile
+        env:
+          CENTRAL_LICENSE_KEY: ${{ secrets.CENTRAL_LICENSE_KEY }}
       - run: pnpm -r typecheck
       - run: pnpm -r --if-present test
 
@@ -51,6 +54,8 @@ jobs:
         with:
           node-version: 24
       - run: pnpm install --frozen-lockfile
+        env:
+          CENTRAL_LICENSE_KEY: ${{ secrets.CENTRAL_LICENSE_KEY }}
 
       - name: Start Convex backend
         # Pinned by digest (the :latest of 2026-10-07); bump deliberately.
@@ -102,8 +107,9 @@ jobs:
           SHOTS: /tmp/dorks-e2e
         run: |
           mkdir -p "$OUT"
+          # dev:direct = vite on :3000 (SITE_URL and the e2e scripts expect that origin); plain `dev` goes through portless
           trap 'kill $(jobs -p) 2>/dev/null || true' EXIT
-          (cd ../web && VITE_CONVEX_URL="$CONVEX_URL" VITE_CONVEX_SITE_URL="$CONVEX_SITE_URL" exec pnpm dev > "$OUT/web-dev.log" 2>&1) &
+          (cd ../web && VITE_CONVEX_URL="$CONVEX_URL" VITE_CONVEX_SITE_URL="$CONVEX_SITE_URL" exec pnpm dev:direct > "$OUT/web-dev.log" 2>&1) &
           SIM_HOST_KEY="$(npx convex env get SIM_HOST_KEY)" BRIDGE_SECRET_KEY="$(npx convex env get BRIDGE_SECRET_KEY)" SIM_DELTAS=100 \
             node ../../infra/bridge-sim/host.mjs > "$OUT/web-host.log" 2>&1 &
           for _ in $(seq 90); do

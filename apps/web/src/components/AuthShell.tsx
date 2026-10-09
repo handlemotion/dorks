@@ -1,18 +1,23 @@
 import { ConvexBetterAuthProvider } from '@convex-dev/better-auth/react'
 import { Authenticated, AuthLoading, Unauthenticated } from 'convex/react'
-import { useState, type ReactNode } from 'react'
+import { useState, type ComponentProps, type ReactNode } from 'react'
 import { authClient, convex } from '../lib/convex'
+import { AppShell } from './AppShell'
+import { AppSidebar } from './AppSidebar'
 
-/** Shared by every signed-in page: Convex + auth provider, email-code sign-in when signed out. Plain elements on purpose. */
+// The provider's AuthClient type does not unify with a client that also has emailOTPClient(), so cast to exactly what it asks for.
+type ProviderAuthClient = ComponentProps<typeof ConvexBetterAuthProvider>['authClient']
+
+/** Shared by every signed-in page: Convex + auth provider, email-code sign-in when signed out, sidebar + main when signed in. */
 export function AuthShell({ children }: { children: ReactNode }) {
   return (
-    // authClient is cast: the component's AuthClient type does not unify with a client that also has emailOTPClient()
-    <ConvexBetterAuthProvider client={convex} authClient={authClient as never}>
-      <main style={{ maxWidth: 820, margin: '0 auto', padding: 16, fontFamily: 'system-ui, sans-serif' }}>
-        <AuthLoading><p>Loading…</p></AuthLoading>
-        <Unauthenticated><SignIn /></Unauthenticated>
-        <Authenticated>{children}</Authenticated>
-      </main>
+    <ConvexBetterAuthProvider client={convex} authClient={authClient as unknown as ProviderAuthClient}>
+      {/* The signed-in <main> is AppShell's; these states get their own so every page state has the landmark. */}
+      <AuthLoading><main><p>Loading…</p></main></AuthLoading>
+      <Unauthenticated><main><SignIn /></main></Unauthenticated>
+      <Authenticated>
+        <AppShell sidebar={<AppSidebar />}>{children}</AppShell>
+      </Authenticated>
     </ConvexBetterAuthProvider>
   )
 }
@@ -47,7 +52,7 @@ function SignIn() {
           <button onClick={verify}>Sign in</button>
         </>
       )}
-      {error && <p role="alert" style={{ color: 'crimson' }}>{error}</p>}
+      {error && <p role="alert">{error}</p>}
     </section>
   )
 }
