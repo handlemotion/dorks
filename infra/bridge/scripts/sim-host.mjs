@@ -37,6 +37,8 @@ export function prepareRealBridge({ repos = ["jaantonio/demo"] } = {}) {
       return {
         PATH: process.env.PATH,
         HOME: process.env.HOME,
+        // Outbound proxy / extra CA for hosts that need them to reach Anthropic (CI and sandboxes often do).
+        ...Object.fromEntries(["HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE"].filter((k) => process.env[k]).map((k) => [k, process.env[k]])),
         DORK_ID: dorkId,
         BRIDGE_URL: bridgeUrl,
         BRIDGE_SECRET: bridgeSecret,
