@@ -67,7 +67,7 @@ export default defineSchema({
     dorkId: v.id("dorks"),
     seq: v.number(),
     ts: v.number(),
-    body: v.any(), // ClientEventBody, validated with the shared zod schema on write
+    body: v.any(), // ClientEventBody. Not validated at runtime: `append` takes it type-checked only, and bridge frames are parsed at the bridge boundary. packages/shared/src/events.test.ts guards the schema; normalize.test.ts checks normalizer output against it.
   }).index("by_dork_seq", ["dorkId", "seq"]),
 
   // Durable outbox + control frames for the bridge. Holds no secrets: `configure`/`gh_token` are markers that
