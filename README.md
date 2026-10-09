@@ -12,13 +12,25 @@ Secrets live in Doppler (project `dorks`); see [docs/secrets/README.md](docs/sec
 ## Full local loop (Docker + Doppler)
 
 ```sh
-pnpm install            # through Doppler if the Central Icons license check complains: doppler run -p dorks -c dev -- pnpm install
+bash cloud-setup.sh     # any machine: Doppler CLI, pnpm, dependencies (needs DOPPLER_TOKEN); add --backend to also start Convex
 pnpm dev:backend        # self-hosted Convex in Docker + deploy + Doppler dev env (idempotent; rerun after backend changes)
 pnpm dev:mail           # prints sign-in codes (the backend's RESEND_API_URL points here); REAL_MAIL=1 pnpm dev:backend uses Resend
 pnpm dev:web            # web on :3000
 ```
 
 Boxes are simulated (`BOX_PROVIDER=sim`): `pnpm dev:sim` runs the sim host (`BRIDGE_IMPL=real pnpm dev:sim` for the real `dorks-bridge` with the fake Claude CLI; add `CLAUDE_BIN=claude` for the real one, which refuses to run as root). A real Claude needs a token in Doppler `dev` as `E2E_CLAUDE_TOKEN` (see the inventory).
+
+### Running the real agent locally
+
+Needs `E2E_CLAUDE_TOKEN` in Doppler `dev` (a `claude setup-token` value). The Claude CLI refuses `--permission-mode bypassPermissions` as root, so on a root-only VM run the sim host as an unprivileged user (`ubuntu` here), with a writable `HOME`, a writable `infra/bridge/dist`, `DORKS_E2E_ROOT` set to a directory it owns, and the proxy/CA variables if the VM needs them:
+
+```sh
+doppler run -p dorks -c dev -- setpriv --reuid=1000 --regid=1000 --init-groups env -i PATH="$PATH" HOME=/tmp/u-home DORKS_E2E_ROOT=/tmp/u-e2e \
+  CONVEX_URL=http://127.0.0.1:3210 SIM_HOST_KEY="$SIM_HOST_KEY" BRIDGE_SECRET_KEY="$BRIDGE_SECRET_KEY" BRIDGE_IMPL=real CLAUDE_BIN="$(command -v claude)" \
+  node infra/bridge-sim/host.mjs
+```
+
+Bridge-level check without Convex: `CLAUDE_CODE_OAUTH_TOKEN=$E2E_CLAUDE_TOKEN pnpm --filter @dorks/bridge test live`, run as that same user. `apps/convex/scripts/e2e.mjs` has one timing check ("mid-turn") that only holds for the simulator's slow streaming; with the real CLI treat it as a smoke test.
 
 ## Sign-in
 
