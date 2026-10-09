@@ -11,7 +11,11 @@ Official docs (checked 2026-10-07): [Workers CI/CD with GitHub Actions](https://
 3. Account ID: dashboard -> **Workers & Pages** overview (right side), or **Find account and zone IDs** in Cloudflare docs.
 4. Insert:
    In the Doppler dashboard, `dorks` -> `prd`: set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
-5. Deploy: `doppler run -p dorks -c prd -- wrangler deploy` from the app folder (humans only; the `prd` config is not for agents). For CI, give it a Doppler service token scoped to `prd` as the one CI secret (`DOPPLER_TOKEN`).
+5. Deploy the web app (humans only; `prd` is not for agents), from `apps/web`:
+   ```sh
+   doppler run -p dorks -c prd --only-secrets VITE_CONVEX_URL,VITE_CONVEX_SITE_URL,VITE_GITHUB_APP_SLUG,CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID -- sh -c 'pnpm build && npx wrangler deploy'
+   ```
+   The `VITE_*` values are inlined at build time, so they must be in the build's environment. `wrangler.jsonc` attaches `dorks.build` as the Worker's custom domain on deploy. Cloudflare's own Git-connected builds (Workers Builds) are not used: they need the Cloudflare GitHub app granted on this repo's org and the `VITE_*` values re-entered as build variables.
 
 ## Pushing runtime secrets to a Worker
 
