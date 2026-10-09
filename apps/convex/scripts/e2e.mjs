@@ -1,5 +1,5 @@
 // End-to-end acceptance run against a local Convex backend, with the sim bridge host standing in for Upstash Box.
-//   env: CONVEX_URL, CONVEX_SITE_URL, SIM_HOST_KEY, BRIDGE_SECRET_KEY (read from `convex env`), SECRETS_OUT (file for the scan)
+//   env: CONVEX_URL, CONVEX_SITE_URL, SIM_HOST_KEY, BRIDGE_SECRET_KEY, GITHUB_WEBHOOK_SECRET (read from `convex env`), SECRETS_OUT (file for the scan)
 import { spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
 import { writeFileSync } from "node:fs";
@@ -7,7 +7,7 @@ import { ConvexClient } from "convex/browser";
 import { anyApi as api } from "convex/server";
 import { codeFor, inbox, startMockResend } from "./mock-resend.mjs";
 
-const { CONVEX_URL, CONVEX_SITE_URL, SIM_HOST_KEY, BRIDGE_SECRET_KEY } = process.env;
+const { CONVEX_URL, CONVEX_SITE_URL, SIM_HOST_KEY, BRIDGE_SECRET_KEY, GITHUB_WEBHOOK_SECRET } = process.env;
 const ORIGIN = "http://localhost:3000";
 const H = { "content-type": "application/json", origin: ORIGIN };
 const CLAUDE_TOKEN = process.env.E2E_CLAUDE_TOKEN ?? "sk-ant-oat01-SUPERSECRET-e2e"; // set E2E_CLAUDE_TOKEN to run the loop against the real CLI
@@ -194,6 +194,30 @@ err = await new ConvexClient(CONVEX_URL).query(api.dorks.list, {}).then(() => nu
 check("unauthenticated calls are refused", !!err);
 err = await spy.mutation(api.bridge.heartbeat, { dorkId, secret: "0".repeat(64) }).then(() => null, (e) => e);
 check("bridge calls with a wrong secret are refused", err?.data?.code === "forbidden");
+
+// ------------------------------------------------------------------ github webhook
+{
+  const body = (extra = {}) => JSON.stringify({
+    action: "closed", pull_request: { number: 7, merged: true, head: { sha: "c0ffee1", ref: "agent/x" }, base: { ref: "main" } },
+    repository: { full_name: "jaantonio/demo" }, installation: { id: 1 }, sender: { login: "alice", type: "User" }, ...extra,
+  });
+  const sig = (raw, secret = GITHUB_WEBHOOK_SECRET) => `sha256=${createHmac("sha256", secret).update(raw).digest("hex")}`;
+  const hook = (event, raw, { id = `e2e-${RUN}-${Math.random()}`, signature = sig(raw) } = {}) =>
+    fetch(`${CONVEX_SITE_URL}/github/webhook`, { method: "POST", headers: { "content-type": "application/json", "x-github-event": event, "x-github-delivery": id, ...(signature ? { "x-hub-signature-256": signature } : {}) }, body: raw }).then((r) => r.status);
+  const live = async () => (await A.query(api.subscriptions.list, { dorkId })).map((s) => s.number);
+
+  await A.mutation(api.subscriptions.subscribe, { dorkId, repo: "jaantonio/demo", number: 7 });
+  check("subscribed to a PR", (await live()).includes(7));
+  const raw = body();
+  check("unsigned webhook refused", (await hook("pull_request", raw, { signature: null })) === 401);
+  check("webhook signed with another secret refused", (await hook("pull_request", raw, { signature: sig(raw, "not-the-secret") })) === 401);
+  check("ping acknowledged", (await hook("ping", JSON.stringify({ zen: "x", hook_id: 1 }))) === 200);
+  check("event from another installation acknowledged but not routed", (await hook("pull_request", body({ installation: { id: 999 } }))) === 200 && (await live()).includes(7));
+  check("closed PR ends the subscription", (await hook("pull_request", raw, { id: `e2e-${RUN}-close` })) === 200 && !(await live()).includes(7));
+  const ended = () => A.query(api.events.list, { dorkId, paginationOpts: { numItems: 200, cursor: null } }).then((r) => r.page.filter((e) => e.type === "subscription" && e.status === "ended"));
+  check("the transcript says why", (await ended()).some((e) => e.number === 7 && e.reason === "merged"));
+  check("redelivery is acknowledged and changes nothing", (await hook("pull_request", raw, { id: `e2e-${RUN}-close` })) === 200 && (await ended()).filter((e) => e.number === 7).length === 1);
+}
 
 // ------------------------------------------------------------------ secrets
 const blob = JSON.stringify([seenByClients, bridgeViews]);

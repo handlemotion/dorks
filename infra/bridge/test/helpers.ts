@@ -1,9 +1,10 @@
-import type { FromBridge, ToBridge } from "@dorks/shared";
-import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import type { FromBridge, PrRef, SubscriptionView, ToBridge } from "@dorks/shared";
+import { execFile, execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { RpcServer, type RpcMethods } from "../src/rpc";
 import type { CommandEntry, PushResult, Transport } from "../src/transport";
 
 export const FAKE_CLAUDE = fileURLToPath(new URL("./fixtures/fake-claude.mjs", import.meta.url));
@@ -20,12 +21,50 @@ export async function waitFor<T>(fn: () => T | undefined | false | Promise<T | u
   }
 }
 
-/** Builds dist/cli.mjs once (the credential helper runs it as a child of git). */
+let built: string | null = null;
+/**
+ * Builds the bundle once per test process (the credential helper and the hooks run it as a child). Into a directory of its own: test files
+ * run in parallel workers, and rebuilding a shared dist/cli.mjs while another worker executes it hands that worker a half-written file.
+ */
 export function builtCli() {
+  if (built) return built;
   const root = fileURLToPath(new URL("..", import.meta.url));
-  execFileSync(process.execPath, [join(root, "scripts/build.mjs")], { stdio: "pipe" });
-  return join(root, "dist/cli.mjs");
+  const out = join(tmp("cli-"), "cli.mjs");
+  execFileSync(process.execPath, [join(root, "scripts/build.mjs")], { stdio: "pipe", env: { ...process.env, DORKS_BUILD_OUT: out } });
+  return (built = out);
 }
+
+/**
+ * Runs `target` (the bundle, or any script) under `name` through a symlink, the way the snapshot installs `dorks` and `gh`.
+ * Async on purpose: the RPC server under test lives in this process, so a blocking exec would deadlock.
+ */
+export function runAs(target: string, name: string, args: string[], env: NodeJS.ProcessEnv, pathDirs: string[] = [], input = "") {
+  const bin = tmp("bin-");
+  symlinkSync(target, join(bin, name));
+  const nodeDir = tmp("node-"); // PATH has `node` (the shebang needs it) and nothing else: a gh installed on the dev machine must not leak in
+  symlinkSync(process.execPath, join(nodeDir, "node"));
+  return new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
+    const child = execFile(join(bin, name), args, { env: { ...env, PATH: [bin, ...pathDirs, nodeDir].join(":") } }, (err, stdout, stderr) => {
+      resolve({ code: err ? ((err as { code?: unknown }).code as number) : 0, stdout, stderr });
+    });
+    child.stdin!.end(input);
+  });
+}
+
+const bridges: RpcServer[] = [];
+export const closeBridges = () => bridges.splice(0).forEach((b) => b.close());
+
+/** A stand-in for the running bridge: the same socket protocol, recording each call. `extra` overrides or adds methods. */
+export async function fakeBridge(extra: RpcMethods = {}) {
+  const calls: { method: string; params: unknown }[] = [];
+  const rec = (method: string, result: unknown = null): RpcMethods[string] => (params) => (calls.push({ method, params }), result);
+  const server = new RpcServer(join(tmp("fake-bridge-"), "cred.sock"), { token: rec("token", { token: "ghs_fakeInstallationToken" }), "pr.sub": rec("pr.sub"), "pr.unsub": rec("pr.unsub"), "pr.list": rec("pr.list", []), ...extra });
+  bridges.push(server);
+  await server.start();
+  return { calls, sock: server.sockPath, env: { DORKS_SOCK: server.sockPath } as NodeJS.ProcessEnv };
+}
+
+export const FAKE_GH = fileURLToPath(new URL("./fixtures/fake-gh.mjs", import.meta.url));
 
 /** A bare "remote" at <base>/<owner>/<repo>.git with one commit on main. Returns the base URL for DORKS_GIT_BASE_URL. */
 export function makeRemote(fullName = "acme/demo") {
@@ -60,6 +99,15 @@ export class FakeTransport implements Transport {
   private cmdCb: ((c: CommandEntry[]) => void) | null = null;
   private reconnectCb: (() => void) | null = null;
   closed = false;
+  /** The backend's view: what `bridge.subscriptions` would return. subscribePr/unsubscribePr edit it like the real mutations do. */
+  subscriptions: SubscriptionView[] = [];
+  prCalls: { op: "sub" | "unsub"; ref: PrRef; source?: string }[] = [];
+  prError: unknown = null;
+  prHang = false;
+  subscriptionsWatchers = 0;
+  /** Set false to simulate a backend that has not answered the subscriptions query yet. */
+  pushInitialSubscriptions = true;
+  private subsCb: ((views: unknown) => void) | null = null;
 
   get frames(): FromBridge[] {
     return this.pushes.flat();
@@ -96,6 +144,28 @@ export class FakeTransport implements Transport {
     this.cmdCb = cb;
     return () => {};
   }
+  subscribePr = async (ref: PrRef, source: "auto" | "agent") => {
+    this.prCalls.push({ op: "sub", ref, source });
+    if (this.prHang) return new Promise<void>(() => {});
+    if (this.prError) throw this.prError;
+    const repo = ref.repo.toLowerCase(); // the backend stores repos lowercase
+    if (!this.subscriptions.some((s) => s.repo === repo && s.number === ref.number)) this.setSubscriptions([...this.subscriptions, fakeView({ ...ref, repo }, source)]);
+  };
+  unsubscribePr = async (ref: PrRef) => {
+    this.prCalls.push({ op: "unsub", ref });
+    if (this.prError) throw this.prError;
+    this.setSubscriptions(this.subscriptions.filter((s) => !(s.repo === ref.repo.toLowerCase() && s.number === ref.number)));
+  };
+  subscribeSubscriptions(cb: (views: unknown) => void) {
+    this.subscriptionsWatchers++;
+    this.subsCb = cb;
+    if (this.pushInitialSubscriptions) cb(this.subscriptions);
+    return () => void (this.subsCb = null);
+  }
+  setSubscriptions(list: SubscriptionView[]) {
+    this.subscriptions = list;
+    this.subsCb?.(list);
+  }
   onReconnect(cb: () => void) {
     this.reconnectCb = cb;
     return () => {};
@@ -112,3 +182,15 @@ export class FakeTransport implements Transport {
     this.reconnectCb?.();
   }
 }
+
+export const fakeView = (ref: PrRef, source: SubscriptionView["source"] = "agent"): SubscriptionView => ({
+  ...ref,
+  url: `https://github.com/${ref.repo}/pull/${ref.number}`,
+  source,
+  status: "active",
+  ci: "unknown",
+  review: "none",
+  mergeable: null,
+  ciFixAttempts: 0,
+  state: "open",
+});
