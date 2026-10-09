@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# Environment setup for any machine that will work on this repo: a cloud agent VM (Claude Code, Codex, Cursor, Copilot, Jules,
-# Devin, ...), a dev container, a Conductor workspace or a fresh laptop. Every provider's "setup" hook should just run this file:
+# Why this exists: a cloud agent VM starts from a bare image, and in it `pnpm install` fails three ways: the repo's pinned pnpm
+# (12.x) does not run under the image's older corepack, the Doppler CLI is missing, and the install runs a license check that
+# needs CENTRAL_LICENSE_KEY (which lives in Doppler, see docs/secrets/README.md). Without this the agent boots into a repo it
+# cannot build or test. This is the one place that knows how to get from bare image to a working checkout, so set it as the
+# setup/install command of every cloud provider we use (AGENTS.md has the exact settings) instead of repeating steps in each.
 #
-#   bash cloud-setup.sh              tools + dependencies
+#   bash cloud-setup.sh              Doppler CLI, pinned pnpm, dependencies
 #   bash cloud-setup.sh --backend    also start the local Convex backend (needs Docker; see scripts/dev-backend.sh)
 #
-# Idempotent and non-interactive; works as root or a normal user (sudo is used only when it exists). Needs Node >= 22 and
-# network access. Secrets come from Doppler: set DOPPLER_TOKEN in the machine's secrets/env (docs/secrets/README.md). Without it,
-# the install fails at the Central Icons license check, and this script says so. Exit code is non-zero if a required step failed.
+# Idempotent and non-interactive; works as root or a normal user (sudo only if it exists) and from any working directory. Needs
+# Node >= 22, network access and DOPPLER_TOKEN in the environment. Exit code is non-zero if a required step failed.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 

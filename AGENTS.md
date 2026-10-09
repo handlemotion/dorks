@@ -13,18 +13,15 @@
 
 ## Cloud setup
 
-One idempotent script sets up any machine that works on this repo (any agent provider, VM, dev container, laptop): `bash cloud-setup.sh` (`--backend` also starts the local Convex backend). It installs Doppler, the pinned pnpm and the dependencies, and exits non-zero if a required step failed. It needs `DOPPLER_TOKEN` in the machine's environment.
+`cloud-setup.sh` (repo root) takes a bare cloud VM to a working checkout. It exists because a fresh agent VM cannot `pnpm install` on its own: the repo pins pnpm 12, which the image's corepack cannot run; the Doppler CLI is missing; and the install needs `CENTRAL_LICENSE_KEY`, which only Doppler has. It installs those, then the dependencies, is idempotent, works as root or not, and exits non-zero if a required step failed. `--backend` also starts the local Convex backend (needs Docker).
 
-Provider hooks only call that script; do not put setup logic anywhere else:
+It is the single source of setup logic: do not copy its steps into a provider's config or a CI job; change the script.
 
-| Provider | Where |
-|---|---|
-| Claude Code | `.claude/settings.json` (SessionStart hook) |
-| Conductor | `conductor.json` (`scripts.setup`) |
-| Cursor background agents | `.cursor/environment.json` (`install`) |
-| Dev containers, Codespaces | `.devcontainer/devcontainer.json` (`postCreateCommand`) |
-| GitHub Copilot coding agent | `.github/workflows/copilot-setup-steps.yml` |
-| Configured in the provider's UI (Codex cloud, Jules, Devin, Claude Code on the web, ...) | set the setup command to `bash cloud-setup.sh` and add `DOPPLER_TOKEN` as a secret |
+For each cloud provider we use, set:
+
+- **Setup / install command:** `bash cloud-setup.sh` (run from the repo root; `bash /path/to/repo/cloud-setup.sh` also works from any directory, but only once the repo is checked out)
+- **Secret / environment variable:** `DOPPLER_TOKEN`
+- Claude Code cloud sessions already run it through the SessionStart hook in `.claude/settings.json`.
 
 ## Secrets
 
