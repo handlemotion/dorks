@@ -28,7 +28,7 @@ For each cloud provider we use, set:
 Doppler is the source of truth (project `dorks`, configs `dev` and `prd`, plus the sync-only `ci`). `DOPPLER_TOKEN` is already in your environment, so `pnpm dev`, `pnpm dev:web`, etc. run with dev secrets and need no setup. Variable inventory: `docs/secrets/inventory.md`; full model: `docs/secrets/README.md`.
 
 - **Never print, log, echo, read or commit secret values.** No `doppler secrets get`/`download`, `doppler run -- printenv`, or `cat .env*`. Names only: `doppler secrets -p dorks -c dev --only-names`.
-- **No prod.** Never run a command with `-c prd`. Humans edit prod in the Doppler dashboard.
+- **Default to dev, tread lightly on prod.** Use `-c dev` unless the user explicitly asks you to touch `prd`; when they do, respect it, but keep it minimal and say what you're running first. Prefer names-only/read-light commands, and never print prod values. Absent an explicit ask, humans edit prod in the Doppler dashboard.
 - **`ci` is sync-only.** It holds just what GitHub Actions needs (today `CENTRAL_LICENSE_KEY`, a reference to `prd`) and is synced to GitHub from the dashboard. Don't add app secrets to it, and don't run `-c ci` to read values.
 - **Add or change a dev secret** without echoing it: `printf %s 'value' | doppler secrets set NAME -p dorks -c dev --no-interactive` (random: pipe `node -e 'process.stdout.write(require("crypto").randomBytes(32).toString("hex"))'`). For values only a human has, set `REPLACE_ME__<PROVIDER>` and ask them to fill it in. Don't overwrite a value you didn't create.
 - **New env var in code:** read it by its exact name, add a row to `docs/secrets/inventory.md` and the name to the unit's `.env.example`, create it in `dev`, and tell the human to create it in `prd`.

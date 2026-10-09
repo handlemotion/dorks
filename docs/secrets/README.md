@@ -54,7 +54,7 @@ Values are read once at process start; restart after changing one. Changes in Do
 ## Agent rules
 
 - **Never print, log, echo, read or commit secret values.** No `doppler secrets get`, `secrets download`, `doppler run -- printenv/env`, `cat .env*`, or anything that sends values to the terminal, a file or chat. Names only: `doppler secrets -p dorks -c dev --only-names`.
-- **No prod.** Never run any command with `-c prd` (read or write). Prod values are edited by a human in the Doppler dashboard.
+- **Default to dev, tread lightly on prod.** Use `-c dev` unless the user explicitly asks you to touch `prd`. If they do, respect that, but keep it minimal, say what you're about to run, prefer names-only/read-light commands, and never print prod values. Without an explicit ask, prod values are edited by a human in the Doppler dashboard.
 - **Add or change a dev secret** (value must not be echoed):
   - generated: `node -e 'process.stdout.write(require("crypto").randomBytes(32).toString("base64"))' | doppler secrets set NAME -p dorks -c dev --no-interactive` (`hex` for hex);
   - config value: `printf %s 'value' | doppler secrets set NAME -p dorks -c dev --no-interactive`;
@@ -65,7 +65,7 @@ Values are read once at process start; restart after changing one. Changes in Do
 
 ## Humans: prod
 
-Edit `prd` in the Doppler dashboard (project `dorks`). Do not paste values into issues or chat. The `Conductor` token's reach into `prd` is a decision still open (the token can currently list `prd` names); prod values must not be read by agents either way.
+Edit `prd` in the Doppler dashboard (project `dorks`). Do not paste values into issues or chat. The `Conductor` token's reach into `prd` is a decision still open (the token can currently list `prd` names); agents should not read prod values unless the user explicitly asks, and never print them.
 
 - **Convex prod env:** `pnpm push:convex-env` ([Convex guide](providers/convex.md)).
 - **Cloudflare Workers:** Doppler's documented path is a CLI pipe into `wrangler secret bulk` ([Cloudflare guide](providers/cloudflare.md)).
