@@ -344,7 +344,7 @@ describe("bridge with a fake claude CLI", () => {
   });
 
   it("connect refused with `sleeping` rejects start() so the CLI can exit 0", async () => {
-    const s = await setup({ connectError: { data: { code: "sleeping" } } });
+    const s = await setup({ connectError: { data: { code: "sleeping", message: "sleeping" } } });
     await expect(s.bridge.start()).rejects.toBeInstanceOf(SleepingError);
   });
 
@@ -352,7 +352,7 @@ describe("bridge with a fake claude CLI", () => {
     let slept = 0;
     const s = await setup({ onSleeping: () => slept++ });
     await s.bridge.start();
-    s.t.connectError = { data: { code: "sleeping" } };
+    s.t.connectError = { data: { code: "sleeping", message: "sleeping" } };
     s.t.reconnect();
     await waitFor(() => slept === 1, "onSleeping");
   });

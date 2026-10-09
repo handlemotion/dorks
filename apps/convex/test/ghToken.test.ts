@@ -116,7 +116,7 @@ describe("bridge.configure / ghToken scoping", () => {
     const c = await seed(t);
     gh.fail = { status };
     expect(await t.action(api.bridge.configure, c)).toBeNull();
-    expect(await eventsOf(t, c.dorkId)).toContainEqual({ type: "error", message: "GitHub App can't access octo/hello; add it to the installation" });
+    expect(await eventsOf(t, c.dorkId)).toContainEqual({ type: "error", message: "GitHub App can't access octo/hello; add it to the installation", error: { code: "failed", message: "GitHub App can't access octo/hello; add it to the installation" } });
     expect((await dorkOf(t, c.dorkId))!.state).toBe("error");
   });
 
@@ -140,7 +140,7 @@ describe("bridge.configure / ghToken scoping", () => {
     const c = await seed(t);
     gh.fail = { status: 502 };
     expect(await t.action(api.bridge.configure, c)).toBeNull();
-    expect(await eventsOf(t, c.dorkId)).toContainEqual({ type: "error", message: "could not configure the sandbox" });
+    expect(await eventsOf(t, c.dorkId)).toContainEqual({ type: "error", message: "could not configure the sandbox", error: { code: "failed", message: "could not configure the sandbox" } });
   });
 });
 
@@ -188,7 +188,7 @@ describe("failed token refresh", () => {
     }
     expect(seen).toEqual([2, 4, 8, 10, 10]);
     expect(notices).toEqual([0, 0, 1, 1, 1]); // one notice, on the third failure
-    expect(await eventsOf(t, c.dorkId)).toContainEqual({ type: "error", message: expect.stringContaining("GitHub access is failing") });
+    expect(await eventsOf(t, c.dorkId)).toContainEqual({ type: "error", message: expect.stringContaining("GitHub access is failing"), error: { code: "github_error", message: expect.stringContaining("GitHub access is failing") } });
     // recovery resets the counter, so a later outage warns again
     gh.fail = null;
     expect(await t.action(api.bridge.ghToken, c)).toMatchObject({ t: "gh_token" });

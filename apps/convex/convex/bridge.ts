@@ -1,4 +1,4 @@
-import { fromBridge, type ClientEventBody, type CommandFrame, type ToBridge } from "@dorks/shared";
+import { errorEvent, fromBridge, type ClientEventBody, type CommandFrame, type ToBridge } from "@dorks/shared";
 import { ConvexError, v } from "convex/values";
 import { aad, decrypt, keyringFromEnv } from "../core/crypto";
 import { agentTokenScope, createInstallationToken, GithubHttpError } from "../core/github";
@@ -8,7 +8,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { verifyBridgeSecret } from "./lib/bridgeAuth";
-import { append, bridgeSeen, dispatch, enqueueConfigure, finishPause, runtimeOf, setTimer } from "./lib/dispatch";
+import { append, bridgeSeen, dispatch, enqueueConfigure, fail, finishPause, runtimeOf, setTimer } from "./lib/dispatch";
 
 // The in-box bridge speaks packages/shared/src/bridge.ts through these functions instead of a WebSocket:
 //   subscribe  `commands`   <- DO->bridge frames (user_message / interrupt / flush; configure & gh_token as fetch markers)
@@ -19,7 +19,7 @@ import { append, bridgeSeen, dispatch, enqueueConfigure, finishPause, runtimeOf,
 
 async function authed(ctx: QueryCtx, dorkId: Id<"dorks">, secret: string): Promise<Doc<"dorks">> {
   const dork = await ctx.db.get(dorkId);
-  if (!dork || dork.deleting || !(await verifyBridgeSecret(dorkId, secret))) throw new ConvexError({ code: "forbidden", message: "forbidden" });
+  if (!dork || dork.deleting || !(await verifyBridgeSecret(dorkId, secret))) fail("forbidden", "forbidden");
   return dork;
 }
 
@@ -30,7 +30,7 @@ export const connect = mutation({
   handler: async (ctx, { dorkId, secret }) => {
     const dork = await authed(ctx, dorkId, secret);
     // A bridge that connects while we believe the box is asleep must not wake anything.
-    if (dork.state === "sleeping") throw new ConvexError({ code: "sleeping", message: "sleeping" });
+    if (dork.state === "sleeping") fail("sleeping", "sleeping");
     await bridgeSeen(ctx, dork);
     await enqueueConfigure(ctx, dorkId);
     return { afterBridgeSeq: (await runtimeOf(ctx, dorkId)).bridgeSeq };
@@ -82,11 +82,11 @@ export const push = mutation({
   args: { ...creds, frames: v.array(v.any()) },
   handler: async (ctx, { dorkId, secret, frames }): Promise<{ ok: true } | { ok: false; expectedBseq: number }> => {
     const dork = await authed(ctx, dorkId, secret);
-    if (frames.length > MAX_FRAMES_PER_PUSH) throw new ConvexError({ code: "too_many_frames", message: `at most ${MAX_FRAMES_PER_PUSH} frames per push` });
+    if (frames.length > MAX_FRAMES_PER_PUSH) fail("too_many_frames", `at most ${MAX_FRAMES_PER_PUSH} frames per push`);
     for (const raw of frames) {
       const payload = (raw as { raw?: unknown } | null)?.raw;
       if (payload !== undefined && encoder.encode(JSON.stringify(payload)).length > MAX_EVENT_BYTES) {
-        throw new ConvexError({ code: "event_too_large", message: `an event exceeds ${MAX_EVENT_BYTES} bytes` });
+        fail("event_too_large", `an event exceeds ${MAX_EVENT_BYTES} bytes`);
       }
     }
     await bridgeSeen(ctx, dork); // liveness counts even when the batch is refused below
@@ -298,7 +298,7 @@ export const ghTokenFailed = internalMutation({
     const failures = transient ? before + 1 : Math.max(before + 1, GH_FAILURES_BEFORE_NOTICE);
     await ctx.db.patch(rt._id, { ghFailures: failures });
     if (before < GH_FAILURES_BEFORE_NOTICE && failures >= GH_FAILURES_BEFORE_NOTICE) {
-      await append(ctx, dorkId, { type: "error", message: `GitHub access is failing${detail ? `: ${detail}` : ""}. Pushing and opening PRs will stop working when the current token expires.` });
+      await append(ctx, dorkId, errorEvent({ code: "github_error", message: `GitHub access is failing${detail ? `: ${detail}` : ""}. Pushing and opening PRs will stop working when the current token expires.` }));
     }
     if (transient) await setTimer(ctx, dorkId, "gh_token", ghRetryDelay(failures));
   },

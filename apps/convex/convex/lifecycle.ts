@@ -1,3 +1,4 @@
+import { errorEvent } from "@dorks/shared";
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { append, beginPause, BRIDGE_STALE_MS, cancelTimer, dispatch, enqueue, enqueueConfigure, finishPause, GH_REFRESH_MS, HEARTBEAT_MS, isAwake, queued, runtimeOf, schedulePauseRetry, setTimer } from "./lib/dispatch";
@@ -17,7 +18,7 @@ export const timer = internalMutation({
         await dispatch(ctx, dorkId, { t: "sleep_due" });
         break;
       case "watchdog":
-        if (isAwake(dork.state)) await append(ctx, dorkId, { type: "error", message: "timed out waiting for the sandbox" });
+        if (isAwake(dork.state)) await append(ctx, dorkId, errorEvent({ code: "timeout", message: "timed out waiting for the sandbox" }));
         await dispatch(ctx, dorkId, { t: "watchdog" });
         break;
       case "gh_token":
@@ -65,7 +66,7 @@ export const opFailed = internalMutation({
       await ctx.db.patch(rt._id, { opGen: gen + 1, ...(rt.pause?.gen === gen ? { pause: undefined } : {}) });
       if (cancelled) return; // a message already took the pause back: the box is still up, so the dork stays as it is
     }
-    await append(ctx, dorkId, { type: "error", message });
+    await append(ctx, dorkId, errorEvent({ code: "failed", message }));
     await dispatch(ctx, dorkId, { t: "op_failed" });
     // In `error` with a box and no pause under way (the pause that error triggers has itself failed): keep trying, capped.
     const after = await ctx.db.get(dorkId);
@@ -84,7 +85,7 @@ export const boxGone = internalMutation({
     const dork = await ctx.db.get(dorkId);
     if (!dork || dork.deleting || dork.boxId !== boxId) return;
     await ctx.db.patch(dorkId, { boxId: undefined, claudeSessionId: undefined });
-    await append(ctx, dorkId, { type: "error", message });
+    await append(ctx, dorkId, errorEvent({ code: "failed", message }));
     await dispatch(ctx, dorkId, { t: "op_failed" });
   },
 });

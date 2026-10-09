@@ -1,4 +1,4 @@
-import type { ClientEventBody } from "@dorks/shared";
+import type { AppError, AppErrorCode, ClientEventBody } from "@dorks/shared";
 import { ConvexError } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -15,10 +15,11 @@ export const PAUSE_STUCK_MS = 2 * 60_000; // a `pausing` intent older than this 
 export const PAUSE_RETRY_BASE_MS = 15_000; // failed pause from `error`: retry after 15s, 30s, 60s, ...
 export const MAX_PAUSE_RETRIES = 6;
 
-export type ErrorCode = "archived" | "invalid" | "deleting" | "conflict" | "failed" | "not_found" | "onboarding_incomplete" | "limit";
-export const fail = (code: ErrorCode, message: string): never => {
-  throw new ConvexError({ code, message });
-};
+export type ErrorCode = AppErrorCode;
+/** Throws a typed AppError (packages/shared/src/errors.ts); clients read it back with `toAppError`. */
+export function fail(code: ErrorCode, message: string): never {
+  throw new ConvexError({ code, message } as AppError);
+}
 
 const AWAKE = ["creating", "working", "idle", "waking"];
 export const isAwake = (s: string) => AWAKE.includes(s);
