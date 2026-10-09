@@ -18,7 +18,7 @@ pnpm dev:mail           # prints sign-in codes (the backend's RESEND_API_URL poi
 pnpm dev:web            # web on :3000
 ```
 
-Boxes are simulated (`BOX_PROVIDER=sim`): `doppler run -p dorks -c dev -- env CONVEX_URL=http://127.0.0.1:3210 node infra/bridge-sim/host.mjs` runs the sim host (add `BRIDGE_IMPL=real` for the real `dorks-bridge` with the fake Claude CLI). A real Claude needs a token in Doppler `dev` as `E2E_CLAUDE_TOKEN` (see the inventory).
+Boxes are simulated (`BOX_PROVIDER=sim`): `pnpm dev:sim` runs the sim host (`BRIDGE_IMPL=real pnpm dev:sim` for the real `dorks-bridge` with the fake Claude CLI; add `CLAUDE_BIN=claude` for the real one, which refuses to run as root). A real Claude needs a token in Doppler `dev` as `E2E_CLAUDE_TOKEN` (see the inventory).
 
 ## Sign-in
 
