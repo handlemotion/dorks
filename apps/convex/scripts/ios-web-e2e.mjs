@@ -24,12 +24,6 @@ const press = async (t) => { const [h] = await page.$$(`xpath/.//*[@role="button
 const typeInto = async (label, v) => { await page.click(`[aria-label="${label}"]`); await page.keyboard.press("End"); for (let i = 0; i < 60; i++) await page.keyboard.press("Backspace"); await page.type(`[aria-label="${label}"]`, v); };
 
 await page.waitForSelector('[aria-label="email"]', { timeout: 60000 });
-await typeInto("email", "eve@evil.com");
-await press("Send code");
-await waitText(/not allowed/i, 10000);
-check("ios screen: foreign email refused", true);
-await page.reload({ waitUntil: "networkidle2" }); // fresh form (RN-web inputs are awkward to clear from puppeteer)
-await page.waitForSelector('[aria-label="email"]');
 await typeInto("email", email);
 await press("Send code");
 await page.waitForSelector('[aria-label="code"]', { timeout: 8000 }).catch(async (e) => { console.log('PAGE:', (await page.evaluate(() => document.body.innerText)).slice(0, 300), '| inbox email value:', await page.$eval('[aria-label="email"]', (n) => n.value).catch(() => null)); throw e; });

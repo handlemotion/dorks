@@ -23,14 +23,8 @@ const text = () => page.evaluate(() => document.body.innerText);
 const clickText = async (t) => { const [h] = await page.$$(`xpath/.//main//button[normalize-space()="${t}"]`); await h.click(); };
 const waitText = (re, ms = 30000) => page.waitForFunction((s) => new RegExp(s).test(document.body.innerText), { timeout: ms }, re.source);
 
-// sign-in: foreign address is refused by the UI too
+// sign-in (open sign-up: any address may request a code)
 await page.waitForSelector('input[aria-label="email"]');
-await page.type('input[aria-label="email"]', "eve@evil.com");
-await clickText("Send code");
-await waitText(/not allowed/i, 10000);
-check("web: foreign email shows an error and sends no code", true);
-await page.evaluate(() => (document.querySelector('input[aria-label="email"]').value = ""));
-await page.click('input[aria-label="email"]', { clickCount: 3 });
 await page.type('input[aria-label="email"]', email);
 await clickText("Send code");
 await page.waitForSelector('input[aria-label="code"]');
