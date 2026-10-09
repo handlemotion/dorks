@@ -1,5 +1,5 @@
 import { errorEvent, fromBridge, type ClientEventBody, type CommandFrame, type ToBridge } from "@dorks/shared";
-import { ConvexError, v } from "convex/values";
+import { v } from "convex/values";
 import { aad, decrypt, keyringFromEnv } from "../core/crypto";
 import { agentTokenScope, createInstallationToken, GithubHttpError } from "../core/github";
 import { createNormalizer } from "../core/normalize";
