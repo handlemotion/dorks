@@ -20,7 +20,19 @@ fi
 if [ ! -d node_modules ]; then
   echo "[cloud-setup] installing repo dependencies"
   corepack enable || true
-  pnpm install --frozen-lockfile || echo "[cloud-setup] pnpm install failed (non-fatal)"
+  # The image's corepack (0.34) cannot run pnpm 12 (it ships bin/pnpm.mjs, corepack looks for pnpm.cjs). Fall back to the npm package.
+  if ! pnpm --version >/dev/null 2>&1; then
+    echo "[cloud-setup] corepack pnpm is broken; installing pnpm from npm"
+    npm install --global "pnpm@$(node -p 'require("./package.json").packageManager.split("@")[1]')" \
+      || echo "[cloud-setup] pnpm install failed (non-fatal)"
+  fi
+  # `pnpm install` runs the Central Icons license check, which needs CENTRAL_LICENSE_KEY; Doppler dev has it.
+  install="pnpm install --frozen-lockfile"
+  if [ -n "${DOPPLER_TOKEN:-}" ] && command -v doppler >/dev/null; then
+    doppler run -p dorks -c dev -- $install || echo "[cloud-setup] pnpm install failed (non-fatal)"
+  else
+    $install || echo "[cloud-setup] pnpm install failed (non-fatal)"
+  fi
 fi
 
 echo "[cloud-setup] done"

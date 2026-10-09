@@ -6,7 +6,8 @@ export function startMockResend(port = 8899) {
     let b = "";
     req.on("data", (c) => (b += c));
     req.on("end", () => {
-      if (req.headers.authorization !== "Bearer re_test_local") { res.writeHead(401).end(); return; }
+      // Any bearer token: the dev deployment carries Doppler's real RESEND_API_KEY, CI a throwaway one.
+      if (!req.headers.authorization?.startsWith("Bearer ")) { res.writeHead(401).end(); return; }
       inbox.push(JSON.parse(b));
       res.writeHead(200, { "content-type": "application/json" }).end('{"id":"mock"}');
     });

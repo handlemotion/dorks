@@ -9,6 +9,17 @@ pnpm workspace. `pnpm install`, then:
 
 Secrets live in Doppler (project `dorks`); see [docs/secrets/README.md](docs/secrets/README.md). With `DOPPLER_TOKEN` set (Conductor workspaces have it), `pnpm dev` starts Convex + web with the `dev` config (`pnpm dev:ios` for Expo).
 
+## Full local loop (Docker + Doppler)
+
+```sh
+pnpm install            # through Doppler if the Central Icons license check complains: doppler run -p dorks -c dev -- pnpm install
+pnpm dev:backend        # self-hosted Convex in Docker + deploy + Doppler dev env (idempotent; rerun after backend changes)
+pnpm dev:mail           # prints sign-in codes (the backend's RESEND_API_URL points here); REAL_MAIL=1 pnpm dev:backend uses Resend
+pnpm dev:web            # web on :3000
+```
+
+Boxes are simulated (`BOX_PROVIDER=sim`): `doppler run -p dorks -c dev -- env CONVEX_URL=http://127.0.0.1:3210 node infra/bridge-sim/host.mjs` runs the sim host (add `BRIDGE_IMPL=real` for the real `dorks-bridge` with the fake Claude CLI). A real Claude needs a token in Doppler `dev` as `E2E_CLAUDE_TOKEN` (see the inventory).
+
 ## Sign-in
 
 Sign-in is open to any email address. Use the web origin (:3000) so Better Auth's origin check passes. Codes are emailed through Resend (`RESEND_API_KEY`); for local dev without Resend, point Convex at the mock (`RESEND_API_URL`, `apps/convex/scripts/mock-resend.mjs`).

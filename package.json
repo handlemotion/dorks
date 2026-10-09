@@ -4,7 +4,9 @@
   "packageManager": "pnpm@12.4.2",
   "scripts": {
     "dev": "doppler run -p dorks -c dev -- pnpm --parallel --filter @dorks/convex --filter @dorks/web dev",
-    "dev:convex": "doppler run -p dorks -c dev -- pnpm --filter @dorks/convex dev",
+    "dev:backend": "bash scripts/dev-backend.sh",
+    "dev:mail": "node apps/convex/scripts/dev-mail.mjs",
+    "dev:convex":"doppler run -p dorks -c dev -- pnpm --filter @dorks/convex dev",
     "dev:web": "doppler run -p dorks -c dev -- pnpm --filter @dorks/web dev",
     "dev:ios": "doppler run -p dorks -c dev -- pnpm --filter @dorks/ios start",
     "typecheck": "pnpm -r typecheck",
