@@ -1,0 +1,108 @@
+/*
+ * Design tokens. Source: Figma "Sidebar" frame (node 1:5).
+ *
+ * Three layers, each generating Tailwind utilities from its namespace:
+ *   surface-*  backgrounds        -> bg-surface-app, bg-surface-selected
+ *   ink-*      text and icons     -> text-ink, text-ink-muted
+ *   line-*     borders, dividers  -> border-line
+ * plus meaning-based colors that components pick by state:
+ *   status-*   chat run state     -> bg-status-idle
+ *   pr-*       pull request state -> text-pr-open
+ *
+ * Components never use raw hex or palette steps; they use these names, so a restyle or a dark theme is a token change: utilities
+ * compile to `var(--color-ink)` etc., so a dark theme only re-declares these variables under a selector (e.g. `[data-theme="dark"]`),
+ * with no component edits. Light only for now.
+ */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  /* Resets Tailwind's default palette so only the tokens below exist. */
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  /* Surface. `canvas` is the page behind everything; `app` is the sidebar fill (from the design). `canvas` is proposed. */
+  --color-surface-canvas: #ffffff;
+  --color-surface-app: #fcfcf9;
+  --color-surface-selected: #ececea; /* selected and hovered rows */
+
+  /* Ink */
+  --color-ink: #171717;
+  --color-ink-muted: #939391;
+
+  /* Line: the default color of every border and divider (base.css sets it; rings still default to currentColor). */
+  --color-line: #ededeb; /* the design's #e7e7e7 read too dark in use */
+  --color-line-strong: #dededc; /* the divider while hovered or dragged */
+
+  /* Whether a chat is moving. `idle` tints the resting dot; a working chat uses `ink`. */
+  --color-status-idle: #d9d9d9;
+
+  /* Pull request state. `open` is from the design; the rest are proposed. */
+  --color-pr-open: #25be0e;
+  --color-pr-merged: #8e4ec6;
+  --color-pr-closed: #939391;
+
+  /* Type. Letter spacing is -0.01em at 13px (-0.13px) and 12px (-0.12px), line height `normal`, as designed. */
+  --text-body: 13px;
+  --text-body--line-height: normal;
+  --text-body--letter-spacing: -0.01em;
+  --text-caption: 12px;
+  --text-caption--line-height: normal;
+  --text-caption--letter-spacing: -0.01em;
+
+  /* Shape */
+  --radius-row: 6px;
+  --radius-cell: 5px;
+
+  /* Fixed sizes of the sidebar row. They sit in the spacing namespace on purpose: that is the only one that generates height
+     utilities (h-row, size-cell, size-glyph). Side effect: p-row, gap-cell etc. also exist; use them for sizes only. The default
+     --spacing scale (p-4, h-8, ...) is untouched. */
+  --spacing-row: 32px;
+  --spacing-cell: 24px;
+  --spacing-glyph: 14px; /* group header icons */
+  --spacing-glyph-page: 16px; /* page link icons */
+
+  /* Orb (components/Orb.tsx), ported from @aicss/react variant M2. Keyframes and easings are aicss's, unchanged except that
+     every position is scaled by --orb-spread so the ring can collapse to a dot (see below). */
+  --animate-orb-morph: orb-morph 4.8s cubic-bezier(0.4, 0, 0.2, 1) infinite both;
+  --animate-orb-twist: orb-morph-twist 9.6s linear infinite;
+
+  @keyframes orb-morph {
+    0%,
+    5% {
+      transform: translate(calc(var(--m-1x) * var(--orb-spread)), calc(var(--m-1y) * var(--orb-spread)));
+    }
+    25%,
+    30% {
+      transform: translate(calc(var(--m-2x) * var(--orb-spread)), calc(var(--m-2y) * var(--orb-spread)));
+    }
+    50%,
+    55% {
+      transform: translate(calc(var(--m-3x) * var(--orb-spread)), calc(var(--m-3y) * var(--orb-spread)));
+    }
+    75%,
+    80% {
+      transform: translate(calc(var(--m-4x) * var(--orb-spread)), calc(var(--m-4y) * var(--orb-spread)));
+    }
+    100% {
+      transform: translate(calc(var(--m-1x) * var(--orb-spread)), calc(var(--m-1y) * var(--orb-spread)));
+    }
+  }
+
+  @keyframes orb-morph-twist {
+    from {
+      transform: scale(var(--orb-k, 1)) rotate(0deg);
+    }
+    to {
+      transform: scale(var(--orb-k, 1)) rotate(360deg);
+    }
+  }
+}
+
+/* 1 = the full ring choreography, 0 = every dot on the centre. Registered so it can transition (and so the keyframes above
+   follow it frame by frame): a working orb settles into a dot instead of snapping to one. */
+@property --orb-spread {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
+}

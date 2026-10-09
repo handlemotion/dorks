@@ -2,21 +2,20 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useAction, useQuery } from 'convex/react'
 import { useEffect, useRef, useState } from 'react'
 import { api, errorCode } from '@dorks/convex/client'
-import { AuthShell } from '../components/AuthShell'
-import { INSTALL_STATE_KEY } from '../lib/githubInstall'
+import { INSTALL_STATE_KEY } from '../../lib/githubInstall'
 
 // GitHub redirects here after "Install" with ?installation_id=…&code=…&state=…&setup_action=install ("Request user authorization (OAuth)
 // during installation"). Linking is automatic only when `state` matches the value Settings generated in this browser tab AND nothing is
 // linked yet; in every other case the user has to confirm, because the `code` only proves the *code's* owner can see the installation,
 // not that this signed-in user asked for it (a crafted URL could otherwise swap in someone else's installation).
-export const Route = createFileRoute('/github/callback')({
+export const Route = createFileRoute('/_app/github/callback')({
   ssr: false,
   validateSearch: (s: Record<string, unknown>) => ({
     installation_id: typeof s.installation_id === 'string' || typeof s.installation_id === 'number' ? String(s.installation_id) : undefined,
     code: typeof s.code === 'string' ? s.code : undefined,
     state: typeof s.state === 'string' ? s.state : undefined,
   }),
-  component: () => <AuthShell><Callback /></AuthShell>,
+  component: Callback,
 })
 
 const MESSAGES: Record<string, string> = {
@@ -71,7 +70,7 @@ function Callback() {
   return (
     <section>
       <h1>Linking GitHub…</h1>
-      {!valid && <p role="alert" style={{ color: 'crimson' }}>This page needs <code>installation_id</code> and <code>code</code> from GitHub. Start from settings and use the install link.</p>}
+      {!valid && <p role="alert">This page needs <code>installation_id</code> and <code>code</code> from GitHub. Start from settings and use the install link.</p>}
       {valid && onboarding && !auto && phase === 'ready' && (
         <div data-testid="confirm-link">
           <p role="status">
@@ -83,7 +82,7 @@ function Callback() {
         </div>
       )}
       {phase === 'linking' && <p role="status">Verifying the installation with GitHub…</p>}
-      {phase === 'error' && <p role="alert" style={{ color: 'crimson' }} data-testid="link-error">{error}</p>}
+      {phase === 'error' && <p role="alert" data-testid="link-error">{error}</p>}
       <Link to="/settings">Back to settings</Link>
     </section>
   )

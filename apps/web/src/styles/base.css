@@ -1,0 +1,53 @@
+@layer base {
+  /* v4 borders default to currentColor (v3 used gray-200); make a bare `border` or `divide-*` the line token instead. */
+  *,
+  ::before,
+  ::after,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-line);
+  }
+
+  /* Full height, so the app shell (whose size comes from its parent) fills the window. */
+  html,
+  body {
+    @apply h-full;
+  }
+
+  html {
+    @apply bg-surface-canvas;
+  }
+
+  /* Type styles go on body, never html: html font-size is the rem base, and every spacing utility is in rem. */
+  body {
+    @apply font-sans text-body text-ink antialiased;
+  }
+}
+
+@layer components {
+  /* App frame: a resizable sidebar panel beside the scrolling main panel (the Group, which sizes itself to 100%). */
+  .app-shell {
+    @apply min-h-0;
+  }
+
+  .app-main {
+    @apply h-full overflow-y-auto;
+  }
+
+  /* 1px divider. The hit area is wider than what is drawn so it is easy to grab; on hover and drag the line itself gets a touch
+     darker. */
+  .app-separator {
+    @apply relative w-px bg-line outline-hidden transition-colors duration-150 motion-reduce:transition-none;
+  }
+
+  .app-separator::before {
+    content: "";
+    @apply absolute -inset-x-1 inset-y-0 z-10;
+  }
+
+  /* Hover and drag are reported by react-resizable-panels in `data-separator` (inactive | hover | active | focus | disabled).
+     Focus counts only from the keyboard (`focus` there also fires on click), so the line does not stay darker after a click. */
+  .app-separator:is([data-separator="hover"], [data-separator="active"], :focus-visible) {
+    @apply bg-line-strong;
+  }
+}

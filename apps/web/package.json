@@ -2,11 +2,13 @@
   "name": "@dorks/web",
   "private": true,
   "type": "module",
+  "portless": "dorks",
   "imports": {
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "vite dev --port 3000",
+    "dev": "portless run vite dev",
+    "dev:direct": "vite dev --port 3000",
     "generate-routes": "tsr generate",
     "build": "vite build",
     "preview": "npm run build && vite preview",
@@ -15,7 +17,12 @@
     "typecheck": "wrangler types && tsc --noEmit"
   },
   "dependencies": {
+    "@central-icons-react/round-outlined-radius-1-stroke-1.5": "^1.2.7",
+    "@chenglou/pretext": "^0.0.9",
     "@convex-dev/better-auth": "0.12.5",
+    "@dnd-kit/dom": "^0.5.0",
+    "@dnd-kit/helpers": "^0.5.0",
+    "@dnd-kit/react": "^0.5.0",
     "@dorks/convex": "workspace:*",
     "@dorks/shared": "workspace:*",
     "@tailwindcss/vite": "^4.1.18",
@@ -27,11 +34,11 @@
     "convex": "^1.46.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-resizable-panels": "^4.14.3",
     "tailwindcss": "^4.1.18"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.26.0",
-    "@tailwindcss/typography": "^0.5.16",
     "@tanstack/devtools-vite": "0.8.5",
     "@tanstack/router-cli": "^1.132.0",
     "@types/node": "^22.20.5",

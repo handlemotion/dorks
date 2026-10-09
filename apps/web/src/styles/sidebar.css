@@ -1,0 +1,87 @@
+/*
+ * Sidebar classes. Every row in the sidebar (nav item, section header, chat link) is the same 32px row:
+ *
+ *   [ 24px cell: glyph or marker ] [ label, flexes ] [ meta, optional ]
+ *
+ * State is expressed with data attributes set by the components in src/components/sidebar, so styling stays in this file and
+ * components stay free of class logic. Convention: a yes/no state is a bare attribute that is present or absent
+ * (`data-active`, `data-working`, `data-dragging`); a state with several values carries it (`data-pr="open|merged|closed"`).
+ */
+@layer components {
+  /* Fills its resizable panel (see AppShell); the 1px divider on its right is the panel separator. */
+  .sidebar {
+    @apply flex h-full w-full flex-col gap-2.5 overflow-y-auto bg-surface-app p-2;
+  }
+
+  .sidebar-group {
+    @apply flex flex-col gap-0.5;
+  }
+
+  /* Row */
+  .sidebar-row {
+    @apply flex h-row w-full items-center justify-between overflow-clip rounded-row px-1 text-left text-body text-ink;
+  }
+
+  /* Interactive rows only (section headers are plain divs). Hover uses the same fill as selected. */
+  a.sidebar-row,
+  button.sidebar-row {
+    @apply cursor-pointer outline-hidden hover:bg-surface-selected focus-visible:bg-surface-selected;
+  }
+
+  .sidebar-row[data-active] {
+    @apply bg-surface-selected;
+  }
+
+  /* 24px cell holding a glyph or the chat's Orb */
+  .sidebar-row-cell {
+    @apply flex size-cell shrink-0 items-center justify-center rounded-cell p-1;
+  }
+
+  .sidebar-row-glyph {
+    @apply size-glyph shrink-0;
+  }
+
+  /* Icons of page links (New session, Automations, Customize) are 16px; group headers stay 14px. */
+  .sidebar-row-glyph-page {
+    @apply size-glyph-page;
+  }
+
+  .sidebar-row-label {
+    @apply min-w-px flex-1 truncate px-1;
+  }
+
+  /* multiply keeps the number readable over the selected fill; it assumes a light surface, so revisit it when dark lands. */
+  .sidebar-row-meta {
+    @apply flex shrink-0 items-center justify-center rounded-cell px-2 py-1 text-caption mix-blend-multiply;
+  }
+
+  /* Section header (Ready, Drafts): same row, muted, not interactive. Wins over .sidebar-row's text-ink by coming after it. */
+  .sidebar-section {
+    @apply text-ink-muted;
+  }
+
+  /* Chat link: a row with a working indicator (the Orb) and a PR number. The orb is the only thing that shows motion. */
+  .chat-link-marker {
+    @apply text-status-idle transition-colors duration-(--orb-settle) motion-reduce:transition-none;
+  }
+
+  .chat-link[data-working] .chat-link-marker {
+    @apply text-ink;
+  }
+
+  .chat-link[data-dragging] {
+    @apply relative z-10 cursor-grabbing bg-surface-selected;
+  }
+
+  .chat-link-pr[data-pr="open"] {
+    @apply text-pr-open;
+  }
+
+  .chat-link-pr[data-pr="merged"] {
+    @apply text-pr-merged;
+  }
+
+  .chat-link-pr[data-pr="closed"] {
+    @apply text-pr-closed;
+  }
+}

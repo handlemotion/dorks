@@ -8,3 +8,4 @@ allowBuilds:
   workerd: true
   lightningcss: true
   sharp: true
+  '@central-icons-react/round-outlined-radius-1-stroke-1.5': true

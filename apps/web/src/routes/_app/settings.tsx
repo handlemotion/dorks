@@ -2,12 +2,10 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
 import { useEffect, useState } from 'react'
 import { api } from '@dorks/convex/client'
-import { INSTALL_STATE_KEY } from '../lib/githubInstall'
-import { AuthShell } from '../components/AuthShell'
-import { usePending } from '../lib/pending'
+import { INSTALL_STATE_KEY } from '../../lib/githubInstall'
+import { usePending } from '../../lib/pending'
 
-// Client-only (see dorks.tsx). Plain elements on purpose.
-export const Route = createFileRoute('/settings')({ ssr: false, component: () => <AuthShell><Settings /></AuthShell> })
+export const Route = createFileRoute('/_app/settings')({ component: Settings })
 
 const GITHUB_APP_SLUG = import.meta.env.VITE_GITHUB_APP_SLUG as string | undefined
 
@@ -16,7 +14,7 @@ function Settings() {
   if (!onboarding) return <p>Loading…</p>
   return (
     <div>
-      <header style={{ display: 'flex', justifyContent: 'space-between' }}>
+      <header>
         <h1>Settings</h1>
         <Link to="/dorks">Back to dorks</Link>
       </header>
@@ -57,7 +55,7 @@ function ClaudeToken() {
       </form>
       <small>Stored encrypted; it is never shown again. Saving a new one replaces the old.</small>
       {saved && <p role="status">Saved.</p>}
-      {error && <p role="alert" style={{ color: 'crimson' }}>{error}</p>}
+      {error && <p role="alert">{error}</p>}
     </section>
   )
 }
@@ -76,7 +74,7 @@ function GithubApp({ linked }: { linked: boolean }) {
       <h2>GitHub</h2>
       <p data-testid="github-status">{linked ? 'GitHub App installed.' : 'GitHub App not installed.'}</p>
       {!GITHUB_APP_SLUG ? (
-        <p role="alert" style={{ color: 'crimson' }}>VITE_GITHUB_APP_SLUG is not set, so the install link is unavailable.</p>
+        <p role="alert">VITE_GITHUB_APP_SLUG is not set, so the install link is unavailable.</p>
       ) : (
         state && <a href={`https://github.com/apps/${encodeURIComponent(GITHUB_APP_SLUG)}/installations/new?state=${state}`}>{linked ? 'Install on more repositories / reinstall' : 'Install GitHub App'}</a>
       )}
@@ -101,7 +99,7 @@ function CliSecrets() {
         <input aria-label="secret value" type="password" autoComplete="off" value={value} onChange={(e) => setValue(e.target.value)} />
         <button type="submit" disabled={pending || !name.trim() || !value}>Save secret</button>
       </form>
-      {error && <p role="alert" style={{ color: 'crimson' }}>{error}</p>}
+      {error && <p role="alert">{error}</p>}
     </section>
   )
 }
@@ -120,7 +118,7 @@ function SleepMinutes({ current }: { current: number }) {
         <button type="submit" disabled={pending || !Number.isFinite(n) || minutes.trim() === ''}>Save</button>
       </form>
       <small>Currently <span data-testid="sleep-current">{current}</span> min. An idle sandbox is paused after this long.</small>
-      {error && <p role="alert" style={{ color: 'crimson' }}>{error}</p>}
+      {error && <p role="alert">{error}</p>}
     </section>
   )
 }
