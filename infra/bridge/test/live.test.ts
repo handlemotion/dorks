@@ -18,9 +18,9 @@ describe.skipIf(!token && !apiKey)("real claude CLI through the bridge", () => {
     for (const b of bridges) await b.stop(1000);
   });
 
-  async function boot(state: string, work: string, remoteBase: string, resume: string | null) {
-    // A clean HOME: the CLI must authenticate from the configured env alone, like in a fresh box.
-    const home = tmp("live-home-");
+  async function boot(state: string, work: string, remoteBase: string, resume: string | null, home: string) {
+    // A clean HOME: the CLI must authenticate from the configured env alone, like in a fresh box. A paused box keeps its disk, so a
+    // second boot of the same box reuses the same HOME (the session transcript lives there).
     mkdirSync(home, { recursive: true });
     const hostEnv: NodeJS.ProcessEnv = {
       PATH: process.env.PATH, HOME: home, DORK_ID: "live_1", BRIDGE_URL: "https://x.convex.cloud", BRIDGE_SECRET: "c".repeat(64),
@@ -50,7 +50,8 @@ describe.skipIf(!token && !apiKey)("real claude CLI through the bridge", () => {
     const remote = makeRemote();
     const state = tmp("live-state-");
     const work = tmp("live-work-");
-    const one = await boot(state, work, remote.baseUrl, null);
+    const home = tmp("live-home-");
+    const one = await boot(state, work, remote.baseUrl, null, home);
 
     await turn(one.t, "m1", "Reply with exactly the word PONG and nothing else.", 1);
     const types1 = one.t.events().map((e) => (e.raw as any).type);
@@ -72,7 +73,7 @@ describe.skipIf(!token && !apiKey)("real claude CLI through the bridge", () => {
     await waitFor(() => one.t.of("flushed").length, "flushed");
     await one.b.stop(1000);
 
-    const two = await boot(state, work, remote.baseUrl, sessionId);
+    const two = await boot(state, work, remote.baseUrl, sessionId, home);
     await turn(two.t, "m3", "What single word did I ask you to reply with in my first message?", 1);
     expect(assistantText(two.t)).toContain("PONG");
     expect(((two.t.events().find((e) => (e.raw as any).subtype === "init")!.raw) as any).session_id).toBe(sessionId);
