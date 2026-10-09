@@ -15,7 +15,9 @@
 	},
 	"upload_source_maps": true,
 	// Attached on deploy; the dorks.build zone must be on the same Cloudflare account as CLOUDFLARE_ACCOUNT_ID.
-	"routes": [{ "pattern": "dorks.build", "custom_domain": true }]
+	"routes": [{ "pattern": "dorks.build", "custom_domain": true }],
+	// Required by `wrangler preview` (PR preview builds); empty because settings stay at the top level.
+	"previews": {}
 	/**
 	 * Smart Placement
 	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
