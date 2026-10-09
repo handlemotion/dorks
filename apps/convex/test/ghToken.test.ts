@@ -11,18 +11,16 @@ import { aad, encrypt, keyringFromEnv } from "../core/crypto";
 const gh = vi.hoisted(() => ({
   calls: [] as { installationId: unknown; scope: unknown }[],
   fail: null as null | { status: number } | "network",
-  repositories: undefined as undefined | "match" | string[],
 }));
 vi.mock("../core/github", async (orig) => {
   const actual = await orig<typeof import("../core/github")>();
   return {
     ...actual,
-    createInstallationToken: async (_env: unknown, installationId: unknown, _f: unknown, scope: { repositories: string[] }) => {
+    createInstallationToken: async (_env: unknown, installationId: unknown, _f: unknown, scope: unknown) => {
       gh.calls.push({ installationId, scope });
       if (gh.fail === "network") throw new TypeError("fetch failed");
       if (gh.fail) throw new actual.GithubHttpError(gh.fail.status);
-      const repositories = gh.repositories === "match" ? scope.repositories.map((n) => `octo/${n}`) : gh.repositories;
-      return { token: "ghs_scoped", expiresAt: "2030-01-01T00:00:00Z", ...(repositories ? { repositories } : {}) };
+      return { token: "ghs_installation", expiresAt: "2030-01-01T00:00:00Z" };
     },
   };
 });
@@ -31,7 +29,7 @@ const modules = import.meta.glob("../convex/**/*.*s");
 type T = TestConvexForDataModel<DataModel>;
 
 beforeEach(() => {
-  Object.assign(gh, { calls: [], fail: null, repositories: undefined });
+  Object.assign(gh, { calls: [], fail: null });
   process.env.BRIDGE_SECRET_KEY = "test-bridge-key";
   process.env.ENCRYPTION_KEY = btoa(String.fromCharCode(...new Uint8Array(32).fill(7)));
   process.env.GITHUB_APP_ID = "1";
@@ -53,13 +51,17 @@ async function seed(t: T, over: { state?: string; archived?: boolean; repo?: str
 }
 
 describe("bridge.configure / ghToken scoping", () => {
-  it("mints a token scoped to the dork's repo only", async () => {
+  it("mints an installation-wide token (no repository filter) with the agent permissions", async () => {
     const t = convexTest(schema, modules);
     const c = await seed(t);
     const cfg = await t.action(api.bridge.configure, c);
-    expect(cfg).toMatchObject({ t: "configure", ghToken: "ghs_scoped", repo: { fullName: "octo/hello" } });
-    expect(gh.calls).toEqual([{ installationId: 42, scope: { repositories: ["hello"], permissions: { contents: "write", pull_requests: "write" } } }]);
-    expect(await t.action(api.bridge.ghToken, c)).toEqual({ t: "gh_token", token: "ghs_scoped" });
+    expect(cfg).toMatchObject({ t: "configure", ghToken: "ghs_installation", repo: { fullName: "octo/hello" } });
+    expect(gh.calls).toEqual([{
+      installationId: 42,
+      scope: { permissions: { contents: "write", pull_requests: "write", issues: "write", workflows: "write", checks: "read", actions: "read", statuses: "read" } },
+    }]);
+    expect(gh.calls[0].scope).not.toHaveProperty("repositories");
+    expect(await t.action(api.bridge.ghToken, c)).toEqual({ t: "gh_token", token: "ghs_installation" });
     expect(gh.calls[1].scope).toEqual(gh.calls[0].scope);
   });
 
@@ -111,28 +113,21 @@ describe("bridge.configure / ghToken scoping", () => {
     await expect(t.action(api.bridge.ghToken, { ...c, secret: "0".repeat(64) })).rejects.toThrow();
   });
 
-  it.each([404, 422])("GitHub %i names the repo and tells the user what to do", async (status) => {
+  it("GitHub 422 tells the user to accept the new permissions on the installation", async () => {
     const t = convexTest(schema, modules);
     const c = await seed(t);
-    gh.fail = { status };
+    gh.fail = { status: 422 };
     expect(await t.action(api.bridge.configure, c)).toBeNull();
-    expect(await eventsOf(t, c.dorkId)).toContainEqual({ type: "error", message: "GitHub App can't access octo/hello; add it to the installation", error: { code: "failed", message: "GitHub App can't access octo/hello; add it to the installation" } });
+    expect(await eventsOf(t, c.dorkId)).toContainEqual({ type: "error", message: "GitHub App permissions are out of date; accept the new permissions on the installation", error: { code: "failed", message: "GitHub App permissions are out of date; accept the new permissions on the installation" } });
     expect((await dorkOf(t, c.dorkId))!.state).toBe("error");
   });
 
-  it("a token for a same-named repo under another owner is refused", async () => {
+  it("GitHub 404 says the installation is gone", async () => {
     const t = convexTest(schema, modules);
     const c = await seed(t);
-    gh.repositories = ["alice/hello"]; // dork is octo/hello, but the installation is alice's
+    gh.fail = { status: 404 };
     expect(await t.action(api.bridge.configure, c)).toBeNull();
-    expect(await eventsOf(t, c.dorkId)).toContainEqual(expect.objectContaining({ type: "error", message: expect.stringContaining("octo/hello") }));
-  });
-
-  it("repo ownership check is case-insensitive", async () => {
-    const t = convexTest(schema, modules);
-    const c = await seed(t);
-    gh.repositories = ["OCTO/Hello"];
-    expect(await t.action(api.bridge.configure, c)).toMatchObject({ t: "configure" });
+    expect(await eventsOf(t, c.dorkId)).toContainEqual({ type: "error", message: "GitHub App installation not found; install the App again", error: { code: "failed", message: "GitHub App installation not found; install the App again" } });
   });
 
   it("a 5xx during configure is a generic failure (no GitHub detail leaks)", async () => {

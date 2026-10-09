@@ -1,16 +1,21 @@
-import { commandFrame, type FromBridge } from "@dorks/shared";
+import { commandFrame, type FromBridge, type PrRef } from "@dorks/shared";
 import { createHash } from "node:crypto";
 import { appendFileSync, chmodSync, closeSync, fsyncSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { Agent, childEnv, configDirOf, findTranscripts } from "./claude";
 import type { Config } from "./config";
-import { CredentialServer, helperCommand } from "./credentials";
+import { GithubToken, helperCommand } from "./credentials";
+import { HookService, settingsPath, writeClaudeSettings } from "./hooks";
 import { resolveIdentity, type Identity } from "./runas";
 import { EventPipeline } from "./events";
 import { prepareRepo, SetupError } from "./git";
 import { Outbox } from "./outbox";
+import { prLabel } from "./pr-ref";
+import { prLookup } from "./pr-lookup";
+import { PrSubscriptions } from "./prs";
 import { errTag, type Log, type Redactor } from "./redact";
+import { RpcServer } from "./rpc";
 import type { CommandEntry, Transport } from "./transport";
 
 export interface BridgeDeps {
@@ -34,7 +39,10 @@ export class SleepingError extends Error {}
 export class Bridge {
   readonly outbox: Outbox;
   readonly pipeline: EventPipeline;
-  private creds: CredentialServer;
+  private rpc: RpcServer;
+  private github: GithubToken;
+  private prs: PrSubscriptions;
+  private hooks: HookService;
   private runAs: Identity | null;
   private agent: Agent | null = null;
   private agentKey = "";
@@ -52,12 +60,15 @@ export class Bridge {
   private configAttempts = new Map<string, number>();
   private agentCtx: { dir: string; env: NodeJS.ProcessEnv } | null = null;
   private readonly cfg: Config;
+  /** [node, cli.mjs]: how the git credential helper and the hooks invoke this binary. */
+  private readonly self: [string, string];
   private readonly t: Transport;
   private readonly log: Log;
   private readonly redactor: Redactor;
 
   constructor(private d: BridgeDeps) {
     this.cfg = d.cfg;
+    this.self = d.selfCommand ?? [process.execPath, process.argv[1]!];
     this.t = d.transport;
     this.log = d.log;
     this.redactor = d.redactor;
@@ -76,20 +87,34 @@ export class Bridge {
       }
     })();
     this.runAs = this.cfg.runAs ? resolveIdentity(this.cfg.runAs) : null;
+    this.github = new GithubToken(["github.com", host].filter(Boolean));
+    this.prs = new PrSubscriptions(this.t, this.log);
+    const env = this.d.baseEnv ?? process.env;
+    this.hooks = new HookService({
+      workDir: this.cfg.workDir,
+      stateDir: this.cfg.stateDir,
+      env,
+      runAs: this.runAs,
+      prs: this.prs,
+      hasPr: prLookup(env, this.self[1], () => this.github.get()),
+      log: this.log,
+    });
     // With privilege separation the socket lives in a directory only the Claude user can enter (the state dir itself stays root-only,
     // traversable so that path resolves).
-    this.creds = new CredentialServer(join(this.cfg.stateDir, this.runAs ? "cred/cred.sock" : "cred.sock"), ["github.com", host].filter(Boolean), this.runAs);
+    this.rpc = new RpcServer(join(this.cfg.stateDir, this.runAs ? "cred/cred.sock" : "cred.sock"), this.rpcMethods(), this.runAs);
     this.written = this.loadWritten();
   }
 
   // ------------------------------------------------------------------ lifecycle
   async start() {
     mkdirSync(this.cfg.stateDir, { recursive: true, mode: 0o700 });
-    if (this.runAs) chmodSync(this.cfg.stateDir, 0o711); // others may traverse to cred/, not list or read
-    await this.creds.start();
+    if (this.runAs) chmodSync(this.cfg.stateDir, 0o711); // others may traverse to cred/ and the settings file, not list or read
+    writeClaudeSettings(this.cfg.stateDir, this.self);
+    await this.rpc.start();
     await this.handshake(true);
+    this.prs.start();
     this.unsubs.push(this.t.subscribeCommands((cmds) => this.onCommands(cmds), () => this.log("commands subscription error")));
-    this.unsubs.push(this.t.onReconnect(() => void this.handshake(false).catch((e) => e instanceof SleepingError && this.d.onSleeping?.())));
+    this.unsubs.push(this.t.onReconnect(() => void this.handshake(false).then(() => !this.closed && this.prs.start()).catch((e) => e instanceof SleepingError && this.d.onSleeping?.())));
     this.hb = setInterval(() => {
       this.t.heartbeat().catch((e) => this.t.isFatal(e) && this.fatal());
     }, this.cfg.heartbeatMs);
@@ -141,8 +166,14 @@ export class Bridge {
     this.outbox.flushNow();
     await Promise.race([this.outbox.drained(), new Promise((r) => setTimeout(r, drainMs))]);
     this.outbox.stop();
-    this.creds.close();
+    this.prs.stop();
+    this.rpc.close();
     await this.t.close();
+  }
+
+  /** The local RPC table (rpc.ts): what the git helper, the `dorks` CLI and the `gh` shim can ask of this process. */
+  private rpcMethods() {
+    return { token: this.github.rpc, ...this.prs.methods, ...this.hooks.methods };
   }
 
   // ------------------------------------------------------------------ commands
@@ -157,9 +188,9 @@ export class Bridge {
       const parsed = commandFrame.safeParse(c.frame);
       if (!parsed.success) continue;
       const f = parsed.data;
-      if (f.t === "user_message") {
+      if (f.t === "user_message" || f.t === "notify") {
         if (this.acked.has(f.id)) continue;
-        this.enqueue(() => this.userMessage(f.id, f.text));
+        this.enqueue(() => this.deliver(f.id, f.text, f.t === "notify" ? f : undefined));
         continue;
       }
       if (this.handled.has(c.cid)) continue;
@@ -181,7 +212,8 @@ export class Bridge {
     this.chain = this.chain.then(job).catch((e) => this.log("command failed:", errTag(e)));
   }
 
-  private async userMessage(id: string, text: string) {
+  /** A user turn for the agent: a `user_message`, or a `notify` (autonomy digest, already wrapped by the backend; written verbatim). */
+  private async deliver(id: string, text: string, notify?: { kinds: string[]; prs: PrRef[] }) {
     if (this.acked.has(id)) return;
     if (!this.written.has(id)) {
       if (!this.agent?.alive) return; // agent not up yet (or dead): reprocessed after configure; left unacked so the backend keeps it
@@ -192,6 +224,8 @@ export class Bridge {
       }
       this.written.add(id);
       this.persistWritten(id);
+      this.hooks.noteTurn(notify?.kinds ?? []);
+      if (notify) this.log("notify delivered:", notify.kinds.join(",") || "-", notify.prs.map(prLabel).join(",") || "-"); // never the text
     }
     this.acked.add(id);
     this.pipeline.control({ t: "ack", id }, true);
@@ -210,7 +244,7 @@ export class Bridge {
     const token = await this.t.ghToken().catch(() => null);
     if (token) {
       this.redactor.add(token);
-      this.creds.setToken(token);
+      this.github.set(token);
       this.log("github token refreshed");
     } else this.log("github token refresh failed; keeping the current one");
     this.pipeline.control({ t: "ack", id: cid }, true);
@@ -274,7 +308,7 @@ export class Bridge {
     if (!cfg) return this.log("configure refused (the backend recorded why)");
     this.redactor.add(cfg.ghToken);
     this.redactor.addAll(Object.values(cfg.env));
-    this.creds.setToken(cfg.ghToken);
+    this.github.set(cfg.ghToken);
 
     const key = createHash("sha256").update(JSON.stringify([cfg.repo, Object.entries(cfg.env).sort()])).digest("hex");
     if (this.agent?.alive && key === this.agentKey) {
@@ -292,7 +326,7 @@ export class Bridge {
     let dir: string;
     try {
       dir = await prepareRepo(
-        { gitBaseUrl: this.cfg.gitBaseUrl, workDir: this.cfg.workDir, helper: helperCommand(...(this.d.selfCommand ?? [process.execPath, process.argv[1]!]), this.creds.sockPath), log: this.log, env: this.d.baseEnv, runAs: this.runAs },
+        { gitBaseUrl: this.cfg.gitBaseUrl, workDir: this.cfg.workDir, helper: helperCommand(...this.self, this.rpc.sockPath), log: this.log, env: this.d.baseEnv, runAs: this.runAs },
         cfg.repo,
       );
     } catch (e) {
@@ -303,6 +337,7 @@ export class Bridge {
     }
 
     const env = childEnv(this.d.baseEnv ?? process.env, cfg.env, this.log, this.runAs);
+    env.DORKS_SOCK = this.rpc.sockPath; // how `dorks`, the gh shim and hooks (children of the CLI) find this process
     this.agentCtx = { dir, env };
     this.agentKey = key;
     let resume = this.lastSessionId ?? cfg.resumeSessionId;
@@ -328,6 +363,7 @@ export class Bridge {
       permissionMode: this.cfg.permissionMode,
       resumeSessionId: resume,
       extraArgs: this.cfg.claudeExtraArgs,
+      settingsFile: settingsPath(this.cfg.stateDir),
       runAs: this.runAs,
       redactor: this.redactor,
       log: this.log,

@@ -5,9 +5,10 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
+const outfile = process.env.DORKS_BUILD_OUT || `${root}dist/cli.mjs`; // the tests build into a temp dir of their own
 await build({
   entryPoints: [`${root}src/cli.ts`],
-  outfile: `${root}dist/cli.mjs`,
+  outfile,
   bundle: true,
   platform: "node",
   target: "node22",
@@ -15,5 +16,5 @@ await build({
   banner: { js: "#!/usr/bin/env node\nimport { createRequire as __cr } from 'node:module';const require = __cr(import.meta.url);" },
   logLevel: "warning",
 });
-chmodSync(`${root}dist/cli.mjs`, 0o755);
-console.log("built infra/bridge/dist/cli.mjs");
+chmodSync(outfile, 0o755);
+console.log(`built ${outfile}`);

@@ -1,4 +1,4 @@
-import { errorEvent, fromBridge, type ClientEventBody, type CommandFrame, type ToBridge } from "@dorks/shared";
+import { errorEvent, fromBridge, type ClientEventBody, type CommandFrame, type SubscriptionView, type ToBridge } from "@dorks/shared";
 import { v } from "convex/values";
 import { aad, decrypt, keyringFromEnv } from "../core/crypto";
 import { agentTokenScope, createInstallationToken, GithubHttpError } from "../core/github";
@@ -9,9 +9,10 @@ import { action, internalMutation, internalQuery, mutation, query } from "./_gen
 import type { QueryCtx } from "./_generated/server";
 import { verifyBridgeSecret } from "./lib/bridgeAuth";
 import { append, bridgeSeen, dispatch, enqueueConfigure, fail, finishPause, runtimeOf, setTimer } from "./lib/dispatch";
+import * as subs from "./lib/subscriptions";
 
 // The in-box bridge speaks packages/shared/src/bridge.ts through these functions instead of a WebSocket:
-//   subscribe  `commands`   <- DO->bridge frames (user_message / interrupt / flush; configure & gh_token as fetch markers)
+//   subscribe  `commands`   <- DO->bridge frames (user_message / notify / interrupt / flush; configure & gh_token as fetch markers)
 //   mutation   `push`       -> bridge->DO frames (event / ready / ack / agent_exited / flushed), batched
 //   mutation   `connect`    -> "hello" + queues a configure;  mutation `heartbeat` -> liveness
 //   action     `configure` / `ghToken` -> the only places secrets are decrypted and handed out.
@@ -47,10 +48,16 @@ export const commands = query({
     const rt = await ctx.db.query("dorkRuntime").withIndex("by_dork", (q) => q.eq("dorkId", dorkId)).unique();
     const deliverMessages = (dork.state === "working" || dork.state === "idle") && (!rt?.pause || rt.pause.phase === "flushing");
     const open = await ctx.db.query("commands").withIndex("by_dork_acked", (q) => q.eq("dorkId", dorkId).eq("acked", false)).collect();
+    // User messages always go first: no notify is emitted while one is unacked. A notify that arrived mid-turn stays held
+    // (`released` false) until the machine's release_notify, so a turn is never interrupted by an autonomous event.
+    const userPending = open.some((c) => c.kind === "user_message");
     const out: { cid: string; frame: CommandFrame }[] = [];
     for (const c of open) {
       if (c.kind === "user_message") {
         if (deliverMessages) out.push({ cid: c.cid, frame: { t: "user_message", id: c.cid, text: c.text! } });
+      } else if (c.kind === "notify") {
+        if (deliverMessages && !userPending && (dork.state === "idle" || c.released))
+          out.push({ cid: c.cid, frame: { t: "notify", id: c.cid, text: c.text!, kinds: c.meta!.kinds, prs: c.meta!.prs } });
       } else if (c.kind === "configure") out.push({ cid: c.cid, frame: { t: "fetch_configure" } });
       else if (c.kind === "gh_token") out.push({ cid: c.cid, frame: { t: "fetch_gh_token" } });
       else out.push({ cid: c.cid, frame: { t: c.kind } });
@@ -146,7 +153,7 @@ export const push = mutation({
           const open = await ctx.db.query("commands").withIndex("by_dork_acked", (q) => q.eq("dorkId", dorkId).eq("acked", false)).collect();
           const c = open.find((x) => x.cid === f.id);
           if (!c) break;
-          if (c.kind === "user_message") await ctx.db.patch(c._id, { acked: true });
+          if (c.kind === "user_message" || c.kind === "notify") await ctx.db.patch(c._id, { acked: true });
           else await ctx.db.delete(c._id);
           break;
         }
@@ -165,6 +172,34 @@ export const push = mutation({
     await ctx.db.patch(rt._id, { bridgeSeq, streamMsgId });
     if (preview !== undefined || touched) await ctx.db.patch(dorkId, { ...(preview !== undefined ? { preview } : {}), lastActivityAt: Date.now() });
     return { ok: true };
+  },
+});
+
+// ---------------------------------------------------------------- PR subscriptions (docs/autonomy.md)
+// The gh shim / hooks / `dorks pr` CLI in the box call these through the bridge. Webhook events for a subscribed PR then reach the agent as `notify` frames.
+
+/** Idempotent. The PR's metadata is filled in asynchronously from GitHub (subscriptions.hydrate). */
+export const subscribe = mutation({
+  args: { ...creds, repo: v.string(), number: v.number(), source: v.union(v.literal("auto"), v.literal("agent")) },
+  handler: async (ctx, { dorkId, secret, repo, number, source }) => {
+    await subs.subscribe(ctx, await authed(ctx, dorkId, secret), repo, number, source);
+  },
+});
+
+export const unsubscribe = mutation({
+  args: { ...creds, repo: v.string(), number: v.number() },
+  handler: async (ctx, { dorkId, secret, repo, number }) => {
+    await authed(ctx, dorkId, secret);
+    await subs.unsubscribe(ctx, dorkId, repo, number);
+  },
+});
+
+/** Reactive: the bridge caches this for its hooks and the `dorks pr list` CLI. */
+export const subscriptions = query({
+  args: creds,
+  handler: async (ctx, { dorkId, secret }): Promise<SubscriptionView[]> => {
+    await authed(ctx, dorkId, secret);
+    return (await subs.subscriptionsOfDork(ctx, dorkId)).filter((s) => s.status !== "ended").map(subs.toView);
   },
 });
 
@@ -203,23 +238,22 @@ export const configInfo = internalQuery({
 
 const ring = () => keyringFromEnv({ ENCRYPTION_KEY: process.env.ENCRYPTION_KEY! });
 
-/** The box runs untrusted agent code, so the token is limited to this dork's repo and to push + PR permissions (see github.ts). */
-async function githubToken(info: { githubInstallationId: number | null; repo: string }): Promise<string> {
+/**
+ * The box runs untrusted agent code, so the token is limited to the permissions in `AGENT_TOKEN_PERMISSIONS` (github.ts). It is not
+ * limited to one repo: the agent may work in any repo the installation reaches (docs/autonomy.md).
+ */
+async function githubToken(info: { githubInstallationId: number | null }): Promise<string> {
   if (!info.githubInstallationId) throw new OnboardingError("GitHub App not installed");
   if (process.env.BOX_PROVIDER === "sim") return "sim-github-token"; // local dev: no real GitHub App
   const env = { GITHUB_APP_ID: process.env.GITHUB_APP_ID!, GITHUB_APP_PRIVATE_KEY: process.env.GITHUB_APP_PRIVATE_KEY! };
-  let res;
   try {
-    res = await createInstallationToken(env, info.githubInstallationId, fetch, agentTokenScope(info.repo));
+    return (await createInstallationToken(env, info.githubInstallationId, fetch, agentTokenScope())).token;
   } catch (e) {
-    // GitHub answers 422 (or 404) when the installation cannot see the repo (not selected, or removed): tell the user what to fix.
-    if (e instanceof GithubHttpError && (e.status === 404 || e.status === 422)) throw new OnboardingError(`GitHub App can't access ${info.repo}; add it to the installation`);
+    // 422: the App (or this installation, which must accept new permissions) lacks a permission we ask for. 404: the installation is gone.
+    if (e instanceof GithubHttpError && e.status === 422) throw new OnboardingError("GitHub App permissions are out of date; accept the new permissions on the installation");
+    if (e instanceof GithubHttpError && e.status === 404) throw new OnboardingError("GitHub App installation not found; install the App again");
     throw e;
   }
-  // Scoping is by repo *name*; make sure GitHub resolved it in the installation's account, not a same-named repo under another owner.
-  if (res.repositories && !res.repositories.some((r) => r.toLowerCase() === info.repo.toLowerCase()))
-    throw new OnboardingError(`GitHub App is not installed on the owner of ${info.repo}; install it there`);
-  return res.token;
 }
 class OnboardingError extends Error {}
 

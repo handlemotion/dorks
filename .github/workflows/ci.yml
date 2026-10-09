@@ -85,12 +85,13 @@ jobs:
           git diff --exit-code -- convex/_generated # generated code must be committed, not drift
           rnd() { node -e 'console.log(require("crypto").randomBytes(32).toString(process.argv[1]))' "$1"; }
           set_env() { npx convex env set "$1" "$2" >/dev/null; }
-          for name in BETTER_AUTH_SECRET BRIDGE_SECRET_KEY SIM_HOST_KEY; do set_env "$name" "$(rnd hex)"; done
+          for name in BETTER_AUTH_SECRET BRIDGE_SECRET_KEY SIM_HOST_KEY GITHUB_WEBHOOK_SECRET; do set_env "$name" "$(rnd hex)"; done
           set_env ENCRYPTION_KEY "$(rnd base64)"
           set_env RESEND_API_KEY re_test_local
           set_env RESEND_API_URL http://127.0.0.1:8899/emails
           set_env SITE_URL http://localhost:3000
           set_env BOX_PROVIDER sim
+          set_env GITHUB_APP_SLUG dorks-ci
           set_env BASE_SNAPSHOT_ID sim-snap
           set_env EXTRA_TRUSTED_ORIGINS http://localhost:8081
 

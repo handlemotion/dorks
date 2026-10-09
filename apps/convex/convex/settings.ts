@@ -1,3 +1,4 @@
+import { commentPolicy as commentPolicySchema, DEFAULT_COMMENT_POLICY } from "@dorks/shared";
 import { v } from "convex/values";
 import { aad, encrypt, keyringFromEnv } from "../core/crypto";
 import { internal } from "./_generated/api";
@@ -26,7 +27,7 @@ export const onboarding = query({
   handler: async (ctx) => {
     const userId = await requireUserId(ctx);
     const s = await ctx.db.query("userSettings").withIndex("by_user", (q) => q.eq("userId", userId)).unique();
-    return { claudeToken: !!s?.claudeTokenEnc, github: !!s?.githubInstallationId, sleepMinutes: s?.sleepMinutes ?? 5 };
+    return { claudeToken: !!s?.claudeTokenEnc, github: !!s?.githubInstallationId, sleepMinutes: s?.sleepMinutes ?? 5, commentPolicy: s?.commentPolicy ?? DEFAULT_COMMENT_POLICY };
   },
 });
 
@@ -80,28 +81,30 @@ export const linkGithubInstallation = action({
     if (!Number.isSafeInteger(installationId) || installationId <= 0) fail("invalid", "bad installation id");
     // Local dev/e2e only (BOX_PROVIDER=sim, already the "no real GitHub App" switch in bridge.ts): code "sim" skips GitHub.
     const simulated = process.env.BOX_PROVIDER === "sim" && code === "sim";
+    let githubLogin: string | undefined;
     if (!simulated) {
       const clientId = process.env.GITHUB_APP_CLIENT_ID;
       const clientSecret = process.env.GITHUB_APP_CLIENT_SECRET;
       if (!clientId || !clientSecret) fail("not_configured", "GitHub App OAuth is not configured");
-      let ok = false;
+      let verified: { login: string } | null = null;
       try {
-        ok = await verifyInstallationOwnership(code, installationId, { clientId, clientSecret });
+        verified = await verifyInstallationOwnership(code, installationId, { clientId, clientSecret });
       } catch (e) {
         console.error("github install verification failed", e instanceof Error ? e.message.slice(0, 200) : "unknown");
         fail("github_error", "could not verify the GitHub installation");
       }
-      if (!ok) fail("forbidden", "installation is not authorized for this GitHub account");
+      if (!verified) fail("forbidden", "installation is not authorized for this GitHub account");
+      githubLogin = verified.login;
     }
-    await ctx.runMutation(internal.settings.storeGithubInstallation, { userId, installationId });
+    await ctx.runMutation(internal.settings.storeGithubInstallation, { userId, installationId, githubLogin });
   },
 });
 
 export const storeGithubInstallation = internalMutation({
-  args: { userId: v.string(), installationId: v.number() },
-  handler: async (ctx, { userId, installationId }) => {
+  args: { userId: v.string(), installationId: v.number(), githubLogin: v.optional(v.string()) },
+  handler: async (ctx, { userId, installationId, githubLogin }) => {
     const row = await settingsRow(ctx, userId);
-    await ctx.db.patch(row._id, { githubInstallationId: installationId });
+    await ctx.db.patch(row._id, { githubInstallationId: installationId, githubLogin });
   },
 });
 
@@ -113,5 +116,20 @@ export const setSleepMinutes = mutation({
     if (!Number.isFinite(minutes)) fail("invalid", "minutes must be a finite number");
     const row = await settingsRow(ctx, userId);
     await ctx.db.patch(row._id, { sleepMinutes: Math.min(Math.max(minutes, 0.05), 24 * 60) });
+  },
+});
+
+export const MAX_ALLOWLIST_LOGIN_CHARS = 100; // GitHub logins are at most 39 chars (bots add "[bot]")
+
+/** Which PR comment authors may wake the user's dorks (docs/autonomy.md). Absent = everyone. */
+export const setCommentPolicy = mutation({
+  args: { policy: v.any() },
+  handler: async (ctx, { policy }) => {
+    const userId = await requireUserId(ctx);
+    const parsed = commentPolicySchema.safeParse(policy);
+    if (!parsed.success) fail("invalid", "bad comment policy");
+    if (parsed.data.mode === "allowlist" && parsed.data.logins.some((l) => !l.trim() || l.length > MAX_ALLOWLIST_LOGIN_CHARS)) fail("invalid", "bad GitHub login in the allowlist");
+    const row = await settingsRow(ctx, userId);
+    await ctx.db.patch(row._id, { commentPolicy: parsed.data });
   },
 });

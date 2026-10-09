@@ -1,12 +1,13 @@
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { Bridge, SleepingError } from "../src/bridge";
+import { rpcCall } from "../src/rpc";
 import { loadConfig } from "../src/config";
 import { makeLogger, Redactor } from "../src/redact";
-import { builtCli, FAKE_CLAUDE, FakeTransport, makeRemote, sleep, tmp, waitFor } from "./helpers";
+import { builtCli, FAKE_CLAUDE, fakeView, FakeTransport, makeRemote, sleep, tmp, waitFor } from "./helpers";
 
 const execFileP = promisify(execFile);
 const BRIDGE_SECRET = "b".repeat(64);
@@ -99,31 +100,39 @@ describe("bridge with a fake claude CLI", () => {
     const dir = join(s.work, "acme/demo");
     const cfgText = readFileSync(join(dir, ".git/config"), "utf8");
     expect(cfgText).not.toContain(GH_TOKEN);
-    expect(cfgText).toContain("credential");
+    expect(cfgText).not.toContain("credential"); // the helper is configured once, globally, for every repo
+    const global = readFileSync(join(s.hostEnv.HOME!, ".gitconfig"), "utf8");
+    expect(global).not.toContain(GH_TOKEN);
+    expect(global).toContain('[credential "https://github.com"]');
+    expect(global).toContain("credential --sock");
     expect(execFileSync("git", ["remote", "get-url", "origin"], { cwd: dir }).toString().trim()).toBe(`${s.remote.baseUrl}/acme/demo.git`);
     // nothing under the state or work dirs holds the token
     const walk = (d: string): string[] => readdirSync(d).flatMap((n) => (statSync(join(d, n)).isDirectory() ? walk(join(d, n)) : statSync(join(d, n)).isSocket() ? [] : [join(d, n)]));
-    for (const f of [...walk(s.state), ...walk(s.work)]) expect(readFileSync(f).includes(GH_TOKEN), f).toBe(false);
+    for (const f of [...walk(s.state), ...walk(s.work), ...walk(s.hostEnv.HOME!)]) expect(readFileSync(f).includes(GH_TOKEN), f).toBe(false);
   });
 
-  it("credential helper: git gets the in-memory token via the bridge, only for github.com, and a refresh swaps it", async () => {
+  it("credential helper: git gets the in-memory token via the bridge in any repo, only for github.com, and a refresh swaps it", async () => {
     const s = await setup();
     await s.bridge.start();
     configure(s.t);
     await waitFor(() => s.t.of("ready").length, "ready");
     const dir = join(s.work, "acme/demo");
+    const other = join(s.work, "someone/else"); // a repo the agent cloned itself: it has no config of its own
+    mkdirSync(other, { recursive: true });
+    execFileSync("git", ["init", "-q"], { cwd: other });
     // async on purpose: the credential server lives in this process, so a blocking exec would deadlock
-    const fill = async (host: string) => {
-      const p = execFileP("git", ["credential", "fill"], { cwd: dir, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_ASKPASS: "", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } });
+    const fill = async (host: string, cwd = dir) => {
+      const p = execFileP("git", ["credential", "fill"], { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_ASKPASS: "", GIT_CONFIG_GLOBAL: join(s.hostEnv.HOME!, ".gitconfig"), GIT_CONFIG_NOSYSTEM: "1" } });
       p.child.stdin!.end(`protocol=https\nhost=${host}\n\n`);
       return (await p).stdout;
     };
     expect(await fill("github.com")).toContain(`password=${GH_TOKEN}`);
+    expect(await fill("github.com", other)).toContain(`username=x-access-token\npassword=${GH_TOKEN}`);
     await expect(fill("evil.example.com")).rejects.toThrow(); // helper declines, git would prompt (disabled) and fail
     s.t.token = "ghs_refreshedToken123";
     s.t.emit([{ cid: "gh1", frame: { t: "fetch_gh_token" } }]);
     await waitFor(() => s.t.of("ack").some((a) => a.id === "gh1"), "gh ack");
-    expect(await fill("github.com")).toContain("password=ghs_refreshedToken123");
+    expect(await fill("github.com", other)).toContain("password=ghs_refreshedToken123");
     expect(existsSync(join(s.state, "cred.sock"))).toBe(true);
   });
 
@@ -492,3 +501,284 @@ describe("bridge with a fake claude CLI", () => {
   });
 });
 
+describe("autonomy: notify frames", () => {
+  const ENVELOPE = '<dorks-event source="github" kinds="ci_failed,comment" prs="acme/demo#12">\nCI failed on acme/demo#12 (attempt 1 of 2).\n  indented "quoted" line\n</dorks-event>';
+  const notify = (id: string, text = ENVELOPE) => ({ cid: id, frame: { t: "notify" as const, id, text, kinds: ["ci_failed" as const, "comment" as const], prs: [{ repo: "acme/demo", number: 12 }] } });
+  const lastResult = (t: FakeTransport) => (t.events().filter((e) => (e.raw as any).type === "result").at(-1)?.raw as any)?.result;
+
+  it("writes the text to the agent verbatim as a user turn and acks it like a user message", async () => {
+    const s = await setup();
+    await s.bridge.start();
+    configure(s.t);
+    await waitFor(() => s.t.of("ready").length, "ready");
+    s.t.emit([notify("n1")]);
+    await waitFor(() => rawTypes(s.t).includes("result"), "turn");
+    expect(lastResult(s.t)).toBe(`Done: ${ENVELOPE}`);
+    expect(s.t.of("ack").filter((a) => a.id === "n1")).toHaveLength(1);
+  });
+
+  it("dedupes a re-delivered notify by id, including across a bridge restart (shared journal)", async () => {
+    const s = await setup();
+    await s.bridge.start();
+    configure(s.t);
+    await waitFor(() => s.t.of("ready").length, "ready");
+    s.t.emit([notify("n1")]);
+    s.t.emit([notify("n1")]);
+    await waitFor(() => rawTypes(s.t).includes("result"), "turn");
+    await sleep(150);
+    expect(rawTypes(s.t).filter((x) => x === "result")).toHaveLength(1);
+    expect(readFileSync(join(s.state, "messages.log"), "utf8").split("\n")).toContain("n1");
+    await s.bridge.stop(500);
+
+    const t2 = new FakeTransport();
+    t2.configureFrame = s.t.configureFrame;
+    const redactor = new Redactor();
+    const b2 = new Bridge({ cfg: loadConfig({ ...s.hostEnv }), transport: t2, log: makeLogger("t2", redactor, () => {}), redactor, baseEnv: s.hostEnv, selfCommand: [process.execPath, cli] });
+    cleanup.push(() => b2.stop(500));
+    await b2.start();
+    t2.emit([{ cid: "cfg2", frame: { t: "fetch_configure" } }, notify("n1")]);
+    await waitFor(() => t2.of("ack").some((a) => a.id === "n1"), "re-ack");
+    await sleep(150);
+    expect(rawTypes(t2)).not.toContain("result");
+  });
+
+  it("an unacked notify waits for the agent and is delivered once configure finishes", async () => {
+    const s = await setup();
+    await s.bridge.start();
+    s.t.emit([notify("n1")]);
+    await sleep(50);
+    expect(s.t.of("ack")).toHaveLength(0);
+    s.t.emit([notify("n1"), { cid: "cfg1", frame: { t: "fetch_configure" } }]);
+    await waitFor(() => s.t.of("ack").some((a) => a.id === "n1"), "ack");
+    await waitFor(() => rawTypes(s.t).includes("result"), "turn");
+  });
+
+  it("logs the kinds and PRs, never the text", async () => {
+    const s = await setup();
+    await s.bridge.start();
+    configure(s.t);
+    await waitFor(() => s.t.of("ready").length, "ready");
+    s.t.emit([notify("n1", "<dorks-event>please-do-not-log-this-body</dorks-event>")]);
+    await waitFor(() => rawTypes(s.t).includes("result"), "turn");
+    const line = s.logs.find((l) => l.includes("notify delivered"));
+    expect(line).toContain("ci_failed,comment");
+    expect(line).toContain("acme/demo#12");
+    expect(s.logs.join("\n")).not.toContain("please-do-not-log-this-body");
+  });
+});
+
+describe("autonomy: local RPC", () => {
+  const sockOf = (s: { state: string }) => join(s.state, "cred.sock");
+  const ready = async (opts: Parameters<typeof setup>[0] = {}) => {
+    const s = await setup(opts);
+    await s.bridge.start();
+    configure(s.t);
+    await waitFor(() => s.t.of("ready").length, "ready");
+    return s;
+  };
+
+  it("token: serves the current GitHub token for github.com only; unavailable before configure; refresh swaps it", async () => {
+    const s = await setup();
+    await s.bridge.start();
+    await expect(rpcCall(sockOf(s), "token", { host: "github.com" })).rejects.toMatchObject({ code: "unavailable" });
+    configure(s.t);
+    await waitFor(() => s.t.of("ready").length, "ready");
+    expect(await rpcCall(sockOf(s), "token", { host: "github.com" })).toEqual({ token: GH_TOKEN });
+    await expect(rpcCall(sockOf(s), "token", { host: "evil.example.com" })).rejects.toMatchObject({ code: "denied" });
+    await expect(rpcCall(sockOf(s), "token", {})).rejects.toMatchObject({ code: "invalid" });
+    s.t.token = "ghs_refreshedToken123";
+    s.t.emit([{ cid: "gh1", frame: { t: "fetch_gh_token" } }]);
+    await waitFor(() => s.t.of("ack").some((a) => a.id === "gh1"), "gh ack");
+    expect(await rpcCall(sockOf(s), "token", { host: "github.com" })).toEqual({ token: "ghs_refreshedToken123" });
+  });
+
+  it("pr.sub / pr.unsub go to the backend with their source, and pr.list reads its own writes", async () => {
+    const s = await ready();
+    const ref = { repo: "acme/demo", number: 12 };
+    expect(await rpcCall(sockOf(s), "pr.list")).toEqual([]);
+    expect(await rpcCall(sockOf(s), "pr.sub", { ...ref, source: "auto" })).toEqual(ref);
+    expect(await rpcCall(sockOf(s), "pr.sub", { repo: "acme/other", number: 3 })).toEqual({ repo: "acme/other", number: 3 }); // agent is the default source
+    expect(s.t.prCalls).toEqual([
+      { op: "sub", ref, source: "auto" },
+      { op: "sub", ref: { repo: "acme/other", number: 3 }, source: "agent" },
+    ]);
+    expect((await rpcCall<any[]>(sockOf(s), "pr.list")).map((v) => `${v.repo}#${v.number}:${v.source}`)).toEqual(["acme/demo#12:auto", "acme/other#3:agent"]);
+    await rpcCall(sockOf(s), "pr.unsub", ref);
+    expect(s.t.prCalls.at(-1)).toEqual({ op: "unsub", ref });
+    expect((await rpcCall<any[]>(sockOf(s), "pr.list")).map((v) => v.number)).toEqual([3]);
+  });
+
+  it("matches repos case-insensitively: the backend stores them lowercase, URLs keep their casing", async () => {
+    const s = await ready();
+    s.t.setSubscriptions([fakeView({ repo: "acme/demo", number: 12 })]);
+    const mixed = { repo: "Acme/Demo", number: 12 };
+    const t0 = Date.now();
+    await rpcCall(sockOf(s), "pr.sub", mixed); // already in the list under its lowercase name: no waiting for a change that never comes
+    expect(Date.now() - t0).toBeLessThan(1000);
+    await rpcCall(sockOf(s), "pr.unsub", mixed);
+    expect(Date.now() - t0).toBeLessThan(1000);
+    expect(s.t.subscriptions).toEqual([]);
+  });
+
+  it("validates input before it reaches the backend", async () => {
+    const s = await ready();
+    for (const params of [{}, { repo: "acme", number: 1 }, { repo: "acme/demo", number: 0 }, { repo: "acme/demo", number: 1.5 }, { repo: "acme/demo", number: "12" }, { repo: "../etc", number: 1 }, { repo: "a/b/c", number: 1 }, { repo: "acme/demo", number: 1, source: "user" }, null]) {
+      await expect(rpcCall(sockOf(s), "pr.sub", params), JSON.stringify(params)).rejects.toMatchObject({ code: "invalid" });
+    }
+    await expect(rpcCall(sockOf(s), "pr.unsub", { repo: "acme/demo" })).rejects.toMatchObject({ code: "invalid" });
+    expect(s.t.prCalls).toEqual([]);
+  });
+
+  it("backend failures surface as coded errors without leaking details", async () => {
+    const s = await ready();
+    s.t.prError = { data: { code: "not_found", message: "not found" }, message: "secret internal detail" };
+    const refused = (await rpcCall(sockOf(s), "pr.sub", { repo: "acme/demo", number: 1 }).catch((e) => e)) as Error;
+    expect(refused).toMatchObject({ code: "failed", message: "the backend refused the request (not_found)" });
+    s.t.prError = new Error("ECONNRESET with secret detail");
+    const down = (await rpcCall(sockOf(s), "pr.unsub", { repo: "acme/demo", number: 1 }).catch((e) => e)) as Error;
+    expect(down).toMatchObject({ code: "unavailable", message: "could not reach the backend" });
+    expect(JSON.stringify([refused.message, down.message, s.logs])).not.toContain("secret");
+  });
+
+  it("pr.list waits for the first copy of the subscriptions, then serves the cache", async () => {
+    const s = await setup();
+    s.t.pushInitialSubscriptions = false;
+    await s.bridge.start();
+    const pending = rpcCall<any[]>(sockOf(s), "pr.list");
+    await sleep(100);
+    s.t.setSubscriptions([fakeView({ repo: "acme/demo", number: 1 })]);
+    expect((await pending).map((v) => v.number)).toEqual([1]);
+  });
+
+  it("ignores a malformed list and keeps the last good one; reconnecting re-opens the subscription and picks up changes", async () => {
+    const s = await ready();
+    s.t.setSubscriptions([fakeView({ repo: "acme/demo", number: 1 })]);
+    s.t.setSubscriptions([{ repo: 1 }] as any);
+    expect((await rpcCall<any[]>(sockOf(s), "pr.list")).map((v) => v.number)).toEqual([1]);
+    expect(s.logs.join("\n")).toContain("malformed subscription list");
+
+    expect(s.t.subscriptionsWatchers).toBe(1);
+    s.t.pushInitialSubscriptions = false; // the backend is slow to answer after the reconnect; the stale copy is still served
+    s.t.reconnect();
+    await waitFor(() => s.t.subscriptionsWatchers === 2, "re-subscribed");
+    s.t.setSubscriptions([fakeView({ repo: "acme/demo", number: 1 }), fakeView({ repo: "acme/demo", number: 2 })]);
+    expect((await rpcCall<any[]>(sockOf(s), "pr.list")).map((v) => v.number)).toEqual([1, 2]);
+  });
+
+  it("the agent's environment carries the socket path, and DORKS_REAL_GH, but no other DORKS_* variable", async () => {
+    const s = await setup({ host: { DORKS_REAL_GH: "/opt/gh/bin/gh" } });
+    await s.bridge.start();
+    configure(s.t);
+    await waitFor(() => s.t.of("ready").length, "ready");
+    const rep = await readReport(s.report);
+    expect(rep.env.DORKS_SOCK).toBe(sockOf(s));
+    expect(rep.env.DORKS_REAL_GH).toBe("/opt/gh/bin/gh");
+    expect(rep.envKeys.filter((k: string) => k.startsWith("DORKS_")).sort()).toEqual(["DORKS_REAL_GH", "DORKS_SOCK"]);
+  });
+});
+
+describe("autonomy: hooks", () => {
+  const sockOf = (s: { state: string }) => join(s.state, "cred.sock");
+  const ready = async (opts: Parameters<typeof setup>[0] = {}) => {
+    const s = await setup(opts);
+    await s.bridge.start();
+    configure(s.t);
+    await waitFor(() => s.t.of("ready").length, "ready");
+    return s;
+  };
+  const settingsOf = (s: { state: string }) => JSON.parse(readFileSync(join(s.state, "claude-settings.json"), "utf8"));
+  /** Runs a hook the way Claude Code does: the settings file's command through a shell, the hook JSON on stdin, DORKS_SOCK in the environment. */
+  const runHook = async (s: Awaited<ReturnType<typeof ready>>, event: "Stop" | "PostToolUse" | "SessionStart", input: object) => {
+    const hook = settingsOf(s).hooks[event][0].hooks[0];
+    const p = execFileP("sh", ["-c", hook.command], { env: { PATH: process.env.PATH, DORKS_SOCK: sockOf(s) } });
+    p.child.stdin!.end(JSON.stringify({ session_id: "sess1", hook_event_name: event, ...input }));
+    const { stdout } = await p;
+    return stdout ? JSON.parse(stdout) : null;
+  };
+  const dir = (s: { work: string }) => join(s.work, "acme/demo");
+  const commit = (s: { work: string; remote: ReturnType<typeof makeRemote> }, file: string) => {
+    writeFileSync(join(dir(s), file), "x\n");
+    s.remote.sh(dir(s), "add", ".");
+    s.remote.sh(dir(s), "commit", "-q", "-m", file);
+  };
+  const notify = (id: string, kinds: ("ready" | "ci_failed")[]) => ({ cid: id, frame: { t: "notify" as const, id, text: "<dorks-event>…</dorks-event>", kinds, prs: [{ repo: "acme/demo", number: 12 }] } });
+
+  it("writes the hook settings before the agent starts and passes them with --settings; the repo's own settings are left alone", async () => {
+    const s = await ready();
+    const file = join(s.state, "claude-settings.json");
+    const rep = await readReport(s.report);
+    expect(rep.argv.slice(rep.argv.indexOf("--settings"), rep.argv.indexOf("--settings") + 2)).toEqual(["--settings", file]);
+    expect(statSync(file).mode & 0o777).toBe(0o644);
+    const hooks = settingsOf(s).hooks;
+    expect(Object.keys(hooks).sort()).toEqual(["PostToolUse", "SessionStart", "Stop"]);
+    expect(hooks.Stop[0].hooks[0].command).toBe(`'${process.execPath}' '${cli}' dorks hook stop`);
+    expect(hooks.PostToolUse[0].matcher).toBe("Bash");
+    expect(hooks.SessionStart[0].matcher).toBe("startup|resume|compact");
+    expect(existsSync(join(dir(s), ".claude"))).toBe(false); // nothing is written into the repo
+  });
+
+  it("keeps --settings on a resumed session", async () => {
+    const s = await ready({ resume: "11111111-2222-3333-4444-555555555555" });
+    const rep = await readReport(s.report);
+    expect(rep.argv).toEqual(expect.arrayContaining(["--resume", "11111111-2222-3333-4444-555555555555", "--settings", join(s.state, "claude-settings.json")]));
+  });
+
+  it("Stop: the command from the settings file blocks on unpushed work once, then lets the agent stop", async () => {
+    const s = await ready();
+    expect(await runHook(s, "Stop", { stop_hook_active: false })).toBeNull(); // the fresh dork branch has no commits yet
+    commit(s, "a.txt");
+    const blocked = await runHook(s, "Stop", { stop_hook_active: false });
+    expect(blocked.decision).toBe("block");
+    expect(blocked.reason).toContain("branch dork/abc: 1 commit not pushed anywhere (no upstream)");
+    expect(await runHook(s, "Stop", { stop_hook_active: true })).toBeNull();
+    expect(await runHook(s, "Stop", { stop_hook_active: false })).toBeNull(); // raised already
+    expect(s.logs.join("\n")).toContain("hook stop: blocked for unpublished");
+  });
+
+  it("Stop: pushing and opening a PR clears it; the turn answering a `ready` notification is not gated", async () => {
+    const s = await ready();
+    commit(s, "a.txt");
+    s.t.emit([notify("n1", ["ready"])]);
+    await waitFor(() => s.t.of("ack").some((a) => a.id === "n1"), "ready notify delivered");
+    expect(await runHook(s, "Stop", {})).toBeNull();
+    s.t.emit([notify("n2", ["ci_failed"])]);
+    await waitFor(() => s.t.of("ack").some((a) => a.id === "n2"), "ci notify delivered");
+    expect((await runHook(s, "Stop", {})).decision).toBe("block");
+  });
+
+  it("Stop: a pushed branch counts as covered once a subscription names it as its head (the backend's lowercase repo)", async () => {
+    const s = await ready();
+    commit(s, "a.txt");
+    s.remote.sh(dir(s), "push", "-q", "-u", "origin", "dork/abc");
+    s.t.setSubscriptions([{ ...fakeView({ repo: "acme/demo", number: 12 }), headRef: "dork/abc" }]);
+    expect(await runHook(s, "Stop", {})).toBeNull();
+  });
+
+  it("PostToolUse: subscribes to the PR `gh pr create` printed", async () => {
+    const s = await ready();
+    const out = await runHook(s, "PostToolUse", { tool_name: "Bash", tool_input: { command: "gh pr create --fill" }, tool_response: { stdout: "https://github.com/Acme/Demo/pull/12\n", stderr: "" } });
+    expect(out).toBeNull();
+    expect(s.t.prCalls).toEqual([{ op: "sub", ref: { repo: "Acme/Demo", number: 12 }, source: "auto" }]);
+    // the shim and the hook race benignly: the second one finds it listed and does nothing
+    await runHook(s, "PostToolUse", { tool_name: "Bash", tool_input: { command: "gh pr create --fill" }, tool_response: { stdout: "https://github.com/acme/demo/pull/12\n", stderr: "" } });
+    expect(s.t.prCalls).toHaveLength(1);
+    await runHook(s, "PostToolUse", { tool_name: "Bash", tool_input: { command: "gh pr merge 12 --squash" }, tool_response: { stdout: "", stderr: "✓ Squashed and merged pull request acme/demo#12 (t)\n" } });
+    expect(s.t.prCalls.at(-1)).toEqual({ op: "unsub", ref: { repo: "acme/demo", number: 12 } });
+    expect(s.t.subscriptions).toEqual([]);
+  });
+
+  it("SessionStart: adds the subscribed PRs from the backend's list", async () => {
+    const s = await ready();
+    s.t.setSubscriptions([{ ...fakeView({ repo: "acme/demo", number: 12 }), title: "Fix login", ci: "failing" }]);
+    const out = await runHook(s, "SessionStart", { source: "resume" });
+    expect(out.hookSpecificOutput.hookEventName).toBe("SessionStart");
+    expect(out.hookSpecificOutput.additionalContext).toContain('- acme/demo#12 "Fix login": CI failing');
+  });
+
+  it("Stop: a work dir with no repositories in it is not an error", async () => {
+    const s = await ready();
+    rmSync(s.work, { recursive: true, force: true }); // the scan finds no repositories: not an error
+    expect(await runHook(s, "Stop", {})).toBeNull();
+    expect(JSON.stringify(s.logs)).not.toContain(GH_TOKEN);
+  });
+});

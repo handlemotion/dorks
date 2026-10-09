@@ -1,4 +1,4 @@
-import { appError, type AppErrorCode, type CommandFrame, type FromBridge, type ToBridge } from "@dorks/shared";
+import { appError, type AppErrorCode, type CommandFrame, type FromBridge, type PrRef, type ToBridge } from "@dorks/shared";
 import { ConvexClient } from "convex/browser";
 import { anyApi } from "convex/server";
 
@@ -20,6 +20,11 @@ export interface Transport {
   configure(): Promise<Extract<ToBridge, { t: "configure" }> | null>;
   ghToken(): Promise<string | null>;
   subscribeCommands(onCommands: (cmds: CommandEntry[]) => void, onError: () => void): () => void;
+  /** Idempotent. `auto`: the gh shim saw this dork create the PR; `agent`: the agent asked (`dorks pr sub`). */
+  subscribePr(ref: PrRef, source: "auto" | "agent"): Promise<void>;
+  unsubscribePr(ref: PrRef): Promise<void>;
+  /** The reactive `bridge.subscriptions` query: this dork's non-ended subscriptions (SubscriptionView[], validated by the caller). */
+  subscribeSubscriptions(onList: (views: unknown) => void, onError: () => void): () => void;
   /** Fires each time the underlying connection comes back after a drop. */
   onReconnect(cb: () => void): () => void;
   /** True when an error means the backend will never accept this bridge (wrong secret / dork deleted): retrying is pointless. */
@@ -65,6 +70,18 @@ export class ConvexTransport implements Transport {
 
   subscribeCommands(onCommands: (cmds: CommandEntry[]) => void, onError: () => void) {
     return this.client.onUpdate(anyApi.bridge.commands, this.creds, (cmds) => onCommands(cmds as CommandEntry[]), onError);
+  }
+
+  subscribePr = async (ref: PrRef, source: "auto" | "agent") => {
+    await this.client.mutation(anyApi.bridge.subscribe, { ...this.creds, ...ref, source });
+  };
+
+  unsubscribePr = async (ref: PrRef) => {
+    await this.client.mutation(anyApi.bridge.unsubscribe, { ...this.creds, ...ref });
+  };
+
+  subscribeSubscriptions(onList: (views: unknown) => void, onError: () => void) {
+    return this.client.onUpdate(anyApi.bridge.subscriptions, this.creds, onList, onError);
   }
 
   onReconnect(cb: () => void) {

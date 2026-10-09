@@ -2,6 +2,7 @@ import { errorEvent } from "@dorks/shared";
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { append, beginPause, BRIDGE_STALE_MS, cancelTimer, dispatch, enqueue, enqueueConfigure, finishPause, GH_REFRESH_MS, HEARTBEAT_MS, isAwake, queued, runtimeOf, schedulePauseRetry, setTimer } from "./lib/dispatch";
+import { foldInbox } from "./lib/notify";
 
 /** Fired by the scheduler (see lib/dispatch.ts setTimer). Replaces Dork.runTimer + the alarm multiplexer. */
 export const timer = internalMutation({
@@ -25,6 +26,9 @@ export const timer = internalMutation({
         if (dork.state !== "working" && dork.state !== "idle") break;
         await enqueue(ctx, dorkId, "gh_token"); // marker only: the bridge calls bridge.ghToken to fetch the token
         await setTimer(ctx, dorkId, "gh_token", GH_REFRESH_MS);
+        break;
+      case "notify":
+        await foldInbox(ctx, dorkId); // the debounce window closed: everything buffered becomes one notification
         break;
       case "flush":
         await finishPause(ctx, dorkId); // flush timeout (a no-op if the pause was cancelled meanwhile)
