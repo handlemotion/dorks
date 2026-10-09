@@ -12,8 +12,8 @@ API() { curl -fsS -H "X-Box-Api-Key: $UPSTASH_BOX_API_KEY" "$@"; }
 JSON() { API -H 'Content-Type: application/json' "$@"; }
 STAMP="$(date +%Y%m%d)"
 
-# 1. bridge tarball (see infra/bridge for its real build command)
-TGZ="$(cd infra/bridge && npm pack --silent | tail -1)"
+# 1. bridge bundle: one self-contained file (dist/cli.mjs is gitignored, so it must be built first; npm pack would omit it)
+pnpm --filter @dorks/bridge build
 
 # 2. build box: no env_vars, no agent, no init_command (snapshots keep agent config; keep secrets out)
 BOX="$(JSON -X POST "$BASE/v2/box" -d '{"name":"dorks-base-build","runtime":"node","labels":["dorks-base"]}' | node -pe 'JSON.parse(require("fs").readFileSync(0)).id')"
@@ -22,8 +22,8 @@ until [ "$(API "$BASE/v2/box/$BOX" | node -pe 'JSON.parse(require("fs").readFile
 exec_() { JSON -X POST "$BASE/v2/box/$BOX/exec" -d "$(node -pe 'JSON.stringify({command:["sh","-c",process.argv[1]]})' "$1")"; echo; }
 
 # 3. install Claude Code + dorks-bridge
-API -X POST "$BASE/v2/box/$BOX/files/upload" -F "paths=/workspace/home/dorks-bridge.tgz" -F "files=@infra/bridge/$TGZ;filename=dorks-bridge.tgz"
-exec_ 'sudo npm install -g @anthropic-ai/claude-code /workspace/home/dorks-bridge.tgz && rm /workspace/home/dorks-bridge.tgz'
+API -X POST "$BASE/v2/box/$BOX/files/upload" -F "paths=/workspace/home/dorks-bridge.mjs" -F "files=@infra/bridge/dist/cli.mjs;filename=dorks-bridge.mjs"
+exec_ 'sudo npm install -g @anthropic-ai/claude-code && sudo install -m 755 /workspace/home/dorks-bridge.mjs /usr/local/bin/dorks-bridge && rm /workspace/home/dorks-bridge.mjs'
 
 # 4. verify (check exit_code is 0 in the output)
 exec_ 'node --version && git --version && claude --version && command -v dorks-bridge'
