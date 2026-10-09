@@ -12,8 +12,9 @@ type ProviderAuthClient = ComponentProps<typeof ConvexBetterAuthProvider>['authC
 export function AuthShell({ children }: { children: ReactNode }) {
   return (
     <ConvexBetterAuthProvider client={convex} authClient={authClient as unknown as ProviderAuthClient}>
-      <AuthLoading><p>Loading…</p></AuthLoading>
-      <Unauthenticated><SignIn /></Unauthenticated>
+      {/* The signed-in <main> is AppShell's; these states get their own so every page state has the landmark. */}
+      <AuthLoading><main><p>Loading…</p></main></AuthLoading>
+      <Unauthenticated><main><SignIn /></main></Unauthenticated>
       <Authenticated>
         <AppShell sidebar={<AppSidebar />}>{children}</AppShell>
       </Authenticated>

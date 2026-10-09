@@ -42,7 +42,7 @@ How each process gets env:
 
 - **web (Vite)** / **ios (Expo)**: `VITE_*` / `EXPO_PUBLIC_*` are read from the process env at dev/build time (public values; after changing them for Expo, restart with `--clear`).
 - **convex**: functions read the _deployment's_ env, not the shell. `sync-env.mjs` pushes every `process.env.NAME` the functions use (scanned from `convex/`, `CONVEX_*` excluded) with `convex env set`, values via stdin. Names missing from Doppler, or still `REPLACE_ME__*`, are listed and left alone on the deployment. Deployment selection is `convex dev`'s own gitignored `apps/convex/.env.local`.
-- **CI** uses no Doppler and no real secrets (inline generated values in `.github/workflows/ci.yml`).
+- **CI** uses no Doppler. It has one real secret, the GitHub Actions repository secret `CENTRAL_LICENSE_KEY` (needed by `pnpm install`, see the inventory); every other value is generated inline in `.github/workflows/ci.yml`.
 
 Values are read once at process start; restart after changing one. Changes in Doppler apply to the next `doppler run`.
 
