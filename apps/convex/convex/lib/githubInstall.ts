@@ -37,7 +37,17 @@ export async function userHasInstallation(userToken: string, installationId: num
   return false;
 }
 
-/** Full check used by the Convex action. */
-export async function verifyInstallationOwnership(code: string, installationId: number, app: GithubOAuthApp, fetcher: typeof fetch = fetch): Promise<boolean> {
-  return userHasInstallation(await exchangeUserCode(code, app, fetcher), installationId, fetcher);
+/** The GitHub login the token belongs to. */
+export async function userLogin(userToken: string, fetcher: typeof fetch = fetch): Promise<string> {
+  const res = await fetcher("https://api.github.com/user", {
+    headers: { Authorization: `Bearer ${userToken}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": UA },
+  });
+  if (!res.ok) throw new Error(`GitHub user lookup failed: ${res.status}`);
+  return ((await res.json()) as { login: string }).login;
+}
+
+/** Full check used by the Convex action: the user's GitHub login if they can see the installation, else null. */
+export async function verifyInstallationOwnership(code: string, installationId: number, app: GithubOAuthApp, fetcher: typeof fetch = fetch): Promise<{ login: string } | null> {
+  const token = await exchangeUserCode(code, app, fetcher);
+  return (await userHasInstallation(token, installationId, fetcher)) ? { login: await userLogin(token, fetcher) } : null;
 }

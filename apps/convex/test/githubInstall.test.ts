@@ -15,6 +15,7 @@ function fakeGithub(opts: { owned: number[]; codes?: Record<string, string>; pag
       const token = (opts.codes ?? { good: "ghu_alice" })[body.code];
       return Response.json(token ? { access_token: token } : { error: "bad_verification_code" });
     }
+    if (url === "https://api.github.com/user") return Response.json({ login: "alice" });
     const u = new URL(url);
     const page = Number(u.searchParams.get("page"));
     const size = opts.pageSize ?? 100;
@@ -25,14 +26,14 @@ function fakeGithub(opts: { owned: number[]; codes?: Record<string, string>; pag
 }
 
 describe("github installation ownership", () => {
-  it("accepts an installation the user can see", async () => {
+  it("accepts an installation the user can see, and reports their GitHub login", async () => {
     const { fetcher } = fakeGithub({ owned: [11, 22] });
-    expect(await verifyInstallationOwnership("good", 22, app, fetcher)).toBe(true);
+    expect(await verifyInstallationOwnership("good", 22, app, fetcher)).toEqual({ login: "alice" });
   });
 
   it("rejects someone else's installation id (the review's attack)", async () => {
     const { fetcher } = fakeGithub({ owned: [11, 22] });
-    expect(await verifyInstallationOwnership("good", 999, app, fetcher)).toBe(false);
+    expect(await verifyInstallationOwnership("good", 999, app, fetcher)).toBeNull();
   });
 
   it("rejects an invalid or replayed code without leaking it", async () => {

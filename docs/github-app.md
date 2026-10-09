@@ -16,12 +16,14 @@ How it fits together:
    install the App on their own org and send a victim the resulting callback URL. So the page links automatically only when
    `state` matches this tab's `sessionStorage` **and** nothing is linked yet; otherwise it asks the user to confirm "Link
    installation N" (and says it will replace the existing one). The `code` is removed from the address bar as soon as the page loads.
-4. When a box asks for secrets, `bridge.configure` / `bridge.ghToken` mint an installation token **scoped to that dork's repository
-   with `contents: write` + `pull_requests: write` only**. The box runs untrusted agent code, so the token never covers the
-   installation's other repos or permissions. GitHub reports which `owner/name` repos the token covers; a token for a same-named repo under
-   a different owner is refused. Tokens last 1 hour and are refreshed every 45 minutes. A refresh that fails on a 5xx, rate limit or network
-   error is retried with backoff (2, 4, 8, then every 10 minutes). Other failures (installation removed, repo deselected, bad key) are not
+4. When a box asks for secrets, `bridge.configure` / `bridge.ghToken` mint an **installation-wide** token (no `repositories` filter:
+   the agent may work in any repo the installation reaches, see `docs/autonomy.md`) with `contents`, `pull_requests`, `issues` and
+   `workflows` **write** and `checks`, `actions` and `statuses` **read** only. The box runs untrusted agent code, so the token never
+   carries more than these permissions. Tokens last 1 hour and are refreshed every 45 minutes. A refresh that fails on a 5xx, rate limit or network
+   error is retried with backoff (2, 4, 8, then every 10 minutes). Other failures (installation removed, permissions not accepted, bad key) are not
    retried early. After 3 consecutive failures (immediately for a permanent one) one error event is added to the dork's transcript.
+   Separately, subscribing a dork to a PR makes the backend read that PR with a short-lived `pull_requests: read` token of the
+   owner's installation (it never reaches a box). A PR the installation cannot see ends the subscription.
 
 ## 1. Register the App
 
@@ -36,7 +38,7 @@ owned by an org).
 | **Request user authorization (OAuth) during installation** | **checked.** Required: without it GitHub sends no `code`, ownership cannot be verified, and linking fails |
 | Expire user authorization tokens | leave on (default); the token is used once and discarded |
 | Setup URL | not used (disabled while OAuth-during-install is on) |
-| Webhook → Active | **unchecked for now.** The PR webhook is a later change. When it lands: check Active, URL `https://<convex site>/github/webhook` (placeholder, the route does not exist yet), set a webhook secret, and subscribe to **Pull request** events |
+| Webhook → Active | **checked** (see [section 4](#4-the-webhook)). URL `https://<deployment>.convex.site/github/webhook` (the Convex *site* URL, the same host as `VITE_CONVEX_SITE_URL`), secret = `GITHUB_WEBHOOK_SECRET`, SSL verification on, content type `application/json`. Subscribe to exactly these events: **Pull request**, **Pull request review**, **Pull request review comment**, **Issue comment**, **Check suite**, **Push** |
 | Where can this App be installed? | **Any account** if people install it from accounts other than the App owner's; otherwise **Only on this account** |
 
 **Repository permissions** (everything else: *No access*):
@@ -44,16 +46,24 @@ owned by an org).
 | Permission | Access | Why |
 |---|---|---|
 | Contents | Read and write | `git push` of the agent branch |
-| Pull requests | Read and write | open the PR (and receive `pull_request` webhooks later) |
+| Pull requests | Read and write | open the PR, comment on and reply in review threads; receive the `pull_request`, `pull_request_review` and `pull_request_review_comment` webhooks |
+| Issues | Read and write | PR conversation comments are issue comments (`gh pr comment`, the stalled-CI comment, and the `issue_comment` webhook) |
+| Workflows | Read and write | the agent may fix CI config (`.github/workflows/**`) when a run fails |
+| Checks | Read-only | CI results: the `check_suite` webhook (read access is enough to subscribe to it) |
+| Actions | Read-only | `gh run view --log-failed` |
+| Commit statuses | Read-only | CI results reported as statuses |
 | Metadata | Read-only | mandatory, granted automatically |
 
-No account or organization permissions. Do **not** grant *Workflows*: with it a prompt-injected agent could push CI changes that
-run with repo secrets, and pushes that touch `.github/workflows/**` will be rejected (this is intended).
+No account or organization permissions. Granting *Workflows* is a deliberate trade-off (docs/autonomy.md decision 6): a
+prompt-injected agent can push CI changes that run with repo secrets, so keep branch protection and required reviews on repos
+the App can reach.
 
-The token request asks for exactly `contents: write` and `pull_requests: write` (`AGENT_TOKEN_PERMISSIONS` in
-`apps/convex/core/github.ts`). GitHub answers **422** if the request asks for more than the App itself has, so the two
-permissions above must be granted on the App. If you change the set, change both places. Installations created before a permission
-change must accept the new permissions on GitHub before tokens work.
+The token request asks for exactly these permissions (`AGENT_TOKEN_PERMISSIONS` in `apps/convex/core/github.ts`). GitHub answers
+**422** if the request asks for more than the App itself has, so all of them must be granted on the App. If you change the set,
+change both places. **Installations must accept new permissions:** when you add permissions to an App that is already installed,
+GitHub emails the account owner and keeps the old permission set until they approve the update (App settings -> Install App ->
+the installation's *Review request*, or `https://github.com/settings/installations/<id>`). Until then token requests fail with
+422 and dorks show `GitHub App permissions are out of date; accept the new permissions on the installation`.
 
 After creating the App:
 
@@ -61,6 +71,8 @@ After creating the App:
 - Note the **Client ID** (`Iv…`) → `GITHUB_APP_CLIENT_ID`.
 - **Generate a new client secret** → `GITHUB_APP_CLIENT_SECRET` (shown once).
 - **Generate a private key** (downloads a `.pem`) → see below.
+- Note the **slug** (`github.com/apps/<slug>`) → `GITHUB_APP_SLUG`.
+- The **webhook secret** is generated by us (`GITHUB_WEBHOOK_SECRET` in `secrets/`); paste the same value into the App's webhook settings.
 
 ## 2. Convert the private key to PKCS#8
 
@@ -85,6 +97,8 @@ npx convex env set GITHUB_APP_ID 123456
 npx convex env set GITHUB_APP_CLIENT_ID Iv23xxxxxxxxxxxxxxxx
 npx convex env set GITHUB_APP_CLIENT_SECRET <client secret>
 npx convex env set GITHUB_APP_PRIVATE_KEY -- "$(cat app.pkcs8.pem)"
+npx convex env set GITHUB_APP_SLUG dorks            # the <slug> of the App: its bot user is `dorks[bot]`
+npx convex env set GITHUB_WEBHOOK_SECRET <the secret you pasted into the App's webhook settings>
 ```
 
 Web (read at build time by Vite, so it must be present when `vite build` / `vite dev` runs, not just at runtime):
@@ -95,14 +109,62 @@ VITE_GITHUB_APP_SLUG=dorks   # the <slug> in https://github.com/apps/<slug>
 
 Without `VITE_GITHUB_APP_SLUG` the Settings page shows an error instead of the install link.
 
-## 4. Local development without a real App
+## 4. The webhook
+
+`POST https://<deployment>.convex.site/github/webhook` (`apps/convex/convex/http.ts`):
+
+1. **Not configured → 503.** While `GITHUB_WEBHOOK_SECRET` or `GITHUB_APP_SLUG` is unset the route refuses every delivery without reading (or logging) the
+   body. The slug is required because the App's own comments must be recognised, or the dork would answer itself.
+2. **Signature.** `X-Hub-Signature-256` is checked over the raw body (`verifyWebhook`); a missing or wrong one is 401.
+3. **Parse.** `lib/githubEvents.ts` turns the payload into a small typed event or `null`. `null` (events and actions we do not act on, including
+   `ping`, `installation` and `installation_repositories`) is acknowledged with 200 and not recorded.
+4. **Route** in one mutation (`github.ingest`): the delivery id (`X-GitHub-Delivery`) is recorded in `githubDeliveries` (a redelivery is a no-op; a cron prunes ids
+   after a week), then the event goes to the subscriptions of that PR. A subscription only receives an event if `payload.installation.id` is the installation its
+   owner linked, so another account's installation cannot feed events to your dorks.
+
+| Event | Handling |
+|---|---|
+| `pull_request` closed | the subscriptions end (`merged` / `closed` in the transcript); the dork is told unless it closed the PR itself |
+| `pull_request` synchronize | head SHA updated, CI back to pending; counts as a CI fix attempt if a `ci_failed` had been handed to the agent |
+| `pull_request` edited, base changed | `base_changed` |
+| `pull_request_review` submitted | `review`; approval / change request tracked for `ready` |
+| `pull_request_review_comment`, `issue_comment` (PRs only) created | `comment`, gated by the owner's comment policy |
+| `check_suite` completed | `ci_failed`, or CI green; matched by head branch **and** the current head SHA |
+| `push` to a branch a subscribed PR targets | schedules a mergeability re-read, poll with backoff while GitHub has not computed it; `conflict` once per base SHA |
+
+**Self-filter.** Events whose sender is `<slug>[bot]` never wake the dork: its own comments and reviews are dropped. Its pushes still update the head SHA and
+reset CI (that is how an attempt is counted), and a PR it closes still ends. CI results and pushes to a base branch are not filtered: they describe the
+code, and every dork of every user shares the one bot identity, so "sent by the App" does not mean "caused by this dork".
+
+**CI policy.** Up to two fix attempts per PR (`CI_FIX_MAX_ATTEMPTS`). After the second push, the next failure *stalls* the subscription: no more CI
+notifications, a `stalled` transcript event, and one PR comment from the App ("a human needs to look", linking the failing run). The counter resets, and a stalled PR
+resumes, on green CI, on a comment from a person that passes the comment policy (a bot's comment does not), on a message to the dork, and on resubscribing.
+`ready` (CI green and the PR approved) is delivered once per head SHA. A PR nobody reviewed is never `ready`: whether a repo requires reviews is not knowable
+without admin permissions.
+
+**Which CI the App sees.** Each workflow run of GitHub Actions is its own check suite, created by the `github-actions` app, not by ours. GitHub's webhook reference (checked 2026-10-08) says
+an App needs only *Checks: read* to subscribe to `check_suite` (and `check_run`) and that repository-level deliveries carry the `completed` action, but it does not state whether
+`check_suite.completed` is sent to an App for suites another app created. We rely on it (it is how other Apps observe Actions) and it is the first thing to verify against a real
+installation (docs/autonomy.md, open check 5). If it turns out not to hold, subscribe the App to **Check run** and **Workflow run** as well and map `check_run.completed` /
+`workflow_run.completed` the same way; no new permission is needed (*Actions: read*, already granted, covers `workflow_run`). CI that reports only through the commit *statuses* API
+(no check runs) sends `status` events, which are not handled.
+Green is confirmed, not inferred: every workflow run is its own suite, so a passing `check_suite.completed` only schedules an action that reads all check suites of the head
+(`GET /repos/{repo}/commits/{sha}/check-suites`, *Checks: read*). Only when every suite is completed and none failed does CI turn green: that resets the CI fix attempts, un-stalls and
+can deliver `ready`. If a suite is still running, nothing changes and that suite's own `completed` event runs the check again, so a fast green workflow cannot reset the attempt budget
+while a slow one is still running or red. Suites with no check runs, and cancelled / stale / `action_required` ones, do not hold green back. Suites for a commit other than the PR's
+current head are ignored.
+
+Debugging: the App's **Advanced** tab lists recent deliveries with their status codes and lets you redeliver one (the same delivery id: a redelivery of a handled one is ignored by design;
+use a fresh event to test).
+
+## 5. Local development without a real App
 
 With `BOX_PROVIDER=sim` on the Convex deployment, `settings.linkGithubInstallation` accepts `code=sim` without calling GitHub and
 `bridge.ghToken` returns a fake token. Open `http://localhost:3000/github/callback?installation_id=1&code=sim` after signing in.
 `apps/convex/scripts/settings-e2e.mjs` drives the whole onboarding this way (see the header of that script for how to run it).
 To exercise the real flow locally, register a second App whose callback URL is the `localhost` one above.
 
-## 5. Errors on the callback page
+## 6. Errors on the callback page
 
 | Code | Meaning |
 |---|---|
@@ -116,12 +178,12 @@ GitHub's response body). The dork shows:
 
 | Message | Cause |
 |---|---|
-| `GitHub App can't access <owner/name>; add it to the installation` | GitHub answered 404/422: the installation is set to "Only select repositories" and this repo is not selected, or the App was removed from it. Add the repo to the installation on GitHub. |
-| `GitHub App is not installed on the owner of <owner/name>; install it there` | the linked installation belongs to a different account than the repo's owner |
+| `GitHub App permissions are out of date; accept the new permissions on the installation` | GitHub answered 422: the App has not been granted every permission in `AGENT_TOKEN_PERMISSIONS`, or the installation owner has not accepted the update yet |
+| `GitHub App installation not found; install the App again` | GitHub answered 404: the installation was removed |
 | `GitHub access is failing…` | token refreshes keep failing; pushes stop working when the current token expires |
 
-A 422 can also mean the App itself lacks one of the two permissions above, but a repo that is not part of the installation is the more
-common cause.
+The token is installation-wide, so a repo the installation does not cover is no longer caught when the token is minted: it shows up
+when the bridge clones it (or when the agent tries to push to it).
 
 ## What needs a human
 
@@ -130,4 +192,4 @@ common cause.
   Convex variables on each deployment.
 - Adding the prod web host to the App's callback URLs and setting `VITE_GITHUB_APP_SLUG` in the prod web build.
 - Each user installing the App on the repositories they want dorks to work in (and an org owner approving, for org-owned repos).
-- Later: the webhook URL + secret once the PR webhook change lands.
+- Pasting the webhook URL and `GITHUB_WEBHOOK_SECRET` into the App, subscribing to the six events, and setting `GITHUB_APP_SLUG` on every Convex deployment.

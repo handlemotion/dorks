@@ -1,6 +1,6 @@
 # Base snapshot
 
-Every dork box is a restore of one **base snapshot** (`POST /v2/box/from-snapshot`, see [`docs/upstash-box.md`](../../docs/upstash-box.md)). It is built once by hand, and rebuilt whenever Node, the Claude Code CLI or `dorks-bridge` change. Boxes already created keep their old filesystem; only new boxes pick up a new snapshot.
+Every dork box is a restore of one **base snapshot** (`POST /v2/box/from-snapshot`, see [`docs/upstash-box.md`](../../docs/upstash-box.md)). It is built once by hand, and rebuilt whenever Node, the Claude Code CLI, `gh` / `gh stack` or `dorks-bridge` change. Boxes already created keep their old filesystem; only new boxes pick up a new snapshot.
 
 The snapshot must contain:
 
@@ -9,7 +9,11 @@ The snapshot must contain:
 | Node.js (the `node` runtime has it) | runs the bridge and Claude Code |
 | `git` | clone/branch/commit/push (the bridge sets up credentials from `bridge.ghToken`) |
 | Claude Code CLI (`claude`, from `@anthropic-ai/claude-code`) | the agent the bridge drives |
-| `dorks-bridge` on `PATH` | `pnpm --filter @dorks/bridge build` makes one self-contained `infra/bridge/dist/cli.mjs`; it is installed as `/usr/local/bin/dorks-bridge` (not via `npm pack`: `dist/` is gitignored and the package has a `workspace:` dependency) |
+| `dorks-bridge` on `PATH` | `pnpm --filter @dorks/bridge build` makes one self-contained `infra/bridge/dist/cli.mjs`, installed as `/usr/local/bin/dorks-bridge` (not via `npm pack`: `dist/` is gitignored and the package has a `workspace:` dependency) |
+| `dorks` on `PATH` | the agent's CLI (`dorks pr sub\|unsub\|list`). Not a second program: a symlink `/usr/local/bin/dorks → dorks-bridge`; the binary picks its role from the name it is invoked as |
+| `gh` (GitHub CLI), pinned: v2.102.0 | the real one is installed at `/usr/bin/gh` |
+| `gh` **shim** ahead of it | a symlink `/usr/local/bin/gh → dorks-bridge`. It gets a fresh installation token from the bridge, runs `/usr/bin/gh` with it in `GH_TOKEN`, and auto-subscribes the dork to PRs it creates ([`docs/autonomy.md`](../../docs/autonomy.md)). **`/usr/local/bin` must come before `/usr/bin` on the PATH of the user that runs Claude**; step 4 checks it (`DORKS_REAL_GH` overrides the real gh's location) |
+| `gh stack` extension ([github/gh-stack](https://github.com/github/gh-stack)), pinned: v0.2.0 | stacked PRs. Installed by placing the release binary and a `manifest.yml` under `~/.local/share/gh/extensions/gh-stack/` of the box user (what `gh extension install` does, without needing a GitHub login at build time); do it as the user that runs Claude (`CLAUDE_RUN_AS`) if that is not the user of the build box. Needs gh ≥ 2.90 |
 
 The snapshot must **not** contain secrets: no Anthropic key, GitHub token, `DORK_ID`, `BRIDGE_URL` or `BRIDGE_SECRET`. Snapshots capture the filesystem *and the box's agent configuration* ([snapshots](https://upstash.com/docs/box/overall/snapshots)), so do not configure an agent or pass `env_vars` on the build box. The per-dork env and `init_command` are passed on each restore (they are **not** inherited from the snapshot).
 
@@ -28,8 +32,9 @@ Steps (the same as in the script):
 1. **Build the bridge bundle** locally: `pnpm --filter @dorks/bridge build` (produces `infra/bridge/dist/cli.mjs`).
 2. **Create the build box**: `POST /v2/box` `{ "name": "dorks-base-build", "runtime": "node", "labels": ["dorks-base"] }`, and poll `GET /v2/box/{id}` until `status` is not `creating`. No `init_command`, no `env_vars`, no agent.
 3. **Install**: upload the bundle (`POST /v2/box/{id}/files/upload`, multipart) and `exec`:
-   `sudo npm install -g @anthropic-ai/claude-code && sudo install -m 755 /workspace/home/dorks-bridge.mjs /usr/local/bin/dorks-bridge` (global installs need `sudo` in the box; `git` ships with the image, verify below).
-4. **Verify** with `exec`: `node --version && git --version && claude --version && command -v dorks-bridge`. If a check fails, fix it and re-run before snapshotting. Optional smoke test: `DORK_ID=x BRIDGE_URL=https://invalid.invalid BRIDGE_SECRET=x dorks-bridge` should start and fail to connect rather than crash on a missing module; then remove anything it wrote (`rm -rf ~/.dorks*`, `/tmp/dorks-*`).
+   - `sudo npm install -g @anthropic-ai/claude-code`, then install the bundle as `/usr/local/bin/dorks-bridge` with symlinks `dorks` and `gh` next to it (global installs need `sudo` in the box; `git` ships with the image, verify below);
+   - download the pinned `gh` release and the pinned `gh-stack` binary for the box's architecture (amd64 and arm64 are in the script), verify their SHA-256, put `gh` at `/usr/bin/gh` and the extension under `~/.local/share/gh/extensions/gh-stack/`. To bump a version, change the version and both checksums in `print-build-plan.sh` (gh publishes `gh_<v>_checksums.txt`; gh-stack publishes none, so hash the downloaded binary).
+4. **Verify** with `exec`: `node --version && git --version && claude --version && command -v dorks-bridge && command -v dorks`, that `command -v gh` is `/usr/local/bin/gh` (the shim) while `/usr/bin/gh --version` works, and `gh stack --help`. If a check fails, fix it and re-run before snapshotting. Optional smoke test: `DORK_ID=x BRIDGE_URL=https://invalid.invalid BRIDGE_SECRET=x dorks-bridge` should start and fail to connect rather than crash on a missing module; then remove anything it wrote (`rm -rf ~/.dorks*`, `/tmp/dorks-*`).
 5. **Snapshot**: `POST /v2/box/{id}/snapshots` `{ "name": "dorks-base-<yyyymmdd>" }`, then poll `GET /v2/box/{id}/snapshots` until that snapshot's `status` is `ready`. Its `id` (a UUID, e.g. `12caffe1-…`) is the value you want.
 6. **Delete the build box** (`DELETE /v2/box/{id}`); the snapshot is independent of it ([snapshots](https://upstash.com/docs/box/overall/snapshots)).
 

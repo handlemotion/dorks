@@ -7,13 +7,19 @@ export interface Ctx {
   state: DorkState;
   archived: boolean;
   hasBox: boolean;
-  /** At least one user message is persisted but not yet acknowledged by the bridge. */
+  /** At least one user message or notify is persisted but not yet acknowledged by the bridge. */
   queued: boolean;
+  /**
+   * An unacked notify is held back for the next turn boundary and no user message is ahead of it (user messages always go first).
+   * Absent = false.
+   */
+  notifyHeld?: boolean;
 }
 
 export type Input =
   | { t: "start" } // first-time creation, only valid in `creating` with no box
   | { t: "user_message" }
+  | { t: "notify" } // an autonomy notification (docs/autonomy.md) was persisted; it wakes a sleeping dork like a message, but never lands mid-turn
   | { t: "agent_ready" }
   | { t: "turn_idle" }
   | { t: "sleep_due" }
@@ -32,6 +38,7 @@ export type Effect =
   | "pause_box" // flush the bridge, then box.pause()
   | "cancel_pause" // drop a pending/in-flight pause: someone needs the box awake
   | "deliver_outbox"
+  | "release_notify" // held notifies may now be emitted: a turn boundary, or a fresh agent
   | "interrupt_agent"
   | "arm_sleep"
   | "cancel_sleep"
@@ -44,7 +51,7 @@ export interface Result {
   state: DorkState;
   archived: boolean;
   effects: Effect[];
-  /** The input was refused (message to an archived dork). Callers must not persist the message. */
+  /** The input was refused (message or notify to an archived dork). Callers must not persist it. */
   rejected?: "archived";
 }
 
@@ -61,14 +68,15 @@ export function reduce(c: Ctx, i: Input): Result {
     case "start":
       return c.state === "creating" && !c.hasBox ? stay(["create_box", "arm_watchdog"]) : stay();
 
-    case "user_message": {
+    case "user_message":
+    case "notify": {
       if (c.archived) return { ...stay(), rejected: "archived" };
       switch (c.state) {
         case "creating":
         case "waking":
           return stay(); // already on its way up; the outbox delivers on ready
         case "working":
-          return stay(["deliver_outbox"]); // steer mid-turn
+          return stay(i.t === "user_message" ? ["deliver_outbox"] : []); // a message steers mid-turn; a notify is held until `turn_idle`
         case "idle":
           return go("working", ["cancel_sleep", "cancel_pause", "deliver_outbox"]); // a sleep flush may be in flight
         case "sleeping":
@@ -82,8 +90,9 @@ export function reduce(c: Ctx, i: Input): Result {
     case "agent_ready":
       if (c.state === "creating" || c.state === "waking") {
         if (c.archived) return go("idle", ["cancel_watchdog", "pause_box"]);
+        // A fresh agent is between turns, so a notify that was held for the previous one can go out now.
         return c.queued
-          ? go("working", ["cancel_watchdog", "arm_gh_refresh", "deliver_outbox"])
+          ? go("working", ["cancel_watchdog", "arm_gh_refresh", ...(c.notifyHeld ? ["release_notify" as const] : []), "deliver_outbox"])
           : go("idle", ["cancel_watchdog", "arm_gh_refresh", "arm_sleep"]);
       }
       // bridge reconnected after a blip: redeliver anything unacked
@@ -92,6 +101,7 @@ export function reduce(c: Ctx, i: Input): Result {
 
     case "turn_idle":
       if (c.state !== "working") return stay();
+      if (c.notifyHeld) return stay(["release_notify", "deliver_outbox"]); // the turn boundary a held notify waited for
       if (c.queued) return stay(["deliver_outbox"]); // a message is in flight; the next turn is about to start
       return go("idle", c.archived ? ["pause_box"] : ["arm_sleep"]);
 
