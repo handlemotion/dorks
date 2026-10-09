@@ -30,7 +30,7 @@ Steps (the same as in the script):
 3. **Install**: upload the bundle (`POST /v2/box/{id}/files/upload`, multipart) and `exec`:
    `sudo npm install -g @anthropic-ai/claude-code && sudo install -m 755 /workspace/home/dorks-bridge.mjs /usr/local/bin/dorks-bridge` (global installs need `sudo` in the box; `git` ships with the image, verify below).
 4. **Verify** with `exec`: `node --version && git --version && claude --version && command -v dorks-bridge`. If a check fails, fix it and re-run before snapshotting. Optional smoke test: `DORK_ID=x BRIDGE_URL=https://invalid.invalid BRIDGE_SECRET=x dorks-bridge` should start and fail to connect rather than crash on a missing module; then remove anything it wrote (`rm -rf ~/.dorks*`, `/tmp/dorks-*`).
-5. **Snapshot**: `POST /v2/box/{id}/snapshots` `{ "name": "dorks-base-<yyyymmdd>" }`, then poll `GET /v2/box/{id}/snapshots` until that snapshot's `status` is `ready`. Its `id` (`snap_...`) is the value you want.
+5. **Snapshot**: `POST /v2/box/{id}/snapshots` `{ "name": "dorks-base-<yyyymmdd>" }`, then poll `GET /v2/box/{id}/snapshots` until that snapshot's `status` is `ready`. Its `id` (a UUID, e.g. `12caffe1-…`) is the value you want.
 6. **Delete the build box** (`DELETE /v2/box/{id}`); the snapshot is independent of it ([snapshots](https://upstash.com/docs/box/overall/snapshots)).
 
 Storage is billed at $0.10/GB-month including snapshots ([pricing](https://upstash.com/docs/box/overall/pricing)), so delete superseded snapshots once no dork needs them: `DELETE /v2/box/snapshots` with body `{"ids":["snap_..."]}` (explicit ids only; never `?all=true`, which deletes every snapshot on the account), or the console.
