@@ -108,7 +108,7 @@ describe("Outbox", () => {
   it("a fatal error (backend refuses us) stops retrying and reports", async () => {
     const t = new FakeTransport();
     t.pushImpl = async () => {
-      throw { data: { code: "forbidden" } };
+      throw { data: { code: "forbidden", message: "forbidden" } };
     };
     const onFatal = vi.fn();
     const o = mk(t, { onFatal });
@@ -222,7 +222,7 @@ describe("Outbox", () => {
   it("event_too_large: the offending event is replaced by a stub with the same bseq, and the stream moves on", async () => {
     const t = new FakeTransport();
     t.pushImpl = async (frames) => {
-      for (const f of frames) if (f.t === "event" && JSON.stringify(f.raw).length > 1000) throw { data: { code: "event_too_large" } };
+      for (const f of frames) if (f.t === "event" && JSON.stringify(f.raw).length > 1000) throw { data: { code: "event_too_large", message: "event_too_large" } };
     };
     const o = mk(t);
     o.push(ev(1));
@@ -236,7 +236,7 @@ describe("Outbox", () => {
   it("too_many_frames: the batch is split until the backend accepts it, nothing dropped", async () => {
     const t = new FakeTransport();
     t.pushImpl = async (frames) => {
-      if (frames.length > 7) throw { data: { code: "too_many_frames" } };
+      if (frames.length > 7) throw { data: { code: "too_many_frames", message: "too_many_frames" } };
     };
     const o = mk(t);
     for (let i = 1; i <= 40; i++) o.push(ev(i));

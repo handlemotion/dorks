@@ -1,4 +1,4 @@
-import type { CommandFrame, FromBridge, PrRef, ToBridge } from "@dorks/shared";
+import { appError, type AppErrorCode, type CommandFrame, type FromBridge, type PrRef, type ToBridge } from "@dorks/shared";
 import { ConvexClient } from "convex/browser";
 import { anyApi } from "convex/server";
 
@@ -31,11 +31,15 @@ export interface Transport {
   isFatal(err: unknown): boolean;
   isSleeping(err: unknown): boolean;
   /** The backend's error code (ConvexError data.code), if any: `event_too_large`, `too_many_frames`, ... */
-  errorCode(err: unknown): string | undefined;
+  errorCode(err: unknown): AppErrorCode | undefined;
   close(): Promise<void>;
 }
 
-const code = (e: unknown) => (e as { data?: { code?: unknown } } | null)?.data?.code;
+/** The backend's typed AppError code, or undefined when the rejection is not one (network drop, plain Error). */
+const code = (e: unknown): AppErrorCode | undefined => {
+  const r = appError.safeParse((e as { data?: unknown } | null)?.data);
+  return r.success ? r.data.code : undefined;
+};
 
 export class ConvexTransport implements Transport {
   private client: ConvexClient;
@@ -92,6 +96,6 @@ export class ConvexTransport implements Transport {
 
   isFatal = (e: unknown) => code(e) === "forbidden";
   isSleeping = (e: unknown) => code(e) === "sleeping";
-  errorCode = (e: unknown) => (typeof code(e) === "string" ? (code(e) as string) : undefined);
+  errorCode = code;
   close = () => this.client.close();
 }

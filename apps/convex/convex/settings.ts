@@ -1,5 +1,5 @@
 import { commentPolicy as commentPolicySchema, DEFAULT_COMMENT_POLICY } from "@dorks/shared";
-import { ConvexError, v } from "convex/values";
+import { v } from "convex/values";
 import { aad, encrypt, keyringFromEnv } from "../core/crypto";
 import { internal } from "./_generated/api";
 import { action, internalMutation, mutation, query } from "./_generated/server";
@@ -45,8 +45,8 @@ export const setClaudeToken = mutation({
   args: { token: v.string() },
   handler: async (ctx, { token }) => {
     const userId = await requireUserId(ctx);
-    if (!token.trim()) throw new ConvexError({ code: "invalid", message: "empty token" });
-    if (token.trim().length > MAX_CLAUDE_TOKEN_CHARS) throw new ConvexError({ code: "invalid", message: "token too long" });
+    if (!token.trim()) fail("invalid", "empty token");
+    if (token.trim().length > MAX_CLAUDE_TOKEN_CHARS) fail("invalid", "token too long");
     const row = await settingsRow(ctx, userId);
     await ctx.db.patch(row._id, { claudeTokenEnc: (await encrypt(ring(), token.trim(), aad.claudeToken(userId))).value });
   },
@@ -56,8 +56,8 @@ export const setCliSecret = mutation({
   args: { name: v.string(), value: v.string() },
   handler: async (ctx, { name, value }) => {
     const userId = await requireUserId(ctx);
-    if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(name)) throw new ConvexError({ code: "invalid", message: "bad secret name" });
-    if (new TextEncoder().encode(value).length > MAX_SECRET_BYTES) throw new ConvexError({ code: "invalid", message: "secret value too large" });
+    if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(name)) fail("invalid", "bad secret name");
+    if (new TextEncoder().encode(value).length > MAX_SECRET_BYTES) fail("invalid", "secret value too large");
     const valueEnc = (await encrypt(ring(), value, aad.secret(userId, name))).value;
     const existing = await ctx.db.query("userSecrets").withIndex("by_user_name", (q) => q.eq("userId", userId).eq("name", name)).unique();
     if (existing) await ctx.db.patch(existing._id, { valueEnc });
@@ -78,22 +78,22 @@ export const linkGithubInstallation = action({
   args: { installationId: v.number(), code: v.string() },
   handler: async (ctx, { installationId, code }) => {
     const userId = await requireUserId(ctx);
-    if (!Number.isSafeInteger(installationId) || installationId <= 0) throw new ConvexError({ code: "invalid", message: "bad installation id" });
+    if (!Number.isSafeInteger(installationId) || installationId <= 0) fail("invalid", "bad installation id");
     // Local dev/e2e only (BOX_PROVIDER=sim, already the "no real GitHub App" switch in bridge.ts): code "sim" skips GitHub.
     const simulated = process.env.BOX_PROVIDER === "sim" && code === "sim";
     let githubLogin: string | undefined;
     if (!simulated) {
       const clientId = process.env.GITHUB_APP_CLIENT_ID;
       const clientSecret = process.env.GITHUB_APP_CLIENT_SECRET;
-      if (!clientId || !clientSecret) throw new ConvexError({ code: "not_configured", message: "GitHub App OAuth is not configured" });
+      if (!clientId || !clientSecret) fail("not_configured", "GitHub App OAuth is not configured");
       let verified: { login: string } | null = null;
       try {
         verified = await verifyInstallationOwnership(code, installationId, { clientId, clientSecret });
       } catch (e) {
         console.error("github install verification failed", e instanceof Error ? e.message.slice(0, 200) : "unknown");
-        throw new ConvexError({ code: "github_error", message: "could not verify the GitHub installation" });
+        fail("github_error", "could not verify the GitHub installation");
       }
-      if (!verified) throw new ConvexError({ code: "forbidden", message: "installation is not authorized for this GitHub account" });
+      if (!verified) fail("forbidden", "installation is not authorized for this GitHub account");
       githubLogin = verified.login;
     }
     await ctx.runMutation(internal.settings.storeGithubInstallation, { userId, installationId, githubLogin });
@@ -113,7 +113,7 @@ export const setSleepMinutes = mutation({
   handler: async (ctx, { minutes }) => {
     const userId = await requireUserId(ctx);
     // NaN slips through Math.min/max, then `runAfter(NaN)` throws inside bridge.push and wedges the dork in `working`.
-    if (!Number.isFinite(minutes)) throw new ConvexError({ code: "invalid", message: "minutes must be a finite number" });
+    if (!Number.isFinite(minutes)) fail("invalid", "minutes must be a finite number");
     const row = await settingsRow(ctx, userId);
     await ctx.db.patch(row._id, { sleepMinutes: Math.min(Math.max(minutes, 0.05), 24 * 60) });
   },
@@ -127,8 +127,8 @@ export const setCommentPolicy = mutation({
   handler: async (ctx, { policy }) => {
     const userId = await requireUserId(ctx);
     const parsed = commentPolicySchema.safeParse(policy);
-    if (!parsed.success) throw new ConvexError({ code: "invalid", message: "bad comment policy" });
-    if (parsed.data.mode === "allowlist" && parsed.data.logins.some((l) => !l.trim() || l.length > MAX_ALLOWLIST_LOGIN_CHARS)) throw new ConvexError({ code: "invalid", message: "bad GitHub login in the allowlist" });
+    if (!parsed.success) fail("invalid", "bad comment policy");
+    if (parsed.data.mode === "allowlist" && parsed.data.logins.some((l) => !l.trim() || l.length > MAX_ALLOWLIST_LOGIN_CHARS)) fail("invalid", "bad GitHub login in the allowlist");
     const row = await settingsRow(ctx, userId);
     await ctx.db.patch(row._id, { commentPolicy: parsed.data });
   },

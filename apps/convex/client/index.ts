@@ -1,6 +1,6 @@
 // Shared by web (DOM) and Expo (native): the whole "live transcript" is one paginated, reactive query folded through the
 // existing pure `fold`. No sockets, tickets, `after=` cursors or gap handling.
-import { emptyView, fold, type ClientEvent, type DorkView } from "@dorks/shared";
+import { emptyView, fold, toAppError, type ClientEvent, type DorkView } from "@dorks/shared";
 import { usePaginatedQuery, useQuery } from "convex/react";
 import { useMemo } from "react";
 import type { Id } from "../convex/_generated/dataModel";
@@ -17,5 +17,6 @@ export function useDorkEvents(dorkId: Id<"dorks">, pageSize = 40): { view: DorkV
 
 export const useDork = (dorkId: Id<"dorks">) => useQuery(api.dorks.get, { dorkId });
 export const useDorks = (archived = false) => useQuery(api.dorks.list, { archived });
-export const errorCode = (e: unknown) => (e as { data?: { code?: string; message?: string } })?.data?.code ?? "failed";
-export const errorMessage = (e: unknown) => (e as { data?: { message?: string } })?.data?.message ?? "Something went wrong";
+export { toAppError };
+export const errorCode = (e: unknown) => toAppError(e).code;
+export const errorMessage = (e: unknown) => toAppError(e).message;

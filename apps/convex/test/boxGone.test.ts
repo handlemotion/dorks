@@ -62,7 +62,7 @@ describe("resume when the box no longer exists", () => {
       expect(after?.boxId).toBeUndefined();
       expect(after?.claudeSessionId).toBeUndefined(); // that session lived on the lost box's disk
       expect(after?.state).toBe("error");
-      expect(await errors(t, dorkId)).toEqual([{ type: "error", message: expect.stringContaining("no longer exists") }]);
+      expect(await errors(t, dorkId)).toEqual([{ type: "error", message: expect.stringContaining("no longer exists"), error: { code: "failed", message: expect.stringContaining("no longer exists") } }]);
 
       // Same path the user's next message takes (machine: error + !hasBox -> create_box).
       await t.action(internal.boxes.create, { dorkId, gen: await opGen(t, dorkId) });

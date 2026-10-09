@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { notifyKind, prRef } from "./autonomy";
+import { appError, type AppError } from "./errors";
 
 export const dorkState = z.enum(["creating", "working", "idle", "sleeping", "waking", "error"]);
 
@@ -21,7 +22,8 @@ export const clientEvent = z.discriminatedUnion("type", [
   z.object({ ...base, type: z.literal("subscription"), repo: z.string(), number: z.number(), status: z.enum(["active", "stalled", "ended"]), reason: z.string().optional() }),
   z.object({ ...base, type: z.literal("rate_limited"), resetsAt: z.number().optional() }),
   z.object({ ...base, type: z.literal("agent_exited"), message: z.string() }),
-  z.object({ ...base, type: z.literal("error"), message: z.string() }),
+  // `error` is the typed form (absent on events stored before the taxonomy); `message` is always present for display.
+  z.object({ ...base, type: z.literal("error"), message: z.string(), error: appError.optional() }),
 ]);
 
 export type ClientEvent = z.infer<typeof clientEvent>;
@@ -30,3 +32,6 @@ export type DorkState = z.infer<typeof dorkState>;
 type DistributiveOmit<T, K extends keyof never> = T extends unknown ? Omit<T, K> : never;
 /** An event before the server assigns seq / dorkId / ts. */
 export type ClientEventBody = DistributiveOmit<ClientEvent, "seq" | "dorkId" | "ts">;
+
+/** The `error` event for a typed error: `message` stays populated so older clients and stored-event readers keep working. */
+export const errorEvent = (error: AppError): Extract<ClientEventBody, { type: "error" }> => ({ type: "error", message: error.message, error });

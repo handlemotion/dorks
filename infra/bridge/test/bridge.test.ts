@@ -353,7 +353,7 @@ describe("bridge with a fake claude CLI", () => {
   });
 
   it("connect refused with `sleeping` rejects start() so the CLI can exit 0", async () => {
-    const s = await setup({ connectError: { data: { code: "sleeping" } } });
+    const s = await setup({ connectError: { data: { code: "sleeping", message: "sleeping" } } });
     await expect(s.bridge.start()).rejects.toBeInstanceOf(SleepingError);
   });
 
@@ -361,7 +361,7 @@ describe("bridge with a fake claude CLI", () => {
     let slept = 0;
     const s = await setup({ onSleeping: () => slept++ });
     await s.bridge.start();
-    s.t.connectError = { data: { code: "sleeping" } };
+    s.t.connectError = { data: { code: "sleeping", message: "sleeping" } };
     s.t.reconnect();
     await waitFor(() => slept === 1, "onSleeping");
   });
@@ -631,7 +631,7 @@ describe("autonomy: local RPC", () => {
 
   it("backend failures surface as coded errors without leaking details", async () => {
     const s = await ready();
-    s.t.prError = { data: { code: "not_found" }, message: "secret internal detail" };
+    s.t.prError = { data: { code: "not_found", message: "not found" }, message: "secret internal detail" };
     const refused = (await rpcCall(sockOf(s), "pr.sub", { repo: "acme/demo", number: 1 }).catch((e) => e)) as Error;
     expect(refused).toMatchObject({ code: "failed", message: "the backend refused the request (not_found)" });
     s.t.prError = new Error("ECONNRESET with secret detail");

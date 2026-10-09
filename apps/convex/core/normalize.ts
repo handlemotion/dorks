@@ -1,4 +1,4 @@
-import type { ClientEventBody } from "@dorks/shared";
+import { errorEvent, type ClientEventBody } from "@dorks/shared";
 
 // Raw Claude Code stream-json -> client events. Shapes follow the documented protocol
 // (code.claude.com headless / Agent SDK types); verify against a real stream in spike S1.
@@ -73,7 +73,7 @@ export function createNormalizer() {
       }
       case "result": {
         ev({ type: "turn_complete", durationMs: typeof m.duration_ms === "number" ? m.duration_ms : 0 });
-        if (m.is_error === true) ev({ type: "error", message: clip(str(m.result) ?? str(m.subtype) ?? "turn failed", 500) });
+        if (m.is_error === true) ev(errorEvent({ code: "turn_failed", message: clip(str(m.result) ?? str(m.subtype) ?? "turn failed", 500) }));
         break;
       }
       case "rate_limit_event": {

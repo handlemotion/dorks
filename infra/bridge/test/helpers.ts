@@ -1,4 +1,4 @@
-import type { FromBridge, PrRef, SubscriptionView, ToBridge } from "@dorks/shared";
+import { appError, type FromBridge, type PrRef, type SubscriptionView, type ToBridge } from "@dorks/shared";
 import { execFile, execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -172,7 +172,7 @@ export class FakeTransport implements Transport {
   }
   isFatal = (e: unknown) => (e as { data?: { code?: string } })?.data?.code === "forbidden";
   isSleeping = (e: unknown) => (e as { data?: { code?: string } })?.data?.code === "sleeping";
-  errorCode = (e: unknown) => (e as { data?: { code?: string } })?.data?.code;
+  errorCode = (e: unknown) => appError.safeParse((e as { data?: unknown })?.data).data?.code;
   close = async () => void (this.closed = true);
 
   emit(cmds: CommandEntry[]) {
