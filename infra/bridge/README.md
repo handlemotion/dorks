@@ -60,7 +60,7 @@ Required (provided by the box): `DORK_ID`, `BRIDGE_URL`, and `BRIDGE_SECRET_FILE
 | `DORKS_PERMISSION_MODE` | `bypassPermissions` | Passed to `--permission-mode`. See "Permission mode". |
 | `DORKS_CLAUDE_ARGS` | _(none)_ | Extra argv for the CLI, whitespace-separated (e.g. `--model sonnet`). |
 | `DORKS_WORKDIR` | `~/work` | Repos are cloned to `<workdir>/<owner>/<repo>`. |
-| `DORKS_STATE_DIR` | `~/.dorks-bridge` | `cred.sock` (the local RPC socket, 0600, dir 0700), `messages.log` (ids of user messages and notifications already written, for dedupe across a bridge restart), `claude-settings.json` (the hooks handed to `claude --settings`, 0644 so the Claude user can read it) and `stop-gate.json` (which Stop-gate conditions were already raised in the session). No secrets. Must survive a pause (it is on the box disk). |
+| `DORKS_STATE_DIR` | `~/.dorks-bridge` | `cred.sock` (the local RPC socket, 0600, dir 0700), `messages.log` (ids of user messages and notifications already written, for dedupe across a bridge restart), `claude-settings.json` (the hooks handed to `claude --settings`) and `claude-mcp.json` (the MCP server handed to `claude --mcp-config`), both 0644 so the Claude user can read them and `stop-gate.json` (which Stop-gate conditions were already raised in the session). No secrets. Must survive a pause (it is on the box disk). |
 | `DORKS_GIT_BASE_URL` | `https://github.com` | Clone base: `<base>/<owner>/<repo>.git`. Local/e2e use `file://…`. |
 | `HEARTBEAT_MS` | `30000` | `bridge.heartbeat` interval. |
 | `DELTA_BATCH_MS` | `150` | Text deltas are coalesced into one event per window. |
@@ -147,6 +147,13 @@ the Claude child's environment (they are children of it).
 - `dorks pr sub <pr>`, `dorks pr unsub <pr>`, `dorks pr list [--json]`, where `<pr>` is `https://github.com/owner/name/pull/12` or `owner/name#12`.
   Human-readable output by default; exit 0 on success, 2 for a bad reference or usage, 1 when the bridge is unreachable (`dorks: cannot reach the
   dorks bridge in this box`) or refuses.
+- **`dorks mcp`: the same PR operations as MCP tools** (`src/mcp.ts`). A stdio MCP server (Model Context Protocol, the plug-in tool interface Claude Code
+  uses), hand-rolled newline-delimited JSON-RPC so the bundle gains no dependency. At `start()` the bridge writes `<state>/claude-mcp.json` (0644) and starts
+  the agent with `--mcp-config <that file>`; Claude Code runs `<node> <cli.mjs> dorks mcp` itself, with `DORKS_SOCK` in the server's own `env`. It adds to the
+  repo's own MCP servers (no `--strict-mcp-config`). Tools, shown to the agent as `mcp__dorks__<name>`:
+  `pr_subscribe { pr }`, `pr_unsubscribe { pr }` and `pr_list { pr? }`, each forwarding to `pr.sub` (`source: "agent"`), `pr.unsub` and `pr.list`.
+  A bad argument or a bridge/backend problem is a tool result with `isError` and the same message the CLI prints; protocol errors are JSON-RPC errors.
+  Claude Code defers MCP tool schemas, so the model usually runs `ToolSearch` before the first call; the SessionStart context names the tools.
 - **`gh` shim.** Ahead of the real gh on `PATH` (`/usr/local/bin/gh` over `/usr/bin/gh`). It asks the socket for the token, runs the real gh
   (`DORKS_REAL_GH`, else the first `gh` on `PATH` that is not the shim, compared by real path) with `GH_TOKEN` set, and passes stdio and the exit
   code through (signals are relayed). The token is only in that child's environment: not in argv, not on disk (installation tokens last an hour, so
@@ -190,7 +197,7 @@ message resets that). Claude Code adds its own cap on consecutive Stop blocks.
 
 ```
 claude -p --input-format stream-json --output-format stream-json --verbose --include-partial-messages
-       --permission-mode bypassPermissions --settings <state>/claude-settings.json [--resume <id>]
+       --permission-mode bypassPermissions --settings <state>/claude-settings.json --mcp-config <state>/claude-mcp.json [--resume <id>]
 ```
 
 `--verbose` is required for stream-json output; `--include-partial-messages` makes `stream_event` text deltas flow. Not used: `--bare` (it

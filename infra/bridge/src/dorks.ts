@@ -21,6 +21,7 @@ const USAGE = `usage:
   dorks pr unsub <pr>      stop being notified about a PR
   dorks pr list [--json]   the PRs this dork is subscribed to
   dorks hook <event>       (run by Claude Code, not by hand) stop | post-tool-use | session-start
+  dorks mcp                (run by Claude Code, not by hand) the same PR tools as an MCP server
 <pr> is https://github.com/owner/name/pull/12 or owner/name#12`;
 
 /** The socket path for a client of the bridge's RPC, or null when this process is not inside a dork box. */
@@ -28,7 +29,7 @@ export const socketOf = (env: NodeJS.ProcessEnv) => env.DORKS_SOCK || null;
 
 export const describeRpcError = (e: unknown) => (e instanceof RpcError ? (e.code === "unreachable" ? "cannot reach the dorks bridge in this box" : e.message) : "unexpected error");
 
-function listLine(s: SubscriptionView) {
+export function listLine(s: SubscriptionView) {
   const parts = [`ci ${s.ci}`, `review ${s.review}`, s.mergeable === false ? "has conflicts" : s.mergeable === true ? "mergeable" : "mergeability unknown"];
   if (s.status === "stalled") parts.push("STALLED (needs a human)");
   else if (s.ciFixAttempts > 0) parts.push(`ci fix attempts ${s.ciFixAttempts}`);

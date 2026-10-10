@@ -148,6 +148,10 @@ Webhook (`http.ts` route `POST /github/webhook`):
   (the socket path) in Claude's environment so the CLI, the shim and the hooks find it.
 - **`dorks` CLI** (the same binary, run as `dorks`: the role is chosen by the name it is invoked as, see `infra/bridge/README.md`): `dorks pr sub <url|owner/name#n>`, `dorks pr unsub …`, `dorks pr list [--json]`,
   `dorks hook <event>` (reads hook JSON on stdin, prints hook JSON on stdout).
+- **MCP tools** (`dorks mcp`, `infra/bridge/src/mcp.ts`): the same operations as typed tools, so the agent does not have to shell out. The bridge writes
+  `<state>/claude-mcp.json` and starts Claude with `--mcp-config`; Claude Code launches `dorks mcp` as a stdio MCP server that forwards to the bridge RPC.
+  Tools: `mcp__dorks__pr_subscribe`, `mcp__dorks__pr_unsubscribe`, `mcp__dorks__pr_list` (all `source: "agent"`, so the same rules as the CLI apply, including
+  that only a human resumes a stalled subscription). Verified against the real CLI by `live.test.ts`.
 - **`gh` shim** (installed ahead of the real `gh` on `PATH` in the snapshot; the real one is found through `DORKS_REAL_GH`):
   - It gets the token from the socket, sets `GH_TOKEN`, and execs the real `gh`, so everything works, including the `gh stack` extension.
   - After a successful `gh pr create`, it parses the PR URL from stdout and calls `pr.sub` with `source: "auto"`.
