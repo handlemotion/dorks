@@ -1,4 +1,5 @@
 import { BoxNotFoundError, type BoxProvider } from "../../core/box";
+import { LOG_TAIL_CHARS, parsePoll, pollCommand, redactLog, startRunnerCommand, type SnapshotBuilder, type SnapshotStatus } from "../../core/snapshot";
 
 // Upstash Box REST provider. Endpoints and bodies follow the official SDK (@upstash/box 0.7.9, github.com/upstash/box), because
 // the REST reference is not published as docs; see docs/upstash-box.md for sources and the items still marked UNKNOWN.
@@ -65,7 +66,7 @@ export function execStartScript(command: string, dir = "/tmp"): string {
   return `p=$(cat ${pid} 2>/dev/null); if [ -n "$p" ] && kill -0 "$p" 2>/dev/null && tr '\\0' ' ' < /proc/$p/cmdline 2>/dev/null | grep -qF -- ${shq(command)}; then exit 0; fi; nohup setsid sh -c ${shq(command)} >${dir}/dorks-start.log 2>&1 & echo $! > ${pid}`;
 }
 
-export function upstashBox(opts: UpstashOptions): BoxProvider {
+export function upstashBox(opts: UpstashOptions): BoxProvider & SnapshotBuilder {
   if (!opts.labelScope) throw new UpstashBoxError("upstash: labelScope is required (CONVEX_CLOUD_URL not set)");
   const base = (opts.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
   const doFetch = opts.fetch ?? fetch;
@@ -153,7 +154,8 @@ export function upstashBox(opts: UpstashOptions): BoxProvider {
       await call("delete", "DELETE", boxPath(id));
     } catch (e) {
       if (!(e instanceof BoxNotFoundError)) throw e;
-      if ((await statusOf("delete", id)) !== null) throw new UpstashBoxError("upstash delete: HTTP 404 but the box exists");
+      const b = await statusOf("delete", id);
+      if (b && b.status !== "deleted") throw new UpstashBoxError("upstash delete: HTTP 404 but the box exists"); // a deleted box still answers GET, with status "deleted"
       // confirmed gone: success
     }
   }
@@ -252,7 +254,121 @@ export function upstashBox(opts: UpstashOptions): BoxProvider {
     async delete(boxId) {
       await remove(boxId);
     },
+
+    // ---- customer snapshot builds (core/snapshot.ts, docs/snapshots.md)
+
+    async createBuildBox(baseSnapshotId, { name }) {
+      // Same idempotency scheme as createFromSnapshot (a label found again after a crash), but the box gets no env, no init command and no
+      // network policy: it only runs the customer's setup script, which may need any host, and nothing in it is a secret.
+      const label = await dorkLabel(opts.labelScope, `build:${name}`);
+      const existing = (await listByLabel(label)).sort(oldestFirst);
+      for (const dead of existing.filter((b) => b.status === "error")) await remove(dead.id);
+      const live = existing.find((b) => b.status !== "error");
+      if (live) {
+        const ready = await waitReady("build", live);
+        if (ready.status === "paused") await resumeBox(ready.id);
+        return { id: ready.id };
+      }
+      const created = (await call("build", "POST", "/v2/box/from-snapshot", { snapshot_id: baseSnapshotId, name: `dorks-build-${name}`.slice(0, 60), labels: [label] })).json as BoxData;
+      if (!created?.id || !SAFE_ID.test(created.id)) throw new UpstashBoxError("upstash build: response had no usable box id");
+      try {
+        await waitReady("build", created);
+      } catch (e) {
+        await remove(created.id).catch(() => {});
+        throw e;
+      }
+      const winner = (await listByLabel(label)).sort(oldestFirst)[0];
+      if (winner && winner.id !== created.id) {
+        await remove(created.id);
+        return { id: winner.id };
+      }
+      return { id: created.id };
+    },
+
+    async findBuildBox(name) {
+      const label = await dorkLabel(opts.labelScope, `build:${name}`);
+      return (await listByLabel(label)).sort(oldestFirst)[0]?.id ?? null;
+    },
+
+    async putFiles(boxId, files) {
+      boxPath(boxId); // validates the id before anything is sent
+      for (const f of files) {
+        if (!/^\/[\w./-]+$/.test(f.path) || f.path.includes("..")) throw new UpstashBoxError("upstash upload: invalid path");
+        await execOk(boxId, "upload", `mkdir -p ${shq(f.path.slice(0, f.path.lastIndexOf("/")) || "/")}`);
+        const form = new FormData();
+        form.append("paths", f.path);
+        form.append("files", new Blob([f.content]), f.path.split("/").pop() || "file");
+        let res: Response;
+        try {
+          res = await doFetch(`${base}${boxPath(boxId, "/files/upload")}`, { method: "POST", headers: { "X-Box-Api-Key": opts.apiKey }, body: form, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+        } catch (e) {
+          throw new UpstashBoxError(`upstash upload: network error (${e instanceof Error ? e.name : "unknown"})`);
+        }
+        await res.text().catch(() => "");
+        if (!res.ok) throw new UpstashBoxError(`upstash upload: HTTP ${res.status}`, res.status);
+        if (f.secret) await execOk(boxId, "upload", `chmod 600 ${shq(f.path)}`);
+      }
+    },
+
+    async startRunner(boxId) {
+      await execOk(boxId, "start", startRunnerCommand);
+    },
+
+    async pollRunner(boxId) {
+      const r = await exec(boxId, "poll", pollCommand);
+      return parsePoll(r.output);
+    },
+
+    async check(boxId, command) {
+      const r = await exec(boxId, "check", command);
+      return { exitCode: r.exitCode, output: redactLog(r.output).slice(-2_000) };
+    },
+
+    async startSnapshot(boxId, name) {
+      const have = (await listSnapshots(boxId)).find((s) => s.name === name && s.status !== "error");
+      if (have) return { id: have.id };
+      const created = (await call("snapshot", "POST", boxPath(boxId, "/snapshots"), { name })).json as { id?: string };
+      if (!created?.id || !SAFE_ID.test(created.id)) throw new UpstashBoxError("upstash snapshot: response had no usable snapshot id");
+      return { id: created.id };
+    },
+
+    async snapshotStatus(boxId, snapshotId) {
+      const s = (await listSnapshots(boxId)).find((x) => x.id === snapshotId);
+      if (!s) return "missing" as SnapshotStatus;
+      return s.status === "ready" ? "ready" : s.status === "error" ? "error" : "creating";
+    },
+
+    async snapshotReady(snapshotId) {
+      return (await accountSnapshots()).some((s) => s.id === snapshotId && s.status === "ready");
+    },
+
+    async deleteSnapshot(snapshotId) {
+      if (!SAFE_ID.test(snapshotId)) throw new UpstashBoxError("upstash: invalid snapshot id");
+      // Explicit ids only: the same endpoint with ?all=true deletes every snapshot on the account.
+      await call("delete_snapshot", "DELETE", "/v2/box/snapshots", { ids: [snapshotId] }, [404]);
+    },
   };
+
+  type SnapshotData = { id: string; name?: string; status?: string };
+  async function accountSnapshots(): Promise<SnapshotData[]> {
+    const { json } = await call("snapshot", "GET", "/v2/box/snapshots");
+    const all = Array.isArray(json) ? json : Array.isArray(json?.snapshots) ? json.snapshots : [];
+    return all.filter((s: SnapshotData) => s?.id && SAFE_ID.test(s.id));
+  }
+  async function listSnapshots(boxId: string): Promise<SnapshotData[]> {
+    const { json } = await call("snapshot", "GET", boxPath(boxId, "/snapshots"));
+    return Array.isArray(json?.snapshots) ? json.snapshots.filter((s: SnapshotData) => s?.id && SAFE_ID.test(s.id)) : [];
+  }
+
+  async function exec(boxId: string, op: string, command: string): Promise<{ exitCode: number; output: string }> {
+    const { json } = await call(op, "POST", boxPath(boxId, "/exec"), { command: ["sh", "-c", command] });
+    return { exitCode: typeof json?.exit_code === "number" ? json.exit_code : 1, output: `${json?.output ?? ""}${json?.error ? `\n${json.error}` : ""}`.slice(-LOG_TAIL_CHARS) };
+  }
+
+  async function execOk(boxId: string, op: string, command: string) {
+    const r = await exec(boxId, op, command);
+    if (r.exitCode !== 0) throw new UpstashBoxError(`upstash ${op}: command exited with ${r.exitCode}`);
+  }
 }
 
 function serializePolicy(p: NetworkPolicy) {

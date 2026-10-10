@@ -32,6 +32,7 @@ import type * as mail from "../mail.js";
 import type * as rateLimit from "../rateLimit.js";
 import type * as settings from "../settings.js";
 import type * as simbox from "../simbox.js";
+import type * as snapshots from "../snapshots.js";
 import type * as subscriptions from "../subscriptions.js";
 import type * as validators from "../validators.js";
 
@@ -66,6 +67,7 @@ declare const fullApi: ApiFromModules<{
   rateLimit: typeof rateLimit;
   settings: typeof settings;
   simbox: typeof simbox;
+  snapshots: typeof snapshots;
   subscriptions: typeof subscriptions;
   validators: typeof validators;
 }>;

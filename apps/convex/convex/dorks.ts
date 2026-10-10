@@ -6,6 +6,7 @@ import { internal } from "./_generated/api";
 import { requireUserId } from "./auth";
 import { append, dispatch, enqueue, fail, MAX_MESSAGE_CHARS, runtimeOf } from "./lib/dispatch";
 import { validRepo } from "./lib/repo";
+import { repoNameFor } from "./snapshots";
 import { endDorkSubscriptions, resetCiAttempts, subscriptionsOfDork } from "./lib/subscriptions";
 
 export const MAX_TITLE_CHARS = 120;
@@ -67,7 +68,7 @@ export const create = mutation({
     const s = await ctx.db.query("userSettings").withIndex("by_user", (q) => q.eq("userId", userId)).unique();
     if (!s?.claudeTokenEnc || !s.githubInstallationId) fail("onboarding_incomplete", "finish onboarding first");
     const dorkId = await ctx.db.insert("dorks", {
-      userId, title: (title?.trim() || text).slice(0, MAX_TITLE_CHARS), repo, branch: `agent/${crypto.randomUUID().slice(0, 8)}`,
+      userId, title: (title?.trim() || text).slice(0, MAX_TITLE_CHARS), repo: await repoNameFor(ctx, userId, repo), branch: `agent/${crypto.randomUUID().slice(0, 8)}`,
       state: "creating", archived: false, lastActivityAt: Date.now(),
     });
     await ctx.db.insert("dorkRuntime", { dorkId, bridgeSeq: 0, streamMsgId: "", sleepMinutes: s!.sleepMinutes, bridgeSeenAt: 0, bridgeLost: false, timers: {} });

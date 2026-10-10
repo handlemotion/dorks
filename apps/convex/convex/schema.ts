@@ -139,6 +139,47 @@ export default defineSchema({
     .index("by_key", ["key"])
     .index("by_window_start", ["windowStart"]),
 
+  // Customer sandbox images (docs/snapshots.md): a setup script per repo (or "*" = all repos) that is baked into a snapshot, which new
+  // dorks of that repo boot from instead of the base snapshot. `repo` is lowercase `owner/name` or "*". The script is the user's own
+  // code, run in a throwaway box; it never holds a secret of ours.
+  sandboxImages: defineTable({
+    userId: v.string(),
+    repo: v.string(),
+    repoDisplay: v.string(), // `repo` as typed: GitHub's casing, which names the clone directory the dorks of this repo use
+    setupScript: v.string(),
+    timeoutMinutes: v.number(),
+    // The live result of the last successful build; absent until one succeeds. New boxes restore from `snapshotId`.
+    snapshotId: v.optional(v.string()),
+    builtScriptHash: v.optional(v.string()),
+    builtBaseSnapshotId: v.optional(v.string()), // the base snapshot the build started from (a changed base makes the image outdated)
+    builtAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_user_repo", ["userId", "repo"]),
+
+  // One row per build attempt. A build is a chain of scheduled steps (snapshots.step); `step` is its position, advanced compare-and-swap.
+  snapshotBuilds: defineTable({
+    imageId: v.id("sandboxImages"),
+    userId: v.string(),
+    repo: v.string(),
+    status: v.union(v.literal("running"), v.literal("succeeded"), v.literal("failed"), v.literal("cancelled")),
+    step: v.union(v.literal("box"), v.literal("start"), v.literal("wait"), v.literal("verify"), v.literal("snapshot"), v.literal("snapshot_wait"), v.literal("done")),
+    setupScript: v.string(), // the script this build runs (later edits of the image do not change a build in flight)
+    scriptHash: v.string(),
+    baseSnapshotId: v.string(),
+    boxId: v.optional(v.string()),
+    snapshotName: v.optional(v.string()),
+    snapshotId: v.optional(v.string()),
+    logTail: v.optional(v.string()), // redacted tail of the runner's output
+    error: v.optional(v.string()), // safe to show
+    createdAt: v.number(),
+    deadline: v.number(), // the script must finish by then
+    finishedAt: v.optional(v.number()),
+  })
+    .index("by_image_created", ["imageId", "createdAt"])
+    .index("by_user_created", ["userId", "createdAt"])
+    .index("by_status", ["status", "createdAt"]),
+
   // Dev/sim only: what a real BoxProvider (Upstash) would hold remotely.
   simBoxes: defineTable({ name: v.string(), running: v.boolean(), gen: v.number() }).index("by_name", ["name"]),
 });

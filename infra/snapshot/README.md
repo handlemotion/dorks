@@ -42,7 +42,7 @@ Storage is billed at $0.10/GB-month including snapshots ([pricing](https://upsta
 
 ## Point dorks at it
 
-The snapshot id is read in `convex/lifecycle.ts` `boxInfo`: the per-user `userSettings.workstationSnapshotId` if set, else the Convex env var `BASE_SNAPSHOT_ID`. Without either, every create fails with "No base snapshot configured".
+The snapshot id is chosen in `convex/lifecycle.ts` `boxInfo` (`chooseSnapshot` in `convex/snapshots.ts`): the customer's own image for the dork's repo if one is ready, else their image for all repos, else the per-user `userSettings.workstationSnapshotId` if set, else the Convex env var `BASE_SNAPSHOT_ID`. Without any of them, every create fails with "No base snapshot configured". Customer images are built from this base snapshot ([`docs/snapshots.md`](../../docs/snapshots.md)); they keep the old base's tools until rebuilt, so after a new base is published, ask customers (or the apps) to rebuild their images.
 
 ```sh
 cd apps/convex

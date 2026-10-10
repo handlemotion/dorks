@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { append, beginPause, BRIDGE_STALE_MS, cancelTimer, dispatch, enqueue, enqueueConfigure, finishPause, GH_REFRESH_MS, HEARTBEAT_MS, isAwake, queued, runtimeOf, schedulePauseRetry, setTimer } from "./lib/dispatch";
 import { foldInbox } from "./lib/notify";
+import { chooseSnapshot } from "./snapshots";
 
 /** Fired by the scheduler (see lib/dispatch.ts setTimer). Replaces Dork.runTimer + the alarm multiplexer. */
 export const timer = internalMutation({
@@ -159,6 +160,8 @@ export const boxInfo = internalQuery({
     const dork = await ctx.db.get(dorkId);
     if (!dork) return null;
     const s = await ctx.db.query("userSettings").withIndex("by_user", (q) => q.eq("userId", dork.userId)).unique();
-    return { boxId: dork.boxId ?? null, deleting: !!dork.deleting, userId: dork.userId, snapshotId: s?.workstationSnapshotId ?? process.env.BASE_SNAPSHOT_ID ?? "", sleepMinutes: s?.sleepMinutes ?? 5 };
+    // The user's image for this repo (docs/snapshots.md), else their override, else the deployment's base snapshot.
+    const choice = await chooseSnapshot(ctx, dork.userId, dork.repo);
+    return { boxId: dork.boxId ?? null, deleting: !!dork.deleting, userId: dork.userId, snapshotId: choice?.snapshotId ?? "", snapshotSource: choice?.source ?? null, imageId: choice?.imageId ?? null, sleepMinutes: s?.sleepMinutes ?? 5 };
   },
 });

@@ -33,10 +33,16 @@ fi
 fresh=0
 if [ -z "$(docker ps -aq -f "name=^${NAME}$")" ]; then
   echo "[dev-backend] creating $NAME"
+  # Behind an egress proxy (cloud agent VMs) the backend's own outbound HTTPS (Upstash Box, GitHub, Resend) must use it and trust its CA.
+  proxy=()
+  if [ -n "${HTTPS_PROXY:-}" ] && [ -f "${SSL_CERT_FILE:-/root/.ccr/ca-bundle.crt}" ]; then
+    proxy=(-e "HTTPS_PROXY=$HTTPS_PROXY" -e "NO_PROXY=127.0.0.1,localhost" -e SSL_CERT_FILE=/etc/proxy-ca.crt -v "${SSL_CERT_FILE:-/root/.ccr/ca-bundle.crt}:/etc/proxy-ca.crt:ro")
+  fi
   docker run -d --name "$NAME" --network host \
     -e INSTANCE_NAME=dorks-dev \
     -e INSTANCE_SECRET="$(node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))')" \
     -e CONVEX_CLOUD_ORIGIN="$URL" -e CONVEX_SITE_ORIGIN="$SITE" -e DO_NOT_REQUIRE_SSL=1 \
+    "${proxy[@]}" \
     "$IMAGE" >/dev/null
   fresh=1
 elif [ -z "$(docker ps -q -f "name=^${NAME}$")" ]; then

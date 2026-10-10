@@ -35,7 +35,8 @@ Base URL `https://us-east-1.box.upstash.com` (override: `UPSTASH_BOX_BASE_URL`).
 | Exec | `POST /v2/box/{id}/exec` `{ command: ["sh","-c",...], folder? }` returns `{ exit_code, output, error? }` | Runs to completion (synchronous). |
 | Network policy | create body `network_policy`, or `PUT /v2/box/{id}/config/network-policy` | Snake_case on the wire: `{ mode, allowed_domains, allowed_cidrs, denied_cidrs }`. |
 | Labels | create body `labels`, `POST /v2/box/{id}/config/labels {label}`, `DELETE .../labels/{label}` | Limit: **5 labels, each ≤ 20 chars of `[A-Za-z0-9._:-]`** (SDK `types.d.ts`, `BoxConfig.labels`). |
-| Snapshot | `POST /v2/box/{id}/snapshots {name}`, `GET .../snapshots`, `DELETE .../snapshots/{id}` | Async; poll the list until `status: "ready"`. |
+| Snapshot | `POST /v2/box/{id}/snapshots {name}`, `GET .../snapshots`, `DELETE .../snapshots/{id}` | Async; poll the list until `status: "ready"`. Customer images ([snapshots.md](snapshots.md)) use these, and the account-wide `DELETE /v2/box/snapshots {ids}` (explicit ids only) to delete one without needing its box. Restoring a missing snapshot id answers `404 {"error":"Snapshot not found"}` (checked 2026-10-10). |
+| Upload a file | `POST /v2/box/{id}/files/upload` multipart (`paths`, `files`) | Use **absolute** paths (`/tmp/x`); the file is owned by the box user, mode 0644 (chmod it afterwards for secrets). A relative path lands somewhere not findable. |
 
 **Error codes: not documented anywhere.** The SDK only distinguishes "response not OK" and reads `error` from the body; the only status codes mentioned in the docs are `400` once the free-plan LLM budget is exhausted (pricing page). The provider therefore classifies by:
 
@@ -95,7 +96,7 @@ After `resume` the provider **polls `GET /v2/box/{id}` until the box is `running
 
 UNKNOWN B3: **can an exec sent right after `POST .../resume` reach a box that is not running yet?** The SDK's `resume()` does not poll. The provider waits for the status itself, but it is unverified whether `idle`/`running` is reported only once exec works. Test: loop `resume` → immediate `exec echo ok` on a paused box 20 times with and without the status wait, and count failures.
 
-UNKNOWN B2: **do detached children survive the exec call returning** (the platform might kill the process group when the exec session ends), and do they inherit `env_vars`? Test: `exec` the script with `dorks-bridge` replaced by `sleep 300`, then a second `exec` of `pgrep -a sleep; env | grep DORK_ID`. If children do not survive, exec mode is not viable and `init_command` (or a paid plan) is the only way; use `exec/session` (live sessions) only as a last resort.
+B2 CONFIRMED 2026-10-10 on a live box: a child started with `nohup setsid ... &` by one `exec` call is still running, and writes its result file, after that call returned (snapshot builds rely on it). Whether it inherits `env_vars` was not checked. Original question: **do detached children survive the exec call returning** (the platform might kill the process group when the exec session ends), and do they inherit `env_vars`? Test: `exec` the script with `dorks-bridge` replaced by `sleep 300`, then a second `exec` of `pgrep -a sleep; env | grep DORK_ID`. If children do not survive, exec mode is not viable and `init_command` (or a paid plan) is the only way; use `exec/session` (live sessions) only as a last resort.
 
 Exec mode costs one extra HTTP call per create/resume and, unlike init mode, leaves a gap where the box is up but the bridge is not (the watchdog covers it).
 

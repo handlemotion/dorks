@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
 import { isBoxNotFound } from "../core/box";
-import { getBox } from "./lib/box";
+import { getBox, getBuilder } from "./lib/box";
 import { bridgeSecret } from "./lib/bridgeAuth";
 
 // Box calls live in actions (at-most-once, no automatic retry). All provider calls are idempotent (see BoxProvider), and a
@@ -22,11 +22,25 @@ export const create = internalAction({
       if (!info || info.deleting) return; // deleted before we started: do not create a box nobody will clean up
       if (!info.snapshotId) return void (await ctx.runMutation(internal.lifecycle.opFailed, { dorkId, gen, message: "No base snapshot configured" }));
       // Only bridge connection details go in the create-time env (it is frozen into snapshots); secrets arrive via bridge.configure.
-      const box = await getBox(ctx).createFromSnapshot(info.snapshotId, {
-        name: dorkId,
-        initCommand: "dorks-bridge",
-        env: { DORK_ID: dorkId, BRIDGE_URL: process.env.CONVEX_CLOUD_URL!, BRIDGE_SECRET: await bridgeSecret(dorkId) },
-      });
+      const start = async (snapshotId: string) =>
+        getBox(ctx).createFromSnapshot(snapshotId, {
+          name: dorkId,
+          initCommand: "dorks-bridge",
+          env: { DORK_ID: dorkId, BRIDGE_URL: process.env.CONVEX_CLOUD_URL!, BRIDGE_SECRET: await bridgeSecret(dorkId) },
+        });
+      let box: { id: string };
+      try {
+        box = await start(info.snapshotId);
+      } catch (e) {
+        // The customer's image points at a snapshot the provider no longer has (docs/snapshots.md): forget it and start from the next
+        // snapshot in line, so a deleted image degrades to the base snapshot instead of failing every new dork of that repo.
+        if (!info.imageId || !(isBoxNotFound(e) || (e as { status?: number }).status === 400) || (await getBuilder().snapshotReady(info.snapshotId).catch(() => true))) throw e;
+        console.error("create_box: the image's snapshot is gone; falling back", dorkId);
+        await ctx.runMutation(internal.snapshots.dropSnapshot, { imageId: info.imageId, snapshotId: info.snapshotId });
+        const next = await ctx.runQuery(internal.lifecycle.boxInfo, { dorkId });
+        if (!next?.snapshotId || next.deleting) throw e;
+        box = await start(next.snapshotId);
+      }
       const recorded = await ctx.runMutation(internal.lifecycle.boxCreated, { dorkId, gen, boxId: box.id, sleepMinutes: info.sleepMinutes });
       // The dork was deleted while the box was being created, so `destroy` saw no boxId. Delete what we just made.
       if (recorded === "orphaned") await ctx.runAction(internal.boxes.deleteOrphan, { boxId: box.id, attempt: 0 });

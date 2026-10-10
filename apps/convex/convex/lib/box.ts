@@ -1,6 +1,7 @@
 import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
 import { unconfiguredBox, type BoxProvider } from "../../core/box";
+import { unconfiguredBuilder, type SnapshotBuilder } from "../../core/snapshot";
 import { DORKS_NETWORK_POLICY, upstashBox } from "./upstash";
 
 /**
@@ -12,19 +13,55 @@ import { DORKS_NETWORK_POLICY, upstashBox } from "./upstash";
  */
 export function getBox(ctx: ActionCtx): BoxProvider {
   if (process.env.BOX_PROVIDER === "sim") return simBox(ctx);
-  if (process.env.BOX_PROVIDER === "upstash") {
-    const apiKey = process.env.UPSTASH_BOX_API_KEY;
-    if (!apiKey) return unconfiguredBox;
-    return upstashBox({
-      apiKey,
-      labelScope: process.env.CONVEX_CLOUD_URL ?? "",
-      baseUrl: process.env.UPSTASH_BOX_BASE_URL || undefined,
-      startMode: process.env.UPSTASH_BOX_START_MODE === "exec" ? "exec" : "init",
-      networkPolicy: process.env.UPSTASH_BOX_NETWORK_POLICY === "dorks" ? DORKS_NETWORK_POLICY : undefined,
-    });
-  }
-  return unconfiguredBox;
+  return upstashFromEnv() ?? unconfiguredBox;
 }
+
+/** Snapshot builds (core/snapshot.ts). Same provider selection as `getBox`; the sim "builds" instantly and runs nothing. */
+export function getBuilder(): SnapshotBuilder {
+  if (process.env.BOX_PROVIDER === "sim") return simBuilder;
+  return upstashFromEnv() ?? unconfiguredBuilder;
+}
+
+function upstashFromEnv() {
+  if (process.env.BOX_PROVIDER !== "upstash") return null;
+  const apiKey = process.env.UPSTASH_BOX_API_KEY;
+  if (!apiKey) return null;
+  return upstashBox({
+    apiKey,
+    labelScope: process.env.CONVEX_CLOUD_URL ?? "",
+    baseUrl: process.env.UPSTASH_BOX_BASE_URL || undefined,
+    startMode: process.env.UPSTASH_BOX_START_MODE === "exec" ? "exec" : "init",
+    networkPolicy: process.env.UPSTASH_BOX_NETWORK_POLICY === "dorks" ? DORKS_NETWORK_POLICY : undefined,
+  });
+}
+
+/** BOX_PROVIDER=sim: no real box to run a script in, so a build succeeds at once with a synthetic snapshot id (docs/snapshots.md). */
+const simBuilder: SnapshotBuilder = {
+  async createBuildBox(_base, { name }) {
+    return { id: `sim-build-${name}` };
+  },
+  async findBuildBox() {
+    return null;
+  },
+  async putFiles() {},
+  async startRunner() {},
+  async pollRunner() {
+    return { state: "done", exitCode: 0, log: "(sim) the setup script was not run: BOX_PROVIDER=sim has no sandbox\n" };
+  },
+  async check() {
+    return { exitCode: 0, output: "" };
+  },
+  async startSnapshot(boxId, name) {
+    return { id: `sim-snap-${name}-${boxId}` };
+  },
+  async snapshotStatus() {
+    return "ready";
+  },
+  async deleteSnapshot() {},
+  async snapshotReady() {
+    return true;
+  },
+};
 
 function simBox(ctx: ActionCtx): BoxProvider {
   return {
