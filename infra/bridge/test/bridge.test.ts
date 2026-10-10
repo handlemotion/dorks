@@ -717,6 +717,17 @@ describe("autonomy: hooks", () => {
     expect(existsSync(join(dir(s), ".claude"))).toBe(false); // nothing is written into the repo
   });
 
+  it("writes the dorks MCP server config and passes it with --mcp-config, pointing the server at the bridge's socket", async () => {
+    const s = await ready();
+    const file = join(s.state, "claude-mcp.json");
+    const rep = await readReport(s.report);
+    expect(rep.argv.slice(rep.argv.indexOf("--mcp-config"), rep.argv.indexOf("--mcp-config") + 2)).toEqual(["--mcp-config", file]);
+    expect(statSync(file).mode & 0o777).toBe(0o644);
+    const server = JSON.parse(readFileSync(file, "utf8")).mcpServers.dorks;
+    expect(server).toEqual({ type: "stdio", command: process.execPath, args: [cli, "dorks", "mcp"], env: { DORKS_SOCK: rep.env.DORKS_SOCK } });
+    expect(existsSync(join(dir(s), ".mcp.json"))).toBe(false); // nothing is written into the repo
+  });
+
   it("keeps --settings on a resumed session", async () => {
     const s = await ready({ resume: "11111111-2222-3333-4444-555555555555" });
     const rep = await readReport(s.report);

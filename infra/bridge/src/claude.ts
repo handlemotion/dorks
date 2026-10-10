@@ -18,6 +18,8 @@ export interface AgentOptions {
   extraArgs: string[];
   /** Hooks for the CLI (`--settings`); merged with the repo's own settings, see hooks.ts. */
   settingsFile?: string;
+  /** The `dorks` MCP server for the CLI (`--mcp-config`), see mcp.ts. */
+  mcpConfigFile?: string;
   runAs?: Identity | null;
   redactor: Redactor;
   log: Log;
@@ -61,11 +63,12 @@ const STDERR_TAIL = 2048;
  *   --include-partial-messages      emit stream_event deltas so text streams token by token
  *   --permission-mode <mode>        see README: bypassPermissions, because nobody can answer a prompt in an unattended box
  *   --settings <file>               the autonomy hooks (hooks.ts); applied above user/project settings, whose hooks still run
+ *   --mcp-config <file>             the `dorks` MCP server (mcp.ts): PR subscription tools. Added on top of the repo's own MCP servers, not instead
  *   --resume <id>                   continue the stored session after a sleep/wake or restart
  * Not used on purpose: --bare (it never reads OAuth, and we authenticate with CLAUDE_CODE_OAUTH_TOKEN), --no-session-persistence
  * (the transcript on disk is what makes resume work).
  */
-export function claudeArgs(o: { permissionMode: string; resumeSessionId: string | null; extraArgs?: string[]; settingsFile?: string }): string[] {
+export function claudeArgs(o: { permissionMode: string; resumeSessionId: string | null; extraArgs?: string[]; settingsFile?: string; mcpConfigFile?: string }): string[] {
   return [
     "-p",
     "--input-format", "stream-json",
@@ -74,6 +77,7 @@ export function claudeArgs(o: { permissionMode: string; resumeSessionId: string 
     "--include-partial-messages",
     "--permission-mode", o.permissionMode,
     ...(o.settingsFile ? ["--settings", o.settingsFile] : []),
+    ...(o.mcpConfigFile ? ["--mcp-config", o.mcpConfigFile] : []),
     ...(o.resumeSessionId ? ["--resume", o.resumeSessionId] : []),
     ...(o.extraArgs ?? []),
   ];
