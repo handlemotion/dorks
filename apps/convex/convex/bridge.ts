@@ -1,6 +1,7 @@
 import { errorEvent, fromBridge, type ClientEventBody, type CommandFrame, type SubscriptionView, type ToBridge } from "@dorks/shared";
 import { v } from "convex/values";
 import { aad, decrypt, keyringFromEnv } from "../core/crypto";
+import { pickSecrets } from "../core/env";
 import { agentTokenScope, createInstallationToken, GithubHttpError } from "../core/github";
 import { createNormalizer } from "../core/normalize";
 import { internal } from "./_generated/api";
@@ -231,7 +232,7 @@ export const configInfo = internalQuery({
       userId: dork.userId, repo: dork.repo, branch: dork.branch, resumeSessionId: dork.claudeSessionId ?? null,
       ghFailures: (await ctx.db.query("dorkRuntime").withIndex("by_dork", (q) => q.eq("dorkId", dorkId)).unique())?.ghFailures ?? 0,
       claudeTokenEnc: s?.claudeTokenEnc ?? null, githubInstallationId: s?.githubInstallationId ?? null,
-      secrets: secrets.map((x) => ({ name: x.name, valueEnc: x.valueEnc })),
+      secrets: pickSecrets(secrets, dork.repo).map((x) => ({ name: x.name, valueEnc: x.valueEnc, repo: x.repo ?? null })),
     };
   },
 });
@@ -273,7 +274,7 @@ export const configure = action({
     try {
       if (!info.claudeTokenEnc) throw new OnboardingError("Claude token not set");
       const cliSecrets: Record<string, string> = {};
-      for (const r of info.secrets) cliSecrets[r.name] = await decrypt(ring(), r.valueEnc, aad.secret(info.userId, r.name));
+      for (const r of info.secrets) cliSecrets[r.name] = await decrypt(ring(), r.valueEnc, aad.secret(info.userId, r.name, r.repo ?? undefined));
       cfg = {
         t: "configure",
         env: { ...cliSecrets, CLAUDE_CODE_OAUTH_TOKEN: await decrypt(ring(), info.claudeTokenEnc, aad.claudeToken(info.userId)) },

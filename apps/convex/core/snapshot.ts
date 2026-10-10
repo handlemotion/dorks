@@ -1,9 +1,6 @@
 // Customer sandbox snapshots (docs/snapshots.md). Pure logic shared by the Convex functions, the provider and the tests:
 // limits, validation, the script that runs inside the build box, log redaction and the "which snapshot does a new dork boot from" rule.
 
-/** `repo` value of an image that applies to every repo of the account (no clone: its script runs in `~/work`). */
-export const ALL_REPOS = "*";
-
 export const MAX_SETUP_SCRIPT_BYTES = 16 * 1024;
 export const MAX_IMAGES_PER_USER = 10;
 /** Builds start billable boxes, so they are capped per rolling 24 hours (all of the user's images together). */
@@ -86,7 +83,6 @@ export const TOOLS = ["node", "git", "claude", "dorks-bridge", "dorks", "gh"] as
  * in `BUILD_DIR/exit` (written last, atomically) whatever happens. The customer's script never sees the token.
  */
 export function runnerScript(repo: string): string {
-  const clone = repo !== ALL_REPOS;
   return `#!/bin/bash
 D=${BUILD_DIR}
 finish() { c=$?; echo "$c" > "$D/exit.tmp" && mv "$D/exit.tmp" "$D/exit"; }
@@ -96,9 +92,7 @@ set -uo pipefail
 export GIT_TERMINAL_PROMPT=0 CI=1 DEBIAN_FRONTEND=noninteractive DORKS_BUILD=1 DORKS_REPO=${shq(repo)}
 mkdir -p "$HOME/work"
 for t in ${TOOLS.join(" ")}; do p=$(type -P "$t" 2>/dev/null || true); echo "$t=$p"; done > "$D/tools.before"
-${
-  clone
-    ? `echo ${shq(`==> [dorks] cloning ${repo}`)}
+echo ${shq(`==> [dorks] cloning ${repo}`)}
 mkdir -p "$HOME/work/$(dirname ${shq(repo)})"
 if [ -f "$D/gh-token" ]; then
   git -c credential.helper= -c 'credential.helper=!f() { echo username=x-access-token; echo "password=$(cat ${BUILD_DIR}/gh-token)"; }; f' clone --quiet ${shq(`https://github.com/${repo}.git`)} "$HOME/work/"${shq(repo)}
@@ -109,9 +103,7 @@ else
 fi
 rm -f "$D/gh-token"
 if [ "$c" != 0 ]; then echo "==> [dorks] git clone failed (exit $c); is the repo public, or is the GitHub App installed on it?"; exit "$c"; fi
-cd "$HOME/work/"${shq(repo)}`
-    : `cd "$HOME/work"`
-}
+cd "$HOME/work/"${shq(repo)}
 echo "==> [dorks] running the setup script in $(pwd)"
 bash -e -o pipefail "$D/setup.sh"
 c=$?
@@ -182,11 +174,11 @@ export function redactLog(text: string): string {
 
 // ---------------------------------------------------------------- which snapshot does a new box boot from
 
-export type ImageChoice = { snapshotId: string; source: "repo" | "default" | "account" | "base" };
+export type ImageChoice = { snapshotId: string; source: "repo" | "account" | "base" };
 
 /**
- * Most specific first: the account's ready image for this exact repo, then its ready image for all repos, then the per-account
- * override `userSettings.workstationSnapshotId`, then the deployment's base snapshot (`BASE_SNAPSHOT_ID`). An image without a ready
+ * Most specific first: the account's ready image for this exact repo (never another repo's), then the account's own base
+ * `userSettings.workstationSnapshotId`, then the deployment's base snapshot (`BASE_SNAPSHOT_ID`, not used with Upstash). An image without a ready
  * snapshot (never built, first build still running or failed) is skipped, so a broken or slow build never blocks creating dorks.
  */
 export function pickSnapshot(o: {
@@ -199,8 +191,6 @@ export function pickSnapshot(o: {
   const ready = (r: string) => o.images.find((i) => i.repo === r && i.snapshotId)?.snapshotId ?? null;
   const exact = ready(repo);
   if (exact) return { snapshotId: exact, source: "repo" };
-  const all = ready(ALL_REPOS);
-  if (all) return { snapshotId: all, source: "default" };
   if (o.accountSnapshotId) return { snapshotId: o.accountSnapshotId, source: "account" };
   if (o.baseSnapshotId) return { snapshotId: o.baseSnapshotId, source: "base" };
   return null;

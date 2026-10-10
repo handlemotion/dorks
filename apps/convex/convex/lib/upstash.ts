@@ -95,7 +95,7 @@ export function upstashBox(opts: UpstashOptions): BoxProvider & SnapshotBuilder 
         throw new UpstashBoxError(`upstash ${op}: invalid JSON response`, res.status);
       }
     }
-    if (res.status === 401 || res.status === 403) throw new UpstashBoxError(`upstash ${op}: unauthorized (HTTP ${res.status}); check UPSTASH_BOX_API_KEY`, res.status);
+    if (res.status === 401 || res.status === 403) throw new UpstashBoxError(`upstash ${op}: unauthorized (HTTP ${res.status}); check the Upstash API key`, res.status);
     // "Not found" is only trusted on 404/410: a 5xx or 400 whose body mentions it (gateway page, "image not found") is not a missing box.
     if (res.status === 404 || res.status === 410) throw new BoxNotFoundError(`upstash ${op}: box not found (HTTP ${res.status})`);
     if (res.status === 429) throw new UpstashBoxError(`upstash ${op}: rate limited (HTTP 429)`, 429);

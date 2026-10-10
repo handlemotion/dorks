@@ -1,4 +1,5 @@
 import { httpRouter } from "convex/server";
+import { verifyStripeSignature } from "../core/billing";
 import { verifyWebhook } from "../core/github";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
@@ -33,6 +34,27 @@ http.route({
     }
     const parsed = parseGithubEvent(event, payload); // null: an event or action we do not act on (incl. `ping` and installation events): acknowledged
     if (parsed) await ctx.runMutation(internal.github.ingest, { deliveryId, event: parsed });
+    return reply(200, "ok");
+  }),
+});
+
+// Stripe webhook (docs/billing.md): subscription lifecycle -> billing row. Verified over the raw body; answers fast, work is one mutation.
+http.route({
+  path: "/stripe/webhook",
+  method: "POST",
+  handler: httpAction(async (ctx, req) => {
+    const secret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (!secret) return reply(503, "webhook not configured");
+    const body = await req.text();
+    if (!(await verifyStripeSignature(secret, body, req.headers.get("stripe-signature")))) return reply(401, "bad signature");
+    let event: { id?: unknown; type?: unknown };
+    try {
+      event = JSON.parse(body);
+    } catch {
+      return reply(400, "bad json");
+    }
+    if (typeof event.id !== "string") return reply(400, "bad event");
+    await ctx.runMutation(internal.billing.ingest, { eventId: event.id, event });
     return reply(200, "ok");
   }),
 });

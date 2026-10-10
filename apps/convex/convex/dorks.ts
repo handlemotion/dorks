@@ -4,6 +4,7 @@ import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { requireUserId } from "./auth";
+import { assertCanStartDork } from "./billing";
 import { append, dispatch, enqueue, fail, MAX_MESSAGE_CHARS, runtimeOf } from "./lib/dispatch";
 import { validRepo } from "./lib/repo";
 import { repoNameFor } from "./snapshots";
@@ -67,6 +68,12 @@ export const create = mutation({
     await assertActiveSlot(ctx, userId);
     const s = await ctx.db.query("userSettings").withIndex("by_user", (q) => q.eq("userId", userId)).unique();
     if (!s?.claudeTokenEnc || !s.githubInstallationId) fail("onboarding_incomplete", "finish onboarding first");
+    if (process.env.BOX_PROVIDER === "upstash") {
+      // Bring your own Upstash: boxes run in the user's account, from an image built there.
+      if (!s.upstashKeyEnc) fail("onboarding_incomplete", "add your Upstash API key first");
+      if (!s.workstationSnapshotId) fail("onboarding_incomplete", "build your sandbox image first");
+    }
+    await assertCanStartDork(ctx, userId); // only when BILLING_REQUIRED=true
     const dorkId = await ctx.db.insert("dorks", {
       userId, title: (title?.trim() || text).slice(0, MAX_TITLE_CHARS), repo: await repoNameFor(ctx, userId, repo), branch: `agent/${crypto.randomUUID().slice(0, 8)}`,
       state: "creating", archived: false, lastActivityAt: Date.now(),

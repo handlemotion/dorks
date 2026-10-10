@@ -23,7 +23,7 @@ export const create = internalAction({
       if (!info.snapshotId) return void (await ctx.runMutation(internal.lifecycle.opFailed, { dorkId, gen, message: "No base snapshot configured" }));
       // Only bridge connection details go in the create-time env (it is frozen into snapshots); secrets arrive via bridge.configure.
       const start = async (snapshotId: string) =>
-        getBox(ctx).createFromSnapshot(snapshotId, {
+        (await getBox(ctx, info.userId)).createFromSnapshot(snapshotId, {
           name: dorkId,
           initCommand: "dorks-bridge",
           env: { DORK_ID: dorkId, BRIDGE_URL: process.env.CONVEX_CLOUD_URL!, BRIDGE_SECRET: await bridgeSecret(dorkId) },
@@ -34,7 +34,7 @@ export const create = internalAction({
       } catch (e) {
         // The customer's image points at a snapshot the provider no longer has (docs/snapshots.md): forget it and start from the next
         // snapshot in line, so a deleted image degrades to the base snapshot instead of failing every new dork of that repo.
-        if (!info.imageId || !(isBoxNotFound(e) || (e as { status?: number }).status === 400) || (await getBuilder().snapshotReady(info.snapshotId).catch(() => true))) throw e;
+        if (!info.imageId || !(isBoxNotFound(e) || (e as { status?: number }).status === 400) || (await (await getBuilder(ctx, info.userId)).snapshotReady(info.snapshotId).catch(() => true))) throw e;
         console.error("create_box: the image's snapshot is gone; falling back", dorkId);
         await ctx.runMutation(internal.snapshots.dropSnapshot, { imageId: info.imageId, snapshotId: info.snapshotId });
         const next = await ctx.runQuery(internal.lifecycle.boxInfo, { dorkId });
@@ -43,7 +43,7 @@ export const create = internalAction({
       }
       const recorded = await ctx.runMutation(internal.lifecycle.boxCreated, { dorkId, gen, boxId: box.id, sleepMinutes: info.sleepMinutes });
       // The dork was deleted while the box was being created, so `destroy` saw no boxId. Delete what we just made.
-      if (recorded === "orphaned") await ctx.runAction(internal.boxes.deleteOrphan, { boxId: box.id, attempt: 0 });
+      if (recorded === "orphaned") await ctx.runAction(internal.boxes.deleteOrphan, { boxId: box.id, userId: info.userId, attempt: 0 });
     } catch (e) {
       await ctx.runMutation(internal.lifecycle.opFailed, { dorkId, gen, message: safe(e, "create_box") });
     }
@@ -52,13 +52,13 @@ export const create = internalAction({
 
 /** Deletes a box that no dork row points at. Provider deletes are idempotent; failures retry with backoff so it cannot leak silently. */
 export const deleteOrphan = internalAction({
-  args: { boxId: v.string(), attempt: v.number() },
-  handler: async (ctx, { boxId, attempt }) => {
+  args: { boxId: v.string(), userId: v.string(), attempt: v.number() }, // userId: whose Upstash account holds the box
+  handler: async (ctx, { boxId, userId, attempt }) => {
     try {
-      await getBox(ctx).delete(boxId);
+      await (await getBox(ctx, userId)).delete(boxId);
     } catch (e) {
       safe(e, "delete_orphan_box");
-      if (attempt < MAX_ORPHAN_ATTEMPTS) await ctx.scheduler.runAfter(15_000 * 2 ** attempt, internal.boxes.deleteOrphan, { boxId, attempt: attempt + 1 });
+      if (attempt < MAX_ORPHAN_ATTEMPTS) await ctx.scheduler.runAfter(15_000 * 2 ** attempt, internal.boxes.deleteOrphan, { boxId, userId, attempt: attempt + 1 });
       else console.error("orphan box could not be deleted; remove it manually", boxId);
     }
   },
@@ -71,7 +71,7 @@ export const resume = internalAction({
       const info = await ctx.runQuery(internal.lifecycle.boxInfo, { dorkId });
       if (!info?.boxId) throw new Error("no box");
       try {
-        await getBox(ctx).resume(info.boxId);
+        await (await getBox(ctx, info.userId)).resume(info.boxId);
       } catch (e) {
         // The provider no longer has this box (deleted out of band, retention expired). Forget the id so the machine's
         // `error` + !hasBox path recreates it from the snapshot on the next message, instead of failing resume forever.
@@ -91,7 +91,7 @@ export const pause = internalAction({
   handler: async (ctx, { dorkId, gen }) => {
     try {
       const info = await ctx.runQuery(internal.lifecycle.boxInfo, { dorkId });
-      if (info?.boxId) await getBox(ctx).pause(info.boxId);
+      if (info?.boxId) await (await getBox(ctx, info.userId)).pause(info.boxId);
       await ctx.runMutation(internal.lifecycle.boxPaused, { dorkId, gen });
     } catch (e) {
       await ctx.runMutation(internal.lifecycle.opFailed, { dorkId, gen, message: safe(e, "pause_box") });
@@ -106,7 +106,7 @@ export const destroy = internalAction({
     if (!info) return;
     // Delete the box first; wipe rows only if that worked, so a failed delete can be retried by calling remove again.
     try {
-      if (info.boxId) await getBox(ctx).delete(info.boxId);
+      if (info.boxId) await (await getBox(ctx, info.userId)).delete(info.boxId);
     } catch (e) {
       safe(e, "delete_box");
       return void (await ctx.runMutation(internal.dorks.unmarkDeleting, { dorkId }));

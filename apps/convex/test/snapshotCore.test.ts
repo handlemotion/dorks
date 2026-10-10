@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  ALL_REPOS, bashCommand, BUILD_DIR, clampTimeoutMinutes, cleanupScript, DEFAULT_BUILD_TIMEOUT_MIN, LOG_TAIL_CHARS, MAX_BUILD_TIMEOUT_MIN, MAX_SETUP_SCRIPT_BYTES, MIN_BUILD_TIMEOUT_MIN,
+  bashCommand, BUILD_DIR, clampTimeoutMinutes, cleanupScript, DEFAULT_BUILD_TIMEOUT_MIN, LOG_TAIL_CHARS, MAX_BUILD_TIMEOUT_MIN, MAX_SETUP_SCRIPT_BYTES, MIN_BUILD_TIMEOUT_MIN,
   outdatedReason, parsePoll, pickSnapshot, redactLog, runnerScript, scriptHash, validateSetupScript, verifyScript,
 } from "../core/snapshot";
 
@@ -42,10 +42,10 @@ describe("scriptHash", () => {
 
 describe("pickSnapshot: which snapshot a new box boots from", () => {
   const base = { accountSnapshotId: "acct", baseSnapshotId: "base" };
-  it("exact repo image, then the all-repos image, then the account override, then the base", () => {
-    const images = [{ repo: ALL_REPOS, snapshotId: "all" }, { repo: "o/r", snapshotId: "repo" }];
+  it("exact repo image, then the account override, then the base", () => {
+    const images = [{ repo: "o/r", snapshotId: "repo" }];
     expect(pickSnapshot({ repo: "o/r", images, ...base })).toEqual({ snapshotId: "repo", source: "repo" });
-    expect(pickSnapshot({ repo: "o/other", images, ...base })).toEqual({ snapshotId: "all", source: "default" });
+    expect(pickSnapshot({ repo: "o/other", images, ...base })).toEqual({ snapshotId: "acct", source: "account" }); // no image for this repo: never another repo's
     expect(pickSnapshot({ repo: "o/other", images: [], ...base })).toEqual({ snapshotId: "acct", source: "account" });
     expect(pickSnapshot({ repo: "o/other", images: [], baseSnapshotId: "base" })).toEqual({ snapshotId: "base", source: "base" });
     expect(pickSnapshot({ repo: "o/other", images: [] })).toBeNull();
@@ -54,7 +54,7 @@ describe("pickSnapshot: which snapshot a new box boots from", () => {
     expect(pickSnapshot({ repo: "Octocat/Hello-World", images: [{ repo: "octocat/hello-world", snapshotId: "s" }], ...base })?.source).toBe("repo");
   });
   it("skips images with no ready snapshot, so a first build in progress or a failed one never blocks a new dork", () => {
-    expect(pickSnapshot({ repo: "o/r", images: [{ repo: "o/r" }, { repo: ALL_REPOS, snapshotId: null }], ...base })).toEqual({ snapshotId: "acct", source: "account" });
+    expect(pickSnapshot({ repo: "o/r", images: [{ repo: "o/r" }, { repo: "o/other", snapshotId: null }], ...base })).toEqual({ snapshotId: "acct", source: "account" });
   });
 });
 
@@ -107,16 +107,21 @@ describe.skipIf(!linux)("runner script (real bash)", () => {
     rmSync(BUILD_DIR, { recursive: true, force: true });
     mkdirSync(BUILD_DIR, { recursive: true });
     writeFileSync(`${BUILD_DIR}/setup.sh`, setup);
-    writeFileSync(`${BUILD_DIR}/run.sh`, runnerScript(ALL_REPOS));
-    const r = bash(`bash ${BUILD_DIR}/run.sh`, { HOME: home });
+    writeFileSync(`${BUILD_DIR}/run.sh`, runnerScript("o/r"));
+    // The runner clones https://github.com/o/r.git; a local bare repo stands in for it so the test needs no network.
+    const remote = join(home, "remote", "o", "r.git");
+    mkdirSync(remote, { recursive: true });
+    bash(`git init --bare -q ${sh(remote)}`, { HOME: home });
+    writeFileSync(join(home, ".gitconfig"), `[url "file://${join(home, "remote")}/"]\n\tinsteadOf = https://github.com/\n`);
+    const r = bash(`bash ${BUILD_DIR}/run.sh`, { HOME: home, GIT_CONFIG_GLOBAL: join(home, ".gitconfig") });
     const exit = existsSync(`${BUILD_DIR}/exit`) ? readFileSync(`${BUILD_DIR}/exit`, "utf8").trim() : null;
     const out = { exit, stdout: r.stdout, home, tools: existsSync(`${BUILD_DIR}/tools.before`) ? readFileSync(`${BUILD_DIR}/tools.before`, "utf8") : "" };
     return out;
   };
-  it("runs the script in ~/work, writes the exit code last, and records where the toolchain resolves", () => {
+  it("clones the repo and runs the script in it, writes the exit code last, and records where the toolchain resolves", () => {
     const r = run("pwd > $HOME/where.txt\nexport -p | grep -E 'DORKS_BUILD|DORKS_REPO' >> $HOME/where.txt\n");
     expect(r.exit).toBe("0");
-    expect(readFileSync(join(r.home, "where.txt"), "utf8")).toContain(`${r.home}/work`);
+    expect(readFileSync(join(r.home, "where.txt"), "utf8")).toContain(`${r.home}/work/o/r`);
     expect(readFileSync(join(r.home, "where.txt"), "utf8")).toMatch(/DORKS_BUILD="1"/);
     expect(r.tools).toMatch(/^node=.+node$/m);
     expect(r.tools.split("\n").filter(Boolean)).toHaveLength(6);

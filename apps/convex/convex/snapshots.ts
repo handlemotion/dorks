@@ -8,7 +8,7 @@
 // advances the row compare-and-swap and schedules the next. A build that stops advancing is failed by the `sweepBuilds` cron.
 import { GithubHttpError, createInstallationToken } from "../core/github";
 import { v } from "convex/values";
-import { ALL_REPOS, BUILD_DIR, bashCommand, clampTimeoutMinutes, cleanupScript, DEFAULT_BUILD_TIMEOUT_MIN, MAX_BUILDS_PER_DAY, MAX_IMAGES_PER_USER, outdatedReason, pickSnapshot, redactLog, runnerScript, scriptHash, validateSetupScript, verifyScript } from "../core/snapshot";
+import { BUILD_DIR, bashCommand, clampTimeoutMinutes, cleanupScript, DEFAULT_BUILD_TIMEOUT_MIN, MAX_BUILDS_PER_DAY, MAX_IMAGES_PER_USER, outdatedReason, pickSnapshot, redactLog, runnerScript, scriptHash, validateSetupScript, verifyScript } from "../core/snapshot";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
@@ -65,10 +65,14 @@ async function imagesOf(ctx: QueryCtx, userId: string) {
   return ctx.db.query("sandboxImages").withIndex("by_user_repo", (q) => q.eq("userId", userId)).take(MAX_IMAGES_PER_USER + 1);
 }
 
-/** The snapshot an account's new boxes start from when it has no image of its own: its override, else the deployment's base. */
+/**
+ * The base every box of this account starts from when it has no image of its own, and every image is built on: the user's own base in their
+ * own Upstash account (`userSettings.workstationSnapshotId`, built by workstation.provision). A snapshot belongs to one Upstash account, so
+ * with Upstash the deployment's BASE_SNAPSHOT_ID (a snapshot of someone else's account) is never used; other providers fall back to it.
+ */
 export async function baseFor(ctx: QueryCtx, userId: string): Promise<string | null> {
   const s = await ctx.db.query("userSettings").withIndex("by_user", (q) => q.eq("userId", userId)).unique();
-  return s?.workstationSnapshotId ?? process.env.BASE_SNAPSHOT_ID ?? null;
+  return s?.workstationSnapshotId ?? (process.env.BOX_PROVIDER === "upstash" ? null : (process.env.BASE_SNAPSHOT_ID ?? null));
 }
 
 /** The user's saved images, newest edit first, with the state of the last build. */
@@ -92,7 +96,7 @@ export const builds = query({
   },
 });
 
-/** Which image a new dork of `repo` would boot from, and why. `source`: repo | default | account | base | none. */
+/** Which image a new dork of `repo` would boot from, and why. `source`: repo | account (the user's own base) | base (the deployment's) | none. */
 export const effective = query({
   args: { repo: v.string() },
   handler: async (ctx, { repo }) => {
@@ -114,8 +118,9 @@ export async function repoNameFor(ctx: QueryCtx, userId: string, repo: string): 
 /** The rule behind `effective` and `lifecycle.boxInfo`: see pickSnapshot. */
 export async function chooseSnapshot(ctx: QueryCtx, userId: string, repo: string) {
   const s = await ctx.db.query("userSettings").withIndex("by_user", (q) => q.eq("userId", userId)).unique();
-  const choice = pickSnapshot({ repo: normalizeRepo(repo), images: await imagesOf(ctx, userId), accountSnapshotId: s?.workstationSnapshotId, baseSnapshotId: process.env.BASE_SNAPSHOT_ID });
-  const image = choice && (choice.source === "repo" || choice.source === "default") ? (await imagesOf(ctx, userId)).find((i) => i.snapshotId === choice.snapshotId) : undefined;
+  const images = await imagesOf(ctx, userId);
+  const choice = pickSnapshot({ repo: normalizeRepo(repo), images, accountSnapshotId: s?.workstationSnapshotId, baseSnapshotId: process.env.BOX_PROVIDER === "upstash" ? undefined : process.env.BASE_SNAPSHOT_ID });
+  const image = choice?.source === "repo" ? images.find((i) => i.snapshotId === choice.snapshotId) : undefined;
   return choice ? { ...choice, imageId: image?._id } : null;
 }
 
@@ -129,17 +134,17 @@ async function ownedImage(ctx: MutationCtx, imageId: Id<"sandboxImages">) {
 }
 
 /**
- * Creates or updates the image for a repo (`owner/name`) or for all repos (`*`). `build` omitted: build when the saved result does not
+ * Creates or updates the image for a repo (`owner/name`): that repo's environment. `build` omitted: build when the saved result does not
  * match the script (nothing is built if it is already current); `true`: build now regardless; `false`: only save.
  */
 export const put = mutation({
   args: { repo: v.string(), setupScript: v.string(), timeoutMinutes: v.optional(v.number()), build: v.optional(v.boolean()) },
   handler: async (ctx, { repo, setupScript, timeoutMinutes, build }) => {
     const userId = await requireUserId(ctx);
-    if (repo !== ALL_REPOS && !validRepo(repo)) fail("invalid", "repo must be owner/name, or * for all repos");
+    if (!validRepo(repo)) fail("invalid", "repo must be owner/name");
     const bad = validateSetupScript(setupScript);
     if (bad) fail("invalid", bad);
-    const key = repo === ALL_REPOS ? repo : normalizeRepo(repo);
+    const key = normalizeRepo(repo);
     const now = Date.now();
     const timeout = clampTimeoutMinutes(timeoutMinutes);
     const existing = await ctx.db.query("sandboxImages").withIndex("by_user_repo", (q) => q.eq("userId", userId).eq("repo", key)).unique();
@@ -182,16 +187,27 @@ export const remove = mutation({
   handler: async (ctx, { imageId }) => {
     const image = await ownedImage(ctx, imageId);
     await cancelRunning(ctx, imageId, "the image was deleted");
-    if (image.snapshotId) await ctx.scheduler.runAfter(supersededGraceMs(), internal.snapshots.release, { snapshotIds: [image.snapshotId], attempt: 0 });
+    if (image.snapshotId) await ctx.scheduler.runAfter(supersededGraceMs(), internal.snapshots.release, { userId: image.userId, snapshotIds: [image.snapshotId], attempt: 0 });
     await ctx.db.delete(imageId);
   },
 });
+
+/**
+ * The user's Upstash key changed, so every image of theirs now lives in an account we no longer use: forget them all and stop the builds.
+ * The old snapshots stay in the old account (we can no longer reach it). The new account has no base yet either (workstation.provision).
+ */
+export async function resetForNewAccount(ctx: MutationCtx, userId: string) {
+  for (const image of await imagesOf(ctx, userId)) {
+    await cancelRunning(ctx, image._id, "the Upstash key changed");
+    await ctx.db.patch(image._id, { snapshotId: undefined, builtScriptHash: undefined, builtBaseSnapshotId: undefined, builtAt: undefined });
+  }
+}
 
 // ---------------------------------------------------------------- build state machine
 
 async function startBuild(ctx: MutationCtx, image: Doc<"sandboxImages">): Promise<Id<"snapshotBuilds">> {
   const base = await baseFor(ctx, image.userId);
-  if (!base) fail("not_configured", "No base snapshot configured");
+  if (!base) fail("not_configured", process.env.BOX_PROVIDER === "upstash" ? "Build your sandbox image first (add your Upstash API key, then build the image)" : "No base snapshot configured");
   const now = Date.now();
   const recent = await ctx.db.query("snapshotBuilds").withIndex("by_user_created", (q) => q.eq("userId", image.userId).gt("createdAt", now - 24 * 3_600_000)).order("desc").take(MAX_BUILDS_PER_DAY + 1);
   if (recent.length >= MAX_BUILDS_PER_DAY) fail("rate_limited", `at most ${MAX_BUILDS_PER_DAY} image builds per day`);
@@ -215,7 +231,7 @@ async function cancelRunning(ctx: MutationCtx, imageId: Id<"sandboxImages">, rea
 async function finish(ctx: MutationCtx, b: Doc<"snapshotBuilds">, status: "failed" | "cancelled", error: string) {
   await ctx.db.patch(b._id, { status, error, finishedAt: Date.now() });
   // Nothing of a failed build is kept: the box, and the half-made snapshot if it got that far. The image keeps its previous good snapshot.
-  await ctx.scheduler.runAfter(0, internal.snapshots.release, { buildName: b._id, boxId: b.boxId, snapshotIds: b.snapshotId ? [b.snapshotId] : [], attempt: 0 });
+  await ctx.scheduler.runAfter(0, internal.snapshots.release, { userId: b.userId, buildName: b._id, boxId: b.boxId, snapshotIds: b.snapshotId ? [b.snapshotId] : [], attempt: 0 });
 }
 
 export const buildForStep = internalQuery({
@@ -276,11 +292,11 @@ export const succeed = internalMutation({
     await ctx.db.patch(buildId, { status: "succeeded", step: "done", finishedAt: now });
     if (!image) {
       // The image was deleted while this ran (remove cancels running builds, so this is a narrow race): nothing points at the snapshot.
-      return void (await ctx.scheduler.runAfter(0, internal.snapshots.release, { buildName: b._id, boxId: b.boxId, snapshotIds: [b.snapshotId], attempt: 0 }));
+      return void (await ctx.scheduler.runAfter(0, internal.snapshots.release, { userId: b.userId, buildName: b._id, boxId: b.boxId, snapshotIds: [b.snapshotId], attempt: 0 }));
     }
     await ctx.db.patch(image._id, { snapshotId: b.snapshotId, builtScriptHash: b.scriptHash, builtBaseSnapshotId: b.baseSnapshotId, builtAt: now });
-    await ctx.scheduler.runAfter(0, internal.snapshots.release, { buildName: b._id, boxId: b.boxId, snapshotIds: [], attempt: 0 });
-    if (image.snapshotId && image.snapshotId !== b.snapshotId) await ctx.scheduler.runAfter(supersededGraceMs(), internal.snapshots.release, { snapshotIds: [image.snapshotId], attempt: 0 });
+    await ctx.scheduler.runAfter(0, internal.snapshots.release, { userId: b.userId, buildName: b._id, boxId: b.boxId, snapshotIds: [], attempt: 0 });
+    if (image.snapshotId && image.snapshotId !== b.snapshotId) await ctx.scheduler.runAfter(supersededGraceMs(), internal.snapshots.release, { userId: image.userId, snapshotIds: [image.snapshotId], attempt: 0 });
   },
 });
 
@@ -333,7 +349,7 @@ export const step = internalAction({
 type BuildRow = Doc<"snapshotBuilds"> & { githubInstallationId: number | null; timeoutMinutes: number | null };
 
 async function run(ctx: ActionCtx, b: BuildRow, step: Step) {
-  const builder = getBuilder();
+  const builder = await getBuilder(ctx, b.userId);
   const adv = (to: Step, budgetMs: number, extra: { boxId?: string; snapshotId?: string; snapshotName?: string; logTail?: string; delayMs?: number } = {}) =>
     ctx.runMutation(internal.snapshots.advance, { buildId: b._id, from: step, to, budgetMs, ...extra });
   const boxId = b.boxId;
@@ -347,7 +363,7 @@ async function run(ctx: ActionCtx, b: BuildRow, step: Step) {
     }
     case "start": {
       const timeoutMs = (b.timeoutMinutes ?? DEFAULT_BUILD_TIMEOUT_MIN) * 60_000;
-      const token = b.repo === ALL_REPOS ? null : await cloneToken(b);
+      const token = await cloneToken(b);
       await builder.putFiles(need(), [
         { path: `${BUILD_DIR}/setup.sh`, content: b.setupScript.endsWith("\n") ? b.setupScript : `${b.setupScript}\n` },
         { path: `${BUILD_DIR}/run.sh`, content: runnerScript(b.repo) },
@@ -417,15 +433,16 @@ async function cloneToken(b: BuildRow): Promise<string | null> {
 
 /** Deletes a build's box and snapshots. Provider deletes are idempotent; failures retry with backoff so nothing leaks silently. */
 export const release = internalAction({
-  args: { buildName: v.optional(v.string()), boxId: v.optional(v.string()), snapshotIds: v.array(v.string()), attempt: v.number() },
-  handler: async (ctx, { buildName, boxId, snapshotIds, attempt }) => {
+  args: { userId: v.string(), buildName: v.optional(v.string()), boxId: v.optional(v.string()), snapshotIds: v.array(v.string()), attempt: v.number() },
+  handler: async (ctx, { userId, buildName, boxId, snapshotIds, attempt }) => {
     const left: string[] = [];
     let boxLeft: string | undefined;
+    const builder = await getBuilder(ctx, userId); // the user's own account: whatever sits in another one is not ours to touch
     try {
-      const id = boxId ?? (buildName ? await getBuilder().findBuildBox(buildName) : null);
+      const id = boxId ?? (buildName ? await builder.findBuildBox(buildName) : null);
       if (id) {
         boxLeft = id;
-        await getBox(ctx).delete(id);
+        await (await getBox(ctx, userId)).delete(id);
         boxLeft = undefined;
       }
     } catch (e) {
@@ -433,14 +450,14 @@ export const release = internalAction({
     }
     for (const s of snapshotIds) {
       try {
-        await getBuilder().deleteSnapshot(s);
+        await builder.deleteSnapshot(s);
       } catch (e) {
         console.error("snapshot build: deleting a snapshot failed", e instanceof Error ? e.message.slice(0, 200) : "unknown");
         left.push(s);
       }
     }
     if (!boxLeft && left.length === 0) return;
-    if (attempt < MAX_CLEANUP_ATTEMPTS) await ctx.scheduler.runAfter(15_000 * 2 ** attempt, internal.snapshots.release, { boxId: boxLeft, snapshotIds: left, attempt: attempt + 1 });
+    if (attempt < MAX_CLEANUP_ATTEMPTS) await ctx.scheduler.runAfter(15_000 * 2 ** attempt, internal.snapshots.release, { userId, boxId: boxLeft, snapshotIds: left, attempt: attempt + 1 });
     else console.error("snapshot build cleanup gave up; remove by hand", boxLeft, left);
   },
 });

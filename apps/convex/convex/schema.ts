@@ -10,14 +10,31 @@ export default defineSchema({
     githubInstallationId: v.optional(v.number()),
     githubLogin: v.optional(v.string()), // the installing user's GitHub login (captured at install-link time): their comments always wake their dorks
     commentPolicy: v.optional(commentPolicy), // absent = DEFAULT_COMMENT_POLICY
-    workstationSnapshotId: v.optional(v.string()),
+    workstationSnapshotId: v.optional(v.string()), // base snapshot in the USER's own Upstash account (built by workstation.provision)
+    workstationStatus: v.optional(v.union(v.literal("building"), v.literal("ready"), v.literal("failed"))),
+    workstationBuildStartedAt: v.optional(v.number()),
+    workstationError: v.optional(v.string()), // generic text only
+    upstashKeyEnc: v.optional(v.string()), // the user's own Upstash Box API key (BYOK), encrypted like claudeTokenEnc
     sleepMinutes: v.number(),
   }).index("by_user", ["userId"]),
+  // Platform files that are not user data. "bridge": the dorks-bridge bundle every user's workstation image is built from.
+  platformFiles: defineTable({
+    key: v.string(),
+    storageId: v.id("_storage"),
+    sha256: v.string(),
+    bytes: v.number(),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
+  // Variables handed to a dork's sandbox. `repo` (normalized, lowercase) scopes one to the dorks of that repo only; absent = account-wide.
+  // A repo's own variable of the same name wins over the account-wide one (core/env.ts).
   userSecrets: defineTable({
     userId: v.string(),
     name: v.string(),
     valueEnc: v.string(),
-  }).index("by_user_name", ["userId", "name"]),
+    repo: v.optional(v.string()),
+  })
+    .index("by_user_name", ["userId", "name"])
+    .index("by_user_repo_name", ["userId", "repo", "name"]),
 
   // Client-visible row (list + header of the thread view). Nothing here changes per delta, so subscriptions stay quiet mid-turn.
   dorks: defineTable({
@@ -139,8 +156,8 @@ export default defineSchema({
     .index("by_key", ["key"])
     .index("by_window_start", ["windowStart"]),
 
-  // Customer sandbox images (docs/snapshots.md): a setup script per repo (or "*" = all repos) that is baked into a snapshot, which new
-  // dorks of that repo boot from instead of the base snapshot. `repo` is lowercase `owner/name` or "*". The script is the user's own
+  // Customer sandbox images (docs/snapshots.md): a setup script per repo that is baked into a snapshot, which new
+  // dorks of that repo boot from instead of the base snapshot. `repo` is lowercase `owner/name`. The script is the user's own
   // code, run in a throwaway box; it never holds a secret of ours.
   sandboxImages: defineTable({
     userId: v.string(),
@@ -181,5 +198,23 @@ export default defineSchema({
     .index("by_status", ["status", "createdAt"]),
 
   // Dev/sim only: what a real BoxProvider (Upstash) would hold remotely.
-  simBoxes: defineTable({ name: v.string(), running: v.boolean(), gen: v.number() }).index("by_name", ["name"]),
+  simBoxes: defineTable({ name: v.string(), running: v.boolean(), gen: v.number(), costMicro: v.optional(v.number()) }).index("by_name", ["name"]),
+
+  // Stripe billing (docs/billing.md): one flat monthly subscription per user. One row per user once they start Checkout; `status` mirrors the Stripe subscription.
+  billing: defineTable({
+    userId: v.string(),
+    stripeCustomerId: v.string(),
+    stripeSubscriptionId: v.optional(v.string()),
+    status: v.string(), // Stripe subscription status (active, trialing, past_due, canceled, ...) or "none" before the first subscription
+    currentPeriodEnd: v.optional(v.number()), // ms
+    cancelAtPeriodEnd: v.optional(v.boolean()),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_customer", ["stripeCustomerId"]),
+
+  // Stripe event ids already handled (webhook dedupe). Pruned by cron.
+  stripeEvents: defineTable({ eventId: v.string(), receivedAt: v.number() })
+    .index("by_event", ["eventId"])
+    .index("by_received", ["receivedAt"]),
 });

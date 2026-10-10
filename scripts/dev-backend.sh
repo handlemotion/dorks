@@ -31,6 +31,15 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 fresh=0
+# The agent proxy's port changes between sessions and a container keeps the one it was created with, so a stale one makes every outbound
+# call of the backend (Upstash, GitHub) fail at once. Recreate the container when it no longer matches; local dev data is reset.
+if [ -n "${HTTPS_PROXY:-}" ] && [ -n "$(docker ps -aq -f "name=^${NAME}$")" ]; then
+  have="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$NAME" | sed -n 's/^HTTPS_PROXY=//p')"
+  if [ "$have" != "$HTTPS_PROXY" ]; then
+    echo "[dev-backend] $NAME was created behind a different egress proxy; recreating it (local data is reset)"
+    docker rm -f "$NAME" >/dev/null
+  fi
+fi
 if [ -z "$(docker ps -aq -f "name=^${NAME}$")" ]; then
   echo "[dev-backend] creating $NAME"
   # Behind an egress proxy (cloud agent VMs) the backend's own outbound HTTPS (Upstash Box, GitHub, Resend) must use it and trust its CA.

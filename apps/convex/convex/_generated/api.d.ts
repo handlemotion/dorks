@@ -9,6 +9,7 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as billing from "../billing.js";
 import type * as boxes from "../boxes.js";
 import type * as bridge from "../bridge.js";
 import type * as crons from "../crons.js";
@@ -27,6 +28,7 @@ import type * as lib_notifyRender from "../lib/notifyRender.js";
 import type * as lib_repo from "../lib/repo.js";
 import type * as lib_subscriptions from "../lib/subscriptions.js";
 import type * as lib_upstash from "../lib/upstash.js";
+import type * as lib_workstationBuild from "../lib/workstationBuild.js";
 import type * as lifecycle from "../lifecycle.js";
 import type * as mail from "../mail.js";
 import type * as rateLimit from "../rateLimit.js";
@@ -35,6 +37,7 @@ import type * as simbox from "../simbox.js";
 import type * as snapshots from "../snapshots.js";
 import type * as subscriptions from "../subscriptions.js";
 import type * as validators from "../validators.js";
+import type * as workstation from "../workstation.js";
 
 import type {
   ApiFromModules,
@@ -44,6 +47,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  billing: typeof billing;
   boxes: typeof boxes;
   bridge: typeof bridge;
   crons: typeof crons;
@@ -62,6 +66,7 @@ declare const fullApi: ApiFromModules<{
   "lib/repo": typeof lib_repo;
   "lib/subscriptions": typeof lib_subscriptions;
   "lib/upstash": typeof lib_upstash;
+  "lib/workstationBuild": typeof lib_workstationBuild;
   lifecycle: typeof lifecycle;
   mail: typeof mail;
   rateLimit: typeof rateLimit;
@@ -70,6 +75,7 @@ declare const fullApi: ApiFromModules<{
   snapshots: typeof snapshots;
   subscriptions: typeof subscriptions;
   validators: typeof validators;
+  workstation: typeof workstation;
 }>;
 
 /**

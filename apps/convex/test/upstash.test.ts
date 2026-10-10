@@ -347,7 +347,7 @@ describe("delete", () => {
 describe("errors", () => {
   const unauthorized = () => new Response(JSON.stringify({ error: `bad key ${KEY}` }), { status: 401 });
 
-  it("auth failures are errors on every operation (never treated as not-found/success) and name the env var, not the key", async () => {
+  it("auth failures are errors on every operation (never treated as not-found/success) and say to check the key, without echoing it", async () => {
     const fk = fake({ failWith: unauthorized });
     const p = make(fk);
     const ops: [string, () => Promise<unknown>][] = [
@@ -361,7 +361,7 @@ describe("errors", () => {
       expect(err).toBeInstanceOf(UpstashBoxError);
       expect(err).not.toBeInstanceOf(BoxNotFoundError);
       expect(err.status).toBe(401);
-      expect(err.message).toMatch(/UPSTASH_BOX_API_KEY/);
+      expect(err.message).toMatch(/check the Upstash API key/);
       expect(err.message).not.toContain(KEY);
     }
   });

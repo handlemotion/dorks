@@ -43,5 +43,7 @@ export async function decrypt(ring: Keyring, envelope: string, aad: string): Pro
 /** Canonical AAD strings. */
 export const aad = {
   claudeToken: (userId: string) => `${userId}|claude_token`,
-  secret: (userId: string, name: string) => `${userId}|secret|${name}`,
+  upstashKey: (userId: string) => `${userId}|upstash_key`,
+  /** `repo` (normalized, lowercase) binds a variable to the one repo it is scoped to; absent = account-wide (the original form, so stored values still decrypt). */
+  secret: (userId: string, name: string, repo?: string) => (repo ? `${userId}|secret|${repo}|${name}` : `${userId}|secret|${name}`),
 };

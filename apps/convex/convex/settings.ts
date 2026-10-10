@@ -1,14 +1,18 @@
 import { commentPolicy as commentPolicySchema, DEFAULT_COMMENT_POLICY } from "@dorks/shared";
 import { v } from "convex/values";
-import { aad, encrypt, keyringFromEnv } from "../core/crypto";
+import { aad, decrypt, encrypt, keyringFromEnv } from "../core/crypto";
 import { internal } from "./_generated/api";
-import { action, internalMutation, mutation, query } from "./_generated/server";
+import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireUserId } from "./auth";
 import { fail } from "./lib/dispatch";
+import { normalizeRepo, validRepo } from "./lib/repo";
+import { resetForNewAccount } from "./snapshots";
 import { verifyInstallationOwnership } from "./lib/githubInstall";
+import { verifyUpstashKey, WorkstationBuildError } from "./lib/workstationBuild";
 
 export const MAX_CLAUDE_TOKEN_CHARS = 4 * 1024;
+export const MAX_UPSTASH_KEY_CHARS = 512;
 export const MAX_SECRET_BYTES = 16 * 1024;
 export const MAX_SECRETS_PER_USER = 50;
 
@@ -27,7 +31,10 @@ export const onboarding = query({
   handler: async (ctx) => {
     const userId = await requireUserId(ctx);
     const s = await ctx.db.query("userSettings").withIndex("by_user", (q) => q.eq("userId", userId)).unique();
-    return { claudeToken: !!s?.claudeTokenEnc, github: !!s?.githubInstallationId, sleepMinutes: s?.sleepMinutes ?? 5, commentPolicy: s?.commentPolicy ?? DEFAULT_COMMENT_POLICY };
+    return {
+      claudeToken: !!s?.claudeTokenEnc, upstashKey: !!s?.upstashKeyEnc, workstation: s?.workstationStatus ?? "none", workstationError: s?.workstationError ?? null,
+      github: !!s?.githubInstallationId, sleepMinutes: s?.sleepMinutes ?? 5, commentPolicy: s?.commentPolicy ?? DEFAULT_COMMENT_POLICY,
+    };
   },
 });
 
@@ -52,20 +59,93 @@ export const setClaudeToken = mutation({
   },
 });
 
+/** Ciphertext for the box actions (internal only: public functions never return it). */
+export const upstashKeyEnc = internalQuery({
+  args: { userId: v.string() },
+  handler: async (ctx, { userId }) => {
+    const s = await ctx.db.query("userSettings").withIndex("by_user", (q) => q.eq("userId", userId)).unique();
+    return s?.upstashKeyEnc ?? null;
+  },
+});
+
+/**
+ * Bring your own Upstash: the user's Box API key (console.upstash.com -> Box). Checked against Upstash before it is stored, then encrypted
+ * like the Claude token. Their dork boxes run in their account and on their bill. A different key means a different account, so the
+ * workstation image (which lives in the old account) is forgotten and has to be built again.
+ */
+export const setUpstashKey = action({
+  args: { key: v.string() },
+  handler: async (ctx, { key }) => {
+    const userId = await requireUserId(ctx);
+    const trimmed = key.trim();
+    if (!trimmed) fail("invalid", "empty key");
+    if (trimmed.length > MAX_UPSTASH_KEY_CHARS) fail("invalid", "key too long");
+    try {
+      await verifyUpstashKey({ apiKey: trimmed, baseUrl: process.env.UPSTASH_BOX_BASE_URL || undefined });
+    } catch (e) {
+      fail("invalid", e instanceof WorkstationBuildError ? e.message : "could not check the Upstash key");
+    }
+    const valueEnc = (await encrypt(ring(), trimmed, aad.upstashKey(userId))).value;
+    await ctx.runMutation(internal.settings.storeUpstashKey, { userId, valueEnc });
+  },
+});
+
+export const storeUpstashKey = internalMutation({
+  args: { userId: v.string(), valueEnc: v.string() },
+  handler: async (ctx, { userId, valueEnc }) => {
+    const row = await settingsRow(ctx, userId);
+    const same = row.upstashKeyEnc !== undefined && (await decrypt(ring(), row.upstashKeyEnc, aad.upstashKey(userId)).catch(() => null)) === (await decrypt(ring(), valueEnc, aad.upstashKey(userId)));
+    await ctx.db.patch(row._id, same ? { upstashKeyEnc: valueEnc } : { upstashKeyEnc: valueEnc, workstationSnapshotId: undefined, workstationStatus: undefined, workstationError: undefined, workstationBuildStartedAt: undefined });
+    // Every image of theirs lives in the old account too: forget them (the new account builds its own from its own base).
+    if (!same) await resetForNewAccount(ctx, userId);
+  },
+});
+
+/** Account-wide variables and each repo's own, with the scope (no values). `repo` is null for account-wide ones. */
+export const secretList = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await requireUserId(ctx);
+    const rows = await ctx.db.query("userSecrets").withIndex("by_user_name", (q) => q.eq("userId", userId)).collect();
+    return rows.map((r) => ({ name: r.name, repo: r.repo ?? null })).sort((a, b) => (a.repo ?? "").localeCompare(b.repo ?? "") || a.name.localeCompare(b.name));
+  },
+});
+
+const scopeOf = (repo: string | undefined) => {
+  if (repo === undefined) return undefined;
+  if (!validRepo(repo)) fail("invalid", "repo must be owner/name");
+  return normalizeRepo(repo);
+};
+
+/**
+ * A variable the sandbox gets (docs/snapshots.md, "Per-repo environments"). With `repo` it belongs to that repo's dorks only; without, it is
+ * a default for all of them. Same name in both: the repo's wins.
+ */
 export const setCliSecret = mutation({
-  args: { name: v.string(), value: v.string() },
-  handler: async (ctx, { name, value }) => {
+  args: { name: v.string(), value: v.string(), repo: v.optional(v.string()) },
+  handler: async (ctx, { name, value, repo }) => {
     const userId = await requireUserId(ctx);
     if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(name)) fail("invalid", "bad secret name");
     if (new TextEncoder().encode(value).length > MAX_SECRET_BYTES) fail("invalid", "secret value too large");
-    const valueEnc = (await encrypt(ring(), value, aad.secret(userId, name))).value;
-    const existing = await ctx.db.query("userSecrets").withIndex("by_user_name", (q) => q.eq("userId", userId).eq("name", name)).unique();
+    const scope = scopeOf(repo);
+    const valueEnc = (await encrypt(ring(), value, aad.secret(userId, name, scope))).value;
+    const existing = await ctx.db.query("userSecrets").withIndex("by_user_repo_name", (q) => q.eq("userId", userId).eq("repo", scope).eq("name", name)).unique();
     if (existing) await ctx.db.patch(existing._id, { valueEnc });
     else {
       const held = await ctx.db.query("userSecrets").withIndex("by_user_name", (q) => q.eq("userId", userId)).take(MAX_SECRETS_PER_USER);
       if (held.length >= MAX_SECRETS_PER_USER) fail("limit", `at most ${MAX_SECRETS_PER_USER} secrets`);
-      await ctx.db.insert("userSecrets", { userId, name, valueEnc });
+      await ctx.db.insert("userSecrets", { userId, name, valueEnc, ...(scope ? { repo: scope } : {}) });
     }
+  },
+});
+
+export const removeCliSecret = mutation({
+  args: { name: v.string(), repo: v.optional(v.string()) },
+  handler: async (ctx, { name, repo }) => {
+    const userId = await requireUserId(ctx);
+    const scope = scopeOf(repo);
+    const existing = await ctx.db.query("userSecrets").withIndex("by_user_repo_name", (q) => q.eq("userId", userId).eq("repo", scope).eq("name", name)).unique();
+    if (existing) await ctx.db.delete(existing._id);
   },
 });
 

@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import schema from "../convex/schema";
+import { resetForNewAccount } from "../convex/snapshots";
+import { aad, encrypt, keyringFromEnv } from "../core/crypto";
 import { MAX_BUILDS_PER_DAY, MAX_IMAGES_PER_USER, type ScriptPoll } from "../core/snapshot";
 
 const fake = vi.hoisted(() => ({
@@ -212,15 +214,71 @@ describe("a build that succeeds", () => {
     expect(await u1.query(api.snapshots.effective, { repo: "o/other" })).toEqual({ source: "base" });
   });
 
-  it("an image for all repos applies to every repo without an image of its own", async () => {
+  it("there is no environment for all repos: `*` is refused, and one repo's image never serves another repo", async () => {
     const { t, u1 } = await setup();
-    await u1.mutation(api.snapshots.put, { repo: "*", setupScript: "sudo apt-get install -y jq" });
-    await u1.mutation(api.snapshots.put, { repo: "o/special", setupScript: "true" });
+    expect(await rejects(u1.mutation(api.snapshots.put, { repo: "*", setupScript: "true" }))).toBe("invalid");
+    await u1.mutation(api.snapshots.put, { repo: "o/special", setupScript: "sudo apt-get install -y jq" });
     await settle(t);
-    expect(await u1.query(api.snapshots.effective, { repo: "any/thing" })).toEqual({ source: "default" });
     expect(await u1.query(api.snapshots.effective, { repo: "o/special" })).toEqual({ source: "repo" });
+    expect(await u1.query(api.snapshots.effective, { repo: "any/thing" })).toEqual({ source: "base" });
     expect(fake.files.find((f) => f.content.includes("apt-get"))).toBeDefined();
-    expect(fake.files.filter((f) => f.path.endsWith("run.sh")).some((f) => !f.content.includes("git clone"))).toBe(true); // the all-repos image clones nothing
+  });
+
+  describe("bring your own Upstash account (BOX_PROVIDER=upstash)", () => {
+    beforeEach(() => {
+      process.env.BOX_PROVIDER = "upstash";
+    });
+    afterEach(() => {
+      delete process.env.BOX_PROVIDER;
+    });
+
+    it("the deployment's base snapshot belongs to another account and is never used: only the user's own base counts", async () => {
+      const { t, u1 } = await setup();
+      expect(await u1.query(api.snapshots.effective, { repo: "o/r" })).toEqual({ source: "none" });
+      await t.run(async (ctx) => { const s = await ctx.db.query("userSettings").first(); await ctx.db.patch(s!._id, { workstationSnapshotId: "own-base" }); });
+      expect(await u1.query(api.snapshots.effective, { repo: "o/r" })).toEqual({ source: "account" });
+    });
+
+    it("an image can be saved before the user's base exists, but not built: it says what to do first", async () => {
+      const { u1 } = await setup();
+      expect(await u1.mutation(api.snapshots.put, { repo: "o/r", setupScript: "true", build: false })).toMatchObject({ buildId: null });
+      expect(await rejects(u1.mutation(api.snapshots.put, { repo: "o/r", setupScript: "true", build: true }))).toBe("not_configured");
+    });
+
+    it("images are built on the user's own base and flagged outdated when that base is replaced", async () => {
+      const { t, u1 } = await setup({ workstationSnapshotId: "own-base-1" });
+      const { imageId } = await u1.mutation(api.snapshots.put, { repo: "o/r", setupScript: "true" });
+      await settle(t);
+      expect(fake.calls).toContain("create:own-base-1");
+      expect(await imageOf(u1, imageId)).toMatchObject({ status: "ready", outdated: null });
+      await t.run(async (ctx) => { const s = await ctx.db.query("userSettings").first(); await ctx.db.patch(s!._id, { workstationSnapshotId: "own-base-2" }); });
+      expect(await imageOf(u1, imageId)).toMatchObject({ status: "ready", outdated: "base_changed" });
+    });
+
+    it("storing a different Upstash key forgets the images (and the base, which is in the old account); storing the same one changes nothing", async () => {
+      process.env.ENCRYPTION_KEY = btoa(String.fromCharCode(...new Uint8Array(32).fill(7)));
+      const ring = keyringFromEnv({ ENCRYPTION_KEY: process.env.ENCRYPTION_KEY });
+      const enc = async (key: string) => (await encrypt(ring, key, aad.upstashKey("u1"))).value;
+      const { t, u1 } = await setup({ workstationSnapshotId: "own-base-1", workstationStatus: "ready", upstashKeyEnc: await enc("key-one") });
+      const { imageId } = await u1.mutation(api.snapshots.put, { repo: "o/r", setupScript: "keep me" });
+      await settle(t);
+      await t.mutation(internal.settings.storeUpstashKey, { userId: "u1", valueEnc: await enc("key-one") }); // same key, fresh ciphertext
+      expect(await imageOf(u1, imageId)).toMatchObject({ status: "ready" });
+      expect((await u1.query(api.settings.onboarding, {})).workstation).toBe("ready");
+      await t.mutation(internal.settings.storeUpstashKey, { userId: "u1", valueEnc: await enc("key-two") });
+      expect(await imageOf(u1, imageId)).toMatchObject({ status: "not_built", setupScript: "keep me" });
+      expect((await u1.query(api.settings.onboarding, {})).workstation).toBe("none");
+      expect(await u1.query(api.snapshots.effective, { repo: "o/r" })).toEqual({ source: "none" });
+    });
+
+    it("a new Upstash key means a new account: every image is forgotten (their snapshots are in the old account), the scripts are kept", async () => {
+      const { t, u1 } = await setup({ workstationSnapshotId: "own-base-1" });
+      const { imageId } = await u1.mutation(api.snapshots.put, { repo: "o/r", setupScript: "keep me" });
+      await settle(t);
+      expect((await imageOf(u1, imageId)).status).toBe("ready");
+      await t.run((ctx) => resetForNewAccount(ctx, "u1"));
+      expect(await imageOf(u1, imageId)).toMatchObject({ status: "not_built", setupScript: "keep me" });
+    });
   });
 
   it("a dork keeps the image's repo casing, so it finds the clone that was baked in", async () => {
@@ -348,7 +406,7 @@ describe("a build that fails", () => {
     const { t } = await setup();
     vi.spyOn(console, "error").mockImplementation(() => {});
     fake.failDelete.add("snap-x");
-    await t.action(internal.snapshots.release, { snapshotIds: ["snap-x", "snap-y"], attempt: 0 });
+    await t.action(internal.snapshots.release, { userId: "u1", snapshotIds: ["snap-x", "snap-y"], attempt: 0 });
     expect(fake.deletedSnapshots).toEqual(["snap-y"]);
     fake.failDelete.clear();
     await settle(t); // the retry is scheduled with backoff

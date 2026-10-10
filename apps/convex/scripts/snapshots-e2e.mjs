@@ -1,14 +1,17 @@
-// End-to-end acceptance for customer sandbox snapshots (docs/snapshots.md) against a REAL Upstash Box account: no sandbox mocks.
+// End-to-end acceptance for customer sandbox environments (docs/snapshots.md) against a REAL Upstash Box account: no sandbox mocks, run the
+// way production works under BYOK ("bring your own key"): the user pastes their own Upstash key, and everything (their base snapshot, their
+// images, their dorks' boxes) is created through that key in their own account.
 // A local Convex backend (scripts/dev-backend.sh) runs the product code; every box and snapshot below is a real Upstash resource,
-// created by the product's own functions (snapshots.put -> build steps -> dorks.create -> boxes.create) and deleted at the end.
+// created by the product's own functions (workstation.provision, snapshots.put -> build steps, dorks.create -> boxes.create) and deleted at the end.
 //
 //   cd apps/convex && doppler run -p dorks -c dev -- node scripts/snapshots-e2e.mjs
 //
-//   needs: the local backend running (CONVEX_URL, CONVEX_SITE_URL default to 127.0.0.1:3210/3211), UPSTASH_BOX_API_KEY from Doppler dev,
-//          network access to Upstash, GitHub (public repos) and npm. E2E_BASE_SNAPSHOT_ID picks the base snapshot; default: the newest
-//          ready `dorks-base-*` snapshot on the account. Cost: about 8 short-lived boxes (a few cents), all deleted at the end.
+//   needs: the local backend running (CONVEX_URL, CONVEX_SITE_URL default to 127.0.0.1:3210/3211), UPSTASH_BOX_API_KEY from Doppler dev (used
+//          here as "the user's key"), pnpm, network access to Upstash, GitHub (public repos) and npm. Cost: about a dozen short-lived boxes
+//          (a few cents), all deleted at the end, with the snapshots they made. Only resources this run created are deleted (the Upstash
+//          account of Doppler dev is shared with other test runs).
 //
-// It switches the deployment to BOX_PROVIDER=upstash for the run and puts the previous values back at the end.
+// It publishes the current bridge bundle and switches the deployment to BOX_PROVIDER=upstash for the run, then puts the previous values back.
 import { spawnSync } from "node:child_process";
 import { ConvexClient } from "convex/browser";
 import { anyApi as api } from "convex/server";
@@ -42,7 +45,9 @@ const exec = async (boxId, cmd) => { const r = (await up("POST", `/v2/box/${boxI
 
 // ---- Convex deployment env (values go over stdin, never argv)
 const envSet = (name, value) => { const r = spawnSync("npx", ["convex", "env", "set", name], { input: value, encoding: "utf8" }); if (r.status !== 0) throw new Error(`convex env set ${name} failed`); };
-const envGet = (name) => { const r = spawnSync("npx", ["convex", "env", "get", name], { encoding: "utf8" }); return r.status === 0 ? r.stdout.trim() : null; };
+const envGet = (name) => { const r = spawnSync("npx", ["convex", "env", "get", name], { encoding: "utf8" }); return r.status === 0 && r.stdout.trim() ? r.stdout.trim() : null; };
+const envRemove = (name) => spawnSync("npx", ["convex", "env", "remove", name], { encoding: "utf8" });
+const envPut = (name, value) => (value === null ? envRemove(name) : envSet(name, value));
 
 await startMockResend();
 const post = (p, body) => fetch(CONVEX_SITE_URL + p, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN }, body: JSON.stringify(body) });
@@ -58,17 +63,18 @@ async function signIn(email) {
   return client;
 }
 
-const before = { provider: envGet("BOX_PROVIDER"), base: envGet("BASE_SNAPSHOT_ID"), grace: envGet("SNAPSHOT_SUPERSEDED_GRACE_SECONDS") };
+// Values to put back. A run that died halfway leaves BOX_PROVIDER=upstash behind; then the real "before" is the sim setup of dev-backend.sh.
+const leftover = envGet("BOX_PROVIDER") === "upstash";
+const before = leftover ? { provider: "sim", grace: null } : { provider: envGet("BOX_PROVIDER"), grace: envGet("SNAPSHOT_SUPERSEDED_GRACE_SECONDS") };
 const startedAt = Math.floor(Date.now() / 1000);
-const ONLY = process.env.ONLY; // "vanished" runs just the last scenario (debugging)
 const dorkIds = [];
+const baseIds = []; // the user's base snapshots this run made (deleted at the end)
 let A;
 try {
-  // ---- the base snapshot the images build on
-  const all = await snapshots();
-  const BASE = process.env.E2E_BASE_SNAPSHOT_ID ?? all.filter((s) => s.name?.startsWith("dorks-base-") && s.status === "ready").sort((a, b) => b.created_at - a.created_at)[0]?.id;
-  if (!BASE) throw new Error("no ready dorks-base-* snapshot on the account; build one (infra/snapshot/README.md) or set E2E_BASE_SNAPSHOT_ID");
-  console.log(`base snapshot ${BASE}`);
+  // ---- the platform publishes its bridge bundle once; each user's own base snapshot is built from it (convex/workstation.ts)
+  const pub = spawnSync("node", ["scripts/publish-bridge.mjs"], { encoding: "utf8" });
+  if (pub.status !== 0) throw new Error(`publish-bridge failed: ${(pub.stderr || pub.stdout).slice(0, 300)}`);
+  console.log(pub.stdout.trim());
 
   // ---- onboarding runs under the sim provider (the GitHub link callback has a sim mode); then the deployment switches to the real one
   envSet("BOX_PROVIDER", "sim");
@@ -77,16 +83,32 @@ try {
   await A.mutation(api.settings.setClaudeToken, { token: "sk-ant-oat01-snapshots-e2e" });
   await A.action(api.settings.linkGithubInstallation, { installationId: 1, code: "sim" });
   envSet("BOX_PROVIDER", "upstash");
-  envSet("BASE_SNAPSHOT_ID", BASE);
   envSet("SNAPSHOT_SUPERSEDED_GRACE_SECONDS", "20");
 
+  // ---- BYOK: nothing works without the user's key; a wrong key is refused; theirs gets its own base built in their account
+  check("without a key a user cannot create a dork", (await code(A.mutation(api.dorks.create, { repo: REPO, message: "x" }))) === "onboarding_incomplete");
+  check("Upstash refuses a wrong key (checked against the real API)", (await code(A.action(api.settings.setUpstashKey, { key: `ubk_not_a_real_key_${RUN}` }))) === "invalid");
+  await A.action(api.settings.setUpstashKey, { key: KEY });
+  const ob0 = await A.query(api.settings.onboarding, {});
+  check("onboarding shows the key is set, and never returns it", ob0.upstashKey === true && !JSON.stringify(ob0).includes(KEY));
+  check("with a key but no base of their own yet, a dork cannot be created and an image cannot be built",
+    (await code(A.mutation(api.dorks.create, { repo: REPO, message: "x" }))) === "onboarding_incomplete" && (await code(A.mutation(api.snapshots.put, { repo: REPO, setupScript: "true", build: true }))) === "not_configured");
+  check("...and nothing would start from someone else's base", (await A.query(api.snapshots.effective, { repo: OTHER_REPO })).source === "none");
+  const t0 = Date.now();
+  const prov1 = await A.action(api.workstation.provision, {});
+  baseIds.push(prov1.snapshotId);
+  const baseSnap1 = (await snapshots()).find((s) => s.id === prov1.snapshotId);
+  check("the user's own base snapshot was built in their account", (await A.query(api.settings.onboarding, {})).workstation === "ready" && baseSnap1?.status === "ready", `${prov1.snapshotId} in ${Math.round((Date.now() - t0) / 1000)}s`);
+  check("a dork of any repo now starts from the user's own base", (await A.query(api.snapshots.effective, { repo: OTHER_REPO })).source === "account");
+  check("no build box of the base was left behind", !(await boxes()).some((b) => b.name?.startsWith("dorks-base-build-") && b.status !== "deleted" && b.created_at >= startedAt - 5));
+
   const imageView = async (id) => (await A.query(api.snapshots.list, {})).find((i) => i.id === id);
-  if (!ONLY) {
+  {
   // ---- validation and ownership
   check("empty script refused", (await code(A.mutation(api.snapshots.put, { repo: REPO, setupScript: "  \n", build: false }))) === "invalid");
   check("script over 16 KB refused", (await code(A.mutation(api.snapshots.put, { repo: REPO, setupScript: "x".repeat(16 * 1024 + 1), build: false }))) === "invalid");
-  for (const repo of ["./x", "o/..", "no-slash", "a b/c"]) check(`repo refused: ${repo}`, (await code(A.mutation(api.snapshots.put, { repo, setupScript: "true", build: false }))) === "invalid");
-  check("no image yet: a new dork would start from the base snapshot", (await A.query(api.snapshots.effective, { repo: REPO })).source === "base");
+  for (const repo of ["./x", "o/..", "no-slash", "a b/c", "*"]) check(`repo refused: ${repo}`, (await code(A.mutation(api.snapshots.put, { repo, setupScript: "true", build: false }))) === "invalid");
+  check("no image yet: a new dork would start from the base snapshot", (await A.query(api.snapshots.effective, { repo: REPO })).source === "account");
 
   // ---- 1. configure + build: clone the repo, install a package, leave a marker
   const SCRIPT1 = `set -x
@@ -109,7 +131,7 @@ git log --oneline -1
   }, "first image build", 15 * 60_000, 3000);
   check("build succeeded", ready1.lastBuild.status === "succeeded" && ready1.outdated === null);
   check("build log shows the clone and the script output", /cloning octocat\/hello-world/i.test(ready1.lastBuild.log) && /is-odd|node v/.test(ready1.lastBuild.log) && /setup script exited with 0/.test(ready1.lastBuild.log), ready1.lastBuild.log.split("\n").slice(-3).join(" | "));
-  check("new dorks of that repo (any casing) now use the image, other repos still the base", (await A.query(api.snapshots.effective, { repo: "Octocat/Hello-World" })).source === "repo" && (await A.query(api.snapshots.effective, { repo: OTHER_REPO })).source === "base");
+  check("new dorks of that repo (any casing) now use the image, other repos still the base (an image never serves another repo)", (await A.query(api.snapshots.effective, { repo: "Octocat/Hello-World" })).source === "repo" && (await A.query(api.snapshots.effective, { repo: OTHER_REPO })).source === "account");
 
   // ---- what the provider holds now: one ready snapshot named for the build, and the build box is gone
   const snap1 = (await snapshots()).filter((s) => s.name === `dorks-env-${ready1.lastBuild.id}`);
@@ -144,6 +166,11 @@ git log --oneline -1
   await waitFor(async () => ["idle", "running"].includes((await boxes()).find((b) => b.id === boxB)?.status), "second box running", 120_000, 2000);
   const baseCheck = await exec(boxB, `ls $HOME/work 2>&1 | head -3; ls $HOME/work/octocat 2>&1 | head -3; command -v dorks-bridge`);
   check("a repo without an image boots from the base snapshot (no baked repo)", !/Hello-World/.test(baseCheck.out) && /dorks-bridge/.test(baseCheck.out), baseCheck.out.replace(/\n/g, " | ").slice(0, 160));
+  // The user's own base has what an agent needs, including the pieces the hand-built base of 2026-10-09 lacked: the `dorks` command and the gh wrapper.
+  const tools = await exec(boxB, `claude --version 2>&1 | head -1; dorks --help >/dev/null 2>&1 && echo dorks-ok; readlink /usr/local/bin/gh; readlink /usr/local/bin/dorks; /usr/bin/gh --version | head -1; gh stack --help >/dev/null 2>&1 && echo stack-ok; ls -l /usr/local/bin/dorks-bridge | cut -c1-10`);
+  check("the user's own base has Claude Code, the dorks command, the gh wrapper in front of the real gh, and gh stack", /Claude Code/.test(tools.out) && /dorks-ok/.test(tools.out) && tools.out.includes("dorks-bridge") && /gh version 2\.102\.0/.test(tools.out) && /stack-ok/.test(tools.out), tools.out.replace(/\n/g, " | ").slice(0, 220));
+  const hasTokens = await exec(boxB, `grep -rIlE '(ghs|ghp|gho|ghu)_[A-Za-z0-9]{20,}|github_pat_|sk-ant-[A-Za-z0-9_-]{20,}' $HOME --exclude-dir=node_modules 2>/dev/null | grep -vxF -e $HOME/.git-credentials -e $HOME/.config/gh/hosts.yml | head -3`);
+  check("the base holds no credentials of ours", hasTokens.out.trim() === "", hasTokens.out.trim());
 
   // ---- 3. change the script: the old image keeps serving until the new one is ready, then is replaced and its snapshot deleted
   const SCRIPT2 = SCRIPT1.replace("is-odd@3.0.1", "is-even@1.0.0").replace(`dorks-e2e-${RUN}`, `dorks-e2e-v2-${RUN}`);
@@ -180,7 +207,7 @@ git log --oneline -1
   check("...and its box is deleted", await waitFor(async () => !(await boxes()).some((b) => b.name?.startsWith("dorks-build-")), "cancelled build box deleted", 90_000, 3000));
   const liveSnap = (await snapshots()).find((s) => s.name === `dorks-env-${ready2.lastBuild.id}`);
   await A.mutation(api.snapshots.remove, { imageId: put1.imageId });
-  check("deleting the image removes it", (await A.query(api.snapshots.list, {})).length === 0 && (await A.query(api.snapshots.effective, { repo: REPO })).source === "base");
+  check("deleting the image removes it", (await A.query(api.snapshots.list, {})).length === 0 && (await A.query(api.snapshots.effective, { repo: REPO })).source === "account");
   check("...and its snapshot", !!liveSnap && (await waitFor(async () => !(await snapshots()).some((s) => s.id === liveSnap.id), "snapshot deleted with the image", 3 * 60_000, 3000)));
 
   }
@@ -193,20 +220,48 @@ git log --oneline -1
   const dorkC = await A.mutation(api.dorks.create, { repo: REPO, message: "e2e: image snapshot vanished" });
   dorkIds.push(dorkC);
   const boxC = await waitFor(async () => (await A.query(api.dorks.get, { dorkId: dorkC }))?.boxId, "fallback dork box", 4 * 60_000, 2000);
-  check("a vanished image snapshot degrades to the base snapshot and the dork still gets a box", !!boxC && (await A.query(api.snapshots.effective, { repo: REPO })).source === "base" && (await imageView(put3.imageId)).status === "not_built");
+  check("a vanished image snapshot degrades to the base snapshot and the dork still gets a box", !!boxC && (await A.query(api.snapshots.effective, { repo: REPO })).source === "account" && (await imageView(put3.imageId)).status === "not_built");
+
+  // ---- 7. the user's own base snapshot disappears at the provider: the dork says so, a rebuilt base brings it back, images built on the old one are flagged
+  const put4 = await A.mutation(api.snapshots.rebuild, { imageId: put3.imageId });
+  await waitFor(async () => { const v = await imageView(put3.imageId); if (v.status === "failed") throw new Error(`rebuild failed: ${v.lastBuild.error}`); return v.status === "ready" && v.lastBuild.id === put4.buildId; }, "image rebuilt on the current base", 10 * 60_000, 3000);
+  check("the image is current on the user's base", (await imageView(put3.imageId)).outdated === null);
+  await up("DELETE", "/v2/box/snapshots", { ids: [prov1.snapshotId] });
+  const dorkD = await A.mutation(api.dorks.create, { repo: OTHER_REPO, message: "e2e: base vanished" });
+  dorkIds.push(dorkD);
+  await waitFor(async () => (await A.query(api.dorks.get, { dorkId: dorkD }))?.state === "error", "dork reports the missing base", 3 * 60_000, 2000);
+  check("a vanished base fails the dork cleanly, with no box left behind", !(await A.query(api.dorks.get, { dorkId: dorkD })).boxId);
+  const prov2 = await A.action(api.workstation.provision, {});
+  baseIds.push(prov2.snapshotId);
+  check("the user can build the base again", prov2.snapshotId !== prov1.snapshotId && (await snapshots()).find((x) => x.id === prov2.snapshotId)?.status === "ready");
+  check("...and images built on the old base are flagged, yet keep serving", (await imageView(put3.imageId)).outdated === "base_changed" && (await A.query(api.snapshots.effective, { repo: REPO })).source === "repo");
+  const dorkE = await A.mutation(api.dorks.create, { repo: OTHER_REPO, message: "e2e: after the base was rebuilt" });
+  dorkIds.push(dorkE);
+  const boxE = await waitFor(async () => (await A.query(api.dorks.get, { dorkId: dorkE }))?.boxId, "dork box from the rebuilt base", 4 * 60_000, 2000);
+  check("...and with the rebuilt base a new dork gets its box", !!boxE);
+
+  // ---- 8. variables are per repo: stored and listed with their scope, never with a value
+  await A.mutation(api.settings.setCliSecret, { name: "E2E_SHARED", value: "wide" });
+  await A.mutation(api.settings.setCliSecret, { name: "E2E_SHARED", value: "narrow", repo: REPO });
+  await A.mutation(api.settings.setCliSecret, { name: "E2E_ONLY_OTHER", value: "x", repo: OTHER_REPO.toUpperCase() });
+  const listed = await A.query(api.settings.secretList, {});
+  check("variables are listed with their repo scope (normalized) and no values", JSON.stringify(listed) === JSON.stringify([{ name: "E2E_SHARED", repo: null }, { name: "E2E_ONLY_OTHER", repo: OTHER_REPO.toLowerCase() }, { name: "E2E_SHARED", repo: REPO.toLowerCase() }].sort((x, y) => (x.repo ?? "").localeCompare(y.repo ?? "") || x.name.localeCompare(y.name))) && !JSON.stringify(listed).includes("narrow"), JSON.stringify(listed));
+  check("a bad repo scope is refused", (await code(A.mutation(api.settings.setCliSecret, { name: "E2E_X", value: "x", repo: "../etc" }))) === "invalid");
+  await A.mutation(api.settings.removeCliSecret, { name: "E2E_SHARED", repo: REPO });
+  await A.mutation(api.settings.removeCliSecret, { name: "E2E_SHARED" });
+  await A.mutation(api.settings.removeCliSecret, { name: "E2E_ONLY_OTHER", repo: OTHER_REPO });
+  check("removing them leaves nothing behind", (await A.query(api.settings.secretList, {})).length === 0);
 } finally {
-  // ---- cleanup: everything this run created, then the deployment env as it was
+  // ---- cleanup: everything this run created (and only that: the Upstash account is shared), then the deployment env as it was
   try {
     for (const id of dorkIds) await A?.mutation(api.dorks.remove, { dorkId: id }).catch(() => {});
     await sleep(8000);
     for (const b of await boxes()) if (b.name?.startsWith("dorks-build-") || dorkIds.includes(b.name)) await up("DELETE", `/v2/box/${b.id}`);
-    const stale = (await snapshots()).filter((s) => s.name?.startsWith("dorks-env-") && s.created_at >= startedAt - 5).map((s) => s.id);
+    const stale = (await snapshots()).filter((s) => baseIds.includes(s.id) || (s.name?.startsWith("dorks-env-") && s.created_at >= startedAt - 5)).map((s) => s.id);
     if (stale.length) await up("DELETE", "/v2/box/snapshots", { ids: stale });
   } catch (e) { console.log("cleanup error", String(e).slice(0, 200)); }
-  if (before.provider) envSet("BOX_PROVIDER", before.provider);
-  if (before.base) envSet("BASE_SNAPSHOT_ID", before.base);
-  if (before.grace) envSet("SNAPSHOT_SUPERSEDED_GRACE_SECONDS", before.grace);
-  else spawnSync("npx", ["convex", "env", "remove", "SNAPSHOT_SUPERSEDED_GRACE_SECONDS"], { encoding: "utf8" });
+  envPut("BOX_PROVIDER", before.provider);
+  envPut("SNAPSHOT_SUPERSEDED_GRACE_SECONDS", before.grace);
 }
 const failedChecks = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failedChecks.length}/${results.length} checks passed`);
