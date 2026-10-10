@@ -287,6 +287,17 @@ This is the same 37-check acceptance run plus the secret scan; the turn produces
    The repo comes from the local fixture remote, and the model decides what tools to use, so the `tool_use`/`tool_result` checks depend on
    it editing a file for "add a readme". Treat this as a smoke test; the fake-CLI run is the deterministic acceptance bar.
 
+4. The MCP tools through the whole stack (real Convex, real bridge, real Claude; costs a few cents). With the local backend up (`pnpm dev:backend`)
+   and the sim host's user not root (the CLI refuses `bypassPermissions` as root; `RUN_AS_UID` drops privileges for the host):
+   ```sh
+   cd apps/convex && doppler run -p dorks -c dev -- env RUN_AS_UID=1000 HOST_HOME=/tmp/u-home DORKS_E2E_ROOT=/tmp/u-e2e bash scripts/run-mcp-e2e.sh
+   ```
+   A message asks the model to `pr_subscribe` / `pr_list`, then `pr_unsubscribe`; the script reads `subscriptions.list` and the transcript back as the user.
+   BOX_PROVIDER=sim means no GitHub App is involved (hydration is skipped).
+5. The MCP tools inside a real Upstash Box: `doppler run -p dorks -c dev -- bash infra/bridge/scripts/box-mcp-check.sh`. It restores a box from the newest
+   `dorks-base-*` snapshot of the account behind `UPSTASH_BOX_API_KEY`, uploads the fresh bundle and `test/box-driver.ts`, runs the real `Bridge` with the box's
+   own Claude CLI, and deletes the box. The backend there is the in-memory `FakeTransport`: a box cannot reach a Convex backend on a developer machine.
+
 ## Known limitations
 
 - **Dedupe is at-most-once across a crash.** A message is journaled right after it is written to the CLI's stdin. If the bridge or box dies between
