@@ -1,22 +1,22 @@
 // End-to-end test of the Convex billing path against REAL Stripe (test mode) on the local Convex backend (pnpm dev:backend).
-// Nothing in Stripe or in our Convex functions is mocked. The one simulated input is the box's cost figure: the local backend runs
-// BOX_PROVIDER=sim, so the sandbox "cost" is set by hand (simbox:setCost). The real Upstash cost source is proven by stripe-e2e.mjs.
+// Nothing in Stripe or in our Convex functions is mocked: our own checkout action creates a real customer and Checkout session, a real
+// $10 subscription is started with a test card, Stripe charges the first invoice, and the app gate (BILLING_REQUIRED) opens and closes.
 //
-//   needs: pnpm dev:backend running with STRIPE_SECRET_KEY + STRIPE_PRICE_ID in Doppler dev (run: node scripts/stripe-setup.mjs --write-doppler dev
-//          first, then dev:backend again to push the env). Run from apps/convex:
-//          doppler run -p dorks -c dev -- node scripts/billing-e2e.mjs
+//   needs: pnpm dev:backend running with STRIPE_SECRET_KEY + STRIPE_PRICE_ID in Doppler dev (run `pnpm stripe:setup` first, then
+//          dev:backend again to push the env). Run from the repo root: pnpm billing:e2e
 //
 // Stripe webhooks cannot reach a local backend and the Stripe CLI is not installable in cloud containers, so deliveries are forwarded by
 // this script: it reads the real events from Stripe's API and POSTs them to /stripe/webhook signed with a throwaway secret it sets on the
 // deployment. The payloads are Stripe's; only the transport and the signing key are ours (Stripe's own signing is covered by the unit tests).
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { ConvexClient } from "convex/browser";
 import { anyApi as api } from "convex/server";
 import { signStripePayload } from "../core/billing.ts";
 import { stripeClient } from "../core/stripe.ts";
-import { ensureBillingObjects } from "../core/stripeSetup.ts";
+import { APP_PRICE_CENTS } from "../core/billing.ts";
+import { ensureAppPrice } from "../core/stripeSetup.ts";
 import { codeFor, startMockResend } from "./mock-resend.mjs";
 
 // The local backend from pnpm dev:backend (same defaults as run-e2e.sh).
@@ -33,16 +33,6 @@ const convex = (args, input) => {
   if (r.status !== 0) throw new Error(`convex ${args[0]} ${args[1] ?? ""} failed: ${(r.stderr || r.stdout).slice(0, 300)}`);
   return r.stdout;
 };
-// Async on purpose: the Stripe forwarder below lives in this process, and a blocking spawnSync here would stop it answering the backend.
-const run = (fn, argsObj = {}) => new Promise((resolve, reject) => {
-  const p = spawn("npx", ["convex", "run", fn, JSON.stringify(argsObj)]);
-  let out = "", err = "";
-  p.stdout.on("data", (d) => (out += d));
-  p.stderr.on("data", (d) => (err += d));
-  p.on("close", (code) => (code === 0 ? resolve(out) : reject(new Error(`convex run ${fn} failed: ${(err || out).slice(0, 300)}`))));
-});
-const usageRows = () => JSON.parse(convex(["data", "boxUsage", "--format", "json"]));
-
 // Convex function env: the deployment must hold the same Stripe key/price (pnpm dev:backend pushes them). The webhook secret is ours.
 const deployed = (n) => { try { return convex(["env", "get", n]).trim(); } catch { return ""; } };
 if (!deployed("STRIPE_SECRET_KEY") || !deployed("STRIPE_PRICE_ID")) throw new Error("the deployment has no STRIPE_SECRET_KEY / STRIPE_PRICE_ID: run pnpm dev:backend after storing them in Doppler dev");
@@ -69,7 +59,7 @@ const forwarder = createServer((req, res) => {
 await new Promise((r) => forwarder.listen(FORWARD_PORT, "127.0.0.1", r));
 convex(["env", "set", "STRIPE_API_BASE_URL"], `http://127.0.0.1:${FORWARD_PORT}`);
 
-const objs = await ensureBillingObjects(stripe);
+const objs = await ensureAppPrice(stripe, () => {});
 await startMockResend();
 
 // ---- Stripe webhook transport (see header)
@@ -99,60 +89,66 @@ client.setAuth(async () => (await (await fetch(CONVEX_SITE_URL + "/api/auth/conv
 
 let customerId, dork;
 try {
+  convex(["env", "set", "BILLING_REQUIRED", "true"]);
+  const priceId = deployed("STRIPE_PRICE_ID");
+  check("the price Stripe holds is the $10 monthly plan", objs.priceId === priceId, objs.priceId);
+  const price = await stripe.get("price", `/v1/prices/${priceId}`);
+  check("price is $10.00 per month", price.unit_amount === APP_PRICE_CENTS && price.currency === "usd" && price.recurring?.interval === "month" && price.recurring?.usage_type === "licensed", `${price.unit_amount} ${price.currency}/${price.recurring?.interval}`);
+
   await client.mutation(api.settings.setClaudeToken, { token: "sk-billing-e2e" });
   await client.action(api.settings.linkGithubInstallation, { installationId: 1, code: "sim" });
-  dork = await client.mutation(api.dorks.create, { repo: "o/r", message: "billing e2e" });
-  let row;
-  for (let i = 0; i < 40 && !row?.boxId; i++) { await sleep(250); row = await client.query(api.dorks.get, { dorkId: dork }); }
-  check("a dork with a box exists", !!row?.boxId, row?.boxId);
-  const userId = row.userId;
 
-  // ---- checkout: real Stripe customer + Checkout session
+  // ---- gate closed: no subscription yet
   let st = await client.query(api.billing.status, {});
-  check("before subscribing: configured, not entitled", st.configured && !st.entitled && st.status === "none", JSON.stringify(st));
+  check("before subscribing: configured, required, not entitled", st.configured && st.required && !st.entitled && st.status === "none", JSON.stringify(st));
+  let blocked = "";
+  try { await client.mutation(api.dorks.create, { repo: "o/r", message: "billing e2e" }); } catch (e) { blocked = String(e?.message ?? e); }
+  check("dorks.create is refused without a subscription", /onboarding_incomplete|subscribe/.test(blocked), blocked.slice(0, 120));
+
+  // ---- checkout: real Stripe customer + Checkout session from our own action
   const { url } = await client.action(api.billing.checkout, {});
   check("checkout returns a Stripe Checkout URL", /^https:\/\/checkout\.stripe\.com\//.test(url));
-  customerId = JSON.parse((await run("billing:rowOf", { userId })).trim() || "null")?.customerId;
-  check("a Stripe customer was created and recorded", /^cus_/.test(customerId ?? ""), customerId);
+  const sessionId = /\/(cs_test_[A-Za-z0-9]+)/.exec(url)?.[1];
+  const session = sessionId ? await stripe.get("session", `/v1/checkout/sessions/${sessionId}`) : null;
+  check("the Checkout session is a $10 subscription", session?.mode === "subscription" && session?.amount_total === APP_PRICE_CENTS, `${session?.mode} ${session?.amount_total}`);
+  const userId = session?.client_reference_id;
+  customerId = session?.customer;
+  check("a Stripe customer exists and is tied to the user", /^cus_/.test(customerId ?? "") && !!userId, customerId);
 
   // The hosted Checkout page is a browser flow; this does what it does on success: pay with a test card and start the subscription.
   const pm = await stripe.post("attach card", "/v1/payment_methods/pm_card_visa/attach", { customer: customerId }); // returns a new payment method id
   await stripe.post("default card", `/v1/customers/${customerId}`, { invoice_settings: { default_payment_method: pm.id } });
-  const sub = await stripe.post("subscription", "/v1/subscriptions", { customer: customerId, items: [{ price: objs.priceId }], metadata: { dorks_user_id: userId } });
+  const sub = await stripe.post("subscription", "/v1/subscriptions", { customer: customerId, items: [{ price: priceId }], metadata: { dorks_user_id: userId }, expand: ["latest_invoice"] });
+  check("Stripe charged the first invoice $10", sub.latest_invoice?.status === "paid" && sub.latest_invoice?.amount_paid === APP_PRICE_CENTS, `${sub.latest_invoice?.status} ${sub.latest_invoice?.amount_paid}`);
   for (let i = 0; i < 20; i++) { await forwardEvents(); st = await client.query(api.billing.status, {}); if (st.entitled) break; await sleep(1500); }
-  check("webhook made the user entitled", st.entitled && st.status === "active", JSON.stringify(st));
+  check("webhook made the user entitled", st.entitled && st.status === "active" && !!st.currentPeriodEnd, JSON.stringify(st));
 
-  // ---- metering: real Stripe meter events from our own claim/settle code
-  const aggregated = async () => {
-    const m = (t) => Math.floor(t / 60) * 60;
-    const s = await stripe.get("summaries", `/v1/billing/meters/${objs.meterId}/event_summaries`, { customer: customerId, start_time: m(Date.now() / 1000 - 600), end_time: m(Date.now() / 1000) + 60 });
-    return s.data.reduce((a, x) => a + x.aggregated_value, 0);
-  };
-  const waitFor = async (want, ms = 240_000) => { const t0 = Date.now(); let v = 0; while (Date.now() - t0 < ms) { v = await aggregated(); if (v === want) return v; await sleep(10_000); } return v; };
-  await run("simbox:setCost", { id: row.boxId, costMicro: 12_345 });
-  await run("billing:meterAll");
-  let u = usageRows().find((x) => x.boxId === row.boxId);
-  check("ledger settled the first window", u?.reportedMicro === 12_345 && u.inflightTo === undefined, JSON.stringify(u));
-  check("Stripe meter shows 12345 micro-USD", (await waitFor(12_345)) === 12_345);
-  await run("billing:meterAll"); // nothing new: must not send again
-  await run("simbox:setCost", { id: row.boxId, costMicro: 20_000 });
-  await run("billing:meterAll");
-  check("Stripe meter shows 20000 after growth (only the delta was sent, nothing counted twice)", (await waitFor(20_000)) === 20_000);
+  // ---- gate open
+  dork = await client.mutation(api.dorks.create, { repo: "o/r", message: "billing e2e" });
+  check("dorks.create works while subscribed", !!dork, dork);
 
-  // ---- cancel: usage after cancel is not billed
+  // ---- portal (manage card / cancel)
+  try {
+    const portal = await client.action(api.billing.portal, {});
+    check("portal returns a Stripe billing portal URL", /^https:\/\/billing\.stripe\.com\//.test(portal.url));
+  } catch (e) {
+    check("portal returns a Stripe billing portal URL", false, String(e?.message ?? e).slice(0, 200));
+  }
+
+  // ---- cancel: entitlement ends, gate closes again
   await stripe.del("cancel", `/v1/subscriptions/${sub.id}`);
   for (let i = 0; i < 20; i++) { await forwardEvents(); st = await client.query(api.billing.status, {}); if (!st.entitled) break; await sleep(1500); }
   check("webhook ended the entitlement", !st.entitled && st.status === "canceled", JSON.stringify(st));
-  await run("simbox:setCost", { id: row.boxId, costMicro: 50_000 });
-  await run("billing:meterAll");
-  await sleep(70_000);
-  check("usage after cancellation is not sent to Stripe", (await aggregated()) === 20_000);
+  blocked = "";
+  try { await client.mutation(api.dorks.create, { repo: "o/r", message: "after cancel" }); } catch (e) { blocked = String(e?.message ?? e); }
+  check("dorks.create is refused again after cancelling", /onboarding_incomplete|subscribe/.test(blocked), blocked.slice(0, 120));
 } catch (e) {
   results.push(false);
   console.error("FAIL", e instanceof Error ? e.message : e);
 } finally {
   try { if (dork) await client.mutation(api.dorks.remove, { dorkId: dork }); } catch {}
   try { if (customerId) await stripe.del("delete customer", `/v1/customers/${customerId}`); } catch {}
+  try { convex(["env", "remove", "BILLING_REQUIRED"]); } catch {}
   try { convex(["env", "remove", "STRIPE_API_BASE_URL"]); } catch {}
   forwarder.close();
   await client.close();

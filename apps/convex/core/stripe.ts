@@ -77,7 +77,7 @@ export function stripeClient(opts: StripeOptions) {
         mode: "subscription",
         customer: p.customerId,
         client_reference_id: p.userId,
-        line_items: [{ price: p.priceId }], // metered price: no quantity
+        line_items: [{ price: p.priceId, quantity: 1 }],
         success_url: p.successUrl,
         cancel_url: p.cancelUrl,
         subscription_data: { metadata: { dorks_user_id: p.userId } },
@@ -85,15 +85,6 @@ export function stripeClient(opts: StripeOptions) {
 
     createPortalSession: (p: { customerId: string; returnUrl: string }) =>
       call<{ url: string }>("create_portal", "POST", "/v1/billing_portal/sessions", { customer: p.customerId, return_url: p.returnUrl }),
-
-    /** `identifier` makes the event idempotent at Stripe (it rejects a repeat), so a retry cannot double-bill. */
-    createMeterEvent: (p: { eventName: string; customerId: string; value: number; identifier: string; timestampSec?: number }) =>
-      call<{ identifier: string }>("meter_event", "POST", "/v1/billing/meter_events", {
-        event_name: p.eventName,
-        identifier: p.identifier,
-        timestamp: p.timestampSec,
-        payload: { stripe_customer_id: p.customerId, value: String(p.value) },
-      }),
   };
 }
 

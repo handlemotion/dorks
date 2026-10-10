@@ -9,11 +9,6 @@ export interface BoxProvider {
   pause(boxId: string): Promise<void>;
   /** Idempotent: deleting a missing box is not an error. */
   delete(boxId: string): Promise<void>;
-  /**
-   * What the provider says this box has cost so far (monotonic, micro-USD; the basis of customer billing, see core/billing.ts).
-   * null: the provider has no figure (box gone, or the field is absent). Throws on transport/auth errors.
-   */
-  usage(boxId: string): Promise<{ costMicro: number } | null>;
 }
 
 /** The box no longer exists at the provider (404 / "not found"). Callers use it to drop a stale box id and recreate. */
@@ -43,16 +38,11 @@ export const unconfiguredBox: BoxProvider = {
   async delete() {
     throw new Error("box provider not configured (UPSTASH_BOX_API_KEY)");
   },
-  async usage() {
-    throw new Error("box provider not configured (UPSTASH_BOX_API_KEY)");
-  },
 };
 
 /** In-memory box for tests and local dev (BOX_PROVIDER=sim). Records calls; can inject failures. */
 export class SimBox implements BoxProvider {
   boxes = new Map<string, { name: string; running: boolean }>();
-  /** Test knob: the cost (micro-USD) `usage` reports per box id. */
-  costs = new Map<string, number>();
   calls: string[] = [];
   failNext = new Set<string>();
   /** Local dev: print how to start the stand-in bridge (the per-dork secret is otherwise never exposed). */
@@ -92,10 +82,5 @@ export class SimBox implements BoxProvider {
     this.calls.push("delete");
     this.maybeFail("delete");
     this.boxes.delete(id);
-  }
-  async usage(id: string) {
-    this.calls.push("usage");
-    this.maybeFail("usage");
-    return this.boxes.has(id) ? { costMicro: this.costs.get(id) ?? 0 } : null;
   }
 }

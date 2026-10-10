@@ -1,6 +1,6 @@
 // Dev-only stand-in for the box host's API. infra/bridge-sim/host.mjs subscribes to `simbox.all` and starts/kills sim bridges.
 import { v } from "convex/values";
-import { internalMutation, internalQuery, query } from "./_generated/server";
+import { internalMutation, query } from "./_generated/server";
 
 export const create = internalMutation({
   args: { name: v.string() },
@@ -17,24 +17,6 @@ export const setRunning = internalMutation({
     const box = await ctx.db.get(ctx.db.normalizeId("simBoxes", id) ?? ("" as never));
     if (!box) throw new Error("sim box not found");
     if (box.running !== running) await ctx.db.patch(box._id, { running, gen: box.gen + 1 });
-  },
-});
-
-/** Dev/e2e: what a sim box has "cost" so far, in micro-USD. Settable with `setCost` so metering can be exercised without a real provider. */
-export const usage = internalQuery({
-  args: { id: v.string() },
-  handler: async (ctx, { id }) => {
-    const nid = ctx.db.normalizeId("simBoxes", id);
-    const box = nid ? await ctx.db.get(nid) : null;
-    return box ? { costMicro: box.costMicro ?? 0 } : null;
-  },
-});
-
-export const setCost = internalMutation({
-  args: { id: v.string(), costMicro: v.number() },
-  handler: async (ctx, { id, costMicro }) => {
-    const nid = ctx.db.normalizeId("simBoxes", id);
-    if (nid) await ctx.db.patch(nid, { costMicro });
   },
 });
 

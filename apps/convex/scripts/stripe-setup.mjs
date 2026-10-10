@@ -1,4 +1,4 @@
-// Creates (or finds) the Stripe meter, product and metered price for billing, in the account the key belongs to. Test mode only.
+// Creates (or finds) the Stripe product and the flat monthly app-access price, in the account the key belongs to. Test mode only.
 //
 //   doppler run -p dorks -c dev -- node apps/convex/scripts/stripe-setup.mjs [--write-doppler dev] [--webhook-url https://<deployment>.convex.site/stripe/webhook]
 //
@@ -6,7 +6,7 @@
 // never printed) in that Doppler config of project dorks. Use the dev config; production is set by a human in the dashboard.
 import { spawnSync } from "node:child_process";
 import { stripeClient } from "../core/stripe.ts";
-import { ensureBillingObjects, ensureWebhookEndpoint } from "../core/stripeSetup.ts";
+import { ensureAppPrice, ensureWebhookEndpoint } from "../core/stripeSetup.ts";
 
 const args = process.argv.slice(2);
 const opt = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
@@ -16,7 +16,7 @@ if (!key || key.startsWith("REPLACE_ME__")) {
   process.exit(2);
 }
 const stripe = stripeClient({ secretKey: key }); // throws on a live key
-const out = await ensureBillingObjects(stripe, (m) => console.log("[stripe-setup]", m));
+const out = await ensureAppPrice(stripe, (m) => console.log("[stripe-setup]", m));
 console.log("[stripe-setup]", JSON.stringify(out));
 
 const config = opt("--write-doppler");

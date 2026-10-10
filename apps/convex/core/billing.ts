@@ -1,41 +1,13 @@
 // Billing primitives with no Convex or Node dependency (WebCrypto only), so Convex functions, unit tests and the e2e scripts share them.
 //
-// Model (docs/billing.md): a customer is billed for what their sandboxes cost us at Upstash, plus a markup. Upstash reports a running
-// `total_compute_cost_usd` per box. Each metering run sends the growth of that number to a Stripe Billing Meter in micro-USD
-// (1 unit = $0.000001 of Upstash cost), and the Stripe price charges `unit_amount_decimal` cents per unit = cost * (1 + markup).
+// Model (docs/billing.md): one flat monthly subscription for app access (users bring their own Upstash and Claude keys, so there is no
+// metering). The price is a Stripe Price with a lookup key that carries the amount, so changing the price means a new lookup key.
 
-/** Our markup over the Upstash Box cost, in basis points (1 bp = 0.01%). 1500 = 15%. Changing it means a new Stripe price. */
-export const MARKUP_BPS = 1500;
-export const MICRO_PER_USD = 1_000_000;
-/** Stripe meter event name. Fixed: it is part of the meter that the setup script creates. */
-export const METER_EVENT_NAME = "dorks_box_cost_micro_usd";
-export const PRICE_LOOKUP_KEY = `dorks_box_usage_markup_${MARKUP_BPS}bps`;
+/** Monthly price of app access, in cents. */
+export const APP_PRICE_CENTS = 1000;
+export const APP_PRICE_LOOKUP_KEY = `dorks_app_monthly_${APP_PRICE_CENTS}`;
 
-/** Upstash reports dollars as a float; the ledger holds whole micro-dollars so sums never drift. */
-export const usdToMicro = (usd: number): number => Math.round(usd * MICRO_PER_USD);
-
-/**
- * Stripe `unit_amount_decimal` (cents, at most 12 decimals) for one micro-USD of cost at the given markup.
- * 1 micro-USD = 0.0001 cents, so with a 15% markup: 0.0001 * 1.15 = 0.000115. Done in integers to avoid float noise.
- */
-export function unitAmountDecimalCents(markupBps: number = MARKUP_BPS): string {
-  if (!Number.isInteger(markupBps) || markupBps < 0 || markupBps > 100_000) throw new Error("bad markup");
-  // (10000 + bps) / 10000 * 1e-4 cents = (10000 + bps) * 1e-8 cents
-  const digits = String(10_000 + markupBps).padStart(9, "0"); // value * 1e-8
-  const whole = digits.slice(0, -8) || "0";
-  const frac = digits.slice(-8).replace(/0+$/, "");
-  return frac ? `${whole}.${frac}` : whole;
-}
-
-/** What the customer pays for `costMicro` of Upstash cost, in (fractional) cents, before Stripe rounds the invoice line. */
-export const billedCents = (costMicro: number, markupBps: number = MARKUP_BPS): number => (costMicro * (10_000 + markupBps)) / 1e8;
-
-export type UsageWindow = { from: number; to: number };
-
-/** Stripe dedupes meter events by `identifier`; the window is in it, so a retry of the same window can never be counted twice. */
-export const meterIdentifier = (boxId: string, w: UsageWindow): string => `${boxId}:${w.from}-${w.to}`;
-
-/** Subscription statuses that keep a customer entitled (and billed). `past_due` still accrues: Stripe is retrying the card. */
+/** Subscription statuses that keep a customer entitled. `past_due` still has access: Stripe is retrying the card. */
 export const ENTITLED_STATUSES = ["active", "trialing", "past_due"] as const;
 export const isEntitled = (status: string | undefined | null): boolean => !!status && (ENTITLED_STATUSES as readonly string[]).includes(status);
 

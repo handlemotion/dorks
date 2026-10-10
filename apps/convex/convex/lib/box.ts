@@ -40,8 +40,5 @@ function simBox(ctx: ActionCtx): BoxProvider {
     async delete(id) {
       await ctx.runMutation(internal.simbox.remove, { id });
     },
-    async usage(id) {
-      return ctx.runQuery(internal.simbox.usage, { id });
-    },
   };
 }

@@ -2,38 +2,17 @@
 // @vitest-environment edge-runtime
 import { convexTest, type TestConvex } from "convex-test";
 import { describe, expect, it } from "vitest";
-import {
-  billedCents, isEntitled, MARKUP_BPS, meterIdentifier, parseBillingEvent, signStripePayload, unitAmountDecimalCents, usdToMicro, verifyStripeSignature,
-} from "../core/billing";
+import { APP_PRICE_CENTS, APP_PRICE_LOOKUP_KEY, isEntitled, parseBillingEvent, signStripePayload, verifyStripeSignature } from "../core/billing";
 import { encodeForm, isLiveKey, stripeClient } from "../core/stripe";
 import { internal } from "../convex/_generated/api";
 import schema from "../convex/schema";
 
 const modules = import.meta.glob("../convex/**/*.*s");
 
-describe("pricing", () => {
-  it("charges cost + 15% as an exact Stripe decimal (cents per micro-USD)", () => {
-    expect(MARKUP_BPS).toBe(1500);
-    expect(unitAmountDecimalCents()).toBe("0.000115");
-    expect(unitAmountDecimalCents(0)).toBe("0.0001");
-    expect(unitAmountDecimalCents(2000)).toBe("0.00012");
-    expect(() => unitAmountDecimalCents(-1)).toThrow();
-  });
-
-  it("bills $1.00 of Upstash cost as $1.15", () => {
-    expect(billedCents(usdToMicro(1))).toBeCloseTo(115, 9);
-    expect(billedCents(usdToMicro(0.2))).toBeCloseTo(23, 9); // 1 hour of two busy cores on a Small box
-    expect(billedCents(0)).toBe(0);
-  });
-
-  it("converts the provider's float dollars to whole micro-dollars", () => {
-    expect(usdToMicro(0.0123456789)).toBe(12346);
-    expect(usdToMicro(0.1 + 0.2)).toBe(300_000); // float noise is rounded away
-  });
-
-  it("names a window uniquely, so a retry repeats the identifier and a wider window does not", () => {
-    expect(meterIdentifier("b1", { from: 5, to: 9 })).toBe(meterIdentifier("b1", { from: 5, to: 9 }));
-    expect(meterIdentifier("b1", { from: 5, to: 9 })).not.toBe(meterIdentifier("b1", { from: 5, to: 12 }));
+describe("plan", () => {
+  it("is $10 a month and the price lookup key carries the amount, so a price change needs a new key", () => {
+    expect(APP_PRICE_CENTS).toBe(1000);
+    expect(APP_PRICE_LOOKUP_KEY).toBe("dorks_app_monthly_1000");
   });
 
   it("keeps past_due customers entitled and cancelled/unpaid ones out", () => {
@@ -91,82 +70,20 @@ describe("stripe client", () => {
     expect(() => stripeClient({ secretKey: "sk_live_abc" })).toThrow(/live keys are refused/);
     expect(() => stripeClient({ secretKey: "sk_live_abc", allowLive: true })).not.toThrow();
   });
-  it("sends the meter event with an identifier and never puts the key or request in an error", async () => {
+  it("sends a subscription Checkout for quantity 1 and never puts the key or request in an error", async () => {
     let seen: { url: string; init: RequestInit } | undefined;
-    const ok = stripeClient({ secretKey: "sk_test_secret", fetch: (async (url: string, init: RequestInit) => ((seen = { url, init }), new Response(JSON.stringify({ identifier: "x" })))) as unknown as typeof fetch });
-    await ok.createMeterEvent({ eventName: "e", customerId: "cus_1", value: 42, identifier: "b:0-42", timestampSec: 1 });
-    expect(seen!.url).toBe("https://api.stripe.com/v1/billing/meter_events");
-    expect(decodeURIComponent(String(seen!.init.body))).toBe("event_name=e&identifier=b:0-42&timestamp=1&payload[stripe_customer_id]=cus_1&payload[value]=42");
+    const ok = stripeClient({ secretKey: "sk_test_secret", fetch: (async (url: string, init: RequestInit) => ((seen = { url, init }), new Response(JSON.stringify({ id: "cs_1", url: "https://checkout.stripe.com/x" })))) as unknown as typeof fetch });
+    await ok.createCheckoutSession({ customerId: "cus_1", priceId: "price_1", userId: "u1", successUrl: "https://a/s", cancelUrl: "https://a/c" });
+    expect(seen!.url).toBe("https://api.stripe.com/v1/checkout/sessions");
+    const body = decodeURIComponent(String(seen!.init.body));
+    expect(body).toContain("mode=subscription");
+    expect(body).toContain("line_items[0][price]=price_1&line_items[0][quantity]=1");
+    expect(body).toContain("client_reference_id=u1");
+    expect((seen!.init.headers as Record<string, string>).authorization).toBe("Bearer sk_test_secret");
     const bad = stripeClient({ secretKey: "sk_test_secret", fetch: (async () => new Response(JSON.stringify({ error: { code: "x", message: "nope" } }), { status: 400 })) as unknown as typeof fetch });
-    const err = await bad.createMeterEvent({ eventName: "e", customerId: "cus_1", value: 1, identifier: "i" }).catch((e) => e);
+    const err = await bad.createPortalSession({ customerId: "cus_1", returnUrl: "https://a" }).catch((e) => e);
     expect(err.message).not.toContain("sk_test_secret");
     expect(err.message).toContain("HTTP 400");
-  });
-});
-
-describe("billing ledger (Convex)", () => {
-  const subscribe = (t: TestConvex<typeof schema>, status = "active") =>
-    t.run((ctx) => ctx.db.insert("billing", { userId: "u1", stripeCustomerId: "cus_1", status, updatedAt: 1 }));
-  const claim = (t: TestConvex<typeof schema>, costMicro: number, userId = "u1") => t.mutation(internal.billing.claim, { userId, boxId: "box1", costMicro });
-  const row = (t: TestConvex<typeof schema>) => t.run((ctx) => ctx.db.query("boxUsage").withIndex("by_box", (q) => q.eq("boxId", "box1")).unique());
-
-  it("claims the growth since the last settled window, once", async () => {
-    const t = convexTest(schema, modules);
-    await subscribe(t);
-    expect(await claim(t, 1000)).toEqual({ window: { from: 0, to: 1000 }, customerId: "cus_1" });
-    await t.mutation(internal.billing.settle, { boxId: "box1", to: 1000 });
-    expect(await claim(t, 1000)).toBeNull(); // nothing new
-    expect(await claim(t, 1750)).toEqual({ window: { from: 1000, to: 1750 }, customerId: "cus_1" });
-  });
-
-  it("retries a claimed but unsettled window unchanged, even after the cost grew (no double count, no widened window)", async () => {
-    const t = convexTest(schema, modules);
-    await subscribe(t);
-    await claim(t, 1000); // sent to Stripe, then the action died before settle
-    const again = await claim(t, 1600);
-    expect(again).toEqual({ window: { from: 0, to: 1000 }, customerId: "cus_1" });
-    await t.mutation(internal.billing.settle, { boxId: "box1", to: 1000 });
-    expect(await claim(t, 1600)).toEqual({ window: { from: 1000, to: 1600 }, customerId: "cus_1" });
-  });
-
-  it("never lets the cost go backwards", async () => {
-    const t = convexTest(schema, modules);
-    await subscribe(t);
-    await claim(t, 900);
-    await t.mutation(internal.billing.settle, { boxId: "box1", to: 900 });
-    expect(await claim(t, 400)).toBeNull();
-    expect((await row(t))!.costMicro).toBe(900);
-  });
-
-  it("does not bill usage that accrued while the user had no entitled subscription", async () => {
-    const t = convexTest(schema, modules);
-    expect(await claim(t, 500)).toBeNull(); // no billing row
-    await subscribe(t);
-    expect(await claim(t, 800)).toEqual({ window: { from: 500, to: 800 }, customerId: "cus_1" }); // only the part after subscribing
-  });
-
-  it("stops billing once the subscription is canceled", async () => {
-    const t = convexTest(schema, modules);
-    const id = await subscribe(t, "canceled");
-    expect(await claim(t, 700)).toBeNull();
-    expect((await row(t))!.reportedMicro).toBe(700);
-    await t.run((ctx) => ctx.db.patch(id, { status: "past_due" }));
-    expect(await claim(t, 900)).toMatchObject({ window: { from: 700, to: 900 } });
-  });
-
-  it("ignores a claim from a different user for the same box", async () => {
-    const t = convexTest(schema, modules);
-    await subscribe(t);
-    await claim(t, 100);
-    expect(await claim(t, 5000, "u2")).toBeNull();
-  });
-
-  it("settle only applies to the window it names", async () => {
-    const t = convexTest(schema, modules);
-    await subscribe(t);
-    await claim(t, 1000);
-    await t.mutation(internal.billing.settle, { boxId: "box1", to: 999 });
-    expect(await row(t)).toMatchObject({ reportedMicro: 0, inflightTo: 1000 });
   });
 });
 

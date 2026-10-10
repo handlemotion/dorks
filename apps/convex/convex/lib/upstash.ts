@@ -1,4 +1,3 @@
-import { usdToMicro } from "../../core/billing";
 import { BoxNotFoundError, type BoxProvider } from "../../core/box";
 
 // Upstash Box REST provider. Endpoints and bodies follow the official SDK (@upstash/box 0.7.9, github.com/upstash/box), because
@@ -17,7 +16,7 @@ const LABEL_MAX = 20; // provider limit: <=20 chars of [A-Za-z0-9._:-], <=5 labe
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 export type BoxStatus = "creating" | "idle" | "running" | "paused" | "error" | "deleted";
-type BoxData = { id: string; name?: string; labels?: string[]; status: BoxStatus; created_at?: number; total_compute_cost_usd?: number };
+type BoxData = { id: string; name?: string; labels?: string[]; status: BoxStatus; created_at?: number };
 export type NetworkPolicy = { mode: "allow-all" | "deny-all" } | { mode: "custom"; allowedDomains?: string[]; allowedCidrs?: string[]; deniedCidrs?: string[] };
 
 export type UpstashOptions = {
@@ -252,19 +251,6 @@ export function upstashBox(opts: UpstashOptions): BoxProvider {
 
     async delete(boxId) {
       await remove(boxId);
-    },
-
-    async usage(boxId) {
-      let b: BoxData;
-      try {
-        b = await getBox("usage", boxId);
-      } catch (e) {
-        if (e instanceof BoxNotFoundError) return null; // gone (or never ours): there is nothing more to bill
-        throw e;
-      }
-      // `total_compute_cost_usd` is the box's cumulative compute bill (UNKNOWN: whether it includes storage; docs/billing.md).
-      const usd = b.total_compute_cost_usd;
-      return typeof usd === "number" && Number.isFinite(usd) && usd >= 0 ? { costMicro: usdToMicro(usd) } : null;
     },
   };
 }
