@@ -9,8 +9,9 @@
 // Stripe webhooks cannot reach a local backend and the Stripe CLI is not installable in cloud containers, so deliveries are forwarded by
 // this script: it reads the real events from Stripe's API and POSTs them to /stripe/webhook signed with a throwaway secret it sets on the
 // deployment. The payloads are Stripe's; only the transport and the signing key are ours (Stripe's own signing is covered by the unit tests).
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { createServer } from "node:http";
 import { ConvexClient } from "convex/browser";
 import { anyApi as api } from "convex/server";
 import { signStripePayload } from "../core/billing.ts";
@@ -18,9 +19,10 @@ import { stripeClient } from "../core/stripe.ts";
 import { ensureBillingObjects } from "../core/stripeSetup.ts";
 import { codeFor, startMockResend } from "./mock-resend.mjs";
 
-const { CONVEX_URL, CONVEX_SITE_URL } = process.env;
+// The local backend from pnpm dev:backend (same defaults as run-e2e.sh).
+const CONVEX_URL = process.env.CONVEX_URL ?? "http://127.0.0.1:3210";
+const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL ?? "http://127.0.0.1:3211";
 const key = process.env.STRIPE_SECRET_KEY;
-if (!CONVEX_URL || !CONVEX_SITE_URL) throw new Error("CONVEX_URL / CONVEX_SITE_URL not set (Doppler dev has them)");
 if (!key || key.startsWith("REPLACE_ME__")) throw new Error("STRIPE_SECRET_KEY is not set");
 const stripe = stripeClient({ secretKey: key });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -31,7 +33,14 @@ const convex = (args, input) => {
   if (r.status !== 0) throw new Error(`convex ${args[0]} ${args[1] ?? ""} failed: ${(r.stderr || r.stdout).slice(0, 300)}`);
   return r.stdout;
 };
-const run = (fn, argsObj = {}) => convex(["run", fn, JSON.stringify(argsObj)]);
+// Async on purpose: the Stripe forwarder below lives in this process, and a blocking spawnSync here would stop it answering the backend.
+const run = (fn, argsObj = {}) => new Promise((resolve, reject) => {
+  const p = spawn("npx", ["convex", "run", fn, JSON.stringify(argsObj)]);
+  let out = "", err = "";
+  p.stdout.on("data", (d) => (out += d));
+  p.stderr.on("data", (d) => (err += d));
+  p.on("close", (code) => (code === 0 ? resolve(out) : reject(new Error(`convex run ${fn} failed: ${(err || out).slice(0, 300)}`))));
+});
 const usageRows = () => JSON.parse(convex(["data", "boxUsage", "--format", "json"]));
 
 // Convex function env: the deployment must hold the same Stripe key/price (pnpm dev:backend pushes them). The webhook secret is ours.
@@ -39,6 +48,26 @@ const deployed = (n) => { try { return convex(["env", "get", n]).trim(); } catch
 if (!deployed("STRIPE_SECRET_KEY") || !deployed("STRIPE_PRICE_ID")) throw new Error("the deployment has no STRIPE_SECRET_KEY / STRIPE_PRICE_ID: run pnpm dev:backend after storing them in Doppler dev");
 const whsec = `whsec_e2e_${randomBytes(16).toString("hex")}`;
 convex(["env", "set", "STRIPE_WEBHOOK_SECRET"], whsec);
+
+// The local Docker backend has no route to the internet in cloud containers (outbound HTTPS only goes through an agent proxy that the container
+// does not use), so its Stripe calls go to this forwarder on the host, which relays them unchanged to api.stripe.com. Real Stripe, local transport.
+const FORWARD_PORT = 8787;
+const forwarder = createServer((req, res) => {
+  const chunks = [];
+  req.on("data", (c) => chunks.push(c));
+  req.on("end", async () => {
+    const headers = {};
+    for (const h of ["authorization", "content-type", "idempotency-key", "stripe-version"]) if (req.headers[h]) headers[h] = req.headers[h];
+    try {
+      const r = await fetch(`https://api.stripe.com${req.url}`, { method: req.method, headers, body: ["GET", "HEAD"].includes(req.method) ? undefined : Buffer.concat(chunks) });
+      res.writeHead(r.status, { "content-type": r.headers.get("content-type") ?? "application/json" }).end(await r.text());
+    } catch {
+      res.writeHead(502).end("{}");
+    }
+  });
+});
+await new Promise((r) => forwarder.listen(FORWARD_PORT, "127.0.0.1", r));
+convex(["env", "set", "STRIPE_API_BASE_URL"], `http://127.0.0.1:${FORWARD_PORT}`);
 
 const objs = await ensureBillingObjects(stripe);
 await startMockResend();
@@ -83,12 +112,12 @@ try {
   check("before subscribing: configured, not entitled", st.configured && !st.entitled && st.status === "none", JSON.stringify(st));
   const { url } = await client.action(api.billing.checkout, {});
   check("checkout returns a Stripe Checkout URL", /^https:\/\/checkout\.stripe\.com\//.test(url));
-  customerId = JSON.parse(run("billing:rowOf", { userId }).trim() || "null")?.customerId;
+  customerId = JSON.parse((await run("billing:rowOf", { userId })).trim() || "null")?.customerId;
   check("a Stripe customer was created and recorded", /^cus_/.test(customerId ?? ""), customerId);
 
   // The hosted Checkout page is a browser flow; this does what it does on success: pay with a test card and start the subscription.
-  await stripe.post("attach card", "/v1/payment_methods/pm_card_visa/attach", { customer: customerId });
-  await stripe.post("default card", `/v1/customers/${customerId}`, { invoice_settings: { default_payment_method: "pm_card_visa" } });
+  const pm = await stripe.post("attach card", "/v1/payment_methods/pm_card_visa/attach", { customer: customerId }); // returns a new payment method id
+  await stripe.post("default card", `/v1/customers/${customerId}`, { invoice_settings: { default_payment_method: pm.id } });
   const sub = await stripe.post("subscription", "/v1/subscriptions", { customer: customerId, items: [{ price: objs.priceId }], metadata: { dorks_user_id: userId } });
   for (let i = 0; i < 20; i++) { await forwardEvents(); st = await client.query(api.billing.status, {}); if (st.entitled) break; await sleep(1500); }
   check("webhook made the user entitled", st.entitled && st.status === "active", JSON.stringify(st));
@@ -100,22 +129,22 @@ try {
     return s.data.reduce((a, x) => a + x.aggregated_value, 0);
   };
   const waitFor = async (want, ms = 240_000) => { const t0 = Date.now(); let v = 0; while (Date.now() - t0 < ms) { v = await aggregated(); if (v === want) return v; await sleep(10_000); } return v; };
-  run("simbox:setCost", { id: row.boxId, costMicro: 12_345 });
-  run("billing:meterAll");
+  await run("simbox:setCost", { id: row.boxId, costMicro: 12_345 });
+  await run("billing:meterAll");
   let u = usageRows().find((x) => x.boxId === row.boxId);
   check("ledger settled the first window", u?.reportedMicro === 12_345 && u.inflightTo === undefined, JSON.stringify(u));
   check("Stripe meter shows 12345 micro-USD", (await waitFor(12_345)) === 12_345);
-  run("billing:meterAll"); // nothing new: must not send again
-  run("simbox:setCost", { id: row.boxId, costMicro: 20_000 });
-  run("billing:meterAll");
+  await run("billing:meterAll"); // nothing new: must not send again
+  await run("simbox:setCost", { id: row.boxId, costMicro: 20_000 });
+  await run("billing:meterAll");
   check("Stripe meter shows 20000 after growth (only the delta was sent, nothing counted twice)", (await waitFor(20_000)) === 20_000);
 
   // ---- cancel: usage after cancel is not billed
   await stripe.del("cancel", `/v1/subscriptions/${sub.id}`);
   for (let i = 0; i < 20; i++) { await forwardEvents(); st = await client.query(api.billing.status, {}); if (!st.entitled) break; await sleep(1500); }
   check("webhook ended the entitlement", !st.entitled && st.status === "canceled", JSON.stringify(st));
-  run("simbox:setCost", { id: row.boxId, costMicro: 50_000 });
-  run("billing:meterAll");
+  await run("simbox:setCost", { id: row.boxId, costMicro: 50_000 });
+  await run("billing:meterAll");
   await sleep(70_000);
   check("usage after cancellation is not sent to Stripe", (await aggregated()) === 20_000);
 } catch (e) {
@@ -124,6 +153,8 @@ try {
 } finally {
   try { if (dork) await client.mutation(api.dorks.remove, { dorkId: dork }); } catch {}
   try { if (customerId) await stripe.del("delete customer", `/v1/customers/${customerId}`); } catch {}
+  try { convex(["env", "remove", "STRIPE_API_BASE_URL"]); } catch {}
+  forwarder.close();
   await client.close();
 }
 console.log(`\n${results.filter(Boolean).length}/${results.length} passed`);

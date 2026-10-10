@@ -19,10 +19,13 @@ const METER_CONCURRENCY = 8;
 const billingConfigured = () => !!process.env.STRIPE_SECRET_KEY && !!process.env.STRIPE_PRICE_ID;
 const billingRequired = () => process.env.BILLING_REQUIRED === "true";
 
+/** STRIPE_API_BASE_URL is for the local e2e only (a local backend in a locked-down container reaches Stripe through a forwarder). Unset in production. */
+const stripeFromEnv = (secretKey: string) => stripeClient({ secretKey, allowLive: process.env.STRIPE_ALLOW_LIVE === "true", baseUrl: process.env.STRIPE_API_BASE_URL || undefined });
+
 function stripe() {
   const secretKey = process.env.STRIPE_SECRET_KEY;
   if (!secretKey) return fail("not_configured", "billing is not configured");
-  return stripeClient({ secretKey, allowLive: process.env.STRIPE_ALLOW_LIVE === "true" });
+  return stripeFromEnv(secretKey);
 }
 
 const siteUrl = (path: string) => {
@@ -239,7 +242,7 @@ export async function meterBox(ctx: ActionCtx, p: { userId: string; boxId: strin
     if (claim) {
       const { window, customerId } = claim;
       try {
-        await stripeClient({ secretKey, allowLive: process.env.STRIPE_ALLOW_LIVE === "true" }).createMeterEvent({
+        await stripeFromEnv(secretKey).createMeterEvent({
           eventName: process.env.STRIPE_METER_EVENT_NAME || METER_EVENT_NAME,
           customerId,
           value: window.to - window.from,

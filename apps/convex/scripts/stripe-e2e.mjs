@@ -48,8 +48,8 @@ try {
   const clock = await stripe.post("clock", "/v1/test_helpers/test_clocks", { frozen_time: now, name: `dorks-billing-e2e-${now}` });
   cleanup.push(() => stripe.del("delete clock", `/v1/test_helpers/test_clocks/${clock.id}`));
   const customer = await stripe.post("customer", "/v1/customers", { test_clock: clock.id, name: "dorks billing e2e", email: "billing-e2e@dorks.build", metadata: { dorks_user_id: "e2e" } });
-  await stripe.post("attach card", "/v1/payment_methods/pm_card_visa/attach", { customer: customer.id });
-  await stripe.post("default card", `/v1/customers/${customer.id}`, { invoice_settings: { default_payment_method: "pm_card_visa" } });
+  const pm = await stripe.post("attach card", "/v1/payment_methods/pm_card_visa/attach", { customer: customer.id }); // attaching the test token returns a new payment method id
+  await stripe.post("default card", `/v1/customers/${customer.id}`, { invoice_settings: { default_payment_method: pm.id } });
   const sub = await stripe.post("subscription", "/v1/subscriptions", { customer: customer.id, items: [{ price: objs.priceId }] });
   check(sub.status === "active", `metered subscription is active (${sub.status})`);
 

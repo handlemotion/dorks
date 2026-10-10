@@ -32,14 +32,15 @@ The ledger is the `boxUsage` table, one row per box: `costMicro` (last cost seen
 
 ## End-to-end tests (real services, nothing mocked)
 
-- `pnpm stripe:e2e` (`scripts/stripe-e2e.mjs`): creates a real Upstash box, burns both CPU cores, reads the box's own cost, deletes the box; puts a Stripe test customer on a **test clock** (Stripe's way of fast-forwarding time) with a test card and the metered subscription; sends the cost to the meter exactly like `billing.ts`; advances the clock; checks the invoice line is `round(cost x 1.15)` cents with the raw cost as quantity. Costs a few cents of Upstash compute.
-- `pnpm billing:e2e` (`scripts/billing-e2e.mjs`): drives our own Convex functions on the local backend against real Stripe: sign in, `billing.checkout` (real customer and Checkout session), subscription, webhook, metering through the real cron action, no double counting, nothing billed after cancel. The box's cost figure is set by hand there (the local backend uses the simulated box provider); the real figure is covered by `stripe:e2e`. Webhooks cannot reach a local backend, and the Stripe CLI cannot be installed in the cloud container, so the script forwards Stripe's real events to `/stripe/webhook` itself, signed with a throwaway secret.
+- `pnpm stripe:e2e` (`scripts/stripe-e2e.mjs`): creates a real Upstash box, burns both CPU cores, reads the box's own cost, deletes the box; puts a Stripe test customer on a **test clock** (Stripe's way of fast-forwarding time) with a test card and the metered subscription; sends the cost to the meter exactly like `billing.ts`; advances the clock; checks the invoice line is `round(cost x 1.15)` cents with the raw cost as quantity. Costs a few cents of Upstash compute. Both pass as of 2026-10-10 (10/10 checks in `billing:e2e`).
+- `pnpm billing:e2e` (`scripts/billing-e2e.mjs`): drives our own Convex functions on the local backend against real Stripe: sign in, `billing.checkout` (real customer and Checkout session), subscription, webhook, metering through the real cron action, no double counting, nothing billed after cancel. The box's cost figure is set by hand there (the local backend uses the simulated box provider); the real figure is covered by `stripe:e2e`. Webhooks cannot reach a local backend, and the Stripe CLI cannot be installed in the cloud container, so the script forwards Stripe's real events to `/stripe/webhook` itself, signed with a throwaway secret. In cloud containers the Docker backend also has no internet route, so the script runs a small relay on the host and points the backend at it with `STRIPE_API_BASE_URL` (removed again at the end): the calls are still real Stripe calls.
 
-## Unknowns to check on first real run
+## What the first real runs showed (2026-10-10, Stripe sandbox + a real Upstash Small box)
 
-- Whether `total_compute_cost_usd` includes storage ($0.10 per GB-month, including snapshots). If it does not, storage is not billed to customers yet. The `stripe:e2e` run shows what the field contains after a burn.
-- What Stripe returns for a repeated meter-event identifier (`stripe:e2e` prints it). `billing.ts` treats an HTTP 400 mentioning identifier/duplicate/already as "already counted".
-- The `total_token_cost_usd` field is ignored on purpose: dorks runs the customer's own Claude token, not Upstash's built-in LLM.
+- `total_compute_cost_usd` is CPU only: 2 cores busy for 240s read $0.013282, which is exactly 480 core-seconds at $0.10 per core-hour. **Storage ($0.10 per GB-month, including snapshots) is not in it, so it is not billed to customers yet.** Decide whether to pass it through (it would need its own meter, since Upstash gives no per-box storage figure).
+- A repeated meter-event identifier is rejected by Stripe with `HTTP 400: An event already exists with identifier ...`; `billing.ts` treats that as "already counted". The meter still read the original amount afterwards.
+- The invoice line read `13282 x Dorks sandbox usage (at $0.00000115 / month)` for 2 cents: 1.328 cents x 1.15 = 1.527 cents, rounded by Stripe. Each invoice line rounds to a whole cent, so a customer with under half a cent of usage in a month is billed nothing.
+- `total_token_cost_usd` is ignored on purpose: dorks runs the customer's own Claude token, not Upstash's built-in LLM.
 
 ## Going live
 

@@ -30,6 +30,7 @@ Backend: **convex** (spike verdict GO, [convex-spike.md](../convex-spike.md)); t
 | `STRIPE_PRICE_ID` | `convex` | dev, prod | no (identifier) | convex `convex/billing.ts` (Checkout line item) | printed and stored in `dev` by `pnpm stripe:setup` | missing | missing |
 | `BILLING_REQUIRED` | `convex` | dev, prod | no | convex `convex/billing.ts`: `true` = creating a dork needs an active subscription | config, default off | - | - |
 | `STRIPE_METER_EVENT_NAME` | `convex` | dev, prod | no | convex `convex/billing.ts`; default `dorks_box_cost_micro_usd` (the name `stripe:setup` gives the meter) | config, leave unset | - | - |
+| `STRIPE_API_BASE_URL` | `convex` | dev | no | convex `convex/billing.ts`: redirects Stripe calls (local e2e relay only; `billing:e2e` sets and removes it on the deployment) | config, never set in Doppler | - | - |
 | `STRIPE_ALLOW_LIVE` | `convex` | dev, prod | no | convex `convex/billing.ts`: `true` lets a live key through. Never set by agents | config, leave unset | - | - |
 | `SIM_HOST_KEY` | `convex` | dev only | yes (dev) | convex `simbox.ts:35`, `scripts/e2e.mjs`, `infra/bridge-sim/host.mjs`. Only honoured when `BOX_PROVIDER=sim` | generated (32 random bytes, hex) | filled | `-` |
 | `VITE_CONVEX_URL` | `web` | dev, prod | no (ships to browsers) | web `src/lib/convex.ts:6` | config: `http://127.0.0.1:3210` (local Convex); prod = `https://<deployment>.convex.cloud` ([Convex](providers/convex.md)) | config | dummy |
