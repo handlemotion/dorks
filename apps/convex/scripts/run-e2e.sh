@@ -4,7 +4,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 export CONVEX_URL=${CONVEX_URL:-http://127.0.0.1:3210} CONVEX_SITE_URL=${CONVEX_SITE_URL:-http://127.0.0.1:3211}
 SIM_HOST_KEY=$(npx convex env get SIM_HOST_KEY); BRIDGE_SECRET_KEY=$(npx convex env get BRIDGE_SECRET_KEY); GITHUB_WEBHOOK_SECRET=$(npx convex env get GITHUB_WEBHOOK_SECRET)
-export SIM_HOST_KEY BRIDGE_SECRET_KEY GITHUB_WEBHOOK_SECRET
+GITHUB_APP_SLUG=$(npx convex env get GITHUB_APP_SLUG 2>/dev/null || true) # an identifier, not a secret
+export SIM_HOST_KEY BRIDGE_SECRET_KEY GITHUB_WEBHOOK_SECRET GITHUB_APP_SLUG
 export HEARTBEAT_MS=${HEARTBEAT_MS:-30000}
 OUT=${OUT:-/tmp/dorks-e2e}; mkdir -p $OUT
 node ../../infra/bridge-sim/host.mjs > $OUT/host.log 2>&1 & HOST=$!
