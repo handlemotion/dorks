@@ -7,7 +7,7 @@ import { ConvexClient } from "convex/browser";
 import { anyApi as api } from "convex/server";
 import { codeFor, inbox, startMockResend } from "./mock-resend.mjs";
 
-const { CONVEX_URL, CONVEX_SITE_URL, SIM_HOST_KEY, BRIDGE_SECRET_KEY, GITHUB_WEBHOOK_SECRET } = process.env;
+const { CONVEX_URL, CONVEX_SITE_URL, SIM_HOST_KEY, BRIDGE_SECRET_KEY, GITHUB_WEBHOOK_SECRET, GITHUB_APP_SLUG } = process.env;
 const ORIGIN = "http://localhost:3000";
 const H = { "content-type": "application/json", origin: ORIGIN };
 const CLAUDE_TOKEN = process.env.E2E_CLAUDE_TOKEN ?? "sk-ant-oat01-SUPERSECRET-e2e"; // set E2E_CLAUDE_TOKEN to run the loop against the real CLI
@@ -219,11 +219,63 @@ check("bridge calls with a wrong secret are refused", err?.data?.code === "forbi
   check("redelivery is acknowledged and changes nothing", (await hook("pull_request", raw, { id: `e2e-${RUN}-close` })) === 200 && (await ended()).filter((e) => e.number === 7).length === 1);
 }
 
+// ------------------------------------------------------------------ autonomy fix loop (webhook -> inbox -> notify -> bridge -> turn -> stall)
+// Real HTTP route, real signature check, real crons/timers (including the 45s notify debounce) and the sim bridge as the agent.
+// No GitHub: hydration and the green confirmation are skipped under BOX_PROVIDER=sim, so "CI green" is not covered here.
+{
+  const REPO = "jaantonio/demo", PR = 9, BRANCH = "agent/fix-loop";
+  const sig = (raw) => `sha256=${createHmac("sha256", GITHUB_WEBHOOK_SECRET).update(raw).digest("hex")}`;
+  let n = 0;
+  const hook = (event, payload, id = `e2e-${RUN}-loop-${++n}`) => {
+    const raw = JSON.stringify({ repository: { full_name: REPO }, installation: { id: 1 }, ...payload });
+    return fetch(`${CONVEX_SITE_URL}/github/webhook`, { method: "POST", headers: { "content-type": "application/json", "x-github-event": event, "x-github-delivery": id, "x-hub-signature-256": sig(raw) }, body: raw }).then((r) => r.status);
+  };
+  const push = (sha) => hook("pull_request", { action: "synchronize", pull_request: { number: PR, head: { sha, ref: BRANCH }, base: { ref: "main" } }, sender: { login: `${GITHUB_APP_SLUG}[bot]`, type: "Bot" } });
+  const fail = (sha, id) => hook("check_suite", { action: "completed", check_suite: { id: Number(sha.replace(/\D/g, "")) || 1, head_sha: sha, head_branch: BRANCH, conclusion: "failure" }, sender: { login: "github-actions[bot]", type: "Bot" } }, id);
+  const comment = (login, type, body) => hook("issue_comment", { action: "created", issue: { number: PR, pull_request: {} }, comment: { body, html_url: `https://github.com/${REPO}/pull/${PR}#c${++n}` }, sender: { login, type } });
+  const sub = async () => (await A.query(api.subscriptions.list, { dorkId })).find((s) => s.number === PR);
+  const transcript = () => A.query(api.events.list, { dorkId, paginationOpts: { numItems: 400, cursor: null } }).then((r) => r.page);
+  const notifies = async () => (await transcript()).filter((e) => e.type === "notify");
+
+  check("loop: the App slug is configured on the backend (else every webhook is 503)", !!GITHUB_APP_SLUG);
+  await A.mutation(api.dorks.setArchived, { dorkId, archived: false }); // an archived dork hears nothing by design (it was archived by the checks above)
+  await A.mutation(api.subscriptions.subscribe, { dorkId, repo: REPO, number: PR });
+  check("loop: PR synchronize from the dork's own push records the head", (await push("aaa1111")) === 200 && (await sub())?.headSha === "aaa1111");
+
+  const before = (await notifies()).length;
+  check("loop: failing check suite accepted", (await fail("aaa1111", `e2e-${RUN}-loop-dup`)) === 200);
+  check("loop: ... and the same delivery again is a no-op", (await fail("aaa1111", `e2e-${RUN}-loop-dup`)) === 200);
+  check("loop: a check suite for a stale commit is ignored", (await fail("0ld0000")) === 200);
+  await waitFor(async () => (await notifies()).length > before, "ci_failed notification (45s debounce)", 120_000);
+  const first = (await notifies()).at(-1);
+  check("loop: one notification, kind ci_failed, for this PR", (await notifies()).length === before + 1 && first.kinds.join() === "ci_failed" && first.prs.some((p) => p.number === PR), JSON.stringify(first.kinds));
+  await waitFor(async () => (await transcript()).some((e) => e.type === "assistant_message" && /notify ci_failed/.test(JSON.stringify(e))), "sim agent ran a turn for the notify", 60_000);
+  check("loop: the sleeping dork woke and the agent took a turn for it", true);
+  await waitFor(() => wa.dork?.state === "idle", "dork idle again", 30_000);
+
+  check("loop: agent push (fix attempt 1) counted", (await push("bbb2222")) === 200 && (await sub())?.ciFixAttempts === 1);
+  check("loop: still failing -> notified again", (await fail("bbb2222")) === 200);
+  await waitFor(async () => (await notifies()).length > before + 1, "second ci_failed notification", 120_000);
+  await waitFor(() => wa.dork?.state === "idle", "dork idle again", 30_000);
+
+  check("loop: agent push (fix attempt 2) counted", (await push("ccc3333")) === 200 && (await sub())?.ciFixAttempts === 2);
+  const count = (await notifies()).length;
+  check("loop: third failure stalls instead of notifying", (await fail("ccc3333")) === 200 && (await sub())?.status === "stalled");
+  check("loop: the transcript says the PR is stalled", (await transcript()).some((e) => e.type === "subscription" && e.number === PR && e.status === "stalled"));
+  check("loop: comments from a bot (and from the App itself) do not un-stall it", (await comment("coderabbitai[bot]", "Bot", "nit")) === 200 && (await comment(`${GITHUB_APP_SLUG}[bot]`, "Bot", "self")) === 200 && (await sub())?.status === "stalled");
+  check("loop: a person's comment resumes it with a fresh attempt budget", (await comment("alice", "User", "please also fix the typo")) === 200 && (await sub())?.status === "active" && (await sub())?.ciFixAttempts === 0);
+  await waitFor(async () => (await notifies()).length > count, "comment notification", 120_000);
+  const kinds = (await notifies()).flatMap((e) => e.kinds); // events.list is newest first: judge the set, not the position
+  check("loop: the person's comment was delivered as a comment notification", kinds.includes("comment"), kinds.join());
+  await waitFor(() => wa.dork?.state === "idle", "dork idle again", 30_000);
+  check("loop: pull request closed by a person ends the subscription", (await hook("pull_request", { action: "closed", pull_request: { number: PR, merged: true, head: { sha: "ccc3333", ref: BRANCH }, base: { ref: "main" } }, sender: { login: "alice", type: "User" } })) === 200 && !(await sub()));
+}
+
 // ------------------------------------------------------------------ secrets
 const blob = JSON.stringify([seenByClients, bridgeViews]);
 const needles = { claudeToken: CLAUDE_TOKEN, cliSecret: CLI_SECRET, ghToken: "sim-github-token", bridgeSecret: bridgeSecret(dorkId) };
 for (const [k, n] of Object.entries(needles)) check(`${k} absent from every query result clients/bridge ever received`, !blob.includes(n));
-check("bridge commands subscription carried only markers/messages", bridgeViews.flat().every((c) => ["user_message", "interrupt", "flush", "fetch_configure", "fetch_gh_token"].includes(c.frame.t)));
+check("bridge commands subscription carried only markers/messages", bridgeViews.flat().every((c) => ["user_message", "notify", "interrupt", "flush", "fetch_configure", "fetch_gh_token"].includes(c.frame.t)));
 writeFileSync(process.env.SECRETS_OUT ?? "/tmp/needles.json", JSON.stringify(needles));
 
 console.log(`\n${results.filter((r) => r.ok).length}/${results.length} checks passed; client A saw ${pushes} reactive pushes for the 2nd turn+`);

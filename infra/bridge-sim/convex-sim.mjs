@@ -155,6 +155,13 @@ async function onCommand({ cid, frame: f }) {
       log("message:", f.text);
       return runTurn(f.text);
     }
+    case "notify": { // autonomy digest (CI failed, review, conflict...): the real bridge writes it to Claude as one user turn
+      await sendNow({ t: "ack", id: f.id });
+      if (seenMsg.has(f.id)) return;
+      seenMsg.add(f.id);
+      log("notify:", (f.kinds ?? []).join(",") || "-");
+      return runTurn(`notify ${(f.kinds ?? []).join(",")}`);
+    }
     case "interrupt": log("interrupt"); return void sendNow({ t: "ack", id: cid });
     case "flush": log("flush"); await flushNow(); return void sendNow({ t: "ack", id: cid }).then(() => sendNow({ t: "flushed", cid }));
     case "fetch_gh_token": { const r = await client.action(api.bridge.ghToken, creds); log("gh token refreshed:", r ? "ok" : "failed"); return void sendNow({ t: "ack", id: cid }); }
