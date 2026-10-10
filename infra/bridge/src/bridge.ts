@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { Agent, childEnv, configDirOf, findTranscripts } from "./claude";
 import type { Config } from "./config";
 import { GithubToken, helperCommand } from "./credentials";
-import { HookService, settingsPath, writeClaudeSettings } from "./hooks";
+import { HookService, mcpConfigPath, settingsPath, writeClaudeMcpConfig, writeClaudeSettings } from "./hooks";
 import { resolveIdentity, type Identity } from "./runas";
 import { EventPipeline } from "./events";
 import { prepareRepo, SetupError } from "./git";
@@ -110,6 +110,7 @@ export class Bridge {
     mkdirSync(this.cfg.stateDir, { recursive: true, mode: 0o700 });
     if (this.runAs) chmodSync(this.cfg.stateDir, 0o711); // others may traverse to cred/ and the settings file, not list or read
     writeClaudeSettings(this.cfg.stateDir, this.self);
+    writeClaudeMcpConfig(this.cfg.stateDir, this.self, this.rpc.sockPath);
     await this.rpc.start();
     await this.handshake(true);
     this.prs.start();
@@ -364,6 +365,7 @@ export class Bridge {
       resumeSessionId: resume,
       extraArgs: this.cfg.claudeExtraArgs,
       settingsFile: settingsPath(this.cfg.stateDir),
+      mcpConfigFile: mcpConfigPath(this.cfg.stateDir),
       runAs: this.runAs,
       redactor: this.redactor,
       log: this.log,

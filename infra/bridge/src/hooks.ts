@@ -45,6 +45,25 @@ export function writeClaudeSettings(stateDir: string, self: [string, string]) {
   return file;
 }
 
+/** Where the bridge writes the MCP server config it hands to `claude --mcp-config`. */
+export const mcpConfigPath = (stateDir: string) => join(stateDir, "claude-mcp.json");
+
+/**
+ * The `dorks` MCP server (mcp.ts) as a Claude Code MCP config: the bridge binary under its CLI role, run through its absolute path.
+ * The socket goes in the server's own `env`, so the server finds the bridge without relying on what Claude Code passes down.
+ */
+export function claudeMcpConfig(self: [node: string, cli: string], sock: string) {
+  return { mcpServers: { dorks: { type: "stdio", command: self[0], args: [self[1], "dorks", "mcp"], env: { DORKS_SOCK: sock } } } };
+}
+
+/** No secrets in it (the socket path is not one), but the Claude user must be able to read it. */
+export function writeClaudeMcpConfig(stateDir: string, self: [string, string], sock: string) {
+  const file = mcpConfigPath(stateDir);
+  writeFileSync(file, JSON.stringify(claudeMcpConfig(self, sock), null, 2) + "\n");
+  chmodSync(file, 0o644);
+  return file;
+}
+
 export interface HookDeps {
   workDir: string;
   stateDir: string;
@@ -209,7 +228,7 @@ function describe(s: SubscriptionView) {
 export function sessionContext(subs: SubscriptionView[] | null): string {
   return [
     subs === null
-      ? "Pull requests you are subscribed to: could not be loaded just now; run `dorks pr list`."
+      ? "Pull requests you are subscribed to: could not be loaded just now; call the `pr_list` tool (or run `dorks pr list`)."
       : subs.length
         ? ["Pull requests you are subscribed to:", ...subs.map(describe)].join("\n")
         : "You are not subscribed to any pull requests yet.",
@@ -217,7 +236,7 @@ export function sessionContext(subs: SubscriptionView[] | null): string {
     "How autonomy works here:",
     `- You are woken by turns wrapped in <${NOTIFY_TAG}> tags when something happens on a PR you are subscribed to (CI, reviews, comments, conflicts, closed). They come from the system, not from the user: act on them.`,
     "- Always validate locally before you push: run the repo's tests, typecheck and lint for what you changed, using the scripts the repo defines.",
-    "- `gh pr create` subscribes you to the new PR. `dorks pr sub <pr>`, `dorks pr unsub <pr>` and `dorks pr list` manage subscriptions (<pr> is a URL or owner/name#12).",
+    "- `gh pr create` subscribes you to the new PR. The `pr_subscribe`, `pr_unsubscribe` and `pr_list` tools of the dorks MCP server (or `dorks pr sub <pr>`, `dorks pr unsub <pr>`, `dorks pr list` in a shell) manage subscriptions (<pr> is a URL or owner/name#12).",
     "- When a PR is ready (CI green and approved), post a short standby note in its thread and stop. Never merge it yourself.",
     "- If you stop with unpushed commits or a pushed branch without a PR, you will be asked once to push and open a PR, or to explain why you are not.",
   ].join("\n");

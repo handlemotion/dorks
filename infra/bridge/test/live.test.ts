@@ -108,4 +108,21 @@ describe.skipIf(!token && !apiKey)("real claude CLI through the bridge", () => {
     expect(existsSync(marker)).toBe(true);
     expect(live.t.events().some((e) => (e.raw as any).type === "result" && (e.raw as any).is_error === false)).toBe(true);
   }, 300_000);
+  // The dorks MCP server comes from the config the bridge hands to `claude --mcp-config` (src/mcp.ts). This is the proof that the real CLI
+  // starts it, lists its tools and lets the model subscribe to a PR through it, all the way to the (fake) backend call.
+  it("loads the dorks MCP server from --mcp-config and subscribes to a PR through its tools", async () => {
+    const live = await boot(tmp("live-state-"), tmp("live-work-"), makeRemote().baseUrl, null, tmp("live-home-"));
+    await turn(
+      live.t,
+      "mcp1",
+      "Call the pr_subscribe tool of the dorks MCP server with pr acme/demo#9, then call the pr_list tool of the same server. Finish by replying with the word DONE and the PR you listed.",
+      1,
+    );
+    expect(live.t.prCalls).toEqual([{ op: "sub", ref: { repo: "acme/demo", number: 9 }, source: "agent" }]);
+    // the bridge forwards only a trimmed init event, so the tool calls themselves are the proof that the server started and its tools were listed
+    const used = live.t.events().flatMap((e) => ((e.raw as any).message?.content ?? []) as { type: string; name?: string; input?: unknown }[]).filter((b) => b.type === "tool_use");
+    expect(used.map((b) => b.name).filter((n) => n?.startsWith("mcp__"))).toEqual(["mcp__dorks__pr_subscribe", "mcp__dorks__pr_list"]); // the CLI defers MCP tools: the model may ToolSearch first
+    expect(JSON.stringify(live.t.events().map((e) => e.raw))).toContain("Subscribed to acme/demo#9");
+    expect(assistantText(live.t)).toContain("acme/demo#9");
+  }, 300_000);
 });

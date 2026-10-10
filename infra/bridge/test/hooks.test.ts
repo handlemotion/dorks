@@ -429,7 +429,7 @@ describe("SessionStart", () => {
 
   it("says so when there are none, or when the list could not be loaded", async () => {
     expect(sessionContext([])).toContain("not subscribed to any pull requests yet");
-    expect(sessionContext(null)).toContain("could not be loaded just now; run `dorks pr list`");
+    expect(sessionContext(null)).toContain("could not be loaded just now; call the `pr_list` tool");
     expect(sessionContext(null)).toContain("How autonomy works here:");
   });
 
@@ -482,6 +482,11 @@ describe("claude argv", () => {
   it("passes the settings file with --settings, before the operator's extra args", () => {
     const args = claudeArgs({ ...base, settingsFile: "/state/claude-settings.json", extraArgs: ["--model", "sonnet"] });
     expect(args).toEqual(["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--permission-mode", "bypassPermissions", "--settings", "/state/claude-settings.json", "--model", "sonnet"]);
+  });
+
+  it("passes the MCP config with --mcp-config, and omits it when there is no file", () => {
+    expect(claudeArgs({ ...base, settingsFile: "/s.json", mcpConfigFile: "/m.json", extraArgs: ["--model", "sonnet"] }).slice(-6)).toEqual(["--settings", "/s.json", "--mcp-config", "/m.json", "--model", "sonnet"]);
+    expect(claudeArgs(base)).not.toContain("--mcp-config");
   });
 
   it("keeps --resume alongside, and omits --settings when there is no file", () => {
