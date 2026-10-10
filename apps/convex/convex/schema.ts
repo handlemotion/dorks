@@ -140,5 +140,39 @@ export default defineSchema({
     .index("by_window_start", ["windowStart"]),
 
   // Dev/sim only: what a real BoxProvider (Upstash) would hold remotely.
-  simBoxes: defineTable({ name: v.string(), running: v.boolean(), gen: v.number() }).index("by_name", ["name"]),
+  simBoxes: defineTable({ name: v.string(), running: v.boolean(), gen: v.number(), costMicro: v.optional(v.number()) }).index("by_name", ["name"]),
+
+  // Stripe billing (docs/billing.md). One row per user once they start Checkout; `status` mirrors the Stripe subscription.
+  billing: defineTable({
+    userId: v.string(),
+    stripeCustomerId: v.string(),
+    stripeSubscriptionId: v.optional(v.string()),
+    status: v.string(), // Stripe subscription status (active, trialing, past_due, canceled, ...) or "none" before the first subscription
+    currentPeriodEnd: v.optional(v.number()), // ms
+    cancelAtPeriodEnd: v.optional(v.boolean()),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_customer", ["stripeCustomerId"]),
+
+  // Metering ledger, one row per provider box. All amounts are micro-USD of Upstash cost (core/billing.ts).
+  // costMicro: last cost the provider reported. reportedMicro: the part already sent to Stripe. inflightTo: a window
+  // (reportedMicro, inflightTo] was claimed and may or may not have reached Stripe; it is retried with the same identifier.
+  boxUsage: defineTable({
+    userId: v.string(),
+    boxId: v.string(),
+    costMicro: v.number(),
+    reportedMicro: v.number(),
+    inflightTo: v.optional(v.number()),
+    observedAt: v.number(),
+    closedAt: v.optional(v.number()), // the box was deleted and its last cost settled; swept later
+  })
+    .index("by_box", ["boxId"])
+    .index("by_user", ["userId"])
+    .index("by_closed", ["closedAt"]),
+
+  // Stripe event ids already handled (webhook dedupe). Pruned by cron.
+  stripeEvents: defineTable({ eventId: v.string(), receivedAt: v.number() })
+    .index("by_event", ["eventId"])
+    .index("by_received", ["receivedAt"]),
 });

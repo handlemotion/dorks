@@ -9,6 +9,7 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as billing from "../billing.js";
 import type * as boxes from "../boxes.js";
 import type * as bridge from "../bridge.js";
 import type * as crons from "../crons.js";
@@ -43,6 +44,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  billing: typeof billing;
   boxes: typeof boxes;
   bridge: typeof bridge;
   crons: typeof crons;

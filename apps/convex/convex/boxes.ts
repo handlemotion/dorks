@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
 import { isBoxNotFound } from "../core/box";
+import { meterBox } from "./billing";
 import { getBox } from "./lib/box";
 import { bridgeSecret } from "./lib/bridgeAuth";
 
@@ -90,7 +91,9 @@ export const destroy = internalAction({
   handler: async (ctx, { dorkId }) => {
     const info = await ctx.runQuery(internal.lifecycle.boxInfo, { dorkId });
     if (!info) return;
-    // Delete the box first; wipe rows only if that worked, so a failed delete can be retried by calling remove again.
+    // Bill the box's last slice of usage first: after the delete the provider no longer reports it. Best effort (never throws).
+    if (info.boxId) await meterBox(ctx, { userId: info.userId, boxId: info.boxId, closed: true });
+    // Delete the box next; wipe rows only if that worked, so a failed delete can be retried by calling remove again.
     try {
       if (info.boxId) await getBox(ctx).delete(info.boxId);
     } catch (e) {
