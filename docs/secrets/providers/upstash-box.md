@@ -1,5 +1,7 @@
 # Upstash Box (the per-dork sandbox)
 
+**Bring your own key: the platform no longer holds an Upstash key.** Each customer adds their own Box API key in settings and builds their own workstation image (`pnpm bridge:publish` on each deploy puts the bridge bundle where that build finds it). The notes below are for running the provider by hand or against your own account.
+
 Provides: `UPSTASH_BOX_API_KEY` (`shared`, secret) and `BASE_SNAPSHOT_ID` (`shared`, prod). The real Box provider is implemented in `apps/convex/convex/lib/upstash.ts` and used whenever `BOX_PROVIDER` is not `sim`. Building the base snapshot and picking optional settings are documented in [docs/upstash-box.md](../../upstash-box.md); use that for the snapshot steps and the steps below for where to store the values.
 
 Official docs (checked 2026-10-07): [Box quickstart](https://upstash.com/docs/box/overall/quickstart), [Snapshots](https://upstash.com/docs/box/overall/snapshots).

@@ -96,7 +96,7 @@ describe("delete vs create race", () => {
     try {
       const t = convexTest(schema, modules);
       provider.failDeletes = 2;
-      await t.action(internal.boxes.deleteOrphan, { boxId: "box-x", attempt: 0 });
+      await t.action(internal.boxes.deleteOrphan, { boxId: "box-x", userId: "u1", attempt: 0 });
       expect(provider.deleted).toEqual([]);
       await t.finishAllScheduledFunctions(vi.runAllTimers);
       expect(provider.deleted).toEqual(["box-x"]);

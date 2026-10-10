@@ -43,5 +43,6 @@ export async function decrypt(ring: Keyring, envelope: string, aad: string): Pro
 /** Canonical AAD strings. */
 export const aad = {
   claudeToken: (userId: string) => `${userId}|claude_token`,
+  upstashKey: (userId: string) => `${userId}|upstash_key`,
   secret: (userId: string, name: string) => `${userId}|secret|${name}`,
 };

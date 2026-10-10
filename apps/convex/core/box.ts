@@ -24,19 +24,19 @@ export function isBoxNotFound(e: unknown): boolean {
   return e instanceof BoxNotFoundError || (e instanceof Error && (e.name === "BoxNotFoundError" || /\b(not found|no such box)\b/i.test(e.message)));
 }
 
-/** Used until UPSTASH_BOX_API_KEY is set: every call fails with a clear, non-secret message. */
+/** Used until the user has added their Upstash API key: every call fails with a clear, non-secret message. */
 export const unconfiguredBox: BoxProvider = {
   async createFromSnapshot() {
-    throw new Error("box provider not configured (UPSTASH_BOX_API_KEY)");
+    throw new Error("box provider not configured (add your Upstash API key in settings)");
   },
   async resume() {
-    throw new Error("box provider not configured (UPSTASH_BOX_API_KEY)");
+    throw new Error("box provider not configured (add your Upstash API key in settings)");
   },
   async pause() {
-    throw new Error("box provider not configured (UPSTASH_BOX_API_KEY)");
+    throw new Error("box provider not configured (add your Upstash API key in settings)");
   },
   async delete() {
-    throw new Error("box provider not configured (UPSTASH_BOX_API_KEY)");
+    throw new Error("box provider not configured (add your Upstash API key in settings)");
   },
 };
 

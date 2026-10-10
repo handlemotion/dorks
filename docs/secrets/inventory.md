@@ -14,11 +14,11 @@ Backend: **convex** (spike verdict GO, [convex-spike.md](../convex-spike.md)); t
 | `ENCRYPTION_KEY` | `shared` | dev, prod | yes | convex `convex/bridge.ts:156`, `convex/settings.ts:9`. AES-GCM key, **must decode to 32 bytes** | generated (32 random bytes, base64) | filled | filled |
 | `RESEND_API_KEY` | `shared` | dev, prod | yes | convex `convex/mail.ts:3` (required, throws if unset) | external: [Resend](providers/resend.md) | dummy | dummy |
 | `BOX_PROVIDER` | `shared` | dev, prod | no | convex `lib/box.ts:10`, `bridge.ts:160`, `settings.ts:61`, `simbox.ts:35` | config: `sim` (dev), `upstash` (prod; any non-`sim` value means real provider, which is not implemented yet) | config | config |
-| `BASE_SNAPSHOT_ID` | `shared` | dev, prod | no | convex `lifecycle.ts:94`. Box snapshot new dorks start from | dev: `sim-snapshot`; prod external: [Upstash Box](providers/upstash-box.md) | config | dummy |
+| `BASE_SNAPSHOT_ID` | `shared` | dev, prod | no | convex `lifecycle.ts` `boxInfo`. Box snapshot new dorks start from for non-Upstash providers (Upstash users build their own image, `workstation.provision`) | dev: `sim-snapshot`; prod external: [Upstash Box](providers/upstash-box.md) | config | dummy |
 | `GITHUB_APP_ID` | `shared` | dev, prod | no (identifier) | convex `bridge.ts:161` | external: [GitHub App](providers/github-app.md) | dummy (unused while `BOX_PROVIDER=sim`) | dummy |
 | `GITHUB_APP_PRIVATE_KEY` | `shared` | dev, prod | yes | convex `bridge.ts:161`. **Must be PKCS#8 PEM**, not GitHub's downloaded PKCS#1 | external: [GitHub App](providers/github-app.md) | dummy | dummy |
 | `GITHUB_WEBHOOK_SECRET` | `shared` | dev, prod | yes | convex `convex/http.ts` (`POST /github/webhook`, verified with `verifyWebhook` from `convex/core/github.ts`; the route answers 503 while it is unset) | generated (32 random bytes, hex); **you paste it into the GitHub App's webhook settings** ([GitHub App](providers/github-app.md)) | filled | filled |
-| `UPSTASH_BOX_API_KEY` | `shared` | dev, prod | yes | convex `lib/box.ts:16` (**required when `BOX_PROVIDER` is not `sim`**) | external: [Upstash Box](providers/upstash-box.md) | dummy | dummy |
+| `UPSTASH_BOX_API_KEY` | `shared` | dev | no | **not read by the backend any more** (bring your own key: each user stores theirs, encrypted, via `settings.setUpstashKey`). Doppler `dev` keeps one only as a stand-in customer key for `pnpm byok:e2e` and the other real-Upstash e2e scripts | external: [Upstash Box](providers/upstash-box.md) | dummy | dummy |
 | `EXPO_ACCESS_TOKEN` | `shared` | dev, prod | yes | not read yet (push sending is planned in convex) | external: [Expo](providers/expo-push.md) (optional feature) | dummy | dummy |
 | `BRIDGE_SECRET_KEY` | `convex` | dev, prod | yes | convex `lib/bridgeAuth.ts:7`; HMAC key deriving each box bridge's secret. Rotating it invalidates running boxes' bridge secrets | generated (32 random bytes, hex) | filled | filled |
 | `GITHUB_APP_CLIENT_ID` | `convex` | dev, prod | no (identifier) | convex `settings.ts:63` (install-ownership check) | external: [GitHub App](providers/github-app.md) | dummy | dummy |
@@ -67,4 +67,4 @@ Backend: **convex** (spike verdict GO, [convex-spike.md](../convex-spike.md)); t
 
 ## Gaps worth knowing
 
-- `EXPO_ACCESS_TOKEN` is not consumed by any running code path yet (the push sender is planned). It is in the inventory so the shape is ready. `GITHUB_WEBHOOK_SECRET` is now consumed by the Convex webhook route. `UPSTASH_BOX_API_KEY` is now read by Convex.
+- `EXPO_ACCESS_TOKEN` is not consumed by any running code path yet (the push sender is planned). It is in the inventory so the shape is ready. `GITHUB_WEBHOOK_SECRET` is now consumed by the Convex webhook route. `UPSTASH_BOX_API_KEY` is no longer read by Convex (each user brings their own Upstash key).

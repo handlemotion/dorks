@@ -13,6 +13,8 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --if-present test",
     "stripe:setup": "doppler run -p dorks -c dev -- node apps/convex/scripts/stripe-setup.mjs --write-doppler dev",
+    "byok:e2e": "doppler run -p dorks -c dev -- pnpm --filter @dorks/convex exec node scripts/byok-e2e.mjs",
+    "bridge:publish": "pnpm --filter @dorks/convex exec node scripts/publish-bridge.mjs",
     "billing:e2e": "doppler run -p dorks -c dev -- pnpm --filter @dorks/convex exec node scripts/billing-e2e.mjs",
     "push:convex-env": "doppler run -p dorks -c prd -- pnpm --filter @dorks/convex sync-env"
   }

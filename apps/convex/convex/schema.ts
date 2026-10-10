@@ -10,9 +10,21 @@ export default defineSchema({
     githubInstallationId: v.optional(v.number()),
     githubLogin: v.optional(v.string()), // the installing user's GitHub login (captured at install-link time): their comments always wake their dorks
     commentPolicy: v.optional(commentPolicy), // absent = DEFAULT_COMMENT_POLICY
-    workstationSnapshotId: v.optional(v.string()),
+    workstationSnapshotId: v.optional(v.string()), // base snapshot in the USER's own Upstash account (built by workstation.provision)
+    workstationStatus: v.optional(v.union(v.literal("building"), v.literal("ready"), v.literal("failed"))),
+    workstationBuildStartedAt: v.optional(v.number()),
+    workstationError: v.optional(v.string()), // generic text only
+    upstashKeyEnc: v.optional(v.string()), // the user's own Upstash Box API key (BYOK), encrypted like claudeTokenEnc
     sleepMinutes: v.number(),
   }).index("by_user", ["userId"]),
+  // Platform files that are not user data. "bridge": the dorks-bridge bundle every user's workstation image is built from.
+  platformFiles: defineTable({
+    key: v.string(),
+    storageId: v.id("_storage"),
+    sha256: v.string(),
+    bytes: v.number(),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
   userSecrets: defineTable({
     userId: v.string(),
     name: v.string(),

@@ -42,6 +42,8 @@ Storage is billed at $0.10/GB-month including snapshots ([pricing](https://upsta
 
 ## Point dorks at it
 
+> **Customers do not need any of this.** With bring-your-own-Upstash each user's image is built in their own account by `workstation.provision` (same steps, run from `convex/lib/workstationBuild.ts`), from the bridge bundle that `pnpm bridge:publish` uploads on each deploy. A snapshot lives in one Upstash account and cannot be restored from another, so `BASE_SNAPSHOT_ID` is not used with `BOX_PROVIDER=upstash`. The by-hand build below is for your own account and for debugging; keep `print-build-plan.sh` and `workstationBuild.ts` in step (same pinned versions and checksums).
+
 The snapshot id is read in `convex/lifecycle.ts` `boxInfo`: the per-user `userSettings.workstationSnapshotId` if set, else the Convex env var `BASE_SNAPSHOT_ID`. Without either, every create fails with "No base snapshot configured".
 
 ```sh

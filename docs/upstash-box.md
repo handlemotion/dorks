@@ -162,9 +162,9 @@ A tighter option for later: allowlist the exact deployment hostname instead of `
 | Convex env var | Meaning |
 |---|---|
 | `BOX_PROVIDER=upstash` | Select this provider (`sim` stays the dev default). |
-| `UPSTASH_BOX_API_KEY` | Required. Without it every box call fails with "box provider not configured". |
+| *(no platform key)* | **Bring your own key:** each user adds their own Upstash Box API key (`settings.setUpstashKey`, stored encrypted) and their boxes run in their account, on their bill. A user without a key gets "box provider not configured". `UPSTASH_BOX_API_KEY` is no longer read by the backend (only the e2e scripts use one from Doppler `dev` as a stand-in for a customer key). |
 | `CONVEX_CLOUD_URL` | Set by Convex itself; used as the box-label scope (see (d)). |
-| `BASE_SNAPSHOT_ID` | The base snapshot to restore ([`infra/snapshot/README.md`](../infra/snapshot/README.md)). Per-user override: `userSettings.workstationSnapshotId`. |
+| `BASE_SNAPSHOT_ID` | Only for non-Upstash providers. With Upstash the image is per user (`userSettings.workstationSnapshotId`, built in their account by `workstation.provision`); a snapshot id from another account is useless, so it is never used as a fallback. See [`infra/snapshot/README.md`](../infra/snapshot/README.md) for building one by hand. |
 | `UPSTASH_BOX_START_MODE` | `init` (default) or `exec` (fallback, see (b)). |
 | `UPSTASH_BOX_NETWORK_POLICY` | `dorks` to apply the allow-list above. Unset = allow-all. |
 | `UPSTASH_BOX_BASE_URL` | Override the API host (other region, tests). |

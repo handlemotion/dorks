@@ -159,6 +159,7 @@ export const boxInfo = internalQuery({
     const dork = await ctx.db.get(dorkId);
     if (!dork) return null;
     const s = await ctx.db.query("userSettings").withIndex("by_user", (q) => q.eq("userId", dork.userId)).unique();
-    return { boxId: dork.boxId ?? null, deleting: !!dork.deleting, userId: dork.userId, snapshotId: s?.workstationSnapshotId ?? process.env.BASE_SNAPSHOT_ID ?? "", sleepMinutes: s?.sleepMinutes ?? 5 };
+    return { boxId: dork.boxId ?? null, deleting: !!dork.deleting, userId: dork.userId, // Upstash is bring-your-own-key: a snapshot id from another account is useless, so only the user's own image counts there.
+      snapshotId: process.env.BOX_PROVIDER === "upstash" ? (s?.workstationSnapshotId ?? "") : (s?.workstationSnapshotId ?? process.env.BASE_SNAPSHOT_ID ?? ""), sleepMinutes: s?.sleepMinutes ?? 5 };
   },
 });
