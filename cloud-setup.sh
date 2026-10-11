@@ -32,11 +32,12 @@ have node || { fail "node is required (>= 22); install it first (the provider's 
 node_major="$(node -p 'process.versions.node.split(".")[0]')"
 [ "$node_major" -ge 22 ] || log "warning: Node $node_major found, this repo expects >= 22"
 
-# The Doppler installer verifies its package signature with gpg, which a bare image (Amazon Linux cloud VMs included)
-# does not ship; without it the install fails and the dependency step below has no CENTRAL_LICENSE_KEY.
-if ! have gpg; then
-  log "installing gnupg"
-  if have dnf; then priv dnf install -y -q gnupg2 || log "gnupg install failed; continuing"
+# The Doppler installer verifies its package signature with gpgv. Amazon Linux cloud VMs ship only gnupg2-minimal (gpg without
+# gpgv), so the install fails and the dependency step below has no CENTRAL_LICENSE_KEY. The full package conflicts with the
+# minimal one, hence --allowerasing.
+if ! have gpgv; then
+  log "installing gnupg (gpgv)"
+  if have dnf; then priv dnf install -y -q --allowerasing gnupg2 || log "gnupg install failed; continuing"
   elif have apt-get; then priv apt-get install -y -q gnupg || log "gnupg install failed; continuing"
   else log "no dnf or apt-get; cannot install gnupg"; fi
 fi
