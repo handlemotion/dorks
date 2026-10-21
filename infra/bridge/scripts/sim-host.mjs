@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const fakeClaude = join(here, "../test/fixtures/fake-claude.mjs");
+const fakeOpencode = join(here, "../test/fixtures/fake-opencode.mjs");
 
 /** @param {{ repos?: string[] }} [opts] */
 export function prepareRealBridge({ repos = ["jaantonio/demo"] } = {}) {
@@ -47,6 +48,8 @@ export function prepareRealBridge({ repos = ["jaantonio/demo"] } = {}) {
         DORKS_STATE_DIR: join(root, "state", short), // survives a "pause" (killed process), like a paused box's disk
         DORKS_WORKDIR: join(root, "work", short),
         CLAUDE_CONFIG_DIR: join(root, "claude", short), // session transcripts: like the box disk, they survive a "pause"
+        OPENCODE_BIN: process.env.OPENCODE_BIN || fakeOpencode, // for dorks whose engine is opencode
+        XDG_DATA_HOME: join(root, "xdg-data", short), // OpenCode's session database, per box like the transcripts
         HEARTBEAT_MS: process.env.HEARTBEAT_MS,
         DELTA_BATCH_MS: process.env.DELTA_BATCH_MS,
       };

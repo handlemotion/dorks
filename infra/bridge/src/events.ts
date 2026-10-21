@@ -1,4 +1,4 @@
-import type { FromBridge } from "@dorks/shared";
+import { AGENT_EVENT_TYPE, type FromBridge } from "@dorks/shared";
 import type { Outbox } from "./outbox";
 
 type Json = Record<string, unknown>;
@@ -33,7 +33,8 @@ const isTextDelta = (raw: Json) => {
 
 /**
  * Decides what of the CLI's stream-json goes to the backend. The server-side normalizer (apps/convex/core/normalize.ts) only reads:
- * system init/session_state_changed, stream message_start + text deltas, assistant, user (tool_result), result, rate_limit_event.
+ * system init/session_state_changed, stream message_start + text deltas, assistant, user (tool_result), result, rate_limit_event, and
+ * the neutral agent events other harnesses emit (`dorks_agent`).
  * Everything else (hook/status/api_retry chatter, thinking and input_json deltas, content_block_start/stop...) is dropped here:
  * it would cost a mutation arg + a bseq for nothing. Returns null to drop.
  */
@@ -70,6 +71,13 @@ export function prepare(raw: unknown): Json | null {
       return { type: "result", subtype: m.subtype, is_error: m.is_error, duration_ms: m.duration_ms, result: typeof m.result === "string" ? clipTo(m.result, CLIP) : undefined, session_id: m.session_id };
     case "rate_limit_event":
       return capSize(m);
+    case AGENT_EVENT_TYPE: {
+      // A neutral agent event (non-Claude harnesses, harness.ts): already reduced to what the backend reads. Tool input/output is
+      // clipped like Claude's; streamed and final text only past the event cap.
+      const e = obj(m.event);
+      if (e?.type === "tool_use" || e?.type === "tool_result") return capSize({ type: AGENT_EVENT_TYPE, event: clipDeep(e) });
+      return capSize(m);
+    }
     default:
       return null;
   }
