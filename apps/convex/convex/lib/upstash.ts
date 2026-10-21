@@ -267,5 +267,7 @@ export const DORKS_NETWORK_POLICY: NetworkPolicy = {
     "github.com", "*.github.com", "*.githubusercontent.com", // git over https, API, raw/codeload
     "api.anthropic.com", "*.anthropic.com", // Claude Code
     "registry.npmjs.org", // npm install
+    "api.doppler.com", // doppler CLI (team secrets)
+    "api.cloudflare.com", // cf CLI (deploys)
   ],
 };
