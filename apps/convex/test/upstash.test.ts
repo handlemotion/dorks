@@ -182,7 +182,7 @@ describe("createFromSnapshot", () => {
     await make(fk, { networkPolicy: DORKS_NETWORK_POLICY }).createFromSnapshot("snap_1", OPTS);
     const body = fk.reqs.find((r) => r.method === "POST")!.body;
     expect(body.network_policy.mode).toBe("custom");
-    expect(body.network_policy.allowed_domains).toEqual(expect.arrayContaining(["*.convex.cloud", "api.anthropic.com", "registry.npmjs.org", "github.com"]));
+    expect(body.network_policy.allowed_domains).toEqual(expect.arrayContaining(["*.convex.cloud", "api.anthropic.com", "registry.npmjs.org", "github.com", "api.doppler.com", "api.cloudflare.com"]));
   });
 
   it("exec start mode: no init_command at create; starts the bridge through exec with a pidfile guard", async () => {

@@ -142,7 +142,8 @@ Documented modes: `allow-all` (default), `deny-all`, `custom` with `allowedDomai
     "*.convex.cloud",                                    // bridge websocket + actions (<deployment>.convex.cloud)
     "github.com", "*.github.com", "*.githubusercontent.com", // git clone/push over https, API, raw/codeload
     "api.anthropic.com", "*.anthropic.com",              // Claude Code
-    "registry.npmjs.org"                                 // npm install
+    "registry.npmjs.org",                                // npm install
+    "api.doppler.com", "api.cloudflare.com"              // the team CLIs in the base snapshot: doppler, cf
   ]
 }
 ```
