@@ -56,6 +56,7 @@ Required (provided by the box): `DORK_ID`, `BRIDGE_URL`, and `BRIDGE_SECRET_FILE
 | Var | Default | Meaning |
 |---|---|---|
 | `CLAUDE_BIN` | `claude` | The CLI binary. Tests point it at `test/fixtures/fake-claude.mjs`. |
+| `OPENCODE_BIN` | `opencode` | The OpenCode binary, for dorks whose engine is `opencode` (see "Engines"). Tests point it at `test/fixtures/fake-opencode.mjs`. |
 | `CLAUDE_RUN_AS` | _(unset)_ | Unprivileged user to run Claude (and the git clone/checkout) as, via `setpriv`. The bridge must be root. Sets the child's `HOME`/`USER` to that user's. |
 | `DORKS_PERMISSION_MODE` | `bypassPermissions` | Passed to `--permission-mode`. See "Permission mode". |
 | `DORKS_CLAUDE_ARGS` | _(none)_ | Extra argv for the CLI, whitespace-separated (e.g. `--model sonnet`). |
@@ -237,6 +238,39 @@ process of the Claude user by design; the token's scope is what limits it). `tes
 **Exit.** When the CLI exits on its own the bridge sends `agent_exited { code, stderrTail }` (`code: null` if killed by a signal) and keeps
 running; a later `configure` starts it again.
 
+## Engines: Claude Code and OpenCode
+
+A dork runs one agent harness (the program that gives the model its tools and runs its loop), chosen when it is created and fixed for its life
+(`dorks.engine`, `@dorks/shared` `engine`). The backend says which in `configure` (`engine`, plus `model` for OpenCode); absent means Claude Code.
+The bridge talks to either through one interface, `Harness` (`src/harness.ts`): send a turn, interrupt, wait for idle, stop, the session's files.
+
+| | Claude Code (`src/claude.ts`) | OpenCode (`src/opencode.ts`) |
+|---|---|---|
+| Process | `claude -p`, stream-json on stdin/stdout | `opencode serve` on loopback; REST to send/abort, Server-Sent Events (`GET /event`) out |
+| Events sent up | Claude's stream-json, as is | neutral agent events (`@dorks/shared` `agent.ts`), translated by `translate()` |
+| Credentials | `CLAUDE_CODE_OAUTH_TOKEN` (the user's Claude token) | provider keys from the CLI secrets (`ANTHROPIC_API_KEY`, ...). The Claude token is never sent to an OpenCode box |
+| Unattended | `--permission-mode bypassPermissions`; `can_use_tool` denied | config `permission` allows all; a `permission.asked` is rejected with a message (the loop continues) |
+| Hooks | `--settings` (Stop, PostToolUse, SessionStart) | no hook API: the harness calls the same `hook.*` handlers itself (below) |
+| MCP (`dorks` tools) | `--mcp-config` | config `mcp.dorks` (`type: local`); the tools appear as `dorks_pr_subscribe` etc. |
+| Resume | transcript `<config dir>/projects/*/<id>.jsonl` | `$XDG_DATA_HOME/opencode/opencode.db` (SQLite); a session the server answers 404 for starts fresh, like "No conversation found" |
+
+OpenCode specifics (checked against `opencode serve` 1.19.3, the classic `/session` + `/event` API; its `/api/*` "v2" API did not run turns):
+
+- **Config** goes in `OPENCODE_CONFIG_CONTENT` (`opencodeConfig()`): no autoupdate, sharing off, allow-all permissions, the `dorks` MCP server, the model.
+  It applies above the repo's own `opencode.json`, which still loads. A user can add a custom provider with an `OPENCODE_CONFIG` CLI secret naming a config file.
+- **The server is locked**: a random `OPENCODE_SERVER_PASSWORD` per start (HTTP Basic). Its API returns provider keys in plaintext (`GET /config/providers`).
+- **Turns**: `POST /session/{id}/prompt_async` (204 at once). The bridge sends one turn at a time and queues the rest, like Claude's stdin: OpenCode's own queue is
+  dropped by an abort, ours is not. The model goes with every prompt as `{providerID, modelID}`.
+- **Turn end**: `session.idle`, settled for 300 ms, because after an abort or error OpenCode sends idle twice with the final message update in between.
+  An abort (`MessageAbortedError`) is not reported as a failure; any other `session.error` or assistant `error` is the turn's `error`.
+- **Text** streams as `message.part.delta` for text parts of assistant messages only (a user message's parts are our own prompt, echoed back).
+- **Hook parity**: the SessionStart context is each prompt's `system`; a finished `bash` call goes to `hook.postToolUse`; when a turn goes idle, `hook.stop`
+  runs and a block reason becomes the next prompt (with `stop_hook_active` set on the turn it starts, so it never gates twice in a row; not after an interrupt).
+- **Environment**: OpenCode enables every provider it finds credentials for in its environment (AWS keys turn on Bedrock, `GH_TOKEN` Copilot). The box
+  environment holds only what `configure` sends, but keep that in mind for the snapshot. It also writes `.git/opencode` (a cached project id) in the repo.
+
+Snapshot: install a pinned `opencode-ai` (`npm i -g opencode-ai@1.19.3`; the platform binary ships as an optional dependency, no postinstall download).
+
 ## Tests
 
 ```sh
@@ -269,6 +303,20 @@ cd apps/convex && BRIDGE_IMPL=real ./scripts/run-e2e.sh      # CLAUDE_BIN defaul
 
 This is the same 37-check acceptance run plus the secret scan; the turn produces `assistant_delta`, `assistant_message`, `tool_use`,
 `tool_result`, `turn_complete`, and the session resumes after sleep/wake.
+
+### OpenCode
+
+`test/opencode.test.ts` runs `translate()` over event streams captured from a real `opencode serve` (`test/fixtures/opencode/*.jsonl`);
+`test/bridge-opencode.test.ts` drives the bridge against `test/fixtures/fake-opencode.mjs`, which copies those shapes. `test/live-opencode.test.ts`
+runs the **real** binary against `test/fixtures/mock-llm.mjs` (an OpenAI-compatible stand-in model, so no key and no cost), opt-in:
+
+```sh
+npm i --prefix /tmp/oc opencode-ai@1.19.3
+OPENCODE_BIN=/tmp/oc/node_modules/.bin/opencode pnpm --filter @dorks/bridge test live-opencode
+```
+
+Through the whole stack and the web page: `apps/convex/scripts/opencode-web-e2e.mjs` (its header lists what to start). Keep `DORKS_E2E_ROOT` short:
+the bridge's socket lives under it, and a Unix socket path cannot exceed 107 bytes.
 
 ### Trying it with a real Claude token locally
 
