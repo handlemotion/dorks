@@ -109,7 +109,7 @@ Order: (1) move carried files into a shared package, fix typing leak; (2) real U
 ## Run it
 
 ```sh
-docker run -d --name convex-local --network host -v convex-data:/convex/data -e INSTANCE_NAME=dorks-spike -e INSTANCE_SECRET=$(node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))') -e CONVEX_CLOUD_ORIGIN=http://127.0.0.1:3210 -e CONVEX_SITE_ORIGIN=http://127.0.0.1:3211 -e DO_NOT_REQUIRE_SSL=1 ghcr.io/get-convex/convex-backend:latest
+docker run -d --name convex-local --network host -v convex-data:/convex/data -e INSTANCE_NAME=dorks-spike -e INSTANCE_SECRET=$(node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))') -e CONVEX_CLOUD_ORIGIN=http://127.0.0.1:3210 -e CONVEX_SITE_ORIGIN=http://127.0.0.1:3211 -e DO_NOT_REQUIRE_SSL=1 ghcr.io/convex/convex-backend:latest
 # put CONVEX_SELF_HOSTED_URL / CONVEX_SELF_HOSTED_ADMIN_KEY (docker exec convex-local ./generate_admin_key.sh) in apps/convex/.env.local
 cd apps/convex && npx convex env set ...   # see list in the verdict section; BOX_PROVIDER=sim, RESEND_API_URL=http://127.0.0.1:8899/emails
 pnpm test                 # machine/normalize/crypto/github suites, unchanged files

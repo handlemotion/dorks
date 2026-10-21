@@ -24,7 +24,6 @@ For each cloud provider we use, set:
 - **Setup / install command:** `bash cloud-setup.sh` (run from the repo root; `bash /path/to/repo/cloud-setup.sh` also works from any directory, but only once the repo is checked out)
 - **Secret / environment variable:** `DOPPLER_TOKEN`
 - Claude Code cloud sessions already run it, with `--servers` (cloud only, keyed on `CLAUDE_CODE_REMOTE`), through the SessionStart hook in `.claude/settings.json`.
-- **Network:** the local Convex backend is a Docker image on `ghcr.io`, so the provider's network policy must allow `ghcr.io` and `pkg-containers.githubusercontent.com`; without them the backend and box simulator stay down (web and mail still start).
 
 ## Running servers
 
@@ -33,6 +32,7 @@ Test changes against running servers, not only unit tests. `scripts/dev-up.sh` r
 - `pnpm dev:wait` blocks until a start in progress (the session-start one) finishes, then prints status. `pnpm dev:up` starts whatever is not running; `pnpm dev:status`, `pnpm dev:down`.
 - Convex `http://127.0.0.1:3210` (HTTP actions `:3211`), web `http://localhost:3000`, mail catcher `:8899` (sign-in codes appear in `/tmp/dorks-dev/mail.log`), box simulator (`sim`).
 - After changing `apps/convex` code, rerun `pnpm dev:backend` to deploy it; vite reloads web changes itself.
+- The e2e scripts in `apps/convex/scripts` (e.g. `run-e2e.sh`) start their own mail mock on :8899 and their own sim, so stop those first (`pnpm dev:down` leaves the backend and stops mail, web and sim; restart web with `pnpm dev:up` if a script needs it).
 
 ## Secrets
 
