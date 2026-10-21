@@ -229,6 +229,7 @@ export const configInfo = internalQuery({
     const secrets = await ctx.db.query("userSecrets").withIndex("by_user_name", (q) => q.eq("userId", dork.userId)).collect();
     return {
       userId: dork.userId, repo: dork.repo, branch: dork.branch, resumeSessionId: dork.claudeSessionId ?? null,
+      engine: dork.engine ?? "claude", opencodeModel: s?.opencodeModel ?? null,
       ghFailures: (await ctx.db.query("dorkRuntime").withIndex("by_dork", (q) => q.eq("dorkId", dorkId)).unique())?.ghFailures ?? 0,
       claudeTokenEnc: s?.claudeTokenEnc ?? null, githubInstallationId: s?.githubInstallationId ?? null,
       secrets: secrets.map((x) => ({ name: x.name, valueEnc: x.valueEnc })),
@@ -271,15 +272,19 @@ export const configure = action({
     }
     let cfg: ToBridge;
     try {
-      if (!info.claudeTokenEnc) throw new OnboardingError("Claude token not set");
+      const claude = info.engine === "claude";
+      if (claude && !info.claudeTokenEnc) throw new OnboardingError("Claude token not set");
       const cliSecrets: Record<string, string> = {};
       for (const r of info.secrets) cliSecrets[r.name] = await decrypt(ring(), r.valueEnc, aad.secret(info.userId, r.name));
       cfg = {
         t: "configure",
-        env: { ...cliSecrets, CLAUDE_CODE_OAUTH_TOKEN: await decrypt(ring(), info.claudeTokenEnc, aad.claudeToken(info.userId)) },
+        // The Claude token is for Claude Code only: an OpenCode box never receives it (OpenCode uses provider keys from the CLI secrets).
+        env: claude ? { ...cliSecrets, CLAUDE_CODE_OAUTH_TOKEN: await decrypt(ring(), info.claudeTokenEnc!, aad.claudeToken(info.userId)) } : cliSecrets,
         ghToken: await githubToken(info),
         repo: { fullName: info.repo, branch: info.branch },
         resumeSessionId: info.resumeSessionId,
+        engine: info.engine,
+        ...(!claude && info.opencodeModel ? { model: info.opencodeModel } : {}),
       };
     } catch (e) {
       const message = e instanceof OnboardingError ? e.message : "could not configure the sandbox";

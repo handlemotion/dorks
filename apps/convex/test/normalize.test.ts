@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { clientEvent, toRaw } from "@dorks/shared";
 import { createNormalizer } from "../core/normalize";
 
 const bodies = (n: ReturnType<ReturnType<typeof createNormalizer>>) => n.flatMap((x) => (x.kind === "event" ? [x.body] : []));
@@ -58,5 +59,45 @@ describe("normalize output matches the shared event schema", () => {
     ];
     expect(out.length).toBeGreaterThan(0);
     for (const body of out) expect(clientEvent.safeParse({ seq: 1, dorkId: "d", ts: 1, ...body }).success).toBe(true);
+  });
+
+  describe("neutral agent events (non-Claude harnesses)", () => {
+    it("maps every kind to the same client events as the Claude dialect", () => {
+      const n = createNormalizer();
+      expect(n(toRaw({ type: "session", sessionId: "ses_1" }))).toEqual([{ kind: "session", sessionId: "ses_1" }]);
+      expect(n(toRaw({ type: "idle" }))).toEqual([{ kind: "idle" }]);
+      expect(bodies(n(toRaw({ type: "text_delta", messageId: "msg_1", text: "Hel" })))).toEqual([{ type: "assistant_delta", messageId: "msg_1", text: "Hel" }]);
+      expect(bodies(n(toRaw({ type: "text", messageId: "msg_1", text: "Hello" })))).toEqual([{ type: "assistant_message", messageId: "msg_1", text: "Hello" }]);
+      expect(bodies(n(toRaw({ type: "tool_use", toolId: "call_1", name: "read", input: { filePath: "/w/README.md" } })))).toEqual([
+        { type: "tool_use", toolId: "call_1", name: "read", summary: "/w/README.md" },
+      ]);
+      const r = bodies(n(toRaw({ type: "tool_result", toolId: "call_1", ok: false, output: "y".repeat(5000) })));
+      expect(r[0]).toMatchObject({ type: "tool_result", toolId: "call_1", ok: false });
+      expect((r[0] as { preview: string }).preview.length).toBeLessThanOrEqual(2049);
+      expect(bodies(n(toRaw({ type: "turn_complete", durationMs: 12 })))).toEqual([{ type: "turn_complete", durationMs: 12 }]);
+      expect(bodies(n(toRaw({ type: "rate_limited", resetsAt: 5 })))).toEqual([{ type: "rate_limited", resetsAt: 5 }]);
+    });
+
+    it("a failed turn completes and reports a typed error", () => {
+      const out = bodies(createNormalizer()(toRaw({ type: "turn_complete", durationMs: 3, error: "ProviderAuthError: no key" })));
+      expect(out).toEqual([
+        { type: "turn_complete", durationMs: 3 },
+        { type: "error", message: "ProviderAuthError: no key", error: { code: "turn_failed", message: "ProviderAuthError: no key" } },
+      ]);
+      for (const b of out) expect(clientEvent.safeParse({ ...b, seq: 1, dorkId: "d", ts: 0 }).success).toBe(true);
+    });
+
+    it("needs no carried state: deltas use their own message id even after a Claude message_start", () => {
+      const n = createNormalizer();
+      n({ type: "stream_event", event: { type: "message_start", message: { id: "claude_m" } } });
+      expect(bodies(n(toRaw({ type: "text_delta", messageId: "msg_2", text: "x" })))).toEqual([{ type: "assistant_delta", messageId: "msg_2", text: "x" }]);
+    });
+
+    it("drops malformed neutral events and empty text", () => {
+      const n = createNormalizer();
+      expect(n({ type: "dorks_agent", event: { type: "tool_use" } })).toEqual([]);
+      expect(n({ type: "dorks_agent", event: { type: "nope" } })).toEqual([]);
+      expect(n(toRaw({ type: "text_delta", messageId: "m", text: "" }))).toEqual([]);
+    });
   });
 });

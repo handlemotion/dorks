@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { engine } from "./agent";
 import { notifyKind, prRef } from "./autonomy";
 
 /**
@@ -21,6 +22,10 @@ export const toBridge = z.discriminatedUnion("t", [
     ghToken: z.string(),
     repo: z.object({ fullName: z.string(), branch: z.string() }),
     resumeSessionId: z.string().nullable(),
+    // Which harness to run (agent.ts). Absent = Claude Code: older backends never send it, and older bridges strip it.
+    engine: engine.optional(),
+    // OpenCode only: `<provider>/<model>` for every prompt. Absent = OpenCode's own default for the providers it has keys for.
+    model: z.string().optional(),
   }),
   z.object({ t: z.literal("user_message"), id: z.string(), text: z.string() }), // bridge dedupes by id
   notifyFrame(),
@@ -32,7 +37,7 @@ export type ToBridge = z.infer<typeof toBridge>;
 
 /** Bridge -> DO. */
 export const fromBridge = z.discriminatedUnion("t", [
-  z.object({ t: z.literal("event"), bseq: z.number().int(), raw: z.unknown() }), // raw claude stream-json line
+  z.object({ t: z.literal("event"), bseq: z.number().int(), raw: z.unknown() }), // a Claude stream-json line, or a neutral agent event (agent.ts agentEventRaw)
   z.object({ t: z.literal("ready") }), // repo cloned + claude running
   z.object({ t: z.literal("ack"), id: z.string() }), // user_message id received
   z.object({ t: z.literal("agent_exited"), code: z.number().nullable(), stderrTail: z.string() }),

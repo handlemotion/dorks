@@ -1,7 +1,8 @@
-import { errorEvent, type ClientEventBody } from "@dorks/shared";
+import { agentEventRaw, errorEvent, type AgentEvent, type ClientEventBody } from "@dorks/shared";
 
-// Raw Claude Code stream-json -> client events. Shapes follow the documented protocol
-// (code.claude.com headless / Agent SDK types); verify against a real stream in spike S1.
+// Bridge event payloads -> client events. Two dialects arrive here: raw Claude Code stream-json (shapes per the documented protocol,
+// code.claude.com headless / Agent SDK types), and the harness-neutral agent events (packages/shared/src/agent.ts) that every other
+// harness's adapter in the bridge emits.
 export type Normalized =
   | { kind: "event"; body: ClientEventBody }
   | { kind: "session"; sessionId: string }
@@ -16,7 +17,7 @@ export const PREVIEW_MAX = 2048;
 
 export function summarizeTool(input: unknown): string {
   const i = obj(input) ?? {};
-  const pick = str(i.command) ?? str(i.file_path) ?? str(i.path) ?? str(i.pattern) ?? str(i.url) ?? str(i.description);
+  const pick = str(i.command) ?? str(i.file_path) ?? str(i.filePath) ?? str(i.path) ?? str(i.pattern) ?? str(i.url) ?? str(i.description);
   return clip(pick ?? JSON.stringify(i), 200);
 }
 
@@ -33,6 +34,8 @@ export function createNormalizer() {
   return function normalize(raw: unknown): Normalized[] {
     const m = obj(raw);
     if (!m) return [];
+    const neutral = agentEventRaw.safeParse(m);
+    if (neutral.success) return fromAgentEvent(neutral.data.event);
     const out: Normalized[] = [];
     const ev = (body: ClientEventBody) => out.push({ kind: "event", body });
 
@@ -87,4 +90,29 @@ export function createNormalizer() {
     }
     return out;
   };
+}
+
+/** A neutral agent event carries its own message id, so unlike Claude's stream it needs no state carried between batches. */
+function fromAgentEvent(e: AgentEvent): Normalized[] {
+  const ev = (body: ClientEventBody): Normalized => ({ kind: "event", body });
+  switch (e.type) {
+    case "session":
+      return [{ kind: "session", sessionId: e.sessionId }];
+    case "idle":
+      return [{ kind: "idle" }];
+    case "text_delta":
+      return e.text ? [ev({ type: "assistant_delta", messageId: e.messageId, text: e.text })] : [];
+    case "text":
+      return e.text ? [ev({ type: "assistant_message", messageId: e.messageId, text: e.text })] : [];
+    case "tool_use":
+      return [ev({ type: "tool_use", toolId: e.toolId, name: e.name, summary: summarizeTool(e.input) })];
+    case "tool_result":
+      return [ev({ type: "tool_result", toolId: e.toolId, ok: e.ok, preview: clip(e.output, PREVIEW_MAX) })];
+    case "turn_complete": {
+      const done = ev({ type: "turn_complete", durationMs: e.durationMs });
+      return e.error === undefined ? [done] : [done, ev(errorEvent({ code: "turn_failed", message: clip(e.error || "turn failed", 500) }))];
+    }
+    case "rate_limited":
+      return [ev({ type: "rate_limited", resetsAt: e.resetsAt })];
+  }
 }

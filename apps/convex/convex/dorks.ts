@@ -1,3 +1,4 @@
+import { DEFAULT_ENGINE } from "@dorks/shared";
 import { v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
@@ -6,6 +7,7 @@ import { internal } from "./_generated/api";
 import { requireUserId } from "./auth";
 import { append, dispatch, enqueue, fail, MAX_MESSAGE_CHARS, runtimeOf } from "./lib/dispatch";
 import { validRepo } from "./lib/repo";
+import { engine as engineValidator } from "./validators";
 import { endDorkSubscriptions, resetCiAttempts, subscriptionsOfDork } from "./lib/subscriptions";
 
 export const MAX_TITLE_CHARS = 120;
@@ -57,18 +59,20 @@ export const get = query({
 });
 
 export const create = mutation({
-  args: { repo: v.string(), message: v.string(), title: v.optional(v.string()) },
-  handler: async (ctx, { repo, message, title }) => {
+  args: { repo: v.string(), message: v.string(), title: v.optional(v.string()), engine: v.optional(engineValidator) },
+  handler: async (ctx, { repo, message, title, engine: asked }) => {
     const userId = await requireUserId(ctx);
     if (!validRepo(repo)) fail("invalid", "repo must be owner/name");
     if (title !== undefined && title.trim().length > MAX_TITLE_CHARS) fail("invalid", "title too long");
     const text = checkText(message);
     await assertActiveSlot(ctx, userId);
     const s = await ctx.db.query("userSettings").withIndex("by_user", (q) => q.eq("userId", userId)).unique();
-    if (!s?.claudeTokenEnc || !s.githubInstallationId) fail("onboarding_incomplete", "finish onboarding first");
+    const engine = asked ?? s?.defaultEngine ?? DEFAULT_ENGINE;
+    // Claude Code runs on the user's Claude token. OpenCode authenticates with provider keys from the CLI secrets instead.
+    if (!s?.githubInstallationId || (engine === "claude" && !s.claudeTokenEnc)) fail("onboarding_incomplete", "finish onboarding first");
     const dorkId = await ctx.db.insert("dorks", {
       userId, title: (title?.trim() || text).slice(0, MAX_TITLE_CHARS), repo, branch: `agent/${crypto.randomUUID().slice(0, 8)}`,
-      state: "creating", archived: false, lastActivityAt: Date.now(),
+      state: "creating", archived: false, lastActivityAt: Date.now(), engine,
     });
     await ctx.db.insert("dorkRuntime", { dorkId, bridgeSeq: 0, streamMsgId: "", sleepMinutes: s!.sleepMinutes, bridgeSeenAt: 0, bridgeLost: false, timers: {} });
     await persistMessage(ctx, (await ctx.db.get(dorkId))!, text);

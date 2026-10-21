@@ -1,6 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { ciState, commentPolicy, dorkState, notifyKind, prRef, reviewState, subscriptionSource, subscriptionStatus } from "./validators";
+import { ciState, commentPolicy, dorkState, engine, notifyKind, prRef, reviewState, subscriptionSource, subscriptionStatus } from "./validators";
 
 export default defineSchema({
   // Encrypted at rest (AES-GCM envelope, key in env). Never returned by any query.
@@ -12,6 +12,8 @@ export default defineSchema({
     commentPolicy: v.optional(commentPolicy), // absent = DEFAULT_COMMENT_POLICY
     workstationSnapshotId: v.optional(v.string()),
     sleepMinutes: v.number(),
+    defaultEngine: v.optional(engine), // what a new dork runs unless the create call says otherwise; absent = DEFAULT_ENGINE
+    opencodeModel: v.optional(v.string()), // `<provider>/<model>` for OpenCode dorks; absent = OpenCode's own default
   }).index("by_user", ["userId"]),
   userSecrets: defineTable({
     userId: v.string(),
@@ -28,7 +30,8 @@ export default defineSchema({
     state: dorkState,
     archived: v.boolean(),
     boxId: v.optional(v.string()),
-    claudeSessionId: v.optional(v.string()),
+    engine: v.optional(engine), // the harness, fixed at create (a session belongs to one harness); absent = "claude" (dorks made before engines)
+    claudeSessionId: v.optional(v.string()), // the harness's session id, whichever `engine` it is (the name predates OpenCode)
     preview: v.optional(v.string()),
     prUrl: v.optional(v.string()),
     deleting: v.optional(v.boolean()),

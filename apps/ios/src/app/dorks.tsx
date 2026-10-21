@@ -1,6 +1,6 @@
 import { ConvexBetterAuthProvider } from '@convex-dev/better-auth/react';
 import { api, errorMessage, useDork, useDorkEvents, useDorks, type Id } from '@dorks/convex/client';
-import type { Block } from '@dorks/shared';
+import { ENGINE_LABEL, type Block, type Engine } from '@dorks/shared';
 import { Authenticated, AuthLoading, Unauthenticated, useMutation } from 'convex/react';
 import { useState } from 'react';
 import { FlatList, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -99,12 +99,12 @@ function Thread({ dorkId, onBack }: { dorkId: Id<'dorks'>; onBack: () => void })
   return (
     <View style={s.col}>
       <Button title="‹ Back" onPress={onBack} />
-      <Text style={s.h1}>{dork?.title} <Text style={s.small}>{dork?.state}{dork?.archived ? ' (archived)' : ''}</Text></Text>
+      <Text style={s.h1}>{dork?.title} <Text style={s.small}>{ENGINE_LABEL[dork?.engine ?? 'claude']} · {dork?.state}{dork?.archived ? ' (archived)' : ''}</Text></Text>
       {dork && <Button title={dork.archived ? 'Unarchive' : 'Archive'} onPress={() => archive({ dorkId, archived: !dork.archived })} />}
       <FlatList
         data={view.blocks}
         keyExtractor={(b) => b.id}
-        renderItem={({ item }) => <BlockView b={item} />}
+        renderItem={({ item }) => <BlockView b={item} engine={dork?.engine ?? 'claude'} />}
         ListHeaderComponent={canLoadMore ? <Button title="Load older" onPress={loadMore} /> : null}
       />
       <TextInput accessibilityLabel="message" style={s.input} value={text} onChangeText={setText} placeholder="Message" />
@@ -114,10 +114,10 @@ function Thread({ dorkId, onBack }: { dorkId: Id<'dorks'>; onBack: () => void })
   );
 }
 
-function BlockView({ b }: { b: Block }) {
+function BlockView({ b, engine }: { b: Block; engine: Engine }) {
   switch (b.kind) {
     case 'user': return <Text><Text style={s.bold}>you: </Text>{b.text}</Text>;
-    case 'assistant': return <Text><Text style={s.bold}>claude: </Text>{b.text}{b.streaming ? ' ▍' : ''}</Text>;
+    case 'assistant': return <Text><Text style={s.bold}>{engine}: </Text>{b.text}{b.streaming ? ' ▍' : ''}</Text>;
     case 'tool': return <Text style={s.mono}>{b.name} {b.summary} — {b.status}{b.preview ? `: ${b.preview}` : ''}</Text>;
     case 'notice': return <Text style={b.level === 'error' ? s.error : s.small}>{b.text}</Text>;
   }

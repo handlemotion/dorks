@@ -2,6 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
 import { useEffect, useState } from 'react'
 import { api } from '@dorks/convex/client'
+import { ENGINE_LABEL, type Engine } from '@dorks/shared'
 import { INSTALL_STATE_KEY } from '../../lib/githubInstall'
 import { usePending } from '../../lib/pending'
 
@@ -18,7 +19,8 @@ function Settings() {
         <h1>Settings</h1>
         <Link to="/dorks">Back to dorks</Link>
       </header>
-      <Checklist claudeToken={onboarding.claudeToken} github={onboarding.github} />
+      <Checklist claudeToken={onboarding.claudeToken} github={onboarding.github} engine={onboarding.defaultEngine} />
+      <AgentEngine engine={onboarding.defaultEngine} model={onboarding.opencodeModel} providerKey={onboarding.providerKey} />
       <ClaudeToken />
       <GithubApp linked={onboarding.github} />
       <CliSecrets />
@@ -27,16 +29,44 @@ function Settings() {
   )
 }
 
-function Checklist({ claudeToken, github }: { claudeToken: boolean; github: boolean }) {
-  const done = claudeToken && github
+function Checklist({ claudeToken, github, engine }: { claudeToken: boolean; github: boolean; engine: Engine }) {
+  // The Claude token is only needed to run Claude Code; OpenCode authenticates with a provider key from the CLI secrets.
+  const done = github && (engine !== 'claude' || claudeToken)
   return (
     <section aria-label="onboarding checklist">
       <h2>Onboarding</h2>
       <ul>
-        <li data-testid="check-claude">{claudeToken ? '✅' : '⬜'} Claude token</li>
+        <li data-testid="check-claude">{claudeToken ? '✅' : '⬜'} Claude token{engine === 'claude' ? '' : ' (only for Claude Code dorks)'}</li>
         <li data-testid="check-github">{github ? '✅' : '⬜'} GitHub App installed</li>
       </ul>
       <p role="status" data-testid="onboarding-status">{done ? 'Ready: you can create dorks.' : 'Finish the steps above to create dorks.'}</p>
+    </section>
+  )
+}
+
+function AgentEngine({ engine, model, providerKey }: { engine: Engine; model: string | null; providerKey: boolean }) {
+  const set = useMutation(api.settings.setEngineDefaults)
+  const [draft, setDraft] = useState(model ?? '')
+  useEffect(() => setDraft(model ?? ''), [model])
+  const { run, pending, error } = usePending()
+  return (
+    <section aria-label="agent engine">
+      <h2>Agent engine</h2>
+      <p><small>The harness new dorks run: the program that gives the model its tools and runs its loop. Each dork keeps the engine it was created with; you can still pick another one per dork when you create it.</small></p>
+      <label>Default for new dorks{' '}
+        <select aria-label="default engine" value={engine} disabled={pending} onChange={(e) => void run(() => set({ defaultEngine: e.target.value as Engine }))}>
+          {(Object.keys(ENGINE_LABEL) as Engine[]).map((k) => <option key={k} value={k}>{ENGINE_LABEL[k]}</option>)}
+        </select>
+      </label>
+      <form onSubmit={(e) => { e.preventDefault(); void run(() => set({ opencodeModel: draft.trim() || null })) }}>
+        <input aria-label="opencode model" placeholder="anthropic/claude-sonnet-4-5" value={draft} onChange={(e) => setDraft(e.target.value)} />
+        <button type="submit" disabled={pending || draft.trim() === (model ?? '')}>Save model</button>
+      </form>
+      <small>OpenCode model as <code>provider/model</code>. Leave empty to let OpenCode pick from the providers it has keys for. Currently <span data-testid="opencode-model">{model ?? 'OpenCode default'}</span>.</small>
+      <p data-testid="provider-key-status"><small>{providerKey
+        ? 'A provider key is saved under CLI secrets.'
+        : 'OpenCode needs a model provider key: save one under CLI secrets, e.g. ANTHROPIC_API_KEY, OPENAI_API_KEY or OPENROUTER_API_KEY. (Your Claude token is not used by OpenCode.)'}</small></p>
+      {error && <p role="alert">{error}</p>}
     </section>
   )
 }

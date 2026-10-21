@@ -9,6 +9,8 @@ export interface Config {
   /** Never logged, never forwarded to the Claude child. */
   bridgeSecret: string;
   claudeBin: string;
+  /** The OpenCode binary, for dorks whose engine is `opencode`. */
+  opencodeBin: string;
   /** Appended to the claude argv (space separated). Escape hatch, e.g. `--model sonnet`. */
   claudeExtraArgs: string[];
   permissionMode: string;
@@ -61,6 +63,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     bridgeUrl,
     bridgeSecret,
     claudeBin: env.CLAUDE_BIN || "claude",
+    opencodeBin: env.OPENCODE_BIN || "opencode",
     claudeExtraArgs: (env.DORKS_CLAUDE_ARGS ?? "").split(/\s+/).filter(Boolean),
     permissionMode: env.DORKS_PERMISSION_MODE || "bypassPermissions",
     runAs: env.CLAUDE_RUN_AS || null,
@@ -79,4 +82,4 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
  * Variables that must never reach the Claude child (or anything it spawns): the bridge's own identity and the dev host's keys.
  * `DORKS_REAL_GH` is the exception: it tells the gh shim (a child of the CLI) where the real gh is.
  */
-export const CHILD_ENV_DENY = [/^BRIDGE_/, /^CLAUDE_RUN_AS$/, /^DORK_ID$/, /^DORKS_(?!REAL_GH$)/, /^SIM_HOST_KEY$/, /^CONVEX_/, /^CLAUDE_BIN$/];
+export const CHILD_ENV_DENY = [/^BRIDGE_/, /^CLAUDE_RUN_AS$/, /^DORK_ID$/, /^DORKS_(?!REAL_GH$)/, /^SIM_HOST_KEY$/, /^CONVEX_/, /^CLAUDE_BIN$/, /^OPENCODE_BIN$/];

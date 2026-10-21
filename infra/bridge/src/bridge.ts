@@ -1,9 +1,11 @@
-import { commandFrame, type FromBridge, type PrRef } from "@dorks/shared";
+import { commandFrame, type Engine, type FromBridge, type PrRef } from "@dorks/shared";
 import { createHash } from "node:crypto";
 import { appendFileSync, chmodSync, closeSync, fsyncSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { join } from "node:path";
-import { Agent, childEnv, configDirOf, findTranscripts } from "./claude";
+import { Agent, childEnv, hasClaudeSession } from "./claude";
+import type { Harness, HarnessOptions } from "./harness";
+import { hasOpenCodeSession, OpenCodeAgent } from "./opencode";
 import type { Config } from "./config";
 import { GithubToken, helperCommand } from "./credentials";
 import { HookService, mcpConfigPath, settingsPath, writeClaudeMcpConfig, writeClaudeSettings } from "./hooks";
@@ -44,7 +46,7 @@ export class Bridge {
   private prs: PrSubscriptions;
   private hooks: HookService;
   private runAs: Identity | null;
-  private agent: Agent | null = null;
+  private agent: Harness | null = null;
   private agentKey = "";
   private lastSessionId: string | null = null;
   private latest: CommandEntry[] = [];
@@ -58,7 +60,7 @@ export class Bridge {
   private handshaking: Promise<void> | null = null;
   private configuring = 0; // configure jobs in flight (an interrupt arriving meanwhile is deferred, not dropped)
   private configAttempts = new Map<string, number>();
-  private agentCtx: { dir: string; env: NodeJS.ProcessEnv } | null = null;
+  private agentCtx: { dir: string; env: NodeJS.ProcessEnv; engine: Engine; model: string | null } | null = null;
   private readonly cfg: Config;
   /** [node, cli.mjs]: how the git credential helper and the hooks invoke this binary. */
   private readonly self: [string, string];
@@ -267,10 +269,9 @@ export class Bridge {
 
   /** The CLI appends its transcript as it goes; make sure the OS has it (and the working tree) on disk before the box pauses. */
   private async persistSession() {
-    const id = this.agent?.sessionId ?? this.lastSessionId;
     try {
-      if (id && this.agentCtx) {
-        for (const f of findTranscripts(configDirOf(this.agentCtx.env), id)) {
+      if (this.agent) {
+        for (const f of this.agent.sessionFiles()) {
           const fd = openSync(f, "r");
           try {
             fsyncSync(fd);
@@ -311,7 +312,9 @@ export class Bridge {
     this.redactor.addAll(Object.values(cfg.env));
     this.github.set(cfg.ghToken);
 
-    const key = createHash("sha256").update(JSON.stringify([cfg.repo, Object.entries(cfg.env).sort()])).digest("hex");
+    const engine = cfg.engine ?? "claude";
+    const model = cfg.model ?? null;
+    const key = createHash("sha256").update(JSON.stringify([cfg.repo, Object.entries(cfg.env).sort(), engine, model])).digest("hex");
     if (this.agent?.alive && key === this.agentKey) {
       // Already running with this config (a reconnect re-sends configure): nothing to do but say so again.
       this.pipeline.control({ t: "ack", id: cid });
@@ -339,12 +342,12 @@ export class Bridge {
 
     const env = childEnv(this.d.baseEnv ?? process.env, cfg.env, this.log, this.runAs);
     env.DORKS_SOCK = this.rpc.sockPath; // how `dorks`, the gh shim and hooks (children of the CLI) find this process
-    this.agentCtx = { dir, env };
+    this.agentCtx = { dir, env, engine, model };
     this.agentKey = key;
     let resume = this.lastSessionId ?? cfg.resumeSessionId;
-    // The backend remembers a session id, but the box may have been recreated without its disk: --resume would fail and the
+    // The backend remembers a session id, but the box may have been recreated without its disk: resuming would fail and the
     // user's message with it. Only resume what is really on disk.
-    if (resume && findTranscripts(configDirOf(env), resume).length === 0) {
+    if (resume && !(engine === "opencode" ? hasOpenCodeSession(env, resume) : hasClaudeSession(env, resume))) {
       this.log("session transcript not found on this box, starting a fresh session");
       this.lastSessionId = null;
       resume = null;
@@ -356,16 +359,11 @@ export class Bridge {
   }
 
   private startAgent(resume: string | null, resend: string[]) {
-    const { dir, env } = this.agentCtx!;
-    const agent = new Agent({
-      bin: this.cfg.claudeBin,
+    const { dir, env, engine, model } = this.agentCtx!;
+    const common: HarnessOptions = {
       cwd: dir,
       env,
-      permissionMode: this.cfg.permissionMode,
       resumeSessionId: resume,
-      extraArgs: this.cfg.claudeExtraArgs,
-      settingsFile: settingsPath(this.cfg.stateDir),
-      mcpConfigFile: mcpConfigPath(this.cfg.stateDir),
       runAs: this.runAs,
       redactor: this.redactor,
       log: this.log,
@@ -387,9 +385,28 @@ export class Bridge {
         this.log("agent exited, code", code);
         this.pipeline.control({ t: "agent_exited", code, stderrTail }, true);
       },
-    });
+    };
+    const agent: Harness =
+      engine === "opencode"
+        ? new OpenCodeAgent({
+            ...common,
+            bin: this.cfg.opencodeBin,
+            model,
+            stateDir: this.cfg.stateDir,
+            mcpServer: { command: [...this.self, "dorks", "mcp"], env: { DORKS_SOCK: this.rpc.sockPath } },
+            // OpenCode has no Claude-style hooks: the harness calls the same handlers at the matching points (see opencode.ts).
+            hooks: this.hooks.methods,
+          })
+        : new Agent({
+            ...common,
+            bin: this.cfg.claudeBin,
+            permissionMode: this.cfg.permissionMode,
+            extraArgs: this.cfg.claudeExtraArgs,
+            settingsFile: settingsPath(this.cfg.stateDir),
+            mcpConfigFile: mcpConfigPath(this.cfg.stateDir),
+          });
     this.agent = agent;
-    this.log("agent started", resume ? "(resuming a session)" : "(new session)");
+    this.log(`agent started (${engine})`, resume ? "(resuming a session)" : "(new session)");
     for (const text of resend) void agent.sendUserMessage(text).catch(() => this.log("could not resend a message to the new session"));
   }
 

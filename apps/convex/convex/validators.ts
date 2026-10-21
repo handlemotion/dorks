@@ -1,5 +1,8 @@
 import { v } from "convex/values";
 
+// Mirror of the shared `engine` enum (packages/shared/src/agent.ts).
+export const engine = v.union(v.literal("claude"), v.literal("opencode"));
+
 export const dorkState = v.union(v.literal("creating"), v.literal("working"), v.literal("idle"), v.literal("sleeping"), v.literal("waking"), v.literal("error"));
 
 // Convex mirrors of the shared zod enums (packages/shared/src/autonomy.ts). `lib/subscriptions.ts toView` fails to typecheck if they drift.

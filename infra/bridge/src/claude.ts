@@ -4,37 +4,22 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { CHILD_ENV_DENY } from "./config";
+import type { Harness, HarnessOptions } from "./harness";
 import { asIdentity, type Identity } from "./runas";
 import type { Log } from "./redact";
-import { errTag, type Redactor } from "./redact";
+import { errTag } from "./redact";
 
-export interface AgentOptions {
+export type { ExitInfo } from "./harness";
+
+/** The Claude Code harness: `claude -p` in streaming mode. Its stream-json is forwarded as is (the backend normalizer reads it). */
+export interface AgentOptions extends HarnessOptions {
   bin: string;
-  cwd: string;
-  /** Final child env (already filtered + merged). */
-  env: NodeJS.ProcessEnv;
   permissionMode: string;
-  resumeSessionId: string | null;
   extraArgs: string[];
   /** Hooks for the CLI (`--settings`); merged with the repo's own settings, see hooks.ts. */
   settingsFile?: string;
   /** The `dorks` MCP server for the CLI (`--mcp-config`), see mcp.ts. */
   mcpConfigFile?: string;
-  runAs?: Identity | null;
-  redactor: Redactor;
-  log: Log;
-  onRaw: (raw: unknown) => void;
-  /** Not called when the exit was requested through {@link Agent.stop}. */
-  onExit: (info: ExitInfo) => void;
-}
-
-export interface ExitInfo {
-  code: number | null;
-  stderrTail: string;
-  /** Started with --resume, died before init, and the CLI said it has no such conversation. Nothing was forwarded for this run. */
-  resumeMissing: boolean;
-  /** Messages written to the CLI that it never got to answer (for a resend on a fresh session). */
-  pending: string[];
 }
 
 /** Where the CLI keeps transcripts: <config dir>/projects/<encoded cwd>/<session>.jsonl */
@@ -97,7 +82,11 @@ export function childEnv(base: NodeJS.ProcessEnv, cfgEnv: Record<string, string>
   return env;
 }
 
-export class Agent {
+/** Whether `--resume <id>` can work on this box: the CLI only resumes a transcript it finds on disk. */
+export const hasClaudeSession = (env: NodeJS.ProcessEnv, sessionId: string) => findTranscripts(configDirOf(env), sessionId).length > 0;
+
+export class Agent implements Harness {
+  readonly engine = "claude" as const;
   private child: ChildProcessWithoutNullStreams;
   private buf = "";
   private stderr = "";
@@ -240,6 +229,10 @@ export class Agent {
         resolve(true);
       });
     });
+  }
+
+  sessionFiles() {
+    return this.sessionId ? findTranscripts(configDirOf(this.o.env), this.sessionId) : [];
   }
 
   /** Ends stdin (the CLI finishes the turn and exits), then escalates to SIGTERM / SIGKILL. Does not report agent_exited. */

@@ -1,4 +1,4 @@
-import { commentPolicy as commentPolicySchema, DEFAULT_COMMENT_POLICY } from "@dorks/shared";
+import { commentPolicy as commentPolicySchema, DEFAULT_COMMENT_POLICY, DEFAULT_ENGINE, OPENCODE_MODEL_RE } from "@dorks/shared";
 import { v } from "convex/values";
 import { aad, encrypt, keyringFromEnv } from "../core/crypto";
 import { internal } from "./_generated/api";
@@ -6,6 +6,7 @@ import { action, internalMutation, mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireUserId } from "./auth";
 import { fail } from "./lib/dispatch";
+import { engine } from "./validators";
 import { verifyInstallationOwnership } from "./lib/githubInstall";
 
 export const MAX_CLAUDE_TOKEN_CHARS = 4 * 1024;
@@ -27,7 +28,13 @@ export const onboarding = query({
   handler: async (ctx) => {
     const userId = await requireUserId(ctx);
     const s = await ctx.db.query("userSettings").withIndex("by_user", (q) => q.eq("userId", userId)).unique();
-    return { claudeToken: !!s?.claudeTokenEnc, github: !!s?.githubInstallationId, sleepMinutes: s?.sleepMinutes ?? 5, commentPolicy: s?.commentPolicy ?? DEFAULT_COMMENT_POLICY };
+    const secrets = await ctx.db.query("userSecrets").withIndex("by_user_name", (q) => q.eq("userId", userId)).collect();
+    return {
+      claudeToken: !!s?.claudeTokenEnc, github: !!s?.githubInstallationId, sleepMinutes: s?.sleepMinutes ?? 5, commentPolicy: s?.commentPolicy ?? DEFAULT_COMMENT_POLICY,
+      defaultEngine: s?.defaultEngine ?? DEFAULT_ENGINE, opencodeModel: s?.opencodeModel ?? null,
+      // OpenCode reads provider keys from the environment (CLI secrets); this is only a hint for the UI, not a requirement.
+      providerKey: secrets.some((r) => PROVIDER_KEY_RE.test(r.name)),
+    };
   },
 });
 
@@ -116,6 +123,24 @@ export const setSleepMinutes = mutation({
     if (!Number.isFinite(minutes)) fail("invalid", "minutes must be a finite number");
     const row = await settingsRow(ctx, userId);
     await ctx.db.patch(row._id, { sleepMinutes: Math.min(Math.max(minutes, 0.05), 24 * 60) });
+  },
+});
+
+/** CLI secret names OpenCode can authenticate a provider with (ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY, ...). */
+export const PROVIDER_KEY_RE = /_API_KEY$/;
+
+/** The engine new dorks run by default, and the model OpenCode dorks use (null or "" clears it: OpenCode picks). */
+export const setEngineDefaults = mutation({
+  args: { defaultEngine: v.optional(engine), opencodeModel: v.optional(v.union(v.string(), v.null())) },
+  handler: async (ctx, { defaultEngine, opencodeModel }) => {
+    const userId = await requireUserId(ctx);
+    const model = typeof opencodeModel === "string" ? opencodeModel.trim() : opencodeModel;
+    if (model && !OPENCODE_MODEL_RE.test(model)) fail("invalid", "model must be <provider>/<model>, e.g. anthropic/claude-sonnet-4-5");
+    const row = await settingsRow(ctx, userId);
+    await ctx.db.patch(row._id, {
+      ...(defaultEngine !== undefined ? { defaultEngine } : {}),
+      ...(model !== undefined ? { opencodeModel: model || undefined } : {}),
+    });
   },
 });
 
