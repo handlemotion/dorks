@@ -7,9 +7,13 @@
 #
 #   bash cloud-setup.sh              Doppler CLI, pinned pnpm, dependencies
 #   bash cloud-setup.sh --backend    also start the local Convex backend (needs Docker; see scripts/dev-backend.sh)
+#   bash cloud-setup.sh --servers    also start the whole stack (backend, mail, web, sim) in the background and return at once;
+#                                    `pnpm dev:wait` blocks until it is up (scripts/dev-up.sh)
 #
-# Idempotent and non-interactive; works as root or a normal user (sudo only if it exists) and from any working directory. Needs
-# Node >= 22, network access and DOPPLER_TOKEN in the environment. Exit code is non-zero if a required step failed.
+# Also installs the optional CLIs agents use: Cloudflare `cf` (authenticates from Doppler: `pnpm cf ...`) and GitHub's `gh stack`
+# extension (stacked PRs). Idempotent and non-interactive; works as root or a normal user (sudo only if it exists) and from any
+# working directory. Needs Node >= 22, network access and DOPPLER_TOKEN in the environment. Exit code is non-zero if a required
+# step failed; optional tools only log.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
@@ -54,10 +58,36 @@ if ! have cf && node -e 'const [a,b]=process.versions.node.split(".").map(Number
   npm_global cf || log "cf install failed (optional)"
 fi
 
+# GitHub CLI + the `gh stack` extension (stacked PRs, optional). `gh extension install` needs api.github.com and a valid gh login;
+# cloud VMs often have neither, so fall back to building the extension from the Go module proxy and registering it as a local
+# extension (a directory gh-stack/ holding an executable gh-stack in gh's extensions dir).
+if ! have gh; then
+  log "installing GitHub CLI"
+  if have apt-get; then
+    priv mkdir -p -m 755 /etc/apt/keyrings \
+      && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | priv tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null \
+      && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | priv tee /etc/apt/sources.list.d/github-cli.list >/dev/null \
+      && priv apt-get update -q >/dev/null && priv apt-get install -y -q gh >/dev/null || log "gh install failed (optional)"
+  elif have dnf; then
+    priv dnf install -y -q 'dnf-command(config-manager)' >/dev/null 2>&1
+    { priv dnf config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.repo || priv dnf config-manager addrepo --from-repofile=https://cli.github.com/packages/rpm/gh-cli.repo; } >/dev/null 2>&1
+    priv dnf install -y -q gh >/dev/null || log "gh install failed (optional)"
+  else log "no apt-get or dnf; install gh by hand (optional)"; fi
+fi
+if have gh && ! gh stack --help >/dev/null 2>&1; then
+  log "installing gh stack"
+  if ! gh extension install github/gh-stack >/dev/null 2>&1; then
+    ext="${XDG_DATA_HOME:-$HOME/.local/share}/gh/extensions/gh-stack"
+    if have go && mkdir -p "$ext" && GOBIN="$ext" GOFLAGS=-mod=mod go install github.com/github/gh-stack@latest >/dev/null 2>&1; then :
+    else rm -rf "$ext"; log "gh stack install failed (optional; needs api.github.com or Go)"; fi
+  fi
+fi
+
 # pnpm at the version the repo pins. Corepack ships with Node, but older corepack builds cannot run pnpm 12 (it ships bin/pnpm.mjs,
 # they look for pnpm.cjs), so verify it works and fall back to the npm package.
 want_pnpm="$(node -p 'require("./package.json").packageManager.split("@")[1]')"
-have corepack && corepack enable >/dev/null 2>&1 || true
+# Only try corepack when pnpm is not already right: `corepack enable` replaces a working pnpm with its shim.
+if [ "$(pnpm --version 2>/dev/null)" != "$want_pnpm" ]; then have corepack && corepack enable >/dev/null 2>&1 || true; fi
 if [ "$(pnpm --version 2>/dev/null)" != "$want_pnpm" ]; then
   log "installing pnpm@$want_pnpm from npm"
   npm_global "pnpm@$want_pnpm" || fail "could not install pnpm@$want_pnpm"
@@ -74,10 +104,29 @@ if have pnpm; then
   fi
 fi
 
-if [ "${1:-}" = "--backend" ]; then
-  log "starting the local backend"
-  bash scripts/dev-backend.sh || fail "dev-backend.sh"
-fi
+case " $* " in
+  *" --servers "*)
+    # In the background so a session is usable at once; servers keep running after this script exits.
+    dir="${DORKS_DEV_DIR:-/tmp/dorks-dev}"; mkdir -p "$dir"
+    log "starting servers in the background (log: $dir/up.log); \`pnpm dev:wait\` blocks until they are up"
+    setsid nohup bash scripts/dev-up.sh up >"$dir/up.log" 2>&1 </dev/null &
+    echo $! >"$dir/up.pid" # dev:wait keys on this; written here so a wait right after setup cannot miss the start
+    ;;
+  *" --backend "*)
+    log "starting the local backend"
+    bash scripts/dev-backend.sh || fail "dev-backend.sh"
+    ;;
+esac
+
+# What an agent can rely on in this session. cf and gh stack are optional, so they only report.
+tools="pnpm $(pnpm --version 2>/dev/null || echo MISSING)"
+have doppler && tools="$tools | doppler $(doppler --version 2>/dev/null)" || tools="$tools | doppler MISSING"
+if have cf; then
+  if [ -n "${DOPPLER_TOKEN:-}" ] && have doppler && doppler run -p dorks -c dev -- cf auth whoami >/dev/null 2>&1; then tools="$tools | cf (Doppler auth ok)"
+  else tools="$tools | cf (not authenticated)"; fi
+else tools="$tools | cf MISSING"; fi
+gh stack --help >/dev/null 2>&1 && tools="$tools | gh stack" || tools="$tools | gh stack MISSING"
+log "tools: $tools"
 
 [ "$status" = 0 ] && log "done" || log "done with errors"
 exit "$status"

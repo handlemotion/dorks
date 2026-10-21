@@ -3,7 +3,7 @@
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/cloud-setup.sh\"" }
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/cloud-setup.sh\" ${CLAUDE_CODE_REMOTE:+--servers}" }
         ]
       }
     ]

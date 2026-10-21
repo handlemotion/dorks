@@ -33,6 +33,11 @@ fi
 fresh=0
 if [ -z "$(docker ps -aq -f "name=^${NAME}$")" ]; then
   echo "[dev-backend] creating $NAME"
+  docker image inspect "$IMAGE" >/dev/null 2>&1 || docker pull -q "$IMAGE" >/dev/null || {
+    echo "could not pull the Convex backend image from ghcr.io. On a cloud VM, allow ghcr.io and pkg-containers.githubusercontent.com" >&2
+    echo "in the environment's network policy (Allowed domains)." >&2
+    exit 1
+  }
   docker run -d --name "$NAME" --network host \
     -e INSTANCE_NAME=dorks-dev \
     -e INSTANCE_SECRET="$(node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))')" \

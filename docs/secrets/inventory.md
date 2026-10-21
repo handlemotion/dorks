@@ -37,8 +37,8 @@ Backend: **convex** (spike verdict GO, [convex-spike.md](../convex-spike.md)); t
 | Name | Unit | Envs | Secret? | Used by | Source | dev | prod |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `CONVEX_DEPLOY_KEY` | `convex` | prod only | yes | `npx convex deploy` from CI / a release machine. **Not created in dev on purpose**: a deploy key in the environment overrides the CLI's deployment selection | external: [Convex](providers/convex.md) | `-` | dummy |
-| `CLOUDFLARE_API_TOKEN` | `shared` | prod only | yes | `wrangler deploy` for `apps/web` (no CI yet) | external: [Cloudflare](providers/cloudflare.md) | `-` | dummy |
-| `CLOUDFLARE_ACCOUNT_ID` | `shared` | prod only | no (identifier) | same | external: [Cloudflare](providers/cloudflare.md) | `-` | dummy |
+| `CLOUDFLARE_API_TOKEN` | `shared` | dev, prod | yes | `wrangler deploy` for `apps/web` (no CI yet); in dev, the `cf` CLI for agents (`pnpm cf ...`) | external: [Cloudflare](providers/cloudflare.md) | filled | dummy |
+| `CLOUDFLARE_ACCOUNT_ID` | `shared` | dev, prod | no (identifier) | same | external: [Cloudflare](providers/cloudflare.md) | filled | dummy |
 | `CENTRAL_LICENSE_KEY` | `shared` | dev, prod | yes | install time: the `preinstall` license check of `@central-icons-react/*` (`apps/web`) reads it, and `pnpm install` fails without it. Needed wherever dependencies are installed (dev machines, deploy builds, and CI, where it comes from the Doppler `ci` environment, a reference to `prd`, synced to the GitHub Actions repository secret `CENTRAL_LICENSE_KEY`) | external: Central Icons license (centralicons.com) | dummy (`REPLACE_ME__CENTRAL_ICONS`) | missing: create in `prd` |
 
 ## Not in Doppler (and why)
