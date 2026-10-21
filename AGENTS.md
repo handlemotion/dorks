@@ -15,13 +15,24 @@
 
 `cloud-setup.sh` (repo root) takes a bare cloud VM to a working checkout. It exists because a fresh agent VM cannot `pnpm install` on its own: the repo pins pnpm 12, which the image's corepack cannot run; the Doppler CLI is missing; and the install needs `CENTRAL_LICENSE_KEY`, which only Doppler has. It installs those, then the dependencies, is idempotent, works as root or not, and exits non-zero if a required step failed. `--backend` also starts the local Convex backend (needs Docker).
 
+It also installs the optional CLIs agents use, reporting each at the end (`[cloud-setup] tools: ...`): Cloudflare `cf` (authenticates from Doppler `dev`: run it as `pnpm cf <args>`) and GitHub's `gh stack` extension for stacked PRs (built from the Go module proxy when `gh extension install` cannot reach GitHub). `--servers` starts the whole stack in the background and returns at once.
+
 It is the single source of setup logic: do not copy its steps into a provider's config or a CI job; change the script.
 
 For each cloud provider we use, set:
 
 - **Setup / install command:** `bash cloud-setup.sh` (run from the repo root; `bash /path/to/repo/cloud-setup.sh` also works from any directory, but only once the repo is checked out)
 - **Secret / environment variable:** `DOPPLER_TOKEN`
-- Claude Code cloud sessions already run it through the SessionStart hook in `.claude/settings.json`.
+- Claude Code cloud sessions already run it, with `--servers` (cloud only, keyed on `CLAUDE_CODE_REMOTE`), through the SessionStart hook in `.claude/settings.json`.
+
+## Running servers
+
+Test changes against running servers, not only unit tests. `scripts/dev-up.sh` runs the stack detached, logs in `/tmp/dorks-dev/<name>.log`:
+
+- `pnpm dev:wait` blocks until a start in progress (the session-start one) finishes, then prints status. `pnpm dev:up` starts whatever is not running; `pnpm dev:status`, `pnpm dev:down`.
+- Convex `http://127.0.0.1:3210` (HTTP actions `:3211`), web `http://localhost:3000`, mail catcher `:8899` (sign-in codes appear in `/tmp/dorks-dev/mail.log`), box simulator (`sim`).
+- After changing `apps/convex` code, rerun `pnpm dev:backend` to deploy it; vite reloads web changes itself.
+- The e2e scripts in `apps/convex/scripts` (e.g. `run-e2e.sh`) start their own mail mock on :8899 and their own sim, so stop those first (`pnpm dev:down` leaves the backend and stops mail, web and sim; restart web with `pnpm dev:up` if a script needs it).
 
 ## Secrets
 

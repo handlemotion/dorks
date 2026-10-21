@@ -66,7 +66,7 @@ jobs:
             -e CONVEX_CLOUD_ORIGIN=http://127.0.0.1:3210 \
             -e CONVEX_SITE_ORIGIN=http://127.0.0.1:3211 \
             -e DO_NOT_REQUIRE_SSL=1 \
-            ghcr.io/get-convex/convex-backend@sha256:d715e9ec088784407ca4ba2d3db592702cd328d02c76cdca3852c0018f2a76b4
+            ghcr.io/convex/convex-backend@sha256:d715e9ec088784407ca4ba2d3db592702cd328d02c76cdca3852c0018f2a76b4
           for _ in $(seq 60); do
             curl -sf http://127.0.0.1:3210/version >/dev/null && exit 0
             sleep 1

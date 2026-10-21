@@ -5,6 +5,11 @@
   "scripts": {
     "dev": "doppler run -p dorks -c dev -- pnpm --parallel --filter @dorks/convex --filter @dorks/web dev",
     "dev:backend": "bash scripts/dev-backend.sh",
+    "dev:up": "bash scripts/dev-up.sh up",
+    "dev:status": "bash scripts/dev-up.sh status",
+    "dev:wait": "bash scripts/dev-up.sh wait",
+    "dev:down": "bash scripts/dev-up.sh down",
+    "cf": "doppler run -p dorks -c dev -- cf",
     "dev:sim": "doppler run -p dorks -c dev -- env CONVEX_URL=http://127.0.0.1:3210 node infra/bridge-sim/host.mjs",
     "dev:mail": "node apps/convex/scripts/dev-mail.mjs",
     "dev:convex": "doppler run -p dorks -c dev -- pnpm --filter @dorks/convex dev",

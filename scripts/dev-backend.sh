@@ -12,7 +12,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 NAME=convex-local
 # Pinned by digest, same as CI (the :latest of 2026-10-07); bump deliberately.
-IMAGE=ghcr.io/get-convex/convex-backend@sha256:d715e9ec088784407ca4ba2d3db592702cd328d02c76cdca3852c0018f2a76b4
+IMAGE=ghcr.io/convex/convex-backend@sha256:d715e9ec088784407ca4ba2d3db592702cd328d02c76cdca3852c0018f2a76b4
 URL=http://127.0.0.1:3210
 SITE=http://127.0.0.1:3211
 
@@ -33,6 +33,10 @@ fi
 fresh=0
 if [ -z "$(docker ps -aq -f "name=^${NAME}$")" ]; then
   echo "[dev-backend] creating $NAME"
+  docker image inspect "$IMAGE" >/dev/null 2>&1 || docker pull -q "$IMAGE" >/dev/null || {
+    echo "could not pull $IMAGE (Convex moved its images from ghcr.io/get-convex to ghcr.io/convex in 2026-10; check the path)" >&2
+    exit 1
+  }
   docker run -d --name "$NAME" --network host \
     -e INSTANCE_NAME=dorks-dev \
     -e INSTANCE_SECRET="$(node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))')" \
