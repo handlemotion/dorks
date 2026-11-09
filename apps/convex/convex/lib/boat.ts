@@ -50,13 +50,13 @@ export function boatBox(opts: BoatOptions): BoxProvider {
       throw new BoatError(`boat ${op}: network error (${e instanceof Error ? e.name : "unknown"})`);
     }
     if (!res.ok) {
-      const error = await res.json().catch(() => ({}));
-      const code = typeof error?.code === "string" ? error.code : undefined;
+      const error: unknown = await res.json().catch(() => ({}));
+      const code = error && typeof error === "object" && "code" in error && typeof error.code === "string" ? error.code : undefined;
       if (res.status === 401 || res.status === 403) throw new BoatError(`boat ${op}: HTTP ${res.status}; check BOAT_API_KEY and access`, res.status, code);
       throw new BoatError(`boat ${op}: HTTP ${res.status}`, res.status, code);
     }
-    const json = await res.json().catch(() => ({}));
-    if (json?.ok === false) throw new BoatError(`boat ${op}: invalid success response`, res.status);
+    const json: unknown = await res.json().catch(() => ({}));
+    if (json && typeof json === "object" && "ok" in json && json.ok === false) throw new BoatError(`boat ${op}: invalid success response`, res.status);
     return json;
   }
 

@@ -16,6 +16,7 @@ import type * as dorks from "../dorks.js";
 import type * as events from "../events.js";
 import type * as github from "../github.js";
 import type * as http from "../http.js";
+import type * as lib_boat from "../lib/boat.js";
 import type * as lib_box from "../lib/box.js";
 import type * as lib_bridgeAuth from "../lib/bridgeAuth.js";
 import type * as lib_dispatch from "../lib/dispatch.js";
@@ -50,6 +51,7 @@ declare const fullApi: ApiFromModules<{
   events: typeof events;
   github: typeof github;
   http: typeof http;
+  "lib/boat": typeof lib_boat;
   "lib/box": typeof lib_box;
   "lib/bridgeAuth": typeof lib_bridgeAuth;
   "lib/dispatch": typeof lib_dispatch;
