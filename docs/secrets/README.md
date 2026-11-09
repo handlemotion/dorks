@@ -3,7 +3,7 @@
 **[Doppler](https://docs.doppler.com) is the source of truth** for every secret and env var dorks needs: project `dorks`, configs `dev` and `prd`. Nothing is stored in git.
 
 - [inventory.md](inventory.md): every variable (name, unit, envs, used by, generated vs external, status).
-- [providers/](providers/): how to get each external value ([Resend](providers/resend.md), [GitHub App](providers/github-app.md), [Upstash Box](providers/upstash-box.md), [Expo push](providers/expo-push.md), [Convex](providers/convex.md), [Cloudflare](providers/cloudflare.md)).
+- [providers/](providers/): how to get each external value ([Resend](providers/resend.md), [GitHub App](providers/github-app.md), [Boat](../boat.md), [Upstash Box](providers/upstash-box.md), [Expo push](providers/expo-push.md), [Convex](providers/convex.md), [Cloudflare](providers/cloudflare.md)).
 - [reuse-in-other-repos.md](reuse-in-other-repos.md): the same setup for another repo.
 
 ## The setup, and why

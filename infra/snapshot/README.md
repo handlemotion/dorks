@@ -1,5 +1,7 @@
 # Base snapshot
 
+For the recommended Boat driver, use [the Boat snapshot guide](../../docs/boat.md) and `boat-install.sh`. The instructions below build a snapshot for the optional Upstash driver.
+
 Every dork box is a restore of one **base snapshot** (`POST /v2/box/from-snapshot`, see [`docs/upstash-box.md`](../../docs/upstash-box.md)). It is built once by hand, and rebuilt whenever Node, the Claude Code CLI, `gh` / `gh stack`, Doppler, `cf` or `dorks-bridge` change. It is the team's one environment preset: every user and every dork gets the same snapshot (per-user `workstationSnapshotId` exists, but nothing builds a different one). Boxes already created keep their old filesystem; only new boxes pick up a new snapshot.
 
 The snapshot must contain:

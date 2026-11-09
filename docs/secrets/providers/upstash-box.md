@@ -1,6 +1,6 @@
 # Upstash Box (the per-dork sandbox)
 
-Provides: `UPSTASH_BOX_API_KEY` (`shared`, secret) and `BASE_SNAPSHOT_ID` (`shared`, prod). The real Box provider is implemented in `apps/convex/convex/lib/upstash.ts` and used whenever `BOX_PROVIDER` is not `sim`. Building the base snapshot and picking optional settings are documented in [docs/upstash-box.md](../../upstash-box.md); use that for the snapshot steps and the steps below for where to store the values.
+Provides: `UPSTASH_BOX_API_KEY` (`shared`, secret) and `BASE_SNAPSHOT_ID` (`shared`, prod). The optional Upstash provider is implemented in `apps/convex/convex/lib/upstash.ts` and used when `BOX_PROVIDER=upstash`. Boat is recommended for new deployments ([Boat guide](../../boat.md)). Building the Upstash base snapshot and picking optional settings are documented in [docs/upstash-box.md](../../upstash-box.md); use that for the snapshot steps and the steps below for where to store the values.
 
 Official docs (checked 2026-10-07): [Box quickstart](https://upstash.com/docs/box/overall/quickstart), [Snapshots](https://upstash.com/docs/box/overall/snapshots).
 
