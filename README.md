@@ -22,6 +22,8 @@ Or all of it detached in one command: `pnpm dev:up` (status `pnpm dev:status`, s
 
 Boxes are simulated (`BOX_PROVIDER=sim`): `pnpm dev:sim` runs the sim host (`BRIDGE_IMPL=real pnpm dev:sim` for the real `dorks-bridge` with the fake Claude CLI; add `CLAUDE_BIN=claude` for the real one, which refuses to run as root). A real Claude needs a token in Doppler `dev` as `E2E_CLAUDE_TOKEN` (see the inventory).
 
+Boat is the recommended real sandbox provider (`BOX_PROVIDER=boat`, the default when unset). See [Boat setup and snapshot building](docs/boat.md). Existing Upstash deployments can keep `BOX_PROVIDER=upstash`.
+
 ### Running the real agent locally
 
 Needs `E2E_CLAUDE_TOKEN` in Doppler `dev` (a `claude setup-token` value). The Claude CLI refuses `--permission-mode bypassPermissions` as root, so on a root-only VM run the sim host as an unprivileged user (`ubuntu` here), with a writable `HOME`, a writable `infra/bridge/dist`, `DORKS_E2E_ROOT` set to a directory it owns, and the proxy/CA variables if the VM needs them:

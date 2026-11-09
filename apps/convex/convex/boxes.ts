@@ -21,11 +21,12 @@ export const create = internalAction({
       const info = await ctx.runQuery(internal.lifecycle.boxInfo, { dorkId });
       if (!info || info.deleting) return; // deleted before we started: do not create a box nobody will clean up
       if (!info.snapshotId) return void (await ctx.runMutation(internal.lifecycle.opFailed, { dorkId, gen, message: "No base snapshot configured" }));
-      // Only bridge connection details go in the create-time env (it is frozen into snapshots); secrets arrive via bridge.configure.
+      // Only bridge connection details go in the create-time env; user secrets arrive via bridge.configure.
       const box = await getBox(ctx).createFromSnapshot(info.snapshotId, {
         name: dorkId,
         initCommand: "dorks-bridge",
         env: { DORK_ID: dorkId, BRIDGE_URL: process.env.CONVEX_CLOUD_URL!, BRIDGE_SECRET: await bridgeSecret(dorkId) },
+        generation: gen,
       });
       const recorded = await ctx.runMutation(internal.lifecycle.boxCreated, { dorkId, gen, boxId: box.id, sleepMinutes: info.sleepMinutes });
       // The dork was deleted while the box was being created, so `destroy` saw no boxId. Delete what we just made.
