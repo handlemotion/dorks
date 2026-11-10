@@ -62,7 +62,6 @@ cd apps/convex
 ../../scripts/with-env.sh node scripts/sync-env.mjs
 
 # Deployment-only settings that are not in .env (docs/env.md).
-npx convex env set EXTRA_TRUSTED_ORIGINS http://localhost:8081 >/dev/null # Expo web
 if [ "${REAL_MAIL:-0}" = 1 ]; then
   npx convex env remove RESEND_API_URL >/dev/null 2>&1 || true
 else

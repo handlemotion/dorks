@@ -1,4 +1,4 @@
-// End-to-end acceptance run against a local Convex backend, with the sim bridge host standing in for Upstash Box.
+// End-to-end acceptance run against a local Convex backend, with the sim bridge host standing in for Boat sandboxes.
 //   env: CONVEX_URL, CONVEX_SITE_URL, SIM_HOST_KEY, BRIDGE_SECRET_KEY, GITHUB_WEBHOOK_SECRET (read from `convex env`), SECRETS_OUT (file for the scan)
 import { spawn } from "node:child_process";
 import { createHmac } from "node:crypto";

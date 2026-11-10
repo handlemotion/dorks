@@ -88,7 +88,6 @@ jobs:
           set_env BOX_PROVIDER sim
           set_env GITHUB_APP_SLUG dorks-test
           set_env BASE_SNAPSHOT_ID sim-snap
-          set_env EXTRA_TRUSTED_ORIGINS http://localhost:8081
 
       - name: Backend e2e and secret scan
         working-directory: apps/convex

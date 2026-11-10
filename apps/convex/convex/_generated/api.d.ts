@@ -27,7 +27,6 @@ import type * as lib_notify from "../lib/notify.js";
 import type * as lib_notifyRender from "../lib/notifyRender.js";
 import type * as lib_repo from "../lib/repo.js";
 import type * as lib_subscriptions from "../lib/subscriptions.js";
-import type * as lib_upstash from "../lib/upstash.js";
 import type * as lifecycle from "../lifecycle.js";
 import type * as mail from "../mail.js";
 import type * as rateLimit from "../rateLimit.js";
@@ -62,7 +61,6 @@ declare const fullApi: ApiFromModules<{
   "lib/notifyRender": typeof lib_notifyRender;
   "lib/repo": typeof lib_repo;
   "lib/subscriptions": typeof lib_subscriptions;
-  "lib/upstash": typeof lib_upstash;
   lifecycle: typeof lifecycle;
   mail: typeof mail;
   rateLimit: typeof rateLimit;

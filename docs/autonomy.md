@@ -185,6 +185,6 @@ C1 and C2 call the B1 functions through the bridge transport. Their tests use th
 
 1. Pushes made with an App installation token trigger Actions and `check_suite` webhooks to the App.
 2. `gh run view --log-failed` works with `actions: read`.
-3. Webhook → wake → first token latency with real Upstash boxes (target < 60 s).
+3. Webhook → wake → first token latency with real Boat sandboxes (target < 60 s).
 4. `gh stack` behaviour through the shim, and the webhooks a restack produces.
 5. The App receives `check_suite.completed` for suites created by other apps (GitHub Actions). GitHub's docs do not say so explicitly; the fallback is `check_run` / `workflow_run` (docs/github-app.md, section 4).

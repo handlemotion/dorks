@@ -14,7 +14,6 @@
     "dev:mail": "node apps/convex/scripts/dev-mail.mjs",
     "dev:convex": "bash scripts/with-env.sh pnpm --filter @dorks/convex dev",
     "dev:web": "bash scripts/with-env.sh pnpm --filter @dorks/web dev:direct",
-    "dev:ios": "bash scripts/with-env.sh pnpm --filter @dorks/ios start",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --if-present test"
   }

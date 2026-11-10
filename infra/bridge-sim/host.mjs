@@ -1,4 +1,4 @@
-// Stands in for Upstash Box hosting in local dev: watches the sim box table and runs/kills one convex-sim.mjs per running box.
+// Stands in for Boat sandbox hosting in local dev: watches the sim box table and runs/kills one convex-sim.mjs per running box.
 // A "paused" box = killed process (its state lives in Convex, like a real paused box keeps only disk).
 //   CONVEX_URL=… SIM_HOST_KEY=… BRIDGE_SECRET_KEY=… node host.mjs
 // Opt in to the real in-box bridge (infra/bridge) instead of convex-sim.mjs: BRIDGE_IMPL=real (CLAUDE_BIN=<claude> to override the fake CLI).

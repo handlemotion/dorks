@@ -243,7 +243,7 @@ describe("Boat sandbox provider", () => {
 });
 
 describe("provider selection", () => {
-  const previous = { BOX_PROVIDER: process.env.BOX_PROVIDER, BOAT_API_KEY: process.env.BOAT_API_KEY, UPSTASH_BOX_API_KEY: process.env.UPSTASH_BOX_API_KEY };
+  const previous = { BOX_PROVIDER: process.env.BOX_PROVIDER, BOAT_API_KEY: process.env.BOAT_API_KEY };
   afterEach(() => {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key];
@@ -251,17 +251,14 @@ describe("provider selection", () => {
     }
   });
 
-  it("recommends Boat when unset and rejects a missing key without falling back to Upstash", async () => {
+  it("recommends Boat when unset and rejects a missing key", async () => {
     delete process.env.BOX_PROVIDER;
     delete process.env.BOAT_API_KEY;
     const provider = getBox({} as ActionCtx);
     await expect(provider.resume("bx_23456789")).rejects.toThrow(/BOAT_API_KEY/);
   });
 
-  it("retains explicitly selected Upstash and rejects unknown drivers", async () => {
-    process.env.BOX_PROVIDER = "upstash";
-    delete process.env.UPSTASH_BOX_API_KEY;
-    await expect(getBox({} as ActionCtx).resume("box_1")).rejects.toThrow(/UPSTASH_BOX_API_KEY/);
+  it("rejects unknown drivers", async () => {
     process.env.BOX_PROVIDER = "unsupported";
     await expect(getBox({} as ActionCtx).resume("box_1")).rejects.toThrow(/unknown box provider/);
   });
