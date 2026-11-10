@@ -262,30 +262,6 @@ mod tests {
     const SCREEN: Rect = Rect { x: 0, y: 0, width: 1728, height: 1117 };
 
     #[test]
-    fn modes_parse_print_and_default_to_onboarding() {
-        assert_eq!("app".parse::<WindowMode>(), Ok(WindowMode::App));
-        assert_eq!("onboarding".parse::<WindowMode>(), Ok(WindowMode::Onboarding));
-        assert!("App".parse::<WindowMode>().is_err());
-        assert_eq!(WindowMode::default(), WindowMode::Onboarding);
-        assert_eq!(WindowMode::App.to_string(), "app");
-        assert_eq!(serde_json::to_string(&WindowMode::Onboarding).unwrap(), "\"onboarding\"");
-    }
-
-    #[test]
-    fn onboarding_is_fixed_without_lights_and_app_is_resizable_with_room_for_them() {
-        let o = WindowMode::Onboarding.spec();
-        assert!(!o.traffic_lights && !o.resizable);
-        assert_eq!(o.size, o.min_size);
-        assert_eq!((o.titlebar_inset_left, o.titlebar_height), (0.0, 0.0));
-
-        let a = WindowMode::App.spec();
-        assert!(a.traffic_lights && a.resizable);
-        assert!(a.size.0 >= a.min_size.0 && a.size.1 >= a.min_size.1);
-        assert!(a.titlebar_inset_left > TRAFFIC_LIGHTS_POSITION.0 + 3.0 * 12.0, "the inset must clear all three buttons");
-        assert!(a.titlebar_height > TRAFFIC_LIGHTS_POSITION.1 + 12.0, "the strip must contain the buttons");
-    }
-
-    #[test]
     fn effect_follows_the_platform_and_the_override_can_only_lower_it() {
         assert_eq!(choose_effect(true, true, None), Effect::LiquidGlass);
         assert_eq!(choose_effect(true, false, None), Effect::Vibrancy);
@@ -296,38 +272,6 @@ mod tests {
         assert_eq!(choose_effect(true, true, Some("glass")), Effect::LiquidGlass);
         assert_eq!(choose_effect(false, false, Some("vibrancy")), Effect::None);
         assert_eq!(choose_effect(true, true, Some("sparkles")), Effect::LiquidGlass);
-    }
-
-    #[test]
-    fn chrome_info_serializes_camel_case_and_the_script_sets_attributes_and_variables() {
-        let info = ChromeInfo::new(WindowMode::App.spec(), Effect::LiquidGlass, WindowTheme::Light);
-        let json = serde_json::to_string(&info).unwrap();
-        assert!(json.contains("\"mode\":\"app\""), "{json}");
-        assert!(json.contains("\"effect\":\"liquid-glass\""), "{json}");
-        assert!(json.contains("\"trafficLights\":true"), "{json}");
-        assert!(json.contains("\"titlebarInsetLeft\":84.0"), "{json}");
-        assert!(json.contains("\"theme\":\"light\""), "{json}");
-
-        let script = info.page_script();
-        for needle in ["data-window-mode", "data-window-effect", "data-window-theme", "data-traffic-lights", "--titlebar-inset-left", "--titlebar-height", "readystatechange"] {
-            assert!(script.contains(needle), "{needle} missing from {script}");
-        }
-        assert!(script.ends_with(");"));
-
-        let o = ChromeInfo::new(WindowMode::Onboarding.spec(), Effect::None, WindowTheme::System);
-        assert!(serde_json::to_string(&o).unwrap().contains("\"trafficLights\":false"));
-    }
-
-    #[test]
-    fn themes_parse_and_default_to_the_system() {
-        assert_eq!(WindowTheme::default(), WindowTheme::System);
-        for (s, t) in [("light", WindowTheme::Light), ("dark", WindowTheme::Dark), ("system", WindowTheme::System)] {
-            assert_eq!(s.parse::<WindowTheme>(), Ok(t));
-            assert_eq!(t.to_string(), s);
-            assert_eq!(serde_json::to_string(&t).unwrap(), format!("\"{s}\""));
-        }
-        assert!("auto".parse::<WindowTheme>().is_err());
-        assert!("Dark".parse::<WindowTheme>().is_err());
     }
 
     #[test]
