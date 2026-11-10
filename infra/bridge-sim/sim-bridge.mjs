@@ -168,13 +168,29 @@ const ev = (raw) => {
 const sendNow = (frame) => { queue.push(frame); return flushNow(); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+let aborted = false;
+// What a real bridge relays from the CLI's `initialize` answer.
+const SIM_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+const SIM_MODELS = [
+  { model: "default", name: "Default (recommended)", description: "Sim Opus 1", resolved: "sim-opus-1", efforts: SIM_EFFORTS },
+  { model: "opus", name: "Sim Opus 1", description: "The thorough one", resolved: "sim-opus-1", efforts: SIM_EFFORTS },
+  { model: "haiku", name: "Sim Haiku 1", description: "The quick one", resolved: "sim-haiku-1", efforts: SIM_EFFORTS },
+];
+
 async function runTurn(text) {
   const n = bseq;
   const mid = `m${n}`;
   ev({ type: "stream_event", event: { type: "message_start", message: { id: mid } } });
-  for (let i = 0; i < DELTAS; i++) { ev({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: `w${i} ` } } }); await sleep(DELTA_GAP_MS); }
+  aborted = false;
+  for (let i = 0; i < DELTAS && !aborted; i++) { ev({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: `w${i} ` } } }); await sleep(DELTA_GAP_MS); }
+  if (aborted) { // like the CLI after an interrupt control_request: an error result, then idle
+    ev({ type: "result", subtype: "error_during_execution", duration_ms: 5, is_error: true, result: "interrupted" });
+    ev({ type: "system", subtype: "session_state_changed", state: "idle" });
+    return void (await flushNow());
+  }
   ev({ type: "assistant", message: { id: mid, content: [{ type: "text", text: `Done: ${text}` }, { type: "tool_use", id: `t${n}`, name: "Bash", input: { command: "git push" } }] } });
   ev({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: `t${n}`, content: "ok" }] } });
+  ev({ type: "assistant", message: { id: `${mid}f`, content: [{ type: "text", text: `Finished: ${text}. Pushed the branch; nothing else is pending.` }] } });
   ev({ type: "result", duration_ms: DELTAS * DELTA_GAP_MS, is_error: false });
   ev({ type: "system", subtype: "session_state_changed", state: "idle" });
   await flushNow();
@@ -189,10 +205,12 @@ async function onCommand({ cid, frame: f }) {
       if (!cfg) return log("configure refused (the backend recorded why)");
       log("configure: repo", cfg.repo.fullName, "branch", cfg.repo.branch, "resume", cfg.resumeSessionId, "env keys", Object.keys(cfg.env).join(","), "gh token", cfg.ghToken ? "yes" : "no");
       sessionId = cfg.resumeSessionId ?? `sim-session-${Date.now()}`; // a real bridge: `claude --resume <id>` when set
-      ev({ type: "system", subtype: "init", session_id: sessionId });
+      const model = SIM_MODELS.find((m) => m.model === (cfg.model ?? "default"))?.resolved ?? cfg.model;
+      ev({ type: "system", subtype: "init", session_id: sessionId, ...(cfg.provider !== "codex" ? { model } : {}) });
       queue.push({ t: "ack", id: cid }, { t: "ready" });
       // The real bridge asks Haiku (or a light Codex model) for this; the sim names the dork after the first few words.
       if (cfg.nameFrom) queue.push({ t: "title", text: `Sim: ${cfg.nameFrom.replace(/\s+/g, " ").trim().split(" ").slice(0, 5).join(" ")}`.slice(0, 120) });
+      if (cfg.provider !== "codex") queue.push({ t: "agent_models", models: SIM_MODELS, effort: cfg.effort ?? null });
       return void flushNow();
     }
     case "user_message": {
@@ -209,7 +227,7 @@ async function onCommand({ cid, frame: f }) {
       log("notify:", (f.kinds ?? []).join(",") || "-");
       return runTurn(`notify ${(f.kinds ?? []).join(",")}`);
     }
-    case "interrupt": log("interrupt"); return void sendNow({ t: "ack", id: cid });
+    case "interrupt": log("interrupt"); aborted = true; return void sendNow({ t: "ack", id: cid });
     case "flush": log("flush"); await flushNow(); return void sendNow({ t: "ack", id: cid }).then(() => sendNow({ t: "flushed", cid }));
     case "fetch_gh_token": { const r = await client.action("gh_token"); log("gh token refreshed:", r ? "ok" : "failed"); return void sendNow({ t: "ack", id: cid }); }
   }

@@ -186,6 +186,10 @@ export class DorksClient {
       await this.api.interrupt(id);
       this.invalidate(`dork:${id}`);
     },
+    chooseModel: async (id: string, model: string | null, effort: string | null) => {
+      await this.api.chooseModel(id, model, effort);
+      this.invalidate(`dork:${id}`);
+    },
     chooseCodexModel: async (id: string, model: string, effort: string) => {
       await this.api.chooseCodexModel(id, model, effort);
       this.invalidate(`dork:${id}`);

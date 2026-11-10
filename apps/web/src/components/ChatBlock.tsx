@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react'
-import { CircleAlertIcon, CircleCheckIcon, TerminalIcon } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { CircleAlertIcon, CircleCheckIcon, CircleStopIcon, ListIcon, TerminalIcon } from 'lucide-react'
 import type { Block } from '@dorks/shared'
 import { Bubble, BubbleContent } from '@dorks/ui/bubble'
 import { CodeBlock, CodeBlockContent } from '@dorks/ui/code-block'
@@ -12,12 +12,14 @@ import {
   TraceCollapsible,
   TraceCollapsibleContent,
   TraceCollapsibleTrigger,
+  TraceDescription,
   TraceIcon,
   TraceLine,
   TraceTitle,
 } from '@dorks/ui/trace'
 
 type ToolBlock = Extract<Block, { kind: 'tool' }>
+type TurnBlock = Extract<Block, { kind: 'turn' }>
 type AgentBlock = Exclude<Block, { kind: 'user' }>
 type Entry = { kind: 'user'; block: Extract<Block, { kind: 'user' }> } | { kind: 'agent'; id: string; blocks: AgentBlock[] }
 
@@ -117,11 +119,11 @@ function agentContent(blocks: AgentBlock[]): ReactNode[] {
       // Assistant text is unbubbled markdown, as in the AI Elements chat pattern. No streaming caret: the markdown is a block, so it
       // fell on a line of its own, and the status line below already says the agent is working.
       content.push(
-        <div key={block.id} className="min-w-0">
+        <div key={block.id} className="min-w-0" data-final={block.final ? '' : undefined}>
           <Markdown components={MARKDOWN} urlTransform={allowDataImages} rehypePlugins={REHYPE}>{block.text}</Markdown>
         </div>,
       )
-    } else {
+    } else if (block.kind === 'notice') {
       content.push(
         <Trace key={block.id} role={block.level === 'error' ? 'alert' : 'status'}>
           <TraceLine status={block.level === 'error' ? 'error' : undefined}>
@@ -133,6 +135,84 @@ function agentContent(blocks: AgentBlock[]): ReactNode[] {
     }
   }
   return content
+}
+
+/** A turn's blocks, in order, with the `turn` marker that ended it (none while it is still running). */
+function turns(blocks: AgentBlock[]): { blocks: AgentBlock[]; end?: TurnBlock }[] {
+  const out: { blocks: AgentBlock[]; end?: TurnBlock }[] = [{ blocks: [] }]
+  for (const block of blocks) {
+    if (block.kind === 'turn') {
+      out[out.length - 1].end = block
+      out.push({ blocks: [] })
+    } else out[out.length - 1].blocks.push(block)
+  }
+  return out.filter((t) => t.blocks.length > 0 || t.end?.outcome === 'stopped')
+}
+
+/** Progress messages and tool calls are work; the final answer (named by the server) and notices stay in view. */
+const isWork = (b: AgentBlock) => b.kind === 'tool' || (b.kind === 'assistant' && !b.final)
+
+/**
+ * The turn's work, one collapsed line. Open while the turn runs (so progress is visible), closed once it ends with a final answer;
+ * a turn that was stopped or failed, or ended without an answer, stays open so what happened is in view. The user's toggle wins.
+ */
+function WorkDetails({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock }) {
+  const running = !end
+  const settledOpen = !!end && (end.outcome !== 'done' || !end.finalId)
+  const [userOpen, setUserOpen] = useState<boolean>()
+  const open = userOpen ?? (running || settledOpen)
+  const tools = blocks.filter((b) => b.kind === 'tool').length
+  const messages = blocks.length - tools
+  const count = [tools && `${tools} ${tools === 1 ? 'step' : 'steps'}`, messages && `${messages} ${messages === 1 ? 'update' : 'updates'}`].filter(Boolean).join(', ')
+  const failed = blocks.some((b) => b.kind === 'tool' && b.status === 'error')
+  return (
+    <Trace data-testid="work-details" data-open={open}>
+      <TraceCollapsible open={open} onOpenChange={(next) => setUserOpen(next)}>
+        <TraceCollapsibleTrigger>
+          <TraceLine status={running ? 'running' : undefined}>
+            <TraceIcon><ListIcon /></TraceIcon>
+            <TraceTitle>{running ? 'Working' : 'Work details'}</TraceTitle>
+            {count && <TraceDescription>{count}{failed ? ', some failed' : ''}</TraceDescription>}
+          </TraceLine>
+        </TraceCollapsibleTrigger>
+        <TraceCollapsibleContent className="flex flex-col gap-3">{agentContent(blocks)}</TraceCollapsibleContent>
+      </TraceCollapsible>
+    </Trace>
+  )
+}
+
+/** One turn: its work collapsed into Work details at the place the work began, then what stays in view, in order. */
+function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock }) {
+  // Turns stored before the server named final answers render as they always did.
+  if (end && end.outcome === null) return <>{agentContent(blocks)}</>
+  const work = blocks.filter(isWork)
+  const content: ReactNode[] = []
+  let placed = false
+  const visible: AgentBlock[] = []
+  const flush = () => {
+    if (visible.length) content.push(...agentContent(visible.splice(0)))
+  }
+  for (const block of blocks) {
+    if (isWork(block)) {
+      if (!placed) {
+        flush()
+        content.push(<WorkDetails key={`w${block.id}`} blocks={work} end={end} />)
+        placed = true
+      }
+    } else visible.push(block)
+  }
+  flush()
+  if (end?.outcome === 'stopped') {
+    content.push(
+      <Trace key={end.id} role="status" data-testid="turn-stopped">
+        <TraceLine>
+          <TraceIcon><CircleStopIcon /></TraceIcon>
+          <TraceTitle>Stopped</TraceTitle>
+        </TraceLine>
+      </Trace>,
+    )
+  }
+  return <>{content}</>
 }
 
 export function ChatMessages({ blocks }: { blocks: Block[] }) {
@@ -165,7 +245,9 @@ export function ChatMessages({ blocks }: { blocks: Block[] }) {
     return (
       <MessageScrollerItem key={entry.id} messageId={entry.id}>
         <Message>
-          <MessageContent className="gap-3">{agentContent(entry.blocks)}</MessageContent>
+          <MessageContent className="gap-3">
+            {turns(entry.blocks).map((turn, i) => <TurnContent key={`${entry.id}:${i}`} blocks={turn.blocks} end={turn.end} />)}
+          </MessageContent>
         </Message>
       </MessageScrollerItem>
     )

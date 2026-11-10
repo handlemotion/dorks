@@ -1,4 +1,5 @@
 import { commentPolicy as commentPolicySchema, DEFAULT_COMMENT_POLICY, type CommentPolicy } from "@dorks/shared";
+import { knownModelChoices } from "./models";
 import { fail, OWNER, touch, type App } from "../app";
 import { aad, decrypt, encrypt } from "../core/crypto";
 import { json, update } from "../db";
@@ -45,6 +46,7 @@ export function settingsView(app: App) {
     commentPolicy: s.commentPolicy ?? DEFAULT_COMMENT_POLICY,
     publicUrlConfigured: !!app.cfg.publicUrl,
     boxProvider: app.cfg.boxProvider,
+    claudeModels: knownModelChoices(app),
   };
 }
 

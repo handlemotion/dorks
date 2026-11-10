@@ -39,7 +39,7 @@ describe("normalize", () => {
 
   it("maps result and rate limits (seconds -> ms)", () => {
     const n = createNormalizer();
-    expect(bodies(n({ type: "result", duration_ms: 1234, is_error: false }))).toEqual([{ type: "turn_complete", durationMs: 1234 }]);
+    expect(bodies(n({ type: "result", duration_ms: 1234, is_error: false }))).toEqual([{ type: "turn_complete", durationMs: 1234, outcome: "done" }]);
     expect(bodies(n({ type: "result", is_error: true, result: "boom" })).map((b) => b.type)).toEqual(["turn_complete", "error"]);
     expect(bodies(n({ type: "rate_limit_event", rate_limit_info: { status: "rejected", resetsAt: 1_800_000_000 } }))).toEqual([{ type: "rate_limited", resetsAt: 1_800_000_000_000 }]);
     expect(bodies(n({ type: "rate_limit_event", rate_limit_info: { status: "allowed" } }))).toEqual([]);

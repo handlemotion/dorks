@@ -1,4 +1,5 @@
 import { ArrowUpIcon, ChevronDownIcon, FileTextIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon } from 'lucide-react'
+import type { AgentModelChoice } from '@dorks/shared'
 import { useRef, useState, type ReactNode } from 'react'
 import { Attachment, AttachmentAction, AttachmentActions, AttachmentContent, AttachmentMedia, AttachmentTitle } from '@dorks/ui/attachment'
 import {
@@ -22,12 +23,6 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } fro
 
 export type AgentProvider = 'codex' | 'claude'
 
-/** The models offered per agent, newest first; the first is the agent's default. */
-const MODELS: { id: string; provider: AgentProvider; name: string }[] = [
-  { id: 'claude-opus-5-5', provider: 'claude', name: 'Opus 5.5' },
-  { id: 'claude-sonnet-5-5', provider: 'claude', name: 'Sonnet 5.5' },
-  { id: 'gpt-5.5-codex', provider: 'codex', name: 'GPT-5.5 Codex' },
-]
 const AGENT_NAMES: Record<AgentProvider, string> = { claude: 'Claude Code', codex: 'Codex' }
 
 function ProviderIcon({ provider }: { provider: AgentProvider }) {
@@ -48,17 +43,36 @@ function EffortBars({ level }: { level: number }) {
 /** The main button (send or stop) is the one brand-blue action. */
 // Disabled: a quiet grey disc with a dimmed arrow, not faded blue.
 const MAIN = 'rounded-full bg-brand text-brand-foreground hover:bg-brand-hover disabled:bg-foreground/[0.08] disabled:text-foreground/35 disabled:opacity-100'
-const EFFORTS = [
-  { id: 'low', name: 'Low' },
-  { id: 'medium', name: 'Medium' },
-  { id: 'high', name: 'High' },
-]
+const EFFORT_NAMES: Record<string, string> = { none: 'None', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max' }
+const DEFAULT = 'default'
+/** An effort among the model's as one to three bars. */
+const barsFor = (efforts: string[], effort: string) => Math.max(1, Math.ceil(((efforts.indexOf(effort) + 1) / efforts.length) * 3))
+
+/**
+ * The Claude model menu's state. `choices` are the models the agent itself reported (the CLI's own list, never one kept here);
+ * `model` and `effort` are the session's choice (absent: the agent's default); `active` is what the agent confirmed it runs.
+ */
+export interface ModelPicker {
+  choices: AgentModelChoice[]
+  model?: string
+  effort?: string
+  active?: { model?: string; effort?: string }
+  onChange: (model: string | undefined, effort: string | undefined) => void
+}
+
+/** The agent's own name for a model id or alias, preferring a concrete model over the `default` alias. */
+function modelName(choices: AgentModelChoice[], id: string | undefined): string | undefined {
+  if (!id) return undefined
+  const resolved = choices.find((c) => c.model === id)?.resolved ?? id
+  const named = choices.find((c) => c.model !== DEFAULT && (c.resolved ?? c.model) === resolved) ?? choices.find((c) => c.model === id)
+  return named?.name ?? (id === DEFAULT ? undefined : id)
+}
 
 /**
  * The message box: the AI Elements prompt input, copied from the published component (ui.shadcn.com/docs/ai-elements/base/prompt-input,
  * `PromptInputDemo` in @dorks/ui): the box holds the text, attachments and main button; the compact bar below holds the repository
  * and one menu for the model (by agent) and the effort. The main button sends, or stops the agent while it is working. With `setRepo` it is the "new session" form (the first
- * message also names the repository). Not wired to the server yet: attached files, the model and the effort are kept here only.
+ * message also names the repository). Claude's models and efforts are the ones the agent reported; attached files are not wired yet.
  */
 export function Composer({
   text,
@@ -75,6 +89,8 @@ export function Composer({
   codexEnabled,
   onStop,
   status,
+  picker,
+  agentLabel,
 }: {
   text: string
   setText: (text: string) => void
@@ -94,17 +110,24 @@ export function Composer({
   onStop?: () => void
   /** A line above the box, e.g. the sandbox status. */
   status?: ReactNode
+  /** Claude's model and effort. */
+  picker?: ModelPicker
+  /** What to call the agent's model when there is no picker (Codex). */
+  agentLabel?: string
 }) {
   const formRef = useRef<HTMLFormElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const [files, setFiles] = useState<{ id: string; name: string }[]>([])
-  const [effort, setEffort] = useState('medium')
-  const [modelId, setModelId] = useState<string>()
   const isNewSession = setRepo !== undefined
   const canSend = text.trim().length > 0 && !pending && !disabled && (!isNewSession || !!repo?.trim())
-  const model = MODELS.find((m) => m.id === modelId && m.provider === provider) ?? MODELS.find((m) => m.provider === provider) ?? MODELS[0]
-  const effortLevel = Math.max(0, EFFORTS.findIndex((e) => e.id === effort))
-  const currentEffort = EFFORTS[effortLevel]
+  const models = provider === 'claude' ? picker : undefined
+  const choices = models?.choices ?? []
+  // The trigger names the model the agent confirmed when it has, else the one chosen (or what the default resolves to).
+  const active = models?.active?.model ? models.active : undefined
+  const modelLabel = (models && (modelName(choices, active?.model) ?? modelName(choices, models.model ?? DEFAULT))) || agentLabel || AGENT_NAMES[provider]
+  const effort = active ? active.effort : models?.effort
+  const selected = choices.find((c) => c.model === (models?.model ?? DEFAULT))
+  const efforts: string[] = selected?.efforts ?? []
   return (
     // The prompt input is published with an 18px group and pill buttons; the app's 6px radius is lifted for it alone.
     <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-4 px-5 pb-3 [--control-radius:18px]">
@@ -191,37 +214,81 @@ export function Composer({
             </span>
           ))}
           <DropdownMenu>
-            <DropdownMenuTrigger disabled={pending} render={<InputGroupButton size="sm" variant="ghost" aria-label={`Model: ${model.name}, effort: ${currentEffort.name}`} className="ml-auto h-7 gap-1.5 px-2 text-[13px] text-muted-foreground hover:text-foreground" />}>
-              {model.name}
-              <span className="text-muted-foreground"><EffortBars level={effortLevel + 1} /></span>
+            <DropdownMenuTrigger disabled={pending || disabled} render={<InputGroupButton size="sm" variant="ghost" aria-label={`Model: ${modelLabel}${effort ? `, effort: ${EFFORT_NAMES[effort] ?? effort}` : ''}`} className="ml-auto h-7 gap-1.5 px-2 text-[13px] text-muted-foreground hover:text-foreground" />}>
+              <span data-testid="model-label">{modelLabel}</span>
+              {effort && efforts.length > 0 && <span className="text-muted-foreground"><EffortBars level={barsFor(efforts, effort)} /></span>}
               <ChevronDownIcon />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52">
-              {(['claude', 'codex'] as const).map((p) => (
-                <DropdownMenuGroup key={p}>
-                  <DropdownMenuLabel>{AGENT_NAMES[p]}</DropdownMenuLabel>
-                  <DropdownMenuRadioGroup value={model.id} onValueChange={(id) => { setModelId(id); if (p !== provider) setProvider?.(p) }}>
-                    {MODELS.filter((m) => m.provider === p).map((m) => (
-                      <DropdownMenuRadioItem key={m.id} value={m.id} closeOnClick disabled={p !== provider && (!setProvider || (p === 'codex' && !codexEnabled))}>
-                        <ProviderIcon provider={p} />
-                        {m.name}
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>{AGENT_NAMES.claude}</DropdownMenuLabel>
+                {provider === 'claude' && models && choices.length > 0 ? (
+                  <DropdownMenuRadioGroup
+                    value={models.model ?? DEFAULT}
+                    onValueChange={(value) => {
+                      const next = choices.find((c) => c.model === value)
+                      // An effort the new model does not support falls back to its default.
+                      models.onChange(value === DEFAULT ? undefined : value, models.effort && next?.efforts.includes(models.effort as never) ? models.effort : undefined)
+                    }}
+                  >
+                    {choices.map((c) => (
+                      <DropdownMenuRadioItem key={c.model} value={c.model} closeOnClick title={c.description}>
+                        <ProviderIcon provider="claude" />
+                        <span className="min-w-0 truncate">{c.name}</span>
                       </DropdownMenuRadioItem>
                     ))}
                   </DropdownMenuRadioGroup>
-                </DropdownMenuGroup>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>Effort</DropdownMenuLabel>
-                <DropdownMenuRadioGroup value={effort} onValueChange={setEffort}>
-                  {EFFORTS.map((e, i) => (
-                    <DropdownMenuRadioItem key={e.id} value={e.id} closeOnClick>
-                      <EffortBars level={i + 1} />
-                      {e.name}
+                ) : (
+                  <DropdownMenuRadioGroup value={provider} onValueChange={() => setProvider?.('claude')}>
+                    <DropdownMenuRadioItem value="claude" closeOnClick disabled={provider !== 'claude' && !setProvider}>
+                      <ProviderIcon provider="claude" />
+                      {provider === 'claude' ? modelLabel : AGENT_NAMES.claude}
                     </DropdownMenuRadioItem>
-                  ))}
+                  </DropdownMenuRadioGroup>
+                )}
+              </DropdownMenuGroup>
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>{AGENT_NAMES.codex}</DropdownMenuLabel>
+                <DropdownMenuRadioGroup value={provider} onValueChange={() => setProvider?.('codex')}>
+                  <DropdownMenuRadioItem value="codex" closeOnClick disabled={provider !== 'codex' && (!setProvider || !codexEnabled)}>
+                    <ProviderIcon provider="codex" />
+                    {provider === 'codex' ? modelLabel : AGENT_NAMES.codex}
+                  </DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
               </DropdownMenuGroup>
+              {models && efforts.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel>Effort</DropdownMenuLabel>
+                    <DropdownMenuRadioGroup value={models.effort ?? DEFAULT} onValueChange={(value) => models.onChange(models.model, value === DEFAULT ? undefined : value)}>
+                      <DropdownMenuRadioItem value={DEFAULT} closeOnClick>
+                        <EffortBars level={0} />
+                        Default
+                      </DropdownMenuRadioItem>
+                      {efforts.map((e) => (
+                        <DropdownMenuRadioItem key={e} value={e} closeOnClick>
+                          <EffortBars level={barsFor(efforts, e)} />
+                          {EFFORT_NAMES[e] ?? e}
+                        </DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuGroup>
+                </>
+              )}
+              {models && !isNewSession && (
+                <>
+                  <DropdownMenuSeparator />
+                  {/* What the agent itself reported, so the trigger is never only what was asked for. */}
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel className="font-normal text-muted-foreground" data-testid="model-confirmation">
+                      {active
+                        ? <span>Running <span className="font-mono">{active.model}</span>{active.effort ? ` at ${(EFFORT_NAMES[active.effort] ?? active.effort).toLowerCase()} effort` : ''}.</span>
+                        : 'Applies from your next message.'}
+                    </DropdownMenuLabel>
+                  </DropdownMenuGroup>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

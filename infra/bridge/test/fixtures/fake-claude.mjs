@@ -17,6 +17,15 @@ import { join } from "node:path";
 
 const argv = process.argv.slice(2);
 const resume = argv.includes("--resume") ? argv[argv.indexOf("--resume") + 1] : null;
+// Like the real CLI's `initialize` answer: aliases with the full id they resolve to and the efforts they support.
+const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+const MODELS = [
+  { value: "default", resolvedModel: "fake-opus-1", displayName: "Default (recommended)", description: "Fake Opus 1", supportsEffort: true, supportedEffortLevels: EFFORTS },
+  { value: "opus", resolvedModel: "fake-opus-1", displayName: "Fake Opus 1", description: "The thorough one", supportsEffort: true, supportedEffortLevels: EFFORTS },
+  { value: "haiku", resolvedModel: "fake-haiku-1", displayName: "Fake Haiku 1", description: "The quick one", supportsEffort: true, supportedEffortLevels: EFFORTS },
+];
+const modelArg = argv.includes("--model") ? argv[argv.indexOf("--model") + 1] : "default";
+const model = MODELS.find((m) => m.value === modelArg)?.resolvedModel ?? modelArg;
 const sessionId = resume ?? randomUUID();
 const DELTAS = Number(process.env.FAKE_CLAUDE_DELTAS ?? 40);
 const GAP = Number(process.env.FAKE_CLAUDE_GAP_MS ?? 40);
@@ -50,13 +59,13 @@ async function runTurn(text) {
   busy = true;
   aborted = false;
   const n = ++turn;
-  const mid = `msg_fake_${sessionId.slice(0, 8)}_${n}`;
+  const mid = `msg_fake_${randomUUID().slice(0, 8)}_${n}`; // unique across restarts, like real message ids
   const tid = `toolu_fake_${n}`;
   record({ type: "user", text });
   out({ type: "system", subtype: "session_state_changed", state: "running", uuid: randomUUID() });
   if (!inited) {
     inited = true;
-    out({ type: "system", subtype: "init", cwd: process.cwd(), tools: ["Bash", "Read", "Edit"], mcp_servers: [], model: "fake-model", permissionMode: "bypassPermissions", apiKeySource: "none", uuid: randomUUID() });
+    out({ type: "system", subtype: "init", cwd: process.cwd(), tools: ["Bash", "Read", "Edit"], mcp_servers: [], model, permissionMode: "bypassPermissions", apiKeySource: "none", uuid: randomUUID() });
   }
   out({ type: "system", subtype: "status", status: "requesting", uuid: randomUUID() });
   out({ type: "stream_event", event: { type: "message_start", message: { id: mid, role: "assistant", content: [], usage: { input_tokens: 3, output_tokens: 1 } } }, parent_tool_use_id: null, uuid: randomUUID() });
@@ -83,8 +92,10 @@ async function runTurn(text) {
     out({ type: "result", subtype: "error_during_execution", is_error: true, duration_ms: 5, result: "interrupted", uuid: randomUUID() });
   } else {
     out({ type: "stream_event", event: { type: "content_block_stop", index: 0 }, parent_tool_use_id: null });
-    out({ type: "assistant", message: { id: mid, type: "message", role: "assistant", model: "fake-model", content: [{ type: "text", text: `Done: ${text}` }, { type: "tool_use", id: tid, name: "Bash", input: { command: "git push", description: "push" } }], stop_reason: "tool_use", usage: { input_tokens: 3, output_tokens: 9 } }, parent_tool_use_id: null, uuid: randomUUID() });
+    out({ type: "assistant", message: { id: mid, type: "message", role: "assistant", model, content: [{ type: "text", text: `Done: ${text}` }, { type: "tool_use", id: tid, name: "Bash", input: { command: "git push", description: "push" } }], stop_reason: "tool_use", usage: { input_tokens: 3, output_tokens: 9 } }, parent_tool_use_id: null, uuid: randomUUID() });
     out({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: tid, content: "ok" }] }, parent_tool_use_id: null, uuid: randomUUID() });
+    // The final answer: a text-only message after the last tool call.
+    out({ type: "assistant", message: { id: `${mid}_final`, type: "message", role: "assistant", model, content: [{ type: "text", text: `Finished: ${text}. Pushed the branch; nothing else is pending.` }], stop_reason: "end_turn", usage: { input_tokens: 3, output_tokens: 9 } }, parent_tool_use_id: null, uuid: randomUUID() });
     out({ type: "result", subtype: "success", is_error: false, duration_ms: DELTAS * GAP, duration_api_ms: 1, num_turns: 1, result: `Done: ${text}`, total_cost_usd: 0, uuid: randomUUID() });
   }
   out({ type: "system", subtype: "session_state_changed", state: "idle", uuid: randomUUID() });
@@ -112,6 +123,8 @@ process.stdin.on("data", (d) => {
       const c = m.message?.content;
       queue.push(typeof c === "string" ? c : c.map((b) => b.text ?? "").join(""));
       drain();
+    } else if (m.type === "control_request" && m.request?.subtype === "initialize") {
+      process.stdout.write(`${JSON.stringify({ type: "control_response", response: { subtype: "success", request_id: m.request_id, response: { commands: [], models: MODELS } } })}\n`);
     } else if (m.type === "control_request" && m.request?.subtype === "interrupt") {
       aborted = true;
       process.stdout.write(`${JSON.stringify({ type: "control_response", response: { subtype: "success", request_id: m.request_id, response: { still_queued: [] } } })}\n`);

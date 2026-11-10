@@ -92,6 +92,8 @@ export function createApi(config: ApiConfig) {
     sendMessage: (id: string, text: string) => request<object>("POST", `${dork(id)}/messages`, { text }),
     interrupt: (id: string) => request<object>("POST", `${dork(id)}/interrupt`),
     setArchived: (id: string, archived: boolean) => request<object>("POST", `${dork(id)}/archive`, { archived }),
+    /** Claude: `model` null for the agent's default, `effort` null for the model's default. */
+    chooseModel: (id: string, model: string | null, effort: string | null) => request<object>("POST", `${dork(id)}/model`, { model, effort }),
     chooseCodexModel: (id: string, model: string, effort: string) => request<object>("POST", `${dork(id)}/codex-model`, { model, effort }),
     /** Newest first with `before` (or neither); ascending with `after` (everything with seq > after). */
     events: (id: string, q: { before?: number; after?: number; limit?: number } = {}) => request<EventsPage>("GET", `${dork(id)}/events`, undefined, q),

@@ -81,6 +81,14 @@ const view = (d: MockDork): Dork => {
   return row;
 };
 
+const MOCK_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+/** What a Claude agent reports from the CLI's `initialize` answer. */
+const MOCK_MODELS = [
+  { model: "default", name: "Default (recommended)", description: "Mock Opus 1", resolved: "mock-opus-1", efforts: [...MOCK_EFFORTS] },
+  { model: "opus", name: "Mock Opus 1", description: "The thorough one", resolved: "mock-opus-1", efforts: [...MOCK_EFFORTS] },
+  { model: "haiku", name: "Mock Haiku 1", description: "The quick one", resolved: "mock-haiku-1", efforts: [...MOCK_EFFORTS] },
+];
+
 export async function startMockServer(opts: MockOptions = {}): Promise<MockServer> {
   const token = opts.token ?? "mock-owner-token";
   const tick = opts.tick ?? 150;
@@ -98,6 +106,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     sleepMinutes: 10,
     commentPolicy: { mode: "all" },
     publicUrlConfigured: true,
+    claudeModels: MOCK_MODELS,
   };
 
   const broadcast = (m: Record<string, unknown>) => {
@@ -169,8 +178,10 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     const tool = `tool-${randomUUID().slice(0, 8)}`;
     const msg = `msg-${randomUUID().slice(0, 8)}`;
     const answer = `Done: ${prompt.slice(0, 60)}. I read the code, made the change and the tests pass.`;
+    const progress = `progress-${randomUUID().slice(0, 8)}`;
     later(tick, () => {
       if (!alive()) return;
+      append(dorkId, { type: "assistant_message", messageId: progress, text: "Running the tests first." });
       append(dorkId, { type: "tool_use", toolId: tool, name: "Bash", summary: "pnpm test" });
     });
     later(tick * 2, () => {
@@ -187,7 +198,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       if (!alive()) return;
       append(dorkId, { type: "assistant_message", messageId: msg, text: answer });
       if (/\bpr\b/i.test(prompt)) append(dorkId, { type: "pr_opened", url: `https://github.com/${d.repo}/pull/7`, number: 7 });
-      append(dorkId, { type: "turn_complete", durationMs: tick * 5 });
+      append(dorkId, { type: "turn_complete", durationMs: tick * 5, outcome: "done", finalMessageId: msg });
       append(dorkId, { type: "status", state: "idle" });
     });
   };
@@ -243,7 +254,8 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         if (provider === "codex" && !settings.boatEnvironment) return fail(res, "onboarding_incomplete", "Save a Boat environment for Codex first.");
         const id = randomUUID();
         const now = Date.now();
-        dorks.set(id, { id, title: str(body.title) || message.slice(0, 48), repo, branch: `dorks/${id.slice(0, 8)}`, provider, state: "creating", archived: false, lastActivityAt: now, createdAt: now, events: [] });
+        dorks.set(id, { id, title: str(body.title) || message.slice(0, 48), repo, branch: `dorks/${id.slice(0, 8)}`, provider, state: "creating", archived: false, lastActivityAt: now, createdAt: now, events: [],
+          ...(provider === "claude" ? { model: str(body.model), effort: str(body.effort), agentModel: MOCK_MODELS.find((c) => c.model === (str(body.model) ?? "default"))?.resolved, modelChoices: MOCK_MODELS } : {}) });
         append(id, { type: "status", state: "creating" });
         broadcast({ t: "dorks" });
         later(tick, () => startTurn(id, message));
@@ -251,7 +263,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       }
     }
 
-    const m = /^\/api\/dorks\/([^/]+)(?:\/(messages|interrupt|archive|codex-model|events|subscriptions(?:\/resume)?))?$/.exec(path);
+    const m = /^\/api\/dorks\/([^/]+)(?:\/(messages|interrupt|archive|model|codex-model|events|subscriptions(?:\/resume)?))?$/.exec(path);
     if (m) {
       const d = dorks.get(decodeURIComponent(m[1]!));
       if (!d || d.deleting) return fail(res, "not_found", "No such session.");
@@ -280,7 +292,10 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         return json(res, 200, {});
       }
       if (sub === "interrupt" && method === "POST") {
-        if (d.state === "working") append(d.id, { type: "status", state: "idle" });
+        if (d.state === "working") {
+          append(d.id, { type: "turn_complete", durationMs: 0, outcome: "stopped" });
+          append(d.id, { type: "status", state: "idle" });
+        }
         return json(res, 200, {});
       }
       if (sub === "archive" && method === "POST") {
@@ -289,8 +304,17 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         broadcast({ t: "dorks" });
         return json(res, 200, {});
       }
+      if (sub === "model" && method === "POST") {
+        const model = str(body.model) || undefined;
+        const effort = str(body.effort) || undefined;
+        const choice = MOCK_MODELS.find((c) => c.model === (model ?? "default"));
+        if ((model || effort) && (!choice || (effort && !choice.efforts.includes(effort as never)))) return fail(res, "invalid", "not offered by the agent");
+        Object.assign(d, { model, effort, agentModel: choice?.resolved ?? "mock-opus-1", agentEffort: effort });
+        broadcast({ t: "dork", dorkId: d.id });
+        return json(res, 200, {});
+      }
       if (sub === "codex-model" && method === "POST") {
-        d.codexModel = `${str(body.model)}:${str(body.effort)}`;
+        d.codexModel = { model: str(body.model) ?? "", effort: str(body.effort) ?? "" };
         broadcast({ t: "dork", dorkId: d.id });
         return json(res, 200, {});
       }

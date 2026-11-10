@@ -277,6 +277,25 @@ describe("bridge with a fake claude CLI", () => {
     expect(s.t.of("ack").map((a) => a.id)).toEqual(expect.arrayContaining(["cfg1", "cfg2"]));
   });
 
+  it("a new model restarts the CLI with --model/--effort on the same session and reports the models the CLI offers", async () => {
+    const s = await setup();
+    await s.bridge.start();
+    configure(s.t);
+    await waitFor(() => s.t.of("agent_models").length, "models from initialize");
+    expect(s.t.of("agent_models")[0]).toMatchObject({ effort: null, models: expect.arrayContaining([expect.objectContaining({ model: "haiku", resolved: "fake-haiku-1", efforts: expect.arrayContaining(["low", "max"]) })]) });
+    const first = await readReport(s.report);
+    expect(first.argv).toEqual(expect.arrayContaining(["--append-system-prompt"]));
+    expect(first.argv).not.toContain("--model");
+    s.t.emit([msg("m1", "hello")]);
+    await waitFor(() => s.t.events().some((e) => (e.raw as any).type === "result"), "first turn");
+    s.t.configureFrame = { ...s.t.configureFrame!, model: "haiku", effort: "low" };
+    configure(s.t, "cfg2");
+    const rep = await waitFor(async () => { const r = await readReport(s.report); return r.pid !== first.pid && r; }, "restarted CLI");
+    expect(rep.argv).toEqual(expect.arrayContaining(["--model", "haiku", "--effort", "low", "--resume"]));
+    await waitFor(() => s.t.of("agent_models").length >= 2, "models again");
+    expect(s.t.of("agent_models").at(-1)).toMatchObject({ effort: "low" });
+  });
+
   it("configure on an existing clone fetches and checks out; a branch that exists on the remote is tracked", async () => {
     const s = await setup({ branch: "dork/existing" });
     s.remote.sh(s.remote.bare, "branch", "dork/existing", "main");

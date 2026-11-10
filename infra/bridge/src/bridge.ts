@@ -1,4 +1,4 @@
-import { commandFrame, type FromBridge, type PrRef } from "@dorks/shared";
+import { commandFrame, effortLevel, type EffortLevel, type FromBridge, type PrRef } from "@dorks/shared";
 import { createHash } from "node:crypto";
 import { appendFileSync, chmodSync, closeSync, fsyncSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
@@ -19,6 +19,8 @@ import { errTag, type Log, type Redactor } from "./redact";
 import { RpcServer } from "./rpc";
 import { claudeOneShot, cleanTitle, titlePrompt } from "./title";
 import type { CommandEntry, Transport } from "./transport";
+
+const EFFORTS = effortLevel.options;
 
 export interface BridgeDeps {
   cfg: Config;
@@ -49,6 +51,7 @@ export class Bridge {
   private agent: Agent | CodexAgent | null = null;
   private provider: "claude" | "codex" = "claude";
   private codexModel: { model: string; effort: string } | undefined;
+  private claudeModel: { model?: string; effort?: string } = {};
   private agentKey = "";
   private lastSessionId: string | null = null;
   private latest: CommandEntry[] = [];
@@ -319,7 +322,7 @@ export class Bridge {
     this.github.set(cfg.ghToken);
 
     const provider = cfg.provider ?? "claude";
-    const key = createHash("sha256").update(JSON.stringify([provider, cfg.codexModel, cfg.repo, Object.entries(cfg.env).sort()])).digest("hex");
+    const key = createHash("sha256").update(JSON.stringify([provider, cfg.codexModel, cfg.model ?? null, cfg.effort ?? null, cfg.repo, Object.entries(cfg.env).sort()])).digest("hex");
     if (this.agent?.alive && key === this.agentKey) {
       // Already running with this config (a reconnect re-sends configure): nothing to do but say so again.
       this.pipeline.control({ t: "ack", id: cid });
@@ -327,7 +330,9 @@ export class Bridge {
       return;
     }
     if (this.agent) {
-      // config changed: restart on the same session
+      // config changed (a new model, say): restart on the same session, but never mid-turn. Messages queue behind this job, so
+      // the next one goes to the restarted agent.
+      while (this.agent.alive && !(await this.agent.waitIdle(60_000))) this.log("configure: waiting for the turn to end before restarting");
       this.lastSessionId = this.agent.sessionId ?? this.lastSessionId;
       await this.agent.stop();
       this.agent = null;
@@ -352,6 +357,7 @@ export class Bridge {
     this.agentKey = key;
     this.provider = provider;
     this.codexModel = cfg.codexModel;
+    this.claudeModel = { model: cfg.model, effort: cfg.effort };
     let resume = this.lastSessionId ?? cfg.resumeSessionId;
     // The backend remembers a session id, but the box may have been recreated without its disk: --resume would fail and the
     // user's message with it. Only resume what is really on disk.
@@ -419,6 +425,12 @@ export class Bridge {
       bin: this.cfg.claudeBin,
       permissionMode: this.cfg.permissionMode,
       extraArgs: this.cfg.claudeExtraArgs,
+      model: this.claudeModel.model,
+      effort: this.claudeModel.effort,
+      onModels: (models) => {
+        const effort = this.claudeModel.effort;
+        this.pipeline.control({ t: "agent_models", models, effort: effort && (EFFORTS as readonly string[]).includes(effort) ? (effort as EffortLevel) : null }, true);
+      },
       settingsFile: settingsPath(this.cfg.stateDir),
       mcpConfigFile: mcpConfigPath(this.cfg.stateDir),
     });

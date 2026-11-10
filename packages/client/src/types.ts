@@ -1,4 +1,4 @@
-import type { ClientEvent, CommentPolicy, DorkState } from "@dorks/shared";
+import type { AgentModelChoice, ClientEvent, CommentPolicy, DorkState } from "@dorks/shared";
 
 export type Provider = "claude" | "codex";
 
@@ -13,8 +13,16 @@ export interface Dork {
   archived: boolean;
   preview?: string;
   prUrl?: string;
-  codexModel?: string;
+  codexModel?: { model: string; effort: string };
   codexModelChoices?: { model: string; efforts: string[] }[];
+  /** Claude: the model and effort chosen for this session (absent: the agent's default). */
+  model?: string;
+  effort?: string;
+  /** What the agent confirmed it runs: the model from its init event (a full id), the effort it was started with. */
+  agentModel?: string;
+  agentEffort?: string;
+  /** The models the agent offers this account, as it last reported them. */
+  modelChoices?: AgentModelChoice[];
   lastActivityAt: number;
   createdAt: number;
 }
@@ -24,6 +32,9 @@ export interface CreateDorkInput {
   message: string;
   title?: string;
   provider?: Provider;
+  /** Claude: one of `Settings.claudeModels` (omit for the default), and one of its efforts. */
+  model?: string;
+  effort?: string;
 }
 
 /** Plain values and booleans only: the server never returns a secret. */
@@ -39,6 +50,8 @@ export interface Settings {
   publicUrlConfigured: boolean;
   /** `boat` or `sim`; absent on older servers. */
   boxProvider?: string;
+  /** The models a Claude agent last reported (empty before any session started); what a new session can choose from. */
+  claudeModels?: AgentModelChoice[];
 }
 
 /** Any subset. Token fields are write-only; an empty string clears one. */

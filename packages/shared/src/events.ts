@@ -4,6 +4,9 @@ import { appError, type AppError } from "./errors";
 
 export const dorkState = z.enum(["creating", "working", "idle", "sleeping", "waking", "error"]);
 
+export const turnOutcome = z.enum(["done", "stopped", "failed"]);
+export type TurnOutcome = z.infer<typeof turnOutcome>;
+
 const base = { seq: z.number().int(), dorkId: z.string(), ts: z.number() };
 
 export const clientEvent = z.discriminatedUnion("type", [
@@ -13,7 +16,16 @@ export const clientEvent = z.discriminatedUnion("type", [
   z.object({ ...base, type: z.literal("tool_use"), toolId: z.string(), name: z.string(), summary: z.string() }),
   z.object({ ...base, type: z.literal("tool_result"), toolId: z.string(), ok: z.boolean(), preview: z.string() }),
   z.object({ ...base, type: z.literal("status"), state: dorkState }),
-  z.object({ ...base, type: z.literal("turn_complete"), durationMs: z.number() }),
+  // The end of an agent turn. `finalMessageId` names the turn's final answer: the last assistant message with no tool call after it,
+  // stamped by the server from the agent's stream (clients never guess it from position). `outcome` is how the turn ended: `stopped`
+  // after the user's Stop, `failed` when the agent reported an error. Both are absent on events stored before they existed.
+  z.object({
+    ...base,
+    type: z.literal("turn_complete"),
+    durationMs: z.number(),
+    finalMessageId: z.string().optional(),
+    outcome: turnOutcome.optional(),
+  }),
   z.object({ ...base, type: z.literal("pr_opened"), url: z.string(), number: z.number() }),
   z.object({ ...base, type: z.literal("pr_merged"), url: z.string(), number: z.number() }),
   // An autonomy notification was handed to the agent (the transcript's event card). `text` is the human-readable digest, without the envelope.

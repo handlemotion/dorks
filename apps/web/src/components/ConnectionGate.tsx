@@ -5,7 +5,6 @@ import { Button } from '@dorks/ui/button'
 import { Input } from '@dorks/ui/input'
 import { clearConnection, currentConnection, DEFAULT_SERVER, normalizeServerUrl, saveConnection, type Connection } from '../lib/connection'
 import { onRuntimeConfig, setKeepAwake } from '../lib/desktop'
-import { WordShimmer } from './WordShimmer'
 
 const DISCONNECT = createContext<(() => void) | null>(null)
 
@@ -79,13 +78,6 @@ function Probe({ conn, onChange, onReplace, children }: { conn: Connection; onCh
       {children}
     </>
   )
-}
-
-/** Lives in the page column so reconnecting shifts its content without moving the sidebar. */
-export function ConnectionBanner() {
-  const { live } = useConnection()
-  if (live !== 'offline') return null
-  return <p className="flex h-12 shrink-0 items-center justify-center border-b bg-background px-5 text-center text-sm" role="status" data-testid="connection-banner"><WordShimmer>Reconnecting to the dorks server…</WordShimmer></p>
 }
 
 function ConnectForm({ initialUrl, error, onConnect }: { initialUrl?: string; error?: string; onConnect: (c: Connection) => void }) {

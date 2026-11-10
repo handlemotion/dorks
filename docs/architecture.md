@@ -76,26 +76,27 @@ Auth: `Authorization: Bearer <owner token>` (SSE also accepts `?access_token=`, 
 IDs are UUID strings. Times are epoch milliseconds.
 
 **Dork** (the client-visible row; box ids, session ids and secrets are never returned):
-`{ id, title, repo, branch, provider: "claude"|"codex", state, archived, preview?, prUrl?, codexModel?, codexModelChoices?, lastActivityAt, createdAt }`
-`state` is one of `creating | working | idle | sleeping | waking | error`.
+`{ id, title, repo, branch, provider: "claude"|"codex", state, archived, preview?, prUrl?, codexModel?, codexModelChoices?, model?, effort?, agentModel?, agentEffort?, modelChoices?, lastActivityAt, createdAt }`
+`state` is one of `creating | working | idle | sleeping | waking | error`. For Claude, `model`/`effort` are the session's choice (absent: the CLI's default), `agentModel`/`agentEffort` what the agent confirmed it runs (the model from its `system/init` event, the effort the bridge started it with; cleared on a change until confirmed again), and `modelChoices` the `AgentModelChoice[]` the CLI offered this account (its `initialize` answer).
 
 | Method and path | Body / query | Result |
 |---|---|---|
 | `GET /api/dorks` | `?archived=true` | `Dork[]`, newest activity first, at most 200 |
 | `GET /api/dorks/:id` | | `Dork` or 404 |
-| `POST /api/dorks` | `{repo, message, title?, provider?}` (`provider` defaults to `claude`; Codex needs a configured Boat environment) | `{id}` |
+| `POST /api/dorks` | `{repo, message, title?, provider?, model?, effort?}` (`provider` defaults to `claude`; Codex needs a configured Boat environment; Claude's `model`/`effort` must be in `settings.claudeModels`) | `{id}` |
 | `PATCH /api/dorks/:id` | `{title}` | `{}` |
 | `DELETE /api/dorks/:id` | | `{}` (box is destroyed in the background, then rows are purged) |
 | `POST /api/dorks/:id/messages` | `{text}` | `{}` |
 | `POST /api/dorks/:id/interrupt` | | `{}` |
 | `POST /api/dorks/:id/archive` | `{archived: boolean}` | `{}` |
+| `POST /api/dorks/:id/model` | `{model: string\|null, effort: string\|null}` | `{}`. Claude only: a model and effort from `modelChoices` (null: the default). While the sandbox is up the bridge restarts the CLI on the same session with `--model`/`--effort` once the current turn ends; asleep, the next wake uses it |
 | `POST /api/dorks/:id/codex-model` | `{model, effort}` | `{}` |
 | `GET /api/dorks/:id/events` | `?before=<seq>&limit=<1..200, default 50>` or `?after=<seq>` | `{events: ClientEvent[], hasMore}`. `before` (or neither) returns newest first; `after` returns ascending, inclusive of `seq > after` |
 | `GET /api/dorks/:id/subscriptions` | | `SubscriptionView[]` (non-ended) |
 | `POST /api/dorks/:id/subscriptions` | `{repo, number}` | `{}` (user subscribe; un-stalls and resets the CI budget) |
 | `DELETE /api/dorks/:id/subscriptions` | `{repo, number}` | `{}` |
 | `POST /api/dorks/:id/subscriptions/resume` | `{repo, number}` | `{}` |
-| `GET /api/settings` | | `{claudeToken, boatKey, github: {configured, login?}, boatOrg, boatEnvironment, baseSnapshotId, sleepMinutes, commentPolicy, publicUrlConfigured, boxProvider}`: booleans and plain values only, never secrets |
+| `GET /api/settings` | | `{claudeToken, boatKey, github: {configured, login?}, boatOrg, boatEnvironment, baseSnapshotId, sleepMinutes, commentPolicy, publicUrlConfigured, boxProvider, claudeModels}`: booleans and plain values only, never secrets. `claudeModels` is the model list a Claude agent last reported (empty before the first session), what a new session can choose from |
 | `PUT /api/settings` | any subset of `{boatKey, boatOrg, claudeToken, githubToken, boatEnvironment, baseSnapshotId, sleepMinutes, commentPolicy}` | `{}`. Token fields are write-only; an empty string clears one. Provider values are checked before anything is saved: `boatKey`/`boatOrg` with the same check as `POST /api/boat/check`, `boatEnvironment` against Boat's environment list, `githubToken` with GitHub `GET /user`; a refusal is `invalid` (400) with Boat's or GitHub's reason in plain words, and an unreachable provider does not block the save. Saving a non-empty `boatKey` with no base snapshot (in Settings or `BASE_SNAPSHOT_ID`) queues the base-snapshot build; so does the next start, if the process stopped in between. A failed build is never retried by itself |
 | `POST /api/boat/check` | `{boatKey?, boatOrg?}` (the saved ones when omitted) | `{status: "ok"\|"invalid"\|"needs_org"\|"credit_required"\|"unreachable", message}`: asks Boat's `GET /limits` with that key (a free trial or `canStart: false` is `credit_required`), or `GET /sandboxes?limit=1` when the key lacks `account.read`; nothing is saved. Error `not_configured` (412) with no key at all |
 | `GET /api/snapshot` | | the base-snapshot build status, see "Base snapshot" |
@@ -105,7 +106,7 @@ IDs are UUID strings. Times are epoch milliseconds.
 | `DELETE /api/secrets/:name` | | `{}` |
 | `GET /api/health` | no auth | `{ok: true}` |
 
-`ClientEvent` and `SubscriptionView` are the zod types in `packages/shared`. The event log is append-only; a growing assistant message keeps **one** row whose text grows in place (same `seq`), so a client that tails must re-read from its last known `seq` inclusive.
+`ClientEvent` and `SubscriptionView` are the zod types in `packages/shared`. A `turn_complete` carries `outcome` (`done`, `stopped` after the user's Stop, `failed`) and, for a `done` turn, `finalMessageId`: the turn's final answer, the last assistant message with no tool call after it, named by the server from the agent's stream. Clients show the final answer and fold the rest of the turn under "Work details"; they never infer it from position. Turns stored before these fields existed have neither. Every agent session is told this (`infra/bridge/src/guidance.ts`, as Claude's `--append-system-prompt` and Codex's `developerInstructions`), so it writes a self-contained final answer. The event log is append-only; a growing assistant message keeps **one** row whose text grows in place (same `seq`), so a client that tails must re-read from its last known `seq` inclusive.
 
 ### Live updates: `GET /api/live` (Server-Sent Events)
 
@@ -143,7 +144,7 @@ One stream per client. Messages are `data: <json>\n\n`; a `: ping` comment every
 
 **Pushes** (server to bridge): `{"t":"commands","cmds":[{cid, frame: CommandFrame}]}` is the **snapshot of unacknowledged commands** and is re-sent whenever it changes (and once right after `auth_ok`). Delivery is idempotent: the bridge dedupes by `cid`/message id and acknowledges with a `push` `ack` frame, which removes the command. This gives resume-after-reconnect for free: after a drop the bridge re-auths, calls `connect` (learning `afterBridgeSeq`, the event cursor, so it replays events above it) and receives the current snapshot. `{"t":"subscriptions","views":SubscriptionView[]}` is sent likewise for the bridge's PR cache.
 
-`push` frames, `ToBridge`, `FromBridge` and `CommandFrame` are the zod types in `packages/shared/src/bridge.ts`. The server does not queue `gh_token` commands. Codex authenticates only through a Boat environment (there is no per-box sign-in); `codex_issue` becomes an error event and `codex_models` fills the model choices. While a dork's title is still its first message (`title_source = 'message'`), `configure` carries that message as `nameFrom`: the bridge asks a light model beside the agent (Haiku through `claude -p`, or a `luna`/mini Codex model on a side thread) for a 5–7 word name and sends a `title` frame; the server applies it only over the placeholder, never over a name the user typed.
+`push` frames, `ToBridge`, `FromBridge` and `CommandFrame` are the zod types in `packages/shared/src/bridge.ts`. The server does not queue `gh_token` commands. For Claude, `configure` carries `model`/`effort` when chosen; the bridge sends the CLI an `initialize` control request and relays its model list as an `agent_models` frame (`{models: AgentModelChoice[], effort}`), and passes the `model` of `system/init` through. A `configure` whose model or effort changed restarts the CLI on the same session after the current turn. Codex authenticates only through a Boat environment (there is no per-box sign-in); `codex_issue` becomes an error event and `codex_models` fills the model choices. While a dork's title is still its first message (`title_source = 'message'`), `configure` carries that message as `nameFrom`: the bridge asks a light model beside the agent (Haiku through `claude -p`, or a `luna`/mini Codex model on a side thread) for a 5–7 word name and sends a `title` frame; the server applies it only over the placeholder, never over a name the user typed.
 
 The `Transport` interface in `infra/bridge/src/transport.ts` is unchanged; `WsTransport` implements it over this protocol with reconnect and resume.
 

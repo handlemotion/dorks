@@ -3,7 +3,9 @@ import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import type { AgentModelChoice } from "@dorks/shared";
 import { CHILD_ENV_DENY } from "./config";
+import { FINAL_ANSWER_GUIDANCE } from "./guidance";
 import { asIdentity, type Identity } from "./runas";
 import type { Log } from "./redact";
 import { errTag, type Redactor } from "./redact";
@@ -16,6 +18,9 @@ export interface AgentOptions {
   permissionMode: string;
   resumeSessionId: string | null;
   extraArgs: string[];
+  /** `--model` / `--effort`; absent: the CLI's default. */
+  model?: string;
+  effort?: string;
   /** Hooks for the CLI (`--settings`); merged with the repo's own settings, see hooks.ts. */
   settingsFile?: string;
   /** The `dorks` MCP server for the CLI (`--mcp-config`), see mcp.ts. */
@@ -24,6 +29,8 @@ export interface AgentOptions {
   redactor: Redactor;
   log: Log;
   onRaw: (raw: unknown) => void;
+  /** The models the CLI offers this account, from its answer to our `initialize` request. */
+  onModels?: (models: AgentModelChoice[]) => void;
   /** Not called when the exit was requested through {@link Agent.stop}. */
   onExit: (info: ExitInfo) => void;
 }
@@ -64,11 +71,13 @@ const STDERR_TAIL = 2048;
  *   --permission-mode <mode>        see README: bypassPermissions, because nobody can answer a prompt in an unattended box
  *   --settings <file>               the autonomy hooks (hooks.ts); applied above user/project settings, whose hooks still run
  *   --mcp-config <file>             the `dorks` MCP server (mcp.ts): PR subscription tools. Added on top of the repo's own MCP servers, not instead
+ *   --model / --effort              the model and effort chosen in the UI (omitted: the CLI's default)
+ *   --append-system-prompt          the standing final-answer guidance (guidance.ts), on top of Claude Code's own system prompt
  *   --resume <id>                   continue the stored session after a sleep/wake or restart
  * Not used on purpose: --bare (it never reads OAuth, and we authenticate with CLAUDE_CODE_OAUTH_TOKEN), --no-session-persistence
  * (the transcript on disk is what makes resume work).
  */
-export function claudeArgs(o: { permissionMode: string; resumeSessionId: string | null; extraArgs?: string[]; settingsFile?: string; mcpConfigFile?: string }): string[] {
+export function claudeArgs(o: { permissionMode: string; resumeSessionId: string | null; extraArgs?: string[]; settingsFile?: string; mcpConfigFile?: string; model?: string; effort?: string }): string[] {
   return [
     "-p",
     "--input-format", "stream-json",
@@ -76,6 +85,9 @@ export function claudeArgs(o: { permissionMode: string; resumeSessionId: string 
     "--verbose",
     "--include-partial-messages",
     "--permission-mode", o.permissionMode,
+    ...(o.model ? ["--model", o.model] : []),
+    ...(o.effort ? ["--effort", o.effort] : []),
+    "--append-system-prompt", FINAL_ANSWER_GUIDANCE,
     ...(o.settingsFile ? ["--settings", o.settingsFile] : []),
     ...(o.mcpConfigFile ? ["--mcp-config", o.mcpConfigFile] : []),
     ...(o.resumeSessionId ? ["--resume", o.resumeSessionId] : []),
@@ -111,6 +123,7 @@ export class Agent {
   private holding: boolean;
   private held: unknown[] = []; // a resumed CLI's output until it proves the session loaded (system/init)
   private pending: string[] = [];
+  private initRequest = randomUUID();
 
   constructor(private o: AgentOptions) {
     this.sessionId = o.resumeSessionId;
@@ -130,6 +143,8 @@ export class Agent {
       this.finish(null);
     });
     this.child.on("close", (code) => this.finish(code));
+    // The SDK's handshake: the answer lists the models (and efforts) this account can use, which is what the UI offers.
+    void this.write({ type: "control_request", request_id: this.initRequest, request: { subtype: "initialize" } }).catch(() => {});
   }
 
   get pid() {
@@ -181,7 +196,7 @@ export class Agent {
       }
     }
     if (m.type === "control_request") return this.answerControlRequest(m);
-    if (m.type === "control_response") return; // receipts for our own interrupt requests
+    if (m.type === "control_response") return this.onControlResponse(msg); // receipts for our own requests
     if (m.type === "system" && m.subtype === "init") {
       this.sawInit = true;
       this.releaseHeld();
@@ -190,6 +205,12 @@ export class Agent {
       return;
     } else this.releaseHeld(); // far more output than a failed start would produce: stop holding, keep order
     this.o.onRaw(msg);
+  }
+
+  private onControlResponse(msg: unknown) {
+    const r = (msg as { response?: { request_id?: string; subtype?: string; response?: { models?: unknown } } }).response;
+    if (r?.request_id !== this.initRequest || r.subtype !== "success" || !this.o.onModels) return;
+    this.o.onModels(modelChoices(r.response?.models));
   }
 
   private releaseHeld() {
@@ -254,4 +275,27 @@ export class Agent {
     clearTimeout(t1);
     clearTimeout(t2);
   }
+}
+
+const MODEL_VALUE = /^[a-zA-Z0-9._:[\]-]{1,64}$/;
+const EFFORTS = ["none", "low", "medium", "high", "xhigh", "max"] as const;
+
+/** The CLI's `initialize` model list (`{value, displayName, description, resolvedModel, supportedEffortLevels}`) in the wire shape. */
+export function modelChoices(raw: unknown): AgentModelChoice[] {
+  if (!Array.isArray(raw)) return [];
+  const out: AgentModelChoice[] = [];
+  for (const m of raw.slice(0, 100)) {
+    const o = (m && typeof m === "object" ? m : {}) as Record<string, unknown>;
+    if (typeof o.value !== "string" || !MODEL_VALUE.test(o.value)) continue;
+    const name = typeof o.displayName === "string" && o.displayName ? o.displayName.slice(0, 80) : o.value;
+    const efforts = Array.isArray(o.supportedEffortLevels) ? o.supportedEffortLevels.filter((e): e is AgentModelChoice["efforts"][number] => EFFORTS.includes(e)) : [];
+    out.push({
+      model: o.value,
+      name,
+      ...(typeof o.description === "string" && o.description ? { description: o.description.slice(0, 200) } : {}),
+      ...(typeof o.resolvedModel === "string" && MODEL_VALUE.test(o.resolvedModel) ? { resolved: o.resolvedModel } : {}),
+      efforts,
+    });
+  }
+  return out;
 }

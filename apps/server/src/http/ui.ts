@@ -6,6 +6,7 @@ import { AppFail, type App, type Change } from "../app";
 import { z } from "zod";
 import type { AppError } from "@dorks/shared";
 import { chooseCodexModel, createDork, getDorkView, interrupt, listDorks, listEvents, removeDork, renameDork, sendMessage, setArchived, owned } from "../services/dorks";
+import { chooseModel } from "../services/models";
 import { deleteSecret, secretNames, setSecret, settingsView, updateSettings } from "../services/settings";
 import { assertBoatAccepts, assertCodexEnvironment, checkBoat } from "../services/boatCheck";
 import { buildIfMissing, snapshotView, startBuild } from "../services/snapshot";
@@ -66,7 +67,7 @@ export function uiApp(app: App): Hono {
   api.get("/api/dorks", (c) => c.json(listDorks(app, c.req.query("archived") === "true")));
   api.post("/api/dorks", async (c) => {
     const b = await body(c);
-    const id = createDork(app, { repo: b.repo as string, message: b.message as string, title: b.title as string | undefined, provider: b.provider as never });
+    const id = createDork(app, { repo: b.repo as string, message: b.message as string, title: b.title as string | undefined, provider: b.provider as never, model: b.model, effort: b.effort });
     return c.json({ id }, 201);
   });
   api.get("/api/dorks/:id", (c) => {
@@ -93,6 +94,11 @@ export function uiApp(app: App): Hono {
     const b = await body(c);
     if (typeof b.archived !== "boolean") throw new AppFail({ code: "invalid", message: "archived must be a boolean" });
     setArchived(app, dorkIdOf(c), b.archived);
+    return c.json({});
+  });
+  api.post("/api/dorks/:id/model", async (c) => {
+    const b = await body(c);
+    chooseModel(app, dorkIdOf(c), b.model, b.effort);
     return c.json({});
   });
   api.post("/api/dorks/:id/codex-model", async (c) => {

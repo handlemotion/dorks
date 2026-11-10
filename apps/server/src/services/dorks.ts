@@ -2,7 +2,8 @@ import type { ClientEvent } from "@dorks/shared";
 import { fail, touch, type App } from "../app";
 import { dorkOf, dorkView, eventOf, getDork, type DorkRow, type DorkView, type Provider } from "../data";
 import { insert } from "../db";
-import { append, dispatch, enqueue, MAX_MESSAGE_CHARS, patchDork, setTimer } from "../lifecycle/dispatch";
+import { append, dispatch, enqueue, MAX_MESSAGE_CHARS, patchDork, patchRuntime, setTimer } from "../lifecycle/dispatch";
+import { knownModelChoices, validModelChoice } from "./models";
 import { validRepo } from "../lib/repo";
 import { missingForSession } from "./setup";
 import { readSettings } from "./settings";
@@ -61,7 +62,7 @@ export function listEvents(app: App, dorkId: string, q: { before?: number; after
   return { events: rows.slice(0, limit).map(eventOf), hasMore: rows.length > limit };
 }
 
-export function createDork(app: App, input: { repo: string; message: string; title?: string; provider?: Provider }): string {
+export function createDork(app: App, input: { repo: string; message: string; title?: string; provider?: Provider; model?: unknown; effort?: unknown }): string {
   const { repo, message, title, provider = "claude" } = input;
   if (provider !== "claude" && provider !== "codex") fail("invalid", "provider must be claude or codex");
   if (typeof repo !== "string" || !validRepo(repo)) fail("invalid", "repo must be owner/name");
@@ -69,13 +70,14 @@ export function createDork(app: App, input: { repo: string; message: string; tit
   const text = checkText(message);
   const missing = missingForSession(app, provider);
   if (missing) fail("onboarding_incomplete", missing);
+  const choice = provider === "claude" ? validModelChoice(knownModelChoices(app), input.model, input.effort) : {};
 
   const id = app.uuid();
   const now = app.now();
   return app.db.tx(() => {
     insert(app.db, "dorks", {
       id, title: (title?.trim() || text).slice(0, MAX_TITLE_CHARS), titleSource: title?.trim() ? "user" : "message", repo, branch: `agent/${app.uuid().slice(0, 8)}`, provider, state: "creating", archived: false,
-      lastActivityAt: now, createdAt: now, deleting: false,
+      lastActivityAt: now, createdAt: now, deleting: false, ...choice,
     });
     insert(app.db, "dork_runtime", { dorkId: id, bridgeSeq: 0, streamMsgId: "", sleepMinutes: readSettings(app).sleepMinutes, bridgeSeenAt: 0, bridgeLost: false, opGen: 0, pauseRetries: 0 });
     persistMessage(app, getDork(app.db, id)!, text);
@@ -109,7 +111,8 @@ export function chooseCodexModel(app: App, dorkId: string, model: string, effort
 export function interrupt(app: App, dorkId: string) {
   app.db.tx(() => {
     owned(app, dorkId);
-    dispatch(app, dorkId, { t: "interrupt" });
+    // Remembered for the turn's end: the error result a stopped turn ends with is then shown as Stopped, not as a failure.
+    if (dispatch(app, dorkId, { t: "interrupt" })?.effects.includes("interrupt_agent")) patchRuntime(app, dorkId, { interruptRequested: true });
   });
 }
 

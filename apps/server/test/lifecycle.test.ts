@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { update } from "../src/db";
 import { boxCreated, boxPaused, boxResumed, opFailed } from "../src/lifecycle/lifecycle";
+import { interrupt as interruptDork } from "../src/services/dorks";
+import { chooseModel } from "../src/services/models";
 import { ev, harness, NOW } from "./harness";
 
 // Lifecycle driver over the real SQLite code paths: state machine + effects + durable timers + box jobs, with a fake clock and a fake sandbox provider.
@@ -532,5 +534,56 @@ describe("review fixes", () => {
       await h.settle();
       expect(h.box.calls).toEqual(["pause"]);
     });
+  });
+});
+
+describe("turn outcomes", () => {
+  const raw = (bseq: number, r: object) => ({ t: "event", bseq, raw: r });
+  const text = (id: string, t: string) => ({ type: "assistant", message: { id, content: [{ type: "text", text: t }] } });
+  const tool = (id: string) => ({ type: "assistant", message: { id, content: [{ type: "tool_use", id: `tu-${id}`, name: "Bash", input: { command: "ls" } }] } });
+  const turnEnd = (h: ReturnType<typeof harness>, id: string) => h.events(id).map((e) => e.body).filter((b) => b.type === "turn_complete" || b.type === "error");
+
+  it("names the last message with no tool call after it as the final answer", () => {
+    const h = harness();
+    const id = h.seed("working");
+    h.push(id, [raw(1, text("a", "Looking")), raw(2, tool("b")), raw(3, text("c", "Done, tests pass."))]);
+    h.push(id, [raw(4, { type: "result", duration_ms: 9, is_error: false })]); // a separate push: the candidate survives batches
+    expect(turnEnd(h, id)).toEqual([{ type: "turn_complete", durationMs: 9, outcome: "done", finalMessageId: "c" }]);
+
+    h.push(id, [raw(5, text("d", "Trying")), raw(6, tool("e")), raw(7, { type: "result", duration_ms: 1, is_error: false })]);
+    expect(turnEnd(h, id)[1]).toEqual({ type: "turn_complete", durationMs: 1, outcome: "done" }); // ended on a tool call: no final answer
+  });
+
+  it("a turn the user stopped is stopped, not an error; a later failure is still a failure", () => {
+    const h = harness();
+    const id = h.seed("working");
+    interruptDork(h.app, id); // the UI's Stop
+    expect(h.rt(id).interruptRequested).toBe(true);
+    h.push(id, [raw(1, text("a", "half")), raw(2, { type: "result", is_error: true, result: "interrupted" })]);
+    expect(turnEnd(h, id)).toEqual([{ type: "turn_complete", durationMs: 0, outcome: "stopped" }]);
+    expect(h.rt(id).interruptRequested).toBe(false);
+
+    h.push(id, [raw(3, { type: "result", is_error: true, result: "boom" })]);
+    expect(turnEnd(h, id).slice(1).map((b) => (b.type === "turn_complete" ? b.outcome : b.type))).toEqual(["failed", "error"]);
+  });
+});
+
+describe("model choice", () => {
+  const models = [{ t: "agent_models", models: [{ model: "default", name: "Default", efforts: ["low", "high"] }, { model: "haiku", name: "Haiku", efforts: ["low"] }], effort: null }];
+
+  it("only accepts what the agent offered, and every change asks the bridge to reconfigure again", () => {
+    const h = harness();
+    const id = h.seed("idle");
+    h.push(id, models);
+    expect(() => chooseModel(h.app, id, "gpt-9", null)).toThrow();
+    expect(() => chooseModel(h.app, id, "haiku", "high")).toThrow(); // Haiku has no high effort
+    chooseModel(h.app, id, "haiku", null);
+    const first = h.cmds(id).filter((c) => c.kind === "configure").map((c) => c.cid);
+    chooseModel(h.app, id, "haiku", "low"); // while the first reconfigure may already be in flight
+    const second = h.cmds(id).filter((c) => c.kind === "configure").map((c) => c.cid);
+    expect(first).toHaveLength(1);
+    expect(second).toHaveLength(1);
+    expect(second[0]).not.toBe(first[0]);
+    expect(h.dork(id)).toMatchObject({ model: "haiku", effort: "low", agentModel: undefined });
   });
 });

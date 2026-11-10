@@ -1,4 +1,4 @@
-import type { ClientEvent, DorkState } from "@dorks/shared";
+import type { AgentModelChoice, ClientEvent, DorkState } from "@dorks/shared";
 import type { Db, Row } from "./db";
 import { bool, json } from "./db";
 
@@ -28,6 +28,14 @@ export interface DorkRow {
   codexThreadId?: string;
   codexModel?: { model: string; effort: string };
   codexModelChoices?: { model: string; efforts: string[] }[];
+  /** Claude: chosen in the UI (undefined: the CLI's default). */
+  model?: string;
+  effort?: string;
+  /** What the agent confirmed: the model from its init event, the effort the bridge started it with. */
+  agentModel?: string;
+  agentEffort?: string;
+  /** The models the agent offers this account, as it last reported them. */
+  modelChoices?: AgentModelChoice[];
   preview?: string;
   prUrl?: string;
   deleting: boolean;
@@ -45,6 +53,8 @@ export interface Runtime {
   opGen: number;
   pause?: Pause;
   pauseRetries: number;
+  finalMsgId: string;
+  interruptRequested: boolean;
 }
 
 export type CommandKind = "user_message" | "notify" | "configure" | "interrupt" | "flush";
@@ -67,6 +77,8 @@ export const dorkOf = (r: Row): DorkRow => ({
   provider: r.provider as Provider, state: r.state as DorkState, archived: bool(r.archived),
   boxId: u(r.box_id as string | null), claudeSessionId: u(r.claude_session_id as string | null), codexThreadId: u(r.codex_thread_id as string | null),
   codexModel: json(r.codex_model), codexModelChoices: json(r.codex_model_choices),
+  model: u(r.model as string | null), effort: u(r.effort as string | null), agentModel: u(r.agent_model as string | null),
+  agentEffort: u(r.agent_effort as string | null), modelChoices: json(r.model_choices),
   preview: u(r.preview as string | null), prUrl: u(r.pr_url as string | null), deleting: bool(r.deleting),
   lastActivityAt: r.last_activity_at as number, createdAt: r.created_at as number,
 });
@@ -83,6 +95,7 @@ export const runtimeOf = (db: Db, dorkId: string): Runtime => {
     dorkId, bridgeSeq: r.bridge_seq as number, streamMsgId: r.stream_msg_id as string, sleepMinutes: r.sleep_minutes as number,
     bridgeSeenAt: r.bridge_seen_at as number, bridgeLost: bool(r.bridge_lost), opGen: r.op_gen as number,
     pause: json(r.pause), pauseRetries: r.pause_retries as number,
+    finalMsgId: (r.final_msg_id as string | null) ?? "", interruptRequested: bool(r.interrupt_requested),
   };
 };
 
@@ -98,6 +111,7 @@ export const openCommands = (db: Db, dorkId: string): CommandRow[] =>
 export const dorkView = (d: DorkRow) => ({
   id: d.id, title: d.title, repo: d.repo, branch: d.branch, provider: d.provider, state: d.state, archived: d.archived,
   preview: d.preview, prUrl: d.prUrl, codexModel: d.codexModel, codexModelChoices: d.codexModelChoices,
+  model: d.model, effort: d.effort, agentModel: d.agentModel, agentEffort: d.agentEffort, modelChoices: d.modelChoices,
   lastActivityAt: d.lastActivityAt, createdAt: d.createdAt,
 });
 export type DorkView = ReturnType<typeof dorkView>;

@@ -4,7 +4,8 @@ import { errorEvent, type ClientEventBody } from "@dorks/shared";
 // (code.claude.com headless / Agent SDK types); verify against a real stream in spike S1.
 export type Normalized =
   | { kind: "event"; body: ClientEventBody }
-  | { kind: "session"; sessionId: string }
+  /** `model`: the model the agent reports it runs (Claude's `system/init`), the confirmation of what was asked for. */
+  | { kind: "session"; sessionId: string; model?: string }
   | { kind: "idle" };
 
 type Json = Record<string, unknown>;
@@ -38,7 +39,7 @@ export function createNormalizer() {
 
     switch (m.type) {
       case "system": {
-        if (m.subtype === "init" && str(m.session_id)) out.push({ kind: "session", sessionId: m.session_id as string });
+        if (m.subtype === "init" && str(m.session_id)) out.push({ kind: "session", sessionId: m.session_id as string, ...(str(m.model) ? { model: clip(m.model as string, 64) } : {}) });
         if (m.subtype === "session_state_changed" && m.state === "idle") out.push({ kind: "idle" });
         break;
       }
@@ -72,7 +73,8 @@ export function createNormalizer() {
         break;
       }
       case "result": {
-        ev({ type: "turn_complete", durationMs: typeof m.duration_ms === "number" ? m.duration_ms : 0 });
+        // `finalMessageId` and a `stopped` outcome are stamped by the caller, which knows the turn (services/bridge.ts).
+        ev({ type: "turn_complete", durationMs: typeof m.duration_ms === "number" ? m.duration_ms : 0, outcome: m.is_error === true ? "failed" : "done" });
         if (m.is_error === true) ev(errorEvent({ code: "turn_failed", message: clip(str(m.result) ?? str(m.subtype) ?? "turn failed", 500) }));
         break;
       }

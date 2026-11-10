@@ -1,3 +1,4 @@
+import { FINAL_ANSWER_GUIDANCE } from "./guidance";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -144,13 +145,14 @@ export class CodexAgent {
         throw new Error("model unavailable");
       }
       let result: Json;
+      const developerInstructions = FINAL_ANSWER_GUIDANCE;
       if (this.o.resumeSessionId) {
-        try { result = await this.request("thread/resume", { threadId: this.o.resumeSessionId, excludeTurns: true }); }
+        try { result = await this.request("thread/resume", { threadId: this.o.resumeSessionId, excludeTurns: true, developerInstructions }); }
         catch (e) {
           if (!/not found|does not exist|no such thread/i.test((e as Error).message)) throw e;
-          result = await this.request("thread/start", { model: selected.model, cwd: this.o.cwd, approvalPolicy: "never" });
+          result = await this.request("thread/start", { model: selected.model, cwd: this.o.cwd, approvalPolicy: "never", developerInstructions });
         }
-      } else result = await this.request("thread/start", { model: selected.model, cwd: this.o.cwd, approvalPolicy: "never" });
+      } else result = await this.request("thread/start", { model: selected.model, cwd: this.o.cwd, approvalPolicy: "never", developerInstructions });
       const id = text(obj(result.thread).id);
       if (!id) throw new Error("Codex did not return a thread");
       this.sessionId = id;

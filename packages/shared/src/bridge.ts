@@ -9,6 +9,20 @@ import { notifyKind, prRef } from "./autonomy";
 const notifyFrame = () =>
   z.object({ t: z.literal("notify"), id: z.string(), text: z.string(), kinds: z.array(notifyKind), prs: z.array(prRef) });
 
+export const effortLevel = z.enum(["none", "low", "medium", "high", "xhigh", "max"]);
+export type EffortLevel = z.infer<typeof effortLevel>;
+/** A model value the CLI accepts for `--model`: an alias (`opus`, `opus[1m]`) or a full id. */
+export const modelValue = z.string().regex(/^[a-zA-Z0-9._:[\]-]{1,64}$/);
+export const agentModelChoice = z.object({
+  model: modelValue,
+  name: z.string().max(80),
+  description: z.string().max(200).optional(),
+  /** The full id the alias resolves to today, when the CLI says. */
+  resolved: modelValue.optional(),
+  efforts: z.array(effortLevel),
+});
+export type AgentModelChoice = z.infer<typeof agentModelChoice>;
+
 /** DO -> bridge (inside the box). */
 export const toBridge = z.discriminatedUnion("t", [
   // `afterBridgeSeq` is the last `event.bseq` the DO has stored. The bridge MUST number new events from
@@ -19,6 +33,9 @@ export const toBridge = z.discriminatedUnion("t", [
     t: z.literal("configure"),
     provider: z.enum(["claude", "codex"]).optional(),
     codexModel: z.object({ model: z.string(), effort: z.string() }).optional(),
+    // Claude: the model (a CLI alias such as `opus`, or a full id) and effort chosen in the UI; absent means the CLI's default.
+    model: z.string().optional(),
+    effort: z.string().optional(),
     env: z.record(z.string(), z.string()), // CLAUDE_CODE_OAUTH_TOKEN + CLI secrets: passed to the claude child, never written to disk
     ghToken: z.string(),
     repo: z.object({ fullName: z.string(), branch: z.string() }),
@@ -38,9 +55,11 @@ export type ToBridge = z.infer<typeof toBridge>;
 /** Bridge -> DO. */
 export const fromBridge = z.discriminatedUnion("t", [
   z.object({ t: z.literal("event"), bseq: z.number().int(), raw: z.unknown() }), // raw claude stream-json line
-  z.object({ t: z.literal("codex_models"), models: z.array(z.object({ model: z.string().regex(/^[a-zA-Z0-9._-]{1,64}$/), efforts: z.array(z.enum(["none", "low", "medium", "high", "xhigh", "max"])) })).max(100) }),
+  z.object({ t: z.literal("codex_models"), models: z.array(z.object({ model: z.string().regex(/^[a-zA-Z0-9._-]{1,64}$/), efforts: z.array(effortLevel) })).max(100) }),
   z.object({ t: z.literal("codex_issue"), message: z.string().max(1000) }),
   z.object({ t: z.literal("title"), text: z.string().min(1).max(120) }), // a generated name for the dork (see `nameFrom`)
+  // Claude: the models the CLI offers this account (its `initialize` answer) and the effort the bridge started it with.
+  z.object({ t: z.literal("agent_models"), models: z.array(agentModelChoice).max(100), effort: effortLevel.nullable() }),
   z.object({ t: z.literal("ready") }), // repo cloned + claude running
   z.object({ t: z.literal("ack"), id: z.string() }), // user_message id received
   z.object({ t: z.literal("agent_exited"), code: z.number().nullable(), stderrTail: z.string() }),

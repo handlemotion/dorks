@@ -68,7 +68,6 @@ function Dorks() {
   return (
     <div className="flex h-full min-h-0 flex-col" data-onboarding={settings ? (ready ? 'complete' : 'preparing') : 'loading'}>
       {!selected && <PageHeader title="New session" divider={false} />}
-      {settings?.boxProvider === 'sim' && <Notice>Local simulation: replies and sandbox work are simulated. No AI provider or GitHub calls are made.</Notice>}
       {settings && ready && !settings.claudeToken && (
         <Notice>Add a <Link to="/settings" className="font-medium underline underline-offset-4">Claude token</Link> to start sessions with Claude Code.</Notice>
       )}
@@ -122,6 +121,9 @@ function Dorks() {
 
 function NewDork({ initialRepo, onCreated, disabled, claudeReady, codexReady }: { initialRepo?: string; onCreated: (id: string) => void; disabled: boolean; claudeReady: boolean; codexReady: boolean }) {
   const { actions } = useDorksClient()
+  const settings = useSettings()
+  // Sent with the first message (the server checks it against the models the agent reported), then kept by the session.
+  const [choice, setChoice] = useState<{ model?: string; effort?: string }>({})
   const dorks = useDorks()
   const repositories = [...new Set(dorks?.map((d) => d.repo) ?? [])].sort()
   const [repo, setRepo] = useState(initialRepo ?? 'acme/demo')
@@ -135,7 +137,11 @@ function NewDork({ initialRepo, onCreated, disabled, claudeReady, codexReady }: 
       <Composer
         text={message} setText={setMessage} repo={repo} setRepo={setRepo} repositories={repositories} provider={provider} setProvider={setProvider} codexEnabled={codexReady}
         pending={pending} disabled={disabled || needsClaudeToken} error={error}
-        onSubmit={() => void run(async () => { onCreated((await actions.createDork({ repo: repo.trim(), message, provider })).id); setMessage('') })}
+        picker={{ choices: settings?.claudeModels ?? [], ...choice, onChange: (model, effort) => setChoice({ model, effort }) }}
+        onSubmit={() => void run(async () => {
+          onCreated((await actions.createDork({ repo: repo.trim(), message, provider, ...(provider === 'claude' ? choice : {}) })).id)
+          setMessage('')
+        })}
       />
     </div>
   )
@@ -152,6 +158,8 @@ function Thread({ dorkId }: { dorkId: string }) {
   const { run: runStop, pending: stopping, error: stopError } = usePending()
   const { run: runArchive, pending: archiving, error: archiveError } = usePending()
   const modelChoice = usePending()
+  const modelSwitch = usePending()
+  const settings = useSettings()
   const models = dork?.codexModelChoices?.flatMap((option) => option.efforts.map((effort) => ({
     key: `${option.model}:${effort}`, model: option.model, effort,
   }))) ?? []
@@ -212,14 +220,23 @@ function Thread({ dorkId }: { dorkId: string }) {
               <ChatMessages blocks={view.blocks} />
               {eventsError && <p role="alert" className="text-sm text-destructive">Could not load messages: {eventsError.message}. Retrying…</p>}
               {/* Fill short transcripts down to the composer; stay in the scroll flow for long ones. */}
-              <div className="mt-auto"><AgentStatus state={dork.state} live={live} /></div>
+              <div className="mt-auto"><AgentStatus state={dork.state} live={live} outcome={view.lastOutcome} /></div>
             </MessageScrollerContent>
           </MessageScrollerViewport>
           <MessageScrollerButton />
         </MessageScroller>
       </MessageScrollerProvider>
       <Composer
-        text={text} setText={setText} repo={dork.repo} provider={dork.provider ?? 'claude'} pending={pending} disabled={dork.archived} error={error || stopError || archiveError}
+        text={text} setText={setText} repo={dork.repo} provider={dork.provider ?? 'claude'} pending={pending} disabled={dork.archived}
+        error={error || stopError || archiveError || modelSwitch.error}
+        agentLabel={dork.codexModel?.model}
+        picker={dork.provider === 'claude' ? {
+          choices: dork.modelChoices ?? settings?.claudeModels ?? [],
+          model: dork.model,
+          effort: dork.effort,
+          active: { model: dork.agentModel, effort: dork.agentEffort },
+          onChange: (model, effort) => void modelSwitch.run(() => actions.chooseModel(dorkId, model ?? null, effort ?? null)),
+        } : undefined}
         onSubmit={() => void run(async () => {
           const sent = text
           setText('') // the optimistic row shows it at once; put it back if the server refuses

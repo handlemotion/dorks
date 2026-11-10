@@ -13,7 +13,7 @@ const samples: Record<ClientEvent["type"], object> = {
   tool_use: { toolId: "t", name: "Bash", summary: "ls" },
   tool_result: { toolId: "t", ok: true, preview: "a" },
   status: { state: "working" },
-  turn_complete: { durationMs: 10 },
+  turn_complete: { durationMs: 10, finalMessageId: "m", outcome: "done" },
   pr_opened: { url: "https://github.com/o/r/pull/1", number: 1 },
   pr_merged: { url: "https://github.com/o/r/pull/1", number: 1 },
   notify: { kinds: [], prs: [], text: "digest" },

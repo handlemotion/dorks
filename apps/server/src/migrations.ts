@@ -160,4 +160,16 @@ export const MIGRATIONS: string[] = [
     WHERE e.dork_id = dorks.id AND json_extract(e.body, '$.type') = 'user_message' ORDER BY e.seq LIMIT 1
   );
   `,
+  `
+  -- The model and effort chosen in the UI (NULL: the agent's default), what the agent confirmed it runs, and the choices it offers.
+  ALTER TABLE dorks ADD COLUMN model TEXT;
+  ALTER TABLE dorks ADD COLUMN effort TEXT;
+  ALTER TABLE dorks ADD COLUMN agent_model TEXT;
+  ALTER TABLE dorks ADD COLUMN agent_effort TEXT;
+  ALTER TABLE dorks ADD COLUMN model_choices TEXT;
+  -- The current turn's final-answer candidate (the last assistant message with no tool call after it), and whether the user pressed
+  -- Stop during it: both are stamped on the turn's turn_complete event, then reset.
+  ALTER TABLE dork_runtime ADD COLUMN final_msg_id TEXT NOT NULL DEFAULT '';
+  ALTER TABLE dork_runtime ADD COLUMN interrupt_requested INTEGER NOT NULL DEFAULT 0;
+  `,
 ];

@@ -43,7 +43,7 @@ export function prepare(raw: unknown): Json | null {
   switch (m.type) {
     case "system":
       // init carries cwd, tools, mcp servers, env-derived info: send only what the backend uses.
-      if (m.subtype === "init") return { type: "system", subtype: "init", session_id: m.session_id };
+      if (m.subtype === "init") return { type: "system", subtype: "init", session_id: m.session_id, ...(typeof m.model === "string" ? { model: m.model.slice(0, 64) } : {}) };
       if (m.subtype === "session_state_changed") return { type: "system", subtype: "session_state_changed", state: m.state };
       return null;
     case "stream_event": {

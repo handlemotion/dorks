@@ -5,6 +5,7 @@ import { getDork, openCommands, runtimeOf, type DorkRow } from "../data";
 import { update } from "../db";
 import { append, bridgeSeen, dispatch, enqueueConfigure, finishPause, patchDork } from "../lifecycle/dispatch";
 import { opFailed } from "../lifecycle/lifecycle";
+import { rememberModelChoices } from "./models";
 import { claudeToken, cliSecrets, githubToken } from "./settings";
 import * as subs from "./subscriptions";
 
@@ -84,7 +85,7 @@ export function push(app: App, dorkId: string, frames: unknown[]): { ok: true } 
     const dork = bridgeDork(app, dorkId);
     bridgeSeen(app, dork); // liveness counts even when the batch is refused below
     const rt = runtimeOf(app.db, dorkId);
-    let { bridgeSeq, streamMsgId } = rt;
+    let { bridgeSeq, streamMsgId, finalMsgId, interruptRequested } = rt;
 
     // Validate the whole batch before applying any of it: events must continue the stored numbering exactly (frames already
     // stored are skipped as replays). A gap refuses the call atomically, so the bridge can resend everything after its last
@@ -122,6 +123,12 @@ export function push(app: App, dorkId: string, frames: unknown[]): { ok: true } 
           if (fresh.titleSource === "message" && title) patchDork(app, dorkId, { title, titleSource: "auto" });
           break;
         }
+        case "agent_models":
+          if (dork.provider === "claude") {
+            patchDork(app, dorkId, { modelChoices: f.models, agentEffort: f.effort ?? undefined });
+            rememberModelChoices(app, f.models);
+          }
+          break;
         case "codex_issue":
           if (dork.provider === "codex") append(app, dorkId, errorEvent({ code: "failed", message: f.message }));
           break;
@@ -130,13 +137,28 @@ export function push(app: App, dorkId: string, frames: unknown[]): { ok: true } 
           bridgeSeq = f.bseq;
           const r = f.raw as { type?: string; event?: { type?: string; message?: { id?: string } } };
           if (r?.type === "stream_event" && r.event?.type === "message_start") streamMsgId = r.event.message?.id ?? "";
+          let stopped = false;
           for (const n of normalize(f.raw)) {
             if (n.kind === "event") {
-              pending.push(n.body);
-              if (n.body.type === "assistant_message") preview = n.body.text.slice(0, 140);
-              if (n.body.type === "turn_complete") touched = true;
+              let body = n.body;
+              // The final answer is the turn's last assistant message with no tool call after it. The server names it on the
+              // turn's turn_complete, so clients never infer it from where a message sits.
+              if (body.type === "assistant_message") finalMsgId = body.messageId;
+              if (body.type === "tool_use") finalMsgId = "";
+              if (body.type === "turn_complete") {
+                // A turn the user stopped ends as an error result: it is `stopped`, not a failure, and gets no error event.
+                stopped = interruptRequested && body.outcome === "failed";
+                const outcome = stopped ? "stopped" : body.outcome;
+                body = { ...body, outcome, ...(outcome === "done" && finalMsgId ? { finalMessageId: finalMsgId } : {}) };
+                finalMsgId = "";
+                interruptRequested = false;
+                touched = true;
+              }
+              if (stopped && body.type === "error" && body.error?.code === "turn_failed") continue;
+              pending.push(body);
+              if (body.type === "assistant_message") preview = body.text.slice(0, 140);
             } else if (n.kind === "session") {
-              patchDork(app, dorkId, dork.provider === "codex" ? { codexThreadId: n.sessionId } : { claudeSessionId: n.sessionId });
+              patchDork(app, dorkId, dork.provider === "codex" ? { codexThreadId: n.sessionId } : { claudeSessionId: n.sessionId, ...(n.model ? { agentModel: n.model } : {}) });
             } else {
               flush();
               dispatch(app, dorkId, { t: "turn_idle" });
@@ -169,7 +191,7 @@ export function push(app: App, dorkId: string, frames: unknown[]): { ok: true } 
       }
     }
     flush();
-    update(app.db, "dork_runtime", { dorkId }, { bridgeSeq, streamMsgId });
+    update(app.db, "dork_runtime", { dorkId }, { bridgeSeq, streamMsgId, finalMsgId, interruptRequested });
     if (preview !== undefined || touched) patchDork(app, dorkId, { ...(preview !== undefined ? { preview } : {}), lastActivityAt: app.now() });
     return { ok: true as const };
   });
@@ -236,6 +258,8 @@ export async function configure(app: App, dorkId: string): Promise<ToBridge | nu
       t: "configure",
       provider: dork.provider,
       ...(dork.provider === "codex" ? { codexModel: dork.codexModel } : {}),
+      ...(dork.provider === "claude" && dork.model ? { model: dork.model } : {}),
+      ...(dork.provider === "claude" && dork.effort ? { effort: dork.effort } : {}),
       env: { ...secrets, ...(claude ? { CLAUDE_CODE_OAUTH_TOKEN: claude } : {}) },
       ghToken: gh,
       repo: { fullName: dork.repo, branch: dork.branch },
