@@ -1,9 +1,9 @@
 import type { ClientEvent, DorkState } from "@dorks/shared";
-import { vi } from "vitest";
+
 import type { App, Config } from "../src/app";
 import { BoxNotFoundError, type BoxProvider } from "../src/core/box";
 import { getDork, openCommands, runtimeOf, type CommandKind } from "../src/data";
-import { Db, insert, update } from "../src/db";
+import { Db, insert } from "../src/db";
 import { bridgeSecret } from "../src/lib/bridgeAuth";
 import { dispatch, enqueue, hasTimer } from "../src/lifecycle/dispatch";
 import { fireTimer } from "../src/lifecycle/lifecycle";
@@ -135,4 +135,3 @@ export type Harness = ReturnType<typeof harness>;
 
 export const ev = (bseq: number) => ({ t: "event", bseq, raw: { type: "assistant", message: { id: `m${bseq}`, content: [{ type: "text", text: `t${bseq}` }] } } });
 
-export { update, vi };
