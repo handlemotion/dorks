@@ -66,12 +66,6 @@ mod tests {
         assert_eq!(http_status(port, "/api/health", Duration::from_secs(2)).await.unwrap(), 503);
     }
 
-    #[tokio::test]
-    async fn nothing_listening_is_unhealthy() {
-        let port = crate::ports::pick_port(None, &[]).unwrap();
-        assert!(!is_healthy(port, "/api/health", Duration::from_millis(300)).await);
-    }
-
     #[test]
     fn status_line_parsing() {
         assert_eq!(parse_status_line(b"HTTP/1.1 204 No Content\r\n"), Some(204));

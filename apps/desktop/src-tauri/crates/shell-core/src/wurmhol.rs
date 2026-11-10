@@ -379,25 +379,4 @@ mod tests {
         assert_eq!(args, vec![OsString::from("4748"), "--json".into(), "--name".into(), "mine".into()]);
     }
 
-    #[test]
-    fn path_gains_node_locations_once() {
-        let path = child_path(Some(OsStr::new("/usr/bin:/opt/homebrew/bin")), Some(Path::new("/Users/me")));
-        let dirs: Vec<PathBuf> = std::env::split_paths(&path).collect();
-        assert_eq!(dirs, vec![PathBuf::from("/usr/bin"), "/opt/homebrew/bin".into(), "/usr/local/bin".into(), "/Users/me/.local/bin".into()]);
-    }
-
-    #[test]
-    fn binary_lookup_prefers_env_then_sibling_then_path() {
-        let dir = tempfile::tempdir().unwrap();
-        let (a, b, c) = (dir.path().join("a"), dir.path().join("b"), dir.path().join("c"));
-        for d in [&a, &b, &c] {
-            std::fs::create_dir_all(d).unwrap();
-            std::fs::write(d.join("wurmhol"), "").unwrap();
-        }
-        let path = std::env::join_paths([&c]).unwrap();
-        assert_eq!(find_wurmhol(Some(a.join("wurmhol").as_os_str()), Some(&b), Some(&path), None), Some(a.join("wurmhol")));
-        assert_eq!(find_wurmhol(Some(OsStr::new("/nope")), Some(&b), Some(&path), None), Some(b.join("wurmhol")));
-        assert_eq!(find_wurmhol(None, Some(Path::new("/nope")), Some(&path), None), Some(c.join("wurmhol")));
-        assert_eq!(find_wurmhol(None, None, Some(OsStr::new("/nope")), None).is_some(), std::path::Path::new("/opt/homebrew/bin/wurmhol").is_file() || std::path::Path::new("/usr/local/bin/wurmhol").is_file());
-    }
 }

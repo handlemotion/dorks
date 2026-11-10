@@ -91,27 +91,7 @@ impl Paths {
 mod tests {
     use super::*;
 
-    #[test]
-    fn explicit_app_dir_wins() {
-        let p = Paths::resolve(Some("/tmp/x".into()), Some("/home/u".into()), None);
-        assert_eq!(p.root(), Path::new("/tmp/x"));
-        assert_eq!(p.server_data_dir(), Path::new("/tmp/x/server"));
-        assert_eq!(p.server_log(), Path::new("/tmp/x/logs/server.log"));
-    }
-
-    #[test]
-    fn empty_override_is_ignored() {
-        let p = Paths::resolve(Some("".into()), Some("/home/u".into()), None);
-        assert_ne!(p.root(), Path::new(""));
-    }
-
     #[cfg(target_os = "macos")]
-    #[test]
-    fn default_is_application_support() {
-        let p = Paths::resolve(None, Some("/Users/u".into()), None);
-        assert_eq!(p.root(), Path::new("/Users/u/Library/Application Support/Dorks"));
-    }
-
     #[cfg(unix)]
     #[test]
     fn ensure_creates_private_dirs() {

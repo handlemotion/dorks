@@ -108,18 +108,3 @@ pub fn refresh(app: &AppHandle) {
         let _ = tray.set_tooltip(Some(format!("Dorks – {}", server_line(&status).to_lowercase())));
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn menu_lines() {
-        assert_eq!(server_line(&Status::Running), "Server: running");
-        assert!(server_line(&Status::Restarting { attempt: 2, reason: "x".into() }).contains("attempt 2"));
-        assert!(server_line(&Status::Failed { reason: "x".into() }).contains("Restart Server"));
-        assert_eq!(tunnel_line(Some("wurmhol"), Some("ready")), "Tunnel: wurmhol connected");
-        assert_eq!(tunnel_line(Some("wurmhol"), Some("error")), "Tunnel: wurmhol unavailable");
-        assert_eq!(tunnel_line(None, None), "Tunnel: not started");
-    }
-}

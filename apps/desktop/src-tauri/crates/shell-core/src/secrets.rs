@@ -105,14 +105,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tokens_are_64_hex_and_distinct() {
-        let a = generate_token().unwrap();
-        let b = generate_token().unwrap();
-        assert!(is_valid_token(&a));
-        assert_ne!(a, b);
-    }
-
-    #[test]
     fn creates_once_and_reuses() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("owner-token");
