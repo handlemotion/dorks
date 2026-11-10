@@ -29,9 +29,19 @@ export class Scheduler implements SchedulerLike {
   start() {
     this.stopped = false;
     this.app.scheduler = this;
-    // A restart must resume watching PRs that were subscribed before it.
-    if (pollable(this.app).length && !hasTimer(this.app, "", "poll")) setTimer(this.app, "", "poll", 1_000);
+    this.recover();
     this.wake();
+  }
+
+  /**
+   * Picks up what a restart interrupted. Timers are durable, but a job is claimed (its row deleted) before it runs, so a crash
+   * mid-job loses it: a delete in flight would leave a hidden dork and its sandbox behind forever.
+   */
+  recover() {
+    const { app } = this;
+    if (pollable(app).length && !hasTimer(app, "", "poll")) setTimer(app, "", "poll", 1_000); // keep watching PRs subscribed before the restart
+    for (const d of app.db.all<{ id: string }>("SELECT id FROM dorks WHERE deleting = 1")) if (!hasTimer(app, d.id, "box:destroy")) setTimer(app, d.id, "box:destroy", 0);
+    if (!hasTimer(app, "", "sweep")) setTimer(app, "", "sweep", 60_000);
   }
 
   stop() {

@@ -173,7 +173,7 @@ describe("creating a dork", () => {
     await a.post("/api/dorks", { repo: "o/r", message: "a", provider: "codex" });
     await a.post("/api/dorks", { repo: "o/r", message: "b", provider: "claude" });
     await h.settle();
-    expect(h.box.created.map((c) => c.boatEnvironment)).toEqual(["chatgpt-only", undefined]);
+    expect(h.box.created.map((c) => c.boatEnvironment ?? "none").sort()).toEqual(["chatgpt-only", "none"]); // jobs due together run in no promised order
   });
 
   it("a sandbox that fails to create leaves the dork in error with a safe message", async () => {

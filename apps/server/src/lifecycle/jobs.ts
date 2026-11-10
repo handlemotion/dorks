@@ -142,8 +142,17 @@ async function stallComment(app: App, subscriptionId: number, runUrl: string, at
   }
 }
 
+export const INBOX_RETENTION_MS = 24 * 3_600_000; // delivered rows only matter for debugging
+export const SWEEP_EVERY_MS = 6 * 3_600_000;
+
+/** Prunes the debounce buffer's delivered rows, then comes back. */
+export function sweep(app: App) {
+  app.db.tx(() => app.db.run("DELETE FROM inbox WHERE delivered = 1 AND created_at < ?", app.now() - INBOX_RETENTION_MS));
+  setTimer(app, "", "sweep", SWEEP_EVERY_MS);
+}
+
 /** Timer names that are jobs (async, outside a transaction) rather than state-machine timers. */
-export const isJob = (name: string) => name.startsWith("box:") || name.startsWith("orphan:") || name.startsWith("stall:") || name === "poll";
+export const isJob = (name: string) => name.startsWith("box:") || name.startsWith("orphan:") || name.startsWith("stall:") || name === "poll" || name === "sweep";
 
 export async function runJob(app: App, owner: string, name: string, payload: any): Promise<void> {
   try {
@@ -153,6 +162,7 @@ export async function runJob(app: App, owner: string, name: string, payload: any
     if (name === "box:destroy") return await boxDestroy(app, owner);
     if (name.startsWith("orphan:")) return await deleteOrphan(app, payload.boxId, payload.attempt);
     if (name.startsWith("stall:")) return await stallComment(app, payload.subscriptionId, payload.runUrl, payload.attempt ?? 0, name, owner);
+    if (name === "sweep") return sweep(app);
     if (name === "poll") {
       const next = await pollOnce(app);
       if (next !== null) setTimer(app, "", "poll", next);
