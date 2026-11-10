@@ -14,10 +14,9 @@ It is a TypeScript discriminated union on `code` (a union where one field tells 
 
 ## Where it travels
 
-- **Request errors** (mutations, queries, actions): throw with `fail(code, message)` (`apps/convex/convex/lib/dispatch.ts`), which throws `ConvexError(AppError)`. Clients call `toAppError(e)` (also `errorCode` / `errorMessage` from `@dorks/convex/client`). Anything that is not an AppError becomes `failed` with a generic message, so internals never reach the UI.
+- **Request errors** (UI API): server code throws with `fail(code, message)` (`apps/server/src/app.ts`). The UI listener answers `{"error": AppError}` with a matching HTTP status (the table is in `apps/server/src/http/ui.ts`, summarized in [architecture](architecture.md)). `@dorks/client` throws an `ApiError` whose `data` is the AppError, and `toAppError(e)` from `@dorks/shared` reads it back. Anything that is not an AppError becomes `failed` with a generic message, so internals never reach the UI.
+- **Bridge rpc errors**: a failed rpc response carries `{"ok": false, "error": AppError}`, and `Transport.errorCode` returns its code.
 - **Transcript errors**: the `error` event carries `error?: AppError` next to the old `message`. Build them with `errorEvent(appError)`. Events stored before this change have no `error`; they still parse and render from `message`.
-- **Bridge**: `Transport.errorCode` returns an `AppErrorCode` (or undefined for network failures).
-
 `isRetryable(err)` and `isFatal(err)` hold the retry policy in one place.
 
 ## Adding a code

@@ -1,58 +1,56 @@
 # Boat sandboxes
 
-Boat is the recommended sandbox driver for dorks. `BOX_PROVIDER=boat` selects it, and it is the default when `BOX_PROVIDER` is unset. Local development and CI use `BOX_PROVIDER=sim`. The implementation is `apps/convex/convex/lib/boat.ts`.
+[Boat](https://boat.dev) is the only sandbox provider. Every dork is one Boat sandbox in **your** Boat account, created from a base snapshot you build once. Dorks never sees your Claude or ChatGPT password: Claude uses a token you paste, and ChatGPT is signed in by Boat itself. The driver is `apps/server/src/lib/boat.ts`.
 
-Boat's `default` machine is 4 vCPU and 8 GB RAM at $0.036/hour, billed per second while running. A stopped sandbox costs no machine time and retains its disk for at least 14 days. Plans, start limits, storage retention and prices can change; see [Boat pricing](https://docs.boat.dev/pricing).
-The free trial requires auto-stop, so this driver needs a paid Boat plan to disable Boat's one-hour timer and let dorks control its own sleep.
+## Cost
+
+Boat's `default` machine is 4 vCPU and 8 GB RAM at $0.036/hour, billed per second while running. A stopped sandbox costs no machine time and keeps its disk for at least 14 days. Prices and limits change; see [Boat pricing](https://docs.boat.dev/pricing). The free trial forces auto-stop, so Dorks needs a paid Boat plan to turn off Boat's one-hour timer and control its own sleep (`sleepMinutes`, default 5).
+
+## Setup, in order
+
+1. **Boat API key.** Create a [Boat API key](https://docs.boat.dev/api/v1) that can create, list, command, stop, resume and delete sandboxes and list environments. Paste it in Settings (`boatKey`). Set `boatOrg` only if you want billing pinned to one organization.
+2. **Public URL.** Sandboxes reach your server through a tunnel to the bridge port. Set the tunnel's `https://` URL in Settings or as `DORKS_PUBLIC_URL`. See [architecture](architecture.md). A dork cannot be created before this is set, and the URL must stay stable, because a sandbox keeps the one it was created with.
+3. **Base snapshot** (below), then enter its name or id as `baseSnapshotId`.
+4. **Agent sign-in**: a Claude token and/or a ChatGPT environment (below).
+5. **GitHub token** ([GitHub](github.md)).
 
 ## Build the base snapshot
 
-Each dork is created from a [saved snapshot](https://docs.boat.dev/snapshots/templates) named by `BASE_SNAPSHOT_ID`. The snapshot contains the bridge and team tools, but **no credentials or per-dork environment**. Boat already includes Node, git and Claude Code. `infra/snapshot/boat-install.sh` adds Codex CLI, the bridge (`dorks` and the `gh` shim), and pinned `gh` and `gh stack`. It checks versions and download checksums before exiting. The build box is created with `--no-env`; do not log in to any agent or set a token in it.
+Each dork starts from a [saved snapshot](https://docs.boat.dev/snapshots/templates). It holds the bridge and the tools the agent needs but **no credentials and no per-dork environment**. Boat's image already has Node, git and Claude Code. `infra/snapshot/boat-install.sh` adds the Codex CLI, the bridge (as `dorks-bridge`, with `dorks` and the `gh` shim as symlinks), a pinned `gh` and `gh stack`. It checks versions and download checksums before it exits. Details and the bump procedure: [infra/snapshot/README.md](../infra/snapshot/README.md). The build sandbox must be created with `--no-env`: do not sign in to any agent or set a token in it.
 
-From a checkout with dependencies installed and a Boat API key configured for the Boat CLI:
+From a checkout with dependencies installed and the [Boat CLI](https://docs.boat.dev) logged in:
 
 ```sh
 pnpm --filter @dorks/bridge build
-boat new --type default --no-env --no-auto-stop
-```
-
-Save the id printed by `boat new` as `<build-id>`, then:
-
-```sh
+boat new --type default --no-env --no-auto-stop     # prints <build-id>
 boat scp infra/bridge/dist/cli.mjs <build-id>:dorks-bridge.mjs
 boat scp infra/snapshot/boat-install.sh <build-id>:boat-install.sh
 boat exec <build-id> -- bash boat-install.sh
 boat snapshot <build-id> dorks-base-YYYYMMDD
 ```
 
-Wait until the saved snapshot reports `ready` (`boat snapshot` or the dashboard). Record the snapshot name, for example `dorks-base-YYYYMMDD`, in `BASE_SNAPSHOT_ID`. Check that the build box contains no secrets before saving; do not use a user's sandbox as the source. The installer removes its copied inputs. Stop or delete the build box after the saved snapshot is ready so it stops billing. Rebuild the snapshot when the bridge or installed tools change. New dorks use the new snapshot; existing ones retain their disk.
+Wait until the snapshot reports `ready`, record its name as `baseSnapshotId`, and check that the build sandbox holds no secrets before you save. The installer removes its copied inputs. Delete the build sandbox once the snapshot is ready so it stops billing. Rebuild when the bridge or the installed tools change: new dorks use the new snapshot, existing ones keep their disk. The installer is x86_64 only.
 
-Connect ChatGPT **once per Boat account**, not once per dork. Use a Boat credential profile containing only the ChatGPT subscription, then connect it with its short code in Boat's **Agents & Proxying** page. The default profile works while it contains only ChatGPT; do not add other AI keys to it if Dorks uses it. Boat does not copy sign-ins when you copy a profile, so moving to a different profile later requires a new sign-in. Leave the account-wide AI credentials proxy **off** to avoid its daily and per-request charges. Create a Boat environment that selects that profile and sets **Safe for third parties off**, **Agents credentials on**, and **GitHub, Secrets, Boat credentials, and Proxy AI credentials off**. Save that environment's name in Dorks Settings under **ChatGPT for Codex**. New Codex dorks use it automatically; Dorks checks those environment switches and that a named profile is selected before starting a box. The selected profile must contain only ChatGPT; Dorks cannot verify the contents without a Boat account-admin key. Boat renews the subscription and installs the sign-in on each box. Dorks never stores Codex access or refresh tokens in Convex or the base snapshot. See [Boat credentials](https://docs.boat.dev/ai-credentials) and [Boat environment access](https://docs.boat.dev/environments/access).
+## Signing in an agent
 
-This direct account connection avoids Boat's paid credentials proxy, but the sign-in **can be read by code inside each box**. Use it only for this single-owner setup with trusted repositories. Linux permissions inside the box do not protect the sign-in from arbitrary code with `sudo`. Do not enable this mode for another user's code: future multi-user access requires approved per-user ChatGPT sign-in or a protected proxy.
+**Claude.** Run `claude setup-token`, paste the value in Settings (`claudeToken`). The server stores it encrypted and returns it only to a dork's authenticated bridge socket, which hands it to the Claude process as `CLAUDE_CODE_OAUTH_TOKEN` without writing it to disk. Claude sandboxes are created with `noEnv: true`, so Boat injects nothing.
 
-Existing Codex boxes created before this change keep their per-box sign-in and **Reconnect ChatGPT** button. Changing the account setting does not rewrite a running box's environment. New boxes use the account-level connection, and no per-box code is offered if Boat's connection is missing. Codex requires Boat for cloud boxes (`sim` keeps device-code tests locally). It uses GPT-6 Sol with high reasoning by default and never falls back to an API key. If that model or effort is unavailable on the connected plan, the box pauses and the thread asks you to choose one from Codex's available list before it continues.
+**ChatGPT (Codex).** Connect ChatGPT once per Boat account, not once per dork:
 
-A Boat deployment requires `DORKS_OWNER_EMAIL` on the Convex deployment. Set it to the only email allowed to sign in. An unset value blocks sign-in and app queries; `BOX_PROVIDER=sim` bypasses this check for local development. Do not copy a Codex sign-in from another box to serve more users.
+1. In Boat's **Agents & Proxying** page, use a credential profile that contains only your ChatGPT subscription and connect it with the short code. The default profile works while it contains only ChatGPT. Boat does not copy sign-ins when you copy a profile.
+2. Leave the account-wide AI credentials proxy **off**, to avoid its daily and per-request charges.
+3. Create a Boat environment that selects that profile with **Safe for third parties off**, **Agents credentials on**, and **GitHub, Secrets, Boat credentials and Proxy AI credentials off**.
+4. Save the environment's name in Settings (`boatEnvironment`).
 
-## Configure Convex
+Before it starts a Codex sandbox, the driver checks those environment switches and that a named profile (not `default`) is selected, and refuses otherwise. It cannot see the profile's contents without a Boat admin key, so keep other AI keys out of it. Boat renews the subscription and installs the sign-in on each sandbox. Dorks never stores Codex tokens in its database or snapshot. Codex defaults to GPT-6 Sol with high reasoning and never falls back to an API key. If that model or effort is unavailable on your plan, the dork pauses and asks you to pick another from Codex's list. See [Boat credentials](https://docs.boat.dev/ai-credentials) and [environment access](https://docs.boat.dev/environments/access).
 
-Create a [Boat API key](https://docs.boat.dev/api/v1) that can create, list, use and delete sandboxes and list environments for the safety check. Keep it out of git and logs; it goes in `BOAT_API_KEY` (see [environment variables](env.md)). Set the Convex deployment env:
+This avoids Boat's paid credentials proxy, but **code inside a sandbox can read the sign-in**. Use it for your own trusted repositories only; see [SECURITY.md](../SECURITY.md#what-a-sandbox-can-read).
 
-| Name | Value |
-| --- | --- |
-| `BOX_PROVIDER` | `boat` (or leave unset for the default). Keep `sim` for local development and CI. |
-| `BOAT_API_KEY` | Account key with sandbox create, list, command, stop, resume, delete and environment list access. |
-| `BOAT_ORG` | Optional organization id to pin billing and list requests to one wallet. Leave unset for a personal account. |
-| `BASE_SNAPSHOT_ID` | Name or id of the ready saved snapshot. |
+## Lifecycle
 
-`pnpm dev:backend` pushes these from your `.env` to the local Convex deployment. See [environment variables](env.md).
+- **Create** uses the snapshot with `from`, a per-installation label (a hash of this install's id and the dork id, so two Dorks installs on one Boat account never adopt each other's sandboxes), the bridge variables and `ttlSeconds: null`. A generation-scoped idempotency key protects retries, and an existing labeled sandbox is reused before another is made. The driver checks the sandbox has `flock` and `dorks-bridge`, then starts the bridge detached under `flock -n /tmp/dorks-bridge.lock`.
+- **Pause** is Boat `stop`; the driver waits for `archived` so the disk is saved before the dork is marked asleep. **Resume** waits for `ready`, then starts the bridge again.
+- **Delete** sends `X-Ascii-Confirm-Delete` with the exact sandbox id. A sandbox that no longer exists (deleted in Boat, or its stopped disk expired) is reported as not found, and the dork recreates it on your next message. Unpushed work and on-disk Claude session state are lost.
+- Boat API errors are logged by operation and HTTP status only, never by response body.
 
-## Lifecycle and security
-
-- `createFromSnapshot` creates a sandbox with `from`, a deployment-scoped dork label, per-dork bridge variables, and `ttlSeconds: null`. Claude and older Codex boxes keep `noEnv: true`. New Codex boxes attach their account's named Boat environment only if it passes agent credentials from a named profile and disables the other credential sources. The app's own sleep timer stops it; Boat's one-hour default must not stop an active dork. A generation-scoped idempotency key protects create retries. The driver looks up an existing labeled sandbox before creating another.
-- `pause` maps to Boat `stop` and waits for `archived` so the disk is saved before dorks marks the box asleep. `resume` waits for `ready`/`idle`/`running`, then starts the bridge. The bridge is a detached, lock-guarded command. On a quick resume it is still running; after a cold resume it is started once. The only values in the command are the executable and lock path; the per-dork bridge secret is injected via `env`, not command arguments.
-- `delete` sends `X-Ascii-Confirm-Delete` for the exact sandbox id. A missing box on resume is reported as `BoxNotFoundError` so the existing lifecycle clears its stale id and recreates it on the next message. Expired stopped-disk data is treated the same way. It loses unpushed work and on-disk Claude session state.
-- Boat API errors are logged by operation and HTTP status only, not by response message. Users' Claude and GitHub credentials still arrive through the bridge; new Codex boxes also receive the personal Boat account's ChatGPT sign-in through their selected environment.
-
-API details: [create](https://docs.boat.dev/api/reference/sandboxes/create-sandbox), [list](https://docs.boat.dev/api/reference/sandboxes/list-sandboxes), [stop](https://docs.boat.dev/api/reference/sandboxes/stop-and-archive-sandbox), [resume](https://docs.boat.dev/api/reference/sandboxes/resume-sandbox), [commands](https://docs.boat.dev/api/reference/agent/execute-sandbox-command), [delete](https://docs.boat.dev/api/reference/sandboxes/permanently-delete-sandbox-data).
+API reference: [create](https://docs.boat.dev/api/reference/sandboxes/create-sandbox), [list](https://docs.boat.dev/api/reference/sandboxes/list-sandboxes), [stop](https://docs.boat.dev/api/reference/sandboxes/stop-and-archive-sandbox), [resume](https://docs.boat.dev/api/reference/sandboxes/resume-sandbox), [commands](https://docs.boat.dev/api/reference/agent/execute-sandbox-command), [delete](https://docs.boat.dev/api/reference/sandboxes/permanently-delete-sandbox-data).
