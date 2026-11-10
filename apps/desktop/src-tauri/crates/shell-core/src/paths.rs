@@ -98,12 +98,10 @@ impl Paths {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
 
-    #[cfg(target_os = "macos")]
-    #[cfg(unix)]
     #[test]
     fn ensure_creates_private_dirs() {
         use std::os::unix::fs::PermissionsExt;
