@@ -4,6 +4,7 @@
   "type": "module",
   "imports": {
     "#lib/*": "./src/lib/*.ts",
+    "#lib/highlighter": "./src/lib/highlighter.tsx",
     "#ui/*": "./src/components/ui/*.tsx",
     "#hooks/*": "./src/hooks/*.ts"
   },
@@ -30,6 +31,7 @@
     "clsx": "2.1.1",
     "cn": "0.5.2",
     "lucide-react": "1.65.0",
+    "shiki": "^4.6.0",
     "tailwind-merge": "3.6.0"
   }
 }
