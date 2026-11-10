@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeftIcon, ArrowRightIcon, RotateCwIcon, SquareMousePointerIcon } from 'lucide-react'
+import { ArrowLeftIcon, ArrowRightIcon, GlobeIcon, RotateCwIcon, SquareMousePointerIcon } from 'lucide-react'
 import { Button } from '@dorks/ui/button'
 import { Input } from '@dorks/ui/input'
 import { EmptyState } from './EmptyState'
+import { List } from './onboarding/List'
+
+/** A dev server running in the sandbox. `html` renders an inline (same-origin) page instead of the URL; the dev demo uses it. */
+export type PreviewServer = { name: string; url: string; html?: string; /** Overrides the page's own `/favicon.ico`. */ favicon?: string }
 
 /** The buttons in Chat details' bars (tabs row, browser bar): 30px, muted, the tabs' hover. */
 export const BAR_BUTTON = "size-[30px] text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground [&_svg:not([class*='size-'])]:size-3.5"
@@ -17,18 +21,41 @@ function normalize(input: string) {
   return /^(localhost|127\.|\[::1\])/.test(v) ? `http://${v}` : `https://${v}`
 }
 
+/** `http://localhost:5173` reads as `:5173`; a URL with no port keeps its host. */
+function port(url: string) {
+  try {
+    const u = new URL(url)
+    return u.port ? `:${u.port}` : u.host
+  } catch {
+    return url
+  }
+}
+
+/** The page's favicon, a globe until it loads (or when the page has none). */
+function Favicon({ server }: { server: PreviewServer }) {
+  const [failed, setFailed] = useState(false)
+  let src = server.favicon
+  try {
+    src ??= new URL('/favicon.ico', server.url).href
+  } catch {
+    // not a URL: keep the globe
+  }
+  if (!src || failed) return <GlobeIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+  return <img src={src} alt="" aria-hidden className="size-4 shrink-0 rounded-[3px] object-contain" onError={() => setFailed(true)} />
+}
+
 /**
- * The Browser tab: back, forward, reload, the address and the element picker over a preview frame.
+ * The Browser tab: back, forward, reload, the address and the element picker over a preview frame. With no page open it lists the
+ * sandbox's dev servers as an island of rows (the onboarding's `List`); a row opens its preview, and Back returns to the list.
  *
  * The picker uses React Grab's primitives (`react-grab/primitives`, loaded on first use) on the preview's own document: hovering
  * highlights the element under the pointer, clicking hands its context (the same snippet React Grab copies: markup, component and source location) to `onGrab`, and
  * Escape leaves. Reaching into the frame's document needs it to be same-origin, so the picker is off for a cross-origin preview.
- * `html` renders an inline (same-origin) page instead of a URL; the dev demo uses it.
  */
-export function PreviewBrowser({ url: initialUrl, html, onGrab, onAsk }: { url?: string; html?: string; onGrab?: (snippet: string) => void; onAsk?: (text: string) => void }) {
-  const [history, setHistory] = useState<string[]>(initialUrl ? [initialUrl] : [])
-  const [index, setIndex] = useState(initialUrl ? 0 : -1)
-  const [address, setAddress] = useState(initialUrl ?? '')
+export function PreviewBrowser({ servers = [], onGrab, onAsk }: { servers?: PreviewServer[]; onGrab?: (snippet: string) => void; onAsk?: (text: string) => void }) {
+  const [history, setHistory] = useState<string[]>([])
+  const [index, setIndex] = useState(-1)
+  const [address, setAddress] = useState('')
   const [reloads, setReloads] = useState(0)
   const [sameOrigin, setSameOrigin] = useState(false)
   const [picking, setPicking] = useState(false)
@@ -37,6 +64,7 @@ export function PreviewBrowser({ url: initialUrl, html, onGrab, onAsk }: { url?:
   const stage = useRef<HTMLDivElement>(null)
   const grab = useRef<Primitives | null>(null)
   const current = history[index]
+  const html = current ? servers.find((s) => normalize(s.url) === current)?.html : undefined
 
   const go = (to: number) => {
     setIndex(to)
@@ -115,7 +143,7 @@ export function PreviewBrowser({ url: initialUrl, html, onGrab, onAsk }: { url?:
     <>
       {/* Same rhythm as the tab row above: 30px buttons, icons in line with the tab icons and the hide button (measured: same left and right edges). */}
       <div className="flex h-10 shrink-0 items-center gap-0.5 border-y pr-1 pl-[5px]">
-        <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="Back" title="Back" disabled={index <= 0} onClick={() => go(index - 1)}>
+        <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="Back" title="Back" disabled={index < (servers.length ? 0 : 1)} onClick={() => go(index - 1)}>
           <ArrowLeftIcon />
         </Button>
         <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="Forward" title="Forward" disabled={index >= history.length - 1} onClick={() => go(index + 1)}>
@@ -171,6 +199,23 @@ export function PreviewBrowser({ url: initialUrl, html, onGrab, onAsk }: { url?:
               <span className={`absolute left-0 rounded-(--control-radius) ${box.y < 28 ? 'top-0 m-1' : 'bottom-full mb-1'} bg-brand px-1.5 py-0.5 font-mono text-xs text-white`}>{box.label}</span>
             </div>
           )}
+        </div>
+      ) : servers.length > 0 ? (
+        <div className="flex min-h-0 flex-1 flex-col justify-center overflow-y-auto p-8">
+          <section aria-label="Dev servers" className="mx-auto flex w-full max-w-sm flex-col gap-6">
+            <h2 className="text-center text-sm font-medium">Running in the sandbox</h2>
+            <List>
+              {servers.map((s) => (
+                <li key={s.url}>
+                  <button type="button" className="group/row flex h-12 w-full items-center gap-3 px-4 text-left outline-none focus-visible:bg-muted" onClick={() => navigate(s.url)}>
+                    <Favicon server={s} />
+                    <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                    <span className="truncate text-muted-foreground transition-colors group-hover/row:text-foreground">{port(s.url)}</span>
+                  </button>
+                </li>
+              ))}
+            </List>
+          </section>
         </div>
       ) : (
         <EmptyState figure="window" title="No preview yet" description="When the agent runs a dev server, its preview opens here. Or type a URL above.">

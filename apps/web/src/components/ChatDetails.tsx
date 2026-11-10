@@ -9,7 +9,7 @@ import { ResizablePanel, ResizablePanelGroup } from '@dorks/ui/resizable'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@dorks/ui/tabs'
 import { EmptyState } from './EmptyState'
 import { ImageLightbox, ImageTrigger, type LightboxImage } from './ImageLightbox'
-import { BAR_BUTTON, PreviewBrowser } from './PreviewBrowser'
+import { BAR_BUTTON, PreviewBrowser, type PreviewServer } from './PreviewBrowser'
 
 /** A file the agent produced in the chat: a screenshot, a design, a document. */
 export type Artifact = { id: string; name: string; /** Short type label, e.g. "PNG". */ type: string; src?: string; href?: string; /** Pixel size of an image, when known. */ width?: number; height?: number }
@@ -20,9 +20,8 @@ export type ChatDetailsData = {
   artifacts?: Artifact[]
   changes?: FileChange[]
   pr?: { url: string; number?: number }
-  previewUrl?: string
-  /** An inline page for the Browser tab instead of a URL (same-origin, so the element picker works); the dev demo uses it. */
-  previewHtml?: string
+  /** The sandbox's dev servers, listed in the Browser tab. */
+  previews?: PreviewServer[]
 }
 
 type Tab = 'artifacts' | 'changes' | 'browser' | 'computer'
@@ -69,7 +68,7 @@ export function ChatDetails({ data, onClose, onGrab, onAsk, className }: { data:
           <EmptyState figure="laptop" title="No computer in use" description="When the agent uses a computer, its screen shows here." />
         </TabsContent>
         <TabsContent value="browser" className="mx-px mb-px flex min-h-0 flex-col overflow-hidden rounded-b-[9px]">
-          <PreviewBrowser url={data.previewUrl} html={data.previewHtml} onGrab={onGrab} onAsk={onAsk} />
+          <PreviewBrowser servers={data.previews} onGrab={onGrab} onAsk={onAsk} />
         </TabsContent>
       </Tabs>
     </aside>

@@ -88,11 +88,14 @@ const DOCS_PATCH = `diff --git a/docs/architecture.md b/docs/architecture.md
 
 const details: ChatDetailsData = {
   pr: { url: 'https://github.com/acme/demo/pull/142', number: 142 },
-  previewUrl: 'http://localhost:5173',
-  previewHtml: `<!doctype html><html><body style="margin:0;font:14px system-ui;color:#111">
+  previews: [
+    { name: 'Web app', url: 'http://localhost:5173', favicon: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#111"/><text x="8" y="11.5" font-family="system-ui" font-size="10" font-weight="500" fill="white" text-anchor="middle">A</text></svg>')}`, html: `<!doctype html><html><body style="margin:0;font:14px system-ui;color:#111">
 <header style="display:flex;gap:16px;align-items:center;padding:16px 24px;border-bottom:1px solid #eee"><strong style="font-weight:500">Acme</strong><a href="#" style="color:#666">Docs</a><a href="#" style="color:#666">Pricing</a><button style="margin-left:auto;padding:6px 12px;border:0;border-radius:6px;background:#111;color:#fff">Sign in</button></header>
 <main style="padding:40px 24px;max-width:520px"><h1 style="font-size:24px;font-weight:500;margin:0 0 8px">Bridge status</h1><p style="color:#666;margin:0 0 24px">Reconnects after wake: 3 today, all recovered.</p>
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div style="padding:16px;border-radius:6px;background:#f4f4f5">Queued<br><span style="font-size:20px">0</span></div><div style="padding:16px;border-radius:6px;background:#f4f4f5">Latency<br><span style="font-size:20px">42 ms</span></div></div></main></body></html>`,
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div style="padding:16px;border-radius:6px;background:#f4f4f5">Queued<br><span style="font-size:20px">0</span></div><div style="padding:16px;border-radius:6px;background:#f4f4f5">Latency<br><span style="font-size:20px">42 ms</span></div></div></main></body></html>` },
+    { name: 'Docs', url: 'http://localhost:4321', favicon: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#3b6be8"/><text x="8" y="11.5" font-family="system-ui" font-size="10" font-weight="500" fill="white" text-anchor="middle">D</text></svg>')}` },
+    { name: 'Storybook', url: 'http://localhost:6006', favicon: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#ff4785"/><text x="8" y="11.5" font-family="system-ui" font-size="10" font-weight="500" fill="white" text-anchor="middle">S</text></svg>')}` },
+  ],
   changes: [
     { path: 'infra/bridge/src/claude.ts', additions: 48, deletions: 12 },
     { path: 'infra/bridge/src/reconnect.ts', additions: 112, deletions: 64, patch: RECONNECT_PATCH },
