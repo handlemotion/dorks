@@ -39,7 +39,7 @@ export const rateKeyForEmail = (email: string) => {
 
 export function personalOwnerEmail(env: NodeJS.ProcessEnv = process.env): string | null {
   if (env.BOX_PROVIDER && env.BOX_PROVIDER !== "boat") return null;
-  const email = env.DORKS_OWNER_EMAIL?.trim().toLowerCase();
+  const email = (env === process.env ? process.env.DORKS_OWNER_EMAIL : env.DORKS_OWNER_EMAIL)?.trim().toLowerCase();
   if (!email || email.startsWith("replace_me__")) throw new Error("DORKS_OWNER_EMAIL must be set for personal Boat deployments");
   return email;
 }

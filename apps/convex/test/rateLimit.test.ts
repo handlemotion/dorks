@@ -70,6 +70,20 @@ describe("auth helpers", () => {
     expect(personalOwnerEmail({ BOX_PROVIDER: "boat", DORKS_OWNER_EMAIL: " Rodrigo@Example.com " })).toBe("rodrigo@example.com");
   });
 
+  it("uses the deployment owner email when no test environment is supplied", () => {
+    const previous = { owner: process.env.DORKS_OWNER_EMAIL, provider: process.env.BOX_PROVIDER };
+    try {
+      process.env.DORKS_OWNER_EMAIL = " Owner@Example.com ";
+      process.env.BOX_PROVIDER = "boat";
+      expect(personalOwnerEmail()).toBe("owner@example.com");
+    } finally {
+      if (previous.owner === undefined) delete process.env.DORKS_OWNER_EMAIL;
+      else process.env.DORKS_OWNER_EMAIL = previous.owner;
+      if (previous.provider === undefined) delete process.env.BOX_PROVIDER;
+      else process.env.BOX_PROVIDER = previous.provider;
+    }
+  });
+
   it("one mailbox, one key: case, whitespace and +tags collapse", () => {
     expect(rateKeyForEmail(" Rodrigo+spam@dorks.build ")).toBe("rodrigo@dorks.build");
     expect(rateKeyForEmail("rodrigo@dorks.build")).toBe("rodrigo@dorks.build");
