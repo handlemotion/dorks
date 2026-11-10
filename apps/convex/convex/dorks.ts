@@ -10,14 +10,6 @@ import { endDorkSubscriptions, resetCiAttempts, subscriptionsOfDork } from "./li
 import { agentProvider } from "./validators";
 
 export const MAX_TITLE_CHARS = 120;
-export const MAX_ACTIVE_DORKS = 20;
-
-/** Archived dorks cost nothing; every active one can hold a box, so creating and unarchiving share one cap. */
-async function assertActiveSlot(ctx: MutationCtx, userId: string) {
-  const active = await ctx.db.query("dorks").withIndex("by_user_archived_activity", (q) => q.eq("userId", userId).eq("archived", false))
-    .filter((q) => q.neq(q.field("deleting"), true)).take(MAX_ACTIVE_DORKS);
-  if (active.length >= MAX_ACTIVE_DORKS) fail("limit", `at most ${MAX_ACTIVE_DORKS} active dorks; archive or delete one first`);
-}
 
 export async function owned(ctx: MutationCtx, dorkId: Id<"dorks">): Promise<Doc<"dorks">> {
   const userId = await requireUserId(ctx);
@@ -65,7 +57,6 @@ export const create = mutation({
     if (!validRepo(repo)) fail("invalid", "repo must be owner/name");
     if (title !== undefined && title.trim().length > MAX_TITLE_CHARS) fail("invalid", "title too long");
     const text = checkText(message);
-    await assertActiveSlot(ctx, userId);
     const s = await ctx.db.query("userSettings").withIndex("by_user", (q) => q.eq("userId", userId)).unique();
     if (!s?.githubInstallationId || (provider === "claude" && !s.claudeTokenEnc)) fail("onboarding_incomplete", "finish onboarding first");
     if (provider === "codex" && process.env.BOX_PROVIDER !== "sim" && !s.codexBoatEnvironment)
@@ -127,8 +118,7 @@ export const interrupt = mutation({
 export const setArchived = mutation({
   args: { dorkId: v.id("dorks"), archived: v.boolean() },
   handler: async (ctx, { dorkId, archived }) => {
-    const dork = await owned(ctx, dorkId);
-    if (!archived && dork.archived) await assertActiveSlot(ctx, dork.userId); // an already-active dork is counted, so only a real unarchive needs a slot
+    await owned(ctx, dorkId);
     await dispatch(ctx, dorkId, { t: archived ? "archive" : "unarchive" });
   },
 });

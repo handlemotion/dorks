@@ -49,7 +49,7 @@ beforeEach(() => {
 
 describe("resume when the box no longer exists", () => {
   for (const [label, err] of [
-    ["BoxNotFoundError from the provider", Object.assign(new Error("upstash resume: box not found (HTTP 404)"), { name: "BoxNotFoundError" })],
+    ["BoxNotFoundError from the provider", Object.assign(new Error("boat resume: box not found (HTTP 404)"), { name: "BoxNotFoundError" })],
     ["a plain 'not found' error", new Error("Box not found")],
   ] as const) {
     it(`${label}: clears boxId, reports an error, and the next message creates a new box`, async () => {
@@ -74,7 +74,7 @@ describe("resume when the box no longer exists", () => {
   it("any other failure keeps the box id (a transient error must not orphan a live box)", async () => {
     const t = convexTest(schema, modules);
     const dorkId = await seed(t);
-    provider.resumeError = new Error("upstash resume: HTTP 503");
+    provider.resumeError = new Error("boat resume: HTTP 503");
     await t.action(internal.boxes.resume, { dorkId, gen: await opGen(t, dorkId) });
     const after = await row(t, dorkId);
     expect(after?.boxId).toBe("box-old");
@@ -84,7 +84,7 @@ describe("resume when the box no longer exists", () => {
   it("an auth error keeps the box id", async () => {
     const t = convexTest(schema, modules);
     const dorkId = await seed(t);
-    provider.resumeError = new Error("upstash resume: unauthorized (HTTP 401); check UPSTASH_BOX_API_KEY");
+    provider.resumeError = new Error("boat resume: unauthorized (HTTP 401); check BOAT_API_KEY");
     await t.action(internal.boxes.resume, { dorkId, gen: await opGen(t, dorkId) });
     expect((await row(t, dorkId))?.boxId).toBe("box-old");
   });
@@ -124,7 +124,7 @@ describe("resume when the box no longer exists", () => {
   it("the resume action passes the box it resumed, so a dork re-pointed mid-flight keeps its new box", async () => {
     const t = convexTest(schema, modules);
     const dorkId = await seed(t);
-    provider.resumeError = new Error("upstash resume: box not found (HTTP 404)");
+    provider.resumeError = new Error("boat resume: box not found (HTTP 404)");
     provider.duringResume = () => t.run((ctx) => ctx.db.patch(dorkId, { boxId: "box-newer" }));
     await t.action(internal.boxes.resume, { dorkId, gen: await opGen(t, dorkId) });
     expect((await row(t, dorkId))?.boxId).toBe("box-newer");

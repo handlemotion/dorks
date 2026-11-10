@@ -10,7 +10,6 @@ import { verifyInstallationOwnership } from "./lib/githubInstall";
 
 export const MAX_CLAUDE_TOKEN_CHARS = 4 * 1024;
 export const MAX_SECRET_BYTES = 16 * 1024;
-export const MAX_SECRETS_PER_USER = 50;
 
 const ring = () => keyringFromEnv({ ENCRYPTION_KEY: process.env.ENCRYPTION_KEY! });
 
@@ -72,11 +71,7 @@ export const setCliSecret = mutation({
     const valueEnc = (await encrypt(ring(), value, aad.secret(userId, name))).value;
     const existing = await ctx.db.query("userSecrets").withIndex("by_user_name", (q) => q.eq("userId", userId).eq("name", name)).unique();
     if (existing) await ctx.db.patch(existing._id, { valueEnc });
-    else {
-      const held = await ctx.db.query("userSecrets").withIndex("by_user_name", (q) => q.eq("userId", userId)).take(MAX_SECRETS_PER_USER);
-      if (held.length >= MAX_SECRETS_PER_USER) fail("limit", `at most ${MAX_SECRETS_PER_USER} secrets`);
-      await ctx.db.insert("userSecrets", { userId, name, valueEnc });
-    }
+    else await ctx.db.insert("userSecrets", { userId, name, valueEnc });
   },
 });
 

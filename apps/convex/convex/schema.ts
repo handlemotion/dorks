@@ -146,6 +146,6 @@ export default defineSchema({
     .index("by_key", ["key"])
     .index("by_window_start", ["windowStart"]),
 
-  // Dev/sim only: what a real BoxProvider (Upstash) would hold remotely.
+  // Dev/sim only: what a real BoxProvider (Boat) would hold remotely.
   simBoxes: defineTable({ name: v.string(), running: v.boolean(), gen: v.number() }).index("by_name", ["name"]),
 });

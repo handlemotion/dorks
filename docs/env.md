@@ -18,15 +18,14 @@ Two kinds of variables exist, and they live in different places:
 | `RESEND_API_KEY` | yes (until sign-in changes) | Mails sign-in codes. Any placeholder works with `RESEND_API_URL` pointed at the local mail catcher. |
 | `RESEND_API_URL` | dev | Override for the Resend endpoint; `pnpm dev:backend` points it at `pnpm dev:mail`. |
 | `DORKS_OWNER_EMAIL` | for Boat | The only email allowed to sign in when `BOX_PROVIDER` is `boat`. |
-| `BOX_PROVIDER` | no | `boat` (default), `sim` (local simulator, tests), `upstash` (being removed). |
+| `BOX_PROVIDER` | no | `boat` (default) or `sim` (local simulator, tests). |
 | `BOAT_API_KEY` | for Boat | Boat API key. See [Boat sandboxes](boat.md). |
 | `BOAT_ORG` | no | Boat organization id to pin billing to one wallet. |
 | `BASE_SNAPSHOT_ID` | for Boat | Name or id of the base snapshot ([infra/snapshot](../infra/snapshot/README.md)). |
 | `SIM_HOST_KEY` | with `sim` | Shared key between the backend and `infra/bridge-sim/host.mjs`. |
 | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_SLUG`, `GITHUB_WEBHOOK_SECRET` | for GitHub | The GitHub App used for PR autonomy ([GitHub App](github-app.md)). |
-| `EXTRA_TRUSTED_ORIGINS` | no | Extra comma-separated origins allowed to sign in (for example an Expo dev server). |
+| `EXTRA_TRUSTED_ORIGINS` | no | Extra comma-separated origins allowed to sign in. |
 | `OTP_SEND_PER_EMAIL`, `OTP_SEND_PER_IP`, `OTP_SEND_GLOBAL`, `OTP_WINDOW_MS` | no | Sign-in code rate limits ([Auth](auth.md)). |
-| `UPSTASH_BOX_*` | no | Legacy Upstash driver; being removed. |
 
 Built into Convex and never set by hand: `CONVEX_CLOUD_URL`, `CONVEX_SITE_URL`.
 

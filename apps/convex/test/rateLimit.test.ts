@@ -64,7 +64,7 @@ describe("rateLimit.reset", () => {
 describe("auth helpers", () => {
   it("requires a real owner email for Boat but leaves local sim and legacy boxes alone", () => {
     expect(personalOwnerEmail({ BOX_PROVIDER: "sim" })).toBeNull();
-    expect(personalOwnerEmail({ BOX_PROVIDER: "upstash" })).toBeNull();
+    expect(personalOwnerEmail({ BOX_PROVIDER: "other" })).toBeNull();
     expect(() => personalOwnerEmail({ BOX_PROVIDER: "boat" })).toThrow("DORKS_OWNER_EMAIL");
     expect(() => personalOwnerEmail({ DORKS_OWNER_EMAIL: "REPLACE_ME__OWNER" })).toThrow("DORKS_OWNER_EMAIL");
     expect(personalOwnerEmail({ BOX_PROVIDER: "boat", DORKS_OWNER_EMAIL: " Rodrigo@Example.com " })).toBe("rodrigo@example.com");
