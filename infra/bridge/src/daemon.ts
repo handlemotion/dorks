@@ -1,7 +1,7 @@
 import { Bridge, SleepingError } from "./bridge";
 import { loadConfig } from "./config";
 import { makeLogger, Redactor } from "./redact";
-import { ConvexTransport } from "./transport";
+import { WsTransport } from "./transport";
 
 /** The bridge process itself (`dorks-bridge` with no subcommand). */
 export async function runDaemon() {
@@ -12,7 +12,7 @@ export async function runDaemon() {
   const redactor = new Redactor();
   redactor.add(cfg.bridgeSecret);
   const log = makeLogger(cfg.dorkId.slice(-6), redactor);
-  const transport = new ConvexTransport(cfg.bridgeUrl, cfg.dorkId, cfg.bridgeSecret);
+  const transport = new WsTransport(cfg.bridgeUrl, cfg.dorkId, cfg.bridgeSecret);
   let bridge: Bridge | undefined;
   const exit = async (code: number) => {
     await bridge?.stop().catch(() => {});

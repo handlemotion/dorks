@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "version": "0.1.0",
-  "description": "The in-box bridge: runs the Claude Code CLI in a sandbox and speaks the dorks bridge protocol over Convex.",
+  "description": "The in-box bridge: runs the Claude Code CLI in a sandbox and speaks the dorks bridge protocol over a WebSocket.",
   "bin": { "dorks-bridge": "./dist/cli.mjs" },
   "engines": { "node": ">=22" },
   "scripts": {
@@ -12,8 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@dorks/shared": "workspace:*",
-    "convex": "^1.46.0"
+    "@dorks/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",

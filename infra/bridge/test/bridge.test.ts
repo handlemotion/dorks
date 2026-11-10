@@ -35,7 +35,7 @@ async function setup(opts: { host?: Record<string, string>; transcript?: boolean
     PATH: process.env.PATH,
     HOME: tmp("home-"),
     DORK_ID: "dork_test_1",
-    BRIDGE_URL: "https://example.convex.cloud",
+    BRIDGE_URL: "wss://example.test/bridge",
     BRIDGE_SECRET,
     SIM_HOST_KEY: "host-key-should-not-leak",
     BRIDGE_SECRET_KEY: "master-should-not-leak",

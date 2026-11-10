@@ -4,10 +4,10 @@ import { errTag, type Log } from "./redact";
 import { RpcError, type RpcMethods } from "./rpc";
 import type { Transport } from "./transport";
 
-// The bridge-side service behind the `pr.*` RPC methods. The backend owns the truth; this side only forwards `sub`/`unsub` to Convex
+// The bridge-side service behind the `pr.*` RPC methods. The backend owns the truth; this side only forwards `sub`/`unsub` to the backend
 // (bridge.subscribe / bridge.unsubscribe) and serves `list` from a cached copy of the reactive `bridge.subscriptions`.
 
-/** How long a backend call may take before the caller gets `unavailable` (the Convex client queues mutations while offline). */
+/** How long a backend call may take before the caller gets `unavailable` (the transport waits for the connection while offline). */
 const BACKEND_WAIT_MS = 10_000;
 /** How long `pr.list` waits for the very first copy of the subscriptions, and `pr.sub`/`unsub` for the cache to reflect their change. */
 const FIRST_LIST_WAIT_MS = 5_000;

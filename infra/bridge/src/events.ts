@@ -32,7 +32,7 @@ const isTextDelta = (raw: Json) => {
 };
 
 /**
- * Decides what of the CLI's stream-json goes to the backend. The server-side normalizer (apps/convex/core/normalize.ts) only reads:
+ * Decides what of the CLI's stream-json goes to the backend. The server-side normalizer (apps/server/src/core/normalize.ts) only reads:
  * system init/session_state_changed, stream message_start + text deltas, assistant, user (tool_result), result, rate_limit_event.
  * Everything else (hook/status/api_retry chatter, thinking and input_json deltas, content_block_start/stop...) is dropped here:
  * it would cost a mutation arg + a bseq for nothing. Returns null to drop.

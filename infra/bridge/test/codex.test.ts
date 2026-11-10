@@ -5,7 +5,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { Bridge } from "../src/bridge";
 import { loadConfig } from "../src/config";
 import { makeLogger, Redactor } from "../src/redact";
-import { createNormalizer } from "../../../apps/convex/core/normalize";
+import { createNormalizer } from "../../../apps/server/src/core/normalize";
 import { builtCli, FakeTransport, makeRemote, tmp, waitFor } from "./helpers";
 
 const fake = fileURLToPath(new URL("./fixtures/fake-codex.mjs", import.meta.url));

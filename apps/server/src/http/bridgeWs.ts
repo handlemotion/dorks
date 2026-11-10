@@ -67,7 +67,7 @@ export class BridgeSession {
     const id = msg.id;
     try {
       const result = await this.rpc(msg.op, (msg.args ?? {}) as Args);
-      this.send({ t: "res", id, ok: true, result: result ?? {} });
+      this.send({ t: "res", id, ok: true, result: result === undefined ? {} : result }); // null is a real answer (configure refused)
     } catch (e) {
       this.send({ t: "res", id, ok: false, error: failure(e) });
     }

@@ -333,9 +333,6 @@ importers:
       '@dorks/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      convex:
-        specifier: ^1.46.0
-        version: 1.46.0(react@19.2.3)
     devDependencies:
       '@types/node':
         specifier: ^26.6.4

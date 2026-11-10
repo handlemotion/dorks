@@ -128,7 +128,7 @@ export class Bridge {
 
   /**
    * connect → afterBridgeSeq. On a reconnect this also replays everything above it from the outbox. A refusal with `sleeping`
-   * throws SleepingError; transient failures are retried (the Convex client is already reconnecting underneath).
+   * throws SleepingError; transient failures are retried (the transport is already reconnecting underneath).
    */
   private handshake(first: boolean): Promise<void> {
     this.handshaking ??= (async () => {

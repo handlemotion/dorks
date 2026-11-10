@@ -40,7 +40,7 @@ async function main() {
     return process.exit(0);
   }
   if (cmd === "--version" || cmd === "version") return console.log("dorks-bridge 0.1.0");
-  await (await import("./daemon")).runDaemon(); // the daemon pulls in the Convex client; the short-lived commands above never load it
+  await (await import("./daemon")).runDaemon(); // the daemon pulls in the socket transport; the short-lived commands above never load it
 }
 
 main().catch((e) => {

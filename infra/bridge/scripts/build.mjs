@@ -1,4 +1,4 @@
-// Bundles src/cli.ts into one self-contained file (convex client + shared schemas included), so the base snapshot only
+// Bundles src/cli.ts into one self-contained file (shared schemas included), so the base snapshot only
 // needs Node: copy dist/cli.mjs into the image as `dorks-bridge`.
 import { chmodSync } from "node:fs";
 import { fileURLToPath } from "node:url";

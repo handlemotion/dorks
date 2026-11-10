@@ -24,7 +24,7 @@ describe.skipIf(!token && !apiKey)("real claude CLI through the bridge", () => {
     // second boot of the same box reuses the same HOME (the session transcript lives there).
     mkdirSync(home, { recursive: true });
     const hostEnv: NodeJS.ProcessEnv = {
-      PATH: process.env.PATH, HOME: home, DORK_ID: "live_1", BRIDGE_URL: "https://x.convex.cloud", BRIDGE_SECRET: "c".repeat(64),
+      PATH: process.env.PATH, HOME: home, DORK_ID: "live_1", BRIDGE_URL: "wss://x.example/bridge", BRIDGE_SECRET: "c".repeat(64),
       DORKS_STATE_DIR: state, DORKS_WORKDIR: work, DORKS_GIT_BASE_URL: remoteBase, DORKS_CLAUDE_ARGS: process.env.LIVE_CLAUDE_ARGS ?? "",
       ...(process.env.CLAUDE_BIN ? { CLAUDE_BIN: process.env.CLAUDE_BIN } : {}),
       ...(process.env.ANTHROPIC_BASE_URL ? { ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL } : {}),

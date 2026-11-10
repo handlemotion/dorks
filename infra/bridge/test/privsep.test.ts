@@ -10,7 +10,7 @@ import { makeLogger, Redactor } from "../src/redact";
 import { builtCli, FAKE_CLAUDE, FakeTransport, makeRemote, tmp, waitFor } from "./helpers";
 
 describe("BRIDGE_SECRET_FILE", () => {
-  const base = { DORK_ID: "d", BRIDGE_URL: "https://x.convex.cloud" };
+  const base = { DORK_ID: "d", BRIDGE_URL: "wss://x.example/bridge" };
 
   it("is read once and unlinked, so the secret never sits in the environment", () => {
     const f = join(tmp("secret-"), "bridge-secret");
@@ -73,7 +73,7 @@ describe.skipIf(typeof process.getuid !== "function" || process.getuid() !== 0)(
     const secretFile = join(root, "secret");
     writeFileSync(secretFile, "s".repeat(64), { mode: 0o400 });
     const hostEnv: NodeJS.ProcessEnv = {
-      PATH: "/usr/local/bin:/usr/bin:/bin", HOME: "/root", DORK_ID: "d1", BRIDGE_URL: "https://x.convex.cloud", BRIDGE_SECRET_FILE: secretFile,
+      PATH: "/usr/local/bin:/usr/bin:/bin", HOME: "/root", DORK_ID: "d1", BRIDGE_URL: "wss://x.example/bridge", BRIDGE_SECRET_FILE: secretFile,
       DORKS_STATE_DIR: state, DORKS_WORKDIR: work, DORKS_GIT_BASE_URL: remote.baseUrl, CLAUDE_BIN: fake, CLAUDE_RUN_AS: "nobody", DORKS_BATCH_MS: "5",
     };
     const cfg = loadConfig(hostEnv);
