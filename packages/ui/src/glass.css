@@ -52,7 +52,8 @@ h6 {
   --glass-content: var(--surface);
   --glass-blur: 0px;
   --glass-saturate: 1;
-  --user-bubble: #ffffff;
+  /* The main app is white, so in light the user bubble takes the composer's fill (input at 50% over white); white in dark. */
+  --user-bubble: oklch(0.961 0 0);
   --user-bubble-foreground: oklch(0.145 0 0);
   /* The brand blue: focus, the current onboarding step, and toast fills. */
   --brand: #3b6be8;
@@ -101,6 +102,18 @@ html.dark {
   --sidebar-ring: var(--brand);
 }
 
+/* In the main app (everything inside `data-app-frame`, so not onboarding), focus is quieter: a control's border turns a slightly darker
+   tone of itself (the --input grey), not the brand blue. */
+html:root [data-app-frame] {
+  --ring: oklch(0.85 0 0);
+  --sidebar-ring: oklch(0.85 0 0);
+}
+
+html.dark [data-app-frame] {
+  --ring: oklch(1 0 0 / 28%);
+  --sidebar-ring: oklch(1 0 0 / 28%);
+}
+
 @theme inline {
   --color-glass: var(--glass);
   --color-glass-strong: var(--glass-strong);
@@ -130,7 +143,7 @@ html.dark {
   border-radius: var(--control-radius);
 }
 
-/* On controls, focus is only the border turning blue (--ring), no halo: the components' 3px `ring-ring/30` glow is made transparent
+/* On controls, focus is only the border changing colour (--ring), no halo: the components' 3px `ring-ring/30` glow is made transparent
    here instead of editing them. Only controls that also tint their border are listed; anything whose only focus mark is the ring
    (sidebar items, for one) keeps it. */
 :is([data-slot="button"], [data-slot="dropdown-menu-trigger"], [data-slot="popover-trigger"], [data-slot="dialog-close"], [data-slot="input"],
@@ -271,19 +284,14 @@ html.dark [data-slot="dialog-footer"] {
 }
 
 [data-slot="sheet-content"][data-mobile="true"] {
-  background-color: var(--app);
+  background-color: var(--background);
 }
 
-/* The published components outline cards, menus and dialogs with a 1px ring (`ring-1 ring-foreground/10`). Fill separates those
-   surfaces, so the ring is switched off here instead of editing the files. Focus rings live on controls, not on these containers. */
+/* The published components outline cards, menus and dialogs with a 1px ring (`ring-1 ring-foreground/10`). Cards and dialogs are
+   separated by fill, so their ring is switched off here instead of editing the files. Floating menus (dropdowns, popovers, selects,
+   hover cards) keep it as published: on the white app their fill alone does not separate them. */
 [data-slot="card"],
-[data-slot="popover-content"],
-[data-slot="dropdown-menu-content"],
-[data-slot="dropdown-menu-sub-content"],
-[data-slot="select-content"],
-[data-slot="hover-card-content"],
 [data-slot="dialog-content"],
-[data-slot="command"],
 [data-slot="sidebar-inner"] {
   --tw-ring-color: transparent;
 }

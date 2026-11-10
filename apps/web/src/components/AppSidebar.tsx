@@ -14,6 +14,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarTrigger,
+  useSidebar,
 } from '@dorks/ui/sidebar'
 import { useDisconnect } from './ConnectionGate'
 import { ChatList, type Chat, type ChatRoute } from './ChatList'
@@ -31,8 +32,8 @@ const MOVING: ReadonlySet<DorkState> = new Set(['creating', 'working', 'waking']
 
 /**
  * The app's sidebar, fed from the user's dorks: navigation, then the chats split by whether they have a pull request yet
- * ("Ready" has one, "Drafts" does not). Each group is reorderable and remembers its order. It sits flat on the app fill, divided
- * from the page by a full-height line, and collapses off-canvas from its own toggle.
+ * ("Ready" has one, "Drafts" does not). Each group is reorderable and remembers its order. It sits flat on the app fill in a resizable
+ * panel (see AppFrame), divided from the page by the resize handle, and collapses from its own toggle.
  */
 export function AppSidebar() {
   const dorks = useDorks(false)
@@ -44,10 +45,12 @@ export function AppSidebar() {
 /** The sidebar for a given list of chats; the dev preview renders it without a server. */
 export function AppSidebarView({ chats, onDisconnect, orderKey = 'dorks.chat-order', chatTo }: { chats: Chat[]; onDisconnect?: (() => void) | null; orderKey?: string; chatTo?: ChatRoute }) {
   const disconnect = onDisconnect
+  const { isMobile } = useSidebar()
   const ready = chats.filter((c) => c.pr)
   const drafts = chats.filter((c) => !c.pr)
   return (
-    <Sidebar collapsible="offcanvas">
+    // In a resizable panel on desktop (the frame sizes it), shadcn's sheet on phones.
+    <Sidebar collapsible={isMobile ? 'offcanvas' : 'none'} className={isMobile ? undefined : 'h-full w-full'}>
       <SidebarHeader data-tauri-drag-region className="h-12 flex-row items-center justify-between px-3 py-0">
         <span className="px-1 text-sm font-medium">Dorks</span>
         <SidebarTrigger className="text-muted-foreground" />

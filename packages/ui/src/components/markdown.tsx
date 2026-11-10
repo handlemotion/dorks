@@ -76,7 +76,8 @@ function MarkdownCode({
   )
 }
 
-// Streamdown memoizes on components, so keep the default stable.
+// Streamdown memoizes on components, so keep the default stable. Exported so an app can add its own (an `img` override, say) and
+// keep the code blocks: spread it into a module-level object.
 const DEFAULT_COMPONENTS = { code: MarkdownCode }
 
 function Markdown({
@@ -96,4 +97,5 @@ function Markdown({
   )
 }
 
-export { Markdown }
+export { defaultRehypePlugins, defaultUrlTransform } from "streamdown"
+export { Markdown, DEFAULT_COMPONENTS as markdownComponents }

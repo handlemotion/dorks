@@ -1,7 +1,8 @@
 import { CatchBoundary, createFileRoute, Link, Navigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { ArchiveIcon, ArchiveRestoreIcon, ChevronDownIcon, InfoIcon } from 'lucide-react'
-import { useDork, useDorkEvents, useDorks, useDorksClient, useSettings } from '@dorks/client/react'
+import { useConnection, useDork, useDorkEvents, useDorks, useDorksClient, useSettings } from '@dorks/client/react'
+import { AgentStatus } from '../../../components/AgentStatus'
 import { Alert, AlertDescription } from '@dorks/ui/alert'
 import { Button } from '@dorks/ui/button'
 import {
@@ -22,7 +23,7 @@ import {
   MessageScrollerViewport,
 } from '@dorks/ui/message-scroller'
 import { ChatMessages } from '../../../components/ChatBlock'
-import { ChatDetails, DETAILS_WIDTH, ShowDetailsButton, useDetailsOpen } from '../../../components/ChatDetails'
+import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen } from '../../../components/ChatDetails'
 import { Composer, type AgentProvider } from '../../../components/ChatComposer'
 import { PageHeader } from '../../../components/PageHeader'
 import { SetupStatus } from '../../../components/SetupStatus'
@@ -137,10 +138,11 @@ function Thread({ dorkId }: { dorkId: string }) {
   const choice = models.find((option) => option.key === selectedModel) ?? models[0]
   const working = dork?.state === 'working'
   const [detailsOpen, setDetailsOpen] = useDetailsOpen()
+  const { live } = useConnection()
   if (dork === undefined || loading) return <p className="mt-4 px-6 text-sm text-muted-foreground" role="status">Loading session…</p>
   if (dork === null) return <p className="mt-4 px-6 text-sm text-destructive" role="alert">That session could not be found.</p>
   return (
-    <div className="flex min-h-0 flex-1">
+    <ChatSplit details={detailsOpen ? <ChatDetails data={{ pr: prOf(dork.prUrl) }} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} onAsk={setText} /> : undefined}>
     <section className="flex min-w-0 flex-1 flex-col" aria-label="thread" data-state={dork.state}>
       <PageHeader divider={!detailsOpen}
         title={dork.title}
@@ -188,8 +190,8 @@ function Thread({ dorkId }: { dorkId: string }) {
       )}
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
         <MessageScroller>
-          <MessageScrollerViewport aria-label="Session transcript">
-            <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-8 py-8" data-testid="transcript">
+          <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
+            <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-3 py-6" data-testid="transcript">
               {canLoadMore && <div className="text-center"><Button variant="outline" size="sm" onClick={loadMore}>Load older</Button></div>}
               <ChatMessages blocks={view.blocks} />
             </MessageScrollerContent>
@@ -205,10 +207,10 @@ function Thread({ dorkId }: { dorkId: string }) {
           try { await send(sent) } catch (e) { setText(sent); throw e }
         })}
         onStop={working && !stopping && !dork.archived ? () => void runStop(() => actions.interrupt(dorkId)) : undefined}
+        status={<AgentStatus state={dork.state} live={live} />}
       />
     </section>
-    {detailsOpen && <ChatDetails data={{ pr: prOf(dork.prUrl) }} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} className={DETAILS_WIDTH} />}
-    </div>
+    </ChatSplit>
   )
 }
 

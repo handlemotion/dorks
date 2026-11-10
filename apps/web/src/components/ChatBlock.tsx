@@ -3,7 +3,8 @@ import { CircleAlertIcon, CircleCheckIcon, TerminalIcon } from 'lucide-react'
 import type { Block } from '@dorks/shared'
 import { Bubble, BubbleContent } from '@dorks/ui/bubble'
 import { CodeBlock, CodeBlockContent } from '@dorks/ui/code-block'
-import { Markdown } from '@dorks/ui/markdown'
+import { defaultRehypePlugins, defaultUrlTransform, Markdown, markdownComponents } from '@dorks/ui/markdown'
+import { ImageLightbox, ImageTrigger, useLightboxImages, type LightboxImage } from './ImageLightbox'
 import { Message, MessageContent } from '@dorks/ui/message'
 import { MessageScrollerItem } from '@dorks/ui/message-scroller'
 import {
@@ -19,6 +20,48 @@ import {
 type ToolBlock = Extract<Block, { kind: 'tool' }>
 type AgentBlock = Exclude<Block, { kind: 'user' }>
 type Entry = { kind: 'user'; block: Extract<Block, { kind: 'user' }> } | { kind: 'agent'; id: string; blocks: AgentBlock[] }
+
+/** Markdown images (`![alt](src)`), the way agents and users put images in a message. */
+const IMAGE = /!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g
+
+/** Every image in the transcript, in reading order: they share one lightbox, so opening one pages through the chat's images. */
+function transcriptImages(blocks: Block[]): LightboxImage[] {
+  const images: LightboxImage[] = []
+  for (const block of blocks) {
+    if (block.kind !== 'user' && block.kind !== 'assistant') continue
+    let n = 0
+    for (const m of block.text.matchAll(IMAGE)) images.push({ id: `${block.id}:${n++}`, src: m[2], alt: m[1] || 'Image', caption: m[1] || undefined })
+  }
+  return images
+}
+
+/** An image in a message: a thumbnail that opens the transcript's lightbox on it (or a plain image if it is not in the list). */
+function ChatImage({ src, alt }: { src?: string | Blob; alt?: string }) {
+  const images = useLightboxImages()
+  const index = typeof src === 'string' ? images.findIndex((i) => i.src === src) : -1
+  if (index < 0) return typeof src === 'string' ? <img src={src} alt={alt ?? ''} className="block h-36 w-auto rounded-(--control-radius)" /> : null
+  return (
+    <ImageTrigger index={index} className="my-1 inline-block cursor-zoom-in rounded-(--control-radius) align-top outline-none focus-visible:outline-2 focus-visible:outline-ring" aria-label={`Open ${alt || 'image'}`}>
+      {({ imageRef, morphRef }) => <img ref={(node) => { imageRef(node); morphRef(node) }} src={src as string} alt={alt ?? ''} className="block h-36 w-auto rounded-(--control-radius) object-cover" />}
+    </ImageTrigger>
+  )
+}
+
+// Module-level so Streamdown's memo holds; keeps the package's code blocks.
+const MARKDOWN = { ...markdownComponents, img: ChatImage }
+
+/**
+ * Agents paste screenshots as `data:image/…` URLs. Streamdown drops those twice (its URL transform and its sanitize schema, which
+ * allows only http(s) image sources); both are widened for image sources alone. Links and everything else keep the defaults, and
+ * the harden step still only lets `data:image/` through.
+ */
+const [sanitize, schema] = defaultRehypePlugins.sanitize as [unknown, { protocols?: Record<string, string[]> }]
+const REHYPE = Object.values({
+  ...defaultRehypePlugins,
+  sanitize: [sanitize, { ...schema, protocols: { ...schema.protocols, src: [...(schema.protocols?.src ?? []), 'data'] } }],
+}) as typeof defaultRehypePlugins[string][]
+
+const allowDataImages: typeof defaultUrlTransform = (url, key, node) => (key === 'src' && url.startsWith('data:image/') ? url : defaultUrlTransform(url, key, node))
 
 function entries(blocks: Block[]): Entry[] {
   const result: Entry[] = []
@@ -74,7 +117,7 @@ function agentContent(blocks: AgentBlock[]): ReactNode[] {
       // Assistant text is unbubbled markdown, as in the AI Elements chat pattern; the cursor marks a reply still streaming.
       content.push(
         <div key={block.id} className="min-w-0">
-          <Markdown>{block.text}</Markdown>
+          <Markdown components={MARKDOWN} urlTransform={allowDataImages} rehypePlugins={REHYPE}>{block.text}</Markdown>
           {block.streaming && <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-foreground align-middle" aria-label="Streaming response" />}
         </div>,
       )
@@ -93,18 +136,26 @@ function agentContent(blocks: AgentBlock[]): ReactNode[] {
 }
 
 export function ChatMessages({ blocks }: { blocks: Block[] }) {
-  return entries(blocks).map((entry) => {
+  const images = transcriptImages(blocks)
+  const messages = entries(blocks).map((entry) => {
     if (entry.kind === 'user') {
+      const text = entry.block.text.replace(IMAGE, '').trim()
+      const own = images.filter((i) => i.id.startsWith(`${entry.block.id}:`))
       return (
         <MessageScrollerItem key={entry.block.id} messageId={entry.block.id} scrollAnchor>
           <Message align="end">
-            <MessageContent>
-              <Bubble align="end">
-                {/* White in light and dark; no outline, since white against the panel fill already contrasts 1.2:1 or more (see packages/ui/README.md). `!` beats the bubble variant background. */}
-                <BubbleContent className="rounded-[10px]! px-3! py-2! bg-user-bubble! text-user-bubble-foreground!">
-                  {entry.block.text}
-                </BubbleContent>
-              </Bubble>
+            <MessageContent className="items-end">
+              {own.length > 0 && (
+                <div className="flex flex-wrap justify-end gap-2">
+                  {own.map((image) => <ChatImage key={image.id} src={image.src} alt={image.alt} />)}
+                </div>
+              )}
+              {text && (
+                <Bubble align="end">
+                  {/* The composer's grey in light, white in dark (see packages/ui/README.md). `!` beats the bubble variant background. */}
+                  <BubbleContent className="rounded-[10px]! px-3! py-2! bg-user-bubble! text-user-bubble-foreground!">{text}</BubbleContent>
+                </Bubble>
+              )}
             </MessageContent>
           </Message>
         </MessageScrollerItem>
@@ -118,4 +169,5 @@ export function ChatMessages({ blocks }: { blocks: Block[] }) {
       </MessageScrollerItem>
     )
   })
+  return images.length > 0 ? <ImageLightbox images={images} label="Images in this chat">{messages}</ImageLightbox> : messages
 }

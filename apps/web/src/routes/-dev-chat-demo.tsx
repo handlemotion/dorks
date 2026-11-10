@@ -10,16 +10,21 @@ import {
 } from '@dorks/ui/message-scroller'
 import { FrameLayout } from '../components/AppFrame'
 import { AppSidebarView } from '../components/AppSidebar'
+import { AgentStatus } from '../components/AgentStatus'
 import { ChatMessages } from '../components/ChatBlock'
-import { ChatDetails, DETAILS_WIDTH, ShowDetailsButton, useDetailsOpen, type ChatDetailsData } from '../components/ChatDetails'
+import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, type ChatDetailsData } from '../components/ChatDetails'
 import { Composer, type AgentProvider } from '../components/ChatComposer'
 import { PageHeader } from '../components/PageHeader'
 
+/** A mock screenshot as an SVG data URL (parentheses escaped so it can sit inside markdown image syntax). */
+const mockShot = (tint: string, line: string) =>
+  `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000"><rect width="1600" height="1000" fill="${tint}"/><rect x="400" y="300" width="800" height="440" rx="40" fill="#fff"/><rect x="480" y="380" width="400" height="40" rx="20" fill="${line}"/><rect x="480" y="480" width="640" height="40" rx="20" fill="#e4e4e7"/></svg>`).replace(/\(/g, '%28').replace(/\)/g, '%29')}`
+
 const initialBlocks: Block[] = [
-  { kind: 'user', id: 'u1', text: 'Fix the flaky bridge reconnect after the box wakes. Check the current tests too.' },
+  { kind: 'user', id: 'u1', text: `Fix the flaky bridge reconnect after the box wakes. Check the current tests too.\n\n![Reconnect error in the app](${mockShot('#fde2e2', '#f2a1a1')})` },
   { kind: 'tool', id: 't1', name: 'Bash', summary: "rg -n 'wake|reconnect' infra/bridge/src", status: 'ok', preview: 'infra/bridge/src/claude.ts:223: resume box\ninfra/bridge/src/claude.ts:228: reconnect bridge' },
   { kind: 'tool', id: 't2', name: 'Bash', summary: 'pnpm --filter @dorks/bridge test', status: 'error', preview: 'FAIL reconnect restores queued messages\nError: timed out waiting for bridge' },
-  { kind: 'assistant', id: 'a1', text: 'The box resumes before the bridge is ready. Queued messages can arrive during that gap. I’ll add a regression test for the race.\n\n- Wait for the bridge handshake before flushing\n- Cover it with a test\n\n```ts\nawait bridge.ready()\n```', streaming: false },
+  { kind: 'assistant', id: 'a1', text: 'The box resumes before the bridge is ready. Queued messages can arrive during that gap. I’ll add a regression test for the race.\n\n![Before the fix](' + mockShot('#e3e9f3', '#a7b4c8') + ') ![After the fix](' + mockShot('#e4f3e8', '#9fcbab') + ')\n\n- Wait for the bridge handshake before flushing\n- Cover it with a test\n\n```ts\nawait bridge.ready()\n```', streaming: false },
   { kind: 'user', id: 'u2', text: 'Please cover the reconnect race with a test before changing the handler.' },
   { kind: 'tool', id: 't3', name: 'Bash', summary: 'pnpm --filter @dorks/bridge test', status: 'running' },
   { kind: 'assistant', id: 'a2', text: 'I added a regression test for a message arriving while the box is waking. I’m checking the dispatch order now.', streaming: true },
@@ -50,6 +55,8 @@ const details: ChatDetailsData = {
     id: name,
     name,
     type: 'PNG',
+    width: 1600,
+    height: 1000,
     src: `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 100"><rect width="160" height="100" fill="hsl(${210 + i * 24} 40% 92%)"/><rect x="40" y="30" width="80" height="44" rx="4" fill="white"/><rect x="48" y="38" width="40" height="4" rx="2" fill="hsl(${210 + i * 24} 20% 70%)"/><rect x="48" y="48" width="64" height="4" rx="2" fill="hsl(${210 + i * 24} 10% 85%)"/></svg>`)}`,
   })),
 }
@@ -80,7 +87,7 @@ export function Demo() {
 
   return (
     <FrameLayout sidebar={<AppSidebarView chats={chats.map((c) => (c.id === 'preview' ? { ...c, working: !stopped } : c))} chatTo="/dev/chat" orderKey="dorks.demo.chat-preview" />}>
-      <div className="flex h-full min-h-0" data-preview>
+      <ChatSplit details={detailsOpen && !showNew ? <ChatDetails data={details} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} onAsk={setText} /> : undefined}>
       <div className="flex min-w-0 flex-1 flex-col">
         <PageHeader divider={showNew || !detailsOpen}
           title={showNew ? 'New session' : 'Fix flaky bridge reconnect after wake'}
@@ -102,20 +109,19 @@ export function Demo() {
           <section className="flex min-h-0 flex-1 flex-col" aria-label="thread">
             <MessageScrollerProvider autoScroll defaultScrollPosition="end">
               <MessageScroller>
-                <MessageScrollerViewport aria-label="Session transcript">
-                  <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-8 py-8" data-testid="transcript">
+                <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
+                  <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-3 py-6" data-testid="transcript">
                     <ChatMessages blocks={blocks} />
                   </MessageScrollerContent>
                 </MessageScrollerViewport>
                 <MessageScrollerButton />
               </MessageScroller>
             </MessageScrollerProvider>
-            <Composer text={text} setText={setText} provider="claude" onSubmit={send} pending={false} error="" onStop={stopped ? undefined : stop} />
+            <Composer text={text} setText={setText} provider="claude" onSubmit={send} pending={false} error="" onStop={stopped ? undefined : stop} status={<AgentStatus state={stopped ? 'idle' : 'working'} live="live" />} />
           </section>
         )}
       </div>
-      {detailsOpen && !showNew && <ChatDetails data={details} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} className={DETAILS_WIDTH} />}
-      </div>
+      </ChatSplit>
     </FrameLayout>
   )
 }

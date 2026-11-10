@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowLeftIcon, ArrowRightIcon, RotateCwIcon, SquareMousePointerIcon } from 'lucide-react'
 import { Button } from '@dorks/ui/button'
 import { Input } from '@dorks/ui/input'
+import { EmptyState } from './EmptyState'
+
+/** The buttons in Chat details' bars (tabs row, browser bar): 30px, muted, the tabs' hover. */
+export const BAR_BUTTON = "size-[30px] text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground [&_svg:not([class*='size-'])]:size-3.5"
 
 type Primitives = typeof import('react-grab/primitives')
 type Box = { x: number; y: number; width: number; height: number; radius: string; label: string }
@@ -21,7 +25,7 @@ function normalize(input: string) {
  * Escape leaves. Reaching into the frame's document needs it to be same-origin, so the picker is off for a cross-origin preview.
  * `html` renders an inline (same-origin) page instead of a URL; the dev demo uses it.
  */
-export function PreviewBrowser({ url: initialUrl, html, onGrab }: { url?: string; html?: string; onGrab?: (snippet: string) => void }) {
+export function PreviewBrowser({ url: initialUrl, html, onGrab, onAsk }: { url?: string; html?: string; onGrab?: (snippet: string) => void; onAsk?: (text: string) => void }) {
   const [history, setHistory] = useState<string[]>(initialUrl ? [initialUrl] : [])
   const [index, setIndex] = useState(initialUrl ? 0 : -1)
   const [address, setAddress] = useState(initialUrl ?? '')
@@ -109,29 +113,30 @@ export function PreviewBrowser({ url: initialUrl, html, onGrab }: { url?: string
 
   return (
     <>
-      <div className="flex h-11 shrink-0 items-center gap-0.5 border-b px-2">
-        <Button variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label="Back" title="Back" disabled={index <= 0} onClick={() => go(index - 1)}>
+      {/* Same rhythm as the tab row above: 30px buttons, icons in line with the tab icons and the hide button (measured: same left and right edges). */}
+      <div className="flex h-10 shrink-0 items-center gap-0.5 border-y pr-1 pl-[5px]">
+        <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="Back" title="Back" disabled={index <= 0} onClick={() => go(index - 1)}>
           <ArrowLeftIcon />
         </Button>
-        <Button variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label="Forward" title="Forward" disabled={index >= history.length - 1} onClick={() => go(index + 1)}>
+        <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="Forward" title="Forward" disabled={index >= history.length - 1} onClick={() => go(index + 1)}>
           <ArrowRightIcon />
         </Button>
-        <Button variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label="Reload" title="Reload" disabled={!current && !html} onClick={() => setReloads((n) => n + 1)}>
+        <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="Reload" title="Reload" disabled={!current && !html} onClick={() => setReloads((n) => n + 1)}>
           <RotateCwIcon />
         </Button>
         <form
-          className="mx-1.5 min-w-0 flex-1"
+          className="mx-1 min-w-0 flex-1"
           onSubmit={(e) => {
             e.preventDefault()
             navigate(address)
           }}
         >
-          <Input aria-label="Address" placeholder="Type a URL" value={address} onChange={(e) => setAddress(e.target.value)} className="h-7 text-sm" spellCheck={false} />
+          <Input aria-label="Address" placeholder="Type a URL" value={address} onChange={(e) => setAddress(e.target.value)} className="h-[30px] text-sm" spellCheck={false} />
         </form>
         <Button
           variant="ghost"
           size="icon-sm"
-          className="text-muted-foreground aria-pressed:bg-brand/10 aria-pressed:text-brand"
+          className={`${BAR_BUTTON} aria-pressed:bg-brand/10 aria-pressed:text-brand`}
           aria-label="Select an element"
           aria-pressed={picking}
           title={sameOrigin ? 'Select an element (Esc to stop)' : 'Element selection needs a same-origin preview'}
@@ -168,7 +173,9 @@ export function PreviewBrowser({ url: initialUrl, html, onGrab }: { url?: string
           )}
         </div>
       ) : (
-        <p className="flex flex-1 items-center justify-center p-8 text-center text-sm text-muted-foreground">When the agent runs a dev server, its preview opens here.</p>
+        <EmptyState figure="window" title="No preview yet" description="When the agent runs a dev server, its preview opens here. Or type a URL above.">
+          {onAsk && <Button size="sm" variant="outline" onClick={() => onAsk('Start the dev server and tell me its URL so I can preview it.')}>Ask for a preview</Button>}
+        </EmptyState>
       )}
     </>
   )

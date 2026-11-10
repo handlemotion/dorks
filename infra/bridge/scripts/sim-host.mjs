@@ -37,6 +37,9 @@ export function prepareRealBridge({ repos = ["acme/demo"] } = {}) {
       return {
         PATH: process.env.PATH,
         HOME: process.env.HOME,
+        // The bridge writes `git config --global` (credential helper, identity), right in a box but not on this host: give each
+        // simulated box its own global git config so a test run never touches the developer's ~/.gitconfig.
+        GIT_CONFIG_GLOBAL: join(root, `gitconfig-${short}`),
         // Outbound proxy / extra CA for hosts that need them to reach Anthropic (CI and sandboxes often do).
         ...Object.fromEntries(["HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE"].filter((k) => process.env[k]).map((k) => [k, process.env[k]])),
         DORK_ID: dorkId,
