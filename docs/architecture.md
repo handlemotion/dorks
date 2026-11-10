@@ -171,4 +171,4 @@ The compiled sidecar is about 64 MB (arm64) / 70 MB (x64): that is the Bun runti
 
 ## Out of scope here
 
-The Tauri shell (`apps/desktop`), the tunnel sidecar, the web client port (`apps/web` onto `packages/client`), removing `apps/convex`, and the Convex-era Phase 1/2 work.
+The Tauri shell and the tunnel sidecar (`docs/desktop.md`). The web client lives in `packages/client` and `apps/web`; `apps/convex` has been removed.

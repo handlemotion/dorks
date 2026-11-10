@@ -4,7 +4,7 @@ import { clientEvent, errorEvent } from "./events";
 import { emptyView, fold } from "./client/fold";
 
 describe("toAppError", () => {
-  it("reads a ConvexError payload from `data`", () => {
+  it("reads an AppError payload from `data`", () => {
     expect(toAppError({ data: { code: "limit", message: "at most 3" } })).toEqual({ code: "limit", message: "at most 3" });
   });
   it("keeps variant-specific fields", () => {

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-// Autonomy: PR subscriptions and the notifications they produce. Shared by the backend (apps/convex) and the in-box bridge
+// Autonomy: PR subscriptions and the notifications they produce. Shared by the backend (apps/server) and the in-box bridge
 // (infra/bridge). See docs/autonomy.md for the design; this file is the wire contract between the two.
 
 /** A failing CI run is handed to the agent at most this many times in a row per PR; then the dork stops and escalates. */

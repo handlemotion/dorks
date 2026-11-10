@@ -259,10 +259,9 @@ a settable subscriptions list), so none of this needs a server.
 
 ### End-to-end through the server
 
-The unit and fake-transport tests above are the acceptance bar today. The end-to-end rig, `infra/bridge-sim/host.mjs` with `BRIDGE_IMPL=real`
-(one real bridge per simulated sandbox, a local bare git remote, a fake Claude CLI), still targets the old Convex backend and is being ported to
-`apps/server` with `BOX_PROVIDER=sim`. Until then, run the real bridge against the real server by hand: start `apps/server`, create a dork in the
-UI, and watch the transcript.
+The unit and fake-transport tests above are the acceptance bar today. The end-to-end rig is `infra/bridge-sim/host.mjs` with `BRIDGE_IMPL=real`
+(one real bridge per simulated sandbox, a local bare git remote, a fake Claude CLI) against `apps/server` with `BOX_PROVIDER=sim`:
+`pnpm e2e:server` runs it, and `BRIDGE_IMPL=real pnpm dev` gives you the same rig interactively (create a dork in the UI and watch the transcript).
 
 ### Trying it with a real Claude token locally
 

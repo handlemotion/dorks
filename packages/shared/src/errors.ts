@@ -4,8 +4,9 @@ import { z } from "zod";
  * The one error shape shared by the backend, the bridge and every UI.
  *
  * A discriminated union on `code`: a `switch (err.code)` is exhaustive, and each variant carries only the extra fields that
- * code needs. `message` is always safe to show to the user (never a stack, token or provider body). Backend functions throw
- * it as `ConvexError(appError)` (see `fail` in apps/convex/convex/lib/dispatch.ts); clients read it back with `toAppError`.
+ * code needs. `message` is always safe to show to the user (never a stack, token or provider body). The server
+ * returns it as the JSON body of a failed UI API call (see `fail` in apps/server/src/app.ts); `@dorks/client` wraps it in an `ApiError`
+ * whose `data` is the AppError, and `toAppError` reads it back.
  */
 const m = { message: z.string() };
 
@@ -43,14 +44,14 @@ export const UNKNOWN_ERROR_MESSAGE = "Something went wrong";
 export const isAppError = (v: unknown): v is AppError => appError.safeParse(v).success;
 
 /**
- * Normalizes anything thrown (a `ConvexError` rejected on the client, a plain Error, a string) to an AppError. Unknown codes and
+ * Normalizes anything thrown (an `ApiError` from `@dorks/client`, a plain Error, a string) to an AppError. Unknown codes and
  * non-app errors become `failed` with a generic message, so internals never reach the UI.
  */
 export function toAppError(e: unknown): AppError {
   const data = (e as { data?: unknown } | null | undefined)?.data;
   const parsed = appError.safeParse(data);
   if (parsed.success) return parsed.data;
-  const message = (data as { message?: unknown } | null | undefined)?.message; // only a ConvexError payload: a plain Error's message may hold internals
+  const message = (data as { message?: unknown } | null | undefined)?.message; // only a payload under `data`: a plain Error's message may hold internals
   return { code: "failed", message: typeof message === "string" && message ? message : UNKNOWN_ERROR_MESSAGE };
 }
 

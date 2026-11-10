@@ -3,7 +3,7 @@ import type { CreateDorkInput, Dork, EventsPage, PrRefInput, Settings, SettingsP
 
 /**
  * Thrown for every failed call. `data` is the typed AppError, so `toAppError(e)` from @dorks/shared reads it unchanged
- * (the same way it read a Convex error), and `message` is always safe to show.
+ * (the way errors have always been read), and `message` is always safe to show.
  */
 export class ApiError extends Error {
   readonly status: number;

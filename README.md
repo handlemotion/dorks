@@ -33,17 +33,14 @@ Needs Node 24, pnpm (version pinned in `package.json`; `corepack enable`) and [B
 
 ```sh
 pnpm install
-
-# the server (prints a JSON "ready" line; data in ~/Library/Application Support/Dorks)
-pnpm --filter @dorks/server dev
-
-# the web UI on http://localhost:3000, in another terminal
-pnpm --filter @dorks/web dev
+pnpm dev     # real server with simulated sandboxes + the web UI; prints the URL to open
 ```
 
-Open http://localhost:3000, enter `http://127.0.0.1:4747` and the `ownerToken` from `secrets.json` in the data directory (see [docs/github.md](docs/github.md#the-owner-token)), then follow setup: Boat key, base snapshot ([docs/boat.md](docs/boat.md)), agent sign-in, GitHub token.
+Open the printed URL (it carries the dev owner token), then follow setup: Boat key, base snapshot ([docs/boat.md](docs/boat.md)), agent sign-in, GitHub token. With `pnpm dev` sandboxes are simulated, so you can create and drive sessions without a Boat account.
 
-To try the UI with no server at all: `pnpm --filter @dorks/web dev:mock` serves an in-memory mock server on :4747 with a scripted fake agent.
+To try the UI with no server at all: `pnpm dev:mock` serves an in-memory mock server on :4747 with a scripted fake agent.
+
+To run the server on its own against your real data (`~/Library/Application Support/Dorks`): `pnpm --filter @dorks/server dev`, then connect the UI with the `ownerToken` from `secrets.json` in that directory (see [docs/github.md](docs/github.md#the-owner-token)).
 
 For real sandboxes the server needs `DORKS_PUBLIC_URL`, the `https://` URL of a tunnel that forwards to the bridge port (default 4748). All variables are in [docs/env.md](docs/env.md).
 

@@ -50,8 +50,8 @@ export const fromBridge = z.discriminatedUnion("t", [
 export type FromBridge = z.infer<typeof fromBridge>;
 
 /**
- * Convex transport only. `bridge.commands` is a reactive query, so its results must not carry secrets: `configure` and
- * `gh_token` appear as fetch markers, and the bridge calls the `bridge.configure` / `bridge.ghToken` actions to get the real frames above.
+ * Frames the server pushes on the bridge socket. They must not carry secrets: `configure` appears as a fetch marker, and the bridge
+ * asks for the real frame above with a `configure` request on the authenticated socket (see docs/architecture.md).
  */
 export const commandFrame = z.discriminatedUnion("t", [
   z.object({ t: z.literal("user_message"), id: z.string(), text: z.string() }),

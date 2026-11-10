@@ -11,9 +11,10 @@ Start with [CONTRIBUTING.md](CONTRIBUTING.md) (layout, dev loop, tests) and [doc
 
 Test changes against running servers, not only unit tests.
 
-- Server: `pnpm --filter @dorks/server dev` (Bun). Use `DORKS_DATA_DIR=<temp dir>` and `DORKS_UI_PORT=0 DORKS_BRIDGE_PORT=0` to avoid touching real data or colliding with another running instance. It prints one JSON `ready` line with the ports.
-- Web against the mock server: `pnpm --filter @dorks/web dev:mock`.
-- The root `dev:*` scripts and `infra/bridge-sim` still target the Convex backend that is being removed; do not rely on them.
+- Whole stack: `pnpm dev` runs the real server with simulated sandboxes plus the web app (data in `.dev-data`, delete it for a clean start). It prints the URL to open, with the dev owner token in it. `pnpm dev:server` runs only the server and the sandbox simulator.
+- Web against an in-memory mock server: `pnpm dev:mock`. Desktop shell: `pnpm dev:desktop`.
+- For a throwaway instance that cannot collide with another one, set `DORKS_DATA_DIR=<temp dir>`, `DORKS_UI_PORT=0` and `DORKS_BRIDGE_PORT=0`; the server prints one JSON `ready` line with the ports.
+- `pnpm test` runs every package; `pnpm e2e` builds the compiled server and runs the server e2e (sim and real bridge, with a secret scan), then the web e2e. `pnpm e2e:server` / `pnpm e2e:web` run one of them.
 
 ## Secrets
 

@@ -34,7 +34,7 @@ export function useSettingsState(): QueryState<Settings> {
   return useStore(useDorksClient().settings());
 }
 
-/** `undefined` while loading, like the Convex hooks this replaces. */
+/** `undefined` while loading, so a component can tell loading from empty. */
 export function useDorks(archived = false): Dork[] | undefined {
   return useStore(useDorksClient().dorks(archived)).data;
 }

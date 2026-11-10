@@ -12,7 +12,7 @@ const route = getRouteApi('/dev/sidebar')
 
 const SEED: Chat[] = [
   { id: 'c1', title: 'Intercom stamping failures triage', working: true, pr: { number: 114 } },
-  { id: 'c2', title: 'Migrate session storage to Convex and drop the legacy cookie fallback', working: false, pr: { number: 112 } },
+  { id: 'c2', title: 'Migrate session storage to SQLite and drop the legacy cookie fallback', working: false, pr: { number: 112 } },
   { id: 'c3', title: 'Fix flaky bridge reconnect after the box wakes', working: true, pr: { number: 109, state: 'merged' } },
   { id: 'c4', title: 'Rate limit the install callback', working: false, pr: { number: 101, state: 'closed' } },
   { id: 'c5', title: 'Refactor the settings page into sections', working: false, pr: { number: 98 } },

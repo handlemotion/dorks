@@ -14,8 +14,8 @@ Dorks is a local-first app. Read [docs/architecture.md](docs/architecture.md) fi
 | `packages/ui` | shadcn-style components used by the web app. |
 | `infra/bridge` | The agent bridge that runs inside each Boat sandbox. |
 | `infra/snapshot` | Installer for the Boat base snapshot. |
-| `infra/bridge-sim` | Local sandbox simulator (see "Known stale pieces"). |
-| `apps/convex` | The previous Convex backend. Being removed; do not extend it. |
+| `infra/bridge-sim` | Local sandbox simulator: runs one bridge process per simulated sandbox (`BOX_PROVIDER=sim`). |
+| `scripts` | `dev.mjs` (the one-command dev loop) and `e2e.mjs` (the e2e runner). |
 
 ## Setup
 
@@ -28,15 +28,16 @@ pnpm install
 ## Dev loop
 
 ```sh
-pnpm --filter @dorks/server dev                  # server on 127.0.0.1:4747 (UI) and :4748 (bridge)
-pnpm --filter @dorks/web dev                     # web on http://localhost:3000
-pnpm --filter @dorks/web dev:mock                # web plus an in-memory mock server, no real server needed
-pnpm --filter @dorks/desktop dev                 # the Tauri app with a stub sidecar
+pnpm dev                 # real server with simulated sandboxes + web with HMR; prints the URL to open
+pnpm dev:server          # only the server and the sandbox simulator
+pnpm dev:web             # only the web app (http://localhost:3000)
+pnpm dev:mock            # web plus an in-memory mock server, no real server needed
+pnpm dev:desktop         # the Tauri app (builds the real server and web UI into it)
 ```
 
-Use a throwaway data directory when you do not want to touch your real data: `DORKS_DATA_DIR=/tmp/dorks-dev pnpm --filter @dorks/server dev`. Port `0` picks a free port (`DORKS_UI_PORT=0`). Every variable is in [docs/env.md](docs/env.md).
+`pnpm dev` keeps its data in `.dev-data` (git-ignored); delete it for a clean start. It uses fixed, dev-only values for the owner token (`dev-owner-token`) and sandbox host key, so no secret or `.env` is needed. `BRIDGE_IMPL=real pnpm dev` runs the real in-box bridge with a fake Claude CLI instead of the sim bridge. Port `0` picks a free port (`DORKS_UI_PORT=0`). Every variable is in [docs/env.md](docs/env.md).
 
-The server's owner token is generated into `<data dir>/secrets.json`. To test against real Boat sandboxes you also need a tunnel URL in `DORKS_PUBLIC_URL` that forwards to the bridge port.
+Outside `pnpm dev` the server's owner token is generated into `<data dir>/secrets.json`. To test against real Boat sandboxes you also need a tunnel URL in `DORKS_PUBLIC_URL` that forwards to the bridge port.
 
 ## Tests
 
@@ -46,12 +47,14 @@ pnpm test                                        # every package that has tests
 pnpm --filter @dorks/server test                 # the server (lifecycle, machine, bridge socket), in-memory SQLite
 pnpm --filter @dorks/client test                 # client against a fake server
 pnpm --filter @dorks/bridge test                 # the bridge
-pnpm --filter @dorks/web build && CHROME_PATH=<chrome> pnpm --filter @dorks/web e2e   # browser run against the mock server
+pnpm e2e:server                                  # builds the compiled server, runs its e2e twice (sim bridge, real bridge) incl. a secret scan; needs Bun
+CHROME_PATH=<chrome> pnpm e2e:web                # builds the SPA, drives it in headless Chrome against the mock server
+pnpm e2e                                         # both
 ```
 
 Prefer tests that run the real code path over mocks: the server tests use the real lifecycle driver on an in-memory database.
 
-CI (`.github/workflows/ci.yml`) runs typecheck and tests, and the web e2e against the mock server. It needs no repository secrets, so it runs on forks. If you add an environment variable the e2e needs, set a throwaway value in the workflow.
+CI (`.github/workflows/ci.yml`) runs typecheck and tests, the server e2e against the compiled binary, and the web e2e against the mock server; `desktop.yml` builds the macOS app. It needs no repository secrets, so it runs on forks. If you add an environment variable the e2e needs, set a throwaway value in the workflow.
 
 ## Rules
 
@@ -59,7 +62,3 @@ CI (`.github/workflows/ci.yml`) runs typecheck and tests, and the web e2e agains
 - Keep `docs/architecture.md` in step with API changes, and make them additive where you can: the web client, the bridge and the desktop shell all read it.
 - Never put a secret behind a `VITE_` prefix.
 - Branch from `main`. Small commits, with a message that says why.
-
-## Known stale pieces
-
-The Convex removal is in progress, so these still point at the old backend and do not work against `apps/server`: the root scripts `dev`, `dev:backend`, `dev:up`, `dev:status`, `dev:wait`, `dev:down`, `dev:sim`, `dev:mail`, `dev:convex`, `env:init`, `infra/bridge-sim`, and the `backend-e2e` CI job. Use the per-package commands above until they are replaced.

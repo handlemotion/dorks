@@ -23,7 +23,7 @@ async function setup(home = tmp("codex-home-"), state = tmp("codex-state-"), res
   const host: NodeJS.ProcessEnv = {
     ...process.env,
     PATH: `${bin}:${process.env.PATH}`, HOME: home, DORK_ID: "codex_dork",
-    BRIDGE_URL: "https://example.convex.cloud", BRIDGE_SECRET: "b".repeat(64),
+    BRIDGE_URL: "https://bridge.example.test", BRIDGE_SECRET: "b".repeat(64),
     DORKS_STATE_DIR: state, DORKS_WORKDIR: tmp("codex-work-"), DORKS_GIT_BASE_URL: remote.baseUrl,
     DORKS_BATCH_MS: "5", DELTA_BATCH_MS: "10", HEARTBEAT_MS: "60000",
   };
