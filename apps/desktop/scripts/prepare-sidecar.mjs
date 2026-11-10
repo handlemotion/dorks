@@ -48,8 +48,8 @@ let builtAll = false;
 function buildServer(triple) {
   if (!BUN_TARGETS[triple]) throw new Error(`no Bun target for ${triple}`);
   if (existsSync(join(serverDir, "scripts", "build.ts"))) {
-    // The server's own build writes every target into its dist; run it once.
-    if (!builtAll) execFileSync("pnpm", ["--filter", "@dorks/server", "run", "build"], { cwd: desktop, stdio: "inherit" });
+    // The server's own build writes only the host target unless given --all; a universal build (or a cross target) needs both.
+    if (!builtAll) execFileSync("bun", ["run", "scripts/build.ts", ...(target === "universal-apple-darwin" || triple !== host ? ["--all"] : [])], { cwd: serverDir, stdio: "inherit" });
     builtAll = true;
     return;
   }
