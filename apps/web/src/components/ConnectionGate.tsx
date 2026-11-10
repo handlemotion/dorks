@@ -75,11 +75,17 @@ function Probe({ conn, onChange, onReplace, children }: { conn: Connection; onCh
   }
   return (
     <>
-      {connection.live === 'offline' && <p className="glass fixed inset-x-0 top-0 z-50 border-b border-surface-line px-4 py-2 text-center text-sm dark:border-border" role="status"><WordShimmer>Reconnecting to the dorks server…</WordShimmer></p>}
       <KeepAwake />
       {children}
     </>
   )
+}
+
+/** Lives in the page column so reconnecting shifts its content without moving the sidebar. */
+export function ConnectionBanner() {
+  const { live } = useConnection()
+  if (live !== 'offline') return null
+  return <p className="flex h-12 shrink-0 items-center justify-center border-b bg-background px-5 text-center text-sm" role="status" data-testid="connection-banner"><WordShimmer>Reconnecting to the dorks server…</WordShimmer></p>
 }
 
 function ConnectForm({ initialUrl, error, onConnect }: { initialUrl?: string; error?: string; onConnect: (c: Connection) => void }) {

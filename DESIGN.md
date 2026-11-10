@@ -79,10 +79,10 @@ The pattern to copy for any toolbar:
 | Need | Use |
 | --- | --- |
 | Any control, menu, dialog | `@dorks/ui/*` (shadcn, base-luma preset). Menus are shadcn `DropdownMenu`; merge related choices into one menu with labelled groups. |
-| Message box | `Composer` (the AI Elements prompt input, copied exactly from `PromptInputDemo` and the Figma frame). The box holds the text and the main button (sends, or Stop while the agent works); attach and the model menu sit under it. |
+| Message box | `Composer` (the AI Elements prompt input, copied exactly from `PromptInputDemo` and the Figma frame). The box holds the text, attach and the main button (sends, or Stop while the agent works); the repository chooser and model menu share a compact 28px bar under it. |
 | An image anywhere | `ImageLightbox` + `ImageTrigger` (`@ramka/react`): one lightbox per place, so navigation stays within that place. Put `imageRef` and `morphRef` on the `<img>` so only the image morphs. |
 | An empty state | `EmptyState`: a Hairline figure (`@lucasmarkes/hairline`), a title, at most one sentence, then small outline buttons only if they do something. |
-| Sandbox health | `AgentStatus` at the end of the transcript (it scrolls; the scroll-to-end button takes its place): a dot and a few words; while something moves the words shimmer and the dot morphs circle → square → diamond with a quarter turn, landing on each shimmer pass (no pulsing). |
+| Sandbox health | `AgentStatus` at the end of the transcript (pushed down above the composer in short chats; it scrolls with longer chats and the scroll-to-end button takes its place): a dot and a few words; while something moves the words shimmer and the dot morphs circle → square → diamond with a quarter turn, landing on each shimmer pass (no pulsing). |
 | Sidebar | `AppSidebar`: a bare 48px title bar (traffic lights, then `WindowControls`, which float in AppFrame so they never move), the owner switcher with New session, Customize, Automations and Builds, then chats grouped by repository under plain labels, Settings at the foot. Rows are `SIDEBAR_ROW` (30px, 2px apart) under one springing hover fill (`useRowHover`). |
 | Chat actions | `ChatMenu`, the ••• on the right of the chat header. Archive is the icon beside the title. |
 | Element context for the agent | `PreviewBrowser`'s picker (`react-grab/primitives`, same-origin frames only). |

@@ -164,13 +164,13 @@ export function Demo() {
                 <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
                   <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-[30px] py-6" data-testid="transcript">
                     <ChatMessages blocks={blocks} />
-                    <AgentStatus state={stopped ? 'idle' : 'working'} live="live" />
+                    <div className="mt-auto"><AgentStatus state={stopped ? 'idle' : 'working'} live="live" /></div>
                   </MessageScrollerContent>
                 </MessageScrollerViewport>
                 <MessageScrollerButton />
               </MessageScroller>
             </MessageScrollerProvider>
-            <Composer text={text} setText={setText} provider="claude" onSubmit={send} pending={false} error="" onStop={stopped ? undefined : stop} />
+            <Composer text={text} setText={setText} repo={repo} provider="claude" onSubmit={send} pending={false} error="" onStop={stopped ? undefined : stop} />
           </section>
         )}
       </div>

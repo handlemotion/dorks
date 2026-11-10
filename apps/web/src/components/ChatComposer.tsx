@@ -1,4 +1,4 @@
-import { ArrowUpIcon, ChevronDownIcon, FileTextIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon } from 'lucide-react'
+import { ArrowUpIcon, ChevronDownIcon, FileTextIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon } from 'lucide-react'
 import { useRef, useState, type ReactNode } from 'react'
 import { Attachment, AttachmentAction, AttachmentActions, AttachmentContent, AttachmentMedia, AttachmentTitle } from '@dorks/ui/attachment'
 import {
@@ -12,6 +12,8 @@ import {
   DropdownMenuTrigger,
 } from '@dorks/ui/dropdown-menu'
 import { Input } from '@dorks/ui/input'
+import { Button } from '@dorks/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@dorks/ui/popover'
 import claudeLogo from '../assets/providers/claude.svg'
 import openaiDark from '../assets/providers/openai-dark.svg'
 import openaiLight from '../assets/providers/openai-light.svg'
@@ -53,8 +55,8 @@ const EFFORTS = [
 
 /**
  * The message box: the AI Elements prompt input, copied from the published component (ui.shadcn.com/docs/ai-elements/base/prompt-input,
- * `PromptInputDemo` in @dorks/ui): the box holds the text and one round main button; under it sit the chat's settings, attach on the left
- * and one menu for the model (by agent) and the effort on the right. The main button sends, or stops the agent while it is working. With `repo` it is the "new session" form (the first
+ * `PromptInputDemo` in @dorks/ui): the box holds the text, attachments and main button; the compact bar below holds the repository
+ * and one menu for the model (by agent) and the effort. The main button sends, or stops the agent while it is working. With `setRepo` it is the "new session" form (the first
  * message also names the repository). Not wired to the server yet: attached files, the model and the effort are kept here only.
  */
 export function Composer({
@@ -66,6 +68,7 @@ export function Composer({
   error,
   repo,
   setRepo,
+  repositories = [],
   provider = 'claude',
   setProvider,
   codexEnabled,
@@ -80,6 +83,7 @@ export function Composer({
   error: string
   repo?: string
   setRepo?: (repo: string) => void
+  repositories?: string[]
   provider?: AgentProvider
   /** Without it the agent is fixed (a running session): the menu shows it but only the effort can change. */
   setProvider?: (provider: AgentProvider) => void
@@ -95,7 +99,8 @@ export function Composer({
   const [files, setFiles] = useState<{ id: string; name: string }[]>([])
   const [effort, setEffort] = useState('medium')
   const [modelId, setModelId] = useState<string>()
-  const canSend = text.trim().length > 0 && !pending && !disabled && (repo === undefined || repo.trim().length > 0)
+  const isNewSession = setRepo !== undefined
+  const canSend = text.trim().length > 0 && !pending && !disabled && (!isNewSession || !!repo?.trim())
   const model = MODELS.find((m) => m.id === modelId && m.provider === provider) ?? MODELS.find((m) => m.provider === provider) ?? MODELS[0]
   const effortLevel = Math.max(0, EFFORTS.findIndex((e) => e.id === effort))
   const currentEffort = EFFORTS[effortLevel]
@@ -118,11 +123,8 @@ export function Composer({
         />
         {/* White on the off-white app (light), with the panel's 6% hairline since that pair is under 1.15:1; dark keeps the published fill. */}
         <InputGroup className="rounded-[15px] border-border bg-white has-[textarea]:rounded-[15px] has-[>[data-align=block-end]]:rounded-[15px] dark:border-transparent dark:bg-input/50">
-          {(repo !== undefined && setRepo) || files.length > 0 ? (
+          {files.length > 0 ? (
             <InputGroupAddon align="block-start" className="flex-wrap">
-              {repo !== undefined && setRepo && (
-                <Input aria-label="repo" name="repo" autoComplete="off" data-1p-ignore data-lpignore="true" value={repo} onChange={(e) => setRepo(e.target.value)} disabled={pending || disabled} placeholder="owner/repo" className="h-8 w-44 max-w-full" />
-              )}
               {files.map((file) => (
                 <Attachment key={file.id} size="sm">
                   <AttachmentMedia>
@@ -141,7 +143,7 @@ export function Composer({
             </InputGroupAddon>
           ) : null}
           <InputGroupTextarea
-            aria-label={repo !== undefined ? 'first message' : 'message'}
+            aria-label={isNewSession ? 'first message' : 'message'}
             // Not a credential field: keep Safari's and password managers' autofill off it.
             name="prompt"
             autoComplete="off"
@@ -159,29 +161,36 @@ export function Composer({
             }}
             disabled={pending || disabled}
             // 15px in from the side, as far in as the corner's radius, and 14px from the top.
-            className="min-h-24 pt-3.5 pr-12 pb-3 pl-[15px]"
+            className="min-h-24 px-[15px] pt-3.5 pb-12"
           />
-          {/* Inside the box: only the main button, pinned bottom right so the text runs beside it. */}
-          <InputGroupAddon align="block-end" className="absolute right-0 bottom-0 w-auto p-[9px]">
+          {/* Prompt actions stay inside the box; project and model settings sit below. */}
+          <InputGroupAddon align="block-end" className="absolute inset-x-0 bottom-0 justify-between p-[9px]">
+            <InputGroupButton size="icon-sm" variant="ghost" className="text-muted-foreground hover:text-foreground [--control-radius:6px]" aria-label="Attach files" onClick={() => fileRef.current?.click()}>
+              <PlusIcon />
+            </InputGroupButton>
             {onStop ? (
               <InputGroupButton size="icon-sm" variant="default" className={MAIN} aria-label="Stop agent" title="Stop agent" onClick={onStop}>
                 <SquareIcon className="fill-current" />
               </InputGroupButton>
             ) : (
-              <InputGroupButton type="submit" size="icon-sm" variant="default" className={MAIN} aria-label={repo !== undefined ? 'Create session' : 'Send message'} title={repo !== undefined ? 'Create session' : 'Send message'} disabled={!canSend}>
+              <InputGroupButton type="submit" size="icon-sm" variant="default" className={MAIN} aria-label={isNewSession ? 'Create session' : 'Send message'} title={isNewSession ? 'Create session' : 'Send message'} disabled={!canSend}>
                 {pending ? <LoaderCircleIcon className="animate-spin" /> : <ArrowUpIcon />}
               </InputGroupButton>
             )}
           </InputGroupAddon>
         </InputGroup>
-        {/* Under the box: the chat's settings, attach on the left and the model and effort on the right. Plain 6px controls, not the
-            box's round ones; the buttons' own padding lines their icons up just inside the box's edges. */}
-        <div className="flex items-center gap-2 pt-1.5 [--control-radius:6px]">
-          <InputGroupButton size="icon-sm" variant="ghost" className="text-muted-foreground hover:text-foreground" aria-label="Attach files" onClick={() => fileRef.current?.click()}>
-            <PlusIcon />
-          </InputGroupButton>
+        {/* Compact, shared baseline for the repository and model controls. */}
+        <div className="flex items-center gap-2 pt-1 [--control-radius:6px]">
+          {repo !== undefined && (setRepo ? (
+            <RepositoryPicker repo={repo} setRepo={setRepo} repositories={repositories} disabled={pending || disabled} />
+          ) : (
+            <span title={repo} data-testid="chat-repository" className="flex h-7 min-w-0 items-center gap-1.5 px-2 text-sm text-muted-foreground">
+              <FolderIcon className="size-3.5 shrink-0" />
+              <span className="max-w-48 truncate">{repo}</span>
+            </span>
+          ))}
           <DropdownMenu>
-            <DropdownMenuTrigger disabled={pending} render={<InputGroupButton size="sm" variant="ghost" aria-label={`Model: ${model.name}, effort: ${currentEffort.name}`} className="ml-auto h-8 gap-1.5 px-2.5 text-muted-foreground hover:text-foreground" />}>
+            <DropdownMenuTrigger disabled={pending} render={<InputGroupButton size="sm" variant="ghost" aria-label={`Model: ${model.name}, effort: ${currentEffort.name}`} className="ml-auto h-7 gap-1.5 px-2 text-muted-foreground hover:text-foreground" />}>
               {model.name}
               <span className="text-muted-foreground"><EffortBars level={effortLevel + 1} /></span>
               <ChevronDownIcon />
@@ -218,5 +227,31 @@ export function Composer({
       </form>
       {error && <p className="px-3 text-sm text-destructive" role="alert">{error}</p>}
     </div>
+  )
+}
+
+/** Recent repositories are shortcuts; entering owner/repo also works for a first session. */
+function RepositoryPicker({ repo, setRepo, repositories, disabled }: { repo: string; setRepo: (repo: string) => void; repositories: string[]; disabled?: boolean }) {
+  const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState(repo)
+  const choose = (value: string) => { setRepo(value.trim()); setOpen(false) }
+  return (
+    <Popover open={open} onOpenChange={(next) => { setOpen(next); if (next) setDraft(repo) }}>
+      <PopoverTrigger disabled={disabled} render={<InputGroupButton size="sm" variant="ghost" className="h-7 min-w-0 gap-1.5 px-2 text-muted-foreground hover:text-foreground" aria-label={`Repository: ${repo || 'Choose repository'}`} title={repo} />}>
+        <FolderIcon />
+        <span className="max-w-48 truncate">{repo || 'Choose repository'}</span>
+        <ChevronDownIcon />
+      </PopoverTrigger>
+      <PopoverContent align="start" className="gap-2 border border-border p-2">
+        <label htmlFor="new-session-repo" className="px-1 text-xs text-muted-foreground">Repository</label>
+        <Input id="new-session-repo" aria-label="repo" autoComplete="off" placeholder="owner/repo" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => {
+          if (event.key === 'Enter') { event.preventDefault(); if (draft.trim()) choose(draft) }
+        }} />
+        {repositories.length > 0 && <div className="flex max-h-44 flex-col overflow-y-auto">
+          {repositories.map((value) => <Button key={value} variant="ghost" size="sm" className="justify-start" onClick={() => choose(value)}><FolderIcon /><span className="truncate">{value}</span></Button>)}
+        </div>}
+        <Button size="sm" variant="outline" disabled={!draft.trim()} onClick={() => choose(draft)}>Use repository</Button>
+      </PopoverContent>
+    </Popover>
   )
 }
