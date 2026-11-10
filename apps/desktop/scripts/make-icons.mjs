@@ -1,7 +1,7 @@
 // Draws the menu-bar template icon with no dependencies (a PNG encoder in ~20 lines).
 //   icons/tray.png    44x44 monochrome template image for the menu bar (black on transparent; macOS tints it)
-// The app icon is no longer drawn here: its source is icons/source.svg (a #f2f2f2 tile with onboarding's grey ring hanging from the
-// top edge), rendered to icons/source.png at 1024px; then `pnpm tauri icon src-tauri/icons/source.png`. `appIcon` below is unused.
+// The app icon is no longer drawn here: its source is icons/source.svg (a #f2f2f2 tile with a thin grey ring, as wide as the tile and cut
+// off at the bottom), rendered to icons/source.png at 1024px; then `pnpm tauri icon src-tauri/icons/source.png`. `appIcon` below is unused.
 import { deflateSync, crc32 } from "node:zlib";
 import { mkdirSync, writeFileSync } from "node:fs";
 
