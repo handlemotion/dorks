@@ -123,7 +123,7 @@ const bridgeSecret = (id) => createHmac("sha256", BRIDGE_SECRET_KEY).update(`bri
 
 // ------------------------------------------------------------------ 2. lifecycle with live streaming
 const t0 = Date.now();
-const dorkId = await A.mutation(api.dorks.create, { repo: "jaantonio/demo", message: "add a readme" });
+const dorkId = await A.mutation(api.dorks.create, { repo: "jaantonio/demo", message: "add a readme", provider: "claude" });
 const wa = watch(A, dorkId, "A");
 await waitFor(() => wa.dork?.state === "idle", "dork idle after first turn", 40_000);
 check("create dork -> box -> bridge ready -> first turn -> idle", true, `${Date.now() - t0}ms`);

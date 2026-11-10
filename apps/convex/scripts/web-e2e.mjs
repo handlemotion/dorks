@@ -45,6 +45,7 @@ await node.mutation(api.settings.setClaudeToken, { token: "sk-ant-oat01-web-e2e"
 await node.action(api.settings.linkGithubInstallation, { installationId: 1, code: "sim" });
 await node.mutation(api.settings.setSleepMinutes, { minutes: 5 });
 
+await page.select('select[aria-label="agent"]', "claude");
 await page.type('input[aria-label="first message"]', "build the web demo");
 await page.click('form button[type="submit"]');
 await waitText(/claude: w\d+/, 30000);

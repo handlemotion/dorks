@@ -130,7 +130,7 @@ await gotoCallback(`installation_id=7&code=sim&setup_action=install&state=${s1}`
 await page.waitForSelector('[data-testid="check-github"]', { timeout: 15000 });
 await waitText(/✅ GitHub App installed/, 10000);
 check("callback: matching state + sim code links automatically and lands on settings", page.url().endsWith("/settings"), page.url());
-await waitText(/Ready: you can create dorks/, 5000);
+await waitText(/To use Codex in Boat, connect ChatGPT once/, 5000);
 await page.screenshot({ path: `${SHOTS}/settings-done.png` });
 
 // something is already linked: even a matching state needs confirmation before it is replaced
@@ -146,6 +146,7 @@ check("callback: confirming replaces it and returns to settings", page.url().end
 await page.click('a[href="/dorks"]');
 await page.waitForSelector('[data-onboarding="complete"]', { timeout: 15000 }); // the onboarding query has loaded and says complete
 check("dorks: no onboarding nudge once complete", !/Setup is incomplete/.test(await text()));
+await page.select('select[aria-label="agent"]', "claude");
 await typeInto("first message", "build the settings demo");
 await page.click('form button[type="submit"]', { count: 2, delay: 5 });
 await waitText(/claude: w\d+/, 30000);
