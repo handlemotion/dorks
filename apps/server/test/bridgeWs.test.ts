@@ -109,10 +109,10 @@ describe("bridge socket: rpc", () => {
     await updateSettings(h.app, { claudeToken: "claude-token-xyz", githubToken: "gh-token-abc" });
     await h.app.db.tx(() => {});
     const { setSecret } = await import("../src/services/settings");
-    await setSecret(h.app, "DOPPLER_TOKEN", "dp-123");
+    await setSecret(h.app, "DEPLOY_TOKEN", "dp-123");
     const cfg = await t.configure();
     expect(cfg).toMatchObject({ t: "configure", provider: "claude", repo: { fullName: "o/r", branch: "agent/x" }, ghToken: "gh-token-abc", resumeSessionId: null });
-    expect(cfg?.env).toEqual({ CLAUDE_CODE_OAUTH_TOKEN: "claude-token-xyz", DOPPLER_TOKEN: "dp-123" });
+    expect(cfg?.env).toEqual({ CLAUDE_CODE_OAUTH_TOKEN: "claude-token-xyz", DEPLOY_TOKEN: "dp-123" });
     // Nothing secret was written to a command row or an event.
     const dump = JSON.stringify([h.cmds(id), h.events(id), h.app.db.all("SELECT * FROM commands")]);
     expect(dump).not.toContain("claude-token-xyz");

@@ -91,10 +91,10 @@ try {
   check("creating a dork before onboarding is refused", early.status === 412 && early.json.error.code === "onboarding_incomplete", JSON.stringify(early.json));
   const set = await api("PUT", "/api/settings", { claudeToken: CLAUDE, githubToken: GITHUB, baseSnapshotId: "sim-snap", sleepMinutes: 0.05 });
   check("settings saved", set.status === 200);
-  check("secret CLI value saved", (await api("PUT", "/api/secrets/DOPPLER_TOKEN", { value: CLI_SECRET })).status === 200);
+  check("secret CLI value saved", (await api("PUT", "/api/secrets/DEPLOY_TOKEN", { value: CLI_SECRET })).status === 200);
   const view = (await api("GET", "/api/settings")).json;
   check("settings never echo secrets", !JSON.stringify(view).includes(CLAUDE) && view.claudeToken === true && view.github.configured === true);
-  check("secret names are listed, values are not", JSON.stringify((await api("GET", "/api/secrets")).json) === '["DOPPLER_TOKEN"]');
+  check("secret names are listed, values are not", JSON.stringify((await api("GET", "/api/secrets")).json) === '["DEPLOY_TOKEN"]');
 
   // ---- live stream
   const live = [];

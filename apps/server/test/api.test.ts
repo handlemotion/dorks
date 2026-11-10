@@ -135,15 +135,15 @@ describe("settings", () => {
 
   it("CLI secrets: names only, 16KB in bytes, upsert and delete", async () => {
     const a = api(harness());
-    expect((await a.put("/api/secrets/DOPPLER_TOKEN", { value: "v1" })).status).toBe(200);
-    expect((await a.put("/api/secrets/DOPPLER_TOKEN", { value: "v2" })).status).toBe(200);
+    expect((await a.put("/api/secrets/DEPLOY_TOKEN", { value: "v1" })).status).toBe(200);
+    expect((await a.put("/api/secrets/DEPLOY_TOKEN", { value: "v2" })).status).toBe(200);
     expect((await a.put("/api/secrets/AAA", { value: "x" })).status).toBe(200);
-    expect((await a.get("/api/secrets")).json).toEqual(["AAA", "DOPPLER_TOKEN"]);
+    expect((await a.get("/api/secrets")).json).toEqual(["AAA", "DEPLOY_TOKEN"]);
     expect((await a.put("/api/secrets/lower", { value: "x" })).json.error.code).toBe("invalid");
     expect((await a.put("/api/secrets/BIG", { value: "é".repeat(8 * 1024 + 1) })).json.error.code).toBe("invalid"); // bytes, not chars
     expect((await a.put("/api/secrets/BIG", { value: "é".repeat(8 * 1024) })).status).toBe(200);
     expect((await a.del("/api/secrets/AAA")).status).toBe(200);
-    expect((await a.get("/api/secrets")).json).toEqual(["BIG", "DOPPLER_TOKEN"]);
+    expect((await a.get("/api/secrets")).json).toEqual(["BIG", "DEPLOY_TOKEN"]);
   });
 });
 
