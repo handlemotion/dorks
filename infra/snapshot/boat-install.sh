@@ -6,7 +6,7 @@ test -f "$HOME/dorks-bridge.mjs"
 node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 18) ? 0 : 1)'
 sudo install -m 0755 "$HOME/dorks-bridge.mjs" /usr/local/bin/dorks-bridge
 sudo ln -sf dorks-bridge /usr/local/bin/dorks
-sudo npm install -g cf@0.15.0 @openai/codex@0.166.0
+sudo npm install -g @openai/codex@0.166.0
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -24,11 +24,6 @@ mkdir -p "$extension"
 install -m 0755 gh-stack "$extension/gh-stack"
 printf 'owner: github\nname: gh-stack\nhost: github.com\ntag: v0.2.0\nispinned: true\n' > "$extension/manifest.yml"
 
-curl -fsSL -o doppler.tgz https://github.com/DopplerHQ/cli/releases/download/3.77.0/doppler_3.77.0_linux_amd64.tar.gz
-echo "92587cb89c2ff82fc2ddec2b2a9f275ff320994a44e16cd9310b55a429a82084  doppler.tgz" | sha256sum -c -
-mkdir doppler
-tar -xzf doppler.tgz -C doppler
-sudo install -m 0755 doppler/doppler /usr/local/bin/doppler
 sudo ln -sf dorks-bridge /usr/local/bin/gh
 
 git --version
@@ -37,8 +32,6 @@ codex --version
 test "$(command -v gh)" = /usr/local/bin/gh
 /usr/bin/gh --version
 gh stack --help >/dev/null
-doppler --version
-cf --version
 dorks --help >/dev/null
 command -v flock >/dev/null
 rm "$HOME/dorks-bridge.mjs" "$HOME/boat-install.sh"

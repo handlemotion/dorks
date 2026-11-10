@@ -1,4 +1,4 @@
-// `convex dev` after syncing function env vars from Doppler (run from the repo root via `pnpm dev:convex`).
+// `convex dev` after syncing function env vars from the repo-root .env (run from the repo root via `pnpm dev:convex`).
 import { spawn } from "node:child_process";
 import "./sync-env.mjs";
 

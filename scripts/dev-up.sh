@@ -4,11 +4,11 @@
 #
 #   scripts/dev-up.sh [up]        backend (scripts/dev-backend.sh), mail catcher, web, box simulator; waits until healthy
 #   scripts/dev-up.sh status      what is running and healthy; exit 0 only if everything is
-#   scripts/dev-up.sh wait        block until healthy (for a start kicked off in the background, e.g. by cloud-setup.sh --servers)
+#   scripts/dev-up.sh wait        block until healthy (for a start kicked off in the background, e.g. one started in the background by another script)
 #   scripts/dev-up.sh down        stop mail, web and sim (the Convex container keeps running; `docker stop convex-local` stops it)
 #   scripts/dev-up.sh logs NAME   tail a server's log (mail, web, sim, backend)
 #
-# Idempotent: servers already healthy are left alone. Needs what dev-backend.sh needs (Docker, Doppler CLI + DOPPLER_TOKEN).
+# Idempotent: servers already healthy are left alone. Needs what dev-backend.sh needs (Docker and a repo-root `.env`).
 # Prints no secret values.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -20,12 +20,12 @@ WEB=http://localhost:3000
 MAIL=http://127.0.0.1:8899
 log() { echo "[dev-up] $*"; }
 
-# name -> command (run from the repo root under the Doppler dev env)
+# name -> command (run from the repo root with the repo-root .env loaded)
 cmd_for() {
   case "$1" in
     mail) echo "node apps/convex/scripts/dev-mail.mjs" ;;
-    web) echo "doppler run -p dorks -c dev -- pnpm --filter @dorks/web dev:direct --host 0.0.0.0" ;;
-    sim) echo "doppler run -p dorks -c dev -- env CONVEX_URL=$CONVEX node infra/bridge-sim/host.mjs" ;;
+    web) echo "bash scripts/with-env.sh pnpm --filter @dorks/web dev:direct --host 0.0.0.0" ;;
+    sim) echo "bash scripts/with-env.sh env CONVEX_URL=$CONVEX node infra/bridge-sim/host.mjs" ;;
   esac
 }
 SERVERS="mail web sim"
@@ -47,7 +47,7 @@ start() {
   if healthy "$name"; then log "$name already running"; return 0; fi
   alive "$name" && kill -- "-$(pid_of "$name")" 2>/dev/null
   log "starting $name (log: $DIR/$name.log)"
-  # setsid: own process group, so `down` stops the server and its children (doppler -> pnpm -> vite) together.
+  # setsid: own process group, so `down` stops the server and its children (with-env -> pnpm -> vite) together.
   if command -v setsid >/dev/null; then
     setsid nohup bash -c "exec $(cmd_for "$name")" >"$DIR/$name.log" 2>&1 </dev/null &
     echo $! >"$DIR/$name.pid"
@@ -113,7 +113,7 @@ case "${1:-up}" in
   up) up ;;
   status) status ;;
   wait)
-    # Wait for a start in progress (e.g. the background one from cloud-setup.sh --servers) to finish, then report.
+    # Wait for a start in progress (e.g. a background start) to finish, then report.
     p="$(cat "$DIR/up.pid" 2>/dev/null)"
     [ -n "$p" ] && kill -0 "$p" 2>/dev/null && log "waiting for the start in progress (log: $DIR/up.log)"
     while [ -n "$p" ] && kill -0 "$p" 2>/dev/null; do sleep 1; done

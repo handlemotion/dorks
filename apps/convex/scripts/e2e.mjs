@@ -35,7 +35,7 @@ await startMockResend();
     for (let i = 0; i < n; i++) statuses.push((await post(path, { email, type: "sign-in" }, headers)).status);
     return statuses;
   };
-  const email = `burst-${RUN}@dorks.build`;
+  const email = `burst-${RUN}@example.com`;
   const before = inbox.length;
   const st = await burst(email, SEND_CAP + 5);
   const delivered = inbox.length - before;
@@ -43,12 +43,12 @@ await startMockResend();
   check("no mail captured beyond the per-email cap", delivered === SEND_CAP, `${delivered} mails`);
   const limited = await post(OTP, { email, type: "sign-in" });
   check("429 body says too many attempts", limited.status === 429 && /too many/i.test((await limited.json()).message ?? ""));
-  const alias = `Burst-${RUN}+x@DORKS.build`;
+  const alias = `Burst-${RUN}+x@EXAMPLE.com`;
   check("case and +tag variants of the same mailbox share the budget", (await post(OTP, { email: alias, type: "sign-in" })).status === 429);
   check("password-reset route cannot bypass the send cap", (await post("/api/auth/email-otp/request-password-reset", { email })).status === 429);
-  check("a different mailbox is unaffected", (await post(OTP, { email: `calm-${RUN}@dorks.build`, type: "sign-in" })).status === 200);
+  check("a different mailbox is unaffected", (await post(OTP, { email: `calm-${RUN}@example.com`, type: "sign-in" })).status === 200);
 
-  const vEmail = `verify-${RUN}@dorks.build`;
+  const vEmail = `verify-${RUN}@example.com`;
   await post(OTP, { email: vEmail, type: "sign-in" });
   const vs = [];
   for (let i = 0; i < 15; i++) vs.push((await post("/api/auth/sign-in/email-otp", { email: vEmail, otp: "000000" })).status);
@@ -59,9 +59,9 @@ await startMockResend();
   // Per IP: the local backend adds no x-forwarded-for, so the test supplies one (the limiter trusts the last hop).
   const ip = `10.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`;
   const ipStatuses = [];
-  for (let i = 0; i < IP_CAP + 2; i++) ipStatuses.push((await post(OTP, { email: `ip-${RUN}-${i}@dorks.build`, type: "sign-in" }, { "x-forwarded-for": `203.0.113.9, ${ip}` })).status);
+  for (let i = 0; i < IP_CAP + 2; i++) ipStatuses.push((await post(OTP, { email: `ip-${RUN}-${i}@example.com`, type: "sign-in" }, { "x-forwarded-for": `203.0.113.9, ${ip}` })).status);
   check(`per-IP cap: ${IP_CAP} sends across different mailboxes, then 429`, ipStatuses.slice(0, IP_CAP).every((s) => s === 200) && ipStatuses.slice(IP_CAP).every((s) => s === 429), ipStatuses.slice(-4).join(","));
-  const spoof = await post(OTP, { email: `ip2-${RUN}@dorks.build`, type: "sign-in" }, { "x-forwarded-for": `${ip}, 198.51.100.7` });
+  const spoof = await post(OTP, { email: `ip2-${RUN}@example.com`, type: "sign-in" }, { "x-forwarded-for": `${ip}, 198.51.100.7` });
   // Documents the trust model rather than proving protection: the IP key is the LAST hop, so a caller who controls the whole header gets any key.
   check("per-IP key is the last x-forwarded-for hop (earlier hops are ignored)", spoof.status === 200);
 }
@@ -76,11 +76,11 @@ async function signIn(email) {
   return { email, tok };
 }
 // Unique per run: the 5 sends/hour budget would otherwise run out after a few local re-runs against the same backend.
-const wrong = await post("/api/auth/sign-in/email-otp", { email: `rodrigo-${RUN}@dorks.build`, otp: "000000" });
+const wrong = await post("/api/auth/sign-in/email-otp", { email: `rodrigo-${RUN}@example.com`, otp: "000000" });
 check("wrong code rejected", wrong.status === 400 || wrong.status === 401, `status ${wrong.status}`);
-const me = await signIn(`rodrigo-${RUN}@dorks.build`);
+const me = await signIn(`rodrigo-${RUN}@example.com`);
 check("allowed email gets a code (Resend request shape) and a session", true, `mail from=${inbox.at(-1).from}`);
-const other = await signIn(`other-${RUN}@dorks.build`);
+const other = await signIn(`other-${RUN}@example.com`);
 
 const mkClient = async (who) => {
   const c = new ConvexClient(CONVEX_URL);
@@ -123,7 +123,7 @@ const bridgeSecret = (id) => createHmac("sha256", BRIDGE_SECRET_KEY).update(`bri
 
 // ------------------------------------------------------------------ 2. lifecycle with live streaming
 const t0 = Date.now();
-const dorkId = await A.mutation(api.dorks.create, { repo: "jaantonio/demo", message: "add a readme", provider: "claude" });
+const dorkId = await A.mutation(api.dorks.create, { repo: "acme/demo", message: "add a readme", provider: "claude" });
 const wa = watch(A, dorkId, "A");
 await waitFor(() => wa.dork?.state === "idle", "dork idle after first turn", 40_000);
 check("create dork -> box -> bridge ready -> first turn -> idle", true, `${Date.now() - t0}ms`);
@@ -199,14 +199,14 @@ check("bridge calls with a wrong secret are refused", err?.data?.code === "forbi
 {
   const body = (extra = {}) => JSON.stringify({
     action: "closed", pull_request: { number: 7, merged: true, head: { sha: "c0ffee1", ref: "agent/x" }, base: { ref: "main" } },
-    repository: { full_name: "jaantonio/demo" }, installation: { id: 1 }, sender: { login: "alice", type: "User" }, ...extra,
+    repository: { full_name: "acme/demo" }, installation: { id: 1 }, sender: { login: "alice", type: "User" }, ...extra,
   });
   const sig = (raw, secret = GITHUB_WEBHOOK_SECRET) => `sha256=${createHmac("sha256", secret).update(raw).digest("hex")}`;
   const hook = (event, raw, { id = `e2e-${RUN}-${Math.random()}`, signature = sig(raw) } = {}) =>
     fetch(`${CONVEX_SITE_URL}/github/webhook`, { method: "POST", headers: { "content-type": "application/json", "x-github-event": event, "x-github-delivery": id, ...(signature ? { "x-hub-signature-256": signature } : {}) }, body: raw }).then((r) => r.status);
   const live = async () => (await A.query(api.subscriptions.list, { dorkId })).map((s) => s.number);
 
-  await A.mutation(api.subscriptions.subscribe, { dorkId, repo: "jaantonio/demo", number: 7 });
+  await A.mutation(api.subscriptions.subscribe, { dorkId, repo: "acme/demo", number: 7 });
   check("subscribed to a PR", (await live()).includes(7));
   const raw = body();
   check("unsigned webhook refused", (await hook("pull_request", raw, { signature: null })) === 401);
@@ -223,7 +223,7 @@ check("bridge calls with a wrong secret are refused", err?.data?.code === "forbi
 // Real HTTP route, real signature check, real crons/timers (including the 45s notify debounce) and the sim bridge as the agent.
 // No GitHub: hydration and the green confirmation are skipped under BOX_PROVIDER=sim, so "CI green" is not covered here.
 {
-  const REPO = "jaantonio/demo", PR = 9, BRANCH = "agent/fix-loop";
+  const REPO = "acme/demo", PR = 9, BRANCH = "agent/fix-loop";
   const sig = (raw) => `sha256=${createHmac("sha256", GITHUB_WEBHOOK_SECRET).update(raw).digest("hex")}`;
   let n = 0;
   const hook = (event, payload, id = `e2e-${RUN}-loop-${++n}`) => {

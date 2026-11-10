@@ -10,7 +10,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 await startMockResend();
 const host = spawn("node", ["../../infra/bridge-sim/host.mjs"], { env: { ...process.env, SIM_DELTAS: "300", SIM_DELTA_GAP_MS: "100" }, stdio: "ignore" });
 const H = { "content-type": "application/json", origin: "http://localhost:3000" };
-const email = `usage${Date.now() % 100000}@dorks.build`;
+const email = `usage${Date.now() % 100000}@example.com`;
 await fetch(CONVEX_SITE_URL + "/api/auth/email-otp/send-verification-otp", { method: "POST", headers: H, body: JSON.stringify({ email, type: "sign-in" }) });
 await sleep(300);
 const r = await fetch(CONVEX_SITE_URL + "/api/auth/sign-in/email-otp", { method: "POST", headers: H, body: JSON.stringify({ email, otp: codeFor(email) }) });

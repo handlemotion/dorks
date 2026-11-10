@@ -17,7 +17,7 @@ const waitFor = async (fn, what, ms = 120_000) => { const t0 = Date.now(); for (
 const post = (p, body) => fetch(CONVEX_SITE_URL + p, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN }, body: JSON.stringify(body) });
 
 await startMockResend();
-const email = `mcp-${Date.now().toString(36)}@dorks.build`;
+const email = `mcp-${Date.now().toString(36)}@example.com`;
 await post("/api/auth/email-otp/send-verification-otp", { email, type: "sign-in" });
 const code = await waitFor(() => codeFor(email), "otp mail", 30_000);
 const signedIn = await post("/api/auth/sign-in/email-otp", { email, otp: code });
@@ -30,13 +30,13 @@ await client.mutation(api.settings.setClaudeToken, { token: E2E_CLAUDE_TOKEN });
 await client.action(api.settings.linkGithubInstallation, { installationId: 1, code: "sim" }); // BOX_PROVIDER=sim: no real GitHub App
 await client.mutation(api.settings.setSleepMinutes, { minutes: 30 });
 
-const PR = { repo: "jaantonio/demo", number: 7 };
+const PR = { repo: "acme/demo", number: 7 };
 const events = (id) => client.query(api.events.list, { dorkId: id, paginationOpts: { numItems: 200, cursor: null } }).then((r) => [...r.page].reverse());
 const toolUses = (evs) => evs.filter((e) => e.type === "tool_use").map((e) => e.name ?? e.tool ?? JSON.stringify(e).match(/mcp__dorks__\w+/)?.[0]);
 const idleCount = (evs) => evs.filter((e) => e.type === "turn_complete").length;
 
 const dorkId = await client.mutation(api.dorks.create, {
-  repo: "jaantonio/demo",
+  repo: "acme/demo",
   provider: "claude",
   message: `Call the pr_subscribe tool of the dorks MCP server with pr ${PR.repo}#${PR.number}, then call the pr_list tool of the same server. Finish by replying with the word DONE and the PR you listed.`,
 });

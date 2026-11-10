@@ -260,8 +260,8 @@ in-process stand-in for the bridge's RPC socket; the bridge-level tests use the 
 ### End-to-end against a local Convex backend
 
 `infra/bridge-sim/host.mjs` takes `BRIDGE_IMPL=real` to run one real bridge per sim box instead of `convex-sim.mjs` (it builds the bundle,
-creates a local bare git remote for `jaantonio/demo`, and gives each box its own state/work dirs that survive a "pause"). With the local
-Convex set up as in `docs/convex-spike.md`:
+creates a local bare git remote for `acme/demo`, and gives each box its own state/work dirs that survive a "pause"). With the local
+Convex set up as in the README (`pnpm env:init`, `pnpm dev:backend`):
 
 ```sh
 cd apps/convex && BRIDGE_IMPL=real ./scripts/run-e2e.sh      # CLAUDE_BIN defaults to the fake CLI
@@ -290,13 +290,10 @@ This is the same 37-check acceptance run plus the secret scan; the turn produces
 4. The MCP tools through the whole stack (real Convex, real bridge, real Claude; costs a few cents). With the local backend up (`pnpm dev:backend`)
    and the sim host's user not root (the CLI refuses `bypassPermissions` as root; `RUN_AS_UID` drops privileges for the host):
    ```sh
-   cd apps/convex && doppler run -p dorks -c dev -- env RUN_AS_UID=1000 HOST_HOME=/tmp/u-home DORKS_E2E_ROOT=/tmp/u-e2e bash scripts/run-mcp-e2e.sh
+   cd apps/convex && ../../scripts/with-env.sh env RUN_AS_UID=1000 HOST_HOME=/tmp/u-home DORKS_E2E_ROOT=/tmp/u-e2e bash scripts/run-mcp-e2e.sh
    ```
    A message asks the model to `pr_subscribe` / `pr_list`, then `pr_unsubscribe`; the script reads `subscriptions.list` and the transcript back as the user.
    BOX_PROVIDER=sim means no GitHub App is involved (hydration is skipped).
-5. The MCP tools inside a real Upstash Box: `doppler run -p dorks -c dev -- bash infra/bridge/scripts/box-mcp-check.sh`. It restores a box from the newest
-   `dorks-base-*` snapshot of the account behind `UPSTASH_BOX_API_KEY`, uploads the fresh bundle and `test/box-driver.ts`, runs the real `Bridge` with the box's
-   own Claude CLI, and deletes the box. The backend there is the in-memory `FakeTransport`: a box cannot reach a Convex backend on a developer machine.
 
 ## Known limitations
 

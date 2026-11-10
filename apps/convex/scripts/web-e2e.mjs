@@ -12,7 +12,7 @@ const results = [];
 const check = (n, ok, x = "") => { results.push(ok); console.log(`${ok ? "PASS" : "FAIL"}  ${n}${x ? "  — " + x : ""}`); };
 await startMockResend();
 
-const email = `web${Date.now() % 100000}@dorks.build`;
+const email = `web${Date.now() % 100000}@example.com`;
 const browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH ?? "/usr/bin/google-chrome", args: ["--no-sandbox", "--disable-gpu"], headless: true });
 const page = await browser.newPage();
 await page.setViewport({ width: 900, height: 900 });
@@ -56,7 +56,7 @@ await claudeOption.click();
 await page.waitForSelector('button[aria-label="Agent: Claude Code"]');
 await page.focus('input[aria-label="repo"]');
 await page.$eval('input[aria-label="repo"]', (input) => input.select());
-await page.type('input[aria-label="repo"]', "jaantonio/demo");
+await page.type('input[aria-label="repo"]', "acme/demo");
 await page.type('textarea[aria-label="first message"]', "build the web demo");
 await page.click('form button[type="submit"]');
 await page.waitForFunction(() => /w\d+ w\d+/.test(document.querySelector('[data-testid="transcript"]')?.textContent ?? ""), { timeout: 30000 });

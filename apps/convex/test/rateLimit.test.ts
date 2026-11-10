@@ -85,9 +85,9 @@ describe("auth helpers", () => {
   });
 
   it("one mailbox, one key: case, whitespace and +tags collapse", () => {
-    expect(rateKeyForEmail(" Rodrigo+spam@dorks.build ")).toBe("rodrigo@dorks.build");
-    expect(rateKeyForEmail("rodrigo@dorks.build")).toBe("rodrigo@dorks.build");
-    expect(rateKeyForEmail("a+b+c@dorks.build")).toBe("a@dorks.build");
+    expect(rateKeyForEmail(" Rodrigo+spam@example.com ")).toBe("rodrigo@example.com");
+    expect(rateKeyForEmail("rodrigo@example.com")).toBe("rodrigo@example.com");
+    expect(rateKeyForEmail("a+b+c@example.com")).toBe("a@example.com");
   });
 
   it("client ip is the last x-forwarded-for hop (earlier hops are caller-controlled)", () => {
@@ -99,10 +99,10 @@ describe("auth helpers", () => {
 
   it("every send is checked against the global key, whatever the caller does with headers", () => {
     const l = { windowMs: H, sendPerEmail: 5, sendPerIp: 30, sendGlobal: 100 };
-    const keys = (ip?: string) => sendChecks("rand-1@dorks.build", ip, l).map((c) => c.key);
-    expect(keys(undefined)).toEqual(["otp-send:email:rand-1@dorks.build", "otp-send:global"]); // no header: no IP key, global still there
-    expect(keys("1.2.3.4")).toEqual(["otp-send:email:rand-1@dorks.build", "otp-send:ip:1.2.3.4", "otp-send:global"]);
-    expect(sendChecks("x@dorks.build", undefined, l).at(-1)).toEqual({ key: "otp-send:global", limit: 100 });
+    const keys = (ip?: string) => sendChecks("rand-1@example.com", ip, l).map((c) => c.key);
+    expect(keys(undefined)).toEqual(["otp-send:email:rand-1@example.com", "otp-send:global"]); // no header: no IP key, global still there
+    expect(keys("1.2.3.4")).toEqual(["otp-send:email:rand-1@example.com", "otp-send:ip:1.2.3.4", "otp-send:global"]);
+    expect(sendChecks("x@example.com", undefined, l).at(-1)).toEqual({ key: "otp-send:global", limit: 100 });
   });
 
   it("the global budget caps total sends across many mailboxes and spoofed IPs", async () => {
@@ -110,7 +110,7 @@ describe("auth helpers", () => {
     const l = { windowMs: H, sendPerEmail: 5, sendPerIp: 30, sendGlobal: 10 };
     const results = [];
     for (let i = 0; i < 15; i++) {
-      const checks = sendChecks(`rand-${i}@dorks.build`, i % 2 ? `9.9.9.${i}` : undefined, l).map((c) => ({ ...c, windowMs: H }));
+      const checks = sendChecks(`rand-${i}@example.com`, i % 2 ? `9.9.9.${i}` : undefined, l).map((c) => ({ ...c, windowMs: H }));
       results.push((await t.mutation(internal.rateLimit.hit, { checks })).ok);
     }
     expect(results.filter(Boolean)).toHaveLength(10);

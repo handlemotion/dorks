@@ -1,13 +1,13 @@
 # Boat sandboxes
 
-Boat is the recommended sandbox driver for dorks. `BOX_PROVIDER=boat` selects it, and it is the default when `BOX_PROVIDER` is unset. Local development and CI still use `BOX_PROVIDER=sim`; `BOX_PROVIDER=upstash` remains available for existing deployments. The implementation is `apps/convex/convex/lib/boat.ts`.
+Boat is the recommended sandbox driver for dorks. `BOX_PROVIDER=boat` selects it, and it is the default when `BOX_PROVIDER` is unset. Local development and CI use `BOX_PROVIDER=sim`. The implementation is `apps/convex/convex/lib/boat.ts`.
 
 Boat's `default` machine is 4 vCPU and 8 GB RAM at $0.036/hour, billed per second while running. A stopped sandbox costs no machine time and retains its disk for at least 14 days. Plans, start limits, storage retention and prices can change; see [Boat pricing](https://docs.boat.dev/pricing).
 The free trial requires auto-stop, so this driver needs a paid Boat plan to disable Boat's one-hour timer and let dorks control its own sleep.
 
 ## Build the base snapshot
 
-Each dork is created from a [saved snapshot](https://docs.boat.dev/snapshots/templates) named by `BASE_SNAPSHOT_ID`. The snapshot contains the bridge and team tools, but **no credentials or per-dork environment**. Boat already includes Node, git and Claude Code. `infra/snapshot/boat-install.sh` adds Codex CLI, the bridge (`dorks` and the `gh` shim), pinned `gh` and `gh stack`, Doppler, and `cf`. It checks versions and download checksums before exiting. The build box is created with `--no-env`; do not log in to any agent or set a token in it.
+Each dork is created from a [saved snapshot](https://docs.boat.dev/snapshots/templates) named by `BASE_SNAPSHOT_ID`. The snapshot contains the bridge and team tools, but **no credentials or per-dork environment**. Boat already includes Node, git and Claude Code. `infra/snapshot/boat-install.sh` adds Codex CLI, the bridge (`dorks` and the `gh` shim), and pinned `gh` and `gh stack`. It checks versions and download checksums before exiting. The build box is created with `--no-env`; do not log in to any agent or set a token in it.
 
 From a checkout with dependencies installed and a Boat API key configured for the Boat CLI:
 
@@ -33,11 +33,11 @@ This direct account connection avoids Boat's paid credentials proxy, but the sig
 
 Existing Codex boxes created before this change keep their per-box sign-in and **Reconnect ChatGPT** button. Changing the account setting does not rewrite a running box's environment. New boxes use the account-level connection, and no per-box code is offered if Boat's connection is missing. Codex requires Boat for cloud boxes (`sim` keeps device-code tests locally). It uses GPT-6 Sol with high reasoning by default and never falls back to an API key. If that model or effort is unavailable on the connected plan, the box pauses and the thread asks you to choose one from Codex's available list before it continues.
 
-The personal Boat deployment requires `DORKS_OWNER_EMAIL` on the Convex deployment. Set it to the only email allowed to sign in. An unset value blocks sign-in and app queries; `BOX_PROVIDER=sim` bypasses this check for local development. To run with more users later, replace this gate with the approved hosted sign-in arrangement rather than copying a Codex sign-in from another box.
+A Boat deployment requires `DORKS_OWNER_EMAIL` on the Convex deployment. Set it to the only email allowed to sign in. An unset value blocks sign-in and app queries; `BOX_PROVIDER=sim` bypasses this check for local development. Do not copy a Codex sign-in from another box to serve more users.
 
 ## Configure Convex
 
-Create a [Boat API key](https://docs.boat.dev/api/v1) that can create, list, use and delete sandboxes and list environments for the safety check. Store it in Doppler `dorks` under `BOAT_API_KEY`; never commit or log it. Set the Convex deployment env:
+Create a [Boat API key](https://docs.boat.dev/api/v1) that can create, list, use and delete sandboxes and list environments for the safety check. Keep it out of git and logs; it goes in `BOAT_API_KEY` (see [environment variables](env.md)). Set the Convex deployment env:
 
 | Name | Value |
 | --- | --- |
@@ -46,7 +46,7 @@ Create a [Boat API key](https://docs.boat.dev/api/v1) that can create, list, use
 | `BOAT_ORG` | Optional organization id to pin billing and list requests to one wallet. Leave unset for a personal account. |
 | `BASE_SNAPSHOT_ID` | Name or id of the ready saved snapshot. |
 
-The existing Convex env sync uses the Doppler `dev` config for local deployments; production values are managed in the `prd` dashboard. See [the secret inventory](secrets/inventory.md). Do not switch a deployment with live Upstash dorks directly: stored `boxId` values belong to Upstash. Plan a drain or migration of those dorks before changing `BOX_PROVIDER` on that deployment. This change does not modify production configuration.
+`pnpm dev:backend` pushes these from your `.env` to the local Convex deployment. See [environment variables](env.md).
 
 ## Lifecycle and security
 

@@ -1,6 +1,5 @@
-// Push the function env vars the Convex code reads from the process env (injected by `doppler run`) to the deployment.
-// Dev: imported by dev.mjs (`pnpm dev:convex`). Prod: `pnpm push:convex-env` runs it under the `prd` config, where
-// CONVEX_DEPLOY_KEY selects the production deployment. Placeholders (`REPLACE_ME__*`) are never pushed.
+// Push the function env vars the Convex code reads from the process env (loaded from the repo-root `.env` by scripts/with-env.sh) to the deployment.
+// Dev: imported by dev.mjs (`pnpm dev:convex`). Point CONVEX_DEPLOY_KEY (or CONVEX_SELF_HOSTED_URL and its admin key) at another deployment to push there. Placeholders (`REPLACE_ME__*`) are never pushed.
 //
 // Convex functions read `process.env.X` from the *deployment's* env, not from the shell that runs
 // `convex dev`, so each var the functions use is pushed with `convex env set`. The names are found
@@ -32,4 +31,4 @@ for (const n of set) {
 }
 console.log(`[convex env] synced: ${set.length - failed.length} set` + (failed.length ? `, FAILED: ${failed.join(", ")}` : ""));
 if (failed.length) process.exitCode = 1;
-if (missing.length) console.log(`[convex env] missing or placeholder in Doppler (left as-is on the deployment): ${missing.join(", ")}`);
+if (missing.length) console.log(`[convex env] missing or placeholder in the environment (left as-is on the deployment): ${missing.join(", ")}`);

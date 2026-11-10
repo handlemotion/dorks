@@ -12,8 +12,7 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# The only real secret is CENTRAL_LICENSE_KEY (a GitHub Actions repository secret), used by the install steps because the
-# @central-icons-react package checks its license in a preinstall script. Every other key below is generated per run.
+# No repository secrets are needed: every key below is generated per run, so the workflow also passes on forks.
 jobs:
   checks:
     name: Typecheck and unit tests
@@ -30,8 +29,6 @@ jobs:
         with:
           node-version: 24
       - run: pnpm install --frozen-lockfile
-        env:
-          CENTRAL_LICENSE_KEY: ${{ secrets.CENTRAL_LICENSE_KEY }}
       - run: pnpm -r typecheck
       - run: pnpm -r --if-present test
 
@@ -54,14 +51,12 @@ jobs:
         with:
           node-version: 24
       - run: pnpm install --frozen-lockfile
-        env:
-          CENTRAL_LICENSE_KEY: ${{ secrets.CENTRAL_LICENSE_KEY }}
 
       - name: Start Convex backend
         # Pinned by digest (the :latest of 2026-10-07); bump deliberately.
         run: |
           docker run -d --name convex-local --network host \
-            -e INSTANCE_NAME=dorks-ci \
+            -e INSTANCE_NAME=dorks-test \
             -e INSTANCE_SECRET="$(node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))')" \
             -e CONVEX_CLOUD_ORIGIN=http://127.0.0.1:3210 \
             -e CONVEX_SITE_ORIGIN=http://127.0.0.1:3211 \
@@ -91,7 +86,7 @@ jobs:
           set_env RESEND_API_URL http://127.0.0.1:8899/emails
           set_env SITE_URL http://localhost:3000
           set_env BOX_PROVIDER sim
-          set_env GITHUB_APP_SLUG dorks-ci
+          set_env GITHUB_APP_SLUG dorks-test
           set_env BASE_SNAPSHOT_ID sim-snap
           set_env EXTRA_TRUSTED_ORIGINS http://localhost:8081
 

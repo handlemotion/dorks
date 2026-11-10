@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # One-command local Convex backend for development: starts the self-hosted backend in Docker, deploys apps/convex to it and
-# pushes the Doppler `dev` env onto the deployment. Idempotent; run it again after changing Convex code or Doppler values.
+# pushes the repo-root `.env` onto the deployment. Idempotent; run it again after changing Convex code or `.env`.
 #
 #   scripts/dev-backend.sh           backend + deploy + env (sign-in codes go to the local mail catcher, see below)
 #   REAL_MAIL=1 scripts/dev-backend.sh   leave RESEND_API_URL unset so codes are emailed through Resend
 #
 # Then, in other terminals:  pnpm dev:mail (prints sign-in codes)  and  pnpm dev:web  (web on :3000).
-# Needs Docker and the Doppler CLI + DOPPLER_TOKEN (see docs/secrets/README.md). Prints no secret values.
+# Needs Docker and a repo-root `.env` (`pnpm env:init`, see docs/env.md). Prints no secret values.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -17,8 +17,7 @@ URL=http://127.0.0.1:3210
 SITE=http://127.0.0.1:3211
 
 command -v docker >/dev/null || { echo "docker is required" >&2; exit 1; }
-command -v doppler >/dev/null || { echo "doppler CLI is required" >&2; exit 1; }
-[ -n "${DOPPLER_TOKEN:-}" ] || { echo "DOPPLER_TOKEN is not set" >&2; exit 1; }
+[ -f .env ] || { echo "no .env at the repo root: run 'pnpm env:init' first" >&2; exit 1; }
 
 # Cloud containers have the docker CLI but no running daemon.
 if ! docker info >/dev/null 2>&1; then
@@ -59,10 +58,10 @@ if [ "$fresh" = 1 ] || ! grep -q '^CONVEX_SELF_HOSTED_ADMIN_KEY=' "$env_file" 2>
 fi
 
 cd apps/convex
-doppler run -p dorks -c dev -- npx convex dev --once
-doppler run -p dorks -c dev -- node scripts/sync-env.mjs
+../../scripts/with-env.sh npx convex dev --once
+../../scripts/with-env.sh node scripts/sync-env.mjs
 
-# Deployment-only settings that are not in Doppler (docs/secrets/inventory.md).
+# Deployment-only settings that are not in .env (docs/env.md).
 npx convex env set EXTRA_TRUSTED_ORIGINS http://localhost:8081 >/dev/null # Expo web
 if [ "${REAL_MAIL:-0}" = 1 ]; then
   npx convex env remove RESEND_API_URL >/dev/null 2>&1 || true

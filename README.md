@@ -1,60 +1,59 @@
 # dorks
 
-pnpm workspace. `pnpm install`, then:
+Run coding agents (Claude Code, Codex) in your own [Boat](https://boat.dev) sandboxes and drive them from one UI: a chat per task, PRs that the agent keeps working on until they merge. Your sandboxes, your Boat account, your Claude or ChatGPT sign-in; nothing is hosted for you. Site: [dorks.build](https://dorks.build).
 
-- `pnpm dev` — Convex + web; `pnpm dev:convex`, `pnpm dev:web`, `pnpm dev:ios` individually
-- `pnpm dev:web` — TanStack Start on Workers via Vite (:3000)
-- `cd apps/ios && pnpm start` — Expo
-- `pnpm typecheck`
+> **Status: in transition.** The project is moving from a hosted-service design to a local-first, single-owner app (a macOS app that runs everything on your machine). Until that lands, you run it from source as described below. See [docs/env.md](docs/env.md) for configuration.
 
-Secrets live in Doppler (project `dorks`); see [docs/secrets/README.md](docs/secrets/README.md). With `DOPPLER_TOKEN` set (Conductor workspaces have it), `pnpm dev` starts Convex + web with the `dev` config (`pnpm dev:ios` for Expo).
+## How it works
 
-## Full local loop (Docker + Doppler)
+- **Backend:** a [Convex](https://convex.dev) app (`apps/convex`) holds dorks, the transcript and the lifecycle state machine. It runs on the open-source self-hosted Convex backend.
+- **Web:** a React app (`apps/web`) for chats and settings.
+- **Sandboxes:** each dork is a Boat sandbox created from a base snapshot ([docs/boat.md](docs/boat.md)). Inside it, `dorks-bridge` (`infra/bridge`) runs the agent and talks to the backend.
+- **Autonomy:** a dork opens PRs, subscribes to them and keeps fixing CI failures, review comments and conflicts ([docs/autonomy.md](docs/autonomy.md)).
+
+The sandbox's bridge connects *out* to the backend, so a backend on your machine needs a public URL that Boat's cloud can reach.
+
+## Run from source
+
+Needs Node 24, pnpm (version pinned in `package.json`; `corepack enable`) and Docker.
 
 ```sh
-bash cloud-setup.sh     # any machine: Doppler CLI, pnpm, dependencies (needs DOPPLER_TOKEN); add --backend to also start Convex
-pnpm dev:backend        # self-hosted Convex in Docker + deploy + Doppler dev env (idempotent; rerun after backend changes)
-pnpm dev:mail           # prints sign-in codes (the backend's RESEND_API_URL points here); REAL_MAIL=1 pnpm dev:backend uses Resend
-pnpm dev:web            # web on :3000
+pnpm install
+pnpm env:init      # writes .env with generated secrets (git-ignored)
+pnpm dev:backend   # self-hosted Convex in Docker, deploys apps/convex, pushes .env (rerun after backend changes)
+pnpm dev:mail      # prints sign-in codes
+pnpm dev:web       # web on http://localhost:3000
 ```
 
-Or all of it detached in one command: `pnpm dev:up` (status `pnpm dev:status`, stop `pnpm dev:down`, logs in `/tmp/dorks-dev`; see AGENTS.md, "Running servers").
+Or detached in one command: `pnpm dev:up` (`pnpm dev:status`, `pnpm dev:down`; logs in `/tmp/dorks-dev`).
 
-Boxes are simulated (`BOX_PROVIDER=sim`): `pnpm dev:sim` runs the sim host (`BRIDGE_IMPL=real pnpm dev:sim` for the real `dorks-bridge` with the fake Claude CLI; add `CLAUDE_BIN=claude` for the real one, which refuses to run as root). A real Claude needs a token in Doppler `dev` as `E2E_CLAUDE_TOKEN` (see the inventory).
+By default `.env` uses `BOX_PROVIDER=sim`, a local simulator (`pnpm dev:sim`; `BRIDGE_IMPL=real pnpm dev:sim` runs the real bridge against a fake Claude CLI). For real sandboxes set `BOX_PROVIDER=boat`, `BOAT_API_KEY`, `BASE_SNAPSHOT_ID` and `DORKS_OWNER_EMAIL`; see [docs/boat.md](docs/boat.md).
 
-Boat is the recommended real sandbox provider (`BOX_PROVIDER=boat`, the default when unset). See [Boat setup and snapshot building](docs/boat.md). Existing Upstash deployments can keep `BOX_PROVIDER=upstash`.
+### Running the real agent against the simulator
 
-### Running the real agent locally
-
-Needs `E2E_CLAUDE_TOKEN` in Doppler `dev` (a `claude setup-token` value). The Claude CLI refuses `--permission-mode bypassPermissions` as root, so on a root-only VM run the sim host as an unprivileged user (`ubuntu` here), with a writable `HOME`, a writable `infra/bridge/dist`, `DORKS_E2E_ROOT` set to a directory it owns, and the proxy/CA variables if the VM needs them:
+Set `E2E_CLAUDE_TOKEN` (a `claude setup-token` value) in your environment. The Claude CLI refuses `--permission-mode bypassPermissions` as root, so on a root-only machine run the sim host as an unprivileged user with a writable `HOME`, a writable `infra/bridge/dist` and `DORKS_E2E_ROOT` set to a directory it owns:
 
 ```sh
-doppler run -p dorks -c dev -- setpriv --reuid=1000 --regid=1000 --init-groups env -i PATH="$PATH" HOME=/tmp/u-home DORKS_E2E_ROOT=/tmp/u-e2e \
+scripts/with-env.sh setpriv --reuid=1000 --regid=1000 --init-groups env -i PATH="$PATH" HOME=/tmp/u-home DORKS_E2E_ROOT=/tmp/u-e2e \
   CONVEX_URL=http://127.0.0.1:3210 SIM_HOST_KEY="$SIM_HOST_KEY" BRIDGE_SECRET_KEY="$BRIDGE_SECRET_KEY" BRIDGE_IMPL=real CLAUDE_BIN="$(command -v claude)" \
   node infra/bridge-sim/host.mjs
 ```
 
-Bridge-level check without Convex: `CLAUDE_CODE_OAUTH_TOKEN=$E2E_CLAUDE_TOKEN pnpm --filter @dorks/bridge test live`, run as that same user. `apps/convex/scripts/e2e.mjs` has one timing check ("mid-turn") that only holds for the simulator's slow streaming; with the real CLI treat it as a smoke test.
-
-## Sign-in
-
-Sign-in is open to any email address. Use the web origin (:3000) so Better Auth's origin check passes. Codes are emailed through Resend (`RESEND_API_KEY`); for local dev without Resend, point Convex at the mock (`RESEND_API_URL`, `apps/convex/scripts/mock-resend.mjs`).
+Bridge-level check without Convex: `CLAUDE_CODE_OAUTH_TOKEN=$E2E_CLAUDE_TOKEN pnpm --filter @dorks/bridge test live`, as that same user. `apps/convex/scripts/e2e.mjs` has one timing check ("mid-turn") that only holds for the simulator's slow streaming; with the real CLI treat it as a smoke test.
 
 ## Tests
 
-`pnpm test` runs the Convex suite (lifecycle machine, normalizer, crypto, GitHub, functions via `convex-test`), the bridge suite and the shared client suite.
+`pnpm typecheck` and `pnpm test` run the Convex suite (lifecycle machine, normalizer, crypto, GitHub, functions via `convex-test`), the bridge suite and the shared client suite.
 
 ## CI
 
-`.github/workflows/ci.yml` runs on pull requests and pushes to `main`. It uses no real secrets: every key is generated per run.
+`.github/workflows/ci.yml` runs on pull requests and pushes to `main`, and needs no repository secrets (every key is generated per run), so it works on forks.
 
 - **checks**: `pnpm install --frozen-lockfile`, `pnpm -r typecheck`, `pnpm -r --if-present test`.
-- **backend-e2e**: starts a self-hosted Convex backend (`ghcr.io/convex/convex-backend`, pinned by digest) with `--network host`, deploys `apps/convex` with `npx convex dev --once`, sets throwaway Convex env vars, then runs `apps/convex/scripts/run-e2e.sh` (acceptance + secret scan) and `apps/convex/scripts/web-e2e.mjs` (headless Chrome against `apps/web` dev). On failure the logs and screenshots in `/tmp/dorks-e2e` are uploaded as the `dorks-e2e-logs` artifact (the raw table export is not).
+- **backend-e2e**: starts a self-hosted Convex backend (`ghcr.io/convex/convex-backend`, pinned by digest), deploys `apps/convex`, sets throwaway env vars, then runs `apps/convex/scripts/run-e2e.sh` (acceptance and secret scan) and `apps/convex/scripts/web-e2e.mjs` (headless Chrome against `apps/web`). On failure the logs and screenshots in `/tmp/dorks-e2e` are uploaded as an artifact.
 
-Reproduce locally by following the steps in the workflow; `CHROME_PATH` overrides the Chrome binary used by `web-e2e.mjs`.
+Keep CI in step with the backend: a new required Convex env var must be added to the `set_env` list in the "Deploy functions and set throwaway env" step, using throwaway or sim values only, and a new workspace package must be in `pnpm-workspace.yaml` with its lockfile changes committed.
 
-Keep CI in step with the backend as other branches land:
+## License
 
-- Any new required Convex env var (the GitHub App and Upstash settings, say) must be added to the `set_env` list in the "Deploy functions and set throwaway env" step, using throwaway or sim values only.
-- Rate limits keyed by IP or email can trip the e2e, which sends many sign-in codes from `127.0.0.1` within seconds. If the auth work adds env-configurable caps, set CI-specific overrides in the same step.
-- A new workspace package (such as `infra/bridge`) is picked up by `pnpm -r` once it is in `pnpm-workspace.yaml`; commit its lockfile changes or `--frozen-lockfile` fails.
+[Apache-2.0](LICENSE).

@@ -95,7 +95,7 @@ function Dorks() {
 
 function NewDork({ onCreated, disabled, claudeReady }: { onCreated: (id: Id<'dorks'>) => void; disabled: boolean; claudeReady: boolean }) {
   const create = useMutation(api.dorks.create)
-  const [repo, setRepo] = useState('jaantonio/demo')
+  const [repo, setRepo] = useState('acme/demo')
   const [message, setMessage] = useState('')
   const [provider, setProvider] = useState<AgentProvider>('codex')
   const { run, pending, error } = usePending()

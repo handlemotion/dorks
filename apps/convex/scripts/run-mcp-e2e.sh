@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs scripts/mcp-e2e.mjs: the dorks MCP tools through a local Convex backend, the real in-box bridge and the REAL Claude CLI.
-# Prereqs: `pnpm dev:backend` is up (BOX_PROVIDER=sim), E2E_CLAUDE_TOKEN is in the environment (run it under `doppler run -p dorks -c dev --`),
+# Prereqs: `pnpm dev:backend` is up (BOX_PROVIDER=sim), E2E_CLAUDE_TOKEN is in the environment (export it, or put it in the repo-root `.env`),
 # and the sim host runs as a user that may start Claude with bypassPermissions (not root). Set RUN_AS_UID to drop privileges for the host.
 set -euo pipefail
 cd "$(dirname "$0")/.."
