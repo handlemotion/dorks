@@ -1,0 +1,134 @@
+// Schema migrations, applied in order and tracked with PRAGMA user_version. Append only; never edit a shipped entry.
+// Strings, not .sql files, so the compiled sidecar needs no files next to it.
+export const MIGRATIONS: string[] = [
+  `
+  -- Singleton: global settings. Token columns hold AES-GCM envelopes (core/crypto.ts); nothing here is ever returned to a client.
+  CREATE TABLE settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    sleep_minutes REAL NOT NULL DEFAULT 5,
+    claude_token_enc TEXT,
+    boat_key_enc TEXT,
+    boat_org TEXT,
+    boat_environment TEXT,
+    base_snapshot_id TEXT,
+    github_token_enc TEXT,
+    github_login TEXT,
+    comment_policy TEXT
+  );
+  INSERT INTO settings (id) VALUES (1);
+
+  CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+
+  CREATE TABLE secrets (name TEXT PRIMARY KEY, value_enc TEXT NOT NULL);
+
+  -- Client-visible row. Nothing here changes per streamed delta, so list queries stay quiet mid-turn.
+  CREATE TABLE dorks (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    repo TEXT NOT NULL,
+    branch TEXT NOT NULL,
+    provider TEXT NOT NULL CHECK (provider IN ('claude', 'codex')),
+    state TEXT NOT NULL,
+    archived INTEGER NOT NULL DEFAULT 0,
+    box_id TEXT,
+    claude_session_id TEXT,
+    codex_thread_id TEXT,
+    codex_model TEXT,
+    codex_model_choices TEXT,
+    preview TEXT,
+    pr_url TEXT,
+    deleting INTEGER NOT NULL DEFAULT 0,
+    last_activity_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX dorks_archived_activity ON dorks (archived, last_activity_at DESC);
+
+  -- Server-only bookkeeping, one row per dork.
+  CREATE TABLE dork_runtime (
+    dork_id TEXT PRIMARY KEY REFERENCES dorks (id) ON DELETE CASCADE,
+    bridge_seq INTEGER NOT NULL DEFAULT 0,
+    stream_msg_id TEXT NOT NULL DEFAULT '',
+    sleep_minutes REAL NOT NULL,
+    bridge_seen_at INTEGER NOT NULL DEFAULT 0,
+    bridge_lost INTEGER NOT NULL DEFAULT 0,
+    op_gen INTEGER NOT NULL DEFAULT 0,
+    pause TEXT,
+    pause_retries INTEGER NOT NULL DEFAULT 0
+  );
+
+  -- Append-only per-dork log; seq is dense per dork. This is the unit a later sync replicates.
+  CREATE TABLE events (
+    dork_id TEXT NOT NULL REFERENCES dorks (id) ON DELETE CASCADE,
+    seq INTEGER NOT NULL,
+    ts INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    PRIMARY KEY (dork_id, seq)
+  ) WITHOUT ROWID;
+
+  -- Outbox plus control frames for the bridge. Holds no secrets: 'configure' is a marker the bridge answers by calling the configure rpc.
+  CREATE TABLE commands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dork_id TEXT NOT NULL REFERENCES dorks (id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    cid TEXT NOT NULL,
+    text TEXT,
+    meta TEXT,
+    released INTEGER NOT NULL DEFAULT 0,
+    acked INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX commands_open ON commands (dork_id, acked);
+
+  -- Durable timers and jobs. owner is a dork id, or '' for global ones. A row is claimed by deleting it.
+  CREATE TABLE timers (
+    owner TEXT NOT NULL,
+    name TEXT NOT NULL,
+    due_at INTEGER NOT NULL,
+    payload TEXT,
+    PRIMARY KEY (owner, name)
+  ) WITHOUT ROWID;
+  CREATE INDEX timers_due ON timers (due_at);
+
+  -- A dork's subscription to a PR (docs/autonomy.md). repo is stored lowercase. poll_* is the poller's bookkeeping.
+  CREATE TABLE pr_subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dork_id TEXT NOT NULL REFERENCES dorks (id) ON DELETE CASCADE,
+    repo TEXT NOT NULL,
+    number INTEGER NOT NULL,
+    url TEXT NOT NULL,
+    title TEXT,
+    head_ref TEXT,
+    base_ref TEXT,
+    head_sha TEXT,
+    source TEXT NOT NULL,
+    status TEXT NOT NULL,
+    ci TEXT NOT NULL,
+    review TEXT NOT NULL,
+    mergeable INTEGER,
+    ci_fix_attempts INTEGER NOT NULL DEFAULT 0,
+    state TEXT NOT NULL,
+    last_event_at INTEGER NOT NULL,
+    ci_failing TEXT,
+    ci_notified INTEGER,
+    ready_sha TEXT,
+    conflict_sha TEXT,
+    poll TEXT,
+    UNIQUE (dork_id, repo, number)
+  );
+  CREATE INDEX pr_subscriptions_repo_number ON pr_subscriptions (repo, number);
+
+  -- Debounce buffer between the poller and the agent: folded into one notify command by the per-dork notify timer.
+  CREATE TABLE inbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dork_id TEXT NOT NULL REFERENCES dorks (id) ON DELETE CASCADE,
+    subscription_id INTEGER NOT NULL REFERENCES pr_subscriptions (id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    delivered INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX inbox_pending ON inbox (dork_id, delivered);
+
+  -- Dev/test only (BOX_PROVIDER=sim): what a real provider would hold remotely.
+  CREATE TABLE sim_boxes (name TEXT PRIMARY KEY, running INTEGER NOT NULL, gen INTEGER NOT NULL);
+  `,
+];
