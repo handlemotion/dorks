@@ -10,6 +10,8 @@ import { fireTimer } from "../src/lifecycle/lifecycle";
 import { Scheduler } from "../src/lifecycle/scheduler";
 import * as bridge from "../src/services/bridge";
 import { createApp } from "../src/server";
+import type { SavedSnapshotInfo, SnapshotDriver } from "../src/core/snapshot";
+import { makeAssets, type SnapshotAssets } from "../src/snapshot/assets";
 
 export const NOW = 1_700_000_000_000;
 
@@ -53,6 +55,91 @@ export function fakeBox(): FakeBox {
   return box;
 }
 
+export const testAssets = (bridge = "bridge-v1", installer = "installer-v1"): SnapshotAssets => makeAssets(new TextEncoder().encode(bridge), installer);
+
+export interface FakeSnapshotDriver extends SnapshotDriver {
+  calls: string[];
+  /** Live build sandboxes, by id. */
+  boxes: Map<string, { label: string }>;
+  files: Map<string, string>;
+  commands: string[];
+  /** What the provider holds under each saved-snapshot name. */
+  saved: Map<string, SavedSnapshotInfo>;
+  /** Exit code of the next installer run (0 = success). */
+  installExit: number;
+  installStderr: string;
+  installTimedOut: boolean;
+  /** Fail the next call to these operations with this error. */
+  failNext: Map<string, Error>;
+  /** How many getSnapshot polls report `saving` before the save settles. */
+  savingPolls: number;
+  /** What a settled save reports. */
+  saveResult: "ready" | "failed";
+  deleteFails: boolean;
+  maybeFail(op: string): void;
+}
+
+export function fakeSnapshotDriver(): FakeSnapshotDriver {
+  let n = 0;
+  const d: FakeSnapshotDriver = {
+    calls: [], boxes: new Map(), files: new Map(), commands: [], saved: new Map(), installExit: 0, installStderr: "", installTimedOut: false,
+    failNext: new Map(), savingPolls: 0, saveResult: "ready", deleteFails: false,
+    maybeFail(op) {
+      const e = d.failNext.get(op);
+      if (e) {
+        d.failNext.delete(op);
+        throw e;
+      }
+    },
+    async listBuildSandboxes(label) {
+      d.calls.push("list");
+      return [...d.boxes].filter(([, b]) => b.label === label).map(([id]) => ({ id }));
+    },
+    async createBuildSandbox({ label }) {
+      d.calls.push("create");
+      d.maybeFail("create");
+      const id = `bx_build${++n}`;
+      d.boxes.set(id, { label });
+      return { id };
+    },
+    async waitReady() {
+      d.calls.push("waitReady");
+      d.maybeFail("waitReady");
+    },
+    async writeFile(_id, path, content) {
+      d.calls.push("writeFile");
+      d.files.set(path, content);
+    },
+    async run(_id, command) {
+      d.calls.push("run");
+      d.commands.push(command);
+      if (command.includes("boat-install.sh")) return { exitCode: d.installExit, stdout: "", stderr: d.installStderr, timedOut: d.installTimedOut };
+      return { exitCode: 0, stdout: "", stderr: "", timedOut: false };
+    },
+    async saveSnapshot(id, name) {
+      d.calls.push("save");
+      d.maybeFail("save");
+      d.saved.set(name, { name, status: "saving", sourceSandboxId: id });
+    },
+    async getSnapshot(name) {
+      d.calls.push("getSnapshot");
+      const s = d.saved.get(name);
+      if (!s) return null;
+      if (s.status === "saving") {
+        if (d.savingPolls-- > 0) return { ...s };
+        d.saved.set(name, { ...s, status: d.saveResult, error: d.saveResult === "failed" ? "disk full" : undefined });
+      }
+      return { ...d.saved.get(name)! };
+    },
+    async deleteSandbox(id) {
+      d.calls.push("delete");
+      if (d.deleteFails) throw new Error("delete down");
+      d.boxes.delete(id);
+    },
+  };
+  return d;
+}
+
 type Handler = (url: URL, init?: RequestInit) => Response | Promise<Response>;
 
 /** A fake of the network: routes by pathname (GitHub API in the tests). Unhandled requests fail the test loudly. */
@@ -71,12 +158,17 @@ export function harness(opts: { fetch?: typeof fetch; config?: Partial<Config> }
   const box = fakeBox();
   // Tests never reach the real network: by default GitHub knows one user, and anything else fails loudly.
   const offline = fakeFetch((url) => (url.pathname === "/user" ? Response.json({ login: "agent-bot" }) : new Response("{}", { status: 404 })));
-  const app: App = createApp(testConfig(opts.config), { db: new Db(), now: () => clock.t, fetch: opts.fetch ?? offline, getBox: async () => box });
+  const snapshotDriver = fakeSnapshotDriver();
+  const assets = { current: testAssets() };
+  const app: App = createApp(testConfig(opts.config), {
+    db: new Db(), now: () => clock.t, fetch: opts.fetch ?? offline, getBox: async () => box,
+    getSnapshotDriver: async () => snapshotDriver, snapshotAssets: async () => assets.current, sleep: async () => {},
+  });
   const scheduler = new Scheduler(app);
   const db = app.db;
 
   const h = {
-    app, box, clock, scheduler,
+    app, box, clock, scheduler, snapshotDriver, assets,
     /** A dork row plus its runtime, directly. */
     seed(state: DorkState, o: { boxId?: string | null; archived?: boolean; bridgeSeenAt?: number; bridgeLost?: boolean; bridgeSeq?: number; opGen?: number; provider?: "claude" | "codex"; repo?: string } = {}) {
       const id = app.uuid();

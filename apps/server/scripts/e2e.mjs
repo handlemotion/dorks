@@ -32,7 +32,7 @@ const until = async (fn, what, ms = 30_000) => {
   }
 };
 
-const env = { ...process.env, DORKS_DATA_DIR: dataDir, DORKS_UI_PORT: "0", DORKS_BRIDGE_PORT: "0", BOX_PROVIDER: "sim", SIM_HOST_KEY };
+const env = { ...process.env, DORKS_DATA_DIR: dataDir, DORKS_UI_PORT: "0", DORKS_BRIDGE_PORT: "0", BOX_PROVIDER: "sim", SIM_HOST_KEY, SIM_BUILD_STEP_MS: "30" };
 delete env.DORKS_PUBLIC_URL;
 const [cmd, ...args] = process.env.SERVER_BIN ? [process.env.SERVER_BIN] : ["bun", "run", join(here, "../src/main.ts")];
 const server = spawn(cmd, args, { env, stdio: ["ignore", "pipe", "pipe"] });
@@ -113,6 +113,20 @@ try {
       }
     }
   })().catch(() => {});
+
+  // ---- "Prepare Boat": the base-snapshot build, against the simulated provider
+  const before = (await api("GET", "/api/snapshot")).json;
+  check("before a build there is no snapshot, and the bridge bundle is embedded", before.state === "none" && before.canBuild === true && typeof before.currentBundleId === "string", JSON.stringify(before));
+  const build = await api("POST", "/api/snapshot/build", {});
+  check("a build starts (202) and reports its first step", build.status === 202 && build.json.state === "building", JSON.stringify(build.json));
+  const built = await until(async () => {
+    const v = (await api("GET", "/api/snapshot")).json;
+    return v.state === "ready" || v.state === "failed" ? v : null;
+  }, "the snapshot build finishes");
+  check("the build succeeded and sandboxes now start from the built snapshot", built.state === "ready" && built.managed && built.stale === false && (await api("GET", "/api/settings")).json.baseSnapshotId === built.snapshot, JSON.stringify(built));
+  check("the live stream announced build progress", live.filter((m) => m.t === "snapshot").length >= 3 && live.some((m) => m.t === "settings"), `${live.filter((m) => m.t === "snapshot").length} snapshot messages`);
+  const again = await api("POST", "/api/snapshot/build", {});
+  check("building again when current is a no-op", again.status === 202 && again.json.state === "ready" && again.json.snapshot === built.snapshot);
 
   // ---- a dork's life
   const created = await api("POST", "/api/dorks", { repo: "acme/demo", message: "add a readme", provider: "claude" });

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Run inside a fresh Boat sandbox, by hand (docs/boat.md) or by the app's "Prepare Boat" build (apps/server/src/services/snapshot.ts),
+# which uploads this script and the bridge bundle to $HOME first. Optional: DORKS_BUNDLE_ID is recorded in the image.
+# Boat sandboxes are Ubuntu 24.04 on x86_64 (https://docs.boat.dev/machines/tools), which the pinned downloads below assume.
 test "$(uname -m)" = x86_64
 test -f "$HOME/dorks-bridge.mjs"
 node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 18) ? 0 : 1)'
@@ -34,4 +37,7 @@ test "$(command -v gh)" = /usr/local/bin/gh
 gh stack --help >/dev/null
 dorks --help >/dev/null
 command -v flock >/dev/null
+if [ -n "${DORKS_BUNDLE_ID:-}" ]; then
+  printf '%s\n' "$DORKS_BUNDLE_ID" | sudo tee /usr/local/share/dorks-bundle-id >/dev/null
+fi
 rm "$HOME/dorks-bridge.mjs" "$HOME/boat-install.sh"

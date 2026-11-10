@@ -2,6 +2,7 @@ import type { App, SchedulerLike } from "../app";
 import { hasTimer, setTimer } from "./dispatch";
 import { isJob, runJob } from "./jobs";
 import { fireTimer } from "./lifecycle";
+import { recoverSnapshotBuild } from "../services/snapshot";
 import { pollable } from "../services/subscriptions";
 
 interface TimerRow {
@@ -42,6 +43,7 @@ export class Scheduler implements SchedulerLike {
     if (pollable(app).length && !hasTimer(app, "", "poll")) setTimer(app, "", "poll", 1_000); // keep watching PRs subscribed before the restart
     for (const d of app.db.all<{ id: string }>("SELECT id FROM dorks WHERE deleting = 1")) if (!hasTimer(app, d.id, "box:destroy")) setTimer(app, d.id, "box:destroy", 0);
     if (!hasTimer(app, "", "sweep")) setTimer(app, "", "sweep", 60_000);
+    recoverSnapshotBuild(app); // a build that was running when the process died runs again, as a new attempt
   }
 
   stop() {

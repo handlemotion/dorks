@@ -16,6 +16,11 @@ const root = join(import.meta.dir, "..");
 const out = join(root, "dist");
 mkdirSync(out, { recursive: true });
 
+// The bridge bundle and the snapshot installer are embedded in the executable (src/snapshot/embedded.bun.ts): the app builds the
+// user's Boat base snapshot from them. Build the bundle first; the compile fails loudly if it is missing.
+const bridgeBuild = Bun.spawnSync(["node", join(root, "../../infra/bridge/scripts/build.mjs")], { stdout: "inherit", stderr: "inherit" });
+if (bridgeBuild.exitCode !== 0) process.exit(bridgeBuild.exitCode ?? 1);
+
 const arch = process.arch === "arm64" ? "aarch64" : "x86_64";
 const host = process.platform === "darwin" ? `${arch}-apple-darwin` : `${arch}-unknown-linux-gnu`;
 if (!TARGETS[host]) throw new Error(`unsupported host: ${process.platform}/${process.arch}`);

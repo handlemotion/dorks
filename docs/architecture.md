@@ -60,6 +60,8 @@ Environment (all optional except where noted); a desktop shell sets these when i
 | `SIM_HOST_KEY` | none | Required when `BOX_PROVIDER=sim`; guards `GET /sim/boxes` (header `x-sim-host-key`), which `infra/bridge-sim/host.mjs` polls to start and stop fake sandboxes |
 | `DORKS_PARENT_PID` | none | The supervising process (the desktop shell sets it). The server shuts down gracefully within a few seconds of that process disappearing |
 | `SIM_LATENCY_MS` | `700` | Sim only: how long a simulated sandbox takes to stop or start, so the polling host always notices |
+| `SIM_BUILD_STEP_MS` | `400` | Sim only: pause per step of the simulated base-snapshot build, so progress is visible |
+| `DORKS_BRIDGE_BUNDLE` | none | Development: path of a bridge bundle to build snapshots from instead of the embedded one (see "Base snapshot") |
 | `DORKS_DEBUG_BRIDGE` | none | Logs bridge frame names and sizes to stderr; never `configure` results or secrets |
 
 `secrets.json` (mode 600) holds `bridgeSecretKey` (HMAC key for per-dork bridge secrets), `encryptionKey` (AES-GCM, base64 32 bytes) and `ownerToken`, generated on first run. The Boat API key, Claude token, GitHub token and CLI secrets are **settings** stored encrypted in SQLite, so the UI can change them without touching the environment.
@@ -94,6 +96,8 @@ IDs are UUID strings. Times are epoch milliseconds.
 | `POST /api/dorks/:id/subscriptions/resume` | `{repo, number}` | `{}` |
 | `GET /api/settings` | | `{claudeToken, boatKey, github: {configured, login?}, boatOrg, boatEnvironment, baseSnapshotId, sleepMinutes, commentPolicy, publicUrlConfigured, boxProvider}`: booleans and plain values only, never secrets |
 | `PUT /api/settings` | any subset of `{boatKey, boatOrg, claudeToken, githubToken, boatEnvironment, baseSnapshotId, sleepMinutes, commentPolicy}` | `{}`. Token fields are write-only; an empty string clears one |
+| `GET /api/snapshot` | | the base-snapshot build status, see "Base snapshot" |
+| `POST /api/snapshot/build` | `{force?: boolean}` | `202` and the same status. Starts "Prepare Boat" unless a build is running, or the snapshot is already built from this app's bridge and in use (and `force` is not set). Error `not_configured` (412) without a Boat key |
 | `GET /api/secrets` | | sorted names `string[]` |
 | `PUT /api/secrets/:name` | `{value}` | `{}` (`^[A-Z][A-Z0-9_]{0,63}$`, 16 KB max) |
 | `DELETE /api/secrets/:name` | | `{}` |
@@ -113,6 +117,7 @@ One stream per client. Messages are `data: <json>\n\n`; a `: ping` comment every
 | `{"t":"events","dorkId","seq"}` | the transcript tail is now `seq`; refetch `events?after=<your last seq - 1>` (coalesced to at most one message per 50 ms per dork) |
 | `{"t":"subscriptions","dorkId"}` | PR subscriptions changed |
 | `{"t":"settings"}` | settings or secret names changed |
+| `{"t":"snapshot"}` | the base-snapshot build changed (a step, a result); refetch `GET /api/snapshot` |
 
 `packages/client` wraps this (`useDorks`, `useDork`, `useDorkEvents`, `useSettings`), replacing `@dorks/convex/client` and `convex/react`.
 
@@ -140,9 +145,25 @@ One stream per client. Messages are `data: <json>\n\n`; a `: ping` comment every
 
 The `Transport` interface in `infra/bridge/src/transport.ts` is unchanged; `WsTransport` implements it over this protocol with reconnect and resume.
 
+## Base snapshot ("Prepare Boat")
+
+Every sandbox is created from a saved snapshot in the user's own Boat account (snapshots are per account), and the app builds it in one click instead of the manual `boat` steps in `docs/boat.md`. Code: `services/snapshot.ts` (the job), `core/snapshot.ts` (the provider seam), `lib/boatSnapshots.ts` (Boat), `snapshot/assets.ts` (what goes in).
+
+`GET /api/snapshot` returns `{state: "none"|"building"|"ready"|"failed", snapshot, managed, stale, step, stepIndex, stepCount, message, error, startedAt, finishedAt, builtBundleId, currentBundleId, canBuild, cannotBuildReason}`:
+
+- `snapshot` is the saved snapshot this app last built (`dorks-base-<8 hex of the install id>`, per installation so two installs on one Boat account never replace each other's image). `managed` is true when `settings.baseSnapshotId` is that snapshot; a name entered by hand (for example a `bsh_` share code) is never judged stale.
+- `stale` means it was built from an older bridge or installer than this app now carries; `POST /api/snapshot/build` rebuilds it (no `force` needed). `bundleId` is the first 12 hex of sha256(bridge bundle, 0x00, installer).
+- `state: "failed"` keeps `snapshot` (the last good one) and leaves `baseSnapshotId` alone: dorks keep starting from it. `error` is a message written for the user; for an installer failure it ends with the last lines of its output.
+- Steps, in order: `prepare` (delete earlier build sandboxes: the recorded one and any with this install's `dorks-build` label), `create` (no account credentials, a 2 h lifetime as a safety net), `start`, `upload` (bridge bundle as base64, installer as text, then a sha256 check), `install` (`boat-install.sh`, 10 minute cap), `save` (Boat's saved-snapshot API, polled until OUR sandbox's save is `ready`; re-saving a name replaces the old artifact only once the new one is ready), `finish` (set `baseSnapshotId`). The build sandbox is deleted on every outcome; if Boat refuses, an `orphan:<id>` job retries.
+- The job is a `snapshot:build` timer; a crash leaves the row `running` and the next start queues it again as a new attempt (`recoverSnapshotBuild`).
+- The bridge bundle and the installer are embedded in the compiled sidecar (`snapshot/embedded.bun.ts`, resolved by `bun build --compile`; `scripts/build.ts` builds the bridge first). From source they are read from `infra/`.
+- `BOX_PROVIDER=sim` swaps in an in-memory provider (`SIM_BUILD_STEP_MS`), so the whole flow runs without Boat.
+
+Boat API used (https://docs.boat.dev): `POST|GET /sandboxes`, `GET|DELETE /sandboxes/{id}`, `PUT /sandboxes/{id}/files`, `POST /sandboxes/{id}/commands`, `POST /saved-snapshots`, `GET /saved-snapshots/{name}`.
+
 ## Lifecycle
 
-`core/machine.ts` is unchanged apart from dropping the GitHub-token-refresh effects. Dispatch applies an input in one transaction: persist the new state, append a `status` event, then run effects (arm/cancel timers, enqueue box jobs, release held notifications, enqueue `interrupt`). Pausing keeps the same intent-with-generation model (`flushing` → `pausing` → `cancelled`). Timers: `sleep`, `watchdog`, `bridge_watch`, `flush`, `notify`, `pause_retry`.
+`core/machine.ts` is unchanged apart from dropping the GitHub-token-refresh effects. Dispatch applies an input in one transaction: persist the new state, append a `status` event, then run effects (arm/cancel timers, enqueue box jobs, release held notifications, enqueue `interrupt`). Pausing keeps the same intent-with-generation model (`flushing` → `pausing` → `cancelled`). Timers: `sleep`, `watchdog`, `bridge_watch`, `flush`, `notify`, `pause_retry`. Global jobs (owner `''`): `poll`, `sweep`, `snapshot:build`, `orphan:<boxId>`.
 
 ## GitHub (autonomy)
 

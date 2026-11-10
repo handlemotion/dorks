@@ -5,6 +5,7 @@ import { BoatError } from "../lib/boat";
 import { bridgeSecret } from "../lib/bridgeAuth";
 import { createIssueComment, GithubHttpError, isTransientGithubError } from "../lib/github";
 import { pollOnce } from "../services/poller";
+import { runBuild, SNAPSHOT_JOB } from "../services/snapshot";
 import { githubToken, readSettings } from "../services/settings";
 import { getSub } from "../services/subscriptions";
 import { boxCreated, boxGone, boxPaused, boxResumed, opFailed } from "./lifecycle";
@@ -152,7 +153,7 @@ export function sweep(app: App) {
 }
 
 /** Timer names that are jobs (async, outside a transaction) rather than state-machine timers. */
-export const isJob = (name: string) => name.startsWith("box:") || name.startsWith("orphan:") || name.startsWith("stall:") || name === "poll" || name === "sweep";
+export const isJob = (name: string) => name.startsWith("box:") || name.startsWith("orphan:") || name.startsWith("stall:") || name === "poll" || name === "sweep" || name === SNAPSHOT_JOB;
 
 export async function runJob(app: App, owner: string, name: string, payload: any): Promise<void> {
   try {
@@ -162,6 +163,7 @@ export async function runJob(app: App, owner: string, name: string, payload: any
     if (name === "box:destroy") return await boxDestroy(app, owner);
     if (name.startsWith("orphan:")) return await deleteOrphan(app, payload.boxId, payload.attempt);
     if (name.startsWith("stall:")) return await stallComment(app, payload.subscriptionId, payload.runUrl, payload.attempt ?? 0, name, owner);
+    if (name === SNAPSHOT_JOB) return await runBuild(app, payload.attempt);
     if (name === "sweep") return sweep(app);
     if (name === "poll") {
       const next = await pollOnce(app);

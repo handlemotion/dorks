@@ -7,6 +7,7 @@ import { z } from "zod";
 import type { AppError } from "@dorks/shared";
 import { chooseCodexModel, createDork, getDorkView, interrupt, listDorks, listEvents, removeDork, renameDork, sendMessage, setArchived, owned } from "../services/dorks";
 import { deleteSecret, secretNames, setSecret, settingsView, updateSettings } from "../services/settings";
+import { snapshotView, startBuild } from "../services/snapshot";
 import * as subs from "../services/subscriptions";
 
 const STATUS: Record<AppError["code"], number> = {
@@ -147,6 +148,14 @@ export function uiApp(app: App): Hono {
   api.delete("/api/secrets/:name", (c) => {
     deleteSecret(app, c.req.param("name"));
     return c.json({});
+  });
+
+  // ---- base snapshot ("Prepare Boat")
+  api.get("/api/snapshot", async (c) => c.json(await snapshotView(app)));
+  api.post("/api/snapshot/build", async (c) => {
+    const b = await body(c);
+    if (b.force !== undefined && typeof b.force !== "boolean") throw new AppFail({ code: "invalid", message: "force must be a boolean" });
+    return c.json(await startBuild(app, { force: b.force === true }), 202);
   });
 
   // ---- live updates (Server-Sent Events): invalidations, not payloads

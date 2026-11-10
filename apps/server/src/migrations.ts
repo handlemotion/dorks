@@ -131,4 +131,23 @@ export const MIGRATIONS: string[] = [
   -- Dev/test only (BOX_PROVIDER=sim): what a real provider would hold remotely.
   CREATE TABLE sim_boxes (name TEXT PRIMARY KEY, running INTEGER NOT NULL, gen INTEGER NOT NULL);
   `,
+  `
+  -- Singleton: the "Prepare Boat" base-snapshot build (services/snapshot.ts). status is the current or last attempt; ready_* is the
+  -- last snapshot that was built successfully, kept while a rebuild runs or fails so the app can say what the dorks still start from.
+  CREATE TABLE snapshot_build (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    status TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('idle', 'running', 'failed')),
+    step TEXT,
+    message TEXT,
+    error TEXT,
+    attempt INTEGER NOT NULL DEFAULT 0,
+    build_sandbox_id TEXT,
+    started_at INTEGER,
+    finished_at INTEGER,
+    ready_name TEXT,
+    ready_bundle_id TEXT,
+    ready_at INTEGER
+  );
+  INSERT INTO snapshot_build (id) VALUES (1);
+  `,
 ];

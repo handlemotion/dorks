@@ -1,8 +1,8 @@
 import { BoxNotFoundError, type BoxProvider } from "../core/box";
 
-const DEFAULT_BASE_URL = "https://boat.dev/api/v1";
-const BOX_ID = /^bx_[23456789abcdefghjkmnpqrstuvwxyz]{8}$/;
-const READY = new Set(["ready", "idle", "running"]);
+export const DEFAULT_BASE_URL = "https://boat.dev/api/v1";
+export const BOX_ID = /^bx_[23456789abcdefghjkmnpqrstuvwxyz]{8}$/;
+export const READY = new Set(["ready", "idle", "running"]);
 const POLL_MS = 2_000;
 const WAIT_MS = 240_000;
 
@@ -27,12 +27,12 @@ export class BoatError extends Error {
   }
 }
 
-export function boatBox(opts: BoatOptions): BoxProvider {
-  if (!opts.scope) throw new BoatError("boat: a scope is required");
-  const doFetch = opts.fetch ?? fetch;
-  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+export type BoatCall = (op: string, method: string, path: string, body?: unknown, headers?: Record<string, string>, timeoutMs?: number) => Promise<any>;
 
-  async function call(op: string, method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<any> {
+/** One authenticated JSON call to the Boat API. Errors carry the HTTP status and Boat's error code, never the response body. */
+export function createBoatCall(opts: Pick<BoatOptions, "apiKey" | "org" | "fetch">): BoatCall {
+  const doFetch = opts.fetch ?? fetch;
+  return async function call(op, method, path, body, headers = {}, timeoutMs = 30_000) {
     let res: Response;
     try {
       res = await doFetch(`${DEFAULT_BASE_URL}${path}`, {
@@ -44,7 +44,7 @@ export function boatBox(opts: BoatOptions): BoxProvider {
           ...headers,
         },
         body: body === undefined ? undefined : JSON.stringify(body),
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (e) {
       throw new BoatError(`boat ${op}: network error (${e instanceof Error ? e.name : "unknown"})`);
@@ -58,7 +58,13 @@ export function boatBox(opts: BoatOptions): BoxProvider {
     const json: unknown = await res.json().catch(() => ({}));
     if (json && typeof json === "object" && "ok" in json && json.ok === false) throw new BoatError(`boat ${op}: invalid success response`, res.status);
     return json;
-  }
+  };
+}
+
+export function boatBox(opts: BoatOptions): BoxProvider {
+  if (!opts.scope) throw new BoatError("boat: a scope is required");
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const call = createBoatCall(opts);
 
   function path(id: string, suffix = ""): string {
     if (!BOX_ID.test(id)) throw new BoatError("boat: invalid sandbox id");

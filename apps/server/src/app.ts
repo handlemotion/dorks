@@ -1,5 +1,7 @@
 import type { AppError, AppErrorCode } from "@dorks/shared";
 import type { BoxProvider } from "./core/box";
+import type { SnapshotDriver } from "./core/snapshot";
+import type { SnapshotAssets } from "./snapshot/assets";
 import type { Keyring } from "./core/crypto";
 import type { Db } from "./db";
 
@@ -10,6 +12,7 @@ export type Change =
   | { t: "events"; dorkId: string; seq: number }
   | { t: "subscriptions"; dorkId: string }
   | { t: "settings" }
+  | { t: "snapshot" }
   | { t: "commands"; dorkId: string };
 
 export class Hub {
@@ -64,6 +67,12 @@ export interface App {
   getBox(): Promise<BoxProvider>;
   /** Where a freshly created sandbox's bridge connects. */
   bridgeUrl(): string | undefined;
+  /** The provider calls the base-snapshot build makes (services/snapshot.ts). Tests replace it. */
+  getSnapshotDriver(): Promise<SnapshotDriver>;
+  /** What the base snapshot is built from: the bridge bundle and the installer. Tests replace it. */
+  snapshotAssets(): Promise<SnapshotAssets>;
+  /** Waits; tests replace it so polling loops do not take real time. */
+  sleep(ms: number): Promise<void>;
 }
 
 export const touch = (app: App, c: Change) => app.db.afterCommit(() => app.hub.emit(c));
