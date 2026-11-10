@@ -106,6 +106,18 @@ html.dark {
   --sidebar-ring: var(--brand);
 }
 
+/* A quiet edge around the native onboarding window. An overlay keeps the layout
+   unchanged and follows the Mac window's rounded corners; app mode has no frame. */
+html[data-window-mode="onboarding"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  pointer-events: none;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+
 /* In the main app (everything inside `data-app-frame`, so not onboarding), focus is quieter: a control's border turns a slightly darker
    tone of itself (the --input grey), not the brand blue. */
 html:root [data-app-frame] {

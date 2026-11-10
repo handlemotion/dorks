@@ -67,6 +67,7 @@ function Dorks() {
           actions={<Button variant="ghost" size="sm" nativeButton={false} render={<Link to="/settings" />}>Settings</Button>}
         />
       )}
+      {settings?.boxProvider === 'sim' && <Notice>Local simulation: replies and sandbox work are simulated. No AI provider or GitHub calls are made.</Notice>}
       {settings && ready && !settings.claudeToken && (
         <Notice>Add a <Link to="/settings" className="font-medium underline underline-offset-4">Claude token</Link> to start sessions with Claude Code.</Notice>
       )}
@@ -81,7 +82,7 @@ function Dorks() {
             <p className="text-sm text-muted-foreground">Choose a repository, then describe the change you want.</p>
           </div>
           {settings && <SetupStatus settings={settings} />}
-          <NewDork onCreated={setSelected} disabled={!ready} claudeReady={!!settings?.claudeToken} codexReady={!!settings?.boatEnvironment} />
+          {settings && <NewDork onCreated={setSelected} disabled={!ready} claudeReady={settings.claudeToken} codexReady={!!settings.boatEnvironment} />}
           <div className="self-start text-sm text-muted-foreground">
             <Button variant="ghost" size="sm" aria-pressed={showArchived} onClick={() => setShowArchived(!showArchived)}>
               {showArchived ? 'Hide archived' : 'Show archived'}
@@ -108,7 +109,7 @@ function NewDork({ onCreated, disabled, claudeReady, codexReady }: { onCreated: 
   const { actions } = useDorksClient()
   const [repo, setRepo] = useState('acme/demo')
   const [message, setMessage] = useState('')
-  const [provider, setProvider] = useState<AgentProvider>('claude')
+  const [provider, setProvider] = useState<AgentProvider>(claudeReady ? 'claude' : codexReady ? 'codex' : 'claude')
   const { run, pending, error } = usePending()
   const needsClaudeToken = provider === 'claude' && !claudeReady
   return (
@@ -127,7 +128,7 @@ function Thread({ dorkId }: { dorkId: string }) {
   const { actions } = useDorksClient()
   const navigate = useNavigate()
   const dork = useDork(dorkId)
-  const { view, canLoadMore, loadMore, loading, send } = useDorkEvents(dorkId)
+  const { view, canLoadMore, loadMore, loading, error: eventsError, send } = useDorkEvents(dorkId)
   const [text, setText] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
   const { run, pending, error } = usePending()
@@ -192,6 +193,7 @@ function Thread({ dorkId }: { dorkId: string }) {
             <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-[30px] py-6" data-testid="transcript">
               {canLoadMore && <div className="text-center"><Button variant="outline" size="sm" onClick={loadMore}>Load older</Button></div>}
               <ChatMessages blocks={view.blocks} />
+              {eventsError && <p role="alert" className="text-sm text-destructive">Could not load messages: {eventsError.message}. Retrying…</p>}
               {/* In the transcript, not pinned over it: scrolled up, the scroll-to-end button takes its place. */}
               <AgentStatus state={dork.state} live={live} />
             </MessageScrollerContent>

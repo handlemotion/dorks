@@ -15,7 +15,7 @@ export function SetupStatus({ settings }: { settings: Settings }) {
   return (
     <div className="flex flex-col gap-3 empty:hidden">
       <SnapshotStatus settings={settings} />
-      {!settings.publicUrlConfigured && <TunnelPrompt />}
+      {settings.boxProvider !== 'sim' && !settings.publicUrlConfigured && <TunnelPrompt />}
     </div>
   )
 }

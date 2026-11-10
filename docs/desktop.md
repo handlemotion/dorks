@@ -86,7 +86,7 @@ The shell remembers the last mode and the app-mode frame (`windowMode`, `windowF
 
 **Theme.** The material follows the window appearance, so the app must report its own theme or a light UI would sit on a dark dim. Call `set_window_theme` whenever the app theme changes (`"system"` while the user has not picked one). With no call, the window follows macOS, including when macOS switches by itself at sunset. The page's `prefers-color-scheme` follows the same setting. Remembered as `windowTheme`. Note that Tauri applies this app-wide, which is fine for a one-window app.
 
-**Shadow and border: both off.** The window has no drop shadow (`shadow(false)`, re-asserted after the material is attached) and the shell draws no border or outline of its own, neither on the window nor on the webview. Why shadow off is fine here: the glass material brings its own edge and the corners stay rounded (the capture of the window is exactly its frame, with no shadow margin). The page should not add a shadow or an outline around the app either.
+**Shadow and border.** The window has no drop shadow (`shadow(false)`, re-asserted after the material is attached). Onboarding has a 1 px border using the theme's `--border` token, drawn as a click-through overlay inside the window with 16 px rounded corners (`packages/ui/src/glass.css`). It does not affect the page layout and disappears in app mode. The shell draws no border or outline of its own.
 
 ### Checking the chrome without taking the screen
 

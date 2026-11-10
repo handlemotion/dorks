@@ -37,6 +37,8 @@ pnpm dev:mock            # web plus an in-memory mock server, no real server nee
 pnpm dev:desktop         # the Tauri app (builds the real server and web UI into it)
 ```
 
+`pnpm dev` seeds missing settings with dummy credentials and prepares a simulated snapshot, so you can open the printed URL and create a chat immediately (`acme/demo`). Replies are simulated, including when the real bridge uses the fake Claude CLI; this does not call an AI provider or GitHub. The composer supports text and agent selection; attachments and general model/effort selection are not yet available.
+
 `pnpm dev` keeps its data in `.dev-data` (git-ignored); delete it for a clean start. It uses fixed, dev-only values for the owner token (`dev-owner-token`) and sandbox host key, so no secret or `.env` is needed. `BRIDGE_IMPL=real pnpm dev` runs the real in-box bridge with a fake Claude CLI instead of the sim bridge. Port `0` picks a free port (`DORKS_UI_PORT=0`). Every variable is in [docs/env.md](env.md).
 
 Outside `pnpm dev` the server's owner token is generated into `<data dir>/secrets.json`. To test against real Boat sandboxes you also need a tunnel URL in `DORKS_PUBLIC_URL` that forwards to the bridge port.
@@ -62,3 +64,25 @@ CI (`.github/workflows/ci.yml`) runs typecheck and tests and the server e2e agai
 - Keep `docs/architecture.md` in step with API changes, and make them additive where you can: the web client, the bridge and the desktop shell all read it.
 - Never put a secret behind a `VITE_` prefix.
 - Branch from `main`. Small commits, with a message that says why.
+
+## Live chat from the web UI
+
+Doppler is optional: account credentials are encrypted settings, not environment variables. For a live run, start the server
+outside `pnpm dev` (which always selects the simulator):
+
+```sh
+DORKS_DATA_DIR="$PWD/.context/live-data" DORKS_UI_PORT=4747 DORKS_BRIDGE_PORT=4748 DORKS_PUBLIC_URL=https://your-tunnel.example bun run apps/server/src/main.ts
+pnpm dev:web
+```
+
+Forward the tunnel to **4748**, the bridge listener. Open `http://localhost:3000` and connect to `http://127.0.0.1:4747` using
+the owner token from `.context/live-data/secrets.json` (read it privately; never paste it in chat or logs). Complete onboarding:
+
+- Boat API key (and organization id if needed), with snapshot/sandbox permissions; see [Boat](boat.md). Saving it builds the base snapshot.
+- Claude token from `claude setup-token`, or a configured Boat ChatGPT environment for Codex.
+- GitHub token with access to the test repository; see [GitHub](github.md).
+
+Wait for Prepare Boat to finish, choose a real `owner/repo`, and send a small task. Check that text streams, a follow-up gets a
+reply, Stop interrupts, reload preserves the transcript, and a message after idle sleep wakes the sandbox. Tokens from a Doppler
+project/config can be submitted to `PUT /api/settings` by a local script without printing them; Dorks does not read Doppler token
+variables itself. Deployment credentials are optional and go in Settings → Secrets only if the task needs them.

@@ -4,6 +4,7 @@
 // Data lives in .dev-data (git-ignored) so sessions survive restarts; delete it for a fresh start. No secrets or .env needed:
 // the owner token and sim host key are fixed, dev-only values (override with DORKS_OWNER_TOKEN, SIM_HOST_KEY, DORKS_DATA_DIR,
 // DORKS_UI_PORT, DORKS_BRIDGE_PORT). BRIDGE_IMPL=real runs the real in-box bridge with a fake Claude CLI instead of the sim bridge.
+import { createServer } from "node:net";
 import { spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,6 +17,16 @@ if (spawnSync("bun", ["--version"], { stdio: "ignore" }).status !== 0) {
   process.exit(1);
 }
 
+// Pick the web port before starting the API so its CORS allowlist and the printed link agree with Vite.
+const availablePort = (port) => new Promise((resolve, reject) => {
+  const probe = createServer();
+  probe.once("error", reject);
+  probe.listen(port, "localhost", () => {
+    const chosen = probe.address().port;
+    probe.close(() => resolve(chosen));
+  });
+});
+const webPort = onlyServer ? null : await availablePort(3000).catch(() => availablePort(0));
 const token = process.env.DORKS_OWNER_TOKEN || "dev-owner-token";
 const simKey = process.env.SIM_HOST_KEY || "dev-sim-host-key";
 const env = {
@@ -24,6 +35,10 @@ const env = {
   DORKS_OWNER_TOKEN: token,
   BOX_PROVIDER: "sim",
   SIM_HOST_KEY: simKey,
+  ...(!onlyServer ? { DORKS_UI_ORIGINS: [
+    process.env.DORKS_UI_ORIGINS || "http://localhost:3000,http://127.0.0.1:3000",
+    `http://localhost:${webPort}`, `http://127.0.0.1:${webPort}`,
+  ].join(",") } : {}),
 };
 delete env.DORKS_PUBLIC_URL;
 
@@ -59,14 +74,43 @@ const ready = await new Promise((resolve) => {
 });
 console.log(`[dev] server: UI ${ready.ui}, bridge ${ready.bridge}`);
 
+// The simulator never calls Boat, GitHub or an AI provider. Seed only missing settings so the real UI can create a
+// session immediately, without asking the developer to paste live credentials into a simulated sandbox.
+const api = async (path, method = "GET", body) => {
+  const res = await fetch(`${ready.ui}/api/${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Dev setup failed (${res.status})`);
+  return res.json();
+};
+try {
+  const settings = await api("settings");
+  await api("settings", "PUT", {
+    ...(!settings.boatKey ? { boatKey: "dev-simulated-boat" } : {}),
+    ...(!settings.claudeToken ? { claudeToken: "dev-simulated-claude" } : {}),
+    ...(!settings.github.configured ? { githubToken: "dev-simulated-github" } : {}),
+  });
+  if (!settings.baseSnapshotId) await api("snapshot/build", "POST", {});
+} catch (error) {
+  console.error(error.message);
+  stop(1);
+}
+console.log("[dev] Simulated sandboxes and AI replies; no live credentials required.");
+
 run("sim host", "node", [join(root, "infra/bridge-sim/host.mjs")], {
   env: { ...env, SIM_UI_URL: ready.ui, SIM_BRIDGE_URL: ready.bridge },
   stdio: "inherit",
 });
 
 if (!onlyServer) {
-  run("web", "pnpm", ["--filter", "@dorks/web", "dev"], { env, stdio: "inherit" });
-  console.log(`\n[dev] open http://localhost:3000/?server=${encodeURIComponent(ready.ui)}&token=${encodeURIComponent(token)}\n`);
+  run("web", "pnpm", ["--filter", "@dorks/web", "dev", "--port", String(webPort), "--strictPort"], { env, stdio: "inherit" });
+  if (!process.env.DORKS_OWNER_TOKEN) {
+    console.log(`\n[dev] open http://localhost:${webPort}/?server=${encodeURIComponent(ready.ui)}&token=dev-owner-token\n`);
+  } else {
+    console.log(`[dev] open http://localhost:${webPort}/ and connect to ${ready.ui} with your configured DORKS_OWNER_TOKEN`);
+  }
 } else {
-  console.log(`[dev] owner token: ${token}`);
+  console.log(process.env.DORKS_OWNER_TOKEN ? "[dev] use your configured DORKS_OWNER_TOKEN to connect" : "[dev] owner token: dev-owner-token");
 }
