@@ -53,6 +53,13 @@ export interface SettingsPatch {
   commentPolicy?: CommentPolicy;
 }
 
+/** `POST /api/boat/check`: whether Boat accepts a key (and organization) before anything is saved. */
+export interface BoatCheck {
+  status: "ok" | "invalid" | "needs_org" | "credit_required" | "unreachable";
+  /** Plain words for the user. */
+  message: string;
+}
+
 /** The "Prepare Boat" build of the base snapshot (`GET /api/snapshot`, docs/architecture.md "Base snapshot"). */
 export interface SnapshotStatus {
   /** none: never built. building: running. failed: the last attempt failed (the previous good snapshot, if any, is still in use). ready: built. */

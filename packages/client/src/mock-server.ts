@@ -329,6 +329,12 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         return json(res, 200, {});
       }
     }
+    if (path === "/api/boat/check" && method === "POST") {
+      const key = typeof body.boatKey === "string" ? body.boatKey.trim() : "";
+      if (!key && !settings.boatKey) return fail(res, "not_configured", "Add your Boat API key first.");
+      if (key.startsWith("bad")) return json(res, 200, { status: "invalid", message: "Boat rejected that key. Check it and its access (create, list, use and delete sandboxes)." });
+      return json(res, 200, { status: "ok", message: "Boat accepted the key." });
+    }
     if (path === "/api/snapshot" && method === "GET") return json(res, 200, snapView());
     if (path === "/api/snapshot/build" && method === "POST") {
       if (body.force !== undefined && typeof body.force !== "boolean") return fail(res, "invalid", "force must be a boolean");

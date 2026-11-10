@@ -4,6 +4,7 @@ import type { Settings } from '@dorks/client'
 import { Button } from '@dorks/ui/button'
 import { Input } from '@dorks/ui/input'
 import { Progress } from '@dorks/ui/progress'
+import { saveBoat } from '../../lib/boat'
 import { isDesktop, readGhToken, setPublicUrl } from '../../lib/desktop'
 import { canCreate, TUNNEL_SKIPPED_KEY, WELCOMED_KEY } from '../../lib/onboarding'
 import { usePending } from '../../lib/pending'
@@ -35,14 +36,13 @@ export function BoatKey({ settings, onNext }: StepProps) {
   const [key, setKey] = useState('')
   const [org, setOrg] = useState(settings.boatOrg ?? '')
   const { run, pending, error } = usePending()
-  const orgChanged = org.trim() !== (settings.boatOrg ?? '')
   return (
     <>
       <Heading title="Connect Boat">Dorks creates sandboxes in your own Boat account. The key is stored encrypted on this Mac and never shown again.</Heading>
       <StepForm
         onSubmit={() =>
           void run(async () => {
-            if (key.trim() || orgChanged) await actions.updateSettings({ ...(key.trim() ? { boatKey: key.trim() } : {}), boatOrg: org.trim() })
+            await saveBoat(actions, key.trim(), org.trim(), settings.boatOrg)
             setKey('')
             onNext()
           })

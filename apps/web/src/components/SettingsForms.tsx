@@ -6,6 +6,7 @@ import { Input } from '@dorks/ui/input'
 import { NativeSelect, NativeSelectOption } from '@dorks/ui/native-select'
 import { Progress } from '@dorks/ui/progress'
 import { Textarea } from '@dorks/ui/textarea'
+import { saveBoat } from '../lib/boat'
 import { isDesktop, readGhToken, setPublicUrl } from '../lib/desktop'
 import { usePending } from '../lib/pending'
 
@@ -28,7 +29,7 @@ export function BoatForm({ settings, onSaved }: { settings: Settings; onSaved?: 
         e.preventDefault()
         setSaved(false)
         void run(async () => {
-          await actions.updateSettings({ ...(key ? { boatKey: key } : {}), boatOrg: org.trim() })
+          await saveBoat(actions, key.trim(), org.trim(), settings.boatOrg)
           setKey('')
           setSaved(true)
           onSaved?.()

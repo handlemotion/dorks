@@ -8,7 +8,7 @@ Boat's `default` machine is 4 vCPU and 8 GB RAM at $0.036/hour, billed per secon
 
 ## Setup, in order
 
-1. **Boat API key.** Create a [Boat API key](https://docs.boat.dev/api/v1) that can create, list, command, stop, resume and delete sandboxes and list environments. Paste it in Settings (`boatKey`). Set `boatOrg` only if you want billing pinned to one organization.
+1. **Boat API key.** Create a [Boat API key](https://docs.boat.dev/api/v1) that can create, list, command, stop, resume and delete sandboxes and list environments. Paste it in the app: the server asks Boat for one sandbox with it first (`POST /api/boat/check`) and saves it only if Boat accepts it, so a wrong key, a missing organization or an empty wallet is reported on that step. Set `boatOrg` only if you want billing pinned to one organization.
 2. **Public URL.** Sandboxes reach your server through a tunnel to the bridge port. Set the tunnel's `https://` URL in Settings or as `DORKS_PUBLIC_URL`. See [architecture](architecture.md). A dork cannot be created before this is set, and the URL must stay stable, because a sandbox keeps the one it was created with.
 3. **Base snapshot**: click **Prepare Boat** (below).
 4. **Agent sign-in**: a Claude token and/or a ChatGPT environment (below).
@@ -48,6 +48,8 @@ Wait until the snapshot reports `ready`, and check that the build sandbox holds 
 ## Signing in an agent
 
 **Claude.** Run `claude setup-token`, paste the value in Settings (`claudeToken`). The server stores it encrypted and returns it only to a dork's authenticated bridge socket, which hands it to the Claude process as `CLAUDE_CODE_OAUTH_TOKEN` without writing it to disk. Claude sandboxes are created with `noEnv: true`, so Boat injects nothing.
+
+*Could Claude use a Boat environment too?* Boat documents it: a credential profile can hold a `claude-subscription` ([AI credentials](https://docs.boat.dev/ai-credentials)), and an environment with **Agents credentials** on passes the provider logins, including `CLAUDE_CODE_OAUTH_TOKEN` and `~/.claude/.credentials.json` ([environment access](https://docs.boat.dev/environments/access), [keys and subscriptions](https://docs.boat.dev/integrated-agents/keys)). Nothing here has run against a real Boat account yet, and a profile with both Claude and ChatGPT would hand both logins to every dork (the Codex check above assumes a ChatGPT-only profile). So the pasted token stays until one real run confirms the bridge's Claude process picks the login up from the sandbox, and then the token path can go.
 
 **ChatGPT (Codex).** Connect ChatGPT once per Boat account, not once per dork:
 

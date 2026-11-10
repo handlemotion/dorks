@@ -1,5 +1,5 @@
 import { appError, type AppError, type AppErrorCode, type SubscriptionView } from "@dorks/shared";
-import type { CreateDorkInput, Dork, EventsPage, PrRefInput, Settings, SettingsPatch, SnapshotStatus } from "./types.ts";
+import type { BoatCheck, CreateDorkInput, Dork, EventsPage, PrRefInput, Settings, SettingsPatch, SnapshotStatus } from "./types.ts";
 
 /**
  * Thrown for every failed call. `data` is the typed AppError, so `toAppError(e)` from @dorks/shared reads it unchanged
@@ -101,6 +101,8 @@ export function createApi(config: ApiConfig) {
     resumeSubscription: (id: string, pr: PrRefInput) => request<object>("POST", `${dork(id)}/subscriptions/resume`, pr),
     getSettings: () => request<Settings>("GET", "/api/settings"),
     updateSettings: (patch: SettingsPatch) => request<object>("PUT", "/api/settings", patch),
+    /** Checks the given key (or the saved one) against Boat without saving it. */
+    checkBoat: (input: { boatKey?: string; boatOrg?: string }) => request<BoatCheck>("POST", "/api/boat/check", input),
     getSnapshot: () => request<SnapshotStatus>("GET", "/api/snapshot"),
     /** Starts the build (idempotent: returns the current status if one is running or the snapshot is current). */
     buildSnapshot: (force = false) => request<SnapshotStatus>("POST", "/api/snapshot/build", force ? { force: true } : {}),

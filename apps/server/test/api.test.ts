@@ -105,6 +105,34 @@ describe("settings", () => {
     expect((await a.get("/api/settings")).json.github).toEqual({ configured: true, login: "robot" });
   });
 
+  it("checks a Boat key before it is saved, and tells a wrong key from a missing org or credit", async () => {
+    const seen: { key: string | null; org: string | null }[] = [];
+    const h = harness({ fetch: (async (_u: string | URL | Request, init?: RequestInit) => {
+      const headers = new Headers(init?.headers);
+      const key = headers.get("authorization")?.replace("Bearer ", "") ?? null;
+      seen.push({ key, org: headers.get("x-boat-org") });
+      if (key === "good") return Response.json({ sandboxes: [] });
+      if (key === "orgkey" && !headers.get("x-boat-org")) return Response.json({ code: "org_required" }, { status: 400 });
+      if (key === "orgkey") return Response.json({ sandboxes: [] });
+      if (key === "broke") return Response.json({ code: "credit_required" }, { status: 402 });
+      if (key === "down") return new Response("{}", { status: 503 });
+      return new Response("{}", { status: 401 });
+    }) as typeof fetch });
+    const a = api(h);
+    const status = async (body: object) => (await a.post("/api/boat/check", body)).json.status;
+    expect(await status({ boatKey: "good" })).toBe("ok");
+    expect(await status({ boatKey: "nope" })).toBe("invalid");
+    expect(await status({ boatKey: "orgkey" })).toBe("needs_org");
+    expect(await status({ boatKey: "orgkey", boatOrg: "org_1" })).toBe("ok");
+    expect(await status({ boatKey: "broke" })).toBe("credit_required");
+    expect(await status({ boatKey: "down" })).toBe("unreachable");
+    expect(seen.at(-3)).toMatchObject({ key: "orgkey", org: "org_1" });
+    expect((await a.get("/api/settings")).json.boatKey).toBe(false); // checking saves nothing
+    expect((await a.post("/api/boat/check", {})).json.error.code).toBe("not_configured");
+    await updateSettings(h.app, { boatKey: "good" });
+    expect(await status({})).toBe("ok"); // falls back to the saved key
+  });
+
   it("CLI secrets: names only, 16KB in bytes, upsert and delete", async () => {
     const a = api(harness());
     expect((await a.put("/api/secrets/DOPPLER_TOKEN", { value: "v1" })).status).toBe(200);

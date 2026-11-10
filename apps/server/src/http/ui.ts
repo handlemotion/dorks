@@ -7,6 +7,7 @@ import { z } from "zod";
 import type { AppError } from "@dorks/shared";
 import { chooseCodexModel, createDork, getDorkView, interrupt, listDorks, listEvents, removeDork, renameDork, sendMessage, setArchived, owned } from "../services/dorks";
 import { deleteSecret, secretNames, setSecret, settingsView, updateSettings } from "../services/settings";
+import { checkBoat } from "../services/boatCheck";
 import { snapshotView, startBuild } from "../services/snapshot";
 import * as subs from "../services/subscriptions";
 
@@ -149,6 +150,9 @@ export function uiApp(app: App): Hono {
     deleteSecret(app, c.req.param("name"));
     return c.json({});
   });
+
+  // ---- Boat key check (nothing is saved)
+  api.post("/api/boat/check", async (c) => c.json(await checkBoat(app, await body(c))));
 
   // ---- base snapshot ("Prepare Boat")
   api.get("/api/snapshot", async (c) => c.json(await snapshotView(app)));

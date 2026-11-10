@@ -208,6 +208,7 @@ export class DorksClient {
       await this.api.updateSettings(patch);
       this.invalidate("settings");
     },
+    checkBoat: (input: { boatKey?: string; boatOrg?: string }) => this.api.checkBoat(input),
     /** Starts "Prepare Boat". Resolves with the status right after it started; follow progress with `snapshot()` / `useSnapshot()`. */
     buildSnapshot: async (force = false) => {
       try {

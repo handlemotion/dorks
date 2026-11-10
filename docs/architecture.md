@@ -96,6 +96,7 @@ IDs are UUID strings. Times are epoch milliseconds.
 | `POST /api/dorks/:id/subscriptions/resume` | `{repo, number}` | `{}` |
 | `GET /api/settings` | | `{claudeToken, boatKey, github: {configured, login?}, boatOrg, boatEnvironment, baseSnapshotId, sleepMinutes, commentPolicy, publicUrlConfigured, boxProvider}`: booleans and plain values only, never secrets |
 | `PUT /api/settings` | any subset of `{boatKey, boatOrg, claudeToken, githubToken, boatEnvironment, baseSnapshotId, sleepMinutes, commentPolicy}` | `{}`. Token fields are write-only; an empty string clears one |
+| `POST /api/boat/check` | `{boatKey?, boatOrg?}` (the saved ones when omitted) | `{status: "ok"\|"invalid"\|"needs_org"\|"credit_required"\|"unreachable", message}`: asks Boat for one sandbox with that key; nothing is saved. Error `not_configured` (412) with no key at all |
 | `GET /api/snapshot` | | the base-snapshot build status, see "Base snapshot" |
 | `POST /api/snapshot/build` | `{force?: boolean}` | `202` and the same status. Starts "Prepare Boat" unless a build is running, or the snapshot is already built from this app's bridge and in use (and `force` is not set). Error `not_configured` (412) without a Boat key |
 | `GET /api/secrets` | | sorted names `string[]` |
