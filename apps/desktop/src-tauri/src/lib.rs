@@ -41,6 +41,8 @@ pub fn run() {
             commands::server_status,
             commands::restart_server,
             commands::set_public_url,
+            commands::set_wurmhol_token,
+            commands::tunnel_status,
             commands::open_data_dir,
             commands::gh_status,
             commands::read_gh_token,

@@ -16,9 +16,11 @@ use tauri::async_runtime::JoinHandle;
 pub struct TunnelInfo {
     /// `"user-url"`, `"wurmhol"`.
     pub kind: String,
-    /// `"ready"` or `"error"`.
+    /// `"ready"`, `"error"` (could not start) or `"lost"` (it was up and went away; the shell is restarting it).
     pub state: String,
     pub error: Option<String>,
+    /// Whether a wurmhol token is saved (the token itself never leaves the shell).
+    pub token_set: bool,
 }
 
 /// What the UI needs to talk to the server. Contains the owner token, so it only ever goes to the app's own window.
@@ -58,6 +60,8 @@ pub struct Runtime {
     pub supervisor: Arc<Supervisor>,
     pub tunnel: Arc<dyn Tunnel>,
     pub watcher: JoinHandle<()>,
+    /// Waits for the tunnel to report it is gone (only tunnels that can be observed).
+    pub tunnel_watcher: Option<JoinHandle<()>>,
 }
 
 pub struct AppState {
@@ -109,7 +113,7 @@ mod tests {
             owner_token: "t".into(),
             data_dir: "/d".into(),
             version: "0".into(),
-            tunnel: TunnelInfo { kind: "wurmhol".into(), state: "error".into(), error: Some("x".into()) },
+            tunnel: TunnelInfo { kind: "wurmhol".into(), state: "error".into(), error: Some("x".into()), token_set: false },
         }
     }
 

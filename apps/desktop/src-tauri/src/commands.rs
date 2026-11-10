@@ -3,6 +3,7 @@
 use std::sync::atomic::Ordering;
 
 use dorks_shell_core::github::{self, GhStatus};
+use dorks_shell_core::secrets::write_secret;
 use dorks_shell_core::settings::{validate_public_url, KeepAwake};
 use dorks_shell_core::supervisor::Status;
 use tauri::{AppHandle, Manager, State};
@@ -10,7 +11,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::boot;
-use crate::state::{AppState, RuntimeConfig};
+use crate::state::{AppState, RuntimeConfig, TunnelInfo};
 
 #[tauri::command]
 pub fn runtime_config(state: State<'_, AppState>) -> Option<RuntimeConfig> {
@@ -44,10 +45,34 @@ pub async fn set_public_url(app: AppHandle, url: Option<String>) -> Result<Optio
         settings.public_url = normalised;
         settings.save(&state.paths.settings_file()).map_err(|e| format!("cannot save settings: {e}"))?;
     }
-    boot::stop_runtime(&app).await;
-    let result = boot::start_runtime(&app).await;
-    boot::publish_config(&app);
-    result.map(Some)
+    restart_runtime(&app).await.map(Some)
+}
+
+async fn restart_runtime(app: &AppHandle) -> Result<RuntimeConfig, String> {
+    boot::stop_runtime(app).await;
+    let result = boot::start_runtime(app).await;
+    boot::publish_config(app);
+    result
+}
+
+/// Saves (or, with `None`, removes) the wurmhol token and restarts tunnel and server. The token is kept in a 0600 file and is
+/// never returned to the UI; `tunnel.tokenSet` says whether one exists.
+#[tauri::command]
+pub async fn set_wurmhol_token(app: AppHandle, token: Option<String>) -> Result<Option<RuntimeConfig>, String> {
+    let token = token.map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+    if let Some(t) = &token {
+        if t.len() > 512 || t.chars().any(|c| c.is_whitespace() || c.is_control()) {
+            return Err("that does not look like a wurmhol token".into());
+        }
+    }
+    let path = app.state::<AppState>().paths.wurmhol_token_file();
+    write_secret(&path, token.as_deref()).map_err(|e| format!("cannot save the token: {e}"))?;
+    restart_runtime(&app).await.map(Some)
+}
+
+#[tauri::command]
+pub fn tunnel_status(state: State<'_, AppState>) -> Option<TunnelInfo> {
+    state.config.lock().unwrap().as_ref().map(|c| c.tunnel.clone())
 }
 
 #[tauri::command]

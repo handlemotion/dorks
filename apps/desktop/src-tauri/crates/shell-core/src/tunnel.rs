@@ -2,7 +2,7 @@
 //! port needs a public URL. Something provides it by implementing [`Tunnel`]:
 //!
 //! - [`UserUrlTunnel`]: the user already exposes the port (own domain, reverse proxy, another tunnel) and gives the URL.
-//! - [`WurmholTunnel`]: the wurmhol client (stable URL). Stubbed; it reports that it is not implemented.
+//! - [`WurmholTunnel`] (module `wurmhol`): runs the wurmhol client against the bridge port and reports the URL it prints.
 //!
 //! Only the bridge port is ever exposed; the UI port stays on loopback.
 
@@ -10,8 +10,10 @@ use std::future::Future;
 use std::pin::Pin;
 
 use serde::Serialize;
+use tokio::sync::watch;
 
 use crate::settings::validate_public_url;
+pub use crate::wurmhol::{WurmholConfig, WurmholTunnel};
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -46,6 +48,14 @@ impl std::fmt::Display for TunnelError {
 
 impl std::error::Error for TunnelError {}
 
+/// What a running tunnel reports about itself after it started.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TunnelHealth {
+    Up,
+    /// The tunnel is gone; the reason is for the UI. Reported once, after which the owner decides what to do.
+    Lost(String),
+}
+
 pub trait Tunnel: Send + Sync {
     /// Short stable name for the UI: `"user-url"`, `"wurmhol"`.
     fn kind(&self) -> &'static str;
@@ -53,6 +63,10 @@ pub trait Tunnel: Send + Sync {
     fn start(&self, target: TunnelTarget) -> BoxFuture<'_, Result<TunnelEndpoint, TunnelError>>;
     /// Tears it down. Must be safe to call when it never started.
     fn stop(&self) -> BoxFuture<'_, ()>;
+    /// Health updates for tunnels that can die on their own. `None` for tunnels that cannot be observed.
+    fn watch(&self) -> Option<watch::Receiver<TunnelHealth>> {
+        None
+    }
 }
 
 /// The user supplies the public URL; nothing is started.
@@ -80,30 +94,12 @@ impl Tunnel for UserUrlTunnel {
     }
 }
 
-/// Placeholder for the wurmhol client (handlemotion/wurmhol: stable URLs). To implement: authenticate, claim the user's stable
-/// hostname, forward it to `127.0.0.1:{bridge_port}` with WebSocket support, and reconnect on drops.
-pub struct WurmholTunnel;
-
-impl Tunnel for WurmholTunnel {
-    fn kind(&self) -> &'static str {
-        "wurmhol"
-    }
-
-    fn start(&self, _target: TunnelTarget) -> BoxFuture<'_, Result<TunnelEndpoint, TunnelError>> {
-        Box::pin(async { Err(TunnelError::NotImplemented("the wurmhol tunnel")) })
-    }
-
-    fn stop(&self) -> BoxFuture<'_, ()> {
-        Box::pin(async {})
-    }
-}
-
 /// Chooses the tunnel: a URL from the environment, else one saved in settings, else wurmhol.
-pub fn select(env_url: Option<&str>, settings_url: Option<&str>) -> Result<Box<dyn Tunnel>, TunnelError> {
+pub fn select(env_url: Option<&str>, settings_url: Option<&str>, wurmhol: WurmholConfig) -> Result<Box<dyn Tunnel>, TunnelError> {
     let url = env_url.filter(|u| !u.trim().is_empty()).or(settings_url.filter(|u| !u.trim().is_empty()));
     match url {
         Some(url) => Ok(Box::new(UserUrlTunnel::new(url)?)),
-        None => Ok(Box::new(WurmholTunnel)),
+        None => Ok(Box::new(WurmholTunnel::new(wurmhol))),
     }
 }
 
@@ -120,19 +116,13 @@ mod tests {
         assert!(UserUrlTunnel::new("http://me.example.com").is_err());
     }
 
-    #[tokio::test]
-    async fn wurmhol_is_a_stub() {
-        let t = WurmholTunnel;
-        assert_eq!(t.start(TunnelTarget { bridge_port: 1 }).await, Err(TunnelError::NotImplemented("the wurmhol tunnel")));
-        t.stop().await;
-    }
-
     #[test]
     fn selection_prefers_environment_then_settings_then_wurmhol() {
-        assert_eq!(select(Some("https://env.example"), Some("https://saved.example")).unwrap().kind(), "user-url");
-        assert_eq!(select(None, Some("https://saved.example")).unwrap().kind(), "user-url");
-        assert_eq!(select(Some(" "), None).unwrap().kind(), "wurmhol");
-        assert_eq!(select(None, None).unwrap().kind(), "wurmhol");
-        assert!(select(Some("http://insecure.example"), None).is_err());
+        let cfg = || WurmholConfig::new("wurmhol".into(), "wurmhol.log".into());
+        assert_eq!(select(Some("https://env.example"), Some("https://saved.example"), cfg()).unwrap().kind(), "user-url");
+        assert_eq!(select(None, Some("https://saved.example"), cfg()).unwrap().kind(), "user-url");
+        assert_eq!(select(Some(" "), None, cfg()).unwrap().kind(), "wurmhol");
+        assert_eq!(select(None, None, cfg()).unwrap().kind(), "wurmhol");
+        assert!(select(Some("http://insecure.example"), None, cfg()).is_err());
     }
 }

@@ -28,6 +28,11 @@ pub struct Settings {
     pub ui_port: Option<u16>,
     pub bridge_port: Option<u16>,
     pub keep_awake: KeepAwake,
+    /// A self-hosted wurmhol install (`WURMHOL_URL`); unset means the hosted one.
+    pub wurmhol_server: Option<String>,
+    /// Extra arguments for the wurmhol client, after `<port> --json` (for flags the relay learns later, such as a reserved
+    /// name). The token never goes here; it has its own 0600 file.
+    pub wurmhol_args: Vec<String>,
 }
 
 impl Settings {
@@ -83,7 +88,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("settings.json");
         assert_eq!(Settings::load(&path).unwrap(), Settings::default());
-        let s = Settings { public_url: Some("https://x.example".into()), ui_port: Some(1), bridge_port: Some(2), keep_awake: KeepAwake::Always };
+        let s = Settings {
+            public_url: Some("https://x.example".into()),
+            ui_port: Some(1),
+            bridge_port: Some(2),
+            keep_awake: KeepAwake::Always,
+            wurmhol_server: Some("https://wh.example".into()),
+            wurmhol_args: vec!["--name".into(), "mine".into()],
+        };
         s.save(&path).unwrap();
         assert_eq!(Settings::load(&path).unwrap(), s);
     }

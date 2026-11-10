@@ -60,6 +60,15 @@ impl Paths {
         self.root.join("owner-token")
     }
 
+    /// The user's wurmhol token (0600). Never in `settings.json`.
+    pub fn wurmhol_token_file(&self) -> PathBuf {
+        self.root.join("wurmhol-token")
+    }
+
+    pub fn wurmhol_log(&self) -> PathBuf {
+        self.logs_dir().join("wurmhol.log")
+    }
+
     pub fn server_pid_file(&self) -> PathBuf {
         self.root.join("server.pid")
     }

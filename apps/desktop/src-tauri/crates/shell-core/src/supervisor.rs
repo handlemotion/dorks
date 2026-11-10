@@ -308,7 +308,7 @@ fn rotate_log(path: &Path, max: u64) {
 }
 
 /// SIGTERM, wait `grace`, then SIGKILL.
-async fn terminate(child: &mut Child, grace: Duration) {
+pub(crate) async fn terminate(child: &mut Child, grace: Duration) {
     #[cfg(unix)]
     if let Some(pid) = child.id() {
         // SAFETY: plain signal delivery to a child we own.

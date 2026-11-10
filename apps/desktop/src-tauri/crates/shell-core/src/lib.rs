@@ -12,3 +12,4 @@ pub mod secrets;
 pub mod settings;
 pub mod supervisor;
 pub mod tunnel;
+pub mod wurmhol;

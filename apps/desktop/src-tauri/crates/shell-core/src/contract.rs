@@ -36,6 +36,10 @@ pub const SERVER_BIN_NAME: &str = "dorks-server";
 /// Overrides the sidecar path (development).
 pub const ENV_SERVER_BIN: &str = "DORKS_SERVER_BIN";
 
+/// Shell-side only: path of the wurmhol client executable (default: `wurmhol` next to the app, else on PATH plus the usual
+/// Homebrew and `~/.local/bin` locations).
+pub const ENV_WURMHOL_BIN: &str = "WURMHOL_BIN";
+
 /// Shell-side only: overrides the app directory (default: `~/Library/Application Support/Dorks`). The server gets
 /// `<app dir>/server` as `DORKS_DATA_DIR`.
 pub const ENV_APP_DIR: &str = "DORKS_APP_DIR";

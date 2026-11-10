@@ -39,6 +39,30 @@ pub fn ensure_owner_token(path: &Path) -> io::Result<String> {
     }
 }
 
+/// A secret stored as a 0600 file: trimmed contents, or `None` when the file is missing or blank.
+pub fn read_secret(path: &Path) -> io::Result<Option<String>> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => {
+            restrict(path)?;
+            let text = text.trim();
+            Ok((!text.is_empty()).then(|| text.to_string()))
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+/// Stores a secret (mode 0600), or removes the file when `value` is `None`.
+pub fn write_secret(path: &Path, value: Option<&str>) -> io::Result<()> {
+    match value {
+        Some(v) => write_private(path, v.trim().as_bytes()),
+        None => match std::fs::remove_file(path) {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        },
+    }
+}
+
 /// Writes `bytes` to `path` atomically (temp file + rename) with mode 0600.
 pub fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let tmp = path.with_extension("tmp");
@@ -108,6 +132,20 @@ mod tests {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
         ensure_owner_token(&path).unwrap();
         assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+    }
+
+    #[test]
+    fn secrets_round_trip_and_clear() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wurmhol-token");
+        assert_eq!(read_secret(&path).unwrap(), None);
+        write_secret(&path, Some("  wh_abc \n")).unwrap();
+        assert_eq!(read_secret(&path).unwrap().as_deref(), Some("wh_abc"));
+        write_secret(&path, None).unwrap();
+        assert_eq!(read_secret(&path).unwrap(), None);
+        write_secret(&path, None).unwrap();
+        std::fs::write(&path, " \n").unwrap();
+        assert_eq!(read_secret(&path).unwrap(), None);
     }
 
     #[test]
