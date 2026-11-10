@@ -1,0 +1,159 @@
+# Architecture: local-first server
+
+Status: accepted. This replaces `apps/convex` with `apps/server`. There are no users, so this is a hard cut with no data migration.
+
+## Decision
+
+Dorks runs as a **local server on the owner's machine** (a single compiled binary, started as a sidecar by the desktop app, or by hand). It owns a SQLite database, the lifecycle state machine, a durable timer queue, the Boat driver and a GitHub poller. The agent's in-sandbox **bridge** connects *out* to it over a WebSocket through a tunnel; the UI talks to it over loopback HTTP.
+
+### Why not keep Convex
+
+Convex gave us live queries, a durable scheduler, transactions and a WebSocket the bridge connects out over. For a local, single-owner product it costs more than it gives:
+
+- **The tunnel would publish the whole Convex API.** The bridge must reach the backend from Boat's cloud, so the backend needs a public URL. Convex serves everything (UI queries, mutations, admin) on one origin, so a tunnel to it exposes all of it. With our own server, the tunnel forwards only the bridge listener, which speaks one narrow, authenticated protocol.
+- **Deploy toolchain and licence.** Running functions locally needs the self-hosted `convex-backend` binary (FSL licence), a CLI plus bundler to deploy functions, admin-key handling and env sync. That is a lot of moving parts to ship inside a desktop app.
+- **No local-first sync story.** Convex is the database; there is nothing to replicate to or from a cloud later.
+- **What we actually used is small.** Three live queries, a scheduler used as a timer table, and single-document transactions. SQLite with a single writer gives the same atomicity (`BEGIN IMMEDIATE`), a `timers` table gives durable timers, and a Server-Sent-Events invalidation stream gives live UI updates.
+
+The pure logic carries over unchanged: the lifecycle reducer (`core/machine.ts`), the stream normalizer, AES-GCM envelope, the Boat driver, the bridge HMAC, the notification renderer and the shared wire types in `packages/shared`.
+
+### Sync later
+
+The per-dork `events` table is append-only with a dense `seq`. That is the replication unit: a later cloud sync can ship `events` (and settings) by `(dork_id, seq)` without redesigning the model.
+
+## Shape
+
+```
+ desktop app (Tauri) ── spawns ──► apps/server  (one binary, Bun)
+   UI (static SPA) ──HTTP+SSE──►  UI listener   127.0.0.1:<ui port>     owner-token auth
+ Boat sandbox: dorks-bridge ──WS─► bridge listener 127.0.0.1:<bridge port>  ◄── tunnel (wurmhol) ◄── public URL
+                                      │
+                                      ├─ SQLite (WAL)       <data dir>/dorks.db
+                                      ├─ lifecycle driver   one SQLite transaction per input
+                                      ├─ timers             durable table + in-process scheduler
+                                      ├─ box jobs           Boat driver, outside transactions
+                                      └─ GitHub poller      ETag polling with a stored token
+```
+
+Runtime: Bun (`bun:sqlite`, `Bun.serve`), compiled with `bun build --compile` into one sidecar binary per target. The code under `apps/server/src` is runtime-neutral except `main.ts`: the SQLite adapter picks `bun:sqlite` under Bun and `node:sqlite` under Node 24, so the unit tests run under vitest on Node against the real code and an in-memory database.
+
+### Process model and atomicity
+
+- All state changes are **synchronous functions over one SQLite connection**, wrapped in `BEGIN IMMEDIATE ... COMMIT`. A thrown error rolls back everything (this is how a rejected message to an archived dork also un-persists its outbox row).
+- Anything async (Boat calls, GitHub calls, HMAC verification, decryption) happens **outside** transactions and reports back through a transactional function carrying the box-operation generation (`op_gen`), exactly as before, so a stale result from a superseded operation is ignored.
+- Effects that must survive a crash are rows in `timers`: `owner` (a dork id or `""`), `name`, `due_at`, `payload`. Box jobs are timers named `box:create`, `box:resume`, `box:pause`, `box:destroy` and `orphan:<boxId>`. A timer is claimed by deleting its row in the transaction that starts running it (at-most-once, like Convex scheduled functions; every provider call is idempotent). On boot the scheduler reloads the table, so due timers fire immediately.
+- After the outermost commit, the transaction's change set is published to live listeners (SSE clients and connected bridge sessions). A rollback discards it.
+
+## Configuration
+
+Environment (all optional except where noted); a desktop shell sets these when it spawns the sidecar.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `DORKS_DATA_DIR` | `~/Library/Application Support/Dorks` (macOS), `$XDG_DATA_HOME/dorks` | Holds `dorks.db` and `secrets.json` |
+| `DORKS_UI_PORT` | `4747` (`0` = random) | UI listener, bound to `127.0.0.1` |
+| `DORKS_BRIDGE_PORT` | `4748` (`0` = random) | Bridge listener, bound to `127.0.0.1`; the tunnel forwards to this |
+| `DORKS_PUBLIC_URL` | none | Public `https://` URL of the tunnel. The sandbox is created with `BRIDGE_URL` = this (as `wss://`). Required before a Boat dork can be created |
+| `DORKS_OWNER_TOKEN` | generated | Bearer token for the UI API. Generated once into `secrets.json` if unset |
+| `DORKS_UI_ORIGINS` | tauri + localhost:3000 | Comma-separated browser origins allowed by CORS |
+| `BOX_PROVIDER` | `boat` | `boat`, or `sim` for the local simulator and tests |
+| `SIM_HOST_KEY` | none | Required when `BOX_PROVIDER=sim`; guards `/sim/*` |
+
+`secrets.json` (mode 600) holds `bridgeSecretKey` (HMAC key for per-dork bridge secrets), `encryptionKey` (AES-GCM, base64 32 bytes) and `ownerToken`, generated on first run. The Boat API key, Claude token, GitHub token and CLI secrets are **settings** stored encrypted in SQLite, so the UI can change them without touching the environment.
+
+On startup the server prints one JSON line to stdout for a supervisor: `{"ready":true,"ui":"http://127.0.0.1:4747","bridge":"ws://127.0.0.1:4748/bridge"}`. `GET /api/health` answers `{"ok":true}` without auth.
+
+## UI API (loopback HTTP)
+
+Auth: `Authorization: Bearer <owner token>` (SSE also accepts `?access_token=`, since `EventSource` cannot set headers). Bodies and responses are JSON. Errors are `{"error": AppError}` (see `packages/shared/src/errors.ts`) with a matching HTTP status (`invalid` 400, `forbidden` 401, `not_found` 404, `conflict`/`archived`/`deleting` 409, `limit` 429, `not_configured`/`onboarding_incomplete` 412, other 500).
+
+IDs are UUID strings. Times are epoch milliseconds.
+
+**Dork** (the client-visible row; box ids, session ids and secrets are never returned):
+`{ id, title, repo, branch, provider: "claude"|"codex", state, archived, preview?, prUrl?, codexModel?, codexModelChoices?, lastActivityAt, createdAt }`
+`state` is one of `creating | working | idle | sleeping | waking | error`.
+
+| Method and path | Body / query | Result |
+|---|---|---|
+| `GET /api/dorks` | `?archived=true` | `Dork[]`, newest activity first, at most 200 |
+| `GET /api/dorks/:id` | | `Dork` or 404 |
+| `POST /api/dorks` | `{repo, message, title?, provider?}` (`provider` defaults to `codex`) | `{id}` |
+| `PATCH /api/dorks/:id` | `{title}` | `{}` |
+| `DELETE /api/dorks/:id` | | `{}` (box is destroyed in the background, then rows are purged) |
+| `POST /api/dorks/:id/messages` | `{text}` | `{}` |
+| `POST /api/dorks/:id/interrupt` | | `{}` |
+| `POST /api/dorks/:id/archive` | `{archived: boolean}` | `{}` |
+| `POST /api/dorks/:id/codex-model` | `{model, effort}` | `{}` |
+| `GET /api/dorks/:id/events` | `?before=<seq>&limit=<1..200, default 50>` or `?after=<seq>` | `{events: ClientEvent[], hasMore}`. `before` (or neither) returns newest first; `after` returns ascending, inclusive of `seq > after` |
+| `GET /api/dorks/:id/subscriptions` | | `SubscriptionView[]` (non-ended) |
+| `POST /api/dorks/:id/subscriptions` | `{repo, number}` | `{}` (user subscribe; un-stalls and resets the CI budget) |
+| `DELETE /api/dorks/:id/subscriptions` | `{repo, number}` | `{}` |
+| `POST /api/dorks/:id/subscriptions/resume` | `{repo, number}` | `{}` |
+| `GET /api/settings` | | `{claudeToken, boatKey, github: {configured, login?}, boatOrg, boatEnvironment, baseSnapshotId, sleepMinutes, commentPolicy, publicUrlConfigured}`: booleans and plain values only, never secrets |
+| `PUT /api/settings` | any subset of `{boatKey, boatOrg, claudeToken, githubToken, boatEnvironment, baseSnapshotId, sleepMinutes, commentPolicy}` | `{}`. Token fields are write-only; an empty string clears one |
+| `GET /api/secrets` | | sorted names `string[]` |
+| `PUT /api/secrets/:name` | `{value}` | `{}` (`^[A-Z][A-Z0-9_]{0,63}$`, 16 KB max) |
+| `DELETE /api/secrets/:name` | | `{}` |
+| `GET /api/health` | no auth | `{ok: true}` |
+
+`ClientEvent` and `SubscriptionView` are the zod types in `packages/shared`. The event log is append-only; a growing assistant message keeps **one** row whose text grows in place (same `seq`), so a client that tails must re-read from its last known `seq` inclusive.
+
+### Live updates: `GET /api/live` (Server-Sent Events)
+
+One stream per client. Messages are `data: <json>\n\n`; a `: ping` comment every 20 s keeps proxies open. They are **invalidations**, not payloads: refetch the thing named.
+
+| Message | Meaning |
+|---|---|
+| `{"t":"hello","now":<ms>}` | sent on connect; refetch everything you show |
+| `{"t":"dorks"}` | the dork list changed (rows, order or archive state) |
+| `{"t":"dork","dorkId"}` | one dork's row changed |
+| `{"t":"events","dorkId","seq"}` | the transcript tail is now `seq`; refetch `events?after=<your last seq - 1>` (coalesced to at most one message per 50 ms per dork) |
+| `{"t":"subscriptions","dorkId"}` | PR subscriptions changed |
+| `{"t":"settings"}` | settings or secret names changed |
+
+`packages/client` wraps this (`useDorks`, `useDork`, `useDorkEvents`, `useSettings`), replacing `@dorks/convex/client` and `convex/react`.
+
+## Bridge protocol (WebSocket, the only thing exposed through the tunnel)
+
+`GET /bridge` upgrades to a WebSocket on the bridge listener. Frames are JSON text. Nothing else is served there (`/` answers 404).
+
+**Auth.** The first frame must be `{"t":"auth","dorkId","secret"}` where `secret = HMAC-SHA256(bridgeSecretKey, "bridge|" + dorkId)` hex, as before. The server answers `{"t":"auth_ok"}`; on a wrong secret, an unknown or deleting dork, or no first frame within 5 s it closes with code 4403. Nothing is served to an unauthenticated socket.
+
+**Requests** (bridge to server): `{"t":"rpc","id":<n>,"op":"<op>","args":{...}}`. **Responses**: `{"t":"res","id":<n>,"ok":true,"result":...}` or `{"t":"res","id":<n>,"ok":false,"error":AppError}`.
+
+| op | args | result |
+|---|---|---|
+| `connect` | | `{afterBridgeSeq}`. Error `sleeping` if the dork is asleep (a bridge must not wake anything). Marks the bridge seen and queues a `configure` command |
+| `heartbeat` | | `{}`. Bridge liveness; back after a blip while `working`/`idle` re-arms the machine |
+| `push` | `{frames: FromBridge[]}` (at most 500 frames, 256 KB per event) | `{ok:true}` or `{ok:false,expectedBseq}` when the batch has a gap. A gap applies nothing: the bridge resends from `expectedBseq`. Events numbered `<=` the stored `bridge_seq` are replays and skipped. Errors `too_many_frames`, `event_too_large` |
+| `configure` | | the `configure` `ToBridge` frame (Claude token, CLI secrets, GitHub token, repo, resume session) or `null` if refused. **The only place secrets are decrypted**; they exist only in this response, never stored in a command row |
+| `gh_token` | | `{token}` or `null` (the stored GitHub token; kept so the bridge's refresh path keeps working, the server no longer queues `gh_token` commands) |
+| `subscribe_pr` | `{repo, number, source: "auto"\|"agent"}` | `{}` (idempotent) |
+| `unsubscribe_pr` | `{repo, number}` | `{}` |
+
+**Pushes** (server to bridge): `{"t":"commands","cmds":[{cid, frame: CommandFrame}]}` is the **snapshot of unacknowledged commands** and is re-sent whenever it changes (and once right after `auth_ok`). Delivery is idempotent: the bridge dedupes by `cid`/message id and acknowledges with a `push` `ack` frame, which removes the command. This gives resume-after-reconnect for free: after a drop the bridge re-auths, calls `connect` (learning `afterBridgeSeq`, the event cursor, so it replays events above it) and receives the current snapshot. `{"t":"subscriptions","views":SubscriptionView[]}` is sent likewise for the bridge's PR cache.
+
+`push` frames, `ToBridge`, `FromBridge` and `CommandFrame` are the zod types in `packages/shared/src/bridge.ts`, unchanged except that the legacy Codex device-code frames are gone: Codex always authenticates through a Boat environment.
+
+The `Transport` interface in `infra/bridge/src/transport.ts` is unchanged; `WsTransport` implements it over this protocol with reconnect and resume.
+
+## Lifecycle
+
+`core/machine.ts` is unchanged apart from dropping the GitHub-token-refresh effects. Dispatch applies an input in one transaction: persist the new state, append a `status` event, then run effects (arm/cancel timers, enqueue box jobs, release held notifications, enqueue `interrupt`). Pausing keeps the same intent-with-generation model (`flushing` → `pausing` → `cancelled`). Timers: `sleep`, `watchdog`, `bridge_watch`, `flush`, `notify`, `pause_retry`.
+
+## GitHub (autonomy)
+
+No GitHub App and no webhooks. One **token** (a fine-grained PAT, or the one `gh auth token` yields) is stored encrypted in settings; it is handed to the sandbox in `configure` and used by the server's poller. Every 30 s (when any subscription is active) the poller reads each subscribed PR with conditional requests (`If-None-Match`; a 304 is free against the rate limit): the PR (head, base, state, mergeability), its reviews, its conversation and review comments since the last cursor, and the check suites of the head. It turns differences into the same normalized events the webhook path produced (`pr_closed`, `pr_synchronize`, `pr_base_changed`, `review`, `comment`, `check_suite`, mergeability) and feeds them through the same routing, CI-attempt budget, debounce inbox and `notify` rendering as before. Polling catches up after the machine sleeps, which webhooks cannot.
+
+Identity: the dork acts as whoever owns the token. Events authored by the token's own login are ignored (they are the agent's own), so use a dedicated bot account's token if you also want your comments on the PR to wake the dork; otherwise talk to it in the chat.
+
+## Security model
+
+- UI listener: loopback only, bearer owner token, CORS limited to configured origins.
+- Bridge listener: loopback only; the tunnel forwards to it. Only `/bridge` upgrades; authentication is the per-dork HMAC; secrets are returned only over an authenticated socket and never persisted in command rows.
+- At rest: Boat key, Claude token, GitHub token and CLI secrets are AES-GCM encrypted (`core/crypto.ts`, additional data binds each to its purpose); `secrets.json` is mode 600.
+- The sandbox's `BRIDGE_URL` is fixed at creation, so `DORKS_PUBLIC_URL` must be stable (a stable tunnel hostname).
+
+## Out of scope here
+
+The Tauri shell (`apps/desktop`), the tunnel sidecar, the web client port (`apps/web` onto `packages/client`), removing `apps/convex`, and the Convex-era Phase 1/2 work.
