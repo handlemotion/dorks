@@ -1,6 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { useDefaultLayout } from 'react-resizable-panels'
-import { ExternalLinkIcon, GitPullRequestIcon, GlobeIcon, LayersIcon, MonitorIcon, ChevronsLeftIcon, ChevronsRightIcon } from 'lucide-react'
+import { useDefaultLayout, usePanelRef } from 'react-resizable-panels'
+import { useSnapOnClick } from '../lib/snapOnClick'
+import { ChevronRightIcon, ChevronsDownUpIcon, ChevronsUpDownIcon, WrapTextIcon, ExternalLinkIcon, GitPullRequestIcon, GlobeIcon, LayersIcon, MonitorIcon, ChevronsLeftIcon, ChevronsRightIcon } from 'lucide-react'
+import { PatchDiff } from '@pierre/diffs/react'
+import { useTheme } from 'next-themes'
 import { Button } from '@dorks/ui/button'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@dorks/ui/resizable'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@dorks/ui/tabs'
@@ -10,7 +13,7 @@ import { BAR_BUTTON, PreviewBrowser } from './PreviewBrowser'
 
 /** A file the agent produced in the chat: a screenshot, a design, a document. */
 export type Artifact = { id: string; name: string; /** Short type label, e.g. "PNG". */ type: string; src?: string; href?: string; /** Pixel size of an image, when known. */ width?: number; height?: number }
-export type FileChange = { path: string; additions: number; deletions: number }
+export type FileChange = { path: string; additions: number; deletions: number; /** The file's unified diff (`git diff` output), when loaded: the row opens it. */ patch?: string }
 
 /** Everything Chat details can show. Missing parts show an empty state in their tab. */
 export type ChatDetailsData = {
@@ -36,11 +39,12 @@ export function ChatDetails({ data, onClose, onGrab, onAsk, className }: { data:
   const changes = data.changes ?? []
   return (
     <aside aria-label="Chat details" className={['flex h-full min-h-0 flex-col p-1', className].filter(Boolean).join(' ')}>
-      {/* Same fill as the app; the only edge is a soft hairline (the --border tone), drawn as an inset outline so it takes no space. */}
+      {/* Same fill as the app; the only edge is a soft hairline (the --border tone), drawn as an overlay above the content so it takes no
+          space and nothing inside (a diff paints its own layer) can cover it. */}
       <Tabs
         value={tab}
         onValueChange={(value) => setTab(value as Tab)}
-        className="min-h-0 flex-1 gap-0 overflow-hidden rounded-[11px] outline outline-1 -outline-offset-1 outline-border"
+        className="relative min-h-0 flex-1 gap-0 overflow-hidden rounded-[11px] after:pointer-events-none after:absolute after:inset-0 after:z-20 after:rounded-[inherit] after:border after:border-border"
       >
         <div data-tauri-drag-region className="flex h-10 shrink-0 items-center gap-0.5 p-[5px]">
           <TabsList className="h-[30px]! gap-0.5 rounded-none bg-transparent p-0">
@@ -183,10 +187,19 @@ function DiffThumb() {
 }
 
 function Changes({ changes, pr }: { changes: FileChange[]; pr?: ChatDetailsData['pr'] }) {
+  const [open, setOpen] = useState<Set<string>>(() => new Set())
+  const [wrap, setWrap] = useState(false)
+  const withPatch = changes.filter((c) => c.patch)
+  const anyOpen = withPatch.some((c) => open.has(c.path))
+  const toggle = (path: string) => setOpen((current) => {
+    const next = new Set(current)
+    if (!next.delete(path)) next.add(path)
+    return next
+  })
   return (
     <div className="flex min-h-full flex-col text-sm">
-      {/* Icons line up with the tab icons above (14px from the panel edge). */}
-      <div className="flex h-10 shrink-0 items-center gap-2 border-y px-[14px]">
+      {/* Icons line up with the tab icons above (14px from the panel edge); the buttons sit 5px from the right, like the tab bar's. */}
+      <div className="flex h-10 shrink-0 items-center gap-2 border-y pr-[5px] pl-[14px]">
         <GitPullRequestIcon className="size-3.5 text-muted-foreground" />
         {pr ? (
           <a href={pr.url} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 hover:underline">
@@ -196,27 +209,60 @@ function Changes({ changes, pr }: { changes: FileChange[]; pr?: ChatDetailsData[
         ) : (
           <span className="text-muted-foreground">No pull request yet</span>
         )}
-        {changes.length > 0 && <span className="ml-auto text-xs"><Stat additions={sum(changes, 'additions')} deletions={sum(changes, 'deletions')} /></span>}
+        {changes.length > 0 && <span className={`ml-auto text-xs ${withPatch.length > 0 ? "mr-1" : "pr-[9px]"}`}><Stat additions={sum(changes, 'additions')} deletions={sum(changes, 'deletions')} /></span>}
+        {withPatch.length > 0 && (
+          <div className="flex shrink-0 items-center gap-0.5">
+            <Button variant="ghost" size="icon-sm" className={`${BAR_BUTTON} transition-none ${wrap ? 'bg-foreground/[0.07] text-foreground hover:bg-foreground/[0.07]' : ''}`} aria-label="Wrap lines" title="Wrap lines" aria-pressed={wrap} onClick={() => setWrap(!wrap)}>
+              <WrapTextIcon />
+            </Button>
+            <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label={anyOpen ? 'Collapse all' : 'Expand all'} title={anyOpen ? 'Collapse all' : 'Expand all'} onClick={() => setOpen(anyOpen ? new Set() : new Set(withPatch.map((c) => c.path)))}>
+              {anyOpen ? <ChevronsDownUpIcon /> : <ChevronsUpDownIcon />}
+            </Button>
+          </div>
+        )}
       </div>
       {changes.length === 0 ? (
         <EmptyState figure="branches" title="No changes yet" description="Files the agent edits show up here, with their diff stats." />
       ) : (
-        <ul className="divide-y">
-          {changes.map((c) => {
-            const slash = c.path.lastIndexOf('/')
-            return (
-              <li key={c.path} className="flex h-9 items-center gap-3 px-[14px] font-mono text-xs">
-                <span className="min-w-0 flex-1 truncate" title={c.path}>
-                  <span className="text-muted-foreground">{c.path.slice(0, slash + 1)}</span>
-                  {c.path.slice(slash + 1)}
-                </span>
-                <Stat additions={c.additions} deletions={c.deletions} />
-              </li>
-            )
-          })}
+        <ul className="divide-y border-b">
+          {changes.map((c) => <ChangeRow key={c.path} change={c} open={open.has(c.path)} onToggle={() => toggle(c.path)} wrap={wrap} />)}
         </ul>
       )}
     </div>
+  )
+}
+
+/** One changed file: its path and stats, and with a patch, a toggle that opens the diff below it (Pierre diffs, unified, no header of its own). */
+function ChangeRow({ change: c, open, onToggle, wrap }: { change: FileChange; open: boolean; onToggle: () => void; wrap: boolean }) {
+  const { resolvedTheme } = useTheme()
+  const slash = c.path.lastIndexOf('/')
+  const row = (
+    <>
+      {/* Without a patch the chevron's slot stays, so every path starts on the same x. */}
+      <ChevronRightIcon className={`size-3.5 shrink-0 text-muted-foreground ${c.patch ? '' : 'invisible'} ${open ? 'rotate-90' : ''}`} />
+      <span className="min-w-0 flex-1 truncate" title={c.path}>
+        <span className="text-muted-foreground">{c.path.slice(0, slash + 1)}</span>
+        {c.path.slice(slash + 1)}
+      </span>
+      <Stat additions={c.additions} deletions={c.deletions} />
+    </>
+  )
+  const box = 'flex h-9 w-full items-center gap-2 px-[14px] text-left font-mono text-xs'
+  return (
+    <li>
+      {c.patch ? (
+        <button type="button" aria-expanded={open} className={`${box} hover:bg-foreground/[0.04]`} onClick={onToggle}>{row}</button>
+      ) : (
+        <div className={box}>{row}</div>
+      )}
+      {open && c.patch && (
+        <PatchDiff
+          patch={c.patch}
+          className="block border-t [--diffs-bg:var(--background)] [--diffs-font-size:12px] [--diffs-line-height:20px] [--diffs-font-family:var(--font-mono)] [--diffs-header-font-family:var(--font-sans)]"
+          options={{ diffStyle: 'unified', disableFileHeader: true, overflow: wrap ? 'wrap' : 'scroll', themeType: resolvedTheme === 'dark' ? 'dark' : 'light' }}
+        />
+      )}
+    </li>
   )
 }
 
@@ -266,17 +312,23 @@ function useWide() {
  * The chat and, when given and the window is wide, Chat details beside it in a resizable split (react-resizable-panels, through
  * shadcn's Resizable). The split is remembered. The handle is invisible: the panel's 4px inset already separates the two.
  */
+const CHAT_WIDTH = 525
+
 export function ChatSplit({ details, children }: { details?: ReactNode; children: ReactNode }) {
   const wide = useWide()
-  const layout = useDefaultLayout({ id: 'dorks.chat-split', storage: localStorage })
+  const layout = useDefaultLayout({ id: 'dorks.chat-split.v3', storage: localStorage })
+  const chat = usePanelRef()
+  const snap = useSnapOnClick(chat, CHAT_WIDTH)
   if (!details || !wide) return <div className="flex min-h-0 min-w-0 flex-1">{children}</div>
   return (
     <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
-      <ResizablePanel id="chat" minSize={360}>
+      {/* The chat is 525px by default and keeps its width when the window resizes; Chat details takes everything else. */}
+      <ResizablePanel id="chat" panelRef={chat} defaultSize={CHAT_WIDTH} minSize={360} groupResizeBehavior="preserve-pixel-size">
         <div className="flex h-full min-w-0">{children}</div>
       </ResizablePanel>
-      <ResizableHandle className="w-0 bg-transparent after:w-2" />
-      <ResizablePanel id="details" defaultSize="50%" minSize={360} maxSize="75%">
+      {/* A click on the handle snaps the chat back to its default width. */}
+      <ResizableHandle className="z-10 w-0 bg-transparent after:w-2" {...snap} />
+      <ResizablePanel id="details" minSize={360}>
         {details}
       </ResizablePanel>
     </ResizablePanelGroup>

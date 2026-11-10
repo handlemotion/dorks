@@ -1,14 +1,15 @@
 ---
 name: Dorks
-description: A flat, quiet workspace for cloud coding agents. White, one radius, one weight, no shadows.
+description: A flat, quiet workspace for cloud coding agents. Off white, one radius, one weight, no shadows.
 colors:
-  background: "oklch(1 0 0)"          # the main app frame (dark: oklch(0.145 0 0))
+  background: "#fafafa"               # the main app frame, a slight off white (dark: oklch(0.145 0 0))
   app: "#f2f2f2"                      # onboarding's fill, thumbnails, the user bubble's family (dark: oklch(0.165 0 0))
   border: "oklch(0 0 0 / 6%)"         # full dividers and the Chat details hairline (dark: oklch(1 0 0 / 7%))
-  input: "oklch(0.922 0 0)"           # composer fill at 50%, form control borders
+  input: "oklch(0.922 0 0)"           # form control borders; the composer fill at 50% in dark
   ring-app: "oklch(0.85 0 0)"         # focus in the main app: a darker tone of the border, never blue (dark: oklch(1 0 0 / 28%))
-  brand: "#3b6be8"                    # onboarding's step and focus, the lightbox's active thumbnail, the picker; never text
-  user-bubble: "oklch(0.961 0 0)"     # the composer's grey (dark: white)
+  brand: "#3b6be8"                    # the composer's send/stop, onboarding's step and focus, the lightbox's active thumbnail, the picker; never text
+  composer: "#ffffff"                 # the prompt input, white on the off-white frame with the 6% hairline (dark: input at 50%)
+  user-bubble: "oklch(0.961 0 0)"     # light grey (dark: white)
 typography:
   family: "Geist Variable; Geist Mono Variable for code and paths"
   sizes: "text-sm (14px) for content, text-xs (12px) for secondary; text-lg only for a focused page's one title"
@@ -21,15 +22,15 @@ rounded:
   composer: 18px                      # the AI Elements prompt input, as published (the one scoped exception)
   pill: 9999px                        # onboarding's step buttons only
 spacing:
-  edge: 12px                          # chat title, messages and composer share one edge
+  edge: 20px                          # chat title and composer share one edge; the transcript is indented to 30px
   bar: "40px rows, 30px buttons and tabs, 5px around them"
   panel-inset: 4px                    # Chat details from the window and the chat
-elevation: none                       # no shadows, glows or blur anywhere
+elevation: none                       # no shadows, glows or blur, except the dropdown menu's soft shadow
 ---
 
 # Dorks design
 
-The app gets out of the way of the agent's work. Everything sits on one white plane; sections are split by full-height or
+The app gets out of the way of the agent's work. Everything sits on one off-white plane; sections are split by full-height or
 full-width hairlines, never by cards floating on cards. The only framed thing is Chat details, and even that is the app's own fill
 with a 6% hairline. When in doubt, remove: fewer borders, fewer sizes, fewer weights, fewer words.
 
@@ -37,12 +38,12 @@ Rules that tooling enforces live in `AGENTS.md` and `packages/ui/README.md`; thi
 
 ## Layout
 
-- **Frame:** `AppFrame` is a resizable split (shadcn `resizable`, react-resizable-panels v4): sidebar (200–420px, collapsible,
+- **Frame:** `AppFrame` is a resizable split (shadcn `resizable`, react-resizable-panels v4): sidebar (275px by default, 200–420px, keeps its width on window resize, a click on the divider snaps it back, collapsible,
   remembered) | page. The divider is the resize handle. Phones get shadcn's sheet instead.
-- **Chat:** `ChatSplit` puts the chat and Chat details side by side (details 360px to 75%, invisible handle in the 4px gap). Details
+- **Chat:** `ChatSplit` puts the chat and Chat details side by side (chat 525px by default, details everything else, both at least 360px; on window resize the sidebar and the chat keep their widths and details absorbs the change; a click on the handle snaps the chat back to 525px; invisible handle in the 4px gap). Details
   hide below `lg`.
-- **One edge:** the chat title, the transcript and the composer all start 12px from the column's edge. The transcript keeps
-  `max-w-3xl`; only the outer padding is small.
+- **Edges:** the page title and the composer start 20px from the column's edge (the composer 20px from the bottom too); the transcript
+  is indented to 30px, a step in from both, so messages read as the content between them. The transcript keeps `max-w-3xl`.
 - **Headers** are 48px, one line, the title in regular 14px. No subtitles, no badges. A header divider exists only when it can span
   the full width; beside Chat details it is off, because a line that stops short of a panel looks broken.
 
@@ -63,7 +64,8 @@ The pattern to copy for any toolbar:
 - Separate with fill and spacing first; a hairline (`border`, 6%) when fill can't; never a shadow.
 - Lines are **full or absent**: a divider spans its whole container, and the last row of a list or grid keeps its bottom line.
   Grids split tiles with each tile's right and bottom edge, the container hiding only the outer right one.
-- Floating menus keep shadcn's 1px ring (on white, fill alone doesn't separate them). Cards and dialogs don't.
+- Dropdown menus have a 6% hairline, a soft two-layer shadow (the app's only one), 32px rows with a fill that springs between
+  them. Cards and dialogs have no ring or shadow.
 - Radii are concentric: an inner radius is the outer minus the padding between them.
 
 ## Type
@@ -80,7 +82,9 @@ The pattern to copy for any toolbar:
 | Message box | `Composer` (the AI Elements prompt input, copied exactly from `PromptInputDemo` and the Figma frame). The main button sends, or becomes Stop while the agent works. |
 | An image anywhere | `ImageLightbox` + `ImageTrigger` (`@ramka/react`): one lightbox per place, so navigation stays within that place. Put `imageRef` and `morphRef` on the `<img>` so only the image morphs. |
 | An empty state | `EmptyState`: a Hairline figure (`@lucasmarkes/hairline`), a title, at most one sentence, then small outline buttons only if they do something. |
-| Sandbox health | `AgentStatus` above the composer: a dot and a few words, ink text. |
+| Sandbox health | `AgentStatus` at the end of the transcript (it scrolls; the scroll-to-end button takes its place): a dot and a few words; while something moves the words shimmer and the dot morphs circle → square → diamond with a quarter turn, landing on each shimmer pass (no pulsing). |
+| Sidebar | `AppSidebar`: a bare 48px title bar (traffic lights, then `WindowControls`, which float in AppFrame so they never move), the owner switcher with New session, Customize, Automations and Builds, then chats grouped by repository under plain labels, Settings at the foot. Rows are `SIDEBAR_ROW` (30px, 2px apart) under one springing hover fill (`useRowHover`). |
+| Chat actions | `ChatMenu`, the ••• on the right of the chat header. Archive is the icon beside the title. |
 | Element context for the agent | `PreviewBrowser`'s picker (`react-grab/primitives`, same-origin frames only). |
 | Resizing | `@dorks/ui/resizable` with `useDefaultLayout` to remember sizes. |
 
@@ -99,7 +103,7 @@ motion. No animation on tab switches, no layout shifts.
 
 ## Don't
 
-- Shadows, glows, blur, gradients, glass.
+- Shadows (outside dropdown menus), glows, blur, gradients, glass.
 - A third font size, or `font-semibold`/`font-bold`.
 - Pills (except onboarding's step buttons) or radii other than the ones above.
 - Cards inside panels, islands on islands, borders around sections.

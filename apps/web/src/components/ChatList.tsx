@@ -4,9 +4,9 @@ import { move } from '@dnd-kit/helpers'
 import { Accessibility, defaultPreset, KeyboardSensor, PointerActivationConstraints, PointerSensor } from '@dnd-kit/dom'
 import { DragDropProvider, type DragEndEvent, type DragOverEvent, type DragStartEvent } from '@dnd-kit/react'
 import { isSortable, useSortable } from '@dnd-kit/react/sortable'
-import { SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem } from '@dorks/ui/sidebar'
 import { useStoredOrder } from '../lib/storedOrder'
 import { Orb } from './Orb'
+import { SIDEBAR_ROW } from './sidebarChrome'
 
 export type PrState = SubscriptionView['state']
 
@@ -15,6 +15,8 @@ export type Chat = {
   /** Dork id, passed through as the `dork` search param of the chat route. */
   id: string
   title: string
+  /** `owner/name`; the sidebar's owner switcher filters by its owner. */
+  repo?: string
   /** Something is moving in this chat. The sidebar shows only this; richer states (sleeping, error) live in the chat itself. */
   working: boolean
   pr?: { number: number; state?: PrState }
@@ -62,7 +64,7 @@ const PLUGINS = [
  * Chats the user can reorder by dragging (or Space + arrow keys). The order is remembered per browser under `orderKey`.
  * One provider per list, so a chat cannot be dragged into another list.
  */
-export function ChatList({ chats, orderKey, to = '/dorks' as ChatRoute }: { chats: Chat[]; orderKey: string; to?: ChatRoute }) {
+export function ChatList({ chats, orderKey, to = '/dorks' as ChatRoute, activeId }: { chats: Chat[]; orderKey: string; to?: ChatRoute; /** The chat open in the page. */ activeId?: string }) {
   const [order, setOrder] = useStoredOrder(orderKey, chats.map((c) => c.id))
   const byId = new Map(chats.map((c) => [c.id, c]))
   return (
@@ -76,7 +78,7 @@ export function ChatList({ chats, orderKey, to = '/dorks' as ChatRoute }: { chat
       }}
     >
       {order.map((id, index) => (
-        <ChatItem key={id} chat={byId.get(id)!} index={index} to={to} />
+        <ChatItem key={id} chat={byId.get(id)!} index={index} to={to} active={id === activeId} />
       ))}
     </DragDropProvider>
   )
@@ -87,37 +89,34 @@ export function ChatList({ chats, orderKey, to = '/dorks' as ChatRoute }: { chat
  * shows the pull request number, colored by PR state, when the chat has opened one. The row is active (`data-active`,
  * `aria-current`) while its chat is the one in the URL.
  */
-function ChatItem({ chat, index, to }: { chat: Chat; index: number; to: ChatRoute }) {
+function ChatItem({ chat, index, to, active }: { chat: Chat; index: number; to: ChatRoute; active: boolean }) {
   // `data` feeds the announcements above.
   const { ref, isDragging } = useSortable({ id: chat.id, index, data: chat })
   return (
-    <SidebarMenuItem ref={ref} data-dragging={isDragging || undefined} className="data-[dragging]:opacity-60">
-      <SidebarMenuButton
-        render={
-          <Link
-            to={to}
-            search={{ dork: chat.id }}
-            activeProps={{ 'data-active': true }}
-            // Explicit, so dnd-kit's accessibility plugin does not turn the link into role="button" when the row is sortable.
-            role="link"
-            draggable={false}
-          />
-        }
+    <div ref={ref} data-dragging={isDragging || undefined} className="relative flex min-w-0 data-[dragging]:z-30 data-[dragging]:opacity-60">
+      <Link
+        to={to}
+        search={{ dork: chat.id }}
+        data-active={active || undefined}
+        aria-current={active ? 'page' : undefined}
+        // Explicit, so dnd-kit's accessibility plugin does not turn the link into role="button" when the row is sortable.
+        role="link"
+        draggable={false}
         data-working={chat.working || undefined}
-        className={chat.pr ? "pr-11" : undefined}
-        tooltip={chat.title}
+        title={chat.title}
+        className={`${SIDEBAR_ROW} ${chat.pr ? 'pr-12' : ''}`}
       >
-        <Orb size={16} working={chat.working} label={chat.working ? 'Working…' : 'Idle'} className="text-muted-foreground" />
-        <span className="truncate">{chat.title}</span>
-      </SidebarMenuButton>
+        <Orb size={14} working={chat.working} label={chat.working ? 'Working…' : 'Idle'} className="text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate">{chat.title}</span>
+      </Link>
       {chat.pr && (
-        <SidebarMenuBadge
+        <span
           data-pr={chat.pr.state ?? 'open'}
-          className="data-[pr=open]:text-emerald-600 data-[pr=merged]:text-violet-600 data-[pr=closed]:text-muted-foreground dark:data-[pr=open]:text-emerald-400 dark:data-[pr=merged]:text-violet-400"
+          className="pointer-events-none absolute top-1/2 right-2 z-20 -translate-y-1/2 text-xs tabular-nums data-[pr=closed]:text-muted-foreground data-[pr=merged]:text-violet-600 data-[pr=open]:text-emerald-600 dark:data-[pr=merged]:text-violet-400 dark:data-[pr=open]:text-emerald-400"
         >
           #{chat.pr.number}
-        </SidebarMenuBadge>
+        </span>
       )}
-    </SidebarMenuItem>
+    </div>
   )
 }

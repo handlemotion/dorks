@@ -1,23 +1,29 @@
-import { Link } from '@tanstack/react-router'
-import { GitPullRequestDraftIcon, GitPullRequestIcon, PlusIcon, SettingsIcon } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Link, useLocation } from '@tanstack/react-router'
+import { BlocksIcon, BoxIcon, ChevronDownIcon, PlusIcon, ServerIcon, SettingsIcon, WorkflowIcon } from 'lucide-react'
 import type { DorkState } from '@dorks/shared'
 import { useDorks } from '@dorks/client/react'
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarTrigger,
-  useSidebar,
-} from '@dorks/ui/sidebar'
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@dorks/ui/dropdown-menu'
+import { FluidHoverHighlight } from '@dorks/ui/fluid-hover-highlight'
+import { Sidebar, useSidebar } from '@dorks/ui/sidebar'
+import githubDark from '../assets/providers/github-dark.svg'
+import githubLight from '../assets/providers/github-light.svg'
 import { useDisconnect } from './ConnectionGate'
 import { ChatList, type Chat, type ChatRoute } from './ChatList'
+import { Logo } from './onboarding/List'
+import { OwnerAvatar, ownerOf } from './RepoAvatar'
+import { SIDEBAR_ROW, SIDEBAR_SECTION } from './sidebarChrome'
+import { useRowHover } from './useRowHover'
 
 const PR_NUMBER = /\/pull\/(\d+)/
 
@@ -30,82 +36,142 @@ function prOf(prUrl: string | undefined): Chat['pr'] {
 /** Dork states in which something is moving. Everything else (idle, sleeping, error) is shown as still. */
 const MOVING: ReadonlySet<DorkState> = new Set(['creating', 'working', 'waking'])
 
-/**
- * The app's sidebar, fed from the user's dorks: navigation, then the chats split by whether they have a pull request yet
- * ("Ready" has one, "Drafts" does not). Each group is reorderable and remembers its order. It sits flat on the app fill in a resizable
- * panel (see AppFrame), divided from the page by the resize handle, and collapses from its own toggle.
- */
 export function AppSidebar() {
   const dorks = useDorks(false)
   const disconnect = useDisconnect()
-  const chats: Chat[] = (dorks ?? []).map((d) => ({ id: d.id, title: d.title, working: MOVING.has(d.state), pr: prOf(d.prUrl) }))
+  const chats: Chat[] = (dorks ?? []).map((d) => ({ id: d.id, title: d.title, repo: d.repo, working: MOVING.has(d.state), pr: prOf(d.prUrl) }))
   return <AppSidebarView chats={chats} onDisconnect={disconnect} />
 }
 
-/** The sidebar for a given list of chats; the dev preview renders it without a server. */
+const ALL = ''
+const SCOPE_KEY = 'dorks.owner-scope'
+
+/** The owner the sidebar is scoped to (`ALL` for every chat), remembered per browser. A scope with no chats left falls back to all. */
+function useOwnerScope(owners: string[]) {
+  const [scope, setScope] = useState(() => localStorage.getItem(SCOPE_KEY) ?? ALL)
+  useEffect(() => localStorage.setItem(SCOPE_KEY, scope), [scope])
+  return [owners.includes(scope) ? scope : ALL, setScope] as const
+}
+
+function GithubMark() {
+  return <Logo light={githubLight} dark={githubDark} className="size-4 shrink-0" />
+}
+
+/**
+ * The header's switcher, the way an organization switcher works: the current owner (a GitHub user or organization) with its avatar,
+ * and a menu to scope the sidebar to another owner or to all of them. Below that, the connection: change the server.
+ */
+function OwnerSwitcher({ owners, scope, setScope, onDisconnect }: { owners: string[]; scope: string; setScope: (scope: string) => void; onDisconnect?: (() => void) | null }) {
+  const name = scope || 'All repositories'
+  return (
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger
+        aria-label={`Switch owner, currently ${name}`}
+        className={`${SIDEBAR_ROW} text-foreground aria-expanded:bg-foreground/[0.05]`}
+      >
+        {scope ? <OwnerAvatar owner={scope} /> : <GithubMark />}
+        <span className="min-w-0 truncate">{name}</span>
+        <ChevronDownIcon aria-hidden className="text-muted-foreground" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-60">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Owners</DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={scope} onValueChange={(value) => setScope(value as string)}>
+            <DropdownMenuRadioItem value={ALL} closeOnClick>
+              <GithubMark />
+              <span className="min-w-0 flex-1 truncate">All repositories</span>
+            </DropdownMenuRadioItem>
+            {owners.map((owner) => (
+              <DropdownMenuRadioItem key={owner} value={owner} closeOnClick>
+                <OwnerAvatar owner={owner} />
+                <span className="min-w-0 flex-1 truncate">{owner}</span>
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuGroup>
+        {onDisconnect && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={onDisconnect}>
+              <ServerIcon />
+              Change server
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+/** The app's pages, under New session. Customize, Automations and Builds are previews: their pages say what will be there. */
+const PAGES = [
+  { to: '/customize', label: 'Customize', icon: BlocksIcon },
+  { to: '/automations', label: 'Automations', icon: WorkflowIcon },
+  { to: '/builds', label: 'Builds', icon: BoxIcon },
+] as const
+
+/**
+ * The app's sidebar: a 48px title bar (traffic lights, the toggle, back and forward); the owner switcher with New session and the
+ * app's pages; then the chats of
+ * the owner in scope, grouped by repository (a plain label per repository, alphabetical), each group reorderable and remembering its
+ * order; Settings at the foot. Rows are 30px, 2px apart, with one hover fill springing between them; groups are 16px apart. It sits
+ * flat on the app fill in a resizable panel (see AppFrame); on phones it is shadcn's sheet.
+ */
 export function AppSidebarView({ chats, onDisconnect, orderKey = 'dorks.chat-order', chatTo }: { chats: Chat[]; onDisconnect?: (() => void) | null; orderKey?: string; chatTo?: ChatRoute }) {
-  const disconnect = onDisconnect
   const { isMobile } = useSidebar()
-  const ready = chats.filter((c) => c.pr)
-  const drafts = chats.filter((c) => !c.pr)
+  const { pathname, search } = useLocation()
+  const dork = (search as { dork?: unknown }).dork
+  const activeId = typeof dork === 'string' ? dork : undefined
+  const owners = [...new Set(chats.flatMap((c) => (c.repo ? [ownerOf(c.repo)] : [])))].sort((a, b) => a.localeCompare(b))
+  const [scope, setScope] = useOwnerScope(owners)
+  const inScope = scope ? chats.filter((c) => c.repo && ownerOf(c.repo) === scope) : chats
+  const repos = new Map<string, Chat[]>()
+  for (const chat of inScope) {
+    const repo = chat.repo ?? ''
+    repos.set(repo, [...(repos.get(repo) ?? []), chat])
+  }
+  const groups = [...repos].sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)))
+  const hover = useRowHover()
+  const rowLink = (active: boolean) => ({ 'data-active': active || undefined, 'aria-current': active ? ('page' as const) : undefined, className: SIDEBAR_ROW })
   return (
     // In a resizable panel on desktop (the frame sizes it), shadcn's sheet on phones.
     <Sidebar collapsible={isMobile ? 'offcanvas' : 'none'} className={isMobile ? undefined : 'h-full w-full'}>
-      <SidebarHeader data-tauri-drag-region className="h-12 flex-row items-center justify-between px-3 py-0">
-        <span className="px-1 text-sm font-medium">Dorks</span>
-        <SidebarTrigger className="text-muted-foreground" />
-      </SidebarHeader>
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton render={<Link to="/dorks" search={{}} activeOptions={{ exact: true, includeSearch: true }} activeProps={{ 'data-active': true }} />} tooltip="New session">
-                  <PlusIcon />
-                  <span>New session</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-        {ready.length > 0 && (
-          <SidebarGroup>
-            <SidebarGroupLabel><GitPullRequestIcon className="mr-1.5" />Ready</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <ChatList chats={ready} orderKey={`${orderKey}.ready`} to={chatTo} />
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
-        {drafts.length > 0 && (
-          <SidebarGroup>
-            <SidebarGroupLabel><GitPullRequestDraftIcon className="mr-1.5" />Drafts</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <ChatList chats={drafts} orderKey={`${orderKey}.drafts`} to={chatTo} />
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
-      </SidebarContent>
-      <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton render={<Link to="/settings" activeProps={{ 'data-active': true }} />} tooltip="Settings">
+      <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden text-foreground">
+        {/* The title bar: the traffic lights and the floating controls (AppFrame) sit over it. Nothing else lives up here. */}
+        <div data-tauri-drag-region className="h-12 shrink-0" />
+        <div ref={hover.containerRef} className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-1.5 pt-1 pb-1.5">
+          <FluidHoverHighlight className="z-0 rounded-[6px] bg-foreground/[0.05]" rect={hover.rect} session={hover.session} />
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto overscroll-y-contain">
+            <nav aria-label="App" className="flex shrink-0 flex-col gap-0.5">
+              <OwnerSwitcher owners={owners} scope={scope} setScope={setScope} onDisconnect={onDisconnect} />
+              <Link to="/dorks" search={{}} {...rowLink(pathname === '/dorks' && !activeId)}>
+                <PlusIcon />
+                New session
+              </Link>
+              {PAGES.map(({ to, label, icon: Icon }) => (
+                <Link key={to} to={to} {...rowLink(pathname === to)}>
+                  <Icon />
+                  {label}
+                </Link>
+              ))}
+            </nav>
+            {groups.map(([repo, list]) => (
+              <nav key={repo} aria-label={repo || 'Other chats'} className="flex shrink-0 flex-col gap-0.5">
+                <div className={SIDEBAR_SECTION} title={repo || undefined}>
+                  <span className="truncate">{repo ? (scope ? repo.slice(scope.length + 1) : repo) : 'Other'}</span>
+                </div>
+                <ChatList chats={list} orderKey={`${orderKey}.${repo || 'other'}`} to={chatTo} activeId={activeId} />
+              </nav>
+            ))}
+          </div>
+          <div className="flex shrink-0 flex-col pt-1.5">
+            <Link to="/settings" {...rowLink(pathname === '/settings')}>
               <SettingsIcon />
-              <span>Settings</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          {disconnect && (
-            <SidebarMenuItem>
-              <SidebarMenuButton onClick={disconnect}>
-                <span className="text-muted-foreground">Change server</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          )}
-        </SidebarMenu>
-      </SidebarFooter>
+              Settings
+            </Link>
+          </div>
+        </div>
+      </div>
     </Sidebar>
   )
 }

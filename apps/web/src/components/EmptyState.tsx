@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react'
-import { Branches, Drawer, Exploded, Laptop } from '@lucasmarkes/hairline/react'
+import { Branches, Drawer, Exploded, Laptop, Plug, Relay, Stack } from '@lucasmarkes/hairline/react'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@dorks/ui/empty'
 
 /**
  * The empty-state figures: Hairline's isometric line drawings (`@lucasmarkes/hairline`), each an object shown holding nothing. They
  * answer the pointer, follow the app's theme on their own, and rest still under reduced motion. Add one here before using a new one.
  */
-const FIGURES = { laptop: Laptop, window: Exploded, drawer: Drawer, branches: Branches }
+const FIGURES = { laptop: Laptop, window: Exploded, drawer: Drawer, branches: Branches, plug: Plug, relay: Relay, stack: Stack }
 
 /**
  * Every empty state in the app, top to bottom: a figure (208px, 20px above the text), one or two lines of text (a title, and a description only when it

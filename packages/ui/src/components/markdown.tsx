@@ -30,15 +30,17 @@ function MarkdownCodeBlock({
   const incomplete = useIsCodeFenceIncomplete()
   const lines = useHighlightedCode(code, language)
 
+  // The ring is inset: the markdown container clips overflow, which cut an outer ring to its top edge. No line numbers, as in the
+  // published Markdown example, so the code starts on the title's edge.
   return (
-    <CodeBlock>
+    <CodeBlock className="ring-inset">
       <CodeBlockHeader>
         <CodeBlockTitle>{language || "text"}</CodeBlockTitle>
         <CodeBlockActions>
           <CodeBlockCopyButton value={code} disabled={incomplete} />
         </CodeBlockActions>
       </CodeBlockHeader>
-      <CodeBlockContent lineNumbers>
+      <CodeBlockContent>
         {lines.map((line, index) => (
           <CodeBlockLine key={index}>{line}</CodeBlockLine>
         ))}

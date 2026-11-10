@@ -15,6 +15,9 @@ import { Route as ConnAppRouteImport } from './routes/_conn/_app'
 import { Route as ConnOnboardingRouteImport } from './routes/_conn/onboarding'
 import { Route as DevAiElementsRouteImport } from './routes/dev.ai-elements'
 import { Route as DevChatRouteImport } from './routes/dev.chat'
+import { Route as ConnAppAutomationsRouteImport } from './routes/_conn/_app/automations'
+import { Route as ConnAppBuildsRouteImport } from './routes/_conn/_app/builds'
+import { Route as ConnAppCustomizeRouteImport } from './routes/_conn/_app/customize'
 import { Route as ConnAppDorksRouteImport } from './routes/_conn/_app/dorks'
 import { Route as ConnAppSettingsRouteImport } from './routes/_conn/_app/settings'
 
@@ -46,6 +49,21 @@ const DevChatRoute = DevChatRouteImport.update({
   path: '/dev/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ConnAppAutomationsRoute = ConnAppAutomationsRouteImport.update({
+  id: '/automations',
+  path: '/automations',
+  getParentRoute: () => ConnAppRoute,
+} as any)
+const ConnAppBuildsRoute = ConnAppBuildsRouteImport.update({
+  id: '/builds',
+  path: '/builds',
+  getParentRoute: () => ConnAppRoute,
+} as any)
+const ConnAppCustomizeRoute = ConnAppCustomizeRouteImport.update({
+  id: '/customize',
+  path: '/customize',
+  getParentRoute: () => ConnAppRoute,
+} as any)
 const ConnAppDorksRoute = ConnAppDorksRouteImport.update({
   id: '/dorks',
   path: '/dorks',
@@ -62,6 +80,9 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof ConnOnboardingRoute
   '/dev/ai-elements': typeof DevAiElementsRoute
   '/dev/chat': typeof DevChatRoute
+  '/automations': typeof ConnAppAutomationsRoute
+  '/builds': typeof ConnAppBuildsRoute
+  '/customize': typeof ConnAppCustomizeRoute
   '/dorks': typeof ConnAppDorksRoute
   '/settings': typeof ConnAppSettingsRoute
 }
@@ -70,6 +91,9 @@ export interface FileRoutesByTo {
   '/onboarding': typeof ConnOnboardingRoute
   '/dev/ai-elements': typeof DevAiElementsRoute
   '/dev/chat': typeof DevChatRoute
+  '/automations': typeof ConnAppAutomationsRoute
+  '/builds': typeof ConnAppBuildsRoute
+  '/customize': typeof ConnAppCustomizeRoute
   '/dorks': typeof ConnAppDorksRoute
   '/settings': typeof ConnAppSettingsRoute
 }
@@ -81,6 +105,9 @@ export interface FileRoutesById {
   '/_conn/onboarding': typeof ConnOnboardingRoute
   '/dev/ai-elements': typeof DevAiElementsRoute
   '/dev/chat': typeof DevChatRoute
+  '/_conn/_app/automations': typeof ConnAppAutomationsRoute
+  '/_conn/_app/builds': typeof ConnAppBuildsRoute
+  '/_conn/_app/customize': typeof ConnAppCustomizeRoute
   '/_conn/_app/dorks': typeof ConnAppDorksRoute
   '/_conn/_app/settings': typeof ConnAppSettingsRoute
 }
@@ -91,6 +118,9 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/dev/ai-elements'
     | '/dev/chat'
+    | '/automations'
+    | '/builds'
+    | '/customize'
     | '/dorks'
     | '/settings'
   fileRoutesByTo: FileRoutesByTo
@@ -99,6 +129,9 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/dev/ai-elements'
     | '/dev/chat'
+    | '/automations'
+    | '/builds'
+    | '/customize'
     | '/dorks'
     | '/settings'
   id:
@@ -109,6 +142,9 @@ export interface FileRouteTypes {
     | '/_conn/onboarding'
     | '/dev/ai-elements'
     | '/dev/chat'
+    | '/_conn/_app/automations'
+    | '/_conn/_app/builds'
+    | '/_conn/_app/customize'
     | '/_conn/_app/dorks'
     | '/_conn/_app/settings'
   fileRoutesById: FileRoutesById
@@ -164,6 +200,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DevChatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_conn/_app/automations': {
+      id: '/_conn/_app/automations'
+      path: '/automations'
+      fullPath: '/automations'
+      preLoaderRoute: typeof ConnAppAutomationsRouteImport
+      parentRoute: typeof ConnAppRoute
+    }
+    '/_conn/_app/builds': {
+      id: '/_conn/_app/builds'
+      path: '/builds'
+      fullPath: '/builds'
+      preLoaderRoute: typeof ConnAppBuildsRouteImport
+      parentRoute: typeof ConnAppRoute
+    }
+    '/_conn/_app/customize': {
+      id: '/_conn/_app/customize'
+      path: '/customize'
+      fullPath: '/customize'
+      preLoaderRoute: typeof ConnAppCustomizeRouteImport
+      parentRoute: typeof ConnAppRoute
+    }
     '/_conn/_app/dorks': {
       id: '/_conn/_app/dorks'
       path: '/dorks'
@@ -182,11 +239,17 @@ declare module '@tanstack/react-router' {
 }
 
 interface ConnAppRouteChildren {
+  ConnAppAutomationsRoute: typeof ConnAppAutomationsRoute
+  ConnAppBuildsRoute: typeof ConnAppBuildsRoute
+  ConnAppCustomizeRoute: typeof ConnAppCustomizeRoute
   ConnAppDorksRoute: typeof ConnAppDorksRoute
   ConnAppSettingsRoute: typeof ConnAppSettingsRoute
 }
 
 const ConnAppRouteChildren: ConnAppRouteChildren = {
+  ConnAppAutomationsRoute: ConnAppAutomationsRoute,
+  ConnAppBuildsRoute: ConnAppBuildsRoute,
+  ConnAppCustomizeRoute: ConnAppCustomizeRoute,
   ConnAppDorksRoute: ConnAppDorksRoute,
   ConnAppSettingsRoute: ConnAppSettingsRoute,
 }

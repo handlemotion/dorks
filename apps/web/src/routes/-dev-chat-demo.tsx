@@ -14,7 +14,8 @@ import { AgentStatus } from '../components/AgentStatus'
 import { ChatMessages } from '../components/ChatBlock'
 import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, type ChatDetailsData } from '../components/ChatDetails'
 import { Composer, type AgentProvider } from '../components/ChatComposer'
-import { PageHeader } from '../components/PageHeader'
+import { ChatMenu } from '../components/ChatMenu'
+import { ArchiveButton, PageHeader } from '../components/PageHeader'
 
 /** A mock screenshot as an SVG data URL (parentheses escaped so it can sit inside markdown image syntax). */
 const mockShot = (tint: string, line: string) =>
@@ -31,11 +32,59 @@ const initialBlocks: Block[] = [
 ]
 
 const chats = [
-  { id: 'preview', title: 'Fix flaky bridge reconnect after wake', working: true, pr: { number: 142 } },
-  { id: 'two', title: 'Add dark mode toggle', working: false, pr: { number: 138 } },
-  { id: 'three', title: 'Upgrade to Node 24', working: false },
-  { id: 'four', title: 'Document the bridge protocol', working: true },
+  { id: 'preview', title: 'Fix flaky bridge reconnect after wake', repo: 'acme/demo', working: true, pr: { number: 142 } },
+  { id: 'two', title: 'Add dark mode toggle', repo: 'acme/web', working: false, pr: { number: 138 } },
+  { id: 'three', title: 'Upgrade to Node 24', repo: 'vercel/next.js', working: false },
+  { id: 'four', title: 'Document the bridge protocol', repo: 'acme/demo', working: true },
 ]
+
+/** Sample `git diff` output for the Changes tab. */
+const RECONNECT_PATCH = `diff --git a/infra/bridge/src/reconnect.ts b/infra/bridge/src/reconnect.ts
+--- a/infra/bridge/src/reconnect.ts
++++ b/infra/bridge/src/reconnect.ts
+@@ -12,14 +12,21 @@ export function createReconnector(socket: BridgeSocket, queue: Queue) {
+   let attempt = 0
+   let timer: ReturnType<typeof setTimeout> | undefined
+ 
+-  socket.on('close', () => {
+-    timer = setTimeout(connect, 1000)
+-  })
++  socket.on('close', () => schedule())
++
++  function schedule() {
++    clearTimeout(timer)
++    const delay = Math.min(30_000, 500 * 2 ** attempt++)
++    timer = setTimeout(connect, delay)
++  }
+ 
+   async function connect() {
+     await socket.open()
+-    queue.flush()
++    // Flushing before the handshake raced the server's session check after a wake.
++    await socket.ready()
++    attempt = 0
++    await queue.flush()
+   }
+ 
+   return { connect, stop: () => clearTimeout(timer) }
+ }
+`
+
+const DOCS_PATCH = `diff --git a/docs/architecture.md b/docs/architecture.md
+--- a/docs/architecture.md
++++ b/docs/architecture.md
+@@ -41,6 +41,9 @@ The bridge keeps one socket per sandbox.
+ 
+ ## Reconnects
+ 
+-The bridge reconnects after one second.
++The bridge reconnects with a backoff (0.5s, doubling, at most 30s). After it
++reconnects it waits for the server's handshake before flushing the queue, so
++messages sent while the sandbox slept are delivered once.
++See \`infra/bridge/src/reconnect.ts\`.
+ 
+ ## Sleep
+`
 
 const details: ChatDetailsData = {
   pr: { url: 'https://github.com/acme/demo/pull/142', number: 142 },
@@ -46,10 +95,10 @@ const details: ChatDetailsData = {
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div style="padding:16px;border-radius:6px;background:#f4f4f5">Queued<br><span style="font-size:20px">0</span></div><div style="padding:16px;border-radius:6px;background:#f4f4f5">Latency<br><span style="font-size:20px">42 ms</span></div></div></main></body></html>`,
   changes: [
     { path: 'infra/bridge/src/claude.ts', additions: 48, deletions: 12 },
-    { path: 'infra/bridge/src/reconnect.ts', additions: 112, deletions: 64 },
+    { path: 'infra/bridge/src/reconnect.ts', additions: 112, deletions: 64, patch: RECONNECT_PATCH },
     { path: 'infra/bridge/test/reconnect.test.ts', additions: 86, deletions: 0 },
     { path: 'apps/server/src/services/dorks.ts', additions: 9, deletions: 3 },
-    { path: 'docs/architecture.md', additions: 4, deletions: 1 },
+    { path: 'docs/architecture.md', additions: 4, deletions: 1, patch: DOCS_PATCH },
   ],
   artifacts: ['wake-before.png', 'wake-after.png', 'reconnect-timeline.png', 'bridge-states.png', 'queue-flush.png'].map((name, i) => ({
     id: name,
@@ -67,6 +116,7 @@ export function Demo() {
   const [text, setText] = useState('')
   const [stopped, setStopped] = useState(false)
   const [showNew, setShowNew] = useState(false)
+  const [archived, setArchived] = useState(false)
   const [repo, setRepo] = useState('acme/demo')
   const [provider, setProvider] = useState<AgentProvider>('claude')
   const [detailsOpen, setDetailsOpen] = useDetailsOpen()
@@ -89,9 +139,11 @@ export function Demo() {
     <FrameLayout sidebar={<AppSidebarView chats={chats.map((c) => (c.id === 'preview' ? { ...c, working: !stopped } : c))} chatTo="/dev/chat" orderKey="dorks.demo.chat-preview" />}>
       <ChatSplit details={detailsOpen && !showNew ? <ChatDetails data={details} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} onAsk={setText} /> : undefined}>
       <div className="flex min-w-0 flex-1 flex-col">
-        <PageHeader divider={showNew || !detailsOpen}
+        <PageHeader divider={showNew}
           title={showNew ? 'New session' : 'Fix flaky bridge reconnect after wake'}
+          titleActions={!showNew && <ArchiveButton archived={archived} onClick={() => setArchived((a) => !a)} />}
           actions={<>
+            {!showNew && <ChatMenu prUrl="https://github.com/acme/demo/pull/142" onDelete={() => setShowNew(true)} />}
             {!detailsOpen && !showNew && <ShowDetailsButton onClick={() => setDetailsOpen(true)} />}
           </>}
         />
@@ -110,14 +162,15 @@ export function Demo() {
             <MessageScrollerProvider autoScroll defaultScrollPosition="end">
               <MessageScroller>
                 <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
-                  <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-3 py-6" data-testid="transcript">
+                  <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-[30px] py-6" data-testid="transcript">
                     <ChatMessages blocks={blocks} />
+                    <AgentStatus state={stopped ? 'idle' : 'working'} live="live" />
                   </MessageScrollerContent>
                 </MessageScrollerViewport>
                 <MessageScrollerButton />
               </MessageScroller>
             </MessageScrollerProvider>
-            <Composer text={text} setText={setText} provider="claude" onSubmit={send} pending={false} error="" onStop={stopped ? undefined : stop} status={<AgentStatus state={stopped ? 'idle' : 'working'} live="live" />} />
+            <Composer text={text} setText={setText} provider="claude" onSubmit={send} pending={false} error="" onStop={stopped ? undefined : stop} />
           </section>
         )}
       </div>

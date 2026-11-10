@@ -28,9 +28,9 @@ The product intentionally has few tests. Do not add or run tests by reflex.
 
 ## UI rules
 
-No drop shadows, minimal borders, a flat white app (onboarding keeps the `#f2f2f2` fill), light grey user bubbles, 6px controls. Full text and the contrast numbers: `packages/ui/README.md` ("Design rules").
+No drop shadows (dropdown menus excepted), minimal borders, a flat off-white app (onboarding keeps the `#f2f2f2` fill), light grey user bubbles, 6px controls. Full text and the contrast numbers: `packages/ui/README.md` ("Design rules").
 
-- **No drop shadows, ever** (any theme, any component, including popovers, menus, dialogs, bubbles and cards). The theme resets Tailwind's shadow tokens, so `shadow-*` classes in the published shadcn / AI Elements files are no-ops: do not edit those files. Do not write `shadow-*`, `box-shadow`, `drop-shadow` or `text-shadow` yourself; `pnpm test` runs `packages/ui/scripts/check-ui-rules.mjs` and fails on them.
+- **No drop shadows, except dropdown menus** (any theme, any other component: popovers, dialogs, bubbles, cards). The one shadow is the soft one in `packages/ui/src/components/ui/dropdown-menu.tsx`; don't add another. The theme resets Tailwind's shadow tokens, so `shadow-*` classes in the published shadcn / AI Elements files are no-ops: do not edit those files. Do not write `shadow-*`, `box-shadow`, `drop-shadow` or `text-shadow` yourself; `pnpm test` runs `packages/ui/scripts/check-ui-rules.mjs` and fails on them.
 - **Minimal borders.** Separate surfaces with fill and spacing. Add a border only where fill contrast truly fails (light-theme form controls, focus rings); check with `node packages/ui/scripts/contrast.mjs` (1.15:1 or more needs no border).
 - **The app is opaque and flat**: `--app` behind everything, `--surface` for what is raised on it, nothing translucent or blurred. Tokens follow the app theme, never the OS: define every new surface token for light and dark (`packages/ui/src/glass.css`).
 - **User message bubbles** are the composer's light grey in light and white in dark; assistant messages are unbubbled.

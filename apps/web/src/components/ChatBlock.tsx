@@ -114,11 +114,11 @@ function agentContent(blocks: AgentBlock[]): ReactNode[] {
         </Trace>,
       )
     } else if (block.kind === 'assistant') {
-      // Assistant text is unbubbled markdown, as in the AI Elements chat pattern; the cursor marks a reply still streaming.
+      // Assistant text is unbubbled markdown, as in the AI Elements chat pattern. No streaming caret: the markdown is a block, so it
+      // fell on a line of its own, and the status line below already says the agent is working.
       content.push(
         <div key={block.id} className="min-w-0">
           <Markdown components={MARKDOWN} urlTransform={allowDataImages} rehypePlugins={REHYPE}>{block.text}</Markdown>
-          {block.streaming && <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-foreground align-middle" aria-label="Streaming response" />}
         </div>,
       )
     } else {

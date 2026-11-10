@@ -33,7 +33,7 @@ folder with `pnpm dlx shadcn@latest add <names> -y -o`. Do not run `shadcn init`
 UI rules: **no drop shadows, minimal borders, an opaque flat app, white user bubbles, 6px controls.** They are written down because they are easy to break
 by accident, and `pnpm test` enforces the first one.
 
-1. **No drop shadows, ever.** Not in any theme, and not on cards, popovers, menus, dialogs or bubbles. `src/glass.css` resets Tailwind's
+1. **No drop shadows, except dropdown menus.** `components/ui/dropdown-menu.tsx` carries the one soft shadow; nothing else (cards, popovers, dialogs, bubbles) gets one. `src/glass.css` resets Tailwind's
    `--shadow-*`, `--inset-shadow-*`, `--drop-shadow-*` and `--text-shadow-*` theme namespaces, so a `shadow-*` class in the published shadcn and
    AI Elements files generates no CSS and those files stay unmodified. Glass has no inner highlight either. Focus rings stay (a ring on a
    focused control is not a shadow). `node packages/ui/scripts/check-ui-rules.mjs` (run by `pnpm test`) fails on `shadow-*`, `box-shadow`,

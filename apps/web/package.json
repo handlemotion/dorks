@@ -25,6 +25,7 @@
     "@fontsource-variable/geist": "^5.3.0",
     "@fontsource-variable/geist-mono": "^5.3.0",
     "@lucasmarkes/hairline": "0.5.1",
+    "@pierre/diffs": "^1.6.4",
     "@ramka/react": "0.0.2",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/react-router": "1.170.41",

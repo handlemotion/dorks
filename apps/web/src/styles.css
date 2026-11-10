@@ -115,8 +115,36 @@
   }
 }
 
+/* The status dot while something moves: circle, square, diamond, one shape per 2s shimmer pass. Each change is a quick 200ms morph
+   (radius and a quarter turn, the diamond an extra 45deg and scaled to the circle's optical size) that lands as the shimmer starts
+   its pass, then the shape holds. It turns about its own centre, so it never shifts the words. */
+@keyframes status-shape {
+  0%,
+  30% {
+    border-radius: 50%;
+    transform: rotate(0deg);
+  }
+  33.333%,
+  63.333% {
+    border-radius: 1.5px;
+    transform: rotate(90deg);
+  }
+  66.666%,
+  96.666% {
+    border-radius: 1.5px;
+    transform: rotate(225deg) scale(0.85);
+  }
+  100% {
+    border-radius: 50%;
+    transform: rotate(360deg);
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .word-shimmer {
     animation: word-shimmer 2s step-end infinite;
+  }
+  .status-shape {
+    animation: status-shape 6s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
   }
 }

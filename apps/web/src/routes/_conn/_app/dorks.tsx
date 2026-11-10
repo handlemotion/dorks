@@ -1,6 +1,6 @@
-import { CatchBoundary, createFileRoute, Link, Navigate } from '@tanstack/react-router'
+import { CatchBoundary, createFileRoute, Link, Navigate, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
-import { ArchiveIcon, ArchiveRestoreIcon, ChevronDownIcon, InfoIcon } from 'lucide-react'
+import { ChevronDownIcon, InfoIcon } from 'lucide-react'
 import { useConnection, useDork, useDorkEvents, useDorks, useDorksClient, useSettings } from '@dorks/client/react'
 import { AgentStatus } from '../../../components/AgentStatus'
 import { Alert, AlertDescription } from '@dorks/ui/alert'
@@ -25,7 +25,8 @@ import {
 import { ChatMessages } from '../../../components/ChatBlock'
 import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen } from '../../../components/ChatDetails'
 import { Composer, type AgentProvider } from '../../../components/ChatComposer'
-import { PageHeader } from '../../../components/PageHeader'
+import { ChatMenu } from '../../../components/ChatMenu'
+import { ArchiveButton, PageHeader } from '../../../components/PageHeader'
 import { SetupStatus } from '../../../components/SetupStatus'
 import { canCreate, onboarded } from '../../../lib/onboarding'
 import { usePending } from '../../../lib/pending'
@@ -124,6 +125,7 @@ function NewDork({ onCreated, disabled, claudeReady, codexReady }: { onCreated: 
 
 function Thread({ dorkId }: { dorkId: string }) {
   const { actions } = useDorksClient()
+  const navigate = useNavigate()
   const dork = useDork(dorkId)
   const { view, canLoadMore, loadMore, loading, send } = useDorkEvents(dorkId)
   const [text, setText] = useState('')
@@ -144,17 +146,13 @@ function Thread({ dorkId }: { dorkId: string }) {
   return (
     <ChatSplit details={detailsOpen ? <ChatDetails data={{ pr: prOf(dork.prUrl) }} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} onAsk={setText} /> : undefined}>
     <section className="flex min-w-0 flex-1 flex-col" aria-label="thread" data-state={dork.state}>
-      <PageHeader divider={!detailsOpen}
+      <PageHeader divider={false}
         title={dork.title}
-        actions={
-          <>
-            <Button variant="ghost" size="sm" disabled={archiving} onClick={() => void runArchive(() => actions.archiveDork(dorkId, !dork.archived))}>
-              {dork.archived ? <ArchiveRestoreIcon /> : <ArchiveIcon />}
-              {dork.archived ? 'Unarchive' : 'Archive'}
-            </Button>
-            {!detailsOpen && <ShowDetailsButton onClick={() => setDetailsOpen(true)} />}
-          </>
-        }
+        titleActions={<ArchiveButton archived={dork.archived} disabled={archiving} onClick={() => void runArchive(() => actions.archiveDork(dorkId, !dork.archived))} />}
+        actions={<>
+          <ChatMenu prUrl={dork.prUrl} onDelete={async () => { await actions.deleteDork(dorkId); await navigate({ to: '/dorks', search: {} }) }} />
+          {!detailsOpen && <ShowDetailsButton onClick={() => setDetailsOpen(true)} />}
+        </>}
       />
       {models.length > 0 && (
         <form className="mx-auto mt-4 flex w-full max-w-3xl shrink-0 flex-wrap items-center gap-2 px-4 text-sm" onSubmit={(event) => {
@@ -191,9 +189,11 @@ function Thread({ dorkId }: { dorkId: string }) {
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
         <MessageScroller>
           <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
-            <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-3 py-6" data-testid="transcript">
+            <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-[30px] py-6" data-testid="transcript">
               {canLoadMore && <div className="text-center"><Button variant="outline" size="sm" onClick={loadMore}>Load older</Button></div>}
               <ChatMessages blocks={view.blocks} />
+              {/* In the transcript, not pinned over it: scrolled up, the scroll-to-end button takes its place. */}
+              <AgentStatus state={dork.state} live={live} />
             </MessageScrollerContent>
           </MessageScrollerViewport>
           <MessageScrollerButton />
@@ -207,7 +207,6 @@ function Thread({ dorkId }: { dorkId: string }) {
           try { await send(sent) } catch (e) { setText(sent); throw e }
         })}
         onStop={working && !stopping && !dork.archived ? () => void runStop(() => actions.interrupt(dorkId)) : undefined}
-        status={<AgentStatus state={dork.state} live={live} />}
       />
     </section>
     </ChatSplit>

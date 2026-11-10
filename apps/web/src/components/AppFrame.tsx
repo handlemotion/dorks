@@ -4,17 +4,26 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@dorks/ui/
 import { SidebarInset, SidebarProvider, useSidebar } from '@dorks/ui/sidebar'
 import { useDefaultLayout, usePanelRef } from 'react-resizable-panels'
 import { AppSidebar } from './AppSidebar'
+import { TITLEBAR_START, WindowControls } from './WindowControls'
+import { useSnapOnClick } from '../lib/snapOnClick'
+
+const SIDEBAR_WIDTH = 275
 
 /**
- * The app frame is flat and white (`bg-background`): the sidebar and the page share it, split by a full-height divider that is also
+ * The app frame is flat and off white (`bg-background`, #fafafa): the sidebar and the page share it, split by a full-height divider that is also
  * the resize handle (react-resizable-panels, through shadcn's Resizable). The sidebar's width is remembered; collapsing it (its
  * toggle, ⌘B, or dragging it shut) collapses the panel. On phones the sidebar is shadcn's sheet instead. Onboarding keeps the grey
  * app fill and is outside this frame.
  */
 export function FrameLayout({ sidebar, children }: { sidebar: ReactNode; children: ReactNode }) {
   return (
-    <SidebarProvider data-app-frame className="h-svh min-h-0 bg-background">
+    <SidebarProvider data-app-frame className="relative h-svh min-h-0 bg-background">
       <Panels sidebar={sidebar}>{children}</Panels>
+      {/* The title bar controls float over the frame's top-left corner, after the traffic lights, so opening or closing the sidebar never
+          moves them; the sidebar's top bar and, while it is hidden, the page header leave room for them. */}
+      <div className="pointer-events-none absolute top-0 left-0 z-20 flex h-12 items-center *:pointer-events-auto" style={{ paddingLeft: TITLEBAR_START }}>
+        <WindowControls />
+      </div>
     </SidebarProvider>
   )
 }
@@ -22,7 +31,8 @@ export function FrameLayout({ sidebar, children }: { sidebar: ReactNode; childre
 function Panels({ sidebar, children }: { sidebar: ReactNode; children: ReactNode }) {
   const { isMobile, open, setOpen } = useSidebar()
   const panel = usePanelRef()
-  const layout = useDefaultLayout({ id: 'dorks.frame', storage: localStorage })
+  const layout = useDefaultLayout({ id: 'dorks.frame.v2', storage: localStorage })
+  const snap = useSnapOnClick(panel, SIDEBAR_WIDTH)
   // The sidebar's open state drives the panel; the panel reports back when it is dragged shut or open.
   useEffect(() => {
     const p = panel.current
@@ -44,7 +54,9 @@ function Panels({ sidebar, children }: { sidebar: ReactNode; children: ReactNode
         id="sidebar"
         className="overflow-hidden"
         panelRef={panel}
-        defaultSize={256}
+        // 275px by default, and it keeps its width when the window resizes: the page takes the difference.
+        defaultSize={SIDEBAR_WIDTH}
+        groupResizeBehavior="preserve-pixel-size"
         minSize={200}
         maxSize={420}
         collapsible
@@ -56,7 +68,8 @@ function Panels({ sidebar, children }: { sidebar: ReactNode; children: ReactNode
       >
         {sidebar}
       </ResizablePanel>
-      <ResizableHandle />
+      {/* Drag to resize; a click snaps the sidebar back to its default width. */}
+      <ResizableHandle className="z-10 after:w-2" {...snap} />
       <ResizablePanel id="main" minSize={480}>
         <SidebarInset className="h-full min-h-0 overflow-hidden bg-transparent">{children}</SidebarInset>
       </ResizablePanel>
