@@ -807,7 +807,7 @@ dependencies = [
 
 [[package]]
 name = "dorks-desktop"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "dorks-shell-core",
  "objc2-app-kit",

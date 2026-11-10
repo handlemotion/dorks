@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "dorks-desktop"
-version = "0.1.0"
+version = "0.0.1"
 description = "Dorks desktop shell"
 edition = "2021"
 license = "Apache-2.0"
