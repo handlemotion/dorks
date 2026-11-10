@@ -3,13 +3,14 @@ import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
 import { isBoxNotFound } from "../core/box";
 import { getBox } from "./lib/box";
+import { BoatError } from "./lib/boat";
 import { bridgeSecret } from "./lib/bridgeAuth";
 
 // Box calls live in actions (at-most-once, no automatic retry). All provider calls are idempotent (see BoxProvider), and a
 // failure becomes `op_failed` -> `error`; the user's next message retries. Only generic text reaches the event log.
 const safe = (e: unknown, what: string) => {
   console.error(`${what} failed`, e instanceof Error ? e.message.slice(0, 200) : "unknown");
-  return `${what} failed`;
+  return e instanceof BoatError && e.message.startsWith("boat: selected environment") ? e.message : `${what} failed`;
 };
 
 const MAX_ORPHAN_ATTEMPTS = 6;
@@ -21,11 +22,14 @@ export const create = internalAction({
       const info = await ctx.runQuery(internal.lifecycle.boxInfo, { dorkId });
       if (!info || info.deleting) return; // deleted before we started: do not create a box nobody will clean up
       if (!info.snapshotId) return void (await ctx.runMutation(internal.lifecycle.opFailed, { dorkId, gen, message: "No base snapshot configured" }));
+      if (info.requiresBoatEnvironment && !info.boatEnvironment)
+        return void (await ctx.runMutation(internal.lifecycle.opFailed, { dorkId, gen, message: "Set your Boat ChatGPT environment in Settings" }));
       // Only bridge connection details go in the create-time env; user secrets arrive via bridge.configure.
       const box = await getBox(ctx).createFromSnapshot(info.snapshotId, {
         name: dorkId,
         initCommand: "dorks-bridge",
         env: { DORK_ID: dorkId, BRIDGE_URL: process.env.CONVEX_CLOUD_URL!, BRIDGE_SECRET: await bridgeSecret(dorkId) },
+        boatEnvironment: info.boatEnvironment,
         generation: gen,
       });
       const recorded = await ctx.runMutation(internal.lifecycle.boxCreated, { dorkId, gen, boxId: box.id, sleepMinutes: info.sleepMinutes });

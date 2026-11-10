@@ -37,12 +37,13 @@ beforeEach(() => {
   delete process.env.BOX_PROVIDER;
 });
 
-async function seed(t: T, over: { state?: string; archived?: boolean; repo?: string } = {}) {
+async function seed(t: T, over: { state?: string; archived?: boolean; repo?: string; provider?: "codex" | "claude" } = {}) {
   const claudeTokenEnc = (await encrypt(keyringFromEnv({ ENCRYPTION_KEY: process.env.ENCRYPTION_KEY! }), "sk-ant-x", aad.claudeToken("u1"))).value;
   const dorkId = await t.run(async (ctx) => {
     await ctx.db.insert("userSettings", { userId: "u1", sleepMinutes: 5, claudeTokenEnc, githubInstallationId: 42 });
     const id = await ctx.db.insert("dorks", {
-      userId: "u1", title: "t", repo: over.repo ?? "octo/hello", branch: "agent/x", state: (over.state ?? "working") as never, archived: over.archived ?? false, lastActivityAt: 1,
+      userId: "u1", title: "t", repo: over.repo ?? "octo/hello", branch: "agent/x", provider: over.provider,
+      state: (over.state ?? "working") as never, archived: over.archived ?? false, lastActivityAt: 1,
     });
     await ctx.db.insert("dorkRuntime", { dorkId: id, bridgeSeq: 0, streamMsgId: "", sleepMinutes: 5, bridgeSeenAt: 0, bridgeLost: false, timers: {} });
     return id;
@@ -51,6 +52,42 @@ async function seed(t: T, over: { state?: string; archived?: boolean; repo?: str
 }
 
 describe("bridge.configure / ghToken scoping", () => {
+  it("configures Codex without sending the Claude token and keeps the device code in the owner's dork row", async () => {
+    const t = convexTest(schema, modules);
+    const c = await seed(t, { provider: "codex", state: "creating" });
+    await t.run(async (ctx) => {
+      const settings = await ctx.db.query("userSettings").first();
+      await ctx.db.patch(settings!._id, { claudeTokenEnc: undefined });
+    });
+    const cfg = await t.action(api.bridge.configure, c);
+    expect(cfg).toMatchObject({ t: "configure", provider: "codex" });
+    expect(cfg?.t).toBe("configure");
+    if (cfg?.t !== "configure") throw new Error("expected configure");
+    expect(cfg.env).not.toHaveProperty("CLAUDE_CODE_OAUTH_TOKEN");
+    const code = { t: "codex_login", verificationUrl: "https://auth.openai.com/codex/device", userCode: "ABCD-1234" };
+    expect(await t.mutation(api.bridge.push, { ...c, frames: [code] })).toEqual({ ok: true });
+    expect((await t.run((ctx) => ctx.db.get(c.dorkId)))?.codexLogin).toEqual({
+      verificationUrl: code.verificationUrl, userCode: code.userCode,
+    });
+    await t.mutation(api.bridge.push, { ...c, frames: [{ t: "ready" }] });
+    expect((await t.run((ctx) => ctx.db.get(c.dorkId)))?.codexLogin).toBeUndefined();
+  });
+  it("passes an explicit model choice to the Codex bridge", async () => {
+    const t = convexTest(schema, modules);
+    const c = await seed(t, { provider: "codex", state: "creating" });
+    await t.run((ctx) => ctx.db.patch(c.dorkId, { codexModel: { model: "gpt-6.1-sol", effort: "high" } }));
+    expect(await t.action(api.bridge.configure, c)).toMatchObject({
+      t: "configure", provider: "codex", codexModel: { model: "gpt-6.1-sol", effort: "high" },
+    });
+  });
+  it("configures account-wide Boat auth without accepting per-dork device codes", async () => {
+    const t = convexTest(schema, modules);
+    const c = await seed(t, { provider: "codex", state: "creating" });
+    await t.run((ctx) => ctx.db.patch(c.dorkId, { codexAuthSource: "boat" }));
+    expect(await t.action(api.bridge.configure, c)).toMatchObject({ t: "configure", codexAuthSource: "boat" });
+    await t.mutation(api.bridge.push, { ...c, frames: [{ t: "codex_login", verificationUrl: "https://auth.openai.com/codex/device", userCode: "ABCD-1234" }] });
+    expect((await t.run((ctx) => ctx.db.get(c.dorkId)))?.codexLogin).toBeUndefined();
+  });
   it("mints an installation-wide token (no repository filter) with the agent permissions", async () => {
     const t = convexTest(schema, modules);
     const c = await seed(t);

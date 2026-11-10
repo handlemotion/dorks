@@ -4,6 +4,7 @@ import { appendFileSync, chmodSync, closeSync, fsyncSync, mkdirSync, openSync, r
 import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { Agent, childEnv, configDirOf, findTranscripts } from "./claude";
+import { CodexAgent } from "./codex";
 import type { Config } from "./config";
 import { GithubToken, helperCommand } from "./credentials";
 import { HookService, mcpConfigPath, settingsPath, writeClaudeMcpConfig, writeClaudeSettings } from "./hooks";
@@ -44,7 +45,10 @@ export class Bridge {
   private prs: PrSubscriptions;
   private hooks: HookService;
   private runAs: Identity | null;
-  private agent: Agent | null = null;
+  private agent: Agent | CodexAgent | null = null;
+  private provider: "claude" | "codex" = "claude";
+  private codexAuthSource: "device" | "boat" = "device";
+  private codexModel: { model: string; effort: string } | undefined;
   private agentKey = "";
   private lastSessionId: string | null = null;
   private latest: CommandEntry[] = [];
@@ -203,6 +207,11 @@ export class Bridge {
         void this.interrupt(c.cid);
         continue;
       }
+      if (f.t === "codex_reconnect") {
+        this.handled.add(c.cid);
+        this.enqueue(() => this.reconnectCodex(c.cid));
+        continue;
+      }
       this.handled.add(c.cid);
       if (f.t === "fetch_configure") this.configuring++; // counted from the moment it is queued, so a later interrupt in this snapshot defers
       this.enqueue(() => (f.t === "fetch_configure" ? this.configureWithRetry(c.cid) : f.t === "flush" ? this.flush(c.cid, (f as { cid?: string }).cid ?? c.cid) : this.refreshToken(c.cid)));
@@ -217,7 +226,7 @@ export class Bridge {
   private async deliver(id: string, text: string, notify?: { kinds: string[]; prs: PrRef[] }) {
     if (this.acked.has(id)) return;
     if (!this.written.has(id)) {
-      if (!this.agent?.alive) return; // agent not up yet (or dead): reprocessed after configure; left unacked so the backend keeps it
+      if (!this.agent?.alive || (this.agent instanceof CodexAgent && !this.agent.ready)) return; // agent not up yet (or dead): reprocessed after configure; left unacked so the backend keeps it
       try {
         await this.agent.sendUserMessage(text);
       } catch {
@@ -237,6 +246,24 @@ export class Bridge {
       if (this.agent?.alive) await this.agent.interrupt();
     } catch {
       this.log("interrupt could not be delivered");
+    }
+    this.pipeline.control({ t: "ack", id: cid }, true);
+  }
+
+  private async reconnectCodex(cid: string) {
+    const agent = this.agent;
+    try {
+      if (!(agent instanceof CodexAgent)) throw new Error("Codex not running");
+      await agent.logout();
+      this.lastSessionId = agent.sessionId ?? this.lastSessionId;
+      await agent.stop();
+      if (this.agent === agent) this.agent = null;
+      this.startAgent(this.lastSessionId, []);
+    } catch {
+      if (agent instanceof CodexAgent) await agent.stop();
+      if (this.agent === agent) this.agent = null;
+      this.pipeline.control({ t: "codex_issue", message: "Could not disconnect ChatGPT in this sandbox. Send a message to retry." }, true);
+      this.pipeline.control({ t: "agent_exited", code: null, stderrTail: "" }, true);
     }
     this.pipeline.control({ t: "ack", id: cid }, true);
   }
@@ -311,11 +338,13 @@ export class Bridge {
     this.redactor.addAll(Object.values(cfg.env));
     this.github.set(cfg.ghToken);
 
-    const key = createHash("sha256").update(JSON.stringify([cfg.repo, Object.entries(cfg.env).sort()])).digest("hex");
+    const provider = cfg.provider ?? "claude";
+    const key = createHash("sha256").update(JSON.stringify([provider, cfg.codexAuthSource, cfg.codexModel, cfg.repo, Object.entries(cfg.env).sort()])).digest("hex");
     if (this.agent?.alive && key === this.agentKey) {
       // Already running with this config (a reconnect re-sends configure): nothing to do but say so again.
       this.pipeline.control({ t: "ack", id: cid });
-      return this.pipeline.control({ t: "ready" }, true);
+      if (!(this.agent instanceof CodexAgent) || this.agent.ready) this.pipeline.control({ t: "ready" }, true);
+      return;
     }
     if (this.agent) {
       // config changed: restart on the same session
@@ -341,40 +370,38 @@ export class Bridge {
     env.DORKS_SOCK = this.rpc.sockPath; // how `dorks`, the gh shim and hooks (children of the CLI) find this process
     this.agentCtx = { dir, env };
     this.agentKey = key;
+    this.provider = provider;
+    this.codexAuthSource = cfg.codexAuthSource ?? "device";
+    this.codexModel = cfg.codexModel;
     let resume = this.lastSessionId ?? cfg.resumeSessionId;
     // The backend remembers a session id, but the box may have been recreated without its disk: --resume would fail and the
     // user's message with it. Only resume what is really on disk.
-    if (resume && findTranscripts(configDirOf(env), resume).length === 0) {
+    if (provider === "claude" && resume && findTranscripts(configDirOf(env), resume).length === 0) {
       this.log("session transcript not found on this box, starting a fresh session");
       this.lastSessionId = null;
       resume = null;
     }
     this.startAgent(resume, []);
     this.pipeline.control({ t: "ack", id: cid });
-    this.pipeline.control({ t: "ready" }, true);
+    if (provider === "claude") this.pipeline.control({ t: "ready" }, true);
     this.process(); // messages that arrived before the agent was up, and interrupts deferred during configure
   }
 
   private startAgent(resume: string | null, resend: string[]) {
     const { dir, env } = this.agentCtx!;
-    const agent = new Agent({
-      bin: this.cfg.claudeBin,
+    const shared = {
       cwd: dir,
       env,
-      permissionMode: this.cfg.permissionMode,
       resumeSessionId: resume,
-      extraArgs: this.cfg.claudeExtraArgs,
-      settingsFile: settingsPath(this.cfg.stateDir),
-      mcpConfigFile: mcpConfigPath(this.cfg.stateDir),
       runAs: this.runAs,
       redactor: this.redactor,
       log: this.log,
-      onRaw: (raw) => {
+      onRaw: (raw: unknown) => {
         const sid = agent.sessionId;
         if (sid) this.lastSessionId = sid;
         this.pipeline.ingest(raw);
       },
-      onExit: ({ code, stderrTail, resumeMissing, pending }) => {
+      onExit: ({ code, stderrTail, resumeMissing, pending }: { code: number | null; stderrTail: string; resumeMissing: boolean; pending: string[] }) => {
         if (this.agent === agent) this.agent = null;
         if (resumeMissing) {
           // Raced the preflight (or the transcript was unreadable): retry once on a fresh session, replaying what it never answered.
@@ -387,6 +414,31 @@ export class Bridge {
         this.log("agent exited, code", code);
         this.pipeline.control({ t: "agent_exited", code, stderrTail }, true);
       },
+    };
+    const agent = this.provider === "codex" ? new CodexAgent({
+      ...shared,
+      authSource: this.codexAuthSource,
+      model: this.codexModel,
+      mcpCommand: this.self,
+      sock: this.rpc.sockPath,
+      onLogin: (verificationUrl, userCode) => this.pipeline.control({ t: "codex_login", verificationUrl, userCode }, true),
+      onModels: (models) => this.pipeline.control({ t: "codex_models", models }, true),
+      onIssue: (message) => this.pipeline.control({ t: "codex_issue", message }, true),
+      onReady: () => {
+        this.pipeline.control({ t: "ready" }, true);
+        this.process();
+      },
+      onTurnFinished: async (sessionId) => {
+        const result = await this.hooks.methods["hook.stop"]({ session_id: sessionId });
+        return result && typeof result === "object" && "reason" in result && typeof result.reason === "string" ? result.reason : null;
+      },
+    }) : new Agent({
+      ...shared,
+      bin: this.cfg.claudeBin,
+      permissionMode: this.cfg.permissionMode,
+      extraArgs: this.cfg.claudeExtraArgs,
+      settingsFile: settingsPath(this.cfg.stateDir),
+      mcpConfigFile: mcpConfigPath(this.cfg.stateDir),
     });
     this.agent = agent;
     this.log("agent started", resume ? "(resuming a session)" : "(new session)");

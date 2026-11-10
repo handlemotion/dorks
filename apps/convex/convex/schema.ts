@@ -1,6 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { ciState, commentPolicy, dorkState, notifyKind, prRef, reviewState, subscriptionSource, subscriptionStatus } from "./validators";
+import { agentProvider, ciState, commentPolicy, dorkState, notifyKind, prRef, reviewState, subscriptionSource, subscriptionStatus } from "./validators";
 
 export default defineSchema({
   // Encrypted at rest (AES-GCM envelope, key in env). Never returned by any query.
@@ -9,6 +9,7 @@ export default defineSchema({
     claudeTokenEnc: v.optional(v.string()),
     githubInstallationId: v.optional(v.number()),
     githubLogin: v.optional(v.string()), // the installing user's GitHub login (captured at install-link time): their comments always wake their dorks
+    codexBoatEnvironment: v.optional(v.string()),
     commentPolicy: v.optional(commentPolicy), // absent = DEFAULT_COMMENT_POLICY
     workstationSnapshotId: v.optional(v.string()),
     sleepMinutes: v.number(),
@@ -25,10 +26,16 @@ export default defineSchema({
     title: v.string(),
     repo: v.string(),
     branch: v.string(),
+    provider: v.optional(agentProvider),
+    codexAuthSource: v.optional(v.union(v.literal("device"), v.literal("boat"))),
     state: dorkState,
     archived: v.boolean(),
     boxId: v.optional(v.string()),
     claudeSessionId: v.optional(v.string()),
+    codexThreadId: v.optional(v.string()),
+    codexLogin: v.optional(v.object({ verificationUrl: v.string(), userCode: v.string() })),
+    codexModel: v.optional(v.object({ model: v.string(), effort: v.string() })),
+    codexModelChoices: v.optional(v.array(v.object({ model: v.string(), efforts: v.array(v.string()) }))),
     preview: v.optional(v.string()),
     prUrl: v.optional(v.string()),
     deleting: v.optional(v.boolean()),
@@ -74,7 +81,7 @@ export default defineSchema({
   // make the bridge call an action, which returns the secrets over the authenticated call (never stored/queried).
   commands: defineTable({
     dorkId: v.id("dorks"),
-    kind: v.union(v.literal("user_message"), v.literal("notify"), v.literal("configure"), v.literal("gh_token"), v.literal("interrupt"), v.literal("flush")),
+    kind: v.union(v.literal("user_message"), v.literal("notify"), v.literal("configure"), v.literal("gh_token"), v.literal("interrupt"), v.literal("codex_reconnect"), v.literal("flush")),
     cid: v.string(), // command id the bridge acks (user_message / notify id is what bridge dedupes on)
     text: v.optional(v.string()),
     // notify only: what the envelope in `text` contains (the frame's metadata), and whether it may be emitted while a turn runs.

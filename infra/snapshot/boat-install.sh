@@ -6,7 +6,7 @@ test -f "$HOME/dorks-bridge.mjs"
 node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 18) ? 0 : 1)'
 sudo install -m 0755 "$HOME/dorks-bridge.mjs" /usr/local/bin/dorks-bridge
 sudo ln -sf dorks-bridge /usr/local/bin/dorks
-sudo npm install -g cf@0.15.0
+sudo npm install -g cf@0.15.0 @openai/codex@0.166.0
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -33,6 +33,7 @@ sudo ln -sf dorks-bridge /usr/local/bin/gh
 
 git --version
 claude --version
+codex --version
 test "$(command -v gh)" = /usr/local/bin/gh
 /usr/bin/gh --version
 gh stack --help >/dev/null

@@ -7,6 +7,7 @@ import { requireUserId } from "./auth";
 import { append, dispatch, enqueue, fail, MAX_MESSAGE_CHARS, runtimeOf } from "./lib/dispatch";
 import { validRepo } from "./lib/repo";
 import { endDorkSubscriptions, resetCiAttempts, subscriptionsOfDork } from "./lib/subscriptions";
+import { agentProvider } from "./validators";
 
 export const MAX_TITLE_CHARS = 120;
 export const MAX_ACTIVE_DORKS = 20;
@@ -57,17 +58,21 @@ export const get = query({
 });
 
 export const create = mutation({
-  args: { repo: v.string(), message: v.string(), title: v.optional(v.string()) },
-  handler: async (ctx, { repo, message, title }) => {
+  args: { repo: v.string(), message: v.string(), title: v.optional(v.string()), provider: v.optional(agentProvider) },
+  handler: async (ctx, { repo, message, title, provider = "codex" }) => {
     const userId = await requireUserId(ctx);
+    if (provider === "codex" && ![undefined, "boat", "sim"].includes(process.env.BOX_PROVIDER)) fail("not_configured", "Codex requires a Boat sandbox");
     if (!validRepo(repo)) fail("invalid", "repo must be owner/name");
     if (title !== undefined && title.trim().length > MAX_TITLE_CHARS) fail("invalid", "title too long");
     const text = checkText(message);
     await assertActiveSlot(ctx, userId);
     const s = await ctx.db.query("userSettings").withIndex("by_user", (q) => q.eq("userId", userId)).unique();
-    if (!s?.claudeTokenEnc || !s.githubInstallationId) fail("onboarding_incomplete", "finish onboarding first");
+    if (!s?.githubInstallationId || (provider === "claude" && !s.claudeTokenEnc)) fail("onboarding_incomplete", "finish onboarding first");
+    if (provider === "codex" && process.env.BOX_PROVIDER !== "sim" && !s.codexBoatEnvironment)
+      fail("onboarding_incomplete", "connect ChatGPT once in Boat and select your Boat environment in Settings");
     const dorkId = await ctx.db.insert("dorks", {
       userId, title: (title?.trim() || text).slice(0, MAX_TITLE_CHARS), repo, branch: `agent/${crypto.randomUUID().slice(0, 8)}`,
+      provider, codexAuthSource: provider === "codex" ? (process.env.BOX_PROVIDER === "sim" ? "device" : "boat") : undefined,
       state: "creating", archived: false, lastActivityAt: Date.now(),
     });
     await ctx.db.insert("dorkRuntime", { dorkId, bridgeSeq: 0, streamMsgId: "", sleepMinutes: s!.sleepMinutes, bridgeSeenAt: 0, bridgeLost: false, timers: {} });
@@ -85,6 +90,29 @@ export const sendMessage = mutation({
     const r = await dispatch(ctx, dorkId, { t: "user_message" });
     if (r?.rejected) fail("archived", "dork is archived"); // rolls back the persisted message
     for (const sub of await subscriptionsOfDork(ctx, dorkId)) if (sub.status !== "ended") await resetCiAttempts(ctx, sub, "resumed by your message"); // a human is back: CI gets a fresh budget
+  },
+});
+
+export const chooseCodexModel = mutation({
+  args: { dorkId: v.id("dorks"), model: v.string(), effort: v.string() },
+  handler: async (ctx, { dorkId, model, effort }) => {
+    const dork = await owned(ctx, dorkId);
+    if (dork.archived) fail("archived", "dork is archived");
+    if (dork.provider !== "codex" || dork.state !== "error"
+      || !dork.codexModelChoices?.some((choice) => choice.model === model && choice.efforts.includes(effort)))
+      fail("invalid", "choose an available Codex model after the sandbox stops");
+    await ctx.db.patch(dorkId, { codexModel: { model, effort }, codexModelChoices: undefined });
+    await dispatch(ctx, dorkId, { t: "user_message" });
+  },
+});
+
+export const reconnectCodex = mutation({
+  args: { dorkId: v.id("dorks") },
+  handler: async (ctx, { dorkId }) => {
+    const dork = await owned(ctx, dorkId);
+    if (dork.provider !== "codex" || dork.codexAuthSource === "boat" || dork.archived || dork.state !== "idle") fail("conflict", "manage an account-wide ChatGPT sign-in in Boat; only idle per-box sign-ins can reconnect here");
+    await enqueue(ctx, dorkId, "codex_reconnect");
+    await dispatch(ctx, dorkId, { t: "reconnect" });
   },
 });
 

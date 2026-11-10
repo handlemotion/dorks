@@ -15,6 +15,7 @@ const CREATE = {
 
 function fake() {
   const boxes = new Map<string, { id: string; state: string; labels: Record<string, string>; dataExpiredAt?: string }>();
+  const environments: { name: string; safeForThirdParties: boolean; proxyAiCredentials: boolean; passAgentsCredentials: boolean; passGithub: boolean; passSecrets: boolean; passSandboxCredentials: boolean; credentialProfileId: string | null }[] = [];
   const requests: { method: string; path: string; body?: any; headers: Record<string, string> }[] = [];
   const keys = new Map<string, string>();
   let next = 0;
@@ -29,6 +30,7 @@ function fake() {
     requests.push({ method, path, body, headers });
     const forced = fail?.(method, path);
     if (forced) return forced;
+    if (url.pathname === "/api/v1/environments" && method === "GET") return json({ ok: true, environments });
     if (url.pathname === "/api/v1/sandboxes" && method === "GET") {
       const label = url.searchParams.get("label");
       const matches = [...boxes.values()].filter((b) => !label || `dorks=${b.labels.dorks}` === label);
@@ -57,7 +59,7 @@ function fake() {
     return json({ ok: false, code: "not_found" }, 404);
   }) as typeof fetch;
   const provider = boatBox({ apiKey: KEY, scope: "https://dev.convex.cloud", fetch: fetcher, sleep: async () => {} });
-  return { boxes, requests, provider, fetcher, setFail: (value: typeof fail) => { fail = value; } };
+  return { boxes, requests, provider, fetcher, environments, setFail: (value: typeof fail) => { fail = value; } };
 }
 
 describe("Boat sandbox provider", () => {
@@ -75,6 +77,44 @@ describe("Boat sandbox provider", () => {
       .toBe("flock -n /tmp/dorks-bridge.lock dorks-bridge");
     expect(f.requests.filter((r) => r.path.endsWith("/commands")).map((r) => r.body.command).join(" ")).not.toContain(CREATE.env.BRIDGE_SECRET);
     expect(f.boxes.has(id)).toBe(true);
+  });
+
+  it("uses a per-account Boat environment that passes only its dedicated ChatGPT profile", async () => {
+    const f = fake();
+    f.environments.push({ name: "dorks-codex", safeForThirdParties: false, proxyAiCredentials: false,
+      passAgentsCredentials: true, passGithub: false, passSecrets: false, passSandboxCredentials: false, credentialProfileId: "codex-only" });
+    await f.provider.createFromSnapshot("dorks-base", { ...CREATE, boatEnvironment: "dorks-codex" });
+    expect(f.requests.find((r) => r.method === "POST" && r.path === "/api/v1/sandboxes")?.body)
+      .toMatchObject({ environment: "dorks-codex", noEnv: false, env: CREATE.env });
+  });
+
+  it("refuses a Boat environment that could expose other account credentials", async () => {
+    const f = fake();
+    f.environments.push({ name: "unsafe", safeForThirdParties: false, proxyAiCredentials: false,
+      passAgentsCredentials: true, passGithub: true, passSecrets: false, passSandboxCredentials: false, credentialProfileId: "codex-only" });
+    await expect(f.provider.createFromSnapshot("dorks-base", { ...CREATE, boatEnvironment: "unsafe" })).rejects.toThrow("disable other credentials");
+    expect(f.requests.some((r) => r.method === "POST" && r.path === "/api/v1/sandboxes")).toBe(false);
+  });
+
+  it("does not mistake a proxy-only or default-profile environment for direct account access", async () => {
+    const f = fake();
+    f.environments.push({ name: "proxy-only", safeForThirdParties: true, proxyAiCredentials: true,
+      passAgentsCredentials: true, passGithub: false, passSecrets: false, passSandboxCredentials: false, credentialProfileId: "codex-only" });
+    f.environments.push({ name: "default-profile", safeForThirdParties: false, proxyAiCredentials: false,
+      passAgentsCredentials: true, passGithub: false, passSecrets: false, passSandboxCredentials: false, credentialProfileId: null });
+    for (const boatEnvironment of ["proxy-only", "default-profile"])
+      await expect(f.provider.createFromSnapshot("dorks-base", { ...CREATE, boatEnvironment })).rejects.toThrow("named AI credential profile");
+    expect(f.requests.some((r) => r.method === "POST" && r.path === "/api/v1/sandboxes")).toBe(false);
+  });
+
+  it("checks an organization environment in the same wallet used to create the box", async () => {
+    const f = fake();
+    f.environments.push({ name: "dorks-codex", safeForThirdParties: false, proxyAiCredentials: false,
+      passAgentsCredentials: true, passGithub: false, passSecrets: false, passSandboxCredentials: false, credentialProfileId: "codex-only" });
+    const provider = boatBox({ apiKey: KEY, scope: "https://dev.convex.cloud", org: "my team", fetch: f.fetcher, sleep: async () => {} });
+    await provider.createFromSnapshot("dorks-base", { ...CREATE, boatEnvironment: "dorks-codex" });
+    expect(f.requests.some((r) => r.path === "/api/v1/environments?org=my%20team")).toBe(true);
+    expect(f.requests.find((r) => r.method === "POST" && r.path === "/api/v1/sandboxes")?.headers["X-Boat-Org"]).toBe("my team");
   });
 
   it("adopts a box after a lost create response rather than billing another one", async () => {

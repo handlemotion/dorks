@@ -18,7 +18,8 @@ function Settings() {
         <h1>Settings</h1>
         <Link to="/dorks">Back to dorks</Link>
       </header>
-      <Checklist claudeToken={onboarding.claudeToken} github={onboarding.github} />
+      <Checklist claudeToken={onboarding.claudeToken} github={onboarding.github} codexBoatEnvironment={onboarding.codexBoatEnvironment} />
+      <CodexConnection current={onboarding.codexBoatEnvironment} />
       <ClaudeToken />
       <GithubApp linked={onboarding.github} />
       <CliSecrets />
@@ -27,16 +28,36 @@ function Settings() {
   )
 }
 
-function Checklist({ claudeToken, github }: { claudeToken: boolean; github: boolean }) {
-  const done = claudeToken && github
+function Checklist({ claudeToken, github, codexBoatEnvironment }: { claudeToken: boolean; github: boolean; codexBoatEnvironment: string | null }) {
   return (
     <section aria-label="onboarding checklist">
       <h2>Onboarding</h2>
       <ul>
-        <li data-testid="check-claude">{claudeToken ? '✅' : '⬜'} Claude token</li>
+        <li data-testid="check-claude">{claudeToken ? '✅' : '⬜'} Claude token (only for Claude dorks)</li>
         <li data-testid="check-github">{github ? '✅' : '⬜'} GitHub App installed</li>
+        <li data-testid="check-codex">{codexBoatEnvironment ? '✅' : '⬜'} Boat environment saved (for cloud Codex dorks)</li>
       </ul>
-      <p role="status" data-testid="onboarding-status">{done ? 'Ready: you can create dorks.' : 'Finish the steps above to create dorks.'}</p>
+      <p role="status" data-testid="onboarding-status">{!github ? 'Install the GitHub App to create dorks.' : codexBoatEnvironment ? 'Boat environment saved. Make sure ChatGPT is connected in Boat before creating a Codex dork.' : 'To use Codex in Boat, connect ChatGPT once and save your Boat environment below.'}</p>
+    </section>
+  )
+}
+
+function CodexConnection({ current }: { current: string | null }) {
+  const save = useMutation(api.settings.setCodexBoatEnvironment)
+  const [environment, setEnvironment] = useState(current ?? '')
+  const { run, pending, error } = usePending()
+  useEffect(() => setEnvironment(current ?? ''), [current])
+  return (
+    <section>
+      <h2>ChatGPT for Codex</h2>
+      <p>Connect ChatGPT once in Boat’s Agents &amp; Proxying page using its short code. Use a profile containing only ChatGPT; the default profile works while it contains no other AI keys. Leave Boat’s account-wide AI credentials proxy off. Create an environment using that profile: turn on Agents credentials, turn off Safe for third parties, GitHub, Secrets, Boat credentials, and Proxy AI credentials. <a href="https://docs.boat.dev/environments/access" target="_blank" rel="noreferrer">Boat setup instructions</a>.</p>
+      <p>Only use this for your personal, trusted repos. Codex needs the sign-in on each box, so code running there can read it. This avoids Boat’s paid credentials proxy.</p>
+      <form onSubmit={(e) => { e.preventDefault(); void run(() => save({ environment })) }}>
+        <label>Boat environment <input aria-label="Boat environment" value={environment} onChange={(e) => setEnvironment(e.target.value)} placeholder="dorks-codex" /></label>
+        <button type="submit" disabled={pending || !environment.trim()}>{pending ? 'Saving…' : 'Save environment'}</button>
+      </form>
+      <small>{current ? `Using ${current} for new Codex boxes. Boat checks its access settings when each box starts; this does not confirm ChatGPT is connected yet.` : 'A separate Boat environment is needed before creating cloud Codex dorks. Dorks does not store ChatGPT tokens.'}</small>
+      {error && <p role="alert">{error}</p>}
     </section>
   )
 }

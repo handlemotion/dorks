@@ -30,7 +30,8 @@ export type Input =
   | { t: "watchdog" }
   | { t: "archive" }
   | { t: "unarchive" }
-  | { t: "interrupt" };
+  | { t: "interrupt" }
+  | { t: "reconnect" };
 
 export type Effect =
   | "create_box"
@@ -138,5 +139,7 @@ export function reduce(c: Ctx, i: Input): Result {
 
     case "interrupt":
       return c.state === "working" ? stay(["interrupt_agent"]) : stay();
+    case "reconnect":
+      return c.state === "idle" ? go("waking", ["cancel_sleep", "arm_watchdog"]) : stay();
   }
 }

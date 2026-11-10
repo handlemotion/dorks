@@ -140,8 +140,16 @@ export function boatBox(opts: BoatOptions): BoxProvider {
   }
 
   return {
-    async createFromSnapshot(snapshotId, { name, initCommand, env, generation }) {
+    async createFromSnapshot(snapshotId, { name, initCommand, env, generation, boatEnvironment }) {
       if (initCommand !== "dorks-bridge") throw new BoatError("boat: unsupported bridge command");
+      if (boatEnvironment) {
+        const environments = await call("list environments", "GET", `/environments${opts.org ? `?org=${encodeURIComponent(opts.org)}` : ""}`);
+        const selected = environments?.environments?.find((item: { name?: string }) => item.name === boatEnvironment);
+        if (!selected || selected.safeForThirdParties !== false || selected.passAgentsCredentials !== true
+          || selected.passGithub !== false || selected.passSecrets !== false || selected.passSandboxCredentials !== false
+          || selected.proxyAiCredentials !== false || !selected.credentialProfileId || selected.credentialProfileId === "default")
+          throw new BoatError("boat: selected environment must disable other credentials and use a named AI credential profile");
+      }
       const label = await labelFor(name);
       const existing = await list(label);
       const live = existing.find((b) => b.state !== "cancelled" && b.state !== "error" && !b.dataExpiredAt);
@@ -155,7 +163,11 @@ export function boatBox(opts: BoatOptions): BoxProvider {
         }
       }
       for (const stale of existing.filter((b) => b.id !== live?.id && (b.state === "error" || b.dataExpiredAt))) await remove(stale.id);
-      const body = { from: snapshotId, name, labels: { dorks: label }, env, noEnv: true, ttlSeconds: null };
+      const body = {
+        from: snapshotId, name, labels: { dorks: label }, env,
+        ...(boatEnvironment ? { environment: boatEnvironment, noEnv: false } : { noEnv: true }),
+        ttlSeconds: null,
+      };
       const key = `dorks-${label}-${generation ?? 0}`;
       const deadline = Date.now() + WAIT_MS;
       let created: any;

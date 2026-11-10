@@ -126,6 +126,18 @@ export const push = mutation({
 
     for (const f of parsedFrames) {
       switch (f.t) {
+        case "codex_login":
+          if (dork.provider === "codex" && dork.codexAuthSource !== "boat") {
+            await ctx.db.patch(dorkId, { codexLogin: { verificationUrl: f.verificationUrl, userCode: f.userCode } });
+            await setTimer(ctx, dorkId, "watchdog", 15 * 60_000);
+          }
+          break;
+        case "codex_issue":
+          if (dork.provider === "codex") await append(ctx, dorkId, errorEvent({ code: "failed", message: f.message }));
+          break;
+        case "codex_models":
+          if (dork.provider === "codex") await ctx.db.patch(dorkId, { codexModelChoices: f.models });
+          break;
         case "event": {
           if (f.bseq <= bridgeSeq) break; // replay overlap after a reconnect
           bridgeSeq = f.bseq;
@@ -137,7 +149,7 @@ export const push = mutation({
               if (n.body.type === "assistant_message") preview = n.body.text.slice(0, 140);
               if (n.body.type === "turn_complete") touched = true;
             } else if (n.kind === "session") {
-              await ctx.db.patch(dorkId, { claudeSessionId: n.sessionId });
+              await ctx.db.patch(dorkId, dork.provider === "codex" ? { codexThreadId: n.sessionId } : { claudeSessionId: n.sessionId });
             } else {
               await flush();
               await dispatch(ctx, dorkId, { t: "turn_idle" });
@@ -147,6 +159,7 @@ export const push = mutation({
         }
         case "ready":
           await flush();
+          if (dork.provider === "codex") await ctx.db.patch(dorkId, { codexLogin: undefined, codexModelChoices: undefined });
           await dispatch(ctx, dorkId, { t: "agent_ready" });
           break;
         case "ack": {
@@ -159,6 +172,7 @@ export const push = mutation({
         }
         case "agent_exited":
           await flush();
+          if (dork.provider === "codex") await ctx.db.patch(dorkId, { codexLogin: undefined });
           await append(ctx, dorkId, { type: "agent_exited", message: `agent exited (code ${f.code ?? "?"})` });
           console.error("agent exited", dorkId, f.code); // stderr tail is never logged: it can echo env
           await dispatch(ctx, dorkId, { t: "agent_exited" });
@@ -228,7 +242,10 @@ export const configInfo = internalQuery({
     const s = await ctx.db.query("userSettings").withIndex("by_user", (q) => q.eq("userId", dork.userId)).unique();
     const secrets = await ctx.db.query("userSecrets").withIndex("by_user_name", (q) => q.eq("userId", dork.userId)).collect();
     return {
-      userId: dork.userId, repo: dork.repo, branch: dork.branch, resumeSessionId: dork.claudeSessionId ?? null,
+      userId: dork.userId, repo: dork.repo, branch: dork.branch, provider: dork.provider ?? "claude",
+      codexAuthSource: dork.codexAuthSource ?? "device",
+      codexModel: dork.codexModel,
+      resumeSessionId: (dork.provider === "codex" ? dork.codexThreadId : dork.claudeSessionId) ?? null,
       ghFailures: (await ctx.db.query("dorkRuntime").withIndex("by_dork", (q) => q.eq("dorkId", dorkId)).unique())?.ghFailures ?? 0,
       claudeTokenEnc: s?.claudeTokenEnc ?? null, githubInstallationId: s?.githubInstallationId ?? null,
       secrets: secrets.map((x) => ({ name: x.name, valueEnc: x.valueEnc })),
@@ -271,12 +288,18 @@ export const configure = action({
     }
     let cfg: ToBridge;
     try {
-      if (!info.claudeTokenEnc) throw new OnboardingError("Claude token not set");
+      if (info.provider === "codex" && ![undefined, "boat", "sim"].includes(process.env.BOX_PROVIDER)) throw new OnboardingError("Codex requires a Boat sandbox");
+      if (info.provider === "claude" && !info.claudeTokenEnc) throw new OnboardingError("Claude token not set");
       const cliSecrets: Record<string, string> = {};
       for (const r of info.secrets) cliSecrets[r.name] = await decrypt(ring(), r.valueEnc, aad.secret(info.userId, r.name));
       cfg = {
         t: "configure",
-        env: { ...cliSecrets, CLAUDE_CODE_OAUTH_TOKEN: await decrypt(ring(), info.claudeTokenEnc, aad.claudeToken(info.userId)) },
+        provider: info.provider,
+        ...(info.provider === "codex" ? { codexAuthSource: info.codexAuthSource } : {}),
+        ...(info.provider === "codex" ? { codexModel: info.codexModel } : {}),
+        env: { ...cliSecrets, ...(info.provider === "claude" && info.claudeTokenEnc
+          ? { CLAUDE_CODE_OAUTH_TOKEN: await decrypt(ring(), info.claudeTokenEnc, aad.claudeToken(info.userId)) }
+          : {}) },
         ghToken: await githubToken(info),
         repo: { fullName: info.repo, branch: info.branch },
         resumeSessionId: info.resumeSessionId,

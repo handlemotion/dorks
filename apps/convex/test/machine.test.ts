@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { reduce, type Ctx, type Input, type Effect } from "../core/machine";
 
 const STATES = dorkState.options as DorkState[];
-const INPUTS: Input["t"][] = ["start", "user_message", "notify", "agent_ready", "turn_idle", "sleep_due", "paused", "bridge_lost", "agent_exited", "op_failed", "watchdog", "archive", "unarchive", "interrupt"];
+const INPUTS: Input["t"][] = ["start", "user_message", "notify", "agent_ready", "turn_idle", "sleep_due", "paused", "bridge_lost", "agent_exited", "op_failed", "watchdog", "archive", "unarchive", "interrupt", "reconnect"];
 const ctx = (state: DorkState, o: Partial<Ctx> = {}): Ctx => ({ state, archived: false, hasBox: true, queued: false, ...o });
 const run = (c: Ctx, t: Input["t"]) => reduce(c, { t } as Input);
 
@@ -16,6 +16,11 @@ describe("machine: spec behaviours", () => {
     expect(run(ctx("working"), "turn_idle")).toMatchObject({ state: "idle", effects: ["arm_sleep"] });
     expect(run(ctx("idle"), "sleep_due").effects).toEqual(["pause_box"]);
     expect(run(ctx("idle"), "paused").state).toBe("sleeping");
+  });
+  it("reconnecting an idle Codex dork keeps the box awake until sign-in finishes", () => {
+    expect(run(ctx("idle"), "reconnect")).toMatchObject({ state: "waking", effects: ["cancel_sleep", "arm_watchdog"] });
+    expect(run(ctx("waking"), "agent_ready")).toMatchObject({ state: "idle", effects: expect.arrayContaining(["cancel_watchdog", "arm_sleep"]) });
+    expect(run(ctx("working"), "reconnect")).toMatchObject({ state: "working", effects: [] });
   });
   it("a new message cancels the sleep timer and any pause in progress", () => {
     expect(run(ctx("idle"), "user_message")).toMatchObject({ state: "working", effects: ["cancel_sleep", "cancel_pause", "deliver_outbox"] });

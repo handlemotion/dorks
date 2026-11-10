@@ -27,7 +27,7 @@ export const onboarding = query({
   handler: async (ctx) => {
     const userId = await requireUserId(ctx);
     const s = await ctx.db.query("userSettings").withIndex("by_user", (q) => q.eq("userId", userId)).unique();
-    return { claudeToken: !!s?.claudeTokenEnc, github: !!s?.githubInstallationId, sleepMinutes: s?.sleepMinutes ?? 5, commentPolicy: s?.commentPolicy ?? DEFAULT_COMMENT_POLICY };
+    return { claudeToken: !!s?.claudeTokenEnc, github: !!s?.githubInstallationId, codexBoatEnvironment: s?.codexBoatEnvironment ?? null, sleepMinutes: s?.sleepMinutes ?? 5, commentPolicy: s?.commentPolicy ?? DEFAULT_COMMENT_POLICY };
   },
 });
 
@@ -49,6 +49,17 @@ export const setClaudeToken = mutation({
     if (token.trim().length > MAX_CLAUDE_TOKEN_CHARS) fail("invalid", "token too long");
     const row = await settingsRow(ctx, userId);
     await ctx.db.patch(row._id, { claudeTokenEnc: (await encrypt(ring(), token.trim(), aad.claudeToken(userId))).value });
+  },
+});
+
+export const setCodexBoatEnvironment = mutation({
+  args: { environment: v.string() },
+  handler: async (ctx, { environment }) => {
+    const userId = await requireUserId(ctx);
+    const name = environment.trim();
+    if (!/^[a-z][a-z0-9_-]{0,62}$/.test(name)) fail("invalid", "enter a Boat environment name");
+    const row = await settingsRow(ctx, userId);
+    await ctx.db.patch(row._id, { codexBoatEnvironment: name });
   },
 });
 

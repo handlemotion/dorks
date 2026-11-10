@@ -88,7 +88,7 @@ export const boxGone = internalMutation({
   handler: async (ctx, { dorkId, boxId, message }) => {
     const dork = await ctx.db.get(dorkId);
     if (!dork || dork.deleting || dork.boxId !== boxId) return;
-    await ctx.db.patch(dorkId, { boxId: undefined, claudeSessionId: undefined });
+    await ctx.db.patch(dorkId, { boxId: undefined, claudeSessionId: undefined, codexThreadId: undefined, codexLogin: undefined });
     await append(ctx, dorkId, errorEvent({ code: "failed", message }));
     await dispatch(ctx, dorkId, { t: "op_failed" });
   },
@@ -159,6 +159,11 @@ export const boxInfo = internalQuery({
     const dork = await ctx.db.get(dorkId);
     if (!dork) return null;
     const s = await ctx.db.query("userSettings").withIndex("by_user", (q) => q.eq("userId", dork.userId)).unique();
-    return { boxId: dork.boxId ?? null, deleting: !!dork.deleting, userId: dork.userId, snapshotId: s?.workstationSnapshotId ?? process.env.BASE_SNAPSHOT_ID ?? "", sleepMinutes: s?.sleepMinutes ?? 5 };
+    return {
+      boxId: dork.boxId ?? null, deleting: !!dork.deleting, userId: dork.userId,
+      snapshotId: s?.workstationSnapshotId ?? process.env.BASE_SNAPSHOT_ID ?? "", sleepMinutes: s?.sleepMinutes ?? 5,
+      requiresBoatEnvironment: dork.codexAuthSource === "boat",
+      boatEnvironment: dork.codexAuthSource === "boat" ? s?.codexBoatEnvironment : undefined,
+    };
   },
 });

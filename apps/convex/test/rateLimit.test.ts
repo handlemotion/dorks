@@ -4,7 +4,7 @@ import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { internal } from "../convex/_generated/api";
 import schema from "../convex/schema";
-import { clientIp, createAuth, otpLimits, rateKeyForEmail, sendChecks } from "../convex/auth";
+import { clientIp, createAuth, otpLimits, personalOwnerEmail, rateKeyForEmail, sendChecks } from "../convex/auth";
 
 const modules = import.meta.glob("../convex/**/*.*s");
 const H = 3_600_000;
@@ -62,6 +62,14 @@ describe("rateLimit.reset", () => {
 });
 
 describe("auth helpers", () => {
+  it("requires a real owner email for Boat but leaves local sim and legacy boxes alone", () => {
+    expect(personalOwnerEmail({ BOX_PROVIDER: "sim" })).toBeNull();
+    expect(personalOwnerEmail({ BOX_PROVIDER: "upstash" })).toBeNull();
+    expect(() => personalOwnerEmail({ BOX_PROVIDER: "boat" })).toThrow("DORKS_OWNER_EMAIL");
+    expect(() => personalOwnerEmail({ DORKS_OWNER_EMAIL: "REPLACE_ME__OWNER" })).toThrow("DORKS_OWNER_EMAIL");
+    expect(personalOwnerEmail({ BOX_PROVIDER: "boat", DORKS_OWNER_EMAIL: " Rodrigo@Example.com " })).toBe("rodrigo@example.com");
+  });
+
   it("one mailbox, one key: case, whitespace and +tags collapse", () => {
     expect(rateKeyForEmail(" Rodrigo+spam@dorks.build ")).toBe("rodrigo@dorks.build");
     expect(rateKeyForEmail("rodrigo@dorks.build")).toBe("rodrigo@dorks.build");

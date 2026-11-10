@@ -37,6 +37,13 @@ export const rateKeyForEmail = (email: string) => {
   return `${local.split("+")[0]}@${domain}`;
 };
 
+export function personalOwnerEmail(env: NodeJS.ProcessEnv = process.env): string | null {
+  if (env.BOX_PROVIDER && env.BOX_PROVIDER !== "boat") return null;
+  const email = env.DORKS_OWNER_EMAIL?.trim().toLowerCase();
+  if (!email || email.startsWith("replace_me__")) throw new Error("DORKS_OWNER_EMAIL must be set for personal Boat deployments");
+  return email;
+}
+
 /**
  * Client IP as seen by the HTTP action. Takes the last `x-forwarded-for` hop: that is the one our own edge appended, while
  * earlier hops can be forged by the caller. Undefined when no proxy header is present (the per-email limits still apply).
@@ -71,6 +78,8 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
         if (!sending && !VERIFY_PATHS.includes(c.path)) return;
         const email = (c.body as { email?: unknown } | undefined)?.email;
         if (typeof email !== "string") throw new APIError("BAD_REQUEST", { message: "Email required" });
+        const owner = personalOwnerEmail();
+        if (owner && email.trim().toLowerCase() !== owner) throw new APIError("FORBIDDEN", { message: "Sign-in is not available" });
         if (!sending) return;
         if (!("runMutation" in ctx)) throw new Error("rate limiting needs a mutation-capable context");
         const l = otpLimits();
@@ -97,5 +106,8 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
 
 /** Auth user id for the current request, or throws. Every public function starts here. */
 export async function requireUserId(ctx: GenericCtx<DataModel>): Promise<string> {
-  return (await authComponent.getAuthUser(ctx))._id;
+  const user = await authComponent.getAuthUser(ctx);
+  const owner = personalOwnerEmail();
+  if (owner && user.email.trim().toLowerCase() !== owner) throw new Error("Only the personal deployment owner may use Dorks");
+  return user._id;
 }
