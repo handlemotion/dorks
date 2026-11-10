@@ -1,7 +1,10 @@
-import { useState, type ReactNode } from 'react'
-import { CircleAlertIcon, CircleCheckIcon, CircleStopIcon, ListIcon, TerminalIcon } from 'lucide-react'
+import { useId, useState, type ReactNode } from 'react'
+import { CircleAlertIcon, CircleCheckIcon, CircleStopIcon, TerminalIcon } from 'lucide-react'
 import type { Block } from '@dorks/shared'
 import { Bubble, BubbleContent } from '@dorks/ui/bubble'
+import { Button } from '@dorks/ui/button'
+import { Marker, MarkerContent } from '@dorks/ui/marker'
+import { Separator } from '@dorks/ui/separator'
 import { CodeBlock, CodeBlockContent } from '@dorks/ui/code-block'
 import { defaultRehypePlugins, defaultUrlTransform, Markdown, markdownComponents } from '@dorks/ui/markdown'
 import { ImageLightbox, ImageTrigger, useLightboxImages, type LightboxImage } from './ImageLightbox'
@@ -12,7 +15,6 @@ import {
   TraceCollapsible,
   TraceCollapsibleContent,
   TraceCollapsibleTrigger,
-  TraceDescription,
   TraceIcon,
   TraceLine,
   TraceTitle,
@@ -108,11 +110,10 @@ function agentContent(blocks: AgentBlock[]): ReactNode[] {
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
     if (block.kind === 'tool') {
-      const tools: ToolBlock[] = [block]
-      while (blocks[i + 1]?.kind === 'tool') tools.push(blocks[++i] as ToolBlock)
+      // One tool call, one step: a turn's history puts a divider between each.
       content.push(
-        <Trace key={tools[0].id} data-testid="tool-steps">
-          {tools.map((tool) => <ToolRow key={tool.id} block={tool} />)}
+        <Trace key={block.id} data-testid="tool-steps">
+          <ToolRow block={block} />
         </Trace>,
       )
     } else if (block.kind === 'assistant') {
@@ -152,67 +153,79 @@ function turns(blocks: AgentBlock[]): { blocks: AgentBlock[]; end?: TurnBlock }[
 /** Progress messages and tool calls are work; the final answer (named by the server) and notices stay in view. */
 const isWork = (b: AgentBlock) => b.kind === 'tool' || (b.kind === 'assistant' && !b.final)
 
+/** "12s", "2m 14s", "1h 3m": how long a turn worked. */
+export function workedFor(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000))
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ${s % 60}s`
+  return `${Math.floor(m / 60)}h ${m % 60}m`
+}
+
 /**
- * The turn's work, one collapsed line. Open while the turn runs (so progress is visible), closed once it ends with a final answer;
- * a turn that was stopped or failed, or ended without an answer, stays open so what happened is in view. The user's toggle wins.
+ * A turn's work as one flat sequence, a full-width divider between each step: progress text, tool calls, notices. Nothing nests
+ * inside a parent step; the dividers are what tell the steps apart.
  */
-function WorkDetails({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock }) {
-  const running = !end
-  const settledOpen = !!end && (end.outcome !== 'done' || !end.finalId)
-  const [userOpen, setUserOpen] = useState<boolean>()
-  const open = userOpen ?? (running || settledOpen)
-  const tools = blocks.filter((b) => b.kind === 'tool').length
-  const messages = blocks.length - tools
-  const count = [tools && `${tools} ${tools === 1 ? 'step' : 'steps'}`, messages && `${messages} ${messages === 1 ? 'update' : 'updates'}`].filter(Boolean).join(', ')
-  const failed = blocks.some((b) => b.kind === 'tool' && b.status === 'error')
+function WorkHistory({ blocks, dimmed, id }: { blocks: AgentBlock[]; dimmed?: boolean; id?: string }) {
+  const content = agentContent(blocks)
   return (
-    <Trace data-testid="work-details" data-open={open}>
-      <TraceCollapsible open={open} onOpenChange={(next) => setUserOpen(next)}>
-        <TraceCollapsibleTrigger>
-          <TraceLine status={running ? 'running' : undefined}>
-            <TraceIcon><ListIcon /></TraceIcon>
-            <TraceTitle>{running ? 'Working' : 'Work details'}</TraceTitle>
-            {count && <TraceDescription>{count}{failed ? ', some failed' : ''}</TraceDescription>}
-          </TraceLine>
-        </TraceCollapsibleTrigger>
-        <TraceCollapsibleContent className="flex flex-col gap-3">{agentContent(blocks)}</TraceCollapsibleContent>
-      </TraceCollapsible>
-    </Trace>
+    <div id={id} data-testid="work-history" data-dimmed={dimmed ? '' : undefined} className={`flex flex-col gap-3 ${dimmed ? 'text-muted-foreground' : ''}`}>
+      {content.map((node, i) => [i > 0 && <Separator key={`s${i}`} />, node])}
+      {/* Opened history ends on a divider too, so the final answer below reads apart from the work. */}
+      {dimmed && <Separator />}
+    </div>
   )
 }
 
-/** One turn: its work collapsed into Work details at the place the work began, then what stays in view, in order. */
+/**
+ * The AI Elements Checkpoint (`CheckpointDemo` in `@dorks/ui/ai-elements/checkpoint`), lifted as published: a separator marker with
+ * its label and an extra-small outline button. Here the label is how long the turn worked and the button shows or hides that work.
+ */
+function TurnCheckpoint({ label, open, onToggle, controls }: { label: string; open: boolean; onToggle: () => void; controls: string }) {
+  return (
+    <Marker variant="separator" data-testid="turn-checkpoint" className="cursor-pointer select-none" onClick={onToggle}>
+      <MarkerContent className="inline-flex items-center gap-2">
+        {label}
+        <Button size="xs" variant="outline" aria-expanded={open} aria-controls={controls}>
+          {open ? 'Hide work' : 'Show work'}
+        </Button>
+      </MarkerContent>
+    </Marker>
+  )
+}
+
+/**
+ * One turn. While it runs, its work shows live as it happens. Once it ends: a checkpoint, "Worked for 2m 14s", with the whole history
+ * folded behind it (shown dimmed when opened), then the final answer and any notices. A turn that was stopped or failed, or ended
+ * without a final answer, opens its history so what happened is in view. The user's toggle wins.
+ */
 function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock }) {
+  const [userOpen, setUserOpen] = useState<boolean>()
+  const historyId = useId()
   // Turns stored before the server named final answers render as they always did.
   if (end && end.outcome === null) return <>{agentContent(blocks)}</>
+  if (!end) return <WorkHistory blocks={blocks} />
   const work = blocks.filter(isWork)
-  const content: ReactNode[] = []
-  let placed = false
-  const visible: AgentBlock[] = []
-  const flush = () => {
-    if (visible.length) content.push(...agentContent(visible.splice(0)))
-  }
-  for (const block of blocks) {
-    if (isWork(block)) {
-      if (!placed) {
-        flush()
-        content.push(<WorkDetails key={`w${block.id}`} blocks={work} end={end} />)
-        placed = true
-      }
-    } else visible.push(block)
-  }
-  flush()
-  if (end?.outcome === 'stopped') {
-    content.push(
-      <Trace key={end.id} role="status" data-testid="turn-stopped">
-        <TraceLine>
-          <TraceIcon><CircleStopIcon /></TraceIcon>
-          <TraceTitle>Stopped</TraceTitle>
-        </TraceLine>
-      </Trace>,
-    )
-  }
-  return <>{content}</>
+  const open = userOpen ?? (end.outcome !== 'done' || !end.finalId)
+  return (
+    <>
+      {work.length > 0 && (
+        <>
+          <TurnCheckpoint label={`Worked for ${workedFor(end.durationMs)}`} open={open} onToggle={() => setUserOpen(!open)} controls={historyId} />
+          {open && <WorkHistory id={historyId} blocks={work} dimmed />}
+        </>
+      )}
+      {agentContent(blocks.filter((b) => !isWork(b)))}
+      {end.outcome === 'stopped' && (
+        <Trace role="status" data-testid="turn-stopped">
+          <TraceLine>
+            <TraceIcon><CircleStopIcon /></TraceIcon>
+            <TraceTitle>Stopped</TraceTitle>
+          </TraceLine>
+        </Trace>
+      )}
+    </>
+  )
 }
 
 export function ChatMessages({ blocks }: { blocks: Block[] }) {

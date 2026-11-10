@@ -23,9 +23,14 @@ const mockShot = (tint: string, line: string) =>
 
 const initialBlocks: Block[] = [
   { kind: 'user', id: 'u1', text: `Fix the flaky bridge reconnect after the box wakes. Check the current tests too.\n\n![Reconnect error in the app](${mockShot('#fde2e2', '#f2a1a1')})` },
+  { kind: 'assistant', id: 'a0', text: 'Looking for where the bridge resumes after a wake.', streaming: false },
   { kind: 'tool', id: 't1', name: 'Bash', summary: "rg -n 'wake|reconnect' infra/bridge/src", status: 'ok', preview: 'infra/bridge/src/claude.ts:223: resume box\ninfra/bridge/src/claude.ts:228: reconnect bridge' },
   { kind: 'tool', id: 't2', name: 'Bash', summary: 'pnpm --filter @dorks/bridge test', status: 'error', preview: 'FAIL reconnect restores queued messages\nError: timed out waiting for bridge' },
-  { kind: 'assistant', id: 'a1', text: 'The box resumes before the bridge is ready. Queued messages can arrive during that gap. I’ll add a regression test for the race.\n\n![Before the fix](' + mockShot('#e3e9f3', '#a7b4c8') + ') ![After the fix](' + mockShot('#e4f3e8', '#9fcbab') + ')\n\n- Wait for the bridge handshake before flushing\n- Cover it with a test\n\n```ts\nawait bridge.ready()\n```', streaming: false },
+  { kind: 'assistant', id: 'a0b', text: 'The reconnect test times out. The queue flushes before the handshake, so I’ll wait for it.', streaming: false },
+  { kind: 'tool', id: 't2b', name: 'Edit', summary: 'infra/bridge/src/reconnect.ts', status: 'ok' },
+  { kind: 'tool', id: 't2c', name: 'Bash', summary: 'pnpm --filter @dorks/bridge test', status: 'ok', preview: 'PASS reconnect restores queued messages' },
+  { kind: 'assistant', id: 'a1', final: true, text: 'The box resumed before the bridge was ready, so queued messages could arrive during that gap. The reconnect now waits for the bridge handshake before it flushes the queue, and the bridge tests pass.\n\n![Before the fix](' + mockShot('#e3e9f3', '#a7b4c8') + ') ![After the fix](' + mockShot('#e4f3e8', '#9fcbab') + ')\n\n- Wait for the bridge handshake before flushing\n- Back off between attempts, up to 30s\n\n```ts\nawait bridge.ready()\n```', streaming: false },
+  { kind: 'turn', id: 'tn1', outcome: 'done', finalId: 'a1', durationMs: 134_000 },
   { kind: 'user', id: 'u2', text: 'Please cover the reconnect race with a test before changing the handler.' },
   { kind: 'tool', id: 't3', name: 'Bash', summary: 'pnpm --filter @dorks/bridge test', status: 'running' },
   { kind: 'assistant', id: 'a2', text: 'I added a regression test for a message arriving while the box is waking. I’m checking the dispatch order now.', streaming: true },
