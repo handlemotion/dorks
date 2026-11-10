@@ -141,7 +141,7 @@ One stream per client. Messages are `data: <json>\n\n`; a `: ping` comment every
 
 **Pushes** (server to bridge): `{"t":"commands","cmds":[{cid, frame: CommandFrame}]}` is the **snapshot of unacknowledged commands** and is re-sent whenever it changes (and once right after `auth_ok`). Delivery is idempotent: the bridge dedupes by `cid`/message id and acknowledges with a `push` `ack` frame, which removes the command. This gives resume-after-reconnect for free: after a drop the bridge re-auths, calls `connect` (learning `afterBridgeSeq`, the event cursor, so it replays events above it) and receives the current snapshot. `{"t":"subscriptions","views":SubscriptionView[]}` is sent likewise for the bridge's PR cache.
 
-`push` frames, `ToBridge`, `FromBridge` and `CommandFrame` are the zod types in `packages/shared/src/bridge.ts`. The server no longer queues `gh_token` commands and ignores the legacy Codex device-code frames (`codex_login`; `codex_issue` still becomes an error event): Codex always authenticates through a Boat environment, so `configure` always says `codexAuthSource: "boat"`.
+`push` frames, `ToBridge`, `FromBridge` and `CommandFrame` are the zod types in `packages/shared/src/bridge.ts`. The server does not queue `gh_token` commands. Codex authenticates only through a Boat environment (there is no per-box sign-in); `codex_issue` becomes an error event and `codex_models` fills the model choices.
 
 The `Transport` interface in `infra/bridge/src/transport.ts` is unchanged; `WsTransport` implements it over this protocol with reconnect and resume.
 

@@ -118,8 +118,6 @@ export function push(app: App, dorkId: string, frames: unknown[]): { ok: true } 
         case "codex_issue":
           if (dork.provider === "codex") append(app, dorkId, errorEvent({ code: "failed", message: f.message }));
           break;
-        case "codex_login":
-          break; // legacy per-box sign-in: Codex signs in through a Boat environment now
         case "event": {
           if (f.bseq <= bridgeSeq) break; // replay overlap after a reconnect
           bridgeSeq = f.bseq;
@@ -219,7 +217,7 @@ export async function configure(app: App, dorkId: string): Promise<ToBridge | nu
     return {
       t: "configure",
       provider: dork.provider,
-      ...(dork.provider === "codex" ? { codexAuthSource: "boat" as const, codexModel: dork.codexModel } : {}),
+      ...(dork.provider === "codex" ? { codexModel: dork.codexModel } : {}),
       env: { ...secrets, ...(claude ? { CLAUDE_CODE_OAUTH_TOKEN: claude } : {}) },
       ghToken: gh,
       repo: { fullName: dork.repo, branch: dork.branch },

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createInterface } from "node:readline";
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const home = process.env.CODEX_HOME;
@@ -22,25 +22,6 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     model: process.env.FAKE_CODEX_MODEL_MISSING ? "gpt-6.1-sol" : "gpt-6-sol",
     supportedReasoningEfforts: [{ reasoningEffort: "high" }],
   }], nextCursor: null });
-  if (m.method === "account/logout") {
-    if (existsSync(auth)) unlinkSync(auth);
-    reply({});
-    send({ method: "account/updated", params: { authMode: null } });
-    return;
-  }
-  if (m.method === "account/login/start") {
-    reply({ type: "chatgptDeviceCode", loginId: "login_fake", verificationUrl: "https://auth.openai.com/codex/device", userCode: "ABCD-1234" });
-    setTimeout(() => {
-      if (process.env.FAKE_CODEX_LOGIN_FAIL) {
-        send({ method: "account/login/completed", params: { loginId: "login_fake", success: false } });
-        return;
-      }
-      mkdirSync(home, { recursive: true });
-      writeFileSync(auth, "{}");
-      send({ method: "account/login/completed", params: { loginId: "login_fake", success: true } });
-    }, 250);
-    return;
-  }
   if (m.method === "thread/start") {
     mkdirSync(home, { recursive: true });
     writeFileSync(thread, "thr_fake");

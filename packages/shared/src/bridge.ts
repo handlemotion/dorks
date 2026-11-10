@@ -18,7 +18,6 @@ export const toBridge = z.discriminatedUnion("t", [
   z.object({
     t: z.literal("configure"),
     provider: z.enum(["claude", "codex"]).optional(),
-    codexAuthSource: z.enum(["device", "boat"]).optional(),
     codexModel: z.object({ model: z.string(), effort: z.string() }).optional(),
     env: z.record(z.string(), z.string()), // CLAUDE_CODE_OAUTH_TOKEN + CLI secrets: passed to the claude child, never written to disk
     ghToken: z.string(),
@@ -28,7 +27,6 @@ export const toBridge = z.discriminatedUnion("t", [
   z.object({ t: z.literal("user_message"), id: z.string(), text: z.string() }), // bridge dedupes by id
   notifyFrame(),
   z.object({ t: z.literal("interrupt") }),
-  z.object({ t: z.literal("codex_reconnect") }),
   z.object({ t: z.literal("flush") }),
   z.object({ t: z.literal("gh_token"), token: z.string() }),
 ]);
@@ -37,7 +35,6 @@ export type ToBridge = z.infer<typeof toBridge>;
 /** Bridge -> DO. */
 export const fromBridge = z.discriminatedUnion("t", [
   z.object({ t: z.literal("event"), bseq: z.number().int(), raw: z.unknown() }), // raw claude stream-json line
-  z.object({ t: z.literal("codex_login"), verificationUrl: z.string().regex(/^https:\/\/auth\.openai\.com\/codex\/device\/?$/), userCode: z.string().regex(/^[A-Z0-9-]{4,32}$/) }),
   z.object({ t: z.literal("codex_models"), models: z.array(z.object({ model: z.string().regex(/^[a-zA-Z0-9._-]{1,64}$/), efforts: z.array(z.enum(["none", "low", "medium", "high", "xhigh", "max"])) })).max(100) }),
   z.object({ t: z.literal("codex_issue"), message: z.string().max(1000) }),
   z.object({ t: z.literal("ready") }), // repo cloned + claude running
@@ -57,7 +54,6 @@ export const commandFrame = z.discriminatedUnion("t", [
   z.object({ t: z.literal("user_message"), id: z.string(), text: z.string() }),
   notifyFrame(),
   z.object({ t: z.literal("interrupt") }),
-  z.object({ t: z.literal("codex_reconnect") }),
   z.object({ t: z.literal("flush") }),
   z.object({ t: z.literal("fetch_configure") }),
   z.object({ t: z.literal("fetch_gh_token") }),

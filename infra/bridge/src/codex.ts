@@ -12,7 +12,6 @@ const clip = (v: string) => v.slice(0, 16 * 1024);
 export interface CodexOptions {
   cwd: string;
   env: NodeJS.ProcessEnv;
-  authSource?: "device" | "boat";
   model?: { model: string; effort: string };
   resumeSessionId: string | null;
   runAs: Identity | null;
@@ -22,7 +21,6 @@ export interface CodexOptions {
   log: Log;
   onRaw: (raw: unknown) => void;
   onReady: () => void;
-  onLogin: (verificationUrl: string, userCode: string) => void;
   onModels: (models: { model: string; efforts: ("none" | "low" | "medium" | "high" | "xhigh" | "max")[] }[]) => void;
   onIssue: (message: string) => void;
   onTurnFinished: (sessionId: string) => Promise<string | null>;
@@ -42,7 +40,6 @@ export class CodexAgent {
   private turnId: string | null = null;
   private startedAt = 0;
   private idleWaiters: (() => void)[] = [];
-  private waitingForLogin = false;
   private opening = false;
   private finishing = false;
   sessionId: string | null = null;
@@ -70,9 +67,7 @@ export class CodexAgent {
     this.child.on("error", (e) => { this.stderr = `spawn failed (${errTag(e)})`; this.finish(null); });
     this.child.on("close", (code) => this.finish(code));
     void this.open().catch(() => {
-      this.o.onIssue(o.authSource === "boat"
-        ? "ChatGPT is not available from your Boat account. Connect ChatGPT in Boat Agents & Proxying, then send a message to retry."
-        : "Codex could not start ChatGPT sign-in. Check device-code sign-in is enabled, then send a message to retry.");
+      this.o.onIssue("ChatGPT is not available from your Boat account. Connect ChatGPT in Boat Agents & Proxying, then send a message to retry.");
       this.child.kill();
     });
   }
@@ -107,13 +102,8 @@ export class CodexAgent {
     await this.request("initialize", { clientInfo: { name: "dorks", title: "Dorks", version: "0.1.0" } });
     await this.write({ method: "initialized", params: {} });
     const state = await this.request("account/read", { refreshToken: false });
-    if (obj(obj(state).account).type === "chatgpt") return this.openThread();
-    if (this.o.authSource === "boat") throw new Error("Boat ChatGPT account is not connected");
-    this.waitingForLogin = true;
-    const login = obj(await this.request("account/login/start", { type: "chatgptDeviceCode" }));
-    if (login.type !== "chatgptDeviceCode" || !/^https:\/\/auth\.openai\.com\/codex\/device\/?$/.test(text(login.verificationUrl))
-      || !/^[A-Z0-9-]{4,32}$/.test(text(login.userCode))) throw new Error("Codex did not return a valid device code");
-    this.o.onLogin(login.verificationUrl as string, login.userCode as string);
+    if (obj(obj(state).account).type !== "chatgpt") throw new Error("Boat ChatGPT account is not connected");
+    return this.openThread();
   }
 
   private async openThread() {
@@ -162,9 +152,7 @@ export class CodexAgent {
       this.ready = true;
       this.o.onReady();
     } catch (e) {
-      if ((e as Error).message !== "model unavailable") this.o.onIssue(this.o.authSource === "boat"
-        ? "Codex could not use your Boat ChatGPT connection. Check Boat Agents & Proxying, then retry."
-        : "Codex could not prepare the ChatGPT account or thread. Check your plan and send a message to retry.");
+      if ((e as Error).message !== "model unavailable") this.o.onIssue("Codex could not use your Boat ChatGPT connection. Check Boat Agents & Proxying, then retry.");
       this.child.kill();
     }
   }
@@ -193,18 +181,8 @@ export class CodexAgent {
       return;
     }
     const p = obj(m.params);
-    if (m.method === "account/login/completed" && this.waitingForLogin) {
-      this.waitingForLogin = false;
-      if (p.success === true) void this.openThread();
-      else {
-        this.o.onIssue("ChatGPT sign-in did not complete. Send a message to retry with a new code.");
-        this.child.kill();
-      }
-    }
     if (m.method === "account/updated" && this.ready && p.authMode !== "chatgpt") {
-      this.o.onIssue(this.o.authSource === "boat"
-        ? "Your Boat ChatGPT connection is no longer available. Reconnect it in Boat Agents & Proxying, then retry."
-        : "This sandbox is no longer signed in with ChatGPT. Send a message to reconnect with a new code.");
+      this.o.onIssue("Your Boat ChatGPT connection is no longer available. Reconnect it in Boat Agents & Proxying, then retry.");
       this.child.kill();
     }
     if (m.method === "item/agentMessage/delta") {
@@ -265,9 +243,7 @@ export class CodexAgent {
     try {
       const account = await this.request("account/read", { refreshToken: false });
       if (obj(account.account).type !== "chatgpt") {
-        this.o.onIssue(this.o.authSource === "boat"
-          ? "Your Boat ChatGPT connection is no longer available. Reconnect it in Boat Agents & Proxying, then retry."
-          : "This sandbox is no longer signed in with ChatGPT. Send a message to reconnect with a new code.");
+        this.o.onIssue("Your Boat ChatGPT connection is no longer available. Reconnect it in Boat Agents & Proxying, then retry.");
         this.child.kill();
         return;
       }
@@ -291,12 +267,6 @@ export class CodexAgent {
 
   async interrupt() {
     if (this.turnId) await this.request("turn/interrupt", { threadId: this.sessionId, turnId: this.turnId });
-  }
-
-  async logout() {
-    if (!this.ready || !this.idle) throw new Error("Codex must be idle before logout");
-    this.ready = false;
-    await this.request("account/logout");
   }
 
   waitIdle(ms: number): Promise<boolean> {

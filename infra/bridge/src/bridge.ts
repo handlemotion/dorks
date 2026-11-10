@@ -47,7 +47,6 @@ export class Bridge {
   private runAs: Identity | null;
   private agent: Agent | CodexAgent | null = null;
   private provider: "claude" | "codex" = "claude";
-  private codexAuthSource: "device" | "boat" = "device";
   private codexModel: { model: string; effort: string } | undefined;
   private agentKey = "";
   private lastSessionId: string | null = null;
@@ -207,11 +206,6 @@ export class Bridge {
         void this.interrupt(c.cid);
         continue;
       }
-      if (f.t === "codex_reconnect") {
-        this.handled.add(c.cid);
-        this.enqueue(() => this.reconnectCodex(c.cid));
-        continue;
-      }
       this.handled.add(c.cid);
       if (f.t === "fetch_configure") this.configuring++; // counted from the moment it is queued, so a later interrupt in this snapshot defers
       this.enqueue(() => (f.t === "fetch_configure" ? this.configureWithRetry(c.cid) : f.t === "flush" ? this.flush(c.cid, (f as { cid?: string }).cid ?? c.cid) : this.refreshToken(c.cid)));
@@ -246,24 +240,6 @@ export class Bridge {
       if (this.agent?.alive) await this.agent.interrupt();
     } catch {
       this.log("interrupt could not be delivered");
-    }
-    this.pipeline.control({ t: "ack", id: cid }, true);
-  }
-
-  private async reconnectCodex(cid: string) {
-    const agent = this.agent;
-    try {
-      if (!(agent instanceof CodexAgent)) throw new Error("Codex not running");
-      await agent.logout();
-      this.lastSessionId = agent.sessionId ?? this.lastSessionId;
-      await agent.stop();
-      if (this.agent === agent) this.agent = null;
-      this.startAgent(this.lastSessionId, []);
-    } catch {
-      if (agent instanceof CodexAgent) await agent.stop();
-      if (this.agent === agent) this.agent = null;
-      this.pipeline.control({ t: "codex_issue", message: "Could not disconnect ChatGPT in this sandbox. Send a message to retry." }, true);
-      this.pipeline.control({ t: "agent_exited", code: null, stderrTail: "" }, true);
     }
     this.pipeline.control({ t: "ack", id: cid }, true);
   }
@@ -339,7 +315,7 @@ export class Bridge {
     this.github.set(cfg.ghToken);
 
     const provider = cfg.provider ?? "claude";
-    const key = createHash("sha256").update(JSON.stringify([provider, cfg.codexAuthSource, cfg.codexModel, cfg.repo, Object.entries(cfg.env).sort()])).digest("hex");
+    const key = createHash("sha256").update(JSON.stringify([provider, cfg.codexModel, cfg.repo, Object.entries(cfg.env).sort()])).digest("hex");
     if (this.agent?.alive && key === this.agentKey) {
       // Already running with this config (a reconnect re-sends configure): nothing to do but say so again.
       this.pipeline.control({ t: "ack", id: cid });
@@ -371,7 +347,6 @@ export class Bridge {
     this.agentCtx = { dir, env };
     this.agentKey = key;
     this.provider = provider;
-    this.codexAuthSource = cfg.codexAuthSource ?? "device";
     this.codexModel = cfg.codexModel;
     let resume = this.lastSessionId ?? cfg.resumeSessionId;
     // The backend remembers a session id, but the box may have been recreated without its disk: --resume would fail and the
@@ -417,11 +392,9 @@ export class Bridge {
     };
     const agent = this.provider === "codex" ? new CodexAgent({
       ...shared,
-      authSource: this.codexAuthSource,
       model: this.codexModel,
       mcpCommand: this.self,
       sock: this.rpc.sockPath,
-      onLogin: (verificationUrl, userCode) => this.pipeline.control({ t: "codex_login", verificationUrl, userCode }, true),
       onModels: (models) => this.pipeline.control({ t: "codex_models", models }, true),
       onIssue: (message) => this.pipeline.control({ t: "codex_issue", message }, true),
       onReady: () => {
