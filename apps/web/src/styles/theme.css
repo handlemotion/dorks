@@ -14,7 +14,7 @@
  * Light only for now.
  */
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
 
   /* Resets Tailwind's default palette so only the tokens below exist. */
   --color-*: initial;

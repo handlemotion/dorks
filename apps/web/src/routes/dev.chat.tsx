@@ -1,7 +1,6 @@
 import { createFileRoute, lazyRouteComponent, notFound } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/dev/chat')({
-  ssr: false,
   beforeLoad: () => {
     if (!import.meta.env.DEV) throw notFound()
   },

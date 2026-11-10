@@ -1,5 +1,5 @@
 import type { DorkState } from '@dorks/shared'
-import { useDorks } from '@dorks/convex/client'
+import { useDorks } from '@dorks/client/react'
 import { ChatSidebar, type Chat } from './ChatSidebar'
 
 const PR_NUMBER = /\/pull\/(\d+)/
@@ -16,6 +16,6 @@ const MOVING: ReadonlySet<DorkState> = new Set(['creating', 'working', 'waking']
 /** The signed-in app's sidebar, fed from the user's dorks. */
 export function AppSidebar() {
   const dorks = useDorks(false)
-  const chats: Chat[] = (dorks ?? []).map((d) => ({ id: d._id, title: d.title, working: MOVING.has(d.state), pr: prOf(d.prUrl) }))
+  const chats: Chat[] = (dorks ?? []).map((d) => ({ id: d.id, title: d.title, working: MOVING.has(d.state), pr: prOf(d.prUrl) }))
   return <ChatSidebar chats={chats} />
 }

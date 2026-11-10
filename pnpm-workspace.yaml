@@ -5,6 +5,5 @@ packages:
 nodeLinker: hoisted
 allowBuilds:
   esbuild: true
-  workerd: true
   lightningcss: true
   sharp: true

@@ -33,9 +33,7 @@ Built into Convex and never set by hand: `CONVEX_CLOUD_URL`, `CONVEX_SITE_URL`.
 
 | Name | Purpose |
 |---|---|
-| `VITE_CONVEX_URL` | Convex deployment URL (`http://127.0.0.1:3210` locally). |
-| `VITE_CONVEX_SITE_URL` | Convex HTTP actions URL (`http://127.0.0.1:3211` locally). |
-| `VITE_GITHUB_APP_SLUG` | GitHub App slug for the install link. |
+| `VITE_DORKS_SERVER` | Optional. Prefills the server address on the browser connect screen. The server address and owner token are not build settings: the desktop app injects them, or you type them once ([apps/web](../apps/web/README.md)). |
 
 ## Adding a variable
 

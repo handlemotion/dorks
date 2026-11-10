@@ -1,8 +1,7 @@
-import { CatchBoundary, createFileRoute, Link } from '@tanstack/react-router'
-import { useMutation, useQuery } from 'convex/react'
+import { CatchBoundary, createFileRoute, Link, Navigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { ChevronDownIcon } from 'lucide-react'
-import { api, useDork, useDorkEvents, useDorks, type Id } from '@dorks/convex/client'
+import { useDork, useDorkEvents, useDorks, useDorksClient, useSettings } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
 import {
   DropdownMenu,
@@ -21,29 +20,33 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from '@dorks/ui/message-scroller'
-import { ChatMessages } from '../../components/ChatBlock'
-import { Composer, type AgentProvider } from '../../components/ChatComposer'
-import { authClient } from '../../lib/convex'
-import { usePending } from '../../lib/pending'
+import { ChatMessages } from '../../../components/ChatBlock'
+import { Composer, type AgentProvider } from '../../../components/ChatComposer'
+import { useDisconnect } from '../../../components/ConnectionGate'
+import { canCreate, SETUP_SKIPPED_KEY } from '../../../lib/onboarding'
+import { usePending } from '../../../lib/pending'
 
 // The selected dork lives in the `dork` search param (not local state) so the sidebar can highlight it and the URL is shareable.
-export const Route = createFileRoute('/_app/dorks')({
+export const Route = createFileRoute('/_conn/_app/dorks')({
   validateSearch: (s: Record<string, unknown>): { dork?: string } => (typeof s.dork === 'string' ? { dork: s.dork } : {}),
   component: Dorks,
 })
 
 function Dorks() {
-  // The URL is user-editable, so this is not guaranteed to be a real id: Convex rejects a malformed one, which <Thread> is wrapped for.
-  const selected = Route.useSearch().dork as Id<'dorks'> | undefined
+  // The URL is user-editable, so this is not guaranteed to be a real id: the server answers not_found, which <Thread> shows.
+  const selected = Route.useSearch().dork
   const navigate = Route.useNavigate()
-  const setSelected = (id: Id<'dorks'>) => void navigate({ search: { dork: id } })
+  const setSelected = (id: string) => void navigate({ search: { dork: id } })
   const [showArchived, setShowArchived] = useState(false)
   const dorks = useDorks(showArchived)
-  const onboarding = useQuery(api.settings.onboarding)
-  const ready = !!onboarding?.github
+  const settings = useSettings()
+  const disconnect = useDisconnect()
+  const ready = !!settings && canCreate(settings)
+  // First run: send the owner through setup once; "Skip for now" there sets this flag so the page does not bounce back.
+  if (settings && !ready && !sessionStorage.getItem(SETUP_SKIPPED_KEY)) return <Navigate to="/setup" replace />
 
   return (
-    <div className="dorks-page" data-onboarding={onboarding ? (ready ? 'complete' : 'incomplete') : 'loading'}>
+    <div className="dorks-page" data-onboarding={settings ? (ready ? 'complete' : 'incomplete') : 'loading'}>
       <header className="dorks-header">
         <div>
           <h1>{selected ? 'Session' : 'Dorks'}</h1>
@@ -52,17 +55,22 @@ function Dorks() {
         <div className="dorks-header-actions">
           {selected && <Button variant="ghost" size="sm" render={<Link to="/dorks" search={{}} />}>New session</Button>}
           <Button variant="ghost" size="sm" render={<Link to="/settings" />}>Settings</Button>
-          <Button variant="ghost" size="sm" onClick={() => void authClient.signOut()}>Sign out</Button>
+          {disconnect && <Button variant="ghost" size="sm" onClick={disconnect}>Change server</Button>}
         </div>
       </header>
-      {onboarding && !ready && (
+      {settings && !ready && (
         <p className="dorks-setup" role="status">
-          Setup is incomplete. <Link to="/settings">Finish onboarding in settings</Link> before creating a session.
+          Setup is incomplete. <Link to="/setup">Finish setup</Link> before creating a session.
         </p>
       )}
-      {onboarding?.github && !onboarding.codexBoatEnvironment && (
+      {settings && ready && !settings.boatEnvironment && (
         <p className="dorks-setup" role="status">
           For cloud Codex sessions, <Link to="/settings">connect ChatGPT to your Boat account once</Link>.
+        </p>
+      )}
+      {settings && ready && !settings.publicUrlConfigured && (
+        <p className="dorks-setup" role="status">
+          Sandboxes cannot reach this machine yet: no public URL is configured. Sessions will not start until the tunnel is up.
         </p>
       )}
       {selected ? (
@@ -75,14 +83,14 @@ function Dorks() {
             <h2>What should we work on?</h2>
             <p>Choose a repository and agent, then describe the change you want.</p>
           </div>
-          <NewDork onCreated={setSelected} disabled={!ready} claudeReady={!!onboarding?.claudeToken} />
+          <NewDork onCreated={setSelected} disabled={!ready} claudeReady={!!settings?.claudeToken} />
           <div className="dorks-history">
             <Button variant="ghost" size="sm" aria-pressed={showArchived} onClick={() => setShowArchived(!showArchived)}>
               {showArchived ? 'Hide archived' : 'Show archived'}
             </Button>
             {showArchived && (
               <ul aria-label="Archived sessions">
-                {dorks?.map((d) => <li key={d._id}><Button variant="ghost" onClick={() => setSelected(d._id)}>{d.title}</Button><span>{d.repo}</span></li>)}
+                {dorks?.map((d) => <li key={d.id}><Button variant="ghost" onClick={() => setSelected(d.id)}>{d.title}</Button><span>{d.repo}</span></li>)}
                 {dorks?.length === 0 && <li>No archived sessions.</li>}
               </ul>
             )}
@@ -93,8 +101,8 @@ function Dorks() {
   )
 }
 
-function NewDork({ onCreated, disabled, claudeReady }: { onCreated: (id: Id<'dorks'>) => void; disabled: boolean; claudeReady: boolean }) {
-  const create = useMutation(api.dorks.create)
+function NewDork({ onCreated, disabled, claudeReady }: { onCreated: (id: string) => void; disabled: boolean; claudeReady: boolean }) {
+  const { actions } = useDorksClient()
   const [repo, setRepo] = useState('acme/demo')
   const [message, setMessage] = useState('')
   const [provider, setProvider] = useState<AgentProvider>('codex')
@@ -106,27 +114,22 @@ function NewDork({ onCreated, disabled, claudeReady }: { onCreated: (id: Id<'dor
       <Composer
         text={message} setText={setMessage} repo={repo} setRepo={setRepo} provider={provider} setProvider={setProvider}
         pending={pending} disabled={disabled || needsClaudeToken} error={error}
-        onSubmit={() => void run(async () => { onCreated(await create({ repo: repo.trim(), message, provider })); setMessage('') })}
+        onSubmit={() => void run(async () => { onCreated((await actions.createDork({ repo: repo.trim(), message, provider })).id); setMessage('') })}
       />
     </>
   )
 }
 
-function Thread({ dorkId }: { dorkId: Id<'dorks'> }) {
+function Thread({ dorkId }: { dorkId: string }) {
+  const { actions } = useDorksClient()
   const dork = useDork(dorkId)
-  const { view, canLoadMore, loadMore, loading } = useDorkEvents(dorkId)
-  const send = useMutation(api.dorks.sendMessage)
-  const interrupt = useMutation(api.dorks.interrupt)
-  const archive = useMutation(api.dorks.setArchived)
-  const chooseModel = useMutation(api.dorks.chooseCodexModel)
-  const reconnect = useMutation(api.dorks.reconnectCodex)
+  const { view, canLoadMore, loadMore, loading, send } = useDorkEvents(dorkId)
   const [text, setText] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
   const { run, pending, error } = usePending()
   const { run: runStop, pending: stopping, error: stopError } = usePending()
   const { run: runArchive, pending: archiving, error: archiveError } = usePending()
   const modelChoice = usePending()
-  const reconnecting = usePending()
   const models = dork?.codexModelChoices?.flatMap((option) => option.efforts.map((effort) => ({
     key: `${option.model}:${effort}`, model: option.model, effort,
   }))) ?? []
@@ -142,29 +145,13 @@ function Thread({ dorkId }: { dorkId: Id<'dorks'> }) {
           <p>{dork.repo} · <span data-testid="state">{dork.state}{dork.archived ? ' (archived)' : ''}</span></p>
         </div>
         <div className="dorks-thread-actions">
-          {dork.provider === 'codex' && dork.codexAuthSource !== 'boat' && (
-            <Button className="dorks-reconnect" variant="outline" size="sm" disabled={dork.state !== 'idle' || reconnecting.pending} onClick={() => {
-              if (window.confirm('Sign out of ChatGPT in this sandbox and get a new sign-in code?'))
-                void reconnecting.run(() => reconnect({ dorkId }))
-            }}>{reconnecting.pending ? 'Disconnecting…' : 'Reconnect ChatGPT'}</Button>
-          )}
-          <Button variant="ghost" size="sm" disabled={archiving} onClick={() => void runArchive(() => archive({ dorkId, archived: !dork.archived }))}>{dork.archived ? 'Unarchive' : 'Archive'}</Button>
+          <Button variant="ghost" size="sm" disabled={archiving} onClick={() => void runArchive(() => actions.archiveDork(dorkId, !dork.archived))}>{dork.archived ? 'Unarchive' : 'Archive'}</Button>
         </div>
       </div>
-      {reconnecting.error && <p className="dorks-agent-error" role="alert">{reconnecting.error}</p>}
-      {dork.codexAuthSource !== 'boat' && dork.codexLogin && (
-        <div className="dorks-agent-frame">
-          <div className="dorks-agent-notice" role="status">
-            <p>Connect ChatGPT to this sandbox. Enable Codex device-code sign-in in ChatGPT settings if needed.</p>
-            <p>Enter <strong>{dork.codexLogin.userCode}</strong> at <a href={dork.codexLogin.verificationUrl} target="_blank" rel="noreferrer">the ChatGPT verification page</a>.</p>
-            <p>This code signs in only this sandbox. It disappears after you connect.</p>
-          </div>
-        </div>
-      )}
       {models.length > 0 && (
         <form className="dorks-agent-frame dorks-model-form" onSubmit={(event) => {
           event.preventDefault()
-          if (choice) void modelChoice.run(() => chooseModel({ dorkId, model: choice.model, effort: choice.effort }))
+          if (choice) void modelChoice.run(() => actions.chooseCodexModel(dorkId, choice.model, choice.effort))
         }}>
           <span className="dorks-model-label">Available ChatGPT models</span>
           <InputGroup className="max-w-56">
@@ -206,8 +193,12 @@ function Thread({ dorkId }: { dorkId: Id<'dorks'> }) {
       </MessageScrollerProvider>
       <Composer
         text={text} setText={setText} provider={dork.provider ?? 'claude'} pending={pending} disabled={dork.archived} error={error || stopError || archiveError}
-        onSubmit={() => void run(async () => { await send({ dorkId, text }); setText('') })}
-        onStop={working && !stopping && !dork.archived ? () => void runStop(() => interrupt({ dorkId })) : undefined}
+        onSubmit={() => void run(async () => {
+          const sent = text
+          setText('') // the optimistic row shows it at once; put it back if the server refuses
+          try { await send(sent) } catch (e) { setText(sent); throw e }
+        })}
+        onStop={working && !stopping && !dork.archived ? () => void runStop(() => actions.interrupt(dorkId)) : undefined}
       />
     </section>
   )

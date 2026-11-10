@@ -10,31 +10,31 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AppRouteImport } from './routes/_app'
-import { Route as AppDorksRouteImport } from './routes/_app/dorks'
-import { Route as AppSettingsRouteImport } from './routes/_app/settings'
+import { Route as ConnRouteImport } from './routes/_conn'
+import { Route as ConnAppRouteImport } from './routes/_conn/_app'
+import { Route as ConnSetupRouteImport } from './routes/_conn/setup'
 import { Route as DevChatRouteImport } from './routes/dev.chat'
 import { Route as DevSidebarRouteImport } from './routes/dev.sidebar'
-import { Route as AppGithubCallbackRouteImport } from './routes/_app/github.callback'
+import { Route as ConnAppDorksRouteImport } from './routes/_conn/_app/dorks'
+import { Route as ConnAppSettingsRouteImport } from './routes/_conn/_app/settings'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppRoute = AppRouteImport.update({
-  id: '/_app',
+const ConnRoute = ConnRouteImport.update({
+  id: '/_conn',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppDorksRoute = AppDorksRouteImport.update({
-  id: '/dorks',
-  path: '/dorks',
-  getParentRoute: () => AppRoute,
+const ConnAppRoute = ConnAppRouteImport.update({
+  id: '/_app',
+  getParentRoute: () => ConnRoute,
 } as any)
-const AppSettingsRoute = AppSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => AppRoute,
+const ConnSetupRoute = ConnSetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
+  getParentRoute: () => ConnRoute,
 } as any)
 const DevChatRoute = DevChatRouteImport.update({
   id: '/dev/chat',
@@ -46,69 +46,65 @@ const DevSidebarRoute = DevSidebarRouteImport.update({
   path: '/dev/sidebar',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppGithubCallbackRoute = AppGithubCallbackRouteImport.update({
-  id: '/github/callback',
-  path: '/github/callback',
-  getParentRoute: () => AppRoute,
+const ConnAppDorksRoute = ConnAppDorksRouteImport.update({
+  id: '/dorks',
+  path: '/dorks',
+  getParentRoute: () => ConnAppRoute,
+} as any)
+const ConnAppSettingsRoute = ConnAppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => ConnAppRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/dorks': typeof AppDorksRoute
-  '/settings': typeof AppSettingsRoute
+  '/setup': typeof ConnSetupRoute
   '/dev/chat': typeof DevChatRoute
   '/dev/sidebar': typeof DevSidebarRoute
-  '/github/callback': typeof AppGithubCallbackRoute
+  '/dorks': typeof ConnAppDorksRoute
+  '/settings': typeof ConnAppSettingsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/dorks': typeof AppDorksRoute
-  '/settings': typeof AppSettingsRoute
+  '/setup': typeof ConnSetupRoute
   '/dev/chat': typeof DevChatRoute
   '/dev/sidebar': typeof DevSidebarRoute
-  '/github/callback': typeof AppGithubCallbackRoute
+  '/dorks': typeof ConnAppDorksRoute
+  '/settings': typeof ConnAppSettingsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/_app': typeof AppRouteWithChildren
-  '/_app/dorks': typeof AppDorksRoute
-  '/_app/settings': typeof AppSettingsRoute
+  '/_conn': typeof ConnRouteWithChildren
+  '/_conn/_app': typeof ConnAppRouteWithChildren
+  '/_conn/setup': typeof ConnSetupRoute
   '/dev/chat': typeof DevChatRoute
   '/dev/sidebar': typeof DevSidebarRoute
-  '/_app/github/callback': typeof AppGithubCallbackRoute
+  '/_conn/_app/dorks': typeof ConnAppDorksRoute
+  '/_conn/_app/settings': typeof ConnAppSettingsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    | '/'
-    | '/dorks'
-    | '/settings'
-    | '/dev/chat'
-    | '/dev/sidebar'
-    | '/github/callback'
+    '/' | '/setup' | '/dev/chat' | '/dev/sidebar' | '/dorks' | '/settings'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/dorks'
-    | '/settings'
-    | '/dev/chat'
-    | '/dev/sidebar'
-    | '/github/callback'
+  to: '/' | '/setup' | '/dev/chat' | '/dev/sidebar' | '/dorks' | '/settings'
   id:
     | '__root__'
     | '/'
-    | '/_app'
-    | '/_app/dorks'
-    | '/_app/settings'
+    | '/_conn'
+    | '/_conn/_app'
+    | '/_conn/setup'
     | '/dev/chat'
     | '/dev/sidebar'
-    | '/_app/github/callback'
+    | '/_conn/_app/dorks'
+    | '/_conn/_app/settings'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AppRoute: typeof AppRouteWithChildren
+  ConnRoute: typeof ConnRouteWithChildren
   DevChatRoute: typeof DevChatRoute
   DevSidebarRoute: typeof DevSidebarRoute
 }
@@ -122,26 +118,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app': {
-      id: '/_app'
+    '/_conn': {
+      id: '/_conn'
       path: ''
       fullPath: '/'
-      preLoaderRoute: typeof AppRouteImport
+      preLoaderRoute: typeof ConnRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app/dorks': {
-      id: '/_app/dorks'
-      path: '/dorks'
-      fullPath: '/dorks'
-      preLoaderRoute: typeof AppDorksRouteImport
-      parentRoute: typeof AppRoute
+    '/_conn/_app': {
+      id: '/_conn/_app'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof ConnAppRouteImport
+      parentRoute: typeof ConnRoute
     }
-    '/_app/settings': {
-      id: '/_app/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof AppSettingsRouteImport
-      parentRoute: typeof AppRoute
+    '/_conn/setup': {
+      id: '/_conn/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof ConnSetupRouteImport
+      parentRoute: typeof ConnRoute
     }
     '/dev/chat': {
       id: '/dev/chat'
@@ -157,45 +153,54 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DevSidebarRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app/github/callback': {
-      id: '/_app/github/callback'
-      path: '/github/callback'
-      fullPath: '/github/callback'
-      preLoaderRoute: typeof AppGithubCallbackRouteImport
-      parentRoute: typeof AppRoute
+    '/_conn/_app/dorks': {
+      id: '/_conn/_app/dorks'
+      path: '/dorks'
+      fullPath: '/dorks'
+      preLoaderRoute: typeof ConnAppDorksRouteImport
+      parentRoute: typeof ConnAppRoute
+    }
+    '/_conn/_app/settings': {
+      id: '/_conn/_app/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof ConnAppSettingsRouteImport
+      parentRoute: typeof ConnAppRoute
     }
   }
 }
 
-interface AppRouteChildren {
-  AppDorksRoute: typeof AppDorksRoute
-  AppSettingsRoute: typeof AppSettingsRoute
-  AppGithubCallbackRoute: typeof AppGithubCallbackRoute
+interface ConnAppRouteChildren {
+  ConnAppDorksRoute: typeof ConnAppDorksRoute
+  ConnAppSettingsRoute: typeof ConnAppSettingsRoute
 }
 
-const AppRouteChildren: AppRouteChildren = {
-  AppDorksRoute: AppDorksRoute,
-  AppSettingsRoute: AppSettingsRoute,
-  AppGithubCallbackRoute: AppGithubCallbackRoute,
+const ConnAppRouteChildren: ConnAppRouteChildren = {
+  ConnAppDorksRoute: ConnAppDorksRoute,
+  ConnAppSettingsRoute: ConnAppSettingsRoute,
 }
 
-const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+const ConnAppRouteWithChildren =
+  ConnAppRoute._addFileChildren(ConnAppRouteChildren)
+
+interface ConnRouteChildren {
+  ConnAppRoute: typeof ConnAppRouteWithChildren
+  ConnSetupRoute: typeof ConnSetupRoute
+}
+
+const ConnRouteChildren: ConnRouteChildren = {
+  ConnAppRoute: ConnAppRouteWithChildren,
+  ConnSetupRoute: ConnSetupRoute,
+}
+
+const ConnRouteWithChildren = ConnRoute._addFileChildren(ConnRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AppRoute: AppRouteWithChildren,
+  ConnRoute: ConnRouteWithChildren,
   DevChatRoute: DevChatRoute,
   DevSidebarRoute: DevSidebarRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}

@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useSyncExternalStore, type ReactN
 import { toAppError, type SubscriptionView } from "@dorks/shared";
 import type { DorksClient, ConnectionState } from "./client.ts";
 import type { EventsState } from "./events.ts";
-import type { Store } from "./store.ts";
+import type { QueryState, Store } from "./store.ts";
 import type { Dork, Settings } from "./types.ts";
 
 const Ctx = createContext<DorksClient | null>(null);
@@ -29,7 +29,12 @@ export function useConnection(): ConnectionState {
   return useStore(useDorksClient().connectionStore);
 }
 
-/** `undefined` while loading, like the Convex hooks this replaces. Use the `*State` hooks when you need the error. */
+/** Settings with their load status and error, for the connection gate (the data hooks below hide both). */
+export function useSettingsState(): QueryState<Settings> {
+  return useStore(useDorksClient().settings());
+}
+
+/** `undefined` while loading, like the Convex hooks this replaces. */
 export function useDorks(archived = false): Dork[] | undefined {
   return useStore(useDorksClient().dorks(archived)).data;
 }

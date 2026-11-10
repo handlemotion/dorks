@@ -10,7 +10,8 @@
 
   /* Full height, so the app shell (whose size comes from its parent) fills the window. */
   html,
-  body {
+  body,
+  #root {
     @apply h-full;
   }
 

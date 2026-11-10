@@ -30,13 +30,15 @@ export interface CreateDorkInput {
 export interface Settings {
   claudeToken: boolean;
   boatKey: boolean;
-  github: { configured: boolean; login?: string };
+  github: { configured: boolean; login?: string | null };
   boatOrg: string | null;
   boatEnvironment: string | null;
   baseSnapshotId: string | null;
   sleepMinutes: number;
   commentPolicy: CommentPolicy;
   publicUrlConfigured: boolean;
+  /** `boat` or `sim`; absent on older servers. */
+  boxProvider?: string;
 }
 
 /** Any subset. Token fields are write-only; an empty string clears one. */

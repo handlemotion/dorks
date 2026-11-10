@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { errorMessage } from '@dorks/convex/client'
+import { errorMessage } from '@dorks/client/react'
 
 /**
  * Runs an async submit handler at most once at a time. `pending` drives `disabled`; the ref guards the window before React
