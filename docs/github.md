@@ -21,7 +21,7 @@ The dork acts as whoever owns the token. Commits, PRs and comments carry that ac
 | Workflows | Read and write | the agent may fix CI configuration (see autonomy decision 6) |
 | Checks | Read | CI results |
 | Actions | Read | `gh run view --log-failed` |
-| Commit statuses | Read | CI that reports through statuses |
+| Commit statuses | Read | the agent's own `gh pr checks` (the poller reads check suites only) |
 | Metadata | Read | required by GitHub |
 
 A classic token with the `repo` and `workflow` scopes also works.
