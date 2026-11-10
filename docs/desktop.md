@@ -142,6 +142,8 @@ pnpm --filter @dorks/desktop prepare:stub # stand-in server + placeholder page, 
 
 ## Release
 
+One-time signing setup: `apps/desktop/scripts/release-setup.sh csr` makes a key and a certificate request to upload to Apple, and `release-setup.sh secrets` (after Apple issues the certificate) builds the `.p12` and sets the secrets and the updater public key below with your own `gh` login. Key material stays in `~/.dorks-release`, never in the repo.
+
 `.github/workflows/desktop-release.yml` builds a universal (Apple silicon + Intel) app, signs it with a Developer ID certificate, notarizes it, and attaches the `.dmg`, the updater bundle and `latest.json` to a **draft** GitHub release. Push a tag `desktop-v<version>` (matching `version` in `src-tauri/tauri.conf.json`), or run it by hand (`unsigned` makes a test build).
 
 One-time setup, in the repository settings. Nothing secret is in the repo.
