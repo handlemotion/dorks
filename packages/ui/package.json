@@ -1,0 +1,35 @@
+{
+  "name": "@dorks/ui",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#lib/*": "./src/lib/*.ts",
+    "#ui/*": "./src/components/ui/*.tsx",
+    "#hooks/*": "./src/hooks/*.ts"
+  },
+  "exports": {
+    "./*": "./src/components/ui/*.tsx",
+    "./styles.css": "./src/styles.css"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "typescript": "^6.0.2"
+  },
+  "dependencies": {
+    "@base-ui/react": "1.9.0",
+    "@shadcn/react": "0.3.1",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "cn": "0.5.2",
+    "lucide-react": "1.65.0",
+    "tailwind-merge": "3.6.0"
+  }
+}

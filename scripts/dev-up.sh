@@ -48,8 +48,19 @@ start() {
   alive "$name" && kill -- "-$(pid_of "$name")" 2>/dev/null
   log "starting $name (log: $DIR/$name.log)"
   # setsid: own process group, so `down` stops the server and its children (doppler -> pnpm -> vite) together.
-  setsid nohup bash -c "exec $(cmd_for "$name")" >"$DIR/$name.log" 2>&1 </dev/null &
-  echo $! >"$DIR/$name.pid"
+  if command -v setsid >/dev/null; then
+    setsid nohup bash -c "exec $(cmd_for "$name")" >"$DIR/$name.log" 2>&1 </dev/null &
+    echo $! >"$DIR/$name.pid"
+  else
+    node -e '
+      const { spawn } = require("node:child_process");
+      const fs = require("node:fs");
+      const log = fs.openSync(process.argv[2], "a");
+      const child = spawn("bash", ["-c", process.argv[1]], { detached: true, stdio: ["ignore", log, log] });
+      child.unref();
+      console.log(child.pid);
+    ' "exec $(cmd_for "$name")" "$DIR/$name.log" >"$DIR/$name.pid"
+  fi
 }
 
 wait_healthy() {

@@ -19,7 +19,6 @@ await page.setViewport({ width: 900, height: 900 });
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
 await page.goto("http://localhost:3000/dorks", { waitUntil: "networkidle2" });
-const text = () => page.evaluate(() => document.body.innerText);
 const clickText = async (t) => { const [h] = await page.$$(`xpath/.//main//button[normalize-space()="${t}"]`); await h.click(); };
 const waitText = (re, ms = 30000) => page.waitForFunction((s) => new RegExp(s).test(document.body.innerText), { timeout: ms }, re.source);
 
@@ -45,23 +44,35 @@ await node.mutation(api.settings.setClaudeToken, { token: "sk-ant-oat01-web-e2e"
 await node.action(api.settings.linkGithubInstallation, { installationId: 1, code: "sim" });
 await node.mutation(api.settings.setSleepMinutes, { minutes: 5 });
 
-await page.type('input[aria-label="first message"]', "build the web demo");
+await page.waitForSelector('[data-onboarding="complete"]', { timeout: 15000 });
+await page.click('button[aria-label="Agent: Codex"]');
+await page.waitForSelector('[data-slot="dropdown-menu-radio-item"]');
+const agentOptions = await page.$$('[data-slot="dropdown-menu-radio-item"]');
+const claudeOption = await (async () => {
+  for (const item of agentOptions) if ((await item.evaluate((el) => el.textContent))?.includes("Claude Code")) return item;
+})();
+if (!claudeOption) throw new Error("Claude Code agent option is missing");
+await claudeOption.click();
+await page.waitForSelector('button[aria-label="Agent: Claude Code"]');
+await page.type('input[aria-label="repo"]', "jaantonio/demo");
+await page.type('textarea[aria-label="first message"]', "build the web demo");
 await page.click('form button[type="submit"]');
-await waitText(/claude: w\d+/, 30000);
-const midText = await text();
+await page.waitForFunction(() => /w\d+ w\d+/.test(document.querySelector('[data-testid="transcript"]')?.textContent ?? ""), { timeout: 30000 });
+const midText = await page.$eval('[data-testid="transcript"]', (el) => el.textContent);
 await page.screenshot({ path: `${SHOTS}/web-streaming.png` });
-check("web: turn streams live into the page", /claude: w\d+ w\d+/.test(midText), midText.match(/claude: [^\n]{0,60}/)?.[0]);
-const partial = midText.match(/claude: ([^\n]*)/)[1].length;
+check("web: turn streams live into the page", /w\d+ w\d+/.test(midText), midText.slice(0, 60));
+const partial = midText.length;
 
 // kill/reopen mid-turn = hard reload of the page
 await page.reload({ waitUntil: "networkidle2" });
-await page.waitForSelector('main ul li button', { timeout: 15000 });
-await page.click("main ul li button");
+await page.waitForSelector('a.chat-link', { timeout: 15000 });
+await page.click("a.chat-link");
 await waitText(/Done: build the web demo/, 40000);
 await waitText(/\bidle\b/, 30000);
-const finalText = await text();
+const finalText = await page.$eval('[data-testid="transcript"]', (el) => el.textContent);
+const userMessages = await page.$$eval('[data-slot="message"][data-align="end"] [data-slot="bubble-content"]', (els) => els.map((el) => el.textContent));
 check("web: reloaded mid-turn, page catches up to the finished turn", /Done: build the web demo/.test(finalText) && /bash git push/i.test(finalText.replace(/\s+/g, " ")));
-check("web: no duplicated blocks after reload", (finalText.match(/you: build the web demo/g) ?? []).length === 1 && (finalText.match(/Done: build the web demo/g) ?? []).length === 1);
+check("web: no duplicated blocks after reload", userMessages.filter((s) => s === "build the web demo").length === 1 && (finalText.match(/Done: build the web demo/g) ?? []).length === 1);
 await page.screenshot({ path: `${SHOTS}/web-final.png` });
 check("web: no page errors", errors.length === 0, errors[0]?.slice(0, 120));
 console.log(`(partial text at first screenshot: ${partial} chars)`);

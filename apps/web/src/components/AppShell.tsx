@@ -1,5 +1,7 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Group, Panel, Separator, usePanelRef } from 'react-resizable-panels'
+import { Menu, X } from 'lucide-react'
+import { Button } from '@dorks/ui/button'
 
 /** Designed sidebar width in px: its default, and what a click on the divider returns it to. */
 export const SIDEBAR_DEFAULT_WIDTH = 325
@@ -50,6 +52,63 @@ export function AppShell({
   const [savedWidth] = useState(() => readWidth(storageKey))
   const sidebarPanel = usePanelRef()
   const pressedAt = useRef<number | null>(null)
+  const [mobile, setMobile] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuButton = useRef<HTMLButtonElement>(null)
+  const closeButton = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 700px)')
+    const onChange = () => {
+      setMobile(query.matches)
+      if (!query.matches) setMenuOpen(false)
+    }
+    onChange()
+    query.addEventListener('change', onChange)
+    return () => query.removeEventListener('change', onChange)
+  }, [])
+
+  useEffect(() => {
+    if (menuOpen) closeButton.current?.focus()
+  }, [menuOpen])
+
+  if (mobile) {
+    const closeMenu = () => {
+      setMenuOpen(false)
+      menuButton.current?.focus()
+    }
+    return (
+      <div className="mobile-shell">
+        <div className="mobile-toolbar">
+          <Button ref={menuButton} variant="ghost" size="sm" aria-label="Open chats" aria-expanded={menuOpen} aria-controls="mobile-sidebar" onClick={() => setMenuOpen(true)}>
+            <Menu className="size-4" /> Chats
+          </Button>
+        </div>
+        {menuOpen && (
+          <>
+            <button className="mobile-backdrop" type="button" aria-label="Close chats" onClick={closeMenu} />
+            <div
+              id="mobile-sidebar"
+              className="mobile-sidebar"
+              role="dialog"
+              aria-label="Chats"
+              aria-modal="true"
+              onKeyDown={(e) => { if (e.key === 'Escape') closeMenu() }}
+              onClick={(e) => { if (e.target instanceof Element && e.target.closest('a')) closeMenu() }}
+            >
+              <div className="mobile-sidebar-header">
+                <span>Chats</span>
+                <Button ref={closeButton} variant="ghost" size="icon-sm" aria-label="Close chats" onClick={closeMenu}><X className="size-4" /></Button>
+              </div>
+              {sidebar}
+            </div>
+          </>
+        )}
+        <main className="app-main" inert={menuOpen}>{children}</main>
+      </div>
+    )
+  }
+
   return (
     <Group
       className="app-shell"

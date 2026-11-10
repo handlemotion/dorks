@@ -15,12 +15,12 @@
   }
 
   html {
-    @apply bg-surface-canvas;
+    @apply bg-background;
   }
 
   /* Type styles go on body, never html: html font-size is the rem base, and every spacing utility is in rem. */
   body {
-    @apply font-sans text-body text-ink antialiased;
+    @apply font-sans text-body text-foreground antialiased;
   }
 }
 
@@ -34,10 +34,39 @@
     @apply h-full overflow-y-auto;
   }
 
+  .mobile-shell {
+    @apply relative flex h-full min-h-0 flex-col;
+  }
+
+  .mobile-toolbar {
+    @apply flex h-12 shrink-0 items-center border-b border-line px-3;
+  }
+
+  .mobile-shell > .app-main {
+    @apply min-h-0 flex-1;
+  }
+
+  .mobile-backdrop {
+    @apply fixed inset-0 z-40;
+    background-color: rgb(0 0 0 / 0.3);
+  }
+
+  .mobile-sidebar {
+    @apply fixed inset-y-0 left-0 z-50 flex w-[min(85vw,325px)] flex-col bg-sidebar shadow-lg;
+  }
+
+  .mobile-sidebar-header {
+    @apply flex h-12 shrink-0 items-center justify-between px-4 font-medium;
+  }
+
+  .mobile-sidebar .sidebar {
+    @apply min-h-0 flex-1;
+  }
+
   /* 1px divider. The hit area is wider than what is drawn so it is easy to grab; on hover and drag the line itself gets a touch
      darker. */
   .app-separator {
-    @apply relative w-px bg-line outline-hidden transition-colors duration-150 motion-reduce:transition-none;
+    @apply relative w-px bg-sidebar-border outline-hidden transition-colors duration-150 motion-reduce:transition-none;
   }
 
   .app-separator::before {

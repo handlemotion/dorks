@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppDorksRouteImport } from './routes/_app/dorks'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
+import { Route as DevChatRouteImport } from './routes/dev.chat'
 import { Route as DevSidebarRouteImport } from './routes/dev.sidebar'
 import { Route as AppGithubCallbackRouteImport } from './routes/_app/github.callback'
 
@@ -35,6 +36,11 @@ const AppSettingsRoute = AppSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AppRoute,
 } as any)
+const DevChatRoute = DevChatRouteImport.update({
+  id: '/dev/chat',
+  path: '/dev/chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DevSidebarRoute = DevSidebarRouteImport.update({
   id: '/dev/sidebar',
   path: '/dev/sidebar',
@@ -50,6 +56,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dorks': typeof AppDorksRoute
   '/settings': typeof AppSettingsRoute
+  '/dev/chat': typeof DevChatRoute
   '/dev/sidebar': typeof DevSidebarRoute
   '/github/callback': typeof AppGithubCallbackRoute
 }
@@ -57,6 +64,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dorks': typeof AppDorksRoute
   '/settings': typeof AppSettingsRoute
+  '/dev/chat': typeof DevChatRoute
   '/dev/sidebar': typeof DevSidebarRoute
   '/github/callback': typeof AppGithubCallbackRoute
 }
@@ -66,20 +74,34 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/_app/dorks': typeof AppDorksRoute
   '/_app/settings': typeof AppSettingsRoute
+  '/dev/chat': typeof DevChatRoute
   '/dev/sidebar': typeof DevSidebarRoute
   '/_app/github/callback': typeof AppGithubCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/dorks' | '/settings' | '/dev/sidebar' | '/github/callback'
+  fullPaths:
+    | '/'
+    | '/dorks'
+    | '/settings'
+    | '/dev/chat'
+    | '/dev/sidebar'
+    | '/github/callback'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/dorks' | '/settings' | '/dev/sidebar' | '/github/callback'
+  to:
+    | '/'
+    | '/dorks'
+    | '/settings'
+    | '/dev/chat'
+    | '/dev/sidebar'
+    | '/github/callback'
   id:
     | '__root__'
     | '/'
     | '/_app'
     | '/_app/dorks'
     | '/_app/settings'
+    | '/dev/chat'
     | '/dev/sidebar'
     | '/_app/github/callback'
   fileRoutesById: FileRoutesById
@@ -87,6 +109,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
+  DevChatRoute: typeof DevChatRoute
   DevSidebarRoute: typeof DevSidebarRoute
 }
 
@@ -119,6 +142,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/settings'
       preLoaderRoute: typeof AppSettingsRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/dev/chat': {
+      id: '/dev/chat'
+      path: '/dev/chat'
+      fullPath: '/dev/chat'
+      preLoaderRoute: typeof DevChatRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/dev/sidebar': {
       id: '/dev/sidebar'
@@ -154,6 +184,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
+  DevChatRoute: DevChatRoute,
   DevSidebarRoute: DevSidebarRoute,
 }
 export const routeTree = rootRouteImport

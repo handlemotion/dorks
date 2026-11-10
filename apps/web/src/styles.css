@@ -1,5 +1,8 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");
 @import "tailwindcss";
 @import "./styles/theme.css";
+@import "@dorks/ui/styles.css";
 @import "./styles/base.css";
 @import "./styles/sidebar.css";
+@import "./styles/chat.css";
+@source "../../../packages/ui/src";

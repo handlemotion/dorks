@@ -10,7 +10,7 @@
 @layer components {
   /* Fills its resizable panel (see AppShell); the 1px divider on its right is the panel separator. */
   .sidebar {
-    @apply flex h-full w-full flex-col gap-2.5 overflow-y-auto bg-surface-app p-2;
+    @apply flex h-full w-full flex-col gap-2.5 overflow-y-auto bg-sidebar p-2;
   }
 
   .sidebar-group {
@@ -19,17 +19,17 @@
 
   /* Row */
   .sidebar-row {
-    @apply flex h-row w-full items-center justify-between overflow-clip rounded-row px-1 text-left text-body text-ink;
+    @apply flex h-row w-full items-center justify-between overflow-clip rounded-row px-1 text-left text-body text-sidebar-foreground;
   }
 
   /* Interactive rows only (section headers are plain divs). Hover uses the same fill as selected. */
   a.sidebar-row,
   button.sidebar-row {
-    @apply cursor-pointer outline-hidden hover:bg-surface-selected focus-visible:bg-surface-selected;
+    @apply cursor-pointer outline-hidden hover:bg-sidebar-accent focus-visible:bg-sidebar-accent;
   }
 
   .sidebar-row[data-active] {
-    @apply bg-surface-selected;
+    @apply bg-sidebar-accent;
   }
 
   /* 24px cell holding a glyph or the chat's Orb */
@@ -55,9 +55,9 @@
     @apply flex shrink-0 items-center justify-center rounded-cell px-2 py-1 text-caption mix-blend-multiply;
   }
 
-  /* Section header (Ready, Drafts): same row, muted, not interactive. Wins over .sidebar-row's text-ink by coming after it. */
+  /* Section header (Ready, Drafts): same row, muted, not interactive. */
   .sidebar-section {
-    @apply text-ink-muted;
+    @apply text-muted-foreground;
   }
 
   /* Chat link: a row with a working indicator (the Orb) and a PR number. The orb is the only thing that shows motion. */
@@ -66,11 +66,11 @@
   }
 
   .chat-link[data-working] .chat-link-marker {
-    @apply text-ink;
+    @apply text-sidebar-foreground;
   }
 
   .chat-link[data-dragging] {
-    @apply relative z-10 cursor-grabbing bg-surface-selected;
+    @apply relative z-10 cursor-grabbing bg-sidebar-accent;
   }
 
   .chat-link-pr[data-pr="open"] {
