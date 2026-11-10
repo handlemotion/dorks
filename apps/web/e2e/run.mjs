@@ -70,6 +70,8 @@ const check = (name, ok, extra = "") => {
 const browser = await puppeteer.launch({ executablePath, args: ["--no-sandbox", "--disable-gpu"], headless: true });
 const page = await browser.newPage();
 await page.setViewport({ width: 1200, height: 900 });
+// E2E_SCHEME=dark runs the whole flow (and its screenshots) in the dark theme; the default follows light.
+if (process.env.E2E_SCHEME) await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: process.env.E2E_SCHEME }]);
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
 page.on("console", (m) => m.type() === "error" && !/Failed to load resource/.test(m.text()) && errors.push(m.text()));
@@ -94,7 +96,7 @@ const fill = async (aria, value) => {
   await page.$eval(sel, (el) => el.select?.());
   await page.type(sel, value);
 };
-const shot = (name) => page.screenshot({ path: join(SHOTS, `web-${name}.png`) });
+const shot = (name) => page.screenshot({ path: join(SHOTS, `web-${process.env.E2E_SCHEME ?? "light"}-${name}.png`) });
 const transcript = () => page.$eval('[data-testid="transcript"]', (el) => el.textContent).catch(() => "");
 
 try {

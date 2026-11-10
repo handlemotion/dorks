@@ -23,7 +23,7 @@ function Onboarding() {
   }, [settings, step])
   if (!settings || step === null) {
     return (
-      <main className="flex min-h-full items-center justify-center">
+      <main className="app-backdrop flex min-h-svh items-center justify-center">
         <p role="status" className="text-sm text-muted-foreground">Loading…</p>
       </main>
     )

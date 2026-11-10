@@ -11,6 +11,8 @@ export interface RuntimeConfig {
   dataDir?: string
   version?: string
   tunnel?: { kind: string; state: string; error?: string | null }
+  /** The window is natively translucent (macOS vibrancy): the page must leave its backdrop transparent. */
+  vibrancy?: boolean
   /** Present instead of the rest when the shell could not set the server up. */
   bootError?: string
 }
@@ -68,6 +70,14 @@ export type WindowMode = 'onboarding' | 'app'
  */
 export function setWindowMode(mode: WindowMode) {
   if (isDesktop()) void invoke('set_window_mode', { mode }).catch(() => {})
+}
+
+/**
+ * Tells the shell which theme the app is showing, so the native window material (vibrancy) follows the app and not the OS. A no-op
+ * outside the app, and when the shell predates the command: the page already lays a theme-matched tint over whatever material shows.
+ */
+export function setWindowTheme(theme: 'light' | 'dark') {
+  if (isDesktop()) void invoke('set_window_theme', { theme }).catch(() => {})
 }
 
 /** Calls `handler` when the shell publishes a changed config (for example after the public URL changed). Returns an unsubscribe. */

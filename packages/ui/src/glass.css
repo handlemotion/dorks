@@ -1,0 +1,165 @@
+/*
+ * Liquid Glass surfaces (macOS 26 direction). Three layers:
+ *   backdrop  what shows through: native vibrancy in the desktop app (html[data-vibrancy]), otherwise a soft blurred gradient
+ *   glass     chrome that floats on it (sidebar, toolbars, menus): translucent, blurred, saturated
+ *   content   the reading surface on top: nearly opaque so text stays legible
+ * Radii are concentric: an inner radius is the outer radius minus the padding between them.
+ *
+ * UI rules (also in README.md and AGENTS.md):
+ *   - No drop shadows, anywhere. Every Tailwind shadow token is switched off below, so `shadow-*` classes in the published components
+ *     are no-ops. No inset highlights either.
+ *   - Borders are the exception: only where fill contrast truly fails (light-theme form controls). The default border colour is nearly
+ *     transparent. Surfaces are separated by fill, spacing and glass layering (see scripts/contrast.mjs).
+ *   - The tint follows the theme, never the OS or the native material.
+ */
+
+/* Shadows off. Resetting the namespaces means `shadow-md`, `drop-shadow-lg`, `inset-shadow-*` generate no CSS at all. ui-rules: allow */
+@theme {
+  --shadow-*: initial; /* ui-rules: allow */
+  --inset-shadow-*: initial; /* ui-rules: allow */
+  --drop-shadow-*: initial; /* ui-rules: allow */
+  --text-shadow-*: initial; /* ui-rules: allow */
+}
+
+:root {
+  --glass: oklch(1 0 0 / 58%);
+  --glass-strong: oklch(1 0 0 / 78%);
+  --glass-content: oklch(0.935 0.004 260 / 85%);
+  --glass-blur: 28px;
+  --glass-saturate: 1.7;
+  /* The tint laid over native vibrancy, and the base of the browser fallback gradient. */
+  --backdrop-tint: oklch(1 0 0 / 30%);
+  --backdrop-base: oklch(0.88 0.01 260);
+  --backdrop-a: oklch(0.86 0.05 250);
+  --backdrop-b: oklch(0.87 0.05 320);
+  --backdrop-c: oklch(0.88 0.04 190);
+  --user-bubble: #ffffff;
+  --user-bubble-foreground: oklch(0.145 0 0);
+}
+
+/* Default border colour: present for a11y tooling, nearly invisible to the eye. Form controls use --input, which stays visible. The
+   preset's own :root block is imported after this file's rules, so these need the extra specificity of `html`. */
+html:root {
+  --border: oklch(0 0 0 / 6%);
+}
+
+.dark {
+  --glass: oklch(0.42 0 0 / 52%);
+  --glass-strong: oklch(0.44 0 0 / 74%);
+  --glass-content: oklch(0.2 0 0 / 82%);
+  --backdrop-tint: oklch(0.18 0 0 / 55%);
+  --backdrop-base: oklch(0.2 0 0);
+  --backdrop-a: oklch(0.28 0.06 265);
+  --backdrop-b: oklch(0.27 0.06 320);
+  --backdrop-c: oklch(0.26 0.05 200);
+  /* The user bubble stays white in dark mode so it pops against the glass. */
+  --user-bubble: #ffffff;
+  --user-bubble-foreground: oklch(0.145 0 0);
+}
+
+html.dark {
+  --border: oklch(1 0 0 / 7%);
+}
+
+@theme inline {
+  --color-glass: var(--glass);
+  --color-glass-strong: var(--glass-strong);
+  --color-glass-content: var(--glass-content);
+  --color-user-bubble: var(--user-bubble);
+  --color-user-bubble-foreground: var(--user-bubble-foreground);
+}
+
+/* Glass: fill plus blur, no border, no shadow. Its fill already separates it from the backdrop (scripts/contrast.mjs). */
+@utility glass {
+  background-color: var(--glass);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+@utility glass-strong {
+  background-color: var(--glass-strong);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
+}
+
+/* The reading surface. Its fill is darker than the backdrop in light and lighter in dark. */
+@utility glass-content {
+  background-color: var(--glass-content);
+  backdrop-filter: blur(calc(var(--glass-blur) * 0.6)) saturate(1.2);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.6)) saturate(1.2);
+}
+
+/* Behind everything. Native vibrancy (desktop) paints the real material, so the page only lays the theme's tint over it. */
+@utility app-backdrop {
+  background-color: var(--backdrop-base);
+  background-image:
+    radial-gradient(60rem 40rem at 8% 0%, var(--backdrop-a), transparent 60%),
+    radial-gradient(50rem 36rem at 100% 10%, var(--backdrop-b), transparent 60%),
+    radial-gradient(60rem 40rem at 60% 110%, var(--backdrop-c), transparent 60%);
+  background-attachment: fixed;
+}
+
+html[data-vibrancy],
+html[data-vibrancy] body {
+  background: transparent;
+}
+
+html[data-vibrancy] .app-backdrop {
+  background: var(--backdrop-tint);
+}
+
+/* The sidebar is the app's glass chrome: its fill is the glass token, and the panel blurs what is behind it. Unlayered on purpose,
+   so it wins over the component's own utilities. */
+html:root,
+html.dark {
+  --sidebar: var(--glass);
+  --sidebar-border: transparent;
+}
+
+[data-slot="sidebar-inner"],
+[data-slot="sheet-content"][data-mobile="true"] {
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+[data-slot="sidebar-inner"] {
+  border-radius: 1.5rem;
+}
+
+/* The published components outline cards, menus and dialogs with a 1px ring (`ring-1 ring-foreground/10`). Fill separates those
+   surfaces, so the ring is switched off here instead of editing the files. Focus rings live on controls, not on these containers. */
+[data-slot="card"],
+[data-slot="popover-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="dropdown-menu-sub-content"],
+[data-slot="select-content"],
+[data-slot="hover-card-content"],
+[data-slot="dialog-content"],
+[data-slot="command"],
+[data-slot="sidebar-inner"] {
+  --tw-ring-color: transparent;
+}
+
+/* Solid, theme-matched fallback: reduced transparency or forced colors. */
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  :root {
+    --glass: oklch(0.985 0 0);
+    --glass-strong: oklch(0.985 0 0);
+    --glass-content: oklch(0.965 0 0);
+    --backdrop-tint: oklch(0.93 0 0);
+  }
+  .dark {
+    --glass: oklch(0.3 0 0);
+    --glass-strong: oklch(0.3 0 0);
+    --glass-content: oklch(0.2 0 0);
+    --backdrop-tint: oklch(0.16 0 0);
+  }
+  :root,
+  .dark {
+    --glass-blur: 0px;
+    --glass-saturate: 1;
+  }
+  .app-backdrop {
+    background-image: none;
+  }
+}

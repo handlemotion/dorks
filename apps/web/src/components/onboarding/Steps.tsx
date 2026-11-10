@@ -3,6 +3,7 @@ import { useDorksClient, useSnapshot } from '@dorks/client/react'
 import type { Settings } from '@dorks/client'
 import { Button } from '@dorks/ui/button'
 import { Input } from '@dorks/ui/input'
+import { Progress } from '@dorks/ui/progress'
 import { isDesktop, readGhToken, setPublicUrl } from '../../lib/desktop'
 import { canCreate, TUNNEL_SKIPPED_KEY, WELCOMED_KEY } from '../../lib/onboarding'
 import { usePending } from '../../lib/pending'
@@ -91,7 +92,7 @@ export function Prepare({ settings, onNext }: StepProps) {
           <p className="text-sm">
             <strong>Step {snap.stepIndex + 1} of {snap.stepCount}:</strong> {snap.message}
           </p>
-          <progress className="h-1.5 w-full accent-foreground"max={snap.stepCount} value={snap.stepIndex + 1} aria-label="build progress" />
+          <Progress value={((snap.stepIndex + 1) / snap.stepCount) * 100} aria-label="build progress" />
         </div>
       )}
       {!building && failed && (

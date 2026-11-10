@@ -1,7 +1,9 @@
 import { CatchBoundary, createFileRoute, Link, Navigate } from '@tanstack/react-router'
 import { useState } from 'react'
-import { ChevronDownIcon } from 'lucide-react'
+import { ArchiveIcon, ArchiveRestoreIcon, ChevronDownIcon, InfoIcon, PlusIcon } from 'lucide-react'
 import { useDork, useDorkEvents, useDorks, useDorksClient, useSettings } from '@dorks/client/react'
+import { Alert, AlertDescription } from '@dorks/ui/alert'
+import { Badge } from '@dorks/ui/badge'
 import { Button } from '@dorks/ui/button'
 import {
   DropdownMenu,
@@ -22,7 +24,7 @@ import {
 } from '@dorks/ui/message-scroller'
 import { ChatMessages } from '../../../components/ChatBlock'
 import { Composer, type AgentProvider } from '../../../components/ChatComposer'
-import { useDisconnect } from '../../../components/ConnectionGate'
+import { PageHeader } from '../../../components/PageHeader'
 import { canCreate } from '../../../lib/onboarding'
 import { usePending } from '../../../lib/pending'
 
@@ -32,6 +34,15 @@ export const Route = createFileRoute('/_conn/_app/dorks')({
   component: Dorks,
 })
 
+function Notice({ children }: { children: React.ReactNode }) {
+  return (
+    <Alert className="mx-auto mt-3 w-full max-w-3xl" role="status">
+      <InfoIcon />
+      <AlertDescription>{children}</AlertDescription>
+    </Alert>
+  )
+}
+
 function Dorks() {
   // The URL is user-editable, so this is not guaranteed to be a real id: the server answers not_found, which <Thread> shows.
   const selected = Route.useSearch().dork
@@ -40,52 +51,48 @@ function Dorks() {
   const [showArchived, setShowArchived] = useState(false)
   const dorks = useDorks(showArchived)
   const settings = useSettings()
-  const disconnect = useDisconnect()
   const ready = !!settings && canCreate(settings)
   // First run: a session needs a Boat key, a snapshot and a GitHub token, so the owner finishes onboarding first.
   if (settings && !ready) return <Navigate to="/onboarding" replace />
 
   return (
-    <div className="dorks-page" data-onboarding={settings ? (ready ? 'complete' : 'incomplete') : 'loading'}>
-      <header className="dorks-header">
-        <div>
-          <h1>{selected ? 'Session' : 'Dorks'}</h1>
-          {!selected && <p>Give your agent a task and follow its work here.</p>}
-        </div>
-        <div className="dorks-header-actions">
-          {selected && <Button variant="ghost" size="sm" render={<Link to="/dorks" search={{}} />}>New session</Button>}
-          <Button variant="ghost" size="sm" render={<Link to="/settings" />}>Settings</Button>
-          {disconnect && <Button variant="ghost" size="sm" onClick={disconnect}>Change server</Button>}
-        </div>
-      </header>
+    <div className="flex h-full min-h-0 flex-col" data-onboarding={settings ? (ready ? 'complete' : 'incomplete') : 'loading'}>
+      {!selected && (
+        <PageHeader
+          title="Dorks"
+          subtitle="Give your agent a task and follow its work here."
+          actions={<Button variant="ghost" size="sm" nativeButton={false} render={<Link to="/settings" />}>Settings</Button>}
+        />
+      )}
       {settings && ready && !settings.boatEnvironment && (
-        <p className="dorks-setup" role="status">
-          For cloud Codex sessions, <Link to="/settings">connect ChatGPT to your Boat account once</Link>.
-        </p>
+        <Notice>For cloud Codex sessions, <Link to="/settings" className="font-medium underline underline-offset-4">connect ChatGPT to your Boat account once</Link>.</Notice>
       )}
       {settings && ready && !settings.publicUrlConfigured && (
-        <p className="dorks-setup" role="status">
-          Sandboxes cannot reach this machine yet: no public URL is configured. Sessions will not start until the tunnel is up.
-        </p>
+        <Notice>Sandboxes cannot reach this machine yet: no public URL is configured. Sessions will not start until the tunnel is up.</Notice>
       )}
       {selected ? (
-        <CatchBoundary getResetKey={() => selected} errorComponent={() => <p className="dorks-error" role="alert">That session could not be opened.</p>}>
+        <CatchBoundary getResetKey={() => selected} errorComponent={() => <p className="mx-auto mt-6 text-sm text-destructive" role="alert">That session could not be opened.</p>}>
           <Thread key={selected} dorkId={selected} />
         </CatchBoundary>
       ) : (
-        <div className="dorks-empty">
-          <div className="dorks-empty-body">
-            <h2>What should we work on?</h2>
-            <p>Choose a repository and agent, then describe the change you want.</p>
+        <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col justify-center gap-8 overflow-y-auto px-4 py-8">
+          <div className="space-y-2">
+            <h2 className="text-3xl font-semibold tracking-tight">What should we work on?</h2>
+            <p className="text-muted-foreground">Choose a repository and agent, then describe the change you want.</p>
           </div>
           <NewDork onCreated={setSelected} disabled={!ready} claudeReady={!!settings?.claudeToken} />
-          <div className="dorks-history">
+          <div className="self-start text-sm text-muted-foreground">
             <Button variant="ghost" size="sm" aria-pressed={showArchived} onClick={() => setShowArchived(!showArchived)}>
               {showArchived ? 'Hide archived' : 'Show archived'}
             </Button>
             {showArchived && (
-              <ul aria-label="Archived sessions">
-                {dorks?.map((d) => <li key={d.id}><Button variant="ghost" onClick={() => setSelected(d.id)}>{d.title}</Button><span>{d.repo}</span></li>)}
+              <ul aria-label="Archived sessions" className="mt-2 flex max-h-44 flex-col overflow-y-auto">
+                {dorks?.map((d) => (
+                  <li key={d.id} className="flex items-center gap-2">
+                    <Button variant="ghost" onClick={() => setSelected(d.id)}>{d.title}</Button>
+                    <span className="truncate text-xs">{d.repo}</span>
+                  </li>
+                ))}
                 {dorks?.length === 0 && <li>No archived sessions.</li>}
               </ul>
             )}
@@ -104,14 +111,14 @@ function NewDork({ onCreated, disabled, claudeReady }: { onCreated: (id: string)
   const { run, pending, error } = usePending()
   const needsClaudeToken = provider === 'claude' && !claudeReady
   return (
-    <>
-      {needsClaudeToken && <p className="dorks-error" role="status">Add a <Link to="/settings">Claude token in settings</Link> to use Claude Code.</p>}
+    <div className="-mx-4">
+      {needsClaudeToken && <p className="mx-4 mb-2 text-sm text-destructive" role="status">Add a <Link to="/settings" className="font-medium underline underline-offset-4">Claude token in settings</Link> to use Claude Code.</p>}
       <Composer
         text={message} setText={setMessage} repo={repo} setRepo={setRepo} provider={provider} setProvider={setProvider}
         pending={pending} disabled={disabled || needsClaudeToken} error={error}
         onSubmit={() => void run(async () => { onCreated((await actions.createDork({ repo: repo.trim(), message, provider })).id); setMessage('') })}
       />
-    </>
+    </div>
   )
 }
 
@@ -130,25 +137,29 @@ function Thread({ dorkId }: { dorkId: string }) {
   }))) ?? []
   const choice = models.find((option) => option.key === selectedModel) ?? models[0]
   const working = dork?.state === 'working'
-  if (dork === undefined || loading) return <p className="dorks-loading" role="status">Loading session…</p>
-  if (dork === null) return <p className="dorks-error" role="alert">That session could not be found.</p>
+  if (dork === undefined || loading) return <p className="mt-4 px-6 text-sm text-muted-foreground" role="status">Loading session…</p>
+  if (dork === null) return <p className="mt-4 px-6 text-sm text-destructive" role="alert">That session could not be found.</p>
   return (
-    <section className="dorks-thread" aria-label="thread">
-      <div className="dorks-thread-header">
-        <div>
-          <h2>{dork.title}</h2>
-          <p>{dork.repo} · <span data-testid="state">{dork.state}{dork.archived ? ' (archived)' : ''}</span></p>
-        </div>
-        <div className="dorks-thread-actions">
-          <Button variant="ghost" size="sm" disabled={archiving} onClick={() => void runArchive(() => actions.archiveDork(dorkId, !dork.archived))}>{dork.archived ? 'Unarchive' : 'Archive'}</Button>
-        </div>
-      </div>
+    <section className="flex min-h-0 flex-1 flex-col" aria-label="thread">
+      <PageHeader
+        title={dork.title}
+        subtitle={<>{dork.repo} · <Badge variant="outline" data-testid="state" className="align-middle">{dork.state}{dork.archived ? ' (archived)' : ''}</Badge></>}
+        actions={
+          <>
+            <Button variant="ghost" size="sm" nativeButton={false} render={<Link to="/dorks" search={{}} />}><PlusIcon />New session</Button>
+            <Button variant="ghost" size="sm" disabled={archiving} onClick={() => void runArchive(() => actions.archiveDork(dorkId, !dork.archived))}>
+              {dork.archived ? <ArchiveRestoreIcon /> : <ArchiveIcon />}
+              {dork.archived ? 'Unarchive' : 'Archive'}
+            </Button>
+          </>
+        }
+      />
       {models.length > 0 && (
-        <form className="dorks-agent-frame dorks-model-form" onSubmit={(event) => {
+        <form className="mx-auto mt-4 flex w-full max-w-3xl shrink-0 flex-wrap items-center gap-2 px-4 text-sm" onSubmit={(event) => {
           event.preventDefault()
           if (choice) void modelChoice.run(() => actions.chooseCodexModel(dorkId, choice.model, choice.effort))
         }}>
-          <span className="dorks-model-label">Available ChatGPT models</span>
+          <span className="w-full text-muted-foreground">Available ChatGPT models</span>
           <InputGroup className="max-w-56">
             <DropdownMenu>
               <DropdownMenuTrigger render={<InputGroupButton size="sm" variant="ghost" className="w-full justify-between" aria-label="Codex model" />}>
@@ -172,14 +183,14 @@ function Thread({ dorkId }: { dorkId: string }) {
           <Button type="submit" size="sm" disabled={dork.state !== 'error' || modelChoice.pending || !choice}>
             {modelChoice.pending ? 'Starting…' : 'Use this model'}
           </Button>
-          {modelChoice.error && <p className="dorks-error" role="alert">{modelChoice.error}</p>}
+          {modelChoice.error && <p className="text-sm text-destructive" role="alert">{modelChoice.error}</p>}
         </form>
       )}
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
         <MessageScroller>
           <MessageScrollerViewport aria-label="Session transcript">
-            <MessageScrollerContent className="dorks-transcript gap-6" data-testid="transcript">
-              {canLoadMore && <div className="dorks-older"><Button variant="outline" size="sm" onClick={loadMore}>Load older</Button></div>}
+            <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-8 py-8" data-testid="transcript">
+              {canLoadMore && <div className="text-center"><Button variant="outline" size="sm" onClick={loadMore}>Load older</Button></div>}
               <ChatMessages blocks={view.blocks} />
             </MessageScrollerContent>
           </MessageScrollerViewport>

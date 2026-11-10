@@ -1,8 +1,104 @@
 @import "tailwindcss";
-@import "./styles/theme.css";
 @import "@dorks/ui/styles.css";
-@import "./styles/base.css";
-@import "./styles/sidebar.css";
-@import "./styles/chat.css";
-@import "./styles/setup.css";
 @source "../../../packages/ui/src";
+/* Streamdown (the markdown renderer) styles itself with Tailwind classes inside its own build: scan it or lists, tables and headings lose them. */
+@source "../../../node_modules/streamdown/dist/*.js";
+
+/* The design tokens, radius scale, dark mode and glass surfaces all come from @dorks/ui (a shadcn preset, see its README). */
+
+/* The forms inside a settings card (components/SettingsForms.tsx): stacked, left-aligned, fields capped at a readable width. */
+@layer components {
+  .settings-group {
+    @apply flex flex-col gap-3 text-sm;
+  }
+
+  .settings-group form {
+    @apply flex flex-col items-start gap-3;
+  }
+
+  .settings-group form label {
+    @apply flex w-full max-w-md flex-col gap-1.5 font-medium;
+  }
+
+  .settings-group form input:not([type="checkbox"]),
+  .settings-group form textarea,
+  .settings-group form select {
+    @apply w-full max-w-md;
+  }
+
+  .settings-group ul {
+    @apply flex flex-col gap-1;
+  }
+
+  .settings-group a {
+    @apply font-medium underline underline-offset-4;
+  }
+
+  .settings-group pre {
+    @apply overflow-x-auto rounded-xl bg-muted p-3 text-xs;
+  }
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    @apply h-full;
+  }
+
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+  }
+}
+
+/* Orb (components/Orb.tsx), ported from @aicss/react variant M2. Keyframes and easings are aicss's, unchanged except that every
+   position is scaled by --orb-spread so the ring can collapse to a dot. */
+@theme {
+  --animate-orb-morph: orb-morph 4.8s cubic-bezier(0.4, 0, 0.2, 1) infinite both;
+  --animate-orb-twist: orb-morph-twist 9.6s linear infinite;
+
+  @keyframes orb-morph {
+    0%,
+    5% {
+      transform: translate(calc(var(--m-1x) * var(--orb-spread)), calc(var(--m-1y) * var(--orb-spread)));
+    }
+    25%,
+    30% {
+      transform: translate(calc(var(--m-2x) * var(--orb-spread)), calc(var(--m-2y) * var(--orb-spread)));
+    }
+    50%,
+    55% {
+      transform: translate(calc(var(--m-3x) * var(--orb-spread)), calc(var(--m-3y) * var(--orb-spread)));
+    }
+    75%,
+    80% {
+      transform: translate(calc(var(--m-4x) * var(--orb-spread)), calc(var(--m-4y) * var(--orb-spread)));
+    }
+    100% {
+      transform: translate(calc(var(--m-1x) * var(--orb-spread)), calc(var(--m-1y) * var(--orb-spread)));
+    }
+  }
+
+  @keyframes orb-morph-twist {
+    from {
+      transform: scale(var(--orb-k, 1)) rotate(0deg);
+    }
+    to {
+      transform: scale(var(--orb-k, 1)) rotate(360deg);
+    }
+  }
+}
+
+/* 1 = the full ring choreography, 0 = every dot on the centre; registered so it can transition. */
+@property --orb-spread {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse,
+  [data-slot="trace"] .animate-spin {
+    animation: none;
+  }
+}

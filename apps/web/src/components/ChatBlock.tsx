@@ -3,6 +3,7 @@ import { CircleAlertIcon, CircleCheckIcon, TerminalIcon } from 'lucide-react'
 import type { Block } from '@dorks/shared'
 import { Bubble, BubbleContent } from '@dorks/ui/bubble'
 import { CodeBlock, CodeBlockContent } from '@dorks/ui/code-block'
+import { Markdown } from '@dorks/ui/markdown'
 import { Message, MessageContent } from '@dorks/ui/message'
 import { MessageScrollerItem } from '@dorks/ui/message-scroller'
 import {
@@ -70,12 +71,12 @@ function agentContent(blocks: AgentBlock[]): ReactNode[] {
         </Trace>,
       )
     } else if (block.kind === 'assistant') {
+      // Assistant text is unbubbled markdown, as in the AI Elements chat pattern; the cursor marks a reply still streaming.
       content.push(
-        <Bubble key={block.id} variant="ghost">
-          <BubbleContent className="whitespace-pre-wrap">
-            {block.text}{block.streaming && <span className="dorks-cursor" aria-label="Streaming response" />}
-          </BubbleContent>
-        </Bubble>,
+        <div key={block.id} className="min-w-0">
+          <Markdown>{block.text}</Markdown>
+          {block.streaming && <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-foreground align-middle" aria-label="Streaming response" />}
+        </div>,
       )
     } else {
       content.push(
@@ -98,8 +99,11 @@ export function ChatMessages({ blocks }: { blocks: Block[] }) {
         <MessageScrollerItem key={entry.block.id} messageId={entry.block.id} scrollAnchor>
           <Message align="end">
             <MessageContent>
-              <Bubble align="end" variant="muted">
-                <BubbleContent>{entry.block.text}</BubbleContent>
+              <Bubble align="end">
+                {/* White in light and dark; no outline, since white against the panel fill already contrasts 1.2:1 or more (see packages/ui/README.md). `!` beats the bubble variant background. */}
+                <BubbleContent className="bg-user-bubble! text-user-bubble-foreground!">
+                  {entry.block.text}
+                </BubbleContent>
               </Bubble>
             </MessageContent>
           </Message>

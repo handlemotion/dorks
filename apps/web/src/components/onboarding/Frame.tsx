@@ -9,7 +9,7 @@ import { ONBOARDING_STEPS, type OnboardingStepId } from '../../lib/onboarding'
 export function Frame({ step, onBack, children }: { step: OnboardingStepId; onBack?: () => void; children: ReactNode }) {
   const index = ONBOARDING_STEPS.indexOf(step)
   return (
-    <div className="relative flex min-h-full flex-col text-foreground" data-testid="onboarding" data-step={step}>
+    <div className="app-backdrop relative flex min-h-svh flex-col text-foreground" data-testid="onboarding" data-step={step}>
       <div data-tauri-drag-region className="h-10 shrink-0" />
       {onBack && (
         <Button variant="ghost" size="sm" className="absolute top-12 left-4 text-muted-foreground" onClick={onBack}>

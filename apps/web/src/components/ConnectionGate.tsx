@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type FormEvent
 import { createClient } from '@dorks/client'
 import { DorksProvider, useConnection, useDorks, useSettingsState } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
+import { Input } from '@dorks/ui/input'
 import { clearConnection, currentConnection, DEFAULT_SERVER, normalizeServerUrl, saveConnection, type Connection } from '../lib/connection'
 import { onRuntimeConfig, setKeepAwake } from '../lib/desktop'
 
@@ -21,13 +22,13 @@ export function ConnectionGate({ children }: { children: ReactNode }) {
   const bootError = window.__DORKS__?.bootError
   if (bootError) {
     return (
-      <main className="gate">
-        <section className="gate-card">
-          <h1>Dorks could not start</h1>
+      <GateScreen>
+        <GateCard>
+          <GateTitle>Dorks could not start</GateTitle>
           <p role="alert">{bootError}</p>
           <p>Quit and reopen the app. If it keeps happening, open the server log from the menu bar icon.</p>
-        </section>
-      </main>
+        </GateCard>
+      </GateScreen>
     )
   }
   if (!conn) return <ConnectForm onConnect={(c) => setConn(c)} />
@@ -56,24 +57,24 @@ function Probe({ conn, onChange, onReplace, children }: { conn: Connection; onCh
     return conn.source === 'stored' ? (
       <ConnectForm initialUrl={conn.serverUrl} error="The server rejected that owner token." onConnect={onReplace} />
     ) : (
-      <main className="gate"><section className="gate-card"><h1>Token rejected</h1><p role="alert">The dorks server did not accept the app's owner token. Quit and reopen Dorks.</p></section></main>
+      <GateScreen><GateCard><GateTitle>Token rejected</GateTitle><p role="alert">The dorks server did not accept the app's owner token. Quit and reopen Dorks.</p></GateCard></GateScreen>
     )
   }
-  if (settings.status === 'loading') return <main className="gate"><p role="status">Connecting…</p></main>
+  if (settings.status === 'loading') return <GateScreen><p role="status" className="text-sm text-muted-foreground">Connecting…</p></GateScreen>
   if (settings.status === 'error' && !settings.data) {
     return (
-      <main className="gate">
-        <section className="gate-card">
-          <h1>Can’t reach the dorks server</h1>
+      <GateScreen>
+        <GateCard>
+          <GateTitle>Can’t reach the dorks server</GateTitle>
           <p role="alert">Nothing answered at <code>{conn.serverUrl}</code>. {conn.source === 'desktop' ? 'The app is still starting it. This page keeps retrying.' : 'Start the server, or connect to a different one. This page keeps retrying.'}</p>
           {conn.source === 'stored' && <Button variant="outline" onClick={onChange}>Change server</Button>}
-        </section>
-      </main>
+        </GateCard>
+      </GateScreen>
     )
   }
   return (
     <>
-      {connection.live === 'offline' && <p className="connection-banner" role="status">Reconnecting to the dorks server…</p>}
+      {connection.live === 'offline' && <p className="glass fixed inset-x-0 top-0 z-50 px-4 py-2 text-center text-sm" role="status">Reconnecting to the dorks server…</p>}
       <KeepAwake />
       {children}
     </>
@@ -93,16 +94,16 @@ function ConnectForm({ initialUrl, error, onConnect }: { initialUrl?: string; er
     onConnect({ serverUrl, token: token.trim(), source: 'stored' })
   }
   return (
-    <main className="gate">
-      <form className="gate-card" onSubmit={submit}>
-        <h1>Connect to your dorks server</h1>
-        <p>The desktop app does this for you. In a browser, enter the address of your local server and its owner token.</p>
-        <label>Server <input aria-label="server" value={url} onChange={(e) => setUrl(e.target.value)} autoComplete="off" spellCheck={false} /></label>
-        <label>Owner token <input aria-label="owner token" type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" /></label>
-        {(error || formError) && <p role="alert">{formError || error}</p>}
-        <Button type="submit">Connect</Button>
-      </form>
-    </main>
+    <GateScreen>
+      <GateCard as="form" onSubmit={submit}>
+        <GateTitle>Connect to your dorks server</GateTitle>
+        <p className="text-muted-foreground">The desktop app does this for you. In a browser, enter the address of your local server and its owner token.</p>
+        <label className="flex flex-col gap-1.5 font-medium">Server <Input aria-label="server" value={url} onChange={(e) => setUrl(e.target.value)} autoComplete="off" spellCheck={false} /></label>
+        <label className="flex flex-col gap-1.5 font-medium">Owner token <Input aria-label="owner token" type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" /></label>
+        {(error || formError) && <p role="alert" className="text-destructive">{formError || error}</p>}
+        <Button type="submit" size="lg">Connect</Button>
+      </GateCard>
+    </GateScreen>
   )
 }
 
@@ -114,4 +115,22 @@ function KeepAwake() {
     setKeepAwake(active)
   }, [active])
   return null
+}
+
+/** Full-window states before the app is usable (connect, rejected token, server unreachable), on the theme's glass backdrop. */
+function GateScreen({ children }: { children: ReactNode }) {
+  return <main className="app-backdrop flex min-h-svh items-center justify-center p-6 text-foreground">{children}</main>
+}
+
+function GateCard({ as = 'section', className = '', children, ...props }: { as?: 'section' | 'form'; className?: string; children: ReactNode } & React.ComponentProps<'form'>) {
+  const Tag = as as 'form'
+  return (
+    <Tag className={`glass-strong flex w-full max-w-md flex-col gap-4 rounded-3xl p-8 text-sm ${className}`} {...props}>
+      {children}
+    </Tag>
+  )
+}
+
+function GateTitle({ children }: { children: ReactNode }) {
+  return <h1 className="text-xl font-semibold tracking-tight">{children}</h1>
 }

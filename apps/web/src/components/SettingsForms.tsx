@@ -2,6 +2,10 @@ import { useState } from 'react'
 import { useDorksClient, useSecretNames, useSnapshot } from '@dorks/client/react'
 import type { Settings } from '@dorks/client'
 import { Button } from '@dorks/ui/button'
+import { Input } from '@dorks/ui/input'
+import { NativeSelect, NativeSelectOption } from '@dorks/ui/native-select'
+import { Progress } from '@dorks/ui/progress'
+import { Textarea } from '@dorks/ui/textarea'
 import { isDesktop, readGhToken, setPublicUrl } from '../lib/desktop'
 import { usePending } from '../lib/pending'
 
@@ -9,7 +13,7 @@ import { usePending } from '../lib/pending'
 // only ever says whether one is stored, and the input is cleared after saving.
 
 function Saved({ show }: { show: boolean }) {
-  return show ? <p role="status">Saved.</p> : null
+  return show ? <p role="status" className="text-sm text-muted-foreground">Saved.</p> : null
 }
 
 export function BoatForm({ settings, onSaved }: { settings: Settings; onSaved?: () => void }) {
@@ -31,12 +35,12 @@ export function BoatForm({ settings, onSaved }: { settings: Settings; onSaved?: 
         })
       }}
     >
-      <label>Boat API key <input aria-label="boat api key" type="password" autoComplete="off" placeholder={settings.boatKey ? 'A key is saved' : 'boat_…'} value={key} onChange={(e) => setKey(e.target.value)} /></label>
-      <label>Organization (optional) <input aria-label="boat organization" autoComplete="off" value={org} onChange={(e) => setOrg(e.target.value)} placeholder="only to bill a team wallet" /></label>
+      <label>Boat API key <Input aria-label="boat api key" type="password" autoComplete="off" placeholder={settings.boatKey ? 'A key is saved' : 'boat_…'} value={key} onChange={(e) => setKey(e.target.value)} /></label>
+      <label>Organization (optional) <Input aria-label="boat organization" autoComplete="off" value={org} onChange={(e) => setOrg(e.target.value)} placeholder="only to bill a team wallet" /></label>
       <Button type="submit" disabled={pending || (!key && !settings.boatKey)}>{pending ? 'Saving…' : 'Save'}</Button>
-      <small>Create the key in your Boat account with access to create, list, use and delete sandboxes. It is stored encrypted on this machine and never shown again.</small>
+      <small className="text-muted-foreground">Create the key in your Boat account with access to create, list, use and delete sandboxes. It is stored encrypted on this machine and never shown again.</small>
       <Saved show={saved} />
-      {error && <p role="alert">{error}</p>}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </form>
   )
 }
@@ -70,7 +74,7 @@ export function SnapshotForm({ settings, onSaved }: { settings: Settings; onSave
       {building && (
         <div role="status" aria-label="snapshot build progress" data-testid="snapshot-progress">
           <p><strong>Step {snap.stepIndex + 1} of {snap.stepCount}:</strong> {snap.message}</p>
-          <progress max={snap.stepCount} value={snap.stepIndex + 1} aria-label="build progress" />
+          <Progress value={((snap.stepIndex + 1) / snap.stepCount) * 100} aria-label="build progress" />
         </div>
       )}
 
@@ -96,7 +100,7 @@ export function SnapshotForm({ settings, onSaved }: { settings: Settings; onSave
         {snap.state !== 'failed' && snap.managed && !snap.stale && !building && button('Rebuild', { force: true, variant: 'outline' })}
         {snap.state !== 'failed' && !snap.managed && button('Prepare Boat')}
       </div>
-      {error && <p role="alert">{error}</p>}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
 
       <details>
         <summary>Use a snapshot I built myself</summary>
@@ -112,10 +116,10 @@ export function SnapshotForm({ settings, onSaved }: { settings: Settings; onSave
             })
           }}
         >
-          <label>Base snapshot <input aria-label="base snapshot" value={manual} onChange={(e) => setManual(e.target.value)} placeholder="dorks-base-20260101" /></label>
+          <label>Base snapshot <Input aria-label="base snapshot" value={manual} onChange={(e) => setManual(e.target.value)} placeholder="dorks-base-20260101" /></label>
           <Button type="submit" variant="outline" disabled={manualRun.pending || !manual.trim()}>{manualRun.pending ? 'Saving…' : 'Save snapshot'}</Button>
           <Saved show={manualSaved} />
-          {manualRun.error && <p role="alert">{manualRun.error}</p>}
+          {manualRun.error && <p role="alert" className="text-sm text-destructive">{manualRun.error}</p>}
         </form>
       </details>
     </>
@@ -143,12 +147,12 @@ export function CodexForm({ settings, onSaved }: { settings: Settings; onSaved?:
           })
         }}
       >
-        <label>Boat environment <input aria-label="Boat environment" value={environment} onChange={(e) => setEnvironment(e.target.value)} placeholder="dorks-codex" /></label>
+        <label>Boat environment <Input aria-label="Boat environment" value={environment} onChange={(e) => setEnvironment(e.target.value)} placeholder="dorks-codex" /></label>
         <Button type="submit" disabled={pending || !environment.trim()}>{pending ? 'Saving…' : 'Save environment'}</Button>
       </form>
-      <small>{current ? `Using ${current} for new Codex sandboxes. Boat checks its access settings when each sandbox starts; this does not confirm ChatGPT is connected yet.` : 'A separate Boat environment is needed before creating Codex sessions. Dorks does not store ChatGPT tokens.'}</small>
+      <small className="text-muted-foreground">{current ? `Using ${current} for new Codex sandboxes. Boat checks its access settings when each sandbox starts; this does not confirm ChatGPT is connected yet.` : 'A separate Boat environment is needed before creating Codex sessions. Dorks does not store ChatGPT tokens.'}</small>
       <Saved show={saved} />
-      {error && <p role="alert">{error}</p>}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </>
   )
 }
@@ -172,12 +176,12 @@ export function ClaudeForm({ settings, onSaved }: { settings: Settings; onSaved?
           })
         }}
       >
-        <input aria-label="claude token" type="password" autoComplete="off" placeholder={settings.claudeToken ? 'A token is saved' : 'sk-ant-oat01-…'} value={token} onChange={(e) => setToken(e.target.value)} />
+        <Input aria-label="claude token" type="password" autoComplete="off" placeholder={settings.claudeToken ? 'A token is saved' : 'sk-ant-oat01-…'} value={token} onChange={(e) => setToken(e.target.value)} />
         <Button type="submit" disabled={pending || !token.trim()}>Save token</Button>
       </form>
-      <small>Run <code>claude setup-token</code> to get one. Stored encrypted; it is never shown again. Saving a new one replaces the old.</small>
+      <small className="text-muted-foreground">Run <code>claude setup-token</code> to get one. Stored encrypted; it is never shown again. Saving a new one replaces the old.</small>
       <Saved show={saved} />
-      {error && <p role="alert">{error}</p>}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </>
   )
 }
@@ -200,12 +204,12 @@ export function GithubForm({ settings, onSaved }: { settings: Settings; onSaved?
       <p data-testid="github-status">{settings.github.configured ? `GitHub token saved${settings.github.login ? ` (${settings.github.login})` : ''}.` : 'No GitHub token yet.'}</p>
       <p>Dorks acts on GitHub as whoever owns this token: it clones, pushes and opens pull requests, and watches the PRs it opened. Use a fine-grained personal access token limited to the repositories you want it to work on, with read and write access to contents, pull requests, issues and workflows. The token is sent to your sandbox so the agent can push.</p>
       <form onSubmit={(e) => { e.preventDefault(); setSaved(false); setGhError(''); void save(token.trim()) }}>
-        <input aria-label="github token" type="password" autoComplete="off" placeholder={settings.github.configured ? 'A token is saved' : 'github_pat_…'} value={token} onChange={(e) => setToken(e.target.value)} />
+        <Input aria-label="github token" type="password" autoComplete="off" placeholder={settings.github.configured ? 'A token is saved' : 'github_pat_…'} value={token} onChange={(e) => setToken(e.target.value)} />
         <Button type="submit" disabled={pending || !token.trim()}>Save token</Button>
       </form>
       {isDesktop() && (
         <div>
-          <p><small>Or reuse the account your GitHub CLI is signed in to. Its login token usually has broad access to all your repositories, and it will be sent to your cloud sandbox. A scoped token above is safer.</small></p>
+          <p><small className="text-muted-foreground">Or reuse the account your GitHub CLI is signed in to. Its login token usually has broad access to all your repositories, and it will be sent to your cloud sandbox. A scoped token above is safer.</small></p>
           <Button
             type="button"
             variant="outline"
@@ -224,7 +228,7 @@ export function GithubForm({ settings, onSaved }: { settings: Settings; onSaved?
         </div>
       )}
       <Saved show={saved} />
-      {(error || ghError) && <p role="alert">{error || ghError}</p>}
+      {(error || ghError) && <p role="alert" className="text-sm text-destructive">{error || ghError}</p>}
     </>
   )
 }
@@ -250,18 +254,18 @@ export function CommentPolicyForm({ settings }: { settings: Settings }) {
     >
       <label>
         Who can wake a session with a PR comment{' '}
-        <select aria-label="comment policy mode" value={mode} onChange={(e) => setMode(e.target.value as 'all' | 'allowlist')}>
-          <option value="all">Anyone</option>
-          <option value="allowlist">Only these GitHub logins</option>
-        </select>
+        <NativeSelect aria-label="comment policy mode" value={mode} onChange={(e) => setMode(e.target.value as 'all' | 'allowlist')}>
+          <NativeSelectOption value="all">Anyone</NativeSelectOption>
+          <NativeSelectOption value="allowlist">Only these GitHub logins</NativeSelectOption>
+        </NativeSelect>
       </label>
       {mode === 'allowlist' && (
-        <label>Logins (one per line or comma separated; bots by login, e.g. coderabbitai[bot]) <textarea aria-label="allowed logins" rows={3} value={logins} onChange={(e) => setLogins(e.target.value)} /></label>
+        <label>Logins (one per line or comma separated; bots by login, e.g. coderabbitai[bot]) <Textarea aria-label="allowed logins" rows={3} value={logins} onChange={(e) => setLogins(e.target.value)} /></label>
       )}
       <Button type="submit" disabled={pending || (mode === 'allowlist' && list.length === 0)}>{pending ? 'Saving…' : 'Save'}</Button>
-      <small>Comments written by the token’s own account are always ignored: they are the agent’s own.</small>
+      <small className="text-muted-foreground">Comments written by the token’s own account are always ignored: they are the agent’s own.</small>
       <Saved show={saved} />
-      {error && <p role="alert">{error}</p>}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </form>
   )
 }
@@ -274,7 +278,7 @@ export function CliSecrets() {
   const { run, pending, error } = usePending()
   return (
     <>
-      <p><small>Exported as environment variables inside the sandbox. Values are never displayed.</small></p>
+      <p><small className="text-muted-foreground">Exported as environment variables inside the sandbox. Values are never displayed.</small></p>
       <ul aria-label="secret names">
         {names?.map((n) => (
           <li key={n}>
@@ -284,11 +288,11 @@ export function CliSecrets() {
       </ul>
       {names?.length === 0 && <p>No secrets yet.</p>}
       <form onSubmit={(e) => { e.preventDefault(); void run(async () => { await actions.setSecret(name.trim(), value); setName(''); setValue('') }) }}>
-        <input aria-label="secret name" placeholder="NAME_IN_CAPS" value={name} onChange={(e) => setName(e.target.value)} />
-        <input aria-label="secret value" type="password" autoComplete="off" value={value} onChange={(e) => setValue(e.target.value)} />
+        <Input aria-label="secret name" placeholder="NAME_IN_CAPS" value={name} onChange={(e) => setName(e.target.value)} />
+        <Input aria-label="secret value" type="password" autoComplete="off" value={value} onChange={(e) => setValue(e.target.value)} />
         <Button type="submit" disabled={pending || !name.trim() || !value}>Save secret</Button>
       </form>
-      {error && <p role="alert">{error}</p>}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </>
   )
 }
@@ -301,11 +305,11 @@ export function SleepMinutes({ current }: { current: number }) {
   return (
     <>
       <form onSubmit={(e) => { e.preventDefault(); void run(() => actions.updateSettings({ sleepMinutes: n })) }}>
-        <input aria-label="sleep minutes" type="number" min={0.05} max={1440} step="any" value={minutes} onChange={(e) => setMinutes(e.target.value)} /> minutes
+        <Input aria-label="sleep minutes" type="number" min={0.05} max={1440} step="any" value={minutes} onChange={(e) => setMinutes(e.target.value)} /> minutes
         <Button type="submit" disabled={pending || !Number.isFinite(n) || minutes.trim() === ''}>Save</Button>
       </form>
-      <small>Currently <span data-testid="sleep-current">{current}</span> min. An idle sandbox is paused after this long.</small>
-      {error && <p role="alert">{error}</p>}
+      <small className="text-muted-foreground">Currently <span data-testid="sleep-current">{current}</span> min. An idle sandbox is paused after this long.</small>
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </>
   )
 }
@@ -321,12 +325,12 @@ export function PublicUrlForm({ settings }: { settings: Settings }) {
     <>
       <p data-testid="tunnel-status">{settings.publicUrlConfigured ? 'A public URL is set.' : 'No public URL yet.'}{tunnel ? ` Tunnel: ${tunnel.kind}, ${tunnel.state}${tunnel.error ? ` (${tunnel.error})` : ''}.` : ''}</p>
       <form onSubmit={(e) => { e.preventDefault(); setSaved(false); void run(async () => { await setPublicUrl(url.trim() || null); setSaved(true) }) }}>
-        <label>Public URL <input aria-label="public url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://dorks.example.com" /></label>
+        <label>Public URL <Input aria-label="public url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://dorks.example.com" /></label>
         <Button type="submit" disabled={pending}>{pending ? 'Saving…' : 'Save and restart'}</Button>
       </form>
-      <small>Boat sandboxes connect out to this address, which must forward to this machine’s bridge port. Only the bridge is exposed, never the app’s own API.</small>
+      <small className="text-muted-foreground">Boat sandboxes connect out to this address, which must forward to this machine’s bridge port. Only the bridge is exposed, never the app’s own API.</small>
       <Saved show={saved} />
-      {error && <p role="alert">{error}</p>}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </>
   )
 }

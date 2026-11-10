@@ -8,21 +8,30 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from '@dorks/ui/message-scroller'
-import { AppShell } from '../components/AppShell'
+import { FrameLayout } from '../components/AppFrame'
+import { AppSidebarView } from '../components/AppSidebar'
 import { ChatMessages } from '../components/ChatBlock'
 import { Composer, type AgentProvider } from '../components/ChatComposer'
-import { ChatSidebar } from '../components/ChatSidebar'
+import { PageHeader } from '../components/PageHeader'
 
 const initialBlocks: Block[] = [
   { kind: 'user', id: 'u1', text: 'Fix the flaky bridge reconnect after the box wakes. Check the current tests too.' },
   { kind: 'tool', id: 't1', name: 'Bash', summary: "rg -n 'wake|reconnect' infra/bridge/src", status: 'ok', preview: 'infra/bridge/src/claude.ts:223: resume box\ninfra/bridge/src/claude.ts:228: reconnect bridge' },
   { kind: 'tool', id: 't2', name: 'Bash', summary: 'pnpm --filter @dorks/bridge test', status: 'error', preview: 'FAIL reconnect restores queued messages\nError: timed out waiting for bridge' },
-  { kind: 'assistant', id: 'a1', text: 'The box resumes before the bridge is ready. Queued messages can arrive during that gap. I’ll add a regression test for the race.', streaming: false },
+  { kind: 'assistant', id: 'a1', text: 'The box resumes before the bridge is ready. Queued messages can arrive during that gap. I’ll add a regression test for the race.\n\n- Wait for the bridge handshake before flushing\n- Cover it with a test\n\n```ts\nawait bridge.ready()\n```', streaming: false },
   { kind: 'user', id: 'u2', text: 'Please cover the reconnect race with a test before changing the handler.' },
   { kind: 'tool', id: 't3', name: 'Bash', summary: 'pnpm --filter @dorks/bridge test', status: 'running' },
   { kind: 'assistant', id: 'a2', text: 'I added a regression test for a message arriving while the box is waking. I’m checking the dispatch order now.', streaming: true },
 ]
 
+const chats = [
+  { id: 'preview', title: 'Fix flaky bridge reconnect after wake', working: true, pr: { number: 142 } },
+  { id: 'two', title: 'Add dark mode toggle', working: false, pr: { number: 138 } },
+  { id: 'three', title: 'Upgrade to Node 24', working: false },
+  { id: 'four', title: 'Document the bridge protocol', working: true },
+]
+
+/** The app frame with a scripted conversation and no server: for looking at the design (dev builds only). */
 export function Demo() {
   const [blocks, setBlocks] = useState(initialBlocks)
   const [text, setText] = useState('')
@@ -46,43 +55,39 @@ export function Demo() {
   }
 
   return (
-    <AppShell layoutId="app-shell-chat-demo" sidebar={<ChatSidebar chats={[{ id: 'preview', title: 'Fix flaky bridge reconnect after wake', working: !stopped }]} chatTo="/dev/chat" orderKey="dorks.demo.chat-preview" />}>
-      <div className="dorks-page" data-preview>
-        <header className="dorks-header">
-          <div><h1>{showNew ? 'New session' : 'Session'}</h1></div>
-          <div className="dorks-header-actions">
-            <Button variant="ghost" size="sm" onClick={() => setShowNew(!showNew)}>{showNew ? 'Back to thread' : 'New session'}</Button>
-            <span className="text-muted-foreground">Mock preview · no backend</span>
-          </div>
-        </header>
+    <FrameLayout sidebar={<AppSidebarView chats={chats.map((c) => (c.id === 'preview' ? { ...c, working: !stopped } : c))} chatTo="/dev/chat" orderKey="dorks.demo.chat-preview" />}>
+      <div className="flex h-full min-h-0 flex-col" data-preview>
+        <PageHeader
+          title={showNew ? 'New session' : 'Fix flaky bridge reconnect after wake'}
+          subtitle={showNew ? 'Mock preview · no backend' : <>acme/demo · <span data-testid="state">{stopped ? 'idle' : 'working'}</span> · mock preview</>}
+          actions={<Button variant="ghost" size="sm" onClick={() => setShowNew(!showNew)}>{showNew ? 'Back to thread' : 'New session'}</Button>}
+        />
         {showNew ? (
-          <div className="dorks-empty">
-            <div className="dorks-empty-body">
-              <h2>What should we work on?</h2>
-              <p>Choose a repository and agent, then describe the change you want.</p>
+          <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col justify-center gap-8 px-4 py-8">
+            <div className="space-y-2">
+              <h2 className="text-3xl font-semibold tracking-tight">What should we work on?</h2>
+              <p className="text-muted-foreground">Choose a repository and agent, then describe the change you want.</p>
             </div>
-            <Composer text={text} setText={setText} repo={repo} setRepo={setRepo} provider={provider} setProvider={setProvider} onSubmit={send} pending={false} error="" />
+            <div className="-mx-4">
+              <Composer text={text} setText={setText} repo={repo} setRepo={setRepo} provider={provider} setProvider={setProvider} onSubmit={send} pending={false} error="" />
+            </div>
           </div>
         ) : (
-        <section className="dorks-thread" aria-label="thread">
-          <div className="dorks-thread-header">
-            <div><h2>Fix flaky bridge reconnect after wake</h2><p>acme/demo · <span data-testid="state">{stopped ? 'idle' : 'working'}</span></p></div>
-            <Button variant="ghost" size="sm" disabled>Archive</Button>
-          </div>
-          <MessageScrollerProvider autoScroll defaultScrollPosition="end">
-            <MessageScroller>
-              <MessageScrollerViewport aria-label="Session transcript">
-                <MessageScrollerContent className="dorks-transcript gap-6" data-testid="transcript">
-                  <ChatMessages blocks={blocks} />
-                </MessageScrollerContent>
-              </MessageScrollerViewport>
-              <MessageScrollerButton />
-            </MessageScroller>
-          </MessageScrollerProvider>
-          <Composer text={text} setText={setText} provider="codex" onSubmit={send} pending={false} error="" onStop={stopped ? undefined : stop} />
-        </section>
+          <section className="flex min-h-0 flex-1 flex-col" aria-label="thread">
+            <MessageScrollerProvider autoScroll defaultScrollPosition="end">
+              <MessageScroller>
+                <MessageScrollerViewport aria-label="Session transcript">
+                  <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-8 py-8" data-testid="transcript">
+                    <ChatMessages blocks={blocks} />
+                  </MessageScrollerContent>
+                </MessageScrollerViewport>
+                <MessageScrollerButton />
+              </MessageScroller>
+            </MessageScrollerProvider>
+            <Composer text={text} setText={setText} provider="codex" onSubmit={send} pending={false} error="" onStop={stopped ? undefined : stop} />
+          </section>
         )}
       </div>
-    </AppShell>
+    </FrameLayout>
   )
 }

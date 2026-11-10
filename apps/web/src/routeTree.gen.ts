@@ -15,7 +15,6 @@ import { Route as ConnAppRouteImport } from './routes/_conn/_app'
 import { Route as ConnOnboardingRouteImport } from './routes/_conn/onboarding'
 import { Route as DevAiElementsRouteImport } from './routes/dev.ai-elements'
 import { Route as DevChatRouteImport } from './routes/dev.chat'
-import { Route as DevSidebarRouteImport } from './routes/dev.sidebar'
 import { Route as ConnAppDorksRouteImport } from './routes/_conn/_app/dorks'
 import { Route as ConnAppSettingsRouteImport } from './routes/_conn/_app/settings'
 
@@ -47,11 +46,6 @@ const DevChatRoute = DevChatRouteImport.update({
   path: '/dev/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DevSidebarRoute = DevSidebarRouteImport.update({
-  id: '/dev/sidebar',
-  path: '/dev/sidebar',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ConnAppDorksRoute = ConnAppDorksRouteImport.update({
   id: '/dorks',
   path: '/dorks',
@@ -68,7 +62,6 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof ConnOnboardingRoute
   '/dev/ai-elements': typeof DevAiElementsRoute
   '/dev/chat': typeof DevChatRoute
-  '/dev/sidebar': typeof DevSidebarRoute
   '/dorks': typeof ConnAppDorksRoute
   '/settings': typeof ConnAppSettingsRoute
 }
@@ -77,7 +70,6 @@ export interface FileRoutesByTo {
   '/onboarding': typeof ConnOnboardingRoute
   '/dev/ai-elements': typeof DevAiElementsRoute
   '/dev/chat': typeof DevChatRoute
-  '/dev/sidebar': typeof DevSidebarRoute
   '/dorks': typeof ConnAppDorksRoute
   '/settings': typeof ConnAppSettingsRoute
 }
@@ -89,7 +81,6 @@ export interface FileRoutesById {
   '/_conn/onboarding': typeof ConnOnboardingRoute
   '/dev/ai-elements': typeof DevAiElementsRoute
   '/dev/chat': typeof DevChatRoute
-  '/dev/sidebar': typeof DevSidebarRoute
   '/_conn/_app/dorks': typeof ConnAppDorksRoute
   '/_conn/_app/settings': typeof ConnAppSettingsRoute
 }
@@ -100,7 +91,6 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/dev/ai-elements'
     | '/dev/chat'
-    | '/dev/sidebar'
     | '/dorks'
     | '/settings'
   fileRoutesByTo: FileRoutesByTo
@@ -109,7 +99,6 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/dev/ai-elements'
     | '/dev/chat'
-    | '/dev/sidebar'
     | '/dorks'
     | '/settings'
   id:
@@ -120,7 +109,6 @@ export interface FileRouteTypes {
     | '/_conn/onboarding'
     | '/dev/ai-elements'
     | '/dev/chat'
-    | '/dev/sidebar'
     | '/_conn/_app/dorks'
     | '/_conn/_app/settings'
   fileRoutesById: FileRoutesById
@@ -130,7 +118,6 @@ export interface RootRouteChildren {
   ConnRoute: typeof ConnRouteWithChildren
   DevAiElementsRoute: typeof DevAiElementsRoute
   DevChatRoute: typeof DevChatRoute
-  DevSidebarRoute: typeof DevSidebarRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -175,13 +162,6 @@ declare module '@tanstack/react-router' {
       path: '/dev/chat'
       fullPath: '/dev/chat'
       preLoaderRoute: typeof DevChatRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dev/sidebar': {
-      id: '/dev/sidebar'
-      path: '/dev/sidebar'
-      fullPath: '/dev/sidebar'
-      preLoaderRoute: typeof DevSidebarRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_conn/_app/dorks': {
@@ -231,7 +211,6 @@ const rootRouteChildren: RootRouteChildren = {
   ConnRoute: ConnRouteWithChildren,
   DevAiElementsRoute: DevAiElementsRoute,
   DevChatRoute: DevChatRoute,
-  DevSidebarRoute: DevSidebarRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

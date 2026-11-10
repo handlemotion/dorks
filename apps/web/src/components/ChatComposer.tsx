@@ -14,6 +14,10 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupText, InputGro
 
 export type AgentProvider = 'codex' | 'claude'
 
+/**
+ * The message box: a glass input group with the agent picker and send/stop buttons. With `repo` it is the "new session" form
+ * (the first message also names the repository).
+ */
 export function Composer({
   text,
   setText,
@@ -42,12 +46,15 @@ export function Composer({
   const formRef = useRef<HTMLFormElement>(null)
   const canSend = text.trim().length > 0 && !pending && !disabled && (repo === undefined || repo.trim().length > 0)
   return (
-    <div className="dorks-composer-wrap">
+    <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-5">
       <form ref={formRef} onSubmit={(e) => { e.preventDefault(); if (canSend) onSubmit() }}>
-        <InputGroup>
+        <InputGroup className="glass-strong rounded-3xl">
           {repo !== undefined && setRepo ? (
             <InputGroupAddon align="block-start">
-              <label className="dorks-repo">Repository <Input aria-label="repo" value={repo} onChange={(e) => setRepo(e.target.value)} disabled={pending || disabled} placeholder="owner/repo" /></label>
+              <label className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+                Repository
+                <Input aria-label="repo" value={repo} onChange={(e) => setRepo(e.target.value)} disabled={pending || disabled} placeholder="owner/repo" className="h-8 w-44 max-w-full" />
+              </label>
             </InputGroupAddon>
           ) : null}
           <InputGroupTextarea
@@ -62,7 +69,7 @@ export function Composer({
               }
             }}
             disabled={pending || disabled}
-            className="p-3"
+            className="min-h-14 p-3"
           />
           <InputGroupAddon align="block-end">
             {provider && setProvider ? (
@@ -96,7 +103,7 @@ export function Composer({
           </InputGroupAddon>
         </InputGroup>
       </form>
-      {error && <p className="dorks-error" role="alert">{error}</p>}
+      {error && <p className="mt-2 text-sm text-destructive" role="alert">{error}</p>}
     </div>
   )
 }
