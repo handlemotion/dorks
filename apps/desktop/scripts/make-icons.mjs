@@ -1,7 +1,7 @@
-// Draws the placeholder app icon and the menu-bar template icon with no dependencies (a PNG encoder in ~20 lines).
-// Replace the art whenever there is a real logo: `node scripts/make-icons.mjs && pnpm tauri icon icons/source.png`.
-//   icons/source.png  1024x1024 app icon source (rounded square with a ring and a dot)
+// Draws the menu-bar template icon with no dependencies (a PNG encoder in ~20 lines).
 //   icons/tray.png    44x44 monochrome template image for the menu bar (black on transparent; macOS tints it)
+// The app icon is no longer drawn here: its source is icons/source.svg (a #fafafa tile with onboarding's grey ring hanging from the
+// top edge), rendered to icons/source.png at 1024px; then `pnpm tauri icon src-tauri/icons/source.png`. `appIcon` below is unused.
 import { deflateSync, crc32 } from "node:zlib";
 import { mkdirSync, writeFileSync } from "node:fs";
 
@@ -70,6 +70,5 @@ function trayIcon(x, y, s) {
 }
 
 mkdirSync(new URL("../src-tauri/icons/", import.meta.url), { recursive: true });
-writeFileSync(new URL("../src-tauri/icons/source.png", import.meta.url), render(1024, appIcon));
 writeFileSync(new URL("../src-tauri/icons/tray.png", import.meta.url), render(44, trayIcon));
-console.log("wrote src-tauri/icons/source.png and tray.png");
+console.log("wrote src-tauri/icons/tray.png");

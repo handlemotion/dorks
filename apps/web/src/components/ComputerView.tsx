@@ -68,43 +68,6 @@ export function ComputerView({ source }: { source?: ComputerSource }) {
 
   return (
     <>
-      {/* The Browser tab's bar: 30px buttons, icons on the same x as the tab icons above. */}
-      <div className="flex h-10 shrink-0 items-center gap-0.5 border-b pr-1 pl-[5px]">
-        <StreamStatus state={error ? 'offline' : loaded ? 'live' : 'connecting'} />
-        <Tip label={control ? 'Hand back control' : source.working ? 'Take over (stops the agent)' : 'Take over'}>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className={`${BAR_BUTTON} aria-pressed:bg-brand/10 aria-pressed:text-brand`}
-            aria-label={control ? 'Hand back control' : 'Take over'}
-            aria-pressed={control}
-            disabled={!url}
-            onClick={() => void takeOver()}
-          >
-            <HandIcon />
-          </Button>
-        </Tip>
-        <Tip label="Reload">
-          <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="Reload" onClick={() => setReloads((n) => n + 1)}>
-            <RotateCwIcon />
-          </Button>
-        </Tip>
-        <Tip label="Open in a window">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className={BAR_BUTTON}
-            aria-label="Open in a window"
-            disabled={!fetchUrl}
-            onClick={() => {
-              // A URL of its own: the one in the frame is already spent.
-              void fetchUrl?.({ theme }).then((u) => window.open(u, '_blank', 'noopener,noreferrer'), () => {})
-            }}
-          >
-            <ExternalLinkIcon />
-          </Button>
-        </Tip>
-      </div>
       {error ? (
         <EmptyState figure="laptop" title="Couldn't show the screen" description={error}>
           <Button size="sm" variant="outline" onClick={() => setReloads((n) => n + 1)}>Try again</Button>
@@ -127,6 +90,43 @@ export function ComputerView({ source }: { source?: ComputerSource }) {
       ) : (
         <div className="flex-1" />
       )}
+      {/* Under the screen, like a player's controls: 30px buttons, the status dot on the same x as the tab icons. */}
+      <div className="flex h-10 shrink-0 items-center gap-0.5 border-t pr-1 pl-[5px]">
+        <StreamStatus state={error ? 'offline' : loaded ? 'live' : 'connecting'} />
+        <Tip side="top" label={control ? 'Hand back control' : source.working ? 'Take over (stops the agent)' : 'Take over'}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={`${BAR_BUTTON} aria-pressed:bg-brand/10 aria-pressed:text-brand`}
+            aria-label={control ? 'Hand back control' : 'Take over'}
+            aria-pressed={control}
+            disabled={!url}
+            onClick={() => void takeOver()}
+          >
+            <HandIcon />
+          </Button>
+        </Tip>
+        <Tip side="top" label="Reload">
+          <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="Reload" onClick={() => setReloads((n) => n + 1)}>
+            <RotateCwIcon />
+          </Button>
+        </Tip>
+        <Tip side="top" label="Open in a window">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={BAR_BUTTON}
+            aria-label="Open in a window"
+            disabled={!fetchUrl}
+            onClick={() => {
+              // A URL of its own: the one in the frame is already spent.
+              void fetchUrl?.({ theme }).then((u) => window.open(u, '_blank', 'noopener,noreferrer'), () => {})
+            }}
+          >
+            <ExternalLinkIcon />
+          </Button>
+        </Tip>
+      </div>
     </>
   )
 }
