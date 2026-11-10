@@ -25,7 +25,7 @@ function Settings() {
           <li data-testid="check-tunnel">{settings.publicUrlConfigured ? '✅' : '⬜'} Public URL for sandboxes (the tunnel)</li>
         </ul>
         {!settings.publicUrlConfigured && <p role="status">No public URL is configured, so sandboxes cannot reach this machine. The desktop app sets it up; when running the server by hand, set <code>DORKS_PUBLIC_URL</code>.</p>}
-        <p><Link to="/setup">Run the guided setup</Link></p>
+        <p><Link to="/onboarding">Run the guided setup</Link></p>
       </section>
       <section className="setup-step">
         <h2>Boat</h2>

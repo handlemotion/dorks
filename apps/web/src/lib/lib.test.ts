@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Settings } from '@dorks/client'
 import { normalizeServerUrl, resolveConnection, STORAGE_TOKEN, STORAGE_URL } from './connection'
-import { canCreate, firstIncomplete, isSetupComplete, stepDone } from './onboarding'
+import { canCreate, firstIncomplete, firstOnboardingStep, isSetupComplete, onboardingDone, stepDone } from './onboarding'
 
 const memory = (init: Record<string, string> = {}) => {
   const m = new Map(Object.entries(init))
@@ -76,5 +76,28 @@ describe('onboarding', () => {
     expect(stepDone({ ...base, boatEnvironment: 'e' }).agents).toBe(true)
     expect(canCreate({ ...base, boatKey: true, baseSnapshotId: 's', github: { configured: true } })).toBe(true)
     expect(isSetupComplete({ ...base, boatKey: true, baseSnapshotId: 's', github: { configured: true } })).toBe(false)
+  })
+})
+
+describe('first-run flow', () => {
+  const fresh = { welcomed: false, tunnelSkipped: false }
+  const configured = { ...base, boatKey: true, baseSnapshotId: 's', claudeToken: true, github: { configured: true } }
+
+  it('starts a brand-new install at the welcome page', () => {
+    expect(firstOnboardingStep(base, fresh)).toBe('welcome')
+    expect(firstOnboardingStep(base, { ...fresh, welcomed: true })).toBe('boat')
+  })
+
+  it('resumes at the first step the server says is missing, and never re-greets a configured install', () => {
+    expect(firstOnboardingStep({ ...base, boatKey: true }, fresh)).toBe('prepare')
+    expect(firstOnboardingStep({ ...base, boatKey: true, baseSnapshotId: 's' }, fresh)).toBe('agent')
+    expect(firstOnboardingStep({ ...base, boatKey: true, baseSnapshotId: 's', claudeToken: true }, fresh)).toBe('github')
+    expect(onboardingDone({ ...base, boatKey: true }, fresh).welcome).toBe(true)
+  })
+
+  it('treats the public URL as the only optional step', () => {
+    expect(firstOnboardingStep(configured, fresh)).toBe('tunnel')
+    expect(firstOnboardingStep(configured, { ...fresh, tunnelSkipped: true })).toBe('done')
+    expect(firstOnboardingStep({ ...configured, publicUrlConfigured: true }, fresh)).toBe('done')
   })
 })

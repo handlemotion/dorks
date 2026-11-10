@@ -12,7 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ConnRouteImport } from './routes/_conn'
 import { Route as ConnAppRouteImport } from './routes/_conn/_app'
-import { Route as ConnSetupRouteImport } from './routes/_conn/setup'
+import { Route as ConnOnboardingRouteImport } from './routes/_conn/onboarding'
 import { Route as DevAiElementsRouteImport } from './routes/dev.ai-elements'
 import { Route as DevChatRouteImport } from './routes/dev.chat'
 import { Route as DevSidebarRouteImport } from './routes/dev.sidebar'
@@ -32,9 +32,9 @@ const ConnAppRoute = ConnAppRouteImport.update({
   id: '/_app',
   getParentRoute: () => ConnRoute,
 } as any)
-const ConnSetupRoute = ConnSetupRouteImport.update({
-  id: '/setup',
-  path: '/setup',
+const ConnOnboardingRoute = ConnOnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
   getParentRoute: () => ConnRoute,
 } as any)
 const DevAiElementsRoute = DevAiElementsRouteImport.update({
@@ -65,7 +65,7 @@ const ConnAppSettingsRoute = ConnAppSettingsRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/setup': typeof ConnSetupRoute
+  '/onboarding': typeof ConnOnboardingRoute
   '/dev/ai-elements': typeof DevAiElementsRoute
   '/dev/chat': typeof DevChatRoute
   '/dev/sidebar': typeof DevSidebarRoute
@@ -74,7 +74,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/setup': typeof ConnSetupRoute
+  '/onboarding': typeof ConnOnboardingRoute
   '/dev/ai-elements': typeof DevAiElementsRoute
   '/dev/chat': typeof DevChatRoute
   '/dev/sidebar': typeof DevSidebarRoute
@@ -86,7 +86,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_conn': typeof ConnRouteWithChildren
   '/_conn/_app': typeof ConnAppRouteWithChildren
-  '/_conn/setup': typeof ConnSetupRoute
+  '/_conn/onboarding': typeof ConnOnboardingRoute
   '/dev/ai-elements': typeof DevAiElementsRoute
   '/dev/chat': typeof DevChatRoute
   '/dev/sidebar': typeof DevSidebarRoute
@@ -97,7 +97,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/setup'
+    | '/onboarding'
     | '/dev/ai-elements'
     | '/dev/chat'
     | '/dev/sidebar'
@@ -106,7 +106,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/setup'
+    | '/onboarding'
     | '/dev/ai-elements'
     | '/dev/chat'
     | '/dev/sidebar'
@@ -117,7 +117,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_conn'
     | '/_conn/_app'
-    | '/_conn/setup'
+    | '/_conn/onboarding'
     | '/dev/ai-elements'
     | '/dev/chat'
     | '/dev/sidebar'
@@ -156,11 +156,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConnAppRouteImport
       parentRoute: typeof ConnRoute
     }
-    '/_conn/setup': {
-      id: '/_conn/setup'
-      path: '/setup'
-      fullPath: '/setup'
-      preLoaderRoute: typeof ConnSetupRouteImport
+    '/_conn/onboarding': {
+      id: '/_conn/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof ConnOnboardingRouteImport
       parentRoute: typeof ConnRoute
     }
     '/dev/ai-elements': {
@@ -216,12 +216,12 @@ const ConnAppRouteWithChildren =
 
 interface ConnRouteChildren {
   ConnAppRoute: typeof ConnAppRouteWithChildren
-  ConnSetupRoute: typeof ConnSetupRoute
+  ConnOnboardingRoute: typeof ConnOnboardingRoute
 }
 
 const ConnRouteChildren: ConnRouteChildren = {
   ConnAppRoute: ConnAppRouteWithChildren,
-  ConnSetupRoute: ConnSetupRoute,
+  ConnOnboardingRoute: ConnOnboardingRoute,
 }
 
 const ConnRouteWithChildren = ConnRoute._addFileChildren(ConnRouteChildren)

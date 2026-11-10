@@ -27,5 +27,44 @@ export const firstIncomplete = (s: Settings): StepId | null => {
   return STEPS.find((step) => !done[step.id])?.id ?? null
 }
 
-/** Set by "Skip for now" so the dorks page does not bounce back to setup in the same browser session. */
-export const SETUP_SKIPPED_KEY = 'dorks.setupSkipped'
+// ---- The full-page first-run flow (routes/_conn/onboarding.tsx) --------------------------------------------------------
+
+export type OnboardingStepId = 'welcome' | 'boat' | 'prepare' | 'agent' | 'github' | 'tunnel' | 'done'
+
+export const ONBOARDING_STEPS: OnboardingStepId[] = ['welcome', 'boat', 'prepare', 'agent', 'github', 'tunnel', 'done']
+
+/** Only the public URL can be skipped: everything else is needed before a session can start. */
+export const OPTIONAL_STEPS: ReadonlySet<OnboardingStepId> = new Set(['tunnel'])
+
+/** Remembered in this browser/webview: the owner pressed Get started, or skipped the public URL. */
+export const WELCOMED_KEY = 'dorks.welcomed'
+export const TUNNEL_SKIPPED_KEY = 'dorks.tunnelSkipped'
+
+export interface OnboardingFlags {
+  welcomed: boolean
+  tunnelSkipped: boolean
+}
+
+export const readFlags = (): OnboardingFlags => ({
+  welcomed: localStorage.getItem(WELCOMED_KEY) === '1',
+  tunnelSkipped: localStorage.getItem(TUNNEL_SKIPPED_KEY) === '1',
+})
+
+/** Whether each onboarding step needs nothing more from the owner. `done` is never done: it is where the flow ends. */
+export const onboardingDone = (s: Settings, f: OnboardingFlags): Record<OnboardingStepId, boolean> => {
+  const d = stepDone(s)
+  return {
+    // Anything already configured means this is not a first run, so skip the greeting.
+    welcome: f.welcomed || d.boat || d.snapshot || d.agents || d.github,
+    boat: d.boat,
+    prepare: d.snapshot,
+    agent: d.agents,
+    github: d.github,
+    tunnel: s.publicUrlConfigured || f.tunnelSkipped,
+    done: false,
+  }
+}
+
+/** Where a returning owner resumes: the first step that is not done, ending at `done`. */
+export const firstOnboardingStep = (s: Settings, f: OnboardingFlags): OnboardingStepId =>
+  ONBOARDING_STEPS.find((id) => !onboardingDone(s, f)[id]) ?? 'done'

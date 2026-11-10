@@ -60,6 +60,16 @@ export async function setPublicUrl(url: string | null): Promise<void> {
   }
 }
 
+export type WindowMode = 'onboarding' | 'app'
+
+/**
+ * Tells the shell which window chrome to show: `onboarding` hides the traffic lights, `app` shows them (a no-op outside the
+ * app). Safe to call repeatedly; an older shell without the command just keeps its default chrome.
+ */
+export function setWindowMode(mode: WindowMode) {
+  if (isDesktop()) void invoke('set_window_mode', { mode }).catch(() => {})
+}
+
 /** Calls `handler` when the shell publishes a changed config (for example after the public URL changed). Returns an unsubscribe. */
 export function onRuntimeConfig(handler: () => void): () => void {
   const listen = window.__TAURI__?.event?.listen

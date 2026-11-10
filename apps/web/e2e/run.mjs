@@ -114,40 +114,72 @@ try {
   await click("Connect");
 
   // ---- first-run setup (a fresh server is unconfigured) --------------------------------------------------------------------
-  const landed = await (await page.waitForFunction(() => (/Set up Dorks/.test(document.body.innerText) ? "setup" : document.querySelector('[data-onboarding="complete"]') ? "app" : false), { timeout: 15000 })).jsonValue();
-  if (landed === "setup") {
-    check("unconfigured server sends the owner to setup", page.url().includes("#/setup"), page.url());
-    await shot("setup-boat");
+  const landed = await (await page.waitForFunction(() => (document.querySelector('[data-testid="onboarding"]') ? "onboarding" : document.querySelector('[data-onboarding="complete"]') ? "app" : false), { timeout: 15000 })).jsonValue();
+  if (landed === "onboarding") {
+    const waitStep = (name) => page.waitForFunction((n) => document.querySelector('[data-testid="onboarding"]')?.getAttribute("data-step") === n, { timeout: 15000 }, name);
+    const clickEnabled = async (label) => {
+      await page.waitForFunction((l) => [...document.querySelectorAll("button")].some((b) => b.textContent.trim() === l && !b.disabled), { timeout: 15000 }, label);
+      await click(label);
+    };
+    check("an unconfigured server sends the owner to onboarding", page.url().includes("#/onboarding"), page.url());
+    await waitStep("welcome");
+    check("onboarding is a bare page: no sidebar or app chrome", !(await page.$(".app-shell, .app-main")));
+    check("the first page is the welcome", /Welcome to Dorks/.test(await text()));
+    await shot("onboarding-1-welcome");
+    await clickEnabled("Get started");
+
+    await waitStep("boat");
+    check("Continue waits for a Boat key", await page.$eval('form button[type="submit"]', (b) => b.disabled));
+    await shot("onboarding-2-boat");
     await fill("boat api key", "boat_e2e_key");
-    await click("Save");
-    await waitText(/Prepare Boat/);
-    await shot("setup-snapshot");
+    await clickEnabled("Continue");
+
+    await waitStep("prepare");
+    // Resumable: the server's settings, not the browser, decide where onboarding starts.
+    await page.reload({ waitUntil: "networkidle2" });
+    await waitStep("prepare");
+    check("reopening onboarding resumes at the first missing step", true);
+    await shot("onboarding-3-prepare");
     await click("Prepare Boat");
     await waitText(/Step \d of 7/, 10000);
     check("Prepare Boat shows the build's progress", true);
-    await shot("setup-snapshot-building");
+    await shot("onboarding-3-prepare-building");
     await waitText(/Ready\. Sessions start from/, 30000);
     check("Prepare Boat finishes and the new snapshot is in use", true);
-    await shot("setup-snapshot-ready");
-    await page.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Next" && !b.disabled), { timeout: 10000 });
-    await click("Next");
+    await shot("onboarding-3-prepare-ready");
+    await clickEnabled("Continue");
+
+    await waitStep("agent");
+    await shot("onboarding-4-agent");
     await fill("Boat environment", "dorks-codex");
-    await click("Save environment");
-    await page.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Next" && !b.disabled), { timeout: 10000 });
-    await click("Next");
-    await waitText(/Give the agent a GitHub token/);
-    await shot("setup-github");
+    await clickEnabled("Continue");
+
+    await waitStep("github");
+    await shot("onboarding-5-github");
+    check("the GitHub step lists the permissions the token needs", /Contents/.test(await page.$eval("details", (d) => ((d.open = true), d.textContent))));
     await fill("github token", "github_pat_e2e");
-    await click("Save token");
-    await waitText(/GitHub token saved/);
-    check("setup walks Boat key, snapshot, agent and GitHub token", true);
-    await page.waitForFunction(() => [...document.querySelectorAll("a,button")].some((b) => b.textContent.trim() === "Start your first session" && !b.disabled), { timeout: 10000 });
-    await click("Start your first session");
+    await clickEnabled("Continue");
+
+    await waitStep("tunnel");
+    await shot("onboarding-6-tunnel");
+    // A configured server shows the address and Continue; an unconfigured one explains what breaks and offers Skip.
+    if (await page.$('[data-testid="tunnel-status"]')) {
+      check("a configured public URL is shown and needs no skip", !/Skip for now/.test(await text()));
+      await clickEnabled("Continue");
+    } else {
+      check("the public URL step says what breaks without it", /sessions cannot start/i.test(await text()));
+      await click("Skip for now");
+    }
+
+    await waitStep("done");
+    await shot("onboarding-7-done");
+    check("onboarding walks welcome, Boat key, snapshot, agent, GitHub, public URL and done", true);
+    await clickEnabled("Start your first session");
   }
 
   // ---- first session -------------------------------------------------------------------------------------------------------
   await page.waitForSelector('[data-onboarding="complete"]', { timeout: 15000 });
-  check("dorks page opens once setup is complete", true);
+  check("dorks page opens once onboarding is complete", true);
   await fill("repo", "acme/demo");
   await page.type('textarea[aria-label="first message"]', "build the demo");
   await page.click('form button[type="submit"]');

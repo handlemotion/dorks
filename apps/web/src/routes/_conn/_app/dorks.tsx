@@ -23,7 +23,7 @@ import {
 import { ChatMessages } from '../../../components/ChatBlock'
 import { Composer, type AgentProvider } from '../../../components/ChatComposer'
 import { useDisconnect } from '../../../components/ConnectionGate'
-import { canCreate, SETUP_SKIPPED_KEY } from '../../../lib/onboarding'
+import { canCreate } from '../../../lib/onboarding'
 import { usePending } from '../../../lib/pending'
 
 // The selected dork lives in the `dork` search param (not local state) so the sidebar can highlight it and the URL is shareable.
@@ -42,8 +42,8 @@ function Dorks() {
   const settings = useSettings()
   const disconnect = useDisconnect()
   const ready = !!settings && canCreate(settings)
-  // First run: send the owner through setup once; "Skip for now" there sets this flag so the page does not bounce back.
-  if (settings && !ready && !sessionStorage.getItem(SETUP_SKIPPED_KEY)) return <Navigate to="/setup" replace />
+  // First run: a session needs a Boat key, a snapshot and a GitHub token, so the owner finishes onboarding first.
+  if (settings && !ready) return <Navigate to="/onboarding" replace />
 
   return (
     <div className="dorks-page" data-onboarding={settings ? (ready ? 'complete' : 'incomplete') : 'loading'}>
@@ -58,11 +58,6 @@ function Dorks() {
           {disconnect && <Button variant="ghost" size="sm" onClick={disconnect}>Change server</Button>}
         </div>
       </header>
-      {settings && !ready && (
-        <p className="dorks-setup" role="status">
-          Setup is incomplete. <Link to="/setup">Finish setup</Link> before creating a session.
-        </p>
-      )}
       {settings && ready && !settings.boatEnvironment && (
         <p className="dorks-setup" role="status">
           For cloud Codex sessions, <Link to="/settings">connect ChatGPT to your Boat account once</Link>.
