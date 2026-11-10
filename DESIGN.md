@@ -19,7 +19,7 @@ rounded:
   panel: 11px                         # Chat details (its 6px tabs + 5px inset, concentric)
   bubble: 10px                        # user messages
   thumb: 8px                          # artifact thumbnails
-  composer: 18px                      # the AI Elements prompt input, as published (the one scoped exception)
+  composer: 15px                      # the AI Elements prompt input (the one scoped exception)
   pill: 9999px                        # onboarding's step buttons only
 spacing:
   edge: 20px                          # chat title and composer share one edge; the transcript is indented to 30px
@@ -79,7 +79,7 @@ The pattern to copy for any toolbar:
 | Need | Use |
 | --- | --- |
 | Any control, menu, dialog | `@dorks/ui/*` (shadcn, base-luma preset). Menus are shadcn `DropdownMenu`; merge related choices into one menu with labelled groups. |
-| Message box | `Composer` (the AI Elements prompt input, copied exactly from `PromptInputDemo` and the Figma frame). The main button sends, or becomes Stop while the agent works. |
+| Message box | `Composer` (the AI Elements prompt input, copied exactly from `PromptInputDemo` and the Figma frame). The box holds the text and the main button (sends, or Stop while the agent works); attach and the model menu sit under it. |
 | An image anywhere | `ImageLightbox` + `ImageTrigger` (`@ramka/react`): one lightbox per place, so navigation stays within that place. Put `imageRef` and `morphRef` on the `<img>` so only the image morphs. |
 | An empty state | `EmptyState`: a Hairline figure (`@lucasmarkes/hairline`), a title, at most one sentence, then small outline buttons only if they do something. |
 | Sandbox health | `AgentStatus` at the end of the transcript (it scrolls; the scroll-to-end button takes its place): a dot and a few words; while something moves the words shimmer and the dot morphs circle → square → diamond with a quarter turn, landing on each shimmer pass (no pulsing). |

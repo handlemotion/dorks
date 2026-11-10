@@ -10,7 +10,7 @@ const control =
 
 /**
  * Every image in the app opens in this lightbox (ramka's headless primitives, `@ramka/react/lightbox`), skinned flat: the app's own
- * background, no shadows, 6px controls. One lightbox per place images live, so navigation stays within that place: the artifacts of a
+ * background, no shadows, 6px controls, above everything in the app (z-50: the sidebar rows and the floating title bar controls are stacked). One lightbox per place images live, so navigation stays within that place: the artifacts of a
  * chat page through the artifacts, the images in a transcript through the transcript. Thumbnails open it through `ImageTrigger` with
  * their index in `images`; the viewer morphs from the thumbnail (a View Transition, a fade where unsupported or with reduced motion),
  * swipes, arrow keys or the thumbnail strip move between images, zooms with pinch, wheel or double click, and closes on Escape or by pulling down.
@@ -20,8 +20,8 @@ export function ImageLightbox({ images, label, children }: { images: LightboxIma
     <Lightbox.Root count={images.length}>
       <IndexContext.Provider value={images}>{children}</IndexContext.Provider>
       <Lightbox.Portal>
-        <Lightbox.Backdrop className="fixed inset-0 bg-background opacity-0 transition-opacity duration-(--lightbox-vt-duration,300ms) data-open:opacity-[calc(1_-_var(--lightbox-pull-progress,0)*0.6)] data-open:starting:opacity-0 data-pulling:transition-none" />
-        <Lightbox.Content aria-label={label} className="group/lb fixed inset-0 flex flex-col outline-none">
+        <Lightbox.Backdrop className="fixed inset-0 z-50 bg-background opacity-0 transition-opacity duration-(--lightbox-vt-duration,300ms) data-open:opacity-[calc(1_-_var(--lightbox-pull-progress,0)*0.6)] data-open:starting:opacity-0 data-pulling:transition-none" />
+        <Lightbox.Content aria-label={label} className="group/lb fixed inset-0 z-50 flex flex-col outline-none">
           <Lightbox.Slides aria-roledescription="carousel" aria-label={label} className="flex-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {images.map((image, index) => (
               <Lightbox.Slide key={image.id} className={`h-full min-w-full flex-[0_0_100%] px-16 pt-14 ${images.length > 1 ? 'pb-[134px]' : 'pb-16'}`}>

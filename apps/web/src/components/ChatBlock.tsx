@@ -142,7 +142,8 @@ export function ChatMessages({ blocks }: { blocks: Block[] }) {
       const text = entry.block.text.replace(IMAGE, '').trim()
       const own = images.filter((i) => i.id.startsWith(`${entry.block.id}:`))
       return (
-        <MessageScrollerItem key={entry.block.id} messageId={entry.block.id} scrollAnchor>
+        // A user message gets 12px more air on each side than the transcript's 24px gap, so turns read apart from the agent's work.
+        <MessageScrollerItem key={entry.block.id} messageId={entry.block.id} scrollAnchor className="py-3">
           <Message align="end">
             <MessageContent className="items-end">
               {own.length > 0 && (

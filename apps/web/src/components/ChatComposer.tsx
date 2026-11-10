@@ -117,7 +117,7 @@ export function Composer({
           }}
         />
         {/* White on the off-white app (light), with the panel's 6% hairline since that pair is under 1.15:1; dark keeps the published fill. */}
-        <InputGroup className="border-border bg-white dark:border-transparent dark:bg-input/50">
+        <InputGroup className="rounded-[15px] border-border bg-white has-[textarea]:rounded-[15px] has-[>[data-align=block-end]]:rounded-[15px] dark:border-transparent dark:bg-input/50">
           {(repo !== undefined && setRepo) || files.length > 0 ? (
             <InputGroupAddon align="block-start" className="flex-wrap">
               {repo !== undefined && setRepo && (
@@ -158,7 +158,8 @@ export function Composer({
               }
             }}
             disabled={pending || disabled}
-            className="min-h-[76px] py-3 pr-12 pl-4"
+            // 15px in from the side, as far in as the corner's radius, and 14px from the top.
+            className="min-h-24 pt-3.5 pr-12 pb-3 pl-[15px]"
           />
           {/* Inside the box: only the main button, pinned bottom right so the text runs beside it. */}
           <InputGroupAddon align="block-end" className="absolute right-0 bottom-0 w-auto p-[9px]">
@@ -173,9 +174,10 @@ export function Composer({
             )}
           </InputGroupAddon>
         </InputGroup>
-        {/* Under the box: the chat's settings, attach on the left and the model and effort on the right. */}
-        <div className="flex items-center gap-2 px-[9px] pt-1.5">
-          <InputGroupButton size="icon-sm" variant="ghost" className="rounded-full text-muted-foreground hover:text-foreground" aria-label="Attach files" onClick={() => fileRef.current?.click()}>
+        {/* Under the box: the chat's settings, attach on the left and the model and effort on the right. Plain 6px controls, not the
+            box's round ones; the buttons' own padding lines their icons up just inside the box's edges. */}
+        <div className="flex items-center gap-2 pt-1.5 [--control-radius:6px]">
+          <InputGroupButton size="icon-sm" variant="ghost" className="text-muted-foreground hover:text-foreground" aria-label="Attach files" onClick={() => fileRef.current?.click()}>
             <PlusIcon />
           </InputGroupButton>
           <DropdownMenu>
