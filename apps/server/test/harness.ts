@@ -69,7 +69,9 @@ export function fakeFetch(handler: Handler) {
 export function harness(opts: { fetch?: typeof fetch; config?: Partial<Config> } = {}) {
   const clock = { t: NOW };
   const box = fakeBox();
-  const app: App = createApp(testConfig(opts.config), { db: new Db(), now: () => clock.t, fetch: opts.fetch, getBox: async () => box });
+  // Tests never reach the real network: by default GitHub knows one user, and anything else fails loudly.
+  const offline = fakeFetch((url) => (url.pathname === "/user" ? Response.json({ login: "agent-bot" }) : new Response("{}", { status: 404 })));
+  const app: App = createApp(testConfig(opts.config), { db: new Db(), now: () => clock.t, fetch: opts.fetch ?? offline, getBox: async () => box });
   const scheduler = new Scheduler(app);
   const db = app.db;
 
