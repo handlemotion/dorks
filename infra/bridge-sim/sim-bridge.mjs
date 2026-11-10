@@ -1,10 +1,9 @@
-// Stand-in for the in-box bridge, speaking the same protocol (packages/shared/src/bridge.ts) over Convex instead of a WebSocket.
-// Usage: DORK_ID=… BRIDGE_SECRET=… BRIDGE_URL=https://<deployment>.convex.cloud node convex-sim.mjs
-//   commands  <- subscription to bridge.commands (reactive; replaces the DO socket)
-//   frames    -> bridge.push mutation, batched (assistant text deltas coalesce for DELTA_BATCH_MS)
-//   secrets   <- bridge.configure / bridge.ghToken actions (never in the subscription)
-import { ConvexClient } from "convex/browser";
-import { anyApi } from "convex/server";
+// Stand-in for the in-box bridge, speaking the same protocol (packages/shared/src/bridge.ts) over the server's bridge WebSocket
+// (docs/architecture.md, "Bridge protocol") without Claude, git or a sandbox.
+// Usage: DORK_ID=… BRIDGE_SECRET=… BRIDGE_URL=ws://127.0.0.1:4748/bridge node sim-bridge.mjs
+//   commands  <- the server's commands snapshot (pushed on every change)
+//   frames    -> the push rpc, batched (assistant text deltas coalesce for DELTA_BATCH_MS)
+//   secrets   <- the configure / gh_token rpcs (never in the snapshot)
 
 const { DORK_ID: dorkId, BRIDGE_SECRET: secret, BRIDGE_URL: url } = process.env;
 const DELTA_BATCH_MS = Number(process.env.DELTA_BATCH_MS ?? 150);
@@ -13,9 +12,55 @@ const DELTAS = Number(process.env.SIM_DELTAS ?? 40); // fake text deltas per tur
 const DELTA_GAP_MS = Number(process.env.SIM_DELTA_GAP_MS ?? 40);
 if (!dorkId || !secret || !url) throw new Error("DORK_ID, BRIDGE_SECRET and BRIDGE_URL are required");
 
-const api = anyApi;
-const creds = { dorkId, secret };
-const client = new ConvexClient(url);
+
+// ---- a minimal client for the bridge protocol: auth frame, rpc request/response, snapshot pushes, reconnect with backoff
+let ws = null;
+let nextId = 1;
+const pendingRpc = new Map();
+let onCommandsCb = null;
+let lastCmds = null; // a snapshot can arrive before the handler is registered
+let lastOpened = false;
+const openSocket = () =>
+  new Promise((resolve, reject) => {
+    const sock = new WebSocket(url);
+    sock.onopen = () => sock.send(JSON.stringify({ t: "auth", dorkId, secret }));
+    sock.onmessage = (m) => {
+      const msg = JSON.parse(String(m.data));
+      if (msg.t === "auth_ok") { ws = sock; lastOpened = true; resolve(); }
+      else if (msg.t === "res") {
+        const p = pendingRpc.get(msg.id);
+        if (!p) return;
+        pendingRpc.delete(msg.id);
+        if (msg.ok) p.resolve(msg.result); else p.reject(Object.assign(new Error(msg.error?.message ?? "rpc failed"), { data: msg.error }));
+      } else if (msg.t === "commands") { lastCmds = msg.cmds; onCommandsCb?.(msg.cmds); }
+    };
+    sock.onerror = () => reject(new Error("connection failed"));
+    sock.onclose = (ev) => {
+      if (ws === sock) ws = null;
+      for (const [id, p] of pendingRpc) { p.reject(new Error("connection lost")); pendingRpc.delete(id); }
+      if (ev.code === 4403) { console.log("[bridge-sim] refused by the server"); process.exit(0); }
+      reject(new Error("connection closed"));
+      if (lastOpened) setTimeout(() => reopen().catch(() => {}), 1000);
+    };
+  });
+async function reopen() {
+  for (let delay = 500; ; delay = Math.min(delay * 2, 10_000)) {
+    try { await openSocket(); await rpc("connect"); return; } catch { await new Promise((r) => setTimeout(r, delay)); }
+  }
+}
+async function rpc(op, args = {}) {
+  if (!ws) await openSocket();
+  const id = nextId++;
+  return new Promise((resolve, reject) => {
+    pendingRpc.set(id, { resolve, reject });
+    ws.send(JSON.stringify({ t: "rpc", id, op, args }));
+  });
+}
+const client = {
+  mutation: (op, args) => rpc(op, args),
+  action: (op, args) => rpc(op, args),
+  onUpdate: (cb) => { onCommandsCb = cb; if (lastCmds) cb(lastCmds); },
+};
 const log = (...a) => console.log(`[bridge-sim ${dorkId.slice(-6)}]`, ...a);
 let bseq = 0;
 let sessionId = null;
@@ -59,7 +104,7 @@ async function pushChunk(chunk) {
   for (let attempt = 0; ; attempt++) {
     let r;
     try {
-      r = await client.mutation(api.bridge.push, { ...creds, frames: chunk });
+      r = await client.mutation("push", { frames: chunk });
     } catch (e) {
       const code = e?.data?.code;
       if (code === "too_many_frames" && chunk.length > 1) { // split and send in order
@@ -140,7 +185,7 @@ async function onCommand({ cid, frame: f }) {
   handled.add(cid);
   switch (f.t) {
     case "fetch_configure": {
-      const cfg = await client.action(api.bridge.configure, creds);
+      const cfg = await client.action("configure");
       if (!cfg) return log("configure refused (the backend recorded why)");
       log("configure: repo", cfg.repo.fullName, "branch", cfg.repo.branch, "resume", cfg.resumeSessionId, "env keys", Object.keys(cfg.env).join(","), "gh token", cfg.ghToken ? "yes" : "no");
       sessionId = cfg.resumeSessionId ?? `sim-session-${Date.now()}`; // a real bridge: `claude --resume <id>` when set
@@ -164,18 +209,18 @@ async function onCommand({ cid, frame: f }) {
     }
     case "interrupt": log("interrupt"); return void sendNow({ t: "ack", id: cid });
     case "flush": log("flush"); await flushNow(); return void sendNow({ t: "ack", id: cid }).then(() => sendNow({ t: "flushed", cid }));
-    case "fetch_gh_token": { const r = await client.action(api.bridge.ghToken, creds); log("gh token refreshed:", r ? "ok" : "failed"); return void sendNow({ t: "ack", id: cid }); }
+    case "fetch_gh_token": { const r = await client.action("gh_token"); log("gh token refreshed:", r ? "ok" : "failed"); return void sendNow({ t: "ack", id: cid }); }
   }
 }
 
 try {
-  const hello = await client.mutation(api.bridge.connect, creds);
+  const hello = await client.mutation("connect");
   bseq = Math.max(bseq, hello.afterBridgeSeq); // a fresh box restarts at 0 but must continue the stored numbering
   log("connected, numbering from", bseq + 1);
 } catch (e) {
   log("connect refused:", String(e.data?.code ?? e.message).slice(0, 60));
   process.exit(0);
 }
-client.onUpdate(api.bridge.commands, creds, (cmds) => { for (const c of cmds) onCommand(c).catch((e) => log("command failed:", String(e.message).slice(0, 120))); }, (e) => log("subscription error:", String(e.message).slice(0, 120)));
-setInterval(() => client.mutation(api.bridge.heartbeat, creds).catch(() => {}), HEARTBEAT_MS).unref();
+client.onUpdate((cmds) => { for (const c of cmds) onCommand(c).catch((e) => log("command failed:", String(e.message).slice(0, 120))); });
+setInterval(() => client.mutation("heartbeat").catch(() => {}), HEARTBEAT_MS).unref();
 process.on("SIGTERM", async () => { await Promise.race([flushNow(), wait(2000)]); process.exit(0); }); // bounded: a backend that is down must not make the sim unkillable

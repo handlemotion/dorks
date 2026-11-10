@@ -25,6 +25,11 @@ export async function getBox(app: App): Promise<BoxProvider> {
   return boatBox({ apiKey, scope: instanceId(app), org: readSettings(app).boatOrg || undefined, fetch: app.fetch });
 }
 
+// A real provider takes seconds to stop or start a sandbox. The simulated host only notices a change when it next polls, so the sim
+// takes a little longer than that: otherwise a pause followed at once by a wake would never look "down" to the host, and the old
+// bridge process (still connected) would be handed the next message and then killed with it.
+const simLatency = () => new Promise((r) => setTimeout(r, Number(process.env.SIM_LATENCY_MS ?? 700)));
+
 function simBox(app: App): BoxProvider {
   const { db } = app;
   return {
@@ -34,11 +39,13 @@ function simBox(app: App): BoxProvider {
       return { id: opts.name };
     },
     async resume(id) {
+      await simLatency();
       const b = db.get<{ running: number; gen: number }>("SELECT running, gen FROM sim_boxes WHERE name = ?", id);
       if (!b) throw new BoxNotFoundError("no such box");
       if (!b.running) db.run("UPDATE sim_boxes SET running = 1, gen = gen + 1 WHERE name = ?", id);
     },
     async pause(id) {
+      await simLatency();
       const b = db.get<{ running: number }>("SELECT running FROM sim_boxes WHERE name = ?", id);
       if (b?.running) db.run("UPDATE sim_boxes SET running = 0, gen = gen + 1 WHERE name = ?", id);
     },

@@ -9,6 +9,7 @@ import * as bridge from "../services/bridge";
 export const AUTH_TIMEOUT_MS = 5_000;
 export const CLOSE_FORBIDDEN = 4403;
 export const MAX_FRAME_BYTES = 16 * 1024 * 1024;
+const DEBUG = !!process.env.DORKS_DEBUG_BRIDGE; // logs frame names and sizes, never configure results
 
 export interface SocketIO {
   send(text: string): void;
@@ -47,7 +48,9 @@ export class BridgeSession {
   }
 
   private send(o: object) {
-    if (!this.closed) this.io.send(JSON.stringify(o));
+    if (this.closed) return;
+    if (DEBUG) console.error("[bridge ws] ->", this.dorkId?.slice(-6), (o as { t?: string }).t === "res" ? JSON.stringify({ t: "res", id: (o as { id?: number }).id, ok: (o as { ok?: boolean }).ok }) : JSON.stringify(o).slice(0, 160));
+    this.io.send(JSON.stringify(o));
   }
 
   async onMessage(raw: string) {
@@ -65,6 +68,7 @@ export class BridgeSession {
     }
     if (msg.t !== "rpc" || typeof msg.id !== "number" || typeof msg.op !== "string") return;
     const id = msg.id;
+    if (DEBUG) console.error("[bridge ws] <-", this.dorkId?.slice(-6), msg.op, raw.slice(0, 120));
     try {
       const result = await this.rpc(msg.op, (msg.args ?? {}) as Args);
       this.send({ t: "res", id, ok: true, result: result === undefined ? {} : result }); // null is a real answer (configure refused)
