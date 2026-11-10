@@ -1,6 +1,6 @@
 # dorks
 
-Run coding agents (Claude Code, Codex) in your own [Boat](https://boat.dev) sandboxes and drive them from one desktop app: a chat per task, and PRs the agent keeps working on until they merge. Your sandboxes, your Boat account, your Claude or ChatGPT sign-in. Nothing is hosted for you. Site: [dorks.build](https://dorks.build).
+Run coding agents (Claude Code first, Codex optional) in your own [Boat](https://boat.dev) sandboxes and drive them from one desktop app: a chat per task, and PRs the agent keeps working on until they merge. Your sandboxes, your Boat account, your Claude or ChatGPT sign-in. Nothing is hosted for you. Site: [dorks.build](https://dorks.build).
 
 > **Status: early.** The server, web UI and desktop shell are in the repo and tested separately. Not yet shipped: a signed `.dmg`, the wurmhol tunnel client (use your own tunnel URL for now), a bundled server binary, and a finished first-run flow. [docs/desktop.md](docs/desktop.md) lists what is missing.
 

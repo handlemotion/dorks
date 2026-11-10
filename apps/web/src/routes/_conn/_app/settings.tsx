@@ -62,11 +62,11 @@ function Settings() {
           </Group>
           <Group title="Boat"><BoatForm settings={settings} /></Group>
           <Group title="Base snapshot"><SnapshotForm settings={settings} /></Group>
-          <Group title="ChatGPT for Codex"><CodexForm settings={settings} /></Group>
-          <Group title="Claude token"><ClaudeForm settings={settings} /></Group>
+          <Group title="Claude Code"><ClaudeForm settings={settings} /></Group>
           <Group title="GitHub"><GithubForm settings={settings} /></Group>
           {isDesktop() && <Group title="Public URL"><PublicUrlForm settings={settings} /></Group>}
           <Group title="PR comments"><CommentPolicyForm settings={settings} /></Group>
+          <Group title="ChatGPT for Codex (optional)"><CodexForm settings={settings} /></Group>
           <Group title="CLI secrets"><CliSecrets /></Group>
           <Group title="Sleep after idle"><SleepMinutes current={settings.sleepMinutes} /></Group>
         </div>

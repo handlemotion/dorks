@@ -64,8 +64,8 @@ function Dorks() {
           actions={<Button variant="ghost" size="sm" nativeButton={false} render={<Link to="/settings" />}>Settings</Button>}
         />
       )}
-      {settings && ready && !settings.boatEnvironment && (
-        <Notice>For cloud Codex sessions, <Link to="/settings" className="font-medium underline underline-offset-4">connect ChatGPT to your Boat account once</Link>.</Notice>
+      {settings && ready && !settings.claudeToken && (
+        <Notice>Add a <Link to="/settings" className="font-medium underline underline-offset-4">Claude token</Link> to start sessions with Claude Code.</Notice>
       )}
       {settings && ready && !settings.publicUrlConfigured && (
         <Notice>Sandboxes cannot reach this machine yet: no public URL is configured. Sessions will not start until the tunnel is up.</Notice>
@@ -78,9 +78,9 @@ function Dorks() {
         <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col justify-center gap-8 overflow-y-auto px-4 py-8">
           <div className="space-y-2">
             <h2 className="text-3xl font-semibold tracking-tight">What should we work on?</h2>
-            <p className="text-muted-foreground">Choose a repository and agent, then describe the change you want.</p>
+            <p className="text-muted-foreground">Choose a repository, then describe the change you want.</p>
           </div>
-          <NewDork onCreated={setSelected} disabled={!ready} claudeReady={!!settings?.claudeToken} />
+          <NewDork onCreated={setSelected} disabled={!ready} claudeReady={!!settings?.claudeToken} codexReady={!!settings?.boatEnvironment} />
           <div className="self-start text-sm text-muted-foreground">
             <Button variant="ghost" size="sm" aria-pressed={showArchived} onClick={() => setShowArchived(!showArchived)}>
               {showArchived ? 'Hide archived' : 'Show archived'}
@@ -103,18 +103,18 @@ function Dorks() {
   )
 }
 
-function NewDork({ onCreated, disabled, claudeReady }: { onCreated: (id: string) => void; disabled: boolean; claudeReady: boolean }) {
+function NewDork({ onCreated, disabled, claudeReady, codexReady }: { onCreated: (id: string) => void; disabled: boolean; claudeReady: boolean; codexReady: boolean }) {
   const { actions } = useDorksClient()
   const [repo, setRepo] = useState('acme/demo')
   const [message, setMessage] = useState('')
-  const [provider, setProvider] = useState<AgentProvider>('codex')
+  const [provider, setProvider] = useState<AgentProvider>('claude')
   const { run, pending, error } = usePending()
   const needsClaudeToken = provider === 'claude' && !claudeReady
   return (
     <div className="-mx-4">
       {needsClaudeToken && <p className="mx-4 mb-2 text-sm text-destructive" role="status">Add a <Link to="/settings" className="font-medium underline underline-offset-4">Claude token in settings</Link> to use Claude Code.</p>}
       <Composer
-        text={message} setText={setMessage} repo={repo} setRepo={setRepo} provider={provider} setProvider={setProvider}
+        text={message} setText={setMessage} repo={repo} setRepo={setRepo} provider={provider} setProvider={setProvider} codexEnabled={codexReady}
         pending={pending} disabled={disabled || needsClaudeToken} error={error}
         onSubmit={() => void run(async () => { onCreated((await actions.createDork({ repo: repo.trim(), message, provider })).id); setMessage('') })}
       />

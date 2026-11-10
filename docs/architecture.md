@@ -82,7 +82,7 @@ IDs are UUID strings. Times are epoch milliseconds.
 |---|---|---|
 | `GET /api/dorks` | `?archived=true` | `Dork[]`, newest activity first, at most 200 |
 | `GET /api/dorks/:id` | | `Dork` or 404 |
-| `POST /api/dorks` | `{repo, message, title?, provider?}` (`provider` defaults to `codex`) | `{id}` |
+| `POST /api/dorks` | `{repo, message, title?, provider?}` (`provider` defaults to `claude`; Codex needs a configured Boat environment) | `{id}` |
 | `PATCH /api/dorks/:id` | `{title}` | `{}` |
 | `DELETE /api/dorks/:id` | | `{}` (box is destroyed in the background, then rows are purged) |
 | `POST /api/dorks/:id/messages` | `{text}` | `{}` |

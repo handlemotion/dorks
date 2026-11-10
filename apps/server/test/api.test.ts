@@ -166,10 +166,10 @@ describe("creating a dork", () => {
     expect(r.json.error.message).toContain("public URL");
   });
 
-  it("defaults to Codex and validates the input", async () => {
+  it("defaults to Claude and validates the input", async () => {
     const { a, h } = await onboarded();
     const id = (await a.post("/api/dorks", { repo: "o/r", message: "hi" })).json.id;
-    expect(h.dork(id).provider).toBe("codex");
+    expect(h.dork(id).provider).toBe("claude");
     const bad = (body: object) => a.post("/api/dorks", { repo: "o/r", message: "hi", ...body }).then((r) => r.json.error?.code);
     expect(await bad({ repo: "nope" })).toBe("invalid");
     expect(await bad({ repo: "a/.." })).toBe("invalid");

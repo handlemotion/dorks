@@ -61,7 +61,7 @@ export function listEvents(app: App, dorkId: string, q: { before?: number; after
 }
 
 export function createDork(app: App, input: { repo: string; message: string; title?: string; provider?: Provider }): string {
-  const { repo, message, title, provider = "codex" } = input;
+  const { repo, message, title, provider = "claude" } = input;
   if (provider !== "claude" && provider !== "codex") fail("invalid", "provider must be claude or codex");
   if (typeof repo !== "string" || !validRepo(repo)) fail("invalid", "repo must be owner/name");
   if (title !== undefined && (typeof title !== "string" || title.trim().length > MAX_TITLE_CHARS)) fail("invalid", "title too long");
@@ -71,7 +71,7 @@ export function createDork(app: App, input: { repo: string; message: string; tit
   if (!s.githubTokenEnc || (provider === "claude" && !s.claudeTokenEnc)) fail("onboarding_incomplete", "finish onboarding first");
   if (!sim && !s.boatKeyEnc) fail("onboarding_incomplete", "add your Boat API key in Settings");
   if (!sim && !app.cfg.publicUrl) fail("onboarding_incomplete", "set up the public URL that sandboxes use to reach this app first");
-  if (provider === "codex" && !sim && !s.boatEnvironment) fail("onboarding_incomplete", "connect ChatGPT once in Boat and select your Boat environment in Settings");
+  if (provider === "codex" && !sim && !s.boatEnvironment) fail("onboarding_incomplete", "Codex is optional: connect ChatGPT once in Boat and select your Boat environment in Settings, or use Claude Code");
 
   const id = app.uuid();
   const now = app.now();

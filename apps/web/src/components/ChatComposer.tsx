@@ -29,6 +29,7 @@ export function Composer({
   setRepo,
   provider,
   setProvider,
+  codexEnabled,
   onStop,
 }: {
   text: string
@@ -41,6 +42,8 @@ export function Composer({
   setRepo?: (repo: string) => void
   provider?: AgentProvider
   setProvider?: (provider: AgentProvider) => void
+  /** Codex only shows up as a choice when a Boat ChatGPT environment is configured. Claude Code is the default. */
+  codexEnabled?: boolean
   onStop?: () => void
 }) {
   const formRef = useRef<HTMLFormElement>(null)
@@ -72,7 +75,7 @@ export function Composer({
             className="min-h-14 p-3"
           />
           <InputGroupAddon align="block-end">
-            {provider && setProvider ? (
+            {provider && setProvider && codexEnabled ? (
               <DropdownMenu>
                 <DropdownMenuTrigger
                   disabled={pending}
@@ -87,8 +90,8 @@ export function Composer({
                     <DropdownMenuRadioGroup value={provider} onValueChange={(value) => {
                       if (value === 'codex' || value === 'claude') setProvider(value)
                     }}>
-                      <DropdownMenuRadioItem value="codex">Codex</DropdownMenuRadioItem>
                       <DropdownMenuRadioItem value="claude">Claude Code</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="codex">Codex</DropdownMenuRadioItem>
                     </DropdownMenuRadioGroup>
                   </DropdownMenuGroup>
                 </DropdownMenuContent>

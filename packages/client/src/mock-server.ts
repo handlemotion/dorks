@@ -237,7 +237,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         const message = str(body.message)?.trim();
         if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo)) return fail(res, "invalid", "repo must look like owner/name");
         if (!message) return fail(res, "invalid", "message is required");
-        const provider = body.provider === "claude" ? "claude" : "codex";
+        const provider = body.provider === "codex" ? "codex" : "claude";
         if (!settings.boatKey || !settings.baseSnapshotId || !settings.github.configured) return fail(res, "onboarding_incomplete", "Finish setup (Boat, base snapshot, GitHub) before creating a session.");
         if (provider === "claude" && !settings.claudeToken) return fail(res, "onboarding_incomplete", "Add a Claude token first.");
         if (provider === "codex" && !settings.boatEnvironment) return fail(res, "onboarding_incomplete", "Save a Boat environment for Codex first.");

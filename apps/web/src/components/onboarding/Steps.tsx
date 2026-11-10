@@ -170,22 +170,18 @@ type Agent = 'codex' | 'claude'
 
 export function AgentSignIn({ settings, onNext }: StepProps) {
   const { actions } = useDorksClient()
-  const [agent, setAgent] = useState<Agent>(settings.boatEnvironment || !settings.claudeToken ? 'codex' : 'claude')
+  // Claude Code is the default. Codex only opens first for someone who already set it up and has no Claude token.
+  const [agent, setAgent] = useState<Agent>(settings.boatEnvironment && !settings.claudeToken ? 'codex' : 'claude')
   const [environment, setEnvironment] = useState(settings.boatEnvironment ?? '')
   const [token, setToken] = useState('')
   const { run, pending, error } = usePending()
-  const configured = !!settings.boatEnvironment || settings.claudeToken
+  const configured = settings.claudeToken || !!settings.boatEnvironment
   const typed = agent === 'codex' ? !!environment.trim() && environment.trim() !== (settings.boatEnvironment ?? '') : !!token.trim()
   return (
     <>
-      <Heading title="Choose your agent">Pick the one you have a subscription for. You can add the other later in Settings.</Heading>
-      <div role="radiogroup" aria-label="agent" className="grid grid-cols-2 gap-2">
-        {(['codex', 'claude'] as const).map((a) => (
-          <Button key={a} type="button" role="radio" aria-checked={agent === a} variant={agent === a ? 'default' : 'outline'} onClick={() => setAgent(a)}>
-            {a === 'codex' ? 'ChatGPT (Codex)' : 'Claude Code'}
-          </Button>
-        ))}
-      </div>
+      <Heading title={agent === 'claude' ? 'Connect Claude Code' : 'Connect ChatGPT (Codex)'}>
+        {agent === 'claude' ? 'Claude Code is the agent Dorks is built around. You can add ChatGPT (Codex) later in Settings.' : 'Codex is optional and works through your Boat account. Claude Code is the recommended agent.'}
+      </Heading>
       <StepForm
         onSubmit={() =>
           void run(async () => {
@@ -218,6 +214,9 @@ export function AgentSignIn({ settings, onNext }: StepProps) {
           {pending ? 'Saving…' : 'Continue'}
         </Primary>
       </StepForm>
+      <Button type="button" variant="ghost" size="sm" className="self-center text-muted-foreground" onClick={() => setAgent(agent === 'claude' ? 'codex' : 'claude')}>
+        {agent === 'claude' ? 'Use ChatGPT (Codex) instead' : 'Use Claude Code instead'}
+      </Button>
     </>
   )
 }

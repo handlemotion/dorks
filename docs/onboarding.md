@@ -32,7 +32,7 @@ Studied on Mobbin (web, desktop-class onboarding): Linear, Twenty, Air, Sana.
 | 1 | Welcome | any setting exists, or the owner pressed Get started | no |
 | 2 | Boat API key (+ optional team org) | `boatKey` | no |
 | 3 | Prepare Boat (one-click snapshot build with progress, retry, stale warning; hand-entered snapshot as a disclosure) | `baseSnapshotId` | no |
-| 4 | Agent: ChatGPT (Boat environment name) or Claude (pasted token) | `boatEnvironment` or `claudeToken` | no |
+| 4 | Agent: Claude Code (pasted token) is the default; "Use ChatGPT (Codex) instead" is a small secondary switch (Boat environment name). One of them is enough | `claudeToken` or `boatEnvironment` | no |
 | 5 | GitHub: "Use my gh CLI" (desktop, native consent) or a fine-grained token, with the required permissions listed | `github.configured` | no |
 | 6 | Public URL: the tunnel's address, so sandboxes can reach this Mac | `publicUrlConfigured` | yes |
 | 7 | Done: create the first session | | |

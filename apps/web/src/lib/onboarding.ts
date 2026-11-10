@@ -12,8 +12,8 @@ export const STEPS: { id: StepId; title: string }[] = [
 export const stepDone = (s: Settings): Record<StepId, boolean> => ({
   boat: s.boatKey,
   snapshot: !!s.baseSnapshotId,
-  // One agent is enough to start; Codex needs a Boat environment, Claude a token.
-  agents: !!s.boatEnvironment || s.claudeToken,
+  // One agent is enough to start. Claude (a token) is the default; a Boat ChatGPT environment alone also counts for Codex.
+  agents: s.claudeToken || !!s.boatEnvironment,
   github: s.github.configured,
 })
 

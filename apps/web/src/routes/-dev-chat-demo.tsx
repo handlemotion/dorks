@@ -38,7 +38,7 @@ export function Demo() {
   const [stopped, setStopped] = useState(false)
   const [showNew, setShowNew] = useState(false)
   const [repo, setRepo] = useState('acme/demo')
-  const [provider, setProvider] = useState<AgentProvider>('codex')
+  const [provider, setProvider] = useState<AgentProvider>('claude')
   const send = () => {
     const id = crypto.randomUUID()
     setBlocks((current) => [
@@ -84,7 +84,7 @@ export function Demo() {
                 <MessageScrollerButton />
               </MessageScroller>
             </MessageScrollerProvider>
-            <Composer text={text} setText={setText} provider="codex" onSubmit={send} pending={false} error="" onStop={stopped ? undefined : stop} />
+            <Composer text={text} setText={setText} provider="claude" onSubmit={send} pending={false} error="" onStop={stopped ? undefined : stop} />
           </section>
         )}
       </div>

@@ -11,7 +11,7 @@ Boat's `default` machine is 4 vCPU and 8 GB RAM at $0.036/hour, billed per secon
 1. **Boat API key.** Create a [Boat API key](https://docs.boat.dev/api/v1) that can create, list, command, stop, resume and delete sandboxes and list environments. Paste it in the app: the server asks Boat for one sandbox with it first (`POST /api/boat/check`) and saves it only if Boat accepts it, so a wrong key, a missing organization or an empty wallet is reported on that step. Set `boatOrg` only if you want billing pinned to one organization.
 2. **Public URL.** Sandboxes reach your server through a tunnel to the bridge port. Set the tunnel's `https://` URL in Settings or as `DORKS_PUBLIC_URL`. See [architecture](architecture.md). A dork cannot be created before this is set, and the URL must stay stable, because a sandbox keeps the one it was created with.
 3. **Base snapshot**: click **Prepare Boat** (below).
-4. **Agent sign-in**: a Claude token and/or a ChatGPT environment (below).
+4. **Agent sign-in**: a Claude token (the default and the recommended agent); a ChatGPT (Codex) environment is optional (below).
 5. **GitHub token** ([GitHub](github.md)).
 
 ## Build the base snapshot ("Prepare Boat")
@@ -51,7 +51,7 @@ Wait until the snapshot reports `ready`, and check that the build sandbox holds 
 
 *Could Claude use a Boat environment too?* Boat documents it: a credential profile can hold a `claude-subscription` ([AI credentials](https://docs.boat.dev/ai-credentials)), and an environment with **Agents credentials** on passes the provider logins, including `CLAUDE_CODE_OAUTH_TOKEN` and `~/.claude/.credentials.json` ([environment access](https://docs.boat.dev/environments/access), [keys and subscriptions](https://docs.boat.dev/integrated-agents/keys)). Nothing here has run against a real Boat account yet, and a profile with both Claude and ChatGPT would hand both logins to every dork (the Codex check above assumes a ChatGPT-only profile). So the pasted token stays until one real run confirms the bridge's Claude process picks the login up from the sandbox, and then the token path can go.
 
-**ChatGPT (Codex).** Connect ChatGPT once per Boat account, not once per dork:
+**ChatGPT (Codex), optional.** Claude Code is the priority and the default for new sessions; Codex only appears as a choice once a Boat ChatGPT environment is configured. Connect ChatGPT once per Boat account, not once per dork:
 
 1. In Boat's **Agents & Proxying** page, use a credential profile that contains only your ChatGPT subscription and connect it with the short code. The default profile works while it contains only ChatGPT. Boat does not copy sign-ins when you copy a profile.
 2. Leave the account-wide AI credentials proxy **off**, to avoid its daily and per-request charges.
