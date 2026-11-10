@@ -45,16 +45,14 @@ Outside `pnpm dev` the server's owner token is generated into `<data dir>/secret
 pnpm typecheck                                   # every package
 pnpm test                                        # every package that has tests
 pnpm --filter @dorks/server test                 # the server (lifecycle, machine, bridge socket), in-memory SQLite
-pnpm --filter @dorks/client test                 # client against a fake server
+pnpm --filter @dorks/client test                 # the live-feed client logic (SSE, tailing, optimistic send)
 pnpm --filter @dorks/bridge test                 # the bridge
-pnpm e2e:server                                  # builds the compiled server, runs its e2e twice (sim bridge, real bridge) incl. a secret scan; needs Bun
-CHROME_PATH=<chrome> pnpm e2e:web                # builds the SPA, drives it in headless Chrome against the mock server
-pnpm e2e                                         # both
+pnpm e2e                                         # builds the compiled server, runs its e2e twice (sim bridge, real bridge) incl. a secret scan; needs Bun
 ```
 
 Prefer tests that run the real code path over mocks: the server tests use the real lifecycle driver on an in-memory database.
 
-CI (`.github/workflows/ci.yml`) runs typecheck and tests, the server e2e against the compiled binary, and the web e2e against the mock server; `desktop.yml` builds the macOS app. It needs no repository secrets, so it runs on forks. If you add an environment variable the e2e needs, set a throwaway value in the workflow.
+CI (`.github/workflows/ci.yml`) runs typecheck and tests and the server e2e against the compiled binary; `desktop.yml` builds the macOS app. It needs no repository secrets, so it runs on forks. If you add an environment variable the e2e needs, set a throwaway value in the workflow.
 
 ## Rules
 

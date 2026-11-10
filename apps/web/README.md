@@ -18,7 +18,6 @@ pnpm --filter @dorks/web dev:mock   # web on :3000 + an in-memory mock server on
 pnpm --filter @dorks/web dev        # web only; point it at a real server from the connect screen
 pnpm --filter @dorks/web build      # static output in dist/client (what apps/desktop packages)
 pnpm --filter @dorks/web test       # unit tests
-pnpm --filter @dorks/web e2e        # headless-Chrome run of the built app (set CHROME_PATH)
 ```
 
 `dev:mock` prints the one URL to open. The mock implements the API contract in [docs/architecture.md](../../docs/architecture.md) with a scripted fake agent, so the whole flow (setup, sessions, streaming, settings) works with no Boat account.

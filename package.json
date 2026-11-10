@@ -10,8 +10,6 @@
     "dev:desktop": "pnpm --filter @dorks/desktop dev",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --if-present test",
-    "e2e": "node scripts/e2e.mjs all",
-    "e2e:server": "node scripts/e2e.mjs server",
-    "e2e:web": "node scripts/e2e.mjs web"
+    "e2e": "node scripts/e2e.mjs"
   }
 }
