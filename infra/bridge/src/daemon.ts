@@ -12,7 +12,7 @@ export async function runDaemon() {
   const redactor = new Redactor();
   redactor.add(cfg.bridgeSecret);
   const log = makeLogger(cfg.dorkId.slice(-6), redactor);
-  const transport = new WsTransport(cfg.bridgeUrl, cfg.dorkId, cfg.bridgeSecret);
+  const transport = new WsTransport(cfg.bridgeUrl, cfg.dorkId, cfg.bridgeSecret, WebSocket, cfg.tunnelKey);
   let bridge: Bridge | undefined;
   const exit = async (code: number) => {
     await bridge?.stop().catch(() => {});

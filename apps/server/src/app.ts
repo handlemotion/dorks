@@ -38,6 +38,8 @@ export interface Config {
   bridgePort: number;
   /** `https://` URL of the tunnel that forwards to the bridge listener. */
   publicUrl?: string;
+  /** Access key of the wurmhol pipe, handed to each sandbox so its bridge can pass the relay. Not an authenticator. */
+  tunnelKey?: string;
   ownerToken: string;
   /** HMAC key for per-dork bridge secrets. */
   bridgeSecretKey: string;

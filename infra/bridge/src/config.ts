@@ -6,6 +6,8 @@ import { join } from "node:path";
 export interface Config {
   dorkId: string;
   bridgeUrl: string;
+  /** Sent as `x-wurmhol-key` when the tunnel is a wurmhol pipe with an access key. Not an authenticator: the per-dork secret is. */
+  tunnelKey: string | null;
   /** Never logged, never forwarded to the Claude child. */
   bridgeSecret: string;
   claudeBin: string;
@@ -59,6 +61,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return {
     dorkId,
     bridgeUrl,
+    tunnelKey: env.DORKS_TUNNEL_KEY || null,
     bridgeSecret,
     claudeBin: env.CLAUDE_BIN || "claude",
     claudeExtraArgs: (env.DORKS_CLAUDE_ARGS ?? "").split(/\s+/).filter(Boolean),

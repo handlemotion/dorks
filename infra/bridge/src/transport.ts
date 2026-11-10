@@ -76,6 +76,8 @@ export class WsTransport implements Transport {
     private readonly dorkId: string,
     private readonly secret: string,
     private readonly WS: typeof WebSocket = WebSocket,
+    /** Sent as `x-wurmhol-key` so a wurmhol pipe lets this non-browser client through. */
+    private readonly tunnelKey: string | null = null,
   ) {}
 
   // ---------------------------------------------------------------- connection
@@ -84,7 +86,8 @@ export class WsTransport implements Transport {
     if (this.ws?.readyState === 1 && !this.opening) return Promise.resolve();
     this.opening ??= new Promise<void>((resolve, reject) => {
       let settled = false;
-      const ws = new this.WS(this.url);
+      // Node's built-in WebSocket takes request headers as a non-standard `headers` init option.
+      const ws = this.tunnelKey ? new this.WS(this.url, { headers: { "x-wurmhol-key": this.tunnelKey } } as unknown as string[]) : new this.WS(this.url);
       const done = (err?: unknown) => {
         if (settled) return;
         settled = true;

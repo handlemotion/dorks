@@ -60,7 +60,7 @@ async function boxCreate(app: App, dorkId: string, gen: number) {
     const box = await (await app.getBox()).createFromSnapshot(info.snapshotId, {
       name: dorkId,
       initCommand: "dorks-bridge",
-      env: { DORK_ID: dorkId, BRIDGE_URL: bridgeUrl, BRIDGE_SECRET: await bridgeSecret(app.cfg.bridgeSecretKey, dorkId) },
+      env: { DORK_ID: dorkId, BRIDGE_URL: bridgeUrl, BRIDGE_SECRET: await bridgeSecret(app.cfg.bridgeSecretKey, dorkId), ...(app.cfg.tunnelKey ? { DORKS_TUNNEL_KEY: app.cfg.tunnelKey } : {}) },
       boatEnvironment: info.boatEnvironment,
       generation: gen,
     });
