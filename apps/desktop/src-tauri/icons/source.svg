@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs><clipPath id="t"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath></defs>
-  <rect x="100" y="100" width="824" height="824" rx="185" fill="#fafafa"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="#f2f2f2"/>
   <rect x="102.0" y="102.0" width="820" height="820" rx="183.0" fill="none" stroke="#000" stroke-opacity="0.08" stroke-width="4"/>
-  <circle cx="512.0" cy="610.1048000000001" r="501.10480000000007" fill="none" stroke="#d6d6d6" stroke-width="24" clip-path="url(#t)"/>
+  <circle cx="512.0" cy="613.10" r="493.10" fill="none" stroke="#a3a3a3" stroke-width="40" clip-path="url(#t)"/>
 </svg>

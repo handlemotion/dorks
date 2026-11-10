@@ -137,7 +137,7 @@ pnpm --filter @dorks/desktop prepare:stub # stand-in server + placeholder page, 
 - **UI:** `prepare:ui` builds `apps/web` (`pnpm --filter @dorks/web build`) and copies `apps/web/dist/client` (`DORKS_WEB_DIST`) into `dist`. `--no-build` reuses an existing build; `--placeholder` copies the status page in `ui/`.
 - At run time `DORKS_SERVER_BIN=/path/to/dorks-server` overrides the bundled sidecar.
 - Use a throwaway data directory when trying things: `DORKS_APP_DIR=/tmp/dorks-test`.
-- The app icon's source is `src-tauri/icons/source.svg`: a `#fafafa` tile with onboarding's grey ring (`BrandCircle`, 1.2454x the width, hanging from the top edge and cut off by the tile). Render it to `source.png` at 1024px, then run `pnpm tauri icon src-tauri/icons/source.png` and keep the files `tauri.conf.json` lists. The web favicon is `apps/web/public/favicon.svg`, the same drawing full-bleed with a darker ring so it reads at 16px. The menu-bar `tray.png` still comes from `scripts/make-icons.mjs`.
+- The app icon's source is `src-tauri/icons/source.svg`: a `#f2f2f2` tile with onboarding's grey ring (`BrandCircle`, 1.2454x the width, hanging from the top edge and cut off by the tile). Render it to `source.png` at 1024px, then run `pnpm tauri icon src-tauri/icons/source.png` and keep the files `tauri.conf.json` lists. The web favicon is `apps/web/public/favicon.svg`, the same drawing full-bleed with a heavier ring so it reads at 16px. The menu-bar `tray.png` still comes from `scripts/make-icons.mjs`.
 
 ## Release
 
