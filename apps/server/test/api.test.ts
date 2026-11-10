@@ -102,32 +102,79 @@ describe("settings", () => {
     expect((await a.get("/api/settings")).json.github).toEqual({ configured: true, login: "robot" });
   });
 
-  it("checks a Boat key before it is saved, and tells a wrong key from a missing org or credit", async () => {
-    const seen: { key: string | null; org: string | null }[] = [];
-    const h = harness({ fetch: (async (_u: string | URL | Request, init?: RequestInit) => {
+  it("checks a Boat key against Boat's limits before it is saved: wrong key, trial, blocked wallet, wrong org", async () => {
+    // Boat's documented answers (docs.boat.dev/api/v1 "Error model", /api/reference/account/get-boat-limits).
+    const seen: { path: string; org: string | null }[] = [];
+    const h = harness({ fetch: (async (u: string | URL | Request, init?: RequestInit) => {
       const headers = new Headers(init?.headers);
       const key = headers.get("authorization")?.replace("Bearer ", "") ?? null;
-      seen.push({ key, org: headers.get("x-boat-org") });
-      if (key === "good") return Response.json({ sandboxes: [] });
-      if (key === "orgkey" && !headers.get("x-boat-org")) return Response.json({ code: "org_required" }, { status: 400 });
-      if (key === "orgkey") return Response.json({ sandboxes: [] });
-      if (key === "broke") return Response.json({ code: "credit_required" }, { status: 402 });
+      const path = new URL(String(u)).pathname.replace("/api/v1", "");
+      seen.push({ path, org: headers.get("x-boat-org") });
+      const err = (status: number, code: string) => Response.json({ ok: false, code }, { status });
+      if (key === "paid") return Response.json({ sandboxPlanKey: "starter", canStart: true });
+      if (key === "trial") return Response.json({ sandboxPlanKey: "trial", canStart: true });
+      if (key === "broke") return Response.json({ sandboxPlanKey: "starter", canStart: false, startBlockedReason: "wallet empty" });
+      if (key === "scoped") return path === "/limits" ? err(403, "api_key_action_forbidden") : Response.json({ sandboxes: [] });
+      if (key === "orgkey") return headers.get("x-boat-org") === "team_1" ? Response.json({ sandboxPlanKey: "team", canStart: true }) : err(409, "ambiguous_org");
+      if (key === "expired") return err(403, "api_key_expired");
       if (key === "down") return new Response("{}", { status: 503 });
-      return new Response("{}", { status: 401 });
+      return err(401, "unauthorized");
     }) as typeof fetch });
     const a = api(h);
-    const status = async (body: object) => (await a.post("/api/boat/check", body)).json.status;
-    expect(await status({ boatKey: "good" })).toBe("ok");
-    expect(await status({ boatKey: "nope" })).toBe("invalid");
-    expect(await status({ boatKey: "orgkey" })).toBe("needs_org");
-    expect(await status({ boatKey: "orgkey", boatOrg: "org_1" })).toBe("ok");
-    expect(await status({ boatKey: "broke" })).toBe("credit_required");
-    expect(await status({ boatKey: "down" })).toBe("unreachable");
-    expect(seen.at(-3)).toMatchObject({ key: "orgkey", org: "org_1" });
+    const check = async (body: object) => (await a.post("/api/boat/check", body)).json;
+    expect((await check({ boatKey: "paid" })).status).toBe("ok");
+    expect((await check({ boatKey: "nope" })).status).toBe("invalid");
+    expect((await check({ boatKey: "expired" })).message).toMatch(/expired/);
+    expect((await check({ boatKey: "trial" })).message).toMatch(/paid Boat plan/);
+    expect((await check({ boatKey: "broke" })).message).toMatch(/wallet empty/);
+    expect((await check({ boatKey: "scoped" })).status).toBe("ok"); // no account.read: the key is proved by listing sandboxes
+    expect(seen.slice(-2).map((s) => s.path)).toEqual(["/limits", "/sandboxes"]);
+    expect((await check({ boatKey: "orgkey", boatOrg: "acme" })).status).toBe("needs_org");
+    expect((await check({ boatKey: "orgkey", boatOrg: "team_1" })).status).toBe("ok");
+    expect(seen.at(-1)).toMatchObject({ org: "team_1" });
+    expect((await check({ boatKey: "down" })).status).toBe("unreachable");
     expect((await a.get("/api/settings")).json.boatKey).toBe(false); // checking saves nothing
     expect((await a.post("/api/boat/check", {})).json.error.code).toBe("not_configured");
-    await updateSettings(h.app, { boatKey: "good" });
-    expect(await status({})).toBe("ok"); // falls back to the saved key
+
+    // Saving runs the same check on the server: refused keys are not stored; an unreachable Boat does not block the save.
+    expect((await a.put("/api/settings", { boatKey: "trial" })).json.error).toMatchObject({ code: "invalid", message: expect.stringMatching(/paid Boat plan/) });
+    expect((await a.get("/api/settings")).json.boatKey).toBe(false);
+    expect((await a.put("/api/settings", { boatKey: "down" })).status).toBe(200);
+    expect((await a.put("/api/settings", { boatKey: "paid" })).status).toBe(200);
+    expect(await (await check({})).status).toBe("ok"); // falls back to the saved key
+  });
+
+  it("checks a Codex environment against Boat when it is saved", async () => {
+    const envs = [
+      { name: "chatgpt-only", safeForThirdParties: false, passAgentsCredentials: true, passGithub: false, passSecrets: false, passSandboxCredentials: false, proxyAiCredentials: false, credentialProfileId: "cp_1" },
+      { name: "leaky", safeForThirdParties: false, passAgentsCredentials: true, passGithub: true, passSecrets: false, passSandboxCredentials: false, proxyAiCredentials: false, credentialProfileId: "cp_1" },
+    ];
+    const urls: string[] = [];
+    const h = harness({ fetch: (async (u: string | URL | Request) => {
+      urls.push(String(u));
+      return String(u).includes("/environments") ? Response.json({ environments: envs }) : Response.json({ sandboxPlanKey: "starter", canStart: true });
+    }) as typeof fetch });
+    const a = api(h);
+    expect((await a.put("/api/settings", { boatKey: "bk", boatOrg: "team_1", boatEnvironment: "chatgpt-only" })).status).toBe(200);
+    expect(urls.some((u) => u.endsWith("/environments?org=team_1"))).toBe(true); // only the query selects the org on /environments
+    expect((await a.put("/api/settings", { boatEnvironment: "leaky" })).json.error.message).toMatch(/disable other credentials/);
+    expect((await a.put("/api/settings", { boatEnvironment: "missing" })).json.error.message).toMatch(/does not exist/);
+    expect((await a.get("/api/settings")).json.boatEnvironment).toBe("chatgpt-only"); // refused values are not saved
+  });
+
+  it("saving a Boat key starts the base-snapshot build, unless a snapshot is already set", async () => {
+    const h = harness({ config: { baseSnapshotId: undefined } });
+    const a = api(h);
+    expect((await a.put("/api/settings", { boatKey: "bk" })).status).toBe(200);
+    expect((await a.get("/api/snapshot")).json.state).toBe("building");
+    h.app.db.run("UPDATE snapshot_build SET status = 'failed' WHERE id = 1"); // say the trial refused the save
+    await a.put("/api/settings", { boatKey: "bk2" }); // the owner's fixed key retries it
+    expect((await a.get("/api/snapshot")).json.state).toBe("building");
+
+    const manual = harness({ config: { baseSnapshotId: undefined } });
+    await updateSettings(manual.app, { baseSnapshotId: "my-snap" });
+    await api(manual).put("/api/settings", { boatKey: "bk" });
+    expect((await api(manual).get("/api/snapshot")).json.state).toBe("none");
   });
 
   it("CLI secrets: names only, upsert, delete, bad names refused", async () => {
@@ -147,12 +194,13 @@ describe("creating a dork", () => {
     const h = harness();
     const a = api(h);
     const create = (provider = "claude") => a.post("/api/dorks", { repo: "o/r", message: "hi", provider });
-    expect((await create()).json.error.code).toBe("onboarding_incomplete"); // no GitHub token
-    await updateSettings(h.app, { githubToken: "gt" });
-    expect((await create()).json.error.message).toContain("finish onboarding"); // Claude needs its token
-    await updateSettings(h.app, { claudeToken: "ct" });
-    expect((await create()).json.error.message).toContain("Boat API key");
+    // Asked in onboarding order, so the reason is always the next thing to do.
+    expect((await create()).json.error).toMatchObject({ code: "onboarding_incomplete", message: expect.stringMatching(/Boat API key/) });
     await updateSettings(h.app, { boatKey: "bk" });
+    expect((await create()).json.error.message).toMatch(/Claude token/);
+    await updateSettings(h.app, { claudeToken: "ct" });
+    expect((await create()).json.error.message).toMatch(/GitHub token/);
+    await updateSettings(h.app, { githubToken: "gt" });
     expect((await create()).status).toBe(201);
     expect((await create("codex")).json.error.message).toContain("ChatGPT"); // Codex needs the Boat environment
     await updateSettings(h.app, { boatEnvironment: "chatgpt-only" });
@@ -208,13 +256,12 @@ describe("creating a dork", () => {
     expect(h.events(id).filter((e) => e.body.type === "error").map((e) => (e.body as { message: string }).message)).toEqual(["create_box failed"]);
   });
 
-  it("without a base snapshot the dork says so", async () => {
-    const { a, h } = await onboarded({ config: { baseSnapshotId: undefined } });
-    const id = (await a.post("/api/dorks", { repo: "o/r", message: "hi", provider: "claude" })).json.id;
-    await h.settle();
-    expect(h.events(id).some((e) => (e.body as { message?: string }).message === "No base snapshot configured")).toBe(true);
+  it("without a base snapshot a session is refused until one is set", async () => {
+    const { a } = await onboarded({ config: { baseSnapshotId: undefined } });
+    const create = () => a.post("/api/dorks", { repo: "o/r", message: "hi", provider: "claude" });
+    expect((await create()).json.error).toMatchObject({ code: "onboarding_incomplete", message: expect.stringMatching(/base snapshot/) });
     await a.put("/api/settings", { baseSnapshotId: "dorks-base-1" });
-    expect((await a.get("/api/settings")).json.baseSnapshotId).toBe("dorks-base-1");
+    expect((await create()).status).toBe(201);
   });
 });
 

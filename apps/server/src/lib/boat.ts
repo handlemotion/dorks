@@ -61,6 +61,22 @@ export function createBoatCall(opts: Pick<BoatOptions, "apiKey" | "org" | "fetch
   };
 }
 
+/**
+ * Refuses a Boat environment that would hand a Codex sandbox more than the ChatGPT sign-in (docs/boat.md, "Signing in an agent").
+ * On `/environments` only the `org` query selects the organization; the `X-Boat-Org` header does not apply there
+ * (https://docs.boat.dev/api/reference/environments/list-sandbox-environments). Messages start with "boat: selected environment",
+ * which the create job shows as is.
+ */
+export async function checkCodexEnvironment(call: BoatCall, org: string | undefined, name: string): Promise<void> {
+  const environments = await call("list environments", "GET", `/environments${org ? `?org=${encodeURIComponent(org)}` : ""}`);
+  const selected = environments?.environments?.find((item: { name?: string }) => item.name === name);
+  if (!selected) throw new BoatError(`boat: selected environment "${name}" does not exist in this Boat account`);
+  if (selected.safeForThirdParties !== false || selected.passAgentsCredentials !== true
+    || selected.passGithub !== false || selected.passSecrets !== false || selected.passSandboxCredentials !== false
+    || selected.proxyAiCredentials !== false || !selected.credentialProfileId || selected.credentialProfileId === "default")
+    throw new BoatError("boat: selected environment must disable other credentials and use a named AI credential profile");
+}
+
 export function boatBox(opts: BoatOptions): BoxProvider {
   if (!opts.scope) throw new BoatError("boat: a scope is required");
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
@@ -148,14 +164,7 @@ export function boatBox(opts: BoatOptions): BoxProvider {
   return {
     async createFromSnapshot(snapshotId, { name, initCommand, env, generation, boatEnvironment }) {
       if (initCommand !== "dorks-bridge") throw new BoatError("boat: unsupported bridge command");
-      if (boatEnvironment) {
-        const environments = await call("list environments", "GET", `/environments${opts.org ? `?org=${encodeURIComponent(opts.org)}` : ""}`);
-        const selected = environments?.environments?.find((item: { name?: string }) => item.name === boatEnvironment);
-        if (!selected || selected.safeForThirdParties !== false || selected.passAgentsCredentials !== true
-          || selected.passGithub !== false || selected.passSecrets !== false || selected.passSandboxCredentials !== false
-          || selected.proxyAiCredentials !== false || !selected.credentialProfileId || selected.credentialProfileId === "default")
-          throw new BoatError("boat: selected environment must disable other credentials and use a named AI credential profile");
-      }
+      if (boatEnvironment) await checkCodexEnvironment(call, opts.org, boatEnvironment);
       const label = await labelFor(name);
       const existing = await list(label);
       const live = existing.find((b) => b.state !== "cancelled" && b.state !== "error" && !b.dataExpiredAt);

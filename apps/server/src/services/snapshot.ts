@@ -126,22 +126,46 @@ export async function startBuild(app: App, opts: { force?: boolean } = {}): Prom
   } catch (e) {
     fail("failed", e instanceof Error ? e.message : "The bridge bundle is not available.");
   }
+  queueBuild(app, { force: opts.force, bundleId: assets.bundleId });
+  return snapshotView(app);
+}
+
+/** Marks a build running and queues its job, unless one runs or the snapshot in use is current. Synchronous: one transaction. */
+function queueBuild(app: App, opts: { force?: boolean; bundleId?: string }) {
   app.db.tx(() => {
     const row = readBuild(app);
     if (row.status === "running") return;
     const inUse = !!row.ready_name && readSettings(app).baseSnapshotId === row.ready_name;
-    if (!opts.force && row.status !== "failed" && inUse && row.ready_bundle_id === assets.bundleId) return; // already up to date
+    if (!opts.force && row.status !== "failed" && inUse && row.ready_bundle_id === opts.bundleId) return; // already up to date
     const attempt = row.attempt + 1;
     update(app.db, "snapshot_build", { id: 1 }, { status: "running", step: STEPS[0].id, message: STEPS[0].label, error: null, attempt, startedAt: app.now(), finishedAt: null });
     setTimer(app, "", SNAPSHOT_JOB, 0, { attempt });
     touch(app, { t: "snapshot" });
+    console.error(`snapshot build queued (attempt ${attempt})`);
   });
-  return snapshotView(app);
 }
 
-/** After a restart: a build that was running when the process died is queued again, as a new attempt. */
+/**
+ * With a Boat key and no base snapshot (in Settings or `BASE_SNAPSHOT_ID`), queue the build, so onboarding needs no "Prepare Boat"
+ * step. Called after a Boat key is saved (`retryFailed`: a new key is the owner's answer to a failed build) and on every start,
+ * which never retries a failure by itself (a build can cost money). If the bridge bundle is missing the job fails and
+ * `snapshotView` says why.
+ */
+export function buildIfMissing(app: App, opts: { retryFailed?: boolean } = {}): void {
+  const s = readSettings(app);
+  if (s.baseSnapshotId ?? app.cfg.baseSnapshotId) return;
+  if (!s.boatKeyEnc) return; // also with simulated sandboxes: the build follows the owner's Boat step, never a bare start
+  if (readBuild(app).status === "failed" && !opts.retryFailed) return;
+  queueBuild(app, {});
+}
+
+/**
+ * After a restart: a build that was running when the process died is queued again, as a new attempt. A Boat key saved with no
+ * snapshot and no build yet (the process stopped between saving the key and queueing the build) starts one now.
+ */
 export function recoverSnapshotBuild(app: App) {
   const row = readBuild(app);
+  if (row.status === "idle") return buildIfMissing(app);
   if (row.status !== "running" || hasTimer(app, "", SNAPSHOT_JOB)) return;
   const attempt = row.attempt + 1;
   update(app.db, "snapshot_build", { id: 1 }, { attempt });
@@ -210,6 +234,7 @@ export async function runBuild(app: App, attempt: number): Promise<void> {
       touch(app, { t: "settings" });
       touch(app, { t: "snapshot" });
     });
+    console.error(`snapshot build ready: ${name}`);
   } catch (e) {
     if (!(e instanceof Superseded)) {
       console.error("snapshot build failed", e instanceof Error ? e.message.slice(0, 200) : "unknown");

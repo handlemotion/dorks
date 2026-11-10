@@ -7,8 +7,8 @@ import { z } from "zod";
 import type { AppError } from "@dorks/shared";
 import { chooseCodexModel, createDork, getDorkView, interrupt, listDorks, listEvents, removeDork, renameDork, sendMessage, setArchived, owned } from "../services/dorks";
 import { deleteSecret, secretNames, setSecret, settingsView, updateSettings } from "../services/settings";
-import { checkBoat } from "../services/boatCheck";
-import { snapshotView, startBuild } from "../services/snapshot";
+import { assertBoatAccepts, assertCodexEnvironment, checkBoat } from "../services/boatCheck";
+import { buildIfMissing, snapshotView, startBuild } from "../services/snapshot";
 import * as subs from "../services/subscriptions";
 
 const STATUS: Record<AppError["code"], number> = {
@@ -138,7 +138,14 @@ export function uiApp(app: App): Hono {
   // ---- settings and secrets
   api.get("/api/settings", (c) => c.json(settingsView(app)));
   api.put("/api/settings", async (c) => {
-    await updateSettings(app, await body(c));
+    const patch = await body(c);
+    // Provider values are checked here, by the server, before anything is saved (GitHub's is checked inside updateSettings).
+    await assertBoatAccepts(app, patch);
+    await assertCodexEnvironment(app, patch);
+    await updateSettings(app, patch);
+    console.error(`settings saved: ${Object.keys(patch).sort().join(", ")}`); // names only, never values
+    // A new Boat key starts the base-snapshot build in the background (onboarding has no "Prepare Boat" step), or retries a failed one.
+    if (typeof patch.boatKey === "string" && patch.boatKey.trim()) buildIfMissing(app, { retryFailed: true });
     return c.json({});
   });
   api.get("/api/secrets", (c) => c.json(secretNames(app)));

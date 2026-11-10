@@ -310,37 +310,8 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       if (sub === "subscriptions/resume") return json(res, 200, {});
     }
 
-    if (path === "/api/settings") {
-      if (method === "GET") return json(res, 200, settings);
-      if (method === "PUT") {
-        const set = (k: "boatKey" | "claudeToken") => {
-          if (typeof body[k] === "string") settings[k] = body[k] !== "";
-        };
-        set("boatKey");
-        set("claudeToken");
-        if (typeof body.githubToken === "string") settings.github = body.githubToken ? { configured: true, login: "octocat" } : { configured: false };
-        for (const k of ["boatOrg", "boatEnvironment", "baseSnapshotId"] as const) if (typeof body[k] === "string") settings[k] = body[k] || null;
-        if (typeof body.sleepMinutes === "number") {
-          if (!Number.isFinite(body.sleepMinutes) || body.sleepMinutes <= 0 || body.sleepMinutes > 1440) return fail(res, "invalid", "minutes must be between 0 and 1440");
-          settings.sleepMinutes = body.sleepMinutes;
-        }
-        if (body.commentPolicy) settings.commentPolicy = body.commentPolicy as Settings["commentPolicy"];
-        broadcast({ t: "settings" });
-        return json(res, 200, {});
-      }
-    }
-    if (path === "/api/boat/check" && method === "POST") {
-      const key = typeof body.boatKey === "string" ? body.boatKey.trim() : "";
-      if (!key && !settings.boatKey) return fail(res, "not_configured", "Add your Boat API key first.");
-      if (key.startsWith("bad")) return json(res, 200, { status: "invalid", message: "Boat rejected that key. Check it and its access (create, list, use and delete sandboxes)." });
-      return json(res, 200, { status: "ok", message: "Boat accepted the key." });
-    }
-    if (path === "/api/snapshot" && method === "GET") return json(res, 200, snapView());
-    if (path === "/api/snapshot/build" && method === "POST") {
-      if (body.force !== undefined && typeof body.force !== "boolean") return fail(res, "invalid", "force must be a boolean");
-      if (!settings.boatKey) return fail(res, "not_configured", "Add your Boat API key first.");
-      const current = snapView();
-      if (snap.state === "building" || (!body.force && snap.state !== "failed" && snap.snapshot && current.managed && !current.stale)) return json(res, 202, current);
+    /** Starts the scripted build (the caller has checked that one may start). */
+    const startBuild = () => {
       const fresh = SNAPSHOT_STEPS.length;
       Object.assign(snap, { state: "building", error: null, startedAt: Date.now(), finishedAt: null });
       const stepTo = (i: number) => {
@@ -367,6 +338,43 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         broadcast({ t: "settings" });
         broadcast({ t: "snapshot" });
       });
+    };
+    if (path === "/api/settings") {
+      if (method === "GET") return json(res, 200, settings);
+      if (method === "PUT") {
+        // Like apps/server, which checks a Boat key with Boat before saving it.
+        if (typeof body.boatKey === "string" && body.boatKey.startsWith("bad")) return fail(res, "invalid", "Boat rejected that key. Check it and its access (create, use, save and delete sandboxes).");
+        const set = (k: "boatKey" | "claudeToken") => {
+          if (typeof body[k] === "string") settings[k] = body[k] !== "";
+        };
+        set("boatKey");
+        set("claudeToken");
+        if (typeof body.githubToken === "string") settings.github = body.githubToken ? { configured: true, login: "octocat" } : { configured: false };
+        for (const k of ["boatOrg", "boatEnvironment", "baseSnapshotId"] as const) if (typeof body[k] === "string") settings[k] = body[k] || null;
+        if (typeof body.sleepMinutes === "number") {
+          if (!Number.isFinite(body.sleepMinutes) || body.sleepMinutes <= 0 || body.sleepMinutes > 1440) return fail(res, "invalid", "minutes must be between 0 and 1440");
+          settings.sleepMinutes = body.sleepMinutes;
+        }
+        if (body.commentPolicy) settings.commentPolicy = body.commentPolicy as Settings["commentPolicy"];
+        broadcast({ t: "settings" });
+        // Like apps/server: a new Boat key starts the base-snapshot build when there is no snapshot yet.
+        if (typeof body.boatKey === "string" && body.boatKey && !settings.baseSnapshotId && snap.state !== "building") startBuild();
+        return json(res, 200, {});
+      }
+    }
+    if (path === "/api/boat/check" && method === "POST") {
+      const key = typeof body.boatKey === "string" ? body.boatKey.trim() : "";
+      if (!key && !settings.boatKey) return fail(res, "not_configured", "Add your Boat API key first.");
+      if (key.startsWith("bad")) return json(res, 200, { status: "invalid", message: "Boat rejected that key. Check it and its access (create, use, save and delete sandboxes)." });
+      return json(res, 200, { status: "ok", message: "Boat accepted the key." });
+    }
+    if (path === "/api/snapshot" && method === "GET") return json(res, 200, snapView());
+    if (path === "/api/snapshot/build" && method === "POST") {
+      if (body.force !== undefined && typeof body.force !== "boolean") return fail(res, "invalid", "force must be a boolean");
+      if (!settings.boatKey) return fail(res, "not_configured", "Add your Boat API key first.");
+      const current = snapView();
+      if (snap.state === "building" || (!body.force && snap.state !== "failed" && snap.snapshot && current.managed && !current.stale)) return json(res, 202, current);
+      startBuild();
       return json(res, 202, snapView());
     }
     if (path === "/api/secrets" && method === "GET") return json(res, 200, [...secrets.keys()].sort());

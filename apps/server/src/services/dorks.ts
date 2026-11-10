@@ -4,6 +4,7 @@ import { dorkOf, dorkView, eventOf, getDork, type DorkRow, type DorkView, type P
 import { insert } from "../db";
 import { append, dispatch, enqueue, MAX_MESSAGE_CHARS, patchDork, setTimer } from "../lifecycle/dispatch";
 import { validRepo } from "../lib/repo";
+import { missingForSession } from "./setup";
 import { readSettings } from "./settings";
 import { endDorkSubscriptions, resetCiAttempts, subscriptionsOfDork } from "./subscriptions";
 
@@ -66,12 +67,8 @@ export function createDork(app: App, input: { repo: string; message: string; tit
   if (typeof repo !== "string" || !validRepo(repo)) fail("invalid", "repo must be owner/name");
   if (title !== undefined && (typeof title !== "string" || title.trim().length > MAX_TITLE_CHARS)) fail("invalid", "title too long");
   const text = checkText(message);
-  const s = readSettings(app);
-  const sim = app.cfg.boxProvider === "sim";
-  if (!s.githubTokenEnc || (provider === "claude" && !s.claudeTokenEnc)) fail("onboarding_incomplete", "finish onboarding first");
-  if (!sim && !s.boatKeyEnc) fail("onboarding_incomplete", "add your Boat API key in Settings");
-  if (!sim && !app.cfg.publicUrl) fail("onboarding_incomplete", "set up the public URL that sandboxes use to reach this app first");
-  if (provider === "codex" && !sim && !s.boatEnvironment) fail("onboarding_incomplete", "Codex is optional: connect ChatGPT once in Boat and select your Boat environment in Settings, or use Claude Code");
+  const missing = missingForSession(app, provider);
+  if (missing) fail("onboarding_incomplete", missing);
 
   const id = app.uuid();
   const now = app.now();
@@ -80,7 +77,7 @@ export function createDork(app: App, input: { repo: string; message: string; tit
       id, title: (title?.trim() || text).slice(0, MAX_TITLE_CHARS), repo, branch: `agent/${app.uuid().slice(0, 8)}`, provider, state: "creating", archived: false,
       lastActivityAt: now, createdAt: now, deleting: false,
     });
-    insert(app.db, "dork_runtime", { dorkId: id, bridgeSeq: 0, streamMsgId: "", sleepMinutes: s.sleepMinutes, bridgeSeenAt: 0, bridgeLost: false, opGen: 0, pauseRetries: 0 });
+    insert(app.db, "dork_runtime", { dorkId: id, bridgeSeq: 0, streamMsgId: "", sleepMinutes: readSettings(app).sleepMinutes, bridgeSeenAt: 0, bridgeLost: false, opGen: 0, pauseRetries: 0 });
     persistMessage(app, getDork(app.db, id)!, text);
     dispatch(app, id, { t: "start" }); // box failures land in `error` via the box job; the row exists either way
     touch(app, { t: "dorks" });

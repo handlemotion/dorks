@@ -4,13 +4,13 @@
 
 ## Cost
 
-Boat's `default` machine is 4 vCPU and 8 GB RAM at $0.036/hour, billed per second while running. A stopped sandbox costs no machine time and keeps its disk for at least 14 days. Prices and limits change; see [Boat pricing](https://docs.boat.dev/pricing). The free trial forces auto-stop, so Dorks needs a paid Boat plan to turn off Boat's one-hour timer and control its own sleep (`sleepMinutes`, default 5).
+Boat's `default` machine is 4 vCPU and 8 GB RAM at $0.036/hour, billed per second while running. A stopped sandbox costs no machine time and keeps its disk for at least 14 days. Prices and limits change; see [Boat pricing](https://docs.boat.dev/pricing). Dorks needs a paid Boat plan: the [free trial](https://docs.boat.dev/free-trial) requires auto-stop within 2 hours (`trial_auto_stop_required`) and cannot save snapshots (`trial_saved_snapshots_not_allowed`), and Dorks creates sandboxes without a timer to control its own sleep (`sleepMinutes`, default 5). The Boat step refuses a trial key for that reason.
 
 ## Setup, in order
 
-1. **Boat API key.** Create a [Boat API key](https://docs.boat.dev/api/v1) that can create, list, command, stop, resume and delete sandboxes and list environments. Paste it in the app: the server asks Boat for one sandbox with it first (`POST /api/boat/check`) and saves it only if Boat accepts it, so a wrong key, a missing organization or an empty wallet is reported on that step. Set `boatOrg` only if you want billing pinned to one organization.
+1. **Boat API key.** Create a [Boat API key](https://docs.boat.dev/api-keys/scopes) with the actions Dorks uses: `sandbox.create`, `sandbox.read`, `sandbox.stop`, `sandbox.resume`, `sandbox.delete`, `exec`, `file.write`, `snapshot.read`, `snapshot.write`, and `environment.read` for Codex. Add `account.read` so the app can also check your plan and wallet. Boat cannot report which actions a key has, so a missing one shows up when it is first used, as `api_key_action_forbidden` (the build names it). Paste the key in the app: before saving it, the server asks Boat's [`GET /limits`](https://docs.boat.dev/api/reference/account/get-boat-limits) with it, so a wrong or expired key, a free trial (`sandboxPlanKey: "trial"`), a blocked wallet (`canStart: false`) or a wrong organization is reported on that step. Without `account.read` it falls back to listing one sandbox, which proves the key but not the plan. Set `boatOrg` only to bill an organization's wallet; use its `team_…` id, because two organizations with the same name are refused as `ambiguous_org`.
 2. **Public URL.** Sandboxes reach your server through a tunnel to the bridge port. Set the tunnel's `https://` URL in Settings or as `DORKS_PUBLIC_URL`. See [architecture](architecture.md). A dork cannot be created before this is set, and the URL must stay stable, because a sandbox keeps the one it was created with.
-3. **Base snapshot**: click **Prepare Boat** (below).
+3. **Base snapshot**: built for you in the background as soon as the Boat key is saved (below).
 4. **Agent sign-in**: a Claude token (the default and the recommended agent); a ChatGPT (Codex) environment is optional (below).
 5. **GitHub token** ([GitHub](github.md)).
 
@@ -18,7 +18,7 @@ Boat's `default` machine is 4 vCPU and 8 GB RAM at $0.036/hour, billed per secon
 
 Each dork starts from a [saved snapshot](https://docs.boat.dev/snapshots/templates) in your Boat account. It holds the bridge and the tools the agent needs but **no credentials and no per-dork environment**. Boat's image already has Node, git and Claude Code. `infra/snapshot/boat-install.sh` adds the Codex CLI, the bridge (as `dorks-bridge`, with `dorks` and the `gh` shim as symlinks), a pinned `gh` and `gh stack`. It checks versions and download checksums before it exits. Details and the bump procedure: [infra/snapshot/README.md](../infra/snapshot/README.md).
 
-Snapshots belong to one Boat account, so every install builds its own. Once your Boat key is saved, click **Prepare Boat** in the setup guide (or in Settings, under Base snapshot). The app:
+Snapshots belong to one Boat account, so every install builds its own. Saving your Boat key starts the build in the background when no base snapshot is set yet (and retries one that failed), and the app shows its progress; no session can be created until it is ready. You can also start or rerun it in Settings, under Base snapshot. The app:
 
 1. creates a temporary build sandbox with none of your account's credentials and a 2 hour lifetime as a safety net,
 2. uploads the bridge bundle that ships inside the app plus the installer, and checks the bundle's sha256,
@@ -26,7 +26,7 @@ Snapshots belong to one Boat account, so every install builds its own. Once your
 4. saves the snapshot as `dorks-base-<8 hex>` (a name unique to this install, so two installs on one Boat account never replace each other's image) and sets it as your base snapshot,
 5. deletes the build sandbox, also when something fails. If Boat refuses the delete, the app keeps retrying in the background, and a build interrupted by a crash or restart is cleaned up and run again on the next start.
 
-Progress shows step by step, and a failure shows its reason with a **Retry** button. A failed rebuild leaves your current snapshot in use. The build adds one [saved snapshot](https://docs.boat.dev/snapshots/templates#saved-snapshot-pricing) to your account: Boat includes 10 per $20 of plan, and each one above that costs $0.056 a day from the wallet (a free trial cannot save snapshots at all, and an empty wallet fails the save with `credit_required`).
+Progress shows step by step, and a failure shows its reason with a **Retry** button. A failed rebuild leaves your current snapshot in use. The build adds one [saved snapshot](https://docs.boat.dev/snapshots/templates#saved-snapshot-pricing) to your account: Boat includes 10 per $20 of plan, and each one above that costs $0.056 a day from the wallet (a free trial cannot save snapshots at all, and an empty wallet fails the save with 402 `credit_required`).
 
 When an app update ships a newer bridge, Settings shows "An update is available" for the snapshot: click **Update snapshot**. New dorks use the new image, existing ones keep their disk. The installer is x86_64 only, which is what every Boat sandbox is ([base image](https://docs.boat.dev/machines/tools)).
 

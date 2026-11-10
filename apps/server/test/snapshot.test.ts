@@ -216,6 +216,24 @@ describe("restarts", () => {
     expect(h.snapshotDriver.boxes.has("bx_leftover")).toBe(false);
   });
 
+  it("a Boat key saved before its build was queued starts one on the next start, but a failed build is not retried by itself", async () => {
+    const h = await ready({ config: { baseSnapshotId: undefined } }); // the key is saved; the process died before queueing
+    recoverSnapshotBuild(h.app);
+    await h.settle();
+    expect((await snapshotView(h.app)).state).toBe("ready");
+
+    const failed = await ready({ config: { baseSnapshotId: undefined } });
+    failed.app.db.run("UPDATE snapshot_build SET status = 'failed', attempt = 1 WHERE id = 1");
+    recoverSnapshotBuild(failed.app);
+    await failed.settle();
+    expect((await snapshotView(failed.app)).state).toBe("failed"); // retrying a failure is the owner's call (it may cost money)
+
+    const preset = await ready(); // BASE_SNAPSHOT_ID is set: nothing to build
+    recoverSnapshotBuild(preset.app);
+    await preset.settle();
+    expect((await snapshotView(preset.app)).state).toBe("none");
+  });
+
   it("a stale job from an earlier attempt does nothing", async () => {
     const h = await ready();
     await startBuild(h.app);

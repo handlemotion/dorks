@@ -41,6 +41,10 @@ Studied on Mobbin (web, desktop-class onboarding): Linear, Twenty, Air, Sana.
 
 The onboarding window shows no traffic lights; the main app does. The page calls `invoke('set_window_mode', { mode: 'onboarding' })` on entering onboarding and `{ mode: 'app' }` when the app view mounts (it is a no-op in a browser). The shell owns what each mode means (title bar, vibrancy). The top 40px of every onboarding page is a drag region (`data-tauri-drag-region`) because the window has no title bar in this mode.
 
-## Boat key validation
+## Server side
 
-The server rejects an empty or oversize key and verifies the GitHub token on save, but it does not call Boat when the key is saved. A wrong Boat key therefore shows up at step 3 as the snapshot build's own error (the message is shown inline with Retry). A dedicated `POST /api/boat/check` would catch it one step earlier; that is a server change and is not part of this work.
+- **Progress is derived, not stored.** Which steps are done comes from the settings the server already keeps (`lib/onboarding.ts`); there is no separate onboarding record to drift out of sync. Only choices that are not settings (having pressed Get started) live in the browser.
+- **The server checks provider values on save** (`PUT /api/settings`), whatever the client checked first. The Boat key is checked with Boat's `GET /limits` (a wrong or expired key, a free trial, a blocked wallet or a wrong organization is refused with the reason), a Codex environment against Boat's environment list, a GitHub token with `GET /user`. An unreachable provider does not block the save.
+- **The snapshot build is durable.** Saving the Boat key queues it in the same request (or retries a failed one); a process that stops before that queues it on the next start; a build interrupted mid-way is rerun (`recoverSnapshotBuild`). A failed build is otherwise never retried by itself.
+- **One gate for a new session** (`services/setup.ts`): Boat, agent, GitHub, base snapshot, public URL, in that order, so the refusal always names the next thing to do.
+- **Logs**: the server writes `settings saved: <field names>` (never values) and each build's queue, ready and failure to stderr, which the desktop app keeps in `logs/server.log`.

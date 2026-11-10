@@ -131,8 +131,11 @@ export function boatSnapshotDriver(opts: BoatSnapshotOptions): SnapshotDriver {
 /** What a failed Boat call means for the person watching the build. Never includes response bodies. */
 export function boatBuildFailureMessage(e: unknown): string {
   if (e instanceof BoatError) {
+    // Codes from https://docs.boat.dev/api/v1 ("Error model"), /free-trial and /api-keys/scopes.
+    if (e.code === "trial_saved_snapshots_not_allowed") return "Boat's free trial cannot save snapshots. End the trial in Boat, then retry.";
+    if (e.code === "api_key_action_forbidden") return "The Boat API key lacks an action the build needs (create, run commands, write files, save snapshots, delete). Give the key those actions, then retry.";
     if (e.status === 401 || e.status === 403) return "Boat rejected the API key. Check the key and its access.";
-    if (e.code === "credit_required" || e.status === 402) return "Boat needs money in the wallet to save another snapshot (saved snapshots above your plan's included count cost $0.056 a day). Add funds in Boat, then retry.";
+    if (e.status === 402) return "Boat needs money in the wallet to save another snapshot (saved snapshots above your plan's included count cost $0.056 a day). Add funds in Boat, then retry.";
     if (e.status === 429) return "Boat is rate limiting this account. Wait a minute and retry.";
     return `${e.message}${e.code ? ` (${e.code})` : ""}`.slice(0, 200);
   }
