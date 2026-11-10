@@ -1,58 +1,59 @@
 # dorks
 
-Run coding agents (Claude Code, Codex) in your own [Boat](https://boat.dev) sandboxes and drive them from one UI: a chat per task, PRs that the agent keeps working on until they merge. Your sandboxes, your Boat account, your Claude or ChatGPT sign-in; nothing is hosted for you. Site: [dorks.build](https://dorks.build).
+Run coding agents (Claude Code, Codex) in your own [Boat](https://boat.dev) sandboxes and drive them from one desktop app: a chat per task, and PRs the agent keeps working on until they merge. Your sandboxes, your Boat account, your Claude or ChatGPT sign-in. Nothing is hosted for you. Site: [dorks.build](https://dorks.build).
 
-> **Status: in transition.** The project is moving from a hosted-service design to a local-first, single-owner app (a macOS app that runs everything on your machine). Until that lands, you run it from source as described below. See [docs/env.md](docs/env.md) for configuration.
+> **Status: early.** The server, web UI and desktop shell are in the repo and tested separately. Not yet shipped: a signed `.dmg`, the wurmhol tunnel client (use your own tunnel URL for now), a bundled server binary, and a finished first-run flow. [docs/desktop.md](docs/desktop.md) lists what is missing.
 
 ## How it works
 
-- **Backend:** a [Convex](https://convex.dev) app (`apps/convex`) holds dorks, the transcript and the lifecycle state machine. It runs on the open-source self-hosted Convex backend.
-- **Web:** a React app (`apps/web`) for chats and settings.
-- **Sandboxes:** each dork is a Boat sandbox created from a base snapshot ([docs/boat.md](docs/boat.md)). Inside it, `dorks-bridge` (`infra/bridge`) runs the agent and talks to the backend.
-- **Autonomy:** a dork opens PRs, subscribes to them and keeps fixing CI failures, review comments and conflicts ([docs/autonomy.md](docs/autonomy.md)).
+```
+ Dorks.app (Tauri, macOS)                              Boat cloud
+ ┌──────────────────────────────────────┐             ┌─────────────────────────────┐
+ │ web UI (static SPA)                  │             │ sandbox (one per dork)      │
+ │    │ HTTP + SSE, owner token         │             │  dorks-bridge ─▶ claude/    │
+ │    ▼                                 │             │  codex, git, gh             │
+ │ dorks-server (SQLite, timers, Boat   │◀── wss ─────│       │                     │
+ │ driver, GitHub poller)               │  tunnel,    └───────┼─────────────────────┘
+ │  UI port 127.0.0.1:4747              │  bridge port        │
+ │  bridge port 127.0.0.1:4748          │  only               ▼
+ └──────────────────────────────────────┘                  GitHub, Anthropic, OpenAI
+```
 
-The sandbox's bridge connects *out* to the backend, so a backend on your machine needs a public URL that Boat's cloud can reach.
+- **Server** (`apps/server`): one local process with a SQLite database. It runs the lifecycle state machine (create, work, idle, sleep, wake), calls Boat, and polls GitHub for PR events.
+- **Bridge** (`infra/bridge`): runs inside each sandbox, drives the agent, and connects *out* to your server over a WebSocket. Your Mac needs a public tunnel URL for that, and only the bridge port is exposed through it.
+- **Web** (`apps/web`) with `packages/client`: the UI. It loads inside the desktop app, or in a browser.
+- **Desktop** (`apps/desktop`): a Tauri shell that starts and supervises the server, hands the UI its token, and keeps the Mac awake while dorks work.
+- **Autonomy**: a dork opens PRs, subscribes to them and keeps fixing CI failures, review comments and conflicts ([docs/autonomy.md](docs/autonomy.md)).
 
-## Run from source
+Read [docs/architecture.md](docs/architecture.md) for the decisions and the wire protocols, and [SECURITY.md](SECURITY.md) for the trust model.
 
-Needs Node 24, pnpm (version pinned in `package.json`; `corepack enable`) and Docker.
+## Quickstart from source
+
+Needs Node 24, pnpm (version pinned in `package.json`; `corepack enable`) and [Bun](https://bun.sh).
 
 ```sh
 pnpm install
-pnpm env:init      # writes .env with generated secrets (git-ignored)
-pnpm dev:backend   # self-hosted Convex in Docker, deploys apps/convex, pushes .env (rerun after backend changes)
-pnpm dev:mail      # prints sign-in codes
-pnpm dev:web       # web on http://localhost:3000
+
+# the server (prints a JSON "ready" line; data in ~/Library/Application Support/Dorks)
+pnpm --filter @dorks/server dev
+
+# the web UI on http://localhost:3000, in another terminal
+pnpm --filter @dorks/web dev
 ```
 
-Or detached in one command: `pnpm dev:up` (`pnpm dev:status`, `pnpm dev:down`; logs in `/tmp/dorks-dev`).
+Open http://localhost:3000, enter `http://127.0.0.1:4747` and the `ownerToken` from `secrets.json` in the data directory (see [docs/github.md](docs/github.md#the-owner-token)), then follow setup: Boat key, base snapshot ([docs/boat.md](docs/boat.md)), agent sign-in, GitHub token.
 
-By default `.env` uses `BOX_PROVIDER=sim`, a local simulator (`pnpm dev:sim`; `BRIDGE_IMPL=real pnpm dev:sim` runs the real bridge against a fake Claude CLI). For real sandboxes set `BOX_PROVIDER=boat`, `BOAT_API_KEY`, `BASE_SNAPSHOT_ID` and `DORKS_OWNER_EMAIL`; see [docs/boat.md](docs/boat.md).
+To try the UI with no server at all: `pnpm --filter @dorks/web dev:mock` serves an in-memory mock server on :4747 with a scripted fake agent.
 
-### Running the real agent against the simulator
+For real sandboxes the server needs `DORKS_PUBLIC_URL`, the `https://` URL of a tunnel that forwards to the bridge port (default 4748). All variables are in [docs/env.md](docs/env.md).
 
-Set `E2E_CLAUDE_TOKEN` (a `claude setup-token` value) in your environment. The Claude CLI refuses `--permission-mode bypassPermissions` as root, so on a root-only machine run the sim host as an unprivileged user with a writable `HOME`, a writable `infra/bridge/dist` and `DORKS_E2E_ROOT` set to a directory it owns:
+## Quickstart from the app
 
-```sh
-scripts/with-env.sh setpriv --reuid=1000 --regid=1000 --init-groups env -i PATH="$PATH" HOME=/tmp/u-home DORKS_E2E_ROOT=/tmp/u-e2e \
-  CONVEX_URL=http://127.0.0.1:3210 SIM_HOST_KEY="$SIM_HOST_KEY" BRIDGE_SECRET_KEY="$BRIDGE_SECRET_KEY" BRIDGE_IMPL=real CLAUDE_BIN="$(command -v claude)" \
-  node infra/bridge-sim/host.mjs
-```
+Once a release exists: download the `.dmg` from the GitHub releases, drag Dorks to Applications, open it, and follow the setup screen. Building the app yourself: [docs/desktop.md](docs/desktop.md).
 
-Bridge-level check without Convex: `CLAUDE_CODE_OAUTH_TOKEN=$E2E_CLAUDE_TOKEN pnpm --filter @dorks/bridge test live`, as that same user. `apps/convex/scripts/e2e.mjs` has one timing check ("mid-turn") that only holds for the simulator's slow streaming; with the real CLI treat it as a smoke test.
+## Develop
 
-## Tests
-
-`pnpm typecheck` and `pnpm test` run the Convex suite (lifecycle machine, normalizer, crypto, GitHub, functions via `convex-test`), the bridge suite and the shared client suite.
-
-## CI
-
-`.github/workflows/ci.yml` runs on pull requests and pushes to `main`, and needs no repository secrets (every key is generated per run), so it works on forks.
-
-- **checks**: `pnpm install --frozen-lockfile`, `pnpm -r typecheck`, `pnpm -r --if-present test`.
-- **backend-e2e**: starts a self-hosted Convex backend (`ghcr.io/convex/convex-backend`, pinned by digest), deploys `apps/convex`, sets throwaway env vars, then runs `apps/convex/scripts/run-e2e.sh` (acceptance and secret scan) and `apps/convex/scripts/web-e2e.mjs` (headless Chrome against `apps/web`). On failure the logs and screenshots in `/tmp/dorks-e2e` are uploaded as an artifact.
-
-Keep CI in step with the backend: a new required Convex env var must be added to the `set_env` list in the "Deploy functions and set throwaway env" step, using throwaway or sim values only, and a new workspace package must be in `pnpm-workspace.yaml` with its lockfile changes committed.
+[CONTRIBUTING.md](CONTRIBUTING.md) has the dev loop, tests and CI.
 
 ## License
 
