@@ -76,8 +76,8 @@ Auth: `Authorization: Bearer <owner token>` (SSE also accepts `?access_token=`, 
 IDs are UUID strings. Times are epoch milliseconds.
 
 **Dork** (the client-visible row; box ids, session ids and secrets are never returned):
-`{ id, title, repo, branch, provider: "claude"|"codex", state, archived, preview?, prUrl?, codexModel?, codexModelChoices?, model?, effort?, agentModel?, agentEffort?, modelChoices?, lastActivityAt, createdAt }`
-`state` is one of `creating | working | idle | sleeping | waking | error`. For Claude, `model`/`effort` are the session's choice (absent: the CLI's default), `agentModel`/`agentEffort` what the agent confirmed it runs (the model from its `system/init` event, the effort the bridge started it with; cleared on a change until confirmed again), and `modelChoices` the `AgentModelChoice[]` the CLI offered this account (its `initialize` answer).
+`{ id, title, repo, branch, provider: "claude"|"codex", state, archived, preview?, previews: {port, url, title?}[], prUrl?, codexModel?, codexModelChoices?, model?, effort?, agentModel?, agentEffort?, modelChoices?, lastActivityAt, createdAt }`
+`state` is one of `creating | working | idle | sleeping | waking | error`. For Claude, `model`/`effort` are the session's choice (absent: the CLI's default), `agentModel`/`agentEffort` what the agent confirmed it runs (the model from its `system/init` event, the effort the bridge started it with; cleared on a change until confirmed again), and `modelChoices` the `AgentModelChoice[]` the CLI offered this account (its `initialize` answer). `previews` are the dev servers the agent showed (`show_preview` below), oldest first, at most 20; the Browser tab in Chat details lists them and opens one as it appears. The URLs are public hosted ports (no token), cleared when the box is replaced.
 
 | Method and path | Body / query | Result |
 |---|---|---|
@@ -142,6 +142,7 @@ One stream per client. Messages are `data: <json>\n\n`; a `: ping` comment every
 | `gh_token` | | `{token}` or `null` (the stored GitHub token; kept so the bridge's refresh path keeps working, the server no longer queues `gh_token` commands) |
 | `subscribe_pr` | `{repo, number, source: "auto"\|"agent"}` | `{}` (idempotent) |
 | `unsubscribe_pr` | `{repo, number}` | `{}` |
+| `show_preview` | `{port, title?, localhost?}` | `{port, url, title?}`. The agent's `preview_show` MCP tool (bridge RPC `preview.show`). The box provider hosts the port (Boat `POST /host`, public; see [Boat](boat.md#hosted-ports)) and the URL is stored in the dork's `previews` (one per port, the newest replaces). Errors `invalid` (bad or reserved port), `sleeping` (no box), `not_configured`, `failed` |
 
 **Pushes** (server to bridge): `{"t":"commands","cmds":[{cid, frame: CommandFrame}]}` is the **snapshot of unacknowledged commands** and is re-sent whenever it changes (and once right after `auth_ok`). Delivery is idempotent: the bridge dedupes by `cid`/message id and acknowledges with a `push` `ack` frame, which removes the command. This gives resume-after-reconnect for free: after a drop the bridge re-auths, calls `connect` (learning `afterBridgeSeq`, the event cursor, so it replays events above it) and receives the current snapshot. `{"t":"subscriptions","views":SubscriptionView[]}` is sent likewise for the bridge's PR cache.
 

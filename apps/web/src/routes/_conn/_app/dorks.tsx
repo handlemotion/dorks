@@ -174,7 +174,7 @@ function Thread({ dorkId }: { dorkId: string }) {
   if (dork === undefined || loading) return <p className="mt-4 px-6 text-sm text-muted-foreground" role="status">Loading session…</p>
   if (dork === null) return <p className="mt-4 px-6 text-sm text-destructive" role="alert">That session could not be found.</p>
   return (
-    <ChatSplit details={detailsOpen ? <ChatDetails data={{ pr: prOf(dork.prUrl), computer: { awake: dork.state === 'working' || dork.state === 'idle', working, used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent } }} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} onAsk={setText} /> : undefined}>
+    <ChatSplit details={detailsOpen ? <ChatDetails data={{ pr: prOf(dork.prUrl), previews: dork.previews?.map((p) => ({ name: p.title ?? `Port ${p.port}`, url: p.url, port: p.port })), computer: { awake: dork.state === 'working' || dork.state === 'idle', working, used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent } }} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} onAsk={setText} /> : undefined}>
     <section className="flex min-w-0 flex-1 flex-col" aria-label="thread" data-state={dork.state}>
       <PageHeader divider={false}
         title={dork.title}

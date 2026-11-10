@@ -36,6 +36,10 @@ The Computer tab's stream URL is a bearer credential to that interactive desktop
 
 So: use dorks only on repositories you trust, scope the GitHub token to the repositories you need (a fine-grained token, see [GitHub](docs/github.md)), and do not hand a dork a token that can do more than you would let its code do. A sandbox cannot reach other dorks' bridge sessions (secrets are per dork) or the UI API (loopback only).
 
+### Dev server previews
+
+When the agent shows a dev server (`preview_show`), the port is hosted on Boat **without a token** (see [Boat](docs/boat.md#hosted-ports) for why), so the page is public until the box is stopped or replaced. Anyone who learns its `*.on.boat.dev` URL can open it. Do not let the agent show a server that exposes secrets or write access.
+
 ### Not defended against
 
 - Anyone with access to your user account on the machine (they can read `secrets.json`).

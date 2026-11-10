@@ -53,6 +53,7 @@ function fake() {
     if (method === "POST" && match[2] === "/commands") return json(body.detached ? { ok: true, processId: "p1" } : { ok: true, exitCode: 0 });
     if (method === "POST" && match[2] === "/stop") return json({ ok: true, status: "archiving", sandbox: Object.assign(box, { state: "archiving" }) }, 202);
     if (method === "POST" && match[2] === "/resume") return json({ ok: true, sandbox: Object.assign(box, { state: "resuming" }) }, 202);
+    if (method === "POST" && match[2] === "/host") return json({ url: `https://dk${box.id.slice(3)}-${body.port}.on.boat.dev${body.public ? "" : "?_token=tok_secret"}`, access: body.public ? "public" : "protected" });
     if (method === "DELETE" && !match[2]) return boxes.delete(box.id), json({ ok: true }, 202);
     return json({ ok: false, code: "not_found" }, 404);
   }) as typeof fetch;
@@ -237,6 +238,16 @@ describe("Boat sandbox provider", () => {
     await expect(f.provider.delete("../sandboxes")).rejects.toThrow(/invalid sandbox id/);
     expect(f.requests).toHaveLength(0);
     expect(() => boatBox({ apiKey: KEY, scope: "" })).toThrow(/scope/);
+  });
+
+  it("hosts a port publicly, so the Browser tab's iframe needs no third-party cookie, and never keeps a token", async () => {
+    const f = fake();
+    const { id } = await f.provider.createFromSnapshot("snap", CREATE);
+    expect(await f.provider.hostPort!(id, 3000, { title: "Web app" })).toEqual({ url: `https://dk${id.slice(3)}-3000.on.boat.dev/` });
+    expect(f.requests.at(-1)).toMatchObject({ method: "POST", path: `/api/v1/sandboxes/${id}/host`, body: { port: 3000, public: true, title: "Web app" } });
+    expect(f.requests.at(-1)!.body).not.toHaveProperty("localhost");
+    f.setFail((method, path) => (path.endsWith("/host") ? new Response(JSON.stringify({ url: "https://x-3000.on.boat.dev?_token=tok_secret" })) : undefined));
+    expect((await f.provider.hostPort!(id, 3000, { localhost: true })).url).not.toContain("tok_secret");
   });
 });
 

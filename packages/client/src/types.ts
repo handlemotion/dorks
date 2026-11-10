@@ -12,6 +12,8 @@ export interface Dork {
   state: DorkState;
   archived: boolean;
   preview?: string;
+  /** Dev servers the agent showed (its `preview_show` tool), oldest first; absent on older servers. */
+  previews?: { port: number; url: string; title?: string }[];
   prUrl?: string;
   codexModel?: { model: string; effort: string };
   codexModelChoices?: { model: string; efforts: string[] }[];

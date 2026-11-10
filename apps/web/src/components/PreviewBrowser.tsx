@@ -6,7 +6,29 @@ import { EmptyState } from './EmptyState'
 import { List } from './onboarding/List'
 
 /** A dev server running in the sandbox. `html` renders an inline (same-origin) page instead of the URL; the dev demo uses it. */
-export type PreviewServer = { name: string; url: string; html?: string; /** Overrides the page's own `/favicon.ico`. */ favicon?: string }
+export type PreviewServer = { name: string; url: string; html?: string; /** Overrides the page's own `/favicon.ico`. */ favicon?: string; /** Shown as `:3000`; a hosted preview's URL carries no port of its own. */ port?: number }
+
+/**
+ * Calls `onShown` with each server that appears after the first render: the agent just showed it (preview_show). The servers there
+ * from the start are not new, so opening Chat details never jumps anywhere by itself.
+ */
+export function useShownServers(servers: PreviewServer[] | undefined, onShown: (server: PreviewServer) => void) {
+  const seen = useRef<Set<string> | null>(null)
+  const latest = useRef(onShown)
+  latest.current = onShown
+  const key = (servers ?? []).map((s) => s.url).join('\n')
+  useEffect(() => {
+    const list = servers ?? []
+    if (!seen.current) {
+      seen.current = new Set(list.map((s) => s.url))
+      return
+    }
+    const fresh = list.filter((s) => !seen.current!.has(s.url))
+    for (const s of fresh) seen.current.add(s.url)
+    if (fresh.length) latest.current(fresh[fresh.length - 1])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the URLs, not the array identity
+  }, [key])
+}
 
 /** The buttons in Chat details' bars (tabs row, browser bar): 30px, muted, the tabs' hover. */
 export const BAR_BUTTON = "size-[30px] text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground [&_svg:not([class*='size-'])]:size-3.5"
@@ -52,7 +74,7 @@ function Favicon({ server }: { server: PreviewServer }) {
  * highlights the element under the pointer, clicking hands its context (the same snippet React Grab copies: markup, component and source location) to `onGrab`, and
  * Escape leaves. Reaching into the frame's document needs it to be same-origin, so the picker is off for a cross-origin preview.
  */
-export function PreviewBrowser({ servers = [], onGrab, onAsk }: { servers?: PreviewServer[]; onGrab?: (snippet: string) => void; onAsk?: (text: string) => void }) {
+export function PreviewBrowser({ servers = [], open, onOpened, onGrab, onAsk }: { servers?: PreviewServer[]; /** A URL to open now (a server the agent just showed); `onOpened` clears it. */ open?: string; onOpened?: () => void; onGrab?: (snippet: string) => void; onAsk?: (text: string) => void }) {
   const [history, setHistory] = useState<string[]>([])
   const [index, setIndex] = useState(-1)
   const [address, setAddress] = useState('')
@@ -77,6 +99,12 @@ export function PreviewBrowser({ servers = [], onGrab, onAsk }: { servers?: Prev
     setIndex(index + 1)
     setAddress(next)
   }
+  useEffect(() => {
+    if (!open) return
+    navigate(open)
+    onOpened?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per URL to open
+  }, [open])
 
   // Picking listens inside the preview's document (capture phase, so the page never sees the click) and draws the highlight in this
   // document, over the frame. Escape in either document leaves; so does any change of page.
@@ -210,7 +238,7 @@ export function PreviewBrowser({ servers = [], onGrab, onAsk }: { servers?: Prev
                   <button type="button" className="group/row flex h-12 w-full items-center gap-3 px-4 text-left outline-none focus-visible:bg-muted" onClick={() => navigate(s.url)}>
                     <Favicon server={s} />
                     <span className="min-w-0 flex-1 truncate">{s.name}</span>
-                    <span className="truncate text-muted-foreground transition-colors group-hover/row:text-foreground">{port(s.url)}</span>
+                    <span className="truncate text-muted-foreground transition-colors group-hover/row:text-foreground">{s.port ? `:${s.port}` : port(s.url)}</span>
                   </button>
                 </li>
               ))}

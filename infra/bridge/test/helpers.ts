@@ -151,6 +151,7 @@ export class FakeTransport implements Transport {
     const repo = ref.repo.toLowerCase(); // the backend stores repos lowercase
     if (!this.subscriptions.some((s) => s.repo === repo && s.number === ref.number)) this.setSubscriptions([...this.subscriptions, fakeView({ ...ref, repo }, source)]);
   };
+  showPreview = async (port: number, opts: { title?: string }) => ({ port, url: `https://sim-${port}.example/`, ...(opts.title ? { title: opts.title } : {}) });
   unsubscribePr = async (ref: PrRef) => {
     this.prCalls.push({ op: "unsub", ref });
     if (this.prError) throw this.prError;

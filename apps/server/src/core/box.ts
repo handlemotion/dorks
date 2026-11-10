@@ -14,9 +14,18 @@ export interface BoxProvider {
    * bearer credential: never store or log it. Absent when the provider has no desktop.
    */
   desktopUrl?(boxId: string, opts: DesktopOptions): Promise<string>;
+  /**
+   * Exposes a port of the box at an https URL the owner's Browser tab can frame (docs/boat.md, "Hosted ports"). Idempotent: asking
+   * again for a hosted port answers the same URL. The URL is public (no token), so it may be stored. Absent when the provider
+   * cannot host ports.
+   */
+  hostPort?(boxId: string, port: number, opts: HostPortOptions): Promise<{ url: string }>;
 }
 
 export type DesktopOptions = { theme: "light" | "dark" };
+
+/** `localhost`: the app listens only on 127.0.0.1 / ::1, so the provider relays the port (an app on 0.0.0.0 must not ask for it). */
+export type HostPortOptions = { title?: string; localhost?: boolean };
 
 /** The box no longer exists at the provider (404 / "not found"). Callers use it to drop a stale box id and recreate. */
 export class BoxNotFoundError extends Error {

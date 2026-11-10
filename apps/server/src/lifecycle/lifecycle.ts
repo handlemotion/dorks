@@ -71,7 +71,7 @@ export function opFailed(app: App, dorkId: string, message: string, gen?: number
 export function boxGone(app: App, dorkId: string, boxId: string, message: string) {
   const dork = getDork(app.db, dorkId);
   if (!dork || dork.deleting || dork.boxId !== boxId) return;
-  patchDork(app, dorkId, { boxId: undefined, claudeSessionId: undefined, codexThreadId: undefined });
+  patchDork(app, dorkId, { boxId: undefined, claudeSessionId: undefined, codexThreadId: undefined, previews: undefined }); // hosted URLs died with the box
   append(app, dorkId, errorEvent({ code: "failed", message }));
   dispatch(app, dorkId, { t: "op_failed" });
 }

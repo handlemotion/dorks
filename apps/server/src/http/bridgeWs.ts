@@ -114,6 +114,8 @@ export class BridgeSession {
         return bridge.subscribePr(this.app, dorkId, args.repo as string, args.number as number, args.source as "auto" | "agent");
       case "unsubscribe_pr":
         return bridge.unsubscribePr(this.app, dorkId, args.repo as string, args.number as number);
+      case "show_preview":
+        return bridge.showPreview(this.app, dorkId, args.port, args.title, args.localhost);
       default:
         throw new AppFail({ code: "invalid", message: `unknown op: ${op}` });
     }

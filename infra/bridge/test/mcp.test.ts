@@ -37,9 +37,9 @@ describe("MCP protocol", () => {
     expect(((await server().handle(JSON.stringify({ id: 1 }))) as any).error.code).toBe(-32600);
   });
 
-  it("lists the three PR tools with object schemas and hints, without leaking the handlers", async () => {
+  it("lists the PR and preview tools with object schemas and hints, without leaking the handlers", async () => {
     const { tools } = (await rpc(server(), "tools/list")).result;
-    expect(tools.map((t: any) => t.name)).toEqual(["pr_subscribe", "pr_unsubscribe", "pr_list"]);
+    expect(tools.map((t: any) => t.name)).toEqual(["pr_subscribe", "pr_unsubscribe", "pr_list", "preview_show"]);
     for (const t of tools) {
       expect(t.inputSchema.type).toBe("object");
       expect(t.inputSchema.additionalProperties).toBe(false);
@@ -144,7 +144,7 @@ describe("the built `dorks mcp` over stdio", () => {
     const replies = out.trim().split("\n").map((l) => JSON.parse(l));
     expect(replies.map((r) => r.id)).toEqual([1, 2, 3, 4]); // the notification got no reply, the rest are in order
     expect(replies[0].result.protocolVersion).toBe("2025-06-18");
-    expect(replies[1].result.tools).toHaveLength(3);
+    expect(replies[1].result.tools).toHaveLength(4);
     expect(replies[2].result.content[0].text).toContain("Subscribed to acme/demo#4");
     expect(replies[3].result.content[0].text).toContain("acme/demo#4");
     expect(b.calls[0]).toEqual({ method: "pr.sub", params: { repo: "acme/demo", number: 4, source: "agent" } });

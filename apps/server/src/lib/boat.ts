@@ -1,4 +1,4 @@
-import { BoxNotFoundError, type BoxProvider, type DesktopOptions } from "../core/box";
+import { BoxNotFoundError, type BoxProvider, type DesktopOptions, type HostPortOptions } from "../core/box";
 
 export const DEFAULT_BASE_URL = "https://boat.dev/api/v1";
 export const BOX_ID = /^bx_[23456789abcdefghjkmnpqrstuvwxyz]{8}$/;
@@ -233,6 +233,9 @@ export function boatBox(opts: BoatOptions): BoxProvider {
     async desktopUrl(id, opts) {
       return desktopUrl(call, path(id, "/desktop"), opts, sleep);
     },
+    async hostPort(id, port, hostOpts) {
+      return hostPort(call, path(id, "/host"), port, hostOpts);
+    },
   };
 }
 
@@ -260,4 +263,21 @@ function withOverlayOff(url: string): string {
   const hash = url.indexOf("#");
   const [base, fragment] = hash < 0 ? [url, ""] : [url.slice(0, hash), url.slice(hash)];
   return `${base}${base.includes("?") ? "&" : "?"}overlay=0${fragment}`;
+}
+
+/**
+ * Boat's hosted ports (https://docs.boat.dev/hosting): `POST /host` answers `https://<sub>-<port>.on.boat.dev`, the same URL on every
+ * call. Hosted `public`: a protected URL gates the page with a `_port_auth` cookie, which is third-party inside the Browser tab's
+ * iframe, and the desktop shell's WebKit blocks it (the frame stays blank). A proxy through the server would have to rewrite every
+ * root-relative asset and HMR socket of an unknown dev server. The URL is only as private as the sandbox subdomain.
+ */
+export async function hostPort(call: BoatCall, path: string, port: number, opts: HostPortOptions): Promise<{ url: string }> {
+  const json = await call("host", "POST", path, { port, public: true, ...(opts.title ? { title: opts.title } : {}), ...(opts.localhost ? { localhost: true } : {}) });
+  const url = json?.url;
+  if (typeof url !== "string" || !url.startsWith("https://")) throw new BoatError("boat host: response had no URL");
+  // Never keep a token: if Boat ever answers a protected URL despite `public`, drop the query rather than store a credential.
+  const u = new URL(url);
+  u.search = "";
+  u.hash = "";
+  return { url: u.toString() };
 }

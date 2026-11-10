@@ -1,7 +1,7 @@
 import { errorEvent, fromBridge, type ClientEventBody, type CommandFrame, type SubscriptionView, type ToBridge } from "@dorks/shared";
 import { fail, touch, type App } from "../app";
 import { createNormalizer } from "../core/normalize";
-import { getDork, openCommands, runtimeOf, type DorkRow } from "../data";
+import { getDork, openCommands, runtimeOf, type DorkRow, type Preview } from "../data";
 import { update } from "../db";
 import { append, bridgeSeen, dispatch, enqueueConfigure, finishPause, patchDork } from "../lifecycle/dispatch";
 import { opFailed } from "../lifecycle/lifecycle";
@@ -210,6 +210,41 @@ export function unsubscribePr(app: App, dorkId: string, repo: string, number: nu
     bridgeDork(app, dorkId);
     subs.unsubscribe(app, dorkId, repo, number);
   });
+}
+
+// ---------------------------------------------------------------- previews
+// `preview_show` (the bridge's MCP tool): the agent says its dev server is up; the box provider hosts the port and the URL is kept on
+// the dork, where the Browser tab lists it.
+
+/** Ports Boat itself uses in every sandbox (https://docs.boat.dev/hosting): SSH, the desktop stream, its agents. */
+const RESERVED_PORTS = new Set([22, 6080, 8090, 8911]);
+const reserved = (port: number) => RESERVED_PORTS.has(port) || (port >= 47984 && port <= 48010);
+const MAX_PREVIEWS = 20;
+const MAX_TITLE = 60;
+
+export async function showPreview(app: App, dorkId: string, port: unknown, title: unknown, localhost: unknown): Promise<Preview> {
+  if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) return fail("invalid", "port must be an integer from 1 to 65535");
+  if (reserved(port)) return fail("invalid", `port ${port} is used by the sandbox itself; run the dev server on another port`);
+  const name = typeof title === "string" && title.trim() ? title.trim().slice(0, MAX_TITLE) : undefined;
+  const dork = bridgeDork(app, dorkId);
+  if (!dork.boxId) return fail("sleeping", "the box is not running");
+  const box = await app.getBox();
+  if (!box.hostPort) return fail("not_configured", "this sandbox provider cannot host ports");
+  let url: string;
+  try {
+    ({ url } = await box.hostPort(dork.boxId, port, { title: name, localhost: localhost === true }));
+  } catch (e) {
+    console.error("host port failed", e instanceof Error ? e.message.slice(0, 200) : "unknown");
+    return fail("failed", "could not host the port");
+  }
+  const preview: Preview = { port, url, ...(name ? { title: name } : {}) };
+  app.db.tx(() => {
+    const now = bridgeDork(app, dorkId);
+    if (now.boxId !== dork.boxId) return; // the box was replaced meanwhile: this URL belongs to the old one
+    const rest = (now.previews ?? []).filter((p) => p.port !== port);
+    patchDork(app, dorkId, { previews: [...rest, preview].slice(-MAX_PREVIEWS) });
+  });
+  return preview;
 }
 
 // ---------------------------------------------------------------- titles

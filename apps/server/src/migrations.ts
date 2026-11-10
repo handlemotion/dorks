@@ -172,4 +172,8 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE dork_runtime ADD COLUMN final_msg_id TEXT NOT NULL DEFAULT '';
   ALTER TABLE dork_runtime ADD COLUMN interrupt_requested INTEGER NOT NULL DEFAULT 0;
   `,
+  `
+  -- The dev servers the agent showed (preview_show): a JSON array of { port, url, title? }, newest last. Public URLs, no secret.
+  ALTER TABLE dorks ADD COLUMN previews TEXT;
+  `,
 ];

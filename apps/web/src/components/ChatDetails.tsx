@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@dorks/ui/tabs'
 import { ComputerView, type ComputerSource } from './ComputerView'
 import { EmptyState } from './EmptyState'
 import { ImageLightbox, ImageTrigger, type LightboxImage } from './ImageLightbox'
-import { BAR_BUTTON, PreviewBrowser, type PreviewServer } from './PreviewBrowser'
+import { BAR_BUTTON, PreviewBrowser, useShownServers, type PreviewServer } from './PreviewBrowser'
 import { Tip } from './Tip'
 
 /** A file the agent produced in the chat: a screenshot, a design, a document. */
@@ -48,6 +48,12 @@ export function ChatDetails({ data, onClose, onGrab, onAsk, className }: { data:
     if (used && !wasUsed.current) setTab('computer')
     wasUsed.current = used
   }, [used])
+  // The agent just showed a dev server: bring the Browser tab up on it. Held here, since the tab's content unmounts while hidden.
+  const [opening, setOpening] = useState<string>()
+  useShownServers(data.previews, (s) => {
+    setTab('browser')
+    setOpening(s.url)
+  })
   return (
     <aside aria-label="Chat details" className={['flex h-full min-h-0 flex-col p-1', className].filter(Boolean).join(' ')}>
       {/* Same fill as the app; the only edge is a soft hairline (the --border tone), drawn as an overlay above the content so it takes no
@@ -82,7 +88,7 @@ export function ChatDetails({ data, onClose, onGrab, onAsk, className }: { data:
           <ComputerView source={data.computer} />
         </TabsContent>
         <TabsContent value="browser" className="mx-px mb-px flex min-h-0 flex-col overflow-hidden rounded-b-[9px]">
-          <PreviewBrowser servers={data.previews} onGrab={onGrab} onAsk={onAsk} />
+          <PreviewBrowser servers={data.previews} open={opening} onOpened={() => setOpening(undefined)} onGrab={onGrab} onAsk={onAsk} />
         </TabsContent>
       </Tabs>
     </aside>

@@ -12,6 +12,7 @@ import { resolveIdentity, type Identity } from "./runas";
 import { EventPipeline } from "./events";
 import { prepareRepo, SetupError } from "./git";
 import { Outbox } from "./outbox";
+import { previewMethods } from "./previews";
 import { prLabel } from "./pr-ref";
 import { prLookup } from "./pr-lookup";
 import { PrSubscriptions } from "./prs";
@@ -184,7 +185,7 @@ export class Bridge {
 
   /** The local RPC table (rpc.ts): what the git helper, the `dorks` CLI and the `gh` shim can ask of this process. */
   private rpcMethods() {
-    return { token: this.github.rpc, ...this.prs.methods, ...this.hooks.methods };
+    return { token: this.github.rpc, ...this.prs.methods, ...previewMethods(this.t, this.log), ...this.hooks.methods };
   }
 
   // ------------------------------------------------------------------ commands

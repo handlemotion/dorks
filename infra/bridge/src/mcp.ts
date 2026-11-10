@@ -2,6 +2,7 @@ import type { PrRef, SubscriptionView } from "@dorks/shared";
 import { createInterface } from "node:readline";
 import { describeRpcError, listLine, socketOf } from "./dorks";
 import { parsePrRef, prLabel, samePr } from "./pr-ref";
+import type { ShownPreview } from "./previews";
 import { rpcCall } from "./rpc";
 
 // `dorks mcp`: the same agent surface as `dorks pr …`, as MCP tools (Model Context Protocol) so the agent calls them as typed tools
@@ -80,6 +81,34 @@ const TOOLS: Tool[] = [
       return subs.length ? subs.map(listLine).join("\n") : "No PR subscriptions.";
     },
   },
+  {
+    name: "preview_show",
+    title: "Show a dev server to the user",
+    description:
+      "Open a web server running in this box in the user's Browser tab, so they can see and click through it. Call it once the server answers " +
+      "(e.g. `curl -sI localhost:3000`), and again after restarting it on another port. Start servers on 0.0.0.0 when you can " +
+      "(`--host 0.0.0.0`); pass `localhost: true` only for one that listens on 127.0.0.1 alone. The page is served from an *.on.boat.dev " +
+      "host: Vite needs `server.allowedHosts: true` (or `.on.boat.dev`). Not for ports 22, 6080, 8090, 8911 or 47984-48010. " +
+      "The returned URL is public while the box runs: do not show servers that expose secrets.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        port: { type: "integer", minimum: 1, maximum: 65535, description: "The port the server listens on, e.g. 3000." },
+        title: { type: "string", description: "Optional: a short name for the list, e.g. \"Web app\". Defaults to the port." },
+        localhost: { type: "boolean", description: "Optional: true when the server listens only on 127.0.0.1 or ::1." },
+      },
+      required: ["port"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+    async run(args, sock) {
+      const port = args.port;
+      if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) throw new ToolError("`port` must be an integer from 1 to 65535.");
+      if (args.title !== undefined && typeof args.title !== "string") throw new ToolError("`title` must be a string.");
+      const shown = await rpcCall<ShownPreview>(sock, "preview.show", { port, title: args.title, localhost: args.localhost === true });
+      return `Showing port ${shown.port} in the user's Browser tab at ${shown.url}. If the page is blank or errors, check that the server answers on that port.`;
+    },
+  },
 ];
 
 const byName = new Map(TOOLS.map((t) => [t.name, t]));
@@ -119,7 +148,8 @@ export class McpServer {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: MCP_SERVER_NAME, title: "Dorks", version: "0.1.0" },
           instructions:
-            "Tools for the pull requests you work on in this box. `gh pr create` subscribes you automatically; subscribed PRs wake you with <dorks-event> turns when CI, reviews, comments or conflicts need you.",
+            "Tools for the pull requests you work on in this box, and for showing the user a dev server. `gh pr create` subscribes you automatically; subscribed PRs wake you with <dorks-event> turns when CI, reviews, comments or conflicts need you. " +
+            "When you start a web server the user should see, call preview_show with its port.",
         });
         break;
       }

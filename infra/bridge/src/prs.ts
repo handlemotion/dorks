@@ -20,6 +20,26 @@ function refParams(params: unknown): PrRef {
   return ref;
 }
 
+/**
+ * One backend call for an RPC method: `unavailable` when it does not answer in time or cannot be reached, `failed` when it refuses.
+ * `explain` adds the backend's message to a refusal (AppError messages are safe to show) so the agent can act on it.
+ */
+export async function callBackend<T>(t: Transport, log: Log, call: () => Promise<T>, explain = false): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, rej) => (timer = setTimeout(() => rej(new RpcError("unavailable", "the backend did not answer in time")), BACKEND_WAIT_MS)));
+  try {
+    return await Promise.race([call(), timeout]);
+  } catch (e) {
+    if (e instanceof RpcError) throw e;
+    const code = t.errorCode(e);
+    log("backend call failed:", code ?? errTag(e));
+    const why = explain && code ? (e as { data?: { message?: unknown } }).data?.message : undefined;
+    throw new RpcError(code ? "failed" : "unavailable", code ? (typeof why === "string" ? why : `the backend refused the request (${code})`) : "could not reach the backend");
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export class PrSubscriptions {
   private cache: SubscriptionView[] | null = null;
   private stopWatching: (() => void) | null = null;
@@ -83,19 +103,8 @@ export class PrSubscriptions {
     this.stopWatching = null;
   }
 
-  private async backend<T>(call: () => Promise<T>): Promise<T> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<never>((_, rej) => (timer = setTimeout(() => rej(new RpcError("unavailable", "the backend did not answer in time")), BACKEND_WAIT_MS)));
-    try {
-      return await Promise.race([call(), timeout]);
-    } catch (e) {
-      if (e instanceof RpcError) throw e;
-      const code = this.t.errorCode(e);
-      this.log("backend call failed:", code ?? errTag(e));
-      throw new RpcError(code ? "failed" : "unavailable", code ? `the backend refused the request (${code})` : "could not reach the backend");
-    } finally {
-      clearTimeout(timer);
-    }
+  private backend<T>(call: () => Promise<T>): Promise<T> {
+    return callBackend(this.t, this.log, call);
   }
 
   /** Resolves when the cached list satisfies `ok` (so `sub` then `list` reads its own write), or after `ms`. Never rejects. */

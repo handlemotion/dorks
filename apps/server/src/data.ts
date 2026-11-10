@@ -37,11 +37,15 @@ export interface DorkRow {
   /** The models the agent offers this account, as it last reported them. */
   modelChoices?: AgentModelChoice[];
   preview?: string;
+  /** Dev servers the agent showed (preview_show), oldest first. */
+  previews?: Preview[];
   prUrl?: string;
   deleting: boolean;
   lastActivityAt: number;
   createdAt: number;
 }
+
+export type Preview = { port: number; url: string; title?: string };
 
 export interface Runtime {
   dorkId: string;
@@ -79,7 +83,7 @@ export const dorkOf = (r: Row): DorkRow => ({
   codexModel: json(r.codex_model), codexModelChoices: json(r.codex_model_choices),
   model: u(r.model as string | null), effort: u(r.effort as string | null), agentModel: u(r.agent_model as string | null),
   agentEffort: u(r.agent_effort as string | null), modelChoices: json(r.model_choices),
-  preview: u(r.preview as string | null), prUrl: u(r.pr_url as string | null), deleting: bool(r.deleting),
+  preview: u(r.preview as string | null), previews: json(r.previews), prUrl: u(r.pr_url as string | null), deleting: bool(r.deleting),
   lastActivityAt: r.last_activity_at as number, createdAt: r.created_at as number,
 });
 
@@ -110,7 +114,7 @@ export const openCommands = (db: Db, dorkId: string): CommandRow[] =>
 /** The wire shape of a dork for the UI: no box id, session ids or other internals. */
 export const dorkView = (d: DorkRow) => ({
   id: d.id, title: d.title, repo: d.repo, branch: d.branch, provider: d.provider, state: d.state, archived: d.archived,
-  preview: d.preview, prUrl: d.prUrl, codexModel: d.codexModel, codexModelChoices: d.codexModelChoices,
+  preview: d.preview, previews: d.previews ?? [], prUrl: d.prUrl, codexModel: d.codexModel, codexModelChoices: d.codexModelChoices,
   model: d.model, effort: d.effort, agentModel: d.agentModel, agentEffort: d.agentEffort, modelChoices: d.modelChoices,
   lastActivityAt: d.lastActivityAt, createdAt: d.createdAt,
 });

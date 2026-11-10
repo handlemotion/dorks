@@ -107,5 +107,10 @@ function simBox(app: App): BoxProvider {
       if (!b) throw new BoxNotFoundError("no such box");
       return `/sim/desktop?${new URLSearchParams({ theme })}`;
     },
+    async hostPort(id, port) {
+      // A sim box's bridge and agent run on this machine, so its dev server already answers on localhost.
+      if (!db.get("SELECT name FROM sim_boxes WHERE name = ?", id)) throw new BoxNotFoundError("no such box");
+      return { url: `http://localhost:${port}/` };
+    },
   };
 }
