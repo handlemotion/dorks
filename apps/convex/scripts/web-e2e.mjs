@@ -54,6 +54,8 @@ const claudeOption = await (async () => {
 if (!claudeOption) throw new Error("Claude Code agent option is missing");
 await claudeOption.click();
 await page.waitForSelector('button[aria-label="Agent: Claude Code"]');
+await page.focus('input[aria-label="repo"]');
+await page.$eval('input[aria-label="repo"]', (input) => input.select());
 await page.type('input[aria-label="repo"]', "jaantonio/demo");
 await page.type('textarea[aria-label="first message"]', "build the web demo");
 await page.click('form button[type="submit"]');
