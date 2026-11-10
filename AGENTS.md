@@ -1,6 +1,6 @@
 # Contributor and agent notes
 
-Start with [docs/development.md](docs/development.md) (layout, dev loop, tests) and [docs/architecture.md](docs/architecture.md) (the contract between server, web, bridge and desktop shell).
+Start with [docs/development.md](docs/development.md) (layout, dev loop, tests) and [docs/architecture.md](docs/architecture.md) (the contract between server, web, bridge and desktop shell). For any UI work, read [DESIGN.md](DESIGN.md) first: the layout, spacing, components and checks the app's design follows.
 
 ## Branching
 
