@@ -76,7 +76,7 @@ One-time setup, in the repository settings. Nothing secret is in the repo.
 
 1. Apple: a Developer ID Application certificate exported as `.p12`. Secrets `APPLE_CERTIFICATE` (base64 of the `.p12`), `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, and for notarization `APPLE_ID`, `APPLE_PASSWORD` (an app-specific password), `APPLE_TEAM_ID`.
 2. Updater: `pnpm --filter @dorks/desktop tauri signer generate -w ~/.tauri/dorks.key`. Secrets `TAURI_SIGNING_PRIVATE_KEY` (and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`), variable `TAURI_UPDATER_PUBKEY` (the public key). The workflow writes the updater config at build time, so no key is committed, and local builds have no updater (the `updater` cargo feature is off).
-3. The server: `apps/server` provides `build:sidecar`, writing `dorks-server-aarch64-apple-darwin` and `dorks-server-x86_64-apple-darwin` into `apps/server/dist`. The release refuses to fall back to the stub.
+3. The server: `apps/server` `build` writes `dorks-server-aarch64-apple-darwin` and `dorks-server-x86_64-apple-darwin` into `apps/server/dist`. The release refuses to fall back to the stub.
 
 The sidecar is signed with the app's identity and the hardened runtime. `src-tauri/Entitlements.plist` grants the JIT entitlements a Bun binary needs.
 

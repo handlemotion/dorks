@@ -78,9 +78,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Build the dorks-server sidecar (Bun)
-        # apps/server must provide `build:sidecar`, writing apps/server/dist/dorks-server-aarch64-apple-darwin and
+        # apps/server `build` must write apps/server/dist/dorks-server-aarch64-apple-darwin and
         # dorks-server-x86_64-apple-darwin (bun build --compile --target=bun-darwin-arm64 / bun-darwin-x64).
-        run: pnpm --filter @dorks/server run build:sidecar
+        run: pnpm --filter @dorks/server run build
 
       - name: Prepare the sidecar and UI
         working-directory: apps/desktop
