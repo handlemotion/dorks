@@ -29,7 +29,20 @@ page.on("pageerror", (e) => errors.push(String(e)));
 const text = () => page.evaluate(() => document.body.innerText);
 const waitText = (re, ms = 30000) => page.waitForFunction((s) => new RegExp(s).test(document.body.innerText), { timeout: ms }, re.source);
 const clickText = async (t) => { const [h] = await page.$$(`xpath/.//main//button[normalize-space()="${t}"]`); await h.click(); };
-const typeInto = async (label, value) => { const sel = `input[aria-label="${label}"]`; await page.waitForSelector(sel); await page.focus(sel); await page.$eval(sel, (i) => i.select()); await page.type(sel, value); };
+const typeInto = async (label, value) => { const sel = `[aria-label="${label}"]`; await page.waitForSelector(sel); await page.focus(sel); await page.$eval(sel, (i) => i.select()); await page.type(sel, value); };
+const selectClaude = async () => {
+  await page.click('button[aria-label="Agent: Codex"]');
+  await page.waitForSelector('[data-slot="dropdown-menu-radio-item"]');
+  const options = await page.$$('[data-slot="dropdown-menu-radio-item"]');
+  for (const option of options) {
+    if ((await option.evaluate((el) => el.textContent))?.includes("Claude Code")) {
+      await option.click();
+      await page.waitForSelector('button[aria-label="Agent: Claude Code"]');
+      return;
+    }
+  }
+  throw new Error("Claude Code agent option is missing");
+};
 
 // ---- sign in (email code, through the UI)
 await page.goto(`${WEB}/dorks`, { waitUntil: "networkidle2" });
@@ -41,15 +54,11 @@ await typeInto("code", code);
 await clickText("Sign in");
 await waitText(/Dorks/, 15000);
 
-// ---- fresh account: /dorks nudges to settings and refuses to create
+// ---- fresh account: /dorks nudges to settings and disables creation
 await page.waitForSelector('[data-onboarding="incomplete"]', { timeout: 15000 });
 await waitText(/Setup is incomplete/, 10000);
 check("dorks: shows a settings link while onboarding is incomplete", true);
-await typeInto("repo", "jaantonio/demo");
-await typeInto("first message", "too early");
-await clickText("New dork");
-await waitText(/finish onboarding/i, 10000);
-check("dorks: create before onboarding shows the backend error", true);
+check("dorks: creation is disabled before onboarding", await page.$eval('textarea[aria-label="first message"]', (e) => e.disabled));
 
 // ---- settings: checklist starts empty
 await page.click('a[href="/settings"]');
@@ -130,7 +139,7 @@ await gotoCallback(`installation_id=7&code=sim&setup_action=install&state=${s1}`
 await page.waitForSelector('[data-testid="check-github"]', { timeout: 15000 });
 await waitText(/✅ GitHub App installed/, 10000);
 check("callback: matching state + sim code links automatically and lands on settings", page.url().endsWith("/settings"), page.url());
-await waitText(/Ready: you can create dorks/, 5000);
+await waitText(/To use Codex in Boat, connect ChatGPT once/, 5000);
 await page.screenshot({ path: `${SHOTS}/settings-done.png` });
 
 // something is already linked: even a matching state needs confirmation before it is replaced
@@ -146,25 +155,29 @@ check("callback: confirming replaces it and returns to settings", page.url().end
 await page.click('a[href="/dorks"]');
 await page.waitForSelector('[data-onboarding="complete"]', { timeout: 15000 }); // the onboarding query has loaded and says complete
 check("dorks: no onboarding nudge once complete", !/Setup is incomplete/.test(await text()));
+await selectClaude();
 await typeInto("first message", "build the settings demo");
 await page.click('form button[type="submit"]', { count: 2, delay: 5 });
-await waitText(/claude: w\d+/, 30000);
-const midText = await text();
-check("dorks: first turn streams live after UI-only onboarding", /claude: w\d+ w\d+/.test(midText), midText.match(/claude: [^\n]{0,50}/)?.[0]);
+await page.waitForFunction(() => /w\d+ w\d+/.test(document.querySelector('[data-testid="transcript"]')?.textContent ?? ""), { timeout: 30000 });
+const midText = await page.$eval('[data-testid="transcript"]', (el) => el.textContent);
+check("dorks: first turn streams live after UI-only onboarding", /w\d+ w\d+/.test(midText), midText.slice(0, 50));
 await page.screenshot({ path: `${SHOTS}/settings-streaming.png` });
 await waitText(/Done: build the settings demo/, 40000);
 await waitText(/\bidle\b/, 30000);
-const listCount = await page.$$eval("main ul li", (li) => li.length);
+const listCount = await page.$$eval("a.chat-link", (links) => links.length);
 check("dorks: double-click on New dork created one dork", listCount === 1, `${listCount} in list`);
-check("dorks: Create is re-enabled after the request settles", !(await page.$eval('form button[type="submit"]', (b) => b.disabled)));
 
 // ---- draft must not leak into another dork
-await page.type('input[aria-label="message"]', "DRAFT-FOR-FIRST");
+await page.type('textarea[aria-label="message"]', "DRAFT-FOR-FIRST");
+check("dorks: Send is enabled after the request settles", !(await page.$eval('form button[type="submit"]', (b) => b.disabled)));
+await page.click('.dorks-header-actions a[href="/dorks"]');
+await page.waitForSelector('textarea[aria-label="first message"]');
+await selectClaude();
 await typeInto("first message", "second dork");
 await page.click('form button[type="submit"]');
-await page.waitForFunction(() => document.querySelectorAll("main ul li").length === 2, { timeout: 15000 });
+await page.waitForFunction(() => document.querySelectorAll("a.chat-link").length === 2, { timeout: 15000 });
 await page.waitForFunction(() => /second dork/.test(document.querySelector('section[aria-label="thread"] h2')?.innerText ?? ""), { timeout: 15000 });
-const leaked = await page.$eval('section[aria-label="thread"] input[aria-label="message"]', (i) => i.value);
+const leaked = await page.$eval('section[aria-label="thread"] textarea[aria-label="message"]', (i) => i.value);
 check("dorks: draft typed in one dork does not follow to the newly selected one", leaked === "", JSON.stringify(leaked));
 check("settings-e2e: no page errors", errors.length === 0, errors[0]?.slice(0, 120));
 await browser.close();

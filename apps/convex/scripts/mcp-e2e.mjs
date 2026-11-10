@@ -37,6 +37,7 @@ const idleCount = (evs) => evs.filter((e) => e.type === "turn_complete").length;
 
 const dorkId = await client.mutation(api.dorks.create, {
   repo: "jaantonio/demo",
+  provider: "claude",
   message: `Call the pr_subscribe tool of the dorks MCP server with pr ${PR.repo}#${PR.number}, then call the pr_list tool of the same server. Finish by replying with the word DONE and the PR you listed.`,
 });
 let evs = await waitFor(async () => { const e = await events(dorkId); return idleCount(e) >= 1 && e; }, "first turn complete");
