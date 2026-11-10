@@ -1,0 +1,45 @@
+[workspace]
+members = [".", "crates/shell-core"]
+resolver = "2"
+
+[package]
+name = "dorks-desktop"
+version = "0.1.0"
+description = "Dorks desktop shell"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+name = "dorks_desktop_lib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "dorks-desktop"
+path = "src/main.rs"
+
+[features]
+# Auto-update scaffolding. Off for local builds; the release workflow enables it together with an updater config overlay
+# (see docs/desktop.md). Nothing in the repo carries a signing key.
+updater = ["dep:tauri-plugin-updater"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+dorks-shell-core = { path = "crates/shell-core" }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = { version = "2", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

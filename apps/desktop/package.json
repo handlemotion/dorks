@@ -1,0 +1,19 @@
+{
+  "name": "@dorks/desktop",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare:sidecar": "node scripts/prepare-sidecar.mjs",
+    "prepare:ui": "node scripts/prepare-ui.mjs",
+    "dev": "pnpm prepare:sidecar && pnpm prepare:ui && tauri dev",
+    "build": "pnpm prepare:sidecar && pnpm prepare:ui && tauri build",
+    "build:dev": "pnpm prepare:sidecar && pnpm prepare:ui && tauri build --debug --bundles app",
+    "typecheck": "node scripts/cargo.mjs clippy -p dorks-shell-core --all-targets -- -D warnings",
+    "test": "node scripts/cargo.mjs test -p dorks-shell-core",
+    "check:app": "node scripts/cargo.mjs clippy --workspace --all-targets -- -D warnings && node scripts/cargo.mjs test --workspace",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

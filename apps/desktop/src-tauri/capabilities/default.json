@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What the bundled UI window may do. App commands (runtime_config, read_gh_token, ...) are defined in src/commands.rs.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

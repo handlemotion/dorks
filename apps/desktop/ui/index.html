@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dorks</title>
+    <style>
+      :root { color-scheme: light dark; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+      body { margin: 0; padding: 32px; max-width: 640px; }
+      h1 { font-size: 20px; margin: 0 0 4px; }
+      p.sub { margin: 0 0 24px; opacity: 0.65; }
+      section { border: 1px solid color-mix(in srgb, currentColor 15%, transparent); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+      h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.6; margin: 0 0 8px; font-weight: 600; }
+      dl { display: grid; grid-template-columns: 120px 1fr; gap: 4px 12px; margin: 0; }
+      dt { opacity: 0.6; }
+      dd { margin: 0; word-break: break-all; }
+      .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: #999; }
+      .dot.running { background: #2da44e; } .dot.failed { background: #d1242f; } .dot.restarting, .dot.starting { background: #bf8700; }
+      button { font: inherit; padding: 4px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); background: transparent; color: inherit; cursor: pointer; margin: 4px 6px 0 0; }
+      input[type="text"] { font: inherit; padding: 4px 8px; width: 60%; border-radius: 6px; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); background: transparent; color: inherit; }
+      .err { color: #d1242f; }
+      pre { margin: 8px 0 0; white-space: pre-wrap; font-size: 12px; opacity: 0.8; }
+    </style>
+  </head>
+  <body>
+    <h1>Dorks</h1>
+    <p class="sub">Desktop shell placeholder. The web app replaces this page once it builds as a static SPA.</p>
+    <p id="boot-error" class="err" hidden></p>
+
+    <section>
+      <h2>Server</h2>
+      <dl>
+        <dt>Status</dt><dd><span id="dot" class="dot"></span><span id="status">…</span></dd>
+        <dt>API</dt><dd id="api">…</dd>
+        <dt>Reachable</dt><dd id="reach">…</dd>
+        <dt>Bridge port</dt><dd id="bridge">…</dd>
+        <dt>Owner token</dt><dd id="token">…</dd>
+        <dt>Data</dt><dd id="data">…</dd>
+        <dt>Version</dt><dd id="version">…</dd>
+      </dl>
+      <button id="restart">Restart server</button>
+      <button id="open-data">Open data folder</button>
+    </section>
+
+    <section>
+      <h2>Tunnel</h2>
+      <dl>
+        <dt>Provider</dt><dd id="tunnel">…</dd>
+        <dt>Public URL</dt><dd id="public">none</dd>
+      </dl>
+      <p><input id="url" type="text" placeholder="https://your-public-url.example" /> <button id="save-url">Save</button> <button id="clear-url">Use wurmhol</button></p>
+      <pre id="url-msg"></pre>
+    </section>
+
+    <section>
+      <h2>GitHub CLI</h2>
+      <button id="gh-status">Check</button>
+      <button id="gh-token">Use my gh token…</button>
+      <pre id="gh-out"></pre>
+    </section>
+
+    <section>
+      <h2>Keep awake</h2>
+      <button id="awake-on">Dorks are active</button>
+      <button id="awake-off">Dorks are idle</button>
+      <pre id="awake-out"></pre>
+    </section>
+
+    <script src="app.js"></script>
+  </body>
+</html>
