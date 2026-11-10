@@ -6,9 +6,11 @@
     "#lib/*": "./src/lib/*.ts",
     "#lib/highlighter": "./src/lib/highlighter.tsx",
     "#ui/*": "./src/components/ui/*.tsx",
-    "#hooks/*": "./src/hooks/*.ts"
+    "#hooks/*": "./src/hooks/*.ts",
+    "#markdown": "./src/components/markdown.tsx"
   },
   "exports": {
+    "./ai-elements/*": "./src/components/ai-elements/*.tsx",
     "./*": "./src/components/ui/*.tsx",
     "./styles.css": "./src/styles.css"
   },
@@ -25,13 +27,18 @@
     "typescript": "^6.0.2"
   },
   "dependencies": {
+    "@ai-sdk/react": "^4.0.170",
     "@base-ui/react": "1.9.0",
+    "@shadcn/helpers": "^0.3.0",
     "@shadcn/react": "0.3.1",
+    "ai": "^7.0.166",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "cn": "0.5.2",
     "lucide-react": "1.65.0",
+    "motion": "^14.10.1",
     "shiki": "^4.6.0",
+    "streamdown": "^2.7.1",
     "tailwind-merge": "3.6.0"
   }
 }
