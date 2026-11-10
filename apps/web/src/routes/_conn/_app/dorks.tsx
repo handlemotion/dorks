@@ -1,8 +1,11 @@
 import { CatchBoundary, createFileRoute, Link, Navigate, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
-import { ChevronDownIcon, InfoIcon } from 'lucide-react'
+import { ChevronDownIcon, ChevronRightIcon, InfoIcon, MessageSquareIcon } from 'lucide-react'
 import { useConnection, useDork, useDorkEvents, useDorks, useDorksClient, useSettings } from '@dorks/client/react'
+import { List } from '../../../components/onboarding/List'
+import { EmptyState } from '../../../components/EmptyState'
 import { AgentStatus } from '../../../components/AgentStatus'
+import { BrandCircle } from '../../../components/BrandCircle'
 import { Alert, AlertDescription } from '@dorks/ui/alert'
 import { Button } from '@dorks/ui/button'
 import {
@@ -33,7 +36,11 @@ import { usePending } from '../../../lib/pending'
 
 // The selected dork lives in the `dork` search param (not local state) so the sidebar can highlight it and the URL is shareable.
 export const Route = createFileRoute('/_conn/_app/dorks')({
-  validateSearch: (s: Record<string, unknown>): { dork?: string } => (typeof s.dork === 'string' ? { dork: s.dork } : {}),
+  // `repo` preselects the new session's repository (the sidebar's + beside a repository group).
+  validateSearch: (s: Record<string, unknown>): { dork?: string; repo?: string } => ({
+    ...(typeof s.dork === 'string' ? { dork: s.dork } : {}),
+    ...(typeof s.repo === 'string' ? { repo: s.repo } : {}),
+  }),
   component: Dorks,
 })
 
@@ -48,7 +55,7 @@ function Notice({ children }: { children: React.ReactNode }) {
 
 function Dorks() {
   // The URL is user-editable, so this is not guaranteed to be a real id: the server answers not_found, which <Thread> shows.
-  const selected = Route.useSearch().dork
+  const { dork: selected, repo: presetRepo } = Route.useSearch()
   const navigate = Route.useNavigate()
   const setSelected = (id: string) => void navigate({ search: { dork: id } })
   const [showArchived, setShowArchived] = useState(false)
@@ -60,13 +67,7 @@ function Dorks() {
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-onboarding={settings ? (ready ? 'complete' : 'preparing') : 'loading'}>
-      {!selected && (
-        <PageHeader
-          title="Dorks"
-          subtitle="Give your agent a task and follow its work here."
-          actions={<Button variant="ghost" size="sm" nativeButton={false} render={<Link to="/settings" />}>Settings</Button>}
-        />
-      )}
+      {!selected && <PageHeader title="New session" divider={false} />}
       {settings?.boxProvider === 'sim' && <Notice>Local simulation: replies and sandbox work are simulated. No AI provider or GitHub calls are made.</Notice>}
       {settings && ready && !settings.claudeToken && (
         <Notice>Add a <Link to="/settings" className="font-medium underline underline-offset-4">Claude token</Link> to start sessions with Claude Code.</Notice>
@@ -76,28 +77,42 @@ function Dorks() {
           <Thread key={selected} dorkId={selected} />
         </CatchBoundary>
       ) : (
-        <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col justify-center gap-8 overflow-y-auto px-4 py-8">
-          <div className="space-y-1">
-            <h2 className="text-lg font-medium">What should we work on?</h2>
-            <p className="text-sm text-muted-foreground">Choose a repository, then describe the change you want.</p>
+        <div className="relative isolate flex min-h-0 flex-1 flex-col overflow-clip" data-testid="new-session">
+          <BrandCircle className="w-[124.54%]" />
+          <div className="flex min-h-0 flex-1 flex-col justify-center overflow-y-auto py-12">
+            {showArchived && (
+              <section aria-label="Archived sessions" className="mx-auto flex min-h-0 w-full max-w-[790px] flex-col gap-6 px-5">
+                <h2 className="text-center text-lg font-medium">Archived sessions</h2>
+                {dorks === undefined ? <p role="status" className="text-center text-sm text-muted-foreground">Loading sessions…</p> : dorks.length === 0 ? (
+                  <EmptyState figure="drawer" title="No archived sessions" description="Sessions you archive will show up here." />
+                ) : (
+                  <div className="overflow-y-auto">
+                    <List>
+                      {dorks.map((d) => (
+                        <li key={d.id}>
+                          <button type="button" onClick={() => setSelected(d.id)} className="flex h-12 w-full items-center gap-3 px-4 text-left outline-none hover:bg-muted focus-visible:bg-muted">
+                            <MessageSquareIcon className="size-4 shrink-0 text-muted-foreground" />
+                            <span className="min-w-0 flex-1 truncate">{d.title}</span>
+                            <span className="max-w-[35%] truncate text-xs text-muted-foreground">{d.repo}</span>
+                            <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                          </button>
+                        </li>
+                      ))}
+                    </List>
+                  </div>
+                )}
+              </section>
+            )}
+              <div className={`${showArchived ? 'hidden' : 'flex'} mx-auto w-full max-w-[790px] flex-col gap-6`}>
+                <h2 className="px-5 text-center text-lg font-medium">What should we work on?</h2>
+                {settings && <div className="px-5 [&:has(>div:empty)]:hidden"><SetupStatus settings={settings} /></div>}
+                <NewDork key={presetRepo} initialRepo={presetRepo} onCreated={setSelected} disabled={!ready} claudeReady={!!settings?.claudeToken} codexReady={!!settings?.boatEnvironment} />
+              </div>
           </div>
-          {settings && <SetupStatus settings={settings} />}
-          {settings && <NewDork onCreated={setSelected} disabled={!ready} claudeReady={settings.claudeToken} codexReady={!!settings.boatEnvironment} />}
-          <div className="self-start text-sm text-muted-foreground">
+          <div className="shrink-0 self-center px-5 pb-3 text-sm text-muted-foreground">
             <Button variant="ghost" size="sm" aria-pressed={showArchived} onClick={() => setShowArchived(!showArchived)}>
               {showArchived ? 'Hide archived' : 'Show archived'}
             </Button>
-            {showArchived && (
-              <ul aria-label="Archived sessions" className="mt-2 flex max-h-44 flex-col overflow-y-auto">
-                {dorks?.map((d) => (
-                  <li key={d.id} className="flex items-center gap-2">
-                    <Button variant="ghost" onClick={() => setSelected(d.id)}>{d.title}</Button>
-                    <span className="truncate text-xs">{d.repo}</span>
-                  </li>
-                ))}
-                {dorks?.length === 0 && <li>No archived sessions.</li>}
-              </ul>
-            )}
           </div>
         </div>
       )}
@@ -105,18 +120,20 @@ function Dorks() {
   )
 }
 
-function NewDork({ onCreated, disabled, claudeReady, codexReady }: { onCreated: (id: string) => void; disabled: boolean; claudeReady: boolean; codexReady: boolean }) {
+function NewDork({ initialRepo, onCreated, disabled, claudeReady, codexReady }: { initialRepo?: string; onCreated: (id: string) => void; disabled: boolean; claudeReady: boolean; codexReady: boolean }) {
   const { actions } = useDorksClient()
-  const [repo, setRepo] = useState('acme/demo')
+  const dorks = useDorks()
+  const repositories = [...new Set(dorks?.map((d) => d.repo) ?? [])].sort()
+  const [repo, setRepo] = useState(initialRepo ?? 'acme/demo')
   const [message, setMessage] = useState('')
   const [provider, setProvider] = useState<AgentProvider>(claudeReady ? 'claude' : codexReady ? 'codex' : 'claude')
   const { run, pending, error } = usePending()
   const needsClaudeToken = provider === 'claude' && !claudeReady
   return (
-    <div className="-mx-4">
-      {needsClaudeToken && <p className="mx-4 mb-2 text-sm text-destructive" role="status">Add a <Link to="/settings" className="font-medium underline underline-offset-4">Claude token in settings</Link> to use Claude Code.</p>}
+    <div className="[&>div]:max-w-none">
+      {needsClaudeToken && <p className="mx-5 mb-2 text-sm text-destructive" role="status">Add a <Link to="/settings" className="font-medium underline underline-offset-4">Claude token in settings</Link> to use Claude Code.</p>}
       <Composer
-        text={message} setText={setMessage} repo={repo} setRepo={setRepo} provider={provider} setProvider={setProvider} codexEnabled={codexReady}
+        text={message} setText={setMessage} repo={repo} setRepo={setRepo} repositories={repositories} provider={provider} setProvider={setProvider} codexEnabled={codexReady}
         pending={pending} disabled={disabled || needsClaudeToken} error={error}
         onSubmit={() => void run(async () => { onCreated((await actions.createDork({ repo: repo.trim(), message, provider })).id); setMessage('') })}
       />
@@ -194,15 +211,15 @@ function Thread({ dorkId }: { dorkId: string }) {
               {canLoadMore && <div className="text-center"><Button variant="outline" size="sm" onClick={loadMore}>Load older</Button></div>}
               <ChatMessages blocks={view.blocks} />
               {eventsError && <p role="alert" className="text-sm text-destructive">Could not load messages: {eventsError.message}. Retrying…</p>}
-              {/* In the transcript, not pinned over it: scrolled up, the scroll-to-end button takes its place. */}
-              <AgentStatus state={dork.state} live={live} />
+              {/* Fill short transcripts down to the composer; stay in the scroll flow for long ones. */}
+              <div className="mt-auto"><AgentStatus state={dork.state} live={live} /></div>
             </MessageScrollerContent>
           </MessageScrollerViewport>
           <MessageScrollerButton />
         </MessageScroller>
       </MessageScrollerProvider>
       <Composer
-        text={text} setText={setText} provider={dork.provider ?? 'claude'} pending={pending} disabled={dork.archived} error={error || stopError || archiveError}
+        text={text} setText={setText} repo={dork.repo} provider={dork.provider ?? 'claude'} pending={pending} disabled={dork.archived} error={error || stopError || archiveError}
         onSubmit={() => void run(async () => {
           const sent = text
           setText('') // the optimistic row shows it at once; put it back if the server refuses

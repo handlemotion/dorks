@@ -31,10 +31,10 @@ export function PageHeader({ title, subtitle, titleActions, actions, divider = t
   const { open, isMobile } = useSidebar()
   return (
     // While the sidebar is hidden, the floating title bar controls (AppFrame) sit over the header's start, so the title begins after them.
-    <header data-tauri-drag-region className={`flex h-12 shrink-0 items-center gap-2 px-5 ${divider ? 'border-b' : ''}`} style={!open || isMobile ? { paddingLeft: TITLEBAR_CONTROLS_END } : undefined}>
+    <header data-tauri-drag-region className={`flex h-12 shrink-0 items-center gap-0.5 px-5 ${divider ? 'border-b' : ''}`} style={!open || isMobile ? { paddingLeft: TITLEBAR_CONTROLS_END } : undefined}>
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <div className="flex min-w-0 items-baseline gap-2">
-          <h1 className="truncate text-sm">{title}</h1>
+          <h1 className="truncate text-sm font-normal!">{title}</h1>
           {subtitle && <p className="truncate text-xs text-muted-foreground">{subtitle}</p>}
         </div>
         {titleActions && <div className="-ml-1 flex shrink-0 items-center gap-0.5">{titleActions}</div>}

@@ -73,7 +73,7 @@ function OwnerSwitcher({ owners, scope, setScope, onDisconnect }: { owners: stri
         <span className="min-w-0 truncate">{name}</span>
         <ChevronDownIcon aria-hidden className="text-muted-foreground" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-60">
+      <DropdownMenuContent align="start">
         <DropdownMenuGroup>
           <DropdownMenuLabel>Owners</DropdownMenuLabel>
           <DropdownMenuRadioGroup value={scope} onValueChange={(value) => setScope(value as string)}>
@@ -157,8 +157,19 @@ export function AppSidebarView({ chats, onDisconnect, orderKey = 'dorks.chat-ord
             </nav>
             {groups.map(([repo, list]) => (
               <nav key={repo} aria-label={repo || 'Other chats'} className="flex shrink-0 flex-col gap-0.5">
-                <div className={SIDEBAR_SECTION} title={repo || undefined}>
-                  <span className="truncate">{repo ? (scope ? repo.slice(scope.length + 1) : repo) : 'Other'}</span>
+                <div className={`group/section ${SIDEBAR_SECTION} pr-1`} title={repo || undefined}>
+                  <span className="min-w-0 flex-1 truncate">{repo ? (scope ? repo.slice(scope.length + 1) : repo) : 'Other'}</span>
+                  {repo && (
+                    <Link
+                      to="/dorks"
+                      search={{ repo }}
+                      aria-label={`New session in ${repo}`}
+                      title={`New session in ${repo}`}
+                      className="flex size-5 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none group-hover/section:opacity-100 hover:bg-foreground/[0.05] hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring [@media(hover:none)]:opacity-100"
+                    >
+                      <PlusIcon aria-hidden className="size-3.5" />
+                    </Link>
+                  )}
                 </div>
                 <ChatList chats={list} orderKey={`${orderKey}.${repo || 'other'}`} to={chatTo} activeId={activeId} />
               </nav>
