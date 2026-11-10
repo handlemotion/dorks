@@ -1,0 +1,24 @@
+name: Close external pull requests
+
+# The project does not take outside pull requests (CONTRIBUTING.md). This runs on the base repo's workflow definition and never
+# checks out or runs code from the pull request, so it is safe with pull_request_target.
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  close:
+    if: ${{ !contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Comment and close
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh pr close "$PR" -R "$REPO" --comment "Thanks for the interest. This project does not accept outside pull requests (see CONTRIBUTING.md). Issues are welcome, and you are free to fork under the Apache-2.0 license."

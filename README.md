@@ -50,7 +50,7 @@ Once a release exists: download the `.dmg` from the GitHub releases, drag Dorks 
 
 ## Develop
 
-[CONTRIBUTING.md](CONTRIBUTING.md) has the dev loop, tests and CI.
+[docs/development.md](docs/development.md) has the dev loop, tests and CI. Outside pull requests are not accepted; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

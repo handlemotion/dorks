@@ -1,6 +1,6 @@
 # Contributor and agent notes
 
-Start with [CONTRIBUTING.md](CONTRIBUTING.md) (layout, dev loop, tests) and [docs/architecture.md](docs/architecture.md) (the contract between server, web, bridge and desktop shell).
+Start with [docs/development.md](docs/development.md) (layout, dev loop, tests) and [docs/architecture.md](docs/architecture.md) (the contract between server, web, bridge and desktop shell).
 
 ## Branching
 

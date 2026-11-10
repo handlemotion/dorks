@@ -113,13 +113,12 @@ Boat sandboxes connect *out* to the server, so the bridge port needs a public UR
 
 Tried and rejected: the package's `openPipe` runs in-process, but it takes the share's URL from the WebSocket `upgrade` event, which Bun's `ws` shim does not implement (it prints "ws.WebSocket 'upgrade' event is not implemented in bun"), and a failed connection ends in an unhandled `ErrorEvent` that kills the process. Embedding needs either a Bun-compatible wurmhol client or running the Node client as a child; the latter is what the shell does.
 
-### What is left on wurmhol's side
+### Wurmhol requirements and what is left
 
-Most of what the first draft of this page asked for already exists: stable names (`--name`), device-code registration (RFC 8628, ADR 0020 and 0026), an embeddable client (`openPipe`) and reconnects. Remaining:
+Stable names (`--name`), device-code registration (RFC 8628, ADR 0020 and 0026), reconnects and the per-pipe access key (ADR 0028) are all live on the hosted relay, and the licence question is settled (ADR 0029: the wire protocol is MIT, the relay AGPL-3.0).
 
-1. **Deploy the access-key support.** It is written (wurmhol branch `dorks-relay-support`, ADR 0028, proposed) but the hosted relay does not have it yet, and the published client (0.6.0) does not send `Wurmhol-Access`. Until both are released, a sandbox's bridge reaches the relay without a sign-in and gets `401 sign in to view this pipe`: set a public URL yourself (`DORKS_PUBLIC_URL` or `set_public_url`, for example a Cloudflare tunnel or your own relay) in the meantime. Release order: Worker first, then the CLI.
+1. **The `wurmhol` client must be 0.7.0 or newer.** Older clients ignore `WURMHOL_ACCESS_KEY`, so the sandbox's bridge would get `401 sign in to view this pipe`. Install it with `npm i -g wurmhol` (or point `WURMHOL_BIN` at it).
 2. **12 hours per pipe.** The relay operator sets `LIMIT_SHARE_SECONDS`; the shell reopens the pipe when it ends.
-3. **Licensing.** The client is MIT but embeds `@wurmhol/protocol`, which sits with the AGPL-3.0 packages. Same owner, so a decision to take before bundling the client in the app.
 
 ## Develop
 
