@@ -5,7 +5,7 @@ import { Button } from '@dorks/ui/button'
 import { Input } from '@dorks/ui/input'
 import { Progress } from '@dorks/ui/progress'
 import { saveBoat } from '../../lib/boat'
-import { isDesktop, readGhToken, setPublicUrl } from '../../lib/desktop'
+import { isDesktop, openTunnelApproval, readGhToken, setPublicUrl } from '../../lib/desktop'
 import { canCreate, TUNNEL_SKIPPED_KEY, WELCOMED_KEY } from '../../lib/onboarding'
 import { usePending } from '../../lib/pending'
 import { A, ErrorText, Field, Heading, Primary, StepForm } from './Frame'
@@ -298,6 +298,14 @@ export function Tunnel({ settings, onNext }: StepProps) {
   return (
     <>
       <Heading title="Let sandboxes reach this Mac">Your sandboxes run in Boat’s cloud and connect back to this app through a public address. Only the agent connection is exposed, never the app itself.</Heading>
+      {tunnel?.state === 'approval' && !settings.publicUrlConfigured && (
+        <div className="flex flex-col items-center gap-2" data-testid="tunnel-approval">
+          <Primary type="button" onClick={() => void run(openTunnelApproval)}>
+            Approve this Mac
+          </Primary>
+          <p className="text-center text-xs text-muted-foreground">Opens wurmhol in your browser. Sign in and approve; this page continues by itself. Or use your own address below.</p>
+        </div>
+      )}
       {settings.publicUrlConfigured && (
         <p role="status" data-testid="tunnel-status" className="text-center text-sm">
           A public URL is set{tunnel ? `. Tunnel: ${tunnel.kind}, ${tunnel.state}${tunnel.error ? ` (${tunnel.error})` : ''}` : ''}.

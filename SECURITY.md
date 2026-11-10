@@ -15,6 +15,10 @@ Dorks is a single-owner app. The owner runs the server on their own machine, and
 | Data at rest | `<data dir>/dorks.db` and `secrets.json` | Boat key, Claude token, GitHub token and CLI secrets are AES-GCM encrypted, with additional data binding each to its purpose. `secrets.json` is mode 600 and holds the three server keys. |
 | Secrets in transit to a sandbox | Bridge socket | Decrypted only inside the `configure` rpc of an authenticated socket. Never stored in a command row, never in the sandbox's creation environment. The creation environment holds only `DORK_ID`, `BRIDGE_URL` and `BRIDGE_SECRET`. |
 
+### The tunnel access key
+
+When the tunnel is a wurmhol pipe, the shell also makes an access key for it (`wurmhol-access-key`, mode 600), passes it to the client as `WURMHOL_ACCESS_KEY`, and gives it to the server (`DORKS_TUNNEL_KEY`), which puts it in every sandbox's creation environment. The bridge sends it as `x-wurmhol-key`. What it does: wurmhol normally answers only a browser signed in to the owner's organisation, so without a key a sandbox cannot connect at all; with the key the relay lets that one pipe through (the relay stores only its hash). What it does not do: it does not authenticate a dork. Anyone who holds the key can reach the bridge socket's front door, and still needs a valid per-dork HMAC for the first frame, or the socket closes. Treat it like any other sandbox-held value: code in a sandbox can read it, and it only ever opens this one pipe. To rotate it, delete `wurmhol-access-key` in the app directory and restart; existing sandboxes then need recreating. It is not used for a public URL you supply.
+
 What the tunnel exposes is one authenticated WebSocket endpoint, not the UI API. Keep it that way: forward the bridge port and never the UI port. Use a tunnel with TLS (the server requires an `https://` public URL).
 
 ### What a sandbox can read

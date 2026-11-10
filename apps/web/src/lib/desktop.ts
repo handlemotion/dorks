@@ -10,7 +10,8 @@ export interface RuntimeConfig {
   ownerToken?: string
   dataDir?: string
   version?: string
-  tunnel?: { kind: string; state: string; error?: string | null }
+  /** `state` is `ready`, `approval` (open `approvalUrl` once, the shell continues by itself), `error` or `lost`. */
+  tunnel?: { kind: string; state: string; error?: string | null; approvalUrl?: string | null; tokenSet?: boolean }
   /** The window is natively translucent (macOS vibrancy): the page must leave its backdrop transparent. */
   vibrancy?: boolean
   /** Present instead of the rest when the shell could not set the server up. */
@@ -59,6 +60,15 @@ export async function setPublicUrl(url: string | null): Promise<void> {
     await invoke('set_public_url', { url })
   } catch (e) {
     throw new Error(typeof e === 'string' ? e : 'Could not save the public URL.')
+  }
+}
+
+/** Opens the pending wurmhol approval link in the browser (the shell opens only the link it holds). */
+export async function openTunnelApproval(): Promise<void> {
+  try {
+    await invoke('open_tunnel_approval')
+  } catch (e) {
+    throw new Error(typeof e === 'string' ? e : 'Could not open the approval page.')
   }
 }
 

@@ -54,6 +54,7 @@ Environment (all optional except where noted); a desktop shell sets these when i
 | `DORKS_UI_PORT` | `4747` (`0` = random) | UI listener, bound to `127.0.0.1` |
 | `DORKS_BRIDGE_PORT` | `4748` (`0` = random) | Bridge listener, bound to `127.0.0.1`; the tunnel forwards to this |
 | `DORKS_PUBLIC_URL` | none | Public `https://` URL of the tunnel. The sandbox is created with `BRIDGE_URL` = this (as `wss://`). Required before a Boat dork can be created |
+| `DORKS_TUNNEL_KEY` | none | Access key of the wurmhol pipe that forwards to the bridge port (32 to 128 of `A-Za-z0-9_-`). Set by the desktop shell for a wurmhol tunnel. Each sandbox gets it as `DORKS_TUNNEL_KEY` in its creation environment, and the bridge sends it as the `x-wurmhol-key` header when it opens its WebSocket, so the relay lets a non-browser client through. It is not authentication: the per-dork HMAC is |
 | `DORKS_OWNER_TOKEN` | generated | Bearer token for the UI API. Generated once into `secrets.json` if unset |
 | `DORKS_UI_ORIGINS` | tauri + localhost:3000 | Comma-separated browser origins allowed by CORS |
 | `BOX_PROVIDER` | `boat` | `boat`, or `sim` for the local simulator and tests |
@@ -177,7 +178,7 @@ Identity: the dork acts as whoever owns the token. Events authored by the token'
 - UI listener: loopback only, bearer owner token, CORS limited to configured origins.
 - Bridge listener: loopback only; the tunnel forwards to it. Only `/bridge` upgrades; authentication is the per-dork HMAC; secrets are returned only over an authenticated socket and never persisted in command rows.
 - At rest: Boat key, Claude token, GitHub token and CLI secrets are AES-GCM encrypted (`core/crypto.ts`, additional data binds each to its purpose); `secrets.json` is mode 600.
-- The sandbox's `BRIDGE_URL` is fixed at creation, so `DORKS_PUBLIC_URL` must be stable (a stable tunnel hostname).
+- The sandbox's `BRIDGE_URL` is fixed at creation, so `DORKS_PUBLIC_URL` must be stable (a stable tunnel hostname). The same goes for `DORKS_TUNNEL_KEY`: the shell makes it once and reuses it, so existing sandboxes keep working through a reopened pipe.
 
 ## Build and test
 
