@@ -1,6 +1,6 @@
 # Boat sandboxes
 
-[Boat](https://boat.dev) is the only sandbox provider. Every dork is one Boat sandbox in **your** Boat account, created from a base snapshot you build once. Dorks never sees your Claude or ChatGPT password: Claude uses a token you paste, and ChatGPT is signed in by Boat itself. The driver is `apps/server/src/lib/boat.ts`.
+[Boat](https://boat.dev) is the only sandbox provider. Every dork is one Boat sandbox in **your** Boat account, created from a base snapshot the app builds for you in one click. Dorks never sees your Claude or ChatGPT password: Claude uses a token you paste, and ChatGPT is signed in by Boat itself. The driver is `apps/server/src/lib/boat.ts`.
 
 ## Cost
 
@@ -10,15 +10,27 @@ Boat's `default` machine is 4 vCPU and 8 GB RAM at $0.036/hour, billed per secon
 
 1. **Boat API key.** Create a [Boat API key](https://docs.boat.dev/api/v1) that can create, list, command, stop, resume and delete sandboxes and list environments. Paste it in Settings (`boatKey`). Set `boatOrg` only if you want billing pinned to one organization.
 2. **Public URL.** Sandboxes reach your server through a tunnel to the bridge port. Set the tunnel's `https://` URL in Settings or as `DORKS_PUBLIC_URL`. See [architecture](architecture.md). A dork cannot be created before this is set, and the URL must stay stable, because a sandbox keeps the one it was created with.
-3. **Base snapshot** (below), then enter its name or id as `baseSnapshotId`.
+3. **Base snapshot**: click **Prepare Boat** (below).
 4. **Agent sign-in**: a Claude token and/or a ChatGPT environment (below).
 5. **GitHub token** ([GitHub](github.md)).
 
-## Build the base snapshot
+## Build the base snapshot ("Prepare Boat")
 
-Each dork starts from a [saved snapshot](https://docs.boat.dev/snapshots/templates). It holds the bridge and the tools the agent needs but **no credentials and no per-dork environment**. Boat's image already has Node, git and Claude Code. `infra/snapshot/boat-install.sh` adds the Codex CLI, the bridge (as `dorks-bridge`, with `dorks` and the `gh` shim as symlinks), a pinned `gh` and `gh stack`. It checks versions and download checksums before it exits. Details and the bump procedure: [infra/snapshot/README.md](../infra/snapshot/README.md). The build sandbox must be created with `--no-env`: do not sign in to any agent or set a token in it.
+Each dork starts from a [saved snapshot](https://docs.boat.dev/snapshots/templates) in your Boat account. It holds the bridge and the tools the agent needs but **no credentials and no per-dork environment**. Boat's image already has Node, git and Claude Code. `infra/snapshot/boat-install.sh` adds the Codex CLI, the bridge (as `dorks-bridge`, with `dorks` and the `gh` shim as symlinks), a pinned `gh` and `gh stack`. It checks versions and download checksums before it exits. Details and the bump procedure: [infra/snapshot/README.md](../infra/snapshot/README.md).
 
-From a checkout with dependencies installed and the [Boat CLI](https://docs.boat.dev) logged in:
+Snapshots belong to one Boat account, so every install builds its own. Once your Boat key is saved, click **Prepare Boat** in the setup guide (or in Settings, under Base snapshot). The app:
+
+1. creates a temporary build sandbox with none of your account's credentials and a 2 hour lifetime as a safety net,
+2. uploads the bridge bundle that ships inside the app plus the installer, and checks the bundle's sha256,
+3. runs the installer (about a minute),
+4. saves the snapshot as `dorks-base-<8 hex>` (a name unique to this install, so two installs on one Boat account never replace each other's image) and sets it as your base snapshot,
+5. deletes the build sandbox, also when something fails. If Boat refuses the delete, the app keeps retrying in the background, and a build interrupted by a crash or restart is cleaned up and run again on the next start.
+
+Progress shows step by step, and a failure shows its reason with a **Retry** button. A failed rebuild leaves your current snapshot in use. The build adds one [saved snapshot](https://docs.boat.dev/snapshots/templates#saved-snapshot-pricing) to your account: Boat includes 10 per $20 of plan, and each one above that costs $0.056 a day from the wallet (a free trial cannot save snapshots at all, and an empty wallet fails the save with `credit_required`).
+
+When an app update ships a newer bridge, Settings shows "An update is available" for the snapshot: click **Update snapshot**. New dorks use the new image, existing ones keep their disk. The installer is x86_64 only, which is what every Boat sandbox is ([base image](https://docs.boat.dev/machines/tools)).
+
+**Do it by hand instead.** A snapshot you build yourself works if it matches the table in [infra/snapshot/README.md](../infra/snapshot/README.md). Enter its name under "Use a snapshot I built myself" (or `baseSnapshotId`). From a checkout with the [Boat CLI](https://docs.boat.dev) logged in:
 
 ```sh
 pnpm --filter @dorks/bridge build
@@ -29,7 +41,9 @@ boat exec <build-id> -- bash boat-install.sh
 boat snapshot <build-id> dorks-base-YYYYMMDD
 ```
 
-Wait until the snapshot reports `ready`, record its name as `baseSnapshotId`, and check that the build sandbox holds no secrets before you save. The installer removes its copied inputs. Delete the build sandbox once the snapshot is ready so it stops billing. Rebuild when the bridge or the installed tools change: new dorks use the new snapshot, existing ones keep their disk. The installer is x86_64 only.
+Wait until the snapshot reports `ready`, and check that the build sandbox holds no secrets before you save. Delete the build sandbox once the snapshot is ready so it stops billing. A hand-entered name is never judged stale.
+
+**Share codes.** Boat can [share a saved snapshot](https://docs.boat.dev/snapshots/templates#share-a-saved-snapshot-with-another-account) with another account through a `bsh_` code, and `baseSnapshotId` accepts one. Dorks does not ship one: your agent tokens and every sandbox you create would run inside an image someone else built, so build your own.
 
 ## Signing in an agent
 

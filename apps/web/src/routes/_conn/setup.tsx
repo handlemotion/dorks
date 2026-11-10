@@ -9,7 +9,7 @@ export const Route = createFileRoute('/_conn/setup')({ component: Setup })
 
 const INTRO: Record<StepId, string> = {
   boat: 'Sessions run in sandboxes in your own Boat account. Paste an API key so Dorks can create them.',
-  snapshot: 'New sessions are restored from a saved snapshot that has the bridge and tools installed.',
+  snapshot: 'One click builds the image your sessions start from.',
   agents: 'Sign in at least one agent. Codex uses your ChatGPT subscription through Boat; Claude Code uses a token. You can add the other later.',
   github: 'Give the agent a GitHub token so it can clone, push and open pull requests, and so Dorks can keep watching them.',
 }

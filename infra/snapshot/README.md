@@ -1,6 +1,6 @@
 # Base snapshot
 
-Every dork sandbox is created from one **base snapshot** in your Boat account, named by `BASE_SNAPSHOT_ID`. The step-by-step build is in [docs/boat.md](../../docs/boat.md); `boat-install.sh` is the script it runs inside the build sandbox. Rebuild the snapshot whenever Node, the Claude Code CLI, `gh` / `gh stack`, Codex or `dorks-bridge` change. Sandboxes that already exist keep their old filesystem; only new ones pick up a new snapshot.
+Every dork sandbox is created from one **base snapshot** in your Boat account, named by the `baseSnapshotId` setting. The app builds it with one click ("Prepare Boat", `apps/server/src/services/snapshot.ts`), which uploads the bridge bundle and `boat-install.sh` to a temporary sandbox and runs the script; the manual steps are in [docs/boat.md](../../docs/boat.md). The script also records `DORKS_BUNDLE_ID` (when set) in `/usr/local/share/dorks-bundle-id`. Rebuild the snapshot whenever Node, the Claude Code CLI, `gh` / `gh stack`, Codex or `dorks-bridge` change. Sandboxes that already exist keep their old filesystem; only new ones pick up a new snapshot.
 
 The snapshot must contain:
 

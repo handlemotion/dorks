@@ -120,10 +120,17 @@ try {
     await shot("setup-boat");
     await fill("boat api key", "boat_e2e_key");
     await click("Save");
-    await waitText(/Base snapshot/);
-    await fill("base snapshot", "dorks-base-e2e");
-    await click("Save snapshot");
-    await waitText(/Agent sign-in/);
+    await waitText(/Prepare Boat/);
+    await shot("setup-snapshot");
+    await click("Prepare Boat");
+    await waitText(/Step \d of 7/, 10000);
+    check("Prepare Boat shows the build's progress", true);
+    await shot("setup-snapshot-building");
+    await waitText(/Ready\. Sessions start from/, 30000);
+    check("Prepare Boat finishes and the new snapshot is in use", true);
+    await shot("setup-snapshot-ready");
+    await page.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Next" && !b.disabled), { timeout: 10000 });
+    await click("Next");
     await fill("Boat environment", "dorks-codex");
     await click("Save environment");
     await page.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Next" && !b.disabled), { timeout: 10000 });
@@ -202,6 +209,23 @@ try {
   await page.waitForSelector('[aria-label="comment policy mode"]');
   check("comment policy persists across a reload", (await page.$eval('[aria-label="comment policy mode"]', (el) => el.value)) === "allowlist");
   await shot("settings");
+
+  // ---- Prepare Boat on the settings page: stale warning, failure with retry (the mock scripts both) -------------------------
+  if (mock) {
+    mock.snapshot.newBridge();
+    await page.waitForSelector('[data-testid="snapshot-stale"]', { timeout: 10000 });
+    check("a snapshot built with an older bridge is flagged for update", /older bridge/.test(await text()));
+    await shot("settings-snapshot-stale");
+    mock.snapshot.failNextBuild("The installer failed (exit 100). E: Unable to locate package");
+    await clickIn("Base snapshot", "Update snapshot");
+    await page.waitForSelector('[data-testid="snapshot-error"]', { timeout: 10000 });
+    const failed = await text();
+    check("a failed build shows why and that sessions keep the old snapshot", /The build failed: The installer failed \(exit 100\)/.test(failed) && /Sessions keep using/.test(failed));
+    await shot("settings-snapshot-failed");
+    await clickIn("Base snapshot", "Retry");
+    await page.waitForSelector('[data-testid="snapshot-ready"]', { timeout: 15000 });
+    check("retrying rebuilds and the stale warning is gone", !(await page.$('[data-testid="snapshot-stale"]')));
+  }
 
   check("the page logged no errors", errors.length === 0, errors[0]?.slice(0, 160));
 } catch (e) {
