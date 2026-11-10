@@ -216,12 +216,13 @@ describe("events feed", () => {
 describe("base snapshot (Prepare Boat)", () => {
   it("follows a build step by step over the live stream and ends with the new snapshot in use", async () => {
     await server.close();
-    server = await startMockServer({ tick: 15 }); // not configured: no snapshot yet
+    server = await startMockServer({ tick: 80 }); // not configured: no snapshot yet; slow enough that steps are observed one by one
     server.settings.boatKey = true;
     const c = connect();
     const snap = watch(c.snapshot());
     const settings = watch(c.settings());
     await waitFor(() => snap.getSnapshot().data?.state === "none", "initial status");
+    await waitFor(() => settings.getSnapshot().data, "initial settings");
     expect(settings.getSnapshot().data?.baseSnapshotId).toBeNull();
 
     const steps: string[] = [];
@@ -232,7 +233,11 @@ describe("base snapshot (Prepare Boat)", () => {
     const started = await c.actions.buildSnapshot();
     expect(started).toMatchObject({ state: "building", step: "prepare", stepIndex: 0 });
     await waitFor(() => snap.getSnapshot().data?.state === "ready", "build finished", 5000);
-    expect(steps).toEqual(expect.arrayContaining(["create", "install", "save"])); // progress arrived without polling
+    // Progress arrived over the live stream, not by polling. Invalidations coalesce, so a fast step may be skipped: the order is what matters.
+    expect(steps.length).toBeGreaterThanOrEqual(3);
+    expect(steps[0]).toBe("prepare");
+    const order = ["prepare", "create", "start", "upload", "install", "save", "finish"];
+    expect(steps.map((s) => order.indexOf(s))).toEqual([...steps.map((s) => order.indexOf(s))].sort((a, b) => a - b));
     expect(snap.getSnapshot().data).toMatchObject({ snapshot: "dorks-base-mock0001", managed: true, stale: false, error: null });
     await waitFor(() => settings.getSnapshot().data?.baseSnapshotId === "dorks-base-mock0001", "settings follow the build");
   });
