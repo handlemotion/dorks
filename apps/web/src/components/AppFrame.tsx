@@ -1,11 +1,11 @@
 import { useEffect, type ReactNode } from 'react'
 import { Outlet } from '@tanstack/react-router'
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@dorks/ui/resizable'
+import { ResizablePanel, ResizablePanelGroup } from '@dorks/ui/resizable'
 import { SidebarInset, SidebarProvider, useSidebar } from '@dorks/ui/sidebar'
 import { useDefaultLayout, usePanelRef } from 'react-resizable-panels'
 import { AppSidebar } from './AppSidebar'
 import { TITLEBAR_START, WindowControls } from './WindowControls'
-import { useSnapOnClick } from '../lib/snapOnClick'
+import { PanelResizeHandle } from '@dorks/ui/panel-resize-handle'
 
 const SIDEBAR_WIDTH = 275
 
@@ -32,7 +32,6 @@ function Panels({ sidebar, children }: { sidebar: ReactNode; children: ReactNode
   const { isMobile, open, setOpen } = useSidebar()
   const panel = usePanelRef()
   const layout = useDefaultLayout({ id: 'dorks.frame.v2', storage: localStorage })
-  const snap = useSnapOnClick(panel, SIDEBAR_WIDTH)
   // The sidebar's open state drives the panel; the panel reports back when it is dragged shut or open.
   useEffect(() => {
     const p = panel.current
@@ -49,7 +48,7 @@ function Panels({ sidebar, children }: { sidebar: ReactNode; children: ReactNode
     )
   }
   return (
-    <ResizablePanelGroup orientation="horizontal" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
+    <ResizablePanelGroup resizeTargetMinimumSize={{ fine: 24, coarse: 37 }} orientation="horizontal" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
       <ResizablePanel
         id="sidebar"
         className="overflow-hidden"
@@ -69,7 +68,7 @@ function Panels({ sidebar, children }: { sidebar: ReactNode; children: ReactNode
         {sidebar}
       </ResizablePanel>
       {/* Drag to resize; a click snaps the sidebar back to its default width. */}
-      <ResizableHandle className="z-10 after:w-2" {...snap} />
+      <PanelResizeHandle aria-label="Resize sidebar" onReset={() => panel.current?.resize(SIDEBAR_WIDTH)} disabled={!open} className={!open ? 'hidden' : undefined} />
       <ResizablePanel id="main" minSize={480}>
         <SidebarInset className="h-full min-h-0 overflow-hidden bg-transparent">{children}</SidebarInset>
       </ResizablePanel>

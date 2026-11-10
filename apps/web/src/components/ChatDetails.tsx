@@ -1,11 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useDefaultLayout, usePanelRef } from 'react-resizable-panels'
-import { useSnapOnClick } from '../lib/snapOnClick'
-import { ChevronRightIcon, ChevronsDownUpIcon, ChevronsUpDownIcon, WrapTextIcon, ExternalLinkIcon, GitPullRequestIcon, GlobeIcon, LayersIcon, MonitorIcon, ChevronsLeftIcon, ChevronsRightIcon } from 'lucide-react'
+import { PanelResizeHandle } from '@dorks/ui/panel-resize-handle'
+import { ChevronRightIcon, ChevronsDownUpIcon, ChevronsUpDownIcon, WrapTextIcon, ExternalLinkIcon, GitPullRequestIcon, GlobeIcon, LayersIcon, MonitorIcon, PanelLeftIcon } from 'lucide-react'
 import { PatchDiff } from '@pierre/diffs/react'
 import { useTheme } from 'next-themes'
 import { Button } from '@dorks/ui/button'
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@dorks/ui/resizable'
+import { ResizablePanel, ResizablePanelGroup } from '@dorks/ui/resizable'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@dorks/ui/tabs'
 import { EmptyState } from './EmptyState'
 import { ImageLightbox, ImageTrigger, type LightboxImage } from './ImageLightbox'
@@ -44,18 +44,18 @@ export function ChatDetails({ data, onClose, onGrab, onAsk, className }: { data:
       <Tabs
         value={tab}
         onValueChange={(value) => setTab(value as Tab)}
-        className="relative min-h-0 flex-1 gap-0 overflow-hidden rounded-[11px] after:pointer-events-none after:absolute after:inset-0 after:z-20 after:rounded-[inherit] after:border after:border-border"
+        className="relative min-h-0 min-w-0 flex-1 gap-0 overflow-hidden rounded-[11px] after:pointer-events-none after:absolute after:inset-0 after:z-20 after:rounded-[inherit] after:border after:border-border"
       >
-        <div data-tauri-drag-region className="flex h-10 shrink-0 items-center gap-0.5 p-[5px]">
-          <TabsList className="h-[30px]! gap-0.5 rounded-none bg-transparent p-0">
+        <div data-tauri-drag-region className="flex h-10 min-w-0 shrink-0 items-center gap-0.5 p-[5px]">
+          <TabsList className="h-[30px]! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
             <DetailsTab value="artifacts" icon={<LayersIcon />}>Artifacts</DetailsTab>
             <DetailsTab value="changes" icon={<GitPullRequestIcon />} count={changes.length || undefined}>Changes</DetailsTab>
             <DetailsTab value="browser" icon={<GlobeIcon />}>Browser</DetailsTab>
             <DetailsTab value="computer" icon={<MonitorIcon />}>Computer</DetailsTab>
           </TabsList>
           {onClose && (
-            <Button variant="ghost" size="icon-sm" className={`ml-auto ${ACTION}`} aria-label="Hide chat details" title="Hide chat details" onClick={onClose}>
-              <ChevronsRightIcon />
+            <Button variant="ghost" size="icon-sm" className={`ml-auto shrink-0 ${ACTION}`} aria-label="Hide chat details" title="Hide chat details" onClick={onClose}>
+              <PanelLeftIcon className="rotate-180" />
             </Button>
           )}
         </div>
@@ -289,8 +289,8 @@ export function useDetailsOpen() {
  */
 export function ShowDetailsButton({ onClick }: { onClick: () => void }) {
   return (
-    <Button variant="ghost" size="icon-sm" className={`-mr-[3px] hidden lg:inline-flex ${ACTION}`} aria-label="Show chat details" title="Show chat details" onClick={onClick}>
-      <ChevronsLeftIcon />
+    <Button variant="ghost" size="icon-sm" className={`-mr-[11px] hidden lg:inline-flex ${ACTION}`} aria-label="Show chat details" title="Show chat details" onClick={onClick}>
+      <PanelLeftIcon className="rotate-180" />
     </Button>
   )
 }
@@ -310,24 +310,23 @@ function useWide() {
 
 /**
  * The chat and, when given and the window is wide, Chat details beside it in a resizable split (react-resizable-panels, through
- * shadcn's Resizable). The split is remembered. The handle is invisible: the panel's 4px inset already separates the two.
+ * shadcn's Resizable). The split is remembered. The divider is invisible: the panel's 4px inset already separates the two.
  */
-const CHAT_WIDTH = 525
+const CHAT_WIDTH = 600
 
 export function ChatSplit({ details, children }: { details?: ReactNode; children: ReactNode }) {
   const wide = useWide()
-  const layout = useDefaultLayout({ id: 'dorks.chat-split.v3', storage: localStorage })
+  const layout = useDefaultLayout({ id: 'dorks.chat-split.v4', storage: localStorage })
   const chat = usePanelRef()
-  const snap = useSnapOnClick(chat, CHAT_WIDTH)
   if (!details || !wide) return <div className="flex min-h-0 min-w-0 flex-1">{children}</div>
   return (
-    <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
-      {/* The chat is 525px by default and keeps its width when the window resizes; Chat details takes everything else. */}
+    <ResizablePanelGroup resizeTargetMinimumSize={{ fine: 24, coarse: 37 }} orientation="horizontal" className="min-h-0 flex-1" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
+      {/* The chat is 600px by default and keeps its width when the window resizes; Chat details takes everything else. */}
       <ResizablePanel id="chat" panelRef={chat} defaultSize={CHAT_WIDTH} minSize={360} groupResizeBehavior="preserve-pixel-size">
         <div className="flex h-full min-w-0">{children}</div>
       </ResizablePanel>
       {/* A click on the handle snaps the chat back to its default width. */}
-      <ResizableHandle className="z-10 w-0 bg-transparent after:w-2" {...snap} />
+      <PanelResizeHandle aria-label="Resize chat and details" className="w-0 bg-transparent" onReset={() => chat.current?.resize(CHAT_WIDTH)} />
       <ResizablePanel id="details" minSize={360}>
         {details}
       </ResizablePanel>

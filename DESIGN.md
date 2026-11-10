@@ -40,7 +40,7 @@ Rules that tooling enforces live in `AGENTS.md` and `packages/ui/README.md`; thi
 
 - **Frame:** `AppFrame` is a resizable split (shadcn `resizable`, react-resizable-panels v4): sidebar (275px by default, 200–420px, keeps its width on window resize, a click on the divider snaps it back, collapsible,
   remembered) | page. The divider is the resize handle. Phones get shadcn's sheet instead.
-- **Chat:** `ChatSplit` puts the chat and Chat details side by side (chat 525px by default, details everything else, both at least 360px; on window resize the sidebar and the chat keep their widths and details absorbs the change; a click on the handle snaps the chat back to 525px; invisible handle in the 4px gap). Details
+- **Chat:** `ChatSplit` puts the chat and Chat details side by side (chat 600px by default, details everything else, both at least 360px; on window resize the sidebar and the chat keep their widths and details absorbs the change; a click on the handle snaps the chat back to 600px; invisible handle in the 4px gap). Details
   hide below `lg`.
 - **Edges:** the page title and the composer start 20px from the column's edge (the composer 20px from the bottom too); the transcript
   is indented to 30px, a step in from both, so messages read as the content between them. The transcript keeps `max-w-3xl`.
@@ -86,7 +86,7 @@ The pattern to copy for any toolbar:
 | Sidebar | `AppSidebar`: a bare 48px title bar (traffic lights, then `WindowControls`, which float in AppFrame so they never move), the owner switcher with New session, Customize, Automations and Builds, then chats grouped by repository under plain labels, Settings at the foot. Rows are `SIDEBAR_ROW` (30px, 2px apart) under one springing hover fill (`useRowHover`). |
 | Chat actions | `ChatMenu`, the ••• on the right of the chat header. Archive is the icon beside the title. |
 | Element context for the agent | `PreviewBrowser`'s picker (`react-grab/primitives`, same-origin frames only). |
-| Resizing | `@dorks/ui/resizable` with `useDefaultLayout` to remember sizes. |
+| Resizing | `@dorks/ui/resizable` with `useDefaultLayout` to remember sizes; `@dorks/ui/panel-resize-handle` for the 4 × 32px grip, 6px beside the divider, shown on hover, focus and drag. A click resets the width. |
 
 ## Motion
 

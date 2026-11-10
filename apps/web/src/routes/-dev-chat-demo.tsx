@@ -143,7 +143,7 @@ export function Demo() {
           title={showNew ? 'New session' : 'Fix flaky bridge reconnect after wake'}
           titleActions={!showNew && <ArchiveButton archived={archived} onClick={() => setArchived((a) => !a)} />}
           actions={<>
-            {!showNew && <ChatMenu prUrl="https://github.com/acme/demo/pull/142" onDelete={() => setShowNew(true)} />}
+            {!showNew && <ChatMenu prUrl="https://github.com/acme/demo/pull/142" detailsOpen={detailsOpen} onDelete={() => setShowNew(true)} />}
             {!detailsOpen && !showNew && <ShowDetailsButton onClick={() => setDetailsOpen(true)} />}
           </>}
         />

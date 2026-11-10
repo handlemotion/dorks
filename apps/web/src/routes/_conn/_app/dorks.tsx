@@ -150,7 +150,7 @@ function Thread({ dorkId }: { dorkId: string }) {
         title={dork.title}
         titleActions={<ArchiveButton archived={dork.archived} disabled={archiving} onClick={() => void runArchive(() => actions.archiveDork(dorkId, !dork.archived))} />}
         actions={<>
-          <ChatMenu prUrl={dork.prUrl} onDelete={async () => { await actions.deleteDork(dorkId); await navigate({ to: '/dorks', search: {} }) }} />
+          <ChatMenu prUrl={dork.prUrl} detailsOpen={detailsOpen} onDelete={async () => { await actions.deleteDork(dorkId); await navigate({ to: '/dorks', search: {} }) }} />
           {!detailsOpen && <ShowDetailsButton onClick={() => setDetailsOpen(true)} />}
         </>}
       />

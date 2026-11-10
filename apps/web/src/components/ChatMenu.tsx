@@ -10,16 +10,16 @@ import { BAR_BUTTON } from './PreviewBrowser'
  * The chat's actions, behind a ••• on the right of its header: open the pull request (when there is one), copy a link to the chat, and
  * delete it after a confirm.
  */
-export function ChatMenu({ prUrl, onDelete }: { prUrl?: string; onDelete?: () => Promise<void> | void }) {
+export function ChatMenu({ prUrl, onDelete, detailsOpen }: { prUrl?: string; onDelete?: () => Promise<void> | void; detailsOpen?: boolean }) {
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting] = useState(false)
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="Chat actions" title="Chat actions" />}>
+        <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className={`${BAR_BUTTON} ${detailsOpen ? 'lg:-mr-[11px]' : ''}`} aria-label="Chat actions" title="Chat actions" />}>
           <MoreHorizontalIcon />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuContent align="end" className="w-max">
           <DropdownMenuGroup>
             {prUrl && (
               <DropdownMenuLinkItem href={prUrl} target="_blank" rel="noreferrer">

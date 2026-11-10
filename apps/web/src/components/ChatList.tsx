@@ -90,11 +90,12 @@ export function ChatList({ chats, orderKey, to = '/dorks' as ChatRoute, activeId
  * `aria-current`) while its chat is the one in the URL.
  */
 function ChatItem({ chat, index, to, active }: { chat: Chat; index: number; to: ChatRoute; active: boolean }) {
-  // `data` feeds the announcements above.
-  const { ref, isDragging } = useSortable({ id: chat.id, index, data: chat })
+  // `data` feeds announcements; the link is the handle so interactive-element filtering allows row drags.
+  const { ref, handleRef, isDragging } = useSortable({ id: chat.id, index, data: chat })
   return (
     <div ref={ref} data-dragging={isDragging || undefined} className="relative flex min-w-0 data-[dragging]:z-30 data-[dragging]:opacity-60">
       <Link
+        ref={handleRef}
         to={to}
         search={{ dork: chat.id }}
         data-active={active || undefined}
