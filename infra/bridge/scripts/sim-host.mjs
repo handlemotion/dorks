@@ -10,7 +10,7 @@ const here = fileURLToPath(new URL(".", import.meta.url));
 const fakeClaude = join(here, "../test/fixtures/fake-claude.mjs");
 
 /** @param {{ repos?: string[] }} [opts] */
-export function prepareRealBridge({ repos = ["jaantonio/demo"] } = {}) {
+export function prepareRealBridge({ repos = ["acme/demo"] } = {}) {
   execFileSync(process.execPath, [join(here, "build.mjs")], { stdio: "inherit" });
   const root = process.env.DORKS_E2E_ROOT || mkdtempSync(join(tmpdir(), "dorks-bridge-e2e-"));
   const remotes = join(root, "remote");

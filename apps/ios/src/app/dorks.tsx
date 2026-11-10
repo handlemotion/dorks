@@ -83,7 +83,7 @@ function NewDork({ onCreated }: { onCreated: (id: Id<'dorks'>) => void }) {
   return (
     <View>
       <TextInput accessibilityLabel="first message" style={s.input} placeholder="What should it do?" value={message} onChangeText={setMessage} />
-      <Button title="New dork" onPress={async () => { setError(''); try { onCreated(await create({ repo: 'jaantonio/demo', message })); setMessage(''); } catch (e) { setError(errorMessage(e)); } }} />
+      <Button title="New dork" onPress={async () => { setError(''); try { onCreated(await create({ repo: 'acme/demo', message })); setMessage(''); } catch (e) { setError(errorMessage(e)); } }} />
       {!!error && <Text style={s.error}>{error}</Text>}
     </View>
   );

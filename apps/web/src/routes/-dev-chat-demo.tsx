@@ -28,7 +28,7 @@ export function Demo() {
   const [text, setText] = useState('')
   const [stopped, setStopped] = useState(false)
   const [showNew, setShowNew] = useState(false)
-  const [repo, setRepo] = useState('jaantonio/demo')
+  const [repo, setRepo] = useState('acme/demo')
   const [provider, setProvider] = useState<AgentProvider>('codex')
   const send = () => {
     const id = crypto.randomUUID()
@@ -66,7 +66,7 @@ export function Demo() {
         ) : (
         <section className="dorks-thread" aria-label="thread">
           <div className="dorks-thread-header">
-            <div><h2>Fix flaky bridge reconnect after wake</h2><p>jaantonio/demo · <span data-testid="state">{stopped ? 'idle' : 'working'}</span></p></div>
+            <div><h2>Fix flaky bridge reconnect after wake</h2><p>acme/demo · <span data-testid="state">{stopped ? 'idle' : 'working'}</span></p></div>
             <Button variant="ghost" size="sm" disabled>Archive</Button>
           </div>
           <MessageScrollerProvider autoScroll defaultScrollPosition="end">

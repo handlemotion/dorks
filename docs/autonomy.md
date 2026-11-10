@@ -2,7 +2,7 @@
 
 A dork doesn't stop at "task done". It opens PRs, subscribes to them, and keeps working on CI failures, review comments,
 merge conflicts and stack rebases until each PR is merged, closed or unsubscribed. One chat (one box) can hold any number of
-PRs across repos and stacks. This follows Devin's model, not Conductor's one-PR-per-workspace model.
+PRs across repos and stacks.
 
 Claude Code stays stock. Autonomy is built from the bridge we already have, plus hooks, a `gh` shim and a small `dorks` CLI.
 
