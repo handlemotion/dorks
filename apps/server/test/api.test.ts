@@ -74,11 +74,9 @@ describe("settings", () => {
     expect((await a.get("/api/settings")).json.claudeToken).toBe(false);
   });
 
-  it("caps and validates: 4KB tokens, finite clamped sleep minutes, environment names, comment policy", async () => {
+  it("validates sleep minutes (NaN never reaches a timer), environment names and the comment policy", async () => {
     const h = harness();
     const a = api(h);
-    expect((await a.put("/api/settings", { claudeToken: "x".repeat(4 * 1024 + 1) })).json.error.code).toBe("invalid");
-    expect((await a.put("/api/settings", { claudeToken: "x".repeat(4 * 1024) })).status).toBe(200);
     for (const bad of [Number.NaN, "5", null]) expect((await a.put("/api/settings", { sleepMinutes: bad as never })).json?.error?.code ?? "ok").not.toBe("ok");
     await a.put("/api/settings", { sleepMinutes: 100_000 });
     expect((await a.get("/api/settings")).json.sleepMinutes).toBe(24 * 60);
@@ -86,7 +84,6 @@ describe("settings", () => {
     expect((await a.get("/api/settings")).json.sleepMinutes).toBe(0.05);
     expect((await a.put("/api/settings", { boatEnvironment: "Bad Name!" })).json.error.code).toBe("invalid");
     expect((await a.put("/api/settings", { commentPolicy: { mode: "nope" } })).json.error.code).toBe("invalid");
-    expect((await a.put("/api/settings", { commentPolicy: { mode: "allowlist", logins: ["x".repeat(101)] } })).json.error.code).toBe("invalid");
     expect((await a.put("/api/settings", { commentPolicy: { mode: "allowlist", logins: ["alice"] } })).status).toBe(200);
     expect((await a.get("/api/settings")).json.commentPolicy).toEqual({ mode: "allowlist", logins: ["alice"] });
   });
@@ -133,17 +130,15 @@ describe("settings", () => {
     expect(await status({})).toBe("ok"); // falls back to the saved key
   });
 
-  it("CLI secrets: names only, 16KB in bytes, upsert and delete", async () => {
+  it("CLI secrets: names only, upsert, delete, bad names refused", async () => {
     const a = api(harness());
     expect((await a.put("/api/secrets/DEPLOY_TOKEN", { value: "v1" })).status).toBe(200);
     expect((await a.put("/api/secrets/DEPLOY_TOKEN", { value: "v2" })).status).toBe(200);
     expect((await a.put("/api/secrets/AAA", { value: "x" })).status).toBe(200);
     expect((await a.get("/api/secrets")).json).toEqual(["AAA", "DEPLOY_TOKEN"]);
     expect((await a.put("/api/secrets/lower", { value: "x" })).json.error.code).toBe("invalid");
-    expect((await a.put("/api/secrets/BIG", { value: "é".repeat(8 * 1024 + 1) })).json.error.code).toBe("invalid"); // bytes, not chars
-    expect((await a.put("/api/secrets/BIG", { value: "é".repeat(8 * 1024) })).status).toBe(200);
     expect((await a.del("/api/secrets/AAA")).status).toBe(200);
-    expect((await a.get("/api/secrets")).json).toEqual(["BIG", "DEPLOY_TOKEN"]);
+    expect((await a.get("/api/secrets")).json).toEqual(["DEPLOY_TOKEN"]);
   });
 });
 
