@@ -45,6 +45,7 @@ pub fn run() {
             commands::set_public_url,
             commands::set_wurmhol_token,
             commands::tunnel_status,
+            commands::open_tunnel_approval,
             commands::open_data_dir,
             commands::gh_status,
             commands::read_gh_token,

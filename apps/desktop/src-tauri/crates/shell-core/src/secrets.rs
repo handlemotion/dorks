@@ -39,6 +39,26 @@ pub fn ensure_owner_token(path: &Path) -> io::Result<String> {
     }
 }
 
+/// Reads a generated value from `path`, creating it with `make` (mode 0600) on first run.
+pub fn ensure_generated(path: &Path, make: impl FnOnce() -> io::Result<String>) -> io::Result<String> {
+    if let Some(existing) = read_secret(path)? {
+        return Ok(existing);
+    }
+    let value = make()?;
+    write_private(path, value.as_bytes())?;
+    Ok(value)
+}
+
+/// The wurmhol pipe access key: 64 hex characters (the relay takes 32 to 128 of `A-Za-z0-9_-`).
+pub fn ensure_access_key(path: &Path) -> io::Result<String> {
+    ensure_generated(path, generate_token)
+}
+
+/// This install's pipe name: `dorks-` and 10 hex characters.
+pub fn ensure_install_name(path: &Path) -> io::Result<String> {
+    ensure_generated(path, || generate_token().map(|t| format!("dorks-{}", &t[..10])))
+}
+
 /// A secret stored as a 0600 file: trimmed contents, or `None` when the file is missing or blank.
 pub fn read_secret(path: &Path) -> io::Result<Option<String>> {
     match std::fs::read_to_string(path) {

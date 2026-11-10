@@ -65,6 +65,17 @@ impl Paths {
         self.root.join("wurmhol-token")
     }
 
+    /// The wurmhol pipe's access key (0600), made once. Sandboxes send it so the relay lets their bridge through; the per-dork
+    /// HMAC remains the real authentication (docs/architecture.md).
+    pub fn wurmhol_access_key_file(&self) -> PathBuf {
+        self.root.join("wurmhol-access-key")
+    }
+
+    /// This install's stable pipe name (`dorks-<10 hex>`), made once so the public URL survives restarts.
+    pub fn wurmhol_name_file(&self) -> PathBuf {
+        self.root.join("wurmhol-name")
+    }
+
     pub fn wurmhol_log(&self) -> PathBuf {
         self.logs_dir().join("wurmhol.log")
     }

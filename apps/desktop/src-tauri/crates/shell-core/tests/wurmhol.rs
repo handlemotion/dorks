@@ -37,7 +37,7 @@ fn detaching(dir: &Path) -> PathBuf {
             r#"case "$1" in
   ls) if [ -f "$STATE/pipe" ]; then echo '[{{"id":"abcde12345"}}]'; else echo '[]'; fi ;;
   stop) echo "$2" > "$STATE/stopped"; rm -f "$STATE/pipe" ;;
-  *) printf '%s ' "$@" > "$STATE/args"; printf '%s' "$WURMHOL_TOKEN" > "$STATE/token"; printf '%s' "$WURMHOL_URL" > "$STATE/server"
+  *) printf '%s ' "$@" > "$STATE/args"; printf '%s' "$WURMHOL_TOKEN" > "$STATE/token"; printf '%s' "$WURMHOL_URL" > "$STATE/server"; printf '%s' "$WURMHOL_ACCESS_KEY" > "$STATE/key"
      touch "$STATE/pipe"; echo '{URL_LINE}' ;;
 esac"#
         ),
@@ -70,13 +70,33 @@ async fn eventually(what: &str, check: impl Fn() -> bool) {
     panic!("timed out waiting for {what}");
 }
 
+/// A computer with no token: the client prints an approval link (`approval: true`) and its daemon waits. The tunnel reports that a
+/// person must approve, then says so once the share stops waiting, so the shell can start over and get the pipe URL.
 #[tokio::test]
-async fn without_a_token_it_says_where_to_get_one() {
+async fn without_a_token_the_client_asks_for_approval_and_the_tunnel_reports_when_it_is_granted() {
     let dir = tempfile::tempdir().unwrap();
-    let mut cfg = config(dir.path(), detaching(dir.path()));
+    let bin = script(
+        dir.path(),
+        r#"case "$1" in
+  ls) if [ -f "$STATE/waiting" ]; then echo '[{"id":"abcde12345","approval":true}]'; else echo '[{"id":"abcde12345"}]'; fi ;;
+  stop) echo "$2" > "$STATE/stopped" ;;
+  *) printf '%s' "$WURMHOL_TOKEN" > "$STATE/token"; touch "$STATE/waiting"
+     echo '{"url":"https://dirt.wurmhol.com/device?code=ABCD-EFGH","port":4748,"id":"abcde12345","approval":true}' ;;
+esac"#,
+    );
+    let mut cfg = config(dir.path(), bin);
     cfg.token = None;
-    let err = WurmholTunnel::new(cfg).start(target()).await.unwrap_err();
-    assert!(matches!(&err, TunnelError::Failed(m) if m.contains("no wurmhol token") && m.contains("Settings")), "{err}");
+    let tunnel = WurmholTunnel::new(cfg);
+    let mut health = tunnel.watch().unwrap();
+    let err = tunnel.start(target()).await.unwrap_err();
+    assert_eq!(err, TunnelError::ApprovalNeeded("https://dirt.wurmhol.com/device?code=ABCD-EFGH".into()));
+    assert_eq!(std::fs::read_to_string(dir.path().join("token")).unwrap(), "", "no token is invented");
+    health.borrow_and_update();
+
+    std::fs::remove_file(dir.path().join("waiting")).unwrap(); // someone approved
+    tokio::time::timeout(Duration::from_secs(5), health.changed()).await.expect("a health change").unwrap();
+    assert_eq!(*health.borrow(), TunnelHealth::Approved);
+    tunnel.stop().await;
 }
 
 #[tokio::test]
@@ -91,6 +111,7 @@ async fn detaching_client_gives_the_url_and_gets_only_the_port_and_the_token_by_
     let dir = tempfile::tempdir().unwrap();
     let mut cfg = config(dir.path(), detaching(dir.path()));
     cfg.server = Some("https://relay.example.com".into());
+    cfg.access_key = Some("k".repeat(40));
     cfg.extra_args = vec!["--name".into(), "mine".into()];
     let tunnel = WurmholTunnel::new(cfg);
     let endpoint = tunnel.start(target()).await.unwrap();
@@ -101,6 +122,8 @@ async fn detaching_client_gives_the_url_and_gets_only_the_port_and_the_token_by_
     assert!(!args.contains(TOKEN), "the token must not be an argument");
     assert_eq!(std::fs::read_to_string(dir.path().join("token")).unwrap(), TOKEN);
     assert_eq!(std::fs::read_to_string(dir.path().join("server")).unwrap(), "https://relay.example.com");
+    assert_eq!(std::fs::read_to_string(dir.path().join("key")).unwrap(), "k".repeat(40), "the access key travels by environment only");
+    assert!(!args.contains(&"k".repeat(40)), "the access key must not be an argument");
 
     tunnel.stop().await;
     assert_eq!(std::fs::read_to_string(dir.path().join("stopped")).unwrap().trim(), "abcde12345", "stop ends the pipe by id");

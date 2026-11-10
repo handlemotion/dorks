@@ -77,6 +77,14 @@ pub fn tunnel_status(state: State<'_, AppState>) -> Option<TunnelInfo> {
     state.config.lock().unwrap().as_ref().map(|c| c.tunnel.clone())
 }
 
+/// Opens the tunnel's pending approval link in the browser. Takes no URL from the page: only the link the shell itself got from
+/// the wurmhol client can be opened.
+#[tauri::command]
+pub fn open_tunnel_approval(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let link = state.config.lock().unwrap().as_ref().and_then(|c| c.tunnel.approval_url.clone()).ok_or("nothing waits for approval")?;
+    app.opener().open_url(link, None::<&str>).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn open_data_dir(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     app.opener().open_path(state.paths.root().display().to_string(), None::<&str>).map_err(|e| e.to_string())

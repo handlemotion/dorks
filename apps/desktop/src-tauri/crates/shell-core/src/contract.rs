@@ -21,6 +21,8 @@ pub const ENV_UI_PORT: &str = "DORKS_UI_PORT";
 pub const ENV_BRIDGE_PORT: &str = "DORKS_BRIDGE_PORT";
 /// Public URL of the bridge port as sandboxes see it. Unset when no tunnel is available.
 pub const ENV_PUBLIC_URL: &str = "DORKS_PUBLIC_URL";
+/// Access key of the wurmhol pipe, given to each sandbox so its bridge passes the relay. Unset for a user-supplied URL.
+pub const ENV_TUNNEL_KEY: &str = "DORKS_TUNNEL_KEY";
 /// PID of the shell. A server that sees this process gone should exit.
 pub const ENV_PARENT_PID: &str = "DORKS_PARENT_PID";
 
