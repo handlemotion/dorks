@@ -15,6 +15,19 @@
 set -euo pipefail
 DIR="$HOME/.dorks-release"
 REPO="${REPO:-handlemotion/dorks}"
+# Where the secrets go: GitHub directly (default), or Doppler (SECRETS_BACKEND=doppler), which you sync to GitHub from its dashboard.
+SECRETS_BACKEND="${SECRETS_BACKEND:-gh}"
+DOPPLER_PROJECT="${DOPPLER_PROJECT:-dorks}"
+DOPPLER_CONFIG="${DOPPLER_CONFIG:-ci}"
+put() { # value on stdin, never on a command line
+  if [ "$SECRETS_BACKEND" = doppler ]; then doppler secrets set "$1" -p "$DOPPLER_PROJECT" -c "$DOPPLER_CONFIG" --no-interactive >/dev/null
+  else gh secret set "$1" -R "$REPO"; fi
+  echo "set $1 ($SECRETS_BACKEND)"
+}
+unput() {
+  if [ "$SECRETS_BACKEND" = doppler ]; then doppler secrets delete "$1" -p "$DOPPLER_PROJECT" -c "$DOPPLER_CONFIG" -y >/dev/null 2>&1 || true
+  else gh secret delete "$1" -R "$REPO" 2>/dev/null || true; fi
+}
 mkdir -p "$DIR" && chmod 700 "$DIR"
 
 # macOS Keychain cannot import the PKCS#12 that OpenSSL 3 writes by default ("Unable to decode the provided data"), so export it
@@ -36,9 +49,9 @@ updater_key() {
   read -r -s -p "Updater key password, as entered above (empty for none): " up_pass; echo
 }
 updater_publish() {
-  gh secret set TAURI_SIGNING_PRIVATE_KEY -R "$REPO" < "$DIR/updater.key"
-  if [ -n "$up_pass" ]; then printf %s "$up_pass" | gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD -R "$REPO"
-  else gh secret delete TAURI_SIGNING_PRIVATE_KEY_PASSWORD -R "$REPO" 2>/dev/null || true; fi
+  put TAURI_SIGNING_PRIVATE_KEY < "$DIR/updater.key"
+  if [ -n "$up_pass" ]; then printf %s "$up_pass" | put TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+  else unput TAURI_SIGNING_PRIVATE_KEY_PASSWORD; fi
   gh variable set TAURI_UPDATER_PUBKEY -R "$REPO" < "$DIR/updater.key.pub"
 }
 
@@ -54,8 +67,10 @@ case "${1:-}" in
   secrets)
     command -v gh >/dev/null || { echo "gh is required" >&2; exit 1; }
     gh auth status >/dev/null || { echo "run 'gh auth login' first (needs permission to write repository secrets)" >&2; exit 1; }
-    read -r -p "Path to the downloaded Developer ID Application .cer: " cer
-    openssl x509 -inform der -in "$cer" -out "$DIR/dorks.pem"
+    if [ ! -f "$DIR/dorks.pem" ]; then
+      read -r -p "Path to the downloaded Developer ID Application .cer: " cer
+      openssl x509 -inform der -in "$cer" -out "$DIR/dorks.pem"
+    fi
     identity="$(openssl x509 -in "$DIR/dorks.pem" -noout -subject -nameopt multiline | awk -F= '/commonName/ {sub(/^ +/,"",$2); print $2}')"
     echo "signing identity: $identity"
     read -r -s -p "Choose a password for the .p12 (not echoed): " p12pass; echo
@@ -64,13 +79,13 @@ case "${1:-}" in
     read -r -s -p "App-specific password (not echoed): " apple_pw; echo
     read -r -p "Team ID: " team
     updater_key
-    base64 < "$DIR/dorks.p12" | tr -d '\n' | gh secret set APPLE_CERTIFICATE -R "$REPO"
-    printf %s "$p12pass" | gh secret set APPLE_CERTIFICATE_PASSWORD -R "$REPO"
-    printf %s "$identity" | gh secret set APPLE_SIGNING_IDENTITY -R "$REPO"
-    printf %s "$apple_id" | gh secret set APPLE_ID -R "$REPO"
-    printf %s "$apple_pw" | gh secret set APPLE_PASSWORD -R "$REPO"
-    printf %s "$team" | gh secret set APPLE_TEAM_ID -R "$REPO"
-    gh secret set TAURI_SIGNING_PRIVATE_KEY -R "$REPO" < "$DIR/updater.key"
+    base64 < "$DIR/dorks.p12" | tr -d '\n' | put APPLE_CERTIFICATE
+    printf %s "$p12pass" | put APPLE_CERTIFICATE_PASSWORD
+    printf %s "$identity" | put APPLE_SIGNING_IDENTITY
+    printf %s "$apple_id" | put APPLE_ID
+    printf %s "$apple_pw" | put APPLE_PASSWORD
+    printf %s "$team" | put APPLE_TEAM_ID
+    put TAURI_SIGNING_PRIVATE_KEY < "$DIR/updater.key"
     updater_publish
     echo "done: secrets and TAURI_UPDATER_PUBKEY set on $REPO. Back up $DIR somewhere safe (password manager); losing updater.key means installed apps cannot update."
     ;;
@@ -79,8 +94,8 @@ case "${1:-}" in
     [ -f "$DIR/dorks.pem" ] || { echo "no $DIR/dorks.pem: run the 'secrets' step first" >&2; exit 1; }
     read -r -s -p "Choose a password for the .p12 (not echoed): " p12pass; echo
     make_p12 "$p12pass"
-    base64 < "$DIR/dorks.p12" | tr -d '\n' | gh secret set APPLE_CERTIFICATE -R "$REPO"
-    printf %s "$p12pass" | gh secret set APPLE_CERTIFICATE_PASSWORD -R "$REPO"
+    base64 < "$DIR/dorks.p12" | tr -d '\n' | put APPLE_CERTIFICATE
+    printf %s "$p12pass" | put APPLE_CERTIFICATE_PASSWORD
     echo "done: APPLE_CERTIFICATE and APPLE_CERTIFICATE_PASSWORD updated on $REPO."
     ;;
   updater)
