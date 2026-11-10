@@ -17,6 +17,7 @@ import { prLookup } from "./pr-lookup";
 import { PrSubscriptions } from "./prs";
 import { errTag, type Log, type Redactor } from "./redact";
 import { RpcServer } from "./rpc";
+import { claudeOneShot, cleanTitle, titlePrompt } from "./title";
 import type { CommandEntry, Transport } from "./transport";
 
 export interface BridgeDeps {
@@ -62,6 +63,9 @@ export class Bridge {
   private configuring = 0; // configure jobs in flight (an interrupt arriving meanwhile is deferred, not dropped)
   private configAttempts = new Map<string, number>();
   private agentCtx: { dir: string; env: NodeJS.ProcessEnv } | null = null;
+  /** The first message to name the dork after, until a name is sent (or tried) by this process. */
+  private nameFrom: string | null = null;
+  private naming = false;
   private readonly cfg: Config;
   /** [node, cli.mjs]: how the git credential helper and the hooks invoke this binary. */
   private readonly self: [string, string];
@@ -358,7 +362,11 @@ export class Bridge {
     }
     this.startAgent(resume, []);
     this.pipeline.control({ t: "ack", id: cid });
-    if (provider === "claude") this.pipeline.control({ t: "ready" }, true);
+    this.nameFrom = cfg.nameFrom ?? null;
+    if (provider === "claude") {
+      this.pipeline.control({ t: "ready" }, true);
+      this.name();
+    }
     this.process(); // messages that arrived before the agent was up, and interrupts deferred during configure
   }
 
@@ -400,6 +408,7 @@ export class Bridge {
       onReady: () => {
         this.pipeline.control({ t: "ready" }, true);
         this.process();
+        this.name();
       },
       onTurnFinished: async (sessionId) => {
         const result = await this.hooks.methods["hook.stop"]({ session_id: sessionId });
@@ -416,6 +425,26 @@ export class Bridge {
     this.agent = agent;
     this.log("agent started", resume ? "(resuming a session)" : "(new session)");
     for (const text of resend) void agent.sendUserMessage(text).catch(() => this.log("could not resend a message to the new session"));
+  }
+
+  // ------------------------------------------------------------------ title
+  /** Names the dork after its first message, beside the agent (never in its session). Best effort: a failure keeps the placeholder. */
+  private name() {
+    const message = this.nameFrom;
+    const agent = this.agent;
+    if (!message || this.naming || !agent || !this.agentCtx) return;
+    this.naming = true;
+    this.nameFrom = null;
+    const prompt = titlePrompt(message);
+    const { env } = this.agentCtx;
+    const reply = agent instanceof CodexAgent
+      ? agent.oneShot(prompt)
+      : claudeOneShot({ bin: this.cfg.claudeBin, env, cwd: this.runAs?.home ?? env.HOME ?? this.cfg.stateDir, runAs: this.runAs, prompt });
+    void reply.then((raw) => {
+      const text = cleanTitle(raw ?? "");
+      if (text) this.pipeline.control({ t: "title", text }, true);
+      this.log(text ? "named the dork" : "title model gave no usable name");
+    }).catch((e) => this.log("could not name the dork:", errTag(e))).finally(() => { this.naming = false; });
   }
 
   // ------------------------------------------------------------------ dedupe journal

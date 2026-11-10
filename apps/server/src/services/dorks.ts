@@ -74,7 +74,7 @@ export function createDork(app: App, input: { repo: string; message: string; tit
   const now = app.now();
   return app.db.tx(() => {
     insert(app.db, "dorks", {
-      id, title: (title?.trim() || text).slice(0, MAX_TITLE_CHARS), repo, branch: `agent/${app.uuid().slice(0, 8)}`, provider, state: "creating", archived: false,
+      id, title: (title?.trim() || text).slice(0, MAX_TITLE_CHARS), titleSource: title?.trim() ? "user" : "message", repo, branch: `agent/${app.uuid().slice(0, 8)}`, provider, state: "creating", archived: false,
       lastActivityAt: now, createdAt: now, deleting: false,
     });
     insert(app.db, "dork_runtime", { dorkId: id, bridgeSeq: 0, streamMsgId: "", sleepMinutes: readSettings(app).sleepMinutes, bridgeSeenAt: 0, bridgeLost: false, opGen: 0, pauseRetries: 0 });
@@ -125,7 +125,7 @@ export function renameDork(app: App, dorkId: string, title: string) {
     owned(app, dorkId);
     const t = typeof title === "string" ? title.trim() : "";
     if (!t || t.length > MAX_TITLE_CHARS) fail("invalid", "bad title");
-    patchDork(app, dorkId, { title: t });
+    patchDork(app, dorkId, { title: t, titleSource: "user" });
   });
 }
 

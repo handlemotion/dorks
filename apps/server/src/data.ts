@@ -5,6 +5,7 @@ import { bool, json } from "./db";
 // Typed readers over the schema (migrations.ts). Columns are snake_case in SQL and camelCase here; NULL becomes undefined.
 
 export type Provider = "claude" | "codex";
+export type TitleSource = "message" | "auto" | "user";
 
 export interface Pause {
   gen: number;
@@ -16,6 +17,7 @@ export interface Pause {
 export interface DorkRow {
   id: string;
   title: string;
+  titleSource: TitleSource;
   repo: string;
   branch: string;
   provider: Provider;
@@ -61,7 +63,7 @@ export interface CommandRow {
 const u = <T>(v: T | null): T | undefined => (v === null ? undefined : v);
 
 export const dorkOf = (r: Row): DorkRow => ({
-  id: r.id as string, title: r.title as string, repo: r.repo as string, branch: r.branch as string,
+  id: r.id as string, title: r.title as string, titleSource: r.title_source as TitleSource, repo: r.repo as string, branch: r.branch as string,
   provider: r.provider as Provider, state: r.state as DorkState, archived: bool(r.archived),
   boxId: u(r.box_id as string | null), claudeSessionId: u(r.claude_session_id as string | null), codexThreadId: u(r.codex_thread_id as string | null),
   codexModel: json(r.codex_model), codexModelChoices: json(r.codex_model_choices),

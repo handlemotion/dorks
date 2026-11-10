@@ -20,6 +20,8 @@ Test changes against running servers, not only unit tests.
 
 The product intentionally has few tests. Do not add or run tests by reflex.
 
+- **Claude is the only provider we test for real right now.** Codex is aggressively deprioritized: keep it compiling and its fake-Codex tests passing, but do not spend time on live Codex runs, Codex-only polish or new Codex coverage. Validate live behaviour with Claude (the `CLAUDE_CODE_OAUTH_TOKEN` in Doppler, `dorks` / `dev_live`).
+
 - **Only real tests on real business logic**: the lifecycle state machine and timers, the Boat driver, the PR poller, crypto, the bridge protocol, the server e2e. Each must be light, high value and able to catch a real bug.
 - **No low-signal tests**: no UI snapshot or screenshot tests, no tests that restate the implementation, no mocks of the thing under test, no tests for markup, styling or copy that will change within a day.
 - **No unnecessary runs.** Do not run the full suite or `pnpm e2e` to confirm a UI tweak; typecheck and a look in a headless browser are enough. Run the tests that cover the logic you changed.

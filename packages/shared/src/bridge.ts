@@ -23,6 +23,9 @@ export const toBridge = z.discriminatedUnion("t", [
     ghToken: z.string(),
     repo: z.object({ fullName: z.string(), branch: z.string() }),
     resumeSessionId: z.string().nullable(),
+    // Set while the dork still carries its first message as a title: the bridge asks a small model for a short name for this
+    // text (once per bridge process) and sends it back as a `title` frame. Absent once the title was generated or typed.
+    nameFrom: z.string().optional(),
   }),
   z.object({ t: z.literal("user_message"), id: z.string(), text: z.string() }), // bridge dedupes by id
   notifyFrame(),
@@ -37,6 +40,7 @@ export const fromBridge = z.discriminatedUnion("t", [
   z.object({ t: z.literal("event"), bseq: z.number().int(), raw: z.unknown() }), // raw claude stream-json line
   z.object({ t: z.literal("codex_models"), models: z.array(z.object({ model: z.string().regex(/^[a-zA-Z0-9._-]{1,64}$/), efforts: z.array(z.enum(["none", "low", "medium", "high", "xhigh", "max"])) })).max(100) }),
   z.object({ t: z.literal("codex_issue"), message: z.string().max(1000) }),
+  z.object({ t: z.literal("title"), text: z.string().min(1).max(120) }), // a generated name for the dork (see `nameFrom`)
   z.object({ t: z.literal("ready") }), // repo cloned + claude running
   z.object({ t: z.literal("ack"), id: z.string() }), // user_message id received
   z.object({ t: z.literal("agent_exited"), code: z.number().nullable(), stderrTail: z.string() }),

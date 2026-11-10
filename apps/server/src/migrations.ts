@@ -150,4 +150,14 @@ export const MIGRATIONS: string[] = [
   );
   INSERT INTO snapshot_build (id) VALUES (1);
   `,
+  `
+  -- Where a dork's title came from: 'message' (the first message, cut short: the bridge may replace it with a generated name),
+  -- 'auto' (generated in the box) or 'user' (typed, never overwritten). Existing dorks whose title is not their first message were
+  -- renamed by hand.
+  ALTER TABLE dorks ADD COLUMN title_source TEXT NOT NULL DEFAULT 'message' CHECK (title_source IN ('message', 'auto', 'user'));
+  UPDATE dorks SET title_source = 'user' WHERE title IS NOT (
+    SELECT substr(trim(json_extract(e.body, '$.text')), 1, 120) FROM events e
+    WHERE e.dork_id = dorks.id AND json_extract(e.body, '$.type') = 'user_message' ORDER BY e.seq LIMIT 1
+  );
+  `,
 ];

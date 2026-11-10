@@ -21,7 +21,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     id: process.env.FAKE_CODEX_MODEL_MISSING ? "gpt-6.1-sol" : "gpt-6-sol",
     model: process.env.FAKE_CODEX_MODEL_MISSING ? "gpt-6.1-sol" : "gpt-6-sol",
     supportedReasoningEfforts: [{ reasoningEffort: "high" }],
-  }], nextCursor: null });
+  }, ...(process.env.FAKE_CODEX_LUNA ? [{ id: "gpt-6-luna", model: "gpt-6-luna", supportedReasoningEfforts: [{ reasoningEffort: "low" }, { reasoningEffort: "medium" }] }] : [])], nextCursor: null });
+  if (m.method === "thread/start" && existsSync(thread)) return reply({ thread: { id: `thr_side_${++turnId}` } }); // a side thread (the title)
   if (m.method === "thread/start") {
     mkdirSync(home, { recursive: true });
     writeFileSync(thread, "thr_fake");
@@ -30,6 +31,15 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   if (m.method === "thread/resume") {
     if (existsSync(thread)) return reply({ thread: { id: "thr_fake" } });
     return send({ id: m.id, error: { code: -32602, message: "thread not found" } });
+  }
+  if (m.method === "turn/start" && m.params.threadId !== "thr_fake") {
+    const id = `turn_${++turnId}`;
+    const p = { threadId: m.params.threadId, turnId: id };
+    if (process.env.FAKE_CODEX_REPORT) writeFileSync(`${process.env.FAKE_CODEX_REPORT}.side`, JSON.stringify({ model: m.params.model, effort: m.params.effort, sandboxPolicy: m.params.sandboxPolicy }));
+    reply({ turn: { id, status: "inProgress" } });
+    send({ method: "item/completed", params: { ...p, item: { type: "agentMessage", id: `msg_${id}`, text: "\"Fix the flaky login tests.\"" } } });
+    send({ method: "turn/completed", params: { ...p, turn: { id, status: "completed" } } });
+    return;
   }
   if (m.method === "turn/start") {
     const id = `turn_${++turnId}`;

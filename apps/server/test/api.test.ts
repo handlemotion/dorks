@@ -376,6 +376,20 @@ describe("a dork's life through the API", () => {
     expect((await a.get(`/api/dorks/${id}/subscriptions`)).json).toEqual([]);
   });
 
+  it("a generated title replaces the first-message placeholder, never a name the user typed", async () => {
+    const { a, h } = await onboarded();
+    const id = (await a.post("/api/dorks", { repo: "o/r", message: "the login tests flake on CI, fix them" })).json.id as string;
+    await h.settle();
+    h.push(id, [{ t: "title", text: "Fix the flaky login tests" }]);
+    expect(h.dork(id).title).toBe("Fix the flaky login tests");
+    h.push(id, [{ t: "title", text: "A second guess" }]); // generated once
+    expect(h.dork(id).title).toBe("Fix the flaky login tests");
+    const named = (await a.post("/api/dorks", { repo: "o/r", message: "hi" })).json.id as string;
+    await a.patch(`/api/dorks/${named}`, { title: "Mine" });
+    h.push(named, [{ t: "title", text: "Say hello" }]);
+    expect(h.dork(named).title).toBe("Mine");
+  });
+
   it("a Codex model can only be chosen from what Codex offered, after the sandbox stopped", async () => {
     const { a, h } = await onboarded();
     const id = (await a.post("/api/dorks", { repo: "o/r", message: "hi", provider: "codex" })).json.id as string;

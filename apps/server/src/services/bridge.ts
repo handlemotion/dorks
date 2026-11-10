@@ -115,6 +115,13 @@ export function push(app: App, dorkId: string, frames: unknown[]): { ok: true } 
         case "codex_models":
           if (dork.provider === "codex") patchDork(app, dorkId, { codexModelChoices: f.models });
           break;
+        case "title": {
+          // Only replaces the first-message placeholder: a name the user typed (or one already generated) always wins.
+          const fresh = getDork(app.db, dorkId)!;
+          const title = cleanTitle(f.text);
+          if (fresh.titleSource === "message" && title) patchDork(app, dorkId, { title, titleSource: "auto" });
+          break;
+        }
         case "codex_issue":
           if (dork.provider === "codex") append(app, dorkId, errorEvent({ code: "failed", message: f.message }));
           break;
@@ -183,6 +190,17 @@ export function unsubscribePr(app: App, dorkId: string, repo: string, number: nu
   });
 }
 
+// ---------------------------------------------------------------- titles
+/** The first user message, which the bridge names the dork after. */
+function nameFrom(app: App, dorkId: string): { nameFrom?: string } {
+  const r = app.db.get("SELECT json_extract(body, '$.text') AS text FROM events WHERE dork_id = ? AND json_extract(body, '$.type') = 'user_message' ORDER BY seq LIMIT 1", dorkId);
+  const text = typeof r?.text === "string" ? r.text.slice(0, 4000) : "";
+  return text ? { nameFrom: text } : {};
+}
+
+/** The bridge already cleaned the name (infra/bridge/src/title.ts); keep it to one line. */
+const cleanTitle = (raw: string) => raw.replace(/\s+/g, " ").trim();
+
 // ---------------------------------------------------------------- secrets (async: decryption never happens inside a transaction)
 /** Secrets are only minted for a dork whose box should be up and which the user has not archived. */
 const TOKEN_STATES = ["creating", "waking", "working", "idle"];
@@ -222,6 +240,7 @@ export async function configure(app: App, dorkId: string): Promise<ToBridge | nu
       ghToken: gh,
       repo: { fullName: dork.repo, branch: dork.branch },
       resumeSessionId: (dork.provider === "codex" ? dork.codexThreadId : dork.claudeSessionId) ?? null,
+      ...(dork.titleSource === "message" ? nameFrom(app, dorkId) : {}),
     };
   } catch (e) {
     const message = e instanceof OnboardingError ? e.message : "could not configure the sandbox";

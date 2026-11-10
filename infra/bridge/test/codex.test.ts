@@ -15,7 +15,7 @@ const cleanup: Bridge[] = [];
 afterEach(async () => { for (const bridge of cleanup.splice(0)) await bridge.stop(500); });
 
 async function setup(home = tmp("codex-home-"), state = tmp("codex-state-"), resumeSessionId: string | null = null,
-  extraEnv: Record<string, string> = {}, codexModel?: { model: string; effort: string }, boatConnected = true) {
+  extraEnv: Record<string, string> = {}, codexModel?: { model: string; effort: string }, boatConnected = true, nameFrom?: string) {
   // Boat installs the account's ChatGPT sign-in in each sandbox's ~/.codex; the fake reads auth.json for "connected".
   if (boatConnected) {
     mkdirSync(join(home, ".codex"), { recursive: true });
@@ -38,7 +38,7 @@ async function setup(home = tmp("codex-home-"), state = tmp("codex-state-"), res
   transport.configureFrame = {
     t: "configure", provider: "codex", codexModel,
     env: { FAKE_CODEX_REPORT: report, OPENAI_API_KEY: "should-not-be-billed", CF_TOKEN: "cli-secret-only", ...extraEnv },
-    ghToken: "ghs_unitTestInstallationToken", repo: { fullName: "acme/demo", branch: "agent/codex" }, resumeSessionId,
+    ghToken: "ghs_unitTestInstallationToken", repo: { fullName: "acme/demo", branch: "agent/codex" }, resumeSessionId, nameFrom,
   };
   const logs: string[] = [];
   const bridge = new Bridge({ cfg: loadConfig(host), transport, log: makeLogger("test", redactor, (s) => logs.push(s)), redactor, baseEnv: host, selfCommand: [process.execPath, cli] });
@@ -69,6 +69,14 @@ describe("Codex through a Boat ChatGPT connection", () => {
     const eventTypes = raws.flatMap((raw) => normalize(raw)).filter((n) => n.kind === "event").map((n) => n.body.type);
     expect(eventTypes).toEqual(expect.arrayContaining(["assistant_delta", "assistant_message", "tool_use", "tool_result", "turn_complete"]));
     expect(s.logs.join(" ")).not.toContain("should-not-be-billed");
+  });
+
+  it("names the dork on a side thread with the lightest model, outside the transcript", async () => {
+    const s = await setup(undefined, undefined, null, { FAKE_CODEX_LUNA: "1" }, undefined, true, "the login tests flake on CI, fix them");
+    await waitFor(() => s.transport.of("title")[0], "title");
+    expect(s.transport.of("title")[0].text).toBe("Fix the flaky login tests");
+    expect(JSON.parse(readFileSync(`${s.report}.side`, "utf8"))).toEqual({ model: "gpt-6-luna", effort: "low", sandboxPolicy: { type: "readOnly" } });
+    expect(JSON.stringify(s.transport.events())).not.toContain("flaky");
   });
 
   it("resumes a saved Codex thread after the bridge restarts", async () => {

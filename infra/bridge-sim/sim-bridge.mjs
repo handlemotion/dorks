@@ -191,6 +191,8 @@ async function onCommand({ cid, frame: f }) {
       sessionId = cfg.resumeSessionId ?? `sim-session-${Date.now()}`; // a real bridge: `claude --resume <id>` when set
       ev({ type: "system", subtype: "init", session_id: sessionId });
       queue.push({ t: "ack", id: cid }, { t: "ready" });
+      // The real bridge asks Haiku (or a light Codex model) for this; the sim names the dork after the first few words.
+      if (cfg.nameFrom) queue.push({ t: "title", text: `Sim: ${cfg.nameFrom.replace(/\s+/g, " ").trim().split(" ").slice(0, 5).join(" ")}`.slice(0, 120) });
       return void flushNow();
     }
     case "user_message": {

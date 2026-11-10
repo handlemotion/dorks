@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { asIdentity, type Identity } from "./runas";
 import { errTag, type Log, type Redactor } from "./redact";
+import { lightCodexModel, lowestEffort } from "./title";
 
 type Json = Record<string, unknown>;
 const obj = (v: unknown): Json => v && typeof v === "object" && !Array.isArray(v) ? v as Json : {};
@@ -42,6 +43,10 @@ export class CodexAgent {
   private idleWaiters: (() => void)[] = [];
   private opening = false;
   private finishing = false;
+  /** Every model the account listed, with its efforts (filled when the thread opens). */
+  private models = new Map<string, string[]>();
+  /** Side threads (one-shot turns such as the title): their notifications never reach the transcript. */
+  private side = new Map<string, { text: string; done: (text: string | null) => void }>();
   sessionId: string | null = null;
   idle = true;
   ready = false;
@@ -127,6 +132,7 @@ export class CodexAgent {
               .filter((e): e is "none" | "low" | "medium" | "high" | "xhigh" | "max" => typeof e === "string" && ["none", "low", "medium", "high", "xhigh", "max"].includes(e))
             : [];
           available.set(id, efforts);
+          this.models.set(id, efforts);
           if (id === selected.model && efforts.includes(selected.effort as typeof efforts[number])) supported = true;
         }
         cursor = text(page.nextCursor) || null;
@@ -181,6 +187,13 @@ export class CodexAgent {
       return;
     }
     const p = obj(m.params);
+    const sideTurn = this.side.get(text(p.threadId));
+    if (sideTurn) {
+      const it = obj(p.item);
+      if (m.method === "item/completed" && it.type === "agentMessage") sideTurn.text = text(it.text);
+      if (m.method === "turn/completed") sideTurn.done(obj(p.turn).status === "completed" ? sideTurn.text : null);
+      return;
+    }
     if (m.method === "account/updated" && this.ready && p.authMode !== "chatgpt") {
       this.o.onIssue("Your Boat ChatGPT connection is no longer available. Reconnect it in Boat Agents & Proxying, then retry.");
       this.child.kill();
@@ -263,6 +276,28 @@ export class CodexAgent {
     if (!this.ready) throw new Error("Codex is not ready");
     this.queue.push(message);
     await this.pump();
+  }
+
+  /**
+   * One turn on a throwaway thread with the account's lightest model (or this dork's model at its lowest effort), read-only and
+   * without approvals. Its events stay out of the transcript. Resolves to the reply, or null when the turn did not complete.
+   */
+  async oneShot(prompt: string, timeoutMs = 45_000): Promise<string | null> {
+    if (!this.ready) throw new Error("Codex is not ready");
+    const own = this.o.model ?? { model: "gpt-6-sol", effort: "high" };
+    const pick = lightCodexModel(this.models) ?? { model: own.model, effort: lowestEffort(this.models.get(own.model) ?? [own.effort]) };
+    const started = await this.request("thread/start", { model: pick.model, cwd: this.o.cwd, approvalPolicy: "never" });
+    const threadId = text(obj(started.thread).id);
+    if (!threadId) throw new Error("Codex did not return a thread");
+    return new Promise<string | null>((resolve, reject) => {
+      const timer = setTimeout(() => finish(null), timeoutMs);
+      const finish = (v: string | null) => { clearTimeout(timer); this.side.delete(threadId); resolve(v); };
+      this.side.set(threadId, { text: "", done: finish });
+      this.request("turn/start", {
+        threadId, input: [{ type: "text", text: prompt }], cwd: this.o.cwd, model: pick.model, effort: pick.effort,
+        approvalPolicy: "never", sandboxPolicy: { type: "readOnly" },
+      }).catch((e) => { clearTimeout(timer); this.side.delete(threadId); reject(e); });
+    });
   }
 
   async interrupt() {
