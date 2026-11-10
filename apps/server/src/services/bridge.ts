@@ -214,7 +214,7 @@ export function unsubscribePr(app: App, dorkId: string, repo: string, number: nu
 
 // ---------------------------------------------------------------- previews
 // `preview_show` (the bridge's MCP tool): the agent says its dev server is up; the box provider hosts the port and the URL is kept on
-// the dork, where the Browser tab lists it.
+// the dork, where the Previews tab lists it.
 
 /** Ports Boat itself uses in every sandbox (https://docs.boat.dev/hosting): SSH, the desktop stream, its agents. */
 const RESERVED_PORTS = new Set([22, 6080, 8090, 8911]);

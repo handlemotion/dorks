@@ -22,7 +22,7 @@ export interface Transport {
   /** Idempotent. `auto`: the gh shim saw this dork create the PR; `agent`: the agent asked (`dorks pr sub`). */
   subscribePr(ref: PrRef, source: "auto" | "agent"): Promise<void>;
   unsubscribePr(ref: PrRef): Promise<void>;
-  /** Hosts a port of this box and shows it in the owner's Browser tab; resolves with the stored preview. */
+  /** Hosts a port of this box and shows it in the owner's Previews tab; resolves with the stored preview. */
   showPreview(port: number, opts: { title?: string; localhost?: boolean }): Promise<{ port: number; url: string; title?: string }>;
   /** This dork's non-ended PR subscriptions (SubscriptionView[], validated by the caller), pushed on every change. */
   subscribeSubscriptions(onList: (views: unknown) => void, onError: () => void): () => void;

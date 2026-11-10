@@ -108,10 +108,7 @@ Use Boat's native desktop for both halves.
   - Check the WebRTC stream plays inside the desktop app.
   - Ask a dork to "open the dev server in Chrome and screenshot it" and confirm the tab follows.
   - Use `--type small` sandboxes for checks that build nothing.
-- **Previews through Boat's hosted ports.**
-  - `POST /sandboxes/{id}/host` gives `https://<sub>-<port>.on.boat.dev`.
-  - This would let the Browser tab show the agent's dev server directly.
-  - It needs a `dorks` MCP tool so the agent can say which port to show.
+- **Previews through Boat's hosted ports**: done. The agent's `preview_show` tool hosts a port and the Previews tab shows it; see [Boat](boat.md#hosted-ports).
 - **Recordings as artifacts**: the driver's `start_recording` and `stop_recording`, or `ascii-record-desktop`, saved per turn into Artifacts.
 - **Codex**: give the Codex CLI the same MCP server. Deprioritized, per AGENTS.md.
 

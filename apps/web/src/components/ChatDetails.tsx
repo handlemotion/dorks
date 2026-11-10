@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useDefaultLayout, usePanelRef } from 'react-resizable-panels'
 import { PanelResizeHandle } from '@dorks/ui/panel-resize-handle'
-import { ChevronRightIcon, ChevronsDownUpIcon, ChevronsUpDownIcon, WrapTextIcon, ExternalLinkIcon, GitPullRequestIcon, GlobeIcon, LayersIcon, MonitorIcon, PanelLeftIcon } from 'lucide-react'
+import { AppWindowIcon, ChevronRightIcon, ChevronsDownUpIcon, ChevronsUpDownIcon, WrapTextIcon, ExternalLinkIcon, GitPullRequestIcon, LayersIcon, MonitorIcon, PanelLeftIcon } from 'lucide-react'
 import { PatchDiff } from '@pierre/diffs/react'
 import { useTheme } from 'next-themes'
 import { Button } from '@dorks/ui/button'
@@ -22,13 +22,13 @@ export type ChatDetailsData = {
   artifacts?: Artifact[]
   changes?: FileChange[]
   pr?: { url: string; number?: number }
-  /** The sandbox's dev servers, listed in the Browser tab. */
+  /** The dev servers the agent showed, listed in the Previews tab. */
   previews?: PreviewServer[]
   /** The agent's own computer, streamed live in the Computer tab. */
   computer?: ComputerSource
 }
 
-type Tab = 'artifacts' | 'changes' | 'browser' | 'computer'
+type Tab = 'artifacts' | 'changes' | 'previews' | 'computer'
 
 /**
  * Chat details: a panel on the right of a chat, in the app's own fill with a soft hairline, inset 4px from the window and the chat, almost full height. Its tabs sit
@@ -37,7 +37,7 @@ type Tab = 'artifacts' | 'changes' | 'browser' | 'computer'
  * every side. The tabs are fixed (always the same four, in the same order).
  * The tab row is placed so its labels share the chat title's centre line (24px from the top).
  */
-export function ChatDetails({ data, onClose, onGrab, onAsk, className }: { data: ChatDetailsData; onClose?: () => void; /** An element picked in the Browser tab, as agent context. */ onGrab?: (snippet: string) => void; /** An empty state's action: puts a ready request in the composer. */ onAsk?: (text: string) => void; className?: string }) {
+export function ChatDetails({ data, onClose, onGrab, onAsk, className }: { data: ChatDetailsData; onClose?: () => void; /** An element picked in the Previews tab, as agent context. */ onGrab?: (snippet: string) => void; /** An empty state's action: puts a ready request in the composer. */ onAsk?: (text: string) => void; className?: string }) {
   const [tab, setTab] = useState<Tab>('artifacts')
   const changes = data.changes ?? []
   // The first time the agent reaches for its computer while the chat is open, show its screen; a chat that opens on a computer
@@ -48,10 +48,10 @@ export function ChatDetails({ data, onClose, onGrab, onAsk, className }: { data:
     if (used && !wasUsed.current) setTab('computer')
     wasUsed.current = used
   }, [used])
-  // The agent just showed a dev server: bring the Browser tab up on it. Held here, since the tab's content unmounts while hidden.
+  // The agent just showed a dev server: bring the Previews tab up on it. Held here, since the tab's content unmounts while hidden.
   const [opening, setOpening] = useState<string>()
   useShownServers(data.previews, (s) => {
-    setTab('browser')
+    setTab('previews')
     setOpening(s.url)
   })
   return (
@@ -67,7 +67,7 @@ export function ChatDetails({ data, onClose, onGrab, onAsk, className }: { data:
           <TabsList className="h-[30px]! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
             <DetailsTab value="artifacts" icon={<LayersIcon />}>Artifacts</DetailsTab>
             <DetailsTab value="changes" icon={<GitPullRequestIcon />} count={changes.length || undefined}>Changes</DetailsTab>
-            <DetailsTab value="browser" icon={<GlobeIcon />}>Browser</DetailsTab>
+            <DetailsTab value="previews" icon={<AppWindowIcon />}>Previews</DetailsTab>
             <DetailsTab value="computer" icon={<MonitorIcon />}>Computer</DetailsTab>
           </TabsList>
           {onClose && (
@@ -87,7 +87,7 @@ export function ChatDetails({ data, onClose, onGrab, onAsk, className }: { data:
         <TabsContent value="computer" className="mx-px mb-px flex min-h-0 flex-col overflow-hidden rounded-b-[9px] border-t">
           <ComputerView source={data.computer} />
         </TabsContent>
-        <TabsContent value="browser" className="mx-px mb-px flex min-h-0 flex-col overflow-hidden rounded-b-[9px]">
+        <TabsContent value="previews" className="mx-px mb-px flex min-h-0 flex-col overflow-hidden rounded-b-[9px]">
           <PreviewBrowser servers={data.previews} open={opening} onOpened={() => setOpening(undefined)} onGrab={onGrab} onAsk={onAsk} />
         </TabsContent>
       </Tabs>

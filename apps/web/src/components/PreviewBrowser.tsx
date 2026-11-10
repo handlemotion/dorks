@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeftIcon, ArrowRightIcon, GlobeIcon, RotateCwIcon, SquareMousePointerIcon } from 'lucide-react'
-import { Button } from '@dorks/ui/button'
-import { Input } from '@dorks/ui/input'
+import { ArrowLeftIcon, ExternalLinkIcon, GlobeIcon, RotateCwIcon, SquareMousePointerIcon } from 'lucide-react'
+import { Button, buttonVariants } from '@dorks/ui/button'
 import { EmptyState } from './EmptyState'
 import { List } from './onboarding/List'
+import { Tip } from './Tip'
 
 /** A dev server running in the sandbox. `html` renders an inline (same-origin) page instead of the URL; the dev demo uses it. */
 export type PreviewServer = { name: string; url: string; html?: string; /** Overrides the page's own `/favicon.ico`. */ favicon?: string; /** Shown as `:3000`; a hosted preview's URL carries no port of its own. */ port?: number }
@@ -36,13 +36,6 @@ export const BAR_BUTTON = "size-[30px] text-muted-foreground hover:bg-foreground
 type Primitives = typeof import('react-grab/primitives')
 type Box = { x: number; y: number; width: number; height: number; radius: string; label: string }
 
-/** `localhost:5173` and `example.com` become full URLs; anything with a scheme is kept. */
-function normalize(input: string) {
-  const v = input.trim()
-  if (!v || /^[a-z][a-z0-9+.-]*:/i.test(v)) return v
-  return /^(localhost|127\.|\[::1\])/.test(v) ? `http://${v}` : `https://${v}`
-}
-
 /** `http://localhost:5173` reads as `:5173`; a URL with no port keeps its host. */
 function port(url: string) {
   try {
@@ -67,17 +60,17 @@ function Favicon({ server }: { server: PreviewServer }) {
 }
 
 /**
- * The Browser tab: back, forward, reload, the address and the element picker over a preview frame. With no page open it lists the
- * sandbox's dev servers as an island of rows (the onboarding's `List`); a row opens its preview, and Back returns to the list.
+ * The Previews tab: what the agent showed with `preview_show` (its dev servers, hosted by the box provider). With nothing open it lists
+ * them as an island of rows (the onboarding's `List`); a row opens its page under a bar with Back (to the list), Reload, the
+ * server's name, the element picker and Open in a new tab. There is no address bar: the agent has its own Chrome (the Computer tab)
+ * for browsing.
  *
  * The picker uses React Grab's primitives (`react-grab/primitives`, loaded on first use) on the preview's own document: hovering
  * highlights the element under the pointer, clicking hands its context (the same snippet React Grab copies: markup, component and source location) to `onGrab`, and
- * Escape leaves. Reaching into the frame's document needs it to be same-origin, so the picker is off for a cross-origin preview.
+ * Escape leaves. Reaching into the frame's document needs it to be same-origin, so the picker only shows for a same-origin preview.
  */
 export function PreviewBrowser({ servers = [], open, onOpened, onGrab, onAsk }: { servers?: PreviewServer[]; /** A URL to open now (a server the agent just showed); `onOpened` clears it. */ open?: string; onOpened?: () => void; onGrab?: (snippet: string) => void; onAsk?: (text: string) => void }) {
-  const [history, setHistory] = useState<string[]>([])
-  const [index, setIndex] = useState(-1)
-  const [address, setAddress] = useState('')
+  const [current, setCurrent] = useState<string>()
   const [reloads, setReloads] = useState(0)
   const [sameOrigin, setSameOrigin] = useState(false)
   const [picking, setPicking] = useState(false)
@@ -85,23 +78,12 @@ export function PreviewBrowser({ servers = [], open, onOpened, onGrab, onAsk }: 
   const frame = useRef<HTMLIFrameElement>(null)
   const stage = useRef<HTMLDivElement>(null)
   const grab = useRef<Primitives | null>(null)
-  const current = history[index]
-  const html = current ? servers.find((s) => normalize(s.url) === current)?.html : undefined
+  const server = current ? servers.find((s) => s.url === current) : undefined
+  const html = server?.html
 
-  const go = (to: number) => {
-    setIndex(to)
-    setAddress(history[to] ?? '')
-  }
-  const navigate = (raw: string) => {
-    const next = normalize(raw)
-    if (!next) return
-    setHistory((h) => [...h.slice(0, index + 1), next])
-    setIndex(index + 1)
-    setAddress(next)
-  }
   useEffect(() => {
     if (!open) return
-    navigate(open)
+    setCurrent(open)
     onOpened?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per URL to open
   }, [open])
@@ -156,7 +138,7 @@ export function PreviewBrowser({ servers = [], open, onOpened, onGrab, onAsk }: 
   useEffect(() => {
     setPicking(false)
     setSameOrigin(false)
-  }, [current, html, reloads])
+  }, [current, reloads])
   useEffect(() => {
     if (!picking) setBox(null)
   }, [picking])
@@ -167,89 +149,94 @@ export function PreviewBrowser({ servers = [], open, onOpened, onGrab, onAsk }: 
     setPicking(true)
   }
 
-  return (
+  return current && server ? (
     <>
       {/* Same rhythm as the tab row above: 30px buttons, icons in line with the tab icons and the hide button (measured: same left and right edges). */}
       <div className="flex h-10 shrink-0 items-center gap-0.5 border-y pr-1 pl-[5px]">
-        <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="Back" title="Back" disabled={index < (servers.length ? 0 : 1)} onClick={() => go(index - 1)}>
-          <ArrowLeftIcon />
-        </Button>
-        <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="Forward" title="Forward" disabled={index >= history.length - 1} onClick={() => go(index + 1)}>
-          <ArrowRightIcon />
-        </Button>
-        <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="Reload" title="Reload" disabled={!current && !html} onClick={() => setReloads((n) => n + 1)}>
-          <RotateCwIcon />
-        </Button>
-        <form
-          className="mx-1 min-w-0 flex-1"
-          onSubmit={(e) => {
-            e.preventDefault()
-            navigate(address)
-          }}
-        >
-          <Input aria-label="Address" placeholder="Type a URL" value={address} onChange={(e) => setAddress(e.target.value)} className="h-[30px] text-sm" spellCheck={false} />
-        </form>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className={`${BAR_BUTTON} aria-pressed:bg-brand/10 aria-pressed:text-brand`}
-          aria-label="Select an element"
-          aria-pressed={picking}
-          title={sameOrigin ? 'Select an element (Esc to stop)' : 'Element selection needs a same-origin preview'}
-          disabled={!sameOrigin}
-          onClick={() => void startPicking()}
-        >
-          <SquareMousePointerIcon />
-        </Button>
-      </div>
-      {current || html ? (
-        <div ref={stage} className="relative min-h-0 flex-1 overflow-hidden">
-          <iframe
-            key={`${current}:${reloads}`}
-            ref={frame}
-            src={html ? undefined : current}
-            srcDoc={html}
-            title="Preview"
-            className="size-full bg-white"
-            onLoad={() => {
-              try {
-                setSameOrigin(!!frame.current?.contentDocument)
-              } catch {
-                setSameOrigin(false)
-              }
-            }}
-          />
-          {box && (
-            <div
-              className="pointer-events-none absolute border border-brand bg-brand/10"
-              style={{ left: box.x, top: box.y, width: box.width, height: box.height, borderRadius: box.radius }}
+        <Tip label="All previews">
+          <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="All previews" onClick={() => setCurrent(undefined)}>
+            <ArrowLeftIcon />
+          </Button>
+        </Tip>
+        <Tip label="Reload">
+          <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="Reload" onClick={() => setReloads((n) => n + 1)}>
+            <RotateCwIcon />
+          </Button>
+        </Tip>
+        <p className="mx-2 flex min-w-0 flex-1 items-center gap-2 text-sm">
+          <span className="truncate">{server.name}</span>
+          <span className="shrink-0 text-muted-foreground">{server.port ? `:${server.port}` : port(server.url)}</span>
+        </p>
+        {sameOrigin && (
+          <Tip label={picking ? 'Stop selecting (Esc)' : 'Select an element to send to the agent'}>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={`${BAR_BUTTON} aria-pressed:bg-brand/10 aria-pressed:text-brand`}
+              aria-label="Select an element"
+              aria-pressed={picking}
+              onClick={() => void startPicking()}
             >
-              <span className={`absolute left-0 rounded-(--control-radius) ${box.y < 28 ? 'top-0 m-1' : 'bottom-full mb-1'} bg-brand px-1.5 py-0.5 font-mono text-xs text-white`}>{box.label}</span>
-            </div>
-          )}
-        </div>
-      ) : servers.length > 0 ? (
-        <div className="flex min-h-0 flex-1 flex-col justify-center overflow-y-auto p-8">
-          <section aria-label="Dev servers" className="mx-auto flex w-full max-w-sm flex-col gap-6">
-            <h2 className="text-center text-sm font-medium">Running in the sandbox</h2>
-            <List>
-              {servers.map((s) => (
-                <li key={s.url}>
-                  <button type="button" className="group/row flex h-12 w-full items-center gap-3 px-4 text-left outline-none focus-visible:bg-muted" onClick={() => navigate(s.url)}>
-                    <Favicon server={s} />
-                    <span className="min-w-0 flex-1 truncate">{s.name}</span>
-                    <span className="truncate text-muted-foreground transition-colors group-hover/row:text-foreground">{s.port ? `:${s.port}` : port(s.url)}</span>
-                  </button>
-                </li>
-              ))}
-            </List>
-          </section>
-        </div>
-      ) : (
-        <EmptyState figure="window" title="No preview yet" description="When the agent runs a dev server, its preview opens here. Or type a URL above.">
-          {onAsk && <Button size="sm" variant="outline" onClick={() => onAsk('Start the dev server and tell me its URL so I can preview it.')}>Ask for a preview</Button>}
-        </EmptyState>
-      )}
+              <SquareMousePointerIcon />
+            </Button>
+          </Tip>
+        )}
+        {!html && (
+          <Tip label="Open in a new tab">
+            <a href={current} target="_blank" rel="noreferrer" aria-label="Open in a new tab" className={`${buttonVariants({ variant: 'ghost', size: 'icon-sm' })} ${BAR_BUTTON}`}>
+              <ExternalLinkIcon />
+            </a>
+          </Tip>
+        )}
+      </div>
+      <div ref={stage} className="relative min-h-0 flex-1 overflow-hidden">
+        <iframe
+          key={`${current}:${reloads}`}
+          ref={frame}
+          src={html ? undefined : current}
+          srcDoc={html}
+          title="Preview"
+          className="size-full bg-white"
+          onLoad={() => {
+            try {
+              setSameOrigin(!!frame.current?.contentDocument)
+            } catch {
+              setSameOrigin(false)
+            }
+          }}
+        />
+        {box && (
+          <div
+            className="pointer-events-none absolute border border-brand bg-brand/10"
+            style={{ left: box.x, top: box.y, width: box.width, height: box.height, borderRadius: box.radius }}
+          >
+            <span className={`absolute left-0 rounded-(--control-radius) ${box.y < 28 ? 'top-0 m-1' : 'bottom-full mb-1'} bg-brand px-1.5 py-0.5 font-mono text-xs text-white`}>{box.label}</span>
+          </div>
+        )}
+      </div>
     </>
+  ) : servers.length > 0 ? (
+    <div className="flex min-h-0 flex-1 flex-col justify-center overflow-y-auto border-t p-8">
+      <section aria-label="Previews" className="mx-auto flex w-full max-w-sm flex-col gap-6">
+        <h2 className="text-center text-sm font-medium">Running in the sandbox</h2>
+        <List>
+          {servers.map((s) => (
+            <li key={s.url}>
+              <button type="button" className="group/row flex h-12 w-full items-center gap-3 px-4 text-left outline-none focus-visible:bg-muted" onClick={() => setCurrent(s.url)}>
+                <Favicon server={s} />
+                <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                <span className="truncate text-muted-foreground transition-colors group-hover/row:text-foreground">{s.port ? `:${s.port}` : port(s.url)}</span>
+              </button>
+            </li>
+          ))}
+        </List>
+      </section>
+    </div>
+  ) : (
+    <div className="flex min-h-0 flex-1 flex-col border-t">
+      <EmptyState figure="window" title="No previews yet" description="When the agent starts a dev server, it opens here.">
+        {onAsk && <Button size="sm" variant="outline" onClick={() => onAsk('Start the dev server and show it to me in Previews.')}>Ask for a preview</Button>}
+      </EmptyState>
+    </div>
   )
 }
