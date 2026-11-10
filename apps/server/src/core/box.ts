@@ -9,7 +9,14 @@ export interface BoxProvider {
   pause(boxId: string): Promise<void>;
   /** Idempotent: deleting a missing box is not an error. */
   delete(boxId: string): Promise<void>;
+  /**
+   * A fresh, short-lived URL of the box's live desktop, for an iframe. The URL is a
+   * bearer credential: never store or log it. Absent when the provider has no desktop.
+   */
+  desktopUrl?(boxId: string, opts: DesktopOptions): Promise<string>;
 }
+
+export type DesktopOptions = { theme: "light" | "dark" };
 
 /** The box no longer exists at the provider (404 / "not found"). Callers use it to drop a stale box id and recreate. */
 export class BoxNotFoundError extends Error {

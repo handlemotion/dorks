@@ -5,6 +5,7 @@ import { insert } from "../db";
 import { append, dispatch, enqueue, MAX_MESSAGE_CHARS, patchDork, patchRuntime, setTimer } from "../lifecycle/dispatch";
 import { knownModelChoices, validModelChoice } from "./models";
 import { validRepo } from "../lib/repo";
+import { isBoxNotFound, type DesktopOptions } from "../core/box";
 import { missingForSession } from "./setup";
 import { readSettings } from "./settings";
 import { endDorkSubscriptions, resetCiAttempts, subscriptionsOfDork } from "./subscriptions";
@@ -106,6 +107,26 @@ export function chooseCodexModel(app: App, dorkId: string, model: string, effort
     patchDork(app, dorkId, { codexModel: { model, effort }, codexModelChoices: undefined });
     dispatch(app, dorkId, { t: "user_message" });
   });
+}
+
+/**
+ * A fresh live-view URL of the dork's computer (docs/computer-use.md). Never stored or logged: it is a bearer credential to an
+ * interactive desktop. Only an awake dork has a screen; this never wakes one (`sleeping` instead), the next message does.
+ */
+export async function desktopUrl(app: App, dorkId: string, opts: DesktopOptions): Promise<string> {
+  const dork = owned(app, dorkId);
+  if (dork.archived) return fail("archived", "dork is archived");
+  if (!dork.boxId || (dork.state !== "working" && dork.state !== "idle")) return fail("sleeping", "The computer is asleep. It wakes with your next message.");
+  const box = await app.getBox();
+  if (!box.desktopUrl) return fail("not_configured", "This sandbox provider has no desktop");
+  try {
+    return await box.desktopUrl(dork.boxId, opts);
+  } catch (e) {
+    if (isBoxNotFound(e)) return fail("sleeping", "The computer is asleep. It wakes with your next message.");
+    if ((e as { code?: string }).code === "provisioning") return fail("timeout", "The screen is still starting. Try again in a moment.");
+    console.error("desktop url failed", e instanceof Error ? e.message.slice(0, 200) : "unknown");
+    return fail("failed", "Couldn't open the computer");
+  }
 }
 
 export function interrupt(app: App, dorkId: string) {

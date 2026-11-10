@@ -5,6 +5,7 @@ import { Button } from '@dorks/ui/button'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@dorks/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLinkItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@dorks/ui/dropdown-menu'
 import { BAR_BUTTON } from './PreviewBrowser'
+import { Tip } from './Tip'
 
 /**
  * The chat's actions, behind a ••• on the right of its header: open the pull request (when there is one), copy a link to the chat, and
@@ -16,9 +17,11 @@ export function ChatMenu({ prUrl, onDelete, detailsOpen }: { prUrl?: string; onD
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className={`${BAR_BUTTON} ${detailsOpen ? 'lg:-mr-[11px]' : ''}`} aria-label="Chat actions" title="Chat actions" />}>
-          <MoreHorizontalIcon />
-        </DropdownMenuTrigger>
+        <Tip label="Chat actions">
+          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className={`${BAR_BUTTON} ${detailsOpen ? 'lg:-mr-[11px]' : ''}`} aria-label="Chat actions" />}>
+            <MoreHorizontalIcon />
+          </DropdownMenuTrigger>
+        </Tip>
         <DropdownMenuContent align="end" className="w-max">
           <DropdownMenuGroup>
             {prUrl && (

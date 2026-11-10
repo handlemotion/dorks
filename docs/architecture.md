@@ -88,6 +88,7 @@ IDs are UUID strings. Times are epoch milliseconds.
 | `DELETE /api/dorks/:id` | | `{}` (box is destroyed in the background, then rows are purged) |
 | `POST /api/dorks/:id/messages` | `{text}` | `{}` |
 | `POST /api/dorks/:id/interrupt` | | `{}` |
+| `POST /api/dorks/:id/desktop` | `{theme?: "light"\|"dark"}` | `{url}`: a fresh live view of the dork's computer for an iframe ([computer use](computer-use.md)). Never stored or logged; minted per view because Boat's URL must be opened within 10 minutes. Error `sleeping` (409) unless the dork is `working` or `idle` (this never wakes it), `timeout` (504) while the stream is still starting. Under the sim it is a path to a stand-in page, `GET /sim/desktop` |
 | `POST /api/dorks/:id/archive` | `{archived: boolean}` | `{}` |
 | `POST /api/dorks/:id/model` | `{model: string\|null, effort: string\|null}` | `{}`. Claude only: a model and effort from `modelChoices` (null: the default). While the sandbox is up the bridge restarts the CLI on the same session with `--model`/`--effort` once the current turn ends; asleep, the next wake uses it |
 | `POST /api/dorks/:id/codex-model` | `{model, effort}` | `{}` |

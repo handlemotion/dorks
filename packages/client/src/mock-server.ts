@@ -263,7 +263,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       }
     }
 
-    const m = /^\/api\/dorks\/([^/]+)(?:\/(messages|interrupt|archive|model|codex-model|events|subscriptions(?:\/resume)?))?$/.exec(path);
+    const m = /^\/api\/dorks\/([^/]+)(?:\/(messages|interrupt|desktop|archive|model|codex-model|events|subscriptions(?:\/resume)?))?$/.exec(path);
     if (m) {
       const d = dorks.get(decodeURIComponent(m[1]!));
       if (!d || d.deleting) return fail(res, "not_found", "No such session.");
@@ -297,6 +297,12 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
           append(d.id, { type: "status", state: "idle" });
         }
         return json(res, 200, {});
+      }
+      if (sub === "desktop" && method === "POST") {
+        if (d.archived) return fail(res, "archived", "This session is archived.");
+        const dark = body.theme === "dark";
+        const page = `<!doctype html><meta charset="utf-8"><body style="margin:0;height:100vh;display:grid;place-items:center;background:${dark ? "#1d1f24" : "#3a6ea5"};color:#fff;font:15px system-ui">Mock desktop</body>`;
+        return json(res, 200, { url: `data:text/html;charset=utf-8,${encodeURIComponent(page)}` });
       }
       if (sub === "archive" && method === "POST") {
         d.archived = body.archived === true;

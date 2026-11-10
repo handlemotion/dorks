@@ -62,6 +62,10 @@ Before it starts a Codex sandbox, the driver checks those environment switches a
 
 This avoids Boat's paid credentials proxy, but **code inside a sandbox can read the sign-in**. Use it for your own trusted repositories only; see [SECURITY.md](../SECURITY.md#what-a-sandbox-can-read).
 
+## Computer use
+
+Every Boat sandbox, ours included, has a Linux desktop with Chrome, Boat's `computer` MCP server for the agent (registered in `~/.claude.json`, so Claude Code loads it beside our `dorks` server) and a live stream that the Computer tab embeds. Nothing extra to install or pay: it runs on the sandbox's own time. Details, the spike results and the limits: [computer use](computer-use.md).
+
 ## Lifecycle
 
 - **Create** uses the snapshot with `from`, a per-installation label (a hash of this install's id and the dork id, so two Dorks installs on one Boat account never adopt each other's sandboxes), the bridge variables and `ttlSeconds: null`. A generation-scoped idempotency key protects retries, and an existing labeled sandbox is reused before another is made. The driver checks the sandbox has `flock` and `dorks-bridge`, then starts the bridge detached under `flock -n /tmp/dorks-bridge.lock`.

@@ -86,7 +86,16 @@ const DOCS_PATCH = `diff --git a/docs/architecture.md b/docs/architecture.md
  ## Sleep
 `
 
+const DEMO_SCREEN = `<!doctype html><meta charset="utf-8"><body style="margin:0;height:100vh;background:#3a6ea5;position:relative;overflow:hidden">
+<div style="position:absolute;inset:8% 12% 14% 10%;background:#fff;border-radius:8px;overflow:hidden"><div style="height:36px;background:#f2f2f2;display:flex;align-items:center;padding:0 12px;font:13px system-ui">localhost:3000</div>
+<div style="padding:32px;font:15px system-ui">The agent's Chrome, on its own desktop.</div></div></body>`
+
 const details: ChatDetailsData = {
+  computer: {
+    awake: true, working: true, used: true,
+    fetchUrl: async () => `data:text/html;charset=utf-8,${encodeURIComponent(DEMO_SCREEN)}`,
+    interrupt: async () => {},
+  },
   pr: { url: 'https://github.com/acme/demo/pull/142', number: 142 },
   previews: [
     { name: 'Web app', url: 'http://localhost:5173', favicon: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#111"/><text x="8" y="11.5" font-family="system-ui" font-size="10" font-weight="500" fill="white" text-anchor="middle">A</text></svg>')}`, html: `<!doctype html><html><body style="margin:0;font:14px system-ui;color:#111">

@@ -61,6 +61,24 @@ export function findTranscripts(configDir: string, sessionId: string): string[] 
 
 const STDERR_TAIL = 2048;
 
+/** Boat's Cua Driver (docs/computer-use.md): present on every Boat sandbox, absent in the simulator and on a dev machine. */
+export const BOAT_COMPUTER_DRIVER = "/opt/ascii/cua-driver/cua-driver";
+
+/**
+ * Boat registers its `computer` MCP server in ~/.claude.json, which the CLI loads next to our --mcp-config, so the tools are already
+ * there. This only tells the agent the screen exists and that the owner is watching it, so it reaches for it to check its own work.
+ */
+export const COMPUTER_PROMPT = [
+  "This sandbox has a Linux desktop (1920x1080, Google Chrome) that you drive with the `mcp__computer__*` tools: get_desktop_state for a screenshot,",
+  "get_window_state for a window's elements, click/type_text/hotkey, launch_app, and browser_navigate/get_browser_state for Chrome.",
+  "The owner watches this screen live in the Computer tab. Use it to look at what you build (open your dev server in Chrome) and for",
+  "tasks that need a GUI or a real browser; prefer the shell for everything else.",
+].join(" ");
+
+export function computerArgs(driverPresent = existsSync(BOAT_COMPUTER_DRIVER)): string[] {
+  return driverPresent ? ["--append-system-prompt", COMPUTER_PROMPT] : [];
+}
+
 /**
  * argv for the headless streaming CLI (verified against the Claude Code docs + a live run of v2.1.293):
  *   -p                              print/headless mode (required by the stream-json flags)

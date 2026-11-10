@@ -1,10 +1,13 @@
-import { BoxNotFoundError, type BoxProvider } from "../core/box";
+import { BoxNotFoundError, type BoxProvider, type DesktopOptions } from "../core/box";
 
 export const DEFAULT_BASE_URL = "https://boat.dev/api/v1";
 export const BOX_ID = /^bx_[23456789abcdefghjkmnpqrstuvwxyz]{8}$/;
 export const READY = new Set(["ready", "idle", "running"]);
 const POLL_MS = 2_000;
 const WAIT_MS = 240_000;
+/** How long a `provisioning` desktop (the first noVNC start) is waited for before the caller is told to retry. */
+const DESKTOP_WAIT_MS = 30_000;
+const DESKTOP_POLL_MS = 1_000;
 
 type Sandbox = { id: string; state: string; labels?: Record<string, string>; dataExpiredAt?: string | null };
 
@@ -227,5 +230,34 @@ export function boatBox(opts: BoatOptions): BoxProvider {
       await waitFor(id, new Set(["archived"]));
     },
     delete: remove,
+    async desktopUrl(id, opts) {
+      return desktopUrl(call, path(id, "/desktop"), opts, sleep);
+    },
   };
+}
+
+/**
+ * Boat's live view (https://docs.boat.dev/api/reference/agent/get-desktop-streaming-url): `POST /desktop` streams the whole screen
+ * over WebRTC. (Boat's `POST /browser` streams Chrome alone; not used: the desktop already shows Chrome, and a second viewer of it
+ * takes the stream over.) A `provisioning` answer means the stream is still starting: ask again. The URL carries
+ * its token in the `#fragment` and must be opened within 10 minutes, so it is minted per view and never kept. `overlay=0` hides
+ * Boat's viewer chrome; it goes in the query, before the fragment.
+ */
+export async function desktopUrl(call: BoatCall, path: string, opts: DesktopOptions, sleep: (ms: number) => Promise<void>, waitMs = DESKTOP_WAIT_MS): Promise<string> {
+  const op = "desktop";
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    const json = await call(op, "POST", `${path}?${new URLSearchParams({ theme: opts.theme })}`);
+    const url = json?.desktopUrl;
+    if (typeof url === "string" && url.startsWith("https://")) return withOverlayOff(url);
+    if (!json?.provisioning) throw new BoatError(`boat ${op}: response had no stream URL`);
+    if (Date.now() >= deadline) throw new BoatError(`boat ${op}: the stream is still starting`, 503, "provisioning");
+    await sleep(DESKTOP_POLL_MS);
+  }
+}
+
+function withOverlayOff(url: string): string {
+  const hash = url.indexOf("#");
+  const [base, fragment] = hash < 0 ? [url, ""] : [url.slice(0, hash), url.slice(hash)];
+  return `${base}${base.includes("?") ? "&" : "?"}overlay=0${fragment}`;
 }

@@ -5,6 +5,7 @@ import { Button } from '@dorks/ui/button'
 import { Input } from '@dorks/ui/input'
 import { BrandCircle } from '../BrandCircle'
 import { ONBOARDING_STEPS, type OnboardingStepId } from '../../lib/onboarding'
+import { Tip } from '../Tip'
 
 /** Joins class names. The callers here never pass two classes that fight, so no Tailwind merging is needed. */
 export const cn = (...names: (string | false | undefined)[]) => names.filter(Boolean).join(' ')
@@ -118,17 +119,19 @@ export function SecretInput({ className, ...props }: Omit<ComponentProps<typeof 
     <div className="relative">
       <Input {...props} type={shown ? 'text' : 'password'} className={cn(className, 'pr-11', !shown && '[&:not(:placeholder-shown)]:tracking-[0.25em]')} />
       {/* Centred with margins, not a translate: Button's press nudge is a translate too and would replace it. */}
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        className="absolute inset-y-0 right-1 my-auto text-muted-foreground hover:text-foreground"
-        aria-label={shown ? 'Hide' : 'Show'}
-        aria-pressed={shown}
-        onClick={() => setShown(!shown)}
-      >
-        {shown ? <EyeOffIcon /> : <EyeIcon />}
-      </Button>
+      <Tip label={shown ? 'Hide' : 'Show'}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="absolute inset-y-0 right-1 my-auto text-muted-foreground hover:text-foreground"
+          aria-label={shown ? 'Hide' : 'Show'}
+          aria-pressed={shown}
+          onClick={() => setShown(!shown)}
+        >
+          {shown ? <EyeOffIcon /> : <EyeIcon />}
+        </Button>
+      </Tip>
     </div>
   )
 }

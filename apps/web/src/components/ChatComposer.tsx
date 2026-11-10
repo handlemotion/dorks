@@ -20,6 +20,7 @@ import openaiDark from '../assets/providers/openai-dark.svg'
 import openaiLight from '../assets/providers/openai-light.svg'
 import { Logo } from './onboarding/List'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@dorks/ui/input-group'
+import { Tip } from './Tip'
 
 export type AgentProvider = 'codex' | 'claude'
 
@@ -189,17 +190,23 @@ export function Composer({
           />
           {/* Prompt actions stay inside the box; project and model settings sit below. */}
           <InputGroupAddon align="block-end" className="absolute inset-x-0 bottom-0 justify-between p-[9px]">
-            <InputGroupButton size="icon-sm" variant="ghost" className="text-muted-foreground hover:text-foreground [--control-radius:6px]" aria-label="Attach files" onClick={() => fileRef.current?.click()}>
-              <PlusIcon className="size-[18px]" />
-            </InputGroupButton>
+            <Tip label="Attach files">
+              <InputGroupButton size="icon-sm" variant="ghost" className="text-muted-foreground hover:text-foreground [--control-radius:6px]" aria-label="Attach files" onClick={() => fileRef.current?.click()}>
+                <PlusIcon className="size-[18px]" />
+              </InputGroupButton>
+            </Tip>
             {onStop ? (
-              <InputGroupButton size="icon-sm" variant="default" className={MAIN} aria-label="Stop agent" title="Stop agent" onClick={onStop}>
-                <SquareIcon className="fill-current" />
-              </InputGroupButton>
+              <Tip label="Stop agent">
+                <InputGroupButton size="icon-sm" variant="default" className={MAIN} aria-label="Stop agent" onClick={onStop}>
+                  <SquareIcon className="fill-current" />
+                </InputGroupButton>
+              </Tip>
             ) : (
-              <InputGroupButton type="submit" size="icon-sm" variant="default" className={MAIN} aria-label={isNewSession ? 'Create session' : 'Send message'} title={isNewSession ? 'Create session' : 'Send message'} disabled={!canSend}>
-                {pending ? <LoaderCircleIcon className="animate-spin" /> : <ArrowUpIcon />}
-              </InputGroupButton>
+              <Tip label={isNewSession ? 'Create session' : 'Send message'}>
+                <InputGroupButton type="submit" size="icon-sm" variant="default" className={MAIN} aria-label={isNewSession ? 'Create session' : 'Send message'} disabled={!canSend}>
+                  {pending ? <LoaderCircleIcon className="animate-spin" /> : <ArrowUpIcon />}
+                </InputGroupButton>
+              </Tip>
             )}
           </InputGroupAddon>
         </InputGroup>

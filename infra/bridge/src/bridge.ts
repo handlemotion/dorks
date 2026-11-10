@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { appendFileSync, chmodSync, closeSync, fsyncSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { join } from "node:path";
-import { Agent, childEnv, configDirOf, findTranscripts } from "./claude";
+import { Agent, childEnv, computerArgs, configDirOf, findTranscripts } from "./claude";
 import { CodexAgent } from "./codex";
 import type { Config } from "./config";
 import { GithubToken, helperCommand } from "./credentials";
@@ -424,7 +424,7 @@ export class Bridge {
       ...shared,
       bin: this.cfg.claudeBin,
       permissionMode: this.cfg.permissionMode,
-      extraArgs: this.cfg.claudeExtraArgs,
+      extraArgs: [...computerArgs(), ...this.cfg.claudeExtraArgs],
       model: this.claudeModel.model,
       effort: this.claudeModel.effort,
       onModels: (models) => {

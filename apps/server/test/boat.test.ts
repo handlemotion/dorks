@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { BoxNotFoundError } from "../src/core/box";
-import { boatBox, BoatError } from "../src/lib/boat";
+import { boatBox, BoatError, desktopUrl, type BoatCall } from "../src/lib/boat";
 
 const KEY = "boat_secret_test";
 const NAME = "dork-123";
@@ -240,3 +240,22 @@ describe("Boat sandbox provider", () => {
   });
 });
 
+describe("desktop stream URL", () => {
+  const noSleep = async () => {};
+  it("waits out provisioning and hides the viewer chrome without touching the token fragment", async () => {
+    const answers = [{ ok: true, provisioning: true }, { ok: true, desktopUrl: "https://box-desktop.on.boat.dev/stream.html?theme=light#token=t0k" }];
+    const paths: string[] = [];
+    const call: BoatCall = async (_op, _method, path) => (paths.push(path), answers.shift());
+    const url = await desktopUrl(call, "/sandboxes/bx_23456789/desktop", { theme: "light" }, noSleep);
+    expect(url).toBe("https://box-desktop.on.boat.dev/stream.html?theme=light&overlay=0#token=t0k");
+    expect(paths).toEqual(["/sandboxes/bx_23456789/desktop?theme=light", "/sandboxes/bx_23456789/desktop?theme=light"]);
+  });
+  it("gives up on a stream that never starts with a retryable code", async () => {
+    const call: BoatCall = async () => ({ ok: true, provisioning: true });
+    await expect(desktopUrl(call, "/sandboxes/bx_23456789/desktop", { theme: "dark" }, noSleep, 0)).rejects.toMatchObject({ code: "provisioning" });
+  });
+  it("refuses a non-https URL", async () => {
+    const bad: BoatCall = async () => ({ ok: true, desktopUrl: "javascript:alert(1)" });
+    await expect(desktopUrl(bad, "/sandboxes/bx_23456789/desktop", { theme: "dark" }, noSleep)).rejects.toBeInstanceOf(BoatError);
+  });
+});

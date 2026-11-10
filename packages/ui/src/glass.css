@@ -72,6 +72,9 @@ h6 {
   --app: #f2f2f2;
   --surface: oklch(1 0 0);
   --surface-line: #e2e2e2;
+  /* Tooltips: coal, not black, with near-white text. */
+  --tip: #3a3a3d;
+  --tip-foreground: #f4f4f5;
 }
 
 /* Default border colour: present for a11y tooling, nearly invisible to the eye. Form controls use --input, which stays visible. The
@@ -96,6 +99,9 @@ html:root {
   --surface: oklch(0.24 0 0);
   /* Dark fills separate on their own (1.17:1), so no hairline. */
   --surface-line: transparent;
+  /* A step above --surface, so a tooltip over a raised panel still reads as its own layer. */
+  --tip: oklch(0.38 0 0);
+  --tip-foreground: #f4f4f5;
 }
 
 html.dark {
@@ -310,4 +316,26 @@ html.dark [data-slot="dialog-footer"] {
 [data-slot="dialog-content"],
 [data-slot="sidebar-inner"] {
   --tw-ring-color: transparent;
+}
+
+/* Tooltips (components/Tip.tsx in the web app): compact, 6px like the controls, coal, no arrow, a plain fade (no zoom or slide).
+   Unlayered so it wins over the published tooltip's own utilities without editing that file; the arrow is the popup's last child. */
+[data-slot="tooltip-content"] {
+  padding: 3px 7px;
+  gap: 4px;
+  border-radius: var(--control-radius);
+  background-color: var(--tip);
+  color: var(--tip-foreground);
+}
+[data-slot="tooltip-content"] > :last-child {
+  display: none;
+}
+[data-slot="tooltip-content"][data-open],
+[data-slot="tooltip-content"][data-closed] {
+  --tw-enter-scale: 1;
+  --tw-exit-scale: 1;
+  --tw-enter-translate-x: 0;
+  --tw-enter-translate-y: 0;
+  --tw-exit-translate-x: 0;
+  --tw-exit-translate-y: 0;
 }

@@ -4,14 +4,17 @@ import { Button } from '@dorks/ui/button'
 import { useSidebar } from '@dorks/ui/sidebar'
 import { BAR_BUTTON } from './PreviewBrowser'
 import { TITLEBAR_CONTROLS_END } from './WindowControls'
+import { Tip } from './Tip'
 
 /** Archive (or restore) a chat: an icon button beside its title. */
 export function ArchiveButton({ archived, disabled, onClick }: { archived?: boolean; disabled?: boolean; onClick: () => void }) {
   const label = archived ? 'Unarchive' : 'Archive'
   return (
-    <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label={label} title={label} disabled={disabled} onClick={onClick}>
-      {archived ? <ArchiveRestoreIcon /> : <ArchiveIcon />}
-    </Button>
+    <Tip label={label}>
+      <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label={label} disabled={disabled} onClick={onClick}>
+        {archived ? <ArchiveRestoreIcon /> : <ArchiveIcon />}
+      </Button>
+    </Tip>
   )
 }
 

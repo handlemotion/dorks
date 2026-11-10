@@ -91,6 +91,8 @@ export function createApi(config: ApiConfig) {
     deleteDork: (id: string) => request<object>("DELETE", dork(id)),
     sendMessage: (id: string, text: string) => request<object>("POST", `${dork(id)}/messages`, { text }),
     interrupt: (id: string) => request<object>("POST", `${dork(id)}/interrupt`),
+    /** A fresh live-view URL of the dork's computer; a bearer credential, so never cache or log it. */
+    desktopUrl: (id: string, opts: DesktopOptions) => request<{ url: string }>("POST", `${dork(id)}/desktop`, opts),
     setArchived: (id: string, archived: boolean) => request<object>("POST", `${dork(id)}/archive`, { archived }),
     /** Claude: `model` null for the agent's default, `effort` null for the model's default. */
     chooseModel: (id: string, model: string | null, effort: string | null) => request<object>("POST", `${dork(id)}/model`, { model, effort }),
@@ -113,3 +115,5 @@ export function createApi(config: ApiConfig) {
     deleteSecret: (name: string) => request<object>("DELETE", `/api/secrets/${enc(name)}`),
   };
 }
+
+export type DesktopOptions = { theme: "light" | "dark" };

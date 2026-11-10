@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "web-demo", "runtimeExecutable": "pnpm", "runtimeArgs": ["--filter", "@dorks/web", "exec", "vite", "--port", "3417", "--strictPort"], "port": 3417 }
+  ]
+}

@@ -100,5 +100,12 @@ function simBox(app: App): BoxProvider {
     async delete(id) {
       db.run("DELETE FROM sim_boxes WHERE name = ?", id);
     },
+    async desktopUrl(id, { theme }) {
+      // A stand-in page on the UI listener (http/ui.ts), relative so the client resolves it against the server it talks to; lets
+      // the Computer tab be built and checked without Boat.
+      const b = db.get<{ running: number }>("SELECT running FROM sim_boxes WHERE name = ?", id);
+      if (!b) throw new BoxNotFoundError("no such box");
+      return `/sim/desktop?${new URLSearchParams({ theme })}`;
+    },
   };
 }

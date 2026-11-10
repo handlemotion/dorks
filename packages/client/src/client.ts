@@ -1,6 +1,6 @@
 import type { SubscriptionView } from "@dorks/shared";
 import { EventsFeed } from "./events.ts";
-import { createApi, ApiError, type ApiConfig } from "./http.ts";
+import { createApi, ApiError, type ApiConfig, type DesktopOptions } from "./http.ts";
 import { connectLive, type LiveStatus } from "./live.ts";
 import { Query, type QueryOptions, type Store } from "./store.ts";
 import type { CreateDorkInput, Dork, LiveMessage, PrRefInput, Settings, SettingsPatch, SnapshotStatus } from "./types.ts";
@@ -189,6 +189,11 @@ export class DorksClient {
     chooseModel: async (id: string, model: string | null, effort: string | null) => {
       await this.api.chooseModel(id, model, effort);
       this.invalidate(`dork:${id}`);
+    },
+    /** A fresh live-view URL of the dork's computer, absolute (the simulator answers with a path on the server). Minted per view. */
+    desktopUrl: async (id: string, opts: DesktopOptions) => {
+      const { url } = await this.api.desktopUrl(id, opts);
+      return new URL(url, `${this.cfg.baseUrl.replace(/\/+$/, "")}/`).toString();
     },
     chooseCodexModel: async (id: string, model: string, effort: string) => {
       await this.api.chooseCodexModel(id, model, effort);

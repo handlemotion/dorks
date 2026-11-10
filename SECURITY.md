@@ -29,7 +29,10 @@ Code running in a sandbox runs with the agent's privileges and should be treated
 - the Claude token, if you set one,
 - your CLI secrets,
 - for Codex dorks, your ChatGPT sign-in, which Boat installs through the selected environment. Linux permissions inside the box do not protect it from code that can use `sudo`,
-- that dork's bridge secret.
+- that dork's bridge secret,
+- whatever its desktop shows: code in the box can drive Boat's computer tools and read the screen and Chrome, including pages you sign in to while you have control in the Computer tab.
+
+The Computer tab's stream URL is a bearer credential to that interactive desktop. The server mints it per view, returns it only over the owner-authenticated UI API with `Cache-Control: no-store`, and never stores or logs it ([computer use](docs/computer-use.md)).
 
 So: use dorks only on repositories you trust, scope the GitHub token to the repositories you need (a fine-grained token, see [GitHub](docs/github.md)), and do not hand a dork a token that can do more than you would let its code do. A sandbox cannot reach other dorks' bridge sessions (secrets are per dork) or the UI API (loopback only).
 

@@ -1,5 +1,6 @@
 import { CatchBoundary, createFileRoute, Link, Navigate, useNavigate } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
+import type { DesktopOptions } from '@dorks/client'
 import { ChevronDownIcon, ChevronRightIcon, InfoIcon, MessageSquareIcon } from 'lucide-react'
 import { useConnection, useDork, useDorkEvents, useDorks, useDorksClient, useSettings } from '@dorks/client/react'
 import { List } from '../../../components/onboarding/List'
@@ -166,11 +167,14 @@ function Thread({ dorkId }: { dorkId: string }) {
   const choice = models.find((option) => option.key === selectedModel) ?? models[0]
   const working = dork?.state === 'working'
   const [detailsOpen, setDetailsOpen] = useDetailsOpen()
+  const computerUsed = view.blocks.some((b) => b.kind === 'tool' && b.name.startsWith('mcp__computer__'))
+  const fetchDesktopUrl = useCallback((opts: DesktopOptions) => actions.desktopUrl(dorkId, opts), [actions, dorkId])
+  const interruptAgent = useCallback(() => actions.interrupt(dorkId), [actions, dorkId])
   const { live } = useConnection()
   if (dork === undefined || loading) return <p className="mt-4 px-6 text-sm text-muted-foreground" role="status">Loading session…</p>
   if (dork === null) return <p className="mt-4 px-6 text-sm text-destructive" role="alert">That session could not be found.</p>
   return (
-    <ChatSplit details={detailsOpen ? <ChatDetails data={{ pr: prOf(dork.prUrl) }} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} onAsk={setText} /> : undefined}>
+    <ChatSplit details={detailsOpen ? <ChatDetails data={{ pr: prOf(dork.prUrl), computer: { awake: dork.state === 'working' || dork.state === 'idle', working, used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent } }} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} onAsk={setText} /> : undefined}>
     <section className="flex min-w-0 flex-1 flex-col" aria-label="thread" data-state={dork.state}>
       <PageHeader divider={false}
         title={dork.title}

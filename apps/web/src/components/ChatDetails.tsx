@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useDefaultLayout, usePanelRef } from 'react-resizable-panels'
 import { PanelResizeHandle } from '@dorks/ui/panel-resize-handle'
 import { ChevronRightIcon, ChevronsDownUpIcon, ChevronsUpDownIcon, WrapTextIcon, ExternalLinkIcon, GitPullRequestIcon, GlobeIcon, LayersIcon, MonitorIcon, PanelLeftIcon } from 'lucide-react'
@@ -7,9 +7,11 @@ import { useTheme } from 'next-themes'
 import { Button } from '@dorks/ui/button'
 import { ResizablePanel, ResizablePanelGroup } from '@dorks/ui/resizable'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@dorks/ui/tabs'
+import { ComputerView, type ComputerSource } from './ComputerView'
 import { EmptyState } from './EmptyState'
 import { ImageLightbox, ImageTrigger, type LightboxImage } from './ImageLightbox'
 import { BAR_BUTTON, PreviewBrowser, type PreviewServer } from './PreviewBrowser'
+import { Tip } from './Tip'
 
 /** A file the agent produced in the chat: a screenshot, a design, a document. */
 export type Artifact = { id: string; name: string; /** Short type label, e.g. "PNG". */ type: string; src?: string; href?: string; /** Pixel size of an image, when known. */ width?: number; height?: number }
@@ -22,6 +24,8 @@ export type ChatDetailsData = {
   pr?: { url: string; number?: number }
   /** The sandbox's dev servers, listed in the Browser tab. */
   previews?: PreviewServer[]
+  /** The agent's own computer, streamed live in the Computer tab. */
+  computer?: ComputerSource
 }
 
 type Tab = 'artifacts' | 'changes' | 'browser' | 'computer'
@@ -36,6 +40,14 @@ type Tab = 'artifacts' | 'changes' | 'browser' | 'computer'
 export function ChatDetails({ data, onClose, onGrab, onAsk, className }: { data: ChatDetailsData; onClose?: () => void; /** An element picked in the Browser tab, as agent context. */ onGrab?: (snippet: string) => void; /** An empty state's action: puts a ready request in the composer. */ onAsk?: (text: string) => void; className?: string }) {
   const [tab, setTab] = useState<Tab>('artifacts')
   const changes = data.changes ?? []
+  // The first time the agent reaches for its computer while the chat is open, show its screen; a chat that opens on a computer
+  // already used keeps the tab the owner was on.
+  const used = data.computer?.used ?? false
+  const wasUsed = useRef(used)
+  useEffect(() => {
+    if (used && !wasUsed.current) setTab('computer')
+    wasUsed.current = used
+  }, [used])
   return (
     <aside aria-label="Chat details" className={['flex h-full min-h-0 flex-col p-1', className].filter(Boolean).join(' ')}>
       {/* Same fill as the app; the only edge is a soft hairline (the --border tone), drawn as an overlay above the content so it takes no
@@ -53,9 +65,11 @@ export function ChatDetails({ data, onClose, onGrab, onAsk, className }: { data:
             <DetailsTab value="computer" icon={<MonitorIcon />}>Computer</DetailsTab>
           </TabsList>
           {onClose && (
-            <Button variant="ghost" size="icon-sm" className={`ml-auto shrink-0 ${ACTION}`} aria-label="Hide chat details" title="Hide chat details" onClick={onClose}>
-              <PanelLeftIcon className="rotate-180" />
-            </Button>
+            <Tip label="Hide chat details">
+              <Button variant="ghost" size="icon-sm" className={`ml-auto shrink-0 ${ACTION}`} aria-label="Hide chat details" onClick={onClose}>
+                <PanelLeftIcon className="rotate-180" />
+              </Button>
+            </Tip>
           )}
         </div>
         <TabsContent value="artifacts" className="flex min-h-0 flex-col overflow-y-auto">
@@ -64,8 +78,8 @@ export function ChatDetails({ data, onClose, onGrab, onAsk, className }: { data:
         <TabsContent value="changes" className="min-h-0 overflow-y-auto">
           <Changes changes={changes} pr={data.pr} />
         </TabsContent>
-        <TabsContent value="computer" className="flex min-h-0 flex-col border-t">
-          <EmptyState figure="laptop" title="No computer in use" description="When the agent uses a computer, its screen shows here." />
+        <TabsContent value="computer" className="mx-px mb-px flex min-h-0 flex-col overflow-hidden rounded-b-[9px] border-t">
+          <ComputerView source={data.computer} />
         </TabsContent>
         <TabsContent value="browser" className="mx-px mb-px flex min-h-0 flex-col overflow-hidden rounded-b-[9px]">
           <PreviewBrowser servers={data.previews} onGrab={onGrab} onAsk={onAsk} />
@@ -211,12 +225,16 @@ function Changes({ changes, pr }: { changes: FileChange[]; pr?: ChatDetailsData[
         {changes.length > 0 && <span className={`ml-auto text-xs ${withPatch.length > 0 ? "mr-1" : "pr-[9px]"}`}><Stat additions={sum(changes, 'additions')} deletions={sum(changes, 'deletions')} /></span>}
         {withPatch.length > 0 && (
           <div className="flex shrink-0 items-center gap-0.5">
-            <Button variant="ghost" size="icon-sm" className={`${BAR_BUTTON} transition-none ${wrap ? 'bg-foreground/[0.07] text-foreground hover:bg-foreground/[0.07]' : ''}`} aria-label="Wrap lines" title="Wrap lines" aria-pressed={wrap} onClick={() => setWrap(!wrap)}>
-              <WrapTextIcon />
-            </Button>
-            <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label={anyOpen ? 'Collapse all' : 'Expand all'} title={anyOpen ? 'Collapse all' : 'Expand all'} onClick={() => setOpen(anyOpen ? new Set() : new Set(withPatch.map((c) => c.path)))}>
-              {anyOpen ? <ChevronsDownUpIcon /> : <ChevronsUpDownIcon />}
-            </Button>
+            <Tip label="Wrap lines">
+              <Button variant="ghost" size="icon-sm" className={`${BAR_BUTTON} transition-none ${wrap ? 'bg-foreground/[0.07] text-foreground hover:bg-foreground/[0.07]' : ''}`} aria-label="Wrap lines" aria-pressed={wrap} onClick={() => setWrap(!wrap)}>
+                <WrapTextIcon />
+              </Button>
+            </Tip>
+            <Tip label={anyOpen ? 'Collapse all' : 'Expand all'}>
+              <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label={anyOpen ? 'Collapse all' : 'Expand all'} onClick={() => setOpen(anyOpen ? new Set() : new Set(withPatch.map((c) => c.path)))}>
+                {anyOpen ? <ChevronsDownUpIcon /> : <ChevronsUpDownIcon />}
+              </Button>
+            </Tip>
           </div>
         )}
       </div>
@@ -288,9 +306,11 @@ export function useDetailsOpen() {
  */
 export function ShowDetailsButton({ onClick }: { onClick: () => void }) {
   return (
-    <Button variant="ghost" size="icon-sm" className={`-mr-[11px] hidden lg:inline-flex ${ACTION}`} aria-label="Show chat details" title="Show chat details" onClick={onClick}>
-      <PanelLeftIcon className="rotate-180" />
-    </Button>
+    <Tip label="Show chat details">
+      <Button variant="ghost" size="icon-sm" className={`-mr-[11px] hidden lg:inline-flex ${ACTION}`} aria-label="Show chat details" onClick={onClick}>
+        <PanelLeftIcon className="rotate-180" />
+      </Button>
+    </Tip>
   )
 }
 

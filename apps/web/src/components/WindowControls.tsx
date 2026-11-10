@@ -3,6 +3,7 @@ import { ArrowLeftIcon, ArrowRightIcon } from 'lucide-react'
 import { Button } from '@dorks/ui/button'
 import { SidebarTrigger } from '@dorks/ui/sidebar'
 import { SIDEBAR_ICON_BUTTON } from './sidebarChrome'
+import { Tip } from './Tip'
 
 /**
  * The title bar's controls: the sidebar toggle, then back and forward. AppFrame floats them over the window's top-left corner, right
@@ -15,12 +16,16 @@ export function WindowControls() {
   return (
     <div className="flex shrink-0 items-center gap-0.5">
       <SidebarTrigger className={SIDEBAR_ICON_BUTTON} />
-      <Button variant="ghost" size="icon-sm" className={SIDEBAR_ICON_BUTTON} aria-label="Back" title="Back" disabled={!canGoBack} onClick={() => router.history.back()}>
-        <ArrowLeftIcon />
-      </Button>
-      <Button variant="ghost" size="icon-sm" className={SIDEBAR_ICON_BUTTON} aria-label="Forward" title="Forward" onClick={() => router.history.forward()}>
-        <ArrowRightIcon />
-      </Button>
+      <Tip label="Back">
+        <Button variant="ghost" size="icon-sm" className={SIDEBAR_ICON_BUTTON} aria-label="Back" disabled={!canGoBack} onClick={() => router.history.back()}>
+          <ArrowLeftIcon />
+        </Button>
+      </Tip>
+      <Tip label="Forward">
+        <Button variant="ghost" size="icon-sm" className={SIDEBAR_ICON_BUTTON} aria-label="Forward" onClick={() => router.history.forward()}>
+          <ArrowRightIcon />
+        </Button>
+      </Tip>
     </div>
   )
 }
