@@ -103,6 +103,7 @@ jobs:
           '
 
       - name: Build, sign, notarize and draft the release
+        if: env.UNSIGNED != 'true'
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -125,3 +126,18 @@ jobs:
           prerelease: ${{ github.ref_type != 'tag' }}
           uploadUpdaterJson: ${{ env.UNSIGNED != 'true' }}
           args: ${{ env.UNSIGNED == 'true' && '--target universal-apple-darwin' || '--target universal-apple-darwin --config src-tauri/tauri.release.conf.json --features updater' }}
+
+      - name: Build an unsigned test app and draft a test release
+        # No signing variables at all: Tauri takes an empty APPLE_CERTIFICATE as "sign with this" and fails to import it.
+        if: env.UNSIGNED == 'true'
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          tauriScript: pnpm tauri
+          tagName: ${{ format('desktop-test-{0}', github.run_number) }}
+          releaseName: ${{ format('Dorks test build {0}', github.run_number) }}
+          releaseDraft: true
+          prerelease: true
+          args: --target universal-apple-darwin

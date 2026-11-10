@@ -4,6 +4,7 @@
 #
 #   release-setup.sh csr       make a signing key + certificate request (CSR) to upload to Apple
 #   release-setup.sh secrets   after Apple issues the certificate: build the .p12 and set the GitHub secrets and variable
+#   release-setup.sh p12       rebuild only the .p12 (with macOS-compatible encryption) and set its two secrets
 #   release-setup.sh updater   (re)generate only the updater signing key and set its secret and public-key variable
 #
 # Apple steps in between (developer.apple.com, signed in as the account holder):
@@ -15,6 +16,15 @@ set -euo pipefail
 DIR="$HOME/.dorks-release"
 REPO="${REPO:-handlemotion/dorks}"
 mkdir -p "$DIR" && chmod 700 "$DIR"
+
+# macOS Keychain cannot import the PKCS#12 that OpenSSL 3 writes by default ("Unable to decode the provided data"), so export it
+# with the legacy encryption (checked: `security import` accepts this).
+make_p12() {
+  openssl pkcs12 -export -legacy -inkey "$DIR/dorks.key" -in "$DIR/dorks.pem" -out "$DIR/dorks.p12" -passout "pass:$1" 2>/dev/null \
+    || openssl pkcs12 -export -certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES -macalg sha1 -inkey "$DIR/dorks.key" -in "$DIR/dorks.pem" -out "$DIR/dorks.p12" -passout "pass:$1" 2>/dev/null \
+    || openssl pkcs12 -export -inkey "$DIR/dorks.key" -in "$DIR/dorks.pem" -out "$DIR/dorks.p12" -passout "pass:$1"
+  chmod 600 "$DIR/dorks.p12"
+}
 
 # The updater key: tauri prompts for its password itself (never put a password on a command line: it shows in `ps` and logs).
 updater_key() {
@@ -49,8 +59,7 @@ case "${1:-}" in
     identity="$(openssl x509 -in "$DIR/dorks.pem" -noout -subject -nameopt multiline | awk -F= '/commonName/ {sub(/^ +/,"",$2); print $2}')"
     echo "signing identity: $identity"
     read -r -s -p "Choose a password for the .p12 (not echoed): " p12pass; echo
-    openssl pkcs12 -export -inkey "$DIR/dorks.key" -in "$DIR/dorks.pem" -out "$DIR/dorks.p12" -passout "pass:$p12pass"
-    chmod 600 "$DIR/dorks.p12"
+    make_p12 "$p12pass"
     read -r -p "Apple ID email: " apple_id
     read -r -s -p "App-specific password (not echoed): " apple_pw; echo
     read -r -p "Team ID: " team
@@ -65,11 +74,20 @@ case "${1:-}" in
     updater_publish
     echo "done: secrets and TAURI_UPDATER_PUBKEY set on $REPO. Back up $DIR somewhere safe (password manager); losing updater.key means installed apps cannot update."
     ;;
+  p12)
+    command -v gh >/dev/null || { echo "gh is required" >&2; exit 1; }
+    [ -f "$DIR/dorks.pem" ] || { echo "no $DIR/dorks.pem: run the 'secrets' step first" >&2; exit 1; }
+    read -r -s -p "Choose a password for the .p12 (not echoed): " p12pass; echo
+    make_p12 "$p12pass"
+    base64 < "$DIR/dorks.p12" | tr -d '\n' | gh secret set APPLE_CERTIFICATE -R "$REPO"
+    printf %s "$p12pass" | gh secret set APPLE_CERTIFICATE_PASSWORD -R "$REPO"
+    echo "done: APPLE_CERTIFICATE and APPLE_CERTIFICATE_PASSWORD updated on $REPO."
+    ;;
   updater)
     command -v gh >/dev/null || { echo "gh is required" >&2; exit 1; }
     updater_key
     updater_publish
     echo "updater key set on $REPO. Back up $DIR (password manager)."
     ;;
-  *) echo "usage: $0 csr|secrets|updater" >&2; exit 2 ;;
+  *) echo "usage: $0 csr|secrets|p12|updater" >&2; exit 2 ;;
 esac
