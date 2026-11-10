@@ -4,6 +4,7 @@ mod boot;
 mod commands;
 mod state;
 mod tray;
+mod window;
 
 use std::sync::atomic::Ordering;
 
@@ -19,6 +20,7 @@ pub fn quit(app: &AppHandle) {
         return;
     }
     let app = app.clone();
+    window::flush(&app);
     tauri::async_runtime::spawn(async move {
         boot::stop_runtime(&app).await;
         app.state::<AppState>().shutdown_done.store(true, Ordering::SeqCst);
@@ -49,9 +51,17 @@ pub fn run() {
             commands::set_keep_awake,
             commands::keep_awake_mode,
             commands::set_keep_awake_mode,
+            commands::window_chrome,
+            commands::set_window_mode,
+            commands::set_window_theme,
             commands::install_update,
         ])
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            if window::verification_mode() {
+                // No Dock icon and no activation: a verification run must never take the user's screen or focus.
+                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            }
             tray::build(app.handle())?;
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -71,10 +81,20 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing the window leaves the app (and the server) running in the menu bar.
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+            if window.label() != "main" {
+                return;
+            }
+            match event {
+                // Closing the window leaves the app (and the server) running in the menu bar.
+                WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    window::remember_frame(window.app_handle());
+                    window::flush(window.app_handle());
+                    let _ = window.hide();
+                }
+                WindowEvent::Moved(_) | WindowEvent::Resized(_) => window::remember_frame(window.app_handle()),
+                WindowEvent::Focused(true) => window::reassert(window.app_handle()),
+                _ => {}
             }
         })
         .build(tauri::generate_context!())

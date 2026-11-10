@@ -1,6 +1,6 @@
 //! Shared application state and the config handed to the UI.
 
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex};
 
 use dorks_shell_core::paths::Paths;
@@ -8,6 +8,7 @@ use dorks_shell_core::power::KeepAwake;
 use dorks_shell_core::settings::Settings;
 use dorks_shell_core::supervisor::{Status, Supervisor};
 use dorks_shell_core::tunnel::Tunnel;
+use dorks_shell_core::window::{ChromeInfo, Effect, WindowMode, WindowTheme};
 use serde::Serialize;
 use tauri::async_runtime::JoinHandle;
 
@@ -47,12 +48,15 @@ pub struct WindowConfig {
     pub config: Option<RuntimeConfig>,
     /// Why the server could not be started, if it could not.
     pub boot_error: Option<String>,
+    /// The window chrome: mode, material, and the room to leave for the traffic lights.
+    pub chrome: ChromeInfo,
 }
 
 impl WindowConfig {
+    /// The `window.__DORKS__` definition, followed by the `<html>` attributes and CSS variables for the chrome.
     pub fn init_script(&self) -> String {
         let json = serde_json::to_string(self).unwrap_or_else(|_| "{}".into());
-        format!("Object.defineProperty(window,'__DORKS__',{{value:Object.freeze({json}),configurable:true}});")
+        format!("Object.defineProperty(window,'__DORKS__',{{value:Object.freeze({json}),configurable:true}});{}", self.chrome.page_script())
     }
 }
 
@@ -77,6 +81,10 @@ pub struct AppState {
     /// True once the sidecar and tunnel are stopped and the app may exit.
     pub shutdown_done: AtomicBool,
     pub quitting: AtomicBool,
+    /// The mode and material the main window currently has (see `window.rs`).
+    pub chrome: Mutex<ChromeInfo>,
+    /// Bumped on every move/resize; the debounced save only runs if it is still the latest.
+    pub frame_gen: AtomicU64,
 }
 
 impl AppState {
@@ -92,17 +100,27 @@ impl AppState {
             ui_active: AtomicBool::new(false),
             shutdown_done: AtomicBool::new(false),
             quitting: AtomicBool::new(false),
+            chrome: Mutex::new(ChromeInfo::new(WindowMode::default().spec(), Effect::None, WindowTheme::default())),
+            frame_gen: AtomicU64::new(0),
         }
     }
 
     pub fn window_config(&self) -> WindowConfig {
-        WindowConfig { config: self.config.lock().unwrap().clone(), boot_error: self.boot_error.lock().unwrap().clone() }
+        WindowConfig {
+            config: self.config.lock().unwrap().clone(),
+            boot_error: self.boot_error.lock().unwrap().clone(),
+            chrome: self.chrome.lock().unwrap().clone(),
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn chrome() -> ChromeInfo {
+        ChromeInfo::new(WindowMode::App.spec(), Effect::LiquidGlass, WindowTheme::Dark)
+    }
 
     fn config() -> RuntimeConfig {
         RuntimeConfig {
@@ -119,8 +137,10 @@ mod tests {
 
     #[test]
     fn init_script_defines_a_frozen_global_with_flattened_fields() {
-        let script = WindowConfig { config: Some(config()), boot_error: None }.init_script();
+        let script = WindowConfig { config: Some(config()), boot_error: None, chrome: chrome() }.init_script();
         assert!(script.starts_with("Object.defineProperty(window,'__DORKS__'"));
+        assert!(script.contains("\"chrome\":{\"mode\":\"app\""));
+        assert!(script.contains("--titlebar-inset-left"), "the page attributes follow the global");
         assert!(script.contains("\"apiUrl\":\"http://127.0.0.1:1\""));
         assert!(script.contains("\"ownerToken\":\"t\""));
         assert!(script.contains("\"tunnel\":{\"kind\":\"wurmhol\""));
@@ -128,7 +148,7 @@ mod tests {
 
     #[test]
     fn without_a_config_only_the_error_is_exposed() {
-        let script = WindowConfig { config: None, boot_error: Some("bad".into()) }.init_script();
+        let script = WindowConfig { config: None, boot_error: Some("bad".into()), chrome: chrome() }.init_script();
         assert!(script.contains("\"bootError\":\"bad\""));
         assert!(!script.contains("ownerToken"));
     }

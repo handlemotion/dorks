@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "What the bundled UI window may do. App commands (runtime_config, read_gh_token, ...) are defined in src/commands.rs.",
+  "description": "What the bundled UI window may do. App commands (runtime_config, read_gh_token, set_window_mode, ...) are defined in src/commands.rs. The window permissions exist for the header drag region (data-tauri-drag-region) and its double-click to zoom.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "core:window:allow-start-dragging", "core:window:allow-internal-toggle-maximize", "core:window:allow-toggle-maximize"]
 }

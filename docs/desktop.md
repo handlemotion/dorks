@@ -31,7 +31,7 @@ Defined in one file, `crates/shell-core/src/contract.rs`. The server gets this e
 
 ## What the UI gets
 
-`window.__DORKS__` is set before any page script runs: `{ apiUrl, uiPort, bridgePort, publicUrl, ownerToken, dataDir, version, tunnel: { kind, state, error, tokenSet }, bootError }`. `tunnel.state` is `ready`, `error` (could not start; `error` says why) or `lost` (it was up and went away; the shell restarts it after 30 s, then `publicUrl` is set again). Call the API with `Authorization: Bearer <ownerToken>` against `apiUrl`. If the server could not be set up, only `bootError` is present. `window.__DORKS__` is replaced when the config changes, and the event `dorks://runtime-config` fires; `dorks://server-status` carries `{ state: "starting" | "running" | "restarting" | "failed" | "stopped", ... }`.
+`window.__DORKS__` is set before any page script runs: `{ apiUrl, uiPort, bridgePort, publicUrl, ownerToken, dataDir, version, tunnel: { kind, state, error, tokenSet }, bootError, chrome }` (`chrome` is described under "Window chrome"). `tunnel.state` is `ready`, `error` (could not start; `error` says why) or `lost` (it was up and went away; the shell restarts it after 30 s, then `publicUrl` is set again). Call the API with `Authorization: Bearer <ownerToken>` against `apiUrl`. If the server could not be set up, only `bootError` is present. `window.__DORKS__` is replaced when the config changes, and the event `dorks://runtime-config` fires; `dorks://server-status` carries `{ state: "starting" | "running" | "restarting" | "failed" | "stopped", ... }`.
 
 Commands (`invoke` from `@tauri-apps/api/core`, or `window.__TAURI__.core.invoke`):
 
@@ -47,9 +47,53 @@ Commands (`invoke` from `@tauri-apps/api/core`, or `window.__TAURI__.core.invoke
 | `read_gh_token()` | **asks the user in a native dialog**, then returns `gh auth token`, or `null` if gh is missing or logged out; `"consent_denied"` if declined. The UI then stores it with `PUT /api/settings { githubToken }` |
 | `set_keep_awake(active)` | tell the shell dorks are (not) working; returns whether the assertion is held |
 | `keep_awake_mode()` / `set_keep_awake_mode(mode)` | the setting |
+| `set_window_mode("onboarding" \| "app")` | switch the window chrome (see "Window chrome" below); remembered for the next launch. Returns the new `chrome` |
+| `set_window_theme("light" \| "dark" \| "system")` | the window appearance, hence the material behind the page; remembered. Returns the new `chrome` |
+| `window_chrome()` | the current `chrome` (`window.__DORKS__.chrome` is the same value at load time) |
 | `install_update()` | check for and install an update (release builds only) |
 
 The window only ever shows the bundled UI; other `http(s)` links open in the browser.
+
+## Window chrome
+
+The window is transparent, with a native material behind the page: **Liquid Glass** (`NSGlassEffectView`) on macOS 26 and later, classic **vibrancy** (`NSVisualEffectView`, the Sidebar material, kept active when the window is not key) before that, and an opaque window if neither can be drawn. Both come from the `window-vibrancy` crate, which Tauri already links. This needs Tauri's `macos-private-api` (`app.macOSPrivateApi` in `tauri.conf.json`), which rules out the Mac App Store; this app ships as a notarized dmg. `chrome.effect` is what was actually applied (`"liquid-glass"`, `"vibrancy"` or `"none"`). `DORKS_WINDOW_EFFECT=vibrancy|none` caps it (it can lower the effect, never ask for one the OS cannot draw).
+
+**For the page**, to let the material show through: `html, body, #root { background: transparent }` whenever `html[data-window-effect]` is `liquid-glass` or `vibrancy`; paint your own background only when it is `none`. Surfaces that should read as glass use translucent fills; a white user bubble stays opaque white.
+
+`window.__DORKS__.chrome` is `{ mode, effect, trafficLights, titlebarInsetLeft, titlebarHeight, theme }`. The shell also mirrors it onto `<html>` before the page's scripts run, and again after every change:
+
+| On `<html>` | Value |
+|---|---|
+| `data-window-mode` | `onboarding` or `app` |
+| `data-window-effect` | `liquid-glass`, `vibrancy` or `none` |
+| `data-window-theme` | the theme the app asked for: `light`, `dark` or `system` |
+| `data-traffic-lights` | `true` in `app` mode, `false` in `onboarding` |
+| `--titlebar-inset-left` | px to keep free at the left of the header for the traffic lights (84px in `app`, 0 in `onboarding`) |
+| `--titlebar-height` | px of header strip to reserve at the top (52px in `app`, 0 in `onboarding`) |
+
+The title bar is an overlay: the page extends under it, so there is no native title bar to drag. Make the header a drag region with `data-tauri-drag-region` on the element (not on its interactive children), sized with `var(--titlebar-height)`, and start the header's own content at `var(--titlebar-inset-left)`. Double-clicking the region zooms the window. The permissions this needs (`core:window:allow-start-dragging`, `allow-internal-toggle-maximize`, `allow-toggle-maximize`) are in `capabilities/default.json`.
+
+**Modes.** Call `set_window_mode` as soon as the app knows which it is in (at boot, and again if setup completes or is undone):
+
+| Mode | Traffic lights | Size | Position |
+|---|---|---|---|
+| `onboarding` | hidden (the three buttons are hidden, the window keeps its native rounded corners) | fixed 920 x 680, not resizable | centred in the screen's usable area |
+| `app` | visible over the content, inset as above | 1200 x 800 by default, resizable, minimum 900 x 600 | the remembered frame if it is still on a screen, else centred |
+
+The shell remembers the last mode and the app-mode frame (`windowMode`, `windowFrame` in `settings.json`, logical points, saved a moment after the last move or resize and on close and quit) and opens the window already in that mode, so there is no flash of the wrong chrome. A fresh install has no mode and starts in `onboarding`; an install from before this existed also starts there until the page calls `set_window_mode("app")`. The shell does not ask the server whether setup is done: the page already knows, and one owner of that decision is simpler.
+
+**Theme.** The material follows the window appearance, so the app must report its own theme or a light UI would sit on a dark dim. Call `set_window_theme` whenever the app theme changes (`"system"` while the user has not picked one). With no call, the window follows macOS, including when macOS switches by itself at sunset. The page's `prefers-color-scheme` follows the same setting. Remembered as `windowTheme`. Note that Tauri applies this app-wide, which is fine for a one-window app.
+
+**Shadow and border: both off.** The window has no drop shadow (`shadow(false)`, re-asserted after the material is attached) and the shell draws no border or outline of its own, neither on the window nor on the webview. Why shadow off is fine here: the glass material brings its own edge and the corners stay rounded (the capture of the window is exactly its frame, with no shadow margin). The page should not add a shadow or an outline around the app either.
+
+### Checking the chrome without taking the screen
+
+`DORKS_WINDOW_NOFOCUS=1` is for automated checks only. The app then runs without a Dock icon (accessory activation policy), the window never takes focus, sits below every other window, and is parked so that all but a 40 pt corner of it is off the screen. Nothing is covered and nothing is interrupted. Check it in two ways that do not need the screen:
+
+- **The shell's log** says what AppKit has for the window after every change, e.g. `dorks: window mode app: shadow=false opaque=false buttons_hidden=Some(false)/Some(false)/Some(false) appearance=NSAppearanceNameDarkAqua frame=...` (`opaque=false` is the transparent window; `buttons_hidden` is close/minimise/zoom; `appearance` is what the theme resolved to).
+- **`screencapture -x -o -l <window id>`** renders that one window only (it never captures the desktop). Find the id with `CGWindowListCopyWindowInfo(.optionAll, ...)`; the window is listed even while it is off screen. Such a capture has no backdrop, so it cannot show how translucent the glass looks, only the chrome, the buttons, the sizes, the corners and the page.
+
+Launch the binary directly (`DORKS_WINDOW_NOFOCUS=1 Dorks.app/Contents/MacOS/dorks-desktop`) or with `open -g`; never `open -a` or an activating AppleScript. Quit with `tell application "Dorks" to quit`, which does not activate the app. Judging the translucency itself (how the glass looks over what is behind it) needs a look at the real screen; do that by hand.
 
 ## Tunnel: wurmhol
 
@@ -111,3 +155,5 @@ The sidecar is signed with the app's identity and the hardened runtime. `src-tau
 - The window was run with the real server and the real SPA (first-run setup renders and talks to the sidecar); the wurmhol token field and the tunnel state are not in the web app's Settings yet.
 - Real icons.
 - The release workflow has not run: it needs the secrets above.
+- Window chrome was verified on macOS 26 only (Liquid Glass). The classic vibrancy fallback (macOS 12 to 25) is code-complete but has not been seen on a real older Mac; neither has a second monitor or a changed screen layout for the remembered frame (the placement rules are unit-tested).
+- How the translucency looks over a real backdrop in the light and dark system appearances was looked at by hand once, before the no-screen rule, and measured as clearly light for the light theme and clearly dark for the dark one; it is not covered by an automated check (see "Checking the chrome without taking the screen").

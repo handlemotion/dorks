@@ -6,11 +6,13 @@ use dorks_shell_core::github::{self, GhStatus};
 use dorks_shell_core::secrets::write_secret;
 use dorks_shell_core::settings::{validate_public_url, KeepAwake};
 use dorks_shell_core::supervisor::Status;
+use dorks_shell_core::window::{ChromeInfo, WindowMode, WindowTheme};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::boot;
+use crate::window;
 use crate::state::{AppState, RuntimeConfig, TunnelInfo};
 
 #[tauri::command]
@@ -134,6 +136,31 @@ pub fn set_keep_awake_mode(app: AppHandle, state: State<'_, AppState>, mode: Kee
     }
     boot::apply_keep_awake(&app);
     Ok(())
+}
+
+/// The window chrome the UI is in right now (`window.__DORKS__.chrome` is the same value at load time).
+#[tauri::command]
+pub fn window_chrome(state: State<'_, AppState>) -> ChromeInfo {
+    state.chrome.lock().unwrap().clone()
+}
+
+/// Switches the window between `"onboarding"` (no traffic lights, fixed size, centred) and `"app"` (traffic lights over the
+/// content, resizable, remembered frame). The shell remembers the mode for the next launch. Returns the new chrome.
+///
+/// Deliberately not `async`: Tauri runs plain commands on the main thread, which is where AppKit wants to be touched.
+#[tauri::command]
+pub fn set_window_mode(app: AppHandle, mode: String) -> Result<ChromeInfo, String> {
+    let mode = mode.parse::<WindowMode>()?;
+    window::set_mode(&app, mode)
+}
+
+/// Sets the window appearance: `"light"`, `"dark"`, or `"system"` (follow macOS, the default). The native material behind the
+/// page and the page's `prefers-color-scheme` follow it, so call it whenever the app's theme changes. Remembered across
+/// launches. Returns the new chrome. Not `async`, for the same main-thread reason as `set_window_mode`.
+#[tauri::command]
+pub fn set_window_theme(app: AppHandle, theme: String) -> Result<ChromeInfo, String> {
+    let theme = theme.parse::<WindowTheme>()?;
+    window::set_theme(&app, theme)
 }
 
 /// Checks for an update and installs it. Real only in builds with the `updater` feature (the release workflow).

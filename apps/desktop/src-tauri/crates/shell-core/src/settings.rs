@@ -6,6 +6,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::secrets::write_private;
+use crate::window::{WindowFrame, WindowMode, WindowTheme};
 
 /// When the shell holds a power assertion to keep the Mac from idle-sleeping.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -33,6 +34,14 @@ pub struct Settings {
     /// Extra arguments for the wurmhol client, after `<port> --json` (for flags the relay learns later, such as a reserved
     /// name). The token never goes here; it has its own 0600 file.
     pub wurmhol_args: Vec<String>,
+    /// The chrome the window had last (the web app sets it with `set_window_mode`). The next launch opens in it, so there is
+    /// no flash of the wrong chrome. A fresh install has none and starts in onboarding.
+    pub window_mode: WindowMode,
+    /// The appearance the app asked for (`set_window_theme`); `system` follows macOS. Remembered so the first paint of the
+    /// next launch already has the right material.
+    pub window_theme: WindowTheme,
+    /// Where the app-mode window was last (logical points); restored if it is still on a screen.
+    pub window_frame: Option<WindowFrame>,
 }
 
 impl Settings {
@@ -95,6 +104,9 @@ mod tests {
             keep_awake: KeepAwake::Always,
             wurmhol_server: Some("https://wh.example".into()),
             wurmhol_args: vec!["--name".into(), "mine".into()],
+            window_mode: WindowMode::App,
+            window_theme: WindowTheme::Dark,
+            window_frame: Some(WindowFrame { x: -5, y: 7, width: 1000, height: 700 }),
         };
         s.save(&path).unwrap();
         assert_eq!(Settings::load(&path).unwrap(), s);
@@ -108,6 +120,21 @@ mod tests {
         let s = Settings::load(&path).unwrap();
         assert_eq!(s.public_url.as_deref(), Some("https://a.example"));
         assert_eq!(s.keep_awake, KeepAwake::WhileActive);
+    }
+
+    #[test]
+    fn window_state_round_trips_and_old_files_start_in_onboarding() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        assert_eq!(Settings::default().window_mode, WindowMode::Onboarding);
+        std::fs::write(&path, r#"{"keepAwake":"always"}"#).unwrap();
+        assert_eq!(Settings::load(&path).unwrap().window_mode, WindowMode::Onboarding);
+
+        let s = Settings { window_mode: WindowMode::App, window_theme: WindowTheme::Light, window_frame: Some(WindowFrame { x: 10, y: 20, width: 1000, height: 700 }), ..Settings::default() };
+        s.save(&path).unwrap();
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("\"windowMode\": \"app\""), "{raw}");
+        assert_eq!(Settings::load(&path).unwrap(), s);
     }
 
     #[test]

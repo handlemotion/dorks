@@ -12,11 +12,13 @@ use dorks_shell_core::secrets::{ensure_owner_token, read_secret};
 use dorks_shell_core::settings::{KeepAwake, Settings};
 use dorks_shell_core::supervisor::{reap_stale, Policy, SidecarSpec, Status, Supervisor};
 use dorks_shell_core::tunnel::{self, Tunnel, TunnelHealth, TunnelTarget};
+use dorks_shell_core::window::{ChromeInfo, Effect};
 use dorks_shell_core::wurmhol::{find_wurmhol, WurmholConfig, WurmholTunnel};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 use crate::state::{AppState, Runtime, RuntimeConfig, TunnelInfo};
 use crate::tray;
+use crate::window;
 
 pub const EVENT_STATUS: &str = "dorks://server-status";
 pub const EVENT_CONFIG: &str = "dorks://runtime-config";
@@ -252,21 +254,45 @@ pub fn show_main(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
         let _ = window.unminimize();
-        let _ = window.set_focus();
+        if !window::verification_mode() {
+            let _ = window.set_focus();
+        }
         return;
     }
     let state = app.state::<AppState>();
+    // Open in the chrome the window had last time (the web app sets it with `set_window_mode`); a fresh install has none and
+    // starts in onboarding. The window stays hidden until its material and geometry are in place, so nothing flashes.
+    let (mode, theme) = {
+        let settings = state.settings.lock().unwrap();
+        (settings.window_mode, settings.window_theme)
+    };
+    let spec = mode.spec();
+    let wanted = window::detect_effect();
+    *state.chrome.lock().unwrap() = ChromeInfo::new(spec, wanted, theme);
     let script = state.window_config().init_script();
     let handle = app.clone();
-    let built = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+    let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("Dorks")
-        .inner_size(1200.0, 800.0)
-        .min_inner_size(800.0, 560.0)
+        .inner_size(spec.size.0, spec.size.1)
+        .min_inner_size(spec.min_size.0, spec.min_size.1)
+        .resizable(spec.resizable)
+        .visible(false)
+        .focused(!window::verification_mode())
+        .theme(window::tauri_theme(theme))
         .initialization_script(script)
-        .on_navigation(move |url| allow_navigation(&handle, url))
-        .build();
-    if let Err(e) = built {
-        eprintln!("dorks: could not create the window: {e}");
+        .on_navigation(move |url| allow_navigation(&handle, url));
+    // A transparent webview is what lets the material show through the page; only ask for it when there is one behind it.
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .transparent(wanted != Effect::None)
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true)
+        // No drop shadow: the material and the page draw the edge (see docs/desktop.md, "Shadow and border").
+        .shadow(false)
+        .traffic_light_position(window::traffic_light_position());
+    match builder.build() {
+        Ok(win) => window::finish(app, &win, mode, theme, wanted),
+        Err(e) => eprintln!("dorks: could not create the window: {e}"),
     }
 }
 
