@@ -16,6 +16,16 @@ Test changes against running servers, not only unit tests.
 - For a throwaway instance that cannot collide with another one, set `DORKS_DATA_DIR=<temp dir>`, `DORKS_UI_PORT=0` and `DORKS_BRIDGE_PORT=0`; the server prints one JSON `ready` line with the ports.
 - `pnpm test` runs every package; `pnpm e2e` builds the compiled server and runs the server e2e (sim and real bridge, with a secret scan), then the web e2e. `pnpm e2e:server` / `pnpm e2e:web` run one of them.
 
+## Testing
+
+The product intentionally has few tests. Do not add or run tests by reflex.
+
+- **Only real tests on real business logic**: the lifecycle state machine and timers, the Boat driver, the PR poller, crypto, the bridge protocol, the server e2e. Each must be light, high value and able to catch a real bug.
+- **No low-signal tests**: no UI snapshot or screenshot tests, no tests that restate the implementation, no mocks of the thing under test, no tests for markup, styling or copy that will change within a day.
+- **No unnecessary runs.** Do not run the full suite, `pnpm e2e` or the web e2e to confirm a UI tweak; typecheck and a look in a headless browser are enough. Run the tests that cover the logic you changed.
+- **Never launch the desktop app or a headed browser to check a change** unless the change is native window behaviour, and then only unfocused. Do not take over the user's screen.
+- When a test is flaky, slow or has not caught a bug, delete it instead of maintaining it.
+
 ## UI rules
 
 No drop shadows, minimal borders, theme-following glass, white user bubbles. Full text and the contrast numbers: `packages/ui/README.md` ("Design rules").
