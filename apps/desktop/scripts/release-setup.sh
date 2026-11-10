@@ -4,6 +4,7 @@
 #
 #   release-setup.sh csr       make a signing key + certificate request (CSR) to upload to Apple
 #   release-setup.sh secrets   after Apple issues the certificate: build the .p12 and set the GitHub secrets and variable
+#   release-setup.sh updater   (re)generate only the updater signing key and set its secret and public-key variable
 #
 # Apple steps in between (developer.apple.com, signed in as the account holder):
 #   1. Certificates, IDs & Profiles > Certificates > + > "Developer ID Application" > upload ~/.dorks-release/dorks.csr
@@ -14,6 +15,22 @@ set -euo pipefail
 DIR="$HOME/.dorks-release"
 REPO="${REPO:-handlemotion/dorks}"
 mkdir -p "$DIR" && chmod 700 "$DIR"
+
+# The updater key: tauri prompts for its password itself (never put a password on a command line: it shows in `ps` and logs).
+updater_key() {
+  if [ ! -f "$DIR/updater.key" ]; then
+    echo "Tauri will now ask for a password for the updater key (empty for none); enter the same one again when this script asks."
+    (cd "$(dirname "$0")/.." && pnpm tauri signer generate -w "$DIR/updater.key")
+    chmod 600 "$DIR/updater.key"
+  fi
+  read -r -s -p "Updater key password, as entered above (empty for none): " up_pass; echo
+}
+updater_publish() {
+  gh secret set TAURI_SIGNING_PRIVATE_KEY -R "$REPO" < "$DIR/updater.key"
+  if [ -n "$up_pass" ]; then printf %s "$up_pass" | gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD -R "$REPO"
+  else gh secret delete TAURI_SIGNING_PRIVATE_KEY_PASSWORD -R "$REPO" 2>/dev/null || true; fi
+  gh variable set TAURI_UPDATER_PUBKEY -R "$REPO" < "$DIR/updater.key.pub"
+}
 
 case "${1:-}" in
   csr)
@@ -37,14 +54,7 @@ case "${1:-}" in
     read -r -p "Apple ID email: " apple_id
     read -r -s -p "App-specific password (not echoed): " apple_pw; echo
     read -r -p "Team ID: " team
-    # Updater key (Tauri): generated once, the public half is a repository variable.
-    if [ ! -f "$DIR/updater.key" ]; then
-      read -r -s -p "Password for the updater signing key (empty for none): " up_pass; echo
-      (cd "$(dirname "$0")/.." && pnpm tauri signer generate -w "$DIR/updater.key" ${up_pass:+-p "$up_pass"} >/dev/null)
-      chmod 600 "$DIR/updater.key"
-    else
-      read -r -s -p "Updater key password (empty for none): " up_pass; echo
-    fi
+    updater_key
     base64 < "$DIR/dorks.p12" | tr -d '\n' | gh secret set APPLE_CERTIFICATE -R "$REPO"
     printf %s "$p12pass" | gh secret set APPLE_CERTIFICATE_PASSWORD -R "$REPO"
     printf %s "$identity" | gh secret set APPLE_SIGNING_IDENTITY -R "$REPO"
@@ -52,9 +62,14 @@ case "${1:-}" in
     printf %s "$apple_pw" | gh secret set APPLE_PASSWORD -R "$REPO"
     printf %s "$team" | gh secret set APPLE_TEAM_ID -R "$REPO"
     gh secret set TAURI_SIGNING_PRIVATE_KEY -R "$REPO" < "$DIR/updater.key"
-    [ -z "$up_pass" ] || printf %s "$up_pass" | gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD -R "$REPO"
-    gh variable set TAURI_UPDATER_PUBKEY -R "$REPO" < "$DIR/updater.key.pub"
+    updater_publish
     echo "done: secrets and TAURI_UPDATER_PUBKEY set on $REPO. Back up $DIR somewhere safe (password manager); losing updater.key means installed apps cannot update."
     ;;
-  *) echo "usage: $0 csr|secrets" >&2; exit 2 ;;
+  updater)
+    command -v gh >/dev/null || { echo "gh is required" >&2; exit 1; }
+    updater_key
+    updater_publish
+    echo "updater key set on $REPO. Back up $DIR (password manager)."
+    ;;
+  *) echo "usage: $0 csr|secrets|updater" >&2; exit 2 ;;
 esac
