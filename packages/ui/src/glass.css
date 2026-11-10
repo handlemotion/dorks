@@ -12,6 +12,32 @@
  *   - The tint follows the theme, never the OS or the native material.
  */
 
+/* Nothing is heavier than medium (500). The heavier weights are mapped to 500, so the heavy weight classes in the published
+   components render as medium; check-ui-rules.mjs keeps app code from writing them at all. */
+@theme {
+  --font-weight-semibold: 500;
+  --font-weight-bold: 500;
+  --font-weight-extrabold: 500;
+  --font-weight-black: 500;
+}
+
+/* Markdown and native elements default to bold; same cap. Headings in a reply also keep the body size: the app uses two sizes. */
+b,
+strong,
+th,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: 500;
+}
+
+[data-slot="markdown"] :is(h1, h2, h3, h4, h5, h6) {
+  font-size: inherit;
+}
+
 /* Shadows off. Resetting the namespaces means `shadow-md`, `drop-shadow-lg`, `inset-shadow-*` generate no CSS at all. ui-rules: allow */
 @theme {
   --shadow-*: initial; /* ui-rules: allow */
@@ -39,8 +65,8 @@
   /* Buttons, inputs and selects. Pills are the exception and set this to var(--radius-pill) themselves. */
   --control-radius: 6px;
   --radius-pill: 9999px;
-  /* The app is flat and opaque: one fill, --app, behind everything, and --surface for what is raised on it (cards, dialogs, the
-     sidebar and composer through the glass tokens). White on #f2f2f2 is 1.12:1 (scripts/contrast.mjs), under the 1.15
+  /* The app frame is flat: one fill behind the sidebar and the chat, separated only by full-height dividers. The one raised surface
+     is --surface (Chat details, the composer, onboarding's cards). White on #f2f2f2 is 1.12:1 (scripts/contrast.mjs), under the 1.15
      that fill alone needs, so in light a raised surface carries the --surface-line hairline (the Figma reference's #e2e2e2). */
   --app: #f2f2f2;
   --surface: oklch(1 0 0);
@@ -136,22 +162,12 @@ body {
   background-color: var(--app);
 }
 
-/* The sidebar is the app's chrome: its fill is the glass token (a solid --surface now, no blur). Unlayered on purpose,
-   so it wins over the component's own utilities. */
+/* The sidebar sits flat on the app fill (it is not a panel), with a full-height divider on its edge. Unlayered on purpose, so it wins
+   over the component's own utilities. On phones it opens as a sheet, which needs the opaque app fill. */
 html:root,
 html.dark {
-  --sidebar: var(--glass);
-  --sidebar-border: transparent;
-}
-
-[data-slot="sidebar-inner"],
-[data-slot="sheet-content"][data-mobile="true"] {
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-}
-
-[data-slot="sidebar-inner"] {
-  border-radius: 1.5rem;
+  --sidebar: transparent;
+  --sidebar-border: var(--border);
 }
 
 /* Toasts: a brand-blue fill with white text, 8px corners, even 12px padding around a 16px icon and a 20px line, and a small bare close at
@@ -254,6 +270,9 @@ html.dark [data-slot="dialog-footer"] {
   background: var(--muted);
 }
 
+[data-slot="sheet-content"][data-mobile="true"] {
+  background-color: var(--app);
+}
 
 /* The published components outline cards, menus and dialogs with a 1px ring (`ring-1 ring-foreground/10`). Fill separates those
    surfaces, so the ring is switched off here instead of editing the files. Focus rings live on controls, not on these containers. */

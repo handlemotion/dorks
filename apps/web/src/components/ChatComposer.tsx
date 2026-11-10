@@ -15,7 +15,7 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupText, InputGro
 export type AgentProvider = 'codex' | 'claude'
 
 /**
- * The message box: a glass input group with the agent picker and send/stop buttons. With `repo` it is the "new session" form
+ * The message box: an input group on the raised surface fill with the agent picker and send/stop buttons. With `repo` it is the "new session" form
  * (the first message also names the repository).
  */
 export function Composer({
@@ -51,7 +51,7 @@ export function Composer({
   return (
     <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-5">
       <form ref={formRef} onSubmit={(e) => { e.preventDefault(); if (canSend) onSubmit() }}>
-        <InputGroup className="glass-strong rounded-3xl">
+        <InputGroup className="bg-surface">
           {repo !== undefined && setRepo ? (
             <InputGroupAddon align="block-start">
               <label className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">

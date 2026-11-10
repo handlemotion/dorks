@@ -1,4 +1,4 @@
-// Fails when app code or the theme CSS uses a drop shadow. The UI rule is "no drop shadows, ever" (see README.md, "Design rules"): the
+// Fails when app code or the theme CSS uses a drop shadow or a font weight over medium (500). The UI rule is "no drop shadows, ever" (see README.md, "Design rules"): the
 // theme switches every Tailwind shadow token off (src/glass.css), so a `shadow-*` class in the published shadcn / AI Elements files is
 // a harmless no-op, but nothing WE write may use one.
 //
@@ -20,6 +20,9 @@ const RULES = [
   [/(?<![\w-])shadow-(?!none\b)[\w[\]/.-]+/, "shadow utility class"],
   [/(?<![\w-])(box|drop|text)-shadow\b/, "box-shadow / drop-shadow / text-shadow"],
   [/(?<![\w-])inset-shadow-/, "inset-shadow utility class"],
+  // Nothing heavier than medium (500).
+  [/(?<![\w-])font-(semibold|bold|extrabold|black)\b/, "font weight over medium"],
+  [/font-weight:\s*(bold|bolder|[6-9]00)\b/, "font weight over medium"],
 ];
 
 function* walk(dir) {
@@ -43,7 +46,7 @@ for (const base of SCAN) {
 }
 
 if (found.length) {
-  console.error(`UI rule broken: no drop shadows. Separate surfaces with fill, spacing and glass layering instead.\n${found.map((f) => `  ${f}`).join("\n")}`);
+  console.error(`UI rule broken: no drop shadows (separate surfaces with fill and spacing) and no weight over medium.\n${found.map((f) => `  ${f}`).join("\n")}`);
   process.exit(1);
 }
-console.log("ui rules: no shadows in app code or theme CSS");
+console.log("ui rules: no shadows and no weight over medium in app code or theme CSS");

@@ -4,7 +4,6 @@ import { CircleCheckIcon, CircleIcon } from 'lucide-react'
 import { useSettings } from '@dorks/client/react'
 import { Alert, AlertDescription } from '@dorks/ui/alert'
 import { Button } from '@dorks/ui/button'
-import { Card, CardContent, CardHeader } from '@dorks/ui/card'
 import { BoatForm, ClaudeForm, CliSecrets, CodexForm, CommentPolicyForm, GithubForm, PublicUrlForm, SleepMinutes, SnapshotForm } from '../../../components/SettingsForms'
 import { PageHeader } from '../../../components/PageHeader'
 import { isDesktop } from '../../../lib/desktop'
@@ -12,18 +11,17 @@ import { STEPS, stepDone } from '../../../lib/onboarding'
 
 export const Route = createFileRoute('/_conn/_app/settings')({ component: Settings })
 
-/** One settings group: a card with a heading (an h2 inside a section, which the e2e and screen readers rely on) and its form. */
+/**
+ * One settings group: a heading (an h2 inside a section, which the e2e and screen readers rely on) and its form, flat on the app fill.
+ * Groups are split by full-width dividers, not cards.
+ */
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section>
-      <Card className="dark:bg-foreground/[0.06]">
-        <CardHeader>
-          <h2 className="text-base font-semibold">{title}</h2>
-        </CardHeader>
-        <CardContent>
-          <div className="settings-group">{children}</div>
-        </CardContent>
-      </Card>
+    <section className="border-b last:border-b-0">
+      <div className="mx-auto grid w-full max-w-3xl gap-4 px-6 py-6 md:grid-cols-[12rem_1fr]">
+        <h2 className="text-sm font-medium">{title}</h2>
+        <div className="settings-group min-w-0">{children}</div>
+      </div>
     </section>
   )
 }
@@ -45,7 +43,7 @@ function Settings() {
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader title="Settings" actions={<Button variant="ghost" size="sm" nativeButton={false} render={<Link to="/dorks" />}>Back to dorks</Button>} />
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-6 py-6">
+        <div className="flex flex-col">
           <Group title="Setup">
             <section aria-label="setup checklist" className="flex flex-col gap-3">
               <ul className="flex flex-col gap-1.5 text-sm">

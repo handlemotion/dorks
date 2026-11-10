@@ -4,16 +4,14 @@ import { SidebarInset, SidebarProvider } from '@dorks/ui/sidebar'
 import { AppSidebar } from './AppSidebar'
 
 /**
- * A floating glass sidebar beside a content panel, both on the window backdrop (native vibrancy in the desktop app, a soft
- * gradient in a browser). Pages render their own PageHeader and scroll inside the panel.
+ * The app frame is flat: the sidebar and the page share one fill (`bg-app`) and a full-height divider separates them. Nothing floats
+ * on it except a page's own raised surface (the chat's Chat details). Pages render their own PageHeader and scroll inside.
  */
 export function FrameLayout({ sidebar, children }: { sidebar: ReactNode; children: ReactNode }) {
   return (
-    <SidebarProvider className="app-backdrop h-svh min-h-0">
+    <SidebarProvider className="h-svh min-h-0 bg-app">
       {sidebar}
-      <SidebarInset className="glass-content bg-glass-content! m-2 min-h-0 overflow-hidden rounded-3xl md:ml-0">
-        {children}
-      </SidebarInset>
+      <SidebarInset className="min-h-0 overflow-hidden bg-transparent">{children}</SidebarInset>
     </SidebarProvider>
   )
 }

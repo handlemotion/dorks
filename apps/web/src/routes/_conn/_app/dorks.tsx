@@ -1,9 +1,8 @@
 import { CatchBoundary, createFileRoute, Link, Navigate } from '@tanstack/react-router'
 import { useState } from 'react'
-import { ArchiveIcon, ArchiveRestoreIcon, ChevronDownIcon, InfoIcon, PlusIcon } from 'lucide-react'
+import { ArchiveIcon, ArchiveRestoreIcon, ChevronDownIcon, InfoIcon } from 'lucide-react'
 import { useDork, useDorkEvents, useDorks, useDorksClient, useSettings } from '@dorks/client/react'
 import { Alert, AlertDescription } from '@dorks/ui/alert'
-import { Badge } from '@dorks/ui/badge'
 import { Button } from '@dorks/ui/button'
 import {
   DropdownMenu,
@@ -23,6 +22,7 @@ import {
   MessageScrollerViewport,
 } from '@dorks/ui/message-scroller'
 import { ChatMessages } from '../../../components/ChatBlock'
+import { ChatDetails, DETAILS_WIDTH, ShowDetailsButton, useDetailsOpen } from '../../../components/ChatDetails'
 import { Composer, type AgentProvider } from '../../../components/ChatComposer'
 import { PageHeader } from '../../../components/PageHeader'
 import { SetupStatus } from '../../../components/SetupStatus'
@@ -74,9 +74,9 @@ function Dorks() {
         </CatchBoundary>
       ) : (
         <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col justify-center gap-8 overflow-y-auto px-4 py-8">
-          <div className="space-y-2">
-            <h2 className="text-3xl font-semibold tracking-tight">What should we work on?</h2>
-            <p className="text-muted-foreground">Choose a repository, then describe the change you want.</p>
+          <div className="space-y-1">
+            <h2 className="text-lg font-medium">What should we work on?</h2>
+            <p className="text-sm text-muted-foreground">Choose a repository, then describe the change you want.</p>
           </div>
           {settings && <SetupStatus settings={settings} />}
           <NewDork onCreated={setSelected} disabled={!ready} claudeReady={!!settings?.claudeToken} codexReady={!!settings?.boatEnvironment} />
@@ -136,20 +136,21 @@ function Thread({ dorkId }: { dorkId: string }) {
   }))) ?? []
   const choice = models.find((option) => option.key === selectedModel) ?? models[0]
   const working = dork?.state === 'working'
+  const [detailsOpen, setDetailsOpen] = useDetailsOpen()
   if (dork === undefined || loading) return <p className="mt-4 px-6 text-sm text-muted-foreground" role="status">Loading session…</p>
   if (dork === null) return <p className="mt-4 px-6 text-sm text-destructive" role="alert">That session could not be found.</p>
   return (
-    <section className="flex min-h-0 flex-1 flex-col" aria-label="thread">
-      <PageHeader
+    <div className="flex min-h-0 flex-1">
+    <section className="flex min-w-0 flex-1 flex-col" aria-label="thread" data-state={dork.state}>
+      <PageHeader divider={!detailsOpen}
         title={dork.title}
-        subtitle={<>{dork.repo} · <Badge variant="outline" data-testid="state" className="align-middle">{dork.state}{dork.archived ? ' (archived)' : ''}</Badge></>}
         actions={
           <>
-            <Button variant="ghost" size="sm" nativeButton={false} render={<Link to="/dorks" search={{}} />}><PlusIcon />New session</Button>
             <Button variant="ghost" size="sm" disabled={archiving} onClick={() => void runArchive(() => actions.archiveDork(dorkId, !dork.archived))}>
               {dork.archived ? <ArchiveRestoreIcon /> : <ArchiveIcon />}
               {dork.archived ? 'Unarchive' : 'Archive'}
             </Button>
+            {!detailsOpen && <ShowDetailsButton onClick={() => setDetailsOpen(true)} />}
           </>
         }
       />
@@ -206,5 +207,14 @@ function Thread({ dorkId }: { dorkId: string }) {
         onStop={working && !stopping && !dork.archived ? () => void runStop(() => actions.interrupt(dorkId)) : undefined}
       />
     </section>
+    {detailsOpen && <ChatDetails data={{ pr: prOf(dork.prUrl) }} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} className={DETAILS_WIDTH} />}
+    </div>
   )
+}
+
+/** The pull request from the stored url; the number is read from it, since the backend does not keep it separately. */
+function prOf(url: string | undefined) {
+  if (!url) return undefined
+  const n = /\/pull\/(\d+)/.exec(url)?.[1]
+  return { url, number: n ? Number(n) : undefined }
 }

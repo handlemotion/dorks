@@ -11,6 +11,7 @@ import {
 import { FrameLayout } from '../components/AppFrame'
 import { AppSidebarView } from '../components/AppSidebar'
 import { ChatMessages } from '../components/ChatBlock'
+import { ChatDetails, DETAILS_WIDTH, ShowDetailsButton, useDetailsOpen, type ChatDetailsData } from '../components/ChatDetails'
 import { Composer, type AgentProvider } from '../components/ChatComposer'
 import { PageHeader } from '../components/PageHeader'
 
@@ -31,6 +32,28 @@ const chats = [
   { id: 'four', title: 'Document the bridge protocol', working: true },
 ]
 
+const details: ChatDetailsData = {
+  pr: { url: 'https://github.com/acme/demo/pull/142', number: 142 },
+  previewUrl: 'http://localhost:5173',
+  previewHtml: `<!doctype html><html><body style="margin:0;font:14px system-ui;color:#111">
+<header style="display:flex;gap:16px;align-items:center;padding:16px 24px;border-bottom:1px solid #eee"><strong style="font-weight:500">Acme</strong><a href="#" style="color:#666">Docs</a><a href="#" style="color:#666">Pricing</a><button style="margin-left:auto;padding:6px 12px;border:0;border-radius:6px;background:#111;color:#fff">Sign in</button></header>
+<main style="padding:40px 24px;max-width:520px"><h1 style="font-size:24px;font-weight:500;margin:0 0 8px">Bridge status</h1><p style="color:#666;margin:0 0 24px">Reconnects after wake: 3 today, all recovered.</p>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div style="padding:16px;border-radius:6px;background:#f4f4f5">Queued<br><span style="font-size:20px">0</span></div><div style="padding:16px;border-radius:6px;background:#f4f4f5">Latency<br><span style="font-size:20px">42 ms</span></div></div></main></body></html>`,
+  changes: [
+    { path: 'infra/bridge/src/claude.ts', additions: 48, deletions: 12 },
+    { path: 'infra/bridge/src/reconnect.ts', additions: 112, deletions: 64 },
+    { path: 'infra/bridge/test/reconnect.test.ts', additions: 86, deletions: 0 },
+    { path: 'apps/server/src/services/dorks.ts', additions: 9, deletions: 3 },
+    { path: 'docs/architecture.md', additions: 4, deletions: 1 },
+  ],
+  artifacts: ['wake-before.png', 'wake-after.png', 'reconnect-timeline.png', 'bridge-states.png', 'queue-flush.png'].map((name, i) => ({
+    id: name,
+    name,
+    type: 'PNG',
+    src: `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 100"><rect width="160" height="100" fill="hsl(${210 + i * 24} 40% 92%)"/><rect x="40" y="30" width="80" height="44" rx="4" fill="white"/><rect x="48" y="38" width="40" height="4" rx="2" fill="hsl(${210 + i * 24} 20% 70%)"/><rect x="48" y="48" width="64" height="4" rx="2" fill="hsl(${210 + i * 24} 10% 85%)"/></svg>`)}`,
+  })),
+}
+
 /** The app frame with a scripted conversation and no server: for looking at the design (dev builds only). */
 export function Demo() {
   const [blocks, setBlocks] = useState(initialBlocks)
@@ -39,6 +62,7 @@ export function Demo() {
   const [showNew, setShowNew] = useState(false)
   const [repo, setRepo] = useState('acme/demo')
   const [provider, setProvider] = useState<AgentProvider>('claude')
+  const [detailsOpen, setDetailsOpen] = useDetailsOpen()
   const send = () => {
     const id = crypto.randomUUID()
     setBlocks((current) => [
@@ -56,17 +80,19 @@ export function Demo() {
 
   return (
     <FrameLayout sidebar={<AppSidebarView chats={chats.map((c) => (c.id === 'preview' ? { ...c, working: !stopped } : c))} chatTo="/dev/chat" orderKey="dorks.demo.chat-preview" />}>
-      <div className="flex h-full min-h-0 flex-col" data-preview>
-        <PageHeader
+      <div className="flex h-full min-h-0" data-preview>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <PageHeader divider={showNew || !detailsOpen}
           title={showNew ? 'New session' : 'Fix flaky bridge reconnect after wake'}
-          subtitle={showNew ? 'Mock preview · no backend' : <>acme/demo · <span data-testid="state">{stopped ? 'idle' : 'working'}</span> · mock preview</>}
-          actions={<Button variant="ghost" size="sm" onClick={() => setShowNew(!showNew)}>{showNew ? 'Back to thread' : 'New session'}</Button>}
+          actions={<>
+            {!detailsOpen && !showNew && <ShowDetailsButton onClick={() => setDetailsOpen(true)} />}
+          </>}
         />
         {showNew ? (
           <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col justify-center gap-8 px-4 py-8">
             <div className="space-y-2">
-              <h2 className="text-3xl font-semibold tracking-tight">What should we work on?</h2>
-              <p className="text-muted-foreground">Choose a repository and agent, then describe the change you want.</p>
+              <h2 className="text-lg font-medium">What should we work on?</h2>
+              <p className="text-sm text-muted-foreground">Choose a repository and agent, then describe the change you want.</p>
             </div>
             <div className="-mx-4">
               <Composer text={text} setText={setText} repo={repo} setRepo={setRepo} provider={provider} setProvider={setProvider} onSubmit={send} pending={false} error="" />
@@ -87,6 +113,8 @@ export function Demo() {
             <Composer text={text} setText={setText} provider="claude" onSubmit={send} pending={false} error="" onStop={stopped ? undefined : stop} />
           </section>
         )}
+      </div>
+      {detailsOpen && !showNew && <ChatDetails data={details} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} className={DETAILS_WIDTH} />}
       </div>
     </FrameLayout>
   )

@@ -13,6 +13,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarTrigger,
 } from '@dorks/ui/sidebar'
 import { useDisconnect } from './ConnectionGate'
 import { ChatList, type Chat, type ChatRoute } from './ChatList'
@@ -30,7 +31,8 @@ const MOVING: ReadonlySet<DorkState> = new Set(['creating', 'working', 'waking']
 
 /**
  * The app's sidebar, fed from the user's dorks: navigation, then the chats split by whether they have a pull request yet
- * ("Ready" has one, "Drafts" does not). Each group is reorderable and remembers its order. It is a floating glass panel.
+ * ("Ready" has one, "Drafts" does not). Each group is reorderable and remembers its order. It sits flat on the app fill, divided
+ * from the page by a full-height line, and collapses off-canvas from its own toggle.
  */
 export function AppSidebar() {
   const dorks = useDorks(false)
@@ -45,9 +47,10 @@ export function AppSidebarView({ chats, onDisconnect, orderKey = 'dorks.chat-ord
   const ready = chats.filter((c) => c.pr)
   const drafts = chats.filter((c) => !c.pr)
   return (
-    <Sidebar variant="floating" collapsible="offcanvas">
-      <SidebarHeader className="px-3 pt-4">
-        <span className="px-1 text-sm font-semibold tracking-tight">Dorks</span>
+    <Sidebar collapsible="offcanvas">
+      <SidebarHeader data-tauri-drag-region className="h-12 flex-row items-center justify-between px-3 py-0">
+        <span className="px-1 text-sm font-medium">Dorks</span>
+        <SidebarTrigger className="text-muted-foreground" />
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>

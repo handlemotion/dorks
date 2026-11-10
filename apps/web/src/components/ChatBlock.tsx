@@ -101,7 +101,7 @@ export function ChatMessages({ blocks }: { blocks: Block[] }) {
             <MessageContent>
               <Bubble align="end">
                 {/* White in light and dark; no outline, since white against the panel fill already contrasts 1.2:1 or more (see packages/ui/README.md). `!` beats the bubble variant background. */}
-                <BubbleContent className="bg-user-bubble! text-user-bubble-foreground!">
+                <BubbleContent className="rounded-[10px]! px-3! py-2! bg-user-bubble! text-user-bubble-foreground!">
                   {entry.block.text}
                 </BubbleContent>
               </Bubble>

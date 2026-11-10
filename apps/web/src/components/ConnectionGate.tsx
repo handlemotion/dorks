@@ -133,5 +133,5 @@ function GateCard({ as = 'section', className = '', children, ...props }: { as?:
 }
 
 function GateTitle({ children }: { children: ReactNode }) {
-  return <h1 className="text-xl font-semibold tracking-tight">{children}</h1>
+  return <h1 className="text-lg font-medium tracking-tight">{children}</h1>
 }

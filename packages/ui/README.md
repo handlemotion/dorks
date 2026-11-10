@@ -50,10 +50,15 @@ by accident, and `pnpm test` enforces the first one.
    `#f2f2f2` is 1.12:1, under 1.15, so a raised surface carries the `--surface-line` hairline (`#e2e2e2`) in light; dark separates on fill.
    When you add a surface, give it a light and a dark value.
 4. **User message bubbles are white** (`--user-bubble`), in light and dark, so they pop against the app. Assistant messages are unbubbled text.
-5. **Controls are 6px.** Buttons, inputs, textareas, selects and menu triggers use `--control-radius` (6px, `src/glass.css`) instead of the
-   preset's pill, applied by `data-slot` so the component files stay unmodified. The one exception is onboarding's step buttons, which are
-   pills: they set `--control-radius: var(--radius-pill)` on themselves. Focus on a control is its border turning the brand blue (`--ring`),
-   with no glow around it. Dialogs and toasts are styled the same way (white sheet with an `--app` footer band; brand-blue toasts).
+5. **Everything is 6px.** Controls, menus, dialogs, message bubbles, sidebar rows, cards and Chat details all use `--control-radius` (6px,
+   `src/glass.css`): the whole `rounded-sm` to `rounded-4xl` scale maps to it (`src/styles.css`), and controls also get it by `data-slot`, so
+   the component files stay unmodified. The one exception is onboarding's step buttons, which are pills: they set
+   `--control-radius: var(--radius-pill)` on themselves.
+   Focus on a control is its border turning the brand blue (`--ring`), with no glow around it. Dialogs and toasts are styled the same way
+   (white sheet with an `--app` footer band; brand-blue toasts).
+6. **Nothing heavier than medium (500), and two text sizes.** `text-sm` for content, `text-xs` for secondary text (a focused page's one title: an onboarding step, the connect screen,
+   the new-session page, is `text-lg`). The heavier weights are mapped to 500 in `src/glass.css`, and `pnpm test` fails on `font-semibold` or
+   heavier in app code.
 
 | Pair (from `contrast.mjs`) | Light | Dark |
 |---|---|---|
