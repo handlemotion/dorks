@@ -1,13 +1,16 @@
 // Puts the `dorks-server` sidecar where Tauri expects it: src-tauri/binaries/dorks-server-<target-triple>.
 //
-//   node scripts/prepare-sidecar.mjs [--target aarch64-apple-darwin|x86_64-apple-darwin|universal-apple-darwin] [--release] [--require-server]
+//   node scripts/prepare-sidecar.mjs [--target aarch64-apple-darwin|x86_64-apple-darwin|universal-apple-darwin] [--release] [--stub]
 //
-// The real server (apps/server: Bun, Hono, SQLite) is looked up as dorks-server-<triple> in $DORKS_SERVER_DIST (default
-// apps/server/dist). Until it exists, the stub from crates/shell-core is built instead, so the shell can be built and run now.
-// --require-server (used by the release workflow) fails instead of falling back to the stub. `universal-apple-darwin`
-// builds both architectures and joins them with lipo.
+// The real server (apps/server: Bun, Hono, SQLite) is the default. For each architecture it is taken from
+// $DORKS_SERVER_DIST (default apps/server/dist) as dorks-server-<triple>, and built first when missing or older than the
+// server sources: with `pnpm --filter @dorks/server run build` once that package has a build script, otherwise by compiling
+// src/main.ts directly with `bun build --compile` (the same thing, one target at a time). Needs Bun on PATH.
+// --stub swaps in the stand-in server from crates/shell-core instead, for working on the shell without Bun. It is never the
+// default, so a release or a plain `pnpm build` cannot ship the stub by accident.
+// `universal-apple-darwin` prepares both architectures and joins them with lipo.
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, chmodSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, chmodSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,17 +26,60 @@ const option = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : u
 const host = process.arch === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin";
 const target = option("--target") ?? process.env.TAURI_TARGET_TRIPLE ?? host;
 const release = flag("--release");
-const requireServer = flag("--require-server");
-const serverDist = resolve(process.env.DORKS_SERVER_DIST ?? join(desktop, "..", "server", "dist"));
+const useStub = flag("--stub");
+const serverDir = resolve(desktop, "..", "server");
+const serverDist = resolve(process.env.DORKS_SERVER_DIST ?? join(serverDir, "dist"));
+const BUN_TARGETS = { "aarch64-apple-darwin": "bun-darwin-arm64", "x86_64-apple-darwin": "bun-darwin-x64" };
+
+/** Newest modification time under a directory (the server sources), 0 if it does not exist. */
+function newest(dir) {
+  if (!existsSync(dir)) return 0;
+  return readdirSync(dir, { withFileTypes: true }).reduce((latest, entry) => {
+    const path = join(dir, entry.name);
+    return Math.max(latest, entry.isDirectory() ? newest(path) : statSync(path).mtimeMs);
+  }, 0);
+}
+
+function stale(binary) {
+  return !existsSync(binary) || statSync(binary).mtimeMs < Math.max(newest(join(serverDir, "src")), statSync(join(serverDir, "package.json")).mtimeMs);
+}
+
+let builtAll = false;
+function buildServer(triple) {
+  if (!BUN_TARGETS[triple]) throw new Error(`no Bun target for ${triple}`);
+  if (existsSync(join(serverDir, "scripts", "build.ts"))) {
+    // The server's own build writes every target into its dist; run it once.
+    if (!builtAll) execFileSync("pnpm", ["--filter", "@dorks/server", "run", "build"], { cwd: desktop, stdio: "inherit" });
+    builtAll = true;
+    return;
+  }
+  mkdirSync(serverDist, { recursive: true });
+  execFileSync(
+    "bun",
+    ["build", join(serverDir, "src", "main.ts"), "--compile", `--target=${BUN_TARGETS[triple]}`, "--outfile", join(serverDist, `dorks-server-${triple}`)],
+    { cwd: serverDir, stdio: "inherit" },
+  );
+}
 
 function obtain(triple) {
-  const real = join(serverDist, `dorks-server-${triple}`);
-  if (existsSync(real)) return { path: real, kind: "server" };
-  if (requireServer) {
-    console.error(`prepare-sidecar: ${real} not found and --require-server is set`);
-    process.exit(1);
+  if (!useStub) {
+    const real = join(serverDist, `dorks-server-${triple}`);
+    if (stale(real)) {
+      console.log(`prepare-sidecar: building the server for ${triple}`);
+      try {
+        buildServer(triple);
+      } catch (error) {
+        console.error(`prepare-sidecar: could not build the server (${error.message}); is Bun installed? Use --stub to work without it.`);
+        process.exit(1);
+      }
+    }
+    if (!existsSync(real)) {
+      console.error(`prepare-sidecar: ${real} not found after building`);
+      process.exit(1);
+    }
+    return { path: real, kind: "server" };
   }
-  console.log(`prepare-sidecar: no real server for ${triple} in ${serverDist}; building the stub`);
+  console.log(`prepare-sidecar: --stub: building the stand-in server for ${triple}`);
   execFileSync("cargo", ["build", "-p", "dorks-shell-core", "--bin", "dorks-server-stub", "--target", triple, ...(release ? ["--release"] : [])], {
     cwd: tauri,
     stdio: "inherit",
