@@ -5,7 +5,17 @@ import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { ClientEvent } from "@dorks/shared";
-import type { Dork, Settings } from "./types.ts";
+import type { Dork, Settings, SnapshotStatus } from "./types.ts";
+
+const SNAPSHOT_STEPS = [
+  ["prepare", "Cleaning up earlier builds"],
+  ["create", "Creating a build sandbox"],
+  ["start", "Waiting for the sandbox to start"],
+  ["upload", "Uploading the bridge and installer"],
+  ["install", "Installing tools (about a minute)"],
+  ["save", "Saving the snapshot"],
+  ["finish", "Finishing up"],
+] as const;
 
 export interface MockOptions {
   port?: number;
@@ -37,6 +47,14 @@ export interface MockServer {
   /** Rewrites an event's fields in place (same seq), like a growing assistant message. */
   rewrite(dorkId: string, seq: number, patch: Record<string, unknown>): void;
   broadcast(message: Record<string, unknown>): void;
+  /** The scripted "Prepare Boat" build. */
+  snapshot: {
+    status(): SnapshotStatus;
+    /** The next build fails at its install step with this message (the previous snapshot stays in use). */
+    failNextBuild(message: string): void;
+    /** Pretend this app now carries a newer bridge: a built snapshot becomes stale. */
+    newBridge(): void;
+  };
   /** Number of open /api/live streams. */
   liveClients(): number;
   /** Drops every open /api/live stream (clients should reconnect and refetch). */
@@ -84,6 +102,34 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
 
   const broadcast = (m: Record<string, unknown>) => {
     for (const r of live) r.write(`data: ${JSON.stringify(m)}\n\n`);
+  };
+
+  // The scripted "Prepare Boat" build: the same states, steps and messages as apps/server (docs/architecture.md, "Base snapshot").
+  let bundle = 1;
+  let failBuild: string | null = null;
+  const snap: SnapshotStatus = {
+    state: opts.configured ? "ready" : "none",
+    snapshot: opts.configured ? "dorks-base-20260101" : null,
+    managed: !!opts.configured,
+    stale: false,
+    step: null,
+    stepIndex: -1,
+    stepCount: SNAPSHOT_STEPS.length,
+    message: null,
+    error: null,
+    startedAt: null,
+    finishedAt: null,
+    builtBundleId: opts.configured ? "mock-bundle-1" : null,
+    currentBundleId: "mock-bundle-1",
+    canBuild: true,
+    cannotBuildReason: null,
+  };
+  const snapView = (): SnapshotStatus => {
+    snap.canBuild = settings.boatKey;
+    snap.cannotBuildReason = settings.boatKey ? null : "Add your Boat API key first.";
+    snap.managed = !!snap.snapshot && settings.baseSnapshotId === snap.snapshot;
+    snap.stale = snap.managed && snap.builtBundleId !== snap.currentBundleId;
+    return { ...snap };
   };
   const later = (ms: number, fn: () => void) => {
     const t = setTimeout(() => {
@@ -283,6 +329,40 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         return json(res, 200, {});
       }
     }
+    if (path === "/api/snapshot" && method === "GET") return json(res, 200, snapView());
+    if (path === "/api/snapshot/build" && method === "POST") {
+      if (body.force !== undefined && typeof body.force !== "boolean") return fail(res, "invalid", "force must be a boolean");
+      if (!settings.boatKey) return fail(res, "not_configured", "Add your Boat API key first.");
+      const current = snapView();
+      if (snap.state === "building" || (!body.force && snap.state !== "failed" && snap.snapshot && current.managed && !current.stale)) return json(res, 202, current);
+      const fresh = SNAPSHOT_STEPS.length;
+      Object.assign(snap, { state: "building", error: null, startedAt: Date.now(), finishedAt: null });
+      const stepTo = (i: number) => {
+        Object.assign(snap, { step: SNAPSHOT_STEPS[i]![0], stepIndex: i, message: SNAPSHOT_STEPS[i]![1] });
+        broadcast({ t: "snapshot" });
+      };
+      stepTo(0);
+      for (let i = 1; i < fresh; i++) {
+        later(tick * i, () => {
+          if (snap.state !== "building") return;
+          if (failBuild && i === 4) {
+            Object.assign(snap, { state: "failed", step: null, stepIndex: -1, message: null, error: failBuild, finishedAt: Date.now() });
+            failBuild = null;
+            return broadcast({ t: "snapshot" });
+          }
+          stepTo(i);
+        });
+      }
+      later(tick * fresh, () => {
+        if (snap.state !== "building") return;
+        const name = "dorks-base-mock0001";
+        Object.assign(snap, { state: "ready", snapshot: name, step: null, stepIndex: -1, message: null, error: null, finishedAt: Date.now(), builtBundleId: `mock-bundle-${bundle}` });
+        settings.baseSnapshotId = name;
+        broadcast({ t: "settings" });
+        broadcast({ t: "snapshot" });
+      });
+      return json(res, 202, snapView());
+    }
     if (path === "/api/secrets" && method === "GET") return json(res, 200, [...secrets.keys()].sort());
     const sm = /^\/api\/secrets\/([^/]+)$/.exec(path);
     if (sm) {
@@ -319,6 +399,16 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     append,
     rewrite,
     broadcast,
+    snapshot: {
+      status: snapView,
+      failNextBuild(message) {
+        failBuild = message;
+      },
+      newBridge() {
+        snap.currentBundleId = `mock-bundle-${++bundle}`;
+        broadcast({ t: "snapshot" });
+      },
+    },
     liveClients: () => live.size,
     dropLive() {
       for (const r of live) r.end();

@@ -53,6 +53,31 @@ export interface SettingsPatch {
   commentPolicy?: CommentPolicy;
 }
 
+/** The "Prepare Boat" build of the base snapshot (`GET /api/snapshot`, docs/architecture.md "Base snapshot"). */
+export interface SnapshotStatus {
+  /** none: never built. building: running. failed: the last attempt failed (the previous good snapshot, if any, is still in use). ready: built. */
+  state: "none" | "building" | "ready" | "failed";
+  /** The saved snapshot this app last built, or null. */
+  snapshot: string | null;
+  /** True when sandboxes start from `snapshot` (it is `settings.baseSnapshotId`); false when the name was entered by hand. */
+  managed: boolean;
+  /** Built from an older bridge or installer than this app carries: rebuild to update. */
+  stale: boolean;
+  step: "prepare" | "create" | "start" | "upload" | "install" | "save" | "finish" | null;
+  stepIndex: number;
+  stepCount: number;
+  /** What the running step is doing, in words. */
+  message: string | null;
+  /** Why the last attempt failed, written for the user. */
+  error: string | null;
+  startedAt: number | null;
+  finishedAt: number | null;
+  builtBundleId: string | null;
+  currentBundleId: string | null;
+  canBuild: boolean;
+  cannotBuildReason: string | null;
+}
+
 export interface EventsPage {
   events: ClientEvent[];
   hasMore: boolean;
@@ -65,7 +90,8 @@ export type LiveMessage =
   | { t: "dork"; dorkId: string }
   | { t: "events"; dorkId: string; seq: number }
   | { t: "subscriptions"; dorkId: string }
-  | { t: "settings" };
+  | { t: "settings" }
+  | { t: "snapshot" };
 
 export interface PrRefInput {
   repo: string;

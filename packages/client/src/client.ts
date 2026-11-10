@@ -3,7 +3,7 @@ import { EventsFeed } from "./events.ts";
 import { createApi, ApiError, type ApiConfig } from "./http.ts";
 import { connectLive, type LiveStatus } from "./live.ts";
 import { Query, type QueryOptions, type Store } from "./store.ts";
-import type { CreateDorkInput, Dork, LiveMessage, PrRefInput, Settings, SettingsPatch } from "./types.ts";
+import type { CreateDorkInput, Dork, LiveMessage, PrRefInput, Settings, SettingsPatch, SnapshotStatus } from "./types.ts";
 
 export interface ClientConfig extends ApiConfig {
   /** Events fetched per page. */
@@ -109,6 +109,9 @@ export class DorksClient {
         this.invalidate("settings");
         this.invalidate("secrets");
         break;
+      case "snapshot":
+        this.invalidate("snapshot");
+        break;
     }
   }
 
@@ -132,6 +135,11 @@ export class DorksClient {
 
   settings() {
     return this.query<Settings>("settings", () => this.api.getSettings());
+  }
+
+  /** The base-snapshot build ("Prepare Boat"). The live stream refreshes it at every step. */
+  snapshot() {
+    return this.query<SnapshotStatus>("snapshot", () => this.api.getSnapshot());
   }
 
   secretNames() {
@@ -199,6 +207,15 @@ export class DorksClient {
     updateSettings: async (patch: SettingsPatch) => {
       await this.api.updateSettings(patch);
       this.invalidate("settings");
+    },
+    /** Starts "Prepare Boat". Resolves with the status right after it started; follow progress with `snapshot()` / `useSnapshot()`. */
+    buildSnapshot: async (force = false) => {
+      try {
+        return await this.api.buildSnapshot(force);
+      } finally {
+        this.invalidate("snapshot");
+        this.invalidate("settings");
+      }
     },
     setSecret: async (name: string, value: string) => {
       await this.api.setSecret(name, value);

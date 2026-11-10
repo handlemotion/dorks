@@ -3,7 +3,7 @@ import { toAppError, type SubscriptionView } from "@dorks/shared";
 import type { DorksClient, ConnectionState } from "./client.ts";
 import type { EventsState } from "./events.ts";
 import type { QueryState, Store } from "./store.ts";
-import type { Dork, Settings } from "./types.ts";
+import type { Dork, Settings, SnapshotStatus } from "./types.ts";
 
 const Ctx = createContext<DorksClient | null>(null);
 
@@ -46,6 +46,15 @@ export function useDork(dorkId: string): Dork | null | undefined {
 
 export function useSettings(): Settings | undefined {
   return useStore(useDorksClient().settings()).data;
+}
+
+/** The "Prepare Boat" build status with its load state; `undefined` data while loading. */
+export function useSnapshotState(): QueryState<SnapshotStatus> {
+  return useStore(useDorksClient().snapshot());
+}
+
+export function useSnapshot(): SnapshotStatus | undefined {
+  return useSnapshotState().data;
 }
 
 export function useSecretNames(): string[] | undefined {

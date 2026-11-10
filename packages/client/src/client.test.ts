@@ -212,3 +212,54 @@ describe("events feed", () => {
     await createApi({ baseUrl: server.url, token: server.token }).setArchived(id, true);
   }
 });
+
+describe("base snapshot (Prepare Boat)", () => {
+  it("follows a build step by step over the live stream and ends with the new snapshot in use", async () => {
+    await server.close();
+    server = await startMockServer({ tick: 15 }); // not configured: no snapshot yet
+    server.settings.boatKey = true;
+    const c = connect();
+    const snap = watch(c.snapshot());
+    const settings = watch(c.settings());
+    await waitFor(() => snap.getSnapshot().data?.state === "none", "initial status");
+    expect(settings.getSnapshot().data?.baseSnapshotId).toBeNull();
+
+    const steps: string[] = [];
+    snap.subscribe(() => {
+      const s = snap.getSnapshot().data;
+      if (s?.step && steps.at(-1) !== s.step) steps.push(s.step);
+    });
+    const started = await c.actions.buildSnapshot();
+    expect(started).toMatchObject({ state: "building", step: "prepare", stepIndex: 0 });
+    await waitFor(() => snap.getSnapshot().data?.state === "ready", "build finished", 5000);
+    expect(steps).toEqual(expect.arrayContaining(["create", "install", "save"])); // progress arrived without polling
+    expect(snap.getSnapshot().data).toMatchObject({ snapshot: "dorks-base-mock0001", managed: true, stale: false, error: null });
+    await waitFor(() => settings.getSnapshot().data?.baseSnapshotId === "dorks-base-mock0001", "settings follow the build");
+  });
+
+  it("reports a failure, keeps the last good snapshot, retries, and flags a stale one", async () => {
+    const c = connect();
+    const snap = watch(c.snapshot());
+    await waitFor(() => snap.getSnapshot().data?.state === "ready", "initial status");
+    expect(snap.getSnapshot().data).toMatchObject({ snapshot: "dorks-base-20260101", managed: true, stale: false });
+
+    server.snapshot.newBridge();
+    await waitFor(() => snap.getSnapshot().data?.stale === true, "stale after a newer bridge");
+
+    server.snapshot.failNextBuild("The installer failed (exit 100). E: Unable to locate package");
+    await c.actions.buildSnapshot();
+    await waitFor(() => snap.getSnapshot().data?.state === "failed", "failed build", 5000);
+    expect(snap.getSnapshot().data).toMatchObject({ error: expect.stringContaining("exit 100"), snapshot: "dorks-base-20260101" });
+    expect(server.settings.baseSnapshotId).toBe("dorks-base-20260101"); // still in use
+
+    await c.actions.buildSnapshot(); // a failed attempt is retried without force
+    await waitFor(() => snap.getSnapshot().data?.state === "ready" && snap.getSnapshot().data?.stale === false, "rebuilt", 5000);
+  });
+
+  it("refuses without a Boat key, with the server's message", async () => {
+    await server.close();
+    server = await startMockServer({ tick: 15 });
+    const err = await createApi({ baseUrl: server.url, token: server.token }).buildSnapshot().catch((e) => e);
+    expect(toAppError(err)).toEqual({ code: "not_configured", message: "Add your Boat API key first." });
+  });
+});
