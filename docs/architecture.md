@@ -41,7 +41,7 @@ Runtime: Bun (`bun:sqlite`, `Bun.serve`), compiled with `bun build --compile` in
 
 - All state changes are **synchronous functions over one SQLite connection**, wrapped in `BEGIN IMMEDIATE ... COMMIT`. A thrown error rolls back everything (this is how a rejected message to an archived dork also un-persists its outbox row).
 - Anything async (Boat calls, GitHub calls, HMAC verification, decryption) happens **outside** transactions and reports back through a transactional function carrying the box-operation generation (`op_gen`), exactly as before, so a stale result from a superseded operation is ignored.
-- Effects that must survive a crash are rows in `timers`: `owner` (a dork id or `""`), `name`, `due_at`, `payload`. Box jobs are timers named `box:create`, `box:resume`, `box:pause`, `box:destroy` and `orphan:<boxId>`. A timer is claimed by deleting its row in the transaction that starts running it (at-most-once, like Convex scheduled functions; every provider call is idempotent). On boot the scheduler reloads the table, so due timers fire immediately.
+- Effects that must survive a crash are rows in `timers`: `owner` (a dork id or `""`), `name`, `due_at`, `payload`. Jobs (work that calls a provider, so it cannot run in a transaction) are timers too: `box:create:<gen>`, `box:resume:<gen>`, `box:pause:<gen>` (one row per operation generation, so a superseded operation still runs and its stale result is ignored), `box:destroy`, `orphan:<boxId>`, `stall:<subscriptionId>` and the global `poll`. A timer is claimed by deleting its row in the transaction that starts running it (at-most-once, like Convex scheduled functions; every provider call is idempotent). On boot the scheduler reloads the table, so due timers fire immediately.
 - After the outermost commit, the transaction's change set is published to live listeners (SSE clients and connected bridge sessions). A rollback discards it.
 
 ## Configuration
@@ -57,7 +57,10 @@ Environment (all optional except where noted); a desktop shell sets these when i
 | `DORKS_OWNER_TOKEN` | generated | Bearer token for the UI API. Generated once into `secrets.json` if unset |
 | `DORKS_UI_ORIGINS` | tauri + localhost:3000 | Comma-separated browser origins allowed by CORS |
 | `BOX_PROVIDER` | `boat` | `boat`, or `sim` for the local simulator and tests |
-| `SIM_HOST_KEY` | none | Required when `BOX_PROVIDER=sim`; guards `/sim/*` |
+| `SIM_HOST_KEY` | none | Required when `BOX_PROVIDER=sim`; guards `GET /sim/boxes` (header `x-sim-host-key`), which `infra/bridge-sim/host.mjs` polls to start and stop fake sandboxes |
+| `DORKS_PARENT_PID` | none | The supervising process (the desktop shell sets it). The server shuts down gracefully within a few seconds of that process disappearing |
+| `SIM_LATENCY_MS` | `700` | Sim only: how long a simulated sandbox takes to stop or start, so the polling host always notices |
+| `DORKS_DEBUG_BRIDGE` | none | Logs bridge frame names and sizes to stderr; never `configure` results or secrets |
 
 `secrets.json` (mode 600) holds `bridgeSecretKey` (HMAC key for per-dork bridge secrets), `encryptionKey` (AES-GCM, base64 32 bytes) and `ownerToken`, generated on first run. The Boat API key, Claude token, GitHub token and CLI secrets are **settings** stored encrypted in SQLite, so the UI can change them without touching the environment.
 
@@ -89,7 +92,7 @@ IDs are UUID strings. Times are epoch milliseconds.
 | `POST /api/dorks/:id/subscriptions` | `{repo, number}` | `{}` (user subscribe; un-stalls and resets the CI budget) |
 | `DELETE /api/dorks/:id/subscriptions` | `{repo, number}` | `{}` |
 | `POST /api/dorks/:id/subscriptions/resume` | `{repo, number}` | `{}` |
-| `GET /api/settings` | | `{claudeToken, boatKey, github: {configured, login?}, boatOrg, boatEnvironment, baseSnapshotId, sleepMinutes, commentPolicy, publicUrlConfigured}`: booleans and plain values only, never secrets |
+| `GET /api/settings` | | `{claudeToken, boatKey, github: {configured, login?}, boatOrg, boatEnvironment, baseSnapshotId, sleepMinutes, commentPolicy, publicUrlConfigured, boxProvider}`: booleans and plain values only, never secrets |
 | `PUT /api/settings` | any subset of `{boatKey, boatOrg, claudeToken, githubToken, boatEnvironment, baseSnapshotId, sleepMinutes, commentPolicy}` | `{}`. Token fields are write-only; an empty string clears one |
 | `GET /api/secrets` | | sorted names `string[]` |
 | `PUT /api/secrets/:name` | `{value}` | `{}` (`^[A-Z][A-Z0-9_]{0,63}$`, 16 KB max) |
@@ -133,7 +136,7 @@ One stream per client. Messages are `data: <json>\n\n`; a `: ping` comment every
 
 **Pushes** (server to bridge): `{"t":"commands","cmds":[{cid, frame: CommandFrame}]}` is the **snapshot of unacknowledged commands** and is re-sent whenever it changes (and once right after `auth_ok`). Delivery is idempotent: the bridge dedupes by `cid`/message id and acknowledges with a `push` `ack` frame, which removes the command. This gives resume-after-reconnect for free: after a drop the bridge re-auths, calls `connect` (learning `afterBridgeSeq`, the event cursor, so it replays events above it) and receives the current snapshot. `{"t":"subscriptions","views":SubscriptionView[]}` is sent likewise for the bridge's PR cache.
 
-`push` frames, `ToBridge`, `FromBridge` and `CommandFrame` are the zod types in `packages/shared/src/bridge.ts`, unchanged except that the legacy Codex device-code frames are gone: Codex always authenticates through a Boat environment.
+`push` frames, `ToBridge`, `FromBridge` and `CommandFrame` are the zod types in `packages/shared/src/bridge.ts`. The server no longer queues `gh_token` commands and ignores the legacy Codex device-code frames (`codex_login`; `codex_issue` still becomes an error event): Codex always authenticates through a Boat environment, so `configure` always says `codexAuthSource: "boat"`.
 
 The `Transport` interface in `infra/bridge/src/transport.ts` is unchanged; `WsTransport` implements it over this protocol with reconnect and resume.
 
@@ -153,6 +156,18 @@ Identity: the dork acts as whoever owns the token. Events authored by the token'
 - Bridge listener: loopback only; the tunnel forwards to it. Only `/bridge` upgrades; authentication is the per-dork HMAC; secrets are returned only over an authenticated socket and never persisted in command rows.
 - At rest: Boat key, Claude token, GitHub token and CLI secrets are AES-GCM encrypted (`core/crypto.ts`, additional data binds each to its purpose); `secrets.json` is mode 600.
 - The sandbox's `BRIDGE_URL` is fixed at creation, so `DORKS_PUBLIC_URL` must be stable (a stable tunnel hostname).
+
+## Build and test
+
+```sh
+pnpm --filter @dorks/server test         # vitest on Node 24 (node:sqlite), in-memory database, fake clock and sandbox provider
+pnpm --filter @dorks/server typecheck
+pnpm --filter @dorks/server build        # bun build --compile -> apps/server/dist/dorks-server-<target triple> (+ dorks-server for the host); `--all` for both macOS targets
+node apps/server/scripts/e2e.mjs         # a real server process (SERVER_BIN=<binary> for the compiled one) with the simulated sandbox host
+BRIDGE_IMPL=real node apps/server/scripts/e2e.mjs   # same, with the real in-box bridge and a fake Claude CLI
+```
+
+The compiled sidecar is about 64 MB (arm64) / 70 MB (x64): that is the Bun runtime plus the bundled code. The binary needs no files next to it; the database and `secrets.json` live in `DORKS_DATA_DIR`.
 
 ## Out of scope here
 
