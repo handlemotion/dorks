@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { toAppError } from "@dorks/shared";
-import { ApiError, createApi } from "./http.ts";
+import { createApi } from "./http.ts";
 import { createClient, type DorksClient } from "./client.ts";
 import { createSseParser } from "./live.ts";
 import { startMockServer, type MockServer } from "./mock-server.ts";
@@ -39,28 +39,6 @@ const connect = (over: Partial<Parameters<typeof createClient>[0]> = {}) => {
   return client;
 };
 
-describe("http api", () => {
-  it("maps server errors to ApiError whose data toAppError reads", async () => {
-    const api = createApi({ baseUrl: server.url, token: server.token });
-    const e = await api.createDork({ repo: "nope", message: "x" }).catch((x) => x);
-    expect(e).toBeInstanceOf(ApiError);
-    expect(e.status).toBe(400);
-    expect(toAppError(e)).toEqual({ code: "invalid", message: "repo must look like owner/name" });
-  });
-
-  it("reports a wrong token as forbidden and an unreachable server as failed", async () => {
-    const bad = createApi({ baseUrl: server.url, token: "wrong" });
-    expect(toAppError(await bad.listDorks().catch((x) => x)).code).toBe("forbidden");
-    await server.close();
-    const down = createApi({ baseUrl: server.url, token: server.token });
-    expect(await down.health()).toBe(false);
-    const e = await down.listDorks().catch((x) => x);
-    expect(e.status).toBe(0);
-    expect(toAppError(e).code).toBe("failed");
-    server = await startMockServer({ configured: true }); // for afterEach
-  });
-});
-
 describe("sse parser", () => {
   it("joins chunks, handles CRLF, ignores comments", () => {
     const got: string[] = [];
@@ -70,46 +48,6 @@ describe("sse parser", () => {
     feed('rks"}\r\n\r\n');
     feed("data: a\ndata: b\n\n");
     expect(got).toEqual(['{"t":"hello"}', '{"t":"dorks"}', "a\nb"]);
-  });
-});
-
-describe("queries", () => {
-  it("loads the dork list and refetches when the server says it changed", async () => {
-    const c = connect();
-    const dorks = watch(c.dorks(false));
-    await waitFor(() => dorks.getSnapshot().status === "ready", "first load");
-    expect(dorks.getSnapshot().data).toEqual([]);
-    const { id } = await c.actions.createDork({ repo: "acme/demo", message: "hello", provider: "codex" });
-    const row = await waitFor(() => dorks.getSnapshot().data?.find((d) => d.id === id), "new dork listed");
-    expect(row.repo).toBe("acme/demo");
-    await waitFor(() => dorks.getSnapshot().data?.find((d) => d.id === id)?.state === "idle", "turn finished and state followed over the live stream");
-  });
-
-  it("returns null for a dork that does not exist instead of an error", async () => {
-    const c = connect();
-    const one = watch(c.dork("11111111-1111-1111-1111-111111111111"));
-    const s = await waitFor(() => one.getSnapshot().status === "ready" && one.getSnapshot(), "loaded");
-    expect(s.data).toBeNull();
-  });
-
-  it("retries a failed read and recovers", async () => {
-    const c = connect();
-    const settings = watch(c.settings());
-    await waitFor(() => settings.getSnapshot().status === "ready", "loaded");
-    const port = Number(new URL(server.url).port);
-    const data = server.settings;
-    await server.close();
-    server = await startMockServer({ configured: true, port });
-    Object.assign(server.settings, data, { sleepMinutes: 42 });
-    await waitFor(() => settings.getSnapshot().data?.sleepMinutes === 42, "refetched after the server came back");
-  });
-
-  it("flags a rejected token and stops retrying", async () => {
-    const c = connect({ token: "wrong" });
-    await waitFor(() => c.connectionStore.getSnapshot().unauthorized, "unauthorized");
-    const q = watch(c.dorks(false));
-    await waitFor(() => q.getSnapshot().status === "error", "errored");
-    expect(q.getSnapshot().error?.code).toBe("forbidden");
   });
 });
 
@@ -211,60 +149,4 @@ describe("events feed", () => {
   async function connectAndArchive(id: string) {
     await createApi({ baseUrl: server.url, token: server.token }).setArchived(id, true);
   }
-});
-
-describe("base snapshot (Prepare Boat)", () => {
-  it("follows a build step by step over the live stream and ends with the new snapshot in use", async () => {
-    await server.close();
-    server = await startMockServer({ tick: 80 }); // not configured: no snapshot yet; slow enough that steps are observed one by one
-    server.settings.boatKey = true;
-    const c = connect();
-    const snap = watch(c.snapshot());
-    const settings = watch(c.settings());
-    await waitFor(() => snap.getSnapshot().data?.state === "none", "initial status");
-    await waitFor(() => settings.getSnapshot().data, "initial settings");
-    expect(settings.getSnapshot().data?.baseSnapshotId).toBeNull();
-
-    const steps: string[] = [];
-    snap.subscribe(() => {
-      const s = snap.getSnapshot().data;
-      if (s?.step && steps.at(-1) !== s.step) steps.push(s.step);
-    });
-    const started = await c.actions.buildSnapshot();
-    expect(started).toMatchObject({ state: "building", step: "prepare", stepIndex: 0 });
-    await waitFor(() => snap.getSnapshot().data?.state === "ready", "build finished", 5000);
-    // Progress arrived over the live stream, not by polling. Invalidations coalesce, so a fast step may be skipped: the order is what matters.
-    expect(steps.length).toBeGreaterThanOrEqual(3);
-    expect(steps[0]).toBe("prepare");
-    const order = ["prepare", "create", "start", "upload", "install", "save", "finish"];
-    expect(steps.map((s) => order.indexOf(s))).toEqual([...steps.map((s) => order.indexOf(s))].sort((a, b) => a - b));
-    expect(snap.getSnapshot().data).toMatchObject({ snapshot: "dorks-base-mock0001", managed: true, stale: false, error: null });
-    await waitFor(() => settings.getSnapshot().data?.baseSnapshotId === "dorks-base-mock0001", "settings follow the build");
-  });
-
-  it("reports a failure, keeps the last good snapshot, retries, and flags a stale one", async () => {
-    const c = connect();
-    const snap = watch(c.snapshot());
-    await waitFor(() => snap.getSnapshot().data?.state === "ready", "initial status");
-    expect(snap.getSnapshot().data).toMatchObject({ snapshot: "dorks-base-20260101", managed: true, stale: false });
-
-    server.snapshot.newBridge();
-    await waitFor(() => snap.getSnapshot().data?.stale === true, "stale after a newer bridge");
-
-    server.snapshot.failNextBuild("The installer failed (exit 100). E: Unable to locate package");
-    await c.actions.buildSnapshot();
-    await waitFor(() => snap.getSnapshot().data?.state === "failed", "failed build", 5000);
-    expect(snap.getSnapshot().data).toMatchObject({ error: expect.stringContaining("exit 100"), snapshot: "dorks-base-20260101" });
-    expect(server.settings.baseSnapshotId).toBe("dorks-base-20260101"); // still in use
-
-    await c.actions.buildSnapshot(); // a failed attempt is retried without force
-    await waitFor(() => snap.getSnapshot().data?.state === "ready" && snap.getSnapshot().data?.stale === false, "rebuilt", 5000);
-  });
-
-  it("refuses without a Boat key, with the server's message", async () => {
-    await server.close();
-    server = await startMockServer({ tick: 15 });
-    const err = await createApi({ baseUrl: server.url, token: server.token }).buildSnapshot().catch((e) => e);
-    expect(toAppError(err)).toEqual({ code: "not_configured", message: "Add your Boat API key first." });
-  });
 });

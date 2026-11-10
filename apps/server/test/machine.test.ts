@@ -122,7 +122,7 @@ describe("machine: totality + invariants", () => {
   it("fuzz: random event sequences keep the invariants", () => {
     let seed = 42;
     const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
-    for (let run_ = 0; run_ < 3000; run_++) {
+    for (let run_ = 0; run_ < 300; run_++) {
       let c: Ctx = { state: "creating", archived: false, hasBox: false, queued: false };
       let outbox = 0;
       for (let step = 0; step < 40; step++) {

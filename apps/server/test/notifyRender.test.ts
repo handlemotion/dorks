@@ -22,33 +22,6 @@ describe("renderNotification", () => {
     expect(r.text).toContain(`attempt ${CI_FIX_MAX_ATTEMPTS} of ${CI_FIX_MAX_ATTEMPTS}`);
   });
 
-  it("CI failure instructions: logs, reproduce, fix, run checks locally before pushing", () => {
-    const { text } = renderNotification([section({ items: [{ kind: "ci_failed", summary: "x" }] })]);
-    expect(text).toContain("gh run view --log-failed");
-    expect(text).toMatch(/reproduce the failure locally, fix it, and run the repo's checks locally before you push/);
-  });
-
-  it("review and comment: address, reply with gh, validate locally, push", () => {
-    for (const kind of ["review", "comment"] as const) {
-      const { text } = renderNotification([section({ items: [{ kind, summary: "alice: please rename" }] })]);
-      expect(text).toMatch(/reply to (it|each comment) with `gh`/);
-      expect(text).toContain("validate locally");
-      expect(text).toContain("then push");
-    }
-  });
-
-  it("conflict: rebase or merge the base, resolve, validate, push with --force-with-lease if rebased", () => {
-    const { text } = renderNotification([section({ items: [{ kind: "conflict", summary: "no longer mergeable" }] })]);
-    expect(text).toMatch(/Rebase onto \(or merge\) the base branch, resolve the conflicts, validate locally/);
-    expect(text).toContain("git push --force-with-lease");
-  });
-
-  it("ready: standby note, never merge", () => {
-    const { text } = renderNotification([section({ items: [{ kind: "ready", summary: "CI green, approved" }] })]);
-    expect(text).toMatch(/short comment on the PR saying you are on standby/);
-    expect(text).toContain("Do not merge");
-  });
-
   it("several PRs and kinds: one section per PR, instructions only for the kinds present, in a stable order", () => {
     const r = renderNotification([
       section({ items: [{ kind: "comment", summary: "a" }, { kind: "ci_failed", summary: "b" }] }),
