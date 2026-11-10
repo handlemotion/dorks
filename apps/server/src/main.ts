@@ -2,6 +2,7 @@ import { loadConfig } from "./config";
 import { BridgeSession, MAX_FRAME_BYTES } from "./http/bridgeWs";
 import { uiApp } from "./http/ui";
 import { Scheduler } from "./lifecycle/scheduler";
+import { parentPid, watchParent } from "./parentWatch";
 import { createApp } from "./server";
 
 // The sidecar entry point (Bun). Two loopback listeners: the UI API, and the bridge WebSocket that a tunnel forwards to.
@@ -51,6 +52,13 @@ async function shutdown() {
   bridge.stop(true);
   app.db.close();
   process.exit(0);
+}
+const parent = parentPid(process.env);
+if (parent) {
+  watchParent(parent, () => {
+    console.error("supervisor is gone; shutting down");
+    void shutdown();
+  });
 }
 process.on("SIGTERM", () => void shutdown());
 process.on("SIGINT", () => void shutdown());

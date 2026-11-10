@@ -165,6 +165,17 @@ try {
   for (const f of files) for (const n of needles) if (readFileSync(join(dataDir, f)).includes(Buffer.from(n))) leaked.push(`${f}:${n.slice(0, 8)}`);
   for (const n of needles) if (logs.join("").includes(n)) leaked.push(`logs:${n.slice(0, 8)}`);
   check("no token or CLI secret is in the database files or the logs in the clear", leaked.length === 0, leaked.join(" "));
+
+  // ---- supervision: a server whose supervisor dies shuts itself down (DORKS_PARENT_PID, set by the desktop shell)
+  const supervisor = spawn("sleep", ["300"], { stdio: "ignore" });
+  const orphan = spawn(cmd, args, { env: { ...env, DORKS_DATA_DIR: mkdtempSync(join(tmpdir(), "dorks-e2e-parent-")), DORKS_PARENT_PID: String(supervisor.pid) }, stdio: "ignore" });
+  const orphanExit = new Promise((resolve) => orphan.on("exit", () => resolve(true)));
+  await sleep(2500);
+  check("a server with a live supervisor keeps running", orphan.exitCode === null);
+  supervisor.kill("SIGKILL");
+  const exited = await Promise.race([orphanExit, sleep(10_000).then(() => false)]);
+  check("a server exits by itself when its supervisor disappears", exited === true);
+  if (!exited) orphan.kill("SIGKILL");
 } catch (e) {
   console.error("e2e error:", e.message);
   if (lastDork) {
