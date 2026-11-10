@@ -25,7 +25,8 @@ import {
 import { ChatMessages } from '../../../components/ChatBlock'
 import { Composer, type AgentProvider } from '../../../components/ChatComposer'
 import { PageHeader } from '../../../components/PageHeader'
-import { canCreate } from '../../../lib/onboarding'
+import { SetupStatus } from '../../../components/SetupStatus'
+import { canCreate, onboarded } from '../../../lib/onboarding'
 import { usePending } from '../../../lib/pending'
 
 // The selected dork lives in the `dork` search param (not local state) so the sidebar can highlight it and the URL is shareable.
@@ -51,12 +52,12 @@ function Dorks() {
   const [showArchived, setShowArchived] = useState(false)
   const dorks = useDorks(showArchived)
   const settings = useSettings()
+  // First run: the owner answers onboarding (Boat, an agent, GitHub) first. The snapshot may still be building: the page says so.
+  if (settings && !onboarded(settings)) return <Navigate to="/onboarding" replace />
   const ready = !!settings && canCreate(settings)
-  // First run: a session needs a Boat key, a snapshot and a GitHub token, so the owner finishes onboarding first.
-  if (settings && !ready) return <Navigate to="/onboarding" replace />
 
   return (
-    <div className="flex h-full min-h-0 flex-col" data-onboarding={settings ? (ready ? 'complete' : 'incomplete') : 'loading'}>
+    <div className="flex h-full min-h-0 flex-col" data-onboarding={settings ? (ready ? 'complete' : 'preparing') : 'loading'}>
       {!selected && (
         <PageHeader
           title="Dorks"
@@ -66,9 +67,6 @@ function Dorks() {
       )}
       {settings && ready && !settings.claudeToken && (
         <Notice>Add a <Link to="/settings" className="font-medium underline underline-offset-4">Claude token</Link> to start sessions with Claude Code.</Notice>
-      )}
-      {settings && ready && !settings.publicUrlConfigured && (
-        <Notice>Sandboxes cannot reach this machine yet: no public URL is configured. Sessions will not start until the tunnel is up.</Notice>
       )}
       {selected ? (
         <CatchBoundary getResetKey={() => selected} errorComponent={() => <p className="mx-auto mt-6 text-sm text-destructive" role="alert">That session could not be opened.</p>}>
@@ -80,6 +78,7 @@ function Dorks() {
             <h2 className="text-3xl font-semibold tracking-tight">What should we work on?</h2>
             <p className="text-muted-foreground">Choose a repository, then describe the change you want.</p>
           </div>
+          {settings && <SetupStatus settings={settings} />}
           <NewDork onCreated={setSelected} disabled={!ready} claudeReady={!!settings?.claudeToken} codexReady={!!settings?.boatEnvironment} />
           <div className="self-start text-sm text-muted-foreground">
             <Button variant="ghost" size="sm" aria-pressed={showArchived} onClick={() => setShowArchived(!showArchived)}>

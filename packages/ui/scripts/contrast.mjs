@@ -70,3 +70,13 @@ for (const [name, t] of Object.entries(themes)) {
   console.log(`\n${name}`);
   for (const [label, r] of rows) console.log(`  ${r.toFixed(2).padStart(5)}:1  ${label}${r >= 1.15 ? "" : "   (< 1.15: needs a hairline)"}`);
 }
+
+// The flat app (glass.css today): one opaque fill, --app, and --surface raised on it. The rows above model the old glass layers.
+const flat = {
+  light: { app: oklchToLinear([0.9612, 0, 0]) /* #f2f2f2 */, surface: oklchToLinear([1, 0, 0]) },
+  dark: { app: oklchToLinear([0.165, 0, 0]), surface: oklchToLinear([0.24, 0, 0]) },
+};
+for (const [name, t] of Object.entries(flat)) {
+  const r = ratio(t.surface, t.app);
+  console.log(`\nflat ${name}\n  ${r.toFixed(2).padStart(5)}:1  surface vs app${r >= 1.15 ? "" : "   (< 1.15: needs a hairline, --surface-line)"}`);
+}

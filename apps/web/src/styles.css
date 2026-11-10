@@ -102,3 +102,21 @@
     animation: none;
   }
 }
+
+/* WordShimmer (components/WordShimmer.tsx): a word is blue for the first 15% of a 2s cycle, then its normal colour. `step-end` makes each
+   change a snap instead of a fade; the per-word delay is what makes the blue walk across the line. */
+@keyframes word-shimmer {
+  0% {
+    color: var(--brand);
+  }
+  15%,
+  100% {
+    color: var(--shimmer-base, var(--foreground));
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .word-shimmer {
+    animation: word-shimmer 2s step-end infinite;
+  }
+}

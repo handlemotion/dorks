@@ -5,6 +5,7 @@ import { Button } from '@dorks/ui/button'
 import { Input } from '@dorks/ui/input'
 import { clearConnection, currentConnection, DEFAULT_SERVER, normalizeServerUrl, saveConnection, type Connection } from '../lib/connection'
 import { onRuntimeConfig, setKeepAwake } from '../lib/desktop'
+import { WordShimmer } from './WordShimmer'
 
 const DISCONNECT = createContext<(() => void) | null>(null)
 
@@ -74,7 +75,7 @@ function Probe({ conn, onChange, onReplace, children }: { conn: Connection; onCh
   }
   return (
     <>
-      {connection.live === 'offline' && <p className="glass fixed inset-x-0 top-0 z-50 px-4 py-2 text-center text-sm" role="status">Reconnecting to the dorks server…</p>}
+      {connection.live === 'offline' && <p className="glass fixed inset-x-0 top-0 z-50 border-b border-surface-line px-4 py-2 text-center text-sm dark:border-border" role="status"><WordShimmer>Reconnecting to the dorks server…</WordShimmer></p>}
       <KeepAwake />
       {children}
     </>

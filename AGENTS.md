@@ -28,12 +28,13 @@ The product intentionally has few tests. Do not add or run tests by reflex.
 
 ## UI rules
 
-No drop shadows, minimal borders, theme-following glass, white user bubbles. Full text and the contrast numbers: `packages/ui/README.md` ("Design rules").
+No drop shadows, minimal borders, an opaque flat app (`#f2f2f2`), white user bubbles, 6px controls. Full text and the contrast numbers: `packages/ui/README.md` ("Design rules").
 
 - **No drop shadows, ever** (any theme, any component, including popovers, menus, dialogs, bubbles and cards). The theme resets Tailwind's shadow tokens, so `shadow-*` classes in the published shadcn / AI Elements files are no-ops: do not edit those files. Do not write `shadow-*`, `box-shadow`, `drop-shadow` or `text-shadow` yourself; `pnpm test` runs `packages/ui/scripts/check-ui-rules.mjs` and fails on them.
-- **Minimal borders.** Separate surfaces with fill, spacing and glass layering. Add a border only where fill contrast truly fails (light-theme form controls, focus rings); check with `node packages/ui/scripts/contrast.mjs` (1.15:1 or more needs no border).
-- **The glass tint follows the app theme**, never the OS: define every new surface token for light and dark (`packages/ui/src/glass.css`).
+- **Minimal borders.** Separate surfaces with fill and spacing. Add a border only where fill contrast truly fails (light-theme form controls, focus rings); check with `node packages/ui/scripts/contrast.mjs` (1.15:1 or more needs no border).
+- **The app is opaque and flat**: `--app` behind everything, `--surface` for what is raised on it, nothing translucent or blurred. Tokens follow the app theme, never the OS: define every new surface token for light and dark (`packages/ui/src/glass.css`).
 - **User message bubbles are white** in both themes; assistant messages are unbubbled.
+- **Buttons and inputs are 6px** (`--control-radius`), not pills. Only onboarding's step buttons are pills.
 - Verify UI headless (Playwright, headless Chromium); never launch a headed browser or take over the screen.
 - Use the shadcn preset tokens and components (`@dorks/ui`), not bespoke CSS. The preset code and how to change it are in `packages/ui/README.md`.
 

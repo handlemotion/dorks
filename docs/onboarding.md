@@ -1,6 +1,6 @@
 # Onboarding design brief
 
-First run walks a new owner from nothing to a first session in seven full-page steps. The code is `apps/web/src/routes/_conn/onboarding.tsx` and `apps/web/src/components/onboarding/`.
+First run walks a new owner from nothing to a first session in four full-page steps. Only what the owner has to type is a step: the base snapshot builds in the background, and the public URL is asked for where sessions are created. The code is `apps/web/src/routes/_conn/onboarding.tsx` and `apps/web/src/components/onboarding/`.
 
 ## What the references taught us
 
@@ -16,26 +16,31 @@ Studied on Mobbin (web, desktop-class onboarding): Linear, Twenty, Air, Sana.
 
 ## Rules
 
-1. **One step, one page.** A heading, one sentence, one form or one button. No sidebar, no app chrome, no step list.
-2. **Progress is seven dots**, bottom center, current one filled. Not clickable: steps are answered in order. Back is a small text button, top left.
-3. **Primary action is the only filled button**, full width of the column, labelled with the verb ("Continue", "Prepare Boat", "Start your first session"). It is disabled until the step can succeed and shows `…ing` while it works.
-4. **Skip only where truly optional.** Only the public URL step has "Skip for now", and it says what breaks (sandboxes cannot reach this Mac, so sessions will not start until it is set). Boat key, snapshot, agent and GitHub are required to create a session.
-5. **Errors are inline, plain, and under the field** that caused them, in the destructive color, with `role="alert"`. No toasts, no stack traces.
-6. **Resumable.** The server's settings decide where you start (`firstIncomplete` in `lib/onboarding.ts`). Quit at step four and the app reopens at step four. Welcome shows once (`localStorage`), and only when nothing is configured yet.
+1. **One step, one page.** A 450px column: a heading, one sentence, the step's content, then the step buttons. A single field stands on its own (no card, no label: the heading names it); a card is only for content that needs grouping, like the intro list or a list of things to connect. No sidebar, no app chrome, no step list. Copy is two lines at most, in the subtitle and in dialogs: if it wraps to three, cut it (details belong in the docs, or in the error when something fails). The design is in Figma (Dorks file, `(1) /intro` and `(3) /ai`); Boat and GitHub follow the same layout.
+2. **Progress is four dots**, bottom center, the current one in the brand blue (`bg-brand`). Not clickable: steps are answered in order. The route renders each step from one `Record<OnboardingStepId, View>` and the dots from the same `step`, so they cannot disagree.
+3. **Step buttons are 40px pills, centered under the card**: Back (ghost, from step two) and the primary action ("Let's go", "Continue"). Pills are only for moving between steps; every other button and input is 6px (`--control-radius`). Controls on these pages are 40px (`lg`), where the app uses 36 or 32. The primary is never disabled for validation: pressing it with something missing toasts what is missing. It is only disabled while it works, and shows `…ing` then.
+4. **No skips.** Every step is required to create a session. Anything that is not a question for the owner (the snapshot build, the tunnel) is not a step.
+5. **Validation and failures are toasts**, top center (`notify` in `Frame.tsx`, the app-wide Sonner `Toaster` in `main.tsx`), in plain words. Nothing is written under the fields, and no stack traces.
+6. **Resumable.** The server's settings decide where you start (`firstIncomplete` in `lib/onboarding.ts`). Quit at step three and the app reopens at step three. The intro shows once (`localStorage`), and only when nothing is configured yet. The last step leaves only once the refreshed settings say onboarding is answered, so the app does not bounce back.
 7. **Secrets are write-only.** Token inputs are `type=password`, are cleared after saving, and a saved one shows as a placeholder ("A key is saved"), never its value.
-8. **Tokens only, no decoration.** Surfaces use shadcn tokens (`bg-background`, `text-foreground`, `text-muted-foreground`, `border-line`, `text-destructive`). The desktop shell supplies the glass backdrop behind the page, so cards and inputs stay on token surfaces and the page itself is transparent.
+8. **Tokens only.** The page is the flat app fill (`app-backdrop`, `#f2f2f2`); cards and lone fields are `bg-surface` with the `--surface-line` hairline in light (white on `#f2f2f2` is under 1.15:1, see `contrast.mjs`). The brand circle (`components/BrandCircle.tsx`, `--brand-line`) sits behind it, the one decoration, copied from the Figma reference at the same proportions.
+9. **Connect lists.** The AI and GitHub steps are a card of 48px rows (`components/onboarding/List.tsx`): logo, name, and Connect / Connected / Soon. A row only shows its state; connecting is a separate action, so it opens a dialog (`ConnectDialog`) with the instructions, the field, Cancel and Save. Rows never expand in place. Provider logos come from svgl (`apps/web/src/assets/providers/`).
 
 ## Steps
 
-| # | Step | Done when | Skippable |
-|---|---|---|---|
-| 1 | Welcome | any setting exists, or the owner pressed Get started | no |
-| 2 | Boat API key (+ optional team org) | `boatKey` | no |
-| 3 | Prepare Boat (one-click snapshot build with progress, retry, stale warning; hand-entered snapshot as a disclosure) | `baseSnapshotId` | no |
-| 4 | Agent: Claude Code (pasted token) is the default; "Use ChatGPT (Codex) instead" is a small secondary switch (Boat environment name). One of them is enough | `claudeToken` or `boatEnvironment` | no |
-| 5 | GitHub: "Use my gh CLI" (desktop, native consent) or a fine-grained token, with the required permissions listed | `github.configured` | no |
-| 6 | Public URL: the tunnel (wurmhol: one "Approve this Mac" click in the browser, no token to paste) or an address of your own, so sandboxes can reach this Mac | `publicUrlConfigured` | yes |
-| 7 | Done: create the first session | | |
+| # | Step | Done when |
+|---|---|---|
+| 1 | Intro: heading, a card of what Dorks is, Let's go | any setting exists, or the owner pressed Get started |
+| 2 | Boat API key. Checked against Boat's `GET /limits` before it is saved (by `POST /api/boat/check`, and again by the server on save), so a wrong or expired key, a free trial, a blocked wallet or a wrong organization is reported here; the organization field appears only when Boat refuses one. Saving it queues the base-snapshot build on the server | `boatKey` |
+| 3 | AI: rows for Claude (pasted token), Codex (Boat environment name, checked against Boat's environment list on save) and Grok (Soon, not supported yet). One of them is enough | `claudeToken` or `boatEnvironment` |
+| 4 | GitHub: rows for the GitHub CLI login (desktop, native consent) and a fine-grained token, with the required permissions listed | `github.configured` |
+
+Then the app opens on the new-session screen (`components/SetupStatus.tsx`), which shows what still stands between the owner and a session:
+
+- **Base snapshot**: "Preparing Boat, step n of 7" with progress while it builds, the reason and Retry when it failed, or a Prepare Boat button when nothing was started (a key saved before builds started themselves). Create stays disabled until a snapshot is set.
+- **Public URL**: in the desktop app with the wurmhol tunnel waiting, an "Approve this Mac" button (it opens the approval page; the shell continues by itself). Otherwise a line saying sessions will not start, pointing at Settings (desktop) or `DORKS_PUBLIC_URL` (server by hand).
+
+Using a hand-built snapshot, billing a team wallet and setting your own public URL live in Settings only.
 
 ## Window chrome (desktop)
 
@@ -43,8 +48,8 @@ The onboarding window shows no traffic lights; the main app does. The page calls
 
 ## Server side
 
-- **Progress is derived, not stored.** Which steps are done comes from the settings the server already keeps (`lib/onboarding.ts`); there is no separate onboarding record to drift out of sync. Only choices that are not settings (having pressed Get started) live in the browser.
-- **The server checks provider values on save** (`PUT /api/settings`), whatever the client checked first. The Boat key is checked with Boat's `GET /limits` (a wrong or expired key, a free trial, a blocked wallet or a wrong organization is refused with the reason), a Codex environment against Boat's environment list, a GitHub token with `GET /user`. An unreachable provider does not block the save.
-- **The snapshot build is durable.** Saving the Boat key queues it in the same request (or retries a failed one); a process that stops before that queues it on the next start; a build interrupted mid-way is rerun (`recoverSnapshotBuild`). A failed build is otherwise never retried by itself.
+- **Progress is derived, not stored.** Which steps are done comes from the settings the server already keeps (`lib/onboarding.ts`); there is no separate onboarding record to drift out of sync. Only "pressed Get started" lives in the browser.
+- **The server checks provider values on save** (`PUT /api/settings`), whatever the client checked first, and refuses Boat's and GitHub's definite rejections with their reason. An unreachable provider does not block the save.
+- **The snapshot build is durable.** Saving the Boat key queues it in the same request; a process that stops before that queues it on the next start; a build interrupted mid-way is rerun (`recoverSnapshotBuild`). A failed build waits for the owner's Retry.
 - **One gate for a new session** (`services/setup.ts`): Boat, agent, GitHub, base snapshot, public URL, in that order, so the refusal always names the next thing to do.
 - **Logs**: the server writes `settings saved: <field names>` (never values) and each build's queue, ready and failure to stderr, which the desktop app keeps in `logs/server.log`.

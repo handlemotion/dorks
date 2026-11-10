@@ -22,13 +22,15 @@
     "@dorks/client": "workspace:*",
     "@dorks/shared": "workspace:*",
     "@dorks/ui": "workspace:*",
-    "@fontsource-variable/inter": "^5.2.8",
+    "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/geist-mono": "^5.3.0",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/react-router": "1.170.41",
     "lucide-react": "1.65.0",
     "next-themes": "^0.4.6",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "sonner": "^2.0.8",
     "tailwindcss": "^4.1.18"
   },
   "devDependencies": {

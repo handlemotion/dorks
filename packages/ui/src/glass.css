@@ -1,8 +1,7 @@
 /*
- * Liquid Glass surfaces (macOS 26 direction). Three layers:
- *   backdrop  what shows through: native vibrancy in the desktop app (html[data-vibrancy]), otherwise a soft blurred gradient
- *   glass     chrome that floats on it (sidebar, toolbars, menus): translucent, blurred, saturated
- *   content   the reading surface on top: nearly opaque so text stays legible
+ * Surfaces. The app is opaque and flat: one fill, --app (#f2f2f2 in light), behind everything, and --surface (white) for the few
+ * raised things on it. Nothing is translucent, in the browser or in the desktop app (the page paints over the native material). The
+ * `glass*` utilities are kept as names but are solid --surface fills now.
  * Radii are concentric: an inner radius is the outer radius minus the padding between them.
  *
  * UI rules (also in README.md and AGENTS.md):
@@ -22,43 +21,58 @@
 }
 
 :root {
-  --glass: oklch(1 0 0 / 58%);
-  --glass-strong: oklch(1 0 0 / 78%);
-  --glass-content: oklch(0.935 0.004 260 / 85%);
-  --glass-blur: 28px;
-  --glass-saturate: 1.7;
-  /* The tint laid over native vibrancy, and the base of the browser fallback gradient. */
-  --backdrop-tint: oklch(1 0 0 / 30%);
-  --backdrop-base: oklch(0.88 0.01 260);
-  --backdrop-a: oklch(0.86 0.05 250);
-  --backdrop-b: oklch(0.87 0.05 320);
-  --backdrop-c: oklch(0.88 0.04 190);
+  --glass: var(--surface);
+  --glass-strong: var(--surface);
+  --glass-content: var(--surface);
+  --glass-blur: 0px;
+  --glass-saturate: 1;
   --user-bubble: #ffffff;
   --user-bubble-foreground: oklch(0.145 0 0);
+  /* The brand blue: focus, the current onboarding step, and toast fills. */
+  --brand: #3b6be8;
+  /* Text on a brand fill (toasts): white is 4.9:1 on #3b6be8. */
+  --brand-foreground: #ffffff;
+  /* A brand fill under the pointer: the blue multiplied darker, not lightened toward white. */
+  --brand-hover: color-mix(in oklab, var(--brand), black 16%);
+  /* The brand circle drawn behind onboarding (components/BrandCircle.tsx in the web app). */
+  --brand-line: oklch(0 0 0 / 7%);
+  /* Buttons, inputs and selects. Pills are the exception and set this to var(--radius-pill) themselves. */
+  --control-radius: 6px;
+  --radius-pill: 9999px;
+  /* The app is flat and opaque: one fill, --app, behind everything, and --surface for what is raised on it (cards, dialogs, the
+     sidebar and composer through the glass tokens). White on #f2f2f2 is 1.12:1 (scripts/contrast.mjs), under the 1.15
+     that fill alone needs, so in light a raised surface carries the --surface-line hairline (the Figma reference's #e2e2e2). */
+  --app: #f2f2f2;
+  --surface: oklch(1 0 0);
+  --surface-line: #e2e2e2;
 }
 
 /* Default border colour: present for a11y tooling, nearly invisible to the eye. Form controls use --input, which stays visible. The
    preset's own :root block is imported after this file's rules, so these need the extra specificity of `html`. */
 html:root {
   --border: oklch(0 0 0 / 6%);
+  /* Focus is the brand blue. */
+  --ring: var(--brand);
+  --sidebar-ring: var(--brand);
 }
 
 .dark {
-  --glass: oklch(0.42 0 0 / 52%);
-  --glass-strong: oklch(0.44 0 0 / 74%);
-  --glass-content: oklch(0.2 0 0 / 82%);
-  --backdrop-tint: oklch(0.18 0 0 / 55%);
-  --backdrop-base: oklch(0.2 0 0);
-  --backdrop-a: oklch(0.28 0.06 265);
-  --backdrop-b: oklch(0.27 0.06 320);
-  --backdrop-c: oklch(0.26 0.05 200);
-  /* The user bubble stays white in dark mode so it pops against the glass. */
+  /* The user bubble stays white in dark mode so it pops against the app. */
   --user-bubble: #ffffff;
   --user-bubble-foreground: oklch(0.145 0 0);
+  --brand: #3b6be8;
+  --brand-foreground: #ffffff;
+  --brand-line: oklch(1 0 0 / 8%);
+  --app: oklch(0.165 0 0);
+  --surface: oklch(0.24 0 0);
+  /* Dark fills separate on their own (1.17:1), so no hairline. */
+  --surface-line: transparent;
 }
 
 html.dark {
   --border: oklch(1 0 0 / 7%);
+  --ring: var(--brand);
+  --sidebar-ring: var(--brand);
 }
 
 @theme inline {
@@ -67,48 +81,62 @@ html.dark {
   --color-glass-content: var(--glass-content);
   --color-user-bubble: var(--user-bubble);
   --color-user-bubble-foreground: var(--user-bubble-foreground);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-line: var(--brand-line);
+  --color-app: var(--app);
+  --color-surface: var(--surface);
+  --color-surface-line: var(--surface-line);
 }
 
-/* Glass: fill plus blur, no border, no shadow. Its fill already separates it from the backdrop (scripts/contrast.mjs). */
+/* Controls are 6px, not the preset's pill. Unlayered on purpose, so it wins over the components' own `rounded-*` utilities without
+   editing them. A control that should be a pill (onboarding's step buttons) sets `--control-radius: var(--radius-pill)` on itself. */
+[data-slot="button"],
+/* A Button rendered as a menu or popover trigger takes the trigger's slot name instead. */
+[data-slot="dropdown-menu-trigger"],
+[data-slot="popover-trigger"],
+[data-slot="dialog-close"],
+[data-slot="input"],
+[data-slot="textarea"],
+[data-slot="select-trigger"],
+[data-slot="native-select"] {
+  border-radius: var(--control-radius);
+}
+
+/* On controls, focus is only the border turning blue (--ring), no halo: the components' 3px `ring-ring/30` glow is made transparent
+   here instead of editing them. Only controls that also tint their border are listed; anything whose only focus mark is the ring
+   (sidebar items, for one) keeps it. */
+:is([data-slot="button"], [data-slot="dropdown-menu-trigger"], [data-slot="popover-trigger"], [data-slot="dialog-close"], [data-slot="input"],
+  [data-slot="textarea"], [data-slot="select-trigger"], [data-slot="native-select"]):focus-visible,
+[data-slot="input-group"]:has([data-slot="input-group-control"]:focus-visible) {
+  --tw-ring-color: transparent;
+}
+
+/* The old glass layers, now solid --surface fills with no blur. */
 @utility glass {
   background-color: var(--glass);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
 @utility glass-strong {
   background-color: var(--glass-strong);
-  backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
 }
 
-/* The reading surface. Its fill is darker than the backdrop in light and lighter in dark. */
 @utility glass-content {
   background-color: var(--glass-content);
-  backdrop-filter: blur(calc(var(--glass-blur) * 0.6)) saturate(1.2);
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.6)) saturate(1.2);
 }
 
-/* Behind everything. Native vibrancy (desktop) paints the real material, so the page only lays the theme's tint over it. */
+/* Behind everything: the flat app fill. Opaque in the desktop app too, so the native window material never shows through. */
 @utility app-backdrop {
-  background-color: var(--backdrop-base);
-  background-image:
-    radial-gradient(60rem 40rem at 8% 0%, var(--backdrop-a), transparent 60%),
-    radial-gradient(50rem 36rem at 100% 10%, var(--backdrop-b), transparent 60%),
-    radial-gradient(60rem 40rem at 60% 110%, var(--backdrop-c), transparent 60%);
-  background-attachment: fixed;
+  background-color: var(--app);
 }
 
-html[data-vibrancy],
-html[data-vibrancy] body {
-  background: transparent;
+html,
+body {
+  background-color: var(--app);
 }
 
-html[data-vibrancy] .app-backdrop {
-  background: var(--backdrop-tint);
-}
-
-/* The sidebar is the app's glass chrome: its fill is the glass token, and the panel blurs what is behind it. Unlayered on purpose,
+/* The sidebar is the app's chrome: its fill is the glass token (a solid --surface now, no blur). Unlayered on purpose,
    so it wins over the component's own utilities. */
 html:root,
 html.dark {
@@ -126,6 +154,107 @@ html.dark {
   border-radius: 1.5rem;
 }
 
+/* Toasts: a brand-blue fill with white text, 8px corners, even 12px padding around a 16px icon and a 20px line, and a small bare close at
+   the right. Sonner's own rules are `[data-sonner-toast][data-styled]`; the leading `html` outranks them without !important. Its drop
+   shadow is switched off like every other one. */
+html [data-sonner-toast][data-styled="true"] {
+  padding: 12px 44px 12px 14px;
+  gap: 10px;
+  align-items: flex-start;
+  border: 0;
+  border-radius: 8px;
+  background: var(--brand);
+  color: var(--brand-foreground);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  letter-spacing: -0.02em;
+  box-shadow: none; /* ui-rules: allow */
+}
+html [data-sonner-toast][data-styled="true"] [data-icon] {
+  margin: 2px 0 0;
+}
+html [data-sonner-toast][data-styled="true"] [data-title] {
+  line-height: 20px;
+}
+html [data-sonner-toast][data-styled="true"] [data-description] {
+  line-height: 20px;
+  color: color-mix(in oklab, var(--brand-foreground) 85%, transparent);
+}
+html [data-sonner-toast][data-styled="true"] [data-close-button] {
+  transition: background-color 150ms ease-out;
+  top: 10px;
+  right: 10px;
+  left: auto;
+  width: 24px;
+  height: 24px;
+  transform: none;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in oklab, var(--brand-foreground) 80%, transparent);
+}
+/* Sonner's own hover rule is `[data-sonner-toast][data-styled]:hover [data-close-button]:hover` (a near-white fill), so this repeats its
+   shape to outrank it. The close only darkens the blue; the cross stays white and keeps its size. */
+html [data-sonner-toast][data-styled="true"]:hover [data-close-button]:hover,
+html [data-sonner-toast][data-styled="true"] [data-close-button]:focus-visible {
+  background: var(--brand-hover);
+  border: 0;
+  color: var(--brand-foreground);
+}
+html [data-sonner-toast][data-styled="true"] [data-close-button] svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Dialogs dim what is behind them but do not blur it: nothing in the app is see-through. */
+[data-slot="dialog-overlay"] {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Dialogs: a white sheet, 540px wide, with the actions on a bottom band in the app fill under a hairline, and a small bare close in the
+   corner. A body between header and footer is a `data-slot="dialog-body"` element, with the header's 24px sides. */
+[data-slot="dialog-content"] {
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  background-color: var(--surface);
+}
+@media (min-width: 40rem) {
+  [data-slot="dialog-content"] {
+    max-width: 540px;
+  }
+}
+[data-slot="dialog-header"] {
+  padding: 24px 48px 20px 24px;
+}
+[data-slot="dialog-body"] {
+  padding: 0 24px 24px;
+}
+[data-slot="dialog-footer"] {
+  padding: 12px 16px;
+  background-color: var(--app);
+  border-top: 1px solid var(--surface-line);
+}
+html.dark [data-slot="dialog-footer"] {
+  border-top-color: var(--border);
+}
+/* Only the corner close: a Cancel rendered through DialogClose also takes this slot name, and stays a normal button. */
+[data-slot="dialog-content"] > [data-slot="dialog-close"] {
+  top: 16px;
+  right: 16px;
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  color: var(--muted-foreground);
+}
+[data-slot="dialog-content"] > [data-slot="dialog-close"]:hover {
+  color: var(--foreground);
+  background: var(--muted);
+}
+
+
 /* The published components outline cards, menus and dialogs with a 1px ring (`ring-1 ring-foreground/10`). Fill separates those
    surfaces, so the ring is switched off here instead of editing the files. Focus rings live on controls, not on these containers. */
 [data-slot="card"],
@@ -138,28 +267,4 @@ html.dark {
 [data-slot="command"],
 [data-slot="sidebar-inner"] {
   --tw-ring-color: transparent;
-}
-
-/* Solid, theme-matched fallback: reduced transparency or forced colors. */
-@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
-  :root {
-    --glass: oklch(0.985 0 0);
-    --glass-strong: oklch(0.985 0 0);
-    --glass-content: oklch(0.965 0 0);
-    --backdrop-tint: oklch(0.93 0 0);
-  }
-  .dark {
-    --glass: oklch(0.3 0 0);
-    --glass-strong: oklch(0.3 0 0);
-    --glass-content: oklch(0.2 0 0);
-    --backdrop-tint: oklch(0.16 0 0);
-  }
-  :root,
-  .dark {
-    --glass-blur: 0px;
-    --glass-saturate: 1;
-  }
-  .app-backdrop {
-    background-image: none;
-  }
 }

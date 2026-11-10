@@ -99,8 +99,8 @@ export function Composer({
             ) : provider ? (
               <InputGroupText>{provider === 'codex' ? 'Codex' : 'Claude Code'}</InputGroupText>
             ) : null}
-            {onStop && <InputGroupButton variant="outline" size="icon-sm" className="ml-auto rounded-full" aria-label="Stop agent" title="Stop agent" onClick={onStop}><SquareIcon /></InputGroupButton>}
-            <InputGroupButton type="submit" size="icon-sm" variant="default" className={onStop ? 'rounded-full' : 'ml-auto rounded-full'} aria-label={repo !== undefined ? 'Create session' : 'Send message'} title={repo !== undefined ? 'Create session' : 'Send message'} disabled={!canSend}>
+            {onStop && <InputGroupButton variant="outline" size="icon-sm" className="ml-auto" aria-label="Stop agent" title="Stop agent" onClick={onStop}><SquareIcon /></InputGroupButton>}
+            <InputGroupButton type="submit" size="icon-sm" variant="default" className={onStop ? undefined : 'ml-auto'} aria-label={repo !== undefined ? 'Create session' : 'Send message'} title={repo !== undefined ? 'Create session' : 'Send message'} disabled={!canSend}>
               {pending ? <LoaderCircleIcon className="animate-spin" /> : <ArrowUpIcon />}
             </InputGroupButton>
           </InputGroupAddon>

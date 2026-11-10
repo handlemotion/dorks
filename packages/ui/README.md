@@ -12,7 +12,7 @@ Components are third-party source kept as published: change tokens in `src/style
 | Style | `luma` (`base-luma` in `components.json`: soft, very round, light shadows) |
 | Base color / theme | `neutral` |
 | Icons | `lucide` |
-| Font | Inter |
+| Font | Geist and Geist Mono (`@fontsource-variable/geist`, set in `src/styles.css`; the preset ships Inter) |
 | Radius | `large` (`--radius: 0.875rem`) |
 | Menus | `default-translucent`, accent `subtle` |
 
@@ -30,7 +30,7 @@ folder with `pnpm dlx shadcn@latest add <names> -y -o`. Do not run `shadcn init`
 
 ## Design rules
 
-UI rules: **no drop shadows, minimal borders, theme-following glass, white user bubbles.** They are written down because they are easy to break
+UI rules: **no drop shadows, minimal borders, an opaque flat app, white user bubbles, 6px controls.** They are written down because they are easy to break
 by accident, and `pnpm test` enforces the first one.
 
 1. **No drop shadows, ever.** Not in any theme, and not on cards, popovers, menus, dialogs or bubbles. `src/glass.css` resets Tailwind's
@@ -44,20 +44,20 @@ by accident, and `pnpm test` enforces the first one.
    border is allowed only where fill contrast truly fails: form controls keep `--input` (light-theme input fill vs card is 1.07:1, and WCAG 1.4.11
    asks 3:1 for a control's boundary) and focus rings. Measure rather than guess: `node packages/ui/scripts/contrast.mjs` prints the contrast
    between the stacked surfaces; at or above **1.15:1** fill alone is enough, below that change the fill first.
-3. **The tint follows the theme, never the OS or the native material.** Glass and backdrop tints are defined per theme in `src/glass.css`: light
-   is a white tint, dark is a dark one; a light app never shows a dark-gray dim and a dark app never a pale one. In the desktop app the native
-   vibrancy material shows through, so the page lays `--backdrop-tint` over it (`html[data-vibrancy]`), and tells the shell which theme it shows
-   (`data-theme` on `<html>`, `set_window_theme` when the shell has it). The reduced-transparency fallback is a solid surface of the same theme.
+3. **The app is opaque and flat, and follows the app theme.** One fill, `--app` (`#f2f2f2` in light), behind everything, and `--surface` (white
+   in light) for the few raised things on it. Nothing is translucent or blurred, including dialog overlays, and the desktop app's native material
+   never shows through (the page paints `--app` over it). The `glass*` utilities still exist as names but are solid `--surface` fills. White on
+   `#f2f2f2` is 1.12:1, under 1.15, so a raised surface carries the `--surface-line` hairline (`#e2e2e2`) in light; dark separates on fill.
    When you add a surface, give it a light and a dark value.
-4. **User message bubbles are white** (`--user-bubble`), in light and dark, so they pop against the glass. Assistant messages are unbubbled text.
+4. **User message bubbles are white** (`--user-bubble`), in light and dark, so they pop against the app. Assistant messages are unbubbled text.
+5. **Controls are 6px.** Buttons, inputs, textareas, selects and menu triggers use `--control-radius` (6px, `src/glass.css`) instead of the
+   preset's pill, applied by `data-slot` so the component files stay unmodified. The one exception is onboarding's step buttons, which are
+   pills: they set `--control-radius: var(--radius-pill)` on themselves. Focus on a control is its border turning the brand blue (`--ring`),
+   with no glow around it. Dialogs and toasts are styled the same way (white sheet with an `--app` footer band; brand-blue toasts).
 
 | Pair (from `contrast.mjs`) | Light | Dark |
 |---|---|---|
-| content panel vs backdrop | 1.19 | 1.20 |
-| sidebar glass vs backdrop | 1.28 | 1.37 |
-| white user bubble vs content panel | 1.24 | 17.3 |
-| card vs content panel (`dark:bg-foreground/[0.06]` in dark) | 1.24 | 1.94 |
-| input fill vs card | 1.07 (border kept) | 2.19 |
+| surface vs app (the `flat` rows) | 1.12 (hairline) | 1.17 |
 
 ## What is in here
 
