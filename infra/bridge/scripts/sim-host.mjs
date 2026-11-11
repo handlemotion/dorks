@@ -29,6 +29,15 @@ export function prepareRealBridge({ repos = ["acme/demo"] } = {}) {
     git(seed, "push", bare, "main");
     rmSync(seed, { recursive: true, force: true });
   }
+  mkdirSync(join(root, "gitconfig"), { recursive: true }); // one global git config per simulated box (envFor)
+  // Git refuses a local remote owned by another user, so with CLAUDE_RUN_AS the stand-in for GitHub belongs to that user.
+  // Its per-box CLAUDE_CONFIG_DIR (below) must be creatable by that user too, and it must be able to traverse to the settings and
+  // MCP files in each box's state dir (the bridge makes the state dir itself 0711, not its parent).
+  if (process.env.CLAUDE_RUN_AS) {
+    mkdirSync(join(root, "claude"), { recursive: true });
+    mkdirSync(join(root, "state"), { recursive: true, mode: 0o711 });
+    execFileSync("chown", ["-R", process.env.CLAUDE_RUN_AS, remotes, join(root, "claude"), join(root, "gitconfig")]);
+  }
   return {
     cli: join(here, "../dist/cli.mjs"),
     /** Env for one bridge process: only what a real box provides (plus test knobs). No host keys. */
@@ -39,13 +48,16 @@ export function prepareRealBridge({ repos = ["acme/demo"] } = {}) {
         HOME: process.env.HOME,
         // The bridge writes `git config --global` (credential helper, identity), right in a box but not on this host: give each
         // simulated box its own global git config so a test run never touches the developer's ~/.gitconfig.
-        GIT_CONFIG_GLOBAL: join(root, `gitconfig-${short}`),
+        GIT_CONFIG_GLOBAL: join(root, "gitconfig", short),
         // Outbound proxy / extra CA for hosts that need them to reach Anthropic (CI and sandboxes often do).
         ...Object.fromEntries(["HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE"].filter((k) => process.env[k]).map((k) => [k, process.env[k]])),
         DORK_ID: dorkId,
         BRIDGE_URL: bridgeUrl,
         BRIDGE_SECRET: bridgeSecret,
         CLAUDE_BIN: process.env.CLAUDE_BIN || fakeClaude,
+        // A host running as root (a CI or cloud container) needs privilege separation for the real CLI, which refuses
+        // bypassPermissions as root: CLAUDE_RUN_AS=<unprivileged user> passes through, like a box configured for it.
+        ...(process.env.CLAUDE_RUN_AS ? { CLAUDE_RUN_AS: process.env.CLAUDE_RUN_AS } : {}),
         DORKS_GIT_BASE_URL: `file://${remotes}`,
         DORKS_STATE_DIR: join(root, "state", short), // survives a "pause" (killed process), like a paused box's disk
         DORKS_WORKDIR: join(root, "work", short),
