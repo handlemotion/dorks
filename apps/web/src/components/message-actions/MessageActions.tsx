@@ -10,10 +10,10 @@ import { BadIcon, CopiedIcon, CopyIcon, GoodIcon, ReplyIcon } from "./icons";
  */
 
 const BUTTON =
-  "relative inline-flex size-6 cursor-pointer items-center justify-center rounded-(--control-radius) border-0 bg-transparent p-0 text-muted-foreground outline-none hover:bg-foreground/[0.04] hover:text-foreground focus-visible:bg-foreground/[0.04] focus-visible:text-foreground data-[on=true]:bg-foreground/[0.07] data-[on=true]:text-foreground";
+  "relative inline-flex size-5 cursor-pointer items-center justify-center rounded-(--control-radius) border-0 bg-transparent p-0 text-muted-foreground outline-none hover:bg-foreground/[0.04] hover:text-foreground focus-visible:bg-foreground/[0.04] focus-visible:text-foreground data-[on=true]:bg-foreground/[0.07] data-[on=true]:text-foreground";
 
 /** Each glyph names its own transform origin (aicss's default is 50% 82%). */
-const GLYPH = "block size-3.5";
+const GLYPH = "block size-3";
 
 /** Joins class names; no merging, so no two of them may set the same property. */
 const cn = (...names: (string | false | null | undefined)[]) =>
@@ -93,7 +93,7 @@ export function MessageActions({
   return (
     <div
       data-testid="message-actions"
-      className="relative inline-flex items-center gap-0.5 rounded-(--control-radius) border border-border bg-surface p-0.5"
+      className="relative inline-flex items-center gap-0.5 rounded-(--control-radius) border border-border bg-surface p-px"
     >
       {rate && <>
       <Tip label="Good response">
@@ -192,7 +192,7 @@ export function MessageActions({
 
 /**
  * A message with its toolbar and time: hidden until the pointer is over the message or focus is in it, then the toolbar at its
- * top-right corner, half above it, and the time left of its first line, centered in the 40px gutter: the transcript is inset 20px
+ * top-right corner, just above it (24px tall, 4px clear of the text), and the time left of its first line, centered in the 40px gutter: the transcript is inset 20px
  * more than the composer, so the time's center falls on the composer's left edge. The message's scroller item paints with
  * `content-visibility: auto`, which clips what is pulled outside it, so the items keep room above and left of it (see ChatBlock).
  */
@@ -230,7 +230,7 @@ export function HoverActions({
         </span>
       )}
       {children}
-      <div className="pointer-events-none absolute -top-4 right-0 z-10 opacity-0 transition-opacity duration-150 ease-out group-focus-within/msg:pointer-events-auto group-focus-within/msg:opacity-100 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100 motion-reduce:transition-none">
+      <div className="pointer-events-none absolute right-0 bottom-full z-10 mb-1 opacity-0 transition-opacity duration-150 ease-out group-focus-within/msg:pointer-events-auto group-focus-within/msg:opacity-100 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100 motion-reduce:transition-none">
         <MessageActions {...actions} />
       </div>
     </div>

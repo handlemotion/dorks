@@ -385,8 +385,9 @@ export function ChatMessages({ blocks: raw, imageUrl, onReply, onReplySend, agen
       const own = images.filter((i) => i.id.startsWith(`${entry.block.id}:`))
       return (
         // A user message gets 12px more air on each side than the transcript's 24px gap, so turns read apart from the agent's work.
-        // `pt-7 -mt-4` is that 12px on top plus 16px of paint room for the hover toolbar, which the item would otherwise clip.
-        <MessageScrollerItem key={entry.block.id} messageId={entry.block.id} scrollAnchor className="-mt-4 pt-7 pb-3">
+        // `pt-10 -mt-7` is that 12px on top plus 28px of paint room for the hover toolbar above the bubble, which the item would
+        // otherwise clip.
+        <MessageScrollerItem key={entry.block.id} messageId={entry.block.id} scrollAnchor className="-mt-7 pt-10 pb-3">
           <Message align="end">
             <MessageContent className="items-end">
               {quoted && <ReplyQuote reply={quoted.kind === 'image' && quoted.ref ? { ...quoted, src: resolveRef(quoted.ref, imageUrl) } : quoted} />}
@@ -410,9 +411,9 @@ export function ChatMessages({ blocks: raw, imageUrl, onReply, onReplySend, agen
       )
     }
     return (
-      // `-mt-4 pt-4 -ml-10 pl-10`: paint room for a first message's hover toolbar and for the times in the left gutter, without
+      // `-mt-7 pt-7 -ml-10 pl-10`: paint room for a first message's hover toolbar and for the times in the left gutter, without
       // moving the layout.
-      <MessageScrollerItem key={entry.id} messageId={entry.id} className="-mt-4 -ml-10 pt-4 pl-10">
+      <MessageScrollerItem key={entry.id} messageId={entry.id} className="-mt-7 -ml-10 pt-7 pl-10">
         <Message {...{ [REPLY_SOURCE]: '' }}>
           <MessageContent className="gap-3">
             {turns(entry.blocks).map((turn, i) => <TurnContent key={`${entry.id}:${i}`} blocks={turn.blocks} end={turn.end} />)}
