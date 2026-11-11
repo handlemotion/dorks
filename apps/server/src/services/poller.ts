@@ -18,6 +18,7 @@ interface GhPr {
   title: string; state: "open" | "closed"; merged?: boolean; mergeable: boolean | null; merged_by?: GhUser | null;
   head: { ref: string; sha: string }; base: { ref: string; sha: string; repo?: { full_name: string } };
 }
+interface GhIssue { closed_by?: GhUser | null }
 interface GhReview { id: number; state: string; body: string | null; html_url: string; user: GhUser | null }
 interface GhComment { id: number; body: string; html_url: string; path?: string; user: GhUser | null; created_at: string }
 interface GhSuites { check_suites: { id: number; status: string; conclusion: string | null; latest_check_runs_count: number }[] }
@@ -64,7 +65,9 @@ export async function observe(app: App, token: string, sub: Subscription): Promi
         poll.baseSha = pr.base.sha;
         if (state !== "open") return { events, baseline, end: state, poll };
       } else if (state !== "open") {
-        events.push({ kind: "pr_closed", merged: state === "merged", sender: actor(pr.merged_by) });
+        // merged_by is null for a plain close; only the issue endpoint says who closed it (one extra read, once per PR).
+        const by = state === "merged" ? pr.merged_by : await get<GhIssue>(`${base}/issues/${sub.number}`).then((i) => (i.status === 200 ? i.json.closed_by : null));
+        events.push({ kind: "pr_closed", merged: state === "merged", sender: actor(by) });
         return { events, baseline, poll };
       } else {
         if (pr.head.sha !== sub.headSha) events.push({ kind: "pr_synchronize", headSha: pr.head.sha, headRef: pr.head.ref });

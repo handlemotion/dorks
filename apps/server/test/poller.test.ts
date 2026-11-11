@@ -17,6 +17,7 @@ function github() {
     issueComments: [] as Comment[],
     reviewComments: [] as Comment[],
     suites: {} as Record<string, { id: number; status: string; conclusion: string | null; latest_check_runs_count: number }[]>,
+    closedBy: null as null | { login: string; type: string },
     missing: false,
     rateLimitedUntil: 0,
     unauthorized: false,
@@ -39,6 +40,7 @@ function github() {
     const since = url.searchParams.get("since");
     const after = <T extends { created_at: string }>(list: T[]) => (since ? list.filter((c) => c.created_at > since) : list);
     if (p === "/repos/octo/hello/pulls/7") return conditional(url, init, state.pr);
+    if (p === "/repos/octo/hello/issues/7") return conditional(url, init, { closed_by: state.closedBy });
     if (p === "/repos/octo/hello/pulls/7/reviews") return conditional(url, init, state.reviews);
     if (p === "/repos/octo/hello/issues/7/comments") return conditional(url, init, after(state.issueComments));
     if (p === "/repos/octo/hello/pulls/7/comments") return conditional(url, init, after(state.reviewComments));
@@ -186,6 +188,18 @@ describe("poller", () => {
     expect(s.h.events(s.id).map((e) => e.body.type)).toContain("pr_merged");
     expect(s.inbox().map((r) => r.kind)).toEqual(["closed"]);
     expect(await pollOnce(s.h.app)).toBeNull(); // nothing left to watch
+  });
+
+  it("a plain close names who closed it, and the agent's own close does not wake it", async () => {
+    for (const [closer, inbox] of [["alice", ["Closed by alice."]], ["agent-bot", []]] as const) {
+      const s = await setup();
+      await pollOnce(s.h.app);
+      s.gh.state.pr.state = "closed";
+      s.gh.state.closedBy = person(closer);
+      await s.tick();
+      expect(s.sub()).toMatchObject({ status: "ended", state: "closed" });
+      expect(s.inbox().map((r) => r.summary)).toEqual(inbox);
+    }
   });
 
   it("a PR that is already merged when first seen just ends", async () => {
