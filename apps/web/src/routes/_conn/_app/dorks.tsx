@@ -104,7 +104,7 @@ function Dorks() {
               </section>
             )}
               <div className={`${showArchived ? 'hidden' : 'flex'} mx-auto w-full max-w-[790px] flex-col gap-6`}>
-                <h2 className="px-5 text-center text-lg font-medium">What should we work on?</h2>
+                <h2 className="sr-only">What should we work on?</h2>
                 {settings && <div className="px-5 [&:has(>div:empty)]:hidden"><SetupStatus settings={settings} /></div>}
                 <NewDork key={presetRepo} initialRepo={presetRepo} onCreated={setSelected} disabled={!ready} claudeReady={!!settings?.claudeToken} codexReady={!!settings?.boatEnvironment} />
               </div>

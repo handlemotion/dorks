@@ -1,6 +1,6 @@
 import { ArrowUpIcon, ChevronDownIcon, FileTextIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon } from 'lucide-react'
 import type { AgentModelChoice } from '@dorks/shared'
-import { useRef, useState, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Attachment, AttachmentAction, AttachmentActions, AttachmentContent, AttachmentMedia, AttachmentTitle } from '@dorks/ui/attachment'
 import {
   DropdownMenu,
@@ -43,7 +43,7 @@ function EffortBars({ level }: { level: number }) {
 }
 /** The main button (send or stop) is the one brand-blue action. */
 // Disabled: a quiet grey disc with a dimmed arrow, not faded blue.
-const MAIN = 'rounded-full bg-brand text-brand-foreground hover:bg-brand-hover disabled:bg-foreground/[0.08] disabled:text-foreground/35 disabled:opacity-100'
+const MAIN = 'size-7 rounded-full [&_svg]:size-3.5 bg-brand text-brand-foreground hover:bg-brand-hover disabled:bg-foreground/[0.08] disabled:text-foreground/35 disabled:opacity-100'
 const EFFORT_NAMES: Record<string, string> = { none: 'None', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max' }
 const DEFAULT = 'default'
 /** An effort among the model's as one to three bars. */
@@ -118,7 +118,25 @@ export function Composer({
 }) {
   const formRef = useRef<HTMLFormElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const textRef = useRef<HTMLTextAreaElement>(null)
   const [files, setFiles] = useState<{ id: string; name: string }[]>([])
+  // One row until the text wraps (or a file is attached); then the text takes the box and the buttons sit on a row under it.
+  // The text has the same side insets in both forms, so it wraps the same way in each and the box never flips back and forth.
+  const [wraps, setWraps] = useState(false)
+  useLayoutEffect(() => {
+    const el = textRef.current
+    if (!el) return
+    const measure = () => {
+      const style = getComputedStyle(el)
+      const content = el.scrollHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
+      setWraps(content > parseFloat(style.lineHeight) * 1.5)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [text])
+  const stacked = wraps || files.length > 0
   const isNewSession = setRepo !== undefined
   const canSend = text.trim().length > 0 && !pending && !disabled && (!isNewSession || !!repo?.trim())
   const models = provider === 'claude' ? picker : undefined
@@ -141,15 +159,16 @@ export function Composer({
           className="sr-only"
           tabIndex={-1}
           onChange={(e) => {
-            const selected = e.target.files
-            if (selected) setFiles((current) => [...current, ...Array.from(selected, (f) => ({ id: crypto.randomUUID(), name: f.name }))])
+            // Copied before the input is cleared: the FileList is live and empties with it.
+            const selected = Array.from(e.target.files ?? [], (f) => ({ id: crypto.randomUUID(), name: f.name }))
+            if (selected.length) setFiles((current) => [...current, ...selected])
             e.target.value = ''
           }}
         />
         {/* White on the off-white app (light), with the panel's 6% hairline since that pair is under 1.15:1; dark keeps the published fill. */}
-        <InputGroup className="rounded-[15px] border-border bg-white has-[textarea]:rounded-[15px] has-[>[data-align=block-end]]:rounded-[15px] dark:border-transparent dark:bg-input/50">
+        <InputGroup className="rounded-[15px] border-border bg-white has-[textarea]:rounded-[15px] has-[>[data-align=block-start]]:rounded-[15px] dark:border-transparent dark:bg-input/50">
           {files.length > 0 ? (
-            <InputGroupAddon align="block-start" className="flex-wrap">
+            <InputGroupAddon align="block-start" className="flex-wrap px-[42px] pt-3 pb-0">
               {files.map((file) => (
                 <Attachment key={file.id} size="sm">
                   <AttachmentMedia>
@@ -185,16 +204,21 @@ export function Composer({
               }
             }}
             disabled={pending || disabled}
-            // 15px in from the side, as far in as the corner's radius, and 14px from the top.
-            className="min-h-24 px-[15px] pt-3.5 pb-12"
+            ref={textRef}
+            rows={1}
+            // A 44px row: 12px above and below a 20px line, the text 42px in from each side (past the 28px buttons, 8px from the
+            // edge, and 6px more). Stacked, the bottom inset makes room for the button row (16px gap, 28px button, 8px edge).
+            className={`max-h-[40vh] min-h-0 py-3 px-[42px] leading-5 ${stacked ? 'pb-13' : ''}`}
           />
-          {/* Prompt actions stay inside the box; project and model settings sit below. */}
-          <InputGroupAddon align="block-end" className="absolute inset-x-0 bottom-0 justify-between p-[9px]">
+          {/* Attach and the main button keep one spot, 8px from the bottom corners, whether the box is one row or stacked. */}
+          <div className="absolute bottom-2 left-2">
             <Tip label="Attach files">
-              <InputGroupButton size="icon-sm" variant="ghost" className="text-muted-foreground hover:text-foreground [--control-radius:6px]" aria-label="Attach files" onClick={() => fileRef.current?.click()}>
-                <PlusIcon className="size-[18px]" />
+              <InputGroupButton size="icon-sm" variant="ghost" className="size-7 text-muted-foreground hover:text-foreground [--control-radius:6px]" aria-label="Attach files" onClick={() => fileRef.current?.click()}>
+                <PlusIcon className="size-4" />
               </InputGroupButton>
             </Tip>
+          </div>
+          <div className="absolute right-2 bottom-2">
             {onStop ? (
               <Tip label="Stop agent">
                 <InputGroupButton size="icon-sm" variant="default" className={MAIN} aria-label="Stop agent" onClick={onStop}>
@@ -208,7 +232,7 @@ export function Composer({
                 </InputGroupButton>
               </Tip>
             )}
-          </InputGroupAddon>
+          </div>
         </InputGroup>
         {/* Compact, shared baseline for the repository and model controls. */}
         <div className="flex items-center gap-2 px-2.5 pt-2 text-[13px] [--control-radius:6px]">
