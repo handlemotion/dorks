@@ -2,6 +2,7 @@ packages:
   - apps/*
   - packages/*
   - infra/bridge
+  - infra/tunnels
 nodeLinker: hoisted
 allowBuilds:
   esbuild: true

@@ -3,6 +3,7 @@ import { isBoxNotFound } from "../core/box";
 import { getDork } from "../data";
 import { BoatError } from "../lib/boat";
 import { bridgeSecret } from "../lib/bridgeAuth";
+import { forgetSandbox, sandboxTunnelEnv } from "../lib/tunnelService";
 import { createIssueComment, GithubHttpError, isTransientGithubError } from "../lib/github";
 import { pollOnce } from "../services/poller";
 import { runBuild, SNAPSHOT_JOB } from "../services/snapshot";
@@ -58,10 +59,11 @@ async function boxCreate(app: App, dorkId: string, gen: number) {
     const bridgeUrl = app.bridgeUrl();
     if (!bridgeUrl) return settle(app, () => opFailed(app, dorkId, "Set up the public URL that sandboxes use to reach this app first", gen));
     // Only bridge connection details go in the create-time env; user secrets arrive over the bridge's configure call.
+    const tunnelEnv = await sandboxTunnelEnv(app, dorkId);
     const box = await (await app.getBox()).createFromSnapshot(info.snapshotId, {
       name: dorkId,
       initCommand: "dorks-bridge",
-      env: { DORK_ID: dorkId, BRIDGE_URL: bridgeUrl, BRIDGE_SECRET: await bridgeSecret(app.cfg.bridgeSecretKey, dorkId), ...(app.cfg.tunnelKey ? { DORKS_TUNNEL_KEY: app.cfg.tunnelKey } : {}) },
+      env: { DORK_ID: dorkId, BRIDGE_URL: bridgeUrl, BRIDGE_SECRET: await bridgeSecret(app.cfg.bridgeSecretKey, dorkId), ...tunnelEnv },
       boatEnvironment: info.boatEnvironment,
       generation: gen,
     });
@@ -123,6 +125,7 @@ async function boxDestroy(app: App, dorkId: string) {
     safe(e, "delete_box");
     return settle(app, () => patchDork(app, dorkId, { deleting: false }));
   }
+  await forgetSandbox(app, dorkId);
   settle(app, () => {
     app.db.run("DELETE FROM dorks WHERE id = ?", dorkId); // events, commands, runtime, subscriptions and the inbox cascade
     app.db.run("DELETE FROM timers WHERE owner = ?", dorkId);

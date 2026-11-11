@@ -53,6 +53,11 @@ The same binary has other entry points (below): `dorks-bridge credential --sock 
 
 Required (provided by the box): `DORK_ID`, `BRIDGE_URL`, and `BRIDGE_SECRET_FILE` (or `BRIDGE_SECRET`).
 
+Behind the desktop app's embedded wurmhol tunnel the box also gets `DORKS_TUNNEL_SERVICE` and `DORKS_TUNNEL_TICKET`: the bridge
+trades the ticket at the tunnel service for a wurmhol grant (`src/grants.ts`), sends it as `x-wurmhol-grant` on every WebSocket
+handshake, renews it before it runs out and after the relay closes with `4401`, and stops for good when the ticket is refused or
+the relay closes with `4403` (docs/desktop.md, "Tunnel: wurmhol").
+
 | Var | Default | Meaning |
 |---|---|---|
 | `CLAUDE_BIN` | `claude` | The CLI binary. Tests point it at `test/fixtures/fake-claude.mjs`. |

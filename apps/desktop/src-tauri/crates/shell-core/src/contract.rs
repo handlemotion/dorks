@@ -21,8 +21,11 @@ pub const ENV_UI_PORT: &str = "DORKS_UI_PORT";
 pub const ENV_BRIDGE_PORT: &str = "DORKS_BRIDGE_PORT";
 /// Public URL of the bridge port as sandboxes see it. Unset when no tunnel is available.
 pub const ENV_PUBLIC_URL: &str = "DORKS_PUBLIC_URL";
-/// Access key of the wurmhol pipe, given to each sandbox so its bridge passes the relay. Unset for a user-supplied URL.
-pub const ENV_TUNNEL_KEY: &str = "DORKS_TUNNEL_KEY";
+/// The Dorks tunnel service, set with [`ENV_TUNNEL_INSTALL_KEY`] when the public URL is this install's embedded wurmhol tunnel.
+/// The server registers each sandbox there; its bridge trades the ticket it gets for wurmhol grants. Unset for a user URL.
+pub const ENV_TUNNEL_SERVICE: &str = "DORKS_TUNNEL_SERVICE";
+/// This install's key for the tunnel service (`dti_` + 64 hex). Stored 0600, never logged.
+pub const ENV_TUNNEL_INSTALL_KEY: &str = "DORKS_TUNNEL_INSTALL_KEY";
 /// PID of the shell. A server that sees this process gone should exit.
 pub const ENV_PARENT_PID: &str = "DORKS_PARENT_PID";
 
@@ -41,6 +44,10 @@ pub const ENV_SERVER_BIN: &str = "DORKS_SERVER_BIN";
 /// Shell-side only: path of the wurmhol client executable (default: `wurmhol` next to the app, else on PATH plus the usual
 /// Homebrew and `~/.local/bin` locations).
 pub const ENV_WURMHOL_BIN: &str = "WURMHOL_BIN";
+
+/// The hosted Dorks tunnel service (infra/tunnels): it holds Dorks' wurmhol integration key and hands this install its tunnel's
+/// connector. `DORKS_TUNNEL_SERVICE` in the shell's environment, or `tunnelService` in `settings.json`, overrides it.
+pub const DEFAULT_TUNNEL_SERVICE: &str = "https://tunnels.dorks.build";
 
 /// Shell-side only: overrides the app directory (default: `~/Library/Application Support/Dorks`). The server gets
 /// `<app dir>/server` as `DORKS_DATA_DIR`.

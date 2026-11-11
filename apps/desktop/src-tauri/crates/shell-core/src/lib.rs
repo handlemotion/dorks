@@ -2,6 +2,7 @@
 //!
 //! The shell supervises one sidecar, `dorks-server`, and talks to it only through the contract in [`contract`].
 
+pub mod connector;
 pub mod contract;
 pub mod github;
 pub mod health;
