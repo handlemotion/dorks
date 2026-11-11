@@ -1,7 +1,7 @@
 // Glue for infra/bridge-sim/host.mjs (BRIDGE_IMPL=real): builds the bundle, provisions a local git "remote" for the repos the e2e
 // uses, and hands back how to launch one real bridge per sim box. Dev/test only; the production box starts `dorks-bridge` itself.
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,8 +34,10 @@ export function prepareRealBridge({ repos = ["acme/demo"] } = {}) {
   // Its per-box CLAUDE_CONFIG_DIR (below) must be creatable by that user too, and it must be able to traverse to the settings and
   // MCP files in each box's state dir (the bridge makes the state dir itself 0711, not its parent).
   if (process.env.CLAUDE_RUN_AS) {
+    chmodSync(root, 0o711); // a mkdtemp root is 0700: the user must traverse it to reach its own dirs
     mkdirSync(join(root, "claude"), { recursive: true });
-    mkdirSync(join(root, "state"), { recursive: true, mode: 0o711 });
+    mkdirSync(join(root, "state"), { recursive: true });
+    chmodSync(join(root, "state"), 0o711);
     execFileSync("chown", ["-R", process.env.CLAUDE_RUN_AS, remotes, join(root, "claude"), join(root, "gitconfig")]);
   }
   return {
