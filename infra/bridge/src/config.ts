@@ -26,6 +26,8 @@ export interface Config {
   batchMs: number;
   flushIdleWaitMs: number;
   flushInterruptWaitMs: number;
+  /** How long a flush waits for the whole-filesystem `sync` before reporting `flushed` anyway (the transcript is fsynced first). */
+  flushSyncWaitMs: number;
 }
 
 const num = (v: string | undefined, d: number) => {
@@ -75,6 +77,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     batchMs: num(env.DORKS_BATCH_MS, 50),
     flushIdleWaitMs: num(env.DORKS_FLUSH_IDLE_WAIT_MS, 20_000),
     flushInterruptWaitMs: num(env.DORKS_FLUSH_INTERRUPT_WAIT_MS, 5_000),
+    flushSyncWaitMs: num(env.DORKS_FLUSH_SYNC_WAIT_MS, 5_000),
   };
 }
 

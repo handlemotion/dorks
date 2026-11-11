@@ -67,6 +67,7 @@ Required (provided by the box): `DORK_ID`, `BRIDGE_URL`, and `BRIDGE_SECRET_FILE
 | `DORKS_BATCH_MS` | `50` | Debounce for sending a batch of other frames. |
 | `DORKS_FLUSH_IDLE_WAIT_MS` | `20000` | How long `flush` waits for the current turn to finish; then it interrupts the turn. |
 | `DORKS_FLUSH_INTERRUPT_WAIT_MS` | `5000` | How long `flush` waits for the interrupted turn to wind down before persisting. |
+| `DORKS_FLUSH_SYNC_WAIT_MS` | `5000` | How long `flush` waits for the whole-filesystem `sync` (after fsyncing the transcript) before it reports `flushed` anyway. |
 
 The bridge never writes configure's secrets into its own `process.env`. `DORKS_*`, `BRIDGE_*`, `DORK_ID`, `SIM_HOST_KEY`
 and `CLAUDE_BIN` are stripped from the environment of the Claude child and everything under it (git included). Two `DORKS_` names are
