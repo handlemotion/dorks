@@ -38,8 +38,8 @@ export interface Dork {
 export interface CreateDorkInput {
   /** owner/name; optional only for a setup session. */
   repo?: string;
-  /** The build to start from (default: the default build, else the base snapshot). */
-  buildId?: string;
+  /** The build to start from; null: the base machine; omitted: the default build, else the base machine. */
+  buildId?: string | null;
   /** A machine-setup session for `buildId`: no repo needed, and the build needs no image yet. */
   setup?: boolean;
   message: string;

@@ -88,7 +88,12 @@ export function fold(view: DorkView, e: ClientEvent): DorkView {
       v.blocks.push({ kind: "build", id: `b${e.seq}`, draftId: e.draftId, buildId: e.buildId, buildName: e.buildName, note: e.note, approved: null });
       break;
     case "build_decision": {
-      const i = find((b) => b.kind === "build" && b.draftId === e.draftId);
+      // A session can submit the same draft again after a decision: the decision belongs to the latest card still waiting.
+      let i = -1;
+      for (let k = v.blocks.length - 1; k >= 0 && i < 0; k--) {
+        const b = v.blocks[k];
+        if (b.kind === "build" && b.draftId === e.draftId && b.approved === null) i = k;
+      }
       if (i >= 0) v.blocks[i] = { ...(v.blocks[i] as Extract<Block, { kind: "build" }>), approved: e.approved, reason: e.reason };
       else notice("info", `${e.approved ? "Approved" : "Rejected"} the machine draft for ${e.buildName}${e.reason ? `: ${e.reason}` : ""}`);
       break;

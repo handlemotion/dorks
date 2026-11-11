@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { BuildSpec, RunKind, RunStatus, RunStep, RunView } from "@dorks/shared";
+import type { BuildSpec, DraftVar, RunKind, RunStatus, RunStep, RunView } from "@dorks/shared";
 import { fail, touch, type App } from "../app";
 import type { SnapshotDriver } from "../core/snapshot";
 import { insert, update } from "../db";
@@ -84,6 +84,7 @@ export function startRun(app: App, buildId: string, o: StartOpts): RunView {
     if (app.db.get("SELECT 1 FROM build_runs WHERE build_id = ? AND status IN ('queued', 'running')", buildId)) fail("conflict", "This build is already running. Wait for it, or cancel it.");
     const vars = varsOf(app, buildId);
     let spec: BuildSpec = specOf(b, vars);
+    let draftVars: DraftVar[] | undefined;
     const agent = o.by.startsWith("dork:");
     if (agent) {
       const since = app.now() - DAY;
@@ -91,7 +92,10 @@ export function startRun(app: App, buildId: string, o: StartOpts): RunView {
         const n = app.db.get<{ n: number }>("SELECT count(*) AS n FROM build_runs WHERE started_by = ? AND kind = 'trial' AND created_at > ?", o.by, since)?.n ?? 0;
         if (n >= AGENT_TRIALS_PER_DAY) fail("limit", `You used ${AGENT_TRIALS_PER_DAY} trial runs today. Ask the owner to run more.`);
         const draft = o.draftOf ? draftView(app, buildId, o.draftOf) : null;
-        if (draft && draft.status === "editing") spec = draft.spec;
+        if (draft && draft.status === "editing") {
+          spec = draft.spec;
+          draftVars = draft.vars;
+        }
       } else {
         // decision 7: an agent may only (re)build the spec the owner approved, never its draft.
         if (b.approvedHash !== b.specHash) fail("forbidden", "The build's current spec was not approved by the owner.");
@@ -104,7 +108,8 @@ export function startRun(app: App, buildId: string, o: StartOpts): RunView {
       if (missing.length) fail("not_configured", `Fill in ${missing.join(", ")} first: the setup script needs ${missing.length === 1 ? "it" : "them"}.`);
     }
     const id = app.uuid();
-    insert(app.db, "build_runs", { id, buildId, kind: o.kind, spec, specHash: hashSpec(spec), startedBy: o.by, status: "queued", attempt: 1, log: "", logBytes: 0, createdAt: app.now() });
+    // A trial of a draft also carries the draft's variable changes (plain values only: a draft never holds a secret's value).
+    insert(app.db, "build_runs", { id, buildId, kind: o.kind, spec: draftVars ? { ...spec, draftVars } : spec, specHash: hashSpec(spec), startedBy: o.by, status: "queued", attempt: 1, log: "", logBytes: 0, createdAt: app.now() });
     setTimer(app, "", `${RUN_JOB}${id}`, 0, { attempt: 1 });
     touch(app, { t: "build", buildId });
     touch(app, { t: "builds" });
@@ -193,6 +198,7 @@ export async function runBuildRun(app: App, runId: string, attempt: number): Pro
   let driver: SnapshotDriver | undefined;
   let sandboxId: string | undefined;
   let processId: number | undefined;
+  let savedName: string | undefined; // set once a save started: if the build is deleted meanwhile, its image must not be left behind
   try {
     driver = await app.getSnapshotDriver();
     const base = readSettings(app).baseSnapshotId ?? app.cfg.baseSnapshotId;
@@ -204,7 +210,13 @@ export async function runBuildRun(app: App, runId: string, attempt: number): Pro
     const approved = isImage && build.approvedHash === r0.spec_hash;
     const allBuildTime = await buildVarValues(app, build.id, true);
     const secrets = new Set(varsOf(app, build.id).filter((v) => v.secret).map((v) => v.name));
-    const env = Object.fromEntries(Object.entries(allBuildTime).filter(([k]) => spec.buildTimeVars.includes(k) && (approved || !secrets.has(k))));
+    const values = { ...allBuildTime };
+    for (const v of (spec as BuildSpec & { draftVars?: DraftVar[] }).draftVars ?? []) {
+      if (v.remove || v.secret) delete values[v.name];
+      else if (v.value !== undefined) values[v.name] = v.value;
+      if (v.secret) secrets.add(v.name);
+    }
+    const env = Object.fromEntries(Object.entries(values).filter(([k]) => spec.buildTimeVars.includes(k) && (approved || !secrets.has(k))));
     const varsAt = varsDigest(app, build.id, allBuildTime);
     const redact = redactor([...(await secretValues(app, build.id)), ...(gh && app.cfg.boxProvider !== "sim" ? [gh] : [])]);
 
@@ -281,22 +293,20 @@ export async function runBuildRun(app: App, runId: string, attempt: number): Pro
 
       progress(app, runId, attempt, "save");
       const name = imageName(app, build.id);
+      savedName = name;
       await driver.saveSnapshot(sandboxId, name);
       await waitSaved(app, driver, name, sandboxId);
 
       progress(app, runId, attempt, "finish");
-      const gone = app.db.tx(() => {
+      app.db.tx(() => {
         const r = getRun(app, runId);
         if (!r || r.status !== "running" || r.attempt !== attempt) throw new Superseded();
         const now = app.now();
-        if (!getBuild(app, build.id)) return true;
         update(app.db, "builds", { id: build.id }, { image: name, imageHash: r0.spec_hash, imageBase: baseAt, imageVars: varsAt, imageAt: now });
         update(app.db, "build_runs", { id: runId }, { status: "succeeded", step: null, finishedAt: now });
         touch(app, { t: "build", buildId: build.id });
         touch(app, { t: "builds" });
-        return false;
       });
-      if (gone) await driver.deleteSnapshot(name).catch(() => undefined); // the build was deleted while it saved
     } else {
       app.db.tx(() => {
         const r = getRun(app, runId);
@@ -320,6 +330,7 @@ export async function runBuildRun(app: App, runId: string, attempt: number): Pro
       });
     }
   } finally {
+    if (driver && savedName && !getBuild(app, build.id)) await driver.deleteSnapshot(savedName).catch(() => app.db.tx(() => setTimer(app, "", `${FORGET_JOB}${savedName}`, 30_000, { image: savedName, attempt: 1 })));
     if (driver && sandboxId) {
       if (processId !== undefined) await driver.killCommand(sandboxId, processId).catch(() => undefined);
       await removeSandbox(app, driver, sandboxId);
@@ -361,7 +372,9 @@ async function follow(app: App, driver: SnapshotDriver, runId: string, attempt: 
       flush(true);
       return res.exitCode;
     }
-    flush(true);
+    // A reconnect is not the end of the output: keep an incomplete last line, so a secret split across two streams is redacted whole.
+    flushedAt = 0;
+    flush();
     const r = getRun(app, runId);
     if (!r || r.status !== "running" || r.attempt !== attempt) throw new Superseded();
   }

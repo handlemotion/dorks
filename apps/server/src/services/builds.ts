@@ -442,11 +442,15 @@ function decide(app: App, d: DraftRow, buildName: string, approved: boolean, rea
  */
 export async function approveDraft(app: App, buildId: string, draftId: string): Promise<{ missing: string[] }> {
   const d0 = ownDraft(app, buildId, draftId);
+  if (d0.status !== "submitted") fail("conflict", "The agent has not submitted this draft yet.");
   const changes = JSON.parse(d0.vars) as DraftVar[];
   const enc = new Map<string, string>();
   for (const v of changes) if (!v.remove && !v.secret && v.value !== undefined) enc.set(v.name, (await encrypt(app.ring, v.value, aadVar(buildId, v.name))).value);
   return app.db.tx(() => {
     const d = ownDraft(app, buildId, draftId);
+    // What the owner approved is what they saw: a draft the agent touched since (even during this call) is not applied.
+    if (d.status !== "submitted" || d.updated_at !== d0.updated_at || d.spec !== d0.spec || d.vars !== d0.vars)
+      fail("conflict", "The agent changed this draft while you were approving it. Review it again.");
     const b = ownBuild(app, buildId);
     const spec = JSON.parse(d.spec) as BuildSpec;
     update(app.db, "builds", { id: buildId }, { machineType: spec.machineType, setupScript: spec.setupScript, repos: spec.repos });

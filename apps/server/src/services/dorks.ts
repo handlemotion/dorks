@@ -80,7 +80,8 @@ export function createDork(app: App, input: { repo?: string; message: string; ti
   if (!(setup && repo === "") && (typeof repo !== "string" || !validRepo(repo))) fail("invalid", "repo must be owner/name");
   if (input.buildId !== undefined && input.buildId !== null && typeof input.buildId !== "string") fail("invalid", "buildId must be a string");
   if (setup && typeof input.buildId !== "string") fail("invalid", "A setup session needs the build it sets up.");
-  const buildId = typeof input.buildId === "string" ? input.buildId : setup ? null : defaultBuildId(app);
+  // An explicit null is the owner choosing the base machine; only an omitted buildId falls back to the default build.
+  const buildId = typeof input.buildId === "string" ? input.buildId : input.buildId === null || setup ? null : defaultBuildId(app);
   if (buildId) {
     const b = getBuild(app, buildId);
     if (!b) fail("not_found", "This build no longer exists.");

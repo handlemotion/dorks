@@ -79,6 +79,8 @@ export interface FakeSnapshotDriver extends SnapshotDriver {
   /** Build runs: the detached setup's exit code and output, what the secret scan finds, and how sandboxes were created. */
   setupExit: number;
   setupOutput: string;
+  /** When set, the setup's output arrives over several attach calls (one array each); all but the last end in a reconnect. */
+  setupStreams?: string[][];
   scanHits: string;
   created: { from?: string; type?: string; labelKey?: string }[];
   killed: number[];
@@ -159,6 +161,11 @@ export function fakeSnapshotDriver(): FakeSnapshotDriver {
         return { t: "exit", exitCode: 0, offsets };
       }
       if (!command.includes("dorks-build/run")) return { t: "exit", exitCode: 0, offsets };
+      if (d.setupStreams?.length) {
+        for (const chunk of d.setupStreams.shift()!) onOutput("stdout", chunk);
+        if (d.setupStreams.length) return { t: "reconnect", offsets };
+        return { t: "exit", exitCode: d.setupExit, offsets };
+      }
       if (d.setupOutput) onOutput("stdout", d.setupOutput);
       return { t: "exit", exitCode: d.setupExit, offsets };
     },

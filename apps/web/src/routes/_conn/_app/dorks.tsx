@@ -149,7 +149,7 @@ function NewDork({ initialRepo, onCreated, disabled, claudeReady, codexReady }: 
         upload={actions.uploadImage}
         machine={{ builds: built, buildId, onChange: setPicked }}
         onSubmit={(images) => run(async () => {
-          onCreated((await actions.createDork({ repo: repo.trim(), message: withImages(message, images), provider, ...(buildId ? { buildId } : {}), ...(provider === 'claude' ? choice : {}) })).id)
+          onCreated((await actions.createDork({ repo: repo.trim(), message: withImages(message, images), provider, buildId, ...(provider === 'claude' ? choice : {}) })).id)
           setMessage('')
         })}
       />
