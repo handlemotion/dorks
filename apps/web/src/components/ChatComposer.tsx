@@ -43,7 +43,7 @@ function EffortBars({ level }: { level: number }) {
 }
 /** The main button (send or stop) is the one brand-blue action. */
 // Disabled: a quiet grey disc with a dimmed arrow, not faded blue.
-const MAIN = 'size-7 rounded-full [&_svg]:size-3.5 bg-brand text-brand-foreground hover:bg-brand-hover disabled:bg-foreground/[0.08] disabled:text-foreground/35 disabled:opacity-100'
+const MAIN = 'size-7 rounded-(--control-radius) [--control-radius:6px] [&_svg]:size-3.5 bg-brand text-brand-foreground hover:bg-brand-hover disabled:bg-foreground/[0.08] disabled:text-foreground/35 disabled:opacity-100'
 const EFFORT_NAMES: Record<string, string> = { none: 'None', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max' }
 const DEFAULT = 'default'
 /** An effort among the model's as one to three bars. */

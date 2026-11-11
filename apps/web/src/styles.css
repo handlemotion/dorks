@@ -94,14 +94,8 @@
   --animate-ma-thumb-up: ma-thumb-up 520ms cubic-bezier(0.22, 1.15, 0.36, 1);
   --animate-ma-thumb-down: ma-thumb-down 520ms cubic-bezier(0.22, 1.15, 0.36, 1);
   --animate-ma-draw-check: ma-draw-check 420ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  --animate-ma-smile-hop: ma-smile-hop 560ms cubic-bezier(0.22, 1.2, 0.36, 1);
-  --animate-ma-wink-shut: ma-wink-shut 560ms cubic-bezier(0.22, 1.2, 0.36, 1);
-  --animate-ma-wink-line: ma-wink-line 560ms cubic-bezier(0.22, 1.2, 0.36, 1);
   --animate-ma-reply-grow: ma-reply-grow 520ms cubic-bezier(0.22, 1.15, 0.36, 1);
   --animate-ma-reply-head: ma-reply-head 520ms cubic-bezier(0.22, 1.15, 0.36, 1);
-  --animate-ma-pop-in: ma-pop-in 160ms cubic-bezier(0.22, 1, 0.36, 1);
-  --animate-ma-reaction-in: ma-reaction-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
-  --animate-ma-emoji-out: ma-emoji-out 220ms ease forwards;
 
   @keyframes ma-thumb-up {
     0% { transform: none; }
@@ -117,21 +111,6 @@
     from { stroke-dashoffset: 28; }
     to { stroke-dashoffset: 0; }
   }
-  @keyframes ma-smile-hop {
-    0% { transform: none; }
-    45% { transform: translate(0.4px, -1px) rotate(-3deg); }
-    100% { transform: none; }
-  }
-  @keyframes ma-wink-shut {
-    0%, 6% { opacity: 1; }
-    16%, 32% { opacity: 0; }
-    42%, 100% { opacity: 1; }
-  }
-  @keyframes ma-wink-line {
-    0%, 6% { opacity: 0; }
-    16%, 32% { opacity: 1; }
-    42%, 100% { opacity: 0; }
-  }
   @keyframes ma-reply-grow {
     0%, 100% { transform: none; }
     46% { transform: scaleX(1.25); }
@@ -139,17 +118,6 @@
   @keyframes ma-reply-head {
     0%, 100% { transform: none; }
     46% { transform: translateX(-12.5%); }
-  }
-  @keyframes ma-pop-in {
-    from { opacity: 0; transform: translateY(4px) scale(0.96); }
-    to { opacity: 1; transform: none; }
-  }
-  @keyframes ma-reaction-in {
-    from { opacity: 0; scale: 1.2; }
-    to { opacity: 1; scale: 1; }
-  }
-  @keyframes ma-emoji-out {
-    to { width: 0; opacity: 0; transform: scale(0.9); }
   }
 }
 
