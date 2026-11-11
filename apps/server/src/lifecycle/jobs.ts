@@ -6,6 +6,8 @@ import { bridgeSecret } from "../lib/bridgeAuth";
 import { createIssueComment, GithubHttpError, isTransientGithubError } from "../lib/github";
 import { pollOnce } from "../services/poller";
 import { runBuild, SNAPSHOT_JOB } from "../services/snapshot";
+import { getBuild } from "../services/builds";
+import { FORGET_JOB, forgetImage, RUN_JOB, runBuildRun } from "../services/buildRuns";
 import { githubToken, readSettings } from "../services/settings";
 import { getSub } from "../services/subscriptions";
 import { boxCreated, boxGone, boxPaused, boxResumed, opFailed } from "./lifecycle";
@@ -32,6 +34,8 @@ export interface BoxInfo {
   sleepMinutes: number;
   requiresBoatEnvironment: boolean;
   boatEnvironment?: string;
+  /** The build's machine size, when the dork is on a build. */
+  machineType?: string;
 }
 
 /** Non-secret facts the box jobs need. */
@@ -40,8 +44,12 @@ export function boxInfo(app: App, dorkId: string): BoxInfo | null {
   if (!dork) return null;
   const s = readSettings(app);
   const codexOnBoat = dork.provider === "codex" && app.cfg.boxProvider === "boat";
+  // A dork on a build starts from the build's image (docs/builds.md); before its first image (a setup session), or after the build was
+  // deleted, from the base snapshot.
+  const build = dork.buildId ? getBuild(app, dork.buildId) : undefined;
   return {
-    boxId: dork.boxId ?? null, deleting: dork.deleting, snapshotId: s.baseSnapshotId ?? app.cfg.baseSnapshotId ?? "", sleepMinutes: s.sleepMinutes,
+    boxId: dork.boxId ?? null, deleting: dork.deleting, snapshotId: build?.image ?? s.baseSnapshotId ?? app.cfg.baseSnapshotId ?? "", sleepMinutes: s.sleepMinutes,
+    machineType: build?.machineType,
     requiresBoatEnvironment: codexOnBoat, boatEnvironment: codexOnBoat ? s.boatEnvironment : undefined,
   };
 }
@@ -62,6 +70,7 @@ async function boxCreate(app: App, dorkId: string, gen: number) {
       initCommand: "dorks-bridge",
       env: { DORK_ID: dorkId, BRIDGE_URL: bridgeUrl, BRIDGE_SECRET: await bridgeSecret(app.cfg.bridgeSecretKey, dorkId), ...(app.cfg.tunnelKey ? { DORKS_TUNNEL_KEY: app.cfg.tunnelKey } : {}) },
       boatEnvironment: info.boatEnvironment,
+      machineType: info.machineType,
       generation: gen,
     });
     const recorded = app.db.tx(() => boxCreated(app, dorkId, box.id, info.sleepMinutes, gen));
@@ -153,7 +162,7 @@ export function sweep(app: App) {
 }
 
 /** Timer names that are jobs (async, outside a transaction) rather than state-machine timers. */
-export const isJob = (name: string) => name.startsWith("box:") || name.startsWith("orphan:") || name.startsWith("stall:") || name === "poll" || name === "sweep" || name === SNAPSHOT_JOB;
+export const isJob = (name: string) => name.startsWith("box:") || name.startsWith("orphan:") || name.startsWith("stall:") || name === "poll" || name === "sweep" || name === SNAPSHOT_JOB || name.startsWith(RUN_JOB) || name.startsWith(FORGET_JOB);
 
 export async function runJob(app: App, owner: string, name: string, payload: any): Promise<void> {
   try {
@@ -164,6 +173,8 @@ export async function runJob(app: App, owner: string, name: string, payload: any
     if (name.startsWith("orphan:")) return await deleteOrphan(app, payload.boxId, payload.attempt);
     if (name.startsWith("stall:")) return await stallComment(app, payload.subscriptionId, payload.runUrl, payload.attempt ?? 0, name, owner);
     if (name === SNAPSHOT_JOB) return await runBuild(app, payload.attempt);
+    if (name.startsWith(RUN_JOB)) return await runBuildRun(app, name.slice(RUN_JOB.length), payload.attempt);
+    if (name.startsWith(FORGET_JOB)) return await forgetImage(app, payload.image, payload.attempt ?? 0);
     if (name === "sweep") return sweep(app);
     if (name === "poll") {
       const next = await pollOnce(app);

@@ -32,6 +32,9 @@ export const clientEvent = z.discriminatedUnion("type", [
   z.object({ ...base, type: z.literal("notify"), kinds: z.array(notifyKind), prs: z.array(prRef), text: z.string() }),
   // A PR subscription changed (subscribed, ended, or stalled after CI_FIX_MAX_ATTEMPTS).
   z.object({ ...base, type: z.literal("subscription"), repo: z.string(), number: z.number(), status: z.enum(["active", "stalled", "ended"]), reason: z.string().optional() }),
+  // Builds (docs/builds.md): the agent submitted a draft of its machine for the owner's approval, and the owner's answer.
+  z.object({ ...base, type: z.literal("build_draft"), draftId: z.string(), buildId: z.string().nullable(), buildName: z.string(), note: z.string().optional() }),
+  z.object({ ...base, type: z.literal("build_decision"), draftId: z.string(), buildId: z.string().nullable(), buildName: z.string(), approved: z.boolean(), reason: z.string().optional() }),
   z.object({ ...base, type: z.literal("rate_limited"), resetsAt: z.number().optional() }),
   z.object({ ...base, type: z.literal("agent_exited"), message: z.string() }),
   // `error` is the typed form (absent on events stored before the taxonomy); `message` is always present for display.

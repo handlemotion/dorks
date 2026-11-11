@@ -190,4 +190,78 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX images_dork ON images (dork_id);
   ALTER TABLE dorks ADD COLUMN images TEXT;
   `,
+  `
+  -- Builds (docs/builds.md): named machine setups, each a Boat saved snapshot layered on the base snapshot. spec_hash covers what
+  -- changes the image (size, setup script, repos, names of build-time variables); approved_hash is the spec the owner last approved.
+  -- image_vars is a keyed hash (HMAC, never a plain hash) of the build-time variable values the image was built with, for staleness.
+  CREATE TABLE builds (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    machine_type TEXT NOT NULL DEFAULT 'default',
+    setup_script TEXT NOT NULL DEFAULT '',
+    repos TEXT NOT NULL DEFAULT '[]',
+    rev INTEGER NOT NULL DEFAULT 1,
+    spec_hash TEXT NOT NULL,
+    approved_hash TEXT,
+    image TEXT,
+    image_rev INTEGER,
+    image_hash TEXT,
+    image_base TEXT,
+    image_vars TEXT,
+    image_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  -- Values are AES-GCM envelopes bound to (build, name). value_enc NULL: an agent asked for it and the owner has not filled it in.
+  CREATE TABLE build_vars (
+    build_id TEXT NOT NULL REFERENCES builds (id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    value_enc TEXT,
+    secret INTEGER NOT NULL,
+    build_time INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (build_id, name)
+  ) WITHOUT ROWID;
+
+  -- One execution of a spec. 'image' runs save the build's snapshot; 'trial' runs only check that the setup works.
+  CREATE TABLE build_runs (
+    id TEXT PRIMARY KEY,
+    build_id TEXT NOT NULL REFERENCES builds (id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('image', 'trial')),
+    spec TEXT NOT NULL,
+    spec_hash TEXT NOT NULL,
+    started_by TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')),
+    step TEXT,
+    error TEXT,
+    attempt INTEGER NOT NULL DEFAULT 1,
+    sandbox_id TEXT,
+    process_id INTEGER,
+    command_id TEXT,
+    exit_code INTEGER,
+    log TEXT NOT NULL DEFAULT '',
+    log_bytes INTEGER NOT NULL DEFAULT 0,
+    started_at INTEGER,
+    finished_at INTEGER,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX build_runs_build ON build_runs (build_id, created_at DESC);
+
+  -- An agent's proposed change to its dork's build, one per (build, dork).
+  CREATE TABLE build_drafts (
+    id TEXT PRIMARY KEY,
+    build_id TEXT NOT NULL REFERENCES builds (id) ON DELETE CASCADE,
+    dork_id TEXT NOT NULL REFERENCES dorks (id) ON DELETE CASCADE,
+    base_rev INTEGER NOT NULL,
+    spec TEXT NOT NULL,
+    vars TEXT NOT NULL DEFAULT '[]',       -- DraftVar[]: proposed variable changes (a secret's value never appears here)
+    note TEXT,
+    status TEXT NOT NULL CHECK (status IN ('editing', 'submitted', 'approved', 'rejected')),
+    updated_at INTEGER NOT NULL,
+    UNIQUE (build_id, dork_id)
+  );
+
+  ALTER TABLE dorks ADD COLUMN build_id TEXT REFERENCES builds (id) ON DELETE SET NULL;
+  ALTER TABLE settings ADD COLUMN default_build_id TEXT;
+  `,
 ];

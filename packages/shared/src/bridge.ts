@@ -36,9 +36,10 @@ export const toBridge = z.discriminatedUnion("t", [
     // Claude: the model (a CLI alias such as `opus`, or a full id) and effort chosen in the UI; absent means the CLI's default.
     model: z.string().optional(),
     effort: z.string().optional(),
-    env: z.record(z.string(), z.string()), // CLAUDE_CODE_OAUTH_TOKEN + CLI secrets: passed to the claude child, never written to disk
+    env: z.record(z.string(), z.string()), // CLAUDE_CODE_OAUTH_TOKEN + shared and build variables: passed to the agent child, never written to disk
     ghToken: z.string(),
-    repo: z.object({ fullName: z.string(), branch: z.string() }),
+    // null: a session with no starting repo (a machine-setup session, docs/builds.md): the agent starts in the work directory.
+    repo: z.object({ fullName: z.string(), branch: z.string() }).nullable(),
     resumeSessionId: z.string().nullable(),
     // Set while the dork still carries its first message as a title: the bridge asks a small model for a short name for this
     // text (once per bridge process) and sends it back as a `title` frame. Absent once the title was generated or typed.

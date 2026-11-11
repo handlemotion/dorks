@@ -3,6 +3,7 @@ import { hasTimer, setTimer } from "./dispatch";
 import { isJob, runJob } from "./jobs";
 import { fireTimer } from "./lifecycle";
 import { recoverSnapshotBuild } from "../services/snapshot";
+import { recoverBuildRuns } from "../services/buildRuns";
 import { pollable } from "../services/subscriptions";
 
 interface TimerRow {
@@ -44,6 +45,7 @@ export class Scheduler implements SchedulerLike {
     for (const d of app.db.all<{ id: string }>("SELECT id FROM dorks WHERE deleting = 1")) if (!hasTimer(app, d.id, "box:destroy")) setTimer(app, d.id, "box:destroy", 0);
     if (!hasTimer(app, "", "sweep")) setTimer(app, "", "sweep", 60_000);
     recoverSnapshotBuild(app); // a build that was running when the process died runs again, as a new attempt
+    recoverBuildRuns(app); // likewise for build runs (docs/builds.md)
   }
 
   stop() {

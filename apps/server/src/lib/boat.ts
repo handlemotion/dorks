@@ -165,7 +165,7 @@ export function boatBox(opts: BoatOptions): BoxProvider {
   }
 
   return {
-    async createFromSnapshot(snapshotId, { name, initCommand, env, generation, boatEnvironment }) {
+    async createFromSnapshot(snapshotId, { name, initCommand, env, generation, boatEnvironment, machineType }) {
       if (initCommand !== "dorks-bridge") throw new BoatError("boat: unsupported bridge command");
       if (boatEnvironment) await checkCodexEnvironment(call, opts.org, boatEnvironment);
       const label = await labelFor(name);
@@ -182,7 +182,7 @@ export function boatBox(opts: BoatOptions): BoxProvider {
       }
       for (const stale of existing.filter((b) => b.id !== live?.id && (b.state === "error" || b.dataExpiredAt))) await remove(stale.id);
       const body = {
-        from: snapshotId, name, labels: { dorks: label }, env,
+        from: snapshotId, name, labels: { dorks: label }, env, ...(machineType ? { type: machineType } : {}),
         ...(boatEnvironment ? { environment: boatEnvironment, noEnv: false } : { noEnv: true }),
         ttlSeconds: null,
       };

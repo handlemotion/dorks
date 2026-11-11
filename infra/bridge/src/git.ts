@@ -78,21 +78,42 @@ export async function prepareRepo(ctx: GitCtx, repo: { fullName: string; branch:
     if ((await git(["fetch", "--quiet", "origin"])).code !== 0) ctx.log("fetch failed; continuing with the checkout on disk");
   }
 
-  // Persist the helper for the agent's own git commands (push etc.) in the user's global config, scoped to the git host, so any repo
-  // it clones under the workdir can push, not just this one. It holds a socket path, not a secret.
-  for (const scope of helperScopes(ctx.gitBaseUrl)) {
-    await run(["config", "--global", "--replace-all", `credential.${scope}.helper`, ""], dir, env); // the empty value resets earlier helpers
-    await run(["config", "--global", "--add", `credential.${scope}.helper`, ctx.helper], dir, env);
-  }
-  for (const [k, v] of [["user.name", "dorks"], ["user.email", "dorks@users.noreply.github.com"]] as const) {
-    if (!(await run(["config", k], dir, env)).stdout.trim()) await run(["config", "--global", k, v], dir, env);
-  }
+  await configureGit(ctx, dir);
 
   const exists = async (ref: string) => (await run(["show-ref", "--verify", "--quiet", ref], dir, env)).code === 0;
   let ok: boolean;
   if (await exists(`refs/heads/${branch}`)) ok = (await run(["checkout", "--quiet", branch], dir, env)).code === 0;
   else if (await exists(`refs/remotes/origin/${branch}`)) ok = (await run(["checkout", "--quiet", "-b", branch, "--track", `origin/${branch}`], dir, env)).code === 0;
-  else ok = (await run(["checkout", "--quiet", "-b", branch], dir, env)).code === 0; // new dork branch off the default branch
+  else {
+    // A new dork branch starts from the freshly fetched upstream of the checked-out branch, not from whatever is checked out: a clone
+    // baked into a build image (docs/builds.md) can be weeks old. A fresh clone's HEAD already equals its upstream, so nothing changes there.
+    const upstream = (await run(["rev-parse", "--verify", "--quiet", "@{upstream}"], dir, env)).stdout.trim();
+    ok = (await run(["checkout", "--quiet", "--no-track", "-b", branch, ...(upstream ? [upstream] : [])], dir, env)).code === 0;
+  }
   if (!ok) throw new SetupError("git checkout");
   return dir;
+}
+
+/**
+ * Persists the credential helper for the agent's own git commands (push etc.) in the user's global config, scoped to the git host, so
+ * any repo it clones under the workdir can push. It holds a socket path, not a secret. Also used by sessions with no starting repo.
+ */
+export async function configureGit(ctx: GitCtx, cwd: string): Promise<void> {
+  const env = gitEnv(ctx.env ?? process.env, ctx.runAs);
+  const run = (args: string[]) => runGit(args, cwd, env, ctx.runAs);
+  for (const scope of helperScopes(ctx.gitBaseUrl)) {
+    await run(["config", "--global", "--replace-all", `credential.${scope}.helper`, ""]); // the empty value resets earlier helpers
+    await run(["config", "--global", "--add", `credential.${scope}.helper`, ctx.helper]);
+  }
+  for (const [k, v] of [["user.name", "dorks"], ["user.email", "dorks@users.noreply.github.com"]] as const) {
+    if (!(await run(["config", k])).stdout.trim()) await run(["config", "--global", k, v]);
+  }
+}
+
+/** A session with no starting repo works in the work directory itself (created, and owned by the agent's user). */
+export async function prepareWorkDir(ctx: GitCtx): Promise<string> {
+  mkdirSync(ctx.workDir, { recursive: true });
+  if (ctx.runAs) chownSync(ctx.workDir, ctx.runAs.uid, ctx.runAs.gid);
+  await configureGit(ctx, ctx.workDir);
+  return ctx.workDir;
 }

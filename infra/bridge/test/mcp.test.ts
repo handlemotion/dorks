@@ -37,9 +37,12 @@ describe("MCP protocol", () => {
     expect(((await server().handle(JSON.stringify({ id: 1 }))) as any).error.code).toBe(-32600);
   });
 
-  it("lists the PR and preview tools with object schemas and hints, without leaking the handlers", async () => {
+  it("lists the PR, preview and machine tools with object schemas and hints, without leaking the handlers", async () => {
     const { tools } = (await rpc(server(), "tools/list")).result;
-    expect(tools.map((t: any) => t.name)).toEqual(["pr_subscribe", "pr_unsubscribe", "pr_list", "preview_show", "screenshot_share"]);
+    expect(tools.map((t: any) => t.name)).toEqual([
+      "pr_subscribe", "pr_unsubscribe", "pr_list", "preview_show", "screenshot_share",
+      "machine_get", "machine_draft", "machine_run", "machine_logs", "machine_submit",
+    ]);
     for (const t of tools) {
       expect(t.inputSchema.type).toBe("object");
       expect(t.inputSchema.additionalProperties).toBe(false);
@@ -116,6 +119,30 @@ describe("MCP tools", () => {
   });
 });
 
+describe("machine tools", () => {
+  it("forward to the bridge's build method as one action each, and a refusal comes back as a tool error", async () => {
+    const run = { id: "r1", kind: "trial", status: "succeeded", step: null, error: null, exitCode: 0, startedBy: "dork:d", createdAt: 1, finishedAt: 2 };
+    const actions: string[] = [];
+    const b = await fakeBridge({
+      build: (p: any) => {
+        actions.push(p.action);
+        if (p.action === "run") return run;
+        if (p.action === "logs") return { run, log: "== done" };
+        if (p.action === "submit") throw new RpcError("failed", "There is no draft to submit. Write one with machine_draft first.");
+        return { build: null, draft: null };
+      },
+    });
+    const s = new McpServer(b.env);
+    expect(text(await call(s, "machine_run", {}))).toContain("Started a trial run (r1)");
+    expect(text(await call(s, "machine_logs", { tail: 5 }))).toContain("trial run r1: succeeded\n\n== done");
+    expect(text(await call(s, "machine_get", {}))).toContain("base machine");
+    const refused = await call(s, "machine_submit", { note: "adds jq" });
+    expect(refused.result.isError).toBe(true);
+    expect(text(refused)).toContain("no draft to submit");
+    expect(actions).toEqual(["run", "logs", "get", "submit"]);
+  });
+});
+
 describe("the built `dorks mcp` over stdio", () => {
   let cli: string;
   beforeAll(() => {
@@ -144,7 +171,7 @@ describe("the built `dorks mcp` over stdio", () => {
     const replies = out.trim().split("\n").map((l) => JSON.parse(l));
     expect(replies.map((r) => r.id)).toEqual([1, 2, 3, 4]); // the notification got no reply, the rest are in order
     expect(replies[0].result.protocolVersion).toBe("2025-06-18");
-    expect(replies[1].result.tools).toHaveLength(5);
+    expect(replies[1].result.tools).toHaveLength(10);
     expect(replies[2].result.content[0].text).toContain("Subscribed to acme/demo#4");
     expect(replies[3].result.content[0].text).toContain("acme/demo#4");
     expect(b.calls[0]).toEqual({ method: "pr.sub", params: { repo: "acme/demo", number: 4, source: "agent" } });
