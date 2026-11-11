@@ -38,6 +38,13 @@ export interface IngestEnv {
  * which is before the turn ends, give or take clock skew between GitHub and this machine.
  */
 export const AGENT_COMMENT_GRACE_MS = 15_000;
+
+/**
+ * Hidden mark on comments the server itself posts with the token (the stall notice). They are authored by the token's owner
+ * while the dork is idle, so without it the server's own "a human is needed" would read as the owner talking: it would wake
+ * the dork and un-stall the subscription it just stalled.
+ */
+export const SERVER_COMMENT_MARK = "<!-- dorks:server -->";
 const MAX_TRACKED_SUITES = 20; // failing check suites remembered per head: a pathological repo must not grow the row
 const short = (sha: string) => sha.slice(0, 7);
 const quote = (text: string) => (text.length > MAX_SUMMARY_CHARS ? `${text.slice(0, MAX_SUMMARY_CHARS)}…` : text);
@@ -135,6 +142,7 @@ export function ingestEvent(app: App, subId: number, event: PrEvent, env: Ingest
     }
 
     case "comment":
+      if (env.ownLogin && event.sender.login.toLowerCase() === env.ownLogin.toLowerCase() && event.body.includes(SERVER_COMMENT_MARK)) return;
       if (byAgent(app, sub, event.sender, event.at, env.ownLogin) || !commentAllowed(env.policy, event.sender.login, env.ownLogin)) return;
       if (!event.sender.bot) resetCiAttempts(app, sub, "resumed by a comment"); // a person is looking at it: CI gets a fresh budget
       notify("comment", `${event.sender.login} commented${event.path ? ` on ${event.path}` : ""}: ${quote(event.body.trim())} (${event.url})`);

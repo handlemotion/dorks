@@ -2,7 +2,7 @@ import { CI_FIX_MAX_ATTEMPTS, DEFAULT_COMMENT_POLICY } from "@dorks/shared";
 import { describe, expect, it } from "vitest";
 import { update } from "../src/db";
 import { append } from "../src/lifecycle/dispatch";
-import { commentAllowed, ingestEvent, type IngestEnv, type PrEvent } from "../src/services/githubIngest";
+import { commentAllowed, ingestEvent, SERVER_COMMENT_MARK, type IngestEnv, type PrEvent } from "../src/services/githubIngest";
 import * as subs from "../src/services/subscriptions";
 import { harness, type Harness } from "./harness";
 
@@ -226,6 +226,10 @@ describe("what a change on the PR does", () => {
     s.patch({ status: "stalled", ciFixAttempts: 2 });
     s.ingest({ kind: "comment", body: "bot says", url: "u", sender: { login: "ci-bot[bot]", bot: true } });
     expect(s.get()).toMatchObject({ status: "stalled", ciFixAttempts: 2 });
+    // the server's own stall notice is posted with the token while the dork is idle: it is nobody's input
+    s.ingest({ kind: "comment", body: `A human needs to take a look.\n\n${SERVER_COMMENT_MARK}`, url: "u", sender: { login: "agent-bot", bot: false }, at: s.h.clock.t });
+    expect(s.get()).toMatchObject({ status: "stalled", ciFixAttempts: 2 });
+    expect(s.inbox().map((r) => r.summary)).toEqual(["ci-bot[bot] commented: bot says (u)"]);
     s.ingest({ kind: "comment", body: "i looked", url: "u", sender: human });
     expect(s.get()).toMatchObject({ status: "active", ciFixAttempts: 0 });
   });
