@@ -3,7 +3,7 @@ import { useDorksClient, useSnapshot } from '@dorks/client/react'
 import type { Settings } from '@dorks/client'
 import { Button } from '@dorks/ui/button'
 import { Progress } from '@dorks/ui/progress'
-import { isDesktop, openTunnelApproval } from '../lib/desktop'
+import { isDesktop } from '../lib/desktop'
 import { usePending } from '../lib/pending'
 
 /**
@@ -64,21 +64,9 @@ function SnapshotStatus({ settings }: { settings: Settings }) {
   )
 }
 
-/** Sandboxes reach this Mac through a public address: one approval click for the desktop tunnel, or an address in Settings. */
+/** Sandboxes reach this Mac through a public address: the desktop app's own private tunnel, or an address in Settings. */
 function TunnelPrompt() {
   const tunnel = window.__DORKS__?.tunnel
-  const { run, pending, error } = usePending()
-  if (isDesktop() && tunnel?.state === 'approval') {
-    return (
-      <div data-testid="tunnel-approval" className="flex flex-wrap items-center gap-2 text-sm">
-        <p className="text-muted-foreground">Sandboxes need a way back to this Mac. Approve it once in your browser; Dorks continues by itself.</p>
-        <Button size="sm" disabled={pending} onClick={() => void run(openTunnelApproval)}>
-          Approve this Mac
-        </Button>
-        {error && <p role="alert" className="text-destructive">{error}</p>}
-      </div>
-    )
-  }
   return (
     <p role="status" data-testid="tunnel-missing" className="text-sm text-muted-foreground">
       Sandboxes cannot reach this Mac yet{tunnel?.error ? ` (${tunnel.error})` : ''}, so sessions will not start.{' '}

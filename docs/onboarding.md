@@ -38,7 +38,7 @@ Studied on Mobbin (web, desktop-class onboarding): Linear, Twenty, Air, Sana.
 Then the app opens on the new-session screen (`components/SetupStatus.tsx`), which shows what still stands between the owner and a session:
 
 - **Base snapshot**: "Preparing Boat, step n of 7" with progress while it builds, the reason and Retry when it failed, or a Prepare Boat button when nothing was started (a key saved before builds started themselves). Create stays disabled until a snapshot is set.
-- **Public URL**: in the desktop app with the wurmhol tunnel waiting, an "Approve this Mac" button (it opens the approval page; the shell continues by itself). Otherwise a line saying sessions will not start, pointing at Settings (desktop) or `DORKS_PUBLIC_URL` (server by hand).
+- **Public URL**: the desktop app opens its own private tunnel with nothing to approve, so this shows only when it could not (with the reason): a line saying sessions will not start, pointing at Settings (desktop) or `DORKS_PUBLIC_URL` (server by hand).
 
 Using a hand-built snapshot, billing a team wallet and setting your own public URL live in Settings only.
 

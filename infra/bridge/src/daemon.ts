@@ -1,6 +1,7 @@
 import { Bridge, SleepingError } from "./bridge";
 import { loadConfig } from "./config";
 import { makeLogger, Redactor } from "./redact";
+import { GrantSource } from "./grants";
 import { WsTransport } from "./transport";
 
 /** The bridge process itself (`dorks-bridge` with no subcommand). */
@@ -9,10 +10,12 @@ export async function runDaemon() {
   // Best effort: the kernel keeps the initial environ readable to same-uid processes, but nothing in this process re-exports it.
   delete process.env.BRIDGE_SECRET;
   delete process.env.BRIDGE_SECRET_FILE;
+  delete process.env.DORKS_TUNNEL_TICKET;
   const redactor = new Redactor();
   redactor.add(cfg.bridgeSecret);
+  if (cfg.tunnel) redactor.add(cfg.tunnel.ticket);
   const log = makeLogger(cfg.dorkId.slice(-6), redactor);
-  const transport = new WsTransport(cfg.bridgeUrl, cfg.dorkId, cfg.bridgeSecret, WebSocket, cfg.tunnelKey);
+  const transport = new WsTransport(cfg.bridgeUrl, cfg.dorkId, cfg.bridgeSecret, WebSocket, cfg.tunnel && new GrantSource(cfg.tunnel.service, cfg.tunnel.ticket));
   let bridge: Bridge | undefined;
   const exit = async (code: number) => {
     await bridge?.stop().catch(() => {});

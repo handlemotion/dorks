@@ -35,13 +35,15 @@ BRIDGE_IMPL=real CLAUDE_BIN="$(command -v claude)" CLAUDE_RUN_AS=dorkrun DORKS_E
 
 Save the token as above, then drive it with `POST /api/dorks` and `GET /api/dorks/:id/events` ([docs/architecture.md](docs/architecture.md)).
 
-Real Boat sandboxes from a cloud session (verified): a Boat box dials back to the bridge, so give the bridge port a public URL with a [Wurmhol](https://wurmhol.com/docs) pipe, the same way the desktop shell does ([docs/desktop.md](docs/desktop.md), "Tunnel: wurmhol"). The environment has `WURMHOL_TOKEN`; the pipe needs only an outbound WebSocket through the proxy.
+Real Boat sandboxes from a cloud session: a Boat box dials back to the bridge, so give the bridge port a public URL with an embedded [Wurmhol](https://wurmhol.com/docs) tunnel from the Dorks tunnel service, the same way the desktop shell does ([docs/desktop.md](docs/desktop.md), "Tunnel: wurmhol"). It needs the service deployed (`infra/tunnels`) and only an outbound WebSocket through the proxy. Not yet run end to end: the access-key pipe this replaced was.
 
 ```sh
-KEY=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')   # pipe access key; keep it out of the transcript
-WURMHOL_ACCESS_KEY=$KEY npx -y wurmhol 4748 --json --name dorks-cloud-<random>   # prints {"url": ...} and returns
-DORKS_PUBLIC_URL=<that url> DORKS_TUNNEL_KEY=$KEY DORKS_BRIDGE_PORT=4748 DORKS_UI_PORT=0 \
-  DORKS_OWNER_TOKEN=dev-owner-token DORKS_DATA_DIR=<temp dir> bun run apps/server/src/main.ts
+SVC=https://tunnels.dorks.build
+KEY=dti_$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')   # this session's install key; keep it out of the transcript
+curl -s -X POST $SVC/v1/tunnel -H "authorization: Bearer $KEY" > /tmp/tunnel.json   # {tunnel: {url}, connector: {connector}}
+WURMHOL_TOKEN=$(jq -r .connector.connector /tmp/tunnel.json) npx -y wurmhol@0.8 4748 --json   # prints {"url": ...} and returns
+DORKS_PUBLIC_URL=$(jq -r .tunnel.url /tmp/tunnel.json) DORKS_TUNNEL_SERVICE=$SVC DORKS_TUNNEL_INSTALL_KEY=$KEY \
+  DORKS_BRIDGE_PORT=4748 DORKS_UI_PORT=0 DORKS_OWNER_TOKEN=dev-owner-token DORKS_DATA_DIR=<temp dir> bun run apps/server/src/main.ts
 ```
 
 Then `PUT /api/settings` with `boatKey`, `boatOrg`, `claudeToken` and `githubToken` from Doppler (one piped JSON body, as above). Saving the Boat key builds the base snapshot on Boat (about a minute); poll `GET /api/snapshot` until `ready`, then create a dork on a real repo. This spends Boat credit: `DELETE /api/dorks/:id` when done (it destroys the box), and `npx wurmhol stop 4748`.

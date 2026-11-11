@@ -8,12 +8,12 @@ use std::time::Duration;
 use dorks_shell_core::contract::*;
 use dorks_shell_core::paths::Paths;
 use dorks_shell_core::ports::pick_port;
-use dorks_shell_core::secrets::{ensure_access_key, ensure_install_name, ensure_owner_token, read_secret};
+use dorks_shell_core::secrets::{ensure_install_key, ensure_owner_token, write_secret};
 use dorks_shell_core::settings::{KeepAwake, Settings};
 use dorks_shell_core::supervisor::{reap_stale, Policy, SidecarSpec, Status, Supervisor};
-use dorks_shell_core::tunnel::{self, Tunnel, TunnelError, TunnelHealth, TunnelTarget};
+use dorks_shell_core::tunnel::{self, Tunnel, TunnelHealth, TunnelTarget};
 use dorks_shell_core::window::{ChromeInfo, Effect};
-use dorks_shell_core::wurmhol::{find_wurmhol, WurmholConfig, WurmholTunnel};
+use dorks_shell_core::wurmhol::{find_wurmhol, ConnectorSource, WurmholConfig, WurmholTunnel};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 use crate::state::{AppState, Runtime, RuntimeConfig, TunnelInfo};
@@ -57,15 +57,19 @@ async fn try_start(app: &AppHandle, state: &AppState) -> Result<RuntimeConfig, S
     }
     *state.settings.lock().unwrap() = settings.clone();
 
-    let (tunnel, public_url, tunnel_info, tunnel_key) = start_tunnel(&settings, paths, bridge_port).await;
+    // The access-key pipe's files (a personal wurmhol token, the pipe's key and name) are replaced by the embedded tunnel.
+    for legacy in paths.legacy_wurmhol_files() {
+        let _ = write_secret(&legacy, None);
+    }
+    let (tunnel, public_url, tunnel_info, tunnel_service) = start_tunnel(&settings, paths, bridge_port).await;
 
     let program = resolve_server_bin().ok_or_else(|| {
         format!("the {SERVER_BIN_NAME} sidecar was not found; run `pnpm --filter @dorks/desktop prepare:sidecar` or set {ENV_SERVER_BIN}")
     })?;
-    let spec = server_spec(paths, program, ui_port, bridge_port, &owner_token, public_url.as_deref(), tunnel_key.as_deref());
+    let spec = server_spec(paths, program, ui_port, bridge_port, &owner_token, public_url.as_deref(), tunnel_service.as_ref());
     let supervisor = Arc::new(Supervisor::start(spec, Policy::default()));
 
-    let tunnel_observable = matches!(tunnel_info.state.as_str(), "ready" | "approval");
+    let tunnel_observable = tunnel_info.state == "ready";
     let config = RuntimeConfig {
         api_url: format!("http://127.0.0.1:{ui_port}"),
         ui_port,
@@ -84,51 +88,54 @@ async fn try_start(app: &AppHandle, state: &AppState) -> Result<RuntimeConfig, S
     Ok(config)
 }
 
-/// The wurmhol client's settings: the executable, the saved token, and the user's server and extra arguments.
+/// The Dorks tunnel service: `$DORKS_TUNNEL_SERVICE`, else `tunnelService` in settings, else the hosted one.
+fn tunnel_service_url(settings: &Settings) -> String {
+    std::env::var(ENV_TUNNEL_SERVICE)
+        .ok()
+        .or_else(|| settings.tunnel_service.clone())
+        .map(|u| u.trim().trim_end_matches('/').to_string())
+        .filter(|u| !u.is_empty())
+        .unwrap_or_else(|| DEFAULT_TUNNEL_SERVICE.to_string())
+}
+
+/// The wurmhol client's settings: the executable, where its connector comes from, and the user's server and extra arguments.
 fn wurmhol_config(settings: &Settings, paths: &Paths) -> WurmholConfig {
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let exe_dir = std::env::current_exe().ok().and_then(|e| e.parent().map(PathBuf::from));
     let bin = find_wurmhol(std::env::var_os(ENV_WURMHOL_BIN).as_deref(), exe_dir.as_deref(), std::env::var_os("PATH").as_deref(), home.as_deref())
         .unwrap_or_else(|| PathBuf::from("wurmhol"));
     let mut cfg = WurmholConfig::new(bin, paths.wurmhol_log());
-    cfg.token = read_secret(&paths.wurmhol_token_file()).ok().flatten();
-    cfg.access_key = ensure_access_key(&paths.wurmhol_access_key_file()).ok();
+    match ensure_install_key(&paths.tunnel_install_key_file()) {
+        Ok(install_key) => cfg.source = Some(ConnectorSource { service: tunnel_service_url(settings), install_key, file: paths.wurmhol_connector_file() }),
+        Err(e) => eprintln!("dorks: {e}"),
+    }
     cfg.server = settings.wurmhol_server.clone();
     cfg.extra_args = settings.wurmhol_args.clone();
-    // A stable name keeps the public URL the same across restarts (sandboxes are created with it). The user's own `--name` wins.
-    if !cfg.extra_args.iter().any(|a| a == "--name") {
-        if let Ok(name) = ensure_install_name(&paths.wurmhol_name_file()) {
-            cfg.extra_args.extend(["--name".to_string(), name]);
-        }
-    }
     cfg
 }
 
-async fn start_tunnel(settings: &Settings, paths: &Paths, bridge_port: u16) -> (Arc<dyn Tunnel>, Option<String>, TunnelInfo, Option<String>) {
+/// The tunnel, its public URL and state, and for an embedded wurmhol tunnel the tunnel service and install key the server
+/// needs to let its sandboxes in.
+async fn start_tunnel(settings: &Settings, paths: &Paths, bridge_port: u16) -> (Arc<dyn Tunnel>, Option<String>, TunnelInfo, Option<(String, String)>) {
     let env_url = std::env::var(ENV_PUBLIC_URL).ok();
     let cfg = wurmhol_config(settings, paths);
-    let token_set = cfg.token.is_some();
     let tunnel: Arc<dyn Tunnel> = match tunnel::select(env_url.as_deref(), settings.public_url.as_deref(), cfg.clone()) {
         Ok(t) => Arc::from(t),
         Err(e) => {
             // A malformed URL: keep an idle wurmhol tunnel so the UI can still show the error.
             let idle: Arc<dyn Tunnel> = Arc::new(WurmholTunnel::new(cfg));
-            return (idle, None, TunnelInfo { kind: "user-url".into(), state: "error".into(), error: Some(e.to_string()), approval_url: None, token_set }, None);
+            return (idle, None, TunnelInfo { kind: "user-url".into(), state: "error".into(), error: Some(e.to_string()) }, None);
         }
     };
-    // Only a wurmhol pipe needs the key; a URL the user supplies goes straight to the server.
-    let tunnel_key = if tunnel.kind() == "wurmhol" { cfg.access_key.clone() } else { None };
+    // Only the embedded tunnel needs the service; a URL the user supplies goes straight to the server.
+    let service = if tunnel.kind() == "wurmhol" { cfg.source.as_ref().map(|s| (s.service.clone(), s.install_key.clone())) } else { None };
     match tunnel.start(TunnelTarget { bridge_port }).await {
         Ok(endpoint) => {
-            let info = TunnelInfo { kind: tunnel.kind().into(), state: "ready".into(), error: None, approval_url: None, token_set };
-            (tunnel, Some(endpoint.public_url), info, tunnel_key)
-        }
-        Err(TunnelError::ApprovalNeeded(link)) => {
-            let info = TunnelInfo { kind: tunnel.kind().into(), state: "approval".into(), error: None, approval_url: Some(link), token_set };
-            (tunnel, None, info, tunnel_key)
+            let info = TunnelInfo { kind: tunnel.kind().into(), state: "ready".into(), error: None };
+            (tunnel, Some(endpoint.public_url), info, service)
         }
         Err(e) => {
-            let info = TunnelInfo { kind: tunnel.kind().into(), state: "error".into(), error: Some(e.to_string()), approval_url: None, token_set };
+            let info = TunnelInfo { kind: tunnel.kind().into(), state: "error".into(), error: Some(e.to_string()) };
             (tunnel, None, info, None)
         }
     }
@@ -146,19 +153,6 @@ fn spawn_tunnel_watcher(app: AppHandle, mut rx: tokio::sync::watch::Receiver<Tun
             }
             let health = rx.borrow_and_update().clone();
             let reason = match health {
-                TunnelHealth::Approved => {
-                    // Approval was granted: start again now (the same command prints the pipe's URL), not after the lost-tunnel delay.
-                    let app = app.clone();
-                    tauri::async_runtime::spawn(async move {
-                        if app.state::<AppState>().quitting.load(Ordering::SeqCst) {
-                            return;
-                        }
-                        stop_runtime(&app).await;
-                        let _ = start_runtime(&app).await;
-                        publish_config(&app);
-                    });
-                    return;
-                }
                 TunnelHealth::Lost(reason) => reason,
                 TunnelHealth::Up => continue,
             };
@@ -188,7 +182,7 @@ fn spawn_tunnel_watcher(app: AppHandle, mut rx: tokio::sync::watch::Receiver<Tun
     })
 }
 
-pub fn server_spec(paths: &Paths, program: PathBuf, ui_port: u16, bridge_port: u16, owner_token: &str, public_url: Option<&str>, tunnel_key: Option<&str>) -> SidecarSpec {
+pub fn server_spec(paths: &Paths, program: PathBuf, ui_port: u16, bridge_port: u16, owner_token: &str, public_url: Option<&str>, tunnel_service: Option<&(String, String)>) -> SidecarSpec {
     let mut env = vec![
         (ENV_DATA_DIR.to_string(), paths.server_data_dir().display().to_string()),
         (ENV_OWNER_TOKEN.to_string(), owner_token.to_string()),
@@ -199,8 +193,9 @@ pub fn server_spec(paths: &Paths, program: PathBuf, ui_port: u16, bridge_port: u
     if let Some(url) = public_url {
         env.push((ENV_PUBLIC_URL.to_string(), url.to_string()));
     }
-    if let Some(key) = tunnel_key {
-        env.push((ENV_TUNNEL_KEY.to_string(), key.to_string()));
+    if let Some((service, install_key)) = tunnel_service {
+        env.push((ENV_TUNNEL_SERVICE.to_string(), service.clone()));
+        env.push((ENV_TUNNEL_INSTALL_KEY.to_string(), install_key.clone()));
     }
     SidecarSpec {
         program,

@@ -12,6 +12,8 @@ All optional.
 | `DORKS_UI_PORT` | `4747` (`0` picks a free port) | UI listener, bound to `127.0.0.1`. |
 | `DORKS_BRIDGE_PORT` | `4748` (`0` picks a free port) | Bridge listener, bound to `127.0.0.1`. The tunnel forwards to this port and only this one. |
 | `DORKS_PUBLIC_URL` | none | `https://` URL of your tunnel. Sandboxes are created with `BRIDGE_URL` set to this (as `wss://`, path `/bridge`). Creating a Boat dork fails with `onboarding_incomplete` until it is set. It must stay stable, because existing sandboxes keep the URL they were created with. |
+| `DORKS_TUNNEL_SERVICE` | none | The Dorks tunnel service (`https://`), set by the desktop shell with `DORKS_TUNNEL_INSTALL_KEY` when the public URL is the install's embedded wurmhol tunnel. Each new sandbox is registered there for a ticket its bridge trades for wurmhol grants. In the shell's own environment it overrides the hosted service (default `https://tunnels.dorks.build`). |
+| `DORKS_TUNNEL_INSTALL_KEY` | none | This install's key for the tunnel service (`dti_` + 64 hex). Secret; the shell keeps it in `tunnel-install-key` (0600). |
 | `DORKS_OWNER_TOKEN` | generated | Bearer token for the UI API. When unset, one is generated into `secrets.json` on first run. |
 | `DORKS_UI_ORIGINS` | `tauri://localhost`, `http://tauri.localhost`, `http://localhost:3000`, `http://127.0.0.1:3000` | Comma-separated browser origins allowed by CORS. |
 | `BASE_SNAPSHOT_ID` | none | Default Boat base snapshot. The `baseSnapshotId` setting wins when set. |

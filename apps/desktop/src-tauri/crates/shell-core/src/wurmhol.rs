@@ -1,5 +1,8 @@
-//! The wurmhol tunnel provider: runs the wurmhol client (`wurmhol <port> --json`, handlemotion/wurmhol `packages/cli`) against
-//! the server's bridge port and reports the URL it prints.
+//! The wurmhol tunnel provider: runs the wurmhol client (`wurmhol <port> --json`, handlemotion/wurmhol `packages/cli`, 0.8.0 or
+//! newer) against the server's bridge port with this install's embedded-tunnel connector, and reports the URL it prints.
+//!
+//! The tunnel is private (wurmhol ADR 0032): only grants for the subjects on its access list open it, which are this install's
+//! sandboxes (see `connector` and `infra/tunnels`). Nobody in Dorks' wurmhol org can open it, and no wurmhol login is needed.
 //!
 //! The client is a separate executable so the shell stays free of the relay protocol. Two shapes are supported, because the
 //! client changes:
@@ -9,8 +12,8 @@
 //! - **Foreground** (a proposal, see docs/desktop.md): it prints the same line and stays alive. Health is the process;
 //!   stopping is SIGTERM.
 //!
-//! The token reaches the client only through `WURMHOL_TOKEN` in its environment, never its arguments. Only the bridge port is
-//! ever passed. See docs/desktop.md for what the hosted relay cannot do yet (stable names, machine access).
+//! The connector reaches the client only through `WURMHOL_TOKEN` in its environment, never its arguments. Only the bridge port
+//! is ever passed: a connector refuses `--name`, `--only` and an access key, since the tunnel already has its URL and its list.
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -25,6 +28,7 @@ use tokio::sync::{oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 
+use crate::connector;
 use crate::settings::validate_public_url;
 use crate::supervisor::{terminate, INHERITED_ENV};
 use crate::tunnel::{BoxFuture, Tunnel, TunnelEndpoint, TunnelError, TunnelHealth, TunnelTarget};
@@ -35,15 +39,19 @@ const PASSTHROUGH_ENV: &[&str] = &["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "
 /// Where a GUI app on macOS usually will not look but `node` (which the client runs on) usually lives.
 const EXTRA_BIN_DIRS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
 
+/// Where the connector comes from: the Dorks tunnel service, this install's key for it, and the 0600 file it is kept in.
+#[derive(Debug, Clone)]
+pub struct ConnectorSource {
+    pub service: String,
+    pub install_key: String,
+    pub file: PathBuf,
+}
+
 #[derive(Debug, Clone)]
 pub struct WurmholConfig {
     pub bin: PathBuf,
-    /// A token the user saved. `None` is fine: the client then asks for a device-login approval (`approval` in its output) and
-    /// keeps the token it is granted in its own credentials file.
-    pub token: Option<String>,
-    /// Passed as `WURMHOL_ACCESS_KEY`: lets a sandbox's bridge through the relay without a browser sign-in. Needs a relay that has
-    /// the access-key support (an older one ignores it, and sandboxes then get 401 at the relay).
-    pub access_key: Option<String>,
+    /// `None` only when the install key could not be read; starting then fails with a reason.
+    pub source: Option<ConnectorSource>,
     /// A self-hosted install, passed as `WURMHOL_URL`.
     pub server: Option<String>,
     pub extra_args: Vec<String>,
@@ -58,8 +66,7 @@ impl WurmholConfig {
     pub fn new(bin: PathBuf, log_file: PathBuf) -> Self {
         Self {
             bin,
-            token: None,
-            access_key: None,
+            source: None,
             server: None,
             extra_args: vec![],
             log_file,
@@ -72,18 +79,15 @@ impl WurmholConfig {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Ready {
-    /// The pipe's URL, or the approval link when `approval` is set.
+    /// The tunnel's URL.
     pub url: String,
     pub id: String,
-    pub approval: bool,
 }
 
 #[derive(Deserialize)]
 struct ReadyJson {
     url: String,
     id: String,
-    #[serde(default)]
-    approval: bool,
 }
 
 /// Parses the client's first stdout line (`--json`): `{"url":"https://…","port":4748,"id":"k3x9p2abcd"}`.
@@ -97,23 +101,8 @@ pub fn parse_ready_line(line: &str) -> Result<Ready, String> {
     if !id_ok {
         return Err("wurmhol reported a pipe id that is not valid".into());
     }
-    // An approval link is a page the person opens (it has a `?code=`); a pipe URL becomes the bridge's public origin.
-    let url = if parsed.approval {
-        validate_approval_link(&parsed.url).map_err(|e| format!("wurmhol reported an approval link that cannot be used: {e}"))?
-    } else {
-        validate_public_url(&parsed.url).map_err(|e| format!("wurmhol reported a URL that cannot be used: {e}"))?
-    };
-    Ok(Ready { url, id: parsed.id, approval: parsed.approval })
-}
-
-/// An `https://` page, with no credentials and no whitespace or control characters; its query is allowed.
-fn validate_approval_link(raw: &str) -> Result<String, String> {
-    let url = raw.trim();
-    let authority = url.strip_prefix("https://").ok_or("the link must be https://")?.split(['/', '?', '#']).next().unwrap_or("");
-    if authority.is_empty() || authority.contains('@') || url.len() > 512 || url.chars().any(|c| c.is_whitespace() || c.is_control()) {
-        return Err("not a plain https link".into());
-    }
-    Ok(url.to_string())
+    let url = validate_public_url(&parsed.url).map_err(|e| format!("wurmhol reported a URL that cannot be used: {e}"))?;
+    Ok(Ready { url, id: parsed.id })
 }
 
 fn truncate(s: &str) -> String {
@@ -127,18 +116,11 @@ fn truncate(s: &str) -> String {
 
 /// Whether `wurmhol ls --json` output lists the pipe.
 pub fn listing_has(output: &str, id: &str) -> bool {
-    listing_state(output, id).is_some()
-}
-
-/// The pipe's state in `wurmhol ls --json` output: `None` when it is not listed, else whether it still waits for approval.
-pub fn listing_state(output: &str, id: &str) -> Option<bool> {
     #[derive(Deserialize)]
     struct Item {
         id: String,
-        #[serde(default)]
-        approval: bool,
     }
-    serde_json::from_str::<Vec<Item>>(output.trim()).ok()?.into_iter().find(|i| i.id == id).map(|i| i.approval)
+    serde_json::from_str::<Vec<Item>>(output.trim()).is_ok_and(|items| items.iter().any(|i| i.id == id))
 }
 
 /// Arguments after the program name: the bridge port, JSON output, then the user's extras.
@@ -198,8 +180,8 @@ impl WurmholTunnel {
         Self { cfg, health, active: tokio::sync::Mutex::new(None) }
     }
 
-    async fn launch(&self, port: u16) -> Result<(Ready, Mode, Arc<Mutex<String>>), TunnelError> {
-        let mut child = command(&self.cfg, &start_args(port, &self.cfg.extra_args))
+    async fn launch(&self, port: u16, token: &str) -> Result<(Ready, Mode, Arc<Mutex<String>>), TunnelError> {
+        let mut child = command(&self.cfg, &start_args(port, &self.cfg.extra_args), Some(token))
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -217,7 +199,7 @@ impl WurmholTunnel {
                 let _ = timeout(Duration::from_secs(2), child.wait()).await;
                 sleep(Duration::from_millis(100)).await;
                 let why = last_error.lock().unwrap().clone();
-                return Err(TunnelError::Failed(if why.is_empty() { "wurmhol exited without opening a pipe".into() } else { why }));
+                return Err(TunnelError::Failed(if why.is_empty() { "wurmhol exited without opening the tunnel".into() } else { why }));
             }
             Err(_) => {
                 let _ = child.kill().await;
@@ -255,14 +237,18 @@ impl Tunnel for WurmholTunnel {
             if let Some(old) = active.take() {
                 finish(old).await;
             }
-            let (ready, mode, last_error) = self.launch(target.bridge_port).await?;
-            if ready.approval {
-                // The daemon waits for a person to approve this computer; watch until it has, then tell the shell to start over.
-                let (stop_tx, stop_rx) = oneshot::channel();
-                let monitor = tokio::spawn(await_approval(self.cfg.clone(), ready.id, stop_rx, self.health.clone()));
-                *active = Some(Active { stop: Some(stop_tx), monitor });
-                return Err(TunnelError::ApprovalNeeded(ready.url));
-            }
+            let source = self.cfg.source.as_ref().ok_or_else(|| TunnelError::Failed("this install has no key for the Dorks tunnel service".into()))?;
+            let from_store = connector::stored(&source.file).is_some();
+            let current = connector::obtain(&source.file, &source.service, &source.install_key, false).await.map_err(TunnelError::Failed)?;
+            let (ready, mode, last_error) = match self.launch(target.bridge_port, &current.connector).await {
+                // A stored connector may have been revoked or rotated since: ask for a new one once.
+                Err(TunnelError::Failed(why)) if from_store => {
+                    eprintln!("dorks: wurmhol refused the stored connector ({why}); asking the tunnel service for a new one");
+                    let fresh = connector::obtain(&source.file, &source.service, &source.install_key, true).await.map_err(TunnelError::Failed)?;
+                    self.launch(target.bridge_port, &fresh.connector).await?
+                }
+                other => other?,
+            };
             let (stop_tx, stop_rx) = oneshot::channel();
             let monitor = tokio::spawn(monitor(self.cfg.clone(), ready.id, mode, last_error, stop_rx, self.health.clone()));
             *active = Some(Active { stop: Some(stop_tx), monitor });
@@ -290,37 +276,6 @@ async fn finish(mut active: Active) {
     }
     let _ = timeout(Duration::from_secs(15), &mut active.monitor).await;
     active.monitor.abort();
-}
-
-/// While the client's daemon waits for a person to approve this computer: polls `wurmhol ls --json` until the share no longer
-/// waits (then reports [`TunnelHealth::Approved`]) or is gone (then reports it lost). Ends the share when told to stop.
-async fn await_approval(cfg: WurmholConfig, id: String, mut stop: oneshot::Receiver<()>, health: watch::Sender<TunnelHealth>) {
-    let poll = cfg.poll_interval.min(Duration::from_secs(3));
-    loop {
-        tokio::select! {
-            _ = &mut stop => {
-                let _ = timeout(Duration::from_secs(8), command(&cfg, &[OsString::from("stop"), OsString::from(&id)]).stdout(Stdio::null()).stderr(Stdio::null()).status()).await;
-                return;
-            }
-            _ = sleep(poll) => {}
-        }
-        let listing = timeout(Duration::from_secs(10), command(&cfg, &[OsString::from("ls"), OsString::from("--json")]).stderr(Stdio::null()).output()).await;
-        if let Ok(Ok(out)) = listing {
-            if out.status.success() {
-                match listing_state(&String::from_utf8_lossy(&out.stdout), &id) {
-                    Some(true) => {}
-                    Some(false) => {
-                        let _ = health.send(TunnelHealth::Approved);
-                        return;
-                    }
-                    None => {
-                        let _ = health.send(TunnelHealth::Lost("the approval was not completed (the code expired or was cancelled)".into()));
-                        return;
-                    }
-                }
-            }
-        }
-    }
 }
 
 /// Watches one pipe until it is stopped (then ends it) or lost (then says so once and returns).
@@ -352,12 +307,12 @@ async fn monitor(
             loop {
                 tokio::select! {
                     _ = &mut stop => {
-                        let _ = timeout(Duration::from_secs(8), command(&cfg, &[OsString::from("stop"), OsString::from(&id)]).stdout(Stdio::null()).stderr(Stdio::null()).status()).await;
+                        let _ = timeout(Duration::from_secs(8), command(&cfg, &[OsString::from("stop"), OsString::from(&id)], None).stdout(Stdio::null()).stderr(Stdio::null()).status()).await;
                         return;
                     }
                     _ = sleep(cfg.poll_interval) => {}
                 }
-                let listing = timeout(Duration::from_secs(10), command(&cfg, &[OsString::from("ls"), OsString::from("--json")]).stderr(Stdio::null()).output()).await;
+                let listing = timeout(Duration::from_secs(10), command(&cfg, &[OsString::from("ls"), OsString::from("--json")], None).stderr(Stdio::null()).output()).await;
                 match listing {
                     Ok(Ok(out)) if out.status.success() => {
                         misses = 0;
@@ -380,7 +335,9 @@ async fn monitor(
     }
 }
 
-fn command(cfg: &WurmholConfig, args: &[OsString]) -> Command {
+/// The client, with a minimal environment. `token` is the connector, for the command that opens the tunnel; `ls` and `stop` talk
+/// to the local daemon and get none.
+fn command(cfg: &WurmholConfig, args: &[OsString], token: Option<&str>) -> Command {
     let mut cmd = Command::new(&cfg.bin);
     cmd.args(args).stdin(Stdio::null()).kill_on_drop(true).env_clear();
     let home = std::env::var_os("HOME").map(PathBuf::from);
@@ -390,11 +347,8 @@ fn command(cfg: &WurmholConfig, args: &[OsString]) -> Command {
         }
     }
     cmd.env("PATH", child_path(std::env::var_os("PATH").as_deref(), home.as_deref()));
-    if let Some(token) = &cfg.token {
+    if let Some(token) = token {
         cmd.env("WURMHOL_TOKEN", token);
-    }
-    if let Some(key) = &cfg.access_key {
-        cmd.env("WURMHOL_ACCESS_KEY", key);
     }
     if let Some(server) = &cfg.server {
         cmd.env("WURMHOL_URL", server);
@@ -422,10 +376,8 @@ mod tests {
 
     #[test]
     fn ready_line_is_parsed_and_validated() {
-        let ok = parse_ready_line(r#"{"url":"https://k3x9p2abcd.pipe.wurmhol.com","port":4748,"id":"k3x9p2abcd"}"#).unwrap();
-        assert_eq!(ok, Ready { url: "https://k3x9p2abcd.pipe.wurmhol.com".into(), id: "k3x9p2abcd".into(), approval: false });
-        let waiting = parse_ready_line(r#"{"url":"https://dirt.wurmhol.com/device?code=ABCD-EFGH","port":4748,"id":"wait1","approval":true}"#).unwrap();
-        assert!(waiting.approval);
+        let ok = parse_ready_line(r#"{"url":"https://ek3x9p2abcd12345.pipe.wurmhol.com","port":4748,"id":"k3x9p2abcd"}"#).unwrap();
+        assert_eq!(ok, Ready { url: "https://ek3x9p2abcd12345.pipe.wurmhol.com".into(), id: "k3x9p2abcd".into() });
         assert!(parse_ready_line("https://k3x9p2abcd.pipe.wurmhol.com").is_err(), "plain mode output is not accepted");
         assert!(parse_ready_line(r#"{"url":"http://insecure.example","id":"abc"}"#).is_err());
         assert!(parse_ready_line(r#"{"url":"https://a.example","id":"--all"}"#).is_err());
@@ -444,8 +396,8 @@ mod tests {
 
     #[test]
     fn arguments_carry_only_the_port_then_extras() {
-        let args = start_args(4748, &["--name".into(), "mine".into()]);
-        assert_eq!(args, vec![OsString::from("4748"), "--json".into(), "--name".into(), "mine".into()]);
+        let args = start_args(4748, &["--verbose".into()]);
+        assert_eq!(args, vec![OsString::from("4748"), "--json".into(), "--verbose".into()]);
     }
 
 }

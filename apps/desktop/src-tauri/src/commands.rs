@@ -3,7 +3,6 @@
 use std::sync::atomic::Ordering;
 
 use dorks_shell_core::github::{self, GhStatus};
-use dorks_shell_core::secrets::write_secret;
 use dorks_shell_core::settings::{validate_public_url, KeepAwake};
 use dorks_shell_core::supervisor::Status;
 use dorks_shell_core::window::{ChromeInfo, WindowMode, WindowTheme};
@@ -57,32 +56,9 @@ async fn restart_runtime(app: &AppHandle) -> Result<RuntimeConfig, String> {
     result
 }
 
-/// Saves (or, with `None`, removes) the wurmhol token and restarts tunnel and server. The token is kept in a 0600 file and is
-/// never returned to the UI; `tunnel.tokenSet` says whether one exists.
-#[tauri::command]
-pub async fn set_wurmhol_token(app: AppHandle, token: Option<String>) -> Result<Option<RuntimeConfig>, String> {
-    let token = token.map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
-    if let Some(t) = &token {
-        if t.len() > 512 || t.chars().any(|c| c.is_whitespace() || c.is_control()) {
-            return Err("that does not look like a wurmhol token".into());
-        }
-    }
-    let path = app.state::<AppState>().paths.wurmhol_token_file();
-    write_secret(&path, token.as_deref()).map_err(|e| format!("cannot save the token: {e}"))?;
-    restart_runtime(&app).await.map(Some)
-}
-
 #[tauri::command]
 pub fn tunnel_status(state: State<'_, AppState>) -> Option<TunnelInfo> {
     state.config.lock().unwrap().as_ref().map(|c| c.tunnel.clone())
-}
-
-/// Opens the tunnel's pending approval link in the browser. Takes no URL from the page: only the link the shell itself got from
-/// the wurmhol client can be opened.
-#[tauri::command]
-pub fn open_tunnel_approval(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    let link = state.config.lock().unwrap().as_ref().and_then(|c| c.tunnel.approval_url.clone()).ok_or("nothing waits for approval")?;
-    app.opener().open_url(link, None::<&str>).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

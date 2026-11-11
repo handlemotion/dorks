@@ -1,4 +1,5 @@
 import { appError, type AppErrorCode, type CommandFrame, type FromBridge, type PrRef, type ToBridge } from "@dorks/shared";
+import { type GrantSource, TicketRefused } from "./grants";
 
 export interface CommandEntry {
   cid: string;
@@ -52,7 +53,10 @@ const RPC_TIMEOUT_MS = 60_000;
 const AUTH_TIMEOUT_MS = 10_000;
 const BACKOFF_START_MS = 500;
 const BACKOFF_MAX_MS = 15_000;
+/** The server's "forbidden", and also Wurmhol's "grant revoked": both final. */
 const CLOSE_FORBIDDEN = 4403;
+/** Wurmhol: the grant this socket was opened with ran out. Get a new one and reconnect. */
+const CLOSE_GRANT_EXPIRED = 4401;
 
 type Pending = { resolve: (v: any) => void; reject: (e: unknown) => void; timer: ReturnType<typeof setTimeout> };
 
@@ -82,23 +86,43 @@ export class WsTransport implements Transport {
     private readonly dorkId: string,
     private readonly secret: string,
     private readonly WS: typeof WebSocket = WebSocket,
-    /** Sent as `x-wurmhol-key` so a wurmhol pipe lets this non-browser client through. */
-    private readonly tunnelKey: string | null = null,
+    /** When the public URL is an embedded Wurmhol tunnel: its grants, sent as `x-wurmhol-grant` on every handshake. */
+    private readonly grants: GrantSource | null = null,
   ) {}
 
   // ---------------------------------------------------------------- connection
   private open(): Promise<void> {
     if (this.fatalError) return Promise.reject(this.fatalError);
     if (this.ws?.readyState === 1 && !this.opening) return Promise.resolve();
-    this.opening ??= new Promise<void>((resolve, reject) => {
+    this.opening ??= this.grant().then((grant) => this.dial(grant));
+    return this.opening;
+  }
+
+  /** The grant to open with, or null without a tunnel. A refused ticket is final, like a refused secret. */
+  private async grant(): Promise<string | null> {
+    if (!this.grants) return null;
+    try {
+      return await this.grants.get();
+    } catch (e) {
+      this.opening = undefined;
+      if (e instanceof TicketRefused) this.fatalError = typed({ code: "forbidden", message: e.message });
+      throw this.fatalError ?? e;
+    }
+  }
+
+  private dial(grant: string | null): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
       let settled = false;
+      let opened = false;
       // Node's built-in WebSocket takes request headers as a non-standard `headers` init option.
-      const ws = this.tunnelKey ? new this.WS(this.url, { headers: { "x-wurmhol-key": this.tunnelKey } } as unknown as string[]) : new this.WS(this.url);
+      const ws = grant ? new this.WS(this.url, { headers: { "x-wurmhol-grant": grant } } as unknown as string[]) : new this.WS(this.url);
       const done = (err?: unknown) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
         this.opening = undefined;
+        // The relay refuses the handshake of a grant that just ran out or was revoked: try the next attempt with a fresh one.
+        if (err && !opened) this.grants?.drop();
         if (err) {
           try {
             ws.close();
@@ -109,7 +133,10 @@ export class WsTransport implements Transport {
         } else resolve();
       };
       const timer = setTimeout(() => done(new Error("connection timed out")), AUTH_TIMEOUT_MS);
-      ws.onopen = () => ws.send(JSON.stringify({ t: "auth", dorkId: this.dorkId, secret: this.secret }));
+      ws.onopen = () => {
+        opened = true;
+        ws.send(JSON.stringify({ t: "auth", dorkId: this.dorkId, secret: this.secret }));
+      };
       ws.onmessage = (m) => {
         let msg: any;
         try {
@@ -128,6 +155,7 @@ export class WsTransport implements Transport {
       };
       ws.onerror = () => done(new Error("connection failed"));
       ws.onclose = (ev) => {
+        if (ev.code === CLOSE_GRANT_EXPIRED) this.grants?.drop();
         if (ev.code === CLOSE_FORBIDDEN) {
           this.fatalError = typed({ code: "forbidden", message: "forbidden" });
           done(this.fatalError);
@@ -138,7 +166,6 @@ export class WsTransport implements Transport {
         }
       };
     });
-    return this.opening;
   }
 
   /** The socket dropped: fail what was in flight, tell subscribers, and reopen (with backoff) if anyone still listens. */
