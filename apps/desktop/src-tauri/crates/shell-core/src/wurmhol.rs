@@ -199,10 +199,10 @@ impl WurmholTunnel {
     }
 
     async fn launch(&self, port: u16) -> Result<(Ready, Mode, Arc<Mutex<String>>), TunnelError> {
-        let mut child = command(&self.cfg, &start_args(port, &self.cfg.extra_args))
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
+        let mut cmd = command(&self.cfg, &start_args(port, &self.cfg.extra_args));
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        let mut child = spawn_retrying(&mut cmd)
+            .await
             .map_err(|e| TunnelError::Failed(format!("cannot run {}: {e}; install it with `npm i -g wurmhol` or set WURMHOL_BIN", self.cfg.bin.display())))?;
         let stdout = child.stdout.take().expect("piped");
         let stderr = child.stderr.take().expect("piped");
@@ -376,6 +376,23 @@ async fn monitor(
                     }
                 }
             }
+        }
+    }
+}
+
+/// Linux refuses to exec a file that some process still holds open for writing (`ETXTBSY`): the client binary being rewritten
+/// by `npm i -g wurmhol`, or a write handle another thread's freshly forked child inherited for the instant before its own exec.
+/// Both clear within milliseconds, so retry briefly instead of failing the tunnel.
+async fn spawn_retrying(cmd: &mut Command) -> std::io::Result<Child> {
+    const ETXTBSY: i32 = 26;
+    let mut attempt = 0;
+    loop {
+        match cmd.spawn() {
+            Err(e) if e.raw_os_error() == Some(ETXTBSY) && attempt < 10 => {
+                attempt += 1;
+                sleep(Duration::from_millis(20 * attempt)).await;
+            }
+            other => return other,
         }
     }
 }
