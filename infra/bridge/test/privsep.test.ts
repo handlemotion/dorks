@@ -74,7 +74,7 @@ describe.skipIf(typeof process.getuid !== "function" || process.getuid() !== 0)(
     writeFileSync(secretFile, "s".repeat(64), { mode: 0o400 });
     const hostEnv: NodeJS.ProcessEnv = {
       PATH: "/usr/local/bin:/usr/bin:/bin", HOME: "/root", DORK_ID: "d1", BRIDGE_URL: "wss://x.example/bridge", BRIDGE_SECRET_FILE: secretFile,
-      DORKS_STATE_DIR: state, DORKS_WORKDIR: work, DORKS_GIT_BASE_URL: remote.baseUrl, CLAUDE_BIN: fake, CLAUDE_RUN_AS: "nobody", DORKS_BATCH_MS: "5",
+      DORKS_STATE_DIR: state, DORKS_SOCK_DIR: state, DORKS_WORKDIR: work, DORKS_GIT_BASE_URL: remote.baseUrl, CLAUDE_BIN: fake, CLAUDE_RUN_AS: "nobody", DORKS_BATCH_MS: "5",
     };
     const cfg = loadConfig(hostEnv);
     expect(existsSync(secretFile)).toBe(false);

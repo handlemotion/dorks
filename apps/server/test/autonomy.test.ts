@@ -125,16 +125,15 @@ describe("subscriptions", () => {
 });
 
 describe("comment policy", () => {
-  it("all accepts anyone but the agent itself", () => {
+  it("all accepts anyone", () => {
     expect(commentAllowed({ mode: "all" }, "alice", "Agent-Bot")).toBe(true);
-    expect(commentAllowed({ mode: "all" }, "AGENT-bot", "agent-bot")).toBe(false);
   });
-  it("an allowlist is case-insensitive, lists bots by login, and never lets the agent through", () => {
-    const policy = { mode: "allowlist" as const, logins: ["Alice", "coderabbitai[bot]", "agent-bot"] };
+  it("an allowlist is case-insensitive, lists bots by login, and always lets the token's owner through", () => {
+    const policy = { mode: "allowlist" as const, logins: ["Alice", "coderabbitai[bot]"] };
     expect(commentAllowed(policy, "alice", "agent-bot")).toBe(true);
     expect(commentAllowed(policy, "CodeRabbitAI[bot]", "agent-bot")).toBe(true);
     expect(commentAllowed(policy, "mallory", "agent-bot")).toBe(false);
-    expect(commentAllowed(policy, "agent-bot", "agent-bot")).toBe(false);
+    expect(commentAllowed(policy, "AGENT-bot", "agent-bot")).toBe(true); // whether it was really the agent is byAgent's call
   });
 });
 

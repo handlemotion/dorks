@@ -39,7 +39,7 @@ async function setup(opts: { host?: Record<string, string>; transcript?: boolean
     BRIDGE_SECRET,
     SIM_HOST_KEY: "host-key-should-not-leak",
     BRIDGE_SECRET_KEY: "master-should-not-leak",
-    DORKS_STATE_DIR: state,
+    DORKS_STATE_DIR: state, DORKS_SOCK_DIR: state,
     DORKS_WORKDIR: work,
     DORKS_GIT_BASE_URL: remote.baseUrl,
     CLAUDE_BIN: FAKE_CLAUDE,

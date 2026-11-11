@@ -18,11 +18,12 @@ interface GhPr {
   title: string; state: "open" | "closed"; merged?: boolean; mergeable: boolean | null; merged_by?: GhUser | null;
   head: { ref: string; sha: string }; base: { ref: string; sha: string; repo?: { full_name: string } };
 }
-interface GhReview { id: number; state: string; body: string | null; html_url: string; user: GhUser | null }
+interface GhReview { id: number; state: string; body: string | null; html_url: string; user: GhUser | null; submitted_at?: string | null }
 interface GhComment { id: number; body: string; html_url: string; path?: string; user: GhUser | null; created_at: string }
 interface GhSuites { check_suites: { id: number; status: string; conclusion: string | null; latest_check_runs_count: number }[] }
 
 const actor = (u: GhUser | null | undefined): Actor => ({ login: u?.login ?? "ghost", bot: u?.type === "Bot" });
+const time = (iso: string | null | undefined) => (iso && !Number.isNaN(Date.parse(iso)) ? Date.parse(iso) : undefined);
 
 export interface Observation {
   events: PrEvent[];
@@ -97,7 +98,7 @@ export async function observe(app: App, token: string, sub: Subscription): Promi
       for (const x of list) {
         if (x.id <= (old.lastReviewId ?? 0)) continue;
         const st = x.state.toLowerCase();
-        if (st === "approved" || st === "changes_requested" || st === "commented") events.push({ kind: "review", state: st, body: x.body ?? "", url: x.html_url, sender: actor(x.user) });
+        if (st === "approved" || st === "changes_requested" || st === "commented") events.push({ kind: "review", state: st, body: x.body ?? "", url: x.html_url, sender: actor(x.user), at: time(x.submitted_at) });
       }
       poll.lastReviewId = Math.max(old.lastReviewId ?? 0, ...list.map((x) => x.id));
     }
@@ -114,7 +115,7 @@ export async function observe(app: App, token: string, sub: Subscription): Promi
     if (!first) {
       for (const c of res.json) {
         if (c.id <= last) continue;
-        events.push({ kind: "comment", body: c.body, url: c.html_url, ...(inline && c.path ? { path: c.path } : {}), sender: actor(c.user) });
+        events.push({ kind: "comment", body: c.body, url: c.html_url, ...(inline && c.path ? { path: c.path } : {}), sender: actor(c.user), at: time(c.created_at) });
         if (!newest || c.created_at > newest) newest = c.created_at;
       }
     }
