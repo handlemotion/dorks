@@ -14,7 +14,7 @@ export interface Actor {
 }
 
 export type PrEvent =
-  | { kind: "pr_closed"; merged: boolean; sender: Actor; closedBy?: string }
+  | { kind: "pr_closed"; merged: boolean; sender: Actor }
   | { kind: "pr_synchronize"; headSha: string; headRef: string }
   | { kind: "pr_base_changed"; baseRef: string; from: string; sender: Actor }
   | { kind: "review"; state: "approved" | "changes_requested" | "commented"; body: string; url: string; sender: Actor }

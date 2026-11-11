@@ -67,7 +67,7 @@ export async function observe(app: App, token: string, sub: Subscription): Promi
       } else if (state !== "open") {
         // merged_by is null for a plain close; only the issue endpoint says who closed it (one extra read, once per PR).
         const by = state === "merged" ? pr.merged_by : await get<GhIssue>(`${base}/issues/${sub.number}`).then((i) => (i.status === 200 ? i.json.closed_by : null));
-        events.push({ kind: "pr_closed", merged: state === "merged", sender: actor(by), closedBy: by?.login });
+        events.push({ kind: "pr_closed", merged: state === "merged", sender: actor(by) });
         return { events, baseline, poll };
       } else {
         if (pr.head.sha !== sub.headSha) events.push({ kind: "pr_synchronize", headSha: pr.head.sha, headRef: pr.head.ref });
