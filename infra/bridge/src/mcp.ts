@@ -215,7 +215,6 @@ function playwrightChromes(): string[] {
 }
 
 async function findChrome(): Promise<string> {
-  if (process.env.CHROME_BIN) return process.env.CHROME_BIN;
   for (const c of CHROMES) {
     if (c.startsWith("/")) {
       if (existsSync(c)) return c;

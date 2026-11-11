@@ -51,7 +51,7 @@ No build-time variables. In `vite dev` only, `?server=<url>&token=<token>` skips
 
 ## In-sandbox bridge (`infra/bridge`)
 
-Set by the server when it creates the sandbox: `DORK_ID`, `BRIDGE_URL`, `BRIDGE_SECRET`. Tuning variables are listed in [infra/bridge/README.md](../infra/bridge/README.md).
+Set by the server when it creates the sandbox: `DORK_ID`, `BRIDGE_URL`, `BRIDGE_SECRET`. Tuning variables are listed in [infra/bridge/README.md](../infra/bridge/README.md). The `screenshot_share` tool also reads Playwright's own `PLAYWRIGHT_BROWSERS_PATH` (default `~/.cache/ms-playwright`, `~/Library/Caches/ms-playwright` on macOS) to find a Chromium when no Chrome is installed.
 
 ## Adding a variable
 

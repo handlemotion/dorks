@@ -294,8 +294,13 @@ export function shareImage(app: App, dorkId: string, data: unknown, caption: unk
   return { id, ...size };
 }
 
+/** How long an upload may wait for the message that names it: a removed or abandoned attachment is deleted after this. */
+export const UNCLAIMED_IMAGE_MS = 24 * 60 * 60 * 1000;
+
 /** An attachment the owner uploaded (POST /api/images), not yet in a message: unclaimed until a message names it. */
 export function uploadImage(app: App, bytes: Uint8Array): { id: string } {
+  // Uploads are the only way unclaimed images appear, so sweeping here bounds them without a timer.
+  app.db.run("DELETE FROM images WHERE dork_id IS NULL AND created_at < ?", app.now() - UNCLAIMED_IMAGE_MS);
   if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) return fail("invalid", `the image must be 1 byte to ${MAX_IMAGE_BYTES / 1024 / 1024} MB`);
   const mime = imageMime(bytes);
   if (!mime) return fail("invalid", "only PNG, JPEG, WebP or GIF images can be attached");
