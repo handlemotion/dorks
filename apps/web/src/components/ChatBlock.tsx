@@ -298,21 +298,20 @@ function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock })
 }
 
 /**
- * The transcript. With `onReply` and `onReplySend` the agent's words can be answered in place: select a passage for a reply box on
- * it, right click an image or use a final answer's Reply for a banner in the composer. A sent reply shows its quote above the bubble.
+ * The transcript. With `onReply` the agent's words can be replied to: select a passage (a small box on it starts the answer), right
+ * click an image or use a final answer's Reply. Each becomes a banner in the composer; nothing is sent from here. A sent reply shows its quote above the bubble.
  */
-export function ChatMessages({ blocks: raw, imageUrl, onReply, onReplySend, agent }: {
+export function ChatMessages({ blocks: raw, imageUrl, onReply, agent }: {
   blocks: Block[]
   /** Resolves a shared screenshot's id to its URL. */
   imageUrl?: (id: string) => string
   onReply?: ReplyHandlers['onReply']
-  onReplySend?: ReplyHandlers['onSend']
   /** The agent's name, for "Reply to Claude". */
   agent?: string
 }) {
   const { blocks, refs } = resolveSharedImages(raw, imageUrl)
   const images = transcriptImages(blocks)
-  const reply = useMemo<ReplyHandlers>(() => ({ onReply, onSend: onReplySend, agent, refOf: (src) => refs.get(src) }), [onReply, onReplySend, agent, refs])
+  const reply = useMemo<ReplyHandlers>(() => ({ onReply, agent, refOf: (src) => refs.get(src) }), [onReply, agent, refs])
   const messages = entries(blocks).map((entry) => {
     if (entry.kind === 'user') {
       const { reply: quoted, body } = parseReply(entry.block.text)

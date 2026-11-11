@@ -1,16 +1,14 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
-import { ArrowDownToLineIcon, ArrowUpIcon, ReplyIcon, XIcon } from 'lucide-react'
+import { ArrowUpIcon, ReplyIcon, XIcon } from 'lucide-react'
 import { Popover, PopoverContent } from '@dorks/ui/popover'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@dorks/ui/input-group'
 import { quoteText, replyLabel, type Reply } from '../lib/reply'
 import { Tip } from './Tip'
 
-/** How the transcript starts a reply: into the composer (`onReply`), or sent straight from the box on a selection (`onSend`). */
+/** How the transcript starts a reply. A reply is never sent from the transcript: it always becomes a reference in the composer. */
 export interface ReplyHandlers {
   /** Puts the reply in the composer's banner, with `draft` (what was typed in the box on a selection) added to its text. */
   onReply?: (reply: Reply, draft?: string) => void
-  /** Sends a reply written in the box on the selection; resolving `false` (or throwing) keeps the box open with the draft. */
-  onSend?: (reply: Reply, text: string) => void | Promise<unknown>
   /** The agent's name for the box's placeholder ("Reply to Claude"). */
   agent?: string
   /** Turns the image URL the chat shows back into the `dorks-image:<id>` the agent can load. */
@@ -27,17 +25,16 @@ const HIGHLIGHT = 'dorks-reply'
 type Target = { range: Range; text: string }
 
 /**
- * Selecting text in the agent's messages opens a small box on the selection: the passage, quoted, and a field to answer it right
- * there (Enter sends). The Move to composer button (an arrow down) moves the passage and anything typed to the composer instead. The passage stays highlighted
- * (CSS Custom Highlight) while the box is open, since focusing the field clears the real selection.
+ * Selecting text in the agent's messages opens a small box on the selection: the passage, quoted, and a field to start the answer.
+ * Enter (or the arrow) attaches the passage to the composer as a reply, with anything typed as the composer's text; it never sends.
+ * The passage stays highlighted (CSS Custom Highlight) while the box is open, since focusing the field clears the real selection.
  */
 export function SelectionReply() {
-  const { onReply, onSend, agent } = useReply()
+  const { onReply, agent } = useReply()
   const [target, setTarget] = useState<Target>()
   const [text, setText] = useState('')
-  const [sending, setSending] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
-  const enabled = !!(onReply || onSend)
+  const enabled = !!onReply
 
   useEffect(() => {
     if (!enabled) return
@@ -70,22 +67,10 @@ export function SelectionReply() {
   if (!enabled || !target) return null
   const reply: Reply = { kind: 'text', text: target.text }
   const close = () => setTarget(undefined)
-  const toComposer = () => {
+  const attach = () => {
     onReply?.(reply, text.trim() || undefined)
+    window.getSelection()?.removeAllRanges()
     close()
-  }
-  const send = async () => {
-    if (!onSend || !text.trim() || sending) return
-    setSending(true)
-    try {
-      if ((await onSend(reply, text)) === false) return
-      window.getSelection()?.removeAllRanges()
-      close()
-    } catch {
-      // The chat shows the error; the box stays open with the draft.
-    } finally {
-      setSending(false)
-    }
   }
   // Anchored on the selection's first line, so a long passage does not push the box off screen.
   const anchor = { getBoundingClientRect: () => target.range.getClientRects()[0] ?? target.range.getBoundingClientRect() }
@@ -102,7 +87,7 @@ export function SelectionReply() {
         className="w-80 gap-3 rounded-[10px] p-3 [--control-radius:6px]"
       >
         <blockquote className="line-clamp-3 border-l-2 border-foreground/15 px-2.5 py-0.5 text-sm leading-5 text-muted-foreground">{target.text}</blockquote>
-        <form onSubmit={(e) => { e.preventDefault(); void send() }}>
+        <form onSubmit={(e) => { e.preventDefault(); attach() }}>
           <InputGroup className="h-8 rounded-(--control-radius)">
             <InputGroupInput
               ref={inputRef}
@@ -110,25 +95,16 @@ export function SelectionReply() {
               placeholder={`Reply to ${agent ?? 'the agent'}`}
               autoComplete="off"
               value={text}
-              disabled={sending}
               onChange={(e) => setText(e.target.value)}
               className="text-sm"
             />
-            <InputGroupAddon align="inline-end" className="gap-0.5 pr-1">
-              {onReply && (
-                <Tip label="Move to composer">
-                  <InputGroupButton size="icon-xs" variant="ghost" aria-label="Move to composer" onClick={toComposer} className="rounded-[6px] text-muted-foreground hover:text-foreground">
-                    <ArrowDownToLineIcon />
-                  </InputGroupButton>
-                </Tip>
-              )}
-              {onSend && (
-                <Tip label="Send reply">
-                  <InputGroupButton type="submit" size="icon-xs" variant="default" aria-label="Send reply" disabled={!text.trim() || sending} className="rounded-[6px] bg-brand text-brand-foreground hover:bg-brand-hover disabled:bg-foreground/[0.08] disabled:text-foreground/35 disabled:opacity-100">
-                    <ArrowUpIcon />
-                  </InputGroupButton>
-                </Tip>
-              )}
+            {/* Quiet, like the composer's +: it attaches, so it is not the blue send. */}
+            <InputGroupAddon align="inline-end" className="pr-1">
+              <Tip label="Add to composer">
+                <InputGroupButton type="submit" size="icon-xs" variant="ghost" aria-label="Add to composer" className="rounded-[6px] text-muted-foreground hover:text-foreground">
+                  <ArrowUpIcon />
+                </InputGroupButton>
+              </Tip>
             </InputGroupAddon>
           </InputGroup>
         </form>
