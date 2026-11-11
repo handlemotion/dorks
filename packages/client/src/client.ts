@@ -3,7 +3,7 @@ import { EventsFeed } from "./events.ts";
 import { createApi, ApiError, type ApiConfig, type DesktopOptions } from "./http.ts";
 import { connectLive, type LiveStatus } from "./live.ts";
 import { Query, type QueryOptions, type Store } from "./store.ts";
-import type { CreateDorkInput, Dork, LiveMessage, PrRefInput, Settings, SettingsPatch, SnapshotStatus } from "./types.ts";
+import type { CreateDorkInput, Dork, LiveMessage, PrRefInput, Settings, SettingsPatch, SnapshotStatus, Usage } from "./types.ts";
 
 export interface ClientConfig extends ApiConfig {
   /** Events fetched per page. */
@@ -140,6 +140,11 @@ export class DorksClient {
   /** The base-snapshot build ("Prepare Boat"). The live stream refreshes it at every step. */
   snapshot() {
     return this.query<SnapshotStatus>("snapshot", () => this.api.getSnapshot());
+  }
+
+  /** Claude subscription and Boat plan usage (the server caches it for five minutes). */
+  usage() {
+    return this.query<Usage>("usage", () => this.api.getUsage());
   }
 
   secretNames() {

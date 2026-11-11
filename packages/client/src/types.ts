@@ -119,3 +119,13 @@ export interface PrRefInput {
   repo: string;
   number: number;
 }
+
+/** `GET /api/usage`: a part is missing when its credential is not set or its source failed. `used` is 0..1, times are epoch ms. */
+export interface UsageWindow {
+  used: number;
+  resetsAt?: number;
+}
+export interface Usage {
+  claude?: { session: UsageWindow; weekly: UsageWindow };
+  cloud?: { usedHours: number; includedHours: number; periodEnd?: number };
+}

@@ -398,6 +398,13 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       if (key.startsWith("bad")) return json(res, 200, { status: "invalid", message: "Boat rejected that key. Check it and its access (create, use, save and delete sandboxes)." });
       return json(res, 200, { status: "ok", message: "Boat accepted the key." });
     }
+    if (path === "/api/usage" && method === "GET") {
+      const now = Date.now();
+      return json(res, 200, {
+        ...(settings.claudeToken ? { claude: { session: { used: 0.07, resetsAt: now + 3 * 3600_000 }, weekly: { used: 0.26, resetsAt: now + 4 * 86400_000 } } } : {}),
+        ...(settings.boatKey ? { cloud: { usedHours: 38.4, includedHours: 555.56, periodEnd: now + 29 * 86400_000 } } : {}),
+      });
+    }
     if (path === "/api/snapshot" && method === "GET") return json(res, 200, snapView());
     if (path === "/api/snapshot/build" && method === "POST") {
       if (body.force !== undefined && typeof body.force !== "boolean") return fail(res, "invalid", "force must be a boolean");

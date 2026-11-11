@@ -11,6 +11,7 @@ import { deleteSecret, secretNames, setSecret, settingsView, updateSettings } fr
 import { assertBoatAccepts, assertCodexEnvironment, checkBoat } from "../services/boatCheck";
 import { buildIfMissing, snapshotView, startBuild } from "../services/snapshot";
 import * as subs from "../services/subscriptions";
+import { forgetUsage, getUsage } from "../services/usage";
 
 const STATUS: Record<AppError["code"], number> = {
   invalid: 400, not_found: 404, forbidden: 401, limit: 429, rate_limited: 429, archived: 409, deleting: 409, conflict: 409, sleeping: 409,
@@ -159,6 +160,7 @@ export function uiApp(app: App): Hono {
     await assertBoatAccepts(app, patch);
     await assertCodexEnvironment(app, patch);
     await updateSettings(app, patch);
+    if ("claudeToken" in patch || "boatKey" in patch || "boatOrg" in patch) forgetUsage(app);
     console.error(`settings saved: ${Object.keys(patch).sort().join(", ")}`); // names only, never values
     // A new Boat key starts the base-snapshot build in the background (onboarding has no "Prepare Boat" step), or retries a failed one.
     if (typeof patch.boatKey === "string" && patch.boatKey.trim()) buildIfMissing(app, { retryFailed: true });
@@ -173,6 +175,9 @@ export function uiApp(app: App): Hono {
     deleteSecret(app, c.req.param("name"));
     return c.json({});
   });
+
+  // ---- usage of the Claude subscription and Boat plan (services/usage.ts), cached for five minutes
+  api.get("/api/usage", async (c) => c.json(await getUsage(app)));
 
   // ---- Boat key check (nothing is saved)
   api.post("/api/boat/check", async (c) => c.json(await checkBoat(app, await body(c))));

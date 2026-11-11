@@ -3,7 +3,7 @@ import { toAppError, type SubscriptionView } from "@dorks/shared";
 import type { DorksClient, ConnectionState } from "./client.ts";
 import type { EventsState } from "./events.ts";
 import type { QueryState, Store } from "./store.ts";
-import type { Dork, Settings, SnapshotStatus } from "./types.ts";
+import type { Dork, Settings, SnapshotStatus, Usage } from "./types.ts";
 
 const Ctx = createContext<DorksClient | null>(null);
 
@@ -55,6 +55,11 @@ export function useSnapshotState(): QueryState<SnapshotStatus> {
 
 export function useSnapshot(): SnapshotStatus | undefined {
   return useSnapshotState().data;
+}
+
+/** Usage of the Claude subscription and the Boat plan; `undefined` while loading. */
+export function useUsage(): Usage | undefined {
+  return useStore(useDorksClient().usage()).data;
 }
 
 export function useSecretNames(): string[] | undefined {

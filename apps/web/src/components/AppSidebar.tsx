@@ -23,6 +23,7 @@ import { ChatList, type Chat, type ChatRoute } from './ChatList'
 import { Logo } from './onboarding/List'
 import { OwnerAvatar, ownerOf } from './RepoAvatar'
 import { SIDEBAR_ROW, SIDEBAR_SECTION } from './sidebarChrome'
+import { UsageBar } from './UsageBar'
 import { useRowHover } from './useRowHover'
 
 const PR_NUMBER = /\/pull\/(\d+)/
@@ -175,7 +176,8 @@ export function AppSidebarView({ chats, onDisconnect, orderKey = 'dorks.chat-ord
               </nav>
             ))}
           </div>
-          <div className="flex shrink-0 flex-col pt-1.5">
+          <div className="flex shrink-0 flex-col gap-2 pt-1.5">
+            <UsageBar />
             <Link to="/settings" {...rowLink(pathname === '/settings')}>
               <SettingsIcon />
               Settings
