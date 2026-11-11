@@ -176,4 +176,18 @@ export const MIGRATIONS: string[] = [
   -- The dev servers the agent showed (preview_show): a JSON array of { port, url, title? }, newest last. Public URLs, no secret.
   ALTER TABLE dorks ADD COLUMN previews TEXT;
   `,
+  `
+  -- Images in a chat: screenshots the agent shared (screenshot_share) and images the owner attached to a message. The id is 128 random
+  -- bits: it is the capability that GET /images/:id serves the bytes for. An attachment is uploaded before its message exists (dork_id
+  -- NULL) and claimed by the dork whose message names it. The dork keeps a JSON list of the agent's screenshots for the Artifacts tab.
+  CREATE TABLE images (
+    id TEXT PRIMARY KEY,
+    dork_id TEXT REFERENCES dorks (id) ON DELETE CASCADE,
+    mime TEXT NOT NULL,
+    bytes BLOB NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX images_dork ON images (dork_id);
+  ALTER TABLE dorks ADD COLUMN images TEXT;
+  `,
 ];

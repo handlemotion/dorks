@@ -1,7 +1,6 @@
-import { ArrowUpIcon, ChevronDownIcon, FileTextIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon } from 'lucide-react'
+import { ArrowUpIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon } from 'lucide-react'
 import type { AgentModelChoice } from '@dorks/shared'
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { Attachment, AttachmentAction, AttachmentActions, AttachmentContent, AttachmentMedia, AttachmentTitle } from '@dorks/ui/attachment'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -69,11 +68,21 @@ function modelName(choices: AgentModelChoice[], id: string | undefined): string 
   return named?.name ?? (id === DEFAULT ? undefined : id)
 }
 
+/** An attached image: shown at once from a local object URL while it uploads; `imageId` is the server's once it has. */
+type Pending = { key: string; name: string; preview: string; state: 'uploading' | 'done' | 'error'; imageId?: string }
+/** What a sent message names: the server ids of its attached images. */
+export type AttachedImage = { id: string; name: string }
+/** The markdown that puts attached images in a message; the chat shows them as thumbnails and the agent gets them as images. */
+export const withImages = (text: string, images: AttachedImage[]) =>
+  [text.trim(), ...images.map((i) => `![${i.name.replace(/[[\]\n]/g, ' ')}](dorks-image:${i.id})`)].filter(Boolean).join('\n\n')
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
+const MAX_IMAGE = 8 * 1024 * 1024
+
 /**
  * The message box: the AI Elements prompt input, copied from the published component (ui.shadcn.com/docs/ai-elements/base/prompt-input,
  * `PromptInputDemo` in @dorks/ui): the box holds the text, attachments and main button; the compact bar below holds the repository
  * and one menu for the model (by agent) and the effort. The main button sends, or stops the agent while it is working. With `setRepo` it is the "new session" form (the first
- * message also names the repository). Claude's models and efforts are the ones the agent reported; attached files are not wired yet.
+ * message also names the repository). Claude's models and efforts are the ones the agent reported; images are attached with the + button, by pasting or by dropping them on the box.
  */
 export function Composer({
   text,
@@ -92,10 +101,12 @@ export function Composer({
   status,
   picker,
   agentLabel,
+  upload,
 }: {
   text: string
   setText: (text: string) => void
-  onSubmit: () => void
+  /** Resolves once sent; the attachments are cleared then, and kept if it throws or resolves `false`. */
+  onSubmit: (images: AttachedImage[]) => void | Promise<unknown>
   pending: boolean
   disabled?: boolean
   error: string
@@ -115,11 +126,37 @@ export function Composer({
   picker?: ModelPicker
   /** What to call the agent's model when there is no picker (Codex). */
   agentLabel?: string
+  /** Uploads an attached image, resolving with its server id. Without it nothing can be attached. */
+  upload?: (file: File) => Promise<string>
 }) {
   const formRef = useRef<HTMLFormElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const textRef = useRef<HTMLTextAreaElement>(null)
-  const [files, setFiles] = useState<{ id: string; name: string }[]>([])
+  const [files, setFiles] = useState<Pending[]>([])
+  const [attachError, setAttachError] = useState('')
+  const filesRef = useRef(files)
+  filesRef.current = files
+  useEffect(() => () => filesRef.current.forEach((f) => URL.revokeObjectURL(f.preview)), [])
+  const attach = (list: File[]) => {
+    if (!upload) return
+    const images = list.filter((f) => IMAGE_TYPES.includes(f.type))
+    const tooBig = images.filter((f) => f.size > MAX_IMAGE)
+    setAttachError(images.length < list.length ? 'Only PNG, JPEG, WebP and GIF images can be attached.' : tooBig.length ? 'Images can be at most 8 MB.' : '')
+    for (const file of images.filter((f) => f.size <= MAX_IMAGE)) {
+      const key = crypto.randomUUID()
+      setFiles((current) => [...current, { key, name: file.name || 'Pasted image', preview: URL.createObjectURL(file), state: 'uploading' }])
+      upload(file).then(
+        (imageId) => setFiles((current) => current.map((f) => (f.key === key ? { ...f, state: 'done', imageId } : f))),
+        () => setFiles((current) => current.map((f) => (f.key === key ? { ...f, state: 'error' } : f))),
+      )
+    }
+  }
+  const remove = (key: string) => setFiles((current) => current.filter((f) => {
+    if (f.key === key) URL.revokeObjectURL(f.preview)
+    return f.key !== key
+  }))
+  const ready = files.filter((f) => f.state === 'done' && f.imageId)
+  const uploading = files.some((f) => f.state === 'uploading')
   // One row until the text wraps (or a file is attached); then the text takes the box and the buttons sit on a row under it.
   // The text has the same side insets in both forms, so it wraps the same way in each and the box never flips back and forth.
   const [wraps, setWraps] = useState(false)
@@ -138,7 +175,19 @@ export function Composer({
   }, [text])
   const stacked = wraps || files.length > 0
   const isNewSession = setRepo !== undefined
-  const canSend = text.trim().length > 0 && !pending && !disabled && (!isNewSession || !!repo?.trim())
+  const canSend = (text.trim().length > 0 || ready.length > 0) && !uploading && !pending && !disabled && (!isNewSession || !!repo?.trim())
+  const submit = async () => {
+    const sent = files
+    try {
+      if ((await onSubmit(ready.map((f) => ({ id: f.imageId!, name: f.name })))) === false) return
+    } catch {
+      return
+    }
+    // Only what was sent goes: an image attached while it was sending stays for the next message.
+    setFiles((current) => current.filter((f) => !sent.includes(f)))
+    sent.forEach((f) => URL.revokeObjectURL(f.preview))
+    setAttachError('')
+  }
   const models = provider === 'claude' ? picker : undefined
   const choices = models?.choices ?? []
   // The trigger names the model the agent confirmed when it has, else the one chosen (or what the default resolves to).
@@ -151,38 +200,57 @@ export function Composer({
     // The prompt input is published with an 18px group and pill buttons; the app's 6px radius is lifted for it alone.
     <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-4 px-5 pb-3 [--control-radius:18px]">
       {status}
-      <form ref={formRef} autoComplete="off" onSubmit={(e) => { e.preventDefault(); if (canSend) onSubmit() }}>
+      <form
+        ref={formRef}
+        autoComplete="off"
+        onSubmit={(e) => { e.preventDefault(); if (canSend) void submit() }}
+        onDragOver={(e) => { if (upload && e.dataTransfer.types.includes('Files')) e.preventDefault() }}
+        onDrop={(e) => {
+          if (!upload || !e.dataTransfer.files.length) return
+          e.preventDefault()
+          attach(Array.from(e.dataTransfer.files))
+        }}
+      >
         <input
           ref={fileRef}
           type="file"
+          accept={IMAGE_TYPES.join(',')}
           multiple
           className="sr-only"
           tabIndex={-1}
           onChange={(e) => {
             // Copied before the input is cleared: the FileList is live and empties with it.
-            const selected = Array.from(e.target.files ?? [], (f) => ({ id: crypto.randomUUID(), name: f.name }))
-            if (selected.length) setFiles((current) => [...current, ...selected])
+            attach(Array.from(e.target.files ?? []))
             e.target.value = ''
           }}
         />
         {/* White on the off-white app (light), with the panel's 6% hairline since that pair is under 1.15:1; dark keeps the published fill. */}
         <InputGroup className="rounded-[15px] border-border bg-white has-[textarea]:rounded-[15px] has-[>[data-align=block-start]]:rounded-[15px] dark:border-transparent dark:bg-input/50">
           {files.length > 0 ? (
-            <InputGroupAddon align="block-start" className="flex-wrap px-[42px] pt-3 pb-0">
+            // Attached images as plain thumbnails, the text's left edge, no file names: a 112px tile with the image filling it, a hairline
+            // drawn inside its edge so a white screenshot keeps its shape, and a remove button in its corner on hover or focus.
+            <InputGroupAddon align="block-start" className="flex-wrap justify-start gap-2 px-[42px] pt-3 pb-0">
               {files.map((file) => (
-                <Attachment key={file.id} size="sm">
-                  <AttachmentMedia>
-                    <FileTextIcon />
-                  </AttachmentMedia>
-                  <AttachmentContent>
-                    <AttachmentTitle>{file.name}</AttachmentTitle>
-                  </AttachmentContent>
-                  <AttachmentActions>
-                    <AttachmentAction aria-label={`Remove ${file.name}`} onClick={() => setFiles((current) => current.filter((f) => f.id !== file.id))}>
-                      <XIcon />
-                    </AttachmentAction>
-                  </AttachmentActions>
-                </Attachment>
+                <div
+                  key={file.key}
+                  data-testid="composer-attachment"
+                  data-state={file.state}
+                  title={file.state === 'error' ? `${file.name}: upload failed` : file.name}
+                  className="group/tile relative size-28 shrink-0 overflow-hidden rounded-[10px] bg-muted"
+                >
+                  <img src={file.preview} alt={file.name} className={`size-full object-cover object-top ${file.state === 'done' ? '' : 'opacity-50'}`} />
+                  <span aria-hidden className={`pointer-events-none absolute inset-0 rounded-[10px] outline outline-1 -outline-offset-1 ${file.state === 'error' ? 'outline-destructive' : 'outline-black/10 dark:outline-white/10'}`} />
+                  {file.state === 'uploading' && <LoaderCircleIcon aria-label="Uploading" className="absolute inset-0 m-auto size-5 animate-spin text-foreground" />}
+                  {file.state === 'error' && <span role="alert" className="absolute inset-x-0 bottom-0 bg-destructive px-2 py-1 text-xs text-white">Upload failed</span>}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${file.name}`}
+                    onClick={() => remove(file.key)}
+                    className="absolute top-1.5 right-1.5 flex size-5 items-center justify-center rounded-full bg-black/70 text-white opacity-0 outline-none transition-opacity group-hover/tile:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring [@media(hover:none)]:opacity-100"
+                  >
+                    <XIcon className="size-3" />
+                  </button>
+                </div>
               ))}
             </InputGroupAddon>
           ) : null}
@@ -197,6 +265,12 @@ export function Composer({
             placeholder="Ask the agent to change your code..."
             value={text}
             onChange={(e) => setText(e.target.value)}
+            onPaste={(e) => {
+              const images = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith('image/'))
+              if (!upload || !images.length) return
+              e.preventDefault()
+              attach(images)
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
@@ -212,8 +286,8 @@ export function Composer({
           />
           {/* Attach and the main button keep one spot, 8px from the bottom corners, whether the box is one row or stacked. */}
           <div className="absolute bottom-2 left-2">
-            <Tip label="Attach files">
-              <InputGroupButton size="icon-sm" variant="ghost" className="size-7 text-muted-foreground hover:text-foreground [--control-radius:6px]" aria-label="Attach files" onClick={() => fileRef.current?.click()}>
+            <Tip label="Attach images">
+              <InputGroupButton size="icon-sm" variant="ghost" className="size-7 text-muted-foreground hover:text-foreground [--control-radius:6px]" aria-label="Attach images" disabled={!upload || pending || disabled} onClick={() => fileRef.current?.click()}>
                 <PlusIcon className="size-4" />
               </InputGroupButton>
             </Tip>
@@ -324,7 +398,7 @@ export function Composer({
           </DropdownMenu>
         </div>
       </form>
-      {error && <p className="px-3 text-sm text-destructive" role="alert">{error}</p>}
+      {(error || attachError) && <p className="px-3 text-sm text-destructive" role="alert">{error || attachError}</p>}
     </div>
   )
 }

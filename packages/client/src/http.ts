@@ -52,8 +52,11 @@ export function createApi(config: ApiConfig) {
     try {
       res = await doFetch(`${base}${path}${qs ? `?${qs}` : ""}`, {
         method,
-        headers: { authorization: `Bearer ${config.token}`, ...(body !== undefined ? { "content-type": "application/json" } : {}) },
-        body: body !== undefined ? JSON.stringify(body) : undefined,
+        headers: {
+          authorization: `Bearer ${config.token}`,
+          ...(body instanceof Blob ? { "content-type": body.type || "application/octet-stream" } : body !== undefined ? { "content-type": "application/json" } : {}),
+        },
+        body: body instanceof Blob ? body : body !== undefined ? JSON.stringify(body) : undefined,
       });
     } catch {
       throw new ApiError(0, NETWORK);
@@ -92,6 +95,8 @@ export function createApi(config: ApiConfig) {
     sendMessage: (id: string, text: string) => request<object>("POST", `${dork(id)}/messages`, { text }),
     interrupt: (id: string) => request<object>("POST", `${dork(id)}/interrupt`),
     /** A fresh live-view URL of the dork's computer; a bearer credential, so never cache or log it. */
+    /** Uploads an image to attach to a message; the message names it as `![name](dorks-image:<id>)`. */
+    uploadImage: (image: Blob) => request<{ id: string }>("POST", "/api/images", image),
     desktopUrl: (id: string, opts: DesktopOptions) => request<{ url: string }>("POST", `${dork(id)}/desktop`, opts),
     setArchived: (id: string, archived: boolean) => request<object>("POST", `${dork(id)}/archive`, { archived }),
     /** Claude: `model` null for the agent's default, `effort` null for the model's default. */

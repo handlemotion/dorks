@@ -152,6 +152,8 @@ export class FakeTransport implements Transport {
     if (!this.subscriptions.some((s) => s.repo === repo && s.number === ref.number)) this.setSubscriptions([...this.subscriptions, fakeView({ ...ref, repo }, source)]);
   };
   showPreview = async (port: number, opts: { title?: string }) => ({ port, url: `https://sim-${port}.example/`, ...(opts.title ? { title: opts.title } : {}) });
+  shareImage = async (_data: string) => ({ id: "0".repeat(32) });
+  getImage = async (_id: string) => null;
   unsubscribePr = async (ref: PrRef) => {
     this.prCalls.push({ op: "unsub", ref });
     if (this.prError) throw this.prError;

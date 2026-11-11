@@ -38,20 +38,39 @@ function transcriptImages(blocks: Block[]): LightboxImage[] {
   return images
 }
 
-/** An image in a message: a thumbnail that opens the transcript's lightbox on it (or a plain image if it is not in the list). */
-function ChatImage({ src, alt }: { src?: string | Blob; alt?: string }) {
+/**
+ * A screenshot the agent shared with its `screenshot_share` tool is written `![caption](dorks-image:<id>)`; the bytes live on the
+ * server, so the id becomes that server's image URL before the markdown renders.
+ */
+const SHARED_IMAGE = /\(\s*dorks-image:([0-9a-f]{32})/g
+function resolveSharedImages(blocks: Block[], imageUrl?: (id: string) => string): Block[] {
+  if (!imageUrl) return blocks
+  return blocks.map((b) => ((b.kind === 'assistant' || b.kind === 'user') && b.text.includes('dorks-image:') ? { ...b, text: b.text.replace(SHARED_IMAGE, (_, id: string) => `(${imageUrl(id)}`) } : b))
+}
+
+/**
+ * An image in a message: a thumbnail that opens the transcript's lightbox on it (or a plain image if it is not in the list). In the
+ * agent's messages (`large`) it is big enough to read a screenshot without opening it: up to 360px tall, never wider than the column.
+ */
+function ChatImage({ src, alt, large }: { src?: string | Blob; alt?: string; large?: boolean }) {
   const images = useLightboxImages()
+  // A hairline drawn inside the edge, so a white screenshot never melts into the page; the layout does not move.
+  const size = `${large ? 'max-h-90 max-w-full h-auto w-auto' : 'h-36 w-auto'} outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10`
   const index = typeof src === 'string' ? images.findIndex((i) => i.src === src) : -1
-  if (index < 0) return typeof src === 'string' ? <img src={src} alt={alt ?? ''} className="block h-36 w-auto rounded-(--control-radius)" /> : null
+  if (index < 0) return typeof src === 'string' ? <img src={src} alt={alt ?? ''} className={`block ${size} rounded-(--control-radius)`} /> : null
   return (
-    <ImageTrigger index={index} className="my-1 inline-block cursor-zoom-in rounded-(--control-radius) align-top outline-none focus-visible:outline-2 focus-visible:outline-ring" aria-label={`Open ${alt || 'image'}`}>
-      {({ imageRef, morphRef }) => <img ref={(node) => { imageRef(node); morphRef(node) }} src={src as string} alt={alt ?? ''} className="block h-36 w-auto rounded-(--control-radius) object-cover" />}
+    <ImageTrigger index={index} className="my-1 inline-block max-w-full cursor-zoom-in rounded-(--control-radius) align-top outline-none focus-visible:outline-2 focus-visible:outline-ring" aria-label={`Open ${alt || 'image'}`}>
+      {({ imageRef, morphRef }) => <img ref={(node) => { imageRef(node); morphRef(node) }} src={src as string} alt={alt ?? ''} className={`block ${size} rounded-(--control-radius) bg-surface object-cover`} />}
     </ImageTrigger>
   )
 }
 
+function AgentImage(props: { src?: string | Blob; alt?: string }) {
+  return <ChatImage {...props} large />
+}
+
 // Module-level so Streamdown's memo holds; keeps the package's code blocks.
-const MARKDOWN = { ...markdownComponents, img: ChatImage }
+const MARKDOWN = { ...markdownComponents, img: AgentImage }
 
 /**
  * Agents paste screenshots as `data:image/…` URLs. Streamdown drops those twice (its URL transform and its sanitize schema, which
@@ -245,7 +264,8 @@ function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock })
   )
 }
 
-export function ChatMessages({ blocks }: { blocks: Block[] }) {
+export function ChatMessages({ blocks: raw, imageUrl }: { blocks: Block[]; /** Resolves a shared screenshot's id to its URL. */ imageUrl?: (id: string) => string }) {
+  const blocks = resolveSharedImages(raw, imageUrl)
   const images = transcriptImages(blocks)
   const messages = entries(blocks).map((entry) => {
     if (entry.kind === 'user') {

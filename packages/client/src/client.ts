@@ -200,6 +200,10 @@ export class DorksClient {
       const { url } = await this.api.desktopUrl(id, opts);
       return new URL(url, `${this.cfg.baseUrl.replace(/\/+$/, "")}/`).toString();
     },
+    /** Uploads an image for the message being written; resolves with its id. */
+    uploadImage: async (image: Blob) => (await this.api.uploadImage(image)).id,
+    /** Where a shared screenshot (`dorks-image:<id>` in a message) loads from. The id is the capability: no token in the URL. */
+    imageUrl: (imageId: string) => `${this.cfg.baseUrl.replace(/\/+$/, "")}/images/${encodeURIComponent(imageId)}`,
     chooseCodexModel: async (id: string, model: string, effort: string) => {
       await this.api.chooseCodexModel(id, model, effort);
       this.invalidate(`dork:${id}`);

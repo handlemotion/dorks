@@ -16,5 +16,12 @@ export function previewMethods(t: Transport, log: Log): RpcMethods {
       const title = typeof p.title === "string" && p.title.trim() ? p.title.trim() : undefined;
       return callBackend(t, log, () => t.showPreview(p.port as number, { title, localhost: p.localhost === true }), true);
     },
+    // `image.share`: a screenshot from the `screenshot_share` MCP tool, already read and checked in the agent's process.
+    "image.share": async (params) => {
+      const p = (params ?? {}) as { data?: unknown; caption?: unknown };
+      if (typeof p.data !== "string" || !p.data) throw new RpcError("invalid", "data must be a base64 image");
+      const caption = typeof p.caption === "string" && p.caption.trim() ? p.caption.trim() : undefined;
+      return callBackend(t, log, () => t.shareImage(p.data as string, caption), true);
+    },
   };
 }

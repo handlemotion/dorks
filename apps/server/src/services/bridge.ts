@@ -1,13 +1,14 @@
 import { errorEvent, fromBridge, type ClientEventBody, type CommandFrame, type SubscriptionView, type ToBridge } from "@dorks/shared";
 import { fail, touch, type App } from "../app";
 import { createNormalizer } from "../core/normalize";
-import { getDork, openCommands, runtimeOf, type DorkRow, type Preview } from "../data";
+import { getDork, openCommands, runtimeOf, type DorkRow, type Preview, type SharedImage } from "../data";
 import { update } from "../db";
 import { append, bridgeSeen, dispatch, enqueueConfigure, finishPause, patchDork } from "../lifecycle/dispatch";
 import { opFailed } from "../lifecycle/lifecycle";
 import { rememberModelChoices } from "./models";
 import { claudeToken, cliSecrets, githubToken } from "./settings";
 import * as subs from "./subscriptions";
+import { randomBytes } from "node:crypto";
 
 // What the in-box bridge may do (docs/architecture.md, "Bridge protocol"). These are the bodies of the WebSocket rpc ops and of the
 // commands snapshot; http/bridgeWs.ts authenticates the socket (per-dork HMAC) before any of them runs.
@@ -245,6 +246,88 @@ export async function showPreview(app: App, dorkId: string, port: unknown, title
     patchDork(app, dorkId, { previews: [...rest, preview].slice(-MAX_PREVIEWS) });
   });
   return preview;
+}
+
+// ---------------------------------------------------------------- shared images
+// `screenshot_share` (the bridge's MCP tool): the agent shows the owner a screenshot of its work. The bytes are stored here and served
+// at GET /images/:id; the agent puts `![caption](dorks-image:<id>)` in its message and the web resolves it to that URL.
+
+export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_IMAGES = 200;
+const MAX_CAPTION = 200;
+
+/** The image type from its magic bytes, or null. Only formats every webview renders; never SVG (it can carry script). */
+export function imageMime(b: Uint8Array): string | null {
+  const at = (i: number, ...v: number[]) => v.every((x, k) => b[i + k] === x);
+  if (at(0, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) return "image/png";
+  if (at(0, 0xff, 0xd8, 0xff)) return "image/jpeg";
+  if (at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50)) return "image/webp";
+  if (at(0, 0x47, 0x49, 0x46, 0x38)) return "image/gif";
+  return null;
+}
+
+/** A PNG's pixel size from its IHDR chunk (the lightbox uses it to size the viewer before the image loads). */
+function pngSize(b: Uint8Array): { width: number; height: number } | undefined {
+  if (b.length < 24) return undefined;
+  const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  return { width: v.getUint32(16), height: v.getUint32(20) };
+}
+
+export function shareImage(app: App, dorkId: string, data: unknown, caption: unknown): { id: string; width?: number; height?: number } {
+  if (typeof data !== "string" || !data) return fail("invalid", "data must be a base64 image");
+  const bytes = Uint8Array.from(Buffer.from(data, "base64"));
+  if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) return fail("invalid", `the image must be 1 byte to ${MAX_IMAGE_BYTES / 1024 / 1024} MB`);
+  const mime = imageMime(bytes);
+  if (!mime) return fail("invalid", "only PNG, JPEG, WebP or GIF images can be shared");
+  const text = typeof caption === "string" ? caption.replace(/\s+/g, " ").trim().slice(0, MAX_CAPTION) : "";
+  const id = randomBytes(16).toString("hex");
+  const size = mime === "image/png" ? pngSize(bytes) : undefined;
+  const image: SharedImage = { id, ...(text ? { caption: text } : {}), ...size, createdAt: Date.now() };
+  app.db.tx(() => {
+    const dork = bridgeDork(app, dorkId);
+    app.db.run("INSERT INTO images (id, dork_id, mime, bytes, created_at) VALUES (?, ?, ?, ?, ?)", id, dorkId, mime, bytes, image.createdAt);
+    const all = [...(dork.images ?? []), image];
+    // Past the cap the oldest go, bytes included, so a looping agent cannot grow the database without bound.
+    for (const old of all.slice(0, Math.max(0, all.length - MAX_IMAGES))) app.db.run("DELETE FROM images WHERE id = ?", old.id);
+    patchDork(app, dorkId, { images: all.slice(-MAX_IMAGES) });
+  });
+  return { id, ...size };
+}
+
+/** How long an upload may wait for the message that names it: a removed or abandoned attachment is deleted after this. */
+export const UNCLAIMED_IMAGE_MS = 24 * 60 * 60 * 1000;
+
+/** An attachment the owner uploaded (POST /api/images), not yet in a message: unclaimed until a message names it. */
+export function uploadImage(app: App, bytes: Uint8Array): { id: string } {
+  // Uploads are the only way unclaimed images appear, so sweeping here bounds them without a timer.
+  app.db.run("DELETE FROM images WHERE dork_id IS NULL AND created_at < ?", app.now() - UNCLAIMED_IMAGE_MS);
+  if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) return fail("invalid", `the image must be 1 byte to ${MAX_IMAGE_BYTES / 1024 / 1024} MB`);
+  const mime = imageMime(bytes);
+  if (!mime) return fail("invalid", "only PNG, JPEG, WebP or GIF images can be attached");
+  const id = randomBytes(16).toString("hex");
+  app.db.run("INSERT INTO images (id, dork_id, mime, bytes, created_at) VALUES (?, NULL, ?, ?, ?)", id, mime, bytes, app.now());
+  return { id };
+}
+
+const NAMED = /dorks-image:([0-9a-f]{32})/g;
+/** The attachments a message names become the dork's (inside the message's transaction). Ids another dork holds are left alone. */
+export function claimImages(app: App, dorkId: string, text: string) {
+  for (const [, id] of text.matchAll(NAMED)) app.db.run("UPDATE images SET dork_id = ? WHERE id = ? AND dork_id IS NULL", dorkId, id);
+}
+
+/** An image of this dork as base64 (the bridge puts attachments in the agent's turn), or null. */
+export function getImage(app: App, dorkId: string, id: unknown): { mime: string; data: string } | null {
+  bridgeDork(app, dorkId);
+  if (typeof id !== "string" || !/^[0-9a-f]{32}$/.test(id)) return null;
+  const r = app.db.get("SELECT mime, bytes FROM images WHERE id = ? AND dork_id = ?", id, dorkId);
+  return r ? { mime: r.mime as string, data: Buffer.from(r.bytes as Uint8Array).toString("base64") } : null;
+}
+
+/** The bytes behind a shared image id, for GET /images/:id. */
+export function imageBytes(app: App, id: string): { mime: string; bytes: Uint8Array } | null {
+  if (!/^[0-9a-f]{32}$/.test(id)) return null;
+  const r = app.db.get("SELECT mime, bytes FROM images WHERE id = ?", id);
+  return r ? { mime: r.mime as string, bytes: r.bytes as Uint8Array } : null;
 }
 
 // ---------------------------------------------------------------- titles

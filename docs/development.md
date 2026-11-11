@@ -37,7 +37,7 @@ pnpm dev:mock            # web plus an in-memory mock server, no real server nee
 pnpm dev:desktop         # the Tauri app (builds the real server and web UI into it)
 ```
 
-`pnpm dev` seeds missing settings with dummy credentials and prepares a simulated snapshot, so you can open the printed URL and create a chat immediately (`acme/demo`). Replies are simulated, including when the real bridge uses the fake Claude CLI; this does not call an AI provider or GitHub. The composer supports text, agent selection and, for Claude, the model and effort the agent reports (the fake CLI and the sim offer fake models); attachments are not yet available.
+`pnpm dev` seeds missing settings with dummy credentials and prepares a simulated snapshot, so you can open the printed URL and create a chat immediately (`acme/demo`). Replies are simulated, including when the real bridge uses the fake Claude CLI; this does not call an AI provider or GitHub. The composer supports text, image attachments (the + button, paste or drop; Claude receives them as images), agent selection and, for Claude, the model and effort the agent reports (the fake CLI and the sim offer fake models).
 
 `pnpm dev` keeps its data in `.dev-data` (git-ignored); delete it for a clean start. It uses fixed, dev-only values for the owner token (`dev-owner-token`) and sandbox host key, so no secret or `.env` is needed. `BRIDGE_IMPL=real pnpm dev` runs the real in-box bridge with a fake Claude CLI instead of the sim bridge. Port `0` picks a free port (`DORKS_UI_PORT=0`). Every variable is in [docs/env.md](env.md).
 

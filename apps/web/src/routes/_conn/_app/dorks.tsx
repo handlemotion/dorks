@@ -28,7 +28,7 @@ import {
 } from '@dorks/ui/message-scroller'
 import { ChatMessages } from '../../../components/ChatBlock'
 import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen } from '../../../components/ChatDetails'
-import { Composer, type AgentProvider } from '../../../components/ChatComposer'
+import { withImages, Composer, type AgentProvider } from '../../../components/ChatComposer'
 import { ChatMenu } from '../../../components/ChatMenu'
 import { ArchiveButton, PageHeader } from '../../../components/PageHeader'
 import { SetupStatus } from '../../../components/SetupStatus'
@@ -139,8 +139,9 @@ function NewDork({ initialRepo, onCreated, disabled, claudeReady, codexReady }: 
         text={message} setText={setMessage} repo={repo} setRepo={setRepo} repositories={repositories} provider={provider} setProvider={setProvider} codexEnabled={codexReady}
         pending={pending} disabled={disabled || needsClaudeToken} error={error}
         picker={{ choices: settings?.claudeModels ?? [], ...choice, onChange: (model, effort) => setChoice({ model, effort }) }}
-        onSubmit={() => void run(async () => {
-          onCreated((await actions.createDork({ repo: repo.trim(), message, provider, ...(provider === 'claude' ? choice : {}) })).id)
+        upload={actions.uploadImage}
+        onSubmit={(images) => run(async () => {
+          onCreated((await actions.createDork({ repo: repo.trim(), message: withImages(message, images), provider, ...(provider === 'claude' ? choice : {}) })).id)
           setMessage('')
         })}
       />
@@ -174,7 +175,7 @@ function Thread({ dorkId }: { dorkId: string }) {
   if (dork === undefined || loading) return <p className="mt-4 px-6 text-sm text-muted-foreground" role="status">Loading session…</p>
   if (dork === null) return <p className="mt-4 px-6 text-sm text-destructive" role="alert">That session could not be found.</p>
   return (
-    <ChatSplit details={detailsOpen ? <ChatDetails data={{ pr: prOf(dork.prUrl), previews: dork.previews?.map((p) => ({ name: p.title ?? `Port ${p.port}`, url: p.url, port: p.port })), computer: { awake: dork.state === 'working' || dork.state === 'idle', working, used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent } }} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} onAsk={setText} /> : undefined}>
+    <ChatSplit details={detailsOpen ? <ChatDetails data={{ pr: prOf(dork.prUrl), artifacts: dork.images?.map((i, n) => ({ id: i.id, name: i.caption ?? `Screenshot ${n + 1}`, type: 'Screenshot', src: actions.imageUrl(i.id), width: i.width, height: i.height })).reverse(), previews: dork.previews?.map((p) => ({ name: p.title ?? `Port ${p.port}`, url: p.url, port: p.port })), computer: { awake: dork.state === 'working' || dork.state === 'idle', working, used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent } }} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} onAsk={setText} /> : undefined}>
     <section className="flex min-w-0 flex-1 flex-col" aria-label="thread" data-state={dork.state}>
       <PageHeader divider={false}
         title={dork.title}
@@ -221,7 +222,7 @@ function Thread({ dorkId }: { dorkId: string }) {
           <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
             <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-[30px] pt-6 pb-12" data-testid="transcript">
               {canLoadMore && <div className="text-center"><Button variant="outline" size="sm" onClick={loadMore}>Load older</Button></div>}
-              <ChatMessages blocks={view.blocks} />
+              <ChatMessages blocks={view.blocks} imageUrl={actions.imageUrl} />
               {eventsError && <p role="alert" className="text-sm text-destructive">Could not load messages: {eventsError.message}. Retrying…</p>}
               <div><AgentStatus state={dork.state} live={live} outcome={view.lastOutcome} /></div>
             </MessageScrollerContent>
@@ -240,10 +241,11 @@ function Thread({ dorkId }: { dorkId: string }) {
           active: { model: dork.agentModel, effort: dork.agentEffort },
           onChange: (model, effort) => void modelSwitch.run(() => actions.chooseModel(dorkId, model ?? null, effort ?? null)),
         } : undefined}
-        onSubmit={() => void run(async () => {
+        upload={actions.uploadImage}
+        onSubmit={(images) => run(async () => {
           const sent = text
           setText('') // the optimistic row shows it at once; put it back if the server refuses
-          try { await send(sent) } catch (e) { setText(sent); throw e }
+          try { await send(withImages(sent, images)) } catch (e) { setText(sent); throw e }
         })}
         onStop={working && !stopping && !dork.archived ? () => void runStop(() => actions.interrupt(dorkId)) : undefined}
       />

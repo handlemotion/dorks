@@ -20,14 +20,14 @@ export class RpcError extends Error {
 
 export type RpcMethods = Record<string, (params: unknown) => unknown | Promise<unknown>>;
 
-/** A request line above this is dropped with the connection (hook payloads carry tool output, so it is generous). */
-const MAX_LINE = 1024 * 1024;
+/** A request line above this is dropped with the connection (hook payloads carry tool output; `image.share` carries an 8 MB image as base64). */
+export const MAX_LINE = 12 * 1024 * 1024;
 
 export class RpcServer {
   private server: Server | null = null;
 
   /** `owner`: the unprivileged user that runs git/claude (CLAUDE_RUN_AS); the socket and its dir belong to them so only they can call. */
-  constructor(readonly sockPath: string, private methods: RpcMethods, private owner?: { uid: number; gid: number } | null) {}
+  constructor(readonly sockPath: string, private methods: RpcMethods, private owner?: { uid: number; gid: number } | null, private maxLine = MAX_LINE) {}
 
   async start() {
     mkdirSync(dirname(this.sockPath), { recursive: true, mode: 0o700 });
@@ -64,7 +64,7 @@ export class RpcServer {
           if (!sock.destroyed) sock.write(JSON.stringify(reply) + "\n");
         });
       }
-      if (buf.length > MAX_LINE) sock.destroy();
+      if (buf.length > this.maxLine) sock.destroy();
     });
     // the client half-closes after its last request: answer what is queued, then close
     sock.on("end", () => void chain.then(() => sock.end()));

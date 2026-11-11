@@ -8,9 +8,9 @@ import { sleep, tmp } from "./helpers";
 let servers: RpcServer[] = [];
 afterEach(() => servers.splice(0).forEach((s) => s.close()));
 
-async function serve(methods: RpcMethods) {
+async function serve(methods: RpcMethods, maxLine?: number) {
   const dir = tmp("rpc-");
-  const server = new RpcServer(join(dir, "sub/rpc.sock"), methods);
+  const server = new RpcServer(join(dir, "sub/rpc.sock"), methods, null, maxLine);
   servers.push(server);
   await server.start();
   return server;
@@ -90,8 +90,8 @@ describe("rpc", () => {
   });
 
   it("drops a connection that sends an endless line", async () => {
-    const s = await serve({ ok: () => 1 });
-    const replies = await raw(s.sockPath, "x".repeat(1024 * 1024 + 10), false);
+    const s = await serve({ ok: () => 1 }, 64 * 1024);
+    const replies = await raw(s.sockPath, "x".repeat(64 * 1024 + 10), false);
     expect(replies).toEqual([]);
     expect(await rpcCall(s.sockPath, "ok")).toBe(1); // the server itself is fine
   });
