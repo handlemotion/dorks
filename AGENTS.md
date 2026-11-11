@@ -16,6 +16,36 @@ Test changes against running servers, not only unit tests.
 - For a throwaway instance that cannot collide with another one, set `DORKS_DATA_DIR=<temp dir>`, `DORKS_UI_PORT=0` and `DORKS_BRIDGE_PORT=0`; the server prints one JSON `ready` line with the ports.
 - `pnpm test` runs every package; `pnpm e2e` builds the compiled server and runs the server e2e (sim and real bridge, with a secret scan).
 
+## Credentials and cloud sessions
+
+Live credentials are in Doppler, project `dorks`, config `dev_live`: `CLAUDE_CODE_OAUTH_TOKEN`, `GITHUB_TOKEN`, `BOAT_API_KEY`, `BOAT_ORG`. Cloud sessions have `DOPPLER_TOKEN` set but no `doppler` CLI, so read one value with the API and pipe it straight where it goes, never into the transcript:
+
+```sh
+curl -sS -u "$DOPPLER_TOKEN:" "https://api.doppler.com/v3/configs/config/secret?project=dorks&config=dev_live&name=CLAUDE_CODE_OAUTH_TOKEN" \
+  | python3 -c 'import json,sys; print(json.dumps({"claudeToken": json.load(sys.stdin)["value"]["raw"]}))' \
+  | curl -sS -X PUT "$UI/api/settings" -H "Authorization: Bearer dev-owner-token" -H "Content-Type: application/json" --data-binary @-
+```
+
+Real Claude through the whole stack in a cloud container (verified): the container runs as root, so add an unprivileged user (`useradd -m dorkrun`), drop the session's own Claude variables from the server's env (`ANTHROPIC_BASE_URL`, `SESSION_INGRESS_URL`, every `CLAUDE_CODE_*`) so the bridge's child CLI only sees the token you saved, then:
+
+```sh
+BRIDGE_IMPL=real CLAUDE_BIN="$(command -v claude)" CLAUDE_RUN_AS=dorkrun DORKS_E2E_ROOT=/tmp/de \
+  DORKS_DATA_DIR=<temp dir> DORKS_UI_PORT=0 DORKS_BRIDGE_PORT=0 node scripts/dev.mjs --only server
+```
+
+Save the token as above, then drive it with `POST /api/dorks` and `GET /api/dorks/:id/events` ([docs/architecture.md](docs/architecture.md)).
+
+Real Boat sandboxes from a cloud session (verified): a Boat box dials back to the bridge, so give the bridge port a public URL with a [Wurmhol](https://wurmhol.com/docs) pipe, the same way the desktop shell does ([docs/desktop.md](docs/desktop.md), "Tunnel: wurmhol"). The environment has `WURMHOL_TOKEN`; the pipe needs only an outbound WebSocket through the proxy.
+
+```sh
+KEY=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')   # pipe access key; keep it out of the transcript
+WURMHOL_ACCESS_KEY=$KEY npx -y wurmhol 4748 --json --name dorks-cloud-<random>   # prints {"url": ...} and returns
+DORKS_PUBLIC_URL=<that url> DORKS_TUNNEL_KEY=$KEY DORKS_BRIDGE_PORT=4748 DORKS_UI_PORT=0 \
+  DORKS_OWNER_TOKEN=dev-owner-token DORKS_DATA_DIR=<temp dir> bun run apps/server/src/main.ts
+```
+
+Then `PUT /api/settings` with `boatKey`, `boatOrg`, `claudeToken` and `githubToken` from Doppler (one piped JSON body, as above). Saving the Boat key builds the base snapshot on Boat (about a minute); poll `GET /api/snapshot` until `ready`, then create a dork on a real repo. This spends Boat credit: `DELETE /api/dorks/:id` when done (it destroys the box), and `npx wurmhol stop 4748`.
+
 ## Testing
 
 The product intentionally has few tests. Do not add or run tests by reflex.
