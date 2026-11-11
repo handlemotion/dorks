@@ -1,6 +1,7 @@
 import { CI_FIX_MAX_ATTEMPTS, DEFAULT_COMMENT_POLICY } from "@dorks/shared";
 import { describe, expect, it } from "vitest";
 import { update } from "../src/db";
+import { append } from "../src/lifecycle/dispatch";
 import { commentAllowed, ingestEvent, type IngestEnv, type PrEvent } from "../src/services/githubIngest";
 import * as subs from "../src/services/subscriptions";
 import { harness, type Harness } from "./harness";
@@ -178,7 +179,18 @@ describe("what a change on the PR does", () => {
     s.patch({ baseRef: "feature-a", conflictSha: "old" });
     s.ingest({ kind: "pr_base_changed", baseRef: "main", from: "feature-a", sender: human });
     expect(s.get()).toMatchObject({ baseRef: "main", mergeable: null, conflictSha: undefined });
-    expect(s.inbox()[0]).toMatchObject({ kind: "base_changed" });
+    expect(s.inbox()[0]).toMatchObject({ kind: "base_changed", summary: "alice changed the base branch from feature-a to main." });
+  });
+
+  it("a base change the agent made mid-turn wakes nobody; one with no known author still does", () => {
+    const s = setup();
+    s.sub();
+    s.patch({ baseRef: "feature-a" });
+    s.h.app.db.tx(() => append(s.h.app, s.id, { type: "status", state: "working" }));
+    s.ingest({ kind: "pr_base_changed", baseRef: "main", from: "feature-a", sender: { login: "agent-bot", bot: false }, at: s.h.clock.t + 1_000 });
+    expect(s.inbox()).toEqual([]);
+    s.ingest({ kind: "pr_base_changed", baseRef: "dev", from: "main" });
+    expect(s.inbox()[0]).toMatchObject({ kind: "base_changed", summary: "Changed the base branch from main to dev." });
   });
 
   it("reviews: a comment-only review never downgrades an approval; a bare approval is recorded without a notification", () => {

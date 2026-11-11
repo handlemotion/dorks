@@ -16,7 +16,8 @@ export interface Actor {
 export type PrEvent =
   | { kind: "pr_closed"; merged: boolean; sender: Actor }
   | { kind: "pr_synchronize"; headSha: string; headRef: string }
-  | { kind: "pr_base_changed"; baseRef: string; from: string; sender: Actor }
+  /** `sender` and `at` when GitHub's issue events say who retargeted the PR. */
+  | { kind: "pr_base_changed"; baseRef: string; from: string; sender?: Actor; at?: number }
   /** `at`: when GitHub says it was written (epoch ms), to tell the agent's comments from the token owner's own (see `byAgent`). */
   | { kind: "review"; state: "approved" | "changes_requested" | "commented"; body: string; url: string; sender: Actor; at?: number }
   | { kind: "comment"; body: string; url: string; path?: string; sender: Actor; at?: number }
@@ -114,7 +115,9 @@ export function ingestEvent(app: App, subId: number, event: PrEvent, env: Ingest
     case "pr_base_changed":
       if (sub.baseRef === event.baseRef) return;
       updateSubscription(app, sub.id, { baseRef: event.baseRef, mergeable: null, conflictSha: undefined });
-      if (!own(event.sender)) notify("base_changed", `${event.sender.login} changed the base branch from ${event.from} to ${event.baseRef}.`);
+      if (event.sender && byAgent(app, sub, event.sender, event.at, env.ownLogin)) return; // the agent retargeted its own PR
+      const change = `the base branch from ${event.from} to ${event.baseRef}`;
+      notify("base_changed", event.sender ? `${event.sender.login} changed ${change}.` : `Changed ${change}.`);
       return;
 
     case "review": {

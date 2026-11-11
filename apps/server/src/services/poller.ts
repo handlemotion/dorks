@@ -20,6 +20,7 @@ interface GhPr {
 }
 interface GhReview { id: number; state: string; body: string | null; html_url: string; user: GhUser | null; submitted_at?: string | null }
 interface GhComment { id: number; body: string; html_url: string; path?: string; user: GhUser | null; created_at: string }
+interface GhIssueEvent { event: string; actor: GhUser | null; created_at: string }
 interface GhSuites { check_suites: { id: number; status: string; conclusion: string | null; latest_check_runs_count: number }[] }
 
 const actor = (u: GhUser | null | undefined): Actor => ({ login: u?.login ?? "ghost", bot: u?.type === "Bot" });
@@ -69,7 +70,13 @@ export async function observe(app: App, token: string, sub: Subscription): Promi
         return { events, baseline, poll };
       } else {
         if (pr.head.sha !== sub.headSha) events.push({ kind: "pr_synchronize", headSha: pr.head.sha, headRef: pr.head.ref });
-        if (pr.base.ref !== sub.baseRef) events.push({ kind: "pr_base_changed", baseRef: pr.base.ref, from: sub.baseRef ?? "", sender: { login: "someone", bot: false } });
+        if (pr.base.ref !== sub.baseRef) {
+          // Only the issue's events say who retargeted it, and when: one read, only when the base moved. Newest last; a PR with
+          // more than 100 events may not show it, and then nobody is named.
+          const changed = await getCached<GhIssueEvent[]>(app.fetch, token, `${base}/issues/${sub.number}/events?per_page=100`, undefined, app.now()).catch(() => null);
+          const ev = changed?.status === 200 ? changed.json.filter((e) => e.event === "base_ref_changed").at(-1) : undefined;
+          events.push({ kind: "pr_base_changed", baseRef: pr.base.ref, from: sub.baseRef ?? "", ...(ev?.actor ? { sender: actor(ev.actor), at: time(ev.created_at) } : {}) });
+        }
         if (pr.mergeable !== null && (pr.mergeable !== sub.mergeable || pr.base.sha !== old.baseSha)) events.push({ kind: "mergeable", baseSha: pr.base.sha, mergeable: pr.mergeable });
         if (pr.mergeable !== null) poll.baseSha = pr.base.sha;
       }

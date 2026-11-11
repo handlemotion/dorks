@@ -264,7 +264,7 @@ describe("bridge with a fake claude CLI", () => {
     expect(order.slice(0, flushedAt)).toContain("e:system:idle"); // the turn finished before we reported flushed
     expect(order.slice(flushedAt + 1).filter((x) => x.startsWith("e:"))).toHaveLength(0);
     expect(s.t.of("ack").some((a) => a.id === "fl1")).toBe(true);
-  });
+  }, 20_000); // a whole streamed turn of the fake CLI: past vitest's 5 s default on a busy CI runner
 
   it("configure is idempotent: a re-sent configure keeps the same process and just says ready again", async () => {
     const s = await setup();
