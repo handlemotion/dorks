@@ -222,7 +222,7 @@ function Thread({ dorkId }: { dorkId: string }) {
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
         <MessageScroller>
           <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
-            <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-[30px] pt-6 pb-12" data-testid="transcript">
+            <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-10 pt-6 pb-12" data-testid="transcript">
               {canLoadMore && <div className="text-center"><Button variant="outline" size="sm" onClick={loadMore}>Load older</Button></div>}
               <ChatMessages
                 blocks={view.blocks}

@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Tip } from "../Tip";
 import { BadIcon, CopiedIcon, CopyIcon, GoodIcon, ReplyIcon } from "./icons";
 
 /**
  * A message's hover toolbar, ported from aicss's Message Actions (https://www.aicss.dev/components/message-actions): same behaviour,
  * geometry and motion, its CSS module rewritten as Tailwind on the app's tokens. Where the app's rules differ, the rules win: the
- * app's own Tip tooltip, 12px text, 6px controls, a fill and no border or shadow. When it was sent, then rate (a final answer only),
- * copy and reply: no reactions, no More menu. `HoverActions` places it on a message.
+ * app's own Tip tooltip, 12px text, 6px controls, no shadow (the hairline border is the reference's, kept on request). Rate (a final
+ * answer only), copy and reply: no reactions, no More menu. `HoverActions` places it on a message, with its time in the left gutter.
  */
 
 const BUTTON =
@@ -21,21 +21,6 @@ const cn = (...names: (string | false | null | undefined)[]) =>
 
 type Vote = "up" | "down" | null;
 
-const ROLL_MS = 400;
-
-function elapsedMinutes(date: Date, now: number) {
-  return Math.max(0, Math.round((now - date.getTime()) / 60000));
-}
-
-function formatAgo(date: Date, now = Date.now()) {
-  const minutes = elapsedMinutes(date, now);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
-
 function formatAbsolute(date: Date) {
   return date.toLocaleString("en-US", {
     month: "short",
@@ -46,84 +31,18 @@ function formatAbsolute(date: Date) {
   });
 }
 
-/** The minutes in "3m ago", each changed digit rolling up (or down) to its next value. */
-function MinuteRoll({ value }: { value: string }) {
-  const prevRef = useRef(value);
-  const [oldVal, setOldVal] = useState(value);
-  const [newVal, setNewVal] = useState(value);
-  const [rolling, setRolling] = useState(false);
-  const [shifted, setShifted] = useState(false);
-  const [dir, setDir] = useState<"up" | "down">("up");
-
-  useEffect(() => {
-    if (prevRef.current === value) return;
-    const from = prevRef.current;
-    prevRef.current = value;
-    const fromN = parseInt(from, 10);
-    const toN = parseInt(value, 10);
-    setDir(
-      Number.isFinite(fromN) && Number.isFinite(toN) && toN < fromN
-        ? "down"
-        : "up",
-    );
-    setOldVal(from);
-    setNewVal(value);
-    setRolling(true);
-    setShifted(false);
-
-    let raf2 = 0;
-    const raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() => setShifted(true));
-    });
-    const done = window.setTimeout(() => {
-      setRolling(false);
-      setOldVal(value);
-      setShifted(false);
-    }, ROLL_MS);
-
-    return () => {
-      cancelAnimationFrame(raf1);
-      cancelAnimationFrame(raf2);
-      window.clearTimeout(done);
-    };
-  }, [value]);
-
-  const chars = rolling ? newVal : oldVal;
-
-  return (
-    <span className="inline-flex">
-      {Array.from({ length: chars.length }, (_, i) => {
-        const previous = oldVal[i] ?? "";
-        const next = chars[i] ?? "";
-        if (!rolling || previous === next)
-          return <span key={`${i}-${next}`}>{next}</span>;
-        const top = dir === "down" ? next : previous;
-        const bottom = dir === "down" ? previous : next;
-        const lifted = dir === "down" ? !shifted : shifted;
-        return (
-          <span
-            key={`${i}-${previous}-${next}-${dir}`}
-            className="relative inline-block h-[1em] overflow-hidden align-[-0.05em] leading-[1em]"
-          >
-            <span
-              className="flex flex-col transition-transform duration-[350ms] ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none [&>span]:h-[1em] [&>span]:leading-[1em]"
-              style={{
-                transform: lifted ? "translateY(-1em)" : "translateY(0)",
-              }}
-            >
-              <span>{top}</span>
-              <span>{bottom}</span>
-            </span>
-          </span>
-        );
-      })}
-    </span>
-  );
+/** "4:17": the clock time alone, short enough for the transcript's 30px gutter. The tooltip carries the date. */
+function formatClock(date: Date) {
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" })
+    .formatToParts(date)
+    .filter((p) => p.type !== "dayPeriod")
+    .map((p) => p.value)
+    .join("")
+    .trim();
 }
 
 export function MessageActions({
   text,
-  sentAt,
   rate,
   onCopy,
   onVote,
@@ -131,8 +50,6 @@ export function MessageActions({
 }: {
   /** What Copy puts on the clipboard. */
   text: string;
-  /** When the message was sent; without it the toolbar shows no time. */
-  sentAt?: Date;
   /** Show Good / Bad response (the agent's final answers). */
   rate?: boolean;
   onCopy?: (text: string) => void;
@@ -144,15 +61,6 @@ export function MessageActions({
   const [upN, setUpN] = useState(0);
   const [downN, setDownN] = useState(0);
   const [replyN, setReplyN] = useState(0);
-  const [now, setNow] = useState(() => Date.now());
-
-  // Minutes are the finest unit shown; every message has a toolbar, so the clock ticks slowly.
-  useEffect(() => {
-    if (!sentAt) return;
-    const id = window.setInterval(() => setNow(Date.now()), 15_000);
-    return () => window.clearInterval(id);
-  }, [sentAt]);
-
   useEffect(() => {
     if (!copied) return;
     const timer = window.setTimeout(() => setCopied(false), 900);
@@ -182,30 +90,11 @@ export function MessageActions({
     onReply?.();
   };
 
-  const minutes = sentAt ? elapsedMinutes(sentAt, now) : 0;
-
   return (
     <div
       data-testid="message-actions"
-      className="relative inline-flex items-center gap-0.5 rounded-(--control-radius) bg-surface p-0.5"
+      className="relative inline-flex items-center gap-0.5 rounded-(--control-radius) border border-border bg-surface p-0.5"
     >
-      {sentAt && (
-        <Tip label={formatAbsolute(sentAt)}>
-          <time
-            dateTime={sentAt.toISOString()}
-            className="mx-1.5 inline-flex h-6 cursor-default items-center text-xs leading-none whitespace-nowrap text-muted-foreground tabular-nums"
-          >
-            {minutes >= 1 && minutes < 60 ? (
-              <>
-                <MinuteRoll value={String(minutes)} />m ago
-              </>
-            ) : (
-              formatAgo(sentAt, now)
-            )}
-          </time>
-        </Tip>
-      )}
-
       {rate && <>
       <Tip label="Good response">
         <button
@@ -302,17 +191,43 @@ export function MessageActions({
 }
 
 /**
- * A message with its toolbar: hidden until the pointer is over the message or focus is in it, then at its top-right corner, half
- * above it. The message's scroller item paints with `content-visibility: auto`, which clips what is pulled outside it, so the items
- * keep 16px of room above their first message (see ChatBlock).
+ * A message with its toolbar and time: hidden until the pointer is over the message or focus is in it, then the toolbar at its
+ * top-right corner, half above it, and the time left of its first line. The message's scroller item paints with
+ * `content-visibility: auto`, which clips what is pulled outside it, so the items keep room above and left of it (see ChatBlock).
  */
 export function HoverActions({
   children,
   className,
+  sentAt,
+  timeClassName,
   ...actions
-}: Parameters<typeof MessageActions>[0] & { children: ReactNode; className?: string }) {
+}: Parameters<typeof MessageActions>[0] & {
+  children: ReactNode;
+  className?: string;
+  /** When the message was sent: its clock time shows in the left gutter on hover. */
+  sentAt?: Date;
+  /** Moves the time down to the message's first line (a bubble's padding). */
+  timeClassName?: string;
+}) {
   return (
     <div data-testid="hover-actions" className={cn("group/msg relative min-w-0", className)}>
+      {sentAt && (
+        <span
+          className={cn(
+            "absolute top-0 right-full mr-2 flex h-[1lh] items-center opacity-0 transition-opacity duration-150 ease-out group-focus-within/msg:opacity-100 group-hover/msg:opacity-100 motion-reduce:transition-none",
+            timeClassName,
+          )}
+        >
+          <Tip label={formatAbsolute(sentAt)}>
+            <time
+              dateTime={sentAt.toISOString()}
+              className="cursor-default text-xs whitespace-nowrap text-muted-foreground tabular-nums"
+            >
+              {formatClock(sentAt)}
+            </time>
+          </Tip>
+        </span>
+      )}
       {children}
       <div className="pointer-events-none absolute -top-4 right-0 z-10 opacity-0 transition-opacity duration-150 ease-out group-focus-within/msg:pointer-events-auto group-focus-within/msg:opacity-100 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100 motion-reduce:transition-none">
         <MessageActions {...actions} />

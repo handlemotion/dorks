@@ -396,8 +396,9 @@ export function ChatMessages({ blocks: raw, imageUrl, onReply, onReplySend, agen
                 </div>
               )}
               {text && (
-                <HoverActions className="flex max-w-full flex-col items-end" text={text} sentAt={entry.block.at ? new Date(entry.block.at) : undefined}>
-                  <Bubble align="end">
+                <HoverActions className="flex w-fit max-w-[80%] flex-col items-end self-end" timeClassName="top-2" text={text} sentAt={entry.block.at ? new Date(entry.block.at) : undefined}>
+                  {/* The wrapper takes the bubble's 80% cap, so it hugs the bubble and the time sits just left of it. */}
+                  <Bubble align="end" className="max-w-full">
                     {/* The composer's grey in light, white in dark (see packages/ui/README.md). `!` beats the bubble variant background. */}
                     <BubbleContent className="rounded-[10px]! px-3! py-2! bg-user-bubble! text-user-bubble-foreground!">{text}</BubbleContent>
                   </Bubble>
@@ -409,8 +410,9 @@ export function ChatMessages({ blocks: raw, imageUrl, onReply, onReplySend, agen
       )
     }
     return (
-      // `pt-4 -mt-4`: paint room for a first message's hover toolbar without moving the layout.
-      <MessageScrollerItem key={entry.id} messageId={entry.id} className="-mt-4 pt-4">
+      // `-mt-4 pt-4 -ml-10 pl-10`: paint room for a first message's hover toolbar and for the times in the left gutter, without
+      // moving the layout.
+      <MessageScrollerItem key={entry.id} messageId={entry.id} className="-mt-4 -ml-10 pt-4 pl-10">
         <Message {...{ [REPLY_SOURCE]: '' }}>
           <MessageContent className="gap-3">
             {turns(entry.blocks).map((turn, i) => <TurnContent key={`${entry.id}:${i}`} blocks={turn.blocks} end={turn.end} />)}
