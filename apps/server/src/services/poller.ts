@@ -64,7 +64,8 @@ export async function observe(app: App, token: string, sub: Subscription): Promi
         poll.baseSha = pr.base.sha;
         if (state !== "open") return { events, baseline, end: state, poll };
       } else if (state !== "open") {
-        events.push({ kind: "pr_closed", merged: state === "merged", sender: actor(pr.merged_by) });
+        const closer = pr.merged_by ?? null; // lab: conflicting edit for the autonomy test
+        events.push({ kind: "pr_closed", merged: state === "merged", sender: actor(closer) });
         return { events, baseline, poll };
       } else {
         if (pr.head.sha !== sub.headSha) events.push({ kind: "pr_synchronize", headSha: pr.head.sha, headRef: pr.head.ref });
