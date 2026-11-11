@@ -71,10 +71,11 @@ export async function observe(app: App, token: string, sub: Subscription): Promi
       } else {
         if (pr.head.sha !== sub.headSha) events.push({ kind: "pr_synchronize", headSha: pr.head.sha, headRef: pr.head.ref });
         if (pr.base.ref !== sub.baseRef) {
-          // Only the issue's events say who retargeted it, and when: one read, only when the base moved. Newest last; a PR with
-          // more than 100 events may not show it, and then nobody is named.
+          // Only the issue's events say who retargeted it, and when: one read, only when the base moved. Newest last. A full page
+          // may not reach the newest event, so then nobody is named rather than whoever retargeted it long ago.
           const changed = await getCached<GhIssueEvent[]>(app.fetch, token, `${base}/issues/${sub.number}/events?per_page=100`, undefined, app.now()).catch(() => null);
-          const ev = changed?.status === 200 ? changed.json.filter((e) => e.event === "base_ref_changed").at(-1) : undefined;
+          const page = changed?.status === 200 && changed.json.length < 100 ? changed.json : [];
+          const ev = page.filter((e) => e.event === "base_ref_changed").at(-1);
           events.push({ kind: "pr_base_changed", baseRef: pr.base.ref, from: sub.baseRef ?? "", ...(ev?.actor ? { sender: actor(ev.actor), at: time(ev.created_at) } : {}) });
         }
         if (pr.mergeable !== null && (pr.mergeable !== sub.mergeable || pr.base.sha !== old.baseSha)) events.push({ kind: "mergeable", baseSha: pr.base.sha, mergeable: pr.mergeable });

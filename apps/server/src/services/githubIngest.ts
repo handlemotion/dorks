@@ -82,7 +82,8 @@ function turnAt(app: App, dorkId: string, at: number): boolean {
 export function byAgent(app: App, sub: Subscription, sender: Actor, at: number | undefined, ownLogin: string | undefined): boolean {
   if (!ownLogin || sender.login.toLowerCase() !== ownLogin.toLowerCase()) return false;
   if (at === undefined) return true;
-  const dorks = app.db.all<{ dork_id: string }>("SELECT DISTINCT dork_id FROM pr_subscriptions WHERE repo = ? AND number = ? AND status != 'ended'", sub.repo, sub.number);
+  // Ended subscriptions count too: a dork that commented and then unsubscribed still wrote that comment.
+  const dorks = app.db.all<{ dork_id: string }>("SELECT DISTINCT dork_id FROM pr_subscriptions WHERE repo = ? AND number = ?", sub.repo, sub.number);
   return [sub.dorkId, ...dorks.map((d) => d.dork_id)].some((id) => turnAt(app, id, at));
 }
 

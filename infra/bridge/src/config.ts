@@ -98,7 +98,9 @@ export const CHILD_ENV_DENY = [/^BRIDGE_/, /^CLAUDE_RUN_AS$/, /^DORK_ID$/, /^DOR
  */
 export function runtimeSockDir(env: NodeJS.ProcessEnv = process.env): string {
   const uid = process.getuid?.() ?? -1;
-  if (uid === 0) return "/run/dorks-bridge";
-  if (env.XDG_RUNTIME_DIR && existsSync(env.XDG_RUNTIME_DIR)) return join(env.XDG_RUNTIME_DIR, "dorks-bridge");
-  return join(tmpdir(), `dorks-bridge-${uid}`);
+  // One dir per dork: several bridges under one user (the local simulator with the real bridge) must not share a socket.
+  const name = `dorks-bridge-${(env.DORK_ID ?? "").replace(/[^A-Za-z0-9-]/g, "").slice(0, 36) || "default"}`;
+  if (uid === 0) return join("/run", name);
+  if (env.XDG_RUNTIME_DIR && existsSync(env.XDG_RUNTIME_DIR)) return join(env.XDG_RUNTIME_DIR, name);
+  return join(tmpdir(), `${name}-${uid}`);
 }
