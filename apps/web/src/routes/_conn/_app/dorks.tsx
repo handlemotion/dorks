@@ -219,12 +219,11 @@ function Thread({ dorkId }: { dorkId: string }) {
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
         <MessageScroller>
           <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
-            <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-[30px] py-6" data-testid="transcript">
+            <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-[30px] pt-6 pb-12" data-testid="transcript">
               {canLoadMore && <div className="text-center"><Button variant="outline" size="sm" onClick={loadMore}>Load older</Button></div>}
               <ChatMessages blocks={view.blocks} />
               {eventsError && <p role="alert" className="text-sm text-destructive">Could not load messages: {eventsError.message}. Retrying…</p>}
-              {/* Fill short transcripts down to the composer; stay in the scroll flow for long ones. */}
-              <div className="mt-auto"><AgentStatus state={dork.state} live={live} outcome={view.lastOutcome} /></div>
+              <div><AgentStatus state={dork.state} live={live} outcome={view.lastOutcome} /></div>
             </MessageScrollerContent>
           </MessageScrollerViewport>
           <MessageScrollerButton />

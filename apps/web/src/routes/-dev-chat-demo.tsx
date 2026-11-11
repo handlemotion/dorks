@@ -179,9 +179,9 @@ export function Demo() {
             <MessageScrollerProvider autoScroll defaultScrollPosition="end">
               <MessageScroller>
                 <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
-                  <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-[30px] py-6" data-testid="transcript">
+                  <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-[30px] pt-6 pb-12" data-testid="transcript">
                     <ChatMessages blocks={blocks} />
-                    <div className="mt-auto"><AgentStatus state={stopped ? 'idle' : 'working'} live="live" /></div>
+                    <div><AgentStatus state={stopped ? 'idle' : 'working'} live="live" /></div>
                   </MessageScrollerContent>
                 </MessageScrollerViewport>
                 <MessageScrollerButton />

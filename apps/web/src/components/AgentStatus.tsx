@@ -36,7 +36,7 @@ function describeDork(name: string, state: DorkState | undefined, live: Live | u
 export function AgentStatus({ state, live, outcome, name = 'Dork' }: { state?: DorkState; live?: Live; outcome?: TurnOutcome | null; name?: string }) {
   const { label, tone, moving } = describeDork(name, state, live, outcome)
   return (
-    <p role="status" aria-live="polite" className="flex items-center justify-center gap-2 text-sm text-foreground" data-testid="agent-status">
+    <p role="status" aria-live="polite" className="flex items-center gap-2 text-sm text-foreground" data-testid="agent-status">
       <span aria-hidden className={`size-2 shrink-0 rounded-full ${tone} ${moving ? 'status-shape' : ''}`} />
       {moving ? <span><WordShimmer>{label}</WordShimmer></span> : label}
     </p>
