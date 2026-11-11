@@ -190,7 +190,7 @@ const TOOLS: Tool[] = [
       "time only, never at session start): write it idempotent and non-interactive, e.g. `sudo apt-get install -y ...`. `repos` is the whole list; each is " +
       "cloned to ~/work/<owner>/<name>, and its `setupScript` runs inside the clone (e.g. `pnpm install`). `vars` changes variables: a plain one may carry " +
       "`value`; for a secret give only the name and why, never a value (the owner types it in). Set `buildTime` only when the setup script needs the " +
-      "value; every variable reaches future sessions' environment anyway. Then run it with machine_run.",
+      "value; every variable reaches future sessions' environment anyway. Then run it with machine_run. A submitted draft cannot change until the owner decides.",
     inputSchema: {
       type: "object",
       properties: {

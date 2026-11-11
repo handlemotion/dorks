@@ -255,7 +255,7 @@ export function uiApp(app: App): Hono {
   });
   api.post("/api/builds/:id/drafts/:draftId/approve", async (c) => {
     const b = await body(c);
-    const { missing } = await builds.approveDraft(app, buildIdOf(c), c.req.param("draftId"));
+    const { missing } = await builds.approveDraft(app, buildIdOf(c), c.req.param("draftId"), b.reviewed);
     // Build right away unless the owner said not to, or a value the setup needs is still missing (the owner fills it in, then builds).
     const run = b.run !== false && !missing.length ? runs.startRun(app, buildIdOf(c), { kind: "image", by: "owner" }) : null;
     return c.json({ run, missing });

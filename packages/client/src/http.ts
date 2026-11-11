@@ -132,7 +132,8 @@ export function createApi(config: ApiConfig) {
     startRun: (id: string, kind: "image" | "trial") => request<RunView>("POST", `/api/builds/${enc(id)}/runs`, { kind }),
     runLog: (id: string, runId: string, after = 0) => request<RunLog>("GET", `/api/builds/${enc(id)}/runs/${enc(runId)}/log`, undefined, { after }),
     cancelRun: (id: string, runId: string) => request<object>("POST", `/api/builds/${enc(id)}/runs/${enc(runId)}/cancel`),
-    approveDraft: (id: string, draftId: string, run = true) => request<{ run: RunView | null; missing: string[] }>("POST", `/api/builds/${enc(id)}/drafts/${enc(draftId)}/approve`, { run }),
+    /** `reviewed`: the `updatedAt` of the draft the owner saw; a draft changed since is refused with `conflict`. */
+    approveDraft: (id: string, draftId: string, reviewed: number, run = true) => request<{ run: RunView | null; missing: string[] }>("POST", `/api/builds/${enc(id)}/drafts/${enc(draftId)}/approve`, { reviewed, run }),
     rejectDraft: (id: string, draftId: string, reason?: string) => request<object>("POST", `/api/builds/${enc(id)}/drafts/${enc(draftId)}/reject`, { reason }),
   };
 }

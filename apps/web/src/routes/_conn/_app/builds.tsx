@@ -420,7 +420,7 @@ function DraftReview({ build, draft }: { build: BuildView; draft: DraftView }) {
         <>
           <div className="flex gap-2">
             <Button size="sm" variant="outline" disabled={pending} onClick={() => void run(async () => {
-              const r = await actions.approveDraft(build.id, draft.id)
+              const r = await actions.approveDraft(build.id, draft.id, draft.updatedAt)
               if (r.missing.length) toast(`Approved. Fill in ${r.missing.join(', ')}, then build.`)
             })}>Approve and build</Button>
             <Button size="sm" variant="ghost" disabled={pending} onClick={() => void run(() => actions.rejectDraft(build.id, draft.id, reason.trim() || undefined))}>Reject</Button>

@@ -175,7 +175,7 @@ secret is a name and flags. `image` is `{name, at, stale, staleReason}` or null.
 | `GET /api/builds/:id/runs` | | `RunView[]`, newest first, at most 20 |
 | `GET /api/builds/:id/runs/:runId/log` | `?after=<byte offset>` | `{text, next, done, run}` from the stored, redacted tail |
 | `POST /api/builds/:id/runs/:runId/cancel` | | `{}`. The job kills the command and deletes the sandbox at its next step |
-| `POST /api/builds/:id/drafts/:draftId/approve` | `{run?: boolean}` (default true) | `{run: RunView \| null, missing: string[]}`. The draft's spec and variable changes become the build's (approved); requested variables appear empty for the owner to fill in; an image run starts unless `run: false` or a value needed while building is `missing` |
+| `POST /api/builds/:id/drafts/:draftId/approve` | `{reviewed, run?: boolean}` (`reviewed`: the draft's `updatedAt` as the owner saw it; `run` default true) | `{run: RunView \| null, missing: string[]}`. The draft's spec and variable changes become the build's (approved); requested variables appear empty for the owner to fill in; an image run starts unless `run: false` or a value needed while building is `missing`. `conflict` if the draft is not submitted or changed since `reviewed` |
 | `POST /api/builds/:id/drafts/:draftId/reject` | `{reason?}` | `{}` |
 
 Changed: `POST /api/dorks` takes `buildId?` (default `settings.defaultBuildId` when it is built, then the base snapshot) and `setup?`. A
@@ -258,6 +258,8 @@ approves → image run → `machine_logs` until it succeeds. Done means the imag
 - **Scope**: own build only, resolved server-side. Codex dorks get the same tools for free (the bridge already registers the `dorks`
   server with Codex), but only Claude is tested live (AGENTS.md).
 - **No secret values**: tools never return one and never accept one. Logs are redacted. Trial runs have no secrets to leak.
+- **What you review is what you approve**: a submitted draft is frozen (`machine_draft` refuses) until the owner decides, and approval
+  names the version the owner saw (`reviewed`), checked again inside the transaction that applies it.
 - **No unapproved images**: an image run needs `spec_hash == approved_hash`. The owner approves a hash by editing the build or approving a
   draft; the build's page shows the change against the build (script, repos, size) and every variable change, with the agent's reasons.
 - **Caps**: per dork, 10 trial runs a day; per build, 5 agent-started image runs a day; one active run per build. Exceeding is a tool error

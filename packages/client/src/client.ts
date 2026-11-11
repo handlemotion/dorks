@@ -313,8 +313,8 @@ export class DorksClient {
       await this.api.cancelRun(id, runId);
       this.invalidateBuild(id);
     },
-    approveDraft: async (id: string, draftId: string, run = true) => {
-      const r = await this.api.approveDraft(id, draftId, run);
+    approveDraft: async (id: string, draftId: string, reviewed: number, run = true) => {
+      const r = await this.api.approveDraft(id, draftId, reviewed, run);
       this.invalidateBuild(id);
       return r;
     },

@@ -375,7 +375,9 @@ export function writeDraft(app: App, dorkId: string, input: unknown): DraftView 
     const b = dorkBuild(app, dorkId);
     if (!b) return fail("not_configured", "This session runs on the base machine, not on a build. Ask the owner to create a build and start a setup session on it.");
     const existing = draftOfDork(app, b.id, dorkId);
-    const live = existing && existing.status !== "approved" && existing.status !== "rejected" ? existing : undefined;
+    // A submitted draft is frozen until the owner decides: what they review is what they approve.
+    if (existing?.status === "submitted") fail("conflict", "Your draft is waiting for the owner's decision; it cannot change until they approve or reject it.");
+    const live = existing && existing.status === "editing" ? existing : undefined;
     const prev: BuildSpec = live ? JSON.parse(live.spec) : specOf(b, varsOf(app, b.id));
     const prevVars: DraftVar[] = live ? JSON.parse(live.vars) : [];
     const vars = patch.vars ? mergeChanges(prevVars, patch.vars) : prevVars;
@@ -440,9 +442,11 @@ function decide(app: App, d: DraftRow, buildName: string, approved: boolean, rea
  * The owner approves a draft: its spec and variable changes become the build's (approved, since the owner chose it). New secret or
  * empty variables appear for the owner to fill in. Returns whether an image run can start now (no build-time value is missing).
  */
-export async function approveDraft(app: App, buildId: string, draftId: string): Promise<{ missing: string[] }> {
+export async function approveDraft(app: App, buildId: string, draftId: string, reviewed: unknown): Promise<{ missing: string[] }> {
   const d0 = ownDraft(app, buildId, draftId);
   if (d0.status !== "submitted") fail("conflict", "The agent has not submitted this draft yet.");
+  // The owner approves the version they saw (DraftView.updatedAt), never whatever the row holds by the time the request lands.
+  if (reviewed !== d0.updated_at) fail("conflict", "This draft changed since you opened it. Review it again.");
   const changes = JSON.parse(d0.vars) as DraftVar[];
   const enc = new Map<string, string>();
   for (const v of changes) if (!v.remove && !v.secret && v.value !== undefined) enc.set(v.name, (await encrypt(app.ring, v.value, aadVar(buildId, v.name))).value);
