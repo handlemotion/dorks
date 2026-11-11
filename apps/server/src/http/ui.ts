@@ -5,6 +5,7 @@ import { streamSSE } from "hono/streaming";
 import { AppFail, type App, type Change } from "../app";
 import { z } from "zod";
 import type { AppError } from "@dorks/shared";
+import { imageBytes, MAX_IMAGE_BYTES, uploadImage } from "../services/bridge";
 import { chooseCodexModel, createDork, desktopUrl, getDorkView, interrupt, listDorks, listEvents, removeDork, renameDork, sendMessage, setArchived, owned } from "../services/dorks";
 import { chooseModel } from "../services/models";
 import { deleteSecret, secretNames, setSecret, settingsView, updateSettings } from "../services/settings";
@@ -37,6 +38,22 @@ export function uiApp(app: App): Hono {
   // The simulator's stand-in for a Boat desktop stream (lib/box.ts simBox): a static page, no data, so it needs no token.
   if (app.cfg.boxProvider === "sim") api.get("/sim/desktop", (c) => c.html(simDesktopPage(c.req.query("theme") === "dark")));
 
+  // A screenshot the agent shared (screenshot_share). Outside /api so a plain <img> can load it: the 128-bit random id is the
+  // capability, handed out only inside the owner's transcript. Immutable, never sniffed, never run as a document.
+  api.get("/images/:id", (c) => {
+    const img = imageBytes(app, c.req.param("id"));
+    if (!img) return c.json(errBody({ code: "not_found", message: "not found" }), 404);
+    return new Response(img.bytes, {
+      headers: {
+        "content-type": img.mime,
+        "cache-control": "private, max-age=31536000, immutable",
+        "x-content-type-options": "nosniff",
+        "content-security-policy": "default-src 'none'; sandbox",
+        "cross-origin-resource-policy": "cross-origin",
+      },
+    });
+  });
+
   api.use("/api/*", async (c, next) => {
     if (c.req.path === "/api/health") return next();
     const header = c.req.header("authorization");
@@ -66,6 +83,13 @@ export function uiApp(app: App): Hono {
     return n;
   };
   const dorkIdOf = (c: Context) => c.req.param("id") as string;
+
+  // ---- images: an attachment for a message the owner is writing (raw bytes in the body). The message names it as dorks-image:<id>.
+  api.post("/api/images", async (c) => {
+    const len = Number(c.req.header("content-length") ?? 0);
+    if (len > MAX_IMAGE_BYTES) throw new AppFail({ code: "invalid", message: "the image is larger than 8 MB" });
+    return c.json(uploadImage(app, new Uint8Array(await c.req.arrayBuffer())), 201);
+  });
 
   // ---- dorks
   api.get("/api/dorks", (c) => c.json(listDorks(app, c.req.query("archived") === "true")));

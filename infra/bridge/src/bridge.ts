@@ -423,6 +423,7 @@ export class Bridge {
       },
     }) : new Agent({
       ...shared,
+      loadImage: (id) => this.t.getImage(id),
       bin: this.cfg.claudeBin,
       permissionMode: this.cfg.permissionMode,
       extraArgs: [...computerArgs(), ...this.cfg.claudeExtraArgs],

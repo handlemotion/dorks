@@ -102,6 +102,19 @@ Use Boat's native desktop for both halves.
 - The stream URL is a bearer credential to a live, interactive desktop. It is returned only over the owner-authenticated UI API and never logged or stored. The iframe sends no referrer.
 - Code in the sandbox can drive the desktop and read the screen, including anything the owner types while in control. This is the same trust model as before ([SECURITY.md](../SECURITY.md)).
 
+### Screenshots in the chat
+
+The computer tools' screenshots reach only the model. To show the owner its work, the agent calls the `dorks` MCP tool `screenshot_share`
+(`infra/bridge/src/mcp.ts`): `url` renders a page in headless Chrome (a throwaway profile, 1440x900 at scale 2 by default, `dark` for
+prefers-color-scheme dark; Chrome, Chromium or a Playwright-downloaded Chromium), `path` shares an image file, and neither grabs the whole
+desktop (`ffmpeg -f x11grab`). The bridge sends the bytes to the server (`share_image`), which stores them in `images` and serves them at
+`GET /images/:id` (the 128-bit id is the capability, so a plain `<img>` loads it). The tool returns `![caption](dorks-image:<id>)` and the
+image itself, so the agent can check it; the web resolves the id to the server URL, and the Artifacts tab lists the dork's screenshots.
+The standing guidance (`guidance.ts`) tells every agent to verify visual work this way and put the images in its final answer.
+
+Images the owner attaches to a message use the same store: `POST /api/images`, named in the message the same way, claimed by the dork when
+the message is sent, and handed to Claude as image blocks (the bridge loads them with `get_image`).
+
 ## Next
 
 - **Run one real turn.**

@@ -24,6 +24,10 @@ export interface Transport {
   unsubscribePr(ref: PrRef): Promise<void>;
   /** Hosts a port of this box and shows it in the owner's Previews tab; resolves with the stored preview. */
   showPreview(port: number, opts: { title?: string; localhost?: boolean }): Promise<{ port: number; url: string; title?: string }>;
+  /** Stores a screenshot (base64 PNG/JPEG/WebP/GIF) for the owner; resolves with its id, which `dorks-image:<id>` names in markdown. */
+  shareImage(data: string, caption?: string): Promise<{ id: string; width?: number; height?: number }>;
+  /** An image the owner attached to one of this dork's messages, as base64; null when it is not this dork's. */
+  getImage(id: string): Promise<{ mime: string; data: string } | null>;
   /** This dork's non-ended PR subscriptions (SubscriptionView[], validated by the caller), pushed on every change. */
   subscribeSubscriptions(onList: (views: unknown) => void, onError: () => void): () => void;
   /** Fires each time the underlying connection comes back after a drop. */
@@ -223,6 +227,10 @@ export class WsTransport implements Transport {
 
   showPreview = async (port: number, opts: { title?: string; localhost?: boolean }) =>
     this.rpc<{ port: number; url: string; title?: string }>("show_preview", { port, ...opts });
+
+  getImage = async (id: string) => this.rpc<{ mime: string; data: string } | null>("get_image", { id });
+
+  shareImage = async (data: string, caption?: string) => this.rpc<{ id: string; width?: number; height?: number }>("share_image", { data, caption });
 
   subscribeSubscriptions(onList: (views: unknown) => void, onError: () => void) {
     const sub = { on: onList, err: onError };

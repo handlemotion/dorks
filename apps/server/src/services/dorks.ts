@@ -8,6 +8,7 @@ import { validRepo } from "../lib/repo";
 import { isBoxNotFound, type DesktopOptions } from "../core/box";
 import { missingForSession } from "./setup";
 import { readSettings } from "./settings";
+import { claimImages } from "./bridge";
 import { endDorkSubscriptions, resetCiAttempts, subscriptionsOfDork } from "./subscriptions";
 
 export const MAX_TITLE_CHARS = 120;
@@ -30,10 +31,14 @@ function checkText(text: unknown) {
 }
 
 /** Durable outbox row + the event clients see. A thrown error rolls both back (e.g. archived dork). */
+/** A message without its attached images (`![name](dorks-image:<id>)`), for titles and previews. */
+const withoutImages = (text: string) => text.replace(/!\[[^\]]*\]\(\s*dorks-image:[0-9a-f]{32}\s*\)/g, "").trim();
+
 function persistMessage(app: App, dork: DorkRow, text: string) {
+  claimImages(app, dork.id, text);
   enqueue(app, dork.id, "user_message", text);
   append(app, dork.id, { type: "user_message", text });
-  patchDork(app, dork.id, { preview: text.slice(0, 140), lastActivityAt: app.now() });
+  patchDork(app, dork.id, { preview: (withoutImages(text) || "Image").slice(0, 140), lastActivityAt: app.now() });
 }
 
 export function listDorks(app: App, archived = false): DorkView[] {
@@ -77,7 +82,7 @@ export function createDork(app: App, input: { repo: string; message: string; tit
   const now = app.now();
   return app.db.tx(() => {
     insert(app.db, "dorks", {
-      id, title: (title?.trim() || text).slice(0, MAX_TITLE_CHARS), titleSource: title?.trim() ? "user" : "message", repo, branch: `agent/${app.uuid().slice(0, 8)}`, provider, state: "creating", archived: false,
+      id, title: (title?.trim() || withoutImages(text) || "Image").slice(0, MAX_TITLE_CHARS), titleSource: title?.trim() ? "user" : "message", repo, branch: `agent/${app.uuid().slice(0, 8)}`, provider, state: "creating", archived: false,
       lastActivityAt: now, createdAt: now, deleting: false, ...choice,
     });
     insert(app.db, "dork_runtime", { dorkId: id, bridgeSeq: 0, streamMsgId: "", sleepMinutes: readSettings(app).sleepMinutes, bridgeSeenAt: 0, bridgeLost: false, opGen: 0, pauseRetries: 0 });

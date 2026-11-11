@@ -1,5 +1,10 @@
 import type { PrRef, SubscriptionView } from "@dorks/shared";
+import { execFile } from "node:child_process";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { promisify } from "node:util";
 import { describeRpcError, listLine, socketOf } from "./dorks";
 import { parsePrRef, prLabel, samePr } from "./pr-ref";
 import type { ShownPreview } from "./previews";
@@ -26,8 +31,10 @@ interface Tool {
   description: string;
   inputSchema: { type: "object"; properties: Record<string, unknown>; required?: string[]; additionalProperties: false };
   annotations: { readOnlyHint: boolean; idempotentHint: boolean; destructiveHint: boolean; openWorldHint: boolean };
-  run: (args: Record<string, unknown>, sock: string) => Promise<string>;
+  run: (args: Record<string, unknown>, sock: string) => Promise<string | Content[]>;
 }
+
+type Content = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
 
 /** Thrown by a tool for a problem the agent should read and act on; it becomes a tool result with `isError`, not a protocol error. */
 class ToolError extends Error {}
@@ -109,7 +116,164 @@ const TOOLS: Tool[] = [
       return `Showing port ${shown.port} in the user's Previews tab at ${shown.url}. If the page is blank or errors, check that the server answers on that port.`;
     },
   },
+  {
+    name: "screenshot_share",
+    title: "Show the user a screenshot",
+    description:
+      "Take a screenshot and show it to the user in the chat. Use it to prove visual work: after you build or change anything the user " +
+      "can see (a page, a component, a layout, a style), screenshot the result and share it. Give exactly one source: " +
+      "`url` renders a page in headless Chrome (best for your dev server: crisp, at `scale` 2 by default, sized by `width`/`height`); " +
+      "`path` shares a PNG/JPEG/WebP you already made (e.g. a Playwright `page.screenshot` cropped to the element, or a before/after); " +
+      "neither captures the whole desktop the user watches in the Computer tab. You get the image back to check it: if it is blank, " +
+      "half-loaded, cropped wrong or shows an error, fix that and share again. The result contains a markdown line; put it in your final " +
+      "answer so the user sees the image there.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        caption: { type: "string", description: "What the image shows, in a few words, e.g. \"Settings page, dark theme\"." },
+        url: { type: "string", description: "A page to render, e.g. http://localhost:3000/settings." },
+        path: { type: "string", description: "An image file to share instead (PNG, JPEG, WebP or GIF, at most 8 MB)." },
+        width: { type: "integer", minimum: 320, maximum: 3840, description: "With `url`: viewport width in CSS pixels. Default 1440; 390 for a phone." },
+        height: { type: "integer", minimum: 240, maximum: 4000, description: "With `url`: viewport height in CSS pixels. Default 900." },
+        scale: { type: "number", minimum: 1, maximum: 3, description: "With `url`: device pixel ratio. Default 2 (sharp text)." },
+        dark: { type: "boolean", description: "With `url`: render with prefers-color-scheme: dark." },
+      },
+      required: ["caption"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: false },
+    async run(args, sock) {
+      const caption = typeof args.caption === "string" ? args.caption.trim() : "";
+      if (!caption) throw new ToolError("`caption` must say what the image shows.");
+      if (args.url !== undefined && args.path !== undefined) throw new ToolError("Give `url` or `path`, not both.");
+      const bytes =
+        typeof args.path === "string" ? readImage(args.path)
+        : typeof args.url === "string" ? await renderPage(args.url, args)
+        : await captureDesktop();
+      if (!sniff(bytes)) throw new ToolError("That is not a PNG, JPEG, WebP or GIF image.");
+      if (bytes.length > MAX_IMAGE_BYTES) throw new ToolError(`The image is ${(bytes.length / 1048576).toFixed(1)} MB; the limit is 8 MB. Crop it or use a smaller scale.`);
+      const data = bytes.toString("base64");
+      const shared = await rpcCall<{ id: string; width?: number; height?: number }>(sock, "image.share", { data, caption });
+      const alt = caption.replace(/[\[\]\n]/g, " ");
+      const size = shared.width && shared.height ? ` (${shared.width}x${shared.height})` : "";
+      const content: Content[] = [{ type: "text", text: `Shared${size}. The user sees it once you put this line in your final answer:\n\n![${alt}](dorks-image:${shared.id})` }];
+      // Hand the image back so the agent can judge it; above this size it would cost too much context.
+      if (bytes.length <= 3.5 * 1048576) content.push({ type: "image", data, mimeType: sniff(bytes)! });
+      return content;
+    },
+  },
 ];
+
+// ---------------------------------------------------------------- screenshots (screenshot_share)
+
+const run = promisify(execFile);
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const CAPTURE_TIMEOUT_MS = 45_000;
+
+function sniff(b: Buffer): string | null {
+  if (b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+  if (b.subarray(0, 4).toString("latin1") === "RIFF" && b.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
+  if (b.subarray(0, 4).toString("latin1") === "GIF8") return "image/gif";
+  return null;
+}
+
+function readImage(path: string): Buffer {
+  let st;
+  try {
+    st = statSync(path);
+  } catch {
+    throw new ToolError(`No file at ${path}.`);
+  }
+  if (!st.isFile()) throw new ToolError(`${path} is not a file.`);
+  if (st.size > MAX_IMAGE_BYTES) throw new ToolError(`${path} is ${(st.size / 1048576).toFixed(1)} MB; the limit is 8 MB.`);
+  return readFileSync(path);
+}
+
+const CHROMES = [
+  "google-chrome", "google-chrome-stable", "chromium", "chromium-browser",
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "/Applications/Chromium.app/Contents/MacOS/Chromium",
+];
+
+/** Browsers Playwright downloaded (`npx playwright install`), newest first: the headless shell is made for exactly this. */
+function playwrightChromes(): string[] {
+  const roots = [process.env.PLAYWRIGHT_BROWSERS_PATH, join(homedir(), "Library/Caches/ms-playwright"), join(homedir(), ".cache/ms-playwright")];
+  const found: string[] = [];
+  for (const root of roots) {
+    if (!root || !existsSync(root)) continue;
+    const dirs = readdirSync(root).filter((d) => /^chromium(_headless_shell)?-\d+$/.test(d)).sort((a, b) => Number(b.split("-")[1]) - Number(a.split("-")[1]));
+    for (const d of dirs) {
+      for (const rel of [
+        "chrome-headless-shell-linux64/chrome-headless-shell", "chrome-headless-shell-mac-arm64/chrome-headless-shell", "chrome-headless-shell-mac-x64/chrome-headless-shell",
+        "chrome-linux/chrome", "chrome-linux64/chrome",
+        "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing", "chrome-mac/Chromium.app/Contents/MacOS/Chromium",
+      ]) if (existsSync(join(root, d, rel))) found.push(join(root, d, rel));
+    }
+  }
+  return found;
+}
+
+async function findChrome(): Promise<string> {
+  if (process.env.CHROME_BIN) return process.env.CHROME_BIN;
+  for (const c of CHROMES) {
+    if (c.startsWith("/")) {
+      if (existsSync(c)) return c;
+    } else if (await run("which", [c]).then(() => true, () => false)) return c;
+  }
+  const pw = playwrightChromes()[0];
+  if (pw) return pw;
+  throw new ToolError("No Chrome or Chromium found for `url`. Take the screenshot yourself (e.g. Playwright) and pass `path`.");
+}
+
+const num = (v: unknown, d: number, lo: number, hi: number) => (typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
+
+/** One page in a throwaway headless Chrome profile, so it never fights the desktop Chrome the user watches over its profile lock. */
+async function renderPage(url: string, args: Record<string, unknown>): Promise<Buffer> {
+  if (!/^https?:\/\//i.test(url)) throw new ToolError("`url` must start with http:// or https://.");
+  const chrome = await findChrome();
+  const dir = mkdtempSync(join(tmpdir(), "dorks-shot-"));
+  const out = join(dir, "shot.png");
+  const width = Math.round(num(args.width, 1440, 320, 3840));
+  const height = Math.round(num(args.height, 900, 240, 4000));
+  const scale = num(args.scale, 2, 1, 3);
+  try {
+    await run(chrome, [
+      "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check", "--mute-audio",
+      ...(process.getuid?.() === 0 ? ["--no-sandbox"] : []),
+      `--user-data-dir=${join(dir, "profile")}`,
+      `--window-size=${width},${height}`, `--force-device-scale-factor=${scale}`,
+      ...(args.dark === true ? ["--force-dark-mode", "--blink-settings=preferredColorScheme=0"] : ["--blink-settings=preferredColorScheme=1"]),
+      "--virtual-time-budget=8000", // let scripts, fonts and data settle before the shot
+      `--screenshot=${out}`, url,
+    ], { timeout: CAPTURE_TIMEOUT_MS });
+    if (!existsSync(out)) throw new ToolError(`Chrome did not write a screenshot of ${url}. Check that it answers (curl -sI ${url}).`);
+    return readFileSync(out);
+  } catch (e) {
+    if (e instanceof ToolError) throw e;
+    throw new ToolError(`Chrome could not screenshot ${url}: ${String((e as { stderr?: unknown }).stderr ?? (e as Error).message).trim().slice(-400)}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** The whole Boat desktop (Xorg :0), the screen the owner watches in the Computer tab. */
+async function captureDesktop(): Promise<Buffer> {
+  const dir = mkdtempSync(join(tmpdir(), "dorks-shot-"));
+  const out = join(dir, "desktop.png");
+  const env = { ...process.env, DISPLAY: process.env.DISPLAY || ":0" };
+  try {
+    await run("ffmpeg", ["-loglevel", "error", "-y", "-f", "x11grab", "-i", env.DISPLAY, "-frames:v", "1", out], { timeout: CAPTURE_TIMEOUT_MS, env }).catch(
+      () => run("import", ["-window", "root", out], { timeout: CAPTURE_TIMEOUT_MS, env }),
+    );
+    if (!existsSync(out)) throw new Error("no file");
+    return readFileSync(out);
+  } catch {
+    throw new ToolError("Could not capture the desktop here (no X display). Pass `url` for a page or `path` for an image file.");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 const byName = new Map(TOOLS.map((t) => [t.name, t]));
 
@@ -148,8 +312,8 @@ export class McpServer {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: MCP_SERVER_NAME, title: "Dorks", version: "0.1.0" },
           instructions:
-            "Tools for the pull requests you work on in this box, and for showing the user a dev server. `gh pr create` subscribes you automatically; subscribed PRs wake you with <dorks-event> turns when CI, reviews, comments or conflicts need you. " +
-            "When you start a web server the user should see, call preview_show with its port.",
+            "Tools for the pull requests you work on in this box, and for showing the user your work. `gh pr create` subscribes you automatically; subscribed PRs wake you with <dorks-event> turns when CI, reviews, comments or conflicts need you. " +
+            "When you start a web server the user should see, call preview_show with its port. When you change anything visual, verify it with screenshot_share and put the image it returns in your final answer.",
         });
         break;
       }
@@ -170,7 +334,7 @@ export class McpServer {
 
   private async call(name: unknown, args: unknown) {
     const tool = typeof name === "string" ? byName.get(name) : undefined;
-    const result = (text: string, isError = false) => ({ content: [{ type: "text", text }], isError });
+    const result = (out: string | Content[], isError = false) => ({ content: typeof out === "string" ? [{ type: "text", text: out }] : out, isError });
     if (!tool) return result(`Unknown tool "${String(name)}".`, true);
     const sock = socketOf(this.env);
     if (!sock) return result("This only works inside a dork box (DORKS_SOCK is not set).", true);

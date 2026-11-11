@@ -14,6 +14,8 @@ export interface Dork {
   preview?: string;
   /** Dev servers the agent showed (its `preview_show` tool), oldest first; absent on older servers. */
   previews?: { port: number; url: string; title?: string }[];
+  /** Screenshots the agent shared (its `screenshot_share` tool), oldest first; load one with `client.imageUrl(id)`. */
+  images?: { id: string; caption?: string; width?: number; height?: number; createdAt: number }[];
   prUrl?: string;
   codexModel?: { model: string; effort: string };
   codexModelChoices?: { model: string; efforts: string[] }[];

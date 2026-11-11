@@ -168,7 +168,7 @@ type ImageRef = (node: HTMLImageElement | null) => void
 function Tile({ thumb, label, meta, image, href, onClick, children }: { thumb: (imageRef?: ImageRef) => ReactNode; label: ReactNode; meta?: string; image?: number; href?: string; onClick?: () => void; children: string }) {
   const body = (imageRef?: ImageRef) => (
     <>
-      <div className="aspect-[16/10] overflow-hidden rounded-[8px] bg-app">{thumb(imageRef)}</div>
+      <div className="aspect-[16/10] overflow-hidden rounded-[8px] bg-app outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10">{thumb(imageRef)}</div>
       <div className="mt-3.5 flex items-baseline justify-between gap-2 text-xs text-muted-foreground">
         {label}
         {meta && <span className="tabular-nums">{meta}</span>}

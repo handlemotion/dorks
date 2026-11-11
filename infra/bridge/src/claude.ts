@@ -10,7 +10,35 @@ import { asIdentity, type Identity } from "./runas";
 import type { Log } from "./redact";
 import { errTag, type Redactor } from "./redact";
 
+/** An image the owner attached, as the backend stores it (`dorks-image:<id>` in the message text). */
+export type LoadedImage = { mime: string; data: string };
+
+/** `![name](dorks-image:<id>)`: how the web puts an attached image in a message. */
+const ATTACHED = /!\[([^\]]*)\]\(\s*dorks-image:([0-9a-f]{32})\s*\)/g;
+
+/**
+ * The CLI's user content for a message: plain text when nothing is attached, else the text (each image line becomes "[Image N: name]")
+ * followed by the images as base64 blocks, so the model sees them. An image that cannot be loaded stays a text note.
+ */
+export async function userContent(text: string, load?: (id: string) => Promise<LoadedImage | null>): Promise<string | unknown[]> {
+  const refs = [...text.matchAll(ATTACHED)];
+  if (!refs.length || !load) return text;
+  const images: unknown[] = [];
+  let n = 0;
+  const loaded = await Promise.all(refs.map((m) => load(m[2]).catch(() => null)));
+  const body = text.replace(ATTACHED, (_all, name: string) => {
+    const img = loaded[n++];
+    const label = name.trim() || "image";
+    if (!img) return `[${label}: attached, but it could not be loaded]`;
+    images.push({ type: "image", source: { type: "base64", media_type: img.mime, data: img.data } });
+    return `[Image ${images.length}: ${label}]`;
+  });
+  return [{ type: "text", text: body.trim() || "(see the attached images)" }, ...images];
+}
+
 export interface AgentOptions {
+  /** Loads an attached image by id (the backend's `get_image`); without it, attachments stay text. */
+  loadImage?: (id: string) => Promise<LoadedImage | null>;
   bin: string;
   cwd: string;
   /** Final child env (already filtered + merged). */
@@ -72,7 +100,8 @@ export const COMPUTER_PROMPT = [
   "This sandbox has a Linux desktop (1920x1080, Google Chrome) that you drive with the `mcp__computer__*` tools: get_desktop_state for a screenshot,",
   "get_window_state for a window's elements, click/type_text/hotkey, launch_app, and browser_navigate/get_browser_state for Chrome.",
   "The owner watches this screen live in the Computer tab. Use it to look at what you build (open your dev server in Chrome) and for",
-  "tasks that need a GUI or a real browser; prefer the shell for everything else.",
+  "tasks that need a GUI or a real browser; prefer the shell for everything else. To show the user a screenshot in the chat, use",
+  "`mcp__dorks__screenshot_share` (the computer tools' screenshots reach only you).",
 ].join(" ");
 
 export function computerArgs(driverPresent = existsSync(BOAT_COMPUTER_DRIVER)): string[] {
@@ -259,7 +288,7 @@ export class Agent {
 
   /** Resolves once the line is flushed to the CLI's stdin. */
   async sendUserMessage(text: string) {
-    await this.write({ type: "user", message: { role: "user", content: text }, parent_tool_use_id: null });
+    await this.write({ type: "user", message: { role: "user", content: await userContent(text, this.o.loadImage) }, parent_tool_use_id: null });
     this.idle = false;
     this.pending.push(text);
   }
