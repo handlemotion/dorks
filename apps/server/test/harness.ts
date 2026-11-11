@@ -123,7 +123,6 @@ export function fakeSnapshotDriver(): FakeSnapshotDriver {
       d.calls.push("run");
       d.commands.push(command);
       if (command.includes("boat-install.sh")) return { exitCode: d.installExit, stdout: "", stderr: d.installStderr, timedOut: d.installTimedOut };
-      if (command.includes("/tmp/dorks-scan")) return { exitCode: 0, stdout: d.scanHits, stderr: "", timedOut: false };
       return { exitCode: 0, stdout: "", stderr: "", timedOut: false };
     },
     async saveSnapshot(id, name) {
@@ -149,10 +148,17 @@ export function fakeSnapshotDriver(): FakeSnapshotDriver {
     async runDetached(_id, command) {
       d.calls.push("runDetached");
       d.commands.push(command);
-      return { processId: 7, commandId: "cmd_1" };
+      return { processId: d.commands.length, commandId: `cmd_${d.commands.length}` };
     },
-    async attach(_id, _pid, offsets, onOutput) {
+    // The setup (`bash /tmp/dorks-build/run`) reports setupExit/setupOutput, the secret scan reports scanHits, anything else succeeds.
+    async attach(_id, pid, offsets, onOutput) {
       d.calls.push("attach");
+      const command = d.commands[pid - 1] ?? "";
+      if (command.includes("/tmp/dorks-scan")) {
+        if (d.scanHits) onOutput("stdout", d.scanHits);
+        return { t: "exit", exitCode: 0, offsets };
+      }
+      if (!command.includes("dorks-build/run")) return { t: "exit", exitCode: 0, offsets };
       if (d.setupOutput) onOutput("stdout", d.setupOutput);
       return { t: "exit", exitCode: d.setupExit, offsets };
     },

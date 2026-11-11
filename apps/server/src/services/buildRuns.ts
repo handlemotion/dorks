@@ -228,8 +228,8 @@ export async function runBuildRun(app: App, runId: string, attempt: number): Pro
           const dir = `${WORK}/${repo.repo}`;
           const cmd = `chmod 600 ${TMP}/gh && chmod 700 ${TMP}/cred && mkdir -p ${q(dir.slice(0, dir.lastIndexOf("/")))} && rm -rf ${q(dir)} && ` +
             `git -c credential.helper= -c credential.helper=${q(`${TMP}/cred`)} clone --quiet ${repo.branch ? `--branch ${q(repo.branch)} ` : ""}${q(`https://github.com/${repo.repo}.git`)} ${q(dir)}`;
-          const res = await driver.run(sandboxId, cmd, 600);
-          if (res.exitCode !== 0) throw new RunError(`Could not clone ${repo.repo}${res.timedOut ? " (it took more than 10 minutes)" : ""}. ${redact(tail(res.stderr || res.stdout, 3))}`.trim());
+          const res = await execLong(driver, sandboxId, cmd, 20 * 60_000, app.now);
+          if (res.exitCode !== 0) throw new RunError(`Could not clone ${repo.repo}${res.timedOut ? " (it took more than 20 minutes)" : ""}. ${redact(tail(res.stderr || res.stdout, 3))}`.trim());
         }
       } finally {
         await driver.run(sandboxId, `rm -rf ${TMP}/gh ${TMP}/cred`, 60).catch(() => undefined);
@@ -269,12 +269,15 @@ export async function runBuildRun(app: App, runId: string, attempt: number): Pro
       const values = [...(await secretValues(app, build.id)), ...(gh && app.cfg.boxProvider !== "sim" ? [gh] : [])].filter((v) => v.length >= 4 && !v.includes("\n"));
       if (values.length) {
         await driver.writeFile(sandboxId, "/tmp/dorks-scan", values.join("\n") + "\n", "utf8");
-        const scan = await driver.run(sandboxId, `chmod 600 /tmp/dorks-scan; hits=$(sudo grep -rlsF -f /tmp/dorks-scan /home /root /etc /usr/local /opt /var/lib 2>/dev/null | grep -v '^/tmp/' | head -5); rm -f /tmp/dorks-scan; printf '%s' "$hits"`, 600);
+        const scan = await execLong(driver, sandboxId, `chmod 600 /tmp/dorks-scan; hits=$(sudo grep -rlsIF -f /tmp/dorks-scan /home /root /etc /usr/local /opt /var/lib 2>/dev/null | head -5); rm -f /tmp/dorks-scan; printf '%s' "$hits"`, 20 * 60_000, app.now);
+        if (scan.timedOut) throw new RunError("The secret check took more than 20 minutes, so the image was not saved. Retry the build.");
         const hits = scan.stdout.trim();
         if (hits) throw new RunError(`A secret value was found on the machine, so it was not saved: ${hits.split("\n").join(", ")}. Make the setup keep secrets out of files (pass them in the environment), then build again.`);
         if (scan.exitCode !== 0 && !scan.stdout) throw new RunError("The secret check could not run. Retry the build.");
       }
-      await driver.run(sandboxId, `rm -rf ${TMP}`, 60).catch(() => undefined);
+      // Boat keeps every command's output in ~/.ascii/processes (and in its command history, 90 days): the build's own commands (the
+      // clone, the setup, the scan) are not part of the machine, so they do not go into the image.
+      await driver.run(sandboxId, `rm -rf ${TMP}; rm -f ~/.ascii/processes/*`, 60).catch(() => undefined);
 
       progress(app, runId, attempt, "save");
       const name = imageName(app, build.id);
@@ -361,6 +364,28 @@ async function follow(app: App, driver: SnapshotDriver, runId: string, attempt: 
     flush(true);
     const r = getRun(app, runId);
     if (!r || r.status !== "running" || r.attempt !== attempt) throw new Superseded();
+  }
+}
+
+/**
+ * Runs a command that can take minutes (a clone, the secret scan) detached, and collects its output over the attach stream: a long
+ * synchronous command call is cut by proxies and is capped at 10 minutes by Boat. Output is kept to the last 64 KB per stream.
+ */
+async function execLong(driver: SnapshotDriver, sandboxId: string, command: string, capMs: number, now: () => number): Promise<{ exitCode: number | null; stdout: string; stderr: string; timedOut: boolean }> {
+  const { processId } = await driver.runDetached(sandboxId, command);
+  const out = { stdout: "", stderr: "" };
+  const deadline = now() + capMs;
+  let offsets = { stdout: 0, stderr: 0 };
+  for (;;) {
+    if (now() > deadline) {
+      await driver.killCommand(sandboxId, processId).catch(() => undefined);
+      return { exitCode: null, ...out, timedOut: true };
+    }
+    const res = await driver.attach(sandboxId, processId, offsets, (stream, data) => {
+      out[stream] = (out[stream] + data).slice(-64 * 1024);
+    });
+    offsets = res.offsets;
+    if (res.t === "exit") return { exitCode: res.exitCode, ...out, timedOut: false };
   }
 }
 

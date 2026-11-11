@@ -83,6 +83,7 @@ function simSnapshotDriver(stepMs: number): SnapshotDriver {
     // "Runs" the uploaded setup scripts by echoing their lines; a line that is `false` or `exit <n>` fails the run, so failures can be tried.
     async attach(id, processId, _offsets, onOutput) {
       const proc = simProcs.get(processId);
+      if (proc && !proc.command.includes("dorks-build/run")) return { t: "exit", exitCode: 0, offsets: { stdout: 0, stderr: 0 } }; // a clone or the secret scan
       const scripts = [...simFiles.entries()].filter(([k]) => k.startsWith(`${id}\0`) && k.endsWith(".sh")).map(([, v]) => v);
       for (const line of scripts.join("\n").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#"))) {
         await pause();
