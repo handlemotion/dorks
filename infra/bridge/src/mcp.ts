@@ -252,7 +252,7 @@ const TOOLS: Tool[] = [
     annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
     async run(args, sock) {
       const run = await rpcCall<MachineRun>(sock, "build", { action: "run", kind: args.kind });
-      return `Started a ${run.kind} run (${run.id}). Follow it with machine_logs { "wait": 120 }.`;
+      return `Started ${run.kind === "image" ? "an image" : "a trial"} run (${run.id}). Follow it with machine_logs { "wait": 120 }.`;
     },
   },
   {
