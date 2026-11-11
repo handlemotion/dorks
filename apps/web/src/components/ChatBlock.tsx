@@ -2,9 +2,7 @@ import { useId, useState, type ReactNode } from 'react'
 import { CircleAlertIcon, CircleCheckIcon, CircleStopIcon, TerminalIcon } from 'lucide-react'
 import type { Block } from '@dorks/shared'
 import { Bubble, BubbleContent } from '@dorks/ui/bubble'
-import { Button } from '@dorks/ui/button'
 import { Marker, MarkerContent } from '@dorks/ui/marker'
-import { Separator } from '@dorks/ui/separator'
 import { CodeBlock, CodeBlockContent } from '@dorks/ui/code-block'
 import { defaultRehypePlugins, defaultUrlTransform, Markdown, markdownComponents } from '@dorks/ui/markdown'
 import { ImageLightbox, ImageTrigger, useLightboxImages, type LightboxImage } from './ImageLightbox'
@@ -110,10 +108,12 @@ function agentContent(blocks: AgentBlock[]): ReactNode[] {
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
     if (block.kind === 'tool') {
-      // One tool call, one step: a turn's history puts a divider between each.
+      // Tool calls in a row are one group (one AI Elements Trace); progress text between them is what splits groups.
+      const tools: ToolBlock[] = [block]
+      while (blocks[i + 1]?.kind === 'tool') tools.push(blocks[++i] as ToolBlock)
       content.push(
-        <Trace key={block.id} data-testid="tool-steps">
-          <ToolRow block={block} />
+        <Trace key={tools[0].id} data-testid="tool-steps">
+          {tools.map((tool) => <ToolRow key={tool.id} block={tool} />)}
         </Trace>,
       )
     } else if (block.kind === 'assistant') {
@@ -163,48 +163,60 @@ export function workedFor(ms: number): string {
 }
 
 /**
- * A turn's work as one flat sequence, a full-width divider between each step: progress text, tool calls, notices. Nothing nests
- * inside a parent step; the dividers are what tell the steps apart.
+ * A turn's work as one flat sequence: progress text, then the tool calls that followed it as one group, and so on, plus notices.
+ * Nothing nests inside a parent step, and nothing divides the steps: spacing does. The turn's checkpoint above is its only line.
  */
 function WorkHistory({ blocks, dimmed, id }: { blocks: AgentBlock[]; dimmed?: boolean; id?: string }) {
-  const content = agentContent(blocks)
   return (
     <div id={id} data-testid="work-history" data-dimmed={dimmed ? '' : undefined} className={`flex flex-col gap-3 ${dimmed ? 'text-muted-foreground' : ''}`}>
-      {content.map((node, i) => [i > 0 && <Separator key={`s${i}`} />, node])}
-      {/* Opened history ends on a divider too, so the final answer below reads apart from the work. */}
-      {dimmed && <Separator />}
+      {agentContent(blocks)}
     </div>
   )
 }
 
 /**
- * The AI Elements Checkpoint (`CheckpointDemo` in `@dorks/ui/ai-elements/checkpoint`), lifted as published: a separator marker with
- * its label and an extra-small outline button. Here the label is how long the turn worked and the button shows or hides that work.
+ * The AI Elements Checkpoint's separator marker (`@dorks/ui/marker`): a line with a label in it, and the turn's only divider. The bar
+ * itself is the toggle once the turn has ended (a real button, so it takes focus and Enter/Space); while the turn runs it only marks
+ * where the work starts and cannot be collapsed.
  */
-function TurnCheckpoint({ label, open, onToggle, controls }: { label: string; open: boolean; onToggle: () => void; controls: string }) {
+function TurnCheckpoint({ label, open, onToggle, controls }: { label: string; open: boolean; onToggle?: () => void; controls: string }) {
+  if (!onToggle) return (
+    <Marker variant="separator" data-testid="turn-checkpoint">
+      <MarkerContent>{label}</MarkerContent>
+    </Marker>
+  )
   return (
-    <Marker variant="separator" data-testid="turn-checkpoint" className="cursor-pointer select-none" onClick={onToggle}>
-      <MarkerContent className="inline-flex items-center gap-2">
-        {label}
-        <Button size="xs" variant="outline" aria-expanded={open} aria-controls={controls}>
-          {open ? 'Hide work' : 'Show work'}
-        </Button>
-      </MarkerContent>
+    <Marker
+      variant="separator"
+      data-testid="turn-checkpoint"
+      render={<button type="button" />}
+      aria-expanded={open}
+      aria-controls={controls}
+      onClick={onToggle}
+      className="cursor-pointer select-none rounded-[var(--control-radius)] outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <MarkerContent>{label}</MarkerContent>
     </Marker>
   )
 }
 
 /**
- * One turn. While it runs, its work shows live as it happens. Once it ends: a checkpoint, "Worked for 2m 14s", with the whole history
- * folded behind it (shown dimmed when opened), then the final answer and any notices. A turn that was stopped or failed, or ended
- * without a final answer, opens its history so what happened is in view. The user's toggle wins.
+ * One turn. While it runs: a "Working" checkpoint, then its work live as it happens, always open. Once it ends with a final answer
+ * the work folds behind the same checkpoint, now "Worked for 2m 14s" (click the bar to open it, shown dimmed), then the final answer
+ * and any notices. A turn that was stopped or failed, or ended without a final answer, opens its history so what happened is in
+ * view. The user's toggle wins.
  */
 function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock }) {
   const [userOpen, setUserOpen] = useState<boolean>()
   const historyId = useId()
   // Turns stored before the server named final answers render as they always did.
   if (end && end.outcome === null) return <>{agentContent(blocks)}</>
-  if (!end) return <WorkHistory blocks={blocks} />
+  if (!end) return (
+    <>
+      <TurnCheckpoint label="Working" open controls={historyId} />
+      <WorkHistory id={historyId} blocks={blocks} />
+    </>
+  )
   const work = blocks.filter(isWork)
   const open = userOpen ?? (end.outcome !== 'done' || !end.finalId)
   return (

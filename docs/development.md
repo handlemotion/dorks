@@ -65,6 +65,20 @@ CI (`.github/workflows/ci.yml`) runs typecheck and tests and the server e2e agai
 - Never put a secret behind a `VITE_` prefix.
 - Branch from `main`. Small commits, with a message that says why.
 
+## Real Claude, no Boat or tunnel
+
+To see real Claude Code work through the whole stack without a Boat account or a tunnel, run the real bridge locally with the real CLI:
+
+```sh
+BRIDGE_IMPL=real CLAUDE_BIN="$(command -v claude)" DORKS_E2E_ROOT=/tmp/de pnpm dev
+```
+
+Then put a real `claudeToken` in place of the dummy one with `PUT /api/settings` (from a script, never echoed). Repos come from a local
+git remote (`acme/demo`), so pushes stay on this machine and `gh` is not signed in. Keep `DORKS_E2E_ROOT` short: the bridge's unix socket
+lives under it and the path limit is about 108 characters. As root (a CI or cloud container), the CLI refuses `bypassPermissions`: create
+an unprivileged user and add `CLAUDE_RUN_AS=<user>`, which the sim host passes to the bridge (privilege separation, as in
+[infra/bridge/README.md](../infra/bridge/README.md)).
+
 ## Live chat from the web UI
 
 Doppler is optional: account credentials are encrypted settings, not environment variables. For a live run, start the server
