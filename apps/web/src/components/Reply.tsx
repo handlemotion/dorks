@@ -7,8 +7,8 @@ import { Tip } from './Tip'
 
 /** How the transcript starts a reply: into the composer (`onReply`), or sent straight from the box on a selection (`onSend`). */
 export interface ReplyHandlers {
-  /** Puts the reply in the composer's banner. */
-  onReply?: (reply: Reply) => void
+  /** Puts the reply in the composer's banner, with `draft` (what was typed in the box on a selection) added to its text. */
+  onReply?: (reply: Reply, draft?: string) => void
   /** Sends a reply written in the box on the selection; resolving `false` (or throwing) keeps the box open with the draft. */
   onSend?: (reply: Reply, text: string) => void | Promise<unknown>
   /** The agent's name for the box's placeholder ("Reply to Claude"). */
@@ -71,7 +71,7 @@ export function SelectionReply() {
   const reply: Reply = { kind: 'text', text: target.text }
   const close = () => setTarget(undefined)
   const toComposer = () => {
-    onReply?.(reply)
+    onReply?.(reply, text.trim() || undefined)
     close()
   }
   const send = async () => {
