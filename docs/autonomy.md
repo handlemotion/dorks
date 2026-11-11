@@ -95,6 +95,8 @@ Every 30 s, while any subscription is active, for each subscribed PR it reads, w
 - reviews, and conversation and review comments since the last cursor;
 - the check suites of the head.
 
+A merge is attributed to the PR's `merged_by`; a plain close to the issue's `closed_by` (one extra read, only when the PR is closed and not merged).
+
 It turns differences into PR events (`pr_closed`, `pr_synchronize`, `pr_base_changed`, `review`, `comment`, `check_suite`, `ci_green`, `mergeable`) and applies them in one transaction per subscription (`src/services/githubIngest.ts`):
 
 - Drop comments and reviews authored by the token's own login or rejected by `commentPolicy`. The agent's own pushes and closes still update the subscription; they just wake nobody. CI results and base-branch pushes are not filtered by sender: they describe the code.
