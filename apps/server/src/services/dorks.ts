@@ -33,12 +33,14 @@ function checkText(text: unknown) {
 /** Durable outbox row + the event clients see. A thrown error rolls both back (e.g. archived dork). */
 /** A message without its attached images (`![name](dorks-image:<id>)`), for titles and previews. */
 const withoutImages = (text: string) => text.replace(/!\[[^\]]*\]\(\s*dorks-image:[0-9a-f]{32}\s*\)/g, "").trim();
+/** A reply's quote (`> Replying to …` lines the web puts first, see apps/web/src/lib/reply.ts) is not what the owner wrote. */
+const withoutReply = (text: string) => (/^> Replying to (this part of your message|this image):\n/.test(text) ? text.replace(/^(>.*(\n|$))+/, "") : text);
 
 function persistMessage(app: App, dork: DorkRow, text: string) {
   claimImages(app, dork.id, text);
   enqueue(app, dork.id, "user_message", text);
   append(app, dork.id, { type: "user_message", text });
-  patchDork(app, dork.id, { preview: (withoutImages(text) || "Image").slice(0, 140), lastActivityAt: app.now() });
+  patchDork(app, dork.id, { preview: (withoutImages(withoutReply(text)) || "Image").slice(0, 140), lastActivityAt: app.now() });
 }
 
 export function listDorks(app: App, archived = false): DorkView[] {

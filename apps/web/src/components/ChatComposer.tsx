@@ -20,6 +20,8 @@ import openaiLight from '../assets/providers/openai-light.svg'
 import { Logo } from './onboarding/List'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@dorks/ui/input-group'
 import { Tip } from './Tip'
+import { ReplyBanner } from './Reply'
+import type { Reply } from '../lib/reply'
 
 export type AgentProvider = 'codex' | 'claude'
 
@@ -102,6 +104,8 @@ export function Composer({
   picker,
   agentLabel,
   upload,
+  reply,
+  onClearReply,
 }: {
   text: string
   setText: (text: string) => void
@@ -128,6 +132,9 @@ export function Composer({
   agentLabel?: string
   /** Uploads an attached image, resolving with its server id. Without it nothing can be attached. */
   upload?: (file: File) => Promise<string>
+  /** What the next message replies to: a banner above the text, with an X (or Escape) to drop it. */
+  reply?: Reply
+  onClearReply?: () => void
 }) {
   const formRef = useRef<HTMLFormElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -173,6 +180,10 @@ export function Composer({
     observer.observe(el)
     return () => observer.disconnect()
   }, [text])
+  // A new reply puts the cursor in the box, ready to answer it.
+  useEffect(() => {
+    if (reply) textRef.current?.focus()
+  }, [reply])
   const stacked = wraps || files.length > 0
   const isNewSession = setRepo !== undefined
   const canSend = (text.trim().length > 0 || ready.length > 0) && !uploading && !pending && !disabled && (!isNewSession || !!repo?.trim())
@@ -226,6 +237,12 @@ export function Composer({
         />
         {/* White on the off-white app (light), with the panel's 6% hairline since that pair is under 1.15:1; dark keeps the published fill. */}
         <InputGroup className="rounded-[15px] border-border bg-white has-[textarea]:rounded-[15px] has-[>[data-align=block-start]]:rounded-[15px] dark:border-transparent dark:bg-input/50">
+          {reply && (
+            // The reply banner sits 8px inside the box (the buttons' inset), concentric with its 15px corners.
+            <InputGroupAddon align="block-start" className="px-2 pt-2 pb-0">
+              <ReplyBanner reply={reply} onClear={() => { onClearReply?.(); textRef.current?.focus() }} />
+            </InputGroupAddon>
+          )}
           {files.length > 0 ? (
             // Attached images as plain thumbnails, the text's left edge, no file names: a 112px tile with the image filling it, a hairline
             // drawn inside its edge so a white screenshot keeps its shape, and a remove button in its corner on hover or focus.
@@ -272,6 +289,11 @@ export function Composer({
               attach(images)
             }}
             onKeyDown={(e) => {
+              if (e.key === 'Escape' && reply && onClearReply) {
+                e.preventDefault()
+                onClearReply()
+                return
+              }
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
                 formRef.current?.requestSubmit()
