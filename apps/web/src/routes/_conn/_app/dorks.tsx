@@ -229,6 +229,7 @@ function Thread({ dorkId }: { dorkId: string }) {
                 imageUrl={actions.imageUrl}
                 agent={dork.provider === 'codex' ? 'Codex' : 'Claude'}
                 onReply={dork.archived ? undefined : (quoted, draft) => { setReply(quoted); if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft)) }}
+                onReplySend={dork.archived ? undefined : (quoted, answer) => run(() => send(withReply(quoted, answer)))}
               />
               {eventsError && <p role="alert" className="text-sm text-destructive">Could not load messages: {eventsError.message}. Retrying…</p>}
               <div><AgentStatus state={dork.state} live={live} outcome={view.lastOutcome} /></div>

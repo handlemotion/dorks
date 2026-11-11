@@ -5,10 +5,12 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '
 import { quoteText, replyLabel, type Reply } from '../lib/reply'
 import { Tip } from './Tip'
 
-/** How the transcript starts a reply. A reply is never sent from the transcript: it always becomes a reference in the composer. */
+/** How the transcript starts a reply: attached to the composer (`onReply`, the default), or sent from a selection's box (`onSend`). */
 export interface ReplyHandlers {
   /** Puts the reply in the composer's banner, with `draft` (what was typed in the box on a selection) added to its text. */
   onReply?: (reply: Reply, draft?: string) => void
+  /** Sends a reply written in a selection's box (⌘ Enter); resolving `false` or throwing keeps the box open with the draft. */
+  onSend?: (reply: Reply, text: string) => void | Promise<unknown>
   /** The agent's name for the box's placeholder ("Reply to Claude"). */
   agent?: string
   /** Turns the image URL the chat shows back into the `dorks-image:<id>` the agent can load. */
@@ -24,15 +26,20 @@ const HIGHLIGHT = 'dorks-reply'
 
 type Target = { range: Range; text: string }
 
+/** ⌘ on Apple platforms, Ctrl elsewhere: the key that turns Enter into send. */
+const SEND_KEY = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl'
+
 /**
- * Selecting text in the agent's messages opens a small box on the selection: the passage, quoted, and a field to start the answer.
- * Enter (or the arrow) attaches the passage to the composer as a reply, with anything typed as the composer's text; it never sends.
- * The passage stays highlighted (CSS Custom Highlight) while the box is open, since focusing the field clears the real selection.
+ * Selecting text in the agent's messages opens a small box on the selection: the passage, quoted, and a field for the answer.
+ * Enter (or the arrow) attaches the passage to the composer as a reply, with anything typed as the composer's text; ⌘ Enter
+ * (Ctrl Enter) sends it right away. The arrow's tooltip says so. The passage stays highlighted (CSS Custom Highlight) while the box
+ * is open, since focusing the field clears the real selection.
  */
 export function SelectionReply() {
-  const { onReply, agent } = useReply()
+  const { onReply, onSend, agent } = useReply()
   const [target, setTarget] = useState<Target>()
   const [text, setText] = useState('')
+  const [sending, setSending] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const enabled = !!onReply
 
@@ -72,6 +79,19 @@ export function SelectionReply() {
     window.getSelection()?.removeAllRanges()
     close()
   }
+  const send = async () => {
+    if (!onSend || !text.trim() || sending) return
+    setSending(true)
+    try {
+      if ((await onSend(reply, text)) === false) return
+      window.getSelection()?.removeAllRanges()
+      close()
+    } catch {
+      // The chat shows the error; the box stays open with the draft.
+    } finally {
+      setSending(false)
+    }
+  }
   // Anchored on the selection's first line, so a long passage does not push the box off screen.
   const anchor = { getBoundingClientRect: () => target.range.getClientRects()[0] ?? target.range.getBoundingClientRect() }
   return (
@@ -84,24 +104,31 @@ export function SelectionReply() {
         initialFocus={inputRef}
         finalFocus={false}
         data-testid="selection-reply"
-        className="w-80 gap-3 rounded-[10px] p-3 [--control-radius:6px]"
+        // Portaled outside the app frame, so it sets the main app's grey focus ring itself (glass.css) instead of the brand blue.
+        className="w-80 gap-3 rounded-[10px] p-3 [--control-radius:6px] [--ring:oklch(0.85_0_0)] dark:[--ring:oklch(1_0_0/28%)]"
       >
         <blockquote className="line-clamp-3 border-l-2 border-foreground/15 px-2.5 py-0.5 text-sm leading-5 text-muted-foreground">{target.text}</blockquote>
         <form onSubmit={(e) => { e.preventDefault(); attach() }}>
-          <InputGroup className="h-8 rounded-(--control-radius)">
+          <InputGroup className="h-9 rounded-(--control-radius)">
             <InputGroupInput
               ref={inputRef}
               aria-label={`Reply to ${agent ?? 'the agent'}`}
               placeholder={`Reply to ${agent ?? 'the agent'}`}
               autoComplete="off"
               value={text}
+              disabled={sending}
               onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey) || !onSend) return
+                e.preventDefault()
+                void send()
+              }}
               className="text-sm"
             />
-            {/* Quiet, like the composer's +: it attaches, so it is not the blue send. */}
-            <InputGroupAddon align="inline-end" className="pr-1">
-              <Tip label="Add to composer">
-                <InputGroupButton type="submit" size="icon-xs" variant="ghost" aria-label="Add to composer" className="rounded-[6px] text-muted-foreground hover:text-foreground">
+            {/* Quiet, like the composer's +: it attaches by default, so it is not the blue send. 6px around it in the 36px field. */}
+            <InputGroupAddon align="inline-end" className="pr-[5px] has-[>button]:mr-0">
+              <Tip side="top" label={onSend ? `Enter to attach, ${SEND_KEY} Enter to send` : 'Enter to attach'}>
+                <InputGroupButton type="submit" size="icon-xs" variant="ghost" aria-label="Attach to composer" disabled={sending} className="rounded-[6px] text-muted-foreground hover:text-foreground">
                   <ArrowUpIcon />
                 </InputGroupButton>
               </Tip>

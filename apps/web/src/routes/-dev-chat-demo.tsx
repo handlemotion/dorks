@@ -183,7 +183,7 @@ export function Demo() {
               <MessageScroller>
                 <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
                   <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-[30px] pt-6 pb-12" data-testid="transcript">
-                    <ChatMessages blocks={blocks} agent="Claude" onReply={(quoted, draft) => { setReply(quoted); if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft)) }} />
+                    <ChatMessages blocks={blocks} agent="Claude" onReply={(quoted, draft) => { setReply(quoted); if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft)) }} onReplySend={(quoted, answer) => send(withReply(quoted, answer))} />
                     <div><AgentStatus state={stopped ? 'idle' : 'working'} live="live" /></div>
                   </MessageScrollerContent>
                 </MessageScrollerViewport>
