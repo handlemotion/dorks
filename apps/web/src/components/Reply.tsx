@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
-import { ArrowUpIcon, ReplyIcon, TextQuoteIcon, XIcon } from 'lucide-react'
+import { ArrowDownToLineIcon, ArrowUpIcon, ReplyIcon, XIcon } from 'lucide-react'
 import { Popover, PopoverContent } from '@dorks/ui/popover'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@dorks/ui/input-group'
 import { quoteText, replyLabel, type Reply } from '../lib/reply'
@@ -28,7 +28,7 @@ type Target = { range: Range; text: string }
 
 /**
  * Selecting text in the agent's messages opens a small box on the selection: the passage, quoted, and a field to answer it right
- * there (Enter sends). The quote button moves the passage and anything typed to the composer instead. The passage stays highlighted
+ * there (Enter sends). The Move to composer button (an arrow down) moves the passage and anything typed to the composer instead. The passage stays highlighted
  * (CSS Custom Highlight) while the box is open, since focusing the field clears the real selection.
  */
 export function SelectionReply() {
@@ -99,9 +99,9 @@ export function SelectionReply() {
         initialFocus={inputRef}
         finalFocus={false}
         data-testid="selection-reply"
-        className="w-80 gap-2 rounded-[10px] p-2 [--control-radius:6px]"
+        className="w-80 gap-3 rounded-[10px] p-3 [--control-radius:6px]"
       >
-        <blockquote className="line-clamp-2 border-l-2 border-foreground/15 pl-2 text-xs text-muted-foreground">{target.text}</blockquote>
+        <blockquote className="line-clamp-3 border-l-2 border-foreground/15 px-2.5 py-0.5 text-sm leading-5 text-muted-foreground">{target.text}</blockquote>
         <form onSubmit={(e) => { e.preventDefault(); void send() }}>
           <InputGroup className="h-8 rounded-(--control-radius)">
             <InputGroupInput
@@ -116,9 +116,9 @@ export function SelectionReply() {
             />
             <InputGroupAddon align="inline-end" className="gap-0.5 pr-1">
               {onReply && (
-                <Tip label="Reply in composer">
-                  <InputGroupButton size="icon-xs" variant="ghost" aria-label="Reply in composer" onClick={toComposer} className="rounded-[6px] text-muted-foreground hover:text-foreground">
-                    <TextQuoteIcon />
+                <Tip label="Move to composer">
+                  <InputGroupButton size="icon-xs" variant="ghost" aria-label="Move to composer" onClick={toComposer} className="rounded-[6px] text-muted-foreground hover:text-foreground">
+                    <ArrowDownToLineIcon />
                   </InputGroupButton>
                 </Tip>
               )}
