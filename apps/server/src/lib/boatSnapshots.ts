@@ -1,11 +1,13 @@
 import { BUILD_SANDBOX_LIFETIME_SECONDS, type SnapshotDriver } from "../core/snapshot";
-import { BOX_ID, BoatError, createBoatCall, READY, type BoatOptions } from "./boat";
+import { BOX_ID, BoatError, createBoatCall, DEFAULT_BASE_URL, READY, type BoatOptions } from "./boat";
 
 // Boat API calls the base-snapshot build needs. Sources (https://docs.boat.dev):
 //   POST /sandboxes, GET /sandboxes, GET|DELETE /sandboxes/{id}      api/reference/sandboxes/*
 //   PUT /sandboxes/{id}/files (UTF-8 or base64, 5 MiB)               api/reference/agent/write-sandbox-file
 //   POST /sandboxes/{id}/commands (sync, 1-600 s)                    api/reference/agent/execute-sandbox-command
 //   POST /saved-snapshots (202, then poll), GET /saved-snapshots/{name}   api/reference/snapshots/save-saved-snapshot, get-saved-snapshot
+//   DELETE /saved-snapshots/{name}                                   api/reference/snapshots/delete-saved-snapshot
+//   POST /sandboxes/{id}/commands {detached}, GET .../commands/{pid}/stream, DELETE .../commands/{pid}   api/reference/agent/*
 
 const POLL_MS = 2_000;
 const READY_WAIT_MS = 240_000;
@@ -17,6 +19,25 @@ export interface BoatSnapshotOptions extends Pick<BoatOptions, "apiKey" | "org" 
 
 export function boatSnapshotDriver(opts: BoatSnapshotOptions): SnapshotDriver {
   const call = createBoatCall(opts);
+  const doFetch = opts.fetch ?? fetch;
+  /** A long-lived streaming GET (the attach stream ends itself after 10 minutes with a `reconnect` line). */
+  async function stream(p: string): Promise<Response> {
+    if (!BOX_ID.test(p.split("/")[2] ?? "")) throw new BoatError("boat: invalid sandbox id");
+    let res: Response;
+    try {
+      res = await doFetch(`${DEFAULT_BASE_URL}${p}`, {
+        headers: { Authorization: `Bearer ${opts.apiKey}`, ...(opts.org ? { "X-Boat-Org": opts.org } : {}) },
+        signal: AbortSignal.timeout(15 * 60_000),
+      });
+    } catch (e) {
+      throw new BoatError(`boat attach: network error (${e instanceof Error ? e.name : "unknown"})`);
+    }
+    if (!res.ok || !res.body) {
+      const err: any = await res.json().catch(() => ({}));
+      throw new BoatError(`boat attach: HTTP ${res.status}`, res.status, typeof err?.code === "string" ? err.code : undefined);
+    }
+    return res;
+  }
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const path = (id: string, suffix = "") => {
     if (!BOX_ID.test(id)) throw new BoatError("boat: invalid sandbox id");
@@ -36,22 +57,22 @@ export function boatSnapshotDriver(opts: BoatSnapshotOptions): SnapshotDriver {
   }
 
   return {
-    async listBuildSandboxes(label) {
+    async listBuildSandboxes(label, labelKey = "dorks-build") {
       const found: { id: string }[] = [];
       let cursor: string | undefined;
       do {
-        const query = new URLSearchParams({ label: `dorks-build=${label}`, limit: "200" });
+        const query = new URLSearchParams({ label: `${labelKey}=${label}`, limit: "200" });
         if (cursor) query.set("cursor", cursor);
         const json = await call("list", "GET", `/sandboxes?${query}`);
         if (!Array.isArray(json.sandboxes)) throw new BoatError("boat list: invalid response");
-        for (const b of json.sandboxes as Sandbox[]) if (BOX_ID.test(b?.id) && b.labels?.["dorks-build"] === label && b.state !== "cancelled" && !b.dataExpiredAt) found.push({ id: b.id });
+        for (const b of json.sandboxes as Sandbox[]) if (BOX_ID.test(b?.id) && b.labels?.[labelKey] === label && b.state !== "cancelled" && !b.dataExpiredAt) found.push({ id: b.id });
         cursor = json.pageInfo?.nextCursor || undefined;
       } while (cursor);
       return found;
     },
 
-    async createBuildSandbox({ name, label, key }) {
-      const body = { name, labels: { "dorks-build": label }, noEnv: true, ttlSeconds: BUILD_SANDBOX_LIFETIME_SECONDS };
+    async createBuildSandbox({ name, label, key, from, type, labelKey = "dorks-build" }) {
+      const body = { name, labels: { [labelKey]: label }, noEnv: true, ttlSeconds: BUILD_SANDBOX_LIFETIME_SECONDS, ...(from ? { from } : {}), ...(type ? { type } : {}) };
       const deadline = Date.now() + READY_WAIT_MS;
       for (;;) {
         try {
@@ -115,6 +136,67 @@ export function boatSnapshotDriver(opts: BoatSnapshotOptions): SnapshotDriver {
       } catch (e) {
         if (e instanceof BoatError && e.status === 404) return null;
         throw e;
+      }
+    },
+
+    async runDetached(id, command) {
+      const json = await call("start command", "POST", path(id, "/commands"), { command, detached: true });
+      if (typeof json.processId !== "number") throw new BoatError("boat start command: response had no process id");
+      return { processId: json.processId, commandId: typeof json.commandId === "string" ? json.commandId : undefined };
+    },
+
+    async attach(id, processId, offsets, onOutput) {
+      // NDJSON: attached, stdout/stderr chunks (with nextOffset), heartbeat, then exit | reconnect | error (api/reference/agent/attach-command).
+      const query = new URLSearchParams({ stdoutOffset: String(offsets.stdout), stderrOffset: String(offsets.stderr) });
+      const res = await stream(`/sandboxes/${encodeURIComponent(id)}/commands/${processId}/stream?${query}`);
+      const at = { ...offsets };
+      const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+      let buf = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) return { t: "reconnect", offsets: at }; // the connection dropped: open it again from where we are
+        buf += value;
+        let nl: number;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (!line) continue;
+          let f: any;
+          try {
+            f = JSON.parse(line);
+          } catch {
+            continue;
+          }
+          if ((f.type === "stdout" || f.type === "stderr") && typeof f.data === "string") {
+            onOutput(f.type, f.data);
+            if (typeof f.nextOffset === "number") at[f.type === "stdout" ? "stdout" : "stderr"] = f.nextOffset;
+          } else if (f.type === "exit") {
+            await reader.cancel().catch(() => {});
+            return { t: "exit", exitCode: typeof f.exitCode === "number" ? f.exitCode : null, offsets: { stdout: f.stdoutOffset ?? at.stdout, stderr: f.stderrOffset ?? at.stderr } };
+          } else if (f.type === "reconnect") {
+            await reader.cancel().catch(() => {});
+            return { t: "reconnect", offsets: { stdout: f.stdoutOffset ?? at.stdout, stderr: f.stderrOffset ?? at.stderr } };
+          } else if (f.type === "error") {
+            await reader.cancel().catch(() => {});
+            throw new BoatError(`boat attach: ${typeof f.error === "string" ? f.error : "stream error"}`, undefined, typeof f.error === "string" ? f.error : undefined);
+          }
+        }
+      }
+    },
+
+    async killCommand(id, processId) {
+      try {
+        await call("stop command", "DELETE", path(id, `/commands/${processId}`));
+      } catch (e) {
+        if (!(e instanceof BoatError) || (e.status !== 404 && e.status !== 409)) throw e;
+      }
+    },
+
+    async deleteSnapshot(name) {
+      try {
+        await call("delete snapshot", "DELETE", `/saved-snapshots/${encodeURIComponent(name)}`);
+      } catch (e) {
+        if (!(e instanceof BoatError) || e.status !== 404) throw e;
       }
     },
 

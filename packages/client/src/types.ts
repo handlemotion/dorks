@@ -1,4 +1,6 @@
-import type { AgentModelChoice, ClientEvent, CommentPolicy, DorkState } from "@dorks/shared";
+import type { AgentModelChoice, BuildRepo, ClientEvent, CommentPolicy, DorkState, MachineType, RunView } from "@dorks/shared";
+
+export type { BuildView, BuildVarView, DraftView, RunView, BuildRepo, MachineType } from "@dorks/shared";
 
 export type Provider = "claude" | "codex";
 
@@ -27,12 +29,19 @@ export interface Dork {
   agentEffort?: string;
   /** The models the agent offers this account, as it last reported them. */
   modelChoices?: AgentModelChoice[];
+  /** The build its machine starts from (docs/builds.md); null: the base snapshot. Absent on older servers. */
+  buildId?: string | null;
   lastActivityAt: number;
   createdAt: number;
 }
 
 export interface CreateDorkInput {
-  repo: string;
+  /** owner/name; optional only for a setup session. */
+  repo?: string;
+  /** The build to start from; null: the base machine; omitted: the default build, else the base machine. */
+  buildId?: string | null;
+  /** A machine-setup session for `buildId`: no repo needed, and the build needs no image yet. */
+  setup?: boolean;
   message: string;
   title?: string;
   provider?: Provider;
@@ -56,6 +65,30 @@ export interface Settings {
   boxProvider?: string;
   /** The models a Claude agent last reported (empty before any session started); what a new session can choose from. */
   claudeModels?: AgentModelChoice[];
+  /** The build new sessions start on; null: the base snapshot. */
+  defaultBuildId?: string | null;
+}
+
+export interface BuildInput {
+  name?: string;
+  machineType?: MachineType;
+  setupScript?: string;
+  repos?: BuildRepo[];
+}
+
+export interface BuildVarInput {
+  /** Omit to keep the stored value (to change a flag only). */
+  value?: string;
+  secret?: boolean;
+  buildTime?: boolean;
+}
+
+export interface RunLog {
+  text: string;
+  /** Byte offset to ask from next. */
+  next: number;
+  done: boolean;
+  run: RunView;
 }
 
 /** Any subset. Token fields are write-only; an empty string clears one. */
@@ -115,7 +148,9 @@ export type LiveMessage =
   | { t: "events"; dorkId: string; seq: number }
   | { t: "subscriptions"; dorkId: string }
   | { t: "settings" }
-  | { t: "snapshot" };
+  | { t: "snapshot" }
+  | { t: "builds" }
+  | { t: "build"; buildId: string };
 
 export interface PrRefInput {
   repo: string;

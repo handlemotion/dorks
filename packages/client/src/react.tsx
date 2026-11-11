@@ -3,7 +3,7 @@ import { toAppError, type SubscriptionView } from "@dorks/shared";
 import type { DorksClient, ConnectionState } from "./client.ts";
 import type { EventsState } from "./events.ts";
 import type { QueryState, Store } from "./store.ts";
-import type { Dork, Settings, SnapshotStatus, Usage } from "./types.ts";
+import type { BuildView, Dork, RunView, Settings, SnapshotStatus, Usage } from "./types.ts";
 
 const Ctx = createContext<DorksClient | null>(null);
 
@@ -64,6 +64,20 @@ export function useUsage(): Usage | undefined {
 
 export function useSecretNames(): string[] | undefined {
   return useStore(useDorksClient().secretNames()).data;
+}
+
+/** Builds (docs/builds.md); `undefined` while loading. */
+export function useBuilds(): BuildView[] | undefined {
+  return useStore(useDorksClient().builds()).data;
+}
+
+/** `undefined` while loading, `null` when it does not exist. */
+export function useBuild(id: string): BuildView | null | undefined {
+  return useStore(useDorksClient().build(id)).data;
+}
+
+export function useRuns(buildId: string): RunView[] | undefined {
+  return useStore(useDorksClient().runs(buildId)).data;
 }
 
 export function useSubscriptions(dorkId: string): SubscriptionView[] | undefined {

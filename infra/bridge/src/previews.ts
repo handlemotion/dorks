@@ -16,6 +16,12 @@ export function previewMethods(t: Transport, log: Log): RpcMethods {
       const title = typeof p.title === "string" && p.title.trim() ? p.title.trim() : undefined;
       return callBackend(t, log, () => t.showPreview(p.port as number, { title, localhost: p.localhost === true }), true);
     },
+    // `build`: the machine_* MCP tools. The server validates everything and scopes it to this dork's build; this only forwards.
+    build: async (params) => {
+      const p = (params ?? {}) as Record<string, unknown>;
+      if (!["get", "draft", "run", "logs", "submit"].includes(p.action as string)) throw new RpcError("invalid", "unknown build action");
+      return callBackend(t, log, () => t.build(p), true);
+    },
     // `image.share`: a screenshot from the `screenshot_share` MCP tool, already read and checked in the agent's process.
     "image.share": async (params) => {
       const p = (params ?? {}) as { data?: unknown; caption?: unknown };

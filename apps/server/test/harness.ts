@@ -76,6 +76,15 @@ export interface FakeSnapshotDriver extends SnapshotDriver {
   /** What a settled save reports. */
   saveResult: "ready" | "failed";
   deleteFails: boolean;
+  /** Build runs: the detached setup's exit code and output, what the secret scan finds, and how sandboxes were created. */
+  setupExit: number;
+  setupOutput: string;
+  /** When set, the setup's output arrives over several attach calls (one array each); all but the last end in a reconnect. */
+  setupStreams?: string[][];
+  scanHits: string;
+  created: { from?: string; type?: string; labelKey?: string }[];
+  killed: number[];
+  deletedSnapshots: string[];
   maybeFail(op: string): void;
 }
 
@@ -84,6 +93,7 @@ export function fakeSnapshotDriver(): FakeSnapshotDriver {
   const d: FakeSnapshotDriver = {
     calls: [], boxes: new Map(), files: new Map(), commands: [], saved: new Map(), installExit: 0, installStderr: "", installTimedOut: false,
     failNext: new Map(), savingPolls: 0, saveResult: "ready", deleteFails: false,
+    setupExit: 0, setupOutput: "", scanHits: "", created: [], killed: [], deletedSnapshots: [],
     maybeFail(op) {
       const e = d.failNext.get(op);
       if (e) {
@@ -91,12 +101,13 @@ export function fakeSnapshotDriver(): FakeSnapshotDriver {
         throw e;
       }
     },
-    async listBuildSandboxes(label) {
+    async listBuildSandboxes(label, _labelKey) {
       d.calls.push("list");
       return [...d.boxes].filter(([, b]) => b.label === label).map(([id]) => ({ id }));
     },
-    async createBuildSandbox({ label }) {
+    async createBuildSandbox({ label, from, type, labelKey }) {
       d.calls.push("create");
+      d.created.push({ from, type, labelKey });
       d.maybeFail("create");
       const id = `bx_build${++n}`;
       d.boxes.set(id, { label });
@@ -135,6 +146,35 @@ export function fakeSnapshotDriver(): FakeSnapshotDriver {
       d.calls.push("delete");
       if (d.deleteFails) throw new Error("delete down");
       d.boxes.delete(id);
+    },
+    async runDetached(_id, command) {
+      d.calls.push("runDetached");
+      d.commands.push(command);
+      return { processId: d.commands.length, commandId: `cmd_${d.commands.length}` };
+    },
+    // The setup (`bash /tmp/dorks-build/run`) reports setupExit/setupOutput, the secret scan reports scanHits, anything else succeeds.
+    async attach(_id, pid, offsets, onOutput) {
+      d.calls.push("attach");
+      const command = d.commands[pid - 1] ?? "";
+      if (command.includes("/tmp/dorks-scan")) {
+        if (d.scanHits) onOutput("stdout", d.scanHits);
+        return { t: "exit", exitCode: 0, offsets };
+      }
+      if (!command.includes("dorks-build/run")) return { t: "exit", exitCode: 0, offsets };
+      if (d.setupStreams?.length) {
+        for (const chunk of d.setupStreams.shift()!) onOutput("stdout", chunk);
+        if (d.setupStreams.length) return { t: "reconnect", offsets };
+        return { t: "exit", exitCode: d.setupExit, offsets };
+      }
+      if (d.setupOutput) onOutput("stdout", d.setupOutput);
+      return { t: "exit", exitCode: d.setupExit, offsets };
+    },
+    async killCommand(_id, pid) {
+      d.killed.push(pid);
+    },
+    async deleteSnapshot(name) {
+      d.deletedSnapshots.push(name);
+      d.saved.delete(name);
     },
   };
   return d;

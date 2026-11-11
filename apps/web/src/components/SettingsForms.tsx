@@ -279,7 +279,7 @@ export function CliSecrets() {
   const { run, pending, error } = usePending()
   return (
     <>
-      <p><small className="text-muted-foreground">Exported as environment variables inside the sandbox. Values are never displayed.</small></p>
+      <p><small className="text-muted-foreground">Environment variables for every session, on any machine. A build’s own variable with the same name wins. Values are never displayed.</small></p>
       <ul aria-label="secret names">
         {names?.map((n) => (
           <li key={n}>

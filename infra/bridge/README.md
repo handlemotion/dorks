@@ -123,8 +123,10 @@ that is another http(s) URL), so every repo the agent clones under the workdir c
 installation-wide). It is `dorks-bridge credential --sock <sock dir>/cred.sock`, which asks the running bridge for the token (the `token` RPC method)
 and answers only for `github.com` (and the host of `DORKS_GIT_BASE_URL`); it never stores. The token lives in the bridge's memory and nowhere on
 disk, so the agent's own `git push` works and gets the refreshed token after each `fetch_gh_token`. `user.name` / `user.email` are set globally
-too, unless already configured. Starting repo: reuse the local branch, else track `origin/<branch>`, else create it from the default branch.
-Local work is never reset.
+too, unless already configured. Starting repo: reuse the local branch, else track `origin/<branch>`, else create it from the freshly
+fetched upstream of the checked-out branch (a clone baked into a build image can be weeks old). Local work is never reset. With no
+starting repo (`configure.repo` null, a machine-setup session), the agent starts in the work directory and the credential helper is still
+set up, so it can clone and push.
 
 **Local RPC, `dorks` and the `gh` shim.** The credential socket (`src/rpc.ts`) is a small JSON-lines RPC: one request per line,
 `{"method":"pr.sub","params":{…}}`, answered in order with `{"ok":true,"result":…}` or `{"ok":false,"error":{"code","message"}}` (codes: `invalid`,
@@ -158,7 +160,9 @@ the Claude child's environment (they are children of it).
   uses), hand-rolled newline-delimited JSON-RPC so the bundle gains no dependency. At `start()` the bridge writes `<state>/claude-mcp.json` (0644) and starts
   the agent with `--mcp-config <that file>`; Claude Code runs `<node> <cli.mjs> dorks mcp` itself, with `DORKS_SOCK` in the server's own `env`. It adds to the
   repo's own MCP servers (no `--strict-mcp-config`). Tools, shown to the agent as `mcp__dorks__<name>`:
-  `pr_subscribe { pr }`, `pr_unsubscribe { pr }` and `pr_list { pr? }`, each forwarding to `pr.sub` (`source: "agent"`), `pr.unsub` and `pr.list`.
+  `pr_subscribe { pr }`, `pr_unsubscribe { pr }` and `pr_list { pr? }`, each forwarding to `pr.sub` (`source: "agent"`), `pr.unsub` and `pr.list`;
+  `preview_show`, `screenshot_share`; and `machine_get`, `machine_draft`, `machine_run`, `machine_logs`, `machine_submit`, which forward to the
+  `build` method and the `build` rpc: the agent's way to change the build its machine starts from ([docs/builds.md](../../docs/builds.md)).
   A bad argument or a bridge/backend problem is a tool result with `isError` and the same message the CLI prints; protocol errors are JSON-RPC errors.
   Claude Code defers MCP tool schemas, so the model usually runs `ToolSearch` before the first call; the SessionStart context names the tools.
 - **`gh` shim.** Ahead of the real gh on `PATH` (`/usr/local/bin/gh` over `/usr/bin/gh`). It asks the socket for the token, runs the real gh

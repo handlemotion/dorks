@@ -10,7 +10,7 @@ import { GithubToken, helperCommand } from "./credentials";
 import { HookService, mcpConfigPath, settingsPath, writeClaudeMcpConfig, writeClaudeSettings } from "./hooks";
 import { resolveIdentity, type Identity } from "./runas";
 import { EventPipeline } from "./events";
-import { prepareRepo, SetupError } from "./git";
+import { prepareRepo, prepareWorkDir, SetupError } from "./git";
 import { Outbox } from "./outbox";
 import { previewMethods } from "./previews";
 import { prLabel } from "./pr-ref";
@@ -355,10 +355,8 @@ export class Bridge {
 
     let dir: string;
     try {
-      dir = await prepareRepo(
-        { gitBaseUrl: this.cfg.gitBaseUrl, workDir: this.cfg.workDir, helper: helperCommand(...this.self, this.rpc.sockPath), log: this.log, env: this.d.baseEnv, runAs: this.runAs },
-        cfg.repo,
-      );
+      const gitCtx = { gitBaseUrl: this.cfg.gitBaseUrl, workDir: this.cfg.workDir, helper: helperCommand(...this.self, this.rpc.sockPath), log: this.log, env: this.d.baseEnv, runAs: this.runAs };
+      dir = cfg.repo ? await prepareRepo(gitCtx, cfg.repo) : await prepareWorkDir(gitCtx);
     } catch (e) {
       const step = e instanceof SetupError ? e.step : "repo setup";
       this.log("repo setup failed:", step);

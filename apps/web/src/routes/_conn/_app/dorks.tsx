@@ -2,7 +2,7 @@ import { CatchBoundary, createFileRoute, Link, Navigate, useNavigate } from '@ta
 import { useCallback, useState } from 'react'
 import type { DesktopOptions } from '@dorks/client'
 import { ChevronDownIcon, ChevronRightIcon, InfoIcon, MessageSquareIcon } from 'lucide-react'
-import { useConnection, useDork, useDorkEvents, useDorks, useDorksClient, useSettings } from '@dorks/client/react'
+import { useBuilds, useConnection, useDork, useDorkEvents, useDorks, useDorksClient, useSettings } from '@dorks/client/react'
 import { List } from '../../../components/onboarding/List'
 import { EmptyState } from '../../../components/EmptyState'
 import { AgentStatus } from '../../../components/AgentStatus'
@@ -127,7 +127,13 @@ function NewDork({ initialRepo, onCreated, disabled, claudeReady, codexReady }: 
   // Sent with the first message (the server checks it against the models the agent reported), then kept by the session.
   const [choice, setChoice] = useState<{ model?: string; effort?: string }>({})
   const dorks = useDorks()
-  const repositories = [...new Set(dorks?.map((d) => d.repo) ?? [])].sort()
+  const builds = useBuilds()
+  const built = (builds ?? []).filter((b) => b.image).map((b) => ({ id: b.id, name: b.name, repos: b.repos.map((r) => r.repo) }))
+  const [picked, setPicked] = useState<string | null | undefined>(undefined)
+  // Until the owner picks one: the default build when it is built, else the base machine.
+  const buildId = picked !== undefined ? picked : built.some((b) => b.id === settings?.defaultBuildId) ? (settings?.defaultBuildId ?? null) : null
+  const buildRepos = built.find((b) => b.id === buildId)?.repos ?? []
+  const repositories = [...new Set([...buildRepos, ...[...new Set(dorks?.map((d) => d.repo).filter(Boolean) ?? [])].sort()])]
   const [repo, setRepo] = useState(initialRepo ?? 'acme/demo')
   const [message, setMessage] = useState('')
   const [provider, setProvider] = useState<AgentProvider>(claudeReady ? 'claude' : codexReady ? 'codex' : 'claude')
@@ -141,8 +147,9 @@ function NewDork({ initialRepo, onCreated, disabled, claudeReady, codexReady }: 
         pending={pending} disabled={disabled || needsClaudeToken} error={error}
         picker={{ choices: settings?.claudeModels ?? [], ...choice, onChange: (model, effort) => setChoice({ model, effort }) }}
         upload={actions.uploadImage}
+        machine={{ builds: built, buildId, onChange: setPicked }}
         onSubmit={(images) => run(async () => {
-          onCreated((await actions.createDork({ repo: repo.trim(), message: withImages(message, images), provider, ...(provider === 'claude' ? choice : {}) })).id)
+          onCreated((await actions.createDork({ repo: repo.trim(), message: withImages(message, images), provider, buildId, ...(provider === 'claude' ? choice : {}) })).id)
           setMessage('')
         })}
       />

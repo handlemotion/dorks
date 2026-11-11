@@ -1,3 +1,4 @@
+import { buildOp } from "../services/buildAgent";
 import type { AppError } from "@dorks/shared";
 import { AppFail, type App, type Change } from "../app";
 import { verifyBridgeSecret } from "../lib/bridgeAuth";
@@ -120,6 +121,8 @@ export class BridgeSession {
         return bridge.getImage(this.app, dorkId, args.id);
       case "share_image":
         return bridge.shareImage(this.app, dorkId, args.data, args.caption);
+      case "build":
+        return buildOp(this.app, dorkId, args);
       default:
         throw new AppFail({ code: "invalid", message: `unknown op: ${op}` });
     }

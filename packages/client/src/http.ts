@@ -1,5 +1,5 @@
 import { appError, type AppError, type AppErrorCode, type SubscriptionView } from "@dorks/shared";
-import type { BoatCheck, CreateDorkInput, Dork, EventsPage, PrRefInput, Settings, SettingsPatch, SnapshotStatus, Usage } from "./types.ts";
+import type { BoatCheck, BuildInput, BuildVarInput, BuildView, CreateDorkInput, Dork, EventsPage, PrRefInput, RunLog, RunView, Settings, SettingsPatch, SnapshotStatus, Usage } from "./types.ts";
 
 /**
  * Thrown for every failed call. `data` is the typed AppError, so `toAppError(e)` from @dorks/shared reads it unchanged
@@ -119,6 +119,22 @@ export function createApi(config: ApiConfig) {
     listSecrets: () => request<string[]>("GET", "/api/secrets"),
     setSecret: (name: string, value: string) => request<object>("PUT", `/api/secrets/${enc(name)}`, { value }),
     deleteSecret: (name: string) => request<object>("DELETE", `/api/secrets/${enc(name)}`),
+    // builds (docs/builds.md)
+    listBuilds: () => request<BuildView[]>("GET", "/api/builds"),
+    getBuild: (id: string) => request<BuildView>("GET", `/api/builds/${enc(id)}`),
+    createBuild: (input: BuildInput & { name: string }) => request<{ id: string }>("POST", "/api/builds", input),
+    updateBuild: (id: string, patch: BuildInput) => request<object>("PATCH", `/api/builds/${enc(id)}`, patch),
+    deleteBuild: (id: string) => request<object>("DELETE", `/api/builds/${enc(id)}`),
+    setDefaultBuild: (id: string, isDefault: boolean) => request<object>("PUT", `/api/builds/${enc(id)}/default`, { default: isDefault }),
+    setBuildVar: (id: string, name: string, input: BuildVarInput) => request<object>("PUT", `/api/builds/${enc(id)}/vars/${enc(name)}`, input),
+    deleteBuildVar: (id: string, name: string) => request<object>("DELETE", `/api/builds/${enc(id)}/vars/${enc(name)}`),
+    listRuns: (id: string) => request<RunView[]>("GET", `/api/builds/${enc(id)}/runs`),
+    startRun: (id: string, kind: "image" | "trial") => request<RunView>("POST", `/api/builds/${enc(id)}/runs`, { kind }),
+    runLog: (id: string, runId: string, after = 0) => request<RunLog>("GET", `/api/builds/${enc(id)}/runs/${enc(runId)}/log`, undefined, { after }),
+    cancelRun: (id: string, runId: string) => request<object>("POST", `/api/builds/${enc(id)}/runs/${enc(runId)}/cancel`),
+    /** `reviewed`: the `updatedAt` of the draft the owner saw; a draft changed since is refused with `conflict`. */
+    approveDraft: (id: string, draftId: string, reviewed: number, run = true) => request<{ run: RunView | null; missing: string[] }>("POST", `/api/builds/${enc(id)}/drafts/${enc(draftId)}/approve`, { reviewed, run }),
+    rejectDraft: (id: string, draftId: string, reason?: string) => request<object>("POST", `/api/builds/${enc(id)}/drafts/${enc(draftId)}/reject`, { reason }),
   };
 }
 

@@ -76,14 +76,14 @@ Auth: `Authorization: Bearer <owner token>` (SSE also accepts `?access_token=`, 
 IDs are UUID strings. Times are epoch milliseconds.
 
 **Dork** (the client-visible row; box ids, session ids and secrets are never returned):
-`{ id, title, repo, branch, provider: "claude"|"codex", state, archived, preview?, previews: {port, url, title?}[], prUrl?, codexModel?, codexModelChoices?, model?, effort?, agentModel?, agentEffort?, modelChoices?, lastActivityAt, createdAt }`
+`{ id, title, repo, branch, provider: "claude"|"codex", state, archived, preview?, previews: {port, url, title?}[], prUrl?, codexModel?, codexModelChoices?, model?, effort?, agentModel?, agentEffort?, modelChoices?, buildId, lastActivityAt, createdAt }`
 `state` is one of `creating | working | idle | sleeping | waking | error`. For Claude, `model`/`effort` are the session's choice (absent: the CLI's default), `agentModel`/`agentEffort` what the agent confirmed it runs (the model from its `system/init` event, the effort the bridge started it with; cleared on a change until confirmed again), and `modelChoices` the `AgentModelChoice[]` the CLI offered this account (its `initialize` answer). `previews` are the dev servers the agent showed (`show_preview` below), oldest first, at most 20; the Previews tab in Chat details lists them and opens one as it appears. The URLs are public hosted ports (no token), cleared when the box is replaced.
 
 | Method and path | Body / query | Result |
 |---|---|---|
 | `GET /api/dorks` | `?archived=true` | `Dork[]`, newest activity first, at most 200 |
 | `GET /api/dorks/:id` | | `Dork` or 404 |
-| `POST /api/dorks` | `{repo, message, title?, provider?, model?, effort?}` (`provider` defaults to `claude`; Codex needs a configured Boat environment; Claude's `model`/`effort` must be in `settings.claudeModels`) | `{id}` |
+| `POST /api/dorks` | `{repo, message, title?, provider?, model?, effort?, buildId?, setup?}` (`provider` defaults to `claude`; Codex needs a configured Boat environment; Claude's `model`/`effort` must be in `settings.claudeModels`; `buildId` defaults to `settings.defaultBuildId`, and needs a built image unless `setup: true`, a machine-setup session that also needs no `repo`: [builds](builds.md)) | `{id}` |
 | `PATCH /api/dorks/:id` | `{title}` | `{}` |
 | `DELETE /api/dorks/:id` | | `{}` (box is destroyed in the background, then rows are purged) |
 | `POST /api/dorks/:id/messages` | `{text}` | `{}` |
@@ -97,7 +97,7 @@ IDs are UUID strings. Times are epoch milliseconds.
 | `POST /api/dorks/:id/subscriptions` | `{repo, number}` | `{}` (user subscribe; un-stalls and resets the CI budget) |
 | `DELETE /api/dorks/:id/subscriptions` | `{repo, number}` | `{}` |
 | `POST /api/dorks/:id/subscriptions/resume` | `{repo, number}` | `{}` |
-| `GET /api/settings` | | `{claudeToken, boatKey, github: {configured, login?}, boatOrg, boatEnvironment, baseSnapshotId, sleepMinutes, commentPolicy, publicUrlConfigured, boxProvider, claudeModels}`: booleans and plain values only, never secrets. `claudeModels` is the model list a Claude agent last reported (empty before the first session), what a new session can choose from |
+| `GET /api/settings` | | `{claudeToken, boatKey, github: {configured, login?}, boatOrg, boatEnvironment, baseSnapshotId, sleepMinutes, commentPolicy, publicUrlConfigured, boxProvider, claudeModels, defaultBuildId}`: booleans and plain values only, never secrets. `claudeModels` is the model list a Claude agent last reported (empty before the first session), what a new session can choose from |
 | `PUT /api/settings` | any subset of `{boatKey, boatOrg, claudeToken, githubToken, boatEnvironment, baseSnapshotId, sleepMinutes, commentPolicy}` | `{}`. Token fields are write-only; an empty string clears one. Provider values are checked before anything is saved: `boatKey`/`boatOrg` with the same check as `POST /api/boat/check`, `boatEnvironment` against Boat's environment list, `githubToken` with GitHub `GET /user`; a refusal is `invalid` (400) with Boat's or GitHub's reason in plain words, and an unreachable provider does not block the save. Saving a non-empty `boatKey` with no base snapshot (in Settings or `BASE_SNAPSHOT_ID`) queues the base-snapshot build; so does the next start, if the process stopped in between. A failed build is never retried by itself |
 | `POST /api/boat/check` | `{boatKey?, boatOrg?}` (the saved ones when omitted) | `{status: "ok"\|"invalid"\|"needs_org"\|"credit_required"\|"unreachable", message}`: asks Boat's `GET /limits` with that key (a free trial or `canStart: false` is `credit_required`), or `GET /sandboxes?limit=1` when the key lacks `account.read`; nothing is saved. Error `not_configured` (412) with no key at all |
 | `GET /api/snapshot` | | the base-snapshot build status, see "Base snapshot" |
@@ -105,6 +105,7 @@ IDs are UUID strings. Times are epoch milliseconds.
 | `GET /api/secrets` | | sorted names `string[]` |
 | `PUT /api/secrets/:name` | `{value}` | `{}` (`^[A-Z][A-Z0-9_]{0,63}$`, 16 KB max) |
 | `DELETE /api/secrets/:name` | | `{}` |
+| `GET/POST /api/builds`, `GET/PATCH/DELETE /api/builds/:id`, `PUT /api/builds/:id/default`, `PUT/DELETE /api/builds/:id/vars/:name`, `GET/POST /api/builds/:id/runs`, `GET /api/builds/:id/runs/:runId/log`, `POST /api/builds/:id/runs/:runId/cancel`, `POST /api/builds/:id/drafts/:draftId/approve\|reject` | | Builds: named machine setups, see [builds](builds.md) ("UI and API") |
 | `GET /api/health` | no auth | `{ok: true}` |
 
 `ClientEvent` and `SubscriptionView` are the zod types in `packages/shared`. A `turn_complete` carries `outcome` (`done`, `stopped` after the user's Stop, `failed`) and, for a `done` turn, `finalMessageId`: the turn's final answer, the last assistant message with no tool call after it, named by the server from the agent's stream. Clients show the final answer and fold the rest of the turn behind a checkpoint, "Worked for 2m 14s" (`durationMs`), that opens the turn's whole history; they never infer the final answer from position. Turns stored before these fields existed have neither. Every agent session is told this (`infra/bridge/src/guidance.ts`, as Claude's `--append-system-prompt` and Codex's `developerInstructions`), so it writes a self-contained final answer. The event log is append-only; a growing assistant message keeps **one** row whose text grows in place (same `seq`), so a client that tails must re-read from its last known `seq` inclusive.
@@ -122,6 +123,8 @@ One stream per client. Messages are `data: <json>\n\n`; a `: ping` comment every
 | `{"t":"subscriptions","dorkId"}` | PR subscriptions changed |
 | `{"t":"settings"}` | settings or secret names changed |
 | `{"t":"snapshot"}` | the base-snapshot build changed (a step, a result); refetch `GET /api/snapshot` |
+| `{"t":"builds"}` | the build list changed; refetch `GET /api/builds` |
+| `{"t":"build","buildId"}` | one build, its runs, drafts or a run's log changed; refetch it, its runs and an open log |
 
 `packages/client` wraps this (`useDorks`, `useDork`, `useDorkEvents`, `useSettings`), replacing `@dorks/convex/client` and `convex/react`.
 
@@ -138,10 +141,11 @@ One stream per client. Messages are `data: <json>\n\n`; a `: ping` comment every
 | `connect` | | `{afterBridgeSeq}`. Error `sleeping` if the dork is asleep (a bridge must not wake anything). Marks the bridge seen and queues a `configure` command |
 | `heartbeat` | | `{}`. Bridge liveness; back after a blip while `working`/`idle` re-arms the machine |
 | `push` | `{frames: FromBridge[]}` (at most 500 frames, 256 KB per event) | `{ok:true}` or `{ok:false,expectedBseq}` when the batch has a gap. A gap applies nothing: the bridge resends from `expectedBseq`. Events numbered `<=` the stored `bridge_seq` are replays and skipped. Errors `too_many_frames`, `event_too_large` |
-| `configure` | | the `configure` `ToBridge` frame (Claude token, CLI secrets, GitHub token, repo, resume session) or `null` if refused. **The only place secrets are decrypted**; they exist only in this response, never stored in a command row |
+| `configure` | | the `configure` `ToBridge` frame (Claude token, shared and build variables, GitHub token, repo or `null` for a setup session, resume session) or `null` if refused. **The only place secrets are decrypted**; they exist only in this response, never stored in a command row |
 | `gh_token` | | `{token}` or `null` (the stored GitHub token; kept so the bridge's refresh path keeps working, the server no longer queues `gh_token` commands) |
 | `subscribe_pr` | `{repo, number, source: "auto"\|"agent"}` | `{}` (idempotent) |
 | `unsubscribe_pr` | `{repo, number}` | `{}` |
+| `build` | `{action: "get"\|"draft"\|"run"\|"logs"\|"submit", ...}` | The agent's `machine_*` MCP tools ([builds](builds.md), "Agent tooling"), scoped to this dork's build. Never returns a secret value |
 | `show_preview` | `{port, title?, localhost?}` | `{port, url, title?}`. The agent's `preview_show` MCP tool (bridge RPC `preview.show`). The box provider hosts the port (Boat `POST /host`, public; see [Boat](boat.md#hosted-ports)) and the URL is stored in the dork's `previews` (one per port, the newest replaces). Errors `invalid` (bad or reserved port), `sleeping` (no box), `not_configured`, `failed` |
 
 **Pushes** (server to bridge): `{"t":"commands","cmds":[{cid, frame: CommandFrame}]}` is the **snapshot of unacknowledged commands** and is re-sent whenever it changes (and once right after `auth_ok`). Delivery is idempotent: the bridge dedupes by `cid`/message id and acknowledges with a `push` `ack` frame, which removes the command. This gives resume-after-reconnect for free: after a drop the bridge re-auths, calls `connect` (learning `afterBridgeSeq`, the event cursor, so it replays events above it) and receives the current snapshot. `{"t":"subscriptions","views":SubscriptionView[]}` is sent likewise for the bridge's PR cache.
@@ -166,9 +170,16 @@ Every sandbox is created from a saved snapshot in the user's own Boat account (s
 
 Boat API used (https://docs.boat.dev): `POST|GET /sandboxes`, `GET|DELETE /sandboxes/{id}`, `PUT /sandboxes/{id}/files`, `POST /sandboxes/{id}/commands`, `POST /saved-snapshots`, `GET /saved-snapshots/{name}`.
 
+## Builds
+
+Optional, named machine setups layered on the base snapshot: a build's image is a Boat saved snapshot made by a run job
+(`services/buildRuns.ts`, timers `build:run:<id>` and `build:forget:<image>`), a dork on a build starts from that image at the build's
+size, and the build's variables reach it through `configure`. Agents propose changes through the `build` bridge op; only the owner
+applies them. The full design: [builds](builds.md).
+
 ## Lifecycle
 
-`core/machine.ts` is unchanged apart from dropping the GitHub-token-refresh effects. Dispatch applies an input in one transaction: persist the new state, append a `status` event, then run effects (arm/cancel timers, enqueue box jobs, release held notifications, enqueue `interrupt`). Pausing keeps the same intent-with-generation model (`flushing` → `pausing` → `cancelled`). Timers: `sleep`, `watchdog`, `bridge_watch`, `flush`, `notify`, `pause_retry`. Global jobs (owner `''`): `poll`, `sweep`, `snapshot:build`, `orphan:<boxId>`.
+`core/machine.ts` is unchanged apart from dropping the GitHub-token-refresh effects. Dispatch applies an input in one transaction: persist the new state, append a `status` event, then run effects (arm/cancel timers, enqueue box jobs, release held notifications, enqueue `interrupt`). Pausing keeps the same intent-with-generation model (`flushing` → `pausing` → `cancelled`). Timers: `sleep`, `watchdog`, `bridge_watch`, `flush`, `notify`, `pause_retry`. Global jobs (owner `''`): `poll`, `sweep`, `snapshot:build`, `orphan:<boxId>`, `build:run:<runId>`, `build:forget:<image>`.
 
 ## GitHub (autonomy)
 

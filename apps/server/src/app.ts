@@ -13,6 +13,8 @@ export type Change =
   | { t: "subscriptions"; dorkId: string }
   | { t: "settings" }
   | { t: "snapshot" }
+  | { t: "builds" }
+  | { t: "build"; buildId: string }
   | { t: "commands"; dorkId: string };
 
 export class Hub {

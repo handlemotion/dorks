@@ -3,7 +3,7 @@ import { EventsFeed } from "./events.ts";
 import { createApi, ApiError, type ApiConfig, type DesktopOptions } from "./http.ts";
 import { connectLive, type LiveStatus } from "./live.ts";
 import { Query, type QueryOptions, type Store } from "./store.ts";
-import type { CreateDorkInput, Dork, LiveMessage, PrRefInput, Settings, SettingsPatch, SnapshotStatus, Usage } from "./types.ts";
+import type { BuildInput, BuildVarInput, BuildView, CreateDorkInput, Dork, LiveMessage, PrRefInput, RunView, Settings, SettingsPatch, SnapshotStatus, Usage } from "./types.ts";
 
 export interface ClientConfig extends ApiConfig {
   /** Events fetched per page. */
@@ -112,6 +112,13 @@ export class DorksClient {
       case "snapshot":
         this.invalidate("snapshot");
         break;
+      case "builds":
+        this.invalidate("builds");
+        break;
+      case "build":
+        this.invalidate(`build:${m.buildId}`);
+        this.invalidate(`runs:${m.buildId}`);
+        break;
     }
   }
 
@@ -162,6 +169,32 @@ export class DorksClient {
       this.feeds.set(dorkId, f);
     }
     return f;
+  }
+
+  /** Builds (docs/builds.md), refreshed by the live stream. */
+  builds() {
+    return this.query<BuildView[]>("builds", () => this.api.listBuilds());
+  }
+
+  /** `null` when it does not exist. */
+  build(id: string) {
+    return this.query<BuildView | null>(`build:${id}`, async () => {
+      try {
+        return await this.api.getBuild(id);
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return null;
+        throw e;
+      }
+    });
+  }
+
+  runs(buildId: string) {
+    return this.query<RunView[]>(`runs:${buildId}`, () => this.api.listRuns(buildId));
+  }
+
+  /** A run's redacted log from a byte offset (not cached: the caller tails it while the run is live). */
+  runLog(buildId: string, runId: string, after = 0) {
+    return this.api.runLog(buildId, runId, after);
   }
 
   // ---- writes: the API call, then an immediate refetch of what it changed (the live stream would do it too, a beat later) ----
@@ -244,7 +277,58 @@ export class DorksClient {
       await this.api.deleteSecret(name);
       this.invalidate("secrets");
     },
+    createBuild: async (input: BuildInput & { name: string }) => {
+      const r = await this.api.createBuild(input);
+      this.invalidate("builds");
+      return r;
+    },
+    updateBuild: async (id: string, patch: BuildInput) => {
+      await this.api.updateBuild(id, patch);
+      this.invalidateBuild(id);
+    },
+    deleteBuild: async (id: string) => {
+      await this.api.deleteBuild(id);
+      this.invalidateBuild(id);
+      this.invalidate("settings");
+    },
+    setDefaultBuild: async (id: string, isDefault: boolean) => {
+      await this.api.setDefaultBuild(id, isDefault);
+      this.invalidateBuild(id);
+      this.invalidate("settings");
+    },
+    setBuildVar: async (id: string, name: string, input: BuildVarInput) => {
+      await this.api.setBuildVar(id, name, input);
+      this.invalidateBuild(id);
+    },
+    deleteBuildVar: async (id: string, name: string) => {
+      await this.api.deleteBuildVar(id, name);
+      this.invalidateBuild(id);
+    },
+    startRun: async (id: string, kind: "image" | "trial") => {
+      const r = await this.api.startRun(id, kind);
+      this.invalidateBuild(id);
+      return r;
+    },
+    cancelRun: async (id: string, runId: string) => {
+      await this.api.cancelRun(id, runId);
+      this.invalidateBuild(id);
+    },
+    approveDraft: async (id: string, draftId: string, reviewed: number, run = true) => {
+      const r = await this.api.approveDraft(id, draftId, reviewed, run);
+      this.invalidateBuild(id);
+      return r;
+    },
+    rejectDraft: async (id: string, draftId: string, reason?: string) => {
+      await this.api.rejectDraft(id, draftId, reason);
+      this.invalidateBuild(id);
+    },
   };
+
+  private invalidateBuild(id: string) {
+    this.invalidate("builds");
+    this.invalidate(`build:${id}`);
+    this.invalidate(`runs:${id}`);
+  }
 }
 
 export function createClient(config: ClientConfig): DorksClient {

@@ -12,6 +12,8 @@ import { deleteSecret, secretNames, setSecret, settingsView, updateSettings } fr
 import { assertBoatAccepts, assertCodexEnvironment, checkBoat } from "../services/boatCheck";
 import { buildIfMissing, snapshotView, startBuild } from "../services/snapshot";
 import * as subs from "../services/subscriptions";
+import * as builds from "../services/builds";
+import * as runs from "../services/buildRuns";
 import { forgetUsage, getUsage } from "../services/usage";
 
 const STATUS: Record<AppError["code"], number> = {
@@ -95,7 +97,7 @@ export function uiApp(app: App): Hono {
   api.get("/api/dorks", (c) => c.json(listDorks(app, c.req.query("archived") === "true")));
   api.post("/api/dorks", async (c) => {
     const b = await body(c);
-    const id = createDork(app, { repo: b.repo as string, message: b.message as string, title: b.title as string | undefined, provider: b.provider as never, model: b.model, effort: b.effort });
+    const id = createDork(app, { repo: b.repo as string | undefined, message: b.message as string, title: b.title as string | undefined, provider: b.provider as never, model: b.model, effort: b.effort, buildId: b.buildId, setup: b.setup });
     return c.json({ id }, 201);
   });
   api.get("/api/dorks/:id", (c) => {
@@ -212,6 +214,55 @@ export function uiApp(app: App): Hono {
     const b = await body(c);
     if (b.force !== undefined && typeof b.force !== "boolean") throw new AppFail({ code: "invalid", message: "force must be a boolean" });
     return c.json(await startBuild(app, { force: b.force === true }), 202);
+  });
+
+  // ---- builds (docs/builds.md)
+  const buildIdOf = (c: Context) => c.req.param("id") as string;
+  api.get("/api/builds", async (c) => c.json(await builds.listBuilds(app)));
+  api.post("/api/builds", async (c) => c.json({ id: builds.createBuild(app, await body(c)) }, 201));
+  api.get("/api/builds/:id", async (c) => c.json(await builds.buildView(app, builds.ownBuild(app, buildIdOf(c)))));
+  api.patch("/api/builds/:id", async (c) => {
+    builds.updateBuild(app, buildIdOf(c), await body(c));
+    return c.json({});
+  });
+  api.delete("/api/builds/:id", (c) => {
+    builds.deleteBuild(app, buildIdOf(c));
+    return c.json({});
+  });
+  api.put("/api/builds/:id/default", async (c) => {
+    const b = await body(c);
+    builds.setDefaultBuild(app, b.default === false ? null : buildIdOf(c));
+    return c.json({});
+  });
+  api.put("/api/builds/:id/vars/:name", async (c) => {
+    await builds.setBuildVar(app, buildIdOf(c), c.req.param("name"), await body(c));
+    return c.json({});
+  });
+  api.delete("/api/builds/:id/vars/:name", (c) => {
+    builds.deleteBuildVar(app, buildIdOf(c), c.req.param("name"));
+    return c.json({});
+  });
+  api.get("/api/builds/:id/runs", (c) => c.json(builds.listRuns(app, buildIdOf(c))));
+  api.post("/api/builds/:id/runs", async (c) => {
+    const b = await body(c);
+    if (b.kind !== "image" && b.kind !== "trial") throw new AppFail({ code: "invalid", message: "kind must be image or trial" });
+    return c.json(runs.startRun(app, buildIdOf(c), { kind: b.kind, by: "owner" }), 202);
+  });
+  api.get("/api/builds/:id/runs/:runId/log", (c) => c.json(runs.runLog(app, buildIdOf(c), c.req.param("runId"), intParam(c.req.query("after")) ?? 0)));
+  api.post("/api/builds/:id/runs/:runId/cancel", (c) => {
+    runs.cancelRun(app, buildIdOf(c), c.req.param("runId"));
+    return c.json({});
+  });
+  api.post("/api/builds/:id/drafts/:draftId/approve", async (c) => {
+    const b = await body(c);
+    const { missing } = await builds.approveDraft(app, buildIdOf(c), c.req.param("draftId"), b.reviewed);
+    // Build right away unless the owner said not to, or a value the setup needs is still missing (the owner fills it in, then builds).
+    const run = b.run !== false && !missing.length ? runs.startRun(app, buildIdOf(c), { kind: "image", by: "owner" }) : null;
+    return c.json({ run, missing });
+  });
+  api.post("/api/builds/:id/drafts/:draftId/reject", async (c) => {
+    builds.rejectDraft(app, buildIdOf(c), c.req.param("draftId"), (await body(c)).reason);
+    return c.json({});
   });
 
   // ---- live updates (Server-Sent Events): invalidations, not payloads

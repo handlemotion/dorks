@@ -8,6 +8,7 @@ import { validRepo } from "../lib/repo";
 import { isBoxNotFound, type DesktopOptions } from "../core/box";
 import { missingForSession } from "./setup";
 import { readSettings } from "./settings";
+import { defaultBuildId, getBuild } from "./builds";
 import { claimImages } from "./bridge";
 import { endDorkSubscriptions, resetCiAttempts, subscriptionsOfDork } from "./subscriptions";
 
@@ -70,10 +71,23 @@ export function listEvents(app: App, dorkId: string, q: { before?: number; after
   return { events: rows.slice(0, limit).map(eventOf), hasMore: rows.length > limit };
 }
 
-export function createDork(app: App, input: { repo: string; message: string; title?: string; provider?: Provider; model?: unknown; effort?: unknown }): string {
-  const { repo, message, title, provider = "claude" } = input;
+export function createDork(app: App, input: { repo?: string; message: string; title?: string; provider?: Provider; model?: unknown; effort?: unknown; buildId?: unknown; setup?: unknown }): string {
+  const { message, title, provider = "claude" } = input;
+  const setup = input.setup === true;
+  const repo = input.repo === undefined || input.repo === null || input.repo === "" ? "" : input.repo;
   if (provider !== "claude" && provider !== "codex") fail("invalid", "provider must be claude or codex");
-  if (typeof repo !== "string" || !validRepo(repo)) fail("invalid", "repo must be owner/name");
+  // A machine-setup session (docs/builds.md) needs no starting repo; every other session does.
+  if (!(setup && repo === "") && (typeof repo !== "string" || !validRepo(repo))) fail("invalid", "repo must be owner/name");
+  if (input.buildId !== undefined && input.buildId !== null && typeof input.buildId !== "string") fail("invalid", "buildId must be a string");
+  if (setup && typeof input.buildId !== "string") fail("invalid", "A setup session needs the build it sets up.");
+  // An explicit null is the owner choosing the base machine; only an omitted buildId falls back to the default build.
+  const buildId = typeof input.buildId === "string" ? input.buildId : input.buildId === null || setup ? null : defaultBuildId(app);
+  if (buildId) {
+    const b = getBuild(app, buildId);
+    if (!b) fail("not_found", "This build no longer exists.");
+    // A setup session may start before the build's first image (it then starts from the base); a working session may not.
+    if (!b.image && !setup) fail("not_configured", "This build has not been built yet. Build it first, or start a setup session on it.");
+  }
   if (title !== undefined && (typeof title !== "string" || title.trim().length > MAX_TITLE_CHARS)) fail("invalid", "title too long");
   const text = checkText(message);
   const missing = missingForSession(app, provider);
@@ -85,7 +99,7 @@ export function createDork(app: App, input: { repo: string; message: string; tit
   return app.db.tx(() => {
     insert(app.db, "dorks", {
       id, title: (title?.trim() || withoutImages(text) || "Image").slice(0, MAX_TITLE_CHARS), titleSource: title?.trim() ? "user" : "message", repo, branch: `agent/${app.uuid().slice(0, 8)}`, provider, state: "creating", archived: false,
-      lastActivityAt: now, createdAt: now, deleting: false, ...choice,
+      lastActivityAt: now, createdAt: now, deleting: false, buildId, ...choice,
     });
     insert(app.db, "dork_runtime", { dorkId: id, bridgeSeq: 0, streamMsgId: "", sleepMinutes: readSettings(app).sleepMinutes, bridgeSeenAt: 0, bridgeLost: false, opGen: 0, pauseRetries: 0 });
     persistMessage(app, getDork(app.db, id)!, text);

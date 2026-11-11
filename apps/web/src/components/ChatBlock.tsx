@@ -1,5 +1,7 @@
 import { useId, useMemo, useState, type ReactNode } from 'react'
-import { CircleAlertIcon, CircleCheckIcon, CircleStopIcon, ReplyIcon, TerminalIcon, WrenchIcon } from 'lucide-react'
+import { BoxIcon, CircleAlertIcon, CircleCheckIcon, CircleStopIcon, ReplyIcon, TerminalIcon, WrenchIcon } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { Button } from '@dorks/ui/button'
 import type { Block } from '@dorks/shared'
 import { Bubble, BubbleContent } from '@dorks/ui/bubble'
 import { Marker, MarkerContent } from '@dorks/ui/marker'
@@ -246,6 +248,23 @@ function agentContent(blocks: AgentBlock[]): ReactNode[] {
       // Assistant text is unbubbled markdown, as in the AI Elements chat pattern. No streaming caret: the markdown is a block, so it
       // fell on a line of its own, and the status line below already says the agent is working.
       content.push(<AgentText key={block.id} block={block} />)
+    } else if (block.kind === 'build') {
+      // The agent asked the owner to approve a change to its machine (docs/builds.md). The diff and the decision live on the build's page.
+      const state = block.approved === null ? 'Waiting for you' : block.approved ? 'Approved' : `Rejected${block.reason ? `: ${block.reason}` : ''}`
+      content.push(
+        <Trace key={block.id} role="status" data-testid="build-draft">
+          <TraceLine>
+            <TraceIcon><BoxIcon /></TraceIcon>
+            <TraceTitle>Proposed a change to the machine {block.buildName}. {state}.</TraceTitle>
+          </TraceLine>
+          {block.note && <p className="pl-6 text-sm text-muted-foreground">{block.note}</p>}
+          {block.buildId && block.approved === null && (
+            <div className="pt-2 pl-6">
+              <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/builds" search={{ build: block.buildId }} />}>Review the change</Button>
+            </div>
+          )}
+        </Trace>,
+      )
     } else if (block.kind === 'notice') {
       content.push(
         <Trace key={block.id} role={block.level === 'error' ? 'alert' : 'status'}>
@@ -333,6 +352,8 @@ function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock })
   const historyId = useId()
   // Turns stored before the server named final answers render as they always did.
   if (end && end.outcome === null) return <>{agentContent(blocks)}</>
+  // Only notices or cards after the last turn (a machine draft, a PR event): nothing is working, so no "Working" bar.
+  if (!end && !blocks.some(isWork)) return <>{agentContent(blocks)}</>
   if (!end) return (
     <>
       <TurnCheckpoint label="Working" open controls={historyId} />
