@@ -70,8 +70,8 @@ fn config(dir: &Path, bin: PathBuf, service: &str) -> WurmholConfig {
 }
 
 /// A connector already kept from an earlier start.
-fn stored(dir: &Path, value: &str) {
-    let c = Connector { connector: value.into(), tunnel_id: "t1".into(), url: "https://eabcde12345fghij.pipe.wurmhol.com".into(), fetched_at: now() };
+fn stored(dir: &Path, value: &str, service: &str) {
+    let c = Connector { connector: value.into(), tunnel_id: "t1".into(), url: "https://eabcde12345fghij.pipe.wurmhol.com".into(), fetched_at: now(), service: service.into() };
     write_private(&dir.join("wurmhol-connector"), &serde_json::to_vec(&c).unwrap()).unwrap();
 }
 
@@ -148,7 +148,7 @@ async fn first_start_gets_a_connector_from_the_service_and_passes_it_by_env_only
     assert_eq!(std::fs::read_to_string(dir.path().join("server")).unwrap(), "https://relay.example.com");
     let kept = dir.path().join("wurmhol-connector");
     assert_eq!(std::fs::metadata(&kept).unwrap().permissions().mode() & 0o777, 0o600);
-    assert_eq!(connector::stored(&kept).unwrap().connector, connector_n(1));
+    assert_eq!(connector::stored(&kept, &service).unwrap().connector, connector_n(1));
 
     tunnel.stop().await;
     assert_eq!(std::fs::read_to_string(dir.path().join("stopped")).unwrap().trim(), "abcde12345", "stop ends the pipe by id");
@@ -165,7 +165,7 @@ async fn first_start_gets_a_connector_from_the_service_and_passes_it_by_env_only
 async fn a_refused_stored_connector_is_replaced_once() {
     let dir = tempfile::tempdir().unwrap();
     let (service, seen) = fake_service().await;
-    stored(dir.path(), &format!("whc_{}", "r".repeat(43)));
+    stored(dir.path(), &format!("whc_{}", "r".repeat(43)), &service);
     // Like the CLI with a revoked connector: refuses it on stderr; accepts the new one.
     let bin = script(
         dir.path(),
@@ -181,7 +181,7 @@ esac"#
     let tunnel = WurmholTunnel::new(config(dir.path(), bin, &service));
     tunnel.start(target()).await.unwrap();
     assert_eq!(seen.lock().unwrap().len(), 1, "asked for a new connector once");
-    assert_eq!(connector::stored(&dir.path().join("wurmhol-connector")).unwrap().connector, connector_n(1));
+    assert_eq!(connector::stored(&dir.path().join("wurmhol-connector"), &service).unwrap().connector, connector_n(1));
     tunnel.stop().await;
 }
 

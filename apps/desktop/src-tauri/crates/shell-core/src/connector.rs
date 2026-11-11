@@ -27,6 +27,10 @@ pub struct Connector {
     pub url: String,
     /// Unix seconds when the service issued it.
     pub fetched_at: u64,
+    /// The tunnel service it came from. Another service is another wurmhol application and tunnel, so a connector kept from one
+    /// is never used with the other (the server would register sandboxes on a tunnel this connector does not open).
+    #[serde(default)]
+    pub service: String,
 }
 
 #[derive(Deserialize)]
@@ -83,21 +87,25 @@ pub async fn request(service: &str, install_key: &str) -> Result<Connector, Stri
         return Err("the Dorks tunnel service sent no connector".into());
     }
     let url = validate_public_url(&answer.tunnel.url).map_err(|e| format!("the Dorks tunnel service sent a tunnel URL that cannot be used: {e}"))?;
-    Ok(Connector { connector: answer.connector.connector, tunnel_id: answer.tunnel.id, url, fetched_at: now() })
+    Ok(Connector { connector: answer.connector.connector, tunnel_id: answer.tunnel.id, url, fetched_at: now(), service: normalize(service) })
 }
 
-/// The stored connector, unless it is missing, unreadable or due for refresh.
-pub fn stored(file: &Path) -> Option<Connector> {
+fn normalize(service: &str) -> String {
+    service.trim().trim_end_matches('/').to_string()
+}
+
+/// The stored connector, unless it is missing, unreadable, due for refresh, or from another tunnel service than `service`.
+pub fn stored(file: &Path, service: &str) -> Option<Connector> {
     let text = read_secret(file).ok().flatten()?;
     let c: Connector = serde_json::from_str(&text).ok()?;
-    (is_connector(&c.connector) && now().saturating_sub(c.fetched_at) < REFRESH_AFTER.as_secs()).then_some(c)
+    (is_connector(&c.connector) && c.service == normalize(service) && now().saturating_sub(c.fetched_at) < REFRESH_AFTER.as_secs()).then_some(c)
 }
 
 /// The connector to open the tunnel with: the stored one, or (when there is none, it is due, or `fresh` is asked for) a new one
 /// from the service, which is then stored.
 pub async fn obtain(file: &Path, service: &str, install_key: &str, fresh: bool) -> Result<Connector, String> {
     if !fresh {
-        if let Some(c) = stored(file) {
+        if let Some(c) = stored(file, service) {
             return Ok(c);
         }
     }
@@ -123,12 +131,14 @@ mod tests {
     fn stored_connector_is_used_until_it_is_due() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("wurmhol-connector");
-        assert_eq!(stored(&file), None);
-        let mut c = Connector { connector: format!("whc_{}", "b".repeat(43)), tunnel_id: "t1".into(), url: "https://e1.pipe.example".into(), fetched_at: now() };
+        let svc = "https://tunnels.example";
+        assert_eq!(stored(&file, svc), None);
+        let mut c = Connector { connector: format!("whc_{}", "b".repeat(43)), tunnel_id: "t1".into(), url: "https://e1.pipe.example".into(), fetched_at: now(), service: svc.into() };
         write_private(&file, &serde_json::to_vec(&c).unwrap()).unwrap();
-        assert_eq!(stored(&file), Some(c.clone()));
+        assert_eq!(stored(&file, "https://tunnels.example/"), Some(c.clone()));
+        assert_eq!(stored(&file, "https://staging-tunnels.example"), None, "another service's connector is not used");
         c.fetched_at = now() - REFRESH_AFTER.as_secs() - 1;
         write_private(&file, &serde_json::to_vec(&c).unwrap()).unwrap();
-        assert_eq!(stored(&file), None);
+        assert_eq!(stored(&file, svc), None);
     }
 }

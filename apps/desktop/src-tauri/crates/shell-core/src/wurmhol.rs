@@ -238,7 +238,7 @@ impl Tunnel for WurmholTunnel {
                 finish(old).await;
             }
             let source = self.cfg.source.as_ref().ok_or_else(|| TunnelError::Failed("this install has no key for the Dorks tunnel service".into()))?;
-            let from_store = connector::stored(&source.file).is_some();
+            let from_store = connector::stored(&source.file, &source.service).is_some();
             let current = connector::obtain(&source.file, &source.service, &source.install_key, false).await.map_err(TunnelError::Failed)?;
             let (ready, mode, last_error) = match self.launch(target.bridge_port, &current.connector).await {
                 // A stored connector may have been revoked or rotated since: ask for a new one once.
