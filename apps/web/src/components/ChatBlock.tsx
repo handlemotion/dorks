@@ -7,7 +7,7 @@ import { CodeBlock, CodeBlockContent } from '@dorks/ui/code-block'
 import { defaultRehypePlugins, defaultUrlTransform, Markdown, markdownComponents } from '@dorks/ui/markdown'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@dorks/ui/context-menu'
 import { DropdownMenuItem } from '@dorks/ui/dropdown-menu'
-import { MessageActions } from './message-actions/MessageActions'
+import { HoverActions } from './message-actions/MessageActions'
 import { REPLY_SOURCE, ReplyContext, ReplyQuote, SelectionReply, useReply, type ReplyHandlers } from './Reply'
 import { parseReply, quoteText } from '../lib/reply'
 import { ImageLightbox, ImageTrigger, useLightboxImages, type LightboxImage } from './ImageLightbox'
@@ -209,6 +209,26 @@ function ToolGroup({ tools }: { tools: ToolBlock[] }) {
   )
 }
 
+/**
+ * One of the agent's messages: unbubbled markdown with its hover toolbar once it has finished streaming. Every message can be copied
+ * and replied to; only a final answer is rated.
+ */
+function AgentText({ block }: { block: Extract<AgentBlock, { kind: 'assistant' }> }) {
+  const { onReply } = useReply()
+  const markdown = <Markdown components={MARKDOWN} urlTransform={allowDataImages} rehypePlugins={REHYPE}>{block.text}</Markdown>
+  if (block.streaming) return <div className="min-w-0">{markdown}</div>
+  return (
+    <HoverActions
+      text={block.text}
+      sentAt={block.at ? new Date(block.at) : undefined}
+      rate={block.final}
+      onReply={onReply && (() => onReply({ kind: 'text', text: quoteText(block.text.replace(IMAGE, '')) }))}
+    >
+      {markdown}
+    </HoverActions>
+  )
+}
+
 function agentContent(blocks: AgentBlock[]): ReactNode[] {
   const content: ReactNode[] = []
   for (let i = 0; i < blocks.length; i++) {
@@ -225,11 +245,7 @@ function agentContent(blocks: AgentBlock[]): ReactNode[] {
     } else if (block.kind === 'assistant') {
       // Assistant text is unbubbled markdown, as in the AI Elements chat pattern. No streaming caret: the markdown is a block, so it
       // fell on a line of its own, and the status line below already says the agent is working.
-      content.push(
-        <div key={block.id} className="min-w-0" data-final={block.final ? '' : undefined}>
-          <Markdown components={MARKDOWN} urlTransform={allowDataImages} rehypePlugins={REHYPE}>{block.text}</Markdown>
-        </div>,
-      )
+      content.push(<AgentText key={block.id} block={block} />)
     } else if (block.kind === 'notice') {
       content.push(
         <Trace key={block.id} role={block.level === 'error' ? 'alert' : 'status'}>
@@ -314,7 +330,6 @@ function TurnCheckpoint({ label, open, onToggle, controls }: { label: string; op
  */
 function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock }) {
   const [userOpen, setUserOpen] = useState<boolean>()
-  const { onReply } = useReply()
   const historyId = useId()
   // Turns stored before the server named final answers render as they always did.
   if (end && end.outcome === null) return <>{agentContent(blocks)}</>
@@ -326,7 +341,6 @@ function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock })
   )
   const work = blocks.filter(isWork)
   const open = userOpen ?? (end.outcome !== 'done' || !end.finalId)
-  const final = blocks.find((b): b is Extract<AgentBlock, { kind: 'assistant' }> => b.kind === 'assistant' && b.id === end.finalId)
   return (
     <>
       {work.length > 0 && (
@@ -336,9 +350,6 @@ function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock })
         </>
       )}
       {agentContent(blocks.filter((b) => !isWork(b)))}
-      {/* The final answer's actions: rate, copy, react, reply, 16px under the text (the transcript's 12px gap plus `mt-1`). The buttons' edge sits on the
-          text's edge: the message item paints with `content-visibility: auto`, which clips anything pulled outside it. */}
-      {final && <div className="mt-1"><MessageActions text={final.text} sentAt={new Date(end.at)} onReply={onReply && (() => onReply({ kind: 'text', text: quoteText(final.text.replace(IMAGE, '')) }))} /></div>}
       {end.outcome === 'stopped' && (
         <Trace role="status" data-testid="turn-stopped">
           <TraceLine>
@@ -374,7 +385,8 @@ export function ChatMessages({ blocks: raw, imageUrl, onReply, onReplySend, agen
       const own = images.filter((i) => i.id.startsWith(`${entry.block.id}:`))
       return (
         // A user message gets 12px more air on each side than the transcript's 24px gap, so turns read apart from the agent's work.
-        <MessageScrollerItem key={entry.block.id} messageId={entry.block.id} scrollAnchor className="py-3">
+        // `pt-7 -mt-4` is that 12px on top plus 16px of paint room for the hover toolbar, which the item would otherwise clip.
+        <MessageScrollerItem key={entry.block.id} messageId={entry.block.id} scrollAnchor className="-mt-4 pt-7 pb-3">
           <Message align="end">
             <MessageContent className="items-end">
               {quoted && <ReplyQuote reply={quoted.kind === 'image' && quoted.ref ? { ...quoted, src: resolveRef(quoted.ref, imageUrl) } : quoted} />}
@@ -384,10 +396,12 @@ export function ChatMessages({ blocks: raw, imageUrl, onReply, onReplySend, agen
                 </div>
               )}
               {text && (
-                <Bubble align="end">
-                  {/* The composer's grey in light, white in dark (see packages/ui/README.md). `!` beats the bubble variant background. */}
-                  <BubbleContent className="rounded-[10px]! px-3! py-2! bg-user-bubble! text-user-bubble-foreground!">{text}</BubbleContent>
-                </Bubble>
+                <HoverActions className="flex max-w-full flex-col items-end" text={text} sentAt={entry.block.at ? new Date(entry.block.at) : undefined}>
+                  <Bubble align="end">
+                    {/* The composer's grey in light, white in dark (see packages/ui/README.md). `!` beats the bubble variant background. */}
+                    <BubbleContent className="rounded-[10px]! px-3! py-2! bg-user-bubble! text-user-bubble-foreground!">{text}</BubbleContent>
+                  </Bubble>
+                </HoverActions>
               )}
             </MessageContent>
           </Message>
@@ -395,7 +409,8 @@ export function ChatMessages({ blocks: raw, imageUrl, onReply, onReplySend, agen
       )
     }
     return (
-      <MessageScrollerItem key={entry.id} messageId={entry.id}>
+      // `pt-4 -mt-4`: paint room for a first message's hover toolbar without moving the layout.
+      <MessageScrollerItem key={entry.id} messageId={entry.id} className="-mt-4 pt-4">
         <Message {...{ [REPLY_SOURCE]: '' }}>
           <MessageContent className="gap-3">
             {turns(entry.blocks).map((turn, i) => <TurnContent key={`${entry.id}:${i}`} blocks={turn.blocks} end={turn.end} />)}

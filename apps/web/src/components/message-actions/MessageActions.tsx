@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Tip } from "../Tip";
 import { BadIcon, CopiedIcon, CopyIcon, GoodIcon, ReplyIcon } from "./icons";
 
 /**
- * The action row under an agent's answer, ported from aicss's Message Actions (https://www.aicss.dev/components/message-actions):
- * same behaviour, geometry and motion, its CSS module rewritten as Tailwind on the app's tokens. Where the app's rules differ, the
- * rules win: the app's own Tip tooltip, 12px text, 6px controls. Rate, copy and reply only: no reactions, no More menu.
+ * A message's hover toolbar, ported from aicss's Message Actions (https://www.aicss.dev/components/message-actions): same behaviour,
+ * geometry and motion, its CSS module rewritten as Tailwind on the app's tokens. Where the app's rules differ, the rules win: the
+ * app's own Tip tooltip, 12px text, 6px controls, a fill and no border or shadow. When it was sent, then rate (a final answer only),
+ * copy and reply: no reactions, no More menu. `HoverActions` places it on a message.
  */
 
 const BUTTON =
@@ -123,13 +124,17 @@ function MinuteRoll({ value }: { value: string }) {
 export function MessageActions({
   text,
   sentAt,
+  rate,
   onCopy,
   onVote,
   onReply,
 }: {
   /** What Copy puts on the clipboard. */
   text: string;
+  /** When the message was sent; without it the toolbar shows no time. */
   sentAt?: Date;
+  /** Show Good / Bad response (the agent's final answers). */
+  rate?: boolean;
   onCopy?: (text: string) => void;
   onVote?: (vote: Vote) => void;
   onReply?: () => void;
@@ -139,13 +144,14 @@ export function MessageActions({
   const [upN, setUpN] = useState(0);
   const [downN, setDownN] = useState(0);
   const [replyN, setReplyN] = useState(0);
-  const [postedAt] = useState(() => sentAt ?? new Date());
   const [now, setNow] = useState(() => Date.now());
 
+  // Minutes are the finest unit shown; every message has a toolbar, so the clock ticks slowly.
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    if (!sentAt) return;
+    const id = window.setInterval(() => setNow(Date.now()), 15_000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [sentAt]);
 
   useEffect(() => {
     if (!copied) return;
@@ -176,13 +182,31 @@ export function MessageActions({
     onReply?.();
   };
 
-  const minutes = elapsedMinutes(postedAt, now);
+  const minutes = sentAt ? elapsedMinutes(sentAt, now) : 0;
 
   return (
     <div
       data-testid="message-actions"
-      className="group/actions relative inline-flex items-center gap-0.5"
+      className="relative inline-flex items-center gap-0.5 rounded-(--control-radius) bg-surface p-0.5"
     >
+      {sentAt && (
+        <Tip label={formatAbsolute(sentAt)}>
+          <time
+            dateTime={sentAt.toISOString()}
+            className="mx-1.5 inline-flex h-6 cursor-default items-center text-xs leading-none whitespace-nowrap text-muted-foreground tabular-nums"
+          >
+            {minutes >= 1 && minutes < 60 ? (
+              <>
+                <MinuteRoll value={String(minutes)} />m ago
+              </>
+            ) : (
+              formatAgo(sentAt, now)
+            )}
+          </time>
+        </Tip>
+      )}
+
+      {rate && <>
       <Tip label="Good response">
         <button
           type="button"
@@ -225,6 +249,7 @@ export function MessageActions({
           />
         </button>
       </Tip>
+      </>}
 
       <Tip label={copied ? "Copied" : "Copy message"}>
         <button
@@ -257,34 +282,41 @@ export function MessageActions({
         </button>
       </Tip>
 
-      <Tip label="Reply">
-        <button
-          type="button"
-          className={BUTTON}
-          aria-label="Reply"
-          onClick={reply}
-        >
-          <ReplyIcon
-            key={replyN}
-            className={cn(GLYPH, "origin-[50%_82%]", replyN > 0 && "ma-play")}
-          />
-        </button>
-      </Tip>
+      {onReply && (
+        <Tip label="Reply">
+          <button
+            type="button"
+            className={BUTTON}
+            aria-label="Reply"
+            onClick={reply}
+          >
+            <ReplyIcon
+              key={replyN}
+              className={cn(GLYPH, "origin-[50%_82%]", replyN > 0 && "ma-play")}
+            />
+          </button>
+        </Tip>
+      )}
+    </div>
+  );
+}
 
-      <Tip label={formatAbsolute(postedAt)}>
-        <time
-          dateTime={postedAt.toISOString()}
-          className="ml-1 inline-flex h-6 cursor-default items-center text-xs leading-none whitespace-nowrap text-muted-foreground tabular-nums opacity-0 transition-opacity duration-200 ease-[ease] group-focus-within/actions:opacity-100 group-hover/actions:opacity-100 motion-reduce:transition-none"
-        >
-          {minutes >= 1 && minutes < 60 ? (
-            <>
-              <MinuteRoll value={String(minutes)} />m ago
-            </>
-          ) : (
-            formatAgo(postedAt, now)
-          )}
-        </time>
-      </Tip>
+/**
+ * A message with its toolbar: hidden until the pointer is over the message or focus is in it, then at its top-right corner, half
+ * above it. The message's scroller item paints with `content-visibility: auto`, which clips what is pulled outside it, so the items
+ * keep 16px of room above their first message (see ChatBlock).
+ */
+export function HoverActions({
+  children,
+  className,
+  ...actions
+}: Parameters<typeof MessageActions>[0] & { children: ReactNode; className?: string }) {
+  return (
+    <div data-testid="hover-actions" className={cn("group/msg relative min-w-0", className)}>
+      {children}
+      <div className="pointer-events-none absolute -top-4 right-0 z-10 opacity-0 transition-opacity duration-150 ease-out group-focus-within/msg:pointer-events-auto group-focus-within/msg:opacity-100 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100 motion-reduce:transition-none">
+        <MessageActions {...actions} />
+      </div>
     </div>
   );
 }

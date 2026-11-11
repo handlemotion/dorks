@@ -1,9 +1,10 @@
 import type { DorkState, ClientEvent, TurnOutcome } from "../events";
 
 export type Block =
-  | { kind: "user"; id: string; text: string }
-  /** `final`: the server named this message the turn's final answer (`turn_complete.finalMessageId`). */
-  | { kind: "assistant"; id: string; text: string; streaming: boolean; final?: boolean }
+  /** `at`: when it was sent (ms since epoch). */
+  | { kind: "user"; id: string; text: string; at?: number }
+  /** `final`: the server named this message the turn's final answer (`turn_complete.finalMessageId`). `at`: when it completed. */
+  | { kind: "assistant"; id: string; text: string; streaming: boolean; final?: boolean; at?: number }
   | { kind: "tool"; id: string; name: string; summary: string; status: "running" | "ok" | "error"; preview?: string }
   | { kind: "notice"; id: string; level: "info" | "error"; text: string }
   /**
@@ -33,12 +34,12 @@ export function fold(view: DorkView, e: ClientEvent): DorkView {
 
   switch (e.type) {
     case "user_message":
-      v.blocks.push({ kind: "user", id: `u${e.seq}`, text: e.text });
+      v.blocks.push({ kind: "user", id: `u${e.seq}`, text: e.text, at: e.ts });
       v.lastOutcome = null;
       break;
     case "assistant_delta": {
       const i = find((b) => b.kind === "assistant" && b.id === e.messageId);
-      if (i < 0) v.blocks.push({ kind: "assistant", id: e.messageId, text: e.text, streaming: true });
+      if (i < 0) v.blocks.push({ kind: "assistant", id: e.messageId, text: e.text, streaming: true, at: e.ts });
       else {
         const b = v.blocks[i] as Extract<Block, { kind: "assistant" }>;
         v.blocks[i] = { ...b, text: b.text + e.text };
@@ -47,7 +48,7 @@ export function fold(view: DorkView, e: ClientEvent): DorkView {
     }
     case "assistant_message": {
       const i = find((b) => b.kind === "assistant" && b.id === e.messageId);
-      const done: Block = { kind: "assistant", id: e.messageId, text: e.text, streaming: false };
+      const done: Block = { kind: "assistant", id: e.messageId, text: e.text, streaming: false, at: e.ts };
       if (i < 0) v.blocks.push(done);
       else v.blocks[i] = done; // the complete message replaces streamed partials
       break;
