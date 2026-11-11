@@ -1,5 +1,5 @@
 import { useId, useState, type ReactNode } from 'react'
-import { CircleAlertIcon, CircleCheckIcon, CircleStopIcon, TerminalIcon } from 'lucide-react'
+import { CircleAlertIcon, CircleCheckIcon, CircleStopIcon, TerminalIcon, WrenchIcon } from 'lucide-react'
 import type { Block } from '@dorks/shared'
 import { Bubble, BubbleContent } from '@dorks/ui/bubble'
 import { Marker, MarkerContent } from '@dorks/ui/marker'
@@ -123,17 +123,71 @@ function ToolRow({ block }: { block: ToolBlock }) {
   )
 }
 
+/** What a tool did, as a verb and a countable noun: "ran" + "command", or a whole phrase when it has no count. */
+function toolAction(name: string): { verb: string; one: string; many: string } {
+  const mcp = /^mcp__[^_]+(?:_[^_]+)*?__(.+)$/.exec(name)
+  switch (name) {
+    case 'Bash': return { verb: 'ran', one: 'a command', many: 'commands' }
+    case 'Read': return { verb: 'read', one: 'a file', many: 'files' }
+    case 'Write': return { verb: 'wrote', one: 'a file', many: 'files' }
+    case 'Edit': case 'MultiEdit': case 'NotebookEdit': return { verb: 'edited', one: 'a file', many: 'files' }
+    case 'Grep': case 'Glob': return { verb: 'searched', one: 'the code', many: 'the code' }
+    case 'WebSearch': return { verb: 'searched', one: 'the web', many: 'the web' }
+    case 'WebFetch': return { verb: 'fetched', one: 'a page', many: 'pages' }
+    case 'Task': case 'Agent': return { verb: 'ran', one: 'an agent', many: 'agents' }
+    case 'TodoWrite': return { verb: 'updated', one: 'the plan', many: 'the plan' }
+    default: {
+      const tool = (mcp?.[1] ?? name).replace(/[_-]+/g, ' ')
+      return { verb: 'used', one: tool, many: tool }
+    }
+  }
+}
+
+/** "Ran 3 commands, read 2 files, edited a file": a run of tool calls in the order each kind first appeared. */
+export function toolGroupTitle(tools: { name: string }[]): string {
+  const counts = new Map<string, { verb: string; one: string; many: string; n: number }>()
+  for (const { name } of tools) {
+    const a = toolAction(name)
+    const key = `${a.verb} ${a.many}`
+    const seen = counts.get(key)
+    if (seen) seen.n++
+    else counts.set(key, { ...a, n: 1 })
+  }
+  const phrases = [...counts.values()].map(({ verb, one, many, n }) => `${verb} ${n === 1 ? one : one === many ? many : `${n} ${many}`}`)
+  const text = phrases.join(', ')
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+/** Two or more tool calls in a row: one summary line that opens onto their rows (single calls stay plain rows). */
+function ToolGroup({ tools }: { tools: ToolBlock[] }) {
+  // Shimmers while a call in it runs; a failed call is red in its own row, not across the whole summary.
+  const status = tools.some((t) => t.status === 'running') ? 'running' : undefined
+  return (
+    <TraceCollapsible data-testid="tool-group">
+      <TraceCollapsibleTrigger>
+        <TraceLine status={status}>
+          <TraceIcon><WrenchIcon /></TraceIcon>
+          <TraceTitle>{toolGroupTitle(tools)}</TraceTitle>
+        </TraceLine>
+      </TraceCollapsibleTrigger>
+      <TraceCollapsibleContent>
+        <Trace>{tools.map((tool) => <ToolRow key={tool.id} block={tool} />)}</Trace>
+      </TraceCollapsibleContent>
+    </TraceCollapsible>
+  )
+}
+
 function agentContent(blocks: AgentBlock[]): ReactNode[] {
   const content: ReactNode[] = []
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
     if (block.kind === 'tool') {
-      // Tool calls in a row are one group (one AI Elements Trace); progress text between them is what splits groups.
+      // Tool calls in a row are one group: a lone call is a plain row, two or more fold under one summary line. Progress text splits groups.
       const tools: ToolBlock[] = [block]
       while (blocks[i + 1]?.kind === 'tool') tools.push(blocks[++i] as ToolBlock)
       content.push(
         <Trace key={tools[0].id} data-testid="tool-steps">
-          {tools.map((tool) => <ToolRow key={tool.id} block={tool} />)}
+          {tools.length === 1 ? <ToolRow block={tools[0]} /> : <ToolGroup tools={tools} />}
         </Trace>,
       )
     } else if (block.kind === 'assistant') {
