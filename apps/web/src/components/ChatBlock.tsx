@@ -1,5 +1,5 @@
 import { useId, useMemo, useState, type ReactNode } from 'react'
-import { CircleAlertIcon, CircleCheckIcon, CircleStopIcon, ReplyIcon, TerminalIcon } from 'lucide-react'
+import { CircleAlertIcon, CircleCheckIcon, CircleStopIcon, ReplyIcon, TerminalIcon, WrenchIcon } from 'lucide-react'
 import type { Block } from '@dorks/shared'
 import { Bubble, BubbleContent } from '@dorks/ui/bubble'
 import { Marker, MarkerContent } from '@dorks/ui/marker'
@@ -7,7 +7,7 @@ import { CodeBlock, CodeBlockContent } from '@dorks/ui/code-block'
 import { defaultRehypePlugins, defaultUrlTransform, Markdown, markdownComponents } from '@dorks/ui/markdown'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@dorks/ui/context-menu'
 import { DropdownMenuItem } from '@dorks/ui/dropdown-menu'
-import { MessageActions } from './message-actions/MessageActions'
+import { HoverActions } from './message-actions/MessageActions'
 import { REPLY_SOURCE, ReplyContext, ReplyQuote, SelectionReply, useReply, type ReplyHandlers } from './Reply'
 import { parseReply, quoteText } from '../lib/reply'
 import { ImageLightbox, ImageTrigger, useLightboxImages, type LightboxImage } from './ImageLightbox'
@@ -155,27 +155,97 @@ function ToolRow({ block }: { block: ToolBlock }) {
   )
 }
 
+/** What a tool did, as a verb and a countable noun: "ran" + "command", or a whole phrase when it has no count. */
+function toolAction(name: string): { verb: string; one: string; many: string } {
+  const mcp = /^mcp__[^_]+(?:_[^_]+)*?__(.+)$/.exec(name)
+  switch (name) {
+    case 'Bash': return { verb: 'ran', one: 'a command', many: 'commands' }
+    case 'Read': return { verb: 'read', one: 'a file', many: 'files' }
+    case 'Write': return { verb: 'wrote', one: 'a file', many: 'files' }
+    case 'Edit': case 'MultiEdit': case 'NotebookEdit': return { verb: 'edited', one: 'a file', many: 'files' }
+    case 'Grep': case 'Glob': return { verb: 'searched', one: 'the code', many: 'the code' }
+    case 'WebSearch': return { verb: 'searched', one: 'the web', many: 'the web' }
+    case 'WebFetch': return { verb: 'fetched', one: 'a page', many: 'pages' }
+    case 'Task': case 'Agent': return { verb: 'ran', one: 'an agent', many: 'agents' }
+    case 'TodoWrite': return { verb: 'updated', one: 'the plan', many: 'the plan' }
+    default: {
+      const tool = (mcp?.[1] ?? name).replace(/[_-]+/g, ' ')
+      return { verb: 'used', one: tool, many: tool }
+    }
+  }
+}
+
+/** "Ran 3 commands, read 2 files, edited a file": a run of tool calls in the order each kind first appeared. */
+export function toolGroupTitle(tools: { name: string }[]): string {
+  const counts = new Map<string, { verb: string; one: string; many: string; n: number }>()
+  for (const { name } of tools) {
+    const a = toolAction(name)
+    const key = `${a.verb} ${a.many}`
+    const seen = counts.get(key)
+    if (seen) seen.n++
+    else counts.set(key, { ...a, n: 1 })
+  }
+  const phrases = [...counts.values()].map(({ verb, one, many, n }) => `${verb} ${n === 1 ? one : one === many ? many : `${n} ${many}`}`)
+  const text = phrases.join(', ')
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+/** Two or more tool calls in a row: one summary line that opens onto their rows (single calls stay plain rows). */
+function ToolGroup({ tools }: { tools: ToolBlock[] }) {
+  // Shimmers while a call in it runs; a failed call is red in its own row, not across the whole summary.
+  const status = tools.some((t) => t.status === 'running') ? 'running' : undefined
+  return (
+    <TraceCollapsible data-testid="tool-group">
+      <TraceCollapsibleTrigger>
+        <TraceLine status={status}>
+          <TraceIcon><WrenchIcon /></TraceIcon>
+          <TraceTitle>{toolGroupTitle(tools)}</TraceTitle>
+        </TraceLine>
+      </TraceCollapsibleTrigger>
+      <TraceCollapsibleContent>
+        <Trace>{tools.map((tool) => <ToolRow key={tool.id} block={tool} />)}</Trace>
+      </TraceCollapsibleContent>
+    </TraceCollapsible>
+  )
+}
+
+/**
+ * One of the agent's messages: unbubbled markdown with its hover toolbar once it has finished streaming. Every message can be copied
+ * and replied to; only a final answer is rated.
+ */
+function AgentText({ block }: { block: Extract<AgentBlock, { kind: 'assistant' }> }) {
+  const { onReply } = useReply()
+  const markdown = <Markdown components={MARKDOWN} urlTransform={allowDataImages} rehypePlugins={REHYPE}>{block.text}</Markdown>
+  if (block.streaming) return <div className="min-w-0">{markdown}</div>
+  return (
+    <HoverActions
+      text={block.text}
+      sentAt={block.at ? new Date(block.at) : undefined}
+      rate={block.final}
+      onReply={onReply && (() => onReply({ kind: 'text', text: quoteText(block.text.replace(IMAGE, '')) }))}
+    >
+      {markdown}
+    </HoverActions>
+  )
+}
+
 function agentContent(blocks: AgentBlock[]): ReactNode[] {
   const content: ReactNode[] = []
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
     if (block.kind === 'tool') {
-      // Tool calls in a row are one group (one AI Elements Trace); progress text between them is what splits groups.
+      // Tool calls in a row are one group: a lone call is a plain row, two or more fold under one summary line. Progress text splits groups.
       const tools: ToolBlock[] = [block]
       while (blocks[i + 1]?.kind === 'tool') tools.push(blocks[++i] as ToolBlock)
       content.push(
         <Trace key={tools[0].id} data-testid="tool-steps">
-          {tools.map((tool) => <ToolRow key={tool.id} block={tool} />)}
+          {tools.length === 1 ? <ToolRow block={tools[0]} /> : <ToolGroup tools={tools} />}
         </Trace>,
       )
     } else if (block.kind === 'assistant') {
       // Assistant text is unbubbled markdown, as in the AI Elements chat pattern. No streaming caret: the markdown is a block, so it
       // fell on a line of its own, and the status line below already says the agent is working.
-      content.push(
-        <div key={block.id} className="min-w-0" data-final={block.final ? '' : undefined}>
-          <Markdown components={MARKDOWN} urlTransform={allowDataImages} rehypePlugins={REHYPE}>{block.text}</Markdown>
-        </div>,
-      )
+      content.push(<AgentText key={block.id} block={block} />)
     } else if (block.kind === 'notice') {
       content.push(
         <Trace key={block.id} role={block.level === 'error' ? 'alert' : 'status'}>
@@ -260,7 +330,6 @@ function TurnCheckpoint({ label, open, onToggle, controls }: { label: string; op
  */
 function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock }) {
   const [userOpen, setUserOpen] = useState<boolean>()
-  const { onReply } = useReply()
   const historyId = useId()
   // Turns stored before the server named final answers render as they always did.
   if (end && end.outcome === null) return <>{agentContent(blocks)}</>
@@ -272,7 +341,6 @@ function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock })
   )
   const work = blocks.filter(isWork)
   const open = userOpen ?? (end.outcome !== 'done' || !end.finalId)
-  const final = blocks.find((b): b is Extract<AgentBlock, { kind: 'assistant' }> => b.kind === 'assistant' && b.id === end.finalId)
   return (
     <>
       {work.length > 0 && (
@@ -282,9 +350,6 @@ function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock })
         </>
       )}
       {agentContent(blocks.filter((b) => !isWork(b)))}
-      {/* The final answer's actions: rate, copy, react, reply, 16px under the text (the transcript's 12px gap plus `mt-1`). The buttons' edge sits on the
-          text's edge: the message item paints with `content-visibility: auto`, which clips anything pulled outside it. */}
-      {final && <div className="mt-1"><MessageActions text={final.text} sentAt={new Date(end.at)} onReply={onReply && (() => onReply({ kind: 'text', text: quoteText(final.text.replace(IMAGE, '')) }))} /></div>}
       {end.outcome === 'stopped' && (
         <Trace role="status" data-testid="turn-stopped">
           <TraceLine>
@@ -320,7 +385,9 @@ export function ChatMessages({ blocks: raw, imageUrl, onReply, onReplySend, agen
       const own = images.filter((i) => i.id.startsWith(`${entry.block.id}:`))
       return (
         // A user message gets 12px more air on each side than the transcript's 24px gap, so turns read apart from the agent's work.
-        <MessageScrollerItem key={entry.block.id} messageId={entry.block.id} scrollAnchor className="py-3">
+        // `pt-10 -mt-7` is that 12px on top plus 28px of paint room for the hover toolbar above the bubble, which the item would
+        // otherwise clip.
+        <MessageScrollerItem key={entry.block.id} messageId={entry.block.id} scrollAnchor className="-mt-7 pt-10 pb-3">
           <Message align="end">
             <MessageContent className="items-end">
               {quoted && <ReplyQuote reply={quoted.kind === 'image' && quoted.ref ? { ...quoted, src: resolveRef(quoted.ref, imageUrl) } : quoted} />}
@@ -330,10 +397,13 @@ export function ChatMessages({ blocks: raw, imageUrl, onReply, onReplySend, agen
                 </div>
               )}
               {text && (
-                <Bubble align="end">
-                  {/* The composer's grey in light, white in dark (see packages/ui/README.md). `!` beats the bubble variant background. */}
-                  <BubbleContent className="rounded-[10px]! px-3! py-2! bg-user-bubble! text-user-bubble-foreground!">{text}</BubbleContent>
-                </Bubble>
+                <HoverActions className="flex w-fit max-w-[80%] flex-col items-end self-end" timeClassName="top-2" text={text} sentAt={entry.block.at ? new Date(entry.block.at) : undefined}>
+                  {/* The wrapper takes the bubble's 80% cap, so it hugs the bubble and the time sits just left of it. */}
+                  <Bubble align="end" className="max-w-full">
+                    {/* The composer's grey in light, white in dark (see packages/ui/README.md). `!` beats the bubble variant background. */}
+                    <BubbleContent className="rounded-[10px]! px-3! py-2! bg-user-bubble! text-user-bubble-foreground!">{text}</BubbleContent>
+                  </Bubble>
+                </HoverActions>
               )}
             </MessageContent>
           </Message>
@@ -341,7 +411,9 @@ export function ChatMessages({ blocks: raw, imageUrl, onReply, onReplySend, agen
       )
     }
     return (
-      <MessageScrollerItem key={entry.id} messageId={entry.id}>
+      // `-mt-7 pt-7 -ml-10 pl-10`: paint room for a first message's hover toolbar and for the times in the left gutter, without
+      // moving the layout.
+      <MessageScrollerItem key={entry.id} messageId={entry.id} className="-mt-7 -ml-10 pt-7 pl-10">
         <Message {...{ [REPLY_SOURCE]: '' }}>
           <MessageContent className="gap-3">
             {turns(entry.blocks).map((turn, i) => <TurnContent key={`${entry.id}:${i}`} blocks={turn.blocks} end={turn.end} />)}

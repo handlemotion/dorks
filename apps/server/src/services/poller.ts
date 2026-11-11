@@ -18,11 +18,13 @@ interface GhPr {
   title: string; state: "open" | "closed"; merged?: boolean; mergeable: boolean | null; merged_by?: GhUser | null;
   head: { ref: string; sha: string }; base: { ref: string; sha: string; repo?: { full_name: string } };
 }
-interface GhReview { id: number; state: string; body: string | null; html_url: string; user: GhUser | null }
+interface GhReview { id: number; state: string; body: string | null; html_url: string; user: GhUser | null; submitted_at?: string | null }
 interface GhComment { id: number; body: string; html_url: string; path?: string; user: GhUser | null; created_at: string }
+interface GhIssueEvent { event: string; actor: GhUser | null; created_at: string }
 interface GhSuites { check_suites: { id: number; status: string; conclusion: string | null; latest_check_runs_count: number }[] }
 
 const actor = (u: GhUser | null | undefined): Actor => ({ login: u?.login ?? "ghost", bot: u?.type === "Bot" });
+const time = (iso: string | null | undefined) => (iso && !Number.isNaN(Date.parse(iso)) ? Date.parse(iso) : undefined);
 
 export interface Observation {
   events: PrEvent[];
@@ -68,7 +70,14 @@ export async function observe(app: App, token: string, sub: Subscription): Promi
         return { events, baseline, poll };
       } else {
         if (pr.head.sha !== sub.headSha) events.push({ kind: "pr_synchronize", headSha: pr.head.sha, headRef: pr.head.ref });
-        if (pr.base.ref !== sub.baseRef) events.push({ kind: "pr_base_changed", baseRef: pr.base.ref, from: sub.baseRef ?? "", sender: { login: "someone", bot: false } });
+        if (pr.base.ref !== sub.baseRef) {
+          // Only the issue's events say who retargeted it, and when: one read, only when the base moved. Newest last. A full page
+          // may not reach the newest event, so then nobody is named rather than whoever retargeted it long ago.
+          const changed = await getCached<GhIssueEvent[]>(app.fetch, token, `${base}/issues/${sub.number}/events?per_page=100`, undefined, app.now()).catch(() => null);
+          const page = changed?.status === 200 && changed.json.length < 100 ? changed.json : [];
+          const ev = page.filter((e) => e.event === "base_ref_changed").at(-1);
+          events.push({ kind: "pr_base_changed", baseRef: pr.base.ref, from: sub.baseRef ?? "", ...(ev?.actor ? { sender: actor(ev.actor), at: time(ev.created_at) } : {}) });
+        }
         if (pr.mergeable !== null && (pr.mergeable !== sub.mergeable || pr.base.sha !== old.baseSha)) events.push({ kind: "mergeable", baseSha: pr.base.sha, mergeable: pr.mergeable });
         if (pr.mergeable !== null) poll.baseSha = pr.base.sha;
       }
@@ -97,7 +106,7 @@ export async function observe(app: App, token: string, sub: Subscription): Promi
       for (const x of list) {
         if (x.id <= (old.lastReviewId ?? 0)) continue;
         const st = x.state.toLowerCase();
-        if (st === "approved" || st === "changes_requested" || st === "commented") events.push({ kind: "review", state: st, body: x.body ?? "", url: x.html_url, sender: actor(x.user) });
+        if (st === "approved" || st === "changes_requested" || st === "commented") events.push({ kind: "review", state: st, body: x.body ?? "", url: x.html_url, sender: actor(x.user), at: time(x.submitted_at) });
       }
       poll.lastReviewId = Math.max(old.lastReviewId ?? 0, ...list.map((x) => x.id));
     }
@@ -114,7 +123,7 @@ export async function observe(app: App, token: string, sub: Subscription): Promi
     if (!first) {
       for (const c of res.json) {
         if (c.id <= last) continue;
-        events.push({ kind: "comment", body: c.body, url: c.html_url, ...(inline && c.path ? { path: c.path } : {}), sender: actor(c.user) });
+        events.push({ kind: "comment", body: c.body, url: c.html_url, ...(inline && c.path ? { path: c.path } : {}), sender: actor(c.user), at: time(c.created_at) });
         if (!newest || c.created_at > newest) newest = c.created_at;
       }
     }

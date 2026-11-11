@@ -1,7 +1,8 @@
 import { CI_FIX_MAX_ATTEMPTS, DEFAULT_COMMENT_POLICY } from "@dorks/shared";
 import { describe, expect, it } from "vitest";
 import { update } from "../src/db";
-import { commentAllowed, ingestEvent, type IngestEnv, type PrEvent } from "../src/services/githubIngest";
+import { append } from "../src/lifecycle/dispatch";
+import { commentAllowed, ingestEvent, SERVER_COMMENT_MARK, type IngestEnv, type PrEvent } from "../src/services/githubIngest";
 import * as subs from "../src/services/subscriptions";
 import { harness, type Harness } from "./harness";
 
@@ -125,16 +126,15 @@ describe("subscriptions", () => {
 });
 
 describe("comment policy", () => {
-  it("all accepts anyone but the agent itself", () => {
+  it("all accepts anyone", () => {
     expect(commentAllowed({ mode: "all" }, "alice", "Agent-Bot")).toBe(true);
-    expect(commentAllowed({ mode: "all" }, "AGENT-bot", "agent-bot")).toBe(false);
   });
-  it("an allowlist is case-insensitive, lists bots by login, and never lets the agent through", () => {
-    const policy = { mode: "allowlist" as const, logins: ["Alice", "coderabbitai[bot]", "agent-bot"] };
+  it("an allowlist is case-insensitive, lists bots by login, and always lets the token's owner through", () => {
+    const policy = { mode: "allowlist" as const, logins: ["Alice", "coderabbitai[bot]"] };
     expect(commentAllowed(policy, "alice", "agent-bot")).toBe(true);
     expect(commentAllowed(policy, "CodeRabbitAI[bot]", "agent-bot")).toBe(true);
     expect(commentAllowed(policy, "mallory", "agent-bot")).toBe(false);
-    expect(commentAllowed(policy, "agent-bot", "agent-bot")).toBe(false);
+    expect(commentAllowed(policy, "AGENT-bot", "agent-bot")).toBe(true); // whether it was really the agent is byAgent's call
   });
 });
 
@@ -179,7 +179,18 @@ describe("what a change on the PR does", () => {
     s.patch({ baseRef: "feature-a", conflictSha: "old" });
     s.ingest({ kind: "pr_base_changed", baseRef: "main", from: "feature-a", sender: human });
     expect(s.get()).toMatchObject({ baseRef: "main", mergeable: null, conflictSha: undefined });
-    expect(s.inbox()[0]).toMatchObject({ kind: "base_changed" });
+    expect(s.inbox()[0]).toMatchObject({ kind: "base_changed", summary: "alice changed the base branch from feature-a to main." });
+  });
+
+  it("a base change the agent made mid-turn wakes nobody; one with no known author still does", () => {
+    const s = setup();
+    s.sub();
+    s.patch({ baseRef: "feature-a" });
+    s.h.app.db.tx(() => append(s.h.app, s.id, { type: "status", state: "working" }));
+    s.ingest({ kind: "pr_base_changed", baseRef: "main", from: "feature-a", sender: { login: "agent-bot", bot: false }, at: s.h.clock.t + 1_000 });
+    expect(s.inbox()).toEqual([]);
+    s.ingest({ kind: "pr_base_changed", baseRef: "dev", from: "main" });
+    expect(s.inbox()[0]).toMatchObject({ kind: "base_changed", summary: "Changed the base branch from main to dev." });
   });
 
   it("reviews: a comment-only review never downgrades an approval; a bare approval is recorded without a notification", () => {
@@ -215,6 +226,10 @@ describe("what a change on the PR does", () => {
     s.patch({ status: "stalled", ciFixAttempts: 2 });
     s.ingest({ kind: "comment", body: "bot says", url: "u", sender: { login: "ci-bot[bot]", bot: true } });
     expect(s.get()).toMatchObject({ status: "stalled", ciFixAttempts: 2 });
+    // the server's own stall notice is posted with the token while the dork is idle: it is nobody's input
+    s.ingest({ kind: "comment", body: `A human needs to take a look.\n\n${SERVER_COMMENT_MARK}`, url: "u", sender: { login: "agent-bot", bot: false }, at: s.h.clock.t });
+    expect(s.get()).toMatchObject({ status: "stalled", ciFixAttempts: 2 });
+    expect(s.inbox().map((r) => r.summary)).toEqual(["ci-bot[bot] commented: bot says (u)"]);
     s.ingest({ kind: "comment", body: "i looked", url: "u", sender: human });
     expect(s.get()).toMatchObject({ status: "active", ciFixAttempts: 0 });
   });

@@ -48,7 +48,7 @@ export const Route = createFileRoute('/_conn/_app/dorks')({
 
 function Notice({ children }: { children: React.ReactNode }) {
   return (
-    <Alert className="mx-auto mt-3 w-full max-w-3xl" role="status">
+    <Alert className="mx-auto mt-3 w-full max-w-4xl" role="status">
       <InfoIcon />
       <AlertDescription>{children}</AlertDescription>
     </Alert>
@@ -188,7 +188,7 @@ function Thread({ dorkId }: { dorkId: string }) {
         </>}
       />
       {models.length > 0 && (
-        <form className="mx-auto mt-4 flex w-full max-w-3xl shrink-0 flex-wrap items-center gap-2 px-4 text-sm" onSubmit={(event) => {
+        <form className="mx-auto mt-4 flex w-full max-w-4xl shrink-0 flex-wrap items-center gap-2 px-4 text-sm" onSubmit={(event) => {
           event.preventDefault()
           if (choice) void modelChoice.run(() => actions.chooseCodexModel(dorkId, choice.model, choice.effort))
         }}>
@@ -222,7 +222,7 @@ function Thread({ dorkId }: { dorkId: string }) {
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
         <MessageScroller>
           <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
-            <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-[30px] pt-6 pb-12" data-testid="transcript">
+            <MessageScrollerContent className="mx-auto w-full max-w-4xl gap-6 px-10 pt-6 pb-12" data-testid="transcript">
               {canLoadMore && <div className="text-center"><Button variant="outline" size="sm" onClick={loadMore}>Load older</Button></div>}
               <ChatMessages
                 blocks={view.blocks}

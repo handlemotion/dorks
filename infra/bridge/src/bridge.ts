@@ -2,7 +2,7 @@ import { commandFrame, effortLevel, type EffortLevel, type FromBridge, type PrRe
 import { createHash } from "node:crypto";
 import { appendFileSync, chmodSync, closeSync, fsyncSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Agent, childEnv, computerArgs, configDirOf, findTranscripts } from "./claude";
 import { CodexAgent } from "./codex";
 import type { Config } from "./config";
@@ -112,7 +112,8 @@ export class Bridge {
     });
     // With privilege separation the socket lives in a directory only the Claude user can enter (the state dir itself stays root-only,
     // traversable so that path resolves).
-    this.rpc = new RpcServer(join(this.cfg.stateDir, this.runAs ? "cred/cred.sock" : "cred.sock"), this.rpcMethods(), this.runAs);
+    const sockDir = this.cfg.sockDir ?? this.cfg.stateDir;
+    this.rpc = new RpcServer(join(sockDir, this.runAs ? "cred/cred.sock" : "cred.sock"), this.rpcMethods(), this.runAs);
     this.written = this.loadWritten();
   }
 
@@ -122,6 +123,12 @@ export class Bridge {
     if (this.runAs) chmodSync(this.cfg.stateDir, 0o711); // others may traverse to cred/ and the settings file, not list or read
     writeClaudeSettings(this.cfg.stateDir, this.self);
     writeClaudeMcpConfig(this.cfg.stateDir, this.self, this.rpc.sockPath);
+    if (this.runAs) {
+      // cred/ sits in the socket dir, which the Claude user must be able to traverse (not list) to reach it
+      const sockDir = dirname(dirname(this.rpc.sockPath));
+      mkdirSync(sockDir, { recursive: true, mode: 0o711 });
+      chmodSync(sockDir, 0o711);
+    }
     await this.rpc.start();
     await this.handshake(true);
     this.prs.start();
@@ -293,7 +300,14 @@ export class Bridge {
     } catch {
       this.log("could not fsync the session transcript");
     }
-    await new Promise<void>((r) => execFile("sync", () => r())); // whole-fs flush; best effort (missing binary is fine)
+    // Whole-fs flush, best effort (a missing binary is fine). It can take seconds on a box with many dirty pages, so the wait is
+    // bounded: the transcript above is already fsynced, and a flush must not hang on unrelated writes.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      new Promise<void>((r) => execFile("sync", () => r())),
+      new Promise<void>((r) => (timer = setTimeout(r, this.cfg.flushSyncWaitMs))),
+    ]);
+    clearTimeout(timer);
   }
 
   // ------------------------------------------------------------------ configure

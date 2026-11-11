@@ -39,7 +39,7 @@ async function setup(opts: { host?: Record<string, string>; transcript?: boolean
     BRIDGE_SECRET,
     SIM_HOST_KEY: "host-key-should-not-leak",
     BRIDGE_SECRET_KEY: "master-should-not-leak",
-    DORKS_STATE_DIR: state,
+    DORKS_STATE_DIR: state, DORKS_SOCK_DIR: state,
     DORKS_WORKDIR: work,
     DORKS_GIT_BASE_URL: remote.baseUrl,
     CLAUDE_BIN: FAKE_CLAUDE,
@@ -249,7 +249,8 @@ describe("bridge with a fake claude CLI", () => {
   });
 
   it("flush: waits for idle, persists, acks, then sends flushed after every event", async () => {
-    const s = await setup({ deltas: 15, env: { CLAUDE_CONFIG_DIR: join(tmp("cc-"), ".claude") } });
+    // A busy machine's whole-fs `sync` can take seconds (it timed this test out in CI); the flush's wait for it is bounded.
+    const s = await setup({ deltas: 15, env: { CLAUDE_CONFIG_DIR: join(tmp("cc-"), ".claude") }, host: { DORKS_FLUSH_SYNC_WAIT_MS: "500" } });
     await s.bridge.start();
     configure(s.t);
     await waitFor(() => s.t.of("ready").length, "ready");
@@ -478,7 +479,7 @@ describe("bridge with a fake claude CLI", () => {
   });
 
   it("flush that times out waiting for the turn interrupts it first, and echoes the flush cid in flushed", async () => {
-    const s = await setup({ deltas: 1000, host: { DORKS_FLUSH_IDLE_WAIT_MS: "150" } });
+    const s = await setup({ deltas: 1000, host: { DORKS_FLUSH_IDLE_WAIT_MS: "150", DORKS_FLUSH_SYNC_WAIT_MS: "500" } });
     await s.bridge.start();
     configure(s.t);
     await waitFor(() => s.t.of("ready").length, "ready");

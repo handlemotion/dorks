@@ -25,7 +25,7 @@ describe.skipIf(!token && !apiKey)("real claude CLI through the bridge", () => {
     mkdirSync(home, { recursive: true });
     const hostEnv: NodeJS.ProcessEnv = {
       PATH: process.env.PATH, HOME: home, DORK_ID: "live_1", BRIDGE_URL: "wss://x.example/bridge", BRIDGE_SECRET: "c".repeat(64),
-      DORKS_STATE_DIR: state, DORKS_WORKDIR: work, DORKS_GIT_BASE_URL: remoteBase, DORKS_CLAUDE_ARGS: process.env.LIVE_CLAUDE_ARGS ?? "",
+      DORKS_STATE_DIR: state, DORKS_SOCK_DIR: state, DORKS_WORKDIR: work, DORKS_GIT_BASE_URL: remoteBase, DORKS_CLAUDE_ARGS: process.env.LIVE_CLAUDE_ARGS ?? "",
       ...(process.env.CLAUDE_BIN ? { CLAUDE_BIN: process.env.CLAUDE_BIN } : {}),
       ...(process.env.ANTHROPIC_BASE_URL ? { ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL } : {}),
     };
