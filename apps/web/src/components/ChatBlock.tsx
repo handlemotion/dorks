@@ -5,6 +5,7 @@ import { Bubble, BubbleContent } from '@dorks/ui/bubble'
 import { Marker, MarkerContent } from '@dorks/ui/marker'
 import { CodeBlock, CodeBlockContent } from '@dorks/ui/code-block'
 import { defaultRehypePlugins, defaultUrlTransform, Markdown, markdownComponents } from '@dorks/ui/markdown'
+import { MessageActions } from './message-actions/MessageActions'
 import { ImageLightbox, ImageTrigger, useLightboxImages, type LightboxImage } from './ImageLightbox'
 import { Message, MessageContent } from '@dorks/ui/message'
 import { MessageScrollerItem } from '@dorks/ui/message-scroller'
@@ -219,6 +220,7 @@ function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock })
   )
   const work = blocks.filter(isWork)
   const open = userOpen ?? (end.outcome !== 'done' || !end.finalId)
+  const final = blocks.find((b): b is Extract<AgentBlock, { kind: 'assistant' }> => b.kind === 'assistant' && b.id === end.finalId)
   return (
     <>
       {work.length > 0 && (
@@ -228,6 +230,9 @@ function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock })
         </>
       )}
       {agentContent(blocks.filter((b) => !isWork(b)))}
+      {/* The final answer's actions: rate, copy, react, reply, 16px under the text (the transcript's 12px gap plus `mt-1`). The buttons' edge sits on the
+          text's edge: the message item paints with `content-visibility: auto`, which clips anything pulled outside it. */}
+      {final && <div className="mt-1"><MessageActions text={final.text} sentAt={new Date(end.at)} /></div>}
       {end.outcome === 'stopped' && (
         <Trace role="status" data-testid="turn-stopped">
           <TraceLine>

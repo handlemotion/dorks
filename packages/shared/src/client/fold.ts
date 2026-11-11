@@ -10,7 +10,7 @@ export type Block =
    * The end of an agent turn: everything since the previous turn (or user message) belongs to it. `outcome` is null for turns stored
    * before the server stamped outcomes and final answers; render those as they always were.
    */
-  | { kind: "turn"; id: string; outcome: TurnOutcome | null; finalId?: string; durationMs: number };
+  | { kind: "turn"; id: string; outcome: TurnOutcome | null; finalId?: string; durationMs: number; /** When it ended (ms since epoch). */ at: number };
 
 export interface DorkView {
   lastSeq: number;
@@ -67,7 +67,7 @@ export function fold(view: DorkView, e: ClientEvent): DorkView {
       v.blocks = v.blocks.map((b) =>
         b.kind === "assistant" && (b.streaming || b.id === e.finalMessageId) ? { ...b, streaming: false, ...(b.id === e.finalMessageId ? { final: true } : {}) } : b,
       );
-      v.blocks.push({ kind: "turn", id: `t${e.seq}`, outcome: e.outcome ?? null, finalId: e.finalMessageId, durationMs: e.durationMs });
+      v.blocks.push({ kind: "turn", id: `t${e.seq}`, outcome: e.outcome ?? null, finalId: e.finalMessageId, durationMs: e.durationMs, at: e.ts });
       v.lastOutcome = e.outcome ?? null;
       break;
     case "pr_opened":
