@@ -162,7 +162,192 @@ const TOOLS: Tool[] = [
       return content;
     },
   },
+  // ---- machine_*: the build this session's machine starts from (docs/builds.md). Deferred like every MCP tool, so a session that never
+  // touches its machine pays only for these names. The server scopes every call to this dork's own build and never returns a secret.
+  {
+    name: "machine_get",
+    title: "Read this session's machine (build)",
+    description:
+      "Machine setup: what the build this session's machine starts from installs and sets up for every future session: its setup script, pre-cloned " +
+      "repositories (each with an optional script run in its clone), environment variables (plain values; secrets by name only), machine size, " +
+      "whether its saved image is current, its last run, and your draft of changes if you have one. Start here when the user asks you to install " +
+      "a tool, set a variable or pre-clone a repo for future sessions. To change it: try the commands in this box first, then machine_draft, " +
+      "machine_run (a trial), machine_logs, and machine_submit for the owner's approval.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
+    async run(_args, sock) {
+      const r = await rpcCall<{ build: MachineBuild | null; draft: MachineDraft | null }>(sock, "build", { action: "get" });
+      if (!r.build) return "This session runs on the base machine, not on a build, so there is nothing to change here. Ask the owner to create a build (Settings, Builds) and start a setup session on it.";
+      return describeBuild(r.build, r.draft);
+    },
+  },
+  {
+    name: "machine_draft",
+    title: "Draft a change to this session's machine",
+    description:
+      "Machine setup: write your proposed change to this session's build. Nothing changes for the owner until they approve it (machine_submit). Fields you " +
+      "leave out keep their current value. `setupScript` is the whole bash script (run with `bash -e` as `user`, passwordless sudo, in /home/user, at build " +
+      "time only, never at session start): write it idempotent and non-interactive, e.g. `sudo apt-get install -y ...`. `repos` is the whole list; each is " +
+      "cloned to ~/work/<owner>/<name>, and its `setupScript` runs inside the clone (e.g. `pnpm install`). `vars` changes variables: a plain one may carry " +
+      "`value`; for a secret give only the name and why, never a value (the owner types it in). Set `buildTime` only when the setup script needs the " +
+      "value; every variable reaches future sessions' environment anyway. Then run it with machine_run.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        setupScript: { type: "string", description: "The full setup script (bash). Replaces the draft's script." },
+        repos: {
+          type: "array",
+          description: "The full list of repositories to pre-clone. Replaces the draft's list.",
+          items: {
+            type: "object",
+            properties: {
+              repo: { type: "string", description: "owner/name on GitHub." },
+              branch: { type: "string", description: "Optional: the branch to clone instead of the default one." },
+              setupScript: { type: "string", description: "Optional: bash run inside the clone at build time, e.g. `pnpm install`." },
+            },
+            required: ["repo"],
+            additionalProperties: false,
+          },
+        },
+        machineType: { type: "string", enum: ["small", "default", "large", "xlarge"], description: "Machine size: small 2 CPU/4 GB, default 4/8, large 8/16, xlarge 16/32." },
+        vars: {
+          type: "array",
+          description: "Variable changes, merged into the draft by name.",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: "UPPER_SNAKE_CASE." },
+              value: { type: "string", description: "Plain variables only." },
+              secret: { type: "boolean", description: "True for keys, tokens, passwords: the owner fills in the value." },
+              buildTime: { type: "boolean", description: "True when the setup script needs it." },
+              why: { type: "string", description: "What it is for, shown to the owner." },
+              remove: { type: "boolean", description: "True to delete the variable." },
+            },
+            required: ["name"],
+            additionalProperties: false,
+          },
+        },
+      },
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: false },
+    async run(args, sock) {
+      const d = await rpcCall<MachineDraft>(sock, "build", { action: "draft", draft: args });
+      return `Draft saved.\n\n${describeDraft(d)}\n\nNext: machine_run with kind "trial" to check that it builds.`;
+    },
+  },
+  {
+    name: "machine_run",
+    title: "Run this session's machine build",
+    description:
+      "Machine setup: start a run of this session's build in a fresh, throwaway machine. `trial` (the default) runs your draft (or the build as it is) " +
+      "without saving anything and without secrets: use it to check your setup script works. `image` rebuilds and saves the build's image, and is only " +
+      "allowed for the spec the owner approved (for example after the base was updated); to change the build, submit your draft instead. Returns at " +
+      "once; follow it with machine_logs and `wait`. A run takes a few minutes; trials are limited per day.",
+    inputSchema: {
+      type: "object",
+      properties: { kind: { type: "string", enum: ["trial", "image"], description: "Default: trial." } },
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
+    async run(args, sock) {
+      const run = await rpcCall<MachineRun>(sock, "build", { action: "run", kind: args.kind });
+      return `Started a ${run.kind} run (${run.id}). Follow it with machine_logs { "wait": 120 }.`;
+    },
+  },
+  {
+    name: "machine_logs",
+    title: "Read a machine build's logs",
+    description:
+      "Machine setup: the status and output of this session's latest build run (or `runId`). `wait` (seconds, up to 120) waits for the run to end " +
+      "first, so you do not need a sleep loop; call again if it is still running. `tail` lines (default 200) or `grep` (a plain substring) narrow the " +
+      "output. Secrets are shown as [redacted]. When a run fails, fix the cause in your draft and run a trial again.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        runId: { type: "string", description: "Optional: a run id from machine_run. Default: the latest run." },
+        wait: { type: "integer", minimum: 0, maximum: 120, description: "Seconds to wait for the run to finish." },
+        tail: { type: "integer", minimum: 1, maximum: 5000, description: "Lines from the end. Default 200." },
+        grep: { type: "string", description: "Only lines containing this text (case-insensitive)." },
+      },
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
+    async run(args, sock) {
+      const wait = typeof args.wait === "number" ? Math.min(Math.max(args.wait, 0), 120) * 1000 : 0;
+      const deadline = Date.now() + wait;
+      const ask = () => rpcCall<{ run: MachineRun; log: string }>(sock, "build", { action: "logs", runId: args.runId, tail: args.tail, grep: args.grep });
+      let r = await ask();
+      while ((r.run.status === "queued" || r.run.status === "running") && Date.now() < deadline) {
+        await new Promise((res) => setTimeout(res, Math.min(5_000, Math.max(0, deadline - Date.now()))));
+        r = await ask();
+      }
+      return `${describeRun(r.run)}\n\n${r.log.trim() ? r.log : "(no output yet)"}`;
+    },
+  },
+  {
+    name: "machine_submit",
+    title: "Submit the machine draft for approval",
+    description:
+      "Machine setup: ask the owner to approve your draft. They see a diff card in this chat and on the build's page; once approved, the draft becomes " +
+      "the build and its image is rebuilt (follow it with machine_logs). Submit only after a trial run succeeded. Their answer arrives as your next " +
+      "turn. `note`: one or two sentences on what changes and why.",
+    inputSchema: {
+      type: "object",
+      properties: { note: { type: "string", description: "What the change does and why, for the owner." } },
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: false },
+    async run(args, sock) {
+      await rpcCall(sock, "build", { action: "submit", note: args.note });
+      return "Submitted. The owner decides in the app; their answer arrives as your next turn. Do not keep polling for it.";
+    },
+  },
 ];
+
+type MachineRun = { id: string; kind: string; status: string; step: string | null; error: string | null; exitCode: number | null; startedBy: string; createdAt: number; finishedAt: number | null };
+type MachineVar = { name: string; secret: boolean; buildTime: boolean; value?: string; requested: boolean };
+type MachineRepo = { repo: string; branch?: string; setupScript?: string };
+type MachineSpec = { machineType: string; setupScript: string; repos: MachineRepo[]; buildTimeVars: string[] };
+type MachineBuild = {
+  name: string; machineType: string; setupScript: string; repos: MachineRepo[]; vars: MachineVar[]; approved: boolean;
+  image: { stale: boolean; staleReason: string | null } | null; lastRun: MachineRun | null;
+};
+type MachineDraft = { status: string; spec: MachineSpec; vars: { name: string; secret: boolean; buildTime: boolean; value?: string; remove?: boolean; why: string }[]; stale: boolean; note: string | null };
+
+const script = (s: string | undefined) => (s?.trim() ? "```bash\n" + s.trim() + "\n```" : "(none)");
+const repoLines = (repos: MachineRepo[]) =>
+  repos.length ? repos.map((r) => `- ${r.repo}${r.branch ? ` (branch ${r.branch})` : ""}${r.setupScript?.trim() ? `\n  setup:\n${script(r.setupScript).replace(/^/gm, "  ")}` : ""}`).join("\n") : "(none)";
+
+function describeRun(r: MachineRun): string {
+  const what = `${r.kind} run ${r.id}: ${r.status}${r.step && r.status === "running" ? ` (${r.step})` : ""}`;
+  return r.error ? `${what}\n${r.error}` : what;
+}
+
+function describeBuild(b: MachineBuild, d: MachineDraft | null): string {
+  const vars = b.vars.length
+    ? b.vars.map((v) => `- ${v.name}${v.secret ? " (secret" + (v.requested ? ", waiting for the owner)" : ")") : v.requested ? " (waiting for a value)" : `=${v.value ?? ""}`}${v.buildTime ? " [build time]" : ""}`).join("\n")
+    : "(none)";
+  const image = !b.image ? "not built yet" : b.image.stale ? `stale: ${b.image.staleReason}` : "current";
+  return [
+    `Build "${b.name}", size ${b.machineType}, image ${image}.`,
+    `Setup script:\n${script(b.setupScript)}`,
+    `Repositories:\n${repoLines(b.repos)}`,
+    `Variables:\n${vars}`,
+    `Last run: ${b.lastRun ? describeRun(b.lastRun) : "none"}`,
+    d ? `Your draft:\n${describeDraft(d)}` : "You have no draft.",
+  ].join("\n\n");
+}
+
+function describeDraft(d: MachineDraft): string {
+  const vars = d.vars.length ? d.vars.map((v) => `- ${v.remove ? "remove " : ""}${v.name}${v.secret ? " (secret, owner fills it in)" : v.value !== undefined ? `=${v.value}` : ""}${v.buildTime ? " [build time]" : ""}`).join("\n") : "(no variable changes)";
+  return [
+    `Status: ${d.status}${d.stale ? " (the build changed since you started this draft: check it with machine_get)" : ""}. Size ${d.spec.machineType}.`,
+    `Setup script:\n${script(d.spec.setupScript)}`,
+    `Repositories:\n${repoLines(d.spec.repos)}`,
+    `Variable changes:\n${vars}`,
+  ].join("\n\n");
+}
 
 // ---------------------------------------------------------------- screenshots (screenshot_share)
 
@@ -312,7 +497,8 @@ export class McpServer {
           serverInfo: { name: MCP_SERVER_NAME, title: "Dorks", version: "0.1.0" },
           instructions:
             "Tools for the pull requests you work on in this box, and for showing the user your work. `gh pr create` subscribes you automatically; subscribed PRs wake you with <dorks-event> turns when CI, reviews, comments or conflicts need you. " +
-            "When you start a web server the user should see, call preview_show with its port. When you change anything visual, verify it with screenshot_share and put the image it returns in your final answer.",
+            "When you start a web server the user should see, call preview_show with its port. When you change anything visual, verify it with screenshot_share and put the image it returns in your final answer. " +
+            "To install tools, set variables or pre-clone repos for future sessions, search for the machine_ tools.",
         });
         break;
       }

@@ -85,6 +85,12 @@ export function makeRemote(fullName = "acme/demo") {
 type ConfigureFrame = Extract<ToBridge, { t: "configure" }>;
 
 export class FakeTransport implements Transport {
+  buildCalls: Record<string, unknown>[] = [];
+  buildResult: unknown = {};
+  build = async (args: Record<string, unknown>) => {
+    this.buildCalls.push(args);
+    return this.buildResult;
+  };
   pushes: FromBridge[][] = [];
   afterBridgeSeq = 0;
   connectCalls = 0;

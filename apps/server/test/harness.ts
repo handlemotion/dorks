@@ -76,6 +76,13 @@ export interface FakeSnapshotDriver extends SnapshotDriver {
   /** What a settled save reports. */
   saveResult: "ready" | "failed";
   deleteFails: boolean;
+  /** Build runs: the detached setup's exit code and output, what the secret scan finds, and how sandboxes were created. */
+  setupExit: number;
+  setupOutput: string;
+  scanHits: string;
+  created: { from?: string; type?: string; labelKey?: string }[];
+  killed: number[];
+  deletedSnapshots: string[];
   maybeFail(op: string): void;
 }
 
@@ -84,6 +91,7 @@ export function fakeSnapshotDriver(): FakeSnapshotDriver {
   const d: FakeSnapshotDriver = {
     calls: [], boxes: new Map(), files: new Map(), commands: [], saved: new Map(), installExit: 0, installStderr: "", installTimedOut: false,
     failNext: new Map(), savingPolls: 0, saveResult: "ready", deleteFails: false,
+    setupExit: 0, setupOutput: "", scanHits: "", created: [], killed: [], deletedSnapshots: [],
     maybeFail(op) {
       const e = d.failNext.get(op);
       if (e) {
@@ -91,12 +99,13 @@ export function fakeSnapshotDriver(): FakeSnapshotDriver {
         throw e;
       }
     },
-    async listBuildSandboxes(label) {
+    async listBuildSandboxes(label, _labelKey) {
       d.calls.push("list");
       return [...d.boxes].filter(([, b]) => b.label === label).map(([id]) => ({ id }));
     },
-    async createBuildSandbox({ label }) {
+    async createBuildSandbox({ label, from, type, labelKey }) {
       d.calls.push("create");
+      d.created.push({ from, type, labelKey });
       d.maybeFail("create");
       const id = `bx_build${++n}`;
       d.boxes.set(id, { label });
@@ -114,6 +123,7 @@ export function fakeSnapshotDriver(): FakeSnapshotDriver {
       d.calls.push("run");
       d.commands.push(command);
       if (command.includes("boat-install.sh")) return { exitCode: d.installExit, stdout: "", stderr: d.installStderr, timedOut: d.installTimedOut };
+      if (command.includes("/tmp/dorks-scan")) return { exitCode: 0, stdout: d.scanHits, stderr: "", timedOut: false };
       return { exitCode: 0, stdout: "", stderr: "", timedOut: false };
     },
     async saveSnapshot(id, name) {
@@ -135,6 +145,23 @@ export function fakeSnapshotDriver(): FakeSnapshotDriver {
       d.calls.push("delete");
       if (d.deleteFails) throw new Error("delete down");
       d.boxes.delete(id);
+    },
+    async runDetached(_id, command) {
+      d.calls.push("runDetached");
+      d.commands.push(command);
+      return { processId: 7, commandId: "cmd_1" };
+    },
+    async attach(_id, _pid, offsets, onOutput) {
+      d.calls.push("attach");
+      if (d.setupOutput) onOutput("stdout", d.setupOutput);
+      return { t: "exit", exitCode: d.setupExit, offsets };
+    },
+    async killCommand(_id, pid) {
+      d.killed.push(pid);
+    },
+    async deleteSnapshot(name) {
+      d.deletedSnapshots.push(name);
+      d.saved.delete(name);
     },
   };
   return d;

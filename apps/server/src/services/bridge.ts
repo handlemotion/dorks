@@ -7,6 +7,7 @@ import { append, bridgeSeen, dispatch, enqueueConfigure, finishPause, patchDork 
 import { opFailed } from "../lifecycle/lifecycle";
 import { rememberModelChoices } from "./models";
 import { claudeToken, cliSecrets, githubToken } from "./settings";
+import { buildVarValues, getBuild } from "./builds";
 import * as subs from "./subscriptions";
 import { randomBytes } from "node:crypto";
 
@@ -372,15 +373,17 @@ export async function configure(app: App, dorkId: string): Promise<ToBridge | nu
     const gh = (await githubToken(app)) ?? (sim ? "sim-github-token" : undefined);
     if (!gh) throw new OnboardingError("GitHub token not set");
     const secrets = await cliSecrets(app);
+    // Build variables (docs/builds.md) over the shared ones; decrypted only here, for an authenticated bridge allowed to mint secrets.
+    const buildVars = dork.buildId && getBuild(app, dork.buildId) ? await buildVarValues(app, dork.buildId) : {};
     return {
       t: "configure",
       provider: dork.provider,
       ...(dork.provider === "codex" ? { codexModel: dork.codexModel } : {}),
       ...(dork.provider === "claude" && dork.model ? { model: dork.model } : {}),
       ...(dork.provider === "claude" && dork.effort ? { effort: dork.effort } : {}),
-      env: { ...secrets, ...(claude ? { CLAUDE_CODE_OAUTH_TOKEN: claude } : {}) },
+      env: { ...secrets, ...buildVars, ...(claude ? { CLAUDE_CODE_OAUTH_TOKEN: claude } : {}) },
       ghToken: gh,
-      repo: { fullName: dork.repo, branch: dork.branch },
+      repo: dork.repo ? { fullName: dork.repo, branch: dork.branch } : null,
       resumeSessionId: (dork.provider === "codex" ? dork.codexThreadId : dork.claudeSessionId) ?? null,
       ...(dork.titleSource === "message" ? nameFrom(app, dorkId) : {}),
     };

@@ -42,6 +42,8 @@ export interface DorkRow {
   /** Screenshots the agent shared (screenshot_share), oldest first. */
   images?: SharedImage[];
   prUrl?: string;
+  /** The build the dork's machine starts from (docs/builds.md); undefined: the base snapshot. */
+  buildId?: string;
   deleting: boolean;
   lastActivityAt: number;
   createdAt: number;
@@ -86,7 +88,7 @@ export const dorkOf = (r: Row): DorkRow => ({
   codexModel: json(r.codex_model), codexModelChoices: json(r.codex_model_choices),
   model: u(r.model as string | null), effort: u(r.effort as string | null), agentModel: u(r.agent_model as string | null),
   agentEffort: u(r.agent_effort as string | null), modelChoices: json(r.model_choices),
-  preview: u(r.preview as string | null), previews: json(r.previews), images: json(r.images), prUrl: u(r.pr_url as string | null), deleting: bool(r.deleting),
+  preview: u(r.preview as string | null), previews: json(r.previews), images: json(r.images), prUrl: u(r.pr_url as string | null), buildId: u(r.build_id as string | null), deleting: bool(r.deleting),
   lastActivityAt: r.last_activity_at as number, createdAt: r.created_at as number,
 });
 
@@ -118,7 +120,7 @@ export const openCommands = (db: Db, dorkId: string): CommandRow[] =>
 export const dorkView = (d: DorkRow) => ({
   id: d.id, title: d.title, repo: d.repo, branch: d.branch, provider: d.provider, state: d.state, archived: d.archived,
   preview: d.preview, previews: d.previews ?? [], images: d.images ?? [], prUrl: d.prUrl, codexModel: d.codexModel, codexModelChoices: d.codexModelChoices,
-  model: d.model, effort: d.effort, agentModel: d.agentModel, agentEffort: d.agentEffort, modelChoices: d.modelChoices,
+  model: d.model, effort: d.effort, agentModel: d.agentModel, agentEffort: d.agentEffort, modelChoices: d.modelChoices, buildId: d.buildId ?? null,
   lastActivityAt: d.lastActivityAt, createdAt: d.createdAt,
 });
 export type DorkView = ReturnType<typeof dorkView>;

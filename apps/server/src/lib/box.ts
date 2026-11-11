@@ -37,6 +37,9 @@ export async function getSnapshotDriver(app: App): Promise<SnapshotDriver> {
 
 // Module-level, because drivers are created per call and the simulated provider's "remote" state has to outlive them.
 const simSaved = new Map<string, { sourceSandboxId: string }>();
+const simFiles = new Map<string, string>(); // `${sandbox}\0${path}` -> content
+const simProcs = new Map<number, { sandbox: string; command: string }>();
+let simPid = 0;
 function simSnapshotDriver(stepMs: number): SnapshotDriver {
   const pause = () => (stepMs > 0 ? new Promise<void>((r) => setTimeout(r, stepMs)) : Promise.resolve());
   const boxes = new Set<string>();
@@ -52,7 +55,8 @@ function simSnapshotDriver(stepMs: number): SnapshotDriver {
     async waitReady() {
       await pause();
     },
-    async writeFile() {
+    async writeFile(id, path, content, encoding) {
+      simFiles.set(`${id}\0${path}`, encoding === "base64" ? Buffer.from(content, "base64").toString("utf8") : content);
       await pause();
     },
     async run() {
@@ -69,6 +73,35 @@ function simSnapshotDriver(stepMs: number): SnapshotDriver {
     },
     async deleteSandbox(id) {
       boxes.delete(id);
+      for (const k of [...simFiles.keys()]) if (k.startsWith(`${id}\0`)) simFiles.delete(k);
+    },
+    async runDetached(id, command) {
+      simPid += 1;
+      simProcs.set(simPid, { sandbox: id, command });
+      return { processId: simPid, commandId: `sim-cmd-${simPid}` };
+    },
+    // "Runs" the uploaded setup scripts by echoing their lines; a line that is `false` or `exit <n>` fails the run, so failures can be tried.
+    async attach(id, processId, _offsets, onOutput) {
+      const proc = simProcs.get(processId);
+      const scripts = [...simFiles.entries()].filter(([k]) => k.startsWith(`${id}\0`) && k.endsWith(".sh")).map(([, v]) => v);
+      for (const line of scripts.join("\n").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#"))) {
+        await pause();
+        onOutput("stdout", `+ ${line}\n`);
+        const failed = line === "false" ? 1 : /^exit\s+(\d+)$/.exec(line) ? Number(/^exit\s+(\d+)$/.exec(line)![1]) : 0;
+        if (failed) {
+          onOutput("stderr", `simulated failure at: ${line}\n`);
+          return { t: "exit", exitCode: failed, offsets: { stdout: 0, stderr: 0 } };
+        }
+      }
+      if (!proc) return { t: "exit", exitCode: 1, offsets: { stdout: 0, stderr: 0 } };
+      onOutput("stdout", "simulated setup finished\n");
+      return { t: "exit", exitCode: 0, offsets: { stdout: 0, stderr: 0 } };
+    },
+    async killCommand(_id, processId) {
+      simProcs.delete(processId);
+    },
+    async deleteSnapshot(name) {
+      simSaved.delete(name);
     },
   };
 }
