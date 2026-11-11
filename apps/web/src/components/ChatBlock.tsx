@@ -108,10 +108,12 @@ function agentContent(blocks: AgentBlock[]): ReactNode[] {
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
     if (block.kind === 'tool') {
-      // One tool call, one step.
+      // Tool calls in a row are one group (one AI Elements Trace); progress text between them is what splits groups.
+      const tools: ToolBlock[] = [block]
+      while (blocks[i + 1]?.kind === 'tool') tools.push(blocks[++i] as ToolBlock)
       content.push(
-        <Trace key={block.id} data-testid="tool-steps">
-          <ToolRow block={block} />
+        <Trace key={tools[0].id} data-testid="tool-steps">
+          {tools.map((tool) => <ToolRow key={tool.id} block={tool} />)}
         </Trace>,
       )
     } else if (block.kind === 'assistant') {
@@ -161,8 +163,8 @@ export function workedFor(ms: number): string {
 }
 
 /**
- * A turn's work as one flat sequence: progress text, tool calls, notices. Nothing nests inside a parent step, and nothing divides
- * the steps: spacing does. The turn's checkpoint above is its only line.
+ * A turn's work as one flat sequence: progress text, then the tool calls that followed it as one group, and so on, plus notices.
+ * Nothing nests inside a parent step, and nothing divides the steps: spacing does. The turn's checkpoint above is its only line.
  */
 function WorkHistory({ blocks, dimmed, id }: { blocks: AgentBlock[]; dimmed?: boolean; id?: string }) {
   return (
