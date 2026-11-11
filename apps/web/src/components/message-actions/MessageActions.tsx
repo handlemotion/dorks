@@ -192,7 +192,8 @@ export function MessageActions({
 
 /**
  * A message with its toolbar and time: hidden until the pointer is over the message or focus is in it, then the toolbar at its
- * top-right corner, half above it, and the time left of its first line. The message's scroller item paints with
+ * top-right corner, half above it, and the time left of its first line, centered in the 40px gutter: the transcript is inset 20px
+ * more than the composer, so the time's center falls on the composer's left edge. The message's scroller item paints with
  * `content-visibility: auto`, which clips what is pulled outside it, so the items keep room above and left of it (see ChatBlock).
  */
 export function HoverActions({
@@ -214,7 +215,7 @@ export function HoverActions({
       {sentAt && (
         <span
           className={cn(
-            "absolute top-0 right-full mr-2 flex h-[1lh] items-center opacity-0 transition-opacity duration-150 ease-out group-focus-within/msg:opacity-100 group-hover/msg:opacity-100 motion-reduce:transition-none",
+            "absolute top-0 right-full flex h-[1lh] w-10 items-center justify-center opacity-0 transition-opacity duration-150 ease-out group-focus-within/msg:opacity-100 group-hover/msg:opacity-100 motion-reduce:transition-none",
             timeClassName,
           )}
         >
