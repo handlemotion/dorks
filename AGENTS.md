@@ -33,7 +33,18 @@ BRIDGE_IMPL=real CLAUDE_BIN="$(command -v claude)" CLAUDE_RUN_AS=dorkrun DORKS_E
   DORKS_DATA_DIR=<temp dir> DORKS_UI_PORT=0 DORKS_BRIDGE_PORT=0 node scripts/dev.mjs --only server
 ```
 
-Save the token as above, then drive it with `POST /api/dorks` and `GET /api/dorks/:id/events` ([docs/architecture.md](docs/architecture.md)). What a cloud session cannot test: real Boat sandboxes. The Boat key works from the container, but a Boat box has to dial back to the bridge through a public `DORKS_PUBLIC_URL`, and the container has no inbound tunnel.
+Save the token as above, then drive it with `POST /api/dorks` and `GET /api/dorks/:id/events` ([docs/architecture.md](docs/architecture.md)).
+
+Real Boat sandboxes from a cloud session (verified): a Boat box dials back to the bridge, so give the bridge port a public URL with a [Wurmhol](https://wurmhol.com/docs) pipe, the same way the desktop shell does ([docs/desktop.md](docs/desktop.md), "Tunnel: wurmhol"). The environment has `WURMHOL_TOKEN`; the pipe needs only an outbound WebSocket through the proxy.
+
+```sh
+KEY=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')   # pipe access key; keep it out of the transcript
+WURMHOL_ACCESS_KEY=$KEY npx -y wurmhol 4748 --json --name dorks-cloud-<random>   # prints {"url": ...} and returns
+DORKS_PUBLIC_URL=<that url> DORKS_TUNNEL_KEY=$KEY DORKS_BRIDGE_PORT=4748 DORKS_UI_PORT=0 \
+  DORKS_OWNER_TOKEN=dev-owner-token DORKS_DATA_DIR=<temp dir> bun run apps/server/src/main.ts
+```
+
+Then `PUT /api/settings` with `boatKey`, `boatOrg`, `claudeToken` and `githubToken` from Doppler (one piped JSON body, as above). Saving the Boat key builds the base snapshot on Boat (about a minute); poll `GET /api/snapshot` until `ready`, then create a dork on a real repo. This spends Boat credit: `DELETE /api/dorks/:id` when done (it destroys the box), and `npx wurmhol stop 4748`.
 
 ## Testing
 
