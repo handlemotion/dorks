@@ -31,9 +31,11 @@ function MarkdownCodeBlock({
   const lines = useHighlightedCode(code, language)
 
   // The ring is inset: the markdown container clips overflow, which cut an outer ring to its top edge. No line numbers, as in the
-  // published Markdown example, so the code starts on the title's edge.
+  // published Markdown example, so the code starts on the title's edge. Its own 16px above and below: the container's space-y-4
+  // only spaces top-level blocks, so a fence inside a list item sat flush against the text around it (the margins collapse with
+  // space-y-4 at the top level, and the container's first/last-child rules still zero them at its edges).
   return (
-    <CodeBlock className="ring-inset">
+    <CodeBlock className="my-4 ring-inset">
       <CodeBlockHeader>
         <CodeBlockTitle>{language || "text"}</CodeBlockTitle>
         <CodeBlockActions>
