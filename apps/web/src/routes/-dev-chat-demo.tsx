@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Block } from '@dorks/shared'
+import type { Usage } from '@dorks/client'
 import { Button } from '@dorks/ui/button'
 import {
   MessageScroller,
@@ -10,16 +11,24 @@ import {
 } from '@dorks/ui/message-scroller'
 import { FrameLayout } from '../components/AppFrame'
 import { AppSidebarView } from '../components/AppSidebar'
+import { UsageBarView } from '../components/UsageBar'
 import { AgentStatus } from '../components/AgentStatus'
 import { ChatMessages } from '../components/ChatBlock'
 import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, type ChatDetailsData } from '../components/ChatDetails'
 import { Composer, type AgentProvider } from '../components/ChatComposer'
 import { ChatMenu } from '../components/ChatMenu'
 import { ArchiveButton, PageHeader } from '../components/PageHeader'
+import { withReply, type Reply } from '../lib/reply'
 
 /** A mock screenshot as an SVG data URL (parentheses escaped so it can sit inside markdown image syntax). */
 const mockShot = (tint: string, line: string) =>
   `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000"><rect width="1600" height="1000" fill="${tint}"/><rect x="400" y="300" width="800" height="440" rx="40" fill="#fff"/><rect x="480" y="380" width="400" height="40" rx="20" fill="${line}"/><rect x="480" y="480" width="640" height="40" rx="20" fill="#e4e4e7"/></svg>`).replace(/\(/g, '%28').replace(/\)/g, '%29')}`
+
+/** Static usage for the sidebar, so the demo needs no live client. */
+const demoUsage: Usage = {
+  claude: { session: { used: 0.42, resetsAt: Date.now() + 2 * 3_600_000 }, weekly: { used: 0.18, resetsAt: Date.now() + 4 * 86_400_000 } },
+  cloud: { usedHours: 12.5, includedHours: 50, periodEnd: Date.now() + 19 * 86_400_000 },
+}
 
 const initialBlocks: Block[] = [
   { kind: 'user', id: 'u1', text: `Fix the flaky bridge reconnect after the box wakes. Check the current tests too.\n\n![Reconnect error in the app](${mockShot('#fde2e2', '#f2a1a1')})` },
@@ -138,11 +147,13 @@ export function Demo() {
   const [repo, setRepo] = useState('acme/demo')
   const [provider, setProvider] = useState<AgentProvider>('claude')
   const [detailsOpen, setDetailsOpen] = useDetailsOpen()
-  const send = () => {
+  const [reply, setReply] = useState<Reply>()
+  const send = (message = withReply(reply, text)) => {
     const id = crypto.randomUUID()
+    setReply(undefined)
     setBlocks((current) => [
       ...current,
-      { kind: 'user', id, text },
+      { kind: 'user', id, text: message },
       { kind: 'notice', id: `${id}-notice`, level: 'info', text: 'Preview only. No agent is connected.' },
     ])
     setText('')
@@ -154,7 +165,7 @@ export function Demo() {
   }
 
   return (
-    <FrameLayout sidebar={<AppSidebarView chats={chats.map((c) => (c.id === 'preview' ? { ...c, working: !stopped } : c))} chatTo="/dev/chat" orderKey="dorks.demo.chat-preview" />}>
+    <FrameLayout sidebar={<AppSidebarView chats={chats.map((c) => (c.id === 'preview' ? { ...c, working: !stopped } : c))} chatTo="/dev/chat" orderKey="dorks.demo.chat-preview" usage={<UsageBarView usage={demoUsage} />} />}>
       <ChatSplit details={detailsOpen && !showNew ? <ChatDetails data={details} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} onAsk={setText} /> : undefined}>
       <div className="flex min-w-0 flex-1 flex-col">
         <PageHeader divider={showNew}
@@ -172,7 +183,7 @@ export function Demo() {
               <p className="text-sm text-muted-foreground">Choose a repository and agent, then describe the change you want.</p>
             </div>
             <div className="-mx-4">
-              <Composer text={text} setText={setText} repo={repo} setRepo={setRepo} provider={provider} setProvider={setProvider} onSubmit={send} pending={false} error="" />
+              <Composer text={text} setText={setText} repo={repo} setRepo={setRepo} provider={provider} setProvider={setProvider} onSubmit={() => send()} pending={false} error="" />
             </div>
           </div>
         ) : (
@@ -181,14 +192,14 @@ export function Demo() {
               <MessageScroller>
                 <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
                   <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-[30px] pt-6 pb-12" data-testid="transcript">
-                    <ChatMessages blocks={blocks} />
+                    <ChatMessages blocks={blocks} agent="Claude" onReply={(quoted, draft) => { setReply(quoted); if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft)) }} onReplySend={(quoted, answer) => send(withReply(quoted, answer))} />
                     <div><AgentStatus state={stopped ? 'idle' : 'working'} live="live" /></div>
                   </MessageScrollerContent>
                 </MessageScrollerViewport>
                 <MessageScrollerButton />
               </MessageScroller>
             </MessageScrollerProvider>
-            <Composer text={text} setText={setText} repo={repo} provider="claude" onSubmit={send} pending={false} error="" onStop={stopped ? undefined : stop} />
+            <Composer text={text} setText={setText} repo={repo} provider="claude" onSubmit={() => send()} reply={reply} onClearReply={() => setReply(undefined)} pending={false} error="" onStop={stopped ? undefined : stop} />
           </section>
         )}
       </div>

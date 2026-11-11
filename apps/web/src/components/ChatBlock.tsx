@@ -1,11 +1,15 @@
-import { useId, useState, type ReactNode } from 'react'
-import { CircleAlertIcon, CircleCheckIcon, CircleStopIcon, TerminalIcon, WrenchIcon } from 'lucide-react'
+import { useId, useMemo, useState, type ReactNode } from 'react'
+import { CircleAlertIcon, CircleCheckIcon, CircleStopIcon, ReplyIcon, TerminalIcon, WrenchIcon } from 'lucide-react'
 import type { Block } from '@dorks/shared'
 import { Bubble, BubbleContent } from '@dorks/ui/bubble'
 import { Marker, MarkerContent } from '@dorks/ui/marker'
 import { CodeBlock, CodeBlockContent } from '@dorks/ui/code-block'
 import { defaultRehypePlugins, defaultUrlTransform, Markdown, markdownComponents } from '@dorks/ui/markdown'
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@dorks/ui/context-menu'
+import { DropdownMenuItem } from '@dorks/ui/dropdown-menu'
 import { MessageActions } from './message-actions/MessageActions'
+import { REPLY_SOURCE, ReplyContext, ReplyQuote, SelectionReply, useReply, type ReplyHandlers } from './Reply'
+import { parseReply, quoteText } from '../lib/reply'
 import { ImageLightbox, ImageTrigger, useLightboxImages, type LightboxImage } from './ImageLightbox'
 import { Message, MessageContent } from '@dorks/ui/message'
 import { MessageScrollerItem } from '@dorks/ui/message-scroller'
@@ -33,7 +37,8 @@ function transcriptImages(blocks: Block[]): LightboxImage[] {
   for (const block of blocks) {
     if (block.kind !== 'user' && block.kind !== 'assistant') continue
     let n = 0
-    for (const m of block.text.matchAll(IMAGE)) images.push({ id: `${block.id}:${n++}`, src: m[2], alt: m[1] || 'Image', caption: m[1] || undefined })
+    const text = block.kind === 'user' ? parseReply(block.text).body : block.text
+    for (const m of text.matchAll(IMAGE)) images.push({ id: `${block.id}:${n++}`, src: m[2], alt: m[1] || 'Image', caption: m[1] || undefined })
   }
   return images
 }
@@ -43,16 +48,43 @@ function transcriptImages(blocks: Block[]): LightboxImage[] {
  * server, so the id becomes that server's image URL before the markdown renders.
  */
 const SHARED_IMAGE = /\(\s*dorks-image:([0-9a-f]{32})/g
-function resolveSharedImages(blocks: Block[], imageUrl?: (id: string) => string): Block[] {
-  if (!imageUrl) return blocks
-  return blocks.map((b) => ((b.kind === 'assistant' || b.kind === 'user') && b.text.includes('dorks-image:') ? { ...b, text: b.text.replace(SHARED_IMAGE, (_, id: string) => `(${imageUrl(id)}`) } : b))
+function resolveSharedImages(blocks: Block[], imageUrl?: (id: string) => string): { blocks: Block[]; refs: Map<string, string> } {
+  // Each resolved URL remembers its id, so a reply to that image can name it to the agent again.
+  const refs = new Map<string, string>()
+  if (!imageUrl) return { blocks, refs }
+  const resolve = (_: string, id: string) => {
+    const url = imageUrl(id)
+    refs.set(url, `dorks-image:${id}`)
+    return `(${url}`
+  }
+  return { blocks: blocks.map((b) => ((b.kind === 'assistant' || b.kind === 'user') && b.text.includes('dorks-image:') ? { ...b, text: b.text.replace(SHARED_IMAGE, resolve) } : b)), refs }
 }
 
 /**
  * An image in a message: a thumbnail that opens the transcript's lightbox on it (or a plain image if it is not in the list). In the
  * agent's messages (`large`) it is big enough to read a screenshot without opening it: up to 360px tall, never wider than the column.
  */
-function ChatImage({ src, alt, large }: { src?: string | Blob; alt?: string; large?: boolean }) {
+function ChatImage(props: { src?: string | Blob; alt?: string; large?: boolean }) {
+  const { onReply, refOf } = useReply()
+  const { src, alt } = props
+  if (!onReply || typeof src !== 'string') return <ChatImageView {...props} />
+  // A right click offers Reply, which puts the image in the composer's banner (and, by its id, in front of the agent).
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger render={<span className="inline-block max-w-full align-top" />}>
+        <ChatImageView {...props} />
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <DropdownMenuItem onClick={() => onReply({ kind: 'image', src, alt: alt || 'Image', ref: src.startsWith('dorks-image:') ? src : refOf?.(src) })}>
+          <ReplyIcon />
+          Reply
+        </DropdownMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  )
+}
+
+function ChatImageView({ src, alt, large }: { src?: string | Blob; alt?: string; large?: boolean }) {
   const images = useLightboxImages()
   // A hairline drawn inside the edge, so a white screenshot never melts into the page; the layout does not move.
   const size = `${large ? 'max-h-90 max-w-full h-auto w-auto' : 'h-36 w-auto'} outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10`
@@ -282,6 +314,7 @@ function TurnCheckpoint({ label, open, onToggle, controls }: { label: string; op
  */
 function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock }) {
   const [userOpen, setUserOpen] = useState<boolean>()
+  const { onReply } = useReply()
   const historyId = useId()
   // Turns stored before the server named final answers render as they always did.
   if (end && end.outcome === null) return <>{agentContent(blocks)}</>
@@ -305,7 +338,7 @@ function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock })
       {agentContent(blocks.filter((b) => !isWork(b)))}
       {/* The final answer's actions: rate, copy, react, reply, 16px under the text (the transcript's 12px gap plus `mt-1`). The buttons' edge sits on the
           text's edge: the message item paints with `content-visibility: auto`, which clips anything pulled outside it. */}
-      {final && <div className="mt-1"><MessageActions text={final.text} sentAt={new Date(end.at)} /></div>}
+      {final && <div className="mt-1"><MessageActions text={final.text} sentAt={new Date(end.at)} onReply={onReply && (() => onReply({ kind: 'text', text: quoteText(final.text.replace(IMAGE, '')) }))} /></div>}
       {end.outcome === 'stopped' && (
         <Trace role="status" data-testid="turn-stopped">
           <TraceLine>
@@ -318,18 +351,33 @@ function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock })
   )
 }
 
-export function ChatMessages({ blocks: raw, imageUrl }: { blocks: Block[]; /** Resolves a shared screenshot's id to its URL. */ imageUrl?: (id: string) => string }) {
-  const blocks = resolveSharedImages(raw, imageUrl)
+/**
+ * The transcript. With `onReply` the agent's words can be replied to: select a passage (a small box on it starts the answer), right
+ * click an image or use a final answer's Reply. Each becomes a banner in the composer (a selection's box can also send with ⌘ Enter). A sent reply shows its quote above the bubble.
+ */
+export function ChatMessages({ blocks: raw, imageUrl, onReply, onReplySend, agent }: {
+  blocks: Block[]
+  /** Resolves a shared screenshot's id to its URL. */
+  imageUrl?: (id: string) => string
+  onReply?: ReplyHandlers['onReply']
+  onReplySend?: ReplyHandlers['onSend']
+  /** The agent's name, for "Reply to Claude". */
+  agent?: string
+}) {
+  const { blocks, refs } = resolveSharedImages(raw, imageUrl)
   const images = transcriptImages(blocks)
+  const reply = useMemo<ReplyHandlers>(() => ({ onReply, onSend: onReplySend, agent, refOf: (src) => refs.get(src) }), [onReply, onReplySend, agent, refs])
   const messages = entries(blocks).map((entry) => {
     if (entry.kind === 'user') {
-      const text = entry.block.text.replace(IMAGE, '').trim()
+      const { reply: quoted, body } = parseReply(entry.block.text)
+      const text = body.replace(IMAGE, '').trim()
       const own = images.filter((i) => i.id.startsWith(`${entry.block.id}:`))
       return (
         // A user message gets 12px more air on each side than the transcript's 24px gap, so turns read apart from the agent's work.
         <MessageScrollerItem key={entry.block.id} messageId={entry.block.id} scrollAnchor className="py-3">
           <Message align="end">
             <MessageContent className="items-end">
+              {quoted && <ReplyQuote reply={quoted.kind === 'image' && quoted.ref ? { ...quoted, src: resolveRef(quoted.ref, imageUrl) } : quoted} />}
               {own.length > 0 && (
                 <div className="flex flex-wrap justify-end gap-2">
                   {own.map((image) => <ChatImage key={image.id} src={image.src} alt={image.alt} />)}
@@ -348,7 +396,7 @@ export function ChatMessages({ blocks: raw, imageUrl }: { blocks: Block[]; /** R
     }
     return (
       <MessageScrollerItem key={entry.id} messageId={entry.id}>
-        <Message>
+        <Message {...{ [REPLY_SOURCE]: '' }}>
           <MessageContent className="gap-3">
             {turns(entry.blocks).map((turn, i) => <TurnContent key={`${entry.id}:${i}`} blocks={turn.blocks} end={turn.end} />)}
           </MessageContent>
@@ -356,5 +404,16 @@ export function ChatMessages({ blocks: raw, imageUrl }: { blocks: Block[]; /** R
       </MessageScrollerItem>
     )
   })
-  return images.length > 0 ? <ImageLightbox images={images} label="Images in this chat">{messages}</ImageLightbox> : messages
+  return (
+    <ReplyContext.Provider value={reply}>
+      {images.length > 0 ? <ImageLightbox images={images} label="Images in this chat">{messages}</ImageLightbox> : messages}
+      <SelectionReply />
+    </ReplyContext.Provider>
+  )
+}
+
+/** A quoted image's `dorks-image:<id>` as the URL that shows it. */
+function resolveRef(ref: string, imageUrl?: (id: string) => string) {
+  const id = /^dorks-image:([0-9a-f]{32})$/.exec(ref)?.[1]
+  return id && imageUrl ? imageUrl(id) : ref
 }

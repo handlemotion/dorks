@@ -17,6 +17,10 @@ import {
 } from "#lib/menu-fluid-hover";
 import { ChevronRightIcon, CheckIcon } from "lucide-react";
 
+/** The menu popup: a hairline and the app's one soft shadow. Shared with the context menu so there is still only one. */
+export const MENU_POPUP_CLASS =
+  "relative z-50 flex max-h-(--available-height) min-w-40 flex-col gap-0.5 overflow-x-hidden overflow-y-auto rounded-[10px] border border-border bg-popover p-1 text-popover-foreground shadow-[0_1px_2px_-1px_rgb(0_0_0/0.04),0_6px_10px_-6px_rgb(0_0_0/0.07)] outline-none";
+
 function DropdownMenu({ ...props }: MenuPrimitive.Root.Props) {
   return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
 }
@@ -66,7 +70,7 @@ function DropdownMenuContent({
             event.stopPropagation();
           }}
           className={cn(
-            "relative z-50 flex max-h-(--available-height) w-(--anchor-width) min-w-40 flex-col gap-0.5 overflow-x-hidden overflow-y-auto rounded-[10px] border border-border bg-popover p-1 text-popover-foreground shadow-[0_1px_2px_-1px_rgb(0_0_0/0.04),0_6px_10px_-6px_rgb(0_0_0/0.07)] outline-none",
+            MENU_POPUP_CLASS, "w-(--anchor-width)",
             className,
           )}
           {...props}

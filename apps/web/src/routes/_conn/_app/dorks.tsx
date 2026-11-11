@@ -34,6 +34,7 @@ import { ArchiveButton, PageHeader } from '../../../components/PageHeader'
 import { SetupStatus } from '../../../components/SetupStatus'
 import { canCreate, onboarded } from '../../../lib/onboarding'
 import { usePending } from '../../../lib/pending'
+import { withReply, type Reply } from '../../../lib/reply'
 
 // The selected dork lives in the `dork` search param (not local state) so the sidebar can highlight it and the URL is shareable.
 export const Route = createFileRoute('/_conn/_app/dorks')({
@@ -155,6 +156,7 @@ function Thread({ dorkId }: { dorkId: string }) {
   const dork = useDork(dorkId)
   const { view, canLoadMore, loadMore, loading, error: eventsError, send } = useDorkEvents(dorkId)
   const [text, setText] = useState('')
+  const [reply, setReply] = useState<Reply>()
   const [selectedModel, setSelectedModel] = useState('')
   const { run, pending, error } = usePending()
   const { run: runStop, pending: stopping, error: stopError } = usePending()
@@ -222,7 +224,13 @@ function Thread({ dorkId }: { dorkId: string }) {
           <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
             <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-[30px] pt-6 pb-12" data-testid="transcript">
               {canLoadMore && <div className="text-center"><Button variant="outline" size="sm" onClick={loadMore}>Load older</Button></div>}
-              <ChatMessages blocks={view.blocks} imageUrl={actions.imageUrl} />
+              <ChatMessages
+                blocks={view.blocks}
+                imageUrl={actions.imageUrl}
+                agent={dork.provider === 'codex' ? 'Codex' : 'Claude'}
+                onReply={dork.archived ? undefined : (quoted, draft) => { setReply(quoted); if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft)) }}
+                onReplySend={dork.archived ? undefined : (quoted, answer) => run(() => send(withReply(quoted, answer)))}
+              />
               {eventsError && <p role="alert" className="text-sm text-destructive">Could not load messages: {eventsError.message}. Retrying…</p>}
               <div><AgentStatus state={dork.state} live={live} outcome={view.lastOutcome} /></div>
             </MessageScrollerContent>
@@ -242,10 +250,15 @@ function Thread({ dorkId }: { dorkId: string }) {
           onChange: (model, effort) => void modelSwitch.run(() => actions.chooseModel(dorkId, model ?? null, effort ?? null)),
         } : undefined}
         upload={actions.uploadImage}
+        reply={reply}
+        onClearReply={() => setReply(undefined)}
         onSubmit={(images) => run(async () => {
           const sent = text
-          setText('') // the optimistic row shows it at once; put it back if the server refuses
-          try { await send(withImages(sent, images)) } catch (e) { setText(sent); throw e }
+          const quoted = reply
+          // The optimistic row shows it at once; put the text and the reply back if the server refuses.
+          setText('')
+          setReply(undefined)
+          try { await send(withReply(quoted, withImages(sent, images))) } catch (e) { setText(sent); setReply(quoted); throw e }
         })}
         onStop={working && !stopping && !dork.archived ? () => void runStop(() => actions.interrupt(dorkId)) : undefined}
       />

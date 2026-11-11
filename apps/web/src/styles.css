@@ -180,3 +180,8 @@
     animation: status-shape 6s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
   }
 }
+
+/* The passage being replied to stays marked while its reply box has focus (components/Reply.tsx). */
+::highlight(dorks-reply) {
+  background-color: color-mix(in oklab, var(--brand) 22%, transparent);
+}
