@@ -209,7 +209,7 @@ export function Composer({
   const efforts: string[] = selected?.efforts ?? []
   return (
     // The prompt input is published with an 18px group and pill buttons; the app's 6px radius is lifted for it alone.
-    <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-4 px-5 pb-3 [--control-radius:18px]">
+    <div className="mx-auto flex w-full max-w-4xl shrink-0 flex-col gap-4 px-5 pb-3 [--control-radius:18px]">
       {status}
       <form
         ref={formRef}

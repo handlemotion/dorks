@@ -293,7 +293,14 @@ export class Bridge {
     } catch {
       this.log("could not fsync the session transcript");
     }
-    await new Promise<void>((r) => execFile("sync", () => r())); // whole-fs flush; best effort (missing binary is fine)
+    // Whole-fs flush, best effort (a missing binary is fine). It can take seconds on a box with many dirty pages, so the wait is
+    // bounded: the transcript above is already fsynced, and a flush must not hang on unrelated writes.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      new Promise<void>((r) => execFile("sync", () => r())),
+      new Promise<void>((r) => (timer = setTimeout(r, this.cfg.flushSyncWaitMs))),
+    ]);
+    clearTimeout(timer);
   }
 
   // ------------------------------------------------------------------ configure
