@@ -6,25 +6,11 @@ import { Alert, AlertDescription } from '@dorks/ui/alert'
 import { Button } from '@dorks/ui/button'
 import { BoatForm, ClaudeForm, CliSecrets, CodexForm, CommentPolicyForm, GithubForm, PublicUrlForm, SleepMinutes, SnapshotForm } from '../../../components/SettingsForms'
 import { PageHeader } from '../../../components/PageHeader'
+import { Group } from '../../../components/SettingsGroup'
 import { isDesktop } from '../../../lib/desktop'
 import { STEPS, stepDone } from '../../../lib/onboarding'
 
 export const Route = createFileRoute('/_conn/_app/settings')({ component: Settings })
-
-/**
- * One settings group: a heading (an h2 inside a section, which the e2e and screen readers rely on) and its form, flat on the app fill.
- * Groups are split by full-width dividers, not cards.
- */
-function Group({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="border-b last:border-b-0">
-      <div className="mx-auto grid w-full max-w-3xl gap-4 px-6 py-6 md:grid-cols-[12rem_1fr]">
-        <h2 className="text-sm font-medium">{title}</h2>
-        <div className="settings-group min-w-0">{children}</div>
-      </div>
-    </section>
-  )
-}
 
 function Check({ id, done, children }: { id: string; done: boolean; children: ReactNode }) {
   return (
@@ -65,7 +51,7 @@ function Settings() {
           {isDesktop() && <Group title="Public URL"><PublicUrlForm settings={settings} /></Group>}
           <Group title="PR comments"><CommentPolicyForm settings={settings} /></Group>
           <Group title="ChatGPT for Codex (optional)"><CodexForm settings={settings} /></Group>
-          <Group title="CLI secrets"><CliSecrets /></Group>
+          <Group title="Shared variables"><CliSecrets /></Group>
           <Group title="Sleep after idle"><SleepMinutes current={settings.sleepMinutes} /></Group>
         </div>
       </div>

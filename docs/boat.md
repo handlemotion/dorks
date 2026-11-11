@@ -45,6 +45,14 @@ Wait until the snapshot reports `ready`, and check that the build sandbox holds 
 
 **Share codes.** Boat can [share a saved snapshot](https://docs.boat.dev/snapshots/templates#share-a-saved-snapshot-with-another-account) with another account through a `bsh_` code, and `baseSnapshotId` accepts one. Dorks does not ship one: your agent tokens and every sandbox you create would run inside an image someone else built, so build your own.
 
+## Builds
+
+A [build](builds.md) is a named machine setup on top of the base snapshot: its own saved snapshot (`dorks-b-<install>-<build>`), made by
+running the build's setup script in a sandbox created `from` the base, at the build's size (`small`, `default`, `large`, `xlarge`). Each
+build adds one saved snapshot to the account (the same pricing as the base snapshot above) plus the minutes its runs take. Dorks on a
+build start from its image at its size. Building needs no new key action: runs use `sandbox.create`, `exec`, `file.write`, `snapshot.write`
+and `sandbox.delete`, like the base snapshot.
+
 ## Signing in an agent
 
 **Claude.** Run `claude setup-token`, paste the value in Settings (`claudeToken`). The server stores it encrypted and returns it only to a dork's authenticated bridge socket, which hands it to the Claude process as `CLAUDE_CODE_OAUTH_TOKEN` without writing it to disk. Claude sandboxes are created with `noEnv: true`, so Boat injects nothing.
@@ -68,7 +76,7 @@ Every Boat sandbox, ours included, has a Linux desktop with Chrome, Boat's `comp
 
 ## Lifecycle
 
-- **Create** uses the snapshot with `from`, a per-installation label (a hash of this install's id and the dork id, so two Dorks installs on one Boat account never adopt each other's sandboxes), the bridge variables and `ttlSeconds: null`. A generation-scoped idempotency key protects retries, and an existing labeled sandbox is reused before another is made. The driver checks the sandbox has `flock` and `dorks-bridge`, then starts the bridge detached under `flock -n /tmp/dorks-bridge.lock`.
+- **Create** uses the snapshot with `from` (the dork's build image, else the base snapshot; and the build's `type`), a per-installation label (a hash of this install's id and the dork id, so two Dorks installs on one Boat account never adopt each other's sandboxes), the bridge variables and `ttlSeconds: null`. A generation-scoped idempotency key protects retries, and an existing labeled sandbox is reused before another is made. The driver checks the sandbox has `flock` and `dorks-bridge`, then starts the bridge detached under `flock -n /tmp/dorks-bridge.lock`.
 - **Pause** is Boat `stop`; the driver waits for `archived` so the disk is saved before the dork is marked asleep. **Resume** waits for `ready`, then starts the bridge again.
 - **Delete** sends `X-Ascii-Confirm-Delete` with the exact sandbox id. A sandbox that no longer exists (deleted in Boat, or its stopped disk expired) is reported as not found, and the dork recreates it on your next message. Unpushed work and on-disk Claude session state are lost.
 - **Hosted ports**: see below.

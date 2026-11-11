@@ -258,6 +258,7 @@ export async function runBuildRun(app: App, runId: string, attempt: number): Pro
     progress(app, runId, attempt, "setup", { processId, commandId: started.commandId ?? null });
     const exitCode = await follow(app, driver, runId, attempt, sandboxId, processId, redact);
     processId = undefined;
+    app.db.tx(() => update(app.db, "build_runs", { id: runId }, { exitCode }));
     if (exitCode !== 0) {
       const log = getRun(app, runId)?.log ?? "";
       throw new RunError(`The setup failed (exit ${exitCode ?? "unknown"}).\n${tail(log)}`.trim());

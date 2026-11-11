@@ -6,6 +6,8 @@ export type Block =
   | { kind: "assistant"; id: string; text: string; streaming: boolean; final?: boolean }
   | { kind: "tool"; id: string; name: string; summary: string; status: "running" | "ok" | "error"; preview?: string }
   | { kind: "notice"; id: string; level: "info" | "error"; text: string }
+  /** The agent submitted a draft of its machine for approval (docs/builds.md). `approved` is null until the owner decides. */
+  | { kind: "build"; id: string; draftId: string; buildId: string | null; buildName: string; note?: string; approved: boolean | null; reason?: string }
   /**
    * The end of an agent turn: everything since the previous turn (or user message) belongs to it. `outcome` is null for turns stored
    * before the server stamped outcomes and final answers; render those as they always were.
@@ -81,6 +83,15 @@ export function fold(view: DorkView, e: ClientEvent): DorkView {
     case "subscription":
       notice(e.status === "stalled" ? "error" : "info", `${e.repo}#${e.number}: ${e.status}${e.reason ? ` (${e.reason})` : ""}`);
       break;
+    case "build_draft":
+      v.blocks.push({ kind: "build", id: `b${e.seq}`, draftId: e.draftId, buildId: e.buildId, buildName: e.buildName, note: e.note, approved: null });
+      break;
+    case "build_decision": {
+      const i = find((b) => b.kind === "build" && b.draftId === e.draftId);
+      if (i >= 0) v.blocks[i] = { ...(v.blocks[i] as Extract<Block, { kind: "build" }>), approved: e.approved, reason: e.reason };
+      else notice("info", `${e.approved ? "Approved" : "Rejected"} the machine draft for ${e.buildName}${e.reason ? `: ${e.reason}` : ""}`);
+      break;
+    }
     case "rate_limited":
       v.rateLimitedUntil = e.resetsAt ?? null;
       notice("error", e.resetsAt ? `Rate limited until ${new Date(e.resetsAt).toISOString()}` : "Rate limited");

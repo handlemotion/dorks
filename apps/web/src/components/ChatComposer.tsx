@@ -1,4 +1,4 @@
-import { ArrowUpIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon } from 'lucide-react'
+import { ArrowUpIcon, BoxIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon } from 'lucide-react'
 import type { AgentModelChoice } from '@dorks/shared'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import {
@@ -102,6 +102,7 @@ export function Composer({
   picker,
   agentLabel,
   upload,
+  machine,
 }: {
   text: string
   setText: (text: string) => void
@@ -128,6 +129,8 @@ export function Composer({
   agentLabel?: string
   /** Uploads an attached image, resolving with its server id. Without it nothing can be attached. */
   upload?: (file: File) => Promise<string>
+  /** The build a new session starts on (docs/builds.md); shown once there is a built one. */
+  machine?: MachinePicker
 }) {
   const formRef = useRef<HTMLFormElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -315,9 +318,10 @@ export function Composer({
           ) : (
             <span title={repo} data-testid="chat-repository" className="flex h-7 min-w-0 items-center gap-1.5 px-2 text-[13px] text-muted-foreground">
               <FolderIcon className="size-3.5 shrink-0" />
-              <span className="max-w-48 truncate">{repo}</span>
+              <span className="max-w-48 truncate">{repo || 'No repository'}</span>
             </span>
           ))}
+          {machine && machine.builds.length > 0 && <MachineMenu machine={machine} disabled={pending || disabled} />}
           <DropdownMenu>
             <DropdownMenuTrigger disabled={pending || disabled} render={<InputGroupButton size="sm" variant="ghost" aria-label={`Model: ${modelLabel}${effort ? `, effort: ${EFFORT_NAMES[effort] ?? effort}` : ''}`} className="ml-auto h-7 gap-1.5 px-2 text-[13px] text-muted-foreground hover:text-foreground" />}>
               <span data-testid="model-label">{modelLabel}</span>
@@ -400,6 +404,42 @@ export function Composer({
       </form>
       {(error || attachError) && <p className="px-3 text-sm text-destructive" role="alert">{error || attachError}</p>}
     </div>
+  )
+}
+
+export interface MachinePicker {
+  /** Builds with an image; the base machine is always offered too. */
+  builds: { id: string; name: string }[]
+  /** null: the base machine. */
+  buildId: string | null
+  onChange: (buildId: string | null) => void
+}
+
+/** Which machine a new session starts on: a build, or the base. */
+function MachineMenu({ machine, disabled }: { machine: MachinePicker; disabled?: boolean }) {
+  const BASE = '__base__'
+  const name = machine.builds.find((b) => b.id === machine.buildId)?.name ?? 'Base machine'
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger disabled={disabled} render={<InputGroupButton size="sm" variant="ghost" aria-label={`Machine: ${name}`} className="h-7 min-w-0 gap-1.5 px-2 text-[13px] text-muted-foreground hover:text-foreground" />}>
+        <BoxIcon className="size-3.5 shrink-0" />
+        <span className="max-w-40 truncate" data-testid="machine-label">{name}</span>
+        <ChevronDownIcon />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-56">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Machine</DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={machine.buildId ?? BASE} onValueChange={(v) => machine.onChange(v === BASE ? null : v)}>
+            {machine.builds.map((b) => (
+              <DropdownMenuRadioItem key={b.id} value={b.id} closeOnClick>
+                <span className="min-w-0 truncate">{b.name}</span>
+              </DropdownMenuRadioItem>
+            ))}
+            <DropdownMenuRadioItem value={BASE} closeOnClick>Base machine</DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 

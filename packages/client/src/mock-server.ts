@@ -415,6 +415,8 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       return json(res, 202, snapView());
     }
     if (path === "/api/secrets" && method === "GET") return json(res, 200, [...secrets.keys()].sort());
+    // Builds are not mocked: the list is empty, so the UI shows its empty state (use `pnpm dev` for the real flow).
+    if (path === "/api/builds" && method === "GET") return json(res, 200, []);
     const sm = /^\/api\/secrets\/([^/]+)$/.exec(path);
     if (sm) {
       const name = decodeURIComponent(sm[1]!);

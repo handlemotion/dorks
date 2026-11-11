@@ -104,7 +104,7 @@ function OwnerSwitcher({ owners, scope, setScope, onDisconnect }: { owners: stri
   )
 }
 
-/** The app's pages, under New session. Customize, Automations and Builds are previews: their pages say what will be there. */
+/** The app's pages, under New session. Customize and Automations are previews: their pages say what will be there. */
 const PAGES = [
   { to: '/customize', label: 'Customize', icon: BlocksIcon },
   { to: '/automations', label: 'Automations', icon: WorkflowIcon },
