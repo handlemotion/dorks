@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useLocation } from '@tanstack/react-router'
 import { BlocksIcon, BoxIcon, ChevronDownIcon, PlusIcon, ServerIcon, SettingsIcon, WorkflowIcon } from 'lucide-react'
 import type { DorkState } from '@dorks/shared'
@@ -41,7 +41,7 @@ export function AppSidebar() {
   const dorks = useDorks(false)
   const disconnect = useDisconnect()
   const chats: Chat[] = (dorks ?? []).map((d) => ({ id: d.id, title: d.title, repo: d.repo, working: MOVING.has(d.state), pr: prOf(d.prUrl) }))
-  return <AppSidebarView chats={chats} onDisconnect={disconnect} />
+  return <AppSidebarView chats={chats} onDisconnect={disconnect} usage={<UsageBar />} />
 }
 
 const ALL = ''
@@ -118,7 +118,8 @@ const PAGES = [
  * order; Settings at the foot. Rows are 30px, 2px apart, with one hover fill springing between them; groups are 16px apart. It sits
  * flat on the app fill in a resizable panel (see AppFrame); on phones it is shadcn's sheet.
  */
-export function AppSidebarView({ chats, onDisconnect, orderKey = 'dorks.chat-order', chatTo }: { chats: Chat[]; onDisconnect?: (() => void) | null; orderKey?: string; chatTo?: ChatRoute }) {
+/** The sidebar from props alone. `usage` is the slot above Settings: the live `<UsageBar />` in the app, static data (or nothing) in demos. */
+export function AppSidebarView({ chats, onDisconnect, orderKey = 'dorks.chat-order', chatTo, usage }: { chats: Chat[]; onDisconnect?: (() => void) | null; orderKey?: string; chatTo?: ChatRoute; usage?: ReactNode }) {
   const { isMobile } = useSidebar()
   const { pathname, search } = useLocation()
   const dork = (search as { dork?: unknown }).dork
@@ -177,7 +178,7 @@ export function AppSidebarView({ chats, onDisconnect, orderKey = 'dorks.chat-ord
             ))}
           </div>
           <div className="flex shrink-0 flex-col gap-2 pt-1.5">
-            <UsageBar />
+            {usage}
             <Link to="/settings" {...rowLink(pathname === '/settings')}>
               <SettingsIcon />
               Settings
