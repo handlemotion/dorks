@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Block } from '@dorks/shared'
+import type { Usage } from '@dorks/client'
 import { Button } from '@dorks/ui/button'
 import {
   MessageScroller,
@@ -10,6 +11,7 @@ import {
 } from '@dorks/ui/message-scroller'
 import { FrameLayout } from '../components/AppFrame'
 import { AppSidebarView } from '../components/AppSidebar'
+import { UsageBarView } from '../components/UsageBar'
 import { AgentStatus } from '../components/AgentStatus'
 import { ChatMessages } from '../components/ChatBlock'
 import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, type ChatDetailsData } from '../components/ChatDetails'
@@ -20,6 +22,12 @@ import { ArchiveButton, PageHeader } from '../components/PageHeader'
 /** A mock screenshot as an SVG data URL (parentheses escaped so it can sit inside markdown image syntax). */
 const mockShot = (tint: string, line: string) =>
   `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000"><rect width="1600" height="1000" fill="${tint}"/><rect x="400" y="300" width="800" height="440" rx="40" fill="#fff"/><rect x="480" y="380" width="400" height="40" rx="20" fill="${line}"/><rect x="480" y="480" width="640" height="40" rx="20" fill="#e4e4e7"/></svg>`).replace(/\(/g, '%28').replace(/\)/g, '%29')}`
+
+/** Static usage for the sidebar, so the demo needs no live client. */
+const demoUsage: Usage = {
+  claude: { session: { used: 0.42, resetsAt: Date.now() + 2 * 3_600_000 }, weekly: { used: 0.18, resetsAt: Date.now() + 4 * 86_400_000 } },
+  cloud: { usedHours: 12.5, includedHours: 50, periodEnd: Date.now() + 19 * 86_400_000 },
+}
 
 const initialBlocks: Block[] = [
   { kind: 'user', id: 'u1', text: `Fix the flaky bridge reconnect after the box wakes. Check the current tests too.\n\n![Reconnect error in the app](${mockShot('#fde2e2', '#f2a1a1')})` },
@@ -153,7 +161,7 @@ export function Demo() {
   }
 
   return (
-    <FrameLayout sidebar={<AppSidebarView chats={chats.map((c) => (c.id === 'preview' ? { ...c, working: !stopped } : c))} chatTo="/dev/chat" orderKey="dorks.demo.chat-preview" />}>
+    <FrameLayout sidebar={<AppSidebarView chats={chats.map((c) => (c.id === 'preview' ? { ...c, working: !stopped } : c))} chatTo="/dev/chat" orderKey="dorks.demo.chat-preview" usage={<UsageBarView usage={demoUsage} />} />}>
       <ChatSplit details={detailsOpen && !showNew ? <ChatDetails data={details} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} onAsk={setText} /> : undefined}>
       <div className="flex min-w-0 flex-1 flex-col">
         <PageHeader divider={showNew}
