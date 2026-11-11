@@ -1,5 +1,5 @@
-import { readFileSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
 /** Everything the bridge reads from its own environment. The box provides the first three; the rest are optional knobs. */
@@ -18,8 +18,10 @@ export interface Config {
   runAs: string | null;
   /** Base URL repos are cloned from: `<gitBaseUrl>/<owner>/<repo>.git`. */
   gitBaseUrl: string;
-  /** Holds the credential socket + the dedupe journal. Not secrets at rest: the token only ever lives in memory. */
+  /** Holds the dedupe journal and the files handed to Claude. Not secrets at rest: the token only ever lives in memory. */
   stateDir: string;
+  /** Where the local RPC socket lives (`stateDir` when unset). Never under a lazily restored home: see `runtimeSockDir`. */
+  sockDir?: string;
   workDir: string;
   heartbeatMs: number;
   deltaBatchMs: number;
@@ -71,6 +73,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     runAs: env.CLAUDE_RUN_AS || null,
     gitBaseUrl: (env.DORKS_GIT_BASE_URL || "https://github.com").replace(/\/+$/, ""),
     stateDir,
+    sockDir: env.DORKS_SOCK_DIR || runtimeSockDir(env),
     workDir: env.DORKS_WORKDIR || join(homedir(), "work"),
     heartbeatMs: num(env.HEARTBEAT_MS, 30_000),
     deltaBatchMs: num(env.DELTA_BATCH_MS, 150),
@@ -86,3 +89,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
  * `DORKS_REAL_GH` is the exception: it tells the gh shim (a child of the CLI) where the real gh is.
  */
 export const CHILD_ENV_DENY = [/^BRIDGE_/, /^CLAUDE_RUN_AS$/, /^DORK_ID$/, /^DORKS_(?!REAL_GH$)/, /^SIM_HOST_KEY$/, /^CLAUDE_BIN$/];
+
+/**
+ * A directory for the RPC socket that is not under the home directory. A Boat sandbox restored from a snapshot serves `/home/user`
+ * lazily through FUSE and, once it is hydrated (about a minute after boot), swaps the real directory in. Files written by path
+ * survive the swap, but a socket bound before it does not: the path then names a copied, dead socket file and every connect is
+ * refused, so git, `gh`, `dorks` and the hooks lose the bridge. `/run` (tmpfs) is outside the lazy mount; `/tmp` is the fallback.
+ */
+export function runtimeSockDir(env: NodeJS.ProcessEnv = process.env): string {
+  const uid = process.getuid?.() ?? -1;
+  // One dir per dork: several bridges under one user (the local simulator with the real bridge) must not share a socket.
+  const name = `dorks-bridge-${(env.DORK_ID ?? "").replace(/[^A-Za-z0-9-]/g, "").slice(0, 36) || "default"}`;
+  if (uid === 0) return join("/run", name);
+  if (env.XDG_RUNTIME_DIR && existsSync(env.XDG_RUNTIME_DIR)) return join(env.XDG_RUNTIME_DIR, name);
+  return join(tmpdir(), `${name}-${uid}`);
+}

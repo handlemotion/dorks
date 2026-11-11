@@ -8,6 +8,7 @@ import { pollOnce } from "../services/poller";
 import { runBuild, SNAPSHOT_JOB } from "../services/snapshot";
 import { githubToken, readSettings } from "../services/settings";
 import { getSub } from "../services/subscriptions";
+import { SERVER_COMMENT_MARK } from "../services/githubIngest";
 import { boxCreated, boxGone, boxPaused, boxResumed, opFailed } from "./lifecycle";
 import { setTimer } from "./dispatch";
 import { patchDork } from "./dispatch";
@@ -136,7 +137,7 @@ async function stallComment(app: App, subscriptionId: number, runUrl: string, at
   const token = await githubToken(app);
   if (!token) return;
   try {
-    await createIssueComment(app.fetch, token, sub.repo, sub.number, `CI is still failing after the agent's automatic fix attempts, so it has stopped. A human needs to take a look.\n\nFailing run: ${runUrl}`);
+    await createIssueComment(app.fetch, token, sub.repo, sub.number, `CI is still failing after the agent's automatic fix attempts, so it has stopped. A human needs to take a look.\n\nFailing run: ${runUrl}\n\n${SERVER_COMMENT_MARK}`);
   } catch (e) {
     console.error("stall comment failed", subscriptionId, e instanceof GithubHttpError ? e.status : "unexpected");
     if (isTransientGithubError(e) && attempt < STALL_RETRY_MS.length) setTimer(app, owner, name, STALL_RETRY_MS[attempt], { subscriptionId, runUrl, attempt: attempt + 1 });

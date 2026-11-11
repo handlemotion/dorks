@@ -60,7 +60,8 @@ Required (provided by the box): `DORK_ID`, `BRIDGE_URL`, and `BRIDGE_SECRET_FILE
 | `DORKS_PERMISSION_MODE` | `bypassPermissions` | Passed to `--permission-mode`. See "Permission mode". |
 | `DORKS_CLAUDE_ARGS` | _(none)_ | Extra argv for the CLI, whitespace-separated (e.g. `--model sonnet`). |
 | `DORKS_WORKDIR` | `~/work` | Repos are cloned to `<workdir>/<owner>/<repo>`. |
-| `DORKS_STATE_DIR` | `~/.dorks-bridge` | `cred.sock` (the local RPC socket, 0600, dir 0700), `messages.log` (ids of user messages and notifications already written, for dedupe across a bridge restart), `claude-settings.json` (the hooks handed to `claude --settings`) and `claude-mcp.json` (the MCP server handed to `claude --mcp-config`), both 0644 so the Claude user can read them and `stop-gate.json` (which Stop-gate conditions were already raised in the session). No secrets. Must survive a pause (it is on the box disk). |
+| `DORKS_SOCK_DIR` | `$XDG_RUNTIME_DIR/dorks-bridge-<DORK_ID>` (`/run/dorks-bridge-<DORK_ID>` as root, else `/tmp/dorks-bridge-<DORK_ID>-<uid>`) | `cred.sock`, the local RPC socket (0600, dir 0700). Never under the home directory: a Boat sandbox restored from a snapshot swaps `/home/user` for the hydrated copy about a minute after boot, and a socket bound before that becomes unreachable |
+| `DORKS_STATE_DIR` | `~/.dorks-bridge` | `messages.log` (ids of user messages and notifications already written, for dedupe across a bridge restart), `claude-settings.json` (the hooks handed to `claude --settings`) and `claude-mcp.json` (the MCP server handed to `claude --mcp-config`), both 0644 so the Claude user can read them and `stop-gate.json` (which Stop-gate conditions were already raised in the session). No secrets. Must survive a pause (it is on the box disk). |
 | `DORKS_GIT_BASE_URL` | `https://github.com` | Clone base: `<base>/<owner>/<repo>.git`. Local/e2e use `file://…`. |
 | `HEARTBEAT_MS` | `30000` | `heartbeat` rpc interval. |
 | `DELTA_BATCH_MS` | `150` | Text deltas are coalesced into one event per window. |
@@ -114,7 +115,7 @@ bridge sets on the child; without it the backend would never see a turn end.
 **Git.** The remote URL is always `https://github.com/<owner>/<repo>.git`, with no credentials. The credential helper is configured once, in
 the Claude user's **global** git config, scoped to the host (`credential.https://github.com.helper`, plus the host of `DORKS_GIT_BASE_URL` when
 that is another http(s) URL), so every repo the agent clones under the workdir can push, not just the starting repo (the token is
-installation-wide). It is `dorks-bridge credential --sock <state>/cred.sock`, which asks the running bridge for the token (the `token` RPC method)
+installation-wide). It is `dorks-bridge credential --sock <sock dir>/cred.sock`, which asks the running bridge for the token (the `token` RPC method)
 and answers only for `github.com` (and the host of `DORKS_GIT_BASE_URL`); it never stores. The token lives in the bridge's memory and nowhere on
 disk, so the agent's own `git push` works and gets the refreshed token after each `fetch_gh_token`. `user.name` / `user.email` are set globally
 too, unless already configured. Starting repo: reuse the local branch, else track `origin/<branch>`, else create it from the default branch.
@@ -223,7 +224,7 @@ child running as the same uid as the bridge can read `/proc/<bridge pid>/environ
 afterwards) and, without Yama, the bridge's memory. So the supported layout is:
 
 - the bridge runs as root and starts Claude with `CLAUDE_RUN_AS=<user>`: Claude and the git commands that prepare its working tree run through
-  `setpriv --reuid --regid --init-groups`, and the repo, the credential socket (`<state>/cred/cred.sock`, 0600) and the child's `HOME` belong to that user;
+  `setpriv --reuid --regid --init-groups`, and the repo, the credential socket (`<sock dir>/cred/cred.sock`, 0600) and the child's `HOME` belong to that user;
   the state dir stays root-only (it holds `messages.log`);
 - the secret arrives via `BRIDGE_SECRET_FILE` (0400, unlinked after reading), so it is not in the environment either;
 - `kernel.yama.ptrace_scope ≥ 1` as defence in depth.

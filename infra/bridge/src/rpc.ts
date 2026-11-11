@@ -1,4 +1,4 @@
-import { chmodSync, chownSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, chownSync, lstatSync, mkdirSync, rmSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { dirname } from "node:path";
 
@@ -31,6 +31,10 @@ export class RpcServer {
 
   async start() {
     mkdirSync(dirname(this.sockPath), { recursive: true, mode: 0o700 });
+    // The dir may be in a shared place (/tmp): refuse one somebody else made or a symlink, rather than serve tokens through it.
+    const st = lstatSync(dirname(this.sockPath));
+    const me = process.getuid?.();
+    if (!st.isDirectory() || (me !== undefined && st.uid !== me && st.uid !== this.owner?.uid)) throw new Error(`refusing socket dir ${dirname(this.sockPath)}: not a directory owned by this user`);
     chmodSync(dirname(this.sockPath), 0o700);
     if (this.owner) chownSync(dirname(this.sockPath), this.owner.uid, this.owner.gid);
     rmSync(this.sockPath, { force: true }); // stale socket from a killed bridge

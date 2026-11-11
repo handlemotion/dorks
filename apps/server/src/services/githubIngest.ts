@@ -16,9 +16,11 @@ export interface Actor {
 export type PrEvent =
   | { kind: "pr_closed"; merged: boolean; sender: Actor }
   | { kind: "pr_synchronize"; headSha: string; headRef: string }
-  | { kind: "pr_base_changed"; baseRef: string; from: string; sender: Actor }
-  | { kind: "review"; state: "approved" | "changes_requested" | "commented"; body: string; url: string; sender: Actor }
-  | { kind: "comment"; body: string; url: string; path?: string; sender: Actor }
+  /** `sender` and `at` when GitHub's issue events say who retargeted the PR. */
+  | { kind: "pr_base_changed"; baseRef: string; from: string; sender?: Actor; at?: number }
+  /** `at`: when GitHub says it was written (epoch ms), to tell the agent's comments from the token owner's own (see `byAgent`). */
+  | { kind: "review"; state: "approved" | "changes_requested" | "commented"; body: string; url: string; sender: Actor; at?: number }
+  | { kind: "comment"; body: string; url: string; path?: string; sender: Actor; at?: number }
   | { kind: "check_suite"; suiteId: number; headSha: string; outcome: "pass" | "fail" }
   /** Every check suite of the head has completed and none failed. */
   | { kind: "ci_green"; headSha: string }
@@ -31,16 +33,58 @@ export interface IngestEnv {
   policy: CommentPolicy;
 }
 
+/**
+ * How long after a turn ends a comment by the token's login still counts as the agent's: GitHub stamps it when the request lands,
+ * which is before the turn ends, give or take clock skew between GitHub and this machine.
+ */
+export const AGENT_COMMENT_GRACE_MS = 15_000;
+
+/**
+ * Hidden mark on comments the server itself posts with the token (the stall notice). They are authored by the token's owner
+ * while the dork is idle, so without it the server's own "a human is needed" would read as the owner talking: it would wake
+ * the dork and un-stall the subscription it just stalled.
+ */
+export const SERVER_COMMENT_MARK = "<!-- dorks:server -->";
 const MAX_TRACKED_SUITES = 20; // failing check suites remembered per head: a pathological repo must not grow the row
 const short = (sha: string) => sha.slice(0, 7);
 const quote = (text: string) => (text.length > MAX_SUMMARY_CHARS ? `${text.slice(0, MAX_SUMMARY_CHARS)}…` : text);
 const checksUrl = (repo: string, sha: string, suiteId: number) => `https://github.com/${repo}/commit/${sha}/checks?check_suite_id=${suiteId}`;
 
-/** Whether a comment by `login` may wake the dork. The agent's own (the token's) comments never do. Logins compare case-insensitively. */
+/**
+ * Whether a comment by `login` may wake the dork under the policy. The token's owner always may: whether a comment of theirs was
+ * really the agent's is `byAgent`'s call. Logins compare case-insensitively.
+ */
 export function commentAllowed(policy: CommentPolicy, login: string, ownLogin?: string): boolean {
   const who = login.toLowerCase();
-  if (ownLogin && who === ownLogin.toLowerCase()) return false;
+  if (ownLogin && who === ownLogin.toLowerCase()) return true;
   return policy.mode === "all" || policy.logins.some((l) => l.toLowerCase() === who);
+}
+
+/** Whether `dorkId` was running a turn at `at` (or finished one less than AGENT_COMMENT_GRACE_MS before), from its status events. */
+function turnAt(app: App, dorkId: string, at: number): boolean {
+  const rows = app.db.all<{ ts: number; state: string }>(
+    `SELECT ts, json_extract(body, '$.state') AS state FROM events
+     WHERE dork_id = ? AND ts <= ? AND json_extract(body, '$.type') = 'status' ORDER BY seq DESC LIMIT 2`,
+    dorkId, at,
+  );
+  const [last, prev] = rows;
+  if (!last) return false;
+  if (last.state === "working") return true;
+  return !!prev && prev.state === "working" && at - last.ts <= AGENT_COMMENT_GRACE_MS;
+}
+
+/**
+ * The dork acts on GitHub as the token's owner, who is usually also the person reviewing its PRs, so the login alone cannot tell
+ * the agent's own comments from the owner's. A comment or review by that login is the agent's when a dork subscribed to the PR
+ * was mid-turn when GitHub stamped it; written while every such dork was idle or asleep, it is the owner's and wakes the dork.
+ * Without a timestamp it is treated as the agent's (never wake on what may be our own words).
+ */
+export function byAgent(app: App, sub: Subscription, sender: Actor, at: number | undefined, ownLogin: string | undefined): boolean {
+  if (!ownLogin || sender.login.toLowerCase() !== ownLogin.toLowerCase()) return false;
+  if (at === undefined) return true;
+  // Ended subscriptions count too: a dork that commented and then unsubscribed still wrote that comment.
+  const dorks = app.db.all<{ dork_id: string }>("SELECT DISTINCT dork_id FROM pr_subscriptions WHERE repo = ? AND number = ?", sub.repo, sub.number);
+  return [sub.dorkId, ...dorks.map((d) => d.dork_id)].some((id) => turnAt(app, id, at));
 }
 
 export const ingestEnv = (app: App, ownLogin: string | undefined, policy: CommentPolicy | undefined): IngestEnv => ({ ownLogin, policy: policy ?? DEFAULT_COMMENT_POLICY });
@@ -79,11 +123,13 @@ export function ingestEvent(app: App, subId: number, event: PrEvent, env: Ingest
     case "pr_base_changed":
       if (sub.baseRef === event.baseRef) return;
       updateSubscription(app, sub.id, { baseRef: event.baseRef, mergeable: null, conflictSha: undefined });
-      if (!own(event.sender)) notify("base_changed", `${event.sender.login} changed the base branch from ${event.from} to ${event.baseRef}.`);
+      if (event.sender && byAgent(app, sub, event.sender, event.at, env.ownLogin)) return; // the agent retargeted its own PR
+      const change = `the base branch from ${event.from} to ${event.baseRef}`;
+      notify("base_changed", event.sender ? `${event.sender.login} changed ${change}.` : `Changed ${change}.`);
       return;
 
     case "review": {
-      if (own(event.sender) || !commentAllowed(env.policy, event.sender.login, env.ownLogin)) return;
+      if (byAgent(app, sub, event.sender, event.at, env.ownLogin) || !commentAllowed(env.policy, event.sender.login, env.ownLogin)) return;
       // A comment-only review never downgrades an approval or a change request.
       const review = event.state === "commented" ? (sub.review === "none" ? "commented" : sub.review) : event.state;
       updateSubscription(app, sub.id, { review });
@@ -97,7 +143,8 @@ export function ingestEvent(app: App, subId: number, event: PrEvent, env: Ingest
     }
 
     case "comment":
-      if (own(event.sender) || !commentAllowed(env.policy, event.sender.login, env.ownLogin)) return;
+      if (env.ownLogin && event.sender.login.toLowerCase() === env.ownLogin.toLowerCase() && event.body.includes(SERVER_COMMENT_MARK)) return;
+      if (byAgent(app, sub, event.sender, event.at, env.ownLogin) || !commentAllowed(env.policy, event.sender.login, env.ownLogin)) return;
       if (!event.sender.bot) resetCiAttempts(app, sub, "resumed by a comment"); // a person is looking at it: CI gets a fresh budget
       notify("comment", `${event.sender.login} commented${event.path ? ` on ${event.path}` : ""}: ${quote(event.body.trim())} (${event.url})`);
       return;
