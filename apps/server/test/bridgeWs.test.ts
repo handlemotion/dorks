@@ -34,7 +34,7 @@ function loopback(h: Harness) {
       }, 0);
     }
     send(t: string) {
-      setTimeout(() => void this.session?.onMessage(t), 0);
+      setTimeout(() => this.session?.onMessage(t), 0);
     }
     close() {
       this.end(1000);

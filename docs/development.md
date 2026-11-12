@@ -76,6 +76,11 @@ The server is moving to [Effect](https://effect.website) (v4). New server code i
   `not_visible`, `auth`, `http`, `network`, `timeout`, `invalid_response`) and schema-decoded responses. `pollOnce` and
   `createIssueComment` keep Promise forms for the jobs that call them.
 - **Scheduler** (`lifecycle/scheduler.ts`): the timer loop is one fiber woken by a `Latch`; jobs run as fibers in a `FiberSet`.
+- **Bridge socket** (`http/bridgeWs.ts`, `services/bridge.ts`): a `BridgeSession` is a `Scope` of fibers closed with the socket (auth
+  timer, a reader over an inbox `Queue`, a writer draining the outbox `Queue`, a snapshot publisher woken by a `Latch`); each rpc is
+  its own fiber, started in arrival order. A refused rpc is a typed `BridgeError` (its `AppError` is the `res` error), a frame that
+  ends the socket is a `Hangup` with its close code. Frame shapes stay the zod types of `packages/shared`; `decodePush` applies the
+  per-call limits and parses with them. `main.ts` drives it from Bun's callbacks (`open` / `onMessage` / `close`).
 
 `Effect.runPromise` rejects with the original error, so `instanceof` checks on `BoatError`, `BoxNotFoundError` and `GithubError` keep working
 across the edge.
