@@ -1,12 +1,16 @@
 import { randomUUID } from "node:crypto";
+import { Context, Effect, Layer } from "effect";
 import { Hub, type App, type Config } from "./app";
 import { keyringFromKey } from "./core/crypto";
+import { loadConfig } from "./config";
 import { Db } from "./db";
+import { AppEnv } from "./http/route";
 import { getBox, getSnapshotDriver } from "./lib/box";
 import { loadAssets, makeAssets, type SnapshotAssets } from "./snapshot/assets";
 
 export interface Overrides {
   db?: Db;
+  hub?: Hub;
   now?: () => number;
   fetch?: typeof fetch;
   getBox?: App["getBox"];
@@ -21,7 +25,7 @@ export function createApp(cfg: Config, o: Overrides = {}): App {
   const app: App = {
     db: o.db ?? new Db(`${cfg.dataDir}/dorks.db`),
     cfg,
-    hub: new Hub(),
+    hub: o.hub ?? new Hub(),
     ring: keyringFromKey(cfg.encryptionKey),
     now: o.now ?? Date.now,
     uuid: () => randomUUID(),
@@ -41,3 +45,32 @@ export function createApp(cfg: Config, o: Overrides = {}): App {
   };
   return app;
 }
+
+// The app as Layers (main.ts). Acquired in dependency order and released in reverse, so whatever is built on the database (the
+// listeners, the scheduler) is gone before the database closes.
+
+export class ServerConfig extends Context.Service<ServerConfig, Config>()("dorks/server/ServerConfig") {
+  static readonly layer = Layer.sync(ServerConfig, loadConfig);
+}
+
+export class Database extends Context.Service<Database, Db>()("dorks/server/Database") {
+  static readonly layer = Layer.effect(
+    Database,
+    Effect.acquireRelease(
+      ServerConfig.use((cfg) => Effect.sync(() => new Db(`${cfg.dataDir}/dorks.db`))),
+      (db) => Effect.sync(() => db.close()),
+    ),
+  );
+}
+
+export class LiveHub extends Context.Service<LiveHub, Hub>()("dorks/server/LiveHub") {
+  static readonly layer = Layer.sync(LiveHub, () => new Hub());
+}
+
+/** The wired app on the config, database and hub layers. */
+export const appLayer = Layer.effect(
+  AppEnv,
+  Effect.gen(function* () {
+    return createApp(yield* ServerConfig, { db: yield* Database, hub: yield* LiveHub });
+  }),
+).pipe(Layer.provideMerge(Layer.mergeAll(Database.layer, LiveHub.layer)), Layer.provideMerge(ServerConfig.layer));

@@ -81,11 +81,18 @@ The server is moving to [Effect](https://effect.website) (v4). New server code i
   build was deleted meanwhile (a finalizer), so cleanup runs however the attempt ends. A cancelled run's fiber is interrupted. The
   jobs call the driver's Effect form (`snapshotOps` in `core/snapshot.ts`: Boat's own, else the Promise calls wrapped); interrupting
   a Boat call aborts its request.
+- **Jobs** (`lifecycle/jobs.ts`): each job is an `Effect<void, JobStepError>` that the scheduler forks straight into its `FiberSet`.
+  A failed step (a provider call, the database) is a `JobStepError`; box jobs turn it into `op_failed`, and one that escapes is
+  logged. Services not yet on Effect are called through the `promise` step helper. `Scheduler.shutdown` stops the loop, drains
+  jobs for up to 5 s, then interrupts the rest.
+- **App wiring** (`server.ts`, `listeners.ts`, `main.ts`): the process is a stack of Layers (config, database and hub, app, the UI
+  and bridge listeners under `Bun.serve`, the scheduler). SIGTERM, SIGINT and the parent watch close it in reverse: scheduler and
+  jobs, listeners, database. `createApp` stays the plain constructor tests use.
 - **Bridge socket** (`http/bridgeWs.ts`, `services/bridge.ts`): a `BridgeSession` is a `Scope` of fibers closed with the socket (auth
   timer, a reader over an inbox `Queue`, a writer draining the outbox `Queue`, a snapshot publisher woken by a `Latch`); each rpc is
   its own fiber, started in arrival order. A refused rpc is a typed `BridgeError` (its `AppError` is the `res` error), a frame that
   ends the socket is a `Hangup` with its close code. Frame shapes stay the zod types of `packages/shared`; `decodePush` applies the
-  per-call limits and parses with them. `main.ts` drives it from Bun's callbacks (`open` / `onMessage` / `close`).
+  per-call limits and parses with them. `listeners.ts` drives it from Bun's callbacks (`open` / `onMessage` / `close`).
 
 `Effect.runPromise` rejects with the original error, so `instanceof` checks on `BoatError`, `BoxNotFoundError` and `GithubError` keep working
 across the edge.
