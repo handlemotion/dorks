@@ -344,25 +344,9 @@ export class Bridge {
       if (!(this.agent instanceof CodexAgent) || this.agent.ready) this.pipeline.control({ t: "ready" }, true);
       return;
     }
-    if (this.agent) {
-      // config changed (a new model, say): restart on the same session, but never mid-turn. Messages queue behind this job, so
-      // the next one goes to the restarted agent.
-      while (this.agent.alive && !(await this.agent.waitIdle(60_000))) this.log("configure: waiting for the turn to end before restarting");
-      this.lastSessionId = this.agent.sessionId ?? this.lastSessionId;
-      await this.agent.stop();
-      this.agent = null;
-    }
-
-    let dir: string;
-    try {
-      const gitCtx = { gitBaseUrl: this.cfg.gitBaseUrl, workDir: this.cfg.workDir, helper: helperCommand(...this.self, this.rpc.sockPath), log: this.log, env: this.d.baseEnv, runAs: this.runAs };
-      dir = cfg.repo ? await prepareRepo(gitCtx, cfg.repo) : await prepareWorkDir(gitCtx);
-    } catch (e) {
-      const step = e instanceof SetupError ? e.step : "repo setup";
-      this.log("repo setup failed:", step);
-      this.pipeline.control({ t: "ack", id: cid });
-      return this.pipeline.control({ t: "agent_exited", code: null, stderrTail: `setup failed: ${step}` }, true);
-    }
+    await this.stopForRestart();
+    const dir = await this.prepareDir(cid, cfg.repo);
+    if (dir === null) return;
 
     const env = childEnv(this.d.baseEnv ?? process.env, cfg.env, this.log, this.runAs);
     env.DORKS_SOCK = this.rpc.sockPath; // how `dorks`, the gh shim and hooks (children of the CLI) find this process
@@ -371,15 +355,7 @@ export class Bridge {
     this.provider = provider;
     this.codexModel = cfg.codexModel;
     this.claudeModel = { model: cfg.model, effort: cfg.effort };
-    let resume = this.lastSessionId ?? cfg.resumeSessionId;
-    // The backend remembers a session id, but the box may have been recreated without its disk: --resume would fail and the
-    // user's message with it. Only resume what is really on disk.
-    if (provider === "claude" && resume && findTranscripts(configDirOf(env), resume).length === 0) {
-      this.log("session transcript not found on this box, starting a fresh session");
-      this.lastSessionId = null;
-      resume = null;
-    }
-    this.startAgent(resume, []);
+    this.startAgent(this.resumableSession(provider, env, cfg.resumeSessionId), []);
     this.pipeline.control({ t: "ack", id: cid });
     this.nameFrom = cfg.nameFrom ?? null;
     if (provider === "claude") {
@@ -387,6 +363,43 @@ export class Bridge {
       this.name();
     }
     this.process(); // messages that arrived before the agent was up, and interrupts deferred during configure
+  }
+
+  /** Config changed (a new model, say): restart on the same session, but never mid-turn. Messages queue behind this job, so the next one goes to the restarted agent. */
+  private async stopForRestart() {
+    if (!this.agent) return;
+    while (this.agent.alive && !(await this.agent.waitIdle(60_000))) this.log("configure: waiting for the turn to end before restarting");
+    this.lastSessionId = this.agent.sessionId ?? this.lastSessionId;
+    await this.agent.stop();
+    this.agent = null;
+  }
+
+  /** Clones the repo (or makes the bare workdir). On failure, acks the command, reports the agent as exited and returns null. */
+  private async prepareDir(cid: string, repo: Parameters<typeof prepareRepo>[1] | null): Promise<string | null> {
+    try {
+      const gitCtx = { gitBaseUrl: this.cfg.gitBaseUrl, workDir: this.cfg.workDir, helper: helperCommand(...this.self, this.rpc.sockPath), log: this.log, env: this.d.baseEnv, runAs: this.runAs };
+      return repo ? await prepareRepo(gitCtx, repo) : await prepareWorkDir(gitCtx);
+    } catch (e) {
+      const step = e instanceof SetupError ? e.step : "repo setup";
+      this.log("repo setup failed:", step);
+      this.pipeline.control({ t: "ack", id: cid });
+      this.pipeline.control({ t: "agent_exited", code: null, stderrTail: `setup failed: ${step}` }, true);
+      return null;
+    }
+  }
+
+  /**
+   * The session to resume. The backend remembers a session id, but the box may have been recreated without its disk: --resume would
+   * fail and the user's message with it. Only resume what is really on disk.
+   */
+  private resumableSession(provider: string, env: NodeJS.ProcessEnv, remembered: string | null): string | null {
+    const resume = this.lastSessionId ?? remembered;
+    if (provider === "claude" && resume && findTranscripts(configDirOf(env), resume).length === 0) {
+      this.log("session transcript not found on this box, starting a fresh session");
+      this.lastSessionId = null;
+      return null;
+    }
+    return resume;
   }
 
   private startAgent(resume: string | null, resend: string[]) {

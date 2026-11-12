@@ -11,7 +11,9 @@ export default defineConfig({
   },
   lint: {
     jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],
-    rules: { "vite-plus/prefer-vite-plus-imports": "error" },
+    // complexity (max 20) is an error: split branchy code into named helpers or handler maps rather than disabling it.
+    rules: { complexity: "error", "vite-plus/prefer-vite-plus-imports": "error" },
+    ignorePatterns: ["**/dist/**", "**/node_modules/**", "**/*.gen.ts", "**/.cloudflare/**"],
     // typeCheck stays off: each package type-checks itself with its own tsconfig (`pnpm typecheck`); one shared program mixes DOM, Bun and Workers globals.
     options: { typeAware: true },
   },

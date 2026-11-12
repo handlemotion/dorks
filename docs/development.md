@@ -46,7 +46,7 @@ Outside `pnpm dev` the server's owner token is generated into `<data dir>/secret
 ## Tests
 
 ```sh
-pnpm check                                       # vp check: Oxlint over the whole workspace (config in the root vite.config.ts)
+pnpm check                                       # vp check: format check + Oxlint (`complexity` is an error); config in the root vite.config.ts
 pnpm typecheck                                   # every package
 pnpm test                                        # every package that has tests
 pnpm --filter @dorks/server test                 # the server (lifecycle, machine, bridge socket), in-memory SQLite
@@ -61,12 +61,29 @@ Prefer tests that run the real code path over mocks: the server tests use the re
 
 CI (`.github/workflows/ci.yml`) runs lint, typecheck and tests and the server e2e against the compiled binary; `desktop.yml` builds the macOS app. It needs no repository secrets, so it runs on forks. If you add an environment variable the e2e needs, set a throwaway value in the workflow.
 
+## Server code: Effect on Hono
+
+The server is moving to [Effect](https://effect.website) (v4). New server code is written in Effect, and code you rework moves over:
+
+- **HTTP**: Hono stays the HTTP layer (routing, CORS, owner-token auth, SSE). Each UI API route is an Effect program
+  (`apps/server/src/http/route.ts`): it decodes its body with `Schema`, calls services through `AppEnv`, and fails with a typed
+  `ApiError` that becomes the `{ error: { code, message } }` answer. A service's `AppFail` maps to `ApiError`; anything else is a
+  defect, logged and answered with a generic 500.
+- **Boat driver** (`lib/boatHttp.ts`, `lib/boat.ts`, `lib/boatSnapshots.ts`): one `BoatError`, schema-decoded responses, and shared
+  `pollUntil` / `retryWhile` loops. The drivers keep their Promise interfaces (`core/box.ts`, `core/snapshot.ts`) by running the
+  effects at that edge.
+- **Scheduler** (`lifecycle/scheduler.ts`): the timer loop is one fiber woken by a `Latch`; jobs run as fibers in a `FiberSet`.
+
+`Effect.runPromise` rejects with the original error, so `instanceof` checks on `BoatError` and `BoxNotFoundError` keep working
+across the edge.
+
 ## Rules
 
 - Never print, log or commit secret values. Refer to variables by name; do not paste tokens into issues.
 - Keep `docs/architecture.md` in step with API changes, and make them additive where you can: the web client, the bridge and the desktop shell all read it.
 - Never put a secret behind a `VITE_` prefix.
 - Branch from `main`. Small commits, with a message that says why.
+- Keep functions under Oxlint's `complexity` limit (20, `pnpm lint`): split branchy code into named helpers or handler maps rather than disabling the rule.
 
 ## Real Claude, no Boat or tunnel
 

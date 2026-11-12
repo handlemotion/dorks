@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@dorks/shared": "workspace:*",
+    "effect": "4.1.2",
     "hono": "^4.9.0",
     "zod": "^4.6.5"
   },

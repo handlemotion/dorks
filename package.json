@@ -11,6 +11,8 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --if-present test",
     "check": "vp check",
+    "lint": "vp lint",
+    "fmt": "vp fmt",
     "e2e": "node scripts/e2e.mjs"
   },
   "devDependencies": {

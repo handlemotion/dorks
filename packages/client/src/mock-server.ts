@@ -76,6 +76,16 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> 
   return text ? (JSON.parse(text) as Record<string, unknown>) : {};
 }
 
+const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+
+/** One request, after auth and body parsing. */
+interface Ctx {
+  url: URL;
+  method: string;
+  body: Record<string, unknown>;
+  res: ServerResponse;
+}
+
 const view = (d: MockDork): Dork => {
   const { events: _events, deleting: _deleting, ...row } = d;
   return row;
@@ -209,6 +219,240 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     runTurn(dorkId, text);
   };
 
+  /** Starts the scripted build (the caller has checked that one may start). */
+  const startBuild = () => {
+    const fresh = SNAPSHOT_STEPS.length;
+    Object.assign(snap, { state: "building", error: null, startedAt: Date.now(), finishedAt: null });
+    const stepTo = (i: number) => {
+      Object.assign(snap, { step: SNAPSHOT_STEPS[i]![0], stepIndex: i, message: SNAPSHOT_STEPS[i]![1] });
+      broadcast({ t: "snapshot" });
+    };
+    stepTo(0);
+    for (let i = 1; i < fresh; i++) {
+      later(tick * i, () => {
+        if (snap.state !== "building") return;
+        if (failBuild && i === 4) {
+          Object.assign(snap, { state: "failed", step: null, stepIndex: -1, message: null, error: failBuild, finishedAt: Date.now() });
+          failBuild = null;
+          return broadcast({ t: "snapshot" });
+        }
+        stepTo(i);
+      });
+    }
+    later(tick * fresh, () => {
+      if (snap.state !== "building") return;
+      const name = "dorks-base-mock0001";
+      Object.assign(snap, { state: "ready", snapshot: name, step: null, stepIndex: -1, message: null, error: null, finishedAt: Date.now(), builtBundleId: `mock-bundle-${bundle}` });
+      settings.baseSnapshotId = name;
+      broadcast({ t: "settings" });
+      broadcast({ t: "snapshot" });
+    });
+  };
+
+  const openLive = (req: IncomingMessage, res: ServerResponse) => {
+    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+    res.write(`data: ${JSON.stringify({ t: "hello", now: Date.now() })}\n\n`);
+    live.add(res);
+    const ping = setInterval(() => res.write(": ping\n\n"), 20_000);
+    req.on("close", () => {
+      clearInterval(ping);
+      live.delete(res);
+    });
+  };
+
+  /** Why a new session cannot start yet, or null when it can. */
+  const cannotCreate = (provider: Dork["provider"]): string | null => {
+    if (!settings.boatKey || !settings.baseSnapshotId || !settings.github.configured) return "Finish setup (Boat, base snapshot, GitHub) before creating a session.";
+    if (provider === "claude" && !settings.claudeToken) return "Add a Claude token first.";
+    if (provider === "codex" && !settings.boatEnvironment) return "Save a Boat environment for Codex first.";
+    return null;
+  };
+
+  const createDork = ({ body, res }: Ctx) => {
+    const repo = str(body.repo)?.trim();
+    const message = str(body.message)?.trim();
+    if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo)) return fail(res, "invalid", "repo must look like owner/name");
+    if (!message) return fail(res, "invalid", "message is required");
+    const provider = body.provider === "codex" ? "codex" : "claude";
+    const blocked = cannotCreate(provider);
+    if (blocked) return fail(res, "onboarding_incomplete", blocked);
+    const id = randomUUID();
+    const now = Date.now();
+    dorks.set(id, { id, title: str(body.title) || message.slice(0, 48), repo, branch: `dorks/${id.slice(0, 8)}`, provider, state: "creating", archived: false, lastActivityAt: now, createdAt: now, events: [],
+      ...(provider === "claude" ? { model: str(body.model), effort: str(body.effort), agentModel: MOCK_MODELS.find((c) => c.model === (str(body.model) ?? "default"))?.resolved, modelChoices: MOCK_MODELS } : {}) });
+    append(id, { type: "status", state: "creating" });
+    broadcast({ t: "dorks" });
+    later(tick, () => startTurn(id, message));
+    return json(res, 200, { id });
+  };
+
+  /** A change to one session that the list and its page both show. */
+  const touched = (d: MockDork) => {
+    broadcast({ t: "dork", dorkId: d.id });
+    broadcast({ t: "dorks" });
+  };
+
+  const listEvents = ({ url, res }: Ctx, d: MockDork) => {
+    const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit")) || 50));
+    const after = url.searchParams.get("after");
+    if (after !== null) {
+      const rest = d.events.filter((e) => e.seq > Number(after));
+      return json(res, 200, { events: rest.slice(0, limit), hasMore: rest.length > limit });
+    }
+    const beforeParam = url.searchParams.get("before");
+    const older = beforeParam === null ? d.events : d.events.filter((e) => e.seq < Number(beforeParam));
+    const page = older.slice(-limit).reverse(); // newest first
+    return json(res, 200, { events: page, hasMore: older.length > limit });
+  };
+
+  const setModel = ({ body, res }: Ctx, d: MockDork) => {
+    const model = str(body.model) || undefined;
+    const effort = str(body.effort) || undefined;
+    const choice = MOCK_MODELS.find((c) => c.model === (model ?? "default"));
+    if ((model || effort) && (!choice || (effort && !choice.efforts.includes(effort as never)))) return fail(res, "invalid", "not offered by the agent");
+    Object.assign(d, { model, effort, agentModel: choice?.resolved ?? "mock-opus-1", agentEffort: effort });
+    broadcast({ t: "dork", dorkId: d.id });
+    return json(res, 200, {});
+  };
+
+  /** `/api/dorks/:id[/sub]`, keyed by `METHOD sub` (`*` for any method). */
+  const dorkRoutes = new Map<string, (c: Ctx, d: MockDork) => void>([
+    ["GET ", ({ res }, d) => json(res, 200, view(d))],
+    ["PATCH ", ({ body, res }, d) => {
+      const title = str(body.title)?.trim();
+      if (!title) return fail(res, "invalid", "title is required");
+      d.title = title;
+      touched(d);
+      return json(res, 200, {});
+    }],
+    ["DELETE ", ({ res }, d) => {
+      d.deleting = true;
+      broadcast({ t: "dorks" });
+      return json(res, 200, {});
+    }],
+    ["POST messages", ({ body, res }, d) => {
+      const text = str(body.text)?.trim();
+      if (!text) return fail(res, "invalid", "text is required");
+      if (d.archived) return fail(res, "archived", "This session is archived.");
+      startTurn(d.id, text);
+      return json(res, 200, {});
+    }],
+    ["POST interrupt", ({ res }, d) => {
+      if (d.state === "working") {
+        append(d.id, { type: "turn_complete", durationMs: 0, outcome: "stopped" });
+        append(d.id, { type: "status", state: "idle" });
+      }
+      return json(res, 200, {});
+    }],
+    ["POST desktop", ({ body, res }, d) => {
+      if (d.archived) return fail(res, "archived", "This session is archived.");
+      const dark = body.theme === "dark";
+      const page = `<!doctype html><meta charset="utf-8"><body style="margin:0;height:100vh;display:grid;place-items:center;background:${dark ? "#1d1f24" : "#3a6ea5"};color:#fff;font:15px system-ui">Mock desktop</body>`;
+      return json(res, 200, { url: `data:text/html;charset=utf-8,${encodeURIComponent(page)}` });
+    }],
+    ["POST archive", ({ body, res }, d) => {
+      d.archived = body.archived === true;
+      touched(d);
+      return json(res, 200, {});
+    }],
+    ["POST model", setModel],
+    ["POST codex-model", ({ body, res }, d) => {
+      d.codexModel = { model: str(body.model) ?? "", effort: str(body.effort) ?? "" };
+      broadcast({ t: "dork", dorkId: d.id });
+      return json(res, 200, {});
+    }],
+    ["GET events", listEvents],
+    ["* subscriptions", ({ method, res }) => json(res, 200, method === "GET" ? [] : {})],
+    ["* subscriptions/resume", ({ res }) => json(res, 200, {})],
+  ]);
+
+  const routeDork = (c: Ctx, m: RegExpExecArray) => {
+    const d = dorks.get(decodeURIComponent(m[1]!));
+    if (!d || d.deleting) return fail(c.res, "not_found", "No such session.");
+    const sub = m[2] ?? "";
+    const handle = dorkRoutes.get(`${c.method} ${sub}`) ?? dorkRoutes.get(`* ${sub}`);
+    if (!handle) return fail(c.res, "not_found", "Unknown route.");
+    return handle(c, d);
+  };
+
+  /** Applies a settings PUT; returns an error message when the body is rejected. */
+  const saveSettings = (body: Record<string, unknown>): string | null => {
+    // Like apps/server, which checks a Boat key with Boat before saving it.
+    if (typeof body.boatKey === "string" && body.boatKey.startsWith("bad")) return "Boat rejected that key. Check it and its access (create, use, save and delete sandboxes).";
+    const set = (k: "boatKey" | "claudeToken") => {
+      if (typeof body[k] === "string") settings[k] = body[k] !== "";
+    };
+    set("boatKey");
+    set("claudeToken");
+    if (typeof body.githubToken === "string") settings.github = body.githubToken ? { configured: true, login: "octocat" } : { configured: false };
+    for (const k of ["boatOrg", "boatEnvironment", "baseSnapshotId"] as const) if (typeof body[k] === "string") settings[k] = body[k] || null;
+    if (typeof body.sleepMinutes === "number") {
+      if (!Number.isFinite(body.sleepMinutes) || body.sleepMinutes <= 0 || body.sleepMinutes > 1440) return "minutes must be between 0 and 1440";
+      settings.sleepMinutes = body.sleepMinutes;
+    }
+    if (body.commentPolicy) settings.commentPolicy = body.commentPolicy as Settings["commentPolicy"];
+    return null;
+  };
+
+  /** Fixed paths, keyed by `METHOD path`. */
+  const routes = new Map<string, (c: Ctx) => void>([
+    ["GET /api/dorks", ({ url, res }) => {
+      const archived = url.searchParams.get("archived") === "true";
+      const rows = [...dorks.values()].filter((d) => !d.deleting && d.archived === archived).sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+      return json(res, 200, rows.slice(0, 200).map(view));
+    }],
+    ["POST /api/dorks", createDork],
+    ["GET /api/settings", ({ res }) => json(res, 200, settings)],
+    ["PUT /api/settings", ({ body, res }) => {
+      const error = saveSettings(body);
+      if (error) return fail(res, "invalid", error);
+      broadcast({ t: "settings" });
+      // Like apps/server: a new Boat key starts the base-snapshot build when there is no snapshot yet.
+      if (typeof body.boatKey === "string" && body.boatKey && !settings.baseSnapshotId && snap.state !== "building") startBuild();
+      return json(res, 200, {});
+    }],
+    ["POST /api/boat/check", ({ body, res }) => {
+      const key = typeof body.boatKey === "string" ? body.boatKey.trim() : "";
+      if (!key && !settings.boatKey) return fail(res, "not_configured", "Add your Boat API key first.");
+      if (key.startsWith("bad")) return json(res, 200, { status: "invalid", message: "Boat rejected that key. Check it and its access (create, use, save and delete sandboxes)." });
+      return json(res, 200, { status: "ok", message: "Boat accepted the key." });
+    }],
+    ["GET /api/usage", ({ res }) => {
+      const now = Date.now();
+      return json(res, 200, {
+        ...(settings.claudeToken ? { claude: { session: { used: 0.07, resetsAt: now + 3 * 3600_000 }, weekly: { used: 0.26, resetsAt: now + 4 * 86400_000 } } } : {}),
+        ...(settings.boatKey ? { cloud: { usedHours: 38.4, includedHours: 555.56, periodEnd: now + 29 * 86400_000 } } : {}),
+      });
+    }],
+    ["GET /api/snapshot", ({ res }) => json(res, 200, snapView())],
+    ["POST /api/snapshot/build", ({ body, res }) => {
+      if (body.force !== undefined && typeof body.force !== "boolean") return fail(res, "invalid", "force must be a boolean");
+      if (!settings.boatKey) return fail(res, "not_configured", "Add your Boat API key first.");
+      const current = snapView();
+      if (snap.state === "building" || (!body.force && snap.state !== "failed" && snap.snapshot && current.managed && !current.stale)) return json(res, 202, current);
+      startBuild();
+      return json(res, 202, snapView());
+    }],
+    ["GET /api/secrets", ({ res }) => json(res, 200, [...secrets.keys()].sort())],
+    // Builds are not mocked: the list is empty, so the UI shows its empty state (use `pnpm dev` for the real flow).
+    ["GET /api/builds", ({ res }) => json(res, 200, [])],
+  ]);
+
+  const routeSecret = ({ method, body, res }: Ctx, name: string) => {
+    if (method === "PUT") {
+      if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(name)) return fail(res, "invalid", "Names are CAPS_WITH_UNDERSCORES.");
+      secrets.set(name, str(body.value) ?? "");
+      broadcast({ t: "settings" });
+      return json(res, 200, {});
+    }
+    if (method === "DELETE") {
+      secrets.delete(name);
+      broadcast({ t: "settings" });
+      return json(res, 200, {});
+    }
+    return fail(res, "not_found", "Unknown route.");
+  };
+
   const route = async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", "http://mock");
     const path = url.pathname;
@@ -220,218 +464,18 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     if (path === "/api/health") return json(res, 200, { ok: true });
     const bearer = /^Bearer (.+)$/.exec(req.headers.authorization ?? "")?.[1] ?? url.searchParams.get("access_token");
     if (bearer !== token) return fail(res, "forbidden", "The owner token was rejected.");
-
-    if (path === "/api/live" && method === "GET") {
-      res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
-      res.write(`data: ${JSON.stringify({ t: "hello", now: Date.now() })}\n\n`);
-      live.add(res);
-      const ping = setInterval(() => res.write(": ping\n\n"), 20_000);
-      req.on("close", () => {
-        clearInterval(ping);
-        live.delete(res);
-      });
-      return;
-    }
+    if (path === "/api/live" && method === "GET") return openLive(req, res);
 
     const body = method === "GET" || method === "DELETE" ? {} : await readBody(req).catch(() => null);
     if (body === null) return fail(res, "invalid", "Invalid JSON.");
-    const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+    const c: Ctx = { url, method, body, res };
 
-    if (path === "/api/dorks") {
-      if (method === "GET") {
-        const archived = url.searchParams.get("archived") === "true";
-        const rows = [...dorks.values()].filter((d) => !d.deleting && d.archived === archived).sort((a, b) => b.lastActivityAt - a.lastActivityAt);
-        return json(res, 200, rows.slice(0, 200).map(view));
-      }
-      if (method === "POST") {
-        const repo = str(body.repo)?.trim();
-        const message = str(body.message)?.trim();
-        if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo)) return fail(res, "invalid", "repo must look like owner/name");
-        if (!message) return fail(res, "invalid", "message is required");
-        const provider = body.provider === "codex" ? "codex" : "claude";
-        if (!settings.boatKey || !settings.baseSnapshotId || !settings.github.configured) return fail(res, "onboarding_incomplete", "Finish setup (Boat, base snapshot, GitHub) before creating a session.");
-        if (provider === "claude" && !settings.claudeToken) return fail(res, "onboarding_incomplete", "Add a Claude token first.");
-        if (provider === "codex" && !settings.boatEnvironment) return fail(res, "onboarding_incomplete", "Save a Boat environment for Codex first.");
-        const id = randomUUID();
-        const now = Date.now();
-        dorks.set(id, { id, title: str(body.title) || message.slice(0, 48), repo, branch: `dorks/${id.slice(0, 8)}`, provider, state: "creating", archived: false, lastActivityAt: now, createdAt: now, events: [],
-          ...(provider === "claude" ? { model: str(body.model), effort: str(body.effort), agentModel: MOCK_MODELS.find((c) => c.model === (str(body.model) ?? "default"))?.resolved, modelChoices: MOCK_MODELS } : {}) });
-        append(id, { type: "status", state: "creating" });
-        broadcast({ t: "dorks" });
-        later(tick, () => startTurn(id, message));
-        return json(res, 200, { id });
-      }
-    }
-
+    const handle = routes.get(`${method} ${path}`);
+    if (handle) return handle(c);
     const m = /^\/api\/dorks\/([^/]+)(?:\/(messages|interrupt|desktop|archive|model|codex-model|events|subscriptions(?:\/resume)?))?$/.exec(path);
-    if (m) {
-      const d = dorks.get(decodeURIComponent(m[1]!));
-      if (!d || d.deleting) return fail(res, "not_found", "No such session.");
-      const sub = m[2];
-      if (!sub) {
-        if (method === "GET") return json(res, 200, view(d));
-        if (method === "PATCH") {
-          const title = str(body.title)?.trim();
-          if (!title) return fail(res, "invalid", "title is required");
-          d.title = title;
-          broadcast({ t: "dork", dorkId: d.id });
-          broadcast({ t: "dorks" });
-          return json(res, 200, {});
-        }
-        if (method === "DELETE") {
-          d.deleting = true;
-          broadcast({ t: "dorks" });
-          return json(res, 200, {});
-        }
-      }
-      if (sub === "messages" && method === "POST") {
-        const text = str(body.text)?.trim();
-        if (!text) return fail(res, "invalid", "text is required");
-        if (d.archived) return fail(res, "archived", "This session is archived.");
-        startTurn(d.id, text);
-        return json(res, 200, {});
-      }
-      if (sub === "interrupt" && method === "POST") {
-        if (d.state === "working") {
-          append(d.id, { type: "turn_complete", durationMs: 0, outcome: "stopped" });
-          append(d.id, { type: "status", state: "idle" });
-        }
-        return json(res, 200, {});
-      }
-      if (sub === "desktop" && method === "POST") {
-        if (d.archived) return fail(res, "archived", "This session is archived.");
-        const dark = body.theme === "dark";
-        const page = `<!doctype html><meta charset="utf-8"><body style="margin:0;height:100vh;display:grid;place-items:center;background:${dark ? "#1d1f24" : "#3a6ea5"};color:#fff;font:15px system-ui">Mock desktop</body>`;
-        return json(res, 200, { url: `data:text/html;charset=utf-8,${encodeURIComponent(page)}` });
-      }
-      if (sub === "archive" && method === "POST") {
-        d.archived = body.archived === true;
-        broadcast({ t: "dork", dorkId: d.id });
-        broadcast({ t: "dorks" });
-        return json(res, 200, {});
-      }
-      if (sub === "model" && method === "POST") {
-        const model = str(body.model) || undefined;
-        const effort = str(body.effort) || undefined;
-        const choice = MOCK_MODELS.find((c) => c.model === (model ?? "default"));
-        if ((model || effort) && (!choice || (effort && !choice.efforts.includes(effort as never)))) return fail(res, "invalid", "not offered by the agent");
-        Object.assign(d, { model, effort, agentModel: choice?.resolved ?? "mock-opus-1", agentEffort: effort });
-        broadcast({ t: "dork", dorkId: d.id });
-        return json(res, 200, {});
-      }
-      if (sub === "codex-model" && method === "POST") {
-        d.codexModel = { model: str(body.model) ?? "", effort: str(body.effort) ?? "" };
-        broadcast({ t: "dork", dorkId: d.id });
-        return json(res, 200, {});
-      }
-      if (sub === "events" && method === "GET") {
-        const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit")) || 50));
-        const after = url.searchParams.get("after");
-        if (after !== null) {
-          const rest = d.events.filter((e) => e.seq > Number(after));
-          return json(res, 200, { events: rest.slice(0, limit), hasMore: rest.length > limit });
-        }
-        const beforeParam = url.searchParams.get("before");
-        const older = beforeParam === null ? d.events : d.events.filter((e) => e.seq < Number(beforeParam));
-        const page = older.slice(-limit).reverse(); // newest first
-        return json(res, 200, { events: page, hasMore: older.length > limit });
-      }
-      if (sub === "subscriptions") return json(res, 200, method === "GET" ? [] : {});
-      if (sub === "subscriptions/resume") return json(res, 200, {});
-    }
-
-    /** Starts the scripted build (the caller has checked that one may start). */
-    const startBuild = () => {
-      const fresh = SNAPSHOT_STEPS.length;
-      Object.assign(snap, { state: "building", error: null, startedAt: Date.now(), finishedAt: null });
-      const stepTo = (i: number) => {
-        Object.assign(snap, { step: SNAPSHOT_STEPS[i]![0], stepIndex: i, message: SNAPSHOT_STEPS[i]![1] });
-        broadcast({ t: "snapshot" });
-      };
-      stepTo(0);
-      for (let i = 1; i < fresh; i++) {
-        later(tick * i, () => {
-          if (snap.state !== "building") return;
-          if (failBuild && i === 4) {
-            Object.assign(snap, { state: "failed", step: null, stepIndex: -1, message: null, error: failBuild, finishedAt: Date.now() });
-            failBuild = null;
-            return broadcast({ t: "snapshot" });
-          }
-          stepTo(i);
-        });
-      }
-      later(tick * fresh, () => {
-        if (snap.state !== "building") return;
-        const name = "dorks-base-mock0001";
-        Object.assign(snap, { state: "ready", snapshot: name, step: null, stepIndex: -1, message: null, error: null, finishedAt: Date.now(), builtBundleId: `mock-bundle-${bundle}` });
-        settings.baseSnapshotId = name;
-        broadcast({ t: "settings" });
-        broadcast({ t: "snapshot" });
-      });
-    };
-    if (path === "/api/settings") {
-      if (method === "GET") return json(res, 200, settings);
-      if (method === "PUT") {
-        // Like apps/server, which checks a Boat key with Boat before saving it.
-        if (typeof body.boatKey === "string" && body.boatKey.startsWith("bad")) return fail(res, "invalid", "Boat rejected that key. Check it and its access (create, use, save and delete sandboxes).");
-        const set = (k: "boatKey" | "claudeToken") => {
-          if (typeof body[k] === "string") settings[k] = body[k] !== "";
-        };
-        set("boatKey");
-        set("claudeToken");
-        if (typeof body.githubToken === "string") settings.github = body.githubToken ? { configured: true, login: "octocat" } : { configured: false };
-        for (const k of ["boatOrg", "boatEnvironment", "baseSnapshotId"] as const) if (typeof body[k] === "string") settings[k] = body[k] || null;
-        if (typeof body.sleepMinutes === "number") {
-          if (!Number.isFinite(body.sleepMinutes) || body.sleepMinutes <= 0 || body.sleepMinutes > 1440) return fail(res, "invalid", "minutes must be between 0 and 1440");
-          settings.sleepMinutes = body.sleepMinutes;
-        }
-        if (body.commentPolicy) settings.commentPolicy = body.commentPolicy as Settings["commentPolicy"];
-        broadcast({ t: "settings" });
-        // Like apps/server: a new Boat key starts the base-snapshot build when there is no snapshot yet.
-        if (typeof body.boatKey === "string" && body.boatKey && !settings.baseSnapshotId && snap.state !== "building") startBuild();
-        return json(res, 200, {});
-      }
-    }
-    if (path === "/api/boat/check" && method === "POST") {
-      const key = typeof body.boatKey === "string" ? body.boatKey.trim() : "";
-      if (!key && !settings.boatKey) return fail(res, "not_configured", "Add your Boat API key first.");
-      if (key.startsWith("bad")) return json(res, 200, { status: "invalid", message: "Boat rejected that key. Check it and its access (create, use, save and delete sandboxes)." });
-      return json(res, 200, { status: "ok", message: "Boat accepted the key." });
-    }
-    if (path === "/api/usage" && method === "GET") {
-      const now = Date.now();
-      return json(res, 200, {
-        ...(settings.claudeToken ? { claude: { session: { used: 0.07, resetsAt: now + 3 * 3600_000 }, weekly: { used: 0.26, resetsAt: now + 4 * 86400_000 } } } : {}),
-        ...(settings.boatKey ? { cloud: { usedHours: 38.4, includedHours: 555.56, periodEnd: now + 29 * 86400_000 } } : {}),
-      });
-    }
-    if (path === "/api/snapshot" && method === "GET") return json(res, 200, snapView());
-    if (path === "/api/snapshot/build" && method === "POST") {
-      if (body.force !== undefined && typeof body.force !== "boolean") return fail(res, "invalid", "force must be a boolean");
-      if (!settings.boatKey) return fail(res, "not_configured", "Add your Boat API key first.");
-      const current = snapView();
-      if (snap.state === "building" || (!body.force && snap.state !== "failed" && snap.snapshot && current.managed && !current.stale)) return json(res, 202, current);
-      startBuild();
-      return json(res, 202, snapView());
-    }
-    if (path === "/api/secrets" && method === "GET") return json(res, 200, [...secrets.keys()].sort());
-    // Builds are not mocked: the list is empty, so the UI shows its empty state (use `pnpm dev` for the real flow).
-    if (path === "/api/builds" && method === "GET") return json(res, 200, []);
+    if (m) return routeDork(c, m);
     const sm = /^\/api\/secrets\/([^/]+)$/.exec(path);
-    if (sm) {
-      const name = decodeURIComponent(sm[1]!);
-      if (method === "PUT") {
-        if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(name)) return fail(res, "invalid", "Names are CAPS_WITH_UNDERSCORES.");
-        secrets.set(name, str(body.value) ?? "");
-        broadcast({ t: "settings" });
-        return json(res, 200, {});
-      }
-      if (method === "DELETE") {
-        secrets.delete(name);
-        broadcast({ t: "settings" });
-        return json(res, 200, {});
-      }
-    }
+    if (sm) return routeSecret(c, decodeURIComponent(sm[1]!));
     return fail(res, "not_found", "Unknown route.");
   };
 

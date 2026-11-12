@@ -86,42 +86,43 @@ async function githubLoginOf(app: App, token: string): Promise<string | null> {
   return typeof j?.login === "string" ? j.login : null;
 }
 
+const boatEnvironmentOf = (v: unknown) => {
+  const t = text(v, "Boat environment", 63);
+  if (t && !/^[a-z][a-z0-9_-]{0,62}$/.test(t)) fail("invalid", "enter a Boat environment name");
+  return t || null;
+};
+
+const sleepMinutesOf = (v: unknown) => {
+  // NaN slips through Math.min/max and would corrupt every timer computed from it.
+  if (typeof v !== "number" || !Number.isFinite(v)) fail("invalid", "minutes must be a finite number");
+  return Math.min(Math.max(v, 0.05), 24 * 60);
+};
+
+const commentPolicyOf = (v: unknown) => {
+  const parsed = commentPolicySchema.safeParse(v);
+  if (!parsed.success) fail("invalid", "bad comment policy");
+  if (parsed.data.mode === "allowlist" && parsed.data.logins.some((l) => !l.trim() || l.length > MAX_ALLOWLIST_LOGIN_CHARS)) fail("invalid", "bad GitHub login in the allowlist");
+  return parsed.data;
+};
+
 /** Applies any subset of settings. An empty string clears a token or name. Encryption and GitHub lookups happen before the write transaction. */
 export async function updateSettings(app: App, patch: SettingsPatch): Promise<void> {
   const row: Record<string, unknown> = {};
-  const encOf = async (v: string, a: string) => (await encrypt(app.ring, v, a)).value;
+  /** The trimmed secret encrypted for the settings row, or null to clear it. */
+  const sealed = async (t: string, a: string) => (t ? (await encrypt(app.ring, t, a)).value : null);
 
-  if (patch.boatKey !== undefined) {
-    const t = text(patch.boatKey, "Boat API key", 512);
-    row.boatKeyEnc = t ? await encOf(t, aad.boatKey(OWNER)) : null;
-  }
+  if (patch.boatKey !== undefined) row.boatKeyEnc = await sealed(text(patch.boatKey, "Boat API key", 512), aad.boatKey(OWNER));
   if (patch.boatOrg !== undefined) row.boatOrg = text(patch.boatOrg, "Boat organization", 128) || null;
-  if (patch.claudeToken !== undefined) {
-    const t = text(patch.claudeToken, "token", MAX_TOKEN_CHARS);
-    row.claudeTokenEnc = t ? await encOf(t, aad.claudeToken(OWNER)) : null;
-  }
+  if (patch.claudeToken !== undefined) row.claudeTokenEnc = await sealed(text(patch.claudeToken, "token", MAX_TOKEN_CHARS), aad.claudeToken(OWNER));
   if (patch.githubToken !== undefined) {
     const t = text(patch.githubToken, "GitHub token", MAX_TOKEN_CHARS);
-    row.githubTokenEnc = t ? await encOf(t, aad.githubToken(OWNER)) : null;
+    row.githubTokenEnc = await sealed(t, aad.githubToken(OWNER));
     row.githubLogin = t ? await githubLoginOf(app, t) : null;
   }
-  if (patch.boatEnvironment !== undefined) {
-    const t = text(patch.boatEnvironment, "Boat environment", 63);
-    if (t && !/^[a-z][a-z0-9_-]{0,62}$/.test(t)) fail("invalid", "enter a Boat environment name");
-    row.boatEnvironment = t || null;
-  }
+  if (patch.boatEnvironment !== undefined) row.boatEnvironment = boatEnvironmentOf(patch.boatEnvironment);
   if (patch.baseSnapshotId !== undefined) row.baseSnapshotId = text(patch.baseSnapshotId, "snapshot", 200) || null;
-  if (patch.sleepMinutes !== undefined) {
-    // NaN slips through Math.min/max and would corrupt every timer computed from it.
-    if (typeof patch.sleepMinutes !== "number" || !Number.isFinite(patch.sleepMinutes)) fail("invalid", "minutes must be a finite number");
-    row.sleepMinutes = Math.min(Math.max(patch.sleepMinutes, 0.05), 24 * 60);
-  }
-  if (patch.commentPolicy !== undefined) {
-    const parsed = commentPolicySchema.safeParse(patch.commentPolicy);
-    if (!parsed.success) fail("invalid", "bad comment policy");
-    if (parsed.data.mode === "allowlist" && parsed.data.logins.some((l) => !l.trim() || l.length > MAX_ALLOWLIST_LOGIN_CHARS)) fail("invalid", "bad GitHub login in the allowlist");
-    row.commentPolicy = parsed.data;
-  }
+  if (patch.sleepMinutes !== undefined) row.sleepMinutes = sleepMinutesOf(patch.sleepMinutes);
+  if (patch.commentPolicy !== undefined) row.commentPolicy = commentPolicyOf(patch.commentPolicy);
   if (!Object.keys(row).length) return;
   app.db.tx(() => {
     update(app.db, "settings", { id: 1 }, row);

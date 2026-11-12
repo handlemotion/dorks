@@ -111,6 +111,18 @@ describe("machine: spec behaviours", () => {
   });
 });
 
+function expectInvariants(prev: Ctx, t: Input["t"], r: ReturnType<typeof reduce>) {
+  const fx: Effect[] = r.effects;
+  if (prev.archived && (t === "user_message" || t === "notify")) expect(r.rejected).toBe("archived");
+  if (fx.includes("resume_box")) expect(["sleeping", "error"]).toContain(prev.state);
+  if (fx.includes("create_box")) expect(prev.hasBox).toBe(false);
+  if (r.state === "error" && prev.state !== "error") expect(fx.includes("pause_box")).toBe(prev.hasBox); // never leave a box running under `error`
+  if (t === "unarchive") expect(fx).toEqual([]); // never wakes
+  if (r.state === "sleeping") expect(fx.includes("deliver_outbox")).toBe(false);
+  if (t === "notify" && prev.state === "working") expect(fx).toEqual([]); // a notify never lands mid-turn
+  if (prev.archived && fx.includes("resume_box")) throw new Error("archived dork woke");
+}
+
 describe("machine: totality + invariants", () => {
   it("handles every state x input x flag combination without throwing", () => {
     for (const s of STATES) for (const t of INPUTS) for (const archived of [false, true]) for (const hasBox of [false, true]) for (const queued of [false, true]) for (const notifyHeld of [false, true]) {
@@ -131,15 +143,7 @@ describe("machine: totality + invariants", () => {
         const r = reduce(c, { t } as Input);
         if ((t === "user_message" || t === "notify") && !r.rejected) outbox++;
         const fx: Effect[] = r.effects;
-        // invariants
-        if (prev.archived && (t === "user_message" || t === "notify")) expect(r.rejected).toBe("archived");
-        if (fx.includes("resume_box")) expect(["sleeping", "error"]).toContain(prev.state);
-        if (fx.includes("create_box")) expect(prev.hasBox).toBe(false);
-        if (r.state === "error" && prev.state !== "error") expect(fx.includes("pause_box")).toBe(prev.hasBox); // never leave a box running under `error`
-        if (t === "unarchive") expect(fx).toEqual([]); // never wakes
-        if (r.state === "sleeping") expect(fx.includes("deliver_outbox")).toBe(false);
-        if (t === "notify" && prev.state === "working") expect(fx).toEqual([]); // a notify never lands mid-turn
-        if (prev.archived && fx.includes("resume_box")) throw new Error("archived dork woke");
+        expectInvariants(prev, t, r);
         // simulate driver bookkeeping
         const hasBox = prev.hasBox || fx.includes("create_box");
         if (fx.includes("deliver_outbox") && rnd() < 0.8) outbox = 0; // acked

@@ -1,6 +1,7 @@
 import { CatchBoundary, createFileRoute, Link, Navigate, useNavigate } from '@tanstack/react-router'
 import { useCallback, useState } from 'react'
 import type { DesktopOptions } from '@dorks/client'
+import type { AgentModelChoice } from '@dorks/shared'
 import { ChevronDownIcon, ChevronRightIcon, InfoIcon, MessageSquareIcon } from 'lucide-react'
 import { useBuilds, useConnection, useDork, useDorkEvents, useDorks, useDorksClient, useSettings } from '@dorks/client/react'
 import { List } from '../../../components/onboarding/List'
@@ -27,8 +28,8 @@ import {
   MessageScrollerViewport,
 } from '@dorks/ui/message-scroller'
 import { ChatMessages } from '../../../components/ChatBlock'
-import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen } from '../../../components/ChatDetails'
-import { withImages, Composer, type AgentProvider } from '../../../components/ChatComposer'
+import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, type ChatDetailsData } from '../../../components/ChatDetails'
+import { withImages, Composer, type AgentProvider, type ModelPicker } from '../../../components/ChatComposer'
 import { ChatMenu } from '../../../components/ChatMenu'
 import { ArchiveButton, PageHeader } from '../../../components/PageHeader'
 import { SetupStatus } from '../../../components/SetupStatus'
@@ -157,6 +158,75 @@ function NewDork({ initialRepo, onCreated, disabled, claudeReady, codexReady }: 
   )
 }
 
+type DorkView = NonNullable<ReturnType<typeof useDork>>
+type DorksActions = ReturnType<typeof useDorksClient>['actions']
+
+/** Chat details for a session: its pull request, screenshots (newest first), previews and computer. */
+function detailsData(dork: DorkView, actions: DorksActions, computer: Pick<NonNullable<ChatDetailsData['computer']>, 'used' | 'fetchUrl' | 'interrupt'>): ChatDetailsData {
+  return {
+    pr: prOf(dork.prUrl),
+    artifacts: dork.images?.map((i, n) => ({ id: i.id, name: i.caption ?? `Screenshot ${n + 1}`, type: 'Screenshot', src: actions.imageUrl(i.id), width: i.width, height: i.height })).reverse(),
+    previews: dork.previews?.map((p) => ({ name: p.title ?? `Port ${p.port}`, url: p.url, port: p.port })),
+    computer: { awake: dork.state === 'working' || dork.state === 'idle', working: dork.state === 'working', ...computer },
+  }
+}
+
+/** Claude's model menu for a running session; Codex has none. */
+function claudePicker(dork: DorkView, fallback: AgentModelChoice[] | undefined, onChange: ModelPicker['onChange']): ModelPicker | undefined {
+  if (dork.provider !== 'claude') return undefined
+  return {
+    choices: dork.modelChoices ?? fallback ?? [],
+    model: dork.model,
+    effort: dork.effort,
+    active: { model: dork.agentModel, effort: dork.agentEffort },
+    onChange,
+  }
+}
+
+/** A failed Codex session's ChatGPT models, to restart it on another one. */
+function CodexModelForm({ dork }: { dork: DorkView }) {
+  const { actions } = useDorksClient()
+  const [selectedModel, setSelectedModel] = useState('')
+  const modelChoice = usePending()
+  const models = dork.codexModelChoices?.flatMap((option) => option.efforts.map((effort) => ({
+    key: `${option.model}:${effort}`, model: option.model, effort,
+  }))) ?? []
+  const choice = models.find((option) => option.key === selectedModel) ?? models[0]
+  if (models.length === 0) return null
+  return (
+    <form className="mx-auto mt-4 flex w-full max-w-4xl shrink-0 flex-wrap items-center gap-2 px-4 text-sm" onSubmit={(event) => {
+      event.preventDefault()
+      if (choice) void modelChoice.run(() => actions.chooseCodexModel(dork.id, choice.model, choice.effort))
+    }}>
+      <span className="w-full text-muted-foreground">Available ChatGPT models</span>
+      <InputGroup className="max-w-56">
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<InputGroupButton size="sm" variant="ghost" className="w-full justify-between" aria-label="Codex model" />}>
+            <span className="truncate">{choice ? `${choice.model} · ${choice.effort}` : 'Choose model'}</span>
+            <ChevronDownIcon className="shrink-0" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-56">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Model and effort</DropdownMenuLabel>
+              <DropdownMenuRadioGroup value={choice?.key ?? ''} onValueChange={setSelectedModel}>
+                {models.map((option) => (
+                  <DropdownMenuRadioItem key={option.key} value={option.key}>
+                    {option.model} · {option.effort}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </InputGroup>
+      <Button type="submit" size="sm" disabled={dork.state !== 'error' || modelChoice.pending || !choice}>
+        {modelChoice.pending ? 'Starting…' : 'Use this model'}
+      </Button>
+      {modelChoice.error && <p className="text-sm text-destructive" role="alert">{modelChoice.error}</p>}
+    </form>
+  )
+}
+
 function Thread({ dorkId }: { dorkId: string }) {
   const { actions } = useDorksClient()
   const navigate = useNavigate()
@@ -164,18 +234,11 @@ function Thread({ dorkId }: { dorkId: string }) {
   const { view, canLoadMore, loadMore, loading, error: eventsError, send } = useDorkEvents(dorkId)
   const [text, setText] = useState('')
   const [reply, setReply] = useState<Reply>()
-  const [selectedModel, setSelectedModel] = useState('')
   const { run, pending, error } = usePending()
   const { run: runStop, pending: stopping, error: stopError } = usePending()
   const { run: runArchive, pending: archiving, error: archiveError } = usePending()
-  const modelChoice = usePending()
   const modelSwitch = usePending()
   const settings = useSettings()
-  const models = dork?.codexModelChoices?.flatMap((option) => option.efforts.map((effort) => ({
-    key: `${option.model}:${effort}`, model: option.model, effort,
-  }))) ?? []
-  const choice = models.find((option) => option.key === selectedModel) ?? models[0]
-  const working = dork?.state === 'working'
   const [detailsOpen, setDetailsOpen] = useDetailsOpen()
   const computerUsed = view.blocks.some((b) => b.kind === 'tool' && b.name.startsWith('mcp__computer__'))
   const fetchDesktopUrl = useCallback((opts: DesktopOptions) => actions.desktopUrl(dorkId, opts), [actions, dorkId])
@@ -183,8 +246,10 @@ function Thread({ dorkId }: { dorkId: string }) {
   const { live } = useConnection()
   if (dork === undefined || loading) return <p className="mt-4 px-6 text-sm text-muted-foreground" role="status">Loading session…</p>
   if (dork === null) return <p className="mt-4 px-6 text-sm text-destructive" role="alert">That session could not be found.</p>
+  const working = dork.state === 'working'
+  const canReply = !dork.archived
   return (
-    <ChatSplit details={detailsOpen ? <ChatDetails data={{ pr: prOf(dork.prUrl), artifacts: dork.images?.map((i, n) => ({ id: i.id, name: i.caption ?? `Screenshot ${n + 1}`, type: 'Screenshot', src: actions.imageUrl(i.id), width: i.width, height: i.height })).reverse(), previews: dork.previews?.map((p) => ({ name: p.title ?? `Port ${p.port}`, url: p.url, port: p.port })), computer: { awake: dork.state === 'working' || dork.state === 'idle', working, used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent } }} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} onAsk={setText} /> : undefined}>
+    <ChatSplit details={detailsOpen ? <ChatDetails data={detailsData(dork, actions, { used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent })} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} onAsk={setText} /> : undefined}>
     <section className="flex min-w-0 flex-1 flex-col" aria-label="thread" data-state={dork.state}>
       <PageHeader divider={false}
         title={dork.title}
@@ -194,38 +259,7 @@ function Thread({ dorkId }: { dorkId: string }) {
           {!detailsOpen && <ShowDetailsButton onClick={() => setDetailsOpen(true)} />}
         </>}
       />
-      {models.length > 0 && (
-        <form className="mx-auto mt-4 flex w-full max-w-4xl shrink-0 flex-wrap items-center gap-2 px-4 text-sm" onSubmit={(event) => {
-          event.preventDefault()
-          if (choice) void modelChoice.run(() => actions.chooseCodexModel(dorkId, choice.model, choice.effort))
-        }}>
-          <span className="w-full text-muted-foreground">Available ChatGPT models</span>
-          <InputGroup className="max-w-56">
-            <DropdownMenu>
-              <DropdownMenuTrigger render={<InputGroupButton size="sm" variant="ghost" className="w-full justify-between" aria-label="Codex model" />}>
-                <span className="truncate">{choice ? `${choice.model} · ${choice.effort}` : 'Choose model'}</span>
-                <ChevronDownIcon className="shrink-0" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-56">
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel>Model and effort</DropdownMenuLabel>
-                  <DropdownMenuRadioGroup value={choice?.key ?? ''} onValueChange={setSelectedModel}>
-                    {models.map((option) => (
-                      <DropdownMenuRadioItem key={option.key} value={option.key}>
-                        {option.model} · {option.effort}
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </InputGroup>
-          <Button type="submit" size="sm" disabled={dork.state !== 'error' || modelChoice.pending || !choice}>
-            {modelChoice.pending ? 'Starting…' : 'Use this model'}
-          </Button>
-          {modelChoice.error && <p className="text-sm text-destructive" role="alert">{modelChoice.error}</p>}
-        </form>
-      )}
+      <CodexModelForm dork={dork} />
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
         <MessageScroller>
           <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
@@ -235,8 +269,8 @@ function Thread({ dorkId }: { dorkId: string }) {
                 blocks={view.blocks}
                 imageUrl={actions.imageUrl}
                 agent={dork.provider === 'codex' ? 'Codex' : 'Claude'}
-                onReply={dork.archived ? undefined : (quoted, draft) => { setReply(quoted); if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft)) }}
-                onReplySend={dork.archived ? undefined : (quoted, answer) => run(() => send(withReply(quoted, answer)))}
+                onReply={canReply ? (quoted, draft) => { setReply(quoted); if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft)) } : undefined}
+                onReplySend={canReply ? (quoted, answer) => run(() => send(withReply(quoted, answer))) : undefined}
               />
               {eventsError && <p role="alert" className="text-sm text-destructive">Could not load messages: {eventsError.message}. Retrying…</p>}
               <div><AgentStatus state={dork.state} live={live} outcome={view.lastOutcome} /></div>
@@ -247,15 +281,9 @@ function Thread({ dorkId }: { dorkId: string }) {
       </MessageScrollerProvider>
       <Composer
         text={text} setText={setText} repo={dork.repo} provider={dork.provider ?? 'claude'} pending={pending} disabled={dork.archived}
-        error={error || stopError || archiveError || modelSwitch.error}
+        error={[error, stopError, archiveError, modelSwitch.error].find(Boolean) ?? ''}
         agentLabel={dork.codexModel?.model}
-        picker={dork.provider === 'claude' ? {
-          choices: dork.modelChoices ?? settings?.claudeModels ?? [],
-          model: dork.model,
-          effort: dork.effort,
-          active: { model: dork.agentModel, effort: dork.agentEffort },
-          onChange: (model, effort) => void modelSwitch.run(() => actions.chooseModel(dorkId, model ?? null, effort ?? null)),
-        } : undefined}
+        picker={claudePicker(dork, settings?.claudeModels, (model, effort) => void modelSwitch.run(() => actions.chooseModel(dorkId, model ?? null, effort ?? null)))}
         upload={actions.uploadImage}
         reply={reply}
         onClearReply={() => setReply(undefined)}
@@ -267,7 +295,7 @@ function Thread({ dorkId }: { dorkId: string }) {
           setReply(undefined)
           try { await send(withReply(quoted, withImages(sent, images))) } catch (e) { setText(sent); setReply(quoted); throw e }
         })}
-        onStop={working && !stopping && !dork.archived ? () => void runStop(() => actions.interrupt(dorkId)) : undefined}
+        onStop={working && !stopping && canReply ? () => void runStop(() => actions.interrupt(dorkId)) : undefined}
       />
     </section>
     </ChatSplit>

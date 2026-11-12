@@ -1,6 +1,6 @@
 import { ArrowUpIcon, BoxIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon } from 'lucide-react'
 import type { AgentModelChoice } from '@dorks/shared'
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -80,6 +80,245 @@ export const withImages = (text: string, images: AttachedImage[]) =>
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
 const MAX_IMAGE = 8 * 1024 * 1024
 
+/** Images attached to the next message: added, uploaded at once, removed, and cleared once sent. */
+function useAttachments(upload: ((file: File) => Promise<string>) | undefined) {
+  const [files, setFiles] = useState<Pending[]>([])
+  const [attachError, setAttachError] = useState('')
+  const filesRef = useRef(files)
+  filesRef.current = files
+  useEffect(() => () => filesRef.current.forEach((f) => URL.revokeObjectURL(f.preview)), [])
+  const attach = (list: File[]) => {
+    if (!upload) return
+    const images = list.filter((f) => IMAGE_TYPES.includes(f.type))
+    const tooBig = images.filter((f) => f.size > MAX_IMAGE)
+    setAttachError(images.length < list.length ? 'Only PNG, JPEG, WebP and GIF images can be attached.' : tooBig.length ? 'Images can be at most 8 MB.' : '')
+    for (const file of images.filter((f) => f.size <= MAX_IMAGE)) {
+      const key = crypto.randomUUID()
+      setFiles((current) => [...current, { key, name: file.name || 'Pasted image', preview: URL.createObjectURL(file), state: 'uploading' }])
+      upload(file).then(
+        (imageId) => setFiles((current) => current.map((f) => (f.key === key ? { ...f, state: 'done', imageId } : f))),
+        () => setFiles((current) => current.map((f) => (f.key === key ? { ...f, state: 'error' } : f))),
+      )
+    }
+  }
+  const remove = (key: string) => setFiles((current) => current.filter((f) => {
+    if (f.key === key) URL.revokeObjectURL(f.preview)
+    return f.key !== key
+  }))
+  /** Only what was sent goes: an image attached while it was sending stays for the next message. */
+  const clearSent = (sent: Pending[]) => {
+    setFiles((current) => current.filter((f) => !sent.includes(f)))
+    sent.forEach((f) => URL.revokeObjectURL(f.preview))
+    setAttachError('')
+  }
+  const ready = files.filter((f) => f.state === 'done' && f.imageId)
+  const uploading = files.some((f) => f.state === 'uploading')
+  return { files, attachError, attach, remove, clearSent, ready, uploading }
+}
+
+/** Whether the text runs past one line; re-measured as it changes and as the box resizes. */
+function useWraps(textRef: RefObject<HTMLTextAreaElement | null>, text: string) {
+  const [wraps, setWraps] = useState(false)
+  useLayoutEffect(() => {
+    const el = textRef.current
+    if (!el) return
+    const measure = () => {
+      const style = getComputedStyle(el)
+      const content = el.scrollHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
+      setWraps(content > parseFloat(style.lineHeight) * 1.5)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [textRef, text])
+  return wraps
+}
+
+/** One attached image: a 112px tile with the image filling it, its upload state, and a remove button. */
+function AttachmentTile({ file, onRemove }: { file: Pending; onRemove: () => void }) {
+  const failed = file.state === 'error'
+  return (
+    <div
+      data-testid="composer-attachment"
+      data-state={file.state}
+      title={failed ? `${file.name}: upload failed` : file.name}
+      className="group/tile relative size-28 shrink-0 overflow-hidden rounded-[10px] bg-muted"
+    >
+      <img src={file.preview} alt={file.name} className={`size-full object-cover object-top ${file.state === 'done' ? '' : 'opacity-50'}`} />
+      <span aria-hidden className={`pointer-events-none absolute inset-0 rounded-[10px] outline outline-1 -outline-offset-1 ${failed ? 'outline-destructive' : 'outline-black/10 dark:outline-white/10'}`} />
+      {file.state === 'uploading' && <LoaderCircleIcon aria-label="Uploading" className="absolute inset-0 m-auto size-5 animate-spin text-foreground" />}
+      {failed && <span role="alert" className="absolute inset-x-0 bottom-0 bg-destructive px-2 py-1 text-xs text-white">Upload failed</span>}
+      <button
+        type="button"
+        aria-label={`Remove ${file.name}`}
+        onClick={onRemove}
+        className="absolute top-1.5 right-1.5 flex size-5 items-center justify-center rounded-full bg-black/70 text-white opacity-0 outline-none transition-opacity group-hover/tile:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring [@media(hover:none)]:opacity-100"
+      >
+        <XIcon className="size-3" />
+      </button>
+    </div>
+  )
+}
+
+/** The main button: Stop while the agent works, else send (or create the session). */
+function MainButton({ onStop, isNewSession, pending, canSend }: { onStop?: () => void; isNewSession: boolean; pending: boolean; canSend: boolean }) {
+  if (onStop) {
+    return (
+      <Tip label="Stop agent">
+        <InputGroupButton size="icon-sm" variant="default" className={MAIN} aria-label="Stop agent" onClick={onStop}>
+          <SquareIcon className="fill-current" />
+        </InputGroupButton>
+      </Tip>
+    )
+  }
+  const label = isNewSession ? 'Create session' : 'Send message'
+  return (
+    <Tip label={label}>
+      <InputGroupButton type="submit" size="icon-sm" variant="default" className={MAIN} aria-label={label} disabled={!canSend}>
+        {pending ? <LoaderCircleIcon className="animate-spin" /> : <ArrowUpIcon />}
+      </InputGroupButton>
+    </Tip>
+  )
+}
+
+/** The repository: a picker for a new session, else its name. */
+function RepositoryControl({ repo, setRepo, repositories, disabled }: { repo?: string; setRepo?: (repo: string) => void; repositories: string[]; disabled: boolean }) {
+  if (repo === undefined) return null
+  if (setRepo) return <RepositoryPicker repo={repo} setRepo={setRepo} repositories={repositories} disabled={disabled} />
+  return (
+    <span title={repo} data-testid="chat-repository" className="flex h-7 min-w-0 items-center gap-1.5 px-2 text-[13px] text-muted-foreground">
+      <FolderIcon className="size-3.5 shrink-0" />
+      <span className="max-w-48 truncate">{repo || 'No repository'}</span>
+    </span>
+  )
+}
+
+const effortName = (effort: string) => EFFORT_NAMES[effort] ?? effort
+
+/** What the model menu shows: the Claude picker (only for Claude), the trigger's label, and the efforts the chosen model has. */
+function modelMenuState(provider: AgentProvider, picker: ModelPicker | undefined, agentLabel: string | undefined) {
+  const models = provider === 'claude' ? picker : undefined
+  const choices = models?.choices ?? []
+  // The trigger names the model the agent confirmed when it has, else the one chosen (or what the default resolves to).
+  const active = models?.active?.model ? models.active : undefined
+  const chosen = models && (modelName(choices, active?.model) ?? modelName(choices, models.model ?? DEFAULT))
+  const label = chosen || agentLabel || AGENT_NAMES[provider]
+  const effort = active ? active.effort : models?.effort
+  const efforts: string[] = choices.find((c) => c.model === (models?.model ?? DEFAULT))?.efforts ?? []
+  return { models, choices, active, label, effort, efforts }
+}
+
+/** Claude's group: the models the agent reported, or Claude Code as a single choice. */
+function ClaudeModels({ models, choices, provider, setProvider, label }: { models?: ModelPicker; choices: AgentModelChoice[]; provider: AgentProvider; setProvider?: (provider: AgentProvider) => void; label: string }) {
+  if (provider === 'claude' && models && choices.length > 0) {
+    return (
+      <DropdownMenuRadioGroup
+        value={models.model ?? DEFAULT}
+        onValueChange={(value) => {
+          const next = choices.find((c) => c.model === value)
+          // An effort the new model does not support falls back to its default.
+          models.onChange(value === DEFAULT ? undefined : value, models.effort && next?.efforts.includes(models.effort as never) ? models.effort : undefined)
+        }}
+      >
+        {choices.map((c) => (
+          <DropdownMenuRadioItem key={c.model} value={c.model} closeOnClick title={c.description}>
+            <ProviderIcon provider="claude" />
+            <span className="min-w-0 truncate">{c.name}</span>
+          </DropdownMenuRadioItem>
+        ))}
+      </DropdownMenuRadioGroup>
+    )
+  }
+  return (
+    <DropdownMenuRadioGroup value={provider} onValueChange={() => setProvider?.('claude')}>
+      <DropdownMenuRadioItem value="claude" closeOnClick disabled={provider !== 'claude' && !setProvider}>
+        <ProviderIcon provider="claude" />
+        {provider === 'claude' ? label : AGENT_NAMES.claude}
+      </DropdownMenuRadioItem>
+    </DropdownMenuRadioGroup>
+  )
+}
+
+/** The chosen model's efforts, with the agent's default first. */
+function EffortGroup({ models, efforts }: { models: ModelPicker; efforts: string[] }) {
+  return (
+    <>
+      <DropdownMenuSeparator />
+      <DropdownMenuGroup>
+        <DropdownMenuLabel>Effort</DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={models.effort ?? DEFAULT} onValueChange={(value) => models.onChange(models.model, value === DEFAULT ? undefined : value)}>
+          <DropdownMenuRadioItem value={DEFAULT} closeOnClick>
+            <EffortBars level={0} />
+            Default
+          </DropdownMenuRadioItem>
+          {efforts.map((e) => (
+            <DropdownMenuRadioItem key={e} value={e} closeOnClick>
+              <EffortBars level={barsFor(efforts, e)} />
+              {effortName(e)}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuGroup>
+    </>
+  )
+}
+
+/** What the agent itself reported, so the trigger is never only what was asked for. */
+function ModelConfirmation({ active }: { active?: { model?: string; effort?: string } }) {
+  return (
+    <>
+      <DropdownMenuSeparator />
+      <DropdownMenuGroup>
+        <DropdownMenuLabel className="font-normal text-muted-foreground" data-testid="model-confirmation">
+          {active
+            ? <span>Running <span className="font-mono">{active.model}</span>{active.effort ? ` at ${effortName(active.effort).toLowerCase()} effort` : ''}.</span>
+            : 'Applies from your next message.'}
+        </DropdownMenuLabel>
+      </DropdownMenuGroup>
+    </>
+  )
+}
+
+/** One menu for the agent, Claude's model and the effort. */
+function ModelMenu({ provider, setProvider, codexEnabled, picker, agentLabel, isNewSession, disabled }: {
+  provider: AgentProvider
+  setProvider?: (provider: AgentProvider) => void
+  codexEnabled?: boolean
+  picker?: ModelPicker
+  agentLabel?: string
+  isNewSession: boolean
+  disabled: boolean
+}) {
+  const { models, choices, active, label, effort, efforts } = modelMenuState(provider, picker, agentLabel)
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger disabled={disabled} render={<InputGroupButton size="sm" variant="ghost" aria-label={`Model: ${label}${effort ? `, effort: ${effortName(effort)}` : ''}`} className="ml-auto h-7 gap-1.5 px-2 text-[13px] text-muted-foreground hover:text-foreground" />}>
+        <span data-testid="model-label">{label}</span>
+        {effort && efforts.length > 0 && <span className="text-muted-foreground"><EffortBars level={barsFor(efforts, effort)} /></span>}
+        <ChevronDownIcon />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>{AGENT_NAMES.claude}</DropdownMenuLabel>
+          <ClaudeModels models={models} choices={choices} provider={provider} setProvider={setProvider} label={label} />
+        </DropdownMenuGroup>
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>{AGENT_NAMES.codex}</DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={provider} onValueChange={() => setProvider?.('codex')}>
+            <DropdownMenuRadioItem value="codex" closeOnClick disabled={provider !== 'codex' && (!setProvider || !codexEnabled)}>
+              <ProviderIcon provider="codex" />
+              {provider === 'codex' ? label : AGENT_NAMES.codex}
+            </DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+        </DropdownMenuGroup>
+        {models && efforts.length > 0 && <EffortGroup models={models} efforts={efforts} />}
+        {models && !isNewSession && <ModelConfirmation active={active} />}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 /**
  * The message box: the AI Elements prompt input, copied from the published component (ui.shadcn.com/docs/ai-elements/base/prompt-input,
  * `PromptInputDemo` in @dorks/ui): the box holds the text, attachments and main button; the compact bar below holds the repository
@@ -142,54 +381,19 @@ export function Composer({
   const formRef = useRef<HTMLFormElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const textRef = useRef<HTMLTextAreaElement>(null)
-  const [files, setFiles] = useState<Pending[]>([])
-  const [attachError, setAttachError] = useState('')
-  const filesRef = useRef(files)
-  filesRef.current = files
-  useEffect(() => () => filesRef.current.forEach((f) => URL.revokeObjectURL(f.preview)), [])
-  const attach = (list: File[]) => {
-    if (!upload) return
-    const images = list.filter((f) => IMAGE_TYPES.includes(f.type))
-    const tooBig = images.filter((f) => f.size > MAX_IMAGE)
-    setAttachError(images.length < list.length ? 'Only PNG, JPEG, WebP and GIF images can be attached.' : tooBig.length ? 'Images can be at most 8 MB.' : '')
-    for (const file of images.filter((f) => f.size <= MAX_IMAGE)) {
-      const key = crypto.randomUUID()
-      setFiles((current) => [...current, { key, name: file.name || 'Pasted image', preview: URL.createObjectURL(file), state: 'uploading' }])
-      upload(file).then(
-        (imageId) => setFiles((current) => current.map((f) => (f.key === key ? { ...f, state: 'done', imageId } : f))),
-        () => setFiles((current) => current.map((f) => (f.key === key ? { ...f, state: 'error' } : f))),
-      )
-    }
-  }
-  const remove = (key: string) => setFiles((current) => current.filter((f) => {
-    if (f.key === key) URL.revokeObjectURL(f.preview)
-    return f.key !== key
-  }))
-  const ready = files.filter((f) => f.state === 'done' && f.imageId)
-  const uploading = files.some((f) => f.state === 'uploading')
+  const { files, attachError, attach, remove, clearSent, ready, uploading } = useAttachments(upload)
   // One row until the text wraps (or a file is attached); then the text takes the box and the buttons sit on a row under it.
   // The text has the same side insets in both forms, so it wraps the same way in each and the box never flips back and forth.
-  const [wraps, setWraps] = useState(false)
-  useLayoutEffect(() => {
-    const el = textRef.current
-    if (!el) return
-    const measure = () => {
-      const style = getComputedStyle(el)
-      const content = el.scrollHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
-      setWraps(content > parseFloat(style.lineHeight) * 1.5)
-    }
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [text])
+  const wraps = useWraps(textRef, text)
   // A new reply puts the cursor in the box, ready to answer it.
   useEffect(() => {
     if (reply) textRef.current?.focus()
   }, [reply])
   const stacked = wraps || files.length > 0
   const isNewSession = setRepo !== undefined
-  const canSend = (text.trim().length > 0 || ready.length > 0) && !uploading && !pending && !disabled && (!isNewSession || !!repo?.trim())
+  const locked = !!(pending || disabled)
+  const hasContent = text.trim().length > 0 || ready.length > 0
+  const canSend = hasContent && !uploading && !locked && (!isNewSession || !!repo?.trim())
   const submit = async () => {
     const sent = files
     try {
@@ -197,19 +401,9 @@ export function Composer({
     } catch {
       return
     }
-    // Only what was sent goes: an image attached while it was sending stays for the next message.
-    setFiles((current) => current.filter((f) => !sent.includes(f)))
-    sent.forEach((f) => URL.revokeObjectURL(f.preview))
-    setAttachError('')
+    clearSent(sent)
   }
-  const models = provider === 'claude' ? picker : undefined
-  const choices = models?.choices ?? []
-  // The trigger names the model the agent confirmed when it has, else the one chosen (or what the default resolves to).
-  const active = models?.active?.model ? models.active : undefined
-  const modelLabel = (models && (modelName(choices, active?.model) ?? modelName(choices, models.model ?? DEFAULT))) || agentLabel || AGENT_NAMES[provider]
-  const effort = active ? active.effort : models?.effort
-  const selected = choices.find((c) => c.model === (models?.model ?? DEFAULT))
-  const efforts: string[] = selected?.efforts ?? []
+  const shownError = error || attachError
   return (
     // The prompt input is published with an 18px group and pill buttons; the app's 6px radius is lifted for it alone.
     <div className="mx-auto flex w-full max-w-4xl shrink-0 flex-col gap-4 px-5 pb-3 [--control-radius:18px]">
@@ -250,28 +444,7 @@ export function Composer({
             // Attached images as plain thumbnails, the text's left edge, no file names: a 112px tile with the image filling it, a hairline
             // drawn inside its edge so a white screenshot keeps its shape, and a remove button in its corner on hover or focus.
             <InputGroupAddon align="block-start" className="flex-wrap justify-start gap-2 px-[42px] pt-3 pb-0">
-              {files.map((file) => (
-                <div
-                  key={file.key}
-                  data-testid="composer-attachment"
-                  data-state={file.state}
-                  title={file.state === 'error' ? `${file.name}: upload failed` : file.name}
-                  className="group/tile relative size-28 shrink-0 overflow-hidden rounded-[10px] bg-muted"
-                >
-                  <img src={file.preview} alt={file.name} className={`size-full object-cover object-top ${file.state === 'done' ? '' : 'opacity-50'}`} />
-                  <span aria-hidden className={`pointer-events-none absolute inset-0 rounded-[10px] outline outline-1 -outline-offset-1 ${file.state === 'error' ? 'outline-destructive' : 'outline-black/10 dark:outline-white/10'}`} />
-                  {file.state === 'uploading' && <LoaderCircleIcon aria-label="Uploading" className="absolute inset-0 m-auto size-5 animate-spin text-foreground" />}
-                  {file.state === 'error' && <span role="alert" className="absolute inset-x-0 bottom-0 bg-destructive px-2 py-1 text-xs text-white">Upload failed</span>}
-                  <button
-                    type="button"
-                    aria-label={`Remove ${file.name}`}
-                    onClick={() => remove(file.key)}
-                    className="absolute top-1.5 right-1.5 flex size-5 items-center justify-center rounded-full bg-black/70 text-white opacity-0 outline-none transition-opacity group-hover/tile:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring [@media(hover:none)]:opacity-100"
-                  >
-                    <XIcon className="size-3" />
-                  </button>
-                </div>
-              ))}
+              {files.map((file) => <AttachmentTile key={file.key} file={file} onRemove={() => remove(file.key)} />)}
             </InputGroupAddon>
           ) : null}
           <InputGroupTextarea
@@ -302,7 +475,7 @@ export function Composer({
                 formRef.current?.requestSubmit()
               }
             }}
-            disabled={pending || disabled}
+            disabled={locked}
             ref={textRef}
             rows={1}
             // A 44px row: 12px above and below a 20px line, the text 42px in from each side (past the 28px buttons, 8px from the
@@ -312,119 +485,23 @@ export function Composer({
           {/* Attach and the main button keep one spot, 8px from the bottom corners, whether the box is one row or stacked. */}
           <div className="absolute bottom-2 left-2">
             <Tip label="Attach images">
-              <InputGroupButton size="icon-sm" variant="ghost" className="size-7 text-muted-foreground hover:text-foreground [--control-radius:6px]" aria-label="Attach images" disabled={!upload || pending || disabled} onClick={() => fileRef.current?.click()}>
+              <InputGroupButton size="icon-sm" variant="ghost" className="size-7 text-muted-foreground hover:text-foreground [--control-radius:6px]" aria-label="Attach images" disabled={!upload || locked} onClick={() => fileRef.current?.click()}>
                 <PlusIcon className="size-4" />
               </InputGroupButton>
             </Tip>
           </div>
           <div className="absolute right-2 bottom-2">
-            {onStop ? (
-              <Tip label="Stop agent">
-                <InputGroupButton size="icon-sm" variant="default" className={MAIN} aria-label="Stop agent" onClick={onStop}>
-                  <SquareIcon className="fill-current" />
-                </InputGroupButton>
-              </Tip>
-            ) : (
-              <Tip label={isNewSession ? 'Create session' : 'Send message'}>
-                <InputGroupButton type="submit" size="icon-sm" variant="default" className={MAIN} aria-label={isNewSession ? 'Create session' : 'Send message'} disabled={!canSend}>
-                  {pending ? <LoaderCircleIcon className="animate-spin" /> : <ArrowUpIcon />}
-                </InputGroupButton>
-              </Tip>
-            )}
+            <MainButton onStop={onStop} isNewSession={isNewSession} pending={pending} canSend={canSend} />
           </div>
         </InputGroup>
         {/* Compact, shared baseline for the repository and model controls. */}
         <div className="flex items-center gap-2 px-2.5 pt-2 text-[13px] [--control-radius:6px]">
-          {repo !== undefined && (setRepo ? (
-            <RepositoryPicker repo={repo} setRepo={setRepo} repositories={repositories} disabled={pending || disabled} />
-          ) : (
-            <span title={repo} data-testid="chat-repository" className="flex h-7 min-w-0 items-center gap-1.5 px-2 text-[13px] text-muted-foreground">
-              <FolderIcon className="size-3.5 shrink-0" />
-              <span className="max-w-48 truncate">{repo || 'No repository'}</span>
-            </span>
-          ))}
-          {machine && machine.builds.length > 0 && <MachineMenu machine={machine} disabled={pending || disabled} />}
-          <DropdownMenu>
-            <DropdownMenuTrigger disabled={pending || disabled} render={<InputGroupButton size="sm" variant="ghost" aria-label={`Model: ${modelLabel}${effort ? `, effort: ${EFFORT_NAMES[effort] ?? effort}` : ''}`} className="ml-auto h-7 gap-1.5 px-2 text-[13px] text-muted-foreground hover:text-foreground" />}>
-              <span data-testid="model-label">{modelLabel}</span>
-              {effort && efforts.length > 0 && <span className="text-muted-foreground"><EffortBars level={barsFor(efforts, effort)} /></span>}
-              <ChevronDownIcon />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>{AGENT_NAMES.claude}</DropdownMenuLabel>
-                {provider === 'claude' && models && choices.length > 0 ? (
-                  <DropdownMenuRadioGroup
-                    value={models.model ?? DEFAULT}
-                    onValueChange={(value) => {
-                      const next = choices.find((c) => c.model === value)
-                      // An effort the new model does not support falls back to its default.
-                      models.onChange(value === DEFAULT ? undefined : value, models.effort && next?.efforts.includes(models.effort as never) ? models.effort : undefined)
-                    }}
-                  >
-                    {choices.map((c) => (
-                      <DropdownMenuRadioItem key={c.model} value={c.model} closeOnClick title={c.description}>
-                        <ProviderIcon provider="claude" />
-                        <span className="min-w-0 truncate">{c.name}</span>
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                ) : (
-                  <DropdownMenuRadioGroup value={provider} onValueChange={() => setProvider?.('claude')}>
-                    <DropdownMenuRadioItem value="claude" closeOnClick disabled={provider !== 'claude' && !setProvider}>
-                      <ProviderIcon provider="claude" />
-                      {provider === 'claude' ? modelLabel : AGENT_NAMES.claude}
-                    </DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                )}
-              </DropdownMenuGroup>
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>{AGENT_NAMES.codex}</DropdownMenuLabel>
-                <DropdownMenuRadioGroup value={provider} onValueChange={() => setProvider?.('codex')}>
-                  <DropdownMenuRadioItem value="codex" closeOnClick disabled={provider !== 'codex' && (!setProvider || !codexEnabled)}>
-                    <ProviderIcon provider="codex" />
-                    {provider === 'codex' ? modelLabel : AGENT_NAMES.codex}
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuGroup>
-              {models && efforts.length > 0 && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuGroup>
-                    <DropdownMenuLabel>Effort</DropdownMenuLabel>
-                    <DropdownMenuRadioGroup value={models.effort ?? DEFAULT} onValueChange={(value) => models.onChange(models.model, value === DEFAULT ? undefined : value)}>
-                      <DropdownMenuRadioItem value={DEFAULT} closeOnClick>
-                        <EffortBars level={0} />
-                        Default
-                      </DropdownMenuRadioItem>
-                      {efforts.map((e) => (
-                        <DropdownMenuRadioItem key={e} value={e} closeOnClick>
-                          <EffortBars level={barsFor(efforts, e)} />
-                          {EFFORT_NAMES[e] ?? e}
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuGroup>
-                </>
-              )}
-              {models && !isNewSession && (
-                <>
-                  <DropdownMenuSeparator />
-                  {/* What the agent itself reported, so the trigger is never only what was asked for. */}
-                  <DropdownMenuGroup>
-                    <DropdownMenuLabel className="font-normal text-muted-foreground" data-testid="model-confirmation">
-                      {active
-                        ? <span>Running <span className="font-mono">{active.model}</span>{active.effort ? ` at ${(EFFORT_NAMES[active.effort] ?? active.effort).toLowerCase()} effort` : ''}.</span>
-                        : 'Applies from your next message.'}
-                    </DropdownMenuLabel>
-                  </DropdownMenuGroup>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <RepositoryControl repo={repo} setRepo={setRepo} repositories={repositories} disabled={locked} />
+          {machine && machine.builds.length > 0 && <MachineMenu machine={machine} disabled={locked} />}
+          <ModelMenu provider={provider} setProvider={setProvider} codexEnabled={codexEnabled} picker={picker} agentLabel={agentLabel} isNewSession={isNewSession} disabled={locked} />
         </div>
       </form>
-      {(error || attachError) && <p className="px-3 text-sm text-destructive" role="alert">{error || attachError}</p>}
+      {shownError && <p className="px-3 text-sm text-destructive" role="alert">{shownError}</p>}
     </div>
   )
 }
