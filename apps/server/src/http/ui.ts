@@ -2,9 +2,9 @@ import { timingSafeEqual } from "node:crypto";
 import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
+import { Effect, Schema } from "effect";
 import { AppFail, type App, type Change } from "../app";
-import { z } from "zod";
-import type { AppError } from "@dorks/shared";
+import { ApiError, body, errBody, intQuery, looseBody, ok, route, service, serviceAsync, STATUS } from "./route";
 import { imageBytes, MAX_IMAGE_BYTES, uploadImage } from "../services/bridge";
 import { chooseCodexModel, createDork, desktopUrl, getDorkView, interrupt, listDorks, listEvents, removeDork, renameDork, sendMessage, setArchived, owned } from "../services/dorks";
 import { chooseModel } from "../services/models";
@@ -16,22 +16,34 @@ import * as builds from "../services/builds";
 import * as runs from "../services/buildRuns";
 import { forgetUsage, getUsage } from "../services/usage";
 
-const STATUS: Record<AppError["code"], number> = {
-  invalid: 400, not_found: 404, forbidden: 401, limit: 429, rate_limited: 429, archived: 409, deleting: 409, conflict: 409, sleeping: 409,
-  onboarding_incomplete: 412, not_configured: 412, too_many_frames: 413, event_too_large: 413, github_error: 502, timeout: 504, turn_failed: 500, failed: 500,
-};
-
 const safeEqual = (a: string, b: string) => {
   const x = Buffer.from(a);
   const y = Buffer.from(b);
   return x.length === y.length && timingSafeEqual(x, y);
 };
 
-const errBody = (error: AppError) => ({ error });
+// Request bodies. A field a service checks itself (with its own message) stays `Unknown` here.
+const Loose = Schema.optional(Schema.Unknown);
+const CreateDork = Schema.Struct({ repo: Loose, message: Loose, title: Loose, provider: Loose, model: Loose, effort: Loose, buildId: Loose, setup: Loose });
+const Text = Schema.Struct({ text: Loose });
+const Title = Schema.Struct({ title: Loose });
+const Theme = Schema.Struct({ theme: Loose });
+const Archived = Schema.Struct({ archived: Schema.Boolean });
+const ModelChoice = Schema.Struct({ model: Loose, effort: Loose });
+const Pr = Schema.Struct({ repo: Schema.String, number: Schema.Int });
+const SecretValue = Schema.Struct({ value: Loose });
+const Force = Schema.Struct({ force: Schema.optional(Schema.Boolean) });
+const RunKind = Schema.Struct({ kind: Schema.Literals(["image", "trial"]) });
+const Approve = Schema.Struct({ reviewed: Loose, run: Loose });
+const Reject = Schema.Struct({ reason: Loose });
+const Default = Schema.Struct({ default: Loose });
+
+const str = (v: unknown) => v as string;
 
 /** The loopback API the UI talks to (docs/architecture.md, "UI API"). Owner-token bearer auth on everything except /api/health. */
 export function uiApp(app: App): Hono {
   const api = new Hono();
+  const on = (f: Parameters<typeof route>[1]) => route(app, f);
 
   api.use("*", cors({ origin: (origin) => (app.cfg.uiOrigins.includes(origin) ? origin : null), allowHeaders: ["Authorization", "Content-Type"], allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], maxAge: 600 }));
 
@@ -66,204 +78,126 @@ export function uiApp(app: App): Hono {
 
   api.onError((e, c) => {
     if (e instanceof AppFail) return c.json(errBody(e.error), STATUS[e.error.code] as 400);
-    if (e instanceof SyntaxError) return c.json(errBody({ code: "invalid", message: "bad JSON" }), 400);
     console.error("ui request failed", c.req.method, c.req.path, e instanceof Error ? e.message.slice(0, 200) : "unknown");
     return c.json(errBody({ code: "failed", message: "Something went wrong" }), 500);
   });
 
-  const body = async (c: Context): Promise<Record<string, unknown>> => {
-    const text = await c.req.text();
-    if (!text) return {};
-    const v = JSON.parse(text);
-    if (v === null || typeof v !== "object" || Array.isArray(v)) throw new AppFail({ code: "invalid", message: "body must be an object" });
-    return v as Record<string, unknown>;
-  };
-  const num = (v: string | undefined) => (v === undefined || v === "" ? undefined : Number(v));
-  const intParam = (v: string | undefined) => {
-    const n = num(v);
-    if (n !== undefined && !Number.isFinite(n)) throw new AppFail({ code: "invalid", message: "bad number" });
-    return n;
-  };
-  const dorkIdOf = (c: Context) => c.req.param("id") as string;
+  const id = (c: Context) => c.req.param("id") as string;
+  const name = (c: Context) => c.req.param("name") as string;
 
   // ---- images: an attachment for a message the owner is writing (raw bytes in the body). The message names it as dorks-image:<id>.
-  api.post("/api/images", async (c) => {
-    const len = Number(c.req.header("content-length") ?? 0);
-    if (len > MAX_IMAGE_BYTES) throw new AppFail({ code: "invalid", message: "the image is larger than 8 MB" });
-    return c.json(uploadImage(app, new Uint8Array(await c.req.arrayBuffer())), 201);
-  });
+  api.post("/api/images", on((c) => Effect.gen(function* () {
+    if (Number(c.req.header("content-length") ?? 0) > MAX_IMAGE_BYTES) return yield* ApiError.of("invalid", "the image is larger than 8 MB");
+    const bytes = new Uint8Array(yield* Effect.promise(() => c.req.arrayBuffer()));
+    return c.json(yield* service((a) => uploadImage(a, bytes)), 201);
+  })));
 
   // ---- dorks
-  api.get("/api/dorks", (c) => c.json(listDorks(app, c.req.query("archived") === "true")));
-  api.post("/api/dorks", async (c) => {
-    const b = await body(c);
-    const id = createDork(app, { repo: b.repo as string | undefined, message: b.message as string, title: b.title as string | undefined, provider: b.provider as never, model: b.model, effort: b.effort, buildId: b.buildId, setup: b.setup });
-    return c.json({ id }, 201);
-  });
-  api.get("/api/dorks/:id", (c) => {
-    const d = getDorkView(app, dorkIdOf(c));
-    return d ? c.json(d) : c.json(errBody({ code: "not_found", message: "not found" }), 404);
-  });
-  api.patch("/api/dorks/:id", async (c) => {
-    renameDork(app, dorkIdOf(c), (await body(c)).title as string);
-    return c.json({});
-  });
-  api.delete("/api/dorks/:id", (c) => {
-    removeDork(app, dorkIdOf(c));
-    return c.json({});
-  });
-  api.post("/api/dorks/:id/messages", async (c) => {
-    sendMessage(app, dorkIdOf(c), (await body(c)).text as string);
-    return c.json({});
-  });
-  api.post("/api/dorks/:id/interrupt", (c) => {
-    interrupt(app, dorkIdOf(c));
-    return c.json({});
-  });
-  api.post("/api/dorks/:id/desktop", async (c) => {
-    const b = await body(c);
-    const theme = b.theme === "dark" ? "dark" : "light";
-    const url = await desktopUrl(app, dorkIdOf(c), { theme });
+  api.get("/api/dorks", on((c) => service((a) => c.json(listDorks(a, c.req.query("archived") === "true")))));
+  api.post("/api/dorks", on((c) => Effect.gen(function* () {
+    const b = yield* body(c, CreateDork);
+    const dorkId = yield* service((a) => createDork(a, { repo: b.repo as string | undefined, message: str(b.message), title: b.title as string | undefined, provider: b.provider as never, model: b.model, effort: b.effort, buildId: b.buildId, setup: b.setup }));
+    return c.json({ id: dorkId }, 201);
+  })));
+  api.get("/api/dorks/:id", on((c) => service((a) => getDorkView(a, id(c))).pipe(
+    Effect.flatMap((d) => (d ? Effect.succeed(c.json(d)) : Effect.fail(ApiError.of("not_found", "not found")))),
+  )));
+  api.patch("/api/dorks/:id", on((c) => body(c, Title).pipe(Effect.flatMap((b) => service((a) => renameDork(a, id(c), str(b.title)))), ok(c))));
+  api.delete("/api/dorks/:id", on((c) => ok(c)(service((a) => removeDork(a, id(c))))));
+  api.post("/api/dorks/:id/messages", on((c) => body(c, Text).pipe(Effect.flatMap((b) => service((a) => sendMessage(a, id(c), str(b.text)))), ok(c))));
+  api.post("/api/dorks/:id/interrupt", on((c) => ok(c)(service((a) => interrupt(a, id(c))))));
+  api.post("/api/dorks/:id/desktop", on((c) => Effect.gen(function* () {
+    const b = yield* body(c, Theme);
+    const url = yield* serviceAsync((a) => desktopUrl(a, id(c), { theme: b.theme === "dark" ? "dark" : "light" }));
     c.header("Cache-Control", "no-store");
     return c.json({ url });
-  });
-  api.post("/api/dorks/:id/archive", async (c) => {
-    const b = await body(c);
-    if (typeof b.archived !== "boolean") throw new AppFail({ code: "invalid", message: "archived must be a boolean" });
-    setArchived(app, dorkIdOf(c), b.archived);
-    return c.json({});
-  });
-  api.post("/api/dorks/:id/model", async (c) => {
-    const b = await body(c);
-    chooseModel(app, dorkIdOf(c), b.model, b.effort);
-    return c.json({});
-  });
-  api.post("/api/dorks/:id/codex-model", async (c) => {
-    const b = await body(c);
-    chooseCodexModel(app, dorkIdOf(c), b.model as string, b.effort as string);
-    return c.json({});
-  });
-  api.get("/api/dorks/:id/events", (c) => {
-    const q = { before: intParam(c.req.query("before")), after: intParam(c.req.query("after")), limit: intParam(c.req.query("limit")) };
-    return c.json(listEvents(app, dorkIdOf(c), q));
-  });
+  })));
+  api.post("/api/dorks/:id/archive", on((c) => body(c, Archived, "archived must be a boolean").pipe(Effect.flatMap((b) => service((a) => setArchived(a, id(c), b.archived))), ok(c))));
+  api.post("/api/dorks/:id/model", on((c) => body(c, ModelChoice).pipe(Effect.flatMap((b) => service((a) => chooseModel(a, id(c), b.model, b.effort))), ok(c))));
+  api.post("/api/dorks/:id/codex-model", on((c) => body(c, ModelChoice).pipe(Effect.flatMap((b) => service((a) => chooseCodexModel(a, id(c), str(b.model), str(b.effort)))), ok(c))));
+  api.get("/api/dorks/:id/events", on((c) => Effect.gen(function* () {
+    const q = { before: yield* intQuery(c, "before"), after: yield* intQuery(c, "after"), limit: yield* intQuery(c, "limit") };
+    return c.json(yield* service((a) => listEvents(a, id(c), q)));
+  })));
 
   // ---- PR subscriptions
-  const prArgs = z.object({ repo: z.string(), number: z.number().int() });
-  const pr = async (c: Context) => {
-    const parsed = prArgs.safeParse(await body(c));
-    if (!parsed.success) throw new AppFail({ code: "invalid", message: "repo and number are required" });
-    return parsed.data;
-  };
-  api.get("/api/dorks/:id/subscriptions", (c) => {
-    if (!getDorkView(app, dorkIdOf(c))) return c.json([]);
-    return c.json(subs.liveSubscriptionViews(app, dorkIdOf(c)));
-  });
-  api.post("/api/dorks/:id/subscriptions", async (c) => {
-    const { repo, number } = await pr(c);
-    app.db.tx(() => void subs.subscribe(app, owned(app, dorkIdOf(c)), repo, number, "user"));
-    return c.json({});
-  });
-  api.delete("/api/dorks/:id/subscriptions", async (c) => {
-    const { repo, number } = await pr(c);
-    app.db.tx(() => {
-      owned(app, dorkIdOf(c));
-      subs.unsubscribe(app, dorkIdOf(c), repo, number);
-    });
-    return c.json({});
-  });
-  api.post("/api/dorks/:id/subscriptions/resume", async (c) => {
-    const { repo, number } = await pr(c);
-    app.db.tx(() => subs.resume(app, owned(app, dorkIdOf(c)), repo, number));
-    return c.json({});
-  });
+  const pr = (c: Context) => body(c, Pr, "repo and number are required");
+  api.get("/api/dorks/:id/subscriptions", on((c) => service((a) => c.json(getDorkView(a, id(c)) ? subs.liveSubscriptionViews(a, id(c)) : []))));
+  api.post("/api/dorks/:id/subscriptions", on((c) => pr(c).pipe(
+    Effect.flatMap(({ repo, number }) => service((a) => a.db.tx(() => void subs.subscribe(a, owned(a, id(c)), repo, number, "user")))),
+    ok(c),
+  )));
+  api.delete("/api/dorks/:id/subscriptions", on((c) => pr(c).pipe(
+    Effect.flatMap(({ repo, number }) => service((a) => a.db.tx(() => {
+      owned(a, id(c));
+      subs.unsubscribe(a, id(c), repo, number);
+    }))),
+    ok(c),
+  )));
+  api.post("/api/dorks/:id/subscriptions/resume", on((c) => pr(c).pipe(
+    Effect.flatMap(({ repo, number }) => service((a) => a.db.tx(() => subs.resume(a, owned(a, id(c)), repo, number)))),
+    ok(c),
+  )));
 
   // ---- settings and secrets
-  api.get("/api/settings", (c) => c.json(settingsView(app)));
-  api.put("/api/settings", async (c) => {
-    const patch = await body(c);
+  api.get("/api/settings", on((c) => service((a) => c.json(settingsView(a)))));
+  api.put("/api/settings", on((c) => Effect.gen(function* () {
+    const patch = yield* looseBody(c);
     // Provider values are checked here, by the server, before anything is saved (GitHub's is checked inside updateSettings).
-    await assertBoatAccepts(app, patch);
-    await assertCodexEnvironment(app, patch);
-    await updateSettings(app, patch);
-    if ("claudeToken" in patch || "boatKey" in patch || "boatOrg" in patch) forgetUsage(app);
-    console.error(`settings saved: ${Object.keys(patch).sort().join(", ")}`); // names only, never values
-    // A new Boat key starts the base-snapshot build in the background (onboarding has no "Prepare Boat" step), or retries a failed one.
-    if (typeof patch.boatKey === "string" && patch.boatKey.trim()) buildIfMissing(app, { retryFailed: true });
+    yield* serviceAsync((a) => assertBoatAccepts(a, patch));
+    yield* serviceAsync((a) => assertCodexEnvironment(a, patch));
+    yield* serviceAsync((a) => updateSettings(a, patch));
+    yield* service((a) => {
+      if ("claudeToken" in patch || "boatKey" in patch || "boatOrg" in patch) forgetUsage(a);
+      console.error(`settings saved: ${Object.keys(patch).sort().join(", ")}`); // names only, never values
+      // A new Boat key starts the base-snapshot build in the background (onboarding has no "Prepare Boat" step), or retries a failed one.
+      if (typeof patch.boatKey === "string" && patch.boatKey.trim()) buildIfMissing(a, { retryFailed: true });
+    });
     return c.json({});
-  });
-  api.get("/api/secrets", (c) => c.json(secretNames(app)));
-  api.put("/api/secrets/:name", async (c) => {
-    await setSecret(app, c.req.param("name"), (await body(c)).value as string);
-    return c.json({});
-  });
-  api.delete("/api/secrets/:name", (c) => {
-    deleteSecret(app, c.req.param("name"));
-    return c.json({});
-  });
+  })));
+  api.get("/api/secrets", on((c) => service((a) => c.json(secretNames(a)))));
+  api.put("/api/secrets/:name", on((c) => body(c, SecretValue).pipe(Effect.flatMap((b) => serviceAsync((a) => setSecret(a, name(c), str(b.value)))), ok(c))));
+  api.delete("/api/secrets/:name", on((c) => ok(c)(service((a) => deleteSecret(a, name(c))))));
 
   // ---- usage of the Claude subscription and Boat plan (services/usage.ts), cached for five minutes
-  api.get("/api/usage", async (c) => c.json(await getUsage(app)));
+  api.get("/api/usage", on((c) => serviceAsync(getUsage).pipe(Effect.map((u) => c.json(u)))));
 
   // ---- Boat key check (nothing is saved)
-  api.post("/api/boat/check", async (c) => c.json(await checkBoat(app, await body(c))));
+  api.post("/api/boat/check", on((c) => looseBody(c).pipe(Effect.flatMap((b) => serviceAsync((a) => checkBoat(a, b))), Effect.map((r) => c.json(r)))));
 
   // ---- base snapshot ("Prepare Boat")
-  api.get("/api/snapshot", async (c) => c.json(await snapshotView(app)));
-  api.post("/api/snapshot/build", async (c) => {
-    const b = await body(c);
-    if (b.force !== undefined && typeof b.force !== "boolean") throw new AppFail({ code: "invalid", message: "force must be a boolean" });
-    return c.json(await startBuild(app, { force: b.force === true }), 202);
-  });
+  api.get("/api/snapshot", on((c) => serviceAsync(snapshotView).pipe(Effect.map((v) => c.json(v)))));
+  api.post("/api/snapshot/build", on((c) => body(c, Force, "force must be a boolean").pipe(
+    Effect.flatMap((b) => serviceAsync((a) => startBuild(a, { force: b.force === true }))),
+    Effect.map((v) => c.json(v, 202)),
+  )));
 
   // ---- builds (docs/builds.md)
-  const buildIdOf = (c: Context) => c.req.param("id") as string;
-  api.get("/api/builds", async (c) => c.json(await builds.listBuilds(app)));
-  api.post("/api/builds", async (c) => c.json({ id: builds.createBuild(app, await body(c)) }, 201));
-  api.get("/api/builds/:id", async (c) => c.json(await builds.buildView(app, builds.ownBuild(app, buildIdOf(c)))));
-  api.patch("/api/builds/:id", async (c) => {
-    builds.updateBuild(app, buildIdOf(c), await body(c));
-    return c.json({});
-  });
-  api.delete("/api/builds/:id", (c) => {
-    builds.deleteBuild(app, buildIdOf(c));
-    return c.json({});
-  });
-  api.put("/api/builds/:id/default", async (c) => {
-    const b = await body(c);
-    builds.setDefaultBuild(app, b.default === false ? null : buildIdOf(c));
-    return c.json({});
-  });
-  api.put("/api/builds/:id/vars/:name", async (c) => {
-    await builds.setBuildVar(app, buildIdOf(c), c.req.param("name"), await body(c));
-    return c.json({});
-  });
-  api.delete("/api/builds/:id/vars/:name", (c) => {
-    builds.deleteBuildVar(app, buildIdOf(c), c.req.param("name"));
-    return c.json({});
-  });
-  api.get("/api/builds/:id/runs", (c) => c.json(builds.listRuns(app, buildIdOf(c))));
-  api.post("/api/builds/:id/runs", async (c) => {
-    const b = await body(c);
-    if (b.kind !== "image" && b.kind !== "trial") throw new AppFail({ code: "invalid", message: "kind must be image or trial" });
-    return c.json(runs.startRun(app, buildIdOf(c), { kind: b.kind, by: "owner" }), 202);
-  });
-  api.get("/api/builds/:id/runs/:runId/log", (c) => c.json(runs.runLog(app, buildIdOf(c), c.req.param("runId"), intParam(c.req.query("after")) ?? 0)));
-  api.post("/api/builds/:id/runs/:runId/cancel", (c) => {
-    runs.cancelRun(app, buildIdOf(c), c.req.param("runId"));
-    return c.json({});
-  });
-  api.post("/api/builds/:id/drafts/:draftId/approve", async (c) => {
-    const b = await body(c);
-    const { missing } = await builds.approveDraft(app, buildIdOf(c), c.req.param("draftId"), b.reviewed);
+  const runId = (c: Context) => c.req.param("runId") as string;
+  const draftId = (c: Context) => c.req.param("draftId") as string;
+  api.get("/api/builds", on((c) => serviceAsync(builds.listBuilds).pipe(Effect.map((v) => c.json(v)))));
+  api.post("/api/builds", on((c) => looseBody(c).pipe(Effect.flatMap((b) => service((a) => builds.createBuild(a, b))), Effect.map((buildId) => c.json({ id: buildId }, 201)))));
+  api.get("/api/builds/:id", on((c) => serviceAsync((a) => builds.buildView(a, builds.ownBuild(a, id(c)))).pipe(Effect.map((v) => c.json(v)))));
+  api.patch("/api/builds/:id", on((c) => looseBody(c).pipe(Effect.flatMap((b) => service((a) => builds.updateBuild(a, id(c), b))), ok(c))));
+  api.delete("/api/builds/:id", on((c) => ok(c)(service((a) => builds.deleteBuild(a, id(c))))));
+  api.put("/api/builds/:id/default", on((c) => body(c, Default).pipe(Effect.flatMap((b) => service((a) => builds.setDefaultBuild(a, b.default === false ? null : id(c)))), ok(c))));
+  api.put("/api/builds/:id/vars/:name", on((c) => looseBody(c).pipe(Effect.flatMap((b) => serviceAsync((a) => builds.setBuildVar(a, id(c), name(c), b))), ok(c))));
+  api.delete("/api/builds/:id/vars/:name", on((c) => ok(c)(service((a) => builds.deleteBuildVar(a, id(c), name(c))))));
+  api.get("/api/builds/:id/runs", on((c) => service((a) => c.json(builds.listRuns(a, id(c))))));
+  api.post("/api/builds/:id/runs", on((c) => body(c, RunKind, "kind must be image or trial").pipe(
+    Effect.flatMap(({ kind }) => service((a) => runs.startRun(a, id(c), { kind, by: "owner" }))),
+    Effect.map((run) => c.json(run, 202)),
+  )));
+  api.get("/api/builds/:id/runs/:runId/log", on((c) => intQuery(c, "after").pipe(Effect.flatMap((after) => service((a) => c.json(runs.runLog(a, id(c), runId(c), after ?? 0)))))));
+  api.post("/api/builds/:id/runs/:runId/cancel", on((c) => ok(c)(service((a) => runs.cancelRun(a, id(c), runId(c))))));
+  api.post("/api/builds/:id/drafts/:draftId/approve", on((c) => Effect.gen(function* () {
+    const b = yield* body(c, Approve);
+    const { missing } = yield* serviceAsync((a) => builds.approveDraft(a, id(c), draftId(c), b.reviewed));
     // Build right away unless the owner said not to, or a value the setup needs is still missing (the owner fills it in, then builds).
-    const run = b.run !== false && !missing.length ? runs.startRun(app, buildIdOf(c), { kind: "image", by: "owner" }) : null;
+    const run = b.run !== false && !missing.length ? yield* service((a) => runs.startRun(a, id(c), { kind: "image", by: "owner" })) : null;
     return c.json({ run, missing });
-  });
-  api.post("/api/builds/:id/drafts/:draftId/reject", async (c) => {
-    builds.rejectDraft(app, buildIdOf(c), c.req.param("draftId"), (await body(c)).reason);
-    return c.json({});
-  });
+  })));
+  api.post("/api/builds/:id/drafts/:draftId/reject", on((c) => body(c, Reject).pipe(Effect.flatMap((b) => service((a) => builds.rejectDraft(a, id(c), draftId(c), b.reason))), ok(c))));
 
   // ---- live updates (Server-Sent Events): invalidations, not payloads
   api.get("/api/live", (c) =>

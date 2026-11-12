@@ -1,5 +1,9 @@
-import { BUILD_SANDBOX_LIFETIME_SECONDS, type SnapshotDriver } from "../core/snapshot";
-import { BOX_ID, BoatError, createBoatCall, DEFAULT_BASE_URL, READY, type BoatOptions } from "./boat";
+import { Effect, Option, Schema } from "effect";
+import { BUILD_SANDBOX_LIFETIME_SECONDS, type AttachResult, type SnapshotDriver } from "../core/snapshot";
+import {
+  BoatError, BOX_ID, boatFetch, createdId, decodeOr, deleteSandbox, getSandbox, ignoreStatus, isBoatStatus, isGone, isTransient,
+  listSandboxes, makeBoatCall, optionalOn404, pauseWith, POLL_MS, pollUntil, READY, retryWhile, sandboxPath, type BoatOptions,
+} from "./boatHttp";
 
 // Boat API calls the base-snapshot build needs. Sources (https://docs.boat.dev):
 //   POST /sandboxes, GET /sandboxes, GET|DELETE /sandboxes/{id}      api/reference/sandboxes/*
@@ -9,217 +13,192 @@ import { BOX_ID, BoatError, createBoatCall, DEFAULT_BASE_URL, READY, type BoatOp
 //   DELETE /saved-snapshots/{name}                                   api/reference/snapshots/delete-saved-snapshot
 //   POST /sandboxes/{id}/commands {detached}, GET .../commands/{pid}/stream, DELETE .../commands/{pid}   api/reference/agent/*
 
-const POLL_MS = 2_000;
 const READY_WAIT_MS = 240_000;
 const COMMAND_SLACK_MS = 30_000;
-
-type Sandbox = { id: string; state: string; labels?: Record<string, string>; dataExpiredAt?: string | null };
+const ATTACH_TIMEOUT_MS = 15 * 60_000;
 
 export interface BoatSnapshotOptions extends Pick<BoatOptions, "apiKey" | "org" | "fetch" | "sleep"> {}
 
-export function boatSnapshotDriver(opts: BoatSnapshotOptions): SnapshotDriver {
-  const call = createBoatCall(opts);
-  const doFetch = opts.fetch ?? fetch;
-  /** A long-lived streaming GET (the attach stream ends itself after 10 minutes with a `reconnect` line). */
-  async function stream(p: string): Promise<Response> {
-    if (!BOX_ID.test(p.split("/")[2] ?? "")) throw new BoatError("boat: invalid sandbox id");
-    let res: Response;
-    try {
-      res = await doFetch(`${DEFAULT_BASE_URL}${p}`, {
-        headers: { Authorization: `Bearer ${opts.apiKey}`, ...(opts.org ? { "X-Boat-Org": opts.org } : {}) },
-        signal: AbortSignal.timeout(15 * 60_000),
-      });
-    } catch (e) {
-      throw new BoatError(`boat attach: network error (${e instanceof Error ? e.name : "unknown"})`);
-    }
-    if (!res.ok || !res.body) {
-      const err: any = await res.json().catch(() => ({}));
-      throw new BoatError(`boat attach: HTTP ${res.status}`, res.status, typeof err?.code === "string" ? err.code : undefined);
-    }
-    return res;
-  }
-  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
-  const path = (id: string, suffix = "") => {
-    if (!BOX_ID.test(id)) throw new BoatError("boat: invalid sandbox id");
-    return `/sandboxes/${id}${suffix}`;
-  };
-  const transient = (e: unknown) => e instanceof BoatError && (e.code === "idempotency_in_progress" || e.status === 500 || e.status === 502 || e.status === 503 || e.message.includes("network error"));
+const CommandAnswer = Schema.Struct({
+  exitCode: Schema.optional(Schema.Unknown),
+  stdout: Schema.optional(Schema.Unknown),
+  stderr: Schema.optional(Schema.Unknown),
+  timedOut: Schema.optional(Schema.Unknown),
+});
+const DetachedAnswer = Schema.Struct({ processId: Schema.Number, commandId: Schema.optional(Schema.Unknown) });
+const SnapshotAnswer = Schema.Struct({
+  snapshot: Schema.Struct({
+    name: Schema.optional(Schema.Unknown),
+    status: Schema.Literals(["saving", "ready", "failed"]),
+    error: Schema.optional(Schema.Unknown),
+    sourceSandboxId: Schema.optional(Schema.Unknown),
+  }),
+});
 
-  async function getSandbox(id: string): Promise<Sandbox | null> {
-    try {
-      const json = await call("get", "GET", path(id));
-      if (!json?.sandbox?.id || typeof json.sandbox.state !== "string") throw new BoatError("boat get: invalid sandbox response");
-      return json.sandbox;
-    } catch (e) {
-      if (e instanceof BoatError && e.status === 404) return null;
-      throw e;
-    }
-  }
+const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+
+/** The Boat side of the base-snapshot and build-image builds (core/snapshot.ts). Each method runs an Effect at the Promise edge. */
+export function boatSnapshotDriver(opts: BoatSnapshotOptions): SnapshotDriver {
+  const call = makeBoatCall(opts);
+  const pause = pauseWith(opts.sleep);
+  const run = <A>(e: Effect.Effect<A, BoatError>) => Effect.runPromise(e);
+  const commands = (id: string, suffix = "") => sandboxPath(id, `/commands${suffix}`);
+
+  const waitReady = (id: string) =>
+    pollUntil(
+      getSandbox(call, id).pipe(
+        Effect.flatMap((found) => {
+          const s = Option.getOrUndefined(found);
+          if (!s || isGone(s)) return Effect.fail(new BoatError("boat: the build sandbox disappeared"));
+          if (READY.has(s.state)) return Effect.succeed(Option.some(undefined));
+          return s.state === "error" ? Effect.fail(new BoatError("boat: the build sandbox entered an error state")) : Effect.succeed(Option.none<void>());
+        }),
+      ),
+      { everyMs: POLL_MS, withinMs: READY_WAIT_MS, pause, onTimeout: () => new BoatError("boat: the build sandbox did not become ready in time") },
+    );
 
   return {
-    async listBuildSandboxes(label, labelKey = "dorks-build") {
-      const found: { id: string }[] = [];
-      let cursor: string | undefined;
-      do {
-        const query = new URLSearchParams({ label: `${labelKey}=${label}`, limit: "200" });
-        if (cursor) query.set("cursor", cursor);
-        const json = await call("list", "GET", `/sandboxes?${query}`);
-        if (!Array.isArray(json.sandboxes)) throw new BoatError("boat list: invalid response");
-        for (const b of json.sandboxes as Sandbox[]) if (BOX_ID.test(b?.id) && b.labels?.[labelKey] === label && b.state !== "cancelled" && !b.dataExpiredAt) found.push({ id: b.id });
-        cursor = json.pageInfo?.nextCursor || undefined;
-      } while (cursor);
-      return found;
-    },
+    listBuildSandboxes: (label, labelKey = "dorks-build") =>
+      run(listSandboxes(call, labelKey, label).pipe(Effect.map((all) => all.filter((b) => !isGone(b)).map((b) => ({ id: b.id }))))),
 
-    async createBuildSandbox({ name, label, key, from, type, labelKey = "dorks-build" }) {
+    createBuildSandbox: ({ name, label, key, from, type, labelKey = "dorks-build" }) => {
       const body = { name, labels: { [labelKey]: label }, noEnv: true, ttlSeconds: BUILD_SANDBOX_LIFETIME_SECONDS, ...(from ? { from } : {}), ...(type ? { type } : {}) };
-      const deadline = Date.now() + READY_WAIT_MS;
-      for (;;) {
-        try {
-          const created = await call("create build sandbox", "POST", "/sandboxes", body, { "Idempotency-Key": key });
-          const id = created?.sandbox?.id;
-          if (typeof id !== "string" || !BOX_ID.test(id)) throw new BoatError("boat create: response had no usable sandbox id");
-          return { id };
-        } catch (e) {
-          if (!transient(e) || Date.now() >= deadline) throw e;
-          await sleep(POLL_MS);
-        }
-      }
+      const create = call("create build sandbox", "POST", "/sandboxes", { body, headers: { "Idempotency-Key": key } }).pipe(Effect.flatMap(createdId));
+      return run(retryWhile(create, { retryable: isTransient, everyMs: POLL_MS, withinMs: READY_WAIT_MS, pause }).pipe(Effect.map((id) => ({ id }))));
     },
 
-    async waitReady(id) {
-      const deadline = Date.now() + READY_WAIT_MS;
-      for (;;) {
-        const sandbox = await getSandbox(id);
-        if (!sandbox || sandbox.state === "cancelled" || sandbox.dataExpiredAt) throw new BoatError("boat: the build sandbox disappeared");
-        if (READY.has(sandbox.state)) return;
-        if (sandbox.state === "error") throw new BoatError("boat: the build sandbox entered an error state");
-        if (Date.now() >= deadline) throw new BoatError("boat: the build sandbox did not become ready in time");
-        await sleep(POLL_MS);
-      }
-    },
+    waitReady: (id) => run(waitReady(id)),
 
-    async writeFile(id, filePath, content, encoding) {
-      await call("write file", "PUT", path(id, "/files"), { path: filePath, content, encoding }, {}, 120_000);
-    },
+    writeFile: (id, filePath, content, encoding) =>
+      run(sandboxPath(id, "/files").pipe(Effect.flatMap((p) => call("write file", "PUT", p, { body: { path: filePath, content, encoding }, timeoutMs: 120_000 })), Effect.asVoid)),
 
-    async run(id, command, timeoutSeconds) {
-      const json = await call("run command", "POST", path(id, "/commands"), { command, timeoutSeconds }, {}, timeoutSeconds * 1000 + COMMAND_SLACK_MS);
-      return {
-        exitCode: typeof json.exitCode === "number" ? json.exitCode : null,
-        stdout: typeof json.stdout === "string" ? json.stdout : "",
-        stderr: typeof json.stderr === "string" ? json.stderr : "",
-        timedOut: json.timedOut === true,
-      };
-    },
+    run: (id, command, timeoutSeconds) =>
+      run(
+        commands(id).pipe(
+          Effect.flatMap((p) => call("run command", "POST", p, { body: { command, timeoutSeconds }, timeoutMs: timeoutSeconds * 1000 + COMMAND_SLACK_MS })),
+          Effect.flatMap(decodeOr(CommandAnswer, "boat run command: invalid response")),
+          Effect.map((json) => ({
+            exitCode: typeof json.exitCode === "number" ? json.exitCode : null,
+            stdout: str(json.stdout) ?? "",
+            stderr: str(json.stderr) ?? "",
+            timedOut: json.timedOut === true,
+          })),
+        ),
+      ),
 
-    async saveSnapshot(id, name) {
-      try {
-        await call("save snapshot", "POST", "/saved-snapshots", { sandboxId: id, name });
-      } catch (e) {
-        // A save under this name is already running (for example this build was resumed after a crash): the poll handles it.
-        if (!(e instanceof BoatError && e.status === 409 && e.code === "save_in_progress")) throw e;
-      }
-    },
+    saveSnapshot: (id, name) =>
+      run(
+        call("save snapshot", "POST", "/saved-snapshots", { body: { sandboxId: id, name } }).pipe(
+          Effect.asVoid,
+          // A save under this name is already running (for example this build was resumed after a crash): the poll handles it.
+          Effect.catchIf((e) => isBoatStatus(e, 409) && e.code === "save_in_progress", () => Effect.void),
+        ),
+      ),
 
-    async getSnapshot(name) {
-      try {
-        const json = await call("get snapshot", "GET", `/saved-snapshots/${encodeURIComponent(name)}`);
-        const s = json?.snapshot;
-        if (!s || (s.status !== "saving" && s.status !== "ready" && s.status !== "failed")) throw new BoatError("boat get snapshot: invalid response");
-        return {
-          name: String(s.name ?? name),
-          status: s.status,
-          error: typeof s.error === "string" ? s.error : undefined,
-          sourceSandboxId: typeof s.sourceSandboxId === "string" ? s.sourceSandboxId : undefined,
-        };
-      } catch (e) {
-        if (e instanceof BoatError && e.status === 404) return null;
-        throw e;
-      }
-    },
+    getSnapshot: (name) =>
+      run(
+        call("get snapshot", "GET", `/saved-snapshots/${encodeURIComponent(name)}`).pipe(
+          Effect.flatMap(decodeOr(SnapshotAnswer, "boat get snapshot: invalid response")),
+          Effect.map(({ snapshot: s }) => ({ name: String(s.name ?? name), status: s.status, error: str(s.error), sourceSandboxId: str(s.sourceSandboxId) })),
+          optionalOn404,
+          Effect.map(Option.getOrNull),
+        ),
+      ),
 
-    async runDetached(id, command) {
-      const json = await call("start command", "POST", path(id, "/commands"), { command, detached: true });
-      if (typeof json.processId !== "number") throw new BoatError("boat start command: response had no process id");
-      return { processId: json.processId, commandId: typeof json.commandId === "string" ? json.commandId : undefined };
-    },
+    runDetached: (id, command) =>
+      run(
+        commands(id).pipe(
+          Effect.flatMap((p) => call("start command", "POST", p, { body: { command, detached: true } })),
+          Effect.flatMap(decodeOr(DetachedAnswer, "boat start command: response had no process id")),
+          Effect.map((json) => ({ processId: json.processId, commandId: str(json.commandId) })),
+        ),
+      ),
 
-    async attach(id, processId, offsets, onOutput) {
-      // NDJSON: attached, stdout/stderr chunks (with nextOffset), heartbeat, then exit | reconnect | error (api/reference/agent/attach-command).
-      const query = new URLSearchParams({ stdoutOffset: String(offsets.stdout), stderrOffset: String(offsets.stderr) });
-      const res = await stream(`/sandboxes/${encodeURIComponent(id)}/commands/${processId}/stream?${query}`);
-      const at = { ...offsets };
-      const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
-      let buf = "";
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) return { t: "reconnect", offsets: at }; // the connection dropped: open it again from where we are
-        buf += value;
-        let nl: number;
-        while ((nl = buf.indexOf("\n")) >= 0) {
-          const line = buf.slice(0, nl).trim();
-          buf = buf.slice(nl + 1);
-          if (!line) continue;
-          let f: any;
-          try {
-            f = JSON.parse(line);
-          } catch {
-            continue;
-          }
-          if ((f.type === "stdout" || f.type === "stderr") && typeof f.data === "string") {
-            onOutput(f.type, f.data);
-            if (typeof f.nextOffset === "number") at[f.type === "stdout" ? "stdout" : "stderr"] = f.nextOffset;
-          } else if (f.type === "exit") {
-            await reader.cancel().catch(() => {});
-            return { t: "exit", exitCode: typeof f.exitCode === "number" ? f.exitCode : null, offsets: { stdout: f.stdoutOffset ?? at.stdout, stderr: f.stderrOffset ?? at.stderr } };
-          } else if (f.type === "reconnect") {
-            await reader.cancel().catch(() => {});
-            return { t: "reconnect", offsets: { stdout: f.stdoutOffset ?? at.stdout, stderr: f.stderrOffset ?? at.stderr } };
-          } else if (f.type === "error") {
-            await reader.cancel().catch(() => {});
-            throw new BoatError(`boat attach: ${typeof f.error === "string" ? f.error : "stream error"}`, undefined, typeof f.error === "string" ? f.error : undefined);
-          }
-        }
-      }
-    },
+    attach: (id, processId, offsets, onOutput) => run(attach(opts, id, processId, offsets, onOutput)),
 
-    async killCommand(id, processId) {
-      try {
-        await call("stop command", "DELETE", path(id, `/commands/${processId}`));
-      } catch (e) {
-        if (!(e instanceof BoatError) || (e.status !== 404 && e.status !== 409)) throw e;
-      }
-    },
+    killCommand: (id, processId) =>
+      run(commands(id, `/${processId}`).pipe(Effect.flatMap((p) => call("stop command", "DELETE", p)), ignoreStatus(404, 409))),
 
-    async deleteSnapshot(name) {
-      try {
-        await call("delete snapshot", "DELETE", `/saved-snapshots/${encodeURIComponent(name)}`);
-      } catch (e) {
-        if (!(e instanceof BoatError) || e.status !== 404) throw e;
-      }
-    },
+    deleteSnapshot: (name) => run(call("delete snapshot", "DELETE", `/saved-snapshots/${encodeURIComponent(name)}`).pipe(ignoreStatus(404))),
 
-    async deleteSandbox(id) {
-      try {
-        await call("delete", "DELETE", path(id), undefined, { "X-Ascii-Confirm-Delete": id });
-      } catch (e) {
-        if (!(e instanceof BoatError) || e.status !== 404) throw e;
-      }
-    },
+    deleteSandbox: (id) => run(deleteSandbox(call, id)),
   };
 }
 
+type Offsets = { stdout: number; stderr: number };
+type Frame = { type?: unknown; data?: unknown; nextOffset?: unknown; exitCode?: unknown; stdoutOffset?: unknown; stderrOffset?: unknown; error?: unknown };
+
+const offsetsAfter = (f: Frame, at: Offsets): Offsets => ({
+  stdout: typeof f.stdoutOffset === "number" ? f.stdoutOffset : at.stdout,
+  stderr: typeof f.stderrOffset === "number" ? f.stderrOffset : at.stderr,
+});
+
+/** What one NDJSON frame of the attach stream means: output to pass on, the end of the stream, or nothing. */
+function frameOutcome(f: Frame, at: Offsets, onOutput: (stream: "stdout" | "stderr", data: string) => void): AttachResult | BoatError | undefined {
+  if ((f.type === "stdout" || f.type === "stderr") && typeof f.data === "string") {
+    onOutput(f.type, f.data);
+    if (typeof f.nextOffset === "number") at[f.type] = f.nextOffset;
+    return undefined;
+  }
+  if (f.type === "exit") return { t: "exit", exitCode: typeof f.exitCode === "number" ? f.exitCode : null, offsets: offsetsAfter(f, at) };
+  if (f.type === "reconnect") return { t: "reconnect", offsets: offsetsAfter(f, at) };
+  if (f.type === "error") return new BoatError(`boat attach: ${str(f.error) ?? "stream error"}`, undefined, str(f.error));
+  return undefined;
+}
+
+const parseFrame = (line: string): Frame | undefined => {
+  try {
+    const f: unknown = JSON.parse(line);
+    return f && typeof f === "object" ? (f as Frame) : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Follows a detached command's output. NDJSON: attached, stdout/stderr chunks (with nextOffset), heartbeat, then exit | reconnect |
+ * error (api/reference/agent/attach-command). The stream ends itself after 10 minutes with a `reconnect` line. The reader is
+ * released however this ends (an exit, an error, or the caller's fiber being interrupted).
+ */
+const attach = (opts: BoatSnapshotOptions, id: string, processId: number, offsets: Offsets, onOutput: (stream: "stdout" | "stderr", data: string) => void) =>
+  Effect.gen(function* () {
+    if (!BOX_ID.test(id)) return yield* new BoatError("boat: invalid sandbox id");
+    const query = new URLSearchParams({ stdoutOffset: String(offsets.stdout), stderrOffset: String(offsets.stderr) });
+    const res = yield* boatFetch(opts, "attach", `/sandboxes/${encodeURIComponent(id)}/commands/${processId}/stream?${query}`, { timeoutMs: ATTACH_TIMEOUT_MS });
+    if (!res.body) return yield* new BoatError(`boat attach: HTTP ${res.status}`, res.status);
+    const body = res.body;
+    const reader = yield* Effect.acquireRelease(
+      Effect.sync(() => body.pipeThrough(new TextDecoderStream()).getReader()),
+      (r) => Effect.promise(() => r.cancel().catch(() => {})),
+    );
+    const at = { ...offsets };
+    let buf = "";
+    for (;;) {
+      const { value, done } = yield* Effect.promise(() => reader.read());
+      if (done) return { t: "reconnect", offsets: at } satisfies AttachResult; // the connection dropped: open it again from where we are
+      buf += value;
+      let nl: number;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const frame = parseFrame(buf.slice(0, nl).trim());
+        buf = buf.slice(nl + 1);
+        const outcome = frame && frameOutcome(frame, at, onOutput);
+        if (outcome instanceof BoatError) return yield* outcome;
+        if (outcome) return outcome;
+      }
+    }
+  }).pipe(Effect.scoped);
+
 /** What a failed Boat call means for the person watching the build. Never includes response bodies. */
 export function boatBuildFailureMessage(e: unknown): string {
-  if (e instanceof BoatError) {
-    // Codes from https://docs.boat.dev/api/v1 ("Error model"), /free-trial and /api-keys/scopes.
-    if (e.code === "trial_saved_snapshots_not_allowed") return "Boat's free trial cannot save snapshots. End the trial in Boat, then retry.";
-    if (e.code === "api_key_action_forbidden") return "The Boat API key lacks an action the build needs (create, run commands, write files, save snapshots, delete). Give the key those actions, then retry.";
-    if (e.status === 401 || e.status === 403) return "Boat rejected the API key. Check the key and its access.";
-    if (e.status === 402) return "Boat needs money in the wallet to save another snapshot (saved snapshots above your plan's included count cost $0.056 a day). Add funds in Boat, then retry.";
-    if (e.status === 429) return "Boat is rate limiting this account. Wait a minute and retry.";
-    return `${e.message}${e.code ? ` (${e.code})` : ""}`.slice(0, 200);
-  }
-  return "The snapshot build failed.";
+  if (!(e instanceof BoatError)) return "The snapshot build failed.";
+  // Codes from https://docs.boat.dev/api/v1 ("Error model"), /free-trial and /api-keys/scopes.
+  const byCode: Record<string, string> = {
+    trial_saved_snapshots_not_allowed: "Boat's free trial cannot save snapshots. End the trial in Boat, then retry.",
+    api_key_action_forbidden: "The Boat API key lacks an action the build needs (create, run commands, write files, save snapshots, delete). Give the key those actions, then retry.",
+  };
+  if (e.code && Object.hasOwn(byCode, e.code)) return byCode[e.code];
+  if (isBoatStatus(e, 401, 403)) return "Boat rejected the API key. Check the key and its access.";
+  if (isBoatStatus(e, 402)) return "Boat needs money in the wallet to save another snapshot (saved snapshots above your plan's included count cost $0.056 a day). Add funds in Boat, then retry.";
+  if (isBoatStatus(e, 429)) return "Boat is rate limiting this account. Wait a minute and retry.";
+  return `${e.message}${e.code ? ` (${e.code})` : ""}`.slice(0, 200);
 }
