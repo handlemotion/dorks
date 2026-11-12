@@ -1,5 +1,6 @@
-import { errorEvent, fromBridge, type ClientEventBody, type CommandFrame, type FromBridge, type SubscriptionView, type ToBridge } from "@dorks/shared";
-import { fail, touch, type App } from "../app";
+import { errorEvent, fromBridge, type AppError, type AppErrorCode, type ClientEventBody, type CommandFrame, type FromBridge, type SubscriptionView, type ToBridge } from "@dorks/shared";
+import { Cause, Data, Effect, Exit } from "effect";
+import { AppFail, fail, touch, type App } from "../app";
 import { createNormalizer } from "../core/normalize";
 import { getDork, openCommands, runtimeOf, type DorkRow, type Preview, type SharedImage } from "../data";
 import { update } from "../db";
@@ -18,6 +19,37 @@ import { randomBytes } from "node:crypto";
 export const MAX_FRAMES_PER_PUSH = 500;
 export const MAX_EVENT_BYTES = 256 * 1024;
 const encoder = new TextEncoder();
+
+/** A refused bridge rpc: `error` is the AppError of its `res` frame. */
+export class BridgeError extends Data.TaggedError("BridgeError")<{ readonly error: AppError }> {
+  static of(code: AppErrorCode, message: string) {
+    return new BridgeError({ error: { code, message } as AppError });
+  }
+}
+
+/** A service's `AppFail` becomes `BridgeError`; anything else stays a defect. */
+const classify = (e: unknown): Effect.Effect<never, BridgeError> => (e instanceof AppFail ? Effect.fail(new BridgeError({ error: e.error })) : Effect.die(e));
+
+/** Runs a synchronous service call that refuses with `fail` (the transactional bodies below). */
+export const attempt = <A>(f: () => A): Effect.Effect<A, BridgeError> =>
+  Effect.suspend(() => {
+    try {
+      return Effect.succeed(f());
+    } catch (e) {
+      return classify(e);
+    }
+  });
+
+/** Like `attempt`, for a call that returns a Promise. */
+export const attemptPromise = <A>(f: () => Promise<A>): Effect.Effect<A, BridgeError> => Effect.tryPromise({ try: f, catch: (e) => e }).pipe(Effect.catch(classify));
+
+/** Runs a bridge effect for a synchronous caller (the test harness): a refusal throws its `AppFail`, as `fail` does. */
+const runSync = <A>(effect: Effect.Effect<A, BridgeError>): A => {
+  const exit = Effect.runSyncExit(effect);
+  if (Exit.isSuccess(exit)) return exit.value;
+  const e = Cause.squash(exit.cause);
+  throw e instanceof BridgeError ? new AppFail(e.error) : e;
+};
 
 /** The dork a bridge socket speaks for, or `forbidden` if it is gone. */
 export function bridgeDork(app: App, dorkId: string): DorkRow {
@@ -70,19 +102,44 @@ export function commandsFor(app: App, dorkId: string): CommandEntry[] {
 
 export const subscriptionsFor = (app: App, dorkId: string): SubscriptionView[] => subs.liveSubscriptionViews(app, dorkId);
 
+/** The JSON size of an event frame's `raw` line (0 for frames that carry none). */
+const eventBytes = (frame: unknown) => {
+  const payload = (frame as { raw?: unknown } | null)?.raw;
+  return payload === undefined ? 0 : encoder.encode(JSON.stringify(payload)).length;
+};
+
+/**
+ * Decodes the `frames` of a `push`: the per-call limits first (too many frames or an oversized event refuse the whole call), then
+ * each frame with the shared `fromBridge` schema. A frame that does not parse is dropped, as an unknown frame from a newer bridge.
+ */
+export const decodePush = (frames: unknown): Effect.Effect<FromBridge[], BridgeError> => {
+  if (!Array.isArray(frames)) return Effect.fail(BridgeError.of("invalid", "frames must be an array"));
+  if (frames.length > MAX_FRAMES_PER_PUSH) return Effect.fail(BridgeError.of("too_many_frames", `at most ${MAX_FRAMES_PER_PUSH} frames per push`));
+  if (frames.some((f) => eventBytes(f) > MAX_EVENT_BYTES)) return Effect.fail(BridgeError.of("event_too_large", `an event exceeds ${MAX_EVENT_BYTES} bytes`));
+  return Effect.succeed(
+    frames.flatMap((raw) => {
+      const parsed = fromBridge.safeParse(raw);
+      return parsed.success ? [parsed.data] : [];
+    }),
+  );
+};
+
+export type PushResult = { ok: true } | { ok: false; expectedBseq: number };
+
 /**
  * Bridge -> server frames, batched. Events must arrive numbered exactly `bridgeSeq + 1`, `+ 2`, ... (anything `<= bridgeSeq` is a
  * replay and is skipped). If the call contains a gap, NOTHING in it is applied and the result is `{ ok: false, expectedBseq }`
  * (`bridgeSeq + 1`): the bridge must resend everything from its event `expectedBseq` on. Otherwise the result is `{ ok: true }`.
  * Too many frames or an oversized event reject the whole call (`too_many_frames` / `event_too_large`).
  */
-export function push(app: App, dorkId: string, frames: unknown[]): { ok: true } | { ok: false; expectedBseq: number } {
-  if (!Array.isArray(frames)) fail("invalid", "frames must be an array");
-  if (frames.length > MAX_FRAMES_PER_PUSH) fail("too_many_frames", `at most ${MAX_FRAMES_PER_PUSH} frames per push`);
-  for (const raw of frames) {
-    const payload = (raw as { raw?: unknown } | null)?.raw;
-    if (payload !== undefined && encoder.encode(JSON.stringify(payload)).length > MAX_EVENT_BYTES) fail("event_too_large", `an event exceeds ${MAX_EVENT_BYTES} bytes`);
-  }
+export const pushFrames = (app: App, dorkId: string, frames: unknown): Effect.Effect<PushResult, BridgeError> =>
+  decodePush(frames).pipe(Effect.flatMap((decoded) => attempt(() => applyPush(app, dorkId, decoded))));
+
+/** `pushFrames` for synchronous callers: a refusal throws `AppFail`. */
+export const push = (app: App, dorkId: string, frames: unknown): PushResult => runSync(pushFrames(app, dorkId, frames));
+
+/** Applies one decoded batch in one transaction. */
+function applyPush(app: App, dorkId: string, frames: FromBridge[]): PushResult {
   return app.db.tx(() => {
     const dork = bridgeDork(app, dorkId);
     bridgeSeen(app, dork); // liveness counts even when the batch is refused below
@@ -91,11 +148,7 @@ export function push(app: App, dorkId: string, frames: unknown[]): { ok: true } 
     // Validate the whole batch before applying any of it: events must continue the stored numbering exactly (frames already
     // stored are skipped as replays). A gap refuses the call atomically, so the bridge can resend everything after its last
     // confirmed event without any frame (an `agent_exited`, say) being applied twice.
-    const parsedFrames = frames.flatMap((raw) => {
-      const parsed = fromBridge.safeParse(raw);
-      return parsed.success ? [parsed.data] : [];
-    });
-    if (hasGap(parsedFrames, rt.bridgeSeq)) return { ok: false as const, expectedBseq: rt.bridgeSeq + 1 };
+    if (hasGap(frames, rt.bridgeSeq)) return { ok: false as const, expectedBseq: rt.bridgeSeq + 1 };
 
     // The normalizer is stateful (in-flight message id) but a transaction is not: seed it from the last batch.
     const normalize = createNormalizer();
@@ -117,7 +170,7 @@ export function push(app: App, dorkId: string, frames: unknown[]): { ok: true } 
       },
     };
 
-    for (const f of parsedFrames) (FRAME_HANDLERS[f.t] as (b: Batch, f: FromBridge) => void)(batch, f);
+    for (const f of frames) (FRAME_HANDLERS[f.t] as (b: Batch, f: FromBridge) => void)(batch, f);
     batch.flush();
     const { bridgeSeq, streamMsgId, finalMsgId, interruptRequested, preview, touched } = batch;
     update(app.db, "dork_runtime", { dorkId }, { bridgeSeq, streamMsgId, finalMsgId, interruptRequested });
@@ -383,7 +436,8 @@ const cleanTitle = (raw: string) => raw.replace(/\s+/g, " ").trim();
 const TOKEN_STATES = ["creating", "waking", "working", "idle"];
 export const mayMintSecrets = (dork: Pick<DorkRow, "state" | "archived">) => !dork.archived && TOKEN_STATES.includes(dork.state);
 
-class OnboardingError extends Error {}
+/** A token the dork needs is not set: the user has onboarding to finish. */
+class OnboardingIncomplete extends Data.TaggedError("OnboardingIncomplete")<{ readonly message: string }> {}
 
 /** `configure` was refused. If the dork was archived while still booting, finish the boot handshake so the box is paused, not left running. */
 function settleRefused(app: App, dorkId: string) {
@@ -393,37 +447,45 @@ function settleRefused(app: App, dorkId: string) {
   });
 }
 
-/** Returns the `configure` frame (Claude token + CLI secrets + GitHub token) straight to the authenticated bridge: never stored. */
-export async function configure(app: App, dorkId: string): Promise<ToBridge | null> {
+/** `configure` could not build the frame: the dork's operation fails with `message` and the bridge gets `null`. */
+const configureFailed = (app: App, dorkId: string, message: string, logged: string) =>
+  Effect.sync(() => {
+    console.error("configure failed", dorkId, logged);
+    app.db.tx(() => opFailed(app, dorkId, message));
+    return null;
+  });
+
+/**
+ * Returns the `configure` frame (Claude token + CLI secrets + GitHub token) straight to the authenticated bridge: never stored.
+ * `null` when the dork may not mint secrets now, or when they cannot be read (that fails the dork's operation).
+ */
+export const configure = Effect.fnUntraced(function* (app: App, dorkId: string): Effect.fn.Return<ToBridge | null, BridgeError> {
   const dork = getDork(app.db, dorkId);
-  if (!dork || dork.deleting) fail("forbidden", "forbidden");
+  if (!dork || dork.deleting) return yield* BridgeError.of("forbidden", "forbidden");
   if (!mayMintSecrets(dork)) {
     console.error("configure refused", dorkId);
     settleRefused(app, dorkId);
     return null;
   }
-  try {
-    return await configureFrame(app, dork);
-  } catch (e) {
-    const message = e instanceof OnboardingError ? e.message : "could not configure the sandbox";
-    console.error("configure failed", dorkId, e instanceof OnboardingError ? e.message : "unexpected");
-    app.db.tx(() => opFailed(app, dorkId, message));
-    return null;
-  }
-}
+  return yield* configureFrame(app, dork).pipe(
+    Effect.catchTag("OnboardingIncomplete", (e) => configureFailed(app, dorkId, e.message, e.message)),
+    Effect.catchDefect(() => configureFailed(app, dorkId, "could not configure the sandbox", "unexpected")),
+  );
+});
 
-/** The tokens and variables the agent runs with. Throws OnboardingError when a token the dork needs is not set. */
-async function agentSecrets(app: App, dork: DorkRow): Promise<{ gh: string; env: Record<string, string> }> {
+/** The tokens and variables the agent runs with. Decryption runs here, never inside a transaction; a failure is a defect. */
+const agentSecrets = Effect.fnUntraced(function* (app: App, dork: DorkRow): Effect.fn.Return<{ gh: string; env: Record<string, string> }, OnboardingIncomplete> {
   const sim = app.cfg.boxProvider === "sim";
-  const claude = dork.provider === "claude" ? await claudeToken(app) : undefined;
-  if (dork.provider === "claude" && !claude) throw new OnboardingError("Claude token not set");
-  const gh = (await githubToken(app)) ?? (sim ? "sim-github-token" : undefined);
-  if (!gh) throw new OnboardingError("GitHub token not set");
-  const secrets = await cliSecrets(app);
+  const claude = dork.provider === "claude" ? yield* Effect.promise(() => claudeToken(app)) : undefined;
+  if (dork.provider === "claude" && !claude) return yield* new OnboardingIncomplete({ message: "Claude token not set" });
+  const gh = (yield* Effect.promise(() => githubToken(app))) ?? (sim ? "sim-github-token" : undefined);
+  if (!gh) return yield* new OnboardingIncomplete({ message: "GitHub token not set" });
+  const secrets = yield* Effect.promise(() => cliSecrets(app));
   // Build variables (docs/builds.md) over the shared ones; decrypted only here, for an authenticated bridge allowed to mint secrets.
-  const buildVars = dork.buildId && getBuild(app, dork.buildId) ? await buildVarValues(app, dork.buildId) : {};
+  const buildId = dork.buildId && getBuild(app, dork.buildId) ? dork.buildId : undefined;
+  const buildVars = buildId ? yield* Effect.promise(() => buildVarValues(app, buildId)) : {};
   return { gh, env: { ...secrets, ...buildVars, ...(claude ? { CLAUDE_CODE_OAUTH_TOKEN: claude } : {}) } };
-}
+});
 
 /** The agent's model and effort: Codex's chosen pair, or Claude's model and effort when set. */
 function modelFields(dork: DorkRow) {
@@ -431,19 +493,19 @@ function modelFields(dork: DorkRow) {
   return { ...(dork.model ? { model: dork.model } : {}), ...(dork.effort ? { effort: dork.effort } : {}) };
 }
 
-async function configureFrame(app: App, dork: DorkRow): Promise<ToBridge> {
-  const { gh, env } = await agentSecrets(app, dork);
-  return {
-    t: "configure",
-    provider: dork.provider,
-    ...modelFields(dork),
-    env,
-    ghToken: gh,
-    repo: dork.repo ? { fullName: dork.repo, branch: dork.branch } : null,
-    resumeSessionId: (dork.provider === "codex" ? dork.codexThreadId : dork.claudeSessionId) ?? null,
-    ...(dork.titleSource === "message" ? nameFrom(app, dork.id) : {}),
-  };
-}
+const configureFrame = (app: App, dork: DorkRow): Effect.Effect<ToBridge, OnboardingIncomplete> =>
+  agentSecrets(app, dork).pipe(
+    Effect.map(({ gh, env }) => ({
+      t: "configure" as const,
+      provider: dork.provider,
+      ...modelFields(dork),
+      env,
+      ghToken: gh,
+      repo: dork.repo ? { fullName: dork.repo, branch: dork.branch } : null,
+      resumeSessionId: (dork.provider === "codex" ? dork.codexThreadId : dork.claudeSessionId) ?? null,
+      ...(dork.titleSource === "message" ? nameFrom(app, dork.id) : {}),
+    })),
+  );
 
 /** The stored GitHub token, for the bridge's refresh path. Same gating as `configure`. */
 export async function ghToken(app: App, dorkId: string): Promise<{ token: string } | null> {
