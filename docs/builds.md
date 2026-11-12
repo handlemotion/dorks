@@ -174,7 +174,7 @@ secret is a name and flags. `image` is `{name, at, stale, staleReason}` or null.
 | `POST /api/builds/:id/runs` | `{kind: "image"\|"trial"}` | `202 RunView`. Errors: `conflict` while this build has a run, `not_configured` without a Boat key or base snapshot, or when a value needed while building is missing |
 | `GET /api/builds/:id/runs` | | `RunView[]`, newest first, at most 20 |
 | `GET /api/builds/:id/runs/:runId/log` | `?after=<byte offset>` | `{text, next, done, run}` from the stored, redacted tail |
-| `POST /api/builds/:id/runs/:runId/cancel` | | `{}`. The job kills the command and deletes the sandbox at its next step |
+| `POST /api/builds/:id/runs/:runId/cancel` | | `{}`. Interrupts the running job, which kills the command and deletes the sandbox |
 | `POST /api/builds/:id/drafts/:draftId/approve` | `{reviewed, run?: boolean}` (`reviewed`: the draft's `updatedAt` as the owner saw it; `run` default true) | `{run: RunView \| null, missing: string[]}`. The draft's spec and variable changes become the build's (approved); requested variables appear empty for the owner to fill in; an image run starts unless `run: false` or a value needed while building is `missing`. `conflict` if the draft is not submitted or changed since `reviewed` |
 | `POST /api/builds/:id/drafts/:draftId/reject` | `{reason?}` | `{}` |
 

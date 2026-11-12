@@ -1,5 +1,5 @@
 import { Effect, Option, Schema } from "effect";
-import { BUILD_SANDBOX_LIFETIME_SECONDS, type AttachResult, type SnapshotDriver } from "../core/snapshot";
+import { BUILD_SANDBOX_LIFETIME_SECONDS, promiseDriver, type AttachResult, type SnapshotDriver, type SnapshotOps } from "../core/snapshot";
 import {
   BoatError,
   BOX_ID,
@@ -56,11 +56,17 @@ const SnapshotAnswer = Schema.Struct({
 
 const str = (v: unknown) => (typeof v === "string" ? v : undefined);
 
-/** The Boat side of the base-snapshot and build-image builds (core/snapshot.ts). Each method runs an Effect at the Promise edge. */
+/**
+ * The Boat side of the base-snapshot and build-image builds (core/snapshot.ts). The calls are Effects (`driver.effect`, used by the
+ * build jobs, where interrupting a call cancels its request); the Promise methods run them at that edge.
+ */
 export function boatSnapshotDriver(opts: BoatSnapshotOptions): SnapshotDriver {
+  return promiseDriver(boatSnapshotOps(opts));
+}
+
+function boatSnapshotOps(opts: BoatSnapshotOptions): SnapshotOps {
   const call = makeBoatCall(opts);
   const pause = pauseWith(opts.sleep);
-  const run = <A>(e: Effect.Effect<A, BoatError>) => Effect.runPromise(e);
   const commands = (id: string, suffix = "") => sandboxPath(id, `/commands${suffix}`);
 
   const waitReady = (id: string) =>
@@ -77,82 +83,70 @@ export function boatSnapshotDriver(opts: BoatSnapshotOptions): SnapshotDriver {
     );
 
   return {
-    listBuildSandboxes: (label, labelKey = "dorks-build") => run(listSandboxes(call, labelKey, label).pipe(Effect.map((all) => all.filter((b) => !isGone(b)).map((b) => ({ id: b.id }))))),
+    listBuildSandboxes: (label, labelKey = "dorks-build") => listSandboxes(call, labelKey, label).pipe(Effect.map((all) => all.filter((b) => !isGone(b)).map((b) => ({ id: b.id })))),
 
     createBuildSandbox: ({ name, label, key, from, type, labelKey = "dorks-build" }) => {
       const body = { name, labels: { [labelKey]: label }, noEnv: true, ttlSeconds: BUILD_SANDBOX_LIFETIME_SECONDS, ...(from ? { from } : {}), ...(type ? { type } : {}) };
       const create = call("create build sandbox", "POST", "/sandboxes", { body, headers: { "Idempotency-Key": key } }).pipe(Effect.flatMap(createdId));
-      return run(retryWhile(create, { retryable: isTransient, everyMs: POLL_MS, withinMs: READY_WAIT_MS, pause }).pipe(Effect.map((id) => ({ id }))));
+      return retryWhile(create, { retryable: isTransient, everyMs: POLL_MS, withinMs: READY_WAIT_MS, pause }).pipe(Effect.map((id) => ({ id })));
     },
 
-    waitReady: (id) => run(waitReady(id)),
+    waitReady,
 
     writeFile: (id, filePath, content, encoding) =>
-      run(
-        sandboxPath(id, "/files").pipe(
-          Effect.flatMap((p) => call("write file", "PUT", p, { body: { path: filePath, content, encoding }, timeoutMs: 120_000 })),
-          Effect.asVoid,
-        ),
+      sandboxPath(id, "/files").pipe(
+        Effect.flatMap((p) => call("write file", "PUT", p, { body: { path: filePath, content, encoding }, timeoutMs: 120_000 })),
+        Effect.asVoid,
       ),
 
     run: (id, command, timeoutSeconds) =>
-      run(
-        commands(id).pipe(
-          Effect.flatMap((p) => call("run command", "POST", p, { body: { command, timeoutSeconds }, timeoutMs: timeoutSeconds * 1000 + COMMAND_SLACK_MS })),
-          Effect.flatMap(decodeOr(CommandAnswer, "boat run command: invalid response")),
-          Effect.map((json) => ({
-            exitCode: typeof json.exitCode === "number" ? json.exitCode : null,
-            stdout: str(json.stdout) ?? "",
-            stderr: str(json.stderr) ?? "",
-            timedOut: json.timedOut === true,
-          })),
-        ),
+      commands(id).pipe(
+        Effect.flatMap((p) => call("run command", "POST", p, { body: { command, timeoutSeconds }, timeoutMs: timeoutSeconds * 1000 + COMMAND_SLACK_MS })),
+        Effect.flatMap(decodeOr(CommandAnswer, "boat run command: invalid response")),
+        Effect.map((json) => ({
+          exitCode: typeof json.exitCode === "number" ? json.exitCode : null,
+          stdout: str(json.stdout) ?? "",
+          stderr: str(json.stderr) ?? "",
+          timedOut: json.timedOut === true,
+        })),
       ),
 
     saveSnapshot: (id, name) =>
-      run(
-        call("save snapshot", "POST", "/saved-snapshots", { body: { sandboxId: id, name } }).pipe(
-          Effect.asVoid,
-          // A save under this name is already running (for example this build was resumed after a crash): the poll handles it.
-          Effect.catchIf(
-            (e) => isBoatStatus(e, 409) && e.code === "save_in_progress",
-            () => Effect.void,
-          ),
+      call("save snapshot", "POST", "/saved-snapshots", { body: { sandboxId: id, name } }).pipe(
+        Effect.asVoid,
+        // A save under this name is already running (for example this build was resumed after a crash): the poll handles it.
+        Effect.catchIf(
+          (e) => isBoatStatus(e, 409) && e.code === "save_in_progress",
+          () => Effect.void,
         ),
       ),
 
     getSnapshot: (name) =>
-      run(
-        call("get snapshot", "GET", `/saved-snapshots/${encodeURIComponent(name)}`).pipe(
-          Effect.flatMap(decodeOr(SnapshotAnswer, "boat get snapshot: invalid response")),
-          Effect.map(({ snapshot: s }) => ({ name: String(s.name ?? name), status: s.status, error: str(s.error), sourceSandboxId: str(s.sourceSandboxId) })),
-          optionalOn404,
-          Effect.map(Option.getOrNull),
-        ),
+      call("get snapshot", "GET", `/saved-snapshots/${encodeURIComponent(name)}`).pipe(
+        Effect.flatMap(decodeOr(SnapshotAnswer, "boat get snapshot: invalid response")),
+        Effect.map(({ snapshot: s }) => ({ name: String(s.name ?? name), status: s.status, error: str(s.error), sourceSandboxId: str(s.sourceSandboxId) })),
+        optionalOn404,
+        Effect.map(Option.getOrNull),
       ),
 
     runDetached: (id, command) =>
-      run(
-        commands(id).pipe(
-          Effect.flatMap((p) => call("start command", "POST", p, { body: { command, detached: true } })),
-          Effect.flatMap(decodeOr(DetachedAnswer, "boat start command: response had no process id")),
-          Effect.map((json) => ({ processId: json.processId, commandId: str(json.commandId) })),
-        ),
+      commands(id).pipe(
+        Effect.flatMap((p) => call("start command", "POST", p, { body: { command, detached: true } })),
+        Effect.flatMap(decodeOr(DetachedAnswer, "boat start command: response had no process id")),
+        Effect.map((json) => ({ processId: json.processId, commandId: str(json.commandId) })),
       ),
 
-    attach: (id, processId, offsets, onOutput) => run(attach(opts, id, processId, offsets, onOutput)),
+    attach: (id, processId, offsets, onOutput) => attach(opts, id, processId, offsets, onOutput),
 
     killCommand: (id, processId) =>
-      run(
-        commands(id, `/${processId}`).pipe(
-          Effect.flatMap((p) => call("stop command", "DELETE", p)),
-          ignoreStatus(404, 409),
-        ),
+      commands(id, `/${processId}`).pipe(
+        Effect.flatMap((p) => call("stop command", "DELETE", p)),
+        ignoreStatus(404, 409),
       ),
 
-    deleteSnapshot: (name) => run(call("delete snapshot", "DELETE", `/saved-snapshots/${encodeURIComponent(name)}`).pipe(ignoreStatus(404))),
+    deleteSnapshot: (name) => call("delete snapshot", "DELETE", `/saved-snapshots/${encodeURIComponent(name)}`).pipe(ignoreStatus(404)),
 
-    deleteSandbox: (id) => run(deleteSandbox(call, id)),
+    deleteSandbox: (id) => deleteSandbox(call, id),
   };
 }
 

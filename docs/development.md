@@ -76,6 +76,11 @@ The server is moving to [Effect](https://effect.website) (v4). New server code i
   `not_visible`, `auth`, `http`, `network`, `timeout`, `invalid_response`) and schema-decoded responses. `pollOnce` and
   `createIssueComment` keep Promise forms for the jobs that call them.
 - **Scheduler** (`lifecycle/scheduler.ts`): the timer loop is one fiber woken by a `Latch`; jobs run as fibers in a `FiberSet`.
+- **Build jobs** (`services/snapshot.ts`, `services/buildRuns.ts`): each attempt is one Effect. What it holds is scoped to it: the
+  build sandbox (`Effect.acquireRelease`), a detached command (`acquireUseRelease`, killed unless it exited) and a saved image whose
+  build was deleted meanwhile (a finalizer), so cleanup runs however the attempt ends. A cancelled run's fiber is interrupted. The
+  jobs call the driver's Effect form (`snapshotOps` in `core/snapshot.ts`: Boat's own, else the Promise calls wrapped); interrupting
+  a Boat call aborts its request.
 - **Jobs** (`lifecycle/jobs.ts`): each job is an `Effect<void, JobStepError>` that the scheduler forks straight into its `FiberSet`.
   A failed step (a provider call, the database) is a `JobStepError`; box jobs turn it into `op_failed`, and one that escapes is
   logged. Services not yet on Effect are called through the `promise` step helper. `Scheduler.shutdown` stops the loop, drains
