@@ -26,27 +26,33 @@ export async function checkBoat(app: App, input: { boatKey?: unknown; boatOrg?: 
   if (!apiKey) fail("not_configured", "Add your Boat API key first.");
   const org = input.boatOrg !== undefined ? input.boatOrg.trim() || undefined : readSettings(app).boatOrg;
   if (app.cfg.boxProvider === "sim") return { status: "ok", message: "Simulated sandboxes: nothing to check." };
-  const call = createBoatCall({ apiKey, org, fetch: app.fetch });
   try {
-    let limits: { sandboxPlanKey?: unknown; canStart?: unknown; startBlockedReason?: unknown };
-    try {
-      limits = await call("check key", "GET", "/limits", undefined, {}, TIMEOUT_MS);
-    } catch (e) {
-      if (!(e instanceof BoatError) || e.code !== "api_key_action_forbidden") throw e;
-      await call("check key", "GET", "/sandboxes?limit=1", undefined, {}, TIMEOUT_MS);
-      return { status: "ok", message: "Boat accepted the key." };
-    }
-    // The trial forces auto-stop within 2 hours and cannot save snapshots (https://docs.boat.dev/free-trial): Dorks cannot run on it.
-    if (limits?.sandboxPlanKey === "trial") return { status: "credit_required", message: "Dorks needs a paid Boat plan: the free trial cannot save the snapshot sessions start from. End the trial in Boat, then continue." };
-    if (limits?.canStart === false) {
-      const reason = typeof limits.startBlockedReason === "string" && limits.startBlockedReason ? ` (${limits.startBlockedReason.slice(0, 120)})` : "";
-      return { status: "credit_required", message: `Boat cannot start sandboxes on this account right now${reason}. Add funds or fix billing in Boat, then continue.` };
-    }
-    return { status: "ok", message: "Boat accepted the key." };
+    return await askBoat(createBoatCall({ apiKey, org, fetch: app.fetch }));
   } catch (e) {
     if (!(e instanceof BoatError)) throw e;
     return failureOf(e, !!org);
   }
+}
+
+const ACCEPTED: BoatCheck = { status: "ok", message: "Boat accepted the key." };
+
+/** `GET /limits`, or `GET /sandboxes?limit=1` for a key without `account.read`. Boat failures are thrown as `BoatError`. */
+async function askBoat(call: ReturnType<typeof createBoatCall>): Promise<BoatCheck> {
+  let limits: { sandboxPlanKey?: unknown; canStart?: unknown; startBlockedReason?: unknown };
+  try {
+    limits = await call("check key", "GET", "/limits", undefined, {}, TIMEOUT_MS);
+  } catch (e) {
+    if (!(e instanceof BoatError) || e.code !== "api_key_action_forbidden") throw e;
+    await call("check key", "GET", "/sandboxes?limit=1", undefined, {}, TIMEOUT_MS);
+    return ACCEPTED;
+  }
+  // The trial forces auto-stop within 2 hours and cannot save snapshots (https://docs.boat.dev/free-trial): Dorks cannot run on it.
+  if (limits?.sandboxPlanKey === "trial") return { status: "credit_required", message: "Dorks needs a paid Boat plan: the free trial cannot save the snapshot sessions start from. End the trial in Boat, then continue." };
+  if (limits?.canStart === false) {
+    const reason = typeof limits.startBlockedReason === "string" && limits.startBlockedReason ? ` (${limits.startBlockedReason.slice(0, 120)})` : "";
+    return { status: "credit_required", message: `Boat cannot start sandboxes on this account right now${reason}. Add funds or fix billing in Boat, then continue.` };
+  }
+  return ACCEPTED;
 }
 
 /** Boat's documented error codes (https://docs.boat.dev/api/v1, "Error model") in plain words for the Boat step. */

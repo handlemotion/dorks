@@ -27,85 +27,93 @@ export interface DorkView {
 
 export const emptyView = (): DorkView => ({ lastSeq: 0, state: null, blocks: [], prUrl: null, rateLimitedUntil: null, lastOutcome: null });
 
+type EventOf<T extends ClientEvent["type"]> = Extract<ClientEvent, { type: T }>;
+/** Applies one event to `v`, a fresh copy of the view (its `blocks` array is already copied, so handlers may push and assign). */
+type Handlers = { [T in ClientEvent["type"]]?: (v: DorkView, e: EventOf<T>) => void };
+
+const notice = (v: DorkView, e: ClientEvent, level: "info" | "error", text: string) => v.blocks.push({ kind: "notice", id: `n${e.seq}`, level, text });
+const findAssistant = (v: DorkView, id: string) => v.blocks.findIndex((b) => b.kind === "assistant" && b.id === id);
+
+const HANDLERS: Handlers = {
+  user_message(v, e) {
+    v.blocks.push({ kind: "user", id: `u${e.seq}`, text: e.text, at: e.ts });
+    v.lastOutcome = null;
+  },
+  assistant_delta(v, e) {
+    const i = findAssistant(v, e.messageId);
+    if (i < 0) v.blocks.push({ kind: "assistant", id: e.messageId, text: e.text, streaming: true, at: e.ts });
+    else {
+      const b = v.blocks[i] as Extract<Block, { kind: "assistant" }>;
+      v.blocks[i] = { ...b, text: b.text + e.text };
+    }
+  },
+  assistant_message(v, e) {
+    const i = findAssistant(v, e.messageId);
+    const done: Block = { kind: "assistant", id: e.messageId, text: e.text, streaming: false, at: e.ts };
+    if (i < 0) v.blocks.push(done);
+    else v.blocks[i] = done; // the complete message replaces streamed partials
+  },
+  tool_use(v, e) {
+    v.blocks.push({ kind: "tool", id: e.toolId, name: e.name, summary: e.summary, status: "running" });
+  },
+  tool_result(v, e) {
+    const i = v.blocks.findIndex((b) => b.kind === "tool" && b.id === e.toolId);
+    if (i >= 0) v.blocks[i] = { ...(v.blocks[i] as Extract<Block, { kind: "tool" }>), status: e.ok ? "ok" : "error", preview: e.preview };
+  },
+  status(v, e) {
+    v.state = e.state;
+  },
+  turn_complete(v, e) {
+    v.blocks = v.blocks.map((b) =>
+      b.kind === "assistant" && (b.streaming || b.id === e.finalMessageId) ? { ...b, streaming: false, ...(b.id === e.finalMessageId ? { final: true } : {}) } : b,
+    );
+    v.blocks.push({ kind: "turn", id: `t${e.seq}`, outcome: e.outcome ?? null, finalId: e.finalMessageId, durationMs: e.durationMs, at: e.ts });
+    v.lastOutcome = e.outcome ?? null;
+  },
+  pr_opened(v, e) {
+    v.prUrl = e.url;
+    notice(v, e, "info", `PR opened: ${e.url}`);
+  },
+  pr_merged(v, e) {
+    v.prUrl = e.url;
+    notice(v, e, "info", `PR merged: ${e.url}`);
+  },
+  notify(v, e) {
+    notice(v, e, "info", e.text);
+  },
+  subscription(v, e) {
+    notice(v, e, e.status === "stalled" ? "error" : "info", `${e.repo}#${e.number}: ${e.status}${e.reason ? ` (${e.reason})` : ""}`);
+  },
+  build_draft(v, e) {
+    v.blocks.push({ kind: "build", id: `b${e.seq}`, draftId: e.draftId, buildId: e.buildId, buildName: e.buildName, note: e.note, approved: null });
+  },
+  build_decision(v, e) {
+    // A session can submit the same draft again after a decision: the decision belongs to the latest card still waiting.
+    let i = -1;
+    for (let k = v.blocks.length - 1; k >= 0 && i < 0; k--) {
+      const b = v.blocks[k];
+      if (b.kind === "build" && b.draftId === e.draftId && b.approved === null) i = k;
+    }
+    if (i >= 0) v.blocks[i] = { ...(v.blocks[i] as Extract<Block, { kind: "build" }>), approved: e.approved, reason: e.reason };
+    else notice(v, e, "info", `${e.approved ? "Approved" : "Rejected"} the machine draft for ${e.buildName}${e.reason ? `: ${e.reason}` : ""}`);
+  },
+  rate_limited(v, e) {
+    v.rateLimitedUntil = e.resetsAt ?? null;
+    notice(v, e, "error", e.resetsAt ? `Rate limited until ${new Date(e.resetsAt).toISOString()}` : "Rate limited");
+  },
+  agent_exited(v, e) {
+    notice(v, e, "error", e.message);
+  },
+  error(v, e) {
+    notice(v, e, "error", e.message);
+  },
+};
+
 /** Pure + idempotent: events at or below lastSeq are ignored, so replays can never duplicate output. */
 export function fold(view: DorkView, e: ClientEvent): DorkView {
   if (e.seq <= view.lastSeq) return view;
   const v: DorkView = { ...view, lastSeq: e.seq, blocks: [...view.blocks] };
-  const notice = (level: "info" | "error", text: string) => v.blocks.push({ kind: "notice", id: `n${e.seq}`, level, text });
-  const find = (pred: (b: Block) => boolean) => v.blocks.findIndex(pred);
-
-  switch (e.type) {
-    case "user_message":
-      v.blocks.push({ kind: "user", id: `u${e.seq}`, text: e.text, at: e.ts });
-      v.lastOutcome = null;
-      break;
-    case "assistant_delta": {
-      const i = find((b) => b.kind === "assistant" && b.id === e.messageId);
-      if (i < 0) v.blocks.push({ kind: "assistant", id: e.messageId, text: e.text, streaming: true, at: e.ts });
-      else {
-        const b = v.blocks[i] as Extract<Block, { kind: "assistant" }>;
-        v.blocks[i] = { ...b, text: b.text + e.text };
-      }
-      break;
-    }
-    case "assistant_message": {
-      const i = find((b) => b.kind === "assistant" && b.id === e.messageId);
-      const done: Block = { kind: "assistant", id: e.messageId, text: e.text, streaming: false, at: e.ts };
-      if (i < 0) v.blocks.push(done);
-      else v.blocks[i] = done; // the complete message replaces streamed partials
-      break;
-    }
-    case "tool_use":
-      v.blocks.push({ kind: "tool", id: e.toolId, name: e.name, summary: e.summary, status: "running" });
-      break;
-    case "tool_result": {
-      const i = find((b) => b.kind === "tool" && b.id === e.toolId);
-      if (i >= 0) v.blocks[i] = { ...(v.blocks[i] as Extract<Block, { kind: "tool" }>), status: e.ok ? "ok" : "error", preview: e.preview };
-      break;
-    }
-    case "status":
-      v.state = e.state;
-      break;
-    case "turn_complete":
-      v.blocks = v.blocks.map((b) =>
-        b.kind === "assistant" && (b.streaming || b.id === e.finalMessageId) ? { ...b, streaming: false, ...(b.id === e.finalMessageId ? { final: true } : {}) } : b,
-      );
-      v.blocks.push({ kind: "turn", id: `t${e.seq}`, outcome: e.outcome ?? null, finalId: e.finalMessageId, durationMs: e.durationMs, at: e.ts });
-      v.lastOutcome = e.outcome ?? null;
-      break;
-    case "pr_opened":
-    case "pr_merged":
-      v.prUrl = e.url;
-      notice("info", `${e.type === "pr_opened" ? "PR opened" : "PR merged"}: ${e.url}`);
-      break;
-    case "notify":
-      notice("info", e.text);
-      break;
-    case "subscription":
-      notice(e.status === "stalled" ? "error" : "info", `${e.repo}#${e.number}: ${e.status}${e.reason ? ` (${e.reason})` : ""}`);
-      break;
-    case "build_draft":
-      v.blocks.push({ kind: "build", id: `b${e.seq}`, draftId: e.draftId, buildId: e.buildId, buildName: e.buildName, note: e.note, approved: null });
-      break;
-    case "build_decision": {
-      // A session can submit the same draft again after a decision: the decision belongs to the latest card still waiting.
-      let i = -1;
-      for (let k = v.blocks.length - 1; k >= 0 && i < 0; k--) {
-        const b = v.blocks[k];
-        if (b.kind === "build" && b.draftId === e.draftId && b.approved === null) i = k;
-      }
-      if (i >= 0) v.blocks[i] = { ...(v.blocks[i] as Extract<Block, { kind: "build" }>), approved: e.approved, reason: e.reason };
-      else notice("info", `${e.approved ? "Approved" : "Rejected"} the machine draft for ${e.buildName}${e.reason ? `: ${e.reason}` : ""}`);
-      break;
-    }
-    case "rate_limited":
-      v.rateLimitedUntil = e.resetsAt ?? null;
-      notice("error", e.resetsAt ? `Rate limited until ${new Date(e.resetsAt).toISOString()}` : "Rate limited");
-      break;
-    case "agent_exited":
-    case "error":
-      notice("error", e.message);
-      break;
-  }
+  const handle = HANDLERS[e.type] as ((v: DorkView, e: ClientEvent) => void) | undefined;
+  handle?.(v, e);
   return v;
 }

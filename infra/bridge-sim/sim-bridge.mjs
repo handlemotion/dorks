@@ -196,41 +196,43 @@ async function runTurn(text) {
   await flushNow();
 }
 
+async function configure(cid) {
+  const cfg = await client.action("configure");
+  if (!cfg) return log("configure refused (the backend recorded why)");
+  log("configure: repo", cfg.repo.fullName, "branch", cfg.repo.branch, "resume", cfg.resumeSessionId, "env keys", Object.keys(cfg.env).join(","), "gh token", cfg.ghToken ? "yes" : "no");
+  sessionId = cfg.resumeSessionId ?? `sim-session-${Date.now()}`; // a real bridge: `claude --resume <id>` when set
+  const model = SIM_MODELS.find((m) => m.model === (cfg.model ?? "default"))?.resolved ?? cfg.model;
+  ev({ type: "system", subtype: "init", session_id: sessionId, ...(cfg.provider !== "codex" ? { model } : {}) });
+  queue.push({ t: "ack", id: cid }, { t: "ready" });
+  // The real bridge asks Haiku (or a light Codex model) for this; the sim names the dork after the first few words.
+  if (cfg.nameFrom) queue.push({ t: "title", text: `Sim: ${cfg.nameFrom.replace(/\s+/g, " ").trim().split(" ").slice(0, 5).join(" ")}`.slice(0, 120) });
+  if (cfg.provider !== "codex") queue.push({ t: "agent_models", models: SIM_MODELS, effort: cfg.effort ?? null });
+  return void flushNow();
+}
+
+/** Acks a message-carrying command and runs its turn once, however often it is redelivered. */
+async function turnOnce(f, label, text) {
+  await sendNow({ t: "ack", id: f.id });
+  if (seenMsg.has(f.id)) return;
+  seenMsg.add(f.id);
+  log(label);
+  return runTurn(text);
+}
+
+const commands = {
+  fetch_configure: (f, cid) => configure(cid),
+  user_message: (f) => turnOnce(f, `message: ${f.text}`, f.text),
+  // autonomy digest (CI failed, review, conflict...): the real bridge writes it to Claude as one user turn
+  notify: (f) => turnOnce(f, `notify: ${(f.kinds ?? []).join(",") || "-"}`, `notify ${(f.kinds ?? []).join(",")}`),
+  interrupt: (f, cid) => { log("interrupt"); aborted = true; return void sendNow({ t: "ack", id: cid }); },
+  flush: async (f, cid) => { log("flush"); await flushNow(); return void sendNow({ t: "ack", id: cid }).then(() => sendNow({ t: "flushed", cid })); },
+  fetch_gh_token: async (f, cid) => { const r = await client.action("gh_token"); log("gh token refreshed:", r ? "ok" : "failed"); return void sendNow({ t: "ack", id: cid }); },
+};
+
 async function onCommand({ cid, frame: f }) {
   if (handled.has(cid)) return;
   handled.add(cid);
-  switch (f.t) {
-    case "fetch_configure": {
-      const cfg = await client.action("configure");
-      if (!cfg) return log("configure refused (the backend recorded why)");
-      log("configure: repo", cfg.repo.fullName, "branch", cfg.repo.branch, "resume", cfg.resumeSessionId, "env keys", Object.keys(cfg.env).join(","), "gh token", cfg.ghToken ? "yes" : "no");
-      sessionId = cfg.resumeSessionId ?? `sim-session-${Date.now()}`; // a real bridge: `claude --resume <id>` when set
-      const model = SIM_MODELS.find((m) => m.model === (cfg.model ?? "default"))?.resolved ?? cfg.model;
-      ev({ type: "system", subtype: "init", session_id: sessionId, ...(cfg.provider !== "codex" ? { model } : {}) });
-      queue.push({ t: "ack", id: cid }, { t: "ready" });
-      // The real bridge asks Haiku (or a light Codex model) for this; the sim names the dork after the first few words.
-      if (cfg.nameFrom) queue.push({ t: "title", text: `Sim: ${cfg.nameFrom.replace(/\s+/g, " ").trim().split(" ").slice(0, 5).join(" ")}`.slice(0, 120) });
-      if (cfg.provider !== "codex") queue.push({ t: "agent_models", models: SIM_MODELS, effort: cfg.effort ?? null });
-      return void flushNow();
-    }
-    case "user_message": {
-      await sendNow({ t: "ack", id: f.id });
-      if (seenMsg.has(f.id)) return;
-      seenMsg.add(f.id);
-      log("message:", f.text);
-      return runTurn(f.text);
-    }
-    case "notify": { // autonomy digest (CI failed, review, conflict...): the real bridge writes it to Claude as one user turn
-      await sendNow({ t: "ack", id: f.id });
-      if (seenMsg.has(f.id)) return;
-      seenMsg.add(f.id);
-      log("notify:", (f.kinds ?? []).join(",") || "-");
-      return runTurn(`notify ${(f.kinds ?? []).join(",")}`);
-    }
-    case "interrupt": log("interrupt"); aborted = true; return void sendNow({ t: "ack", id: cid });
-    case "flush": log("flush"); await flushNow(); return void sendNow({ t: "ack", id: cid }).then(() => sendNow({ t: "flushed", cid }));
-    case "fetch_gh_token": { const r = await client.action("gh_token"); log("gh token refreshed:", r ? "ok" : "failed"); return void sendNow({ t: "ack", id: cid }); }
-  }
+  return commands[f.t]?.(f, cid);
 }
 
 try {

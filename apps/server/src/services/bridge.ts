@@ -1,4 +1,4 @@
-import { errorEvent, fromBridge, type ClientEventBody, type CommandFrame, type SubscriptionView, type ToBridge } from "@dorks/shared";
+import { errorEvent, fromBridge, type ClientEventBody, type CommandFrame, type FromBridge, type SubscriptionView, type ToBridge } from "@dorks/shared";
 import { fail, touch, type App } from "../app";
 import { createNormalizer } from "../core/normalize";
 import { getDork, openCommands, runtimeOf, type DorkRow, type Preview, type SharedImage } from "../data";
@@ -87,7 +87,6 @@ export function push(app: App, dorkId: string, frames: unknown[]): { ok: true } 
     const dork = bridgeDork(app, dorkId);
     bridgeSeen(app, dork); // liveness counts even when the batch is refused below
     const rt = runtimeOf(app.db, dorkId);
-    let { bridgeSeq, streamMsgId, finalMsgId, interruptRequested } = rt;
 
     // Validate the whole batch before applying any of it: events must continue the stored numbering exactly (frames already
     // stored are skipped as replays). A gap refuses the call atomically, so the bridge can resend everything after its last
@@ -96,107 +95,136 @@ export function push(app: App, dorkId: string, frames: unknown[]): { ok: true } 
       const parsed = fromBridge.safeParse(raw);
       return parsed.success ? [parsed.data] : [];
     });
-    let next = bridgeSeq + 1;
-    for (const f of parsedFrames) {
-      if (f.t !== "event" || f.bseq < next) continue;
-      if (f.bseq !== next) return { ok: false as const, expectedBseq: bridgeSeq + 1 };
-      next++;
-    }
+    if (hasGap(parsedFrames, rt.bridgeSeq)) return { ok: false as const, expectedBseq: rt.bridgeSeq + 1 };
+
     // The normalizer is stateful (in-flight message id) but a transaction is not: seed it from the last batch.
     const normalize = createNormalizer();
-    if (streamMsgId) normalize({ type: "stream_event", event: { type: "message_start", message: { id: streamMsgId } } });
-
+    if (rt.streamMsgId) normalize({ type: "stream_event", event: { type: "message_start", message: { id: rt.streamMsgId } } });
     const pending: ClientEventBody[] = [];
-    const flush = () => {
-      if (pending.length) append(app, dorkId, ...pending.splice(0));
+    const batch: Batch = {
+      app, dorkId, dork, normalize, pending, touched: false,
+      bridgeSeq: rt.bridgeSeq, streamMsgId: rt.streamMsgId, finalMsgId: rt.finalMsgId, interruptRequested: rt.interruptRequested,
+      flush: () => {
+        if (pending.length) append(app, dorkId, ...pending.splice(0));
+      },
     };
-    let preview: string | undefined;
-    let touched = false;
 
-    for (const f of parsedFrames) {
-      switch (f.t) {
-        case "codex_models":
-          if (dork.provider === "codex") patchDork(app, dorkId, { codexModelChoices: f.models });
-          break;
-        case "title": {
-          // Only replaces the first-message placeholder: a name the user typed (or one already generated) always wins.
-          const fresh = getDork(app.db, dorkId)!;
-          const title = cleanTitle(f.text);
-          if (fresh.titleSource === "message" && title) patchDork(app, dorkId, { title, titleSource: "auto" });
-          break;
-        }
-        case "agent_models":
-          if (dork.provider === "claude") {
-            patchDork(app, dorkId, { modelChoices: f.models, agentEffort: f.effort ?? undefined });
-            rememberModelChoices(app, f.models);
-          }
-          break;
-        case "codex_issue":
-          if (dork.provider === "codex") append(app, dorkId, errorEvent({ code: "failed", message: f.message }));
-          break;
-        case "event": {
-          if (f.bseq <= bridgeSeq) break; // replay overlap after a reconnect
-          bridgeSeq = f.bseq;
-          const r = f.raw as { type?: string; event?: { type?: string; message?: { id?: string } } };
-          if (r?.type === "stream_event" && r.event?.type === "message_start") streamMsgId = r.event.message?.id ?? "";
-          let stopped = false;
-          for (const n of normalize(f.raw)) {
-            if (n.kind === "event") {
-              let body = n.body;
-              // The final answer is the turn's last assistant message with no tool call after it. The server names it on the
-              // turn's turn_complete, so clients never infer it from where a message sits.
-              if (body.type === "assistant_message") finalMsgId = body.messageId;
-              if (body.type === "tool_use") finalMsgId = "";
-              if (body.type === "turn_complete") {
-                // A turn the user stopped ends as an error result: it is `stopped`, not a failure, and gets no error event.
-                stopped = interruptRequested && body.outcome === "failed";
-                const outcome = stopped ? "stopped" : body.outcome;
-                body = { ...body, outcome, ...(outcome === "done" && finalMsgId ? { finalMessageId: finalMsgId } : {}) };
-                finalMsgId = "";
-                interruptRequested = false;
-                touched = true;
-              }
-              if (stopped && body.type === "error" && body.error?.code === "turn_failed") continue;
-              pending.push(body);
-              if (body.type === "assistant_message") preview = body.text.slice(0, 140);
-            } else if (n.kind === "session") {
-              patchDork(app, dorkId, dork.provider === "codex" ? { codexThreadId: n.sessionId } : { claudeSessionId: n.sessionId, ...(n.model ? { agentModel: n.model } : {}) });
-            } else {
-              flush();
-              dispatch(app, dorkId, { t: "turn_idle" });
-            }
-          }
-          break;
-        }
-        case "ready":
-          flush();
-          if (dork.provider === "codex") patchDork(app, dorkId, { codexModelChoices: undefined });
-          dispatch(app, dorkId, { t: "agent_ready" });
-          break;
-        case "ack": {
-          const c = openCommands(app.db, dorkId).find((x) => x.cid === f.id);
-          if (!c) break;
-          if (c.kind === "user_message" || c.kind === "notify") update(app.db, "commands", { id: c.id }, { acked: true });
-          else app.db.run("DELETE FROM commands WHERE id = ?", c.id);
-          touch(app, { t: "commands", dorkId });
-          break;
-        }
-        case "agent_exited":
-          flush();
-          append(app, dorkId, { type: "agent_exited", message: `agent exited (code ${f.code ?? "?"})` });
-          console.error("agent exited", dorkId, f.code); // stderr tail is never logged: it can echo env
-          dispatch(app, dorkId, { t: "agent_exited" });
-          break;
-        case "flushed":
-          finishPause(app, dorkId, f.cid);
-          break;
-      }
-    }
-    flush();
+    for (const f of parsedFrames) (FRAME_HANDLERS[f.t] as (b: Batch, f: FromBridge) => void)(batch, f);
+    batch.flush();
+    const { bridgeSeq, streamMsgId, finalMsgId, interruptRequested, preview, touched } = batch;
     update(app.db, "dork_runtime", { dorkId }, { bridgeSeq, streamMsgId, finalMsgId, interruptRequested });
     if (preview !== undefined || touched) patchDork(app, dorkId, { ...(preview !== undefined ? { preview } : {}), lastActivityAt: app.now() });
     return { ok: true as const };
   });
+}
+
+/** Whether the batch's new events skip a number after `bridgeSeq` (replays, `<= bridgeSeq`, are fine). */
+function hasGap(frames: FromBridge[], bridgeSeq: number): boolean {
+  let next = bridgeSeq + 1;
+  for (const f of frames) {
+    if (f.t !== "event" || f.bseq < next) continue;
+    if (f.bseq !== next) return true;
+    next++;
+  }
+  return false;
+}
+
+/** One `push` call being applied: the runtime cursor it advances and what it has collected so far. */
+interface Batch {
+  app: App;
+  dorkId: string;
+  dork: DorkRow;
+  normalize: ReturnType<typeof createNormalizer>;
+  /** Client events not yet appended; `flush` appends them, so events stay ordered around dispatches. */
+  pending: ClientEventBody[];
+  flush: () => void;
+  bridgeSeq: number;
+  streamMsgId: string;
+  finalMsgId: string;
+  interruptRequested: boolean;
+  preview?: string;
+  /** A turn completed: the dork's last activity moves. */
+  touched: boolean;
+}
+type FrameOf<T extends FromBridge["t"]> = Extract<FromBridge, { t: T }>;
+
+const FRAME_HANDLERS: { [T in FromBridge["t"]]: (b: Batch, f: FrameOf<T>) => void } = {
+  codex_models: ({ app, dorkId, dork }, f) => {
+    if (dork.provider === "codex") patchDork(app, dorkId, { codexModelChoices: f.models });
+  },
+  title: ({ app, dorkId }, f) => {
+    // Only replaces the first-message placeholder: a name the user typed (or one already generated) always wins.
+    const fresh = getDork(app.db, dorkId)!;
+    const title = cleanTitle(f.text);
+    if (fresh.titleSource === "message" && title) patchDork(app, dorkId, { title, titleSource: "auto" });
+  },
+  agent_models: ({ app, dorkId, dork }, f) => {
+    if (dork.provider !== "claude") return;
+    patchDork(app, dorkId, { modelChoices: f.models, agentEffort: f.effort ?? undefined });
+    rememberModelChoices(app, f.models);
+  },
+  codex_issue: ({ app, dorkId, dork }, f) => {
+    if (dork.provider === "codex") append(app, dorkId, errorEvent({ code: "failed", message: f.message }));
+  },
+  event: applyEvent,
+  ready: ({ app, dorkId, dork, flush }) => {
+    flush();
+    if (dork.provider === "codex") patchDork(app, dorkId, { codexModelChoices: undefined });
+    dispatch(app, dorkId, { t: "agent_ready" });
+  },
+  ack: ({ app, dorkId }, f) => {
+    const c = openCommands(app.db, dorkId).find((x) => x.cid === f.id);
+    if (!c) return;
+    if (c.kind === "user_message" || c.kind === "notify") update(app.db, "commands", { id: c.id }, { acked: true });
+    else app.db.run("DELETE FROM commands WHERE id = ?", c.id);
+    touch(app, { t: "commands", dorkId });
+  },
+  agent_exited: ({ app, dorkId, flush }, f) => {
+    flush();
+    append(app, dorkId, { type: "agent_exited", message: `agent exited (code ${f.code ?? "?"})` });
+    console.error("agent exited", dorkId, f.code); // stderr tail is never logged: it can echo env
+    dispatch(app, dorkId, { t: "agent_exited" });
+  },
+  flushed: ({ app, dorkId }, f) => finishPause(app, dorkId, f.cid),
+};
+
+/** One raw agent stream line: normalized into client events, the session id, or a turn boundary. */
+function applyEvent(b: Batch, f: FrameOf<"event">) {
+  if (f.bseq <= b.bridgeSeq) return; // replay overlap after a reconnect
+  b.bridgeSeq = f.bseq;
+  const r = f.raw as { type?: string; event?: { type?: string; message?: { id?: string } } };
+  if (r?.type === "stream_event" && r.event?.type === "message_start") b.streamMsgId = r.event.message?.id ?? "";
+  let stopped = false;
+  for (const n of b.normalize(f.raw)) {
+    if (n.kind === "event") stopped = applyClientEvent(b, n.body, stopped);
+    else if (n.kind === "session") {
+      patchDork(b.app, b.dorkId, b.dork.provider === "codex" ? { codexThreadId: n.sessionId } : { claudeSessionId: n.sessionId, ...(n.model ? { agentModel: n.model } : {}) });
+    } else {
+      b.flush();
+      dispatch(b.app, b.dorkId, { t: "turn_idle" });
+    }
+  }
+}
+
+/** Queues one client event, stamping a `turn_complete`. Returns whether the line's turn was stopped by the user. */
+function applyClientEvent(b: Batch, body: ClientEventBody, stopped: boolean): boolean {
+  // The final answer is the turn's last assistant message with no tool call after it. The server names it on the
+  // turn's turn_complete, so clients never infer it from where a message sits.
+  if (body.type === "assistant_message") b.finalMsgId = body.messageId;
+  if (body.type === "tool_use") b.finalMsgId = "";
+  if (body.type === "turn_complete") {
+    // A turn the user stopped ends as an error result: it is `stopped`, not a failure, and gets no error event.
+    stopped = b.interruptRequested && body.outcome === "failed";
+    const outcome = stopped ? "stopped" : body.outcome;
+    body = { ...body, outcome, ...(outcome === "done" && b.finalMsgId ? { finalMessageId: b.finalMsgId } : {}) };
+    b.finalMsgId = "";
+    b.interruptRequested = false;
+    b.touched = true;
+  }
+  if (stopped && body.type === "error" && body.error?.code === "turn_failed") return stopped;
+  b.pending.push(body);
+  if (body.type === "assistant_message") b.preview = body.text.slice(0, 140);
+  return stopped;
 }
 
 // ---------------------------------------------------------------- PR subscriptions (docs/autonomy.md)
@@ -367,32 +395,46 @@ export async function configure(app: App, dorkId: string): Promise<ToBridge | nu
     return null;
   }
   try {
-    const sim = app.cfg.boxProvider === "sim";
-    const claude = dork.provider === "claude" ? await claudeToken(app) : undefined;
-    if (dork.provider === "claude" && !claude) throw new OnboardingError("Claude token not set");
-    const gh = (await githubToken(app)) ?? (sim ? "sim-github-token" : undefined);
-    if (!gh) throw new OnboardingError("GitHub token not set");
-    const secrets = await cliSecrets(app);
-    // Build variables (docs/builds.md) over the shared ones; decrypted only here, for an authenticated bridge allowed to mint secrets.
-    const buildVars = dork.buildId && getBuild(app, dork.buildId) ? await buildVarValues(app, dork.buildId) : {};
-    return {
-      t: "configure",
-      provider: dork.provider,
-      ...(dork.provider === "codex" ? { codexModel: dork.codexModel } : {}),
-      ...(dork.provider === "claude" && dork.model ? { model: dork.model } : {}),
-      ...(dork.provider === "claude" && dork.effort ? { effort: dork.effort } : {}),
-      env: { ...secrets, ...buildVars, ...(claude ? { CLAUDE_CODE_OAUTH_TOKEN: claude } : {}) },
-      ghToken: gh,
-      repo: dork.repo ? { fullName: dork.repo, branch: dork.branch } : null,
-      resumeSessionId: (dork.provider === "codex" ? dork.codexThreadId : dork.claudeSessionId) ?? null,
-      ...(dork.titleSource === "message" ? nameFrom(app, dorkId) : {}),
-    };
+    return await configureFrame(app, dork);
   } catch (e) {
     const message = e instanceof OnboardingError ? e.message : "could not configure the sandbox";
     console.error("configure failed", dorkId, e instanceof OnboardingError ? e.message : "unexpected");
     app.db.tx(() => opFailed(app, dorkId, message));
     return null;
   }
+}
+
+/** The tokens and variables the agent runs with. Throws OnboardingError when a token the dork needs is not set. */
+async function agentSecrets(app: App, dork: DorkRow): Promise<{ gh: string; env: Record<string, string> }> {
+  const sim = app.cfg.boxProvider === "sim";
+  const claude = dork.provider === "claude" ? await claudeToken(app) : undefined;
+  if (dork.provider === "claude" && !claude) throw new OnboardingError("Claude token not set");
+  const gh = (await githubToken(app)) ?? (sim ? "sim-github-token" : undefined);
+  if (!gh) throw new OnboardingError("GitHub token not set");
+  const secrets = await cliSecrets(app);
+  // Build variables (docs/builds.md) over the shared ones; decrypted only here, for an authenticated bridge allowed to mint secrets.
+  const buildVars = dork.buildId && getBuild(app, dork.buildId) ? await buildVarValues(app, dork.buildId) : {};
+  return { gh, env: { ...secrets, ...buildVars, ...(claude ? { CLAUDE_CODE_OAUTH_TOKEN: claude } : {}) } };
+}
+
+/** The agent's model and effort: Codex's chosen pair, or Claude's model and effort when set. */
+function modelFields(dork: DorkRow) {
+  if (dork.provider === "codex") return { codexModel: dork.codexModel };
+  return { ...(dork.model ? { model: dork.model } : {}), ...(dork.effort ? { effort: dork.effort } : {}) };
+}
+
+async function configureFrame(app: App, dork: DorkRow): Promise<ToBridge> {
+  const { gh, env } = await agentSecrets(app, dork);
+  return {
+    t: "configure",
+    provider: dork.provider,
+    ...modelFields(dork),
+    env,
+    ghToken: gh,
+    repo: dork.repo ? { fullName: dork.repo, branch: dork.branch } : null,
+    resumeSessionId: (dork.provider === "codex" ? dork.codexThreadId : dork.claudeSessionId) ?? null,
+    ...(dork.titleSource === "message" ? nameFrom(app, dork.id) : {}),
+  };
 }
 
 /** The stored GitHub token, for the bridge's refresh path. Same gating as `configure`. */
