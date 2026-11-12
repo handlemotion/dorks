@@ -6,7 +6,10 @@ import type { BoatCheck, DorksClient } from '@dorks/client'
  */
 export class BoatCheckError extends Error {
   readonly data: { code: 'invalid'; message: string }
-  constructor(readonly status: BoatCheck['status'], message: string) {
+  constructor(
+    readonly status: BoatCheck['status'],
+    message: string,
+  ) {
     super(message)
     this.data = { code: 'invalid', message }
   }

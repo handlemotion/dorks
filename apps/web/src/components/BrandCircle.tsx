@@ -4,10 +4,5 @@
  * keeps the same composition. Its parent must be `relative isolate` (the ring sits at z -10) and `overflow-clip`: with `overflow-hidden` the page can still be scrolled sideways by focus (a closing dialog handing focus back), and the whole step slides off center.
  */
 export function BrandCircle({ className = 'w-[124.54vw]' }: { className?: string }) {
-  return (
-    <div
-      aria-hidden
-      className={`pointer-events-none absolute top-0 left-1/2 -z-10 aspect-square -translate-x-1/2 rounded-full border-2 border-brand-line ${className}`}
-    />
-  )
+  return <div aria-hidden className={`pointer-events-none absolute top-0 left-1/2 -z-10 aspect-square -translate-x-1/2 rounded-full border-2 border-brand-line ${className}`} />
 }

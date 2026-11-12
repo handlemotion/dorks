@@ -12,7 +12,6 @@ const DELTAS = Number(process.env.SIM_DELTAS ?? 40); // fake text deltas per tur
 const DELTA_GAP_MS = Number(process.env.SIM_DELTA_GAP_MS ?? 40);
 if (!dorkId || !secret || !url) throw new Error("DORK_ID, BRIDGE_SECRET and BRIDGE_URL are required");
 
-
 // ---- a minimal client for the bridge protocol: auth frame, rpc request/response, snapshot pushes, reconnect with backoff
 let ws = null;
 let nextId = 1;
@@ -26,26 +25,45 @@ const openSocket = () =>
     sock.onopen = () => sock.send(JSON.stringify({ t: "auth", dorkId, secret }));
     sock.onmessage = (m) => {
       const msg = JSON.parse(String(m.data));
-      if (msg.t === "auth_ok") { ws = sock; lastOpened = true; resolve(); }
-      else if (msg.t === "res") {
+      if (msg.t === "auth_ok") {
+        ws = sock;
+        lastOpened = true;
+        resolve();
+      } else if (msg.t === "res") {
         const p = pendingRpc.get(msg.id);
         if (!p) return;
         pendingRpc.delete(msg.id);
-        if (msg.ok) p.resolve(msg.result); else p.reject(Object.assign(new Error(msg.error?.message ?? "rpc failed"), { data: msg.error }));
-      } else if (msg.t === "commands") { lastCmds = msg.cmds; onCommandsCb?.(msg.cmds); }
+        if (msg.ok) p.resolve(msg.result);
+        else p.reject(Object.assign(new Error(msg.error?.message ?? "rpc failed"), { data: msg.error }));
+      } else if (msg.t === "commands") {
+        lastCmds = msg.cmds;
+        onCommandsCb?.(msg.cmds);
+      }
     };
     sock.onerror = () => reject(new Error("connection failed"));
     sock.onclose = (ev) => {
       if (ws === sock) ws = null;
-      for (const [id, p] of pendingRpc) { p.reject(new Error("connection lost")); pendingRpc.delete(id); }
-      if (ev.code === 4403) { console.log("[bridge-sim] refused by the server"); process.exit(0); }
+      for (const [id, p] of pendingRpc) {
+        p.reject(new Error("connection lost"));
+        pendingRpc.delete(id);
+      }
+      if (ev.code === 4403) {
+        console.log("[bridge-sim] refused by the server");
+        process.exit(0);
+      }
       reject(new Error("connection closed"));
       if (lastOpened) setTimeout(() => reopen().catch(() => {}), 1000);
     };
   });
 async function reopen() {
   for (let delay = 500; ; delay = Math.min(delay * 2, 10_000)) {
-    try { await openSocket(); await rpc("connect"); return; } catch { await new Promise((r) => setTimeout(r, delay)); }
+    try {
+      await openSocket();
+      await rpc("connect");
+      return;
+    } catch {
+      await new Promise((r) => setTimeout(r, delay));
+    }
   }
 }
 async function rpc(op, args = {}) {
@@ -59,7 +77,10 @@ async function rpc(op, args = {}) {
 const client = {
   mutation: (op, args) => rpc(op, args),
   action: (op, args) => rpc(op, args),
-  onUpdate: (cb) => { onCommandsCb = cb; if (lastCmds) cb(lastCmds); },
+  onUpdate: (cb) => {
+    onCommandsCb = cb;
+    if (lastCmds) cb(lastCmds);
+  },
 };
 const log = (...a) => console.log(`[bridge-sim ${dorkId.slice(-6)}]`, ...a);
 let bseq = 0;
@@ -107,14 +128,20 @@ async function pushChunk(chunk) {
       r = await client.mutation("push", { frames: chunk });
     } catch (e) {
       const code = e?.data?.code;
-      if (code === "too_many_frames" && chunk.length > 1) { // split and send in order
+      if (code === "too_many_frames" && chunk.length > 1) {
+        // split and send in order
         const half = chunk.length >> 1;
         await pushChunk(chunk.slice(0, half));
         return pushChunk(chunk.slice(half));
       }
       if (code === "event_too_large") {
         const big = chunk.filter((f) => f.t === "event" && eventBytes(f) > MAX_EVENT_BYTES);
-        const victims = big.length ? big : chunk.filter((f) => f.t === "event").sort((a, b) => eventBytes(b) - eventBytes(a)).slice(0, 1);
+        const victims = big.length
+          ? big
+          : chunk
+              .filter((f) => f.t === "event")
+              .sort((a, b) => eventBytes(b) - eventBytes(a))
+              .slice(0, 1);
         if (victims.length) {
           victims.forEach(truncate);
           continue;
@@ -158,14 +185,18 @@ const ev = (raw) => {
     deltaText += raw.event.delta.text;
     return schedule();
   }
-  if (deltaText) { // keep order: pending text goes out before whatever comes next
+  if (deltaText) {
+    // keep order: pending text goes out before whatever comes next
     eventFrame(deltaRaw(deltaText));
     deltaText = "";
   }
   eventFrame(raw);
   schedule();
 };
-const sendNow = (frame) => { queue.push(frame); return flushNow(); };
+const sendNow = (frame) => {
+  queue.push(frame);
+  return flushNow();
+};
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let aborted = false;
@@ -182,13 +213,26 @@ async function runTurn(text) {
   const mid = `m${n}`;
   ev({ type: "stream_event", event: { type: "message_start", message: { id: mid } } });
   aborted = false;
-  for (let i = 0; i < DELTAS && !aborted; i++) { ev({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: `w${i} ` } } }); await sleep(DELTA_GAP_MS); }
-  if (aborted) { // like the CLI after an interrupt control_request: an error result, then idle
+  for (let i = 0; i < DELTAS && !aborted; i++) {
+    ev({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: `w${i} ` } } });
+    await sleep(DELTA_GAP_MS);
+  }
+  if (aborted) {
+    // like the CLI after an interrupt control_request: an error result, then idle
     ev({ type: "result", subtype: "error_during_execution", duration_ms: 5, is_error: true, result: "interrupted" });
     ev({ type: "system", subtype: "session_state_changed", state: "idle" });
     return void (await flushNow());
   }
-  ev({ type: "assistant", message: { id: mid, content: [{ type: "text", text: `Done: ${text}` }, { type: "tool_use", id: `t${n}`, name: "Bash", input: { command: "git push" } }] } });
+  ev({
+    type: "assistant",
+    message: {
+      id: mid,
+      content: [
+        { type: "text", text: `Done: ${text}` },
+        { type: "tool_use", id: `t${n}`, name: "Bash", input: { command: "git push" } },
+      ],
+    },
+  });
   ev({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: `t${n}`, content: "ok" }] } });
   ev({ type: "assistant", message: { id: `${mid}f`, content: [{ type: "text", text: `Finished: ${text}. Pushed the branch; nothing else is pending.` }] } });
   ev({ type: "result", duration_ms: DELTAS * DELTA_GAP_MS, is_error: false });
@@ -224,9 +268,21 @@ const commands = {
   user_message: (f) => turnOnce(f, `message: ${f.text}`, f.text),
   // autonomy digest (CI failed, review, conflict...): the real bridge writes it to Claude as one user turn
   notify: (f) => turnOnce(f, `notify: ${(f.kinds ?? []).join(",") || "-"}`, `notify ${(f.kinds ?? []).join(",")}`),
-  interrupt: (f, cid) => { log("interrupt"); aborted = true; return void sendNow({ t: "ack", id: cid }); },
-  flush: async (f, cid) => { log("flush"); await flushNow(); return void sendNow({ t: "ack", id: cid }).then(() => sendNow({ t: "flushed", cid })); },
-  fetch_gh_token: async (f, cid) => { const r = await client.action("gh_token"); log("gh token refreshed:", r ? "ok" : "failed"); return void sendNow({ t: "ack", id: cid }); },
+  interrupt: (f, cid) => {
+    log("interrupt");
+    aborted = true;
+    return void sendNow({ t: "ack", id: cid });
+  },
+  flush: async (f, cid) => {
+    log("flush");
+    await flushNow();
+    return void sendNow({ t: "ack", id: cid }).then(() => sendNow({ t: "flushed", cid }));
+  },
+  fetch_gh_token: async (f, cid) => {
+    const r = await client.action("gh_token");
+    log("gh token refreshed:", r ? "ok" : "failed");
+    return void sendNow({ t: "ack", id: cid });
+  },
 };
 
 async function onCommand({ cid, frame: f }) {
@@ -243,6 +299,11 @@ try {
   log("connect refused:", String(e.data?.code ?? e.message).slice(0, 60));
   process.exit(0);
 }
-client.onUpdate((cmds) => { for (const c of cmds) onCommand(c).catch((e) => log("command failed:", String(e.message).slice(0, 120))); });
+client.onUpdate((cmds) => {
+  for (const c of cmds) onCommand(c).catch((e) => log("command failed:", String(e.message).slice(0, 120)));
+});
 setInterval(() => client.mutation("heartbeat").catch(() => {}), HEARTBEAT_MS).unref();
-process.on("SIGTERM", async () => { await Promise.race([flushNow(), wait(2000)]); process.exit(0); }); // bounded: a backend that is down must not make the sim unkillable
+process.on("SIGTERM", async () => {
+  await Promise.race([flushNow(), wait(2000)]);
+  process.exit(0);
+}); // bounded: a backend that is down must not make the sim unkillable

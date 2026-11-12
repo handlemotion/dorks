@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { createNormalizer } from "../src/core/normalize";
 
 const bodies = (n: ReturnType<ReturnType<typeof createNormalizer>>) => n.flatMap((x) => (x.kind === "event" ? [x.body] : []));
@@ -13,14 +13,23 @@ describe("normalize", () => {
   it("streams text deltas under the in-flight message id", () => {
     const n = createNormalizer();
     n({ type: "stream_event", event: { type: "message_start", message: { id: "m1" } } });
-    expect(bodies(n({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "Hi" } } }))).toEqual([
-      { type: "assistant_delta", messageId: "m1", text: "Hi" },
-    ]);
+    expect(bodies(n({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "Hi" } } }))).toEqual([{ type: "assistant_delta", messageId: "m1", text: "Hi" }]);
   });
 
   it("maps assistant text + tool_use, and tool_result with truncation", () => {
     const n = createNormalizer();
-    const a = bodies(n({ type: "assistant", message: { id: "m1", content: [{ type: "text", text: "ok" }, { type: "tool_use", id: "t1", name: "Bash", input: { command: "ls -la" } }] } }));
+    const a = bodies(
+      n({
+        type: "assistant",
+        message: {
+          id: "m1",
+          content: [
+            { type: "text", text: "ok" },
+            { type: "tool_use", id: "t1", name: "Bash", input: { command: "ls -la" } },
+          ],
+        },
+      }),
+    );
     expect(a).toEqual([
       { type: "assistant_message", messageId: "m1", text: "ok" },
       { type: "tool_use", toolId: "t1", name: "Bash", summary: "ls -la" },
@@ -53,7 +62,18 @@ describe("normalize output matches the shared event schema", () => {
     n({ type: "stream_event", event: { type: "message_start", message: { id: "m1" } } });
     const out = [
       ...bodies(n({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "Hi" } } })),
-      ...bodies(n({ type: "assistant", message: { id: "m1", content: [{ type: "text", text: "ok" }, { type: "tool_use", id: "t1", name: "Bash", input: { command: "ls" } }] } })),
+      ...bodies(
+        n({
+          type: "assistant",
+          message: {
+            id: "m1",
+            content: [
+              { type: "text", text: "ok" },
+              { type: "tool_use", id: "t1", name: "Bash", input: { command: "ls" } },
+            ],
+          },
+        }),
+      ),
       ...bodies(n({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", is_error: false, content: "x" }] } })),
     ];
     expect(out.length).toBeGreaterThan(0);

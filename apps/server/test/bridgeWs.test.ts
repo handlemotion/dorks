@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { BridgeSession } from "../src/http/bridgeWs";
 import { updateSettings } from "../src/services/settings";
 import { WsTransport, type CommandEntry } from "../../../infra/bridge/src/transport";
@@ -88,7 +88,10 @@ describe("bridge socket: rpc", () => {
   it("connect reports the stored bseq and queues configure; the snapshot carries it as a fetch marker, never a secret", async () => {
     const { h, id, t } = await setup("waking", { bridgeSeq: 7 });
     const seen: CommandEntry[][] = [];
-    const off = t.subscribeCommands((c) => seen.push(c), () => {});
+    const off = t.subscribeCommands(
+      (c) => seen.push(c),
+      () => {},
+    );
     expect((await t.connect()).afterBridgeSeq).toBe(7);
     await until(() => seen.some((c) => c.some((e) => e.frame.t === "fetch_configure")), "configure marker");
     expect(JSON.stringify(seen)).not.toContain("secret");
@@ -149,7 +152,10 @@ describe("bridge socket: rpc", () => {
   it("PR subscriptions: subscribe/unsubscribe rpc and the pushed list", async () => {
     const { h, id, t } = await setup("working");
     const lists: unknown[] = [];
-    const off = t.subscribeSubscriptions((v) => lists.push(v), () => {});
+    const off = t.subscribeSubscriptions(
+      (v) => lists.push(v),
+      () => {},
+    );
     await t.subscribePr({ repo: "O/R", number: 7 }, "auto");
     await until(() => lists.some((l) => Array.isArray(l) && l.length === 1), "subscription list");
     expect((lists.at(-1) as { repo: string; number: number }[])[0]).toMatchObject({ repo: "o/r", number: 7, source: "auto", status: "active" });
@@ -165,7 +171,10 @@ describe("bridge socket: a whole turn through the real transport", () => {
   it("message -> snapshot -> ack -> events -> turn_idle, and the snapshot follows every change", async () => {
     const { h, id, t } = await setup("waking");
     const snaps: CommandEntry[][] = [];
-    t.subscribeCommands((c) => snaps.push(c), () => {});
+    t.subscribeCommands(
+      (c) => snaps.push(c),
+      () => {},
+    );
     await t.connect();
     h.sendMessage(id, "do the thing"); // while waking: queued, not delivered
     await tick(20);
@@ -174,7 +183,12 @@ describe("bridge socket: a whole turn through the real transport", () => {
     await until(() => snaps.at(-1)?.some((c) => c.frame.t === "user_message") ?? false, "message delivered once ready");
     const msg = snaps.at(-1)!.find((c) => c.frame.t === "user_message")!;
     expect(msg.frame).toMatchObject({ t: "user_message", text: "do the thing" });
-    await t.push([{ t: "ack", id: msg.cid } as never, ev(1) as never, { t: "event", bseq: 2, raw: { type: "result", duration_ms: 5, is_error: false } } as never, { t: "event", bseq: 3, raw: { type: "system", subtype: "session_state_changed", state: "idle" } } as never]);
+    await t.push([
+      { t: "ack", id: msg.cid } as never,
+      ev(1) as never,
+      { t: "event", bseq: 2, raw: { type: "result", duration_ms: 5, is_error: false } } as never,
+      { t: "event", bseq: 3, raw: { type: "system", subtype: "session_state_changed", state: "idle" } } as never,
+    ]);
     await until(() => h.state(id) === "idle", "idle after the turn");
     await until(() => snaps.at(-1)?.every((c) => c.frame.t !== "user_message") ?? false, "acked message gone from the snapshot");
     expect(h.events(id).map((e) => e.body.type)).toContain("turn_complete");
@@ -186,7 +200,10 @@ describe("bridge socket: a whole turn through the real transport", () => {
     const snaps: CommandEntry[][] = [];
     let reconnects = 0;
     t.onReconnect(() => reconnects++);
-    t.subscribeCommands((c) => snaps.push(c), () => {});
+    t.subscribeCommands(
+      (c) => snaps.push(c),
+      () => {},
+    );
     await t.connect();
     await until(() => snaps.length > 0, "first snapshot");
     const before = snaps.length;

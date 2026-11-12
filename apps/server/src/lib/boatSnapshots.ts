@@ -1,8 +1,27 @@
 import { Effect, Option, Schema } from "effect";
 import { BUILD_SANDBOX_LIFETIME_SECONDS, type AttachResult, type SnapshotDriver } from "../core/snapshot";
 import {
-  BoatError, BOX_ID, boatFetch, createdId, decodeOr, deleteSandbox, getSandbox, ignoreStatus, isBoatStatus, isGone, isTransient,
-  listSandboxes, makeBoatCall, optionalOn404, pauseWith, POLL_MS, pollUntil, READY, retryWhile, sandboxPath, type BoatOptions,
+  BoatError,
+  BOX_ID,
+  boatFetch,
+  createdId,
+  decodeOr,
+  deleteSandbox,
+  getSandbox,
+  ignoreStatus,
+  isBoatStatus,
+  isGone,
+  isTransient,
+  listSandboxes,
+  makeBoatCall,
+  optionalOn404,
+  pauseWith,
+  POLL_MS,
+  pollUntil,
+  READY,
+  retryWhile,
+  sandboxPath,
+  type BoatOptions,
 } from "./boatHttp";
 
 // Boat API calls the base-snapshot build needs. Sources (https://docs.boat.dev):
@@ -58,8 +77,7 @@ export function boatSnapshotDriver(opts: BoatSnapshotOptions): SnapshotDriver {
     );
 
   return {
-    listBuildSandboxes: (label, labelKey = "dorks-build") =>
-      run(listSandboxes(call, labelKey, label).pipe(Effect.map((all) => all.filter((b) => !isGone(b)).map((b) => ({ id: b.id }))))),
+    listBuildSandboxes: (label, labelKey = "dorks-build") => run(listSandboxes(call, labelKey, label).pipe(Effect.map((all) => all.filter((b) => !isGone(b)).map((b) => ({ id: b.id }))))),
 
     createBuildSandbox: ({ name, label, key, from, type, labelKey = "dorks-build" }) => {
       const body = { name, labels: { [labelKey]: label }, noEnv: true, ttlSeconds: BUILD_SANDBOX_LIFETIME_SECONDS, ...(from ? { from } : {}), ...(type ? { type } : {}) };
@@ -70,7 +88,12 @@ export function boatSnapshotDriver(opts: BoatSnapshotOptions): SnapshotDriver {
     waitReady: (id) => run(waitReady(id)),
 
     writeFile: (id, filePath, content, encoding) =>
-      run(sandboxPath(id, "/files").pipe(Effect.flatMap((p) => call("write file", "PUT", p, { body: { path: filePath, content, encoding }, timeoutMs: 120_000 })), Effect.asVoid)),
+      run(
+        sandboxPath(id, "/files").pipe(
+          Effect.flatMap((p) => call("write file", "PUT", p, { body: { path: filePath, content, encoding }, timeoutMs: 120_000 })),
+          Effect.asVoid,
+        ),
+      ),
 
     run: (id, command, timeoutSeconds) =>
       run(
@@ -91,7 +114,10 @@ export function boatSnapshotDriver(opts: BoatSnapshotOptions): SnapshotDriver {
         call("save snapshot", "POST", "/saved-snapshots", { body: { sandboxId: id, name } }).pipe(
           Effect.asVoid,
           // A save under this name is already running (for example this build was resumed after a crash): the poll handles it.
-          Effect.catchIf((e) => isBoatStatus(e, 409) && e.code === "save_in_progress", () => Effect.void),
+          Effect.catchIf(
+            (e) => isBoatStatus(e, 409) && e.code === "save_in_progress",
+            () => Effect.void,
+          ),
         ),
       ),
 
@@ -117,7 +143,12 @@ export function boatSnapshotDriver(opts: BoatSnapshotOptions): SnapshotDriver {
     attach: (id, processId, offsets, onOutput) => run(attach(opts, id, processId, offsets, onOutput)),
 
     killCommand: (id, processId) =>
-      run(commands(id, `/${processId}`).pipe(Effect.flatMap((p) => call("stop command", "DELETE", p)), ignoreStatus(404, 409))),
+      run(
+        commands(id, `/${processId}`).pipe(
+          Effect.flatMap((p) => call("stop command", "DELETE", p)),
+          ignoreStatus(404, 409),
+        ),
+      ),
 
     deleteSnapshot: (name) => run(call("delete snapshot", "DELETE", `/saved-snapshots/${encodeURIComponent(name)}`).pipe(ignoreStatus(404))),
 

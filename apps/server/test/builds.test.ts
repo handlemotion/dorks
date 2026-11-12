@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { update } from "../src/db";
 import { approveDraft, buildView, createBuild, getBuild, imageName, setBuildVar, submitDraft, writeDraft } from "../src/services/builds";
 import { startRun, startRunForDork } from "../src/services/buildRuns";

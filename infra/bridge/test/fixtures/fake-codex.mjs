@@ -6,17 +6,28 @@ import { join } from "node:path";
 const home = process.env.CODEX_HOME;
 const auth = join(home, "auth.json");
 const thread = join(home, "thread.json");
-if (process.env.FAKE_CODEX_REPORT) writeFileSync(process.env.FAKE_CODEX_REPORT, JSON.stringify({
-  args: process.argv.slice(2), envKeys: Object.keys(process.env), cwd: process.cwd(), home, pid: process.pid,
-}));
+if (process.env.FAKE_CODEX_REPORT)
+  writeFileSync(
+    process.env.FAKE_CODEX_REPORT,
+    JSON.stringify({
+      args: process.argv.slice(2),
+      envKeys: Object.keys(process.env),
+      cwd: process.cwd(),
+      home,
+      pid: process.pid,
+    }),
+  );
 const send = (m) => process.stdout.write(`${JSON.stringify(m)}\n`);
 let turnId = 0;
 let active = false;
-const models = () => [{
-  id: process.env.FAKE_CODEX_MODEL_MISSING ? "gpt-6.1-sol" : "gpt-6-sol",
-  model: process.env.FAKE_CODEX_MODEL_MISSING ? "gpt-6.1-sol" : "gpt-6-sol",
-  supportedReasoningEfforts: [{ reasoningEffort: "high" }],
-}, ...(process.env.FAKE_CODEX_LUNA ? [{ id: "gpt-6-luna", model: "gpt-6-luna", supportedReasoningEfforts: [{ reasoningEffort: "low" }, { reasoningEffort: "medium" }] }] : [])];
+const models = () => [
+  {
+    id: process.env.FAKE_CODEX_MODEL_MISSING ? "gpt-6.1-sol" : "gpt-6-sol",
+    model: process.env.FAKE_CODEX_MODEL_MISSING ? "gpt-6.1-sol" : "gpt-6-sol",
+    supportedReasoningEfforts: [{ reasoningEffort: "high" }],
+  },
+  ...(process.env.FAKE_CODEX_LUNA ? [{ id: "gpt-6-luna", model: "gpt-6-luna", supportedReasoningEfforts: [{ reasoningEffort: "low" }, { reasoningEffort: "medium" }] }] : []),
+];
 
 function startThread(m, reply) {
   if (existsSync(thread)) return reply({ thread: { id: `thr_side_${++turnId}` } }); // a side thread (the title)
@@ -30,7 +41,7 @@ function sideTurn(m, reply) {
   const p = { threadId: m.params.threadId, turnId: id };
   if (process.env.FAKE_CODEX_REPORT) writeFileSync(`${process.env.FAKE_CODEX_REPORT}.side`, JSON.stringify({ model: m.params.model, effort: m.params.effort, sandboxPolicy: m.params.sandboxPolicy }));
   reply({ turn: { id, status: "inProgress" } });
-  send({ method: "item/completed", params: { ...p, item: { type: "agentMessage", id: `msg_${id}`, text: "\"Fix the flaky login tests.\"" } } });
+  send({ method: "item/completed", params: { ...p, item: { type: "agentMessage", id: `msg_${id}`, text: '"Fix the flaky login tests."' } } });
   send({ method: "turn/completed", params: { ...p, turn: { id, status: "completed" } } });
 }
 
@@ -70,7 +81,7 @@ const handlers = {
   "account/read": (m, reply) => reply({ account: existsSync(auth) ? { type: "chatgpt", planType: "plus" } : null, requiresOpenaiAuth: true }),
   "model/list": (m, reply) => reply({ data: models(), nextCursor: null }),
   "thread/start": startThread,
-  "thread/resume": (m, reply) => existsSync(thread) ? reply({ thread: { id: "thr_fake" } }) : send({ id: m.id, error: { code: -32602, message: "thread not found" } }),
+  "thread/resume": (m, reply) => (existsSync(thread) ? reply({ thread: { id: "thr_fake" } }) : send({ id: m.id, error: { code: -32602, message: "thread not found" } })),
   "turn/start": startTurn,
   "turn/interrupt": (m, reply) => {
     reply({});

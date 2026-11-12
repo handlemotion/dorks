@@ -2,7 +2,7 @@ import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
 import { Bridge, SleepingError } from "../src/bridge";
 import { rpcCall } from "../src/rpc";
 import { loadConfig } from "../src/config";
@@ -24,7 +24,19 @@ afterEach(async () => {
   for (const c of cleanup.splice(0)) await c();
 });
 
-async function setup(opts: { host?: Record<string, string>; transcript?: boolean; onSleeping?: () => void; env?: Record<string, string>; resume?: string | null; branch?: string; deltas?: number; connectError?: unknown; afterBridgeSeq?: number } = {}) {
+async function setup(
+  opts: {
+    host?: Record<string, string>;
+    transcript?: boolean;
+    onSleeping?: () => void;
+    env?: Record<string, string>;
+    resume?: string | null;
+    branch?: string;
+    deltas?: number;
+    connectError?: unknown;
+    afterBridgeSeq?: number;
+  } = {},
+) {
   const remote = makeRemote();
   const state = tmp("state-");
   const work = tmp("work-");
@@ -39,7 +51,8 @@ async function setup(opts: { host?: Record<string, string>; transcript?: boolean
     BRIDGE_SECRET,
     SIM_HOST_KEY: "host-key-should-not-leak",
     BRIDGE_SECRET_KEY: "master-should-not-leak",
-    DORKS_STATE_DIR: state, DORKS_SOCK_DIR: state,
+    DORKS_STATE_DIR: state,
+    DORKS_SOCK_DIR: state,
     DORKS_WORKDIR: work,
     DORKS_GIT_BASE_URL: remote.baseUrl,
     CLAUDE_BIN: FAKE_CLAUDE,
@@ -88,7 +101,9 @@ describe("bridge with a fake claude CLI", () => {
     expect(execFileSync("git", ["branch", "--show-current"], { cwd: dir }).toString().trim()).toBe("dork/abc");
     const rep = await readReport(s.report);
     expect(rep.cwd).toContain("acme/demo");
-    expect(rep.argv).toEqual(expect.arrayContaining(["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--permission-mode", "bypassPermissions"]));
+    expect(rep.argv).toEqual(
+      expect.arrayContaining(["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--permission-mode", "bypassPermissions"]),
+    );
     expect(rep.argv).not.toContain("--resume");
   });
 
@@ -122,7 +137,10 @@ describe("bridge with a fake claude CLI", () => {
     execFileSync("git", ["init", "-q"], { cwd: other });
     // async on purpose: the credential server lives in this process, so a blocking exec would deadlock
     const fill = async (host: string, cwd = dir) => {
-      const p = execFileP("git", ["credential", "fill"], { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_ASKPASS: "", GIT_CONFIG_GLOBAL: join(s.hostEnv.HOME!, ".gitconfig"), GIT_CONFIG_NOSYSTEM: "1" } });
+      const p = execFileP("git", ["credential", "fill"], {
+        cwd,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_ASKPASS: "", GIT_CONFIG_GLOBAL: join(s.hostEnv.HOME!, ".gitconfig"), GIT_CONFIG_NOSYSTEM: "1" },
+      });
       p.child.stdin!.end(`protocol=https\nhost=${host}\n\n`);
       return (await p).stdout;
     };
@@ -213,7 +231,14 @@ describe("bridge with a fake claude CLI", () => {
     const t2 = new FakeTransport();
     t2.configureFrame = s.t.configureFrame;
     const redactor = new Redactor();
-    const b2 = new Bridge({ cfg: loadConfig({ ...s.hostEnv }), transport: t2, log: makeLogger("t2", redactor, (l) => logs.push(l)), redactor, baseEnv: s.hostEnv, selfCommand: [process.execPath, cli] });
+    const b2 = new Bridge({
+      cfg: loadConfig({ ...s.hostEnv }),
+      transport: t2,
+      log: makeLogger("t2", redactor, (l) => logs.push(l)),
+      redactor,
+      baseEnv: s.hostEnv,
+      selfCommand: [process.execPath, cli],
+    });
     cleanup.push(() => b2.stop(500));
     await b2.start();
     t2.emit([{ cid: "cfg2", frame: { t: "fetch_configure" } }, msg("m1", "once")]);
@@ -283,7 +308,10 @@ describe("bridge with a fake claude CLI", () => {
     await s.bridge.start();
     configure(s.t);
     await waitFor(() => s.t.of("agent_models").length, "models from initialize");
-    expect(s.t.of("agent_models")[0]).toMatchObject({ effort: null, models: expect.arrayContaining([expect.objectContaining({ model: "haiku", resolved: "fake-haiku-1", efforts: expect.arrayContaining(["low", "max"]) })]) });
+    expect(s.t.of("agent_models")[0]).toMatchObject({
+      effort: null,
+      models: expect.arrayContaining([expect.objectContaining({ model: "haiku", resolved: "fake-haiku-1", efforts: expect.arrayContaining(["low", "max"]) })]),
+    });
     const first = await readReport(s.report);
     expect(first.argv).toEqual(expect.arrayContaining(["--append-system-prompt"]));
     expect(first.argv).not.toContain("--model");
@@ -291,7 +319,10 @@ describe("bridge with a fake claude CLI", () => {
     await waitFor(() => s.t.events().some((e) => (e.raw as any).type === "result"), "first turn");
     s.t.configureFrame = { ...s.t.configureFrame!, model: "haiku", effort: "low" };
     configure(s.t, "cfg2");
-    const rep = await waitFor(async () => { const r = await readReport(s.report); return r.pid !== first.pid && r; }, "restarted CLI");
+    const rep = await waitFor(async () => {
+      const r = await readReport(s.report);
+      return r.pid !== first.pid && r;
+    }, "restarted CLI");
     expect(rep.argv).toEqual(expect.arrayContaining(["--model", "haiku", "--effort", "low", "--resume"]));
     await waitFor(() => s.t.of("agent_models").length >= 2, "models again");
     expect(s.t.of("agent_models").at(-1)).toMatchObject({ effort: "low" });
@@ -401,7 +432,12 @@ describe("bridge with a fake claude CLI", () => {
     s.t.reconnect();
     await waitFor(() => s.t.connectCalls > before, "re-connect");
     await waitFor(() => s.t.events().length >= delivered.length + 3, "replay");
-    expect(s.t.events().slice(delivered.length).map((e) => e.bseq)).toEqual(delivered.filter((x) => x > stored));
+    expect(
+      s.t
+        .events()
+        .slice(delivered.length)
+        .map((e) => e.bseq),
+    ).toEqual(delivered.filter((x) => x > stored));
     // new events continue after the highest number
     s.t.emit([msg("m2", "two")]);
     await waitFor(() => s.t.events().some((e) => e.bseq > delivered.at(-1)!), "continued numbering");
@@ -470,7 +506,10 @@ describe("bridge with a fake claude CLI", () => {
     const s = await setup({ deltas: 400 });
     s.t.configureDelayMs = 300;
     await s.bridge.start();
-    s.t.emit([{ cid: "cfg1", frame: { t: "fetch_configure" } }, { cid: "int1", frame: { t: "interrupt" } }]);
+    s.t.emit([
+      { cid: "cfg1", frame: { t: "fetch_configure" } },
+      { cid: "int1", frame: { t: "interrupt" } },
+    ]);
     await sleep(100);
     expect(s.t.of("ack").some((a) => a.id === "int1")).toBe(false); // deferred, not acked-and-dropped
     await waitFor(() => s.t.of("ack").some((a) => a.id === "int1"), "interrupt handled once the agent is up");
@@ -524,7 +563,13 @@ describe("bridge with a fake claude CLI", () => {
 describe("autonomy: notify frames", () => {
   const ENVELOPE = '<dorks-event source="github" kinds="ci_failed,comment" prs="acme/demo#12">\nCI failed on acme/demo#12 (attempt 1 of 2).\n  indented "quoted" line\n</dorks-event>';
   const notify = (id: string, text = ENVELOPE) => ({ cid: id, frame: { t: "notify" as const, id, text, kinds: ["ci_failed" as const, "comment" as const], prs: [{ repo: "acme/demo", number: 12 }] } });
-  const lastResult = (t: FakeTransport) => (t.events().filter((e) => (e.raw as any).type === "result").at(-1)?.raw as any)?.result;
+  const lastResult = (t: FakeTransport) =>
+    (
+      t
+        .events()
+        .filter((e) => (e.raw as any).type === "result")
+        .at(-1)?.raw as any
+    )?.result;
 
   it("writes the text to the agent verbatim as a user turn and acks it like a user message", async () => {
     const s = await setup();
@@ -642,7 +687,17 @@ describe("autonomy: local RPC", () => {
 
   it("validates input before it reaches the backend", async () => {
     const s = await ready();
-    for (const params of [{}, { repo: "acme", number: 1 }, { repo: "acme/demo", number: 0 }, { repo: "acme/demo", number: 1.5 }, { repo: "acme/demo", number: "12" }, { repo: "../etc", number: 1 }, { repo: "a/b/c", number: 1 }, { repo: "acme/demo", number: 1, source: "user" }, null]) {
+    for (const params of [
+      {},
+      { repo: "acme", number: 1 },
+      { repo: "acme/demo", number: 0 },
+      { repo: "acme/demo", number: 1.5 },
+      { repo: "acme/demo", number: "12" },
+      { repo: "../etc", number: 1 },
+      { repo: "a/b/c", number: 1 },
+      { repo: "acme/demo", number: 1, source: "user" },
+      null,
+    ]) {
       await expect(rpcCall(sockOf(s), "pr.sub", params), JSON.stringify(params)).rejects.toMatchObject({ code: "invalid" });
     }
     await expect(rpcCall(sockOf(s), "pr.unsub", { repo: "acme/demo" })).rejects.toMatchObject({ code: "invalid" });
@@ -747,5 +802,4 @@ describe("autonomy: hooks", () => {
     expect(await runHook(s, "Stop", { stop_hook_active: false })).toBeNull(); // raised already
     expect(s.logs.join("\n")).toContain("hook stop: blocked for unpublished");
   });
-
 });

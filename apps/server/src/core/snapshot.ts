@@ -46,8 +46,6 @@ export interface SnapshotDriver {
   deleteSnapshot(name: string): Promise<void>;
 }
 
-export type AttachResult =
-  | { t: "exit"; exitCode: number | null; offsets: { stdout: number; stderr: number } }
-  | { t: "reconnect"; offsets: { stdout: number; stderr: number } };
+export type AttachResult = { t: "exit"; exitCode: number | null; offsets: { stdout: number; stderr: number } } | { t: "reconnect"; offsets: { stdout: number; stderr: number } };
 
 export const BUILD_SANDBOX_LIFETIME_SECONDS = 2 * 3600;

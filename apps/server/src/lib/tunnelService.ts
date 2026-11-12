@@ -15,7 +15,10 @@ async function call(app: App, method: "PUT" | "DELETE", dorkId: string): Promise
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   if (!res.ok && res.status !== 404) {
-    const fix = await res.json().then((b) => (b as { fix?: string }).fix, () => undefined);
+    const fix = await res.json().then(
+      (b) => (b as { fix?: string }).fix,
+      () => undefined,
+    );
     throw new Error(`tunnel service: ${fix ?? `answered ${res.status}`}`);
   }
   return res;

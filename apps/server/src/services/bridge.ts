@@ -102,8 +102,16 @@ export function push(app: App, dorkId: string, frames: unknown[]): { ok: true } 
     if (rt.streamMsgId) normalize({ type: "stream_event", event: { type: "message_start", message: { id: rt.streamMsgId } } });
     const pending: ClientEventBody[] = [];
     const batch: Batch = {
-      app, dorkId, dork, normalize, pending, touched: false,
-      bridgeSeq: rt.bridgeSeq, streamMsgId: rt.streamMsgId, finalMsgId: rt.finalMsgId, interruptRequested: rt.interruptRequested,
+      app,
+      dorkId,
+      dork,
+      normalize,
+      pending,
+      touched: false,
+      bridgeSeq: rt.bridgeSeq,
+      streamMsgId: rt.streamMsgId,
+      finalMsgId: rt.finalMsgId,
+      interruptRequested: rt.interruptRequested,
       flush: () => {
         if (pending.length) append(app, dorkId, ...pending.splice(0));
       },

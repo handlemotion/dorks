@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import type { Change } from "../src/app";
 import { BoatError } from "../src/lib/boat";
 import { readSettings, updateSettings } from "../src/services/settings";

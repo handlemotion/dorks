@@ -1,5 +1,5 @@
 import type { FromBridge } from "@dorks/shared";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { Outbox } from "../src/outbox";
 import { FakeTransport, waitFor } from "./helpers";
 
@@ -256,4 +256,3 @@ describe("Outbox", () => {
     expect(n).toBe(4);
   });
 });
-

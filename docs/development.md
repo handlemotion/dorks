@@ -46,7 +46,7 @@ Outside `pnpm dev` the server's owner token is generated into `<data dir>/secret
 ## Tests
 
 ```sh
-pnpm lint                                        # oxlint over the repo (.oxlintrc.json); `complexity` is an error
+pnpm check                                       # vp check: format check + Oxlint (`complexity` is an error); config in the root vite.config.ts
 pnpm typecheck                                   # every package
 pnpm test                                        # every package that has tests
 pnpm --filter @dorks/server test                 # the server (lifecycle, machine, bridge socket), in-memory SQLite
@@ -55,9 +55,11 @@ pnpm --filter @dorks/bridge test                 # the bridge
 pnpm e2e                                         # builds the compiled server, runs its e2e twice (sim bridge, real bridge) incl. a secret scan; needs Bun
 ```
 
+The JS toolchain is [Vite+](https://viteplus.dev) (`vite-plus`, the `vp` CLI): `vp dev` / `vp build` for the web app, `vp test` (Vitest) for every package's tests, `vp lint` / `vp check` for linting. Import test helpers from `vite-plus/test` and config helpers from `vite-plus`, not `vitest` or `vite` (a lint rule enforces it). `vp fmt` formats code in the house style (Markdown and the vendored shadcn / AI Elements files excepted) and `pnpm check` fails on unformatted files; run `pnpm fmt` before you commit. Its version is pinned once in the `catalog` in `pnpm-workspace.yaml`.
+
 Prefer tests that run the real code path over mocks: the server tests use the real lifecycle driver on an in-memory database.
 
-CI (`.github/workflows/ci.yml`) runs typecheck and tests and the server e2e against the compiled binary; `desktop.yml` builds the macOS app. It needs no repository secrets, so it runs on forks. If you add an environment variable the e2e needs, set a throwaway value in the workflow.
+CI (`.github/workflows/ci.yml`) runs lint, typecheck and tests and the server e2e against the compiled binary; `desktop.yml` builds the macOS app. It needs no repository secrets, so it runs on forks. If you add an environment variable the e2e needs, set a throwaway value in the workflow.
 
 ## Server code: Effect on Hono
 
@@ -81,7 +83,7 @@ across the edge.
 - Keep `docs/architecture.md` in step with API changes, and make them additive where you can: the web client, the bridge and the desktop shell all read it.
 - Never put a secret behind a `VITE_` prefix.
 - Branch from `main`. Small commits, with a message that says why.
-- Keep functions under oxlint's `complexity` limit (20): split branchy code into named helpers or handler maps rather than disabling the rule.
+- Keep functions under Oxlint's `complexity` limit (20, `pnpm lint`): split branchy code into named helpers or handler maps rather than disabling the rule.
 
 ## Real Claude, no Boat or tunnel
 

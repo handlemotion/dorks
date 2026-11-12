@@ -81,7 +81,9 @@ export function findTranscripts(configDir: string, sessionId: string): string[] 
   const root = join(configDir, "projects");
   if (!existsSync(root)) return [];
   try {
-    return readdirSync(root).map((d) => join(root, d, `${sessionId}.jsonl`)).filter((f) => existsSync(f));
+    return readdirSync(root)
+      .map((d) => join(root, d, `${sessionId}.jsonl`))
+      .filter((f) => existsSync(f));
   } catch {
     return [];
   }
@@ -124,17 +126,29 @@ export function computerArgs(driverPresent = existsSync(BOAT_COMPUTER_DRIVER)): 
  * Not used on purpose: --bare (it never reads OAuth, and we authenticate with CLAUDE_CODE_OAUTH_TOKEN), --no-session-persistence
  * (the transcript on disk is what makes resume work).
  */
-export function claudeArgs(o: { permissionMode: string; resumeSessionId: string | null; extraArgs?: string[]; settingsFile?: string; mcpConfigFile?: string; model?: string; effort?: string }): string[] {
+export function claudeArgs(o: {
+  permissionMode: string;
+  resumeSessionId: string | null;
+  extraArgs?: string[];
+  settingsFile?: string;
+  mcpConfigFile?: string;
+  model?: string;
+  effort?: string;
+}): string[] {
   return [
     "-p",
-    "--input-format", "stream-json",
-    "--output-format", "stream-json",
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
     "--verbose",
     "--include-partial-messages",
-    "--permission-mode", o.permissionMode,
+    "--permission-mode",
+    o.permissionMode,
     ...(o.model ? ["--model", o.model] : []),
     ...(o.effort ? ["--effort", o.effort] : []),
-    "--append-system-prompt", FINAL_ANSWER_GUIDANCE,
+    "--append-system-prompt",
+    FINAL_ANSWER_GUIDANCE,
     ...(o.settingsFile ? ["--settings", o.settingsFile] : []),
     ...(o.mcpConfigFile ? ["--mcp-config", o.mcpConfigFile] : []),
     ...(o.resumeSessionId ? ["--resume", o.resumeSessionId] : []),

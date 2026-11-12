@@ -6,7 +6,13 @@ import { List } from './onboarding/List'
 import { Tip } from './Tip'
 
 /** A dev server running in the sandbox. `html` renders an inline (same-origin) page instead of the URL; the dev demo uses it. */
-export type PreviewServer = { name: string; url: string; html?: string; /** Overrides the page's own `/favicon.ico`. */ favicon?: string; /** Shown as `:3000`; a hosted preview's URL carries no port of its own. */ port?: number }
+export type PreviewServer = {
+  name: string
+  url: string
+  html?: string
+  /** Overrides the page's own `/favicon.ico`. */ favicon?: string
+  /** Shown as `:3000`; a hosted preview's URL carries no port of its own. */ port?: number
+}
 
 /**
  * Calls `onShown` with each server that appears after the first render: the agent just showed it (preview_show). The servers there
@@ -69,7 +75,19 @@ function Favicon({ server }: { server: PreviewServer }) {
  * highlights the element under the pointer, clicking hands its context (the same snippet React Grab copies: markup, component and source location) to `onGrab`, and
  * Escape leaves. Reaching into the frame's document needs it to be same-origin, so the picker only shows for a same-origin preview.
  */
-export function PreviewBrowser({ servers = [], open, onOpened, onGrab, onAsk }: { servers?: PreviewServer[]; /** A URL to open now (a server the agent just showed); `onOpened` clears it. */ open?: string; onOpened?: () => void; onGrab?: (snippet: string) => void; onAsk?: (text: string) => void }) {
+export function PreviewBrowser({
+  servers = [],
+  open,
+  onOpened,
+  onGrab,
+  onAsk,
+}: {
+  servers?: PreviewServer[]
+  /** A URL to open now (a server the agent just showed); `onOpened` clears it. */ open?: string
+  onOpened?: () => void
+  onGrab?: (snippet: string) => void
+  onAsk?: (text: string) => void
+}) {
   const [current, setCurrent] = useState<string>()
   const [reloads, setReloads] = useState(0)
   const [sameOrigin, setSameOrigin] = useState(false)
@@ -206,10 +224,7 @@ export function PreviewBrowser({ servers = [], open, onOpened, onGrab, onAsk }: 
           }}
         />
         {box && (
-          <div
-            className="pointer-events-none absolute border border-brand bg-brand/10"
-            style={{ left: box.x, top: box.y, width: box.width, height: box.height, borderRadius: box.radius }}
-          >
+          <div className="pointer-events-none absolute border border-brand bg-brand/10" style={{ left: box.x, top: box.y, width: box.width, height: box.height, borderRadius: box.radius }}>
             <span className={`absolute left-0 rounded-(--control-radius) ${box.y < 28 ? 'top-0 m-1' : 'bottom-full mb-1'} bg-brand px-1.5 py-0.5 font-mono text-xs text-white`}>{box.label}</span>
           </div>
         )}
@@ -235,7 +250,11 @@ export function PreviewBrowser({ servers = [], open, onOpened, onGrab, onAsk }: 
   ) : (
     <div className="flex min-h-0 flex-1 flex-col border-t">
       <EmptyState figure="window" title="No previews yet" description="When the agent starts a dev server, it opens here.">
-        {onAsk && <Button size="sm" variant="outline" onClick={() => onAsk('Start the dev server and show it to me in Previews.')}>Ask for a preview</Button>}
+        {onAsk && (
+          <Button size="sm" variant="outline" onClick={() => onAsk('Start the dev server and show it to me in Previews.')}>
+            Ask for a preview
+          </Button>
+        )}
       </EmptyState>
     </div>
   )

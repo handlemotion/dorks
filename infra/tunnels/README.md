@@ -25,16 +25,27 @@ bridge socket, where the first frame still needs the dork's HMAC, which never le
 
 ## Deploy (Cloudflare Worker)
 
+The Worker is configured in [`cloudflare.config.ts`](cloudflare.config.ts) (Cloudflare's `cf` CLI, beta), not a Wrangler file. Vite+
+builds it with the Cloudflare Vite plugin: `pnpm --filter @dorks/tunnels dev` (`vp dev`, the Worker in local workerd) and `build`
+(`vp build`, writes `.cloudflare/output`). `deploy` uploads that build with `cf deploy --prebuilt` (`cf auth login` first, or
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in CI). `cf dev` / `cf build` do not work here yet: `cf` only looks for the
+Vite plugin in this package's own `node_modules`, and the workspace hoists it to the root.
+
+For `vp dev`, put the two secrets in `infra/tunnels/.env.local` (gitignored). `Env` is generated from the config into
+`.cloudflare/types` (`pnpm --filter @dorks/tunnels types`; `typecheck`, `dev` and `build` do it too).
+
 Not deployed yet. Needs, in this order, and none of it is in the repo:
 
 1. A wurmhol org on Business with embedded mode on (wurmhol.com from the deploy with `EMBEDDED_ENABLED`).
 2. An application for Dorks in that org, and an integration key with `tunnels:read`, `tunnels:manage`, `subjects:manage` and
    `grants:issue` (console → Apps, or `POST /api/apps/:id/keys`).
-3. `wrangler secret put WURMHOL_KEY` (that key) and `wrangler secret put TICKET_KEY` (32+ random bytes; rotating it ends every
-   sandbox's ticket, so existing sandboxes then need recreating).
+3. The secrets `cloudflare.config.ts` declares: `WURMHOL_KEY` (that key) and `TICKET_KEY` (32+ random bytes; rotating it ends every
+   sandbox's ticket, so existing sandboxes then need recreating). `cf` cannot set one secret on its own yet: pass a JSON or `.env`
+   file with `cf deploy --prebuilt --secrets-file <file>` on the first deploy (keep it out of the repo), or run
+   `pnpm dlx wrangler secret put <NAME> --name dorks-tunnels`.
 4. A route for the Worker at the URL the desktop shell defaults to (`DEFAULT_TUNNEL_SERVICE`, `https://tunnels.dorks.build`), or
-   change that constant. Optional var: `TENANT_MONTHLY_REQUESTS`, a monthly request cap per install; `WURMHOL_SERVER` for a
-   self-hosted wurmhol.
+   change that constant. Optional vars, under `worker.env` with `bindings.text(...)`: `TENANT_MONTHLY_REQUESTS`, a monthly request
+   cap per install; `WURMHOL_SERVER` for a self-hosted wurmhol.
 
 Anyone can make an install key, so anyone can get one tunnel billed to Dorks' org. The per-tenant cap of one open tunnel and the
 optional monthly cap bound that; add a Cloudflare rate limit on `POST /v1/tunnel` when it is deployed.

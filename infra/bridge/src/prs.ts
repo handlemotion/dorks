@@ -45,7 +45,10 @@ export class PrSubscriptions {
   private stopWatching: (() => void) | null = null;
   private waiters = new Set<() => void>();
 
-  constructor(private t: Transport, private log: Log) {}
+  constructor(
+    private t: Transport,
+    private log: Log,
+  ) {}
 
   readonly methods: RpcMethods = {
     "pr.sub": async (params) => {

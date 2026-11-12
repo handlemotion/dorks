@@ -9,20 +9,20 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vp test run",
     "mock": "node src/mock-cli.ts"
   },
   "dependencies": {
     "@dorks/shared": "workspace:*"
-  },
-  "peerDependencies": {
-    "react": "^19.2.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",
     "@types/react": "^19.2.0",
     "react": "^19.2.0",
     "typescript": "^6.0.2",
-    "vitest": "^4.1.11"
+    "vite-plus": "catalog:"
+  },
+  "peerDependencies": {
+    "react": "^19.2.0"
   }
 }

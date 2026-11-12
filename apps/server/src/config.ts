@@ -79,7 +79,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     encryptionKey: secrets.encryptionKey,
     boxProvider,
     simHostKey: env.SIM_HOST_KEY,
-    uiOrigins: (env.DORKS_UI_ORIGINS ?? "tauri://localhost,http://tauri.localhost,http://localhost:3000,http://127.0.0.1:3000").split(",").map((s) => s.trim()).filter(Boolean),
+    uiOrigins: (env.DORKS_UI_ORIGINS ?? "tauri://localhost,http://tauri.localhost,http://localhost:3000,http://127.0.0.1:3000")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
     baseSnapshotId: env.BASE_SNAPSHOT_ID || undefined,
   };
 }

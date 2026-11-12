@@ -44,7 +44,8 @@ function EffortBars({ level }: { level: number }) {
 }
 /** The main button (send or stop) is the one brand-blue action. */
 // Disabled: a quiet grey disc with a dimmed arrow, not faded blue.
-const MAIN = 'size-7 rounded-(--control-radius) [--control-radius:6px] [&_svg]:size-3.5 bg-brand text-brand-foreground hover:bg-brand-hover disabled:bg-foreground/[0.08] disabled:text-foreground/35 disabled:opacity-100'
+const MAIN =
+  'size-7 rounded-(--control-radius) [--control-radius:6px] [&_svg]:size-3.5 bg-brand text-brand-foreground hover:bg-brand-hover disabled:bg-foreground/[0.08] disabled:text-foreground/35 disabled:opacity-100'
 const EFFORT_NAMES: Record<string, string> = { none: 'None', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max' }
 const DEFAULT = 'default'
 /** An effort among the model's as one to three bars. */
@@ -75,8 +76,7 @@ type Pending = { key: string; name: string; preview: string; state: 'uploading' 
 /** What a sent message names: the server ids of its attached images. */
 export type AttachedImage = { id: string; name: string }
 /** The markdown that puts attached images in a message; the chat shows them as thumbnails and the agent gets them as images. */
-export const withImages = (text: string, images: AttachedImage[]) =>
-  [text.trim(), ...images.map((i) => `![${i.name.replace(/[[\]\n]/g, ' ')}](dorks-image:${i.id})`)].filter(Boolean).join('\n\n')
+export const withImages = (text: string, images: AttachedImage[]) => [text.trim(), ...images.map((i) => `![${i.name.replace(/[[\]\n]/g, ' ')}](dorks-image:${i.id})`)].filter(Boolean).join('\n\n')
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
 const MAX_IMAGE = 8 * 1024 * 1024
 
@@ -101,10 +101,13 @@ function useAttachments(upload: ((file: File) => Promise<string>) | undefined) {
       )
     }
   }
-  const remove = (key: string) => setFiles((current) => current.filter((f) => {
-    if (f.key === key) URL.revokeObjectURL(f.preview)
-    return f.key !== key
-  }))
+  const remove = (key: string) =>
+    setFiles((current) =>
+      current.filter((f) => {
+        if (f.key === key) URL.revokeObjectURL(f.preview)
+        return f.key !== key
+      }),
+    )
   /** Only what was sent goes: an image attached while it was sending stays for the next message. */
   const clearSent = (sent: Pending[]) => {
     setFiles((current) => current.filter((f) => !sent.includes(f)))
@@ -146,9 +149,16 @@ function AttachmentTile({ file, onRemove }: { file: Pending; onRemove: () => voi
       className="group/tile relative size-28 shrink-0 overflow-hidden rounded-[10px] bg-muted"
     >
       <img src={file.preview} alt={file.name} className={`size-full object-cover object-top ${file.state === 'done' ? '' : 'opacity-50'}`} />
-      <span aria-hidden className={`pointer-events-none absolute inset-0 rounded-[10px] outline outline-1 -outline-offset-1 ${failed ? 'outline-destructive' : 'outline-black/10 dark:outline-white/10'}`} />
+      <span
+        aria-hidden
+        className={`pointer-events-none absolute inset-0 rounded-[10px] outline outline-1 -outline-offset-1 ${failed ? 'outline-destructive' : 'outline-black/10 dark:outline-white/10'}`}
+      />
       {file.state === 'uploading' && <LoaderCircleIcon aria-label="Uploading" className="absolute inset-0 m-auto size-5 animate-spin text-foreground" />}
-      {failed && <span role="alert" className="absolute inset-x-0 bottom-0 bg-destructive px-2 py-1 text-xs text-white">Upload failed</span>}
+      {failed && (
+        <span role="alert" className="absolute inset-x-0 bottom-0 bg-destructive px-2 py-1 text-xs text-white">
+          Upload failed
+        </span>
+      )}
       <button
         type="button"
         aria-label={`Remove ${file.name}`}
@@ -210,7 +220,19 @@ function modelMenuState(provider: AgentProvider, picker: ModelPicker | undefined
 }
 
 /** Claude's group: the models the agent reported, or Claude Code as a single choice. */
-function ClaudeModels({ models, choices, provider, setProvider, label }: { models?: ModelPicker; choices: AgentModelChoice[]; provider: AgentProvider; setProvider?: (provider: AgentProvider) => void; label: string }) {
+function ClaudeModels({
+  models,
+  choices,
+  provider,
+  setProvider,
+  label,
+}: {
+  models?: ModelPicker
+  choices: AgentModelChoice[]
+  provider: AgentProvider
+  setProvider?: (provider: AgentProvider) => void
+  label: string
+}) {
   if (provider === 'claude' && models && choices.length > 0) {
     return (
       <DropdownMenuRadioGroup
@@ -271,9 +293,14 @@ function ModelConfirmation({ active }: { active?: { model?: string; effort?: str
       <DropdownMenuSeparator />
       <DropdownMenuGroup>
         <DropdownMenuLabel className="font-normal text-muted-foreground" data-testid="model-confirmation">
-          {active
-            ? <span>Running <span className="font-mono">{active.model}</span>{active.effort ? ` at ${effortName(active.effort).toLowerCase()} effort` : ''}.</span>
-            : 'Applies from your next message.'}
+          {active ? (
+            <span>
+              Running <span className="font-mono">{active.model}</span>
+              {active.effort ? ` at ${effortName(active.effort).toLowerCase()} effort` : ''}.
+            </span>
+          ) : (
+            'Applies from your next message.'
+          )}
         </DropdownMenuLabel>
       </DropdownMenuGroup>
     </>
@@ -281,7 +308,15 @@ function ModelConfirmation({ active }: { active?: { model?: string; effort?: str
 }
 
 /** One menu for the agent, Claude's model and the effort. */
-function ModelMenu({ provider, setProvider, codexEnabled, picker, agentLabel, isNewSession, disabled }: {
+function ModelMenu({
+  provider,
+  setProvider,
+  codexEnabled,
+  picker,
+  agentLabel,
+  isNewSession,
+  disabled,
+}: {
   provider: AgentProvider
   setProvider?: (provider: AgentProvider) => void
   codexEnabled?: boolean
@@ -293,9 +328,23 @@ function ModelMenu({ provider, setProvider, codexEnabled, picker, agentLabel, is
   const { models, choices, active, label, effort, efforts } = modelMenuState(provider, picker, agentLabel)
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger disabled={disabled} render={<InputGroupButton size="sm" variant="ghost" aria-label={`Model: ${label}${effort ? `, effort: ${effortName(effort)}` : ''}`} className="ml-auto h-7 gap-1.5 px-2 text-[13px] text-muted-foreground hover:text-foreground" />}>
+      <DropdownMenuTrigger
+        disabled={disabled}
+        render={
+          <InputGroupButton
+            size="sm"
+            variant="ghost"
+            aria-label={`Model: ${label}${effort ? `, effort: ${effortName(effort)}` : ''}`}
+            className="ml-auto h-7 gap-1.5 px-2 text-[13px] text-muted-foreground hover:text-foreground"
+          />
+        }
+      >
         <span data-testid="model-label">{label}</span>
-        {effort && efforts.length > 0 && <span className="text-muted-foreground"><EffortBars level={barsFor(efforts, effort)} /></span>}
+        {effort && efforts.length > 0 && (
+          <span className="text-muted-foreground">
+            <EffortBars level={barsFor(efforts, effort)} />
+          </span>
+        )}
         <ChevronDownIcon />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
@@ -411,8 +460,13 @@ export function Composer({
       <form
         ref={formRef}
         autoComplete="off"
-        onSubmit={(e) => { e.preventDefault(); if (canSend) void submit() }}
-        onDragOver={(e) => { if (upload && e.dataTransfer.types.includes('Files')) e.preventDefault() }}
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (canSend) void submit()
+        }}
+        onDragOver={(e) => {
+          if (upload && e.dataTransfer.types.includes('Files')) e.preventDefault()
+        }}
         onDrop={(e) => {
           if (!upload || !e.dataTransfer.files.length) return
           e.preventDefault()
@@ -437,14 +491,22 @@ export function Composer({
           {reply && (
             // The reply banner sits 8px inside the box (the buttons' inset), concentric with its 15px corners.
             <InputGroupAddon align="block-start" className="px-2 pt-2 pb-0">
-              <ReplyBanner reply={reply} onClear={() => { onClearReply?.(); textRef.current?.focus() }} />
+              <ReplyBanner
+                reply={reply}
+                onClear={() => {
+                  onClearReply?.()
+                  textRef.current?.focus()
+                }}
+              />
             </InputGroupAddon>
           )}
           {files.length > 0 ? (
             // Attached images as plain thumbnails, the text's left edge, no file names: a 112px tile with the image filling it, a hairline
             // drawn inside its edge so a white screenshot keeps its shape, and a remove button in its corner on hover or focus.
             <InputGroupAddon align="block-start" className="flex-wrap justify-start gap-2 px-[42px] pt-3 pb-0">
-              {files.map((file) => <AttachmentTile key={file.key} file={file} onRemove={() => remove(file.key)} />)}
+              {files.map((file) => (
+                <AttachmentTile key={file.key} file={file} onRemove={() => remove(file.key)} />
+              ))}
             </InputGroupAddon>
           ) : null}
           <InputGroupTextarea
@@ -485,7 +547,14 @@ export function Composer({
           {/* Attach and the main button keep one spot, 8px from the bottom corners, whether the box is one row or stacked. */}
           <div className="absolute bottom-2 left-2">
             <Tip label="Attach images">
-              <InputGroupButton size="icon-sm" variant="ghost" className="size-7 text-muted-foreground hover:text-foreground [--control-radius:6px]" aria-label="Attach images" disabled={!upload || locked} onClick={() => fileRef.current?.click()}>
+              <InputGroupButton
+                size="icon-sm"
+                variant="ghost"
+                className="size-7 text-muted-foreground hover:text-foreground [--control-radius:6px]"
+                aria-label="Attach images"
+                disabled={!upload || locked}
+                onClick={() => fileRef.current?.click()}
+              >
                 <PlusIcon className="size-4" />
               </InputGroupButton>
             </Tip>
@@ -501,7 +570,11 @@ export function Composer({
           <ModelMenu provider={provider} setProvider={setProvider} codexEnabled={codexEnabled} picker={picker} agentLabel={agentLabel} isNewSession={isNewSession} disabled={locked} />
         </div>
       </form>
-      {shownError && <p className="px-3 text-sm text-destructive" role="alert">{shownError}</p>}
+      {shownError && (
+        <p className="px-3 text-sm text-destructive" role="alert">
+          {shownError}
+        </p>
+      )}
     </div>
   )
 }
@@ -520,9 +593,14 @@ function MachineMenu({ machine, disabled }: { machine: MachinePicker; disabled?:
   const name = machine.builds.find((b) => b.id === machine.buildId)?.name ?? 'Base machine'
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger disabled={disabled} render={<InputGroupButton size="sm" variant="ghost" aria-label={`Machine: ${name}`} className="h-7 min-w-0 gap-1.5 px-2 text-[13px] text-muted-foreground hover:text-foreground" />}>
+      <DropdownMenuTrigger
+        disabled={disabled}
+        render={<InputGroupButton size="sm" variant="ghost" aria-label={`Machine: ${name}`} className="h-7 min-w-0 gap-1.5 px-2 text-[13px] text-muted-foreground hover:text-foreground" />}
+      >
         <BoxIcon className="size-3.5 shrink-0" />
-        <span className="max-w-40 truncate" data-testid="machine-label">{name}</span>
+        <span className="max-w-40 truncate" data-testid="machine-label">
+          {name}
+        </span>
         <ChevronDownIcon />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">
@@ -534,7 +612,9 @@ function MachineMenu({ machine, disabled }: { machine: MachinePicker; disabled?:
                 <span className="min-w-0 truncate">{b.name}</span>
               </DropdownMenuRadioItem>
             ))}
-            <DropdownMenuRadioItem value={BASE} closeOnClick>Base machine</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value={BASE} closeOnClick>
+              Base machine
+            </DropdownMenuRadioItem>
           </DropdownMenuRadioGroup>
         </DropdownMenuGroup>
       </DropdownMenuContent>
@@ -546,23 +626,65 @@ function MachineMenu({ machine, disabled }: { machine: MachinePicker; disabled?:
 function RepositoryPicker({ repo, setRepo, repositories, disabled }: { repo: string; setRepo: (repo: string) => void; repositories: string[]; disabled?: boolean }) {
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState(repo)
-  const choose = (value: string) => { setRepo(value.trim()); setOpen(false) }
+  const choose = (value: string) => {
+    setRepo(value.trim())
+    setOpen(false)
+  }
   return (
-    <Popover open={open} onOpenChange={(next) => { setOpen(next); if (next) setDraft(repo) }}>
-      <PopoverTrigger disabled={disabled} render={<InputGroupButton size="sm" variant="ghost" className="h-7 min-w-0 gap-1.5 px-2 text-[13px] text-muted-foreground hover:text-foreground" aria-label={`Repository: ${repo || 'Choose repository'}`} title={repo} />}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (next) setDraft(repo)
+      }}
+    >
+      <PopoverTrigger
+        disabled={disabled}
+        render={
+          <InputGroupButton
+            size="sm"
+            variant="ghost"
+            className="h-7 min-w-0 gap-1.5 px-2 text-[13px] text-muted-foreground hover:text-foreground"
+            aria-label={`Repository: ${repo || 'Choose repository'}`}
+            title={repo}
+          />
+        }
+      >
         <FolderIcon />
         <span className="max-w-48 truncate">{repo || 'Choose repository'}</span>
         <ChevronDownIcon />
       </PopoverTrigger>
       <PopoverContent align="start" className="gap-2 border border-border p-2">
-        <label htmlFor="new-session-repo" className="px-1 text-xs text-muted-foreground">Repository</label>
-        <Input id="new-session-repo" aria-label="repo" autoComplete="off" placeholder="owner/repo" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => {
-          if (event.key === 'Enter') { event.preventDefault(); if (draft.trim()) choose(draft) }
-        }} />
-        {repositories.length > 0 && <div className="flex max-h-44 flex-col overflow-y-auto">
-          {repositories.map((value) => <Button key={value} variant="ghost" size="sm" className="justify-start" onClick={() => choose(value)}><FolderIcon /><span className="truncate">{value}</span></Button>)}
-        </div>}
-        <Button size="sm" variant="outline" disabled={!draft.trim()} onClick={() => choose(draft)}>Use repository</Button>
+        <label htmlFor="new-session-repo" className="px-1 text-xs text-muted-foreground">
+          Repository
+        </label>
+        <Input
+          id="new-session-repo"
+          aria-label="repo"
+          autoComplete="off"
+          placeholder="owner/repo"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              if (draft.trim()) choose(draft)
+            }
+          }}
+        />
+        {repositories.length > 0 && (
+          <div className="flex max-h-44 flex-col overflow-y-auto">
+            {repositories.map((value) => (
+              <Button key={value} variant="ghost" size="sm" className="justify-start" onClick={() => choose(value)}>
+                <FolderIcon />
+                <span className="truncate">{value}</span>
+              </Button>
+            ))}
+          </div>
+        )}
+        <Button size="sm" variant="outline" disabled={!draft.trim()} onClick={() => choose(draft)}>
+          Use repository
+        </Button>
       </PopoverContent>
     </Popover>
   )

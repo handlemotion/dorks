@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it } from 'vite-plus/test'
 import { resolveConnection, STORAGE_TOKEN, STORAGE_URL } from './connection'
 
 const memory = () => {

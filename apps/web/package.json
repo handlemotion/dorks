@@ -6,13 +6,13 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "vite --port 3000",
-    "dev:direct": "vite --port 3000",
+    "dev": "vp dev --port 3000",
+    "dev:direct": "vp dev --port 3000",
     "dev:mock": "node scripts/dev-mock.mjs",
     "generate-routes": "tsr generate",
-    "build": "vite build",
-    "preview": "vite preview --port 3000",
-    "test": "vitest run",
+    "build": "vp build",
+    "preview": "vp preview --port 3000",
+    "test": "vp test run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -46,7 +46,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.1",
     "typescript": "^6.0.2",
-    "vite": "^8.0.0",
-    "vitest": "^4.1.11"
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
   }
 }

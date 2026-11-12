@@ -100,8 +100,7 @@ export class EmbedClient implements Embed {
 
   listTunnels = async (tenant: string) => (await this.#call<{ tunnels: EmbedTunnel[] }>("GET", `tunnels?${new URLSearchParams({ tenant })}`)).tunnels;
 
-  createTunnel = (input: { tenant: string; owner: string; connectorTtlSeconds: number }) =>
-    this.#call<{ tunnel: EmbedTunnel; connector: EmbedConnector }>("POST", "tunnels", input);
+  createTunnel = (input: { tenant: string; owner: string; connectorTtlSeconds: number }) => this.#call<{ tunnel: EmbedTunnel; connector: EmbedConnector }>("POST", "tunnels", input);
 
   connector = async (tunnel: string, options: { rotate: boolean; ttlSeconds: number }) =>
     (await this.#call<{ connector: EmbedConnector }>("POST", `tunnels/${seg(tunnel, "connectors")}`, options)).connector;
@@ -110,6 +109,5 @@ export class EmbedClient implements Embed {
     await this.#call("PUT", `tunnels/${seg(tunnel, "access", subject)}`);
   };
 
-  issueClientGrant = async (input: { tunnel: string; subject: string; ttlSeconds: number }) =>
-    (await this.#call<{ grant: EmbedGrant }>("POST", "grants", { ...input, kind: "client" })).grant;
+  issueClientGrant = async (input: { tunnel: string; subject: string; ttlSeconds: number }) => (await this.#call<{ grant: EmbedGrant }>("POST", "grants", { ...input, kind: "client" })).grant;
 }

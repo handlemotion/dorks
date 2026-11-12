@@ -22,7 +22,11 @@ const MAX_QUOTE = 1500
 
 /** Selected or copied text as one tidy quote: no runs of blank lines, no trailing space, at most {@link MAX_QUOTE} characters. */
 export function quoteText(text: string): string {
-  const tidy = text.replace(/\r\n?/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+  const tidy = text
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
   return tidy.length > MAX_QUOTE ? `${tidy.slice(0, MAX_QUOTE).trimEnd()}…` : tidy
 }
 
@@ -31,10 +35,11 @@ const escapeAlt = (alt: string) => alt.replace(/[[\]\n]/g, ' ').trim() || 'Image
 /** The message as sent: the reply's quote, a blank line, then what the owner wrote. */
 export function withReply(reply: Reply | undefined, message: string): string {
   if (!reply) return message
-  const quote = reply.kind === 'text'
-    ? [TEXT_HEADER, ...reply.text.split('\n').map((line) => (line ? `> ${line}` : '>'))]
-    // Only an image the agent can load is quoted as one; anything else (a data URL, a link) is named by its caption.
-    : [IMAGE_HEADER, reply.ref ? `> ![${escapeAlt(reply.alt)}](${reply.ref})` : `> ${escapeAlt(reply.alt)}`]
+  const quote =
+    reply.kind === 'text'
+      ? [TEXT_HEADER, ...reply.text.split('\n').map((line) => (line ? `> ${line}` : '>'))]
+      : // Only an image the agent can load is quoted as one; anything else (a data URL, a link) is named by its caption.
+        [IMAGE_HEADER, reply.ref ? `> ![${escapeAlt(reply.alt)}](${reply.ref})` : `> ${escapeAlt(reply.alt)}`]
   return [quote.join('\n'), message.trim()].filter(Boolean).join('\n\n')
 }
 
@@ -45,7 +50,11 @@ export function parseReply(text: string): { reply?: Reply; body: string } {
   const lines = text.split('\n')
   let end = 1
   while (end < lines.length && lines[end].startsWith('>')) end++
-  const quoted = lines.slice(1, end).map((line) => line.replace(/^> ?/, '')).join('\n').trim()
+  const quoted = lines
+    .slice(1, end)
+    .map((line) => line.replace(/^> ?/, ''))
+    .join('\n')
+    .trim()
   const body = lines.slice(end).join('\n').trim()
   if (header === 'text') return { reply: { kind: 'text', text: quoted }, body }
   const image = /^!\[([^\]]*)\]\(\s*([^)\s]+)\s*\)$/.exec(quoted)

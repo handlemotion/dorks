@@ -64,9 +64,7 @@ const HANDLERS: Handlers = {
     v.state = e.state;
   },
   turn_complete(v, e) {
-    v.blocks = v.blocks.map((b) =>
-      b.kind === "assistant" && (b.streaming || b.id === e.finalMessageId) ? { ...b, streaming: false, ...(b.id === e.finalMessageId ? { final: true } : {}) } : b,
-    );
+    v.blocks = v.blocks.map((b) => (b.kind === "assistant" && (b.streaming || b.id === e.finalMessageId) ? { ...b, streaming: false, ...(b.id === e.finalMessageId ? { final: true } : {}) } : b));
     v.blocks.push({ kind: "turn", id: `t${e.seq}`, outcome: e.outcome ?? null, finalId: e.finalMessageId, durationMs: e.durationMs, at: e.ts });
     v.lastOutcome = e.outcome ?? null;
   },

@@ -140,10 +140,13 @@ export class EventsFeed implements Store<EventsState> {
     this.error = e instanceof ApiError ? e : new ApiError(0, { code: "failed", message: "Something went wrong" });
     if (this.error.status === 401) this.onUnauthorized();
     else if (this.listeners.size > 0 && !this.retryTimer) {
-      this.retryTimer = setTimeout(() => {
-        this.retryTimer = undefined;
-        this.requestTail();
-      }, this.retryDelay(this.failures++));
+      this.retryTimer = setTimeout(
+        () => {
+          this.retryTimer = undefined;
+          this.requestTail();
+        },
+        this.retryDelay(this.failures++),
+      );
     }
   }
 
@@ -169,9 +172,7 @@ export class EventsFeed implements Store<EventsState> {
   }
 
   private publish() {
-    const view: DorkView = this.pending.length
-      ? { ...this.folded, blocks: [...this.folded.blocks, ...this.pending.map((p) => ({ kind: "user" as const, id: p.id, text: p.text }))] }
-      : this.folded;
+    const view: DorkView = this.pending.length ? { ...this.folded, blocks: [...this.folded.blocks, ...this.pending.map((p) => ({ kind: "user" as const, id: p.id, text: p.text }))] } : this.folded;
     this.state = { view, loading: !this.started && !this.error, canLoadMore: this.hasMore, loadingMore: this.loadingMore, error: this.error };
     for (const l of [...this.listeners]) l();
   }

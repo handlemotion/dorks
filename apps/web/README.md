@@ -7,7 +7,7 @@ The Dorks UI: a static React single-page app (Vite, TanStack Router with hash ro
 In order:
 
 1. **The desktop app.** The Tauri shell sets `window.__DORKS__ = { apiUrl, ownerToken, ... }` before the page loads ([docs/desktop.md](../../docs/desktop.md)). It also provides native commands the UI uses: reading the `gh` CLI token (with a consent dialog), keeping the Mac awake while sessions work, and setting the public URL.
-2. **A browser.** The first screen asks for the server address and owner token and keeps them in `localStorage`. In `vite dev` only, `?server=<url>&token=<token>` skips that screen.
+2. **A browser.** The first screen asks for the server address and owner token and keeps them in `localStorage`. In `vp dev` only, `?server=<url>&token=<token>` skips that screen.
 
 The server must allow the page's origin (`DORKS_UI_ORIGINS`; `http://localhost:3000` and the Tauri origin are allowed by default).
 

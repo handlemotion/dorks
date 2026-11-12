@@ -66,10 +66,7 @@ function OwnerSwitcher({ owners, scope, setScope, onDisconnect }: { owners: stri
   const name = scope || 'All repositories'
   return (
     <DropdownMenu modal={false}>
-      <DropdownMenuTrigger
-        aria-label={`Switch owner, currently ${name}`}
-        className={`${SIDEBAR_ROW} text-foreground aria-expanded:bg-foreground/[0.05]`}
-      >
+      <DropdownMenuTrigger aria-label={`Switch owner, currently ${name}`} className={`${SIDEBAR_ROW} text-foreground aria-expanded:bg-foreground/[0.05]`}>
         {scope ? <OwnerAvatar owner={scope} /> : <GithubMark />}
         <span className="min-w-0 truncate">{name}</span>
         <ChevronDownIcon aria-hidden className="text-muted-foreground" />
@@ -119,7 +116,19 @@ const PAGES = [
  * flat on the app fill in a resizable panel (see AppFrame); on phones it is shadcn's sheet.
  */
 /** The sidebar from props alone. `usage` is the slot above Settings: the live `<UsageBar />` in the app, static data (or nothing) in demos. */
-export function AppSidebarView({ chats, onDisconnect, orderKey = 'dorks.chat-order', chatTo, usage }: { chats: Chat[]; onDisconnect?: (() => void) | null; orderKey?: string; chatTo?: ChatRoute; usage?: ReactNode }) {
+export function AppSidebarView({
+  chats,
+  onDisconnect,
+  orderKey = 'dorks.chat-order',
+  chatTo,
+  usage,
+}: {
+  chats: Chat[]
+  onDisconnect?: (() => void) | null
+  orderKey?: string
+  chatTo?: ChatRoute
+  usage?: ReactNode
+}) {
   const { isMobile } = useSidebar()
   const { pathname, search } = useLocation()
   const dork = (search as { dork?: unknown }).dork

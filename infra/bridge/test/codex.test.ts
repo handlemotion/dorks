@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
 import { Bridge } from "../src/bridge";
 import { loadConfig } from "../src/config";
 import { makeLogger, Redactor } from "../src/redact";
@@ -10,12 +10,23 @@ import { builtCli, FakeTransport, makeRemote, tmp, waitFor } from "./helpers";
 
 const fake = fileURLToPath(new URL("./fixtures/fake-codex.mjs", import.meta.url));
 let cli: string;
-beforeAll(() => { cli = builtCli(); });
+beforeAll(() => {
+  cli = builtCli();
+});
 const cleanup: Bridge[] = [];
-afterEach(async () => { for (const bridge of cleanup.splice(0)) await bridge.stop(500); });
+afterEach(async () => {
+  for (const bridge of cleanup.splice(0)) await bridge.stop(500);
+});
 
-async function setup(home = tmp("codex-home-"), state = tmp("codex-state-"), resumeSessionId: string | null = null,
-  extraEnv: Record<string, string> = {}, codexModel?: { model: string; effort: string }, boatConnected = true, nameFrom?: string) {
+async function setup(
+  home = tmp("codex-home-"),
+  state = tmp("codex-state-"),
+  resumeSessionId: string | null = null,
+  extraEnv: Record<string, string> = {},
+  codexModel?: { model: string; effort: string },
+  boatConnected = true,
+  nameFrom?: string,
+) {
   // Boat installs the account's ChatGPT sign-in in each sandbox's ~/.codex; the fake reads auth.json for "connected".
   if (boatConnected) {
     mkdirSync(join(home, ".codex"), { recursive: true });
@@ -27,18 +38,31 @@ async function setup(home = tmp("codex-home-"), state = tmp("codex-state-"), res
   const report = join(tmp("codex-report-"), "report.json");
   const host: NodeJS.ProcessEnv = {
     ...process.env,
-    PATH: `${bin}:${process.env.PATH}`, HOME: home, DORK_ID: "codex_dork",
-    BRIDGE_URL: "https://bridge.example.test", BRIDGE_SECRET: "b".repeat(64),
-    DORKS_STATE_DIR: state, DORKS_SOCK_DIR: state, DORKS_WORKDIR: tmp("codex-work-"), DORKS_GIT_BASE_URL: remote.baseUrl,
-    DORKS_BATCH_MS: "5", DELTA_BATCH_MS: "10", HEARTBEAT_MS: "60000",
+    PATH: `${bin}:${process.env.PATH}`,
+    HOME: home,
+    DORK_ID: "codex_dork",
+    BRIDGE_URL: "https://bridge.example.test",
+    BRIDGE_SECRET: "b".repeat(64),
+    DORKS_STATE_DIR: state,
+    DORKS_SOCK_DIR: state,
+    DORKS_WORKDIR: tmp("codex-work-"),
+    DORKS_GIT_BASE_URL: remote.baseUrl,
+    DORKS_BATCH_MS: "5",
+    DELTA_BATCH_MS: "10",
+    HEARTBEAT_MS: "60000",
   };
   const redactor = new Redactor();
   redactor.add(host.BRIDGE_SECRET);
   const transport = new FakeTransport();
   transport.configureFrame = {
-    t: "configure", provider: "codex", codexModel,
+    t: "configure",
+    provider: "codex",
+    codexModel,
     env: { FAKE_CODEX_REPORT: report, OPENAI_API_KEY: "should-not-be-billed", CF_TOKEN: "cli-secret-only", ...extraEnv },
-    ghToken: "ghs_unitTestInstallationToken", repo: { fullName: "acme/demo", branch: "agent/codex" }, resumeSessionId, nameFrom,
+    ghToken: "ghs_unitTestInstallationToken",
+    repo: { fullName: "acme/demo", branch: "agent/codex" },
+    resumeSessionId,
+    nameFrom,
   };
   const logs: string[] = [];
   const bridge = new Bridge({ cfg: loadConfig(host), transport, log: makeLogger("test", redactor, (s) => logs.push(s)), redactor, baseEnv: host, selfCommand: [process.execPath, cli] });
@@ -63,10 +87,15 @@ describe("Codex through a Boat ChatGPT connection", () => {
     const raws = s.transport.events().map((e) => e.raw);
     expect(JSON.stringify(raws)).toContain("Done: fix tests");
     expect(JSON.parse(readFileSync(s.report, "utf8"))).toMatchObject({
-      model: "gpt-6-sol", effort: "high", sandboxPolicy: { type: "externalSandbox", networkAccess: "enabled" },
+      model: "gpt-6-sol",
+      effort: "high",
+      sandboxPolicy: { type: "externalSandbox", networkAccess: "enabled" },
     });
     const normalize = createNormalizer();
-    const eventTypes = raws.flatMap((raw) => normalize(raw)).filter((n) => n.kind === "event").map((n) => n.body.type);
+    const eventTypes = raws
+      .flatMap((raw) => normalize(raw))
+      .filter((n) => n.kind === "event")
+      .map((n) => n.body.type);
     expect(eventTypes).toEqual(expect.arrayContaining(["assistant_delta", "assistant_message", "tool_use", "tool_result", "turn_complete"]));
     expect(s.logs.join(" ")).not.toContain("should-not-be-billed");
   });
@@ -134,7 +163,12 @@ describe("Codex through a Boat ChatGPT connection", () => {
     s.transport.emit([{ cid: "m1", frame: { t: "user_message", id: "m1", text: "do work" } }]);
     await waitFor(() => s.transport.events().some((e) => (e.raw as { result?: string }).result === "ChatGPT plan limit reached"), "plan limit");
     const normalize = createNormalizer();
-    expect(s.transport.events().flatMap((e) => normalize(e.raw)).some((n) => n.kind === "event" && n.body.type === "error")).toBe(true);
+    expect(
+      s.transport
+        .events()
+        .flatMap((e) => normalize(e.raw))
+        .some((n) => n.kind === "event" && n.body.type === "error"),
+    ).toBe(true);
     expect(s.transport.of("agent_exited")).toHaveLength(0);
     expect(JSON.parse(readFileSync(s.report, "utf8")).envKeys).not.toContain("OPENAI_API_KEY");
   });

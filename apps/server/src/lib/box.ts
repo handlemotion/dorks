@@ -85,7 +85,11 @@ function simSnapshotDriver(stepMs: number): SnapshotDriver {
       const proc = simProcs.get(processId);
       if (proc && !proc.command.includes("dorks-build/run")) return { t: "exit", exitCode: 0, offsets: { stdout: 0, stderr: 0 } }; // a clone or the secret scan
       const scripts = [...simFiles.entries()].filter(([k]) => k.startsWith(`${id}\0`) && k.endsWith(".sh")).map(([, v]) => v);
-      for (const line of scripts.join("\n").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#"))) {
+      for (const line of scripts
+        .join("\n")
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l && !l.startsWith("#"))) {
         await pause();
         onOutput("stdout", `+ ${line}\n`);
         const failed = line === "false" ? 1 : /^exit\s+(\d+)$/.exec(line) ? Number(/^exit\s+(\d+)$/.exec(line)![1]) : 0;

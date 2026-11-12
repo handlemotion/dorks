@@ -1,16 +1,22 @@
 {
   "name": "@dorks/tunnels",
-  "private": true,
-  "type": "module",
   "version": "0.1.0",
+  "private": true,
   "description": "The Dorks tunnel service: holds Wurmhol's integration key and gives each install a private embedded tunnel, and its sandboxes grants to reach it.",
+  "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "dev": "vp dev",
+    "build": "vp build",
+    "deploy": "vp build && cf deploy --prebuilt",
+    "types": "cf workers types",
+    "typecheck": "cf workers types >/dev/null && tsc --noEmit",
+    "test": "vp test run"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "2.0.0-beta.v.15",
     "@types/node": "^26.6.4",
+    "cf": "1.0.0-beta.30",
     "typescript": "^6.0.2",
-    "vitest": "^4.1.11"
+    "vite-plus": "catalog:"
   }
 }

@@ -43,7 +43,9 @@ function Panels({ sidebar, children }: { sidebar: ReactNode; children: ReactNode
     return (
       <>
         {sidebar}
-        <SidebarInset className="min-h-0 overflow-hidden bg-transparent"><div className="flex min-h-0 flex-1 flex-col">{children}</div></SidebarInset>
+        <SidebarInset className="min-h-0 overflow-hidden bg-transparent">
+          <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+        </SidebarInset>
       </>
     )
   }
@@ -70,7 +72,9 @@ function Panels({ sidebar, children }: { sidebar: ReactNode; children: ReactNode
       {/* Drag to resize; a click snaps the sidebar back to its default width. */}
       <PanelResizeHandle aria-label="Resize sidebar" onReset={() => panel.current?.resize(SIDEBAR_WIDTH)} disabled={!open} className={!open ? 'hidden' : undefined} />
       <ResizablePanel id="main" minSize={480}>
-        <SidebarInset className="h-full min-h-0 overflow-hidden bg-transparent"><div className="flex min-h-0 flex-1 flex-col">{children}</div></SidebarInset>
+        <SidebarInset className="h-full min-h-0 overflow-hidden bg-transparent">
+          <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+        </SidebarInset>
       </ResizablePanel>
     </ResizablePanelGroup>
   )

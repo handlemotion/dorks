@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { clientEvent } from "./events";
 import type { ClientEvent } from "./events";
 import { emptyView, fold } from "./client/fold";

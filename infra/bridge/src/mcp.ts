@@ -101,7 +101,7 @@ const TOOLS: Tool[] = [
       type: "object",
       properties: {
         port: { type: "integer", minimum: 1, maximum: 65535, description: "The port the server listens on, e.g. 3000." },
-        title: { type: "string", description: "Optional: a short name for the list, e.g. \"Web app\". Defaults to the port." },
+        title: { type: "string", description: 'Optional: a short name for the list, e.g. "Web app". Defaults to the port.' },
         localhost: { type: "boolean", description: "Optional: true when the server listens only on 127.0.0.1 or ::1." },
       },
       required: ["port"],
@@ -130,7 +130,7 @@ const TOOLS: Tool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        caption: { type: "string", description: "What the image shows, in a few words, e.g. \"Settings page, dark theme\"." },
+        caption: { type: "string", description: 'What the image shows, in a few words, e.g. "Settings page, dark theme".' },
         url: { type: "string", description: "A page to render, e.g. http://localhost:3000/settings." },
         path: { type: "string", description: "An image file to share instead (PNG, JPEG, WebP or GIF, at most 8 MB)." },
         width: { type: "integer", minimum: 320, maximum: 3840, description: "With `url`: viewport width in CSS pixels. Default 1440; 390 for a phone." },
@@ -146,10 +146,7 @@ const TOOLS: Tool[] = [
       const caption = typeof args.caption === "string" ? args.caption.trim() : "";
       if (!caption) throw new ToolError("`caption` must say what the image shows.");
       if (args.url !== undefined && args.path !== undefined) throw new ToolError("Give `url` or `path`, not both.");
-      const bytes =
-        typeof args.path === "string" ? readImage(args.path)
-        : typeof args.url === "string" ? await renderPage(args.url, args)
-        : await captureDesktop();
+      const bytes = typeof args.path === "string" ? readImage(args.path) : typeof args.url === "string" ? await renderPage(args.url, args) : await captureDesktop();
       if (!sniff(bytes)) throw new ToolError("That is not a PNG, JPEG, WebP or GIF image.");
       if (bytes.length > MAX_IMAGE_BYTES) throw new ToolError(`The image is ${(bytes.length / 1048576).toFixed(1)} MB; the limit is 8 MB. Crop it or use a smaller scale.`);
       const data = bytes.toString("base64");
@@ -177,7 +174,8 @@ const TOOLS: Tool[] = [
     annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
     async run(_args, sock) {
       const r = await rpcCall<{ build: MachineBuild | null; draft: MachineDraft | null }>(sock, "build", { action: "get" });
-      if (!r.build) return "This session runs on the base machine, not on a build, so there is nothing to change here. Ask the owner to create a build (Settings, Builds) and start a setup session on it.";
+      if (!r.build)
+        return "This session runs on the base machine, not on a build, so there is nothing to change here. Ask the owner to create a build (Settings, Builds) and start a setup session on it.";
       return describeBuild(r.build, r.draft);
     },
   },
@@ -310,14 +308,28 @@ type MachineVar = { name: string; secret: boolean; buildTime: boolean; value?: s
 type MachineRepo = { repo: string; branch?: string; setupScript?: string };
 type MachineSpec = { machineType: string; setupScript: string; repos: MachineRepo[]; buildTimeVars: string[] };
 type MachineBuild = {
-  name: string; machineType: string; setupScript: string; repos: MachineRepo[]; vars: MachineVar[]; approved: boolean;
-  image: { stale: boolean; staleReason: string | null } | null; lastRun: MachineRun | null;
+  name: string;
+  machineType: string;
+  setupScript: string;
+  repos: MachineRepo[];
+  vars: MachineVar[];
+  approved: boolean;
+  image: { stale: boolean; staleReason: string | null } | null;
+  lastRun: MachineRun | null;
 };
-type MachineDraft = { status: string; spec: MachineSpec; vars: { name: string; secret: boolean; buildTime: boolean; value?: string; remove?: boolean; why: string }[]; stale: boolean; note: string | null };
+type MachineDraft = {
+  status: string;
+  spec: MachineSpec;
+  vars: { name: string; secret: boolean; buildTime: boolean; value?: string; remove?: boolean; why: string }[];
+  stale: boolean;
+  note: string | null;
+};
 
 const script = (s: string | undefined) => (s?.trim() ? "```bash\n" + s.trim() + "\n```" : "(none)");
 const repoLines = (repos: MachineRepo[]) =>
-  repos.length ? repos.map((r) => `- ${r.repo}${r.branch ? ` (branch ${r.branch})` : ""}${r.setupScript?.trim() ? `\n  setup:\n${script(r.setupScript).replace(/^/gm, "  ")}` : ""}`).join("\n") : "(none)";
+  repos.length
+    ? repos.map((r) => `- ${r.repo}${r.branch ? ` (branch ${r.branch})` : ""}${r.setupScript?.trim() ? `\n  setup:\n${script(r.setupScript).replace(/^/gm, "  ")}` : ""}`).join("\n")
+    : "(none)";
 
 function describeRun(r: MachineRun): string {
   const what = `${r.kind} run ${r.id}: ${r.status}${r.step && r.status === "running" ? ` (${r.step})` : ""}`;
@@ -326,7 +338,12 @@ function describeRun(r: MachineRun): string {
 
 function describeBuild(b: MachineBuild, d: MachineDraft | null): string {
   const vars = b.vars.length
-    ? b.vars.map((v) => `- ${v.name}${v.secret ? " (secret" + (v.requested ? ", waiting for the owner)" : ")") : v.requested ? " (waiting for a value)" : `=${v.value ?? ""}`}${v.buildTime ? " [build time]" : ""}`).join("\n")
+    ? b.vars
+        .map(
+          (v) =>
+            `- ${v.name}${v.secret ? " (secret" + (v.requested ? ", waiting for the owner)" : ")") : v.requested ? " (waiting for a value)" : `=${v.value ?? ""}`}${v.buildTime ? " [build time]" : ""}`,
+        )
+        .join("\n")
     : "(none)";
   const image = !b.image ? "not built yet" : b.image.stale ? `stale: ${b.image.staleReason}` : "current";
   return [
@@ -340,7 +357,11 @@ function describeBuild(b: MachineBuild, d: MachineDraft | null): string {
 }
 
 function describeDraft(d: MachineDraft): string {
-  const vars = d.vars.length ? d.vars.map((v) => `- ${v.remove ? "remove " : ""}${v.name}${v.secret ? " (secret, owner fills it in)" : v.value !== undefined ? `=${v.value}` : ""}${v.buildTime ? " [build time]" : ""}`).join("\n") : "(no variable changes)";
+  const vars = d.vars.length
+    ? d.vars
+        .map((v) => `- ${v.remove ? "remove " : ""}${v.name}${v.secret ? " (secret, owner fills it in)" : v.value !== undefined ? `=${v.value}` : ""}${v.buildTime ? " [build time]" : ""}`)
+        .join("\n")
+    : "(no variable changes)";
   return [
     `Status: ${d.status}${d.stale ? " (the build changed since you started this draft: check it with machine_get)" : ""}. Size ${d.spec.machineType}.`,
     `Setup script:\n${script(d.spec.setupScript)}`,
@@ -376,7 +397,10 @@ function readImage(path: string): Buffer {
 }
 
 const CHROMES = [
-  "google-chrome", "google-chrome-stable", "chromium", "chromium-browser",
+  "google-chrome",
+  "google-chrome-stable",
+  "chromium",
+  "chromium-browser",
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "/Applications/Chromium.app/Contents/MacOS/Chromium",
 ];
@@ -387,13 +411,20 @@ function playwrightChromes(): string[] {
   const found: string[] = [];
   for (const root of roots) {
     if (!root || !existsSync(root)) continue;
-    const dirs = readdirSync(root).filter((d) => /^chromium(_headless_shell)?-\d+$/.test(d)).sort((a, b) => Number(b.split("-")[1]) - Number(a.split("-")[1]));
+    const dirs = readdirSync(root)
+      .filter((d) => /^chromium(_headless_shell)?-\d+$/.test(d))
+      .sort((a, b) => Number(b.split("-")[1]) - Number(a.split("-")[1]));
     for (const d of dirs) {
       for (const rel of [
-        "chrome-headless-shell-linux64/chrome-headless-shell", "chrome-headless-shell-mac-arm64/chrome-headless-shell", "chrome-headless-shell-mac-x64/chrome-headless-shell",
-        "chrome-linux/chrome", "chrome-linux64/chrome",
-        "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing", "chrome-mac/Chromium.app/Contents/MacOS/Chromium",
-      ]) if (existsSync(join(root, d, rel))) found.push(join(root, d, rel));
+        "chrome-headless-shell-linux64/chrome-headless-shell",
+        "chrome-headless-shell-mac-arm64/chrome-headless-shell",
+        "chrome-headless-shell-mac-x64/chrome-headless-shell",
+        "chrome-linux/chrome",
+        "chrome-linux64/chrome",
+        "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+        "chrome-mac/Chromium.app/Contents/MacOS/Chromium",
+      ])
+        if (existsSync(join(root, d, rel))) found.push(join(root, d, rel));
     }
   }
   return found;
@@ -403,7 +434,13 @@ async function findChrome(): Promise<string> {
   for (const c of CHROMES) {
     if (c.startsWith("/")) {
       if (existsSync(c)) return c;
-    } else if (await run("which", [c]).then(() => true, () => false)) return c;
+    } else if (
+      await run("which", [c]).then(
+        () => true,
+        () => false,
+      )
+    )
+      return c;
   }
   const pw = playwrightChromes()[0];
   if (pw) return pw;
@@ -422,20 +459,35 @@ async function renderPage(url: string, args: Record<string, unknown>): Promise<B
   const height = Math.round(num(args.height, 900, 240, 4000));
   const scale = num(args.scale, 2, 1, 3);
   try {
-    await run(chrome, [
-      "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check", "--mute-audio",
-      ...(process.getuid?.() === 0 ? ["--no-sandbox"] : []),
-      `--user-data-dir=${join(dir, "profile")}`,
-      `--window-size=${width},${height}`, `--force-device-scale-factor=${scale}`,
-      ...(args.dark === true ? ["--force-dark-mode", "--blink-settings=preferredColorScheme=0"] : ["--blink-settings=preferredColorScheme=1"]),
-      "--virtual-time-budget=8000", // let scripts, fonts and data settle before the shot
-      `--screenshot=${out}`, url,
-    ], { timeout: CAPTURE_TIMEOUT_MS });
+    await run(
+      chrome,
+      [
+        "--headless=new",
+        "--disable-gpu",
+        "--hide-scrollbars",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--mute-audio",
+        ...(process.getuid?.() === 0 ? ["--no-sandbox"] : []),
+        `--user-data-dir=${join(dir, "profile")}`,
+        `--window-size=${width},${height}`,
+        `--force-device-scale-factor=${scale}`,
+        ...(args.dark === true ? ["--force-dark-mode", "--blink-settings=preferredColorScheme=0"] : ["--blink-settings=preferredColorScheme=1"]),
+        "--virtual-time-budget=8000", // let scripts, fonts and data settle before the shot
+        `--screenshot=${out}`,
+        url,
+      ],
+      { timeout: CAPTURE_TIMEOUT_MS },
+    );
     if (!existsSync(out)) throw new ToolError(`Chrome did not write a screenshot of ${url}. Check that it answers (curl -sI ${url}).`);
     return readFileSync(out);
   } catch (e) {
     if (e instanceof ToolError) throw e;
-    throw new ToolError(`Chrome could not screenshot ${url}: ${String((e as { stderr?: unknown }).stderr ?? (e as Error).message).trim().slice(-400)}`);
+    throw new ToolError(
+      `Chrome could not screenshot ${url}: ${String((e as { stderr?: unknown }).stderr ?? (e as Error).message)
+        .trim()
+        .slice(-400)}`,
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -447,8 +499,8 @@ async function captureDesktop(): Promise<Buffer> {
   const out = join(dir, "desktop.png");
   const env = { ...process.env, DISPLAY: process.env.DISPLAY || ":0" };
   try {
-    await run("ffmpeg", ["-loglevel", "error", "-y", "-f", "x11grab", "-i", env.DISPLAY, "-frames:v", "1", out], { timeout: CAPTURE_TIMEOUT_MS, env }).catch(
-      () => run("import", ["-window", "root", out], { timeout: CAPTURE_TIMEOUT_MS, env }),
+    await run("ffmpeg", ["-loglevel", "error", "-y", "-f", "x11grab", "-i", env.DISPLAY, "-frames:v", "1", out], { timeout: CAPTURE_TIMEOUT_MS, env }).catch(() =>
+      run("import", ["-window", "root", out], { timeout: CAPTURE_TIMEOUT_MS, env }),
     );
     if (!existsSync(out)) throw new Error("no file");
     return readFileSync(out);

@@ -17,9 +17,7 @@ function describeDork(name: string, state: DorkState | undefined, live: Live | u
     case 'working':
       return { label: `${name} is working`, tone: 'bg-brand', moving: true }
     case 'idle':
-      return outcome === 'stopped'
-        ? { label: `${name} stopped`, tone: 'bg-muted-foreground/50' }
-        : { label: `${name} is waiting for your next message`, tone: 'bg-emerald-500' }
+      return outcome === 'stopped' ? { label: `${name} stopped`, tone: 'bg-muted-foreground/50' } : { label: `${name} is waiting for your next message`, tone: 'bg-emerald-500' }
     case 'sleeping':
       return { label: `${name} is sleeping`, tone: 'bg-muted-foreground/50' }
     case 'error':
@@ -38,7 +36,13 @@ export function AgentStatus({ state, live, outcome, name = 'Dork' }: { state?: D
   return (
     <p role="status" aria-live="polite" className="flex items-center gap-2 text-sm text-foreground" data-testid="agent-status">
       <span aria-hidden className={`size-2 shrink-0 rounded-full ${tone} ${moving ? 'status-shape' : ''}`} />
-      {moving ? <span><WordShimmer>{label}</WordShimmer></span> : label}
+      {moving ? (
+        <span>
+          <WordShimmer>{label}</WordShimmer>
+        </span>
+      ) : (
+        label
+      )}
     </p>
   )
 }

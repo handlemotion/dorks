@@ -36,9 +36,7 @@ export type ChatRoute = {
 const SENSORS = [
   PointerSensor.configure({
     activationConstraints: (event) =>
-      event.pointerType === 'touch'
-        ? [new PointerActivationConstraints.Delay({ value: 250, tolerance: 5 })]
-        : [new PointerActivationConstraints.Distance({ value: 5 })],
+      event.pointerType === 'touch' ? [new PointerActivationConstraints.Delay({ value: 250, tolerance: 5 })] : [new PointerActivationConstraints.Distance({ value: 5 })],
   }),
   KeyboardSensor.configure({ keyboardCodes: { ...KeyboardSensor.defaults.keyboardCodes, start: ['Space'] } }),
 ]
@@ -54,8 +52,7 @@ const PLUGINS = [
     announcements: {
       dragstart: ({ operation: { source } }: DragStartEvent) => `Picked up ${titleOf(source)}.`,
       dragover: ({ operation: { source } }: DragOverEvent) => `${titleOf(source)} moved${positionOf(source)}.`,
-      dragend: ({ operation: { source }, canceled }: DragEndEvent) =>
-        canceled ? `Reordering canceled. ${titleOf(source)} is back in place.` : `${titleOf(source)} dropped${positionOf(source)}.`,
+      dragend: ({ operation: { source }, canceled }: DragEndEvent) => (canceled ? `Reordering canceled. ${titleOf(source)} is back in place.` : `${titleOf(source)} dropped${positionOf(source)}.`),
     },
   }),
 ]
@@ -65,7 +62,10 @@ const PLUGINS = [
  * One provider per list, so a chat cannot be dragged into another list.
  */
 export function ChatList({ chats, orderKey, to = '/dorks' as ChatRoute, activeId }: { chats: Chat[]; orderKey: string; to?: ChatRoute; /** The chat open in the page. */ activeId?: string }) {
-  const [order, setOrder] = useStoredOrder(orderKey, chats.map((c) => c.id))
+  const [order, setOrder] = useStoredOrder(
+    orderKey,
+    chats.map((c) => c.id),
+  )
   const byId = new Map(chats.map((c) => [c.id, c]))
   return (
     <DragDropProvider

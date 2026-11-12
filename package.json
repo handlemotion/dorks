@@ -1,7 +1,6 @@
 {
   "name": "dorks",
   "private": true,
-  "packageManager": "pnpm@12.4.2",
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:server": "node scripts/dev.mjs --only server",
@@ -10,10 +9,13 @@
     "dev:desktop": "pnpm --filter @dorks/desktop dev",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --if-present test",
-    "e2e": "node scripts/e2e.mjs",
-    "lint": "oxlint"
+    "check": "vp check",
+    "lint": "vp lint",
+    "fmt": "vp fmt",
+    "e2e": "node scripts/e2e.mjs"
   },
   "devDependencies": {
-    "oxlint": "1.91.0"
-  }
+    "vite-plus": "catalog:"
+  },
+  "packageManager": "pnpm@12.4.2"
 }

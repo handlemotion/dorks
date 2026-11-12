@@ -58,18 +58,46 @@ export interface Subscription {
 const u = <T>(v: T | null): T | undefined => (v === null ? undefined : v);
 
 export const subOf = (r: Row): Subscription => ({
-  id: r.id as number, dorkId: r.dork_id as string, repo: r.repo as string, number: r.number as number, url: r.url as string,
-  title: u(r.title as string | null), headRef: u(r.head_ref as string | null), baseRef: u(r.base_ref as string | null), headSha: u(r.head_sha as string | null),
-  source: r.source as Subscription["source"], status: r.status as Subscription["status"], ci: r.ci as Subscription["ci"], review: r.review as Subscription["review"],
-  mergeable: r.mergeable === null ? null : bool(r.mergeable), ciFixAttempts: r.ci_fix_attempts as number, state: r.state as Subscription["state"],
-  lastEventAt: r.last_event_at as number, ciFailing: json(r.ci_failing), ciNotified: r.ci_notified === null ? undefined : bool(r.ci_notified),
-  readySha: u(r.ready_sha as string | null), conflictSha: u(r.conflict_sha as string | null), poll: json(r.poll),
+  id: r.id as number,
+  dorkId: r.dork_id as string,
+  repo: r.repo as string,
+  number: r.number as number,
+  url: r.url as string,
+  title: u(r.title as string | null),
+  headRef: u(r.head_ref as string | null),
+  baseRef: u(r.base_ref as string | null),
+  headSha: u(r.head_sha as string | null),
+  source: r.source as Subscription["source"],
+  status: r.status as Subscription["status"],
+  ci: r.ci as Subscription["ci"],
+  review: r.review as Subscription["review"],
+  mergeable: r.mergeable === null ? null : bool(r.mergeable),
+  ciFixAttempts: r.ci_fix_attempts as number,
+  state: r.state as Subscription["state"],
+  lastEventAt: r.last_event_at as number,
+  ciFailing: json(r.ci_failing),
+  ciNotified: r.ci_notified === null ? undefined : bool(r.ci_notified),
+  readySha: u(r.ready_sha as string | null),
+  conflictSha: u(r.conflict_sha as string | null),
+  poll: json(r.poll),
 });
 
 /** The wire shape of a subscription (`bridge subscriptions push`, `GET /api/dorks/:id/subscriptions`). */
 export const toView = (s: Subscription): SubscriptionView => ({
-  repo: s.repo, number: s.number, url: s.url, title: s.title, headRef: s.headRef, baseRef: s.baseRef, headSha: s.headSha,
-  source: s.source, status: s.status, ci: s.ci, review: s.review, mergeable: s.mergeable, ciFixAttempts: s.ciFixAttempts, state: s.state,
+  repo: s.repo,
+  number: s.number,
+  url: s.url,
+  title: s.title,
+  headRef: s.headRef,
+  baseRef: s.baseRef,
+  headSha: s.headSha,
+  source: s.source,
+  status: s.status,
+  ci: s.ci,
+  review: s.review,
+  mergeable: s.mergeable,
+  ciFixAttempts: s.ciFixAttempts,
+  state: s.state,
 });
 
 // ---------------------------------------------------------------- lookups
@@ -78,17 +106,21 @@ export const getSub = (app: App, id: number): Subscription | undefined => {
   return r ? subOf(r) : undefined;
 };
 
-export const subscriptionsOfDork = (app: App, dorkId: string): Subscription[] =>
-  app.db.all("SELECT * FROM pr_subscriptions WHERE dork_id = ? ORDER BY id", dorkId).map(subOf);
+export const subscriptionsOfDork = (app: App, dorkId: string): Subscription[] => app.db.all("SELECT * FROM pr_subscriptions WHERE dork_id = ? ORDER BY id", dorkId).map(subOf);
 
-export const liveSubscriptionViews = (app: App, dorkId: string): SubscriptionView[] => subscriptionsOfDork(app, dorkId).filter((s) => s.status !== "ended").map(toView);
+export const liveSubscriptionViews = (app: App, dorkId: string): SubscriptionView[] =>
+  subscriptionsOfDork(app, dorkId)
+    .filter((s) => s.status !== "ended")
+    .map(toView);
 
 /** Subscriptions the poller must look at: not ended, still open, and the dork is neither archived nor being deleted. */
 export const pollable = (app: App): Subscription[] =>
-  app.db.all(
-    `SELECT s.* FROM pr_subscriptions s JOIN dorks d ON d.id = s.dork_id
+  app.db
+    .all(
+      `SELECT s.* FROM pr_subscriptions s JOIN dorks d ON d.id = s.dork_id
      WHERE s.status != 'ended' AND s.state = 'open' AND d.deleting = 0 AND d.archived = 0 ORDER BY s.id`,
-  ).map(subOf);
+    )
+    .map(subOf);
 
 const find = (app: App, dorkId: string, repo: string, number: number): Subscription | undefined => {
   const r = app.db.get("SELECT * FROM pr_subscriptions WHERE dork_id = ? AND repo = ? AND number = ?", dorkId, normalizeRepo(repo), number);
@@ -136,8 +168,18 @@ export function subscribe(app: App, dork: DorkRow, repo: string, number: number,
   }
   const name = normalizeRepo(repo);
   insert(app.db, "pr_subscriptions", {
-    dorkId: dork.id, repo: name, number, url: prUrl(name, number), source, status: "active", ci: "unknown", review: "none", mergeable: null,
-    ciFixAttempts: 0, state: "open", lastEventAt: app.now(),
+    dorkId: dork.id,
+    repo: name,
+    number,
+    url: prUrl(name, number),
+    source,
+    status: "active",
+    ci: "unknown",
+    review: "none",
+    mergeable: null,
+    ciFixAttempts: 0,
+    state: "open",
+    lastEventAt: app.now(),
   });
   const id = app.db.get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id;
   pollSoon(app);

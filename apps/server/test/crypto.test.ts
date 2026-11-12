@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { aad, decrypt, encrypt, type Keyring } from "../src/core/crypto";
 
 const k = (n: number) => btoa(String.fromCharCode(...new Uint8Array(32).fill(n)));

@@ -27,32 +27,71 @@ function Settings() {
   const done = stepDone(settings)
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PageHeader title="Settings" actions={<Button variant="ghost" size="sm" nativeButton={false} render={<Link to="/dorks" />}>Back to dorks</Button>} />
+      <PageHeader
+        title="Settings"
+        actions={
+          <Button variant="ghost" size="sm" nativeButton={false} render={<Link to="/dorks" />}>
+            Back to dorks
+          </Button>
+        }
+      />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col">
           <Group title="Setup">
             <section aria-label="setup checklist" className="flex flex-col gap-3">
               <ul className="flex flex-col gap-1.5 text-sm">
-                {STEPS.map((s) => <Check key={s.id} id={s.id} done={done[s.id]}>{s.title}</Check>)}
-                <Check id="tunnel" done={settings.publicUrlConfigured}>Public URL for sandboxes (the tunnel)</Check>
+                {STEPS.map((s) => (
+                  <Check key={s.id} id={s.id} done={done[s.id]}>
+                    {s.title}
+                  </Check>
+                ))}
+                <Check id="tunnel" done={settings.publicUrlConfigured}>
+                  Public URL for sandboxes (the tunnel)
+                </Check>
               </ul>
               {!settings.publicUrlConfigured && (
                 <Alert role="status">
-                  <AlertDescription>No public URL is configured, so sandboxes cannot reach this machine. The desktop app sets it up; when running the server by hand, set <code>DORKS_PUBLIC_URL</code>.</AlertDescription>
+                  <AlertDescription>
+                    No public URL is configured, so sandboxes cannot reach this machine. The desktop app sets it up; when running the server by hand, set <code>DORKS_PUBLIC_URL</code>.
+                  </AlertDescription>
                 </Alert>
               )}
-              <p><Link to="/onboarding" className="font-medium underline underline-offset-4">Run the guided setup</Link></p>
+              <p>
+                <Link to="/onboarding" className="font-medium underline underline-offset-4">
+                  Run the guided setup
+                </Link>
+              </p>
             </section>
           </Group>
-          <Group title="Boat"><BoatForm settings={settings} /></Group>
-          <Group title="Base snapshot"><SnapshotForm settings={settings} /></Group>
-          <Group title="Claude Code"><ClaudeForm settings={settings} /></Group>
-          <Group title="GitHub"><GithubForm settings={settings} /></Group>
-          {isDesktop() && <Group title="Public URL"><PublicUrlForm settings={settings} /></Group>}
-          <Group title="PR comments"><CommentPolicyForm settings={settings} /></Group>
-          <Group title="ChatGPT for Codex (optional)"><CodexForm settings={settings} /></Group>
-          <Group title="Shared variables"><CliSecrets /></Group>
-          <Group title="Sleep after idle"><SleepMinutes current={settings.sleepMinutes} /></Group>
+          <Group title="Boat">
+            <BoatForm settings={settings} />
+          </Group>
+          <Group title="Base snapshot">
+            <SnapshotForm settings={settings} />
+          </Group>
+          <Group title="Claude Code">
+            <ClaudeForm settings={settings} />
+          </Group>
+          <Group title="GitHub">
+            <GithubForm settings={settings} />
+          </Group>
+          {isDesktop() && (
+            <Group title="Public URL">
+              <PublicUrlForm settings={settings} />
+            </Group>
+          )}
+          <Group title="PR comments">
+            <CommentPolicyForm settings={settings} />
+          </Group>
+          <Group title="ChatGPT for Codex (optional)">
+            <CodexForm settings={settings} />
+          </Group>
+          <Group title="Shared variables">
+            <CliSecrets />
+          </Group>
+          <Group title="Sleep after idle">
+            <SleepMinutes current={settings.sleepMinutes} />
+          </Group>
         </div>
       </div>
     </div>

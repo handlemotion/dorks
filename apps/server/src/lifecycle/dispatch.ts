@@ -61,7 +61,10 @@ const unackedMessages = (app: App, dorkId: string): CommandRow[] => openCommands
 export function machineCtx(app: App, dork: DorkRow) {
   const open = unackedMessages(app, dork.id);
   return {
-    state: dork.state, archived: dork.archived, hasBox: !!dork.boxId, queued: open.length > 0,
+    state: dork.state,
+    archived: dork.archived,
+    hasBox: !!dork.boxId,
+    queued: open.length > 0,
     notifyHeld: !open.some((c) => c.kind === "user_message") && open.some((c) => c.kind === "notify" && !c.released),
   };
 }

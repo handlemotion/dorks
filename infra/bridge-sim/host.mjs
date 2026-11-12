@@ -15,7 +15,9 @@ const { SIM_HOST_KEY } = process.env;
 if (!SIM_HOST_KEY) throw new Error("SIM_HOST_KEY is required");
 const uiUrl = (process.env.SIM_UI_URL || "http://127.0.0.1:4747").replace(/\/+$/, "");
 const bridgeUrl = process.env.SIM_BRIDGE_URL || "ws://127.0.0.1:4748/bridge";
-const dataDir = process.env.DORKS_DATA_DIR || (process.platform === "darwin" ? join(homedir(), "Library", "Application Support", "Dorks") : join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "dorks"));
+const dataDir =
+  process.env.DORKS_DATA_DIR ||
+  (process.platform === "darwin" ? join(homedir(), "Library", "Application Support", "Dorks") : join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "dorks"));
 const bridgeSecretKey = process.env.BRIDGE_SECRET_KEY || JSON.parse(readFileSync(join(dataDir, "secrets.json"), "utf8")).bridgeSecretKey;
 const sim = fileURLToPath(new URL("./sim-bridge.mjs", import.meta.url));
 const secretFor = (dorkId) => createHmac("sha256", bridgeSecretKey).update(`bridge|${dorkId}`).digest("hex");
@@ -25,11 +27,19 @@ const POLL_MS = Number(process.env.SIM_POLL_MS ?? 300);
 
 function reconcile(boxes) {
   const names = new Set(boxes.map((b) => b.name));
-  for (const [name, p] of procs) if (!names.has(name)) { p.child.kill("SIGKILL"); procs.delete(name); }
+  for (const [name, p] of procs)
+    if (!names.has(name)) {
+      p.child.kill("SIGKILL");
+      procs.delete(name);
+    }
   for (const b of boxes) {
     const cur = procs.get(b.name);
     if (cur && cur.gen === b.gen) continue;
-    if (cur) { cur.child.kill("SIGKILL"); procs.delete(b.name); console.log(`[host] ${b.name.slice(-6)} paused`); }
+    if (cur) {
+      cur.child.kill("SIGKILL");
+      procs.delete(b.name);
+      console.log(`[host] ${b.name.slice(-6)} paused`);
+    }
     if (!b.running) continue;
     console.log(`[host] ${b.name.slice(-6)} running (gen ${b.gen})`);
     const child = real
@@ -51,5 +61,11 @@ setInterval(async () => {
     warned = true;
   }
 }, POLL_MS);
-process.on("SIGINT", () => { for (const p of procs.values()) p.child.kill("SIGKILL"); process.exit(0); });
-process.on("SIGTERM", () => { for (const p of procs.values()) p.child.kill("SIGKILL"); process.exit(0); });
+process.on("SIGINT", () => {
+  for (const p of procs.values()) p.child.kill("SIGKILL");
+  process.exit(0);
+});
+process.on("SIGTERM", () => {
+  for (const p of procs.values()) p.child.kill("SIGKILL");
+  process.exit(0);
+});

@@ -16,8 +16,17 @@ import { makeAssets, type SnapshotAssets } from "../src/snapshot/assets";
 export const NOW = 1_700_000_000_000;
 
 export const testConfig = (over: Partial<Config> = {}): Config => ({
-  dataDir: "/nonexistent", uiPort: 0, bridgePort: 0, publicUrl: "https://dorks.example", ownerToken: "owner-token-for-tests", bridgeSecretKey: "test-bridge-key",
-  encryptionKey: Buffer.alloc(32, 7).toString("base64"), boxProvider: "boat", uiOrigins: ["http://localhost:3000"], baseSnapshotId: "snap-1", ...over,
+  dataDir: "/nonexistent",
+  uiPort: 0,
+  bridgePort: 0,
+  publicUrl: "https://dorks.example",
+  ownerToken: "owner-token-for-tests",
+  bridgeSecretKey: "test-bridge-key",
+  encryptionKey: Buffer.alloc(32, 7).toString("base64"),
+  boxProvider: "boat",
+  uiOrigins: ["http://localhost:3000"],
+  baseSnapshotId: "snap-1",
+  ...over,
 });
 
 export interface FakeBox extends BoxProvider {
@@ -31,7 +40,12 @@ export interface FakeBox extends BoxProvider {
 
 export function fakeBox(): FakeBox {
   const box: FakeBox = {
-    calls: [], failResumes: 0, failPauses: 0, failCreates: 0, missing: new Set(), created: [],
+    calls: [],
+    failResumes: 0,
+    failPauses: 0,
+    failCreates: 0,
+    missing: new Set(),
+    created: [],
     async createFromSnapshot(_s, o) {
       box.calls.push("create");
       if (box.failCreates-- > 0) throw new Error("create down");
@@ -91,9 +105,24 @@ export interface FakeSnapshotDriver extends SnapshotDriver {
 export function fakeSnapshotDriver(): FakeSnapshotDriver {
   let n = 0;
   const d: FakeSnapshotDriver = {
-    calls: [], boxes: new Map(), files: new Map(), commands: [], saved: new Map(), installExit: 0, installStderr: "", installTimedOut: false,
-    failNext: new Map(), savingPolls: 0, saveResult: "ready", deleteFails: false,
-    setupExit: 0, setupOutput: "", scanHits: "", created: [], killed: [], deletedSnapshots: [],
+    calls: [],
+    boxes: new Map(),
+    files: new Map(),
+    commands: [],
+    saved: new Map(),
+    installExit: 0,
+    installStderr: "",
+    installTimedOut: false,
+    failNext: new Map(),
+    savingPolls: 0,
+    saveResult: "ready",
+    deleteFails: false,
+    setupExit: 0,
+    setupOutput: "",
+    scanHits: "",
+    created: [],
+    killed: [],
+    deletedSnapshots: [],
     maybeFail(op) {
       const e = d.failNext.get(op);
       if (e) {
@@ -201,24 +230,52 @@ export function harness(opts: { fetch?: typeof fetch; config?: Partial<Config> }
   const snapshotDriver = fakeSnapshotDriver();
   const assets = { current: testAssets() };
   const app: App = createApp(testConfig(opts.config), {
-    db: new Db(), now: () => clock.t, fetch: opts.fetch ?? offline, getBox: async () => box,
-    getSnapshotDriver: async () => snapshotDriver, snapshotAssets: async () => assets.current, sleep: async () => {},
+    db: new Db(),
+    now: () => clock.t,
+    fetch: opts.fetch ?? offline,
+    getBox: async () => box,
+    getSnapshotDriver: async () => snapshotDriver,
+    snapshotAssets: async () => assets.current,
+    sleep: async () => {},
   });
   const scheduler = new Scheduler(app);
   const db = app.db;
 
   const h = {
-    app, box, clock, scheduler, snapshotDriver, assets,
+    app,
+    box,
+    clock,
+    scheduler,
+    snapshotDriver,
+    assets,
     /** A dork row plus its runtime, directly. */
-    seed(state: DorkState, o: { boxId?: string | null; archived?: boolean; bridgeSeenAt?: number; bridgeLost?: boolean; bridgeSeq?: number; opGen?: number; provider?: "claude" | "codex"; repo?: string } = {}) {
+    seed(
+      state: DorkState,
+      o: { boxId?: string | null; archived?: boolean; bridgeSeenAt?: number; bridgeLost?: boolean; bridgeSeq?: number; opGen?: number; provider?: "claude" | "codex"; repo?: string } = {},
+    ) {
       const id = app.uuid();
       insert(db, "dorks", {
-        id, title: "t", repo: o.repo ?? "o/r", branch: "agent/x", provider: o.provider ?? "claude", state, archived: o.archived ?? false,
-        boxId: o.boxId === undefined ? "box-1" : (o.boxId ?? undefined), deleting: false, lastActivityAt: 1, createdAt: 1,
+        id,
+        title: "t",
+        repo: o.repo ?? "o/r",
+        branch: "agent/x",
+        provider: o.provider ?? "claude",
+        state,
+        archived: o.archived ?? false,
+        boxId: o.boxId === undefined ? "box-1" : (o.boxId ?? undefined),
+        deleting: false,
+        lastActivityAt: 1,
+        createdAt: 1,
       });
       insert(db, "dork_runtime", {
-        dorkId: id, bridgeSeq: o.bridgeSeq ?? 0, streamMsgId: "", sleepMinutes: 5, bridgeSeenAt: o.bridgeSeenAt ?? clock.t, bridgeLost: o.bridgeLost ?? false,
-        opGen: o.opGen ?? 0, pauseRetries: 0,
+        dorkId: id,
+        bridgeSeq: o.bridgeSeq ?? 0,
+        streamMsgId: "",
+        sleepMinutes: 5,
+        bridgeSeenAt: o.bridgeSeenAt ?? clock.t,
+        bridgeLost: o.bridgeLost ?? false,
+        opGen: o.opGen ?? 0,
+        pauseRetries: 0,
       });
       return id;
     },
@@ -226,7 +283,10 @@ export function harness(opts: { fetch?: typeof fetch; config?: Partial<Config> }
     state: (id: string) => getDork(db, id)!.state,
     rt: (id: string) => runtimeOf(db, id),
     cmds: (id: string) => openCommands(db, id),
-    kinds: (id: string) => openCommands(db, id).map((c) => c.kind).sort(),
+    kinds: (id: string) =>
+      openCommands(db, id)
+        .map((c) => c.kind)
+        .sort(),
     events: (id: string) => db.all("SELECT seq, body FROM events WHERE dork_id = ? ORDER BY seq", id).map((r) => ({ seq: r.seq as number, body: JSON.parse(r.body as string) as ClientEvent })),
     hasTimer: (id: string, name: string) => hasTimer(app, id, name),
     input: (id: string, i: Parameters<typeof dispatch>[2]) => db.tx(() => dispatch(app, id, i)),
@@ -268,4 +328,3 @@ export function harness(opts: { fetch?: typeof fetch; config?: Partial<Config> }
 export type Harness = ReturnType<typeof harness>;
 
 export const ev = (bseq: number) => ({ t: "event", bseq, raw: { type: "assistant", message: { id: `m${bseq}`, content: [{ type: "text", text: `t${bseq}` }] } } });
-

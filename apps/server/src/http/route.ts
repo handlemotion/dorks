@@ -19,8 +19,23 @@ export class ApiError extends Data.TaggedError("ApiError")<{ readonly error: App
 }
 
 export const STATUS: Record<AppErrorCode, number> = {
-  invalid: 400, not_found: 404, forbidden: 401, limit: 429, rate_limited: 429, archived: 409, deleting: 409, conflict: 409, sleeping: 409,
-  onboarding_incomplete: 412, not_configured: 412, too_many_frames: 413, event_too_large: 413, github_error: 502, timeout: 504, turn_failed: 500, failed: 500,
+  invalid: 400,
+  not_found: 404,
+  forbidden: 401,
+  limit: 429,
+  rate_limited: 429,
+  archived: 409,
+  deleting: 409,
+  conflict: 409,
+  sleeping: 409,
+  onboarding_incomplete: 412,
+  not_configured: 412,
+  too_many_frames: 413,
+  event_too_large: 413,
+  github_error: 502,
+  timeout: 504,
+  turn_failed: 500,
+  failed: 500,
 };
 
 export const errBody = (error: AppError) => ({ error });
@@ -61,11 +76,7 @@ const readObject = (c: HonoContext) =>
  * own description of the problem), so the services only ever see well-formed input.
  */
 export const body = <S extends Schema.Constraint & { readonly DecodingServices: never }>(c: HonoContext, schema: S, message?: string) =>
-  readObject(c).pipe(
-    Effect.flatMap((value) =>
-      Schema.decodeUnknownEffect(schema)(value).pipe(Effect.mapError((e) => ApiError.of("invalid", message ?? e.message.split("\n")[0].slice(0, 200)))),
-    ),
-  );
+  readObject(c).pipe(Effect.flatMap((value) => Schema.decodeUnknownEffect(schema)(value).pipe(Effect.mapError((e) => ApiError.of("invalid", message ?? e.message.split("\n")[0].slice(0, 200))))));
 
 /** The untyped body, for services that validate their own input (settings, builds). */
 export const looseBody = readObject;
@@ -82,13 +93,15 @@ export const intQuery = (c: HonoContext, name: string): Effect.Effect<number | u
  * A Hono handler from an Effect program. `ApiError` becomes its status and `{ error }` body; a defect is rethrown for Hono's
  * onError, which logs it without the request's content.
  */
-export const route = (app: App, f: (c: HonoContext) => Effect.Effect<Response, ApiError, AppEnv>): Handler => (c) =>
-  Effect.runPromise(
-    f(c).pipe(
-      Effect.catchTag("ApiError", ({ error }) => Effect.succeed(c.json(errBody(error), STATUS[error.code] as 400))),
-      Effect.provideService(AppEnv, app),
-    ),
-  );
+export const route =
+  (app: App, f: (c: HonoContext) => Effect.Effect<Response, ApiError, AppEnv>): Handler =>
+  (c) =>
+    Effect.runPromise(
+      f(c).pipe(
+        Effect.catchTag("ApiError", ({ error }) => Effect.succeed(c.json(errBody(error), STATUS[error.code] as 400))),
+        Effect.provideService(AppEnv, app),
+      ),
+    );
 
 /** `{}` with 200: the answer of every command that returns nothing. */
 export const ok = (c: HonoContext) => (effect: Effect.Effect<unknown, ApiError, AppEnv>) => effect.pipe(Effect.as(c.json({})));

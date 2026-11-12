@@ -45,7 +45,15 @@ export function uiApp(app: App): Hono {
   const api = new Hono();
   const on = (f: Parameters<typeof route>[1]) => route(app, f);
 
-  api.use("*", cors({ origin: (origin) => (app.cfg.uiOrigins.includes(origin) ? origin : null), allowHeaders: ["Authorization", "Content-Type"], allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], maxAge: 600 }));
+  api.use(
+    "*",
+    cors({
+      origin: (origin) => (app.cfg.uiOrigins.includes(origin) ? origin : null),
+      allowHeaders: ["Authorization", "Content-Type"],
+      allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      maxAge: 600,
+    }),
+  );
 
   api.get("/api/health", (c) => c.json({ ok: true }));
 
@@ -86,118 +94,333 @@ export function uiApp(app: App): Hono {
   const name = (c: Context) => c.req.param("name") as string;
 
   // ---- images: an attachment for a message the owner is writing (raw bytes in the body). The message names it as dorks-image:<id>.
-  api.post("/api/images", on((c) => Effect.gen(function* () {
-    if (Number(c.req.header("content-length") ?? 0) > MAX_IMAGE_BYTES) return yield* ApiError.of("invalid", "the image is larger than 8 MB");
-    const bytes = new Uint8Array(yield* Effect.promise(() => c.req.arrayBuffer()));
-    return c.json(yield* service((a) => uploadImage(a, bytes)), 201);
-  })));
+  api.post(
+    "/api/images",
+    on((c) =>
+      Effect.gen(function* () {
+        if (Number(c.req.header("content-length") ?? 0) > MAX_IMAGE_BYTES) return yield* ApiError.of("invalid", "the image is larger than 8 MB");
+        const bytes = new Uint8Array(yield* Effect.promise(() => c.req.arrayBuffer()));
+        return c.json(yield* service((a) => uploadImage(a, bytes)), 201);
+      }),
+    ),
+  );
 
   // ---- dorks
-  api.get("/api/dorks", on((c) => service((a) => c.json(listDorks(a, c.req.query("archived") === "true")))));
-  api.post("/api/dorks", on((c) => Effect.gen(function* () {
-    const b = yield* body(c, CreateDork);
-    const dorkId = yield* service((a) => createDork(a, { repo: b.repo as string | undefined, message: str(b.message), title: b.title as string | undefined, provider: b.provider as never, model: b.model, effort: b.effort, buildId: b.buildId, setup: b.setup }));
-    return c.json({ id: dorkId }, 201);
-  })));
-  api.get("/api/dorks/:id", on((c) => service((a) => getDorkView(a, id(c))).pipe(
-    Effect.flatMap((d) => (d ? Effect.succeed(c.json(d)) : Effect.fail(ApiError.of("not_found", "not found")))),
-  )));
-  api.patch("/api/dorks/:id", on((c) => body(c, Title).pipe(Effect.flatMap((b) => service((a) => renameDork(a, id(c), str(b.title)))), ok(c))));
-  api.delete("/api/dorks/:id", on((c) => ok(c)(service((a) => removeDork(a, id(c))))));
-  api.post("/api/dorks/:id/messages", on((c) => body(c, Text).pipe(Effect.flatMap((b) => service((a) => sendMessage(a, id(c), str(b.text)))), ok(c))));
-  api.post("/api/dorks/:id/interrupt", on((c) => ok(c)(service((a) => interrupt(a, id(c))))));
-  api.post("/api/dorks/:id/desktop", on((c) => Effect.gen(function* () {
-    const b = yield* body(c, Theme);
-    const url = yield* serviceAsync((a) => desktopUrl(a, id(c), { theme: b.theme === "dark" ? "dark" : "light" }));
-    c.header("Cache-Control", "no-store");
-    return c.json({ url });
-  })));
-  api.post("/api/dorks/:id/archive", on((c) => body(c, Archived, "archived must be a boolean").pipe(Effect.flatMap((b) => service((a) => setArchived(a, id(c), b.archived))), ok(c))));
-  api.post("/api/dorks/:id/model", on((c) => body(c, ModelChoice).pipe(Effect.flatMap((b) => service((a) => chooseModel(a, id(c), b.model, b.effort))), ok(c))));
-  api.post("/api/dorks/:id/codex-model", on((c) => body(c, ModelChoice).pipe(Effect.flatMap((b) => service((a) => chooseCodexModel(a, id(c), str(b.model), str(b.effort)))), ok(c))));
-  api.get("/api/dorks/:id/events", on((c) => Effect.gen(function* () {
-    const q = { before: yield* intQuery(c, "before"), after: yield* intQuery(c, "after"), limit: yield* intQuery(c, "limit") };
-    return c.json(yield* service((a) => listEvents(a, id(c), q)));
-  })));
+  api.get(
+    "/api/dorks",
+    on((c) => service((a) => c.json(listDorks(a, c.req.query("archived") === "true")))),
+  );
+  api.post(
+    "/api/dorks",
+    on((c) =>
+      Effect.gen(function* () {
+        const b = yield* body(c, CreateDork);
+        const dorkId = yield* service((a) =>
+          createDork(a, {
+            repo: b.repo as string | undefined,
+            message: str(b.message),
+            title: b.title as string | undefined,
+            provider: b.provider as never,
+            model: b.model,
+            effort: b.effort,
+            buildId: b.buildId,
+            setup: b.setup,
+          }),
+        );
+        return c.json({ id: dorkId }, 201);
+      }),
+    ),
+  );
+  api.get(
+    "/api/dorks/:id",
+    on((c) => service((a) => getDorkView(a, id(c))).pipe(Effect.flatMap((d) => (d ? Effect.succeed(c.json(d)) : Effect.fail(ApiError.of("not_found", "not found")))))),
+  );
+  api.patch(
+    "/api/dorks/:id",
+    on((c) =>
+      body(c, Title).pipe(
+        Effect.flatMap((b) => service((a) => renameDork(a, id(c), str(b.title)))),
+        ok(c),
+      ),
+    ),
+  );
+  api.delete(
+    "/api/dorks/:id",
+    on((c) => ok(c)(service((a) => removeDork(a, id(c))))),
+  );
+  api.post(
+    "/api/dorks/:id/messages",
+    on((c) =>
+      body(c, Text).pipe(
+        Effect.flatMap((b) => service((a) => sendMessage(a, id(c), str(b.text)))),
+        ok(c),
+      ),
+    ),
+  );
+  api.post(
+    "/api/dorks/:id/interrupt",
+    on((c) => ok(c)(service((a) => interrupt(a, id(c))))),
+  );
+  api.post(
+    "/api/dorks/:id/desktop",
+    on((c) =>
+      Effect.gen(function* () {
+        const b = yield* body(c, Theme);
+        const url = yield* serviceAsync((a) => desktopUrl(a, id(c), { theme: b.theme === "dark" ? "dark" : "light" }));
+        c.header("Cache-Control", "no-store");
+        return c.json({ url });
+      }),
+    ),
+  );
+  api.post(
+    "/api/dorks/:id/archive",
+    on((c) =>
+      body(c, Archived, "archived must be a boolean").pipe(
+        Effect.flatMap((b) => service((a) => setArchived(a, id(c), b.archived))),
+        ok(c),
+      ),
+    ),
+  );
+  api.post(
+    "/api/dorks/:id/model",
+    on((c) =>
+      body(c, ModelChoice).pipe(
+        Effect.flatMap((b) => service((a) => chooseModel(a, id(c), b.model, b.effort))),
+        ok(c),
+      ),
+    ),
+  );
+  api.post(
+    "/api/dorks/:id/codex-model",
+    on((c) =>
+      body(c, ModelChoice).pipe(
+        Effect.flatMap((b) => service((a) => chooseCodexModel(a, id(c), str(b.model), str(b.effort)))),
+        ok(c),
+      ),
+    ),
+  );
+  api.get(
+    "/api/dorks/:id/events",
+    on((c) =>
+      Effect.gen(function* () {
+        const q = { before: yield* intQuery(c, "before"), after: yield* intQuery(c, "after"), limit: yield* intQuery(c, "limit") };
+        return c.json(yield* service((a) => listEvents(a, id(c), q)));
+      }),
+    ),
+  );
 
   // ---- PR subscriptions
   const pr = (c: Context) => body(c, Pr, "repo and number are required");
-  api.get("/api/dorks/:id/subscriptions", on((c) => service((a) => c.json(getDorkView(a, id(c)) ? subs.liveSubscriptionViews(a, id(c)) : []))));
-  api.post("/api/dorks/:id/subscriptions", on((c) => pr(c).pipe(
-    Effect.flatMap(({ repo, number }) => service((a) => a.db.tx(() => void subs.subscribe(a, owned(a, id(c)), repo, number, "user")))),
-    ok(c),
-  )));
-  api.delete("/api/dorks/:id/subscriptions", on((c) => pr(c).pipe(
-    Effect.flatMap(({ repo, number }) => service((a) => a.db.tx(() => {
-      owned(a, id(c));
-      subs.unsubscribe(a, id(c), repo, number);
-    }))),
-    ok(c),
-  )));
-  api.post("/api/dorks/:id/subscriptions/resume", on((c) => pr(c).pipe(
-    Effect.flatMap(({ repo, number }) => service((a) => a.db.tx(() => subs.resume(a, owned(a, id(c)), repo, number)))),
-    ok(c),
-  )));
+  api.get(
+    "/api/dorks/:id/subscriptions",
+    on((c) => service((a) => c.json(getDorkView(a, id(c)) ? subs.liveSubscriptionViews(a, id(c)) : []))),
+  );
+  api.post(
+    "/api/dorks/:id/subscriptions",
+    on((c) =>
+      pr(c).pipe(
+        Effect.flatMap(({ repo, number }) => service((a) => a.db.tx(() => void subs.subscribe(a, owned(a, id(c)), repo, number, "user")))),
+        ok(c),
+      ),
+    ),
+  );
+  api.delete(
+    "/api/dorks/:id/subscriptions",
+    on((c) =>
+      pr(c).pipe(
+        Effect.flatMap(({ repo, number }) =>
+          service((a) =>
+            a.db.tx(() => {
+              owned(a, id(c));
+              subs.unsubscribe(a, id(c), repo, number);
+            }),
+          ),
+        ),
+        ok(c),
+      ),
+    ),
+  );
+  api.post(
+    "/api/dorks/:id/subscriptions/resume",
+    on((c) =>
+      pr(c).pipe(
+        Effect.flatMap(({ repo, number }) => service((a) => a.db.tx(() => subs.resume(a, owned(a, id(c)), repo, number)))),
+        ok(c),
+      ),
+    ),
+  );
 
   // ---- settings and secrets
-  api.get("/api/settings", on((c) => service((a) => c.json(settingsView(a)))));
-  api.put("/api/settings", on((c) => Effect.gen(function* () {
-    const patch = yield* looseBody(c);
-    // Provider values are checked here, by the server, before anything is saved (GitHub's is checked inside updateSettings).
-    yield* serviceAsync((a) => assertBoatAccepts(a, patch));
-    yield* serviceAsync((a) => assertCodexEnvironment(a, patch));
-    yield* serviceAsync((a) => updateSettings(a, patch));
-    yield* service((a) => {
-      if ("claudeToken" in patch || "boatKey" in patch || "boatOrg" in patch) forgetUsage(a);
-      console.error(`settings saved: ${Object.keys(patch).sort().join(", ")}`); // names only, never values
-      // A new Boat key starts the base-snapshot build in the background (onboarding has no "Prepare Boat" step), or retries a failed one.
-      if (typeof patch.boatKey === "string" && patch.boatKey.trim()) buildIfMissing(a, { retryFailed: true });
-    });
-    return c.json({});
-  })));
-  api.get("/api/secrets", on((c) => service((a) => c.json(secretNames(a)))));
-  api.put("/api/secrets/:name", on((c) => body(c, SecretValue).pipe(Effect.flatMap((b) => serviceAsync((a) => setSecret(a, name(c), str(b.value)))), ok(c))));
-  api.delete("/api/secrets/:name", on((c) => ok(c)(service((a) => deleteSecret(a, name(c))))));
+  api.get(
+    "/api/settings",
+    on((c) => service((a) => c.json(settingsView(a)))),
+  );
+  api.put(
+    "/api/settings",
+    on((c) =>
+      Effect.gen(function* () {
+        const patch = yield* looseBody(c);
+        // Provider values are checked here, by the server, before anything is saved (GitHub's is checked inside updateSettings).
+        yield* serviceAsync((a) => assertBoatAccepts(a, patch));
+        yield* serviceAsync((a) => assertCodexEnvironment(a, patch));
+        yield* serviceAsync((a) => updateSettings(a, patch));
+        yield* service((a) => {
+          if ("claudeToken" in patch || "boatKey" in patch || "boatOrg" in patch) forgetUsage(a);
+          console.error(`settings saved: ${Object.keys(patch).sort().join(", ")}`); // names only, never values
+          // A new Boat key starts the base-snapshot build in the background (onboarding has no "Prepare Boat" step), or retries a failed one.
+          if (typeof patch.boatKey === "string" && patch.boatKey.trim()) buildIfMissing(a, { retryFailed: true });
+        });
+        return c.json({});
+      }),
+    ),
+  );
+  api.get(
+    "/api/secrets",
+    on((c) => service((a) => c.json(secretNames(a)))),
+  );
+  api.put(
+    "/api/secrets/:name",
+    on((c) =>
+      body(c, SecretValue).pipe(
+        Effect.flatMap((b) => serviceAsync((a) => setSecret(a, name(c), str(b.value)))),
+        ok(c),
+      ),
+    ),
+  );
+  api.delete(
+    "/api/secrets/:name",
+    on((c) => ok(c)(service((a) => deleteSecret(a, name(c))))),
+  );
 
   // ---- usage of the Claude subscription and Boat plan (services/usage.ts), cached for five minutes
-  api.get("/api/usage", on((c) => serviceAsync(getUsage).pipe(Effect.map((u) => c.json(u)))));
+  api.get(
+    "/api/usage",
+    on((c) => serviceAsync(getUsage).pipe(Effect.map((u) => c.json(u)))),
+  );
 
   // ---- Boat key check (nothing is saved)
-  api.post("/api/boat/check", on((c) => looseBody(c).pipe(Effect.flatMap((b) => serviceAsync((a) => checkBoat(a, b))), Effect.map((r) => c.json(r)))));
+  api.post(
+    "/api/boat/check",
+    on((c) =>
+      looseBody(c).pipe(
+        Effect.flatMap((b) => serviceAsync((a) => checkBoat(a, b))),
+        Effect.map((r) => c.json(r)),
+      ),
+    ),
+  );
 
   // ---- base snapshot ("Prepare Boat")
-  api.get("/api/snapshot", on((c) => serviceAsync(snapshotView).pipe(Effect.map((v) => c.json(v)))));
-  api.post("/api/snapshot/build", on((c) => body(c, Force, "force must be a boolean").pipe(
-    Effect.flatMap((b) => serviceAsync((a) => startBuild(a, { force: b.force === true }))),
-    Effect.map((v) => c.json(v, 202)),
-  )));
+  api.get(
+    "/api/snapshot",
+    on((c) => serviceAsync(snapshotView).pipe(Effect.map((v) => c.json(v)))),
+  );
+  api.post(
+    "/api/snapshot/build",
+    on((c) =>
+      body(c, Force, "force must be a boolean").pipe(
+        Effect.flatMap((b) => serviceAsync((a) => startBuild(a, { force: b.force === true }))),
+        Effect.map((v) => c.json(v, 202)),
+      ),
+    ),
+  );
 
   // ---- builds (docs/builds.md)
   const runId = (c: Context) => c.req.param("runId") as string;
   const draftId = (c: Context) => c.req.param("draftId") as string;
-  api.get("/api/builds", on((c) => serviceAsync(builds.listBuilds).pipe(Effect.map((v) => c.json(v)))));
-  api.post("/api/builds", on((c) => looseBody(c).pipe(Effect.flatMap((b) => service((a) => builds.createBuild(a, b))), Effect.map((buildId) => c.json({ id: buildId }, 201)))));
-  api.get("/api/builds/:id", on((c) => serviceAsync((a) => builds.buildView(a, builds.ownBuild(a, id(c)))).pipe(Effect.map((v) => c.json(v)))));
-  api.patch("/api/builds/:id", on((c) => looseBody(c).pipe(Effect.flatMap((b) => service((a) => builds.updateBuild(a, id(c), b))), ok(c))));
-  api.delete("/api/builds/:id", on((c) => ok(c)(service((a) => builds.deleteBuild(a, id(c))))));
-  api.put("/api/builds/:id/default", on((c) => body(c, Default).pipe(Effect.flatMap((b) => service((a) => builds.setDefaultBuild(a, b.default === false ? null : id(c)))), ok(c))));
-  api.put("/api/builds/:id/vars/:name", on((c) => looseBody(c).pipe(Effect.flatMap((b) => serviceAsync((a) => builds.setBuildVar(a, id(c), name(c), b))), ok(c))));
-  api.delete("/api/builds/:id/vars/:name", on((c) => ok(c)(service((a) => builds.deleteBuildVar(a, id(c), name(c))))));
-  api.get("/api/builds/:id/runs", on((c) => service((a) => c.json(builds.listRuns(a, id(c))))));
-  api.post("/api/builds/:id/runs", on((c) => body(c, RunKind, "kind must be image or trial").pipe(
-    Effect.flatMap(({ kind }) => service((a) => runs.startRun(a, id(c), { kind, by: "owner" }))),
-    Effect.map((run) => c.json(run, 202)),
-  )));
-  api.get("/api/builds/:id/runs/:runId/log", on((c) => intQuery(c, "after").pipe(Effect.flatMap((after) => service((a) => c.json(runs.runLog(a, id(c), runId(c), after ?? 0)))))));
-  api.post("/api/builds/:id/runs/:runId/cancel", on((c) => ok(c)(service((a) => runs.cancelRun(a, id(c), runId(c))))));
-  api.post("/api/builds/:id/drafts/:draftId/approve", on((c) => Effect.gen(function* () {
-    const b = yield* body(c, Approve);
-    const { missing } = yield* serviceAsync((a) => builds.approveDraft(a, id(c), draftId(c), b.reviewed));
-    // Build right away unless the owner said not to, or a value the setup needs is still missing (the owner fills it in, then builds).
-    const run = b.run !== false && !missing.length ? yield* service((a) => runs.startRun(a, id(c), { kind: "image", by: "owner" })) : null;
-    return c.json({ run, missing });
-  })));
-  api.post("/api/builds/:id/drafts/:draftId/reject", on((c) => body(c, Reject).pipe(Effect.flatMap((b) => service((a) => builds.rejectDraft(a, id(c), draftId(c), b.reason))), ok(c))));
+  api.get(
+    "/api/builds",
+    on((c) => serviceAsync(builds.listBuilds).pipe(Effect.map((v) => c.json(v)))),
+  );
+  api.post(
+    "/api/builds",
+    on((c) =>
+      looseBody(c).pipe(
+        Effect.flatMap((b) => service((a) => builds.createBuild(a, b))),
+        Effect.map((buildId) => c.json({ id: buildId }, 201)),
+      ),
+    ),
+  );
+  api.get(
+    "/api/builds/:id",
+    on((c) => serviceAsync((a) => builds.buildView(a, builds.ownBuild(a, id(c)))).pipe(Effect.map((v) => c.json(v)))),
+  );
+  api.patch(
+    "/api/builds/:id",
+    on((c) =>
+      looseBody(c).pipe(
+        Effect.flatMap((b) => service((a) => builds.updateBuild(a, id(c), b))),
+        ok(c),
+      ),
+    ),
+  );
+  api.delete(
+    "/api/builds/:id",
+    on((c) => ok(c)(service((a) => builds.deleteBuild(a, id(c))))),
+  );
+  api.put(
+    "/api/builds/:id/default",
+    on((c) =>
+      body(c, Default).pipe(
+        Effect.flatMap((b) => service((a) => builds.setDefaultBuild(a, b.default === false ? null : id(c)))),
+        ok(c),
+      ),
+    ),
+  );
+  api.put(
+    "/api/builds/:id/vars/:name",
+    on((c) =>
+      looseBody(c).pipe(
+        Effect.flatMap((b) => serviceAsync((a) => builds.setBuildVar(a, id(c), name(c), b))),
+        ok(c),
+      ),
+    ),
+  );
+  api.delete(
+    "/api/builds/:id/vars/:name",
+    on((c) => ok(c)(service((a) => builds.deleteBuildVar(a, id(c), name(c))))),
+  );
+  api.get(
+    "/api/builds/:id/runs",
+    on((c) => service((a) => c.json(builds.listRuns(a, id(c))))),
+  );
+  api.post(
+    "/api/builds/:id/runs",
+    on((c) =>
+      body(c, RunKind, "kind must be image or trial").pipe(
+        Effect.flatMap(({ kind }) => service((a) => runs.startRun(a, id(c), { kind, by: "owner" }))),
+        Effect.map((run) => c.json(run, 202)),
+      ),
+    ),
+  );
+  api.get(
+    "/api/builds/:id/runs/:runId/log",
+    on((c) => intQuery(c, "after").pipe(Effect.flatMap((after) => service((a) => c.json(runs.runLog(a, id(c), runId(c), after ?? 0)))))),
+  );
+  api.post(
+    "/api/builds/:id/runs/:runId/cancel",
+    on((c) => ok(c)(service((a) => runs.cancelRun(a, id(c), runId(c))))),
+  );
+  api.post(
+    "/api/builds/:id/drafts/:draftId/approve",
+    on((c) =>
+      Effect.gen(function* () {
+        const b = yield* body(c, Approve);
+        const { missing } = yield* serviceAsync((a) => builds.approveDraft(a, id(c), draftId(c), b.reviewed));
+        // Build right away unless the owner said not to, or a value the setup needs is still missing (the owner fills it in, then builds).
+        const run = b.run !== false && !missing.length ? yield* service((a) => runs.startRun(a, id(c), { kind: "image", by: "owner" })) : null;
+        return c.json({ run, missing });
+      }),
+    ),
+  );
+  api.post(
+    "/api/builds/:id/drafts/:draftId/reject",
+    on((c) =>
+      body(c, Reject).pipe(
+        Effect.flatMap((b) => service((a) => builds.rejectDraft(a, id(c), draftId(c), b.reason))),
+        ok(c),
+      ),
+    ),
+  );
 
   // ---- live updates (Server-Sent Events): invalidations, not payloads
   api.get("/api/live", (c) =>

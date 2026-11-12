@@ -46,7 +46,11 @@ export class Outbox {
   private waiters: (() => void)[] = [];
   private readonly o: Required<Omit<OutboxOptions, "onFatal" | "onRenumbered" | "onBackendAhead">> & Pick<OutboxOptions, "onFatal" | "onRenumbered" | "onBackendAhead">;
 
-  constructor(private transport: Transport, private log: Log, opts: OutboxOptions) {
+  constructor(
+    private transport: Transport,
+    private log: Log,
+    opts: OutboxOptions,
+  ) {
     this.o = { maxFrames: 100, maxBytes: 512 * 1024, retainEvents: 2000, backoffBaseMs: 500, backoffCapMs: 30_000, rand: Math.random, maxEventBytes: 200 * 1024, ...opts };
   }
 

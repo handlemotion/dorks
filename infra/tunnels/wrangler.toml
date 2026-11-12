@@ -1,8 +1,0 @@
-# Not deployed yet. Before the first deploy: pick the route (the desktop shell's default is DEFAULT_TUNNEL_SERVICE in
-# apps/desktop/src-tauri/crates/shell-core/src/contract.rs), then `wrangler secret put WURMHOL_KEY` and `TICKET_KEY`.
-name = "dorks-tunnels"
-main = "src/worker.ts"
-compatibility_date = "2026-10-01"
-
-[vars]
-# TENANT_MONTHLY_REQUESTS = "2000000"

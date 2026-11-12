@@ -67,7 +67,9 @@ export class Db {
   }
 
   all<T = Row>(sql: string, ...params: Param[]): T[] {
-    return this.stmt(sql).all(...params).map((r) => ({ ...(r as object) }) as T);
+    return this.stmt(sql)
+      .all(...params)
+      .map((r) => ({ ...(r as object) }) as T);
   }
 
   /** Runs `fn` in one transaction (BEGIN IMMEDIATE: single writer). Nested calls become savepoints. A throw rolls back. */
@@ -120,11 +122,7 @@ export function update(db: Db, table: string, where: Record<string, Param>, patc
   const keys = Object.keys(patch);
   if (!keys.length) return;
   const wk = Object.keys(where);
-  db.run(
-    `UPDATE ${table} SET ${keys.map((k) => `${snake(k)} = ?`).join(", ")} WHERE ${wk.map((k) => `${snake(k)} = ?`).join(" AND ")}`,
-    ...keys.map((k) => enc(patch[k])),
-    ...wk.map((k) => where[k]),
-  );
+  db.run(`UPDATE ${table} SET ${keys.map((k) => `${snake(k)} = ?`).join(", ")} WHERE ${wk.map((k) => `${snake(k)} = ?`).join(" AND ")}`, ...keys.map((k) => enc(patch[k])), ...wk.map((k) => where[k]));
 }
 
 /** `INSERT INTO table (...)` from camelCase keys. */

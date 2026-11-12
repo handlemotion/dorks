@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { insert, update } from "../src/db";
 import { enqueueNotification, NOTIFY_DEBOUNCE_MS } from "../src/services/notify";
 import { unsubscribe } from "../src/services/subscriptions";
@@ -11,8 +11,21 @@ const setup = () => {
   let bseq = 0;
   const subscribeTo = (dorkId: string, number = 12, over: { ciFixAttempts?: number } = {}) => {
     insert(h.app.db, "pr_subscriptions", {
-      dorkId, repo: "octo/hello", number, url: `https://github.com/octo/hello/pull/${number}`, title: "Add thing", headRef: "agent/x", baseRef: "main",
-      source: "agent", status: "active", ci: "unknown", review: "none", mergeable: null, ciFixAttempts: over.ciFixAttempts ?? 0, state: "open", lastEventAt: 1,
+      dorkId,
+      repo: "octo/hello",
+      number,
+      url: `https://github.com/octo/hello/pull/${number}`,
+      title: "Add thing",
+      headRef: "agent/x",
+      baseRef: "main",
+      source: "agent",
+      status: "active",
+      ci: "unknown",
+      review: "none",
+      mergeable: null,
+      ciFixAttempts: over.ciFixAttempts ?? 0,
+      state: "open",
+      lastEventAt: 1,
     });
     return h.app.db.get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id;
   };
@@ -38,7 +51,10 @@ describe("debounce and coalesce", () => {
     expect(s.dueAt(id, "notify")! - NOW).toBe(NOTIFY_DEBOUNCE_MS);
     expect(NOTIFY_DEBOUNCE_MS).toBe(45_000);
     expect(s.h.app.db.all("SELECT 1 FROM timers WHERE owner = ? AND name = 'notify'", id)).toHaveLength(1);
-    expect(s.inbox(id)).toEqual([["comment", false], ["ci_failed", false]]);
+    expect(s.inbox(id)).toEqual([
+      ["comment", false],
+      ["ci_failed", false],
+    ]);
     expect(s.notifyRows(id)).toEqual([]);
   });
 
@@ -67,8 +83,17 @@ describe("debounce and coalesce", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].text).toContain('<dorks-event source="github" kinds="ci_failed,comment,conflict" prs="octo/hello#12,octo/hello#13">');
     expect(rows[0].text).toContain("gh run view --log-failed");
-    expect(rows[0].meta).toEqual({ kinds: ["ci_failed", "comment", "conflict"], prs: [{ repo: "octo/hello", number: 12 }, { repo: "octo/hello", number: 13 }] });
-    const cards = s.h.events(id).map((e) => e.body).filter((e) => e.type === "notify");
+    expect(rows[0].meta).toEqual({
+      kinds: ["ci_failed", "comment", "conflict"],
+      prs: [
+        { repo: "octo/hello", number: 12 },
+        { repo: "octo/hello", number: 13 },
+      ],
+    });
+    const cards = s.h
+      .events(id)
+      .map((e) => e.body)
+      .filter((e) => e.type === "notify");
     expect(cards).toHaveLength(1);
     expect(cards[0]).toMatchObject({ kinds: ["ci_failed", "comment", "conflict"], text: expect.stringContaining("## octo/hello#12: Add thing") });
     expect((cards[0] as { text: string }).text).not.toContain("dorks-event");
@@ -335,4 +360,3 @@ describe("pause and flush interactions", () => {
     expect(emitted(s, id)).toContain("notify");
   });
 });
-

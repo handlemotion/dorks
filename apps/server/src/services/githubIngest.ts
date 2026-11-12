@@ -65,7 +65,8 @@ function turnAt(app: App, dorkId: string, at: number): boolean {
   const rows = app.db.all<{ ts: number; state: string }>(
     `SELECT ts, json_extract(body, '$.state') AS state FROM events
      WHERE dork_id = ? AND ts <= ? AND json_extract(body, '$.type') = 'status' ORDER BY seq DESC LIMIT 2`,
-    dorkId, at,
+    dorkId,
+    at,
   );
   const [last, prev] = rows;
   if (!last) return false;
@@ -138,7 +139,12 @@ function onSynchronize({ app, sub }: Ingest, event: EventOf<"pr_synchronize">) {
   for (const row of unsent) app.db.run("DELETE FROM inbox WHERE id = ?", row.id);
   const attempt = sub.status === "active" && sub.ciNotified === true && !unsent.length;
   updateSubscription(app, sub.id, {
-    headSha: event.headSha, headRef: event.headRef, ci: "pending", ciFailing: [], ciNotified: false, mergeable: null,
+    headSha: event.headSha,
+    headRef: event.headRef,
+    ci: "pending",
+    ciFailing: [],
+    ciNotified: false,
+    mergeable: null,
     ciFixAttempts: sub.ciFixAttempts + (attempt ? 1 : 0),
   });
 }

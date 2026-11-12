@@ -2,30 +2,12 @@
 
 import * as React from "react"
 import { cn } from "cn"
-import {
-  Streamdown,
-  useIsCodeFenceIncomplete,
-  type ExtraProps,
-} from "streamdown"
+import { Streamdown, useIsCodeFenceIncomplete, type ExtraProps } from "streamdown"
 
 import { useHighlightedCode } from "#hooks/use-highlighted-code"
-import {
-  CodeBlock,
-  CodeBlockActions,
-  CodeBlockContent,
-  CodeBlockCopyButton,
-  CodeBlockHeader,
-  CodeBlockLine,
-  CodeBlockTitle,
-} from "#ui/code-block"
+import { CodeBlock, CodeBlockActions, CodeBlockContent, CodeBlockCopyButton, CodeBlockHeader, CodeBlockLine, CodeBlockTitle } from "#ui/code-block"
 
-function MarkdownCodeBlock({
-  code,
-  language,
-}: {
-  code: string
-  language: string
-}) {
+function MarkdownCodeBlock({ code, language }: { code: string; language: string }) {
   // True while the closing fence has not arrived yet.
   const incomplete = useIsCodeFenceIncomplete()
   const lines = useHighlightedCode(code, language)
@@ -51,54 +33,25 @@ function MarkdownCodeBlock({
   )
 }
 
-function MarkdownCode({
-  node,
-  className,
-  children,
-  ...props
-}: React.ComponentProps<"code"> & ExtraProps) {
+function MarkdownCode({ node, className, children, ...props }: React.ComponentProps<"code"> & ExtraProps) {
   // Streamdown marks fenced code with data-block. Inline code stays inline.
   if (!("data-block" in props)) {
     return (
-      <code
-        className={cn(
-          "rounded-sm bg-muted px-1 py-0.5 font-mono text-[0.9em]",
-          className
-        )}
-        {...props}
-      >
+      <code className={cn("rounded-sm bg-muted px-1 py-0.5 font-mono text-[0.9em]", className)} {...props}>
         {children}
       </code>
     )
   }
 
-  return (
-    <MarkdownCodeBlock
-      code={typeof children === "string" ? children : ""}
-      language={/language-(\S+)/.exec(className ?? "")?.[1] ?? ""}
-    />
-  )
+  return <MarkdownCodeBlock code={typeof children === "string" ? children : ""} language={/language-(\S+)/.exec(className ?? "")?.[1] ?? ""} />
 }
 
 // Streamdown memoizes on components, so keep the default stable. Exported so an app can add its own (an `img` override, say) and
 // keep the code blocks: spread it into a module-level object.
 const DEFAULT_COMPONENTS = { code: MarkdownCode }
 
-function Markdown({
-  className,
-  components = DEFAULT_COMPONENTS,
-  controls = false,
-  ...props
-}: React.ComponentProps<typeof Streamdown>) {
-  return (
-    <Streamdown
-      data-slot="markdown"
-      components={components}
-      controls={controls}
-      className={cn("cn-markdown w-full min-w-0 overflow-hidden", className)}
-      {...props}
-    />
-  )
+function Markdown({ className, components = DEFAULT_COMPONENTS, controls = false, ...props }: React.ComponentProps<typeof Streamdown>) {
+  return <Streamdown data-slot="markdown" components={components} controls={controls} className={cn("cn-markdown w-full min-w-0 overflow-hidden", className)} {...props} />
 }
 
 export { defaultRehypePlugins, defaultUrlTransform } from "streamdown"

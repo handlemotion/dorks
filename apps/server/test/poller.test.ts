@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { append } from "../src/lifecycle/dispatch";
 import { AGENT_COMMENT_GRACE_MS } from "../src/services/githubIngest";
 import { pollOnce, POLL_MS } from "../src/services/poller";
@@ -8,13 +8,28 @@ import { fakeFetch, harness, NOW } from "./harness";
 
 // The PR poller against a miniature GitHub: conditional requests, a baseline that does not replay history, and the events a change produces.
 
-interface Comment { id: number; body: string; html_url: string; user: { login: string; type: string }; created_at: string; path?: string }
+interface Comment {
+  id: number;
+  body: string;
+  html_url: string;
+  user: { login: string; type: string };
+  created_at: string;
+  path?: string;
+}
 const person = (login: string, type = "User") => ({ login, type });
 
 function github() {
   const state = {
     token: "ghp_test",
-    pr: { title: "Add thing", state: "open" as "open" | "closed", merged: false, mergeable: true as boolean | null, merged_by: null as null | { login: string; type: string }, head: { ref: "agent/x", sha: "aaa1111" }, base: { ref: "main", sha: "base000" } },
+    pr: {
+      title: "Add thing",
+      state: "open" as "open" | "closed",
+      merged: false,
+      mergeable: true as boolean | null,
+      merged_by: null as null | { login: string; type: string },
+      head: { ref: "agent/x", sha: "aaa1111" },
+      base: { ref: "main", sha: "base000" },
+    },
     reviews: [] as { id: number; state: string; body: string; html_url: string; user: { login: string; type: string } }[],
     issueComments: [] as Comment[],
     reviewComments: [] as Comment[],
@@ -138,7 +153,10 @@ describe("poller", () => {
     const s = await setup();
     await pollOnce(s.h.app);
     s.gh.state.pr.head.sha = "bbb2222";
-    s.gh.state.suites["bbb2222"] = [{ id: 31, status: "completed", conclusion: "failure", latest_check_runs_count: 2 }, { id: 32, status: "in_progress", conclusion: null, latest_check_runs_count: 1 }];
+    s.gh.state.suites["bbb2222"] = [
+      { id: 31, status: "completed", conclusion: "failure", latest_check_runs_count: 2 },
+      { id: 32, status: "in_progress", conclusion: null, latest_check_runs_count: 1 },
+    ];
     await s.tick();
     expect(s.sub()).toMatchObject({ headSha: "bbb2222", ci: "failing", ciFailing: [31], ciNotified: true });
     expect(s.inbox().map((r) => r.kind)).toEqual(["ci_failed"]);
@@ -243,4 +261,3 @@ describe("poller", () => {
     expect(s.h.hasTimer("", "poll")).toBe(false);
   });
 });
-

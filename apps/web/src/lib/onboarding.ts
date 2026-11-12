@@ -53,5 +53,4 @@ export const onboarded = (s: Settings) => {
 }
 
 /** Where a returning owner resumes: the first step that is not done, or null when there is nothing left to ask. */
-export const firstOnboardingStep = (s: Settings, welcomed: boolean): OnboardingStepId | null =>
-  ONBOARDING_STEPS.find((id) => !onboardingDone(s, welcomed)[id]) ?? null
+export const firstOnboardingStep = (s: Settings, welcomed: boolean): OnboardingStepId | null => ONBOARDING_STEPS.find((id) => !onboardingDone(s, welcomed)[id]) ?? null

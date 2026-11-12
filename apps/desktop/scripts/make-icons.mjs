@@ -34,7 +34,10 @@ function render(size, shade) {
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const px = shade(x + 0.5, y + 0.5, size);
-      rgba.set(px.map((v) => Math.round(v)), (y * size + x) * 4);
+      rgba.set(
+        px.map((v) => Math.round(v)),
+        (y * size + x) * 4,
+      );
     }
   }
   return png(size, size, rgba);
@@ -50,8 +53,10 @@ const over = (dst, src, a) => {
 function appIcon(x, y, s) {
   const c = s / 2;
   // rounded square, 10% inset (macOS icon grid), corner radius ~22%
-  const half = s * 0.4, r = s * 0.18;
-  const qx = Math.abs(x - c) - (half - r), qy = Math.abs(y - c) - (half - r);
+  const half = s * 0.4,
+    r = s * 0.18;
+  const qx = Math.abs(x - c) - (half - r),
+    qy = Math.abs(y - c) - (half - r);
   const dSquare = Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - r;
   let px = [0, 0, 0, 0];
   px = over(px, [24, 24, 27], cover(dSquare));
@@ -62,7 +67,8 @@ function appIcon(x, y, s) {
 }
 
 function trayIcon(x, y, s) {
-  const c = s / 2, d = Math.hypot(x - c, y - c);
+  const c = s / 2,
+    d = Math.hypot(x - c, y - c);
   let px = [0, 0, 0, 0];
   px = over(px, [0, 0, 0], cover(Math.abs(d - s * 0.34) - s * 0.075));
   px = over(px, [0, 0, 0], cover(d - s * 0.13));

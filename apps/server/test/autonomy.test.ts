@@ -1,5 +1,5 @@
 import { CI_FIX_MAX_ATTEMPTS, DEFAULT_COMMENT_POLICY } from "@dorks/shared";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { update } from "../src/db";
 import { append } from "../src/lifecycle/dispatch";
 import { commentAllowed, ingestEvent, SERVER_COMMENT_MARK, type IngestEnv, type PrEvent } from "../src/services/githubIngest";
@@ -33,7 +33,17 @@ describe("subscriptions", () => {
   it("subscribes (repo stored lowercase), starts a poll, and appends a subscription event", () => {
     const s = setup();
     const sub = s.sub(7, "agent");
-    expect(sub).toMatchObject({ repo: "octo/hello", number: 7, url: "https://github.com/octo/hello/pull/7", source: "agent", status: "active", ci: "unknown", review: "none", mergeable: null, state: "open" });
+    expect(sub).toMatchObject({
+      repo: "octo/hello",
+      number: 7,
+      url: "https://github.com/octo/hello/pull/7",
+      source: "agent",
+      status: "active",
+      ci: "unknown",
+      review: "none",
+      mergeable: null,
+      state: "open",
+    });
     expect(s.h.hasTimer("", "poll")).toBe(true);
     expect(s.h.events(s.id).map((e) => e.body)).toContainEqual({ type: "subscription", repo: "octo/hello", number: 7, status: "active", reason: "subscribed (agent)" });
   });
@@ -304,4 +314,3 @@ describe("what a change on the PR does", () => {
     expect(s.inbox()).toEqual([]);
   });
 });
-

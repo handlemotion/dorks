@@ -1,6 +1,6 @@
 import { readFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
 import { RpcError } from "../src/rpc";
 import { builtCli, closeBridges, FAKE_GH, fakeBridge, runAs, tmp } from "./helpers";
 
@@ -94,7 +94,9 @@ describe("gh shim", () => {
     });
     const r = await gh(["stack", "submit"], { ...b.env, FAKE_GH_STDERR: "https://github.com/acme/demo/pull/21\nhttps://github.com/acme/demo/pull/22\n" });
     expect(r.code).toBe(0);
-    expect(r.stderr.split("\n").filter((l) => l.startsWith("dorks:"))).toEqual(["dorks: could not subscribe to acme/demo#21, acme/demo#22 (the backend refused the request (forbidden)); run `dorks pr sub` to retry"]);
+    expect(r.stderr.split("\n").filter((l) => l.startsWith("dorks:"))).toEqual([
+      "dorks: could not subscribe to acme/demo#21, acme/demo#22 (the backend refused the request (forbidden)); run `dorks pr sub` to retry",
+    ]);
   });
 
   it("with the bridge unreachable, gh still runs (without a token) and says so once", async () => {

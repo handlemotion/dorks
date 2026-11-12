@@ -95,7 +95,12 @@ export function SelectionReply() {
   // Anchored on the selection's first line, so a long passage does not push the box off screen.
   const anchor = { getBoundingClientRect: () => target.range.getClientRects()[0] ?? target.range.getBoundingClientRect() }
   return (
-    <Popover open onOpenChange={(open) => { if (!open) close() }}>
+    <Popover
+      open
+      onOpenChange={(open) => {
+        if (!open) close()
+      }}
+    >
       <PopoverContent
         anchor={anchor}
         side="top"
@@ -108,7 +113,12 @@ export function SelectionReply() {
         className="w-80 gap-3 rounded-[10px] p-3 [--control-radius:6px] [--ring:oklch(0.85_0_0)] dark:[--ring:oklch(1_0_0/28%)]"
       >
         <blockquote className="line-clamp-3 border-l-2 border-foreground/15 px-2.5 py-0.5 text-sm leading-5 text-muted-foreground">{target.text}</blockquote>
-        <form onSubmit={(e) => { e.preventDefault(); attach() }}>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            attach()
+          }}
+        >
           <InputGroup className="h-9 rounded-(--control-radius)">
             <InputGroupInput
               ref={inputRef}
@@ -145,7 +155,9 @@ function ReplyLine({ reply, className = '' }: { reply: Reply; className?: string
   return (
     <span className={`flex min-w-0 items-center gap-2 ${className}`}>
       <ReplyIcon aria-hidden className="size-3.5 shrink-0" />
-      {reply.kind === 'image' && reply.src && <img src={reply.src} alt="" className="size-5 shrink-0 rounded-[4px] object-cover outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10" />}
+      {reply.kind === 'image' && reply.src && (
+        <img src={reply.src} alt="" className="size-5 shrink-0 rounded-[4px] object-cover outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10" />
+      )}
       <span className="min-w-0 truncate">{reply.kind === 'text' ? `“${replyLabel(reply)}”` : replyLabel(reply)}</span>
     </span>
   )
@@ -157,7 +169,13 @@ export function ReplyBanner({ reply, onClear }: { reply: Reply; onClear: () => v
     <div data-testid="composer-reply" className="flex h-8 w-full min-w-0 items-center gap-1 rounded-[7px] bg-foreground/[0.04] pr-1 pl-2.5 text-[13px] text-muted-foreground">
       <ReplyLine reply={reply} className="flex-1" />
       <Tip label="Remove reply">
-        <InputGroupButton size="icon-xs" variant="ghost" aria-label="Remove reply" onClick={onClear} className="rounded-[6px] shrink-0 text-muted-foreground hover:text-foreground [--control-radius:6px]">
+        <InputGroupButton
+          size="icon-xs"
+          variant="ghost"
+          aria-label="Remove reply"
+          onClick={onClear}
+          className="rounded-[6px] shrink-0 text-muted-foreground hover:text-foreground [--control-radius:6px]"
+        >
           <XIcon />
         </InputGroupButton>
       </Tip>

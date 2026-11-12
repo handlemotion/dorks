@@ -35,7 +35,7 @@ The per-dork `events` table is append-only with a dense `seq`. That is the repli
                                       └─ GitHub poller      ETag polling with a stored token
 ```
 
-Runtime: Bun (`bun:sqlite`, `Bun.serve`), compiled with `bun build --compile` into one sidecar binary per target. The code under `apps/server/src` is runtime-neutral except `main.ts`: the SQLite adapter picks `bun:sqlite` under Bun and `node:sqlite` under Node 24, so the unit tests run under vitest on Node against the real code and an in-memory database.
+Runtime: Bun (`bun:sqlite`, `Bun.serve`), compiled with `bun build --compile` into one sidecar binary per target. The code under `apps/server/src` is runtime-neutral except `main.ts`: the SQLite adapter picks `bun:sqlite` under Bun and `node:sqlite` under Node 24, so the unit tests run under Vitest (`vp test`) on Node against the real code and an in-memory database.
 
 ### Process model and atomicity
 
@@ -197,7 +197,7 @@ Identity: the dork acts as whoever owns the token. Events authored by the token'
 ## Build and test
 
 ```sh
-pnpm --filter @dorks/server test         # vitest on Node 24 (node:sqlite), in-memory database, fake clock and sandbox provider
+pnpm --filter @dorks/server test         # vp test (Vitest) on Node 24 (node:sqlite), in-memory database, fake clock and sandbox provider
 pnpm --filter @dorks/server typecheck
 pnpm --filter @dorks/server build        # bun build --compile -> apps/server/dist/dorks-server-<target triple> (+ dorks-server for the host); `--all` for both macOS targets
 node apps/server/scripts/e2e.mjs         # a real server process (SERVER_BIN=<binary> for the compiled one) with the simulated sandbox host

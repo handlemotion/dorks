@@ -4,7 +4,7 @@
 import type { SubscriptionView } from "@dorks/shared";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vite-plus/test";
 import { Bridge } from "../src/bridge";
 import { loadConfig } from "../src/config";
 import { makeLogger, Redactor } from "../src/redact";
@@ -24,15 +24,26 @@ describe.skipIf(!token && !apiKey)("real claude CLI through the bridge", () => {
     // second boot of the same box reuses the same HOME (the session transcript lives there).
     mkdirSync(home, { recursive: true });
     const hostEnv: NodeJS.ProcessEnv = {
-      PATH: process.env.PATH, HOME: home, DORK_ID: "live_1", BRIDGE_URL: "wss://x.example/bridge", BRIDGE_SECRET: "c".repeat(64),
-      DORKS_STATE_DIR: state, DORKS_SOCK_DIR: state, DORKS_WORKDIR: work, DORKS_GIT_BASE_URL: remoteBase, DORKS_CLAUDE_ARGS: process.env.LIVE_CLAUDE_ARGS ?? "",
+      PATH: process.env.PATH,
+      HOME: home,
+      DORK_ID: "live_1",
+      BRIDGE_URL: "wss://x.example/bridge",
+      BRIDGE_SECRET: "c".repeat(64),
+      DORKS_STATE_DIR: state,
+      DORKS_SOCK_DIR: state,
+      DORKS_WORKDIR: work,
+      DORKS_GIT_BASE_URL: remoteBase,
+      DORKS_CLAUDE_ARGS: process.env.LIVE_CLAUDE_ARGS ?? "",
       ...(process.env.CLAUDE_BIN ? { CLAUDE_BIN: process.env.CLAUDE_BIN } : {}),
       ...(process.env.ANTHROPIC_BASE_URL ? { ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL } : {}),
     };
     const t = new FakeTransport();
     t.subscriptions = subscriptions;
     t.configureFrame = {
-      t: "configure", ghToken: "ghs_live_unused", repo: { fullName: "acme/demo", branch: "dork/live" }, resumeSessionId: resume,
+      t: "configure",
+      ghToken: "ghs_live_unused",
+      repo: { fullName: "acme/demo", branch: "dork/live" },
+      resumeSessionId: resume,
       env: { ...(token ? { CLAUDE_CODE_OAUTH_TOKEN: token } : {}), ...(apiKey ? { ANTHROPIC_API_KEY: apiKey } : {}) },
     };
     const redactor = new Redactor();
@@ -48,7 +59,12 @@ describe.skipIf(!token && !apiKey)("real claude CLI through the bridge", () => {
     t.emit([{ cid: id, frame: { t: "user_message", id, text } }]);
     await waitFor(() => t.events().filter((e) => (e.raw as any).state === "idle").length >= idleCount, `turn ${id} idle`, 120_000);
   };
-  const assistantText = (t: FakeTransport) => t.events().filter((e) => (e.raw as any).type === "assistant").map((e) => JSON.stringify((e.raw as any).message.content)).join("\n");
+  const assistantText = (t: FakeTransport) =>
+    t
+      .events()
+      .filter((e) => (e.raw as any).type === "assistant")
+      .map((e) => JSON.stringify((e.raw as any).message.content))
+      .join("\n");
 
   it("streams a turn, uses a tool, and resumes the same session in a new bridge process", async () => {
     const remote = makeRemote();
@@ -80,7 +96,7 @@ describe.skipIf(!token && !apiKey)("real claude CLI through the bridge", () => {
     const two = await boot(state, work, remote.baseUrl, sessionId, home);
     await turn(two.t, "m3", "What single word did I ask you to reply with in my first message?", 1);
     expect(assistantText(two.t)).toContain("PONG");
-    expect(((two.t.events().find((e) => (e.raw as any).subtype === "init")!.raw) as any).session_id).toBe(sessionId);
+    expect((two.t.events().find((e) => (e.raw as any).subtype === "init")!.raw as any).session_id).toBe(sessionId);
     expect(join(work, "acme/demo")).toBeTruthy();
   }, 300_000);
 
@@ -120,7 +136,10 @@ describe.skipIf(!token && !apiKey)("real claude CLI through the bridge", () => {
     );
     expect(live.t.prCalls).toEqual([{ op: "sub", ref: { repo: "acme/demo", number: 9 }, source: "agent" }]);
     // the bridge forwards only a trimmed init event, so the tool calls themselves are the proof that the server started and its tools were listed
-    const used = live.t.events().flatMap((e) => ((e.raw as any).message?.content ?? []) as { type: string; name?: string; input?: unknown }[]).filter((b) => b.type === "tool_use");
+    const used = live.t
+      .events()
+      .flatMap((e) => ((e.raw as any).message?.content ?? []) as { type: string; name?: string; input?: unknown }[])
+      .filter((b) => b.type === "tool_use");
     expect(used.map((b) => b.name).filter((n) => n?.startsWith("mcp__"))).toEqual(["mcp__dorks__pr_subscribe", "mcp__dorks__pr_list"]); // the CLI defers MCP tools: the model may ToolSearch first
     expect(JSON.stringify(live.t.events().map((e) => e.raw))).toContain("Subscribed to acme/demo#9");
     expect(assistantText(live.t)).toContain("acme/demo#9");
