@@ -10,6 +10,10 @@
     "dev:desktop": "pnpm --filter @dorks/desktop dev",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --if-present test",
+    "check": "vp check",
     "e2e": "node scripts/e2e.mjs"
+  },
+  "devDependencies": {
+    "vite-plus": "catalog:"
   }
 }

@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import { Db, insert } from "../src/db";
 import { setTimer } from "../src/lifecycle/dispatch";
 import { INBOX_RETENTION_MS, SWEEP_EVERY_MS } from "../src/lifecycle/jobs";

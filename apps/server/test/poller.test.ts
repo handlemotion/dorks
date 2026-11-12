@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { append } from "../src/lifecycle/dispatch";
 import { AGENT_COMMENT_GRACE_MS } from "../src/services/githubIngest";
 import { pollOnce, POLL_MS } from "../src/services/poller";

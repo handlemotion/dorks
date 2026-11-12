@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { childEnv, claudeArgs } from "../src/claude";
 import { loadConfig } from "../src/config";
 import { asIdentity } from "../src/runas";
@@ -52,7 +52,7 @@ describe("privilege separation argv", () => {
   });
 });
 
-// Real uid separation needs root. Run it with:  sudo -E env PATH=$PATH npx vitest run test/privsep.test.ts
+// Real uid separation needs root. Run it with:  sudo -E env PATH=$PATH pnpm exec vp test run test/privsep.test.ts
 describe.skipIf(typeof process.getuid !== "function" || process.getuid() !== 0)("CLAUDE_RUN_AS=nobody (root only)", () => {
   it("claude and its git tree run as the unprivileged user; it cannot read the bridge's environ or secret", async () => {
     const root = tmp("privsep-");

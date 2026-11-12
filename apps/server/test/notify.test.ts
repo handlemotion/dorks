@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { insert, update } from "../src/db";
 import { enqueueNotification, NOTIFY_DEBOUNCE_MS } from "../src/services/notify";
 import { unsubscribe } from "../src/services/subscriptions";

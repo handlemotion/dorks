@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { createNormalizer } from "../src/core/normalize";
 
 const bodies = (n: ReturnType<ReturnType<typeof createNormalizer>>) => n.flatMap((x) => (x.kind === "event" ? [x.body] : []));

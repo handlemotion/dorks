@@ -46,6 +46,7 @@ Outside `pnpm dev` the server's owner token is generated into `<data dir>/secret
 ## Tests
 
 ```sh
+pnpm check                                       # vp check: Oxlint over the whole workspace (config in the root vite.config.ts)
 pnpm typecheck                                   # every package
 pnpm test                                        # every package that has tests
 pnpm --filter @dorks/server test                 # the server (lifecycle, machine, bridge socket), in-memory SQLite
@@ -54,9 +55,11 @@ pnpm --filter @dorks/bridge test                 # the bridge
 pnpm e2e                                         # builds the compiled server, runs its e2e twice (sim bridge, real bridge) incl. a secret scan; needs Bun
 ```
 
+The JS toolchain is [Vite+](https://viteplus.dev) (`vite-plus`, the `vp` CLI): `vp dev` / `vp build` for the web app, `vp test` (Vitest) for every package's tests, `vp lint` / `vp check` for linting. Import test helpers from `vite-plus/test` and config helpers from `vite-plus`, not `vitest` or `vite` (a lint rule enforces it). `vp fmt` is set to the house style but not enforced yet. Its version is pinned once in the `catalog` in `pnpm-workspace.yaml`.
+
 Prefer tests that run the real code path over mocks: the server tests use the real lifecycle driver on an in-memory database.
 
-CI (`.github/workflows/ci.yml`) runs typecheck and tests and the server e2e against the compiled binary; `desktop.yml` builds the macOS app. It needs no repository secrets, so it runs on forks. If you add an environment variable the e2e needs, set a throwaway value in the workflow.
+CI (`.github/workflows/ci.yml`) runs lint, typecheck and tests and the server e2e against the compiled binary; `desktop.yml` builds the macOS app. It needs no repository secrets, so it runs on forks. If you add an environment variable the e2e needs, set a throwaway value in the workflow.
 
 ## Rules
 

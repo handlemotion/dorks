@@ -4,7 +4,7 @@
 import type { SubscriptionView } from "@dorks/shared";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vite-plus/test";
 import { Bridge } from "../src/bridge";
 import { loadConfig } from "../src/config";
 import { makeLogger, Redactor } from "../src/redact";

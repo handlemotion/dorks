@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { type Embed, EmbedError, type EmbedTunnel } from "../src/embed";
 import { createHandler, tenantOf } from "../src/handler";
 

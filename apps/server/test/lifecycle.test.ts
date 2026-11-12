@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { update } from "../src/db";
 import { boxCreated, boxPaused, boxResumed, opFailed } from "../src/lifecycle/lifecycle";
 import { interrupt as interruptDork } from "../src/services/dorks";

@@ -1,15 +1,12 @@
-// Cloudflare Worker entry. Secrets (`wrangler secret put`): WURMHOL_KEY (the Dorks application's integration key, with
+// Cloudflare Worker entry, configured in cloudflare.config.ts. Secrets: WURMHOL_KEY (the Dorks application's integration key, with
 // `tunnels:read`, `tunnels:manage`, `subjects:manage` and `grants:issue`) and TICKET_KEY (32+ random bytes). Optional vars:
 // WURMHOL_SERVER (a self-hosted Wurmhol), TENANT_MONTHLY_REQUESTS.
 import { EmbedClient } from "./embed";
 import { createHandler } from "./handler";
 
-interface Env {
-  WURMHOL_KEY: string;
-  TICKET_KEY: string;
-  WURMHOL_SERVER?: string;
-  TENANT_MONTHLY_REQUESTS?: string;
-}
+// `Cloudflare.Env` is generated from cloudflare.config.ts into .cloudflare/types (`cf workers types`, `vp dev`, `vp build`). The two optional
+// vars are not declared there, so they are added here.
+type Env = Cloudflare.Env & { WURMHOL_SERVER?: string; TENANT_MONTHLY_REQUESTS?: string };
 
 let cached: { env: Env; handle: (req: Request) => Promise<Response> } | undefined;
 

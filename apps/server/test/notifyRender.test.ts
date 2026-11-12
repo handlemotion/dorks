@@ -1,5 +1,5 @@
 import { CI_FIX_MAX_ATTEMPTS } from "@dorks/shared";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { MAX_ITEMS, MAX_SUMMARY_CHARS, renderNotification, type PrSection } from "../src/lib/notifyRender";
 
 const section = (over: Partial<PrSection> & Pick<PrSection, "items">): PrSection => ({

@@ -1,7 +1,7 @@
 import type { PrRef, SubscriptionView } from "@dorks/shared";
 import { chmodSync, mkdirSync, statSync, writeFileSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { claudeSettings, HookService, sessionContext, settingsPath, writeClaudeSettings, type HookDeps } from "../src/hooks";
 import { prLookup } from "../src/pr-lookup";
 import { findRepos } from "../src/work-scan";

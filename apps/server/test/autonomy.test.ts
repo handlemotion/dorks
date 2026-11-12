@@ -1,5 +1,5 @@
 import { CI_FIX_MAX_ATTEMPTS, DEFAULT_COMMENT_POLICY } from "@dorks/shared";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { update } from "../src/db";
 import { append } from "../src/lifecycle/dispatch";
 import { commentAllowed, ingestEvent, SERVER_COMMENT_MARK, type IngestEnv, type PrEvent } from "../src/services/githubIngest";

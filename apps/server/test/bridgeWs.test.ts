@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { BridgeSession } from "../src/http/bridgeWs";
 import { updateSettings } from "../src/services/settings";
 import { WsTransport, type CommandEntry } from "../../../infra/bridge/src/transport";

@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { symlinkSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
 import { claudeMcpConfig } from "../src/hooks";
 import { McpServer } from "../src/mcp";
 import { RpcError } from "../src/rpc";

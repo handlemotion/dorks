@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
 import { RpcError } from "../src/rpc";
 import { builtCli, closeBridges, fakeBridge, runAs, tmp } from "./helpers";
 

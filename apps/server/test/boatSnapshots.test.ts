@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { BoatError } from "../src/lib/boat";
 import { boatBuildFailureMessage, boatSnapshotDriver } from "../src/lib/boatSnapshots";
 import { loadAssets, makeAssets } from "../src/snapshot/assets";

@@ -243,7 +243,7 @@ With this, an agent under `bypassPermissions` cannot read the bridge's environ, 
 then only `ptrace_scope ≥ 2` or a separate uid fully closes it; treat the secret as readable by the agent in that layout. The agent already holds the
 Claude and GitHub tokens either way, so what is at stake is mainly event forgery and lifecycle control (the credential socket hands the GitHub token to any
 process of the Claude user by design; the token's scope is what limits it). `test/privsep.test.ts` checks the uid separation when run as root:
-`sudo -E env "PATH=$PATH" npx vitest run test/privsep.test.ts` (skipped otherwise).
+`sudo -E env "PATH=$PATH" pnpm exec vp test run test/privsep.test.ts` (skipped otherwise).
 
 **Exit.** When the CLI exits on its own the bridge sends `agent_exited { code, stderrTail }` (`code: null` if killed by a signal) and keeps
 running; a later `configure` starts it again.

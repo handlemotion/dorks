@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { GrantSource } from "../src/grants";
 import { WsTransport } from "../src/transport";
 

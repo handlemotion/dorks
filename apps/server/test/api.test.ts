@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { uiApp } from "../src/http/ui";
 import { updateSettings } from "../src/services/settings";
 import { bridgeSecret } from "../src/lib/bridgeAuth";

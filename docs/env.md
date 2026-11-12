@@ -49,7 +49,7 @@ Token settings are write-only: reads return booleans, and an empty string clears
 
 ## Web (`apps/web`)
 
-No build-time variables. In `vite dev` only, `?server=<url>&token=<token>` skips the connect screen. The mock server reads `MOCK_PORT`, `MOCK_TOKEN`, `MOCK_CONFIGURED` and `MOCK_TICK`.
+No build-time variables. In `vp dev` only, `?server=<url>&token=<token>` skips the connect screen. The mock server reads `MOCK_PORT`, `MOCK_TOKEN`, `MOCK_CONFIGURED` and `MOCK_TICK`.
 
 ## In-sandbox bridge (`infra/bridge`)
 

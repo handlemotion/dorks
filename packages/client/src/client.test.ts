@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 import { toAppError } from "@dorks/shared";
 import { createApi } from "./http.ts";
 import { createClient, type DorksClient } from "./client.ts";
