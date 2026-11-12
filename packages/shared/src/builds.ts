@@ -20,7 +20,13 @@ const repoName = z
 
 export const buildRepo = z.object({
   repo: repoName,
-  branch: z.string().trim().min(1).max(200).regex(/^[^\s~^:?*[\\]+$/, "not a valid branch name").optional(),
+  branch: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .regex(/^[^\s~^:?*[\\]+$/, "not a valid branch name")
+    .optional(),
   setupScript: z.string().max(MAX_SCRIPT_CHARS).optional(),
 });
 export type BuildRepo = z.infer<typeof buildRepo>;
@@ -42,7 +48,10 @@ export const draftVar = z.object({
   name: z.string().regex(VAR_NAME, "variable names are UPPER_SNAKE_CASE"),
   secret: z.boolean().default(false),
   buildTime: z.boolean().default(false),
-  value: z.string().max(16 * 1024).optional(),
+  value: z
+    .string()
+    .max(16 * 1024)
+    .optional(),
   why: z.string().max(500).default(""),
   remove: z.boolean().optional(),
 });

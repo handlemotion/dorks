@@ -18,14 +18,15 @@ if (spawnSync("bun", ["--version"], { stdio: "ignore" }).status !== 0) {
 }
 
 // Pick the web port before starting the API so its CORS allowlist and the printed link agree with Vite.
-const availablePort = (port) => new Promise((resolve, reject) => {
-  const probe = createServer();
-  probe.once("error", reject);
-  probe.listen(port, "localhost", () => {
-    const chosen = probe.address().port;
-    probe.close(() => resolve(chosen));
+const availablePort = (port) =>
+  new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once("error", reject);
+    probe.listen(port, "localhost", () => {
+      const chosen = probe.address().port;
+      probe.close(() => resolve(chosen));
+    });
   });
-});
 const webPort = onlyServer ? null : await availablePort(3000).catch(() => availablePort(0));
 const token = process.env.DORKS_OWNER_TOKEN || "dev-owner-token";
 const simKey = process.env.SIM_HOST_KEY || "dev-sim-host-key";
@@ -35,10 +36,7 @@ const env = {
   DORKS_OWNER_TOKEN: token,
   BOX_PROVIDER: "sim",
   SIM_HOST_KEY: simKey,
-  ...(!onlyServer ? { DORKS_UI_ORIGINS: [
-    process.env.DORKS_UI_ORIGINS || "http://localhost:3000,http://127.0.0.1:3000",
-    `http://localhost:${webPort}`, `http://127.0.0.1:${webPort}`,
-  ].join(",") } : {}),
+  ...(!onlyServer ? { DORKS_UI_ORIGINS: [process.env.DORKS_UI_ORIGINS || "http://localhost:3000,http://127.0.0.1:3000", `http://localhost:${webPort}`, `http://127.0.0.1:${webPort}`].join(",") } : {}),
 };
 delete env.DORKS_PUBLIC_URL;
 

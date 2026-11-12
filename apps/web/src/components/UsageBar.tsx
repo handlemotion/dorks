@@ -25,11 +25,7 @@ const tone = (left: number) => (left < 0.1 ? 'bg-destructive' : left < 0.2 ? 'bg
 export function UsageBarView({ usage }: { usage: Usage }) {
   const { claude, cloud } = usage
   if (!claude && !cloud) return null
-  const footer = claude?.session.resetsAt
-    ? `Session resets ${time.format(claude.session.resetsAt)}`
-    : cloud?.periodEnd
-      ? `Cloud renews ${day.format(cloud.periodEnd)}`
-      : undefined
+  const footer = claude?.session.resetsAt ? `Session resets ${time.format(claude.session.resetsAt)}` : cloud?.periodEnd ? `Cloud renews ${day.format(cloud.periodEnd)}` : undefined
   return (
     <section aria-label="Usage" className="rounded-[6px] bg-foreground/[0.04]">
       <div className="flex flex-col gap-3 rounded-[6px] border border-border bg-surface px-[10px] pt-[6.5px] pb-[10px]">

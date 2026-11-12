@@ -65,10 +65,25 @@ async function runTurn(text) {
   out({ type: "system", subtype: "session_state_changed", state: "running", uuid: randomUUID() });
   if (!inited) {
     inited = true;
-    out({ type: "system", subtype: "init", cwd: process.cwd(), tools: ["Bash", "Read", "Edit"], mcp_servers: [], model, permissionMode: "bypassPermissions", apiKeySource: "none", uuid: randomUUID() });
+    out({
+      type: "system",
+      subtype: "init",
+      cwd: process.cwd(),
+      tools: ["Bash", "Read", "Edit"],
+      mcp_servers: [],
+      model,
+      permissionMode: "bypassPermissions",
+      apiKeySource: "none",
+      uuid: randomUUID(),
+    });
   }
   out({ type: "system", subtype: "status", status: "requesting", uuid: randomUUID() });
-  out({ type: "stream_event", event: { type: "message_start", message: { id: mid, role: "assistant", content: [], usage: { input_tokens: 3, output_tokens: 1 } } }, parent_tool_use_id: null, uuid: randomUUID() });
+  out({
+    type: "stream_event",
+    event: { type: "message_start", message: { id: mid, role: "assistant", content: [], usage: { input_tokens: 3, output_tokens: 1 } } },
+    parent_tool_use_id: null,
+    uuid: randomUUID(),
+  });
   out({ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }, parent_tool_use_id: null, uuid: randomUUID() });
   if (text === "crash") process.exit(3);
   if (text === "stderr-echo") {
@@ -92,10 +107,39 @@ async function runTurn(text) {
     out({ type: "result", subtype: "error_during_execution", is_error: true, duration_ms: 5, result: "interrupted", uuid: randomUUID() });
   } else {
     out({ type: "stream_event", event: { type: "content_block_stop", index: 0 }, parent_tool_use_id: null });
-    out({ type: "assistant", message: { id: mid, type: "message", role: "assistant", model, content: [{ type: "text", text: `Done: ${text}` }, { type: "tool_use", id: tid, name: "Bash", input: { command: "git push", description: "push" } }], stop_reason: "tool_use", usage: { input_tokens: 3, output_tokens: 9 } }, parent_tool_use_id: null, uuid: randomUUID() });
+    out({
+      type: "assistant",
+      message: {
+        id: mid,
+        type: "message",
+        role: "assistant",
+        model,
+        content: [
+          { type: "text", text: `Done: ${text}` },
+          { type: "tool_use", id: tid, name: "Bash", input: { command: "git push", description: "push" } },
+        ],
+        stop_reason: "tool_use",
+        usage: { input_tokens: 3, output_tokens: 9 },
+      },
+      parent_tool_use_id: null,
+      uuid: randomUUID(),
+    });
     out({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: tid, content: "ok" }] }, parent_tool_use_id: null, uuid: randomUUID() });
     // The final answer: a text-only message after the last tool call.
-    out({ type: "assistant", message: { id: `${mid}_final`, type: "message", role: "assistant", model, content: [{ type: "text", text: `Finished: ${text}. Pushed the branch; nothing else is pending.` }], stop_reason: "end_turn", usage: { input_tokens: 3, output_tokens: 9 } }, parent_tool_use_id: null, uuid: randomUUID() });
+    out({
+      type: "assistant",
+      message: {
+        id: `${mid}_final`,
+        type: "message",
+        role: "assistant",
+        model,
+        content: [{ type: "text", text: `Finished: ${text}. Pushed the branch; nothing else is pending.` }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 3, output_tokens: 9 },
+      },
+      parent_tool_use_id: null,
+      uuid: randomUUID(),
+    });
     out({ type: "result", subtype: "success", is_error: false, duration_ms: DELTAS * GAP, duration_api_ms: 1, num_turns: 1, result: `Done: ${text}`, total_cost_usd: 0, uuid: randomUUID() });
   }
   out({ type: "system", subtype: "session_state_changed", state: "idle", uuid: randomUUID() });

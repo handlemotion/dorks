@@ -103,7 +103,15 @@ export function BoatKey({ settings, onNext }: StepProps) {
         </Heading>
         {/* One field needs no card or label: the heading says what it is. */}
         <div className="flex flex-col gap-3">
-          <SecretInput aria-label="boat api key" className={FIELD} autoComplete="off" autoFocus placeholder={settings.boatKey ? 'A key is saved' : 'Paste your Boat API key'} value={key} onChange={(e) => setKey(e.target.value)} />
+          <SecretInput
+            aria-label="boat api key"
+            className={FIELD}
+            autoComplete="off"
+            autoFocus
+            placeholder={settings.boatKey ? 'A key is saved' : 'Paste your Boat API key'}
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+          />
           {askOrg && <Input aria-label="boat organization" className={FIELD} autoComplete="off" placeholder="Organization id" value={org} onChange={(e) => setOrg(e.target.value)} />}
         </div>
       </Body>
@@ -134,9 +142,7 @@ export function AgentSignIn({ settings, onNext }: StepProps) {
           <Row icon={<Logo light={grokLight} dark={grokDark} />} name="Grok" soon />
         </List>
       </Body>
-      <Actions onClick={() => (configured ? onNext() : notify('Connect Claude or Codex first.'))}>
-        Continue
-      </Actions>
+      <Actions onClick={() => (configured ? onNext() : notify('Connect Claude or Codex first.'))}>Continue</Actions>
 
       <ConnectDialog
         {...dialog('claude')}
@@ -170,7 +176,23 @@ type SettingsPatch = Parameters<ReturnType<typeof useDorksClient>['actions']['up
  * A dialog's field, then Cancel and Save on the dialog's footer band. The form is `contents` so its body and footer lay out as the
  * dialog's own sections. The live stream sends the saved setting back, which marks the row Connected.
  */
-function SaveForm({ label, placeholder, secret, initial = '', extra, save, onSaved }: { label: string; placeholder: string; secret?: boolean; initial?: string; extra?: ReactNode; save: (value: string) => SettingsPatch; onSaved: () => void }) {
+function SaveForm({
+  label,
+  placeholder,
+  secret,
+  initial = '',
+  extra,
+  save,
+  onSaved,
+}: {
+  label: string
+  placeholder: string
+  secret?: boolean
+  initial?: string
+  extra?: ReactNode
+  save: (value: string) => SettingsPatch
+  onSaved: () => void
+}) {
   const { actions } = useDorksClient()
   const [value, setValue] = useState(initial)
   const { run, pending, error } = usePending()
@@ -232,7 +254,13 @@ export function GitHub({ settings, onNext }: StepProps) {
     void cli.run(async () => {
       const r = await readGhToken()
       if (!r.ok) {
-        notify(r.reason === 'declined' ? 'Cancelled, no token was read.' : r.reason === 'missing' ? 'The GitHub CLI isn’t signed in. Run `gh auth login` in a terminal first.' : 'Couldn’t read the GitHub CLI token.')
+        notify(
+          r.reason === 'declined'
+            ? 'Cancelled, no token was read.'
+            : r.reason === 'missing'
+              ? 'The GitHub CLI isn’t signed in. Run `gh auth login` in a terminal first.'
+              : 'Couldn’t read the GitHub CLI token.',
+        )
         return
       }
       await actions.updateSettings({ githubToken: r.token })
@@ -250,9 +278,7 @@ export function GitHub({ settings, onNext }: StepProps) {
           <Row icon={mark} name={login ? `Token for ${login}` : 'Access token'} connected={settings.github.configured} onOpen={() => setOpen('token')} />
         </List>
       </Body>
-      <Actions onClick={() => (settings.github.configured ? onNext() : notify('Add a GitHub token first.'))}>
-        Continue
-      </Actions>
+      <Actions onClick={() => (settings.github.configured ? onNext() : notify('Add a GitHub token first.'))}>Continue</Actions>
 
       {desktop && (
         <ConnectDialog

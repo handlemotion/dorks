@@ -107,9 +107,7 @@ export class Scheduler implements SchedulerLike {
 
   /** Runs a claimed job as a fiber of the job set. A job reports its own failures; anything that escapes is logged here. */
   private fork(row: TimerRow, payload: unknown) {
-    const job = Effect.promise(() => runJob(this.app, row.owner, row.name, payload)).pipe(
-      Effect.catchCause((cause) => Effect.sync(() => console.error(`job ${row.name} failed`, errorText(cause)))),
-    );
+    const job = Effect.promise(() => runJob(this.app, row.owner, row.name, payload)).pipe(Effect.catchCause((cause) => Effect.sync(() => console.error(`job ${row.name} failed`, errorText(cause)))));
     FiberSet.addUnsafe(this.jobs, Effect.runFork(job));
   }
 

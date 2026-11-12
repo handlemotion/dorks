@@ -55,7 +55,7 @@ pnpm --filter @dorks/bridge test                 # the bridge
 pnpm e2e                                         # builds the compiled server, runs its e2e twice (sim bridge, real bridge) incl. a secret scan; needs Bun
 ```
 
-The JS toolchain is [Vite+](https://viteplus.dev) (`vite-plus`, the `vp` CLI): `vp dev` / `vp build` for the web app, `vp test` (Vitest) for every package's tests, `vp lint` / `vp check` for linting. Import test helpers from `vite-plus/test` and config helpers from `vite-plus`, not `vitest` or `vite` (a lint rule enforces it). `vp fmt` is set to the house style but not enforced yet. Its version is pinned once in the `catalog` in `pnpm-workspace.yaml`.
+The JS toolchain is [Vite+](https://viteplus.dev) (`vite-plus`, the `vp` CLI): `vp dev` / `vp build` for the web app, `vp test` (Vitest) for every package's tests, `vp lint` / `vp check` for linting. Import test helpers from `vite-plus/test` and config helpers from `vite-plus`, not `vitest` or `vite` (a lint rule enforces it). `vp fmt` formats code in the house style (Markdown and the vendored shadcn / AI Elements files excepted) and `pnpm check` fails on unformatted files; run `pnpm fmt` before you commit. Its version is pinned once in the `catalog` in `pnpm-workspace.yaml`.
 
 Prefer tests that run the real code path over mocks: the server tests use the real lifecycle driver on an in-memory database.
 

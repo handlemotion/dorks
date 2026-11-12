@@ -132,8 +132,20 @@ export class Bridge {
     await this.rpc.start();
     await this.handshake(true);
     this.prs.start();
-    this.unsubs.push(this.t.subscribeCommands((cmds) => this.onCommands(cmds), () => this.log("commands subscription error")));
-    this.unsubs.push(this.t.onReconnect(() => void this.handshake(false).then(() => !this.closed && this.prs.start()).catch((e) => e instanceof SleepingError && this.d.onSleeping?.())));
+    this.unsubs.push(
+      this.t.subscribeCommands(
+        (cmds) => this.onCommands(cmds),
+        () => this.log("commands subscription error"),
+      ),
+    );
+    this.unsubs.push(
+      this.t.onReconnect(
+        () =>
+          void this.handshake(false)
+            .then(() => !this.closed && this.prs.start())
+            .catch((e) => e instanceof SleepingError && this.d.onSleeping?.()),
+      ),
+    );
     this.hb = setInterval(() => {
       this.t.heartbeat().catch((e) => this.t.isFatal(e) && this.fatal());
     }, this.cfg.heartbeatMs);
@@ -303,10 +315,7 @@ export class Bridge {
     // Whole-fs flush, best effort (a missing binary is fine). It can take seconds on a box with many dirty pages, so the wait is
     // bounded: the transcript above is already fsynced, and a flush must not hang on unrelated writes.
     let timer: ReturnType<typeof setTimeout> | undefined;
-    await Promise.race([
-      new Promise<void>((r) => execFile("sync", () => r())),
-      new Promise<void>((r) => (timer = setTimeout(r, this.cfg.flushSyncWaitMs))),
-    ]);
+    await Promise.race([new Promise<void>((r) => execFile("sync", () => r())), new Promise<void>((r) => (timer = setTimeout(r, this.cfg.flushSyncWaitMs)))]);
     clearTimeout(timer);
   }
 
@@ -337,7 +346,9 @@ export class Bridge {
     this.github.set(cfg.ghToken);
 
     const provider = cfg.provider ?? "claude";
-    const key = createHash("sha256").update(JSON.stringify([provider, cfg.codexModel, cfg.model ?? null, cfg.effort ?? null, cfg.repo, Object.entries(cfg.env).sort()])).digest("hex");
+    const key = createHash("sha256")
+      .update(JSON.stringify([provider, cfg.codexModel, cfg.model ?? null, cfg.effort ?? null, cfg.repo, Object.entries(cfg.env).sort()]))
+      .digest("hex");
     if (this.agent?.alive && key === this.agentKey) {
       // Already running with this config (a reconnect re-sends configure): nothing to do but say so again.
       this.pipeline.control({ t: "ack", id: cid });
@@ -430,37 +441,40 @@ export class Bridge {
         this.pipeline.control({ t: "agent_exited", code, stderrTail }, true);
       },
     };
-    const agent = this.provider === "codex" ? new CodexAgent({
-      ...shared,
-      model: this.codexModel,
-      mcpCommand: this.self,
-      sock: this.rpc.sockPath,
-      onModels: (models) => this.pipeline.control({ t: "codex_models", models }, true),
-      onIssue: (message) => this.pipeline.control({ t: "codex_issue", message }, true),
-      onReady: () => {
-        this.pipeline.control({ t: "ready" }, true);
-        this.process();
-        this.name();
-      },
-      onTurnFinished: async (sessionId) => {
-        const result = await this.hooks.methods["hook.stop"]({ session_id: sessionId });
-        return result && typeof result === "object" && "reason" in result && typeof result.reason === "string" ? result.reason : null;
-      },
-    }) : new Agent({
-      ...shared,
-      loadImage: (id) => this.t.getImage(id),
-      bin: this.cfg.claudeBin,
-      permissionMode: this.cfg.permissionMode,
-      extraArgs: [...computerArgs(), ...this.cfg.claudeExtraArgs],
-      model: this.claudeModel.model,
-      effort: this.claudeModel.effort,
-      onModels: (models) => {
-        const effort = this.claudeModel.effort;
-        this.pipeline.control({ t: "agent_models", models, effort: effort && (EFFORTS as readonly string[]).includes(effort) ? (effort as EffortLevel) : null }, true);
-      },
-      settingsFile: settingsPath(this.cfg.stateDir),
-      mcpConfigFile: mcpConfigPath(this.cfg.stateDir),
-    });
+    const agent =
+      this.provider === "codex"
+        ? new CodexAgent({
+            ...shared,
+            model: this.codexModel,
+            mcpCommand: this.self,
+            sock: this.rpc.sockPath,
+            onModels: (models) => this.pipeline.control({ t: "codex_models", models }, true),
+            onIssue: (message) => this.pipeline.control({ t: "codex_issue", message }, true),
+            onReady: () => {
+              this.pipeline.control({ t: "ready" }, true);
+              this.process();
+              this.name();
+            },
+            onTurnFinished: async (sessionId) => {
+              const result = await this.hooks.methods["hook.stop"]({ session_id: sessionId });
+              return result && typeof result === "object" && "reason" in result && typeof result.reason === "string" ? result.reason : null;
+            },
+          })
+        : new Agent({
+            ...shared,
+            loadImage: (id) => this.t.getImage(id),
+            bin: this.cfg.claudeBin,
+            permissionMode: this.cfg.permissionMode,
+            extraArgs: [...computerArgs(), ...this.cfg.claudeExtraArgs],
+            model: this.claudeModel.model,
+            effort: this.claudeModel.effort,
+            onModels: (models) => {
+              const effort = this.claudeModel.effort;
+              this.pipeline.control({ t: "agent_models", models, effort: effort && (EFFORTS as readonly string[]).includes(effort) ? (effort as EffortLevel) : null }, true);
+            },
+            settingsFile: settingsPath(this.cfg.stateDir),
+            mcpConfigFile: mcpConfigPath(this.cfg.stateDir),
+          });
     this.agent = agent;
     this.log("agent started", resume ? "(resuming a session)" : "(new session)");
     for (const text of resend) void agent.sendUserMessage(text).catch(() => this.log("could not resend a message to the new session"));
@@ -476,14 +490,18 @@ export class Bridge {
     this.nameFrom = null;
     const prompt = titlePrompt(message);
     const { env } = this.agentCtx;
-    const reply = agent instanceof CodexAgent
-      ? agent.oneShot(prompt)
-      : claudeOneShot({ bin: this.cfg.claudeBin, env, cwd: this.runAs?.home ?? env.HOME ?? this.cfg.stateDir, runAs: this.runAs, prompt });
-    void reply.then((raw) => {
-      const text = cleanTitle(raw ?? "");
-      if (text) this.pipeline.control({ t: "title", text }, true);
-      this.log(text ? "named the dork" : "title model gave no usable name");
-    }).catch((e) => this.log("could not name the dork:", errTag(e))).finally(() => { this.naming = false; });
+    const reply =
+      agent instanceof CodexAgent ? agent.oneShot(prompt) : claudeOneShot({ bin: this.cfg.claudeBin, env, cwd: this.runAs?.home ?? env.HOME ?? this.cfg.stateDir, runAs: this.runAs, prompt });
+    void reply
+      .then((raw) => {
+        const text = cleanTitle(raw ?? "");
+        if (text) this.pipeline.control({ t: "title", text }, true);
+        this.log(text ? "named the dork" : "title model gave no usable name");
+      })
+      .catch((e) => this.log("could not name the dork:", errTag(e)))
+      .finally(() => {
+        this.naming = false;
+      });
   }
 
   // ------------------------------------------------------------------ dedupe journal

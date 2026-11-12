@@ -2,13 +2,7 @@ import { useState } from 'react'
 import type { Block } from '@dorks/shared'
 import type { Usage } from '@dorks/client'
 import { Button } from '@dorks/ui/button'
-import {
-  MessageScroller,
-  MessageScrollerButton,
-  MessageScrollerContent,
-  MessageScrollerProvider,
-  MessageScrollerViewport,
-} from '@dorks/ui/message-scroller'
+import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport } from '@dorks/ui/message-scroller'
 import { FrameLayout } from '../components/AppFrame'
 import { AppSidebarView } from '../components/AppSidebar'
 import { UsageBarView } from '../components/UsageBar'
@@ -31,19 +25,49 @@ const demoUsage: Usage = {
 }
 
 const initialBlocks: Block[] = [
-  { kind: 'user', id: 'u1', text: `Fix the flaky bridge reconnect after the box wakes. Check the current tests too.\n\n![Reconnect error in the app](${mockShot('#fde2e2', '#f2a1a1')})`, at: Date.now() - 36 * 60_000 },
+  {
+    kind: 'user',
+    id: 'u1',
+    text: `Fix the flaky bridge reconnect after the box wakes. Check the current tests too.\n\n![Reconnect error in the app](${mockShot('#fde2e2', '#f2a1a1')})`,
+    at: Date.now() - 36 * 60_000,
+  },
   { kind: 'assistant', id: 'a0', text: 'Looking for where the bridge resumes after a wake.', streaming: false, at: Date.now() - 32 * 60_000 },
-  { kind: 'tool', id: 't1', name: 'Bash', summary: "rg -n 'wake|reconnect' infra/bridge/src", status: 'ok', preview: 'infra/bridge/src/claude.ts:223: resume box\ninfra/bridge/src/claude.ts:228: reconnect bridge' },
+  {
+    kind: 'tool',
+    id: 't1',
+    name: 'Bash',
+    summary: "rg -n 'wake|reconnect' infra/bridge/src",
+    status: 'ok',
+    preview: 'infra/bridge/src/claude.ts:223: resume box\ninfra/bridge/src/claude.ts:228: reconnect bridge',
+  },
   { kind: 'tool', id: 't2', name: 'Bash', summary: 'pnpm --filter @dorks/bridge test', status: 'error', preview: 'FAIL reconnect restores queued messages\nError: timed out waiting for bridge' },
   { kind: 'assistant', id: 'a0b', text: 'The reconnect test times out. The queue flushes before the handshake, so I’ll wait for it.', streaming: false, at: Date.now() - 28 * 60_000 },
   { kind: 'tool', id: 't2a', name: 'Read', summary: 'infra/bridge/src/reconnect.ts', status: 'ok' },
   { kind: 'tool', id: 't2b', name: 'Edit', summary: 'infra/bridge/src/reconnect.ts', status: 'ok' },
   { kind: 'tool', id: 't2c', name: 'Bash', summary: 'pnpm --filter @dorks/bridge test', status: 'ok', preview: 'PASS reconnect restores queued messages' },
-  { kind: 'assistant', id: 'a1', final: true, text: 'The box resumed before the bridge was ready, so queued messages could arrive during that gap. The reconnect now waits for the bridge handshake before it flushes the queue, and the bridge tests pass.\n\n![Before the fix](' + mockShot('#e3e9f3', '#a7b4c8') + ') ![After the fix](' + mockShot('#e4f3e8', '#9fcbab') + ')\n\n- Wait for the bridge handshake before flushing\n- Back off between attempts, up to 30s\n\n```ts\nawait bridge.ready()\n```', streaming: false, at: Date.now() - 24 * 60_000 },
+  {
+    kind: 'assistant',
+    id: 'a1',
+    final: true,
+    text:
+      'The box resumed before the bridge was ready, so queued messages could arrive during that gap. The reconnect now waits for the bridge handshake before it flushes the queue, and the bridge tests pass.\n\n![Before the fix](' +
+      mockShot('#e3e9f3', '#a7b4c8') +
+      ') ![After the fix](' +
+      mockShot('#e4f3e8', '#9fcbab') +
+      ')\n\n- Wait for the bridge handshake before flushing\n- Back off between attempts, up to 30s\n\n```ts\nawait bridge.ready()\n```',
+    streaming: false,
+    at: Date.now() - 24 * 60_000,
+  },
   { kind: 'turn', id: 'tn1', outcome: 'done', finalId: 'a1', durationMs: 134_000, at: Date.now() - 3 * 60_000 },
   { kind: 'user', id: 'u2', text: 'Please cover the reconnect race with a test before changing the handler.', at: Date.now() - 20 * 60_000 },
   { kind: 'tool', id: 't3', name: 'Bash', summary: 'pnpm --filter @dorks/bridge test', status: 'running' },
-  { kind: 'assistant', id: 'a2', text: 'I added a regression test for a message arriving while the box is waking. I’m checking the dispatch order now.', streaming: true, at: Date.now() - 16 * 60_000 },
+  {
+    kind: 'assistant',
+    id: 'a2',
+    text: 'I added a regression test for a message arriving while the box is waking. I’m checking the dispatch order now.',
+    streaming: true,
+    at: Date.now() - 16 * 60_000,
+  },
 ]
 
 const chats = [
@@ -107,18 +131,33 @@ const DEMO_SCREEN = `<!doctype html><meta charset="utf-8"><body style="margin:0;
 
 const details: ChatDetailsData = {
   computer: {
-    awake: true, working: true, used: true,
+    awake: true,
+    working: true,
+    used: true,
     fetchUrl: async () => `data:text/html;charset=utf-8,${encodeURIComponent(DEMO_SCREEN)}`,
     interrupt: async () => {},
   },
   pr: { url: 'https://github.com/acme/demo/pull/142', number: 142 },
   previews: [
-    { name: 'Web app', url: 'http://localhost:5173', favicon: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#111"/><text x="8" y="11.5" font-family="system-ui" font-size="10" font-weight="500" fill="white" text-anchor="middle">A</text></svg>')}`, html: `<!doctype html><html><body style="margin:0;font:14px system-ui;color:#111">
+    {
+      name: 'Web app',
+      url: 'http://localhost:5173',
+      favicon: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#111"/><text x="8" y="11.5" font-family="system-ui" font-size="10" font-weight="500" fill="white" text-anchor="middle">A</text></svg>')}`,
+      html: `<!doctype html><html><body style="margin:0;font:14px system-ui;color:#111">
 <header style="display:flex;gap:16px;align-items:center;padding:16px 24px;border-bottom:1px solid #eee"><strong style="font-weight:500">Acme</strong><a href="#" style="color:#666">Docs</a><a href="#" style="color:#666">Pricing</a><button style="margin-left:auto;padding:6px 12px;border:0;border-radius:6px;background:#111;color:#fff">Sign in</button></header>
 <main style="padding:40px 24px;max-width:520px"><h1 style="font-size:24px;font-weight:500;margin:0 0 8px">Bridge status</h1><p style="color:#666;margin:0 0 24px">Reconnects after wake: 3 today, all recovered.</p>
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div style="padding:16px;border-radius:6px;background:#f4f4f5">Queued<br><span style="font-size:20px">0</span></div><div style="padding:16px;border-radius:6px;background:#f4f4f5">Latency<br><span style="font-size:20px">42 ms</span></div></div></main></body></html>` },
-    { name: 'Docs', url: 'http://localhost:4321', favicon: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#3b6be8"/><text x="8" y="11.5" font-family="system-ui" font-size="10" font-weight="500" fill="white" text-anchor="middle">D</text></svg>')}` },
-    { name: 'Storybook', url: 'http://localhost:6006', favicon: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#ff4785"/><text x="8" y="11.5" font-family="system-ui" font-size="10" font-weight="500" fill="white" text-anchor="middle">S</text></svg>')}` },
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div style="padding:16px;border-radius:6px;background:#f4f4f5">Queued<br><span style="font-size:20px">0</span></div><div style="padding:16px;border-radius:6px;background:#f4f4f5">Latency<br><span style="font-size:20px">42 ms</span></div></div></main></body></html>`,
+    },
+    {
+      name: 'Docs',
+      url: 'http://localhost:4321',
+      favicon: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#3b6be8"/><text x="8" y="11.5" font-family="system-ui" font-size="10" font-weight="500" fill="white" text-anchor="middle">D</text></svg>')}`,
+    },
+    {
+      name: 'Storybook',
+      url: 'http://localhost:6006',
+      favicon: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#ff4785"/><text x="8" y="11.5" font-family="system-ui" font-size="10" font-weight="500" fill="white" text-anchor="middle">S</text></svg>')}`,
+    },
   ],
   changes: [
     { path: 'infra/bridge/src/claude.ts', additions: 48, deletions: 12 },
@@ -165,44 +204,83 @@ export function Demo() {
   }
 
   return (
-    <FrameLayout sidebar={<AppSidebarView chats={chats.map((c) => (c.id === 'preview' ? { ...c, working: !stopped } : c))} chatTo="/dev/chat" orderKey="dorks.demo.chat-preview" usage={<UsageBarView usage={demoUsage} />} />}>
-      <ChatSplit details={detailsOpen && !showNew ? <ChatDetails data={details} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} onAsk={setText} /> : undefined}>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <PageHeader divider={showNew}
-          title={showNew ? 'New session' : 'Fix flaky bridge reconnect after wake'}
-          titleActions={!showNew && <ArchiveButton archived={archived} onClick={() => setArchived((a) => !a)} />}
-          actions={<>
-            {!showNew && <ChatMenu prUrl="https://github.com/acme/demo/pull/142" detailsOpen={detailsOpen} onDelete={() => setShowNew(true)} />}
-            {!detailsOpen && !showNew && <ShowDetailsButton onClick={() => setDetailsOpen(true)} />}
-          </>}
+    <FrameLayout
+      sidebar={
+        <AppSidebarView
+          chats={chats.map((c) => (c.id === 'preview' ? { ...c, working: !stopped } : c))}
+          chatTo="/dev/chat"
+          orderKey="dorks.demo.chat-preview"
+          usage={<UsageBarView usage={demoUsage} />}
         />
-        {showNew ? (
-          <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col justify-center gap-8 px-4 py-8">
-            <div className="space-y-2">
-              <h2 className="text-lg font-medium">What should we work on?</h2>
-              <p className="text-sm text-muted-foreground">Choose a repository and agent, then describe the change you want.</p>
+      }
+    >
+      <ChatSplit
+        details={
+          detailsOpen && !showNew ? (
+            <ChatDetails data={details} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} onAsk={setText} />
+          ) : undefined
+        }
+      >
+        <div className="flex min-w-0 flex-1 flex-col">
+          <PageHeader
+            divider={showNew}
+            title={showNew ? 'New session' : 'Fix flaky bridge reconnect after wake'}
+            titleActions={!showNew && <ArchiveButton archived={archived} onClick={() => setArchived((a) => !a)} />}
+            actions={
+              <>
+                {!showNew && <ChatMenu prUrl="https://github.com/acme/demo/pull/142" detailsOpen={detailsOpen} onDelete={() => setShowNew(true)} />}
+                {!detailsOpen && !showNew && <ShowDetailsButton onClick={() => setDetailsOpen(true)} />}
+              </>
+            }
+          />
+          {showNew ? (
+            <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col justify-center gap-8 px-4 py-8">
+              <div className="space-y-2">
+                <h2 className="text-lg font-medium">What should we work on?</h2>
+                <p className="text-sm text-muted-foreground">Choose a repository and agent, then describe the change you want.</p>
+              </div>
+              <div className="-mx-4">
+                <Composer text={text} setText={setText} repo={repo} setRepo={setRepo} provider={provider} setProvider={setProvider} onSubmit={() => send()} pending={false} error="" />
+              </div>
             </div>
-            <div className="-mx-4">
-              <Composer text={text} setText={setText} repo={repo} setRepo={setRepo} provider={provider} setProvider={setProvider} onSubmit={() => send()} pending={false} error="" />
-            </div>
-          </div>
-        ) : (
-          <section className="flex min-h-0 flex-1 flex-col" aria-label="thread">
-            <MessageScrollerProvider autoScroll defaultScrollPosition="end">
-              <MessageScroller>
-                <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
-                  <MessageScrollerContent className="mx-auto w-full max-w-4xl gap-6 px-10 pt-6 pb-12" data-testid="transcript">
-                    <ChatMessages blocks={blocks} agent="Claude" onReply={(quoted, draft) => { setReply(quoted); if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft)) }} onReplySend={(quoted, answer) => send(withReply(quoted, answer))} />
-                    <div><AgentStatus state={stopped ? 'idle' : 'working'} live="live" /></div>
-                  </MessageScrollerContent>
-                </MessageScrollerViewport>
-                <MessageScrollerButton />
-              </MessageScroller>
-            </MessageScrollerProvider>
-            <Composer text={text} setText={setText} repo={repo} provider="claude" onSubmit={() => send()} reply={reply} onClearReply={() => setReply(undefined)} pending={false} error="" onStop={stopped ? undefined : stop} />
-          </section>
-        )}
-      </div>
+          ) : (
+            <section className="flex min-h-0 flex-1 flex-col" aria-label="thread">
+              <MessageScrollerProvider autoScroll defaultScrollPosition="end">
+                <MessageScroller>
+                  <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
+                    <MessageScrollerContent className="mx-auto w-full max-w-4xl gap-6 px-10 pt-6 pb-12" data-testid="transcript">
+                      <ChatMessages
+                        blocks={blocks}
+                        agent="Claude"
+                        onReply={(quoted, draft) => {
+                          setReply(quoted)
+                          if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft))
+                        }}
+                        onReplySend={(quoted, answer) => send(withReply(quoted, answer))}
+                      />
+                      <div>
+                        <AgentStatus state={stopped ? 'idle' : 'working'} live="live" />
+                      </div>
+                    </MessageScrollerContent>
+                  </MessageScrollerViewport>
+                  <MessageScrollerButton />
+                </MessageScroller>
+              </MessageScrollerProvider>
+              <Composer
+                text={text}
+                setText={setText}
+                repo={repo}
+                provider="claude"
+                onSubmit={() => send()}
+                reply={reply}
+                onClearReply={() => setReply(undefined)}
+                pending={false}
+                error=""
+                onStop={stopped ? undefined : stop}
+              />
+            </section>
+          )}
+        </div>
       </ChatSplit>
     </FrameLayout>
   )

@@ -89,9 +89,7 @@ const onAgentReady: Handler = (c, { stay, go }) => {
   if (c.state === "creating" || c.state === "waking") {
     if (c.archived) return go("idle", ["cancel_watchdog", "pause_box"]);
     // A fresh agent is between turns, so a notify that was held for the previous one can go out now.
-    return c.queued
-      ? go("working", ["cancel_watchdog", ...(c.notifyHeld ? ["release_notify" as const] : []), "deliver_outbox"])
-      : go("idle", ["cancel_watchdog", "arm_sleep"]);
+    return c.queued ? go("working", ["cancel_watchdog", ...(c.notifyHeld ? ["release_notify" as const] : []), "deliver_outbox"]) : go("idle", ["cancel_watchdog", "arm_sleep"]);
   }
   // bridge reconnected after a blip: redeliver anything unacked
   if (c.state === "working" || c.state === "idle") return stay(["cancel_watchdog", "deliver_outbox"]);

@@ -29,8 +29,14 @@ const SIZES: { value: MachineType; label: string }[] = [
 ]
 
 const STEP_NAMES: Record<string, string> = {
-  prepare: 'Cleaning up', create: 'Creating a machine', start: 'Starting it', clone: 'Cloning repositories', setup: 'Running the setup',
-  scan: 'Checking for secrets', save: 'Saving the image', finish: 'Finishing up',
+  prepare: 'Cleaning up',
+  create: 'Creating a machine',
+  start: 'Starting it',
+  clone: 'Cloning repositories',
+  setup: 'Running the setup',
+  scan: 'Checking for secrets',
+  save: 'Saving the image',
+  finish: 'Finishing up',
 }
 
 function ago(ms: number) {
@@ -59,22 +65,30 @@ function BuildList() {
   const { actions } = useDorksClient()
   const navigate = useNavigate()
   const { run, pending } = usePending()
-  const create = () => run(async () => {
-    const taken = new Set(builds?.map((b) => b.name.toLowerCase()))
-    let name = 'New build'
-    for (let n = 2; taken.has(name.toLowerCase()); n++) name = `New build ${n}`
-    const { id } = await actions.createBuild({ name })
-    await navigate({ to: '/builds', search: { build: id } })
-  })
-  const newButton = <Button size="sm" variant="outline" disabled={pending} onClick={() => void create()}>New build</Button>
-  if (builds && builds.length === 0) return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <PageHeader title="Builds" divider={false} />
-      <div className="flex min-h-0 flex-1 items-center justify-center pb-12">
-        <EmptyState figure="stack" title="No builds yet" description="A build is a machine set up once: tools installed, variables set, repositories cloned.">{newButton}</EmptyState>
-      </div>
-    </div>
+  const create = () =>
+    run(async () => {
+      const taken = new Set(builds?.map((b) => b.name.toLowerCase()))
+      let name = 'New build'
+      for (let n = 2; taken.has(name.toLowerCase()); n++) name = `New build ${n}`
+      const { id } = await actions.createBuild({ name })
+      await navigate({ to: '/builds', search: { build: id } })
+    })
+  const newButton = (
+    <Button size="sm" variant="outline" disabled={pending} onClick={() => void create()}>
+      New build
+    </Button>
   )
+  if (builds && builds.length === 0)
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <PageHeader title="Builds" divider={false} />
+        <div className="flex min-h-0 flex-1 items-center justify-center pb-12">
+          <EmptyState figure="stack" title="No builds yet" description="A build is a machine set up once: tools installed, variables set, repositories cloned.">
+            {newButton}
+          </EmptyState>
+        </div>
+      </div>
+    )
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader title="Builds" actions={newButton} />
@@ -85,7 +99,10 @@ function BuildList() {
               <Link to="/builds" search={{ build: b.id }} className="flex items-baseline gap-3 rounded-[var(--control-radius)] px-3 py-2.5 text-sm hover:bg-foreground/[0.04]">
                 <span className="min-w-0 truncate">{b.name}</span>
                 {b.isDefault && <span className="text-xs text-muted-foreground">Default</span>}
-                <span className="ml-auto shrink-0 text-xs text-muted-foreground">{status(b)}{b.drafts.some((d) => d.status === 'submitted') ? ' · a change to review' : ''}</span>
+                <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                  {status(b)}
+                  {b.drafts.some((d) => d.status === 'submitted') ? ' · a change to review' : ''}
+                </span>
               </Link>
             </li>
           ))}
@@ -98,16 +115,19 @@ function BuildList() {
 function BuildPage({ id }: { id: string }) {
   const build = useBuild(id)
   if (build === undefined) return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
-  if (build === null) return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <PageHeader title="Builds" divider={false} />
-      <div className="flex min-h-0 flex-1 items-center justify-center pb-12">
-        <EmptyState figure="stack" title="This build no longer exists">
-          <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/builds" />}>Back to builds</Button>
-        </EmptyState>
+  if (build === null)
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <PageHeader title="Builds" divider={false} />
+        <div className="flex min-h-0 flex-1 items-center justify-center pb-12">
+          <EmptyState figure="stack" title="This build no longer exists">
+            <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/builds" />}>
+              Back to builds
+            </Button>
+          </EmptyState>
+        </div>
       </div>
-    </div>
-  )
+    )
   return <BuildDetails build={build} />
 }
 
@@ -116,46 +136,98 @@ function BuildDetails({ build }: { build: BuildView }) {
   const navigate = useNavigate()
   const { run, pending, error } = usePending()
   const missing = build.vars.filter((v) => v.buildTime && v.requested).map((v) => v.name)
-  const startSetup = () => run(async () => {
-    const { id } = await actions.createDork({ buildId: build.id, setup: true, message: `Set up this machine (the build "${build.name}"). Ask me what it needs if you are not sure, try each step in this box first, then use the machine_ tools to draft the setup, trial-run it and submit it for my approval.` })
-    await navigate({ to: '/dorks', search: { dork: id } })
-  })
+  const startSetup = () =>
+    run(async () => {
+      const { id } = await actions.createDork({
+        buildId: build.id,
+        setup: true,
+        message: `Set up this machine (the build "${build.name}"). Ask me what it needs if you are not sure, try each step in this box first, then use the machine_ tools to draft the setup, trial-run it and submit it for my approval.`,
+      })
+      await navigate({ to: '/dorks', search: { dork: id } })
+    })
   const buildLabel = build.image ? 'Rebuild' : 'Build'
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader
-        title={<Link to="/builds" className="text-muted-foreground hover:text-foreground">Builds</Link>}
+        title={
+          <Link to="/builds" className="text-muted-foreground hover:text-foreground">
+            Builds
+          </Link>
+        }
         subtitle={<span className="text-sm text-foreground">{build.name}</span>}
         actions={
           <>
-            <Button size="sm" variant="ghost" disabled={pending} onClick={() => void startSetup()}>Set up with an agent</Button>
-            <Button size="sm" variant="outline" disabled={pending || !!build.activeRun || missing.length > 0} onClick={() => void run(() => actions.startRun(build.id, 'image'))}>{buildLabel}</Button>
+            <Button size="sm" variant="ghost" disabled={pending} onClick={() => void startSetup()}>
+              Set up with an agent
+            </Button>
+            <Button size="sm" variant="outline" disabled={pending || !!build.activeRun || missing.length > 0} onClick={() => void run(() => actions.startRun(build.id, 'image'))}>
+              {buildLabel}
+            </Button>
           </>
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col">
           <Group title="Status">
-            <p data-testid="build-status">{status(build)}{build.image?.stale && build.image.staleReason ? `. ${build.image.staleReason}` : '.'}</p>
-            {missing.length > 0 && <p className="text-muted-foreground">Fill in {missing.join(', ')} below before building: the setup needs {missing.length === 1 ? 'it' : 'them'}.</p>}
-            {build.activeRun && <Button size="sm" variant="outline" disabled={pending} onClick={() => void run(() => actions.cancelRun(build.id, build.activeRun!.id))}>Cancel</Button>}
-            {!build.activeRun && build.lastRun?.status === 'failed' && build.lastRun.error && <pre className="whitespace-pre-wrap" role="alert">{build.lastRun.error}</pre>}
+            <p data-testid="build-status">
+              {status(build)}
+              {build.image?.stale && build.image.staleReason ? `. ${build.image.staleReason}` : '.'}
+            </p>
+            {missing.length > 0 && (
+              <p className="text-muted-foreground">
+                Fill in {missing.join(', ')} below before building: the setup needs {missing.length === 1 ? 'it' : 'them'}.
+              </p>
+            )}
+            {build.activeRun && (
+              <Button size="sm" variant="outline" disabled={pending} onClick={() => void run(() => actions.cancelRun(build.id, build.activeRun!.id))}>
+                Cancel
+              </Button>
+            )}
+            {!build.activeRun && build.lastRun?.status === 'failed' && build.lastRun.error && (
+              <pre className="whitespace-pre-wrap" role="alert">
+                {build.lastRun.error}
+              </pre>
+            )}
             <p className="text-muted-foreground">
               {build.dorkCount === 1 ? '1 session uses it.' : `${build.dorkCount} sessions use it.`}{' '}
               {build.isDefault ? 'New sessions start on it.' : build.image ? '' : 'Build it before sessions can start on it.'}
             </p>
             {build.image && (
-              <div><Button size="sm" variant="ghost" disabled={pending} onClick={() => void run(() => actions.setDefaultBuild(build.id, !build.isDefault))}>{build.isDefault ? 'Stop using for new sessions' : 'Use for new sessions'}</Button></div>
+              <div>
+                <Button size="sm" variant="ghost" disabled={pending} onClick={() => void run(() => actions.setDefaultBuild(build.id, !build.isDefault))}>
+                  {build.isDefault ? 'Stop using for new sessions' : 'Use for new sessions'}
+                </Button>
+              </div>
             )}
-            {error && <p role="alert" className="text-destructive">{error}</p>}
+            {error && (
+              <p role="alert" className="text-destructive">
+                {error}
+              </p>
+            )}
           </Group>
-          {build.drafts.filter((d) => d.status === 'submitted' || d.status === 'editing').map((d) => <DraftReview key={d.id} build={build} draft={d} />)}
-          <Group title="Setup script"><SetupScript build={build} /></Group>
-          <Group title="Repositories"><Repositories build={build} /></Group>
-          <Group title="Variables"><Variables build={build} /></Group>
-          <Group title="Size"><Size build={build} /></Group>
-          <Group title="Runs"><Runs build={build} /></Group>
-          <Group title="Name and removal"><NameAndDelete build={build} /></Group>
+          {build.drafts
+            .filter((d) => d.status === 'submitted' || d.status === 'editing')
+            .map((d) => (
+              <DraftReview key={d.id} build={build} draft={d} />
+            ))}
+          <Group title="Setup script">
+            <SetupScript build={build} />
+          </Group>
+          <Group title="Repositories">
+            <Repositories build={build} />
+          </Group>
+          <Group title="Variables">
+            <Variables build={build} />
+          </Group>
+          <Group title="Size">
+            <Size build={build} />
+          </Group>
+          <Group title="Runs">
+            <Runs build={build} />
+          </Group>
+          <Group title="Name and removal">
+            <NameAndDelete build={build} />
+          </Group>
         </div>
       </div>
     </div>
@@ -168,11 +240,32 @@ function SetupScript({ build }: { build: BuildView }) {
   useEffect(() => setText(build.setupScript), [build.setupScript])
   const { run, pending, error } = usePending()
   return (
-    <form onSubmit={(e) => { e.preventDefault(); void run(() => actions.updateBuild(build.id, { setupScript: text })) }}>
-      <small className="text-muted-foreground">Runs once, when the machine is built, as <code>user</code> with passwordless sudo in <code>/home/user</code>. Stops at the first failing command.</small>
-      <Textarea aria-label="setup script" rows={8} spellCheck={false} className="max-w-none! font-mono text-xs" placeholder="sudo apt-get install -y jq" value={text} onChange={(e) => setText(e.target.value)} />
-      <Button type="submit" size="sm" disabled={pending || text === build.setupScript}>Save</Button>
-      {error && <p role="alert" className="text-destructive">{error}</p>}
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        void run(() => actions.updateBuild(build.id, { setupScript: text }))
+      }}
+    >
+      <small className="text-muted-foreground">
+        Runs once, when the machine is built, as <code>user</code> with passwordless sudo in <code>/home/user</code>. Stops at the first failing command.
+      </small>
+      <Textarea
+        aria-label="setup script"
+        rows={8}
+        spellCheck={false}
+        className="max-w-none! font-mono text-xs"
+        placeholder="sudo apt-get install -y jq"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+      <Button type="submit" size="sm" disabled={pending || text === build.setupScript}>
+        Save
+      </Button>
+      {error && (
+        <p role="alert" className="text-destructive">
+          {error}
+        </p>
+      )}
     </form>
   )
 }
@@ -186,7 +279,9 @@ function Repositories({ build }: { build: BuildView }) {
   const save = (repos: BuildRepo[]) => run(() => actions.updateBuild(build.id, { repos }))
   return (
     <>
-      <small className="text-muted-foreground">Cloned into <code>~/work/owner/name</code> when the machine is built. A session fetches before it starts, so new work starts from the latest code.</small>
+      <small className="text-muted-foreground">
+        Cloned into <code>~/work/owner/name</code> when the machine is built. A session fetches before it starts, so new work starts from the latest code.
+      </small>
       {build.repos.length > 0 && (
         <ul aria-label="repositories">
           {build.repos.map((r) => (
@@ -194,26 +289,55 @@ function Repositories({ build }: { build: BuildView }) {
               <div className="flex items-baseline gap-2">
                 <code>{r.repo}</code>
                 {r.branch && <span className="text-muted-foreground">{r.branch}</span>}
-                <Button type="button" size="sm" variant="ghost" className="ml-auto" disabled={pending} aria-label={`remove ${r.repo}`} onClick={() => void save(build.repos.filter((x) => x.repo !== r.repo))}>Remove</Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="ml-auto"
+                  disabled={pending}
+                  aria-label={`remove ${r.repo}`}
+                  onClick={() => void save(build.repos.filter((x) => x.repo !== r.repo))}
+                >
+                  Remove
+                </Button>
               </div>
               {r.setupScript && <pre>{r.setupScript}</pre>}
             </li>
           ))}
         </ul>
       )}
-      <form onSubmit={(e) => {
-        e.preventDefault()
-        void run(async () => {
-          await actions.updateBuild(build.id, { repos: [...build.repos, { repo: repo.trim(), ...(branch.trim() ? { branch: branch.trim() } : {}), ...(script.trim() ? { setupScript: script } : {}) }] })
-          setRepo(''); setBranch(''); setScript('')
-        })
-      }}>
-        <label>Repository <Input aria-label="repository" placeholder="owner/name" value={repo} onChange={(e) => setRepo(e.target.value)} /></label>
-        <label>Branch (optional) <Input aria-label="branch" placeholder="the default branch" value={branch} onChange={(e) => setBranch(e.target.value)} /></label>
-        <label>Setup in the clone (optional) <Textarea aria-label="repository setup" rows={2} spellCheck={false} className="font-mono text-xs" placeholder="pnpm install" value={script} onChange={(e) => setScript(e.target.value)} /></label>
-        <Button type="submit" size="sm" disabled={pending || !repo.trim()}>Add repository</Button>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          void run(async () => {
+            await actions.updateBuild(build.id, {
+              repos: [...build.repos, { repo: repo.trim(), ...(branch.trim() ? { branch: branch.trim() } : {}), ...(script.trim() ? { setupScript: script } : {}) }],
+            })
+            setRepo('')
+            setBranch('')
+            setScript('')
+          })
+        }}
+      >
+        <label>
+          Repository <Input aria-label="repository" placeholder="owner/name" value={repo} onChange={(e) => setRepo(e.target.value)} />
+        </label>
+        <label>
+          Branch (optional) <Input aria-label="branch" placeholder="the default branch" value={branch} onChange={(e) => setBranch(e.target.value)} />
+        </label>
+        <label>
+          Setup in the clone (optional){' '}
+          <Textarea aria-label="repository setup" rows={2} spellCheck={false} className="font-mono text-xs" placeholder="pnpm install" value={script} onChange={(e) => setScript(e.target.value)} />
+        </label>
+        <Button type="submit" size="sm" disabled={pending || !repo.trim()}>
+          Add repository
+        </Button>
       </form>
-      {error && <p role="alert" className="text-destructive">{error}</p>}
+      {error && (
+        <p role="alert" className="text-destructive">
+          {error}
+        </p>
+      )}
     </>
   )
 }
@@ -236,38 +360,82 @@ function Variables({ build }: { build: BuildView }) {
             <li key={v.name} className="flex flex-wrap items-baseline gap-2">
               <code>{v.name}</code>
               <span className="min-w-0 truncate text-muted-foreground">
-                {v.requested ? 'Waiting for a value' : v.secret ? 'Secret' : v.value}{v.buildTime ? ' · needed while building' : ''}
+                {v.requested ? 'Waiting for a value' : v.secret ? 'Secret' : v.value}
+                {v.buildTime ? ' · needed while building' : ''}
               </span>
               <span className="ml-auto flex gap-1">
-                {(v.requested || v.secret) && <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={() => { setFilling(v.name); setFill('') }}>{v.requested ? 'Fill in' : 'Replace'}</Button>}
-                <Button type="button" size="sm" variant="ghost" disabled={pending} aria-label={`remove ${v.name}`} onClick={() => void run(() => actions.deleteBuildVar(build.id, v.name))}>Remove</Button>
+                {(v.requested || v.secret) && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={pending}
+                    onClick={() => {
+                      setFilling(v.name)
+                      setFill('')
+                    }}
+                  >
+                    {v.requested ? 'Fill in' : 'Replace'}
+                  </Button>
+                )}
+                <Button type="button" size="sm" variant="ghost" disabled={pending} aria-label={`remove ${v.name}`} onClick={() => void run(() => actions.deleteBuildVar(build.id, v.name))}>
+                  Remove
+                </Button>
               </span>
               {filling === v.name && (
-                <form className="w-full" onSubmit={(e) => { e.preventDefault(); void run(async () => { await actions.setBuildVar(build.id, v.name, { value: fill }); setFilling(null) }) }}>
+                <form
+                  className="w-full"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    void run(async () => {
+                      await actions.setBuildVar(build.id, v.name, { value: fill })
+                      setFilling(null)
+                    })
+                  }}
+                >
                   <Input aria-label={`value of ${v.name}`} type={v.secret ? 'password' : 'text'} autoComplete="off" value={fill} onChange={(e) => setFill(e.target.value)} />
-                  <Button type="submit" size="sm" disabled={pending || !fill}>Save</Button>
+                  <Button type="submit" size="sm" disabled={pending || !fill}>
+                    Save
+                  </Button>
                 </form>
               )}
             </li>
           ))}
         </ul>
       )}
-      <form onSubmit={(e) => {
-        e.preventDefault()
-        void run(async () => {
-          await actions.setBuildVar(build.id, name.trim(), { value, secret, buildTime })
-          setName(''); setValue('')
-        })
-      }}>
-        <label>Name <Input aria-label="variable name" placeholder="NAME_IN_CAPS" value={name} onChange={(e) => setName(e.target.value)} /></label>
-        <label>Value <Input aria-label="variable value" type={secret ? 'password' : 'text'} autoComplete="off" value={value} onChange={(e) => setValue(e.target.value)} /></label>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          void run(async () => {
+            await actions.setBuildVar(build.id, name.trim(), { value, secret, buildTime })
+            setName('')
+            setValue('')
+          })
+        }}
+      >
+        <label>
+          Name <Input aria-label="variable name" placeholder="NAME_IN_CAPS" value={name} onChange={(e) => setName(e.target.value)} />
+        </label>
+        <label>
+          Value <Input aria-label="variable value" type={secret ? 'password' : 'text'} autoComplete="off" value={value} onChange={(e) => setValue(e.target.value)} />
+        </label>
         <div className="flex gap-4 font-normal">
-          <label className="flex-row! items-center gap-2 font-normal!"><input type="checkbox" checked={secret} onChange={(e) => setSecret(e.target.checked)} /> Secret</label>
-          <label className="flex-row! items-center gap-2 font-normal!"><input type="checkbox" checked={buildTime} onChange={(e) => setBuildTime(e.target.checked)} /> Needed while building</label>
+          <label className="flex-row! items-center gap-2 font-normal!">
+            <input type="checkbox" checked={secret} onChange={(e) => setSecret(e.target.checked)} /> Secret
+          </label>
+          <label className="flex-row! items-center gap-2 font-normal!">
+            <input type="checkbox" checked={buildTime} onChange={(e) => setBuildTime(e.target.checked)} /> Needed while building
+          </label>
         </div>
-        <Button type="submit" size="sm" disabled={pending || !name.trim()}>Save variable</Button>
+        <Button type="submit" size="sm" disabled={pending || !name.trim()}>
+          Save variable
+        </Button>
       </form>
-      {error && <p role="alert" className="text-destructive">{error}</p>}
+      {error && (
+        <p role="alert" className="text-destructive">
+          {error}
+        </p>
+      )}
     </>
   )
 }
@@ -277,11 +445,24 @@ function Size({ build }: { build: BuildView }) {
   const { run, pending, error } = usePending()
   return (
     <>
-      <NativeSelect aria-label="machine size" value={build.machineType} disabled={pending} onChange={(e) => void run(() => actions.updateBuild(build.id, { machineType: e.target.value as MachineType }))}>
-        {SIZES.map((s) => <NativeSelectOption key={s.value} value={s.value}>{s.label}</NativeSelectOption>)}
+      <NativeSelect
+        aria-label="machine size"
+        value={build.machineType}
+        disabled={pending}
+        onChange={(e) => void run(() => actions.updateBuild(build.id, { machineType: e.target.value as MachineType }))}
+      >
+        {SIZES.map((s) => (
+          <NativeSelectOption key={s.value} value={s.value}>
+            {s.label}
+          </NativeSelectOption>
+        ))}
       </NativeSelect>
       <small className="text-muted-foreground">Billed per second while a session runs. Extra large needs Boat’s $100 plan.</small>
-      {error && <p role="alert" className="text-destructive">{error}</p>}
+      {error && (
+        <p role="alert" className="text-destructive">
+          {error}
+        </p>
+      )}
     </>
   )
 }
@@ -294,17 +475,32 @@ function Runs({ build }: { build: BuildView }) {
   const shown = open ?? runs?.[0]?.id ?? null
   return (
     <>
-      <div><Button size="sm" variant="outline" disabled={pending || !!build.activeRun} onClick={() => void run(() => actions.startRun(build.id, 'trial'))}>Try the setup</Button></div>
+      <div>
+        <Button size="sm" variant="outline" disabled={pending || !!build.activeRun} onClick={() => void run(() => actions.startRun(build.id, 'trial'))}>
+          Try the setup
+        </Button>
+      </div>
       <small className="text-muted-foreground">A try runs the setup on a throwaway machine without saving it and without secrets.</small>
-      {error && <p role="alert" className="text-destructive">{error}</p>}
+      {error && (
+        <p role="alert" className="text-destructive">
+          {error}
+        </p>
+      )}
       {runs && runs.length > 0 && (
         <ul aria-label="runs">
           {runs.map((r) => (
             <li key={r.id}>
-              <button type="button" className={`flex w-full items-baseline gap-2 rounded-[var(--control-radius)] px-2 py-1 text-left hover:bg-foreground/[0.04] ${r.id === shown ? 'bg-foreground/[0.07]' : ''}`} onClick={() => setOpen(r.id)}>
+              <button
+                type="button"
+                className={`flex w-full items-baseline gap-2 rounded-[var(--control-radius)] px-2 py-1 text-left hover:bg-foreground/[0.04] ${r.id === shown ? 'bg-foreground/[0.07]' : ''}`}
+                onClick={() => setOpen(r.id)}
+              >
                 <span>{r.kind === 'image' ? 'Build' : 'Try'}</span>
                 <span className="text-muted-foreground">{runStatus(r)}</span>
-                <span className="ml-auto text-xs text-muted-foreground">{r.startedBy === 'owner' ? '' : 'by an agent · '}{ago(r.createdAt)}</span>
+                <span className="ml-auto text-xs text-muted-foreground">
+                  {r.startedBy === 'owner' ? '' : 'by an agent · '}
+                  {ago(r.createdAt)}
+                </span>
               </button>
             </li>
           ))}
@@ -326,13 +522,26 @@ function RunLog({ buildId, runId, run }: { buildId: string; runId: string; run?:
   const bytes = run?.logBytes ?? 0
   useEffect(() => {
     let cancelled = false
-    client.runLog(buildId, runId).then((l) => { if (!cancelled) setText(l.text) }).catch(() => {})
-    return () => { cancelled = true }
+    client
+      .runLog(buildId, runId)
+      .then((l) => {
+        if (!cancelled) setText(l.text)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
   }, [client, buildId, runId, bytes, live])
   return (
     <>
-      <pre aria-label="run log" className="max-h-96 whitespace-pre-wrap">{text || (live ? 'Waiting for output…' : 'No output.')}</pre>
-      {run?.error && run.status === 'failed' && <p role="alert" className="whitespace-pre-wrap text-destructive">{run.error}</p>}
+      <pre aria-label="run log" className="max-h-96 whitespace-pre-wrap">
+        {text || (live ? 'Waiting for output…' : 'No output.')}
+      </pre>
+      {run?.error && run.status === 'failed' && (
+        <p role="alert" className="whitespace-pre-wrap text-destructive">
+          {run.error}
+        </p>
+      )}
     </>
   )
 }
@@ -346,25 +555,53 @@ function NameAndDelete({ build }: { build: BuildView }) {
   const { run, pending, error } = usePending()
   return (
     <>
-      <form onSubmit={(e) => { e.preventDefault(); void run(() => actions.updateBuild(build.id, { name })) }}>
-        <label>Name <Input aria-label="build name" value={name} onChange={(e) => setName(e.target.value)} /></label>
-        <Button type="submit" size="sm" disabled={pending || !name.trim() || name === build.name}>Rename</Button>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          void run(() => actions.updateBuild(build.id, { name }))
+        }}
+      >
+        <label>
+          Name <Input aria-label="build name" value={name} onChange={(e) => setName(e.target.value)} />
+        </label>
+        <Button type="submit" size="sm" disabled={pending || !name.trim() || name === build.name}>
+          Rename
+        </Button>
       </form>
-      <div><Button size="sm" variant="outline" onClick={() => setConfirming(true)}>Delete build</Button></div>
-      {error && <p role="alert" className="text-destructive">{error}</p>}
+      <div>
+        <Button size="sm" variant="outline" onClick={() => setConfirming(true)}>
+          Delete build
+        </Button>
+      </div>
+      {error && (
+        <p role="alert" className="text-destructive">
+          {error}
+        </p>
+      )}
       <Dialog open={confirming} onOpenChange={setConfirming}>
         <DialogContent>
           <DialogHeader className="gap-2">
             <DialogTitle className="text-sm font-medium">Delete {build.name}?</DialogTitle>
-            <DialogDescription className="text-sm leading-5">Its saved image is removed from Boat. Sessions on it keep their machines; one that loses its machine starts again from the base.</DialogDescription>
+            <DialogDescription className="text-sm leading-5">
+              Its saved image is removed from Boat. Sessions on it keep their machines; one that loses its machine starts again from the base.
+            </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <DialogClose render={<Button variant="outline" size="sm" />}>Cancel</DialogClose>
-            <Button variant="destructive" size="sm" disabled={pending} onClick={() => void run(async () => {
-              await actions.deleteBuild(build.id)
-              setConfirming(false)
-              await navigate({ to: '/builds', search: {} })
-            })}>Delete</Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={pending}
+              onClick={() =>
+                void run(async () => {
+                  await actions.deleteBuild(build.id)
+                  setConfirming(false)
+                  await navigate({ to: '/builds', search: {} })
+                })
+              }
+            >
+              Delete
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -387,7 +624,10 @@ function DraftReview({ build, draft }: { build: BuildView; draft: DraftView }) {
   return (
     <Group title={waiting ? 'Change in progress' : 'Change to review'} label="agent draft">
       <p>
-        From <Link to="/dorks" search={{ dork: draft.dorkId }}>{draft.dorkTitle || 'a session'}</Link>
+        From{' '}
+        <Link to="/dorks" search={{ dork: draft.dorkId }}>
+          {draft.dorkTitle || 'a session'}
+        </Link>
         {waiting ? ', still being written.' : '.'}
         {draft.stale ? ' The build changed since the agent started it.' : ''}
       </p>
@@ -396,8 +636,12 @@ function DraftReview({ build, draft }: { build: BuildView; draft: DraftView }) {
         <div key={c.what} className="flex flex-col gap-1">
           <p className="font-medium">{c.what}</p>
           <div className="grid gap-2 md:grid-cols-2">
-            <pre aria-label={`${c.what} before`} className="whitespace-pre-wrap text-muted-foreground">{c.before}</pre>
-            <pre aria-label={`${c.what} after`} className="whitespace-pre-wrap">{c.after}</pre>
+            <pre aria-label={`${c.what} before`} className="whitespace-pre-wrap text-muted-foreground">
+              {c.before}
+            </pre>
+            <pre aria-label={`${c.what} after`} className="whitespace-pre-wrap">
+              {c.after}
+            </pre>
           </div>
         </div>
       ))}
@@ -419,16 +663,31 @@ function DraftReview({ build, draft }: { build: BuildView; draft: DraftView }) {
       {!waiting && (
         <>
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" disabled={pending} onClick={() => void run(async () => {
-              const r = await actions.approveDraft(build.id, draft.id, draft.updatedAt)
-              if (r.missing.length) toast(`Approved. Fill in ${r.missing.join(', ')}, then build.`)
-            })}>Approve and build</Button>
-            <Button size="sm" variant="ghost" disabled={pending} onClick={() => void run(() => actions.rejectDraft(build.id, draft.id, reason.trim() || undefined))}>Reject</Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={pending}
+              onClick={() =>
+                void run(async () => {
+                  const r = await actions.approveDraft(build.id, draft.id, draft.updatedAt)
+                  if (r.missing.length) toast(`Approved. Fill in ${r.missing.join(', ')}, then build.`)
+                })
+              }
+            >
+              Approve and build
+            </Button>
+            <Button size="sm" variant="ghost" disabled={pending} onClick={() => void run(() => actions.rejectDraft(build.id, draft.id, reason.trim() || undefined))}>
+              Reject
+            </Button>
           </div>
           <Input aria-label="reason to reject" placeholder="Why not (optional, the agent reads it)" value={reason} onChange={(e) => setReason(e.target.value)} />
         </>
       )}
-      {error && <p role="alert" className="text-destructive">{error}</p>}
+      {error && (
+        <p role="alert" className="text-destructive">
+          {error}
+        </p>
+      )}
     </Group>
   )
 }

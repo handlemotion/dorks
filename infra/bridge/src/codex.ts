@@ -7,14 +7,15 @@ import { errTag, type Log, type Redactor } from "./redact";
 import { lightCodexModel, lowestEffort } from "./title";
 
 type Json = Record<string, unknown>;
-const obj = (v: unknown): Json => v && typeof v === "object" && !Array.isArray(v) ? v as Json : {};
-const text = (v: unknown): string => typeof v === "string" ? v : "";
+const obj = (v: unknown): Json => (v && typeof v === "object" && !Array.isArray(v) ? (v as Json) : {});
+const text = (v: unknown): string => (typeof v === "string" ? v : "");
 const clip = (v: string) => v.slice(0, 16 * 1024);
 type Effort = "none" | "low" | "medium" | "high" | "xhigh" | "max";
 const EFFORTS: string[] = ["none", "low", "medium", "high", "xhigh", "max"];
-const effortsOf = (model: Json): Effort[] => Array.isArray(model.supportedReasoningEfforts)
-  ? model.supportedReasoningEfforts.map((e: unknown) => obj(e).reasoningEffort).filter((e): e is Effort => typeof e === "string" && EFFORTS.includes(e))
-  : [];
+const effortsOf = (model: Json): Effort[] =>
+  Array.isArray(model.supportedReasoningEfforts)
+    ? model.supportedReasoningEfforts.map((e: unknown) => obj(e).reasoningEffort).filter((e): e is Effort => typeof e === "string" && EFFORTS.includes(e))
+    : [];
 
 export interface CodexOptions {
   cwd: string;
@@ -73,9 +74,14 @@ export class CodexAgent {
     this.child.stdout.setEncoding("utf8");
     this.child.stdout.on("data", (s: string) => this.read(s));
     this.child.stderr.setEncoding("utf8");
-    this.child.stderr.on("data", (s: string) => { this.stderr = (this.stderr + s).slice(-2048); });
+    this.child.stderr.on("data", (s: string) => {
+      this.stderr = (this.stderr + s).slice(-2048);
+    });
     this.child.stdin.on("error", () => {});
-    this.child.on("error", (e) => { this.stderr = `spawn failed (${errTag(e)})`; this.finish(null); });
+    this.child.on("error", (e) => {
+      this.stderr = `spawn failed (${errTag(e)})`;
+      this.finish(null);
+    });
     this.child.on("close", (code) => this.finish(code));
     void this.open().catch(() => {
       this.o.onIssue("ChatGPT is not available from your Boat account. Connect ChatGPT in Boat Agents & Proxying, then send a message to retry.");
@@ -83,12 +89,14 @@ export class CodexAgent {
     });
   }
 
-  get alive() { return !this.exited && !this.stopped; }
+  get alive() {
+    return !this.exited && !this.stopped;
+  }
 
   private write(value: Json) {
     return new Promise<void>((resolve, reject) => {
       if (!this.alive || !this.child.stdin.writable) return reject(new Error("Codex is not running"));
-      this.child.stdin.write(`${JSON.stringify(value)}\n`, (e) => e ? reject(e) : resolve());
+      this.child.stdin.write(`${JSON.stringify(value)}\n`, (e) => (e ? reject(e) : resolve()));
     });
   }
 
@@ -101,10 +109,15 @@ export class CodexAgent {
       }, 30_000);
       this.requests.set(id, { resolve, reject, timer });
     });
-    try { await this.write({ id, method, params }); }
-    catch (e) {
+    try {
+      await this.write({ id, method, params });
+    } catch (e) {
       const pending = this.requests.get(id);
-      if (pending) { clearTimeout(pending.timer); this.requests.delete(id); pending.reject(e as Error); }
+      if (pending) {
+        clearTimeout(pending.timer);
+        this.requests.delete(id);
+        pending.reject(e as Error);
+      }
     }
     return result;
   }
@@ -128,7 +141,9 @@ export class CodexAgent {
       if (!supported) {
         const choices = [...available].filter(([, efforts]) => efforts.length).slice(0, 100);
         this.o.onModels(choices.map(([model, efforts]) => ({ model, efforts })));
-        this.o.onIssue(`${selected.model} (${selected.effort}) is not available to this ChatGPT account. ${choices.length ? "Choose another model shown in the thread." : "No compatible model is available; check this ChatGPT account."} No other model or billing method was selected.`);
+        this.o.onIssue(
+          `${selected.model} (${selected.effort}) is not available to this ChatGPT account. ${choices.length ? "Choose another model shown in the thread." : "No compatible model is available; check this ChatGPT account."} No other model or billing method was selected.`,
+        );
         throw new Error("model unavailable");
       }
       const result = await this.startThread(selected.model);
@@ -170,8 +185,9 @@ export class CodexAgent {
     const developerInstructions = FINAL_ANSWER_GUIDANCE;
     const start = () => this.request("thread/start", { model, cwd: this.o.cwd, approvalPolicy: "never", developerInstructions });
     if (!this.o.resumeSessionId) return start();
-    try { return await this.request("thread/resume", { threadId: this.o.resumeSessionId, excludeTurns: true, developerInstructions }); }
-    catch (e) {
+    try {
+      return await this.request("thread/resume", { threadId: this.o.resumeSessionId, excludeTurns: true, developerInstructions });
+    } catch (e) {
       if (!/not found|does not exist|no such thread/i.test((e as Error).message)) throw e;
       return start();
     }
@@ -183,7 +199,9 @@ export class CodexAgent {
     while ((nl = this.buf.indexOf("\n")) !== -1) {
       const line = this.buf.slice(0, nl);
       this.buf = this.buf.slice(nl + 1);
-      try { this.line(obj(JSON.parse(line))); } catch {}
+      try {
+        this.line(obj(JSON.parse(line)));
+      } catch {}
     }
   }
 
@@ -253,15 +271,25 @@ export class CodexAgent {
   private tool(item: Json): { name: string; summary: string } | null {
     const name = typeof item.type === "string" ? item.type : "";
     if (!["commandExecution", "fileChange", "mcpToolCall", "webSearch"].includes(name)) return null;
-    const summary = name === "commandExecution" ? text(item.command)
-      : name === "fileChange" ? obj((item.changes as unknown[] | undefined)?.[0]).path
-      : name === "mcpToolCall" ? `${text(item.server)}/${text(item.tool)}` : text(item.query);
+    const summary =
+      name === "commandExecution"
+        ? text(item.command)
+        : name === "fileChange"
+          ? obj((item.changes as unknown[] | undefined)?.[0]).path
+          : name === "mcpToolCall"
+            ? `${text(item.server)}/${text(item.tool)}`
+            : text(item.query);
     return { name, summary: clip(this.o.redactor.scrub(text(summary))) };
   }
 
   private async complete(turn: Json) {
     this.finishing = true;
-    this.o.onRaw({ type: "result", is_error: turn.status !== "completed", result: clip(this.o.redactor.scrub(text(obj(turn.error).message) || text(turn.status))), duration_ms: Date.now() - this.startedAt });
+    this.o.onRaw({
+      type: "result",
+      is_error: turn.status !== "completed",
+      result: clip(this.o.redactor.scrub(text(obj(turn.error).message) || text(turn.status))),
+      duration_ms: Date.now() - this.startedAt,
+    });
     this.current = null;
     this.turnId = null;
     if (turn.status === "completed" && this.sessionId) {
@@ -288,8 +316,12 @@ export class CodexAgent {
         return;
       }
       const r = await this.request("turn/start", {
-        threadId: this.sessionId, input: [{ type: "text", text: this.current }], cwd: this.o.cwd,
-        model: this.o.model?.model ?? "gpt-6-sol", effort: this.o.model?.effort ?? "high", approvalPolicy: "never",
+        threadId: this.sessionId,
+        input: [{ type: "text", text: this.current }],
+        cwd: this.o.cwd,
+        model: this.o.model?.model ?? "gpt-6-sol",
+        effort: this.o.model?.effort ?? "high",
+        approvalPolicy: "never",
         sandboxPolicy: { type: "externalSandbox", networkAccess: "enabled" },
       });
       if (this.current !== null) this.turnId = text(obj(r.turn).id) || this.turnId;
@@ -318,12 +350,25 @@ export class CodexAgent {
     if (!threadId) throw new Error("Codex did not return a thread");
     return new Promise<string | null>((resolve, reject) => {
       const timer = setTimeout(() => finish(null), timeoutMs);
-      const finish = (v: string | null) => { clearTimeout(timer); this.side.delete(threadId); resolve(v); };
+      const finish = (v: string | null) => {
+        clearTimeout(timer);
+        this.side.delete(threadId);
+        resolve(v);
+      };
       this.side.set(threadId, { text: "", done: finish });
       this.request("turn/start", {
-        threadId, input: [{ type: "text", text: prompt }], cwd: this.o.cwd, model: pick.model, effort: pick.effort,
-        approvalPolicy: "never", sandboxPolicy: { type: "readOnly" },
-      }).catch((e) => { clearTimeout(timer); this.side.delete(threadId); reject(e); });
+        threadId,
+        input: [{ type: "text", text: prompt }],
+        cwd: this.o.cwd,
+        model: pick.model,
+        effort: pick.effort,
+        approvalPolicy: "never",
+        sandboxPolicy: { type: "readOnly" },
+      }).catch((e) => {
+        clearTimeout(timer);
+        this.side.delete(threadId);
+        reject(e);
+      });
     });
   }
 
@@ -335,20 +380,29 @@ export class CodexAgent {
     if (this.idle || this.exited) return Promise.resolve(true);
     return new Promise((resolve) => {
       const timer = setTimeout(() => resolve(this.idle), ms);
-      this.idleWaiters.push(() => { clearTimeout(timer); resolve(true); });
+      this.idleWaiters.push(() => {
+        clearTimeout(timer);
+        resolve(true);
+      });
     });
   }
 
   private finish(code: number | null) {
     if (this.exited) return;
     this.exited = true;
-    for (const pending of this.requests.values()) { clearTimeout(pending.timer); pending.reject(new Error("Codex exited")); }
+    for (const pending of this.requests.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error("Codex exited"));
+    }
     this.requests.clear();
     for (const wake of this.idleWaiters.splice(0)) wake();
-    if (!this.stopped) this.o.onExit({
-      code, stderrTail: this.o.redactor.scrub(this.stderr), resumeMissing: false,
-      pending: [this.current, ...this.queue].filter((s): s is string => s !== null),
-    });
+    if (!this.stopped)
+      this.o.onExit({
+        code,
+        stderrTail: this.o.redactor.scrub(this.stderr),
+        resumeMissing: false,
+        pending: [this.current, ...this.queue].filter((s): s is string => s !== null),
+      });
   }
 
   async stop(graceMs = 5000) {

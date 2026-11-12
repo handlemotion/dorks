@@ -26,9 +26,15 @@ const n = <T>(v: T | null | undefined): T | undefined => (v === null || v === un
 export function readSettings(app: App): Settings {
   const r = app.db.get("SELECT * FROM settings WHERE id = 1")!;
   return {
-    sleepMinutes: r.sleep_minutes as number, claudeTokenEnc: n(r.claude_token_enc as string | null), boatKeyEnc: n(r.boat_key_enc as string | null),
-    boatOrg: n(r.boat_org as string | null), boatEnvironment: n(r.boat_environment as string | null), baseSnapshotId: n(r.base_snapshot_id as string | null),
-    githubTokenEnc: n(r.github_token_enc as string | null), githubLogin: n(r.github_login as string | null), commentPolicy: json(r.comment_policy),
+    sleepMinutes: r.sleep_minutes as number,
+    claudeTokenEnc: n(r.claude_token_enc as string | null),
+    boatKeyEnc: n(r.boat_key_enc as string | null),
+    boatOrg: n(r.boat_org as string | null),
+    boatEnvironment: n(r.boat_environment as string | null),
+    baseSnapshotId: n(r.base_snapshot_id as string | null),
+    githubTokenEnc: n(r.github_token_enc as string | null),
+    githubLogin: n(r.github_login as string | null),
+    commentPolicy: json(r.comment_policy),
   };
 }
 
@@ -165,4 +171,3 @@ export async function cliSecrets(app: App): Promise<Record<string, string>> {
   for (const r of app.db.all<{ name: string; value_enc: string }>("SELECT name, value_enc FROM secrets ORDER BY name")) out[r.name] = await decrypt(app.ring, r.value_enc, aad.secret(OWNER, r.name));
   return out;
 }
-

@@ -83,19 +83,32 @@ export function createBoatCall(opts: Pick<BoatOptions, "apiKey" | "org" | "fetch
 }
 
 /** Decodes a response, failing with `message` (no response content) when it does not match. */
-export const decodeOr = <S extends Schema.Constraint & { readonly DecodingServices: never }>(schema: S, message: string) => (json: unknown) =>
-  Schema.decodeUnknownEffect(schema)(json).pipe(Effect.mapError(() => new BoatError(message)));
+export const decodeOr =
+  <S extends Schema.Constraint & { readonly DecodingServices: never }>(schema: S, message: string) =>
+  (json: unknown) =>
+    Schema.decodeUnknownEffect(schema)(json).pipe(Effect.mapError(() => new BoatError(message)));
 
 /** Turns a 404 (the thing is gone) into `none`. */
 export const optionalOn404 = <A, R>(self: Effect.Effect<A, BoatError, R>): Effect.Effect<Option.Option<A>, BoatError, R> =>
   self.pipe(
     Effect.map(Option.some),
-    Effect.catchIf((e) => isBoatStatus(e, 404), () => Effect.succeed(Option.none<A>())),
+    Effect.catchIf(
+      (e) => isBoatStatus(e, 404),
+      () => Effect.succeed(Option.none<A>()),
+    ),
   );
 
 /** Ignores the given HTTP statuses (idempotent deletes and stops). */
-export const ignoreStatus = (...statuses: number[]) => <A, R>(self: Effect.Effect<A, BoatError, R>): Effect.Effect<void, BoatError, R> =>
-  self.pipe(Effect.asVoid, Effect.catchIf((e) => isBoatStatus(e, ...statuses), () => Effect.void));
+export const ignoreStatus =
+  (...statuses: number[]) =>
+  <A, R>(self: Effect.Effect<A, BoatError, R>): Effect.Effect<void, BoatError, R> =>
+    self.pipe(
+      Effect.asVoid,
+      Effect.catchIf(
+        (e) => isBoatStatus(e, ...statuses),
+        () => Effect.void,
+      ),
+    );
 
 /** Waits `ms`. The drivers take a `sleep` so tests do not wait in real time. */
 export const pauseWith = (sleep: BoatOptions["sleep"]) => (ms: number) => (sleep ? Effect.promise(() => sleep(ms)) : Effect.sleep(ms));
@@ -188,7 +201,13 @@ export const deleteSandbox = (call: BoatCall, id: string) =>
 
 /** The id of a sandbox in a create response. */
 export const createdId = (json: unknown) =>
-  decodeOr(Schema.Struct({ sandbox: Schema.Struct({ id: Schema.String }) }), "boat create: response had no usable sandbox id")(json).pipe(
+  decodeOr(
+    Schema.Struct({ sandbox: Schema.Struct({ id: Schema.String }) }),
+    "boat create: response had no usable sandbox id",
+  )(json).pipe(
     Effect.map((r) => r.sandbox.id),
-    Effect.filterOrFail((id) => BOX_ID.test(id), () => new BoatError("boat create: response had no usable sandbox id")),
+    Effect.filterOrFail(
+      (id) => BOX_ID.test(id),
+      () => new BoatError("boat create: response had no usable sandbox id"),
+    ),
   );

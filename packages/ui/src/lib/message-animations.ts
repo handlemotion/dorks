@@ -127,11 +127,7 @@ const MESSAGE_ANIMATIONS = ANIMATIONS.reduce(
     acc[preset.id] = preset
     return acc
   },
-  {} as Record<MessageAnimationId, MessageAnimationPreset>
+  {} as Record<MessageAnimationId, MessageAnimationPreset>,
 )
 
-export {
-  MESSAGE_ANIMATIONS,
-  type MessageAnimationId,
-  type MessageAnimationPreset,
-}
+export { MESSAGE_ANIMATIONS, type MessageAnimationId, type MessageAnimationPreset }

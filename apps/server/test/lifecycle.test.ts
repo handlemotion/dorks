@@ -338,7 +338,12 @@ describe("R5: box results are tied to the operation that produced them", () => {
     expect(h.rt(id).opGen).toBe(3);
     await h.settle(); // resume#1 never runs (replaced by #3's job); pause#2 lands stale
     expect(h.state(id)).toBe("waking");
-    expect(h.events(id).filter((e) => e.body.type === "error").map((e) => (e.body as { message: string }).message)).not.toContain("resume_box failed");
+    expect(
+      h
+        .events(id)
+        .filter((e) => e.body.type === "error")
+        .map((e) => (e.body as { message: string }).message),
+    ).not.toContain("resume_box failed");
   });
 
   it("the current attempt's failure still moves the dork to error", async () => {
@@ -541,7 +546,11 @@ describe("turn outcomes", () => {
   const raw = (bseq: number, r: object) => ({ t: "event", bseq, raw: r });
   const text = (id: string, t: string) => ({ type: "assistant", message: { id, content: [{ type: "text", text: t }] } });
   const tool = (id: string) => ({ type: "assistant", message: { id, content: [{ type: "tool_use", id: `tu-${id}`, name: "Bash", input: { command: "ls" } }] } });
-  const turnEnd = (h: ReturnType<typeof harness>, id: string) => h.events(id).map((e) => e.body).filter((b) => b.type === "turn_complete" || b.type === "error");
+  const turnEnd = (h: ReturnType<typeof harness>, id: string) =>
+    h
+      .events(id)
+      .map((e) => e.body)
+      .filter((b) => b.type === "turn_complete" || b.type === "error");
 
   it("names the last message with no tool call after it as the final answer", () => {
     const h = harness();
@@ -564,12 +573,25 @@ describe("turn outcomes", () => {
     expect(h.rt(id).interruptRequested).toBe(false);
 
     h.push(id, [raw(3, { type: "result", is_error: true, result: "boom" })]);
-    expect(turnEnd(h, id).slice(1).map((b) => (b.type === "turn_complete" ? b.outcome : b.type))).toEqual(["failed", "error"]);
+    expect(
+      turnEnd(h, id)
+        .slice(1)
+        .map((b) => (b.type === "turn_complete" ? b.outcome : b.type)),
+    ).toEqual(["failed", "error"]);
   });
 });
 
 describe("model choice", () => {
-  const models = [{ t: "agent_models", models: [{ model: "default", name: "Default", efforts: ["low", "high"] }, { model: "haiku", name: "Haiku", efforts: ["low"] }], effort: null }];
+  const models = [
+    {
+      t: "agent_models",
+      models: [
+        { model: "default", name: "Default", efforts: ["low", "high"] },
+        { model: "haiku", name: "Haiku", efforts: ["low"] },
+      ],
+      effort: null,
+    },
+  ];
 
   it("only accepts what the agent offered, and every change asks the bridge to reconfigure again", () => {
     const h = harness();
@@ -578,9 +600,15 @@ describe("model choice", () => {
     expect(() => chooseModel(h.app, id, "gpt-9", null)).toThrow();
     expect(() => chooseModel(h.app, id, "haiku", "high")).toThrow(); // Haiku has no high effort
     chooseModel(h.app, id, "haiku", null);
-    const first = h.cmds(id).filter((c) => c.kind === "configure").map((c) => c.cid);
+    const first = h
+      .cmds(id)
+      .filter((c) => c.kind === "configure")
+      .map((c) => c.cid);
     chooseModel(h.app, id, "haiku", "low"); // while the first reconfigure may already be in flight
-    const second = h.cmds(id).filter((c) => c.kind === "configure").map((c) => c.cid);
+    const second = h
+      .cmds(id)
+      .filter((c) => c.kind === "configure")
+      .map((c) => c.cid);
     expect(first).toHaveLength(1);
     expect(second).toHaveLength(1);
     expect(second[0]).not.toBe(first[0]);

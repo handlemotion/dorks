@@ -13,7 +13,10 @@ import { dirname } from "node:path";
 export type RpcErrorCode = "invalid" | "unknown_method" | "unavailable" | "denied" | "failed" | "unreachable" | "protocol";
 
 export class RpcError extends Error {
-  constructor(readonly code: RpcErrorCode, message: string) {
+  constructor(
+    readonly code: RpcErrorCode,
+    message: string,
+  ) {
     super(message);
   }
 }
@@ -27,7 +30,12 @@ export class RpcServer {
   private server: Server | null = null;
 
   /** `owner`: the unprivileged user that runs git/claude (CLAUDE_RUN_AS); the socket and its dir belong to them so only they can call. */
-  constructor(readonly sockPath: string, private methods: RpcMethods, private owner?: { uid: number; gid: number } | null, private maxLine = MAX_LINE) {}
+  constructor(
+    readonly sockPath: string,
+    private methods: RpcMethods,
+    private owner?: { uid: number; gid: number } | null,
+    private maxLine = MAX_LINE,
+  ) {}
 
   async start() {
     mkdirSync(dirname(this.sockPath), { recursive: true, mode: 0o700 });

@@ -31,7 +31,7 @@ export function runGit(args: string[], cwd: string | undefined, env: NodeJS.Proc
   return new Promise((resolve) => {
     const [bin, argv] = asIdentity(id, "git", args);
     execFile(bin, argv, { cwd: cwd ?? (id ? "/" : undefined), env, maxBuffer: 16 * 1024 * 1024, timeout: timeoutMs }, (err, stdout) => {
-      const code = err ? (typeof (err as { code?: unknown }).code === "number" ? ((err as { code: number }).code) : 1) : 0;
+      const code = err ? (typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 1) : 0;
       resolve({ code, stdout: String(stdout ?? "") });
     });
   });
@@ -105,7 +105,10 @@ export async function configureGit(ctx: GitCtx, cwd: string): Promise<void> {
     await run(["config", "--global", "--replace-all", `credential.${scope}.helper`, ""]); // the empty value resets earlier helpers
     await run(["config", "--global", "--add", `credential.${scope}.helper`, ctx.helper]);
   }
-  for (const [k, v] of [["user.name", "dorks"], ["user.email", "dorks@users.noreply.github.com"]] as const) {
+  for (const [k, v] of [
+    ["user.name", "dorks"],
+    ["user.email", "dorks@users.noreply.github.com"],
+  ] as const) {
     if (!(await run(["config", k])).stdout.trim()) await run(["config", "--global", k, v]);
   }
 }

@@ -59,7 +59,10 @@ describe("grants", () => {
     await t.connect();
     expect(FakeWs.all).toHaveLength(1);
 
-    t.subscribeCommands(() => {}, () => {});
+    t.subscribeCommands(
+      () => {},
+      () => {},
+    );
     FakeWs.all[0]!.close(4401);
     for (let i = 0; i < 200 && FakeWs.all.length < 2; i++) await new Promise((r) => setTimeout(r, 10));
     await t.connect();

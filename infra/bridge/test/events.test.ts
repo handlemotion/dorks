@@ -29,7 +29,11 @@ describe("EventPipeline", () => {
     p.ingest({ type: "assistant", message: { id: "m1", content: [{ type: "text", text: "hello world" }] } });
     p.control({ t: "ack", id: "x" });
     await o.drained();
-    expect(t.events().map((e) => [e.bseq, (e.raw as any).type])).toEqual([[1, "stream_event"], [2, "stream_event"], [3, "assistant"]]);
+    expect(t.events().map((e) => [e.bseq, (e.raw as any).type])).toEqual([
+      [1, "stream_event"],
+      [2, "stream_event"],
+      [3, "assistant"],
+    ]);
     expect((t.events()[1].raw as any).event.delta.text).toBe("hello world");
   });
 

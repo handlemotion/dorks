@@ -33,7 +33,17 @@ describe("subscriptions", () => {
   it("subscribes (repo stored lowercase), starts a poll, and appends a subscription event", () => {
     const s = setup();
     const sub = s.sub(7, "agent");
-    expect(sub).toMatchObject({ repo: "octo/hello", number: 7, url: "https://github.com/octo/hello/pull/7", source: "agent", status: "active", ci: "unknown", review: "none", mergeable: null, state: "open" });
+    expect(sub).toMatchObject({
+      repo: "octo/hello",
+      number: 7,
+      url: "https://github.com/octo/hello/pull/7",
+      source: "agent",
+      status: "active",
+      ci: "unknown",
+      review: "none",
+      mergeable: null,
+      state: "open",
+    });
     expect(s.h.hasTimer("", "poll")).toBe(true);
     expect(s.h.events(s.id).map((e) => e.body)).toContainEqual({ type: "subscription", repo: "octo/hello", number: 7, status: "active", reason: "subscribed (agent)" });
   });
@@ -304,4 +314,3 @@ describe("what a change on the PR does", () => {
     expect(s.inbox()).toEqual([]);
   });
 });
-

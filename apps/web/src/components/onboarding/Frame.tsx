@@ -25,7 +25,10 @@ export function Frame({ step, onBack, children }: { step: OnboardingStepId; onBa
       <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-10" />
       <BackContext.Provider value={onBack}>
         {/* Keyed by step so each step enters on its own instead of morphing out of the last one. */}
-        <main key={step} className="mx-auto flex w-full max-w-[546px] flex-1 flex-col justify-center gap-8 p-12 pb-20 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-300">
+        <main
+          key={step}
+          className="mx-auto flex w-full max-w-[546px] flex-1 flex-col justify-center gap-8 p-12 pb-20 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-300"
+        >
           {children}
         </main>
       </BackContext.Provider>

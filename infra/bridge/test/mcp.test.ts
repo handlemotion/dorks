@@ -40,8 +40,16 @@ describe("MCP protocol", () => {
   it("lists the PR, preview and machine tools with object schemas and hints, without leaking the handlers", async () => {
     const { tools } = (await rpc(server(), "tools/list")).result;
     expect(tools.map((t: any) => t.name)).toEqual([
-      "pr_subscribe", "pr_unsubscribe", "pr_list", "preview_show", "screenshot_share",
-      "machine_get", "machine_draft", "machine_run", "machine_logs", "machine_submit",
+      "pr_subscribe",
+      "pr_unsubscribe",
+      "pr_list",
+      "preview_show",
+      "screenshot_share",
+      "machine_get",
+      "machine_draft",
+      "machine_run",
+      "machine_logs",
+      "machine_submit",
     ]);
     for (const t of tools) {
       expect(t.inputSchema.type).toBe("object");
@@ -97,7 +105,14 @@ describe("MCP tools", () => {
   it("bad arguments are tool errors the agent can read, and never reach the bridge", async () => {
     const b = await fakeBridge();
     const s = new McpServer(b.env);
-    for (const [tool, args] of [["pr_subscribe", {}], ["pr_subscribe", { pr: 12 }], ["pr_subscribe", { pr: "acme/demo" }], ["pr_unsubscribe", { pr: "https://example.com/a/b/pull/1" }], ["pr_list", { pr: "nope" }], ["pr_subscribe", null]] as const) {
+    for (const [tool, args] of [
+      ["pr_subscribe", {}],
+      ["pr_subscribe", { pr: 12 }],
+      ["pr_subscribe", { pr: "acme/demo" }],
+      ["pr_unsubscribe", { pr: "https://example.com/a/b/pull/1" }],
+      ["pr_list", { pr: "nope" }],
+      ["pr_subscribe", null],
+    ] as const) {
       const r = await call(s, tool, args);
       expect(r.result.isError, `${tool} ${JSON.stringify(args)}`).toBe(true);
       expect(text(r)).toMatch(/`pr` must be/);
@@ -109,7 +124,11 @@ describe("MCP tools", () => {
   });
 
   it("backend and bridge problems come back as tool errors with the bridge's own message", async () => {
-    const b = await fakeBridge({ "pr.sub": () => { throw new RpcError("unavailable", "the backend did not answer in time"); } });
+    const b = await fakeBridge({
+      "pr.sub": () => {
+        throw new RpcError("unavailable", "the backend did not answer in time");
+      },
+    });
     const r = await call(new McpServer(b.env), "pr_subscribe", { pr: "acme/demo#1" });
     expect(r.result.isError).toBe(true);
     expect(text(r)).toBe("the backend did not answer in time");
@@ -168,7 +187,10 @@ describe("the built `dorks mcp` over stdio", () => {
     child.stdin.end();
 
     expect(await exited).toBe(0);
-    const replies = out.trim().split("\n").map((l) => JSON.parse(l));
+    const replies = out
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
     expect(replies.map((r) => r.id)).toEqual([1, 2, 3, 4]); // the notification got no reply, the rest are in order
     expect(replies[0].result.protocolVersion).toBe("2025-06-18");
     expect(replies[1].result.tools).toHaveLength(10);

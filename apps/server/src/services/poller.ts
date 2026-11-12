@@ -13,15 +13,43 @@ export const POLL_MS = 30_000;
 export const POLL_AUTH_FAILED_MS = 5 * 60_000;
 const NOT_VISIBLE = "PR not found or not accessible to your GitHub token";
 
-interface GhUser { login: string; type?: string }
-interface GhPr {
-  title: string; state: "open" | "closed"; merged?: boolean; mergeable: boolean | null; merged_by?: GhUser | null;
-  head: { ref: string; sha: string }; base: { ref: string; sha: string; repo?: { full_name: string } };
+interface GhUser {
+  login: string;
+  type?: string;
 }
-interface GhReview { id: number; state: string; body: string | null; html_url: string; user: GhUser | null; submitted_at?: string | null }
-interface GhComment { id: number; body: string; html_url: string; path?: string; user: GhUser | null; created_at: string }
-interface GhIssueEvent { event: string; actor: GhUser | null; created_at: string }
-interface GhSuites { check_suites: { id: number; status: string; conclusion: string | null; latest_check_runs_count: number }[] }
+interface GhPr {
+  title: string;
+  state: "open" | "closed";
+  merged?: boolean;
+  mergeable: boolean | null;
+  merged_by?: GhUser | null;
+  head: { ref: string; sha: string };
+  base: { ref: string; sha: string; repo?: { full_name: string } };
+}
+interface GhReview {
+  id: number;
+  state: string;
+  body: string | null;
+  html_url: string;
+  user: GhUser | null;
+  submitted_at?: string | null;
+}
+interface GhComment {
+  id: number;
+  body: string;
+  html_url: string;
+  path?: string;
+  user: GhUser | null;
+  created_at: string;
+}
+interface GhIssueEvent {
+  event: string;
+  actor: GhUser | null;
+  created_at: string;
+}
+interface GhSuites {
+  check_suites: { id: number; status: string; conclusion: string | null; latest_check_runs_count: number }[];
+}
 
 const actor = (u: GhUser | null | undefined): Actor => ({ login: u?.login ?? "ghost", bot: u?.type === "Bot" });
 const time = (iso: string | null | undefined) => (iso && !Number.isNaN(Date.parse(iso)) ? Date.parse(iso) : undefined);
@@ -137,7 +165,10 @@ async function observeReviewsAndComments(look: Look) {
   const issueComments = await look.get<GhComment[]>(`${base}/issues/${sub.number}/comments?${q}`);
   const reviewComments = await look.get<GhComment[]>(`${base}/pulls/${sub.number}/comments?${q}`);
   let newest = old.since;
-  for (const [res, key, inline] of [[issueComments, "lastCommentId", false], [reviewComments, "lastReviewCommentId", true]] as const) {
+  for (const [res, key, inline] of [
+    [issueComments, "lastCommentId", false],
+    [reviewComments, "lastReviewCommentId", true],
+  ] as const) {
     if (res.status !== 200) continue; // 304: nothing new in this list
     const last = old[key] ?? 0;
     if (!first) newest = newComments(look, res.json, last, inline, newest);
@@ -166,7 +197,8 @@ function newReviews({ old, poll, events }: Look, list: GhReview[]) {
   for (const x of list) {
     if (x.id <= (old.lastReviewId ?? 0)) continue;
     const st = x.state.toLowerCase();
-    if (st === "approved" || st === "changes_requested" || st === "commented") events.push({ kind: "review", state: st, body: x.body ?? "", url: x.html_url, sender: actor(x.user), at: time(x.submitted_at) });
+    if (st === "approved" || st === "changes_requested" || st === "commented")
+      events.push({ kind: "review", state: st, body: x.body ?? "", url: x.html_url, sender: actor(x.user), at: time(x.submitted_at) });
   }
   poll.lastReviewId = Math.max(old.lastReviewId ?? 0, ...list.map((x) => x.id));
 }

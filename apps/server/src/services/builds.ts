@@ -1,7 +1,19 @@
 import { createHash, createHmac } from "node:crypto";
 import {
-  buildRepo, draftVar, machineType as machineTypeSchema, MAX_BUILD_NAME_CHARS, MAX_BUILD_REPOS, MAX_SCRIPT_CHARS, VAR_NAME,
-  type BuildRepo, type BuildSpec, type BuildVarView, type BuildView, type DraftVar, type DraftView, type MachineType,
+  buildRepo,
+  draftVar,
+  machineType as machineTypeSchema,
+  MAX_BUILD_NAME_CHARS,
+  MAX_BUILD_REPOS,
+  MAX_SCRIPT_CHARS,
+  VAR_NAME,
+  type BuildRepo,
+  type BuildSpec,
+  type BuildVarView,
+  type BuildView,
+  type DraftVar,
+  type DraftView,
+  type MachineType,
 } from "@dorks/shared";
 import { z } from "zod";
 import { fail, touch, type App } from "../app";
@@ -48,11 +60,21 @@ interface VarRow {
 }
 
 const buildOf = (r: Record<string, unknown>): BuildRow => ({
-  id: r.id as string, name: r.name as string, machineType: r.machine_type as MachineType, setupScript: r.setup_script as string,
-  repos: json<BuildRepo[]>(r.repos) ?? [], rev: r.rev as number, specHash: r.spec_hash as string, approvedHash: (r.approved_hash as string | null) ?? null,
-  image: (r.image as string | null) ?? null, imageHash: (r.image_hash as string | null) ?? null, imageBase: (r.image_base as string | null) ?? null,
-  imageVars: (r.image_vars as string | null) ?? null, imageAt: (r.image_at as number | null) ?? null,
-  createdAt: r.created_at as number, updatedAt: r.updated_at as number,
+  id: r.id as string,
+  name: r.name as string,
+  machineType: r.machine_type as MachineType,
+  setupScript: r.setup_script as string,
+  repos: json<BuildRepo[]>(r.repos) ?? [],
+  rev: r.rev as number,
+  specHash: r.spec_hash as string,
+  approvedHash: (r.approved_hash as string | null) ?? null,
+  image: (r.image as string | null) ?? null,
+  imageHash: (r.image_hash as string | null) ?? null,
+  imageBase: (r.image_base as string | null) ?? null,
+  imageVars: (r.image_vars as string | null) ?? null,
+  imageAt: (r.image_at as number | null) ?? null,
+  createdAt: r.created_at as number,
+  updatedAt: r.updated_at as number,
 });
 
 export const getBuild = (app: App, id: string): BuildRow | undefined => {
@@ -68,7 +90,10 @@ export function ownBuild(app: App, id: string): BuildRow {
 
 export const varsOf = (app: App, buildId: string): VarRow[] =>
   app.db.all("SELECT * FROM build_vars WHERE build_id = ? ORDER BY name", buildId).map((r) => ({
-    name: r.name as string, valueEnc: (r.value_enc as string | null) ?? null, secret: r.secret === 1, buildTime: r.build_time === 1,
+    name: r.name as string,
+    valueEnc: (r.value_enc as string | null) ?? null,
+    secret: r.secret === 1,
+    buildTime: r.build_time === 1,
   }));
 
 // ---------------------------------------------------------------- spec and hashes
@@ -77,17 +102,25 @@ export function specOf(b: Pick<BuildRow, "machineType" | "setupScript" | "repos"
     machineType: b.machineType,
     setupScript: b.setupScript,
     repos: b.repos.map((r) => ({ repo: r.repo, ...(r.branch ? { branch: r.branch } : {}), ...(r.setupScript ? { setupScript: r.setupScript } : {}) })),
-    buildTimeVars: vars.filter((v) => v.buildTime).map((v) => v.name).sort(),
+    buildTimeVars: vars
+      .filter((v) => v.buildTime)
+      .map((v) => v.name)
+      .sort(),
   };
 }
 
 /** Canonical: fixed key order, so the same spec always hashes the same. */
 export const hashSpec = (s: BuildSpec): string =>
-  createHash("sha256").update(JSON.stringify([s.machineType, s.setupScript, s.repos.map((r) => [r.repo.toLowerCase(), r.branch ?? null, r.setupScript ?? null]), s.buildTimeVars])).digest("hex");
+  createHash("sha256")
+    .update(JSON.stringify([s.machineType, s.setupScript, s.repos.map((r) => [r.repo.toLowerCase(), r.branch ?? null, r.setupScript ?? null]), s.buildTimeVars]))
+    .digest("hex");
 
 /** A keyed hash (never a plain one: values may be low-entropy secrets) of the build-time values, to tell when an image went stale. */
 export const varsDigest = (app: App, buildId: string, values: Record<string, string>): string =>
-  createHmac("sha256", app.cfg.bridgeSecretKey).update(`build-vars|${buildId}|`).update(JSON.stringify(Object.entries(values).sort(([a], [b]) => (a < b ? -1 : 1)))).digest("hex");
+  createHmac("sha256", app.cfg.bridgeSecretKey)
+    .update(`build-vars|${buildId}|`)
+    .update(JSON.stringify(Object.entries(values).sort(([a], [b]) => (a < b ? -1 : 1))))
+    .digest("hex");
 
 /** Which base the images are layered on: the base snapshot's name, and the bridge bundle it was built from when the app built it. */
 export function baseKey(app: App): string {
@@ -99,7 +132,13 @@ export function baseKey(app: App): string {
 
 /** The saved snapshot a build's image is kept under: per install and per build, lowercase, at most 63 characters. */
 export const imageName = (app: App, buildId: string) =>
-  `dorks-b-${instanceId(app).replace(/[^a-z0-9]/gi, "").toLowerCase().slice(0, 8)}-${buildId.replace(/[^a-z0-9]/gi, "").toLowerCase().slice(0, 8)}`;
+  `dorks-b-${instanceId(app)
+    .replace(/[^a-z0-9]/gi, "")
+    .toLowerCase()
+    .slice(0, 8)}-${buildId
+    .replace(/[^a-z0-9]/gi, "")
+    .toLowerCase()
+    .slice(0, 8)}`;
 
 // ---------------------------------------------------------------- input validation
 const specInput = z.object({
@@ -209,8 +248,7 @@ export function setDefaultBuild(app: App, buildId: string | null) {
   });
 }
 
-export const defaultBuildId = (app: App): string | null =>
-  app.db.get<{ default_build_id: string | null }>("SELECT default_build_id FROM settings WHERE id = 1")?.default_build_id ?? null;
+export const defaultBuildId = (app: App): string | null => app.db.get<{ default_build_id: string | null }>("SELECT default_build_id FROM settings WHERE id = 1")?.default_build_id ?? null;
 
 // ---------------------------------------------------------------- owner: variables
 const aadVar = (buildId: string, name: string) => `build-var|${buildId}|${name}`;
@@ -220,15 +258,19 @@ export async function setBuildVar(app: App, buildId: string, name: string, input
   if (input.value !== undefined && typeof input.value !== "string") fail("invalid", "value must be a string");
   if (typeof input.value === "string" && Buffer.byteLength(input.value) > MAX_SECRET_BYTES) fail("invalid", "Values are at most 16 KB.");
   const existing = varsOf(app, buildId).find((v) => v.name === name);
-  const secret = typeof input.secret === "boolean" ? input.secret : existing?.secret ?? false;
-  const buildTime = typeof input.buildTime === "boolean" ? input.buildTime : existing?.buildTime ?? false;
-  const valueEnc = typeof input.value === "string" ? (await encrypt(app.ring, input.value, aadVar(buildId, name))).value : existing?.valueEnc ?? null;
+  const secret = typeof input.secret === "boolean" ? input.secret : (existing?.secret ?? false);
+  const buildTime = typeof input.buildTime === "boolean" ? input.buildTime : (existing?.buildTime ?? false);
+  const valueEnc = typeof input.value === "string" ? (await encrypt(app.ring, input.value, aadVar(buildId, name))).value : (existing?.valueEnc ?? null);
   app.db.tx(() => {
     ownBuild(app, buildId);
     if (!existing && varsOf(app, buildId).length >= MAX_VARS) fail("limit", `At most ${MAX_VARS} variables per build.`);
     app.db.run(
       "INSERT INTO build_vars (build_id, name, value_enc, secret, build_time) VALUES (?, ?, ?, ?, ?) ON CONFLICT (build_id, name) DO UPDATE SET value_enc = excluded.value_enc, secret = excluded.secret, build_time = excluded.build_time",
-      buildId, name, valueEnc, secret ? 1 : 0, buildTime ? 1 : 0,
+      buildId,
+      name,
+      valueEnc,
+      secret ? 1 : 0,
+      buildTime ? 1 : 0,
     );
     respec(app, buildId);
   });
@@ -280,8 +322,7 @@ export async function staleness(app: App, b: BuildRow): Promise<string | null> {
   return null;
 }
 
-const runsOf = (app: App, buildId: string, limit: number): RunRow[] =>
-  app.db.all<RunRow>("SELECT * FROM build_runs WHERE build_id = ? ORDER BY created_at DESC LIMIT ?", buildId, limit);
+const runsOf = (app: App, buildId: string, limit: number): RunRow[] => app.db.all<RunRow>("SELECT * FROM build_runs WHERE build_id = ? ORDER BY created_at DESC LIMIT ?", buildId, limit);
 
 export async function buildView(app: App, b: BuildRow): Promise<BuildView> {
   const plain = await plainValues(app, b.id);
@@ -289,13 +330,23 @@ export async function buildView(app: App, b: BuildRow): Promise<BuildView> {
   const active = app.db.get<RunRow>("SELECT * FROM build_runs WHERE build_id = ? AND status IN ('queued', 'running') ORDER BY created_at DESC LIMIT 1", b.id);
   const stale = await staleness(app, b);
   return {
-    id: b.id, name: b.name, machineType: b.machineType, setupScript: b.setupScript, repos: b.repos, vars: varViews(app, b.id, plain), rev: b.rev,
-    specHash: b.specHash, approved: b.approvedHash === b.specHash,
+    id: b.id,
+    name: b.name,
+    machineType: b.machineType,
+    setupScript: b.setupScript,
+    repos: b.repos,
+    vars: varViews(app, b.id, plain),
+    rev: b.rev,
+    specHash: b.specHash,
+    approved: b.approvedHash === b.specHash,
     image: b.image && b.imageAt ? { name: b.image, at: b.imageAt, stale: !!stale, staleReason: stale } : null,
-    lastRun: runs[0] ?? null, activeRun: active ? runViewOf(active) : null,
+    lastRun: runs[0] ?? null,
+    activeRun: active ? runViewOf(active) : null,
     drafts: draftsOf(app, b.id).filter((d) => d.status === "submitted" || d.status === "editing"),
     dorkCount: app.db.get<{ n: number }>("SELECT count(*) AS n FROM dorks WHERE build_id = ? AND deleting = 0 AND archived = 0", b.id)?.n ?? 0,
-    isDefault: defaultBuildId(app) === b.id, createdAt: b.createdAt, updatedAt: b.updatedAt,
+    isDefault: defaultBuildId(app) === b.id,
+    createdAt: b.createdAt,
+    updatedAt: b.updatedAt,
   };
 }
 
@@ -328,20 +379,28 @@ function draftViewOf(app: App, d: DraftRow): DraftView {
   const spec = JSON.parse(d.spec) as BuildSpec;
   const build = getBuild(app, d.build_id);
   return {
-    id: d.id, buildId: d.build_id, dorkId: d.dork_id, dorkTitle: getDork(app.db, d.dork_id)?.title ?? "", status: d.status, spec, specHash: hashSpec(spec),
-    vars: JSON.parse(d.vars) as DraftVar[], note: d.note, stale: !!build && build.rev !== d.base_rev, updatedAt: d.updated_at,
+    id: d.id,
+    buildId: d.build_id,
+    dorkId: d.dork_id,
+    dorkTitle: getDork(app.db, d.dork_id)?.title ?? "",
+    status: d.status,
+    spec,
+    specHash: hashSpec(spec),
+    vars: JSON.parse(d.vars) as DraftVar[],
+    note: d.note,
+    stale: !!build && build.rev !== d.base_rev,
+    updatedAt: d.updated_at,
   };
 }
 
-const draftsOf = (app: App, buildId: string): DraftView[] =>
-  app.db.all<DraftRow>("SELECT * FROM build_drafts WHERE build_id = ? ORDER BY updated_at DESC", buildId).map((d) => draftViewOf(app, d));
+const draftsOf = (app: App, buildId: string): DraftView[] => app.db.all<DraftRow>("SELECT * FROM build_drafts WHERE build_id = ? ORDER BY updated_at DESC", buildId).map((d) => draftViewOf(app, d));
 
 const draftOfDork = (app: App, buildId: string, dorkId: string) => app.db.get<DraftRow>("SELECT * FROM build_drafts WHERE build_id = ? AND dork_id = ?", buildId, dorkId);
 
 /** The dork's own build: the only one its agent can ever reach. */
 export function dorkBuild(app: App, dorkId: string): BuildRow | null {
   const r = app.db.get<{ build_id: string | null }>("SELECT build_id FROM dorks WHERE id = ?", dorkId);
-  return r?.build_id ? getBuild(app, r.build_id) ?? null : null;
+  return r?.build_id ? (getBuild(app, r.build_id) ?? null) : null;
 }
 
 export function draftView(app: App, buildId: string, dorkId: string): DraftView | null {
@@ -467,13 +526,20 @@ export async function approveDraft(app: App, buildId: string, draftId: string, r
       const valueEnc = enc.get(v.name) ?? (existing && existing.secret === v.secret ? existing.valueEnc : null);
       app.db.run(
         "INSERT INTO build_vars (build_id, name, value_enc, secret, build_time) VALUES (?, ?, ?, ?, ?) ON CONFLICT (build_id, name) DO UPDATE SET value_enc = excluded.value_enc, secret = excluded.secret, build_time = excluded.build_time",
-        buildId, v.name, valueEnc, v.secret ? 1 : 0, v.buildTime ? 1 : 0,
+        buildId,
+        v.name,
+        valueEnc,
+        v.secret ? 1 : 0,
+        v.buildTime ? 1 : 0,
       );
     }
     respec(app, buildId);
     decide(app, d, b.name, true, "");
-    for (const other of app.db.all<DraftRow>("SELECT * FROM build_drafts WHERE build_id = ? AND id != ? AND status = 'submitted'", buildId, draftId)) touch(app, { t: "build", buildId: other.build_id });
-    const missing = varsOf(app, buildId).filter((v) => v.buildTime && !v.valueEnc).map((v) => v.name);
+    for (const other of app.db.all<DraftRow>("SELECT * FROM build_drafts WHERE build_id = ? AND id != ? AND status = 'submitted'", buildId, draftId))
+      touch(app, { t: "build", buildId: other.build_id });
+    const missing = varsOf(app, buildId)
+      .filter((v) => v.buildTime && !v.valueEnc)
+      .map((v) => v.name);
     return { missing };
   });
 }

@@ -6,9 +6,7 @@ import { insert, update } from "../db";
 import { boatBuildFailureMessage } from "../lib/boatSnapshots";
 import { instanceId } from "../lib/box";
 import { hasTimer, setTimer } from "../lifecycle/dispatch";
-import {
-  baseKey, buildVarValues, dorkBuild, draftView, getBuild, hashSpec, imageName, ownBuild, secretValues, specOf, varsDigest, varsOf, type BuildRow,
-} from "./builds";
+import { baseKey, buildVarValues, dorkBuild, draftView, getBuild, hashSpec, imageName, ownBuild, secretValues, specOf, varsDigest, varsOf, type BuildRow } from "./builds";
 import { boatKey, githubToken, readSettings } from "./settings";
 
 // A build run (docs/builds.md, "A run, step by step"): a sandbox from the base snapshot runs the build's setup; an `image` run then
@@ -55,8 +53,19 @@ export interface RunRow {
 }
 
 export const runViewOf = (r: RunRow): RunView => ({
-  id: r.id, buildId: r.build_id, kind: r.kind, status: r.status, step: r.step, startedBy: r.started_by, error: r.error, exitCode: r.exit_code,
-  specHash: r.spec_hash, createdAt: r.created_at, startedAt: r.started_at, finishedAt: r.finished_at, logBytes: r.log_bytes,
+  id: r.id,
+  buildId: r.build_id,
+  kind: r.kind,
+  status: r.status,
+  step: r.step,
+  startedBy: r.started_by,
+  error: r.error,
+  exitCode: r.exit_code,
+  specHash: r.spec_hash,
+  createdAt: r.created_at,
+  startedAt: r.started_at,
+  finishedAt: r.finished_at,
+  logBytes: r.log_bytes,
 });
 
 const getRun = (app: App, id: string) => app.db.get<RunRow>("SELECT * FROM build_runs WHERE id = ?", id);
@@ -109,7 +118,19 @@ export function startRun(app: App, buildId: string, o: StartOpts): RunView {
     }
     const id = app.uuid();
     // A trial of a draft also carries the draft's variable changes (plain values only: a draft never holds a secret's value).
-    insert(app.db, "build_runs", { id, buildId, kind: o.kind, spec: draftVars ? { ...spec, draftVars } : spec, specHash: hashSpec(spec), startedBy: o.by, status: "queued", attempt: 1, log: "", logBytes: 0, createdAt: app.now() });
+    insert(app.db, "build_runs", {
+      id,
+      buildId,
+      kind: o.kind,
+      spec: draftVars ? { ...spec, draftVars } : spec,
+      specHash: hashSpec(spec),
+      startedBy: o.by,
+      status: "queued",
+      attempt: 1,
+      log: "",
+      logBytes: 0,
+      createdAt: app.now(),
+    });
     setTimer(app, "", `${RUN_JOB}${id}`, 0, { attempt: 1 });
     touch(app, { t: "build", buildId });
     touch(app, { t: "builds" });
@@ -147,7 +168,9 @@ export function runLog(app: App, buildId: string, runId: string, after = 0): { t
   // `log` keeps the last LOG_MAX bytes of `log_bytes` written; an offset before that window starts at the window.
   const start = Math.max(0, r.log_bytes - Buffer.byteLength(r.log));
   const from = Math.max(after, start);
-  const text = Buffer.from(r.log).subarray(from - start).toString("utf8");
+  const text = Buffer.from(r.log)
+    .subarray(from - start)
+    .toString("utf8");
   return { text, next: r.log_bytes, done: r.status !== "queued" && r.status !== "running", run: runViewOf(r) };
 }
 
@@ -162,7 +185,10 @@ export function redactor(values: string[]): (s: string) => string {
 
 // ---------------------------------------------------------------- the job
 const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
-const runLabel = (app: App, buildId: string) => createHash("sha256").update(`build-run\n${instanceId(app)}\n${buildId}`).digest("hex");
+const runLabel = (app: App, buildId: string) =>
+  createHash("sha256")
+    .update(`build-run\n${instanceId(app)}\n${buildId}`)
+    .digest("hex");
 
 function progress(app: App, runId: string, attempt: number, step: RunStep, patch: Record<string, unknown> = {}) {
   app.db.tx(() => {
@@ -239,7 +265,16 @@ async function runSteps(run: Run) {
 
   progress(app, runId, attempt, "create");
   const spec = JSON.parse(r0.spec) as BuildSpec;
-  const sandboxId = (run.sandboxId = (await driver.createBuildSandbox({ name: `dorks-build-${build.name}`.slice(0, 120), label: runLabel(app, build.id), labelKey: "dorks-run", key: `dorks-run-${runId}-${attempt}`, from: inputs.base, type: spec.machineType })).id);
+  const sandboxId = (run.sandboxId = (
+    await driver.createBuildSandbox({
+      name: `dorks-build-${build.name}`.slice(0, 120),
+      label: runLabel(app, build.id),
+      labelKey: "dorks-run",
+      key: `dorks-run-${runId}-${attempt}`,
+      from: inputs.base,
+      type: spec.machineType,
+    })
+  ).id);
   progress(app, runId, attempt, "start", { sandboxId });
   await driver.waitReady(sandboxId);
 
@@ -259,7 +294,11 @@ async function runInputs({ app, r0, build }: Run): Promise<RunInputs> {
   // An image run of the approved spec gets the build-time variables; anything else gets the plain ones only.
   const approved = r0.kind === "image" && build.approvedHash === r0.spec_hash;
   const allBuildTime = await buildVarValues(app, build.id, true);
-  const secrets = new Set(varsOf(app, build.id).filter((v) => v.secret).map((v) => v.name));
+  const secrets = new Set(
+    varsOf(app, build.id)
+      .filter((v) => v.secret)
+      .map((v) => v.name),
+  );
   const values = { ...allBuildTime };
   for (const v of spec.draftVars ?? []) {
     if (v.remove || v.secret) delete values[v.name];
@@ -285,7 +324,8 @@ async function cloneRepos({ app, runId, attempt }: Run, driver: SnapshotDriver, 
   try {
     for (const repo of spec.repos) {
       const dir = `${WORK}/${repo.repo}`;
-      const cmd = `chmod 600 ${TMP}/gh && chmod 700 ${TMP}/cred && mkdir -p ${q(dir.slice(0, dir.lastIndexOf("/")))} && rm -rf ${q(dir)} && ` +
+      const cmd =
+        `chmod 600 ${TMP}/gh && chmod 700 ${TMP}/cred && mkdir -p ${q(dir.slice(0, dir.lastIndexOf("/")))} && rm -rf ${q(dir)} && ` +
         `git -c credential.helper= -c credential.helper=${q(`${TMP}/cred`)} clone --quiet ${repo.branch ? `--branch ${q(repo.branch)} ` : ""}${q(`https://github.com/${repo.repo}.git`)} ${q(dir)}`;
       const res = await execLong(driver, sandboxId, cmd, 20 * 60_000, app.now);
       if (res.exitCode !== 0) throw new RunError(`Could not clone ${repo.repo}${res.timedOut ? " (it took more than 20 minutes)" : ""}. ${redact(tail(res.stderr || res.stdout, 3))}`.trim());
@@ -300,7 +340,14 @@ async function runSetup(run: Run, driver: SnapshotDriver, sandboxId: string, spe
   progress(app, runId, attempt, "setup");
   const parts = ["set -e", "cd /home/user"];
   if (Object.keys(env).length) {
-    await driver.writeFile(sandboxId, `${TMP}/env`, Object.entries(env).map(([k, v]) => `${k}=${q(v)}`).join("\n") + "\n", "utf8");
+    await driver.writeFile(
+      sandboxId,
+      `${TMP}/env`,
+      Object.entries(env)
+        .map(([k, v]) => `${k}=${q(v)}`)
+        .join("\n") + "\n",
+      "utf8",
+    );
     parts.push(`chmod 600 ${TMP}/env`, `set -a; . ${TMP}/env; set +a`, `rm -f ${TMP}/env`);
   }
   if (spec.setupScript.trim()) {
@@ -331,10 +378,19 @@ async function scanForSecrets({ app, build }: Run, driver: SnapshotDriver, sandb
   const values = (await scannedValues(app, build.id, gh)).filter((v) => v.length >= 4 && !v.includes("\n"));
   if (!values.length) return;
   await driver.writeFile(sandboxId, "/tmp/dorks-scan", values.join("\n") + "\n", "utf8");
-  const scan = await execLong(driver, sandboxId, `chmod 600 /tmp/dorks-scan; hits=$(sudo grep -rlsIF -f /tmp/dorks-scan /home /root /etc /usr/local /opt /var/lib 2>/dev/null | head -5); rm -f /tmp/dorks-scan; printf '%s' "$hits"`, 20 * 60_000, app.now);
+  const scan = await execLong(
+    driver,
+    sandboxId,
+    `chmod 600 /tmp/dorks-scan; hits=$(sudo grep -rlsIF -f /tmp/dorks-scan /home /root /etc /usr/local /opt /var/lib 2>/dev/null | head -5); rm -f /tmp/dorks-scan; printf '%s' "$hits"`,
+    20 * 60_000,
+    app.now,
+  );
   if (scan.timedOut) throw new RunError("The secret check took more than 20 minutes, so the image was not saved. Retry the build.");
   const hits = scan.stdout.trim();
-  if (hits) throw new RunError(`A secret value was found on the machine, so it was not saved: ${hits.split("\n").join(", ")}. Make the setup keep secrets out of files (pass them in the environment), then build again.`);
+  if (hits)
+    throw new RunError(
+      `A secret value was found on the machine, so it was not saved: ${hits.split("\n").join(", ")}. Make the setup keep secrets out of files (pass them in the environment), then build again.`,
+    );
   if (scan.exitCode !== 0 && !scan.stdout) throw new RunError("The secret check could not run. Retry the build.");
 }
 
@@ -384,7 +440,8 @@ function failRun({ app, runId, attempt, r0 }: Run, e: unknown) {
 }
 
 async function cleanUp({ app, build, driver, sandboxId, processId, savedName }: Run) {
-  if (driver && savedName && !getBuild(app, build.id)) await driver.deleteSnapshot(savedName).catch(() => app.db.tx(() => setTimer(app, "", `${FORGET_JOB}${savedName}`, 30_000, { image: savedName, attempt: 1 })));
+  if (driver && savedName && !getBuild(app, build.id))
+    await driver.deleteSnapshot(savedName).catch(() => app.db.tx(() => setTimer(app, "", `${FORGET_JOB}${savedName}`, 30_000, { image: savedName, attempt: 1 })));
   if (driver && sandboxId) {
     if (processId !== undefined) await driver.killCommand(sandboxId, processId).catch(() => undefined);
     await removeSandbox(app, driver, sandboxId);
@@ -437,7 +494,13 @@ async function follow(app: App, driver: SnapshotDriver, runId: string, attempt: 
  * Runs a command that can take minutes (a clone, the secret scan) detached, and collects its output over the attach stream: a long
  * synchronous command call is cut by proxies and is capped at 10 minutes by Boat. Output is kept to the last 64 KB per stream.
  */
-async function execLong(driver: SnapshotDriver, sandboxId: string, command: string, capMs: number, now: () => number): Promise<{ exitCode: number | null; stdout: string; stderr: string; timedOut: boolean }> {
+async function execLong(
+  driver: SnapshotDriver,
+  sandboxId: string,
+  command: string,
+  capMs: number,
+  now: () => number,
+): Promise<{ exitCode: number | null; stdout: string; stderr: string; timedOut: boolean }> {
   const { processId } = await driver.runDetached(sandboxId, command);
   const out = { stdout: "", stderr: "" };
   const deadline = now() + capMs;

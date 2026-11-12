@@ -11,11 +11,23 @@ const TOKEN = "owner-token-for-tests";
 function api(h: Harness) {
   const app = uiApp(h.app);
   const call = async (method: string, path: string, body?: unknown, headers: Record<string, string> = { Authorization: `Bearer ${TOKEN}` }) => {
-    const res = await app.request(path, { method, headers: { ...headers, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const res = await app.request(path, {
+      method,
+      headers: { ...headers, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
     const text = await res.text();
     return { status: res.status, json: text ? JSON.parse(text) : null, res };
   };
-  return { app, get: (p: string) => call("GET", p), post: (p: string, b?: unknown) => call("POST", p, b ?? {}), put: (p: string, b: unknown) => call("PUT", p, b), del: (p: string, b?: unknown) => call("DELETE", p, b), patch: (p: string, b: unknown) => call("PATCH", p, b), call };
+  return {
+    app,
+    get: (p: string) => call("GET", p),
+    post: (p: string, b?: unknown) => call("POST", p, b ?? {}),
+    put: (p: string, b: unknown) => call("PUT", p, b),
+    del: (p: string, b?: unknown) => call("DELETE", p, b),
+    patch: (p: string, b: unknown) => call("PATCH", p, b),
+    call,
+  };
 }
 
 async function onboarded(over: Parameters<typeof harness>[0] = {}) {
@@ -30,7 +42,13 @@ describe("auth and errors", () => {
     const h = harness();
     const a = api(h);
     expect((await a.call("GET", "/api/health", undefined, {})).status).toBe(200);
-    for (const [m, p] of [["GET", "/api/dorks"], ["POST", "/api/dorks"], ["GET", "/api/settings"], ["GET", "/api/secrets"], ["GET", "/api/live"]] as const) {
+    for (const [m, p] of [
+      ["GET", "/api/dorks"],
+      ["POST", "/api/dorks"],
+      ["GET", "/api/settings"],
+      ["GET", "/api/secrets"],
+      ["GET", "/api/live"],
+    ] as const) {
       const r = await a.call(m, p, undefined, {});
       expect([m, p, r.status]).toEqual([m, p, 401]);
       expect(r.json.error.code).toBe("forbidden");
@@ -68,7 +86,15 @@ describe("settings", () => {
   it("never echoes secrets, and clears with an empty string", async () => {
     const { a } = await onboarded();
     const view = (await a.get("/api/settings")).json;
-    expect(view).toMatchObject({ claudeToken: true, boatKey: true, boatEnvironment: "chatgpt-only", github: { configured: true }, publicUrlConfigured: true, sleepMinutes: 5, commentPolicy: { mode: "all" } });
+    expect(view).toMatchObject({
+      claudeToken: true,
+      boatKey: true,
+      boatEnvironment: "chatgpt-only",
+      github: { configured: true },
+      publicUrlConfigured: true,
+      sleepMinutes: 5,
+      commentPolicy: { mode: "all" },
+    });
     expect(JSON.stringify(view)).not.toMatch(/ct|gt|bk(?!$)/.source.slice(0, 0) + "xyz-never");
     await a.put("/api/settings", { claudeToken: "" });
     expect((await a.get("/api/settings")).json.claudeToken).toBe(false);
@@ -90,11 +116,13 @@ describe("settings", () => {
 
   it("a GitHub token GitHub rejects is refused; an accepted one records whose it is", async () => {
     const calls: string[] = [];
-    const h = harness({ fetch: (async (u: string | URL | Request, init?: RequestInit) => {
-      const tok = new Headers(init?.headers).get("authorization");
-      calls.push(String(u));
-      return tok === "Bearer good" ? Response.json({ login: "robot" }) : new Response("{}", { status: 401 });
-    }) as typeof fetch });
+    const h = harness({
+      fetch: (async (u: string | URL | Request, init?: RequestInit) => {
+        const tok = new Headers(init?.headers).get("authorization");
+        calls.push(String(u));
+        return tok === "Bearer good" ? Response.json({ login: "robot" }) : new Response("{}", { status: 401 });
+      }) as typeof fetch,
+    });
     const a = api(h);
     expect((await a.put("/api/settings", { githubToken: "bad" })).json.error.code).toBe("invalid");
     expect((await a.get("/api/settings")).json.github.configured).toBe(false);
@@ -105,21 +133,23 @@ describe("settings", () => {
   it("checks a Boat key against Boat's limits before it is saved: wrong key, trial, blocked wallet, wrong org", async () => {
     // Boat's documented answers (docs.boat.dev/api/v1 "Error model", /api/reference/account/get-boat-limits).
     const seen: { path: string; org: string | null }[] = [];
-    const h = harness({ fetch: (async (u: string | URL | Request, init?: RequestInit) => {
-      const headers = new Headers(init?.headers);
-      const key = headers.get("authorization")?.replace("Bearer ", "") ?? null;
-      const path = new URL(String(u)).pathname.replace("/api/v1", "");
-      seen.push({ path, org: headers.get("x-boat-org") });
-      const err = (status: number, code: string) => Response.json({ ok: false, code }, { status });
-      if (key === "paid") return Response.json({ sandboxPlanKey: "starter", canStart: true });
-      if (key === "trial") return Response.json({ sandboxPlanKey: "trial", canStart: true });
-      if (key === "broke") return Response.json({ sandboxPlanKey: "starter", canStart: false, startBlockedReason: "wallet empty" });
-      if (key === "scoped") return path === "/limits" ? err(403, "api_key_action_forbidden") : Response.json({ sandboxes: [] });
-      if (key === "orgkey") return headers.get("x-boat-org") === "team_1" ? Response.json({ sandboxPlanKey: "team", canStart: true }) : err(409, "ambiguous_org");
-      if (key === "expired") return err(403, "api_key_expired");
-      if (key === "down") return new Response("{}", { status: 503 });
-      return err(401, "unauthorized");
-    }) as typeof fetch });
+    const h = harness({
+      fetch: (async (u: string | URL | Request, init?: RequestInit) => {
+        const headers = new Headers(init?.headers);
+        const key = headers.get("authorization")?.replace("Bearer ", "") ?? null;
+        const path = new URL(String(u)).pathname.replace("/api/v1", "");
+        seen.push({ path, org: headers.get("x-boat-org") });
+        const err = (status: number, code: string) => Response.json({ ok: false, code }, { status });
+        if (key === "paid") return Response.json({ sandboxPlanKey: "starter", canStart: true });
+        if (key === "trial") return Response.json({ sandboxPlanKey: "trial", canStart: true });
+        if (key === "broke") return Response.json({ sandboxPlanKey: "starter", canStart: false, startBlockedReason: "wallet empty" });
+        if (key === "scoped") return path === "/limits" ? err(403, "api_key_action_forbidden") : Response.json({ sandboxes: [] });
+        if (key === "orgkey") return headers.get("x-boat-org") === "team_1" ? Response.json({ sandboxPlanKey: "team", canStart: true }) : err(409, "ambiguous_org");
+        if (key === "expired") return err(403, "api_key_expired");
+        if (key === "down") return new Response("{}", { status: 503 });
+        return err(401, "unauthorized");
+      }) as typeof fetch,
+    });
     const a = api(h);
     const check = async (body: object) => (await a.post("/api/boat/check", body)).json;
     expect((await check({ boatKey: "paid" })).status).toBe("ok");
@@ -146,14 +176,34 @@ describe("settings", () => {
 
   it("checks a Codex environment against Boat when it is saved", async () => {
     const envs = [
-      { name: "chatgpt-only", safeForThirdParties: false, passAgentsCredentials: true, passGithub: false, passSecrets: false, passSandboxCredentials: false, proxyAiCredentials: false, credentialProfileId: "cp_1" },
-      { name: "leaky", safeForThirdParties: false, passAgentsCredentials: true, passGithub: true, passSecrets: false, passSandboxCredentials: false, proxyAiCredentials: false, credentialProfileId: "cp_1" },
+      {
+        name: "chatgpt-only",
+        safeForThirdParties: false,
+        passAgentsCredentials: true,
+        passGithub: false,
+        passSecrets: false,
+        passSandboxCredentials: false,
+        proxyAiCredentials: false,
+        credentialProfileId: "cp_1",
+      },
+      {
+        name: "leaky",
+        safeForThirdParties: false,
+        passAgentsCredentials: true,
+        passGithub: true,
+        passSecrets: false,
+        passSandboxCredentials: false,
+        proxyAiCredentials: false,
+        credentialProfileId: "cp_1",
+      },
     ];
     const urls: string[] = [];
-    const h = harness({ fetch: (async (u: string | URL | Request) => {
-      urls.push(String(u));
-      return String(u).includes("/environments") ? Response.json({ environments: envs }) : Response.json({ sandboxPlanKey: "starter", canStart: true });
-    }) as typeof fetch });
+    const h = harness({
+      fetch: (async (u: string | URL | Request) => {
+        urls.push(String(u));
+        return String(u).includes("/environments") ? Response.json({ environments: envs }) : Response.json({ sandboxPlanKey: "starter", canStart: true });
+      }) as typeof fetch,
+    });
     const a = api(h);
     expect((await a.put("/api/settings", { boatKey: "bk", boatOrg: "team_1", boatEnvironment: "chatgpt-only" })).status).toBe(200);
     expect(urls.some((u) => u.endsWith("/environments?org=team_1"))).toBe(true); // only the query selects the org on /environments
@@ -242,9 +292,12 @@ describe("creating a dork", () => {
   it("with an embedded tunnel, registers the sandbox for a ticket before creating it and removes it once its box is deleted", async () => {
     const svc = { url: "https://tunnels.example", installKey: `dti_${"a".repeat(64)}` };
     const fetch = fakeFetch((url, init) =>
-      url.pathname === "/user" ? Response.json({ login: "agent-bot" })
-      : url.host === "tunnels.example" && init?.method === "PUT" ? Response.json({ ticket: "dts_payload.sig" })
-      : new Response(null, { status: 204 }));
+      url.pathname === "/user"
+        ? Response.json({ login: "agent-bot" })
+        : url.host === "tunnels.example" && init?.method === "PUT"
+          ? Response.json({ ticket: "dts_payload.sig" })
+          : new Response(null, { status: 204 }),
+    );
     const { a, h } = await onboarded({ fetch, config: { tunnelService: svc } });
     const id = (await a.post("/api/dorks", { repo: "o/r", message: "hi", provider: "claude" })).json.id;
     await h.settle();
@@ -270,7 +323,12 @@ describe("creating a dork", () => {
     const id = (await a.post("/api/dorks", { repo: "o/r", message: "hi", provider: "claude" })).json.id;
     await h.settle();
     expect(h.state(id)).toBe("error");
-    expect(h.events(id).filter((e) => e.body.type === "error").map((e) => (e.body as { message: string }).message)).toEqual(["create_box failed"]);
+    expect(
+      h
+        .events(id)
+        .filter((e) => e.body.type === "error")
+        .map((e) => (e.body as { message: string }).message),
+    ).toEqual(["create_box failed"]);
   });
 
   it("without a base snapshot a session is refused until one is set", async () => {

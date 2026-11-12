@@ -5,7 +5,11 @@ const HEADERS = { Accept: "application/vnd.github+json", "X-GitHub-Api-Version":
 
 /** GitHub answered non-2xx (other than 304). Carries only the status: response bodies are never surfaced. */
 export class GithubHttpError extends Error {
-  constructor(readonly status: number, what = "request", /** Epoch ms when a rate limit lifts, when GitHub said so. */ readonly retryAt?: number) {
+  constructor(
+    readonly status: number,
+    what = "request",
+    /** Epoch ms when a rate limit lifts, when GitHub said so. */ readonly retryAt?: number,
+  ) {
     super(`GitHub ${what} failed: ${status}`);
     this.name = "GithubHttpError";
   }

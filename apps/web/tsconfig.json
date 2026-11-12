@@ -20,7 +20,7 @@
     /* Linting */
     "skipLibCheck": true,
     "strict": true,
-    "noUnusedLocals": false, /* registry files in @dorks/ui are kept verbatim */
+    "noUnusedLocals": false /* registry files in @dorks/ui are kept verbatim */,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true

@@ -50,4 +50,3 @@ function logs(app: App, dorkId: string, args: Record<string, unknown>) {
   if (out.length > MAX_LOG_CHARS) out = out.slice(-MAX_LOG_CHARS);
   return { run, log: out };
 }
-

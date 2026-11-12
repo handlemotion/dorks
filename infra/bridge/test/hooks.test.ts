@@ -13,7 +13,11 @@ function checkout(fullName = "acme/demo", work = tmp("work-")) {
   const dir = join(work, fullName);
   mkdirSync(dirname(dir), { recursive: true });
   remote.sh(work, "clone", "-q", `${remote.baseUrl}/${fullName}.git`, dir);
-  const git = (...args: string[]) => remote.sh(dir, ...args).toString().trim();
+  const git = (...args: string[]) =>
+    remote
+      .sh(dir, ...args)
+      .toString()
+      .trim();
   const commit = (file: string, msg = `edit ${file}`) => {
     writeFileSync(join(dir, file), `${msg}\n`);
     git("add", ".");
@@ -164,7 +168,6 @@ describe("Stop gate", () => {
       const other = [{ ...fakeView({ repo: "acme/demo", number: 8 }), headRef: "dork/y" }];
       expect(await service(w.work, { hasPr: async () => false, subs: other }).stop()).toMatchObject({ decision: "block" });
     });
-
   });
 
   describe("once per condition", () => {
@@ -249,7 +252,10 @@ describe("Stop gate", () => {
   it("scans every repository under the workdir, deeper than owner/name, and not node_modules, dot dirs or worktree checkouts", async () => {
     const a = checkout("acme/demo");
     const b = checkout("other/lib", a.work);
-    for (const [dir, file] of [[a.dir, "a.txt"], [b.dir, "b.txt"]] as const) {
+    for (const [dir, file] of [
+      [a.dir, "a.txt"],
+      [b.dir, "b.txt"],
+    ] as const) {
       writeFileSync(join(dir, file), "x\n");
       a.remote.sh(dir, "add", ".");
       a.remote.sh(dir, "commit", "-q", "-m", "x");
@@ -281,7 +287,6 @@ describe("Stop gate", () => {
     const broken = service(w.work, { subs: null, prs: { ...fakePrs().prs, list: () => Promise.reject(new Error("x")) } });
     expect(await broken.stop()).toBeNull();
   });
-
 });
 
 describe("PostToolUse", () => {
@@ -384,7 +389,6 @@ describe("SessionStart", () => {
     expect(sessionContext(null)).toContain("could not be loaded just now; call the `pr_list` tool");
     expect(sessionContext(null)).toContain("How autonomy works here:");
   });
-
 });
 
 describe("settings for `claude --settings`", () => {

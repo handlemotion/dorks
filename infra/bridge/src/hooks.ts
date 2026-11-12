@@ -121,8 +121,7 @@ export class HookService {
     if (this.turnKinds.includes("ready")) return null;
 
     const subs = (await this.d.prs.list()) ?? [];
-    const hasPr = async (repo: string, branch: string) =>
-      subs.some((s) => s.headRef === branch && s.repo.toLowerCase() === repo.toLowerCase()) || this.d.hasPr(repo, branch);
+    const hasPr = async (repo: string, branch: string) => subs.some((s) => s.headRef === branch && s.repo.toLowerCase() === repo.toLowerCase()) || this.d.hasPr(repo, branch);
     const found = await scanWork({ workDir: this.d.workDir, env: this.d.env, runAs: this.d.runAs, hasPr });
 
     // A condition is raised once. It is forgotten when it clears, so work that goes unpushed again later is raised again.

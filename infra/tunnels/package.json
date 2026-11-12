@@ -1,9 +1,9 @@
 {
   "name": "@dorks/tunnels",
-  "private": true,
-  "type": "module",
   "version": "0.1.0",
+  "private": true,
   "description": "The Dorks tunnel service: holds Wurmhol's integration key and gives each install a private embedded tunnel, and its sandboxes grants to reach it.",
+  "type": "module",
   "scripts": {
     "dev": "vp dev",
     "build": "vp build",

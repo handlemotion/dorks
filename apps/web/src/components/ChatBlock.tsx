@@ -15,15 +15,7 @@ import { parseReply, quoteText } from '../lib/reply'
 import { ImageLightbox, ImageTrigger, useLightboxImages, type LightboxImage } from './ImageLightbox'
 import { Message, MessageContent } from '@dorks/ui/message'
 import { MessageScrollerItem } from '@dorks/ui/message-scroller'
-import {
-  Trace,
-  TraceCollapsible,
-  TraceCollapsibleContent,
-  TraceCollapsibleTrigger,
-  TraceIcon,
-  TraceLine,
-  TraceTitle,
-} from '@dorks/ui/trace'
+import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from '@dorks/ui/trace'
 
 type ToolBlock = Extract<Block, { kind: 'tool' }>
 type TurnBlock = Extract<Block, { kind: 'turn' }>
@@ -93,8 +85,22 @@ function ChatImageView({ src, alt, large }: { src?: string | Blob; alt?: string;
   const index = typeof src === 'string' ? images.findIndex((i) => i.src === src) : -1
   if (index < 0) return typeof src === 'string' ? <img src={src} alt={alt ?? ''} className={`block ${size} rounded-(--control-radius)`} /> : null
   return (
-    <ImageTrigger index={index} className="my-1 inline-block max-w-full cursor-zoom-in rounded-(--control-radius) align-top outline-none focus-visible:outline-2 focus-visible:outline-ring" aria-label={`Open ${alt || 'image'}`}>
-      {({ imageRef, morphRef }) => <img ref={(node) => { imageRef(node); morphRef(node) }} src={src as string} alt={alt ?? ''} className={`block ${size} rounded-(--control-radius) bg-surface object-cover`} />}
+    <ImageTrigger
+      index={index}
+      className="my-1 inline-block max-w-full cursor-zoom-in rounded-(--control-radius) align-top outline-none focus-visible:outline-2 focus-visible:outline-ring"
+      aria-label={`Open ${alt || 'image'}`}
+    >
+      {({ imageRef, morphRef }) => (
+        <img
+          ref={(node) => {
+            imageRef(node)
+            morphRef(node)
+          }}
+          src={src as string}
+          alt={alt ?? ''}
+          className={`block ${size} rounded-(--control-radius) bg-surface object-cover`}
+        />
+      )}
     </ImageTrigger>
   )
 }
@@ -115,7 +121,7 @@ const [sanitize, schema] = defaultRehypePlugins.sanitize as [unknown, { protocol
 const REHYPE = Object.values({
   ...defaultRehypePlugins,
   sanitize: [sanitize, { ...schema, protocols: { ...schema.protocols, src: [...(schema.protocols?.src ?? []), 'data'] } }],
-}) as typeof defaultRehypePlugins[string][]
+}) as (typeof defaultRehypePlugins)[string][]
 
 const allowDataImages: typeof defaultUrlTransform = (url, key, node) => (key === 'src' && url.startsWith('data:image/') ? url : defaultUrlTransform(url, key, node))
 
@@ -135,12 +141,12 @@ function entries(blocks: Block[]): Entry[] {
 
 function ToolRow({ block }: { block: ToolBlock }) {
   const command = block.summary
-  const title = block.name === 'Bash'
-    ? `${block.status === 'running' ? 'Running' : block.status === 'error' ? 'Failed to run' : 'Ran'} ${command}`
-    : `${block.name}: ${command}`
+  const title = block.name === 'Bash' ? `${block.status === 'running' ? 'Running' : block.status === 'error' ? 'Failed to run' : 'Ran'} ${command}` : `${block.name}: ${command}`
   const line = (
     <TraceLine status={block.status === 'ok' ? undefined : block.status}>
-      <TraceIcon><TerminalIcon /></TraceIcon>
+      <TraceIcon>
+        <TerminalIcon />
+      </TraceIcon>
       <TraceTitle>{title}</TraceTitle>
     </TraceLine>
   )
@@ -150,7 +156,9 @@ function ToolRow({ block }: { block: ToolBlock }) {
       <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
       <TraceCollapsibleContent>
         <CodeBlock size="sm" variant={block.status === 'error' ? 'destructive' : 'default'}>
-          <CodeBlockContent wrap className="max-h-64">{block.preview}</CodeBlockContent>
+          <CodeBlockContent wrap className="max-h-64">
+            {block.preview}
+          </CodeBlockContent>
         </CodeBlock>
       </TraceCollapsibleContent>
     </TraceCollapsible>
@@ -161,15 +169,28 @@ function ToolRow({ block }: { block: ToolBlock }) {
 function toolAction(name: string): { verb: string; one: string; many: string } {
   const mcp = /^mcp__[^_]+(?:_[^_]+)*?__(.+)$/.exec(name)
   switch (name) {
-    case 'Bash': return { verb: 'ran', one: 'a command', many: 'commands' }
-    case 'Read': return { verb: 'read', one: 'a file', many: 'files' }
-    case 'Write': return { verb: 'wrote', one: 'a file', many: 'files' }
-    case 'Edit': case 'MultiEdit': case 'NotebookEdit': return { verb: 'edited', one: 'a file', many: 'files' }
-    case 'Grep': case 'Glob': return { verb: 'searched', one: 'the code', many: 'the code' }
-    case 'WebSearch': return { verb: 'searched', one: 'the web', many: 'the web' }
-    case 'WebFetch': return { verb: 'fetched', one: 'a page', many: 'pages' }
-    case 'Task': case 'Agent': return { verb: 'ran', one: 'an agent', many: 'agents' }
-    case 'TodoWrite': return { verb: 'updated', one: 'the plan', many: 'the plan' }
+    case 'Bash':
+      return { verb: 'ran', one: 'a command', many: 'commands' }
+    case 'Read':
+      return { verb: 'read', one: 'a file', many: 'files' }
+    case 'Write':
+      return { verb: 'wrote', one: 'a file', many: 'files' }
+    case 'Edit':
+    case 'MultiEdit':
+    case 'NotebookEdit':
+      return { verb: 'edited', one: 'a file', many: 'files' }
+    case 'Grep':
+    case 'Glob':
+      return { verb: 'searched', one: 'the code', many: 'the code' }
+    case 'WebSearch':
+      return { verb: 'searched', one: 'the web', many: 'the web' }
+    case 'WebFetch':
+      return { verb: 'fetched', one: 'a page', many: 'pages' }
+    case 'Task':
+    case 'Agent':
+      return { verb: 'ran', one: 'an agent', many: 'agents' }
+    case 'TodoWrite':
+      return { verb: 'updated', one: 'the plan', many: 'the plan' }
     default: {
       const tool = (mcp?.[1] ?? name).replace(/[_-]+/g, ' ')
       return { verb: 'used', one: tool, many: tool }
@@ -200,12 +221,18 @@ function ToolGroup({ tools }: { tools: ToolBlock[] }) {
     <TraceCollapsible data-testid="tool-group">
       <TraceCollapsibleTrigger>
         <TraceLine status={status}>
-          <TraceIcon><WrenchIcon /></TraceIcon>
+          <TraceIcon>
+            <WrenchIcon />
+          </TraceIcon>
           <TraceTitle>{toolGroupTitle(tools)}</TraceTitle>
         </TraceLine>
       </TraceCollapsibleTrigger>
       <TraceCollapsibleContent>
-        <Trace>{tools.map((tool) => <ToolRow key={tool.id} block={tool} />)}</Trace>
+        <Trace>
+          {tools.map((tool) => (
+            <ToolRow key={tool.id} block={tool} />
+          ))}
+        </Trace>
       </TraceCollapsibleContent>
     </TraceCollapsible>
   )
@@ -217,7 +244,11 @@ function ToolGroup({ tools }: { tools: ToolBlock[] }) {
  */
 function AgentText({ block }: { block: Extract<AgentBlock, { kind: 'assistant' }> }) {
   const { onReply } = useReply()
-  const markdown = <Markdown components={MARKDOWN} urlTransform={allowDataImages} rehypePlugins={REHYPE}>{block.text}</Markdown>
+  const markdown = (
+    <Markdown components={MARKDOWN} urlTransform={allowDataImages} rehypePlugins={REHYPE}>
+      {block.text}
+    </Markdown>
+  )
   if (block.streaming) return <div className="min-w-0">{markdown}</div>
   return (
     <HoverActions
@@ -254,13 +285,19 @@ function agentContent(blocks: AgentBlock[]): ReactNode[] {
       content.push(
         <Trace key={block.id} role="status" data-testid="build-draft">
           <TraceLine>
-            <TraceIcon><BoxIcon /></TraceIcon>
-            <TraceTitle>Proposed a change to the machine {block.buildName}. {state}.</TraceTitle>
+            <TraceIcon>
+              <BoxIcon />
+            </TraceIcon>
+            <TraceTitle>
+              Proposed a change to the machine {block.buildName}. {state}.
+            </TraceTitle>
           </TraceLine>
           {block.note && <p className="pl-6 text-sm text-muted-foreground">{block.note}</p>}
           {block.buildId && block.approved === null && (
             <div className="pt-2 pl-6">
-              <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/builds" search={{ build: block.buildId }} />}>Review the change</Button>
+              <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/builds" search={{ build: block.buildId }} />}>
+                Review the change
+              </Button>
             </div>
           )}
         </Trace>,
@@ -321,11 +358,12 @@ function WorkHistory({ blocks, dimmed, id }: { blocks: AgentBlock[]; dimmed?: bo
  * where the work starts and cannot be collapsed.
  */
 function TurnCheckpoint({ label, open, onToggle, controls }: { label: string; open: boolean; onToggle?: () => void; controls: string }) {
-  if (!onToggle) return (
-    <Marker variant="separator" data-testid="turn-checkpoint">
-      <MarkerContent>{label}</MarkerContent>
-    </Marker>
-  )
+  if (!onToggle)
+    return (
+      <Marker variant="separator" data-testid="turn-checkpoint">
+        <MarkerContent>{label}</MarkerContent>
+      </Marker>
+    )
   return (
     <Marker
       variant="separator"
@@ -354,12 +392,13 @@ function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock })
   if (end && end.outcome === null) return <>{agentContent(blocks)}</>
   // Only notices or cards after the last turn (a machine draft, a PR event): nothing is working, so no "Working" bar.
   if (!end && !blocks.some(isWork)) return <>{agentContent(blocks)}</>
-  if (!end) return (
-    <>
-      <TurnCheckpoint label="Working" open controls={historyId} />
-      <WorkHistory id={historyId} blocks={blocks} />
-    </>
-  )
+  if (!end)
+    return (
+      <>
+        <TurnCheckpoint label="Working" open controls={historyId} />
+        <WorkHistory id={historyId} blocks={blocks} />
+      </>
+    )
   const work = blocks.filter(isWork)
   const open = userOpen ?? (end.outcome !== 'done' || !end.finalId)
   return (
@@ -374,7 +413,9 @@ function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock })
       {end.outcome === 'stopped' && (
         <Trace role="status" data-testid="turn-stopped">
           <TraceLine>
-            <TraceIcon><CircleStopIcon /></TraceIcon>
+            <TraceIcon>
+              <CircleStopIcon />
+            </TraceIcon>
             <TraceTitle>Stopped</TraceTitle>
           </TraceLine>
         </Trace>
@@ -387,7 +428,13 @@ function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock })
  * The transcript. With `onReply` the agent's words can be replied to: select a passage (a small box on it starts the answer), right
  * click an image or use a final answer's Reply. Each becomes a banner in the composer (a selection's box can also send with ⌘ Enter). A sent reply shows its quote above the bubble.
  */
-export function ChatMessages({ blocks: raw, imageUrl, onReply, onReplySend, agent }: {
+export function ChatMessages({
+  blocks: raw,
+  imageUrl,
+  onReply,
+  onReplySend,
+  agent,
+}: {
   blocks: Block[]
   /** Resolves a shared screenshot's id to its URL. */
   imageUrl?: (id: string) => string
@@ -414,7 +461,9 @@ export function ChatMessages({ blocks: raw, imageUrl, onReply, onReplySend, agen
               {quoted && <ReplyQuote reply={quoted.kind === 'image' && quoted.ref ? { ...quoted, src: resolveRef(quoted.ref, imageUrl) } : quoted} />}
               {own.length > 0 && (
                 <div className="flex flex-wrap justify-end gap-2">
-                  {own.map((image) => <ChatImage key={image.id} src={image.src} alt={image.alt} />)}
+                  {own.map((image) => (
+                    <ChatImage key={image.id} src={image.src} alt={image.alt} />
+                  ))}
                 </div>
               )}
               {text && (
@@ -437,7 +486,9 @@ export function ChatMessages({ blocks: raw, imageUrl, onReply, onReplySend, agen
       <MessageScrollerItem key={entry.id} messageId={entry.id} className="-mt-7 -ml-10 pt-7 pl-10">
         <Message {...{ [REPLY_SOURCE]: '' }}>
           <MessageContent className="gap-3">
-            {turns(entry.blocks).map((turn, i) => <TurnContent key={`${entry.id}:${i}`} blocks={turn.blocks} end={turn.end} />)}
+            {turns(entry.blocks).map((turn, i) => (
+              <TurnContent key={`${entry.id}:${i}`} blocks={turn.blocks} end={turn.end} />
+            ))}
           </MessageContent>
         </Message>
       </MessageScrollerItem>
@@ -445,7 +496,13 @@ export function ChatMessages({ blocks: raw, imageUrl, onReply, onReplySend, agen
   })
   return (
     <ReplyContext.Provider value={reply}>
-      {images.length > 0 ? <ImageLightbox images={images} label="Images in this chat">{messages}</ImageLightbox> : messages}
+      {images.length > 0 ? (
+        <ImageLightbox images={images} label="Images in this chat">
+          {messages}
+        </ImageLightbox>
+      ) : (
+        messages
+      )}
       <SelectionReply />
     </ReplyContext.Provider>
   )

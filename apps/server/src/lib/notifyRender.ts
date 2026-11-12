@@ -32,7 +32,8 @@ const INSTRUCTIONS: Record<NotifyKind, string> = {
   review: "A review was submitted. Address every requested change, reply to each comment with `gh`, validate locally (tests, typecheck and lint for what you changed), then push.",
   comment: "There are new comments. Address each one, reply to it with `gh`, validate locally (tests, typecheck and lint for what you changed), then push.",
   conflict: "The PR no longer merges cleanly. Rebase onto (or merge) the base branch, resolve the conflicts, validate locally, then push; use `git push --force-with-lease` if you rebased.",
-  base_changed: "The PR's base branch changed (for example a stack parent was merged). Rebase onto (or merge) the new base, validate locally, then push; use `git push --force-with-lease` if you rebased.",
+  base_changed:
+    "The PR's base branch changed (for example a stack parent was merged). Rebase onto (or merge) the new base, validate locally, then push; use `git push --force-with-lease` if you rebased.",
   ready: "CI is green and the PR is approved. Post a short comment on the PR saying you are on standby, then stop. Do not merge it.",
   closed: "The PR was closed or merged and your subscription to it has ended. Leave it alone.",
 };

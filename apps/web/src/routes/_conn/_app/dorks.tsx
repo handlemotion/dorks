@@ -10,23 +10,9 @@ import { AgentStatus } from '../../../components/AgentStatus'
 import { BrandCircle } from '../../../components/BrandCircle'
 import { Alert, AlertDescription } from '@dorks/ui/alert'
 import { Button } from '@dorks/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from '@dorks/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@dorks/ui/dropdown-menu'
 import { InputGroup, InputGroupButton } from '@dorks/ui/input-group'
-import {
-  MessageScroller,
-  MessageScrollerButton,
-  MessageScrollerContent,
-  MessageScrollerProvider,
-  MessageScrollerViewport,
-} from '@dorks/ui/message-scroller'
+import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport } from '@dorks/ui/message-scroller'
 import { ChatMessages } from '../../../components/ChatBlock'
 import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, type ChatDetailsData } from '../../../components/ChatDetails'
 import { withImages, Composer, type AgentProvider, type ModelPicker } from '../../../components/ChatComposer'
@@ -72,10 +58,23 @@ function Dorks() {
     <div className="flex h-full min-h-0 flex-col" data-onboarding={settings ? (ready ? 'complete' : 'preparing') : 'loading'}>
       {!selected && <PageHeader title="New session" divider={false} />}
       {settings && ready && !settings.claudeToken && (
-        <Notice>Add a <Link to="/settings" className="font-medium underline underline-offset-4">Claude token</Link> to start sessions with Claude Code.</Notice>
+        <Notice>
+          Add a{' '}
+          <Link to="/settings" className="font-medium underline underline-offset-4">
+            Claude token
+          </Link>{' '}
+          to start sessions with Claude Code.
+        </Notice>
       )}
       {selected ? (
-        <CatchBoundary getResetKey={() => selected} errorComponent={() => <p className="mx-auto mt-6 text-sm text-destructive" role="alert">That session could not be opened.</p>}>
+        <CatchBoundary
+          getResetKey={() => selected}
+          errorComponent={() => (
+            <p className="mx-auto mt-6 text-sm text-destructive" role="alert">
+              That session could not be opened.
+            </p>
+          )}
+        >
           <Thread key={selected} dorkId={selected} />
         </CatchBoundary>
       ) : (
@@ -85,7 +84,11 @@ function Dorks() {
             {showArchived && (
               <section aria-label="Archived sessions" className="mx-auto flex min-h-0 w-full max-w-[790px] flex-col gap-6 px-5">
                 <h2 className="text-center text-lg font-medium">Archived sessions</h2>
-                {dorks === undefined ? <p role="status" className="text-center text-sm text-muted-foreground">Loading sessions…</p> : dorks.length === 0 ? (
+                {dorks === undefined ? (
+                  <p role="status" className="text-center text-sm text-muted-foreground">
+                    Loading sessions…
+                  </p>
+                ) : dorks.length === 0 ? (
                   <EmptyState figure="drawer" title="No archived sessions" description="Sessions you archive will show up here." />
                 ) : (
                   <div className="overflow-y-auto">
@@ -105,11 +108,15 @@ function Dorks() {
                 )}
               </section>
             )}
-              <div className={`${showArchived ? 'hidden' : 'flex'} mx-auto w-full max-w-[790px] flex-col gap-6`}>
-                <h2 className="sr-only">What should we work on?</h2>
-                {settings && <div className="px-5 [&:has(>div:empty)]:hidden"><SetupStatus settings={settings} /></div>}
-                <NewDork key={presetRepo} initialRepo={presetRepo} onCreated={setSelected} disabled={!ready} claudeReady={!!settings?.claudeToken} codexReady={!!settings?.boatEnvironment} />
-              </div>
+            <div className={`${showArchived ? 'hidden' : 'flex'} mx-auto w-full max-w-[790px] flex-col gap-6`}>
+              <h2 className="sr-only">What should we work on?</h2>
+              {settings && (
+                <div className="px-5 [&:has(>div:empty)]:hidden">
+                  <SetupStatus settings={settings} />
+                </div>
+              )}
+              <NewDork key={presetRepo} initialRepo={presetRepo} onCreated={setSelected} disabled={!ready} claudeReady={!!settings?.claudeToken} codexReady={!!settings?.boatEnvironment} />
+            </div>
           </div>
           <div className="shrink-0 self-center px-5 pb-3 text-sm text-muted-foreground">
             <Button variant="ghost" size="sm" aria-pressed={showArchived} onClick={() => setShowArchived(!showArchived)}>
@@ -122,7 +129,19 @@ function Dorks() {
   )
 }
 
-function NewDork({ initialRepo, onCreated, disabled, claudeReady, codexReady }: { initialRepo?: string; onCreated: (id: string) => void; disabled: boolean; claudeReady: boolean; codexReady: boolean }) {
+function NewDork({
+  initialRepo,
+  onCreated,
+  disabled,
+  claudeReady,
+  codexReady,
+}: {
+  initialRepo?: string
+  onCreated: (id: string) => void
+  disabled: boolean
+  claudeReady: boolean
+  codexReady: boolean
+}) {
   const { actions } = useDorksClient()
   const settings = useSettings()
   // Sent with the first message (the server checks it against the models the agent reported), then kept by the session.
@@ -142,17 +161,36 @@ function NewDork({ initialRepo, onCreated, disabled, claudeReady, codexReady }: 
   const needsClaudeToken = provider === 'claude' && !claudeReady
   return (
     <div className="[&>div]:max-w-none">
-      {needsClaudeToken && <p className="mx-5 mb-2 text-sm text-destructive" role="status">Add a <Link to="/settings" className="font-medium underline underline-offset-4">Claude token in settings</Link> to use Claude Code.</p>}
+      {needsClaudeToken && (
+        <p className="mx-5 mb-2 text-sm text-destructive" role="status">
+          Add a{' '}
+          <Link to="/settings" className="font-medium underline underline-offset-4">
+            Claude token in settings
+          </Link>{' '}
+          to use Claude Code.
+        </p>
+      )}
       <Composer
-        text={message} setText={setMessage} repo={repo} setRepo={setRepo} repositories={repositories} provider={provider} setProvider={setProvider} codexEnabled={codexReady}
-        pending={pending} disabled={disabled || needsClaudeToken} error={error}
+        text={message}
+        setText={setMessage}
+        repo={repo}
+        setRepo={setRepo}
+        repositories={repositories}
+        provider={provider}
+        setProvider={setProvider}
+        codexEnabled={codexReady}
+        pending={pending}
+        disabled={disabled || needsClaudeToken}
+        error={error}
         picker={{ choices: settings?.claudeModels ?? [], ...choice, onChange: (model, effort) => setChoice({ model, effort }) }}
         upload={actions.uploadImage}
         machine={{ builds: built, buildId, onChange: setPicked }}
-        onSubmit={(images) => run(async () => {
-          onCreated((await actions.createDork({ repo: repo.trim(), message: withImages(message, images), provider, buildId, ...(provider === 'claude' ? choice : {}) })).id)
-          setMessage('')
-        })}
+        onSubmit={(images) =>
+          run(async () => {
+            onCreated((await actions.createDork({ repo: repo.trim(), message: withImages(message, images), provider, buildId, ...(provider === 'claude' ? choice : {}) })).id)
+            setMessage('')
+          })
+        }
       />
     </div>
   )
@@ -188,16 +226,24 @@ function CodexModelForm({ dork }: { dork: DorkView }) {
   const { actions } = useDorksClient()
   const [selectedModel, setSelectedModel] = useState('')
   const modelChoice = usePending()
-  const models = dork.codexModelChoices?.flatMap((option) => option.efforts.map((effort) => ({
-    key: `${option.model}:${effort}`, model: option.model, effort,
-  }))) ?? []
+  const models =
+    dork.codexModelChoices?.flatMap((option) =>
+      option.efforts.map((effort) => ({
+        key: `${option.model}:${effort}`,
+        model: option.model,
+        effort,
+      })),
+    ) ?? []
   const choice = models.find((option) => option.key === selectedModel) ?? models[0]
   if (models.length === 0) return null
   return (
-    <form className="mx-auto mt-4 flex w-full max-w-4xl shrink-0 flex-wrap items-center gap-2 px-4 text-sm" onSubmit={(event) => {
-      event.preventDefault()
-      if (choice) void modelChoice.run(() => actions.chooseCodexModel(dork.id, choice.model, choice.effort))
-    }}>
+    <form
+      className="mx-auto mt-4 flex w-full max-w-4xl shrink-0 flex-wrap items-center gap-2 px-4 text-sm"
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (choice) void modelChoice.run(() => actions.chooseCodexModel(dork.id, choice.model, choice.effort))
+      }}
+    >
       <span className="w-full text-muted-foreground">Available ChatGPT models</span>
       <InputGroup className="max-w-56">
         <DropdownMenu>
@@ -222,7 +268,11 @@ function CodexModelForm({ dork }: { dork: DorkView }) {
       <Button type="submit" size="sm" disabled={dork.state !== 'error' || modelChoice.pending || !choice}>
         {modelChoice.pending ? 'Starting…' : 'Use this model'}
       </Button>
-      {modelChoice.error && <p className="text-sm text-destructive" role="alert">{modelChoice.error}</p>}
+      {modelChoice.error && (
+        <p className="text-sm text-destructive" role="alert">
+          {modelChoice.error}
+        </p>
+      )}
     </form>
   )
 }
@@ -244,60 +294,123 @@ function Thread({ dorkId }: { dorkId: string }) {
   const fetchDesktopUrl = useCallback((opts: DesktopOptions) => actions.desktopUrl(dorkId, opts), [actions, dorkId])
   const interruptAgent = useCallback(() => actions.interrupt(dorkId), [actions, dorkId])
   const { live } = useConnection()
-  if (dork === undefined || loading) return <p className="mt-4 px-6 text-sm text-muted-foreground" role="status">Loading session…</p>
-  if (dork === null) return <p className="mt-4 px-6 text-sm text-destructive" role="alert">That session could not be found.</p>
+  if (dork === undefined || loading)
+    return (
+      <p className="mt-4 px-6 text-sm text-muted-foreground" role="status">
+        Loading session…
+      </p>
+    )
+  if (dork === null)
+    return (
+      <p className="mt-4 px-6 text-sm text-destructive" role="alert">
+        That session could not be found.
+      </p>
+    )
   const working = dork.state === 'working'
   const canReply = !dork.archived
   return (
-    <ChatSplit details={detailsOpen ? <ChatDetails data={detailsData(dork, actions, { used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent })} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} onAsk={setText} /> : undefined}>
-    <section className="flex min-w-0 flex-1 flex-col" aria-label="thread" data-state={dork.state}>
-      <PageHeader divider={false}
-        title={dork.title}
-        titleActions={<ArchiveButton archived={dork.archived} disabled={archiving} onClick={() => void runArchive(() => actions.archiveDork(dorkId, !dork.archived))} />}
-        actions={<>
-          <ChatMenu prUrl={dork.prUrl} detailsOpen={detailsOpen} onDelete={async () => { await actions.deleteDork(dorkId); await navigate({ to: '/dorks', search: {} }) }} />
-          {!detailsOpen && <ShowDetailsButton onClick={() => setDetailsOpen(true)} />}
-        </>}
-      />
-      <CodexModelForm dork={dork} />
-      <MessageScrollerProvider autoScroll defaultScrollPosition="end">
-        <MessageScroller>
-          <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
-            <MessageScrollerContent className="mx-auto w-full max-w-4xl gap-6 px-10 pt-6 pb-12" data-testid="transcript">
-              {canLoadMore && <div className="text-center"><Button variant="outline" size="sm" onClick={loadMore}>Load older</Button></div>}
-              <ChatMessages
-                blocks={view.blocks}
-                imageUrl={actions.imageUrl}
-                agent={dork.provider === 'codex' ? 'Codex' : 'Claude'}
-                onReply={canReply ? (quoted, draft) => { setReply(quoted); if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft)) } : undefined}
-                onReplySend={canReply ? (quoted, answer) => run(() => send(withReply(quoted, answer))) : undefined}
+    <ChatSplit
+      details={
+        detailsOpen ? (
+          <ChatDetails
+            data={detailsData(dork, actions, { used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent })}
+            onClose={() => setDetailsOpen(false)}
+            onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}
+            onAsk={setText}
+          />
+        ) : undefined
+      }
+    >
+      <section className="flex min-w-0 flex-1 flex-col" aria-label="thread" data-state={dork.state}>
+        <PageHeader
+          divider={false}
+          title={dork.title}
+          titleActions={<ArchiveButton archived={dork.archived} disabled={archiving} onClick={() => void runArchive(() => actions.archiveDork(dorkId, !dork.archived))} />}
+          actions={
+            <>
+              <ChatMenu
+                prUrl={dork.prUrl}
+                detailsOpen={detailsOpen}
+                onDelete={async () => {
+                  await actions.deleteDork(dorkId)
+                  await navigate({ to: '/dorks', search: {} })
+                }}
               />
-              {eventsError && <p role="alert" className="text-sm text-destructive">Could not load messages: {eventsError.message}. Retrying…</p>}
-              <div><AgentStatus state={dork.state} live={live} outcome={view.lastOutcome} /></div>
-            </MessageScrollerContent>
-          </MessageScrollerViewport>
-          <MessageScrollerButton />
-        </MessageScroller>
-      </MessageScrollerProvider>
-      <Composer
-        text={text} setText={setText} repo={dork.repo} provider={dork.provider ?? 'claude'} pending={pending} disabled={dork.archived}
-        error={[error, stopError, archiveError, modelSwitch.error].find(Boolean) ?? ''}
-        agentLabel={dork.codexModel?.model}
-        picker={claudePicker(dork, settings?.claudeModels, (model, effort) => void modelSwitch.run(() => actions.chooseModel(dorkId, model ?? null, effort ?? null)))}
-        upload={actions.uploadImage}
-        reply={reply}
-        onClearReply={() => setReply(undefined)}
-        onSubmit={(images) => run(async () => {
-          const sent = text
-          const quoted = reply
-          // The optimistic row shows it at once; put the text and the reply back if the server refuses.
-          setText('')
-          setReply(undefined)
-          try { await send(withReply(quoted, withImages(sent, images))) } catch (e) { setText(sent); setReply(quoted); throw e }
-        })}
-        onStop={working && !stopping && canReply ? () => void runStop(() => actions.interrupt(dorkId)) : undefined}
-      />
-    </section>
+              {!detailsOpen && <ShowDetailsButton onClick={() => setDetailsOpen(true)} />}
+            </>
+          }
+        />
+        <CodexModelForm dork={dork} />
+        <MessageScrollerProvider autoScroll defaultScrollPosition="end">
+          <MessageScroller>
+            <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
+              <MessageScrollerContent className="mx-auto w-full max-w-4xl gap-6 px-10 pt-6 pb-12" data-testid="transcript">
+                {canLoadMore && (
+                  <div className="text-center">
+                    <Button variant="outline" size="sm" onClick={loadMore}>
+                      Load older
+                    </Button>
+                  </div>
+                )}
+                <ChatMessages
+                  blocks={view.blocks}
+                  imageUrl={actions.imageUrl}
+                  agent={dork.provider === 'codex' ? 'Codex' : 'Claude'}
+                  onReply={
+                    canReply
+                      ? (quoted, draft) => {
+                          setReply(quoted)
+                          if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft))
+                        }
+                      : undefined
+                  }
+                  onReplySend={canReply ? (quoted, answer) => run(() => send(withReply(quoted, answer))) : undefined}
+                />
+                {eventsError && (
+                  <p role="alert" className="text-sm text-destructive">
+                    Could not load messages: {eventsError.message}. Retrying…
+                  </p>
+                )}
+                <div>
+                  <AgentStatus state={dork.state} live={live} outcome={view.lastOutcome} />
+                </div>
+              </MessageScrollerContent>
+            </MessageScrollerViewport>
+            <MessageScrollerButton />
+          </MessageScroller>
+        </MessageScrollerProvider>
+        <Composer
+          text={text}
+          setText={setText}
+          repo={dork.repo}
+          provider={dork.provider ?? 'claude'}
+          pending={pending}
+          disabled={dork.archived}
+          error={[error, stopError, archiveError, modelSwitch.error].find(Boolean) ?? ''}
+          agentLabel={dork.codexModel?.model}
+          picker={claudePicker(dork, settings?.claudeModels, (model, effort) => void modelSwitch.run(() => actions.chooseModel(dorkId, model ?? null, effort ?? null)))}
+          upload={actions.uploadImage}
+          reply={reply}
+          onClearReply={() => setReply(undefined)}
+          onSubmit={(images) =>
+            run(async () => {
+              const sent = text
+              const quoted = reply
+              // The optimistic row shows it at once; put the text and the reply back if the server refuses.
+              setText('')
+              setReply(undefined)
+              try {
+                await send(withReply(quoted, withImages(sent, images)))
+              } catch (e) {
+                setText(sent)
+                setReply(quoted)
+                throw e
+              }
+            })
+          }
+          onStop={working && !stopping && canReply ? () => void runStop(() => actions.interrupt(dorkId)) : undefined}
+        />
+      </section>
     </ChatSplit>
   )
 }

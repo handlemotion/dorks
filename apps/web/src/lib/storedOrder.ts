@@ -50,7 +50,11 @@ function parse(raw: string | null): string[] {
  * exist are ignored. Read during render on the client, so there is no flash of the default order; the server renders it.
  */
 export function useStoredOrder(storageKey: string, ids: string[]) {
-  const raw = useSyncExternalStore(subscribe, () => read(storageKey), () => null)
+  const raw = useSyncExternalStore(
+    subscribe,
+    () => read(storageKey),
+    () => null,
+  )
   const stored = useMemo(() => parse(raw), [raw])
   const present = new Set(ids)
   const known = new Set(stored)

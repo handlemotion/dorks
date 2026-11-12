@@ -35,7 +35,10 @@ export class BridgeSession {
   private closed = false;
   private authenticating = false;
 
-  constructor(private readonly app: App, private readonly io: SocketIO) {}
+  constructor(
+    private readonly app: App,
+    private readonly io: SocketIO,
+  ) {}
 
   open() {
     this.authTimer = setTimeout(() => this.io.close(CLOSE_FORBIDDEN, "auth timeout"), AUTH_TIMEOUT_MS);
@@ -50,7 +53,12 @@ export class BridgeSession {
 
   private send(o: object) {
     if (this.closed) return;
-    if (DEBUG) console.error("[bridge ws] ->", this.dorkId?.slice(-6), (o as { t?: string }).t === "res" ? JSON.stringify({ t: "res", id: (o as { id?: number }).id, ok: (o as { ok?: boolean }).ok }) : JSON.stringify(o).slice(0, 160));
+    if (DEBUG)
+      console.error(
+        "[bridge ws] ->",
+        this.dorkId?.slice(-6),
+        (o as { t?: string }).t === "res" ? JSON.stringify({ t: "res", id: (o as { id?: number }).id, ok: (o as { ok?: boolean }).ok }) : JSON.stringify(o).slice(0, 160),
+      );
     this.io.send(JSON.stringify(o));
   }
 

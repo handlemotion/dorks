@@ -77,7 +77,8 @@ describe("retention sweep", () => {
     const id = h.seed("idle");
     h.app.db.tx(() => subscribe(h.app, h.dork(id), "o/r", 1, "agent"));
     const subId = h.app.db.get<{ id: number }>("SELECT id FROM pr_subscriptions")!.id;
-    const row = (createdAt: number, delivered: number) => h.app.db.run("INSERT INTO inbox (dork_id, subscription_id, kind, summary, created_at, delivered) VALUES (?, ?, 'comment', 's', ?, ?)", id, subId, createdAt, delivered);
+    const row = (createdAt: number, delivered: number) =>
+      h.app.db.run("INSERT INTO inbox (dork_id, subscription_id, kind, summary, created_at, delivered) VALUES (?, ?, 'comment', 's', ?, ?)", id, subId, createdAt, delivered);
     row(NOW - 2 * INBOX_RETENTION_MS, 1); // old and delivered: pruned
     row(NOW - 2 * INBOX_RETENTION_MS, 0); // old but still waiting for the agent: kept
     row(NOW - 1000, 1); // recent: kept

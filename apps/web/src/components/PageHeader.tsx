@@ -23,7 +23,13 @@ export function ArchiveButton({ archived, disabled, onClick }: { archived?: bool
  * page turns it off). The sidebar toggle shows here only while the sidebar is hidden; otherwise it lives in the sidebar's own header.
  * `titleActions` sit right after the title.
  */
-export function PageHeader({ title, subtitle, titleActions, actions, divider = true }: {
+export function PageHeader({
+  title,
+  subtitle,
+  titleActions,
+  actions,
+  divider = true,
+}: {
   title: ReactNode
   subtitle?: ReactNode
   titleActions?: ReactNode
@@ -34,7 +40,11 @@ export function PageHeader({ title, subtitle, titleActions, actions, divider = t
   const { open, isMobile } = useSidebar()
   return (
     // While the sidebar is hidden, the floating title bar controls (AppFrame) sit over the header's start, so the title begins after them.
-    <header data-tauri-drag-region className={`flex h-12 shrink-0 items-center gap-0.5 px-5 ${divider ? 'border-b' : ''}`} style={!open || isMobile ? { paddingLeft: TITLEBAR_CONTROLS_END } : undefined}>
+    <header
+      data-tauri-drag-region
+      className={`flex h-12 shrink-0 items-center gap-0.5 px-5 ${divider ? 'border-b' : ''}`}
+      style={!open || isMobile ? { paddingLeft: TITLEBAR_CONTROLS_END } : undefined}
+    >
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <div className="flex min-w-0 items-baseline gap-2">
           <h1 className="truncate text-sm font-normal!">{title}</h1>

@@ -254,8 +254,7 @@ export class WsTransport implements Transport {
     await this.rpc("unsubscribe_pr", ref);
   };
 
-  showPreview = async (port: number, opts: { title?: string; localhost?: boolean }) =>
-    this.rpc<{ port: number; url: string; title?: string }>("show_preview", { port, ...opts });
+  showPreview = async (port: number, opts: { title?: string; localhost?: boolean }) => this.rpc<{ port: number; url: string; title?: string }>("show_preview", { port, ...opts });
 
   getImage = async (id: string) => this.rpc<{ mime: string; data: string } | null>("get_image", { id });
 

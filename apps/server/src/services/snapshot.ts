@@ -58,8 +58,15 @@ interface BuildRow {
 const readBuild = (app: App) => app.db.get<BuildRow>("SELECT * FROM snapshot_build WHERE id = 1")!;
 
 /** Stable per installation; lowercase letters, digits and dashes, as Boat requires. */
-export const snapshotName = (app: App) => `dorks-base-${instanceId(app).replace(/[^a-z0-9]/gi, "").toLowerCase().slice(0, 8)}`;
-export const buildLabel = (app: App) => createHash("sha256").update(`snapshot-build\n${instanceId(app)}`).digest("hex");
+export const snapshotName = (app: App) =>
+  `dorks-base-${instanceId(app)
+    .replace(/[^a-z0-9]/gi, "")
+    .toLowerCase()
+    .slice(0, 8)}`;
+export const buildLabel = (app: App) =>
+  createHash("sha256")
+    .update(`snapshot-build\n${instanceId(app)}`)
+    .digest("hex");
 
 export interface SnapshotView {
   /** none: never built. building: a build is running. failed: the last attempt failed (a previous good snapshot may still be in use). ready: built. */

@@ -73,13 +73,29 @@ describe.skipIf(typeof process.getuid !== "function" || process.getuid() !== 0)(
     const secretFile = join(root, "secret");
     writeFileSync(secretFile, "s".repeat(64), { mode: 0o400 });
     const hostEnv: NodeJS.ProcessEnv = {
-      PATH: "/usr/local/bin:/usr/bin:/bin", HOME: "/root", DORK_ID: "d1", BRIDGE_URL: "wss://x.example/bridge", BRIDGE_SECRET_FILE: secretFile,
-      DORKS_STATE_DIR: state, DORKS_SOCK_DIR: state, DORKS_WORKDIR: work, DORKS_GIT_BASE_URL: remote.baseUrl, CLAUDE_BIN: fake, CLAUDE_RUN_AS: "nobody", DORKS_BATCH_MS: "5",
+      PATH: "/usr/local/bin:/usr/bin:/bin",
+      HOME: "/root",
+      DORK_ID: "d1",
+      BRIDGE_URL: "wss://x.example/bridge",
+      BRIDGE_SECRET_FILE: secretFile,
+      DORKS_STATE_DIR: state,
+      DORKS_SOCK_DIR: state,
+      DORKS_WORKDIR: work,
+      DORKS_GIT_BASE_URL: remote.baseUrl,
+      CLAUDE_BIN: fake,
+      CLAUDE_RUN_AS: "nobody",
+      DORKS_BATCH_MS: "5",
     };
     const cfg = loadConfig(hostEnv);
     expect(existsSync(secretFile)).toBe(false);
     const t = new FakeTransport();
-    t.configureFrame = { t: "configure", env: { CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat01-privsep", FAKE_CLAUDE_REPORT: report, FAKE_CLAUDE_DELTAS: "2" }, ghToken: "ghs_privsep_token", repo: { fullName: "acme/demo", branch: "dork/p" }, resumeSessionId: null };
+    t.configureFrame = {
+      t: "configure",
+      env: { CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat01-privsep", FAKE_CLAUDE_REPORT: report, FAKE_CLAUDE_DELTAS: "2" },
+      ghToken: "ghs_privsep_token",
+      repo: { fullName: "acme/demo", branch: "dork/p" },
+      resumeSessionId: null,
+    };
     const redactor = new Redactor();
     const logs: string[] = [];
     const b = new Bridge({ cfg, transport: t, log: makeLogger("p", redactor, (l) => logs.push(l)), redactor, baseEnv: hostEnv, selfCommand: [process.execPath, cli] });

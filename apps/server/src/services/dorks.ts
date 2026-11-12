@@ -65,9 +65,10 @@ export function listEvents(app: App, dorkId: string, q: { before?: number; after
     const rows = app.db.all("SELECT * FROM events WHERE dork_id = ? AND seq > ? ORDER BY seq ASC LIMIT ?", dorkId, q.after, limit + 1);
     return { events: rows.slice(0, limit).map(eventOf), hasMore: rows.length > limit };
   }
-  const rows = q.before !== undefined
-    ? app.db.all("SELECT * FROM events WHERE dork_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?", dorkId, q.before, limit + 1)
-    : app.db.all("SELECT * FROM events WHERE dork_id = ? ORDER BY seq DESC LIMIT ?", dorkId, limit + 1);
+  const rows =
+    q.before !== undefined
+      ? app.db.all("SELECT * FROM events WHERE dork_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?", dorkId, q.before, limit + 1)
+      : app.db.all("SELECT * FROM events WHERE dork_id = ? ORDER BY seq DESC LIMIT ?", dorkId, limit + 1);
   return { events: rows.slice(0, limit).map(eventOf), hasMore: rows.length > limit };
 }
 
@@ -109,8 +110,19 @@ export function createDork(app: App, input: { repo?: string; message: string; ti
   const now = app.now();
   return app.db.tx(() => {
     insert(app.db, "dorks", {
-      id, title: (title?.trim() || withoutImages(text) || "Image").slice(0, MAX_TITLE_CHARS), titleSource: title?.trim() ? "user" : "message", repo, branch: `agent/${app.uuid().slice(0, 8)}`, provider, state: "creating", archived: false,
-      lastActivityAt: now, createdAt: now, deleting: false, buildId, ...choice,
+      id,
+      title: (title?.trim() || withoutImages(text) || "Image").slice(0, MAX_TITLE_CHARS),
+      titleSource: title?.trim() ? "user" : "message",
+      repo,
+      branch: `agent/${app.uuid().slice(0, 8)}`,
+      provider,
+      state: "creating",
+      archived: false,
+      lastActivityAt: now,
+      createdAt: now,
+      deleting: false,
+      buildId,
+      ...choice,
     });
     insert(app.db, "dork_runtime", { dorkId: id, bridgeSeq: 0, streamMsgId: "", sleepMinutes: readSettings(app).sleepMinutes, bridgeSeenAt: 0, bridgeLost: false, opGen: 0, pauseRetries: 0 });
     persistMessage(app, getDork(app.db, id)!, text);

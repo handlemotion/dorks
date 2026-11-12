@@ -48,18 +48,28 @@ function SnapshotStatus({ settings }: { settings: Settings }) {
         <Button size="sm" variant="outline" disabled={pending || !snap.canBuild} onClick={build}>
           {pending ? 'Starting…' : 'Retry'}
         </Button>
-        {error && <p role="alert" className="text-destructive">{error}</p>}
+        {error && (
+          <p role="alert" className="text-destructive">
+            {error}
+          </p>
+        )}
       </div>
     )
   }
   // No snapshot and nothing running: a key saved before builds started by themselves, or the build could not start.
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm">
-      <p role="status" className="text-muted-foreground">{snap.cannotBuildReason ?? 'Boat needs preparing before the first session (a few minutes).'}</p>
+      <p role="status" className="text-muted-foreground">
+        {snap.cannotBuildReason ?? 'Boat needs preparing before the first session (a few minutes).'}
+      </p>
       <Button size="sm" variant="outline" disabled={pending || !snap.canBuild} onClick={build}>
         {pending ? 'Starting…' : 'Prepare Boat'}
       </Button>
-      {error && <p role="alert" className="text-destructive">{error}</p>}
+      {error && (
+        <p role="alert" className="text-destructive">
+          {error}
+        </p>
+      )}
     </div>
   )
 }
@@ -72,7 +82,11 @@ function TunnelPrompt() {
       Sandboxes cannot reach this Mac yet{tunnel?.error ? ` (${tunnel.error})` : ''}, so sessions will not start.{' '}
       {isDesktop() ? (
         <>
-          Set a public URL in <Link to="/settings" className="font-medium underline underline-offset-4">Settings</Link>.
+          Set a public URL in{' '}
+          <Link to="/settings" className="font-medium underline underline-offset-4">
+            Settings
+          </Link>
+          .
         </>
       ) : (
         <>

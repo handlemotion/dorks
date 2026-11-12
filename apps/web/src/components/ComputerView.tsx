@@ -70,7 +70,9 @@ export function ComputerView({ source }: { source?: ComputerSource }) {
     <>
       {error ? (
         <EmptyState figure="laptop" title="Couldn't show the screen" description={error}>
-          <Button size="sm" variant="outline" onClick={() => setReloads((n) => n + 1)}>Try again</Button>
+          <Button size="sm" variant="outline" onClick={() => setReloads((n) => n + 1)}>
+            Try again
+          </Button>
         </EmptyState>
       ) : url ? (
         // The screen keeps Boat's 16:9 (1920x1080) and floats in the panel's own fill with 24px around it: as wide as fits, never
@@ -120,7 +122,10 @@ export function ComputerView({ source }: { source?: ComputerSource }) {
             disabled={!fetchUrl}
             onClick={() => {
               // A URL of its own: the one in the frame is already spent.
-              void fetchUrl?.({ theme }).then((u) => window.open(u, '_blank', 'noopener,noreferrer'), () => {})
+              void fetchUrl?.({ theme }).then(
+                (u) => window.open(u, '_blank', 'noopener,noreferrer'),
+                () => {},
+              )
             }}
           >
             <ExternalLinkIcon />

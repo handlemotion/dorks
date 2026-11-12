@@ -3,7 +3,23 @@ import { describe, expect, it } from "vite-plus/test";
 import { reduce, type Ctx, type Input, type Effect } from "../src/core/machine";
 
 const STATES = dorkState.options as DorkState[];
-const INPUTS: Input["t"][] = ["start", "user_message", "notify", "agent_ready", "turn_idle", "sleep_due", "paused", "bridge_lost", "agent_exited", "op_failed", "watchdog", "archive", "unarchive", "interrupt", "reconnect"];
+const INPUTS: Input["t"][] = [
+  "start",
+  "user_message",
+  "notify",
+  "agent_ready",
+  "turn_idle",
+  "sleep_due",
+  "paused",
+  "bridge_lost",
+  "agent_exited",
+  "op_failed",
+  "watchdog",
+  "archive",
+  "unarchive",
+  "interrupt",
+  "reconnect",
+];
 const ctx = (state: DorkState, o: Partial<Ctx> = {}): Ctx => ({ state, archived: false, hasBox: true, queued: false, ...o });
 const run = (c: Ctx, t: Input["t"]) => reduce(c, { t } as Input);
 
@@ -125,15 +141,20 @@ function expectInvariants(prev: Ctx, t: Input["t"], r: ReturnType<typeof reduce>
 
 describe("machine: totality + invariants", () => {
   it("handles every state x input x flag combination without throwing", () => {
-    for (const s of STATES) for (const t of INPUTS) for (const archived of [false, true]) for (const hasBox of [false, true]) for (const queued of [false, true]) for (const notifyHeld of [false, true]) {
-      const r = run({ state: s, archived, hasBox, queued, notifyHeld }, t);
-      expect(STATES).toContain(r.state);
-    }
+    for (const s of STATES)
+      for (const t of INPUTS)
+        for (const archived of [false, true])
+          for (const hasBox of [false, true])
+            for (const queued of [false, true])
+              for (const notifyHeld of [false, true]) {
+                const r = run({ state: s, archived, hasBox, queued, notifyHeld }, t);
+                expect(STATES).toContain(r.state);
+              }
   });
 
   it("fuzz: random event sequences keep the invariants", () => {
     let seed = 42;
-    const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+    const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
     for (let run_ = 0; run_ < 300; run_++) {
       let c: Ctx = { state: "creating", archived: false, hasBox: false, queued: false };
       let outbox = 0;

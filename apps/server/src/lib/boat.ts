@@ -1,8 +1,26 @@
 import { Effect, Option, Schema } from "effect";
 import { BoxNotFoundError, type BoxProvider, type DesktopOptions, type HostPortOptions } from "../core/box";
 import {
-  BoatError, BOX_ID, createdId, decodeOr, deleteSandbox, getSandbox, isBoatStatus, isGone, isTransient, listSandboxes, makeBoatCall,
-  pauseWith, POLL_MS, pollUntil, READY, retryWhile, sandboxPath, type BoatCall, type BoatOptions, type Sandbox,
+  BoatError,
+  BOX_ID,
+  createdId,
+  decodeOr,
+  deleteSandbox,
+  getSandbox,
+  isBoatStatus,
+  isGone,
+  isTransient,
+  listSandboxes,
+  makeBoatCall,
+  pauseWith,
+  POLL_MS,
+  pollUntil,
+  READY,
+  retryWhile,
+  sandboxPath,
+  type BoatCall,
+  type BoatOptions,
+  type Sandbox,
 } from "./boatHttp";
 
 export { BoatError, BOX_ID, createBoatCall, DEFAULT_BASE_URL, READY, type BoatCall, type BoatOptions } from "./boatHttp";
@@ -24,8 +42,14 @@ type Environment = Readonly<Record<string, unknown>>;
 
 /** Only the dedicated ChatGPT profile reaches the box: no other credential, secret or AI proxy (docs/boat.md). */
 const passesOnlyItsProfile = (e: Environment) =>
-  e.safeForThirdParties === false && e.passAgentsCredentials === true && e.passGithub === false && e.passSecrets === false
-  && e.passSandboxCredentials === false && e.proxyAiCredentials === false && !!e.credentialProfileId && e.credentialProfileId !== "default";
+  e.safeForThirdParties === false &&
+  e.passAgentsCredentials === true &&
+  e.passGithub === false &&
+  e.passSecrets === false &&
+  e.passSandboxCredentials === false &&
+  e.proxyAiCredentials === false &&
+  !!e.credentialProfileId &&
+  e.credentialProfileId !== "default";
 
 /**
  * Refuses a Boat environment that would hand a Codex sandbox more than the ChatGPT sign-in (docs/boat.md, "Signing in an agent").
@@ -70,10 +94,17 @@ function boatOps(call: BoatCall, pause: Pause, opts: BoatOptions) {
   const waitFor = (id: string, states: Set<string>) =>
     pollUntil(
       getSandbox(call, id).pipe(
-        Effect.flatMap(Option.match({
-          onNone: () => Effect.fail(notFound()),
-          onSome: (s) => (isGone(s) ? Effect.fail(notFound()) : s.state === "error" ? Effect.fail(new BoatError("boat: sandbox entered error state")) : Effect.succeed(states.has(s.state) ? Option.some(s) : Option.none())),
-        })),
+        Effect.flatMap(
+          Option.match({
+            onNone: () => Effect.fail(notFound()),
+            onSome: (s) =>
+              isGone(s)
+                ? Effect.fail(notFound())
+                : s.state === "error"
+                  ? Effect.fail(new BoatError("boat: sandbox entered error state"))
+                  : Effect.succeed(states.has(s.state) ? Option.some(s) : Option.none()),
+          }),
+        ),
       ),
       { everyMs: POLL_MS, withinMs: WAIT_MS, pause, onTimeout: () => new BoatError(`boat: sandbox did not reach ${[...states].join("/")} in time`) },
     );
@@ -95,7 +126,10 @@ function boatOps(call: BoatCall, pause: Pause, opts: BoatOptions) {
   const resumeArchived = (id: string) =>
     sandboxPath(id, "/resume").pipe(
       Effect.flatMap((p) => call("resume", "POST", p, { body: { ttlSeconds: null } })),
-      Effect.catchIf((e) => e.code === "snapshot_data_expired" || isBoatStatus(e, 404), () => Effect.fail(notFound())),
+      Effect.catchIf(
+        (e) => e.code === "snapshot_data_expired" || isBoatStatus(e, 404),
+        () => Effect.fail(notFound()),
+      ),
     );
 
   const wake = (id: string) =>
@@ -112,7 +146,10 @@ function boatOps(call: BoatCall, pause: Pause, opts: BoatOptions) {
   const adopt = (live: Sandbox) =>
     wake(live.id).pipe(
       Effect.as(Option.some({ id: live.id })),
-      Effect.catchIf((e) => e instanceof BoxNotFoundError, () => deleteSandbox(call, live.id).pipe(Effect.as(Option.none()))),
+      Effect.catchIf(
+        (e) => e instanceof BoxNotFoundError,
+        () => deleteSandbox(call, live.id).pipe(Effect.as(Option.none())),
+      ),
     );
 
   /** Waits for a new sandbox and starts its bridge, deleting it on failure so it cannot bill indefinitely. */
@@ -136,7 +173,11 @@ function boatOps(call: BoatCall, pause: Pause, opts: BoatOptions) {
       }
       for (const stale of existing.filter((b) => b.id !== live?.id && (b.state === "error" || b.dataExpiredAt))) yield* deleteSandbox(call, stale.id);
       const body = {
-        from: snapshotId, name, labels: { dorks: label }, env, ...(machineType ? { type: machineType } : {}),
+        from: snapshotId,
+        name,
+        labels: { dorks: label },
+        env,
+        ...(machineType ? { type: machineType } : {}),
         ...(boatEnvironment ? { environment: boatEnvironment, noEnv: false } : { noEnv: true }),
         ttlSeconds: null,
       };
@@ -153,7 +194,10 @@ function boatOps(call: BoatCall, pause: Pause, opts: BoatOptions) {
         const stopped = yield* sandboxPath(id, "/stop").pipe(
           Effect.flatMap((p) => call("stop", "POST", p)),
           Effect.as(true),
-          Effect.catchIf((e) => isBoatStatus(e, 404), () => Effect.succeed(false)),
+          Effect.catchIf(
+            (e) => isBoatStatus(e, 404),
+            () => Effect.succeed(false),
+          ),
         );
         if (!stopped) return;
       }

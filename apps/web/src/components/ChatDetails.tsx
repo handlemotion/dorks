@@ -14,7 +14,15 @@ import { BAR_BUTTON, PreviewBrowser, useShownServers, type PreviewServer } from 
 import { Tip } from './Tip'
 
 /** A file the agent produced in the chat: a screenshot, a design, a document. */
-export type Artifact = { id: string; name: string; /** Short type label, e.g. "PNG". */ type: string; src?: string; href?: string; /** Pixel size of an image, when known. */ width?: number; height?: number }
+export type Artifact = {
+  id: string
+  name: string
+  /** Short type label, e.g. "PNG". */ type: string
+  src?: string
+  href?: string
+  /** Pixel size of an image, when known. */ width?: number
+  height?: number
+}
 export type FileChange = { path: string; additions: number; deletions: number; /** The file's unified diff (`git diff` output), when loaded: the row opens it. */ patch?: string }
 
 /** Everything Chat details can show. Missing parts show an empty state in their tab. */
@@ -37,7 +45,19 @@ type Tab = 'artifacts' | 'changes' | 'previews' | 'computer'
  * every side. The tabs are fixed (always the same four, in the same order).
  * The tab row is placed so its labels share the chat title's centre line (24px from the top).
  */
-export function ChatDetails({ data, onClose, onGrab, onAsk, className }: { data: ChatDetailsData; onClose?: () => void; /** An element picked in the Previews tab, as agent context. */ onGrab?: (snippet: string) => void; /** An empty state's action: puts a ready request in the composer. */ onAsk?: (text: string) => void; className?: string }) {
+export function ChatDetails({
+  data,
+  onClose,
+  onGrab,
+  onAsk,
+  className,
+}: {
+  data: ChatDetailsData
+  onClose?: () => void
+  /** An element picked in the Previews tab, as agent context. */ onGrab?: (snippet: string) => void
+  /** An empty state's action: puts a ready request in the composer. */ onAsk?: (text: string) => void
+  className?: string
+}) {
   const [tab, setTab] = useState<Tab>('artifacts')
   const changes = data.changes ?? []
   // The first time the agent reaches for its computer while the chat is open, show its screen; a chat that opens on a computer
@@ -65,10 +85,18 @@ export function ChatDetails({ data, onClose, onGrab, onAsk, className }: { data:
       >
         <div data-tauri-drag-region className="flex h-10 min-w-0 shrink-0 items-center gap-0.5 p-[5px]">
           <TabsList className="h-[30px]! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
-            <DetailsTab value="artifacts" icon={<LayersIcon />}>Artifacts</DetailsTab>
-            <DetailsTab value="changes" icon={<GitPullRequestIcon />} count={changes.length || undefined}>Changes</DetailsTab>
-            <DetailsTab value="previews" icon={<AppWindowIcon />}>Previews</DetailsTab>
-            <DetailsTab value="computer" icon={<MonitorIcon />}>Computer</DetailsTab>
+            <DetailsTab value="artifacts" icon={<LayersIcon />}>
+              Artifacts
+            </DetailsTab>
+            <DetailsTab value="changes" icon={<GitPullRequestIcon />} count={changes.length || undefined}>
+              Changes
+            </DetailsTab>
+            <DetailsTab value="previews" icon={<AppWindowIcon />}>
+              Previews
+            </DetailsTab>
+            <DetailsTab value="computer" icon={<MonitorIcon />}>
+              Computer
+            </DetailsTab>
           </TabsList>
           {onClose && (
             <Tip label="Hide chat details">
@@ -109,14 +137,12 @@ function DetailsTab({ value, icon, count, children }: { value: Tab; icon: ReactN
   )
 }
 
-
 const sum = (changes: FileChange[], key: 'additions' | 'deletions') => changes.reduce((n, c) => n + c[key], 0)
 
 function Stat({ additions, deletions }: { additions: number; deletions: number }) {
   return (
     <span className="tabular-nums">
-      <span className="text-emerald-600 dark:text-emerald-400">+{additions}</span>{' '}
-      <span className="text-red-600 dark:text-red-400">−{deletions}</span>
+      <span className="text-emerald-600 dark:text-emerald-400">+{additions}</span> <span className="text-red-600 dark:text-red-400">−{deletions}</span>
     </span>
   )
 }
@@ -126,9 +152,14 @@ function Stat({ additions, deletions }: { additions: number; deletions: number }
  * is the code changes, when there are any.
  */
 function Artifacts({ artifacts, changes, onOpenChanges, onAsk }: { artifacts: Artifact[]; changes: FileChange[]; onOpenChanges: () => void; onAsk?: (text: string) => void }) {
-  if (artifacts.length === 0 && changes.length === 0) return (
+  if (artifacts.length === 0 && changes.length === 0)
+    return (
       <EmptyState figure="drawer" title="No artifacts yet" description="Screenshots, designs and files from this chat show up here.">
-        {onAsk && <Button size="sm" variant="outline" onClick={() => onAsk('Take a screenshot of the current UI and add it to the artifacts.')}>Ask for a screenshot</Button>}
+        {onAsk && (
+          <Button size="sm" variant="outline" onClick={() => onAsk('Take a screenshot of the current UI and add it to the artifacts.')}>
+            Ask for a screenshot
+          </Button>
+        )}
       </EmptyState>
     )
   // The images among the artifacts share one lightbox, so opening one pages through the others.
@@ -165,7 +196,23 @@ function Artifacts({ artifacts, changes, onOpenChanges, onAsk }: { artifacts: Ar
 type ImageRef = (node: HTMLImageElement | null) => void
 
 /** A tile: an image opens the artifacts lightbox at `image`, anything else opens `href` or runs `onClick`. */
-function Tile({ thumb, label, meta, image, href, onClick, children }: { thumb: (imageRef?: ImageRef) => ReactNode; label: ReactNode; meta?: string; image?: number; href?: string; onClick?: () => void; children: string }) {
+function Tile({
+  thumb,
+  label,
+  meta,
+  image,
+  href,
+  onClick,
+  children,
+}: {
+  thumb: (imageRef?: ImageRef) => ReactNode
+  label: ReactNode
+  meta?: string
+  image?: number
+  href?: string
+  onClick?: () => void
+  children: string
+}) {
   const body = (imageRef?: ImageRef) => (
     <>
       <div className="aspect-[16/10] overflow-hidden rounded-[8px] bg-app outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10">{thumb(imageRef)}</div>
@@ -173,7 +220,9 @@ function Tile({ thumb, label, meta, image, href, onClick, children }: { thumb: (
         {label}
         {meta && <span className="tabular-nums">{meta}</span>}
       </div>
-      <div className="mt-1 truncate text-sm" title={children}>{children}</div>
+      <div className="mt-1 truncate text-sm" title={children}>
+        {children}
+      </div>
     </>
   )
   const cls = 'block w-full px-5 pt-5 pb-4 text-left transition-colors hover:bg-foreground/[0.03] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring'
@@ -182,12 +231,21 @@ function Tile({ thumb, label, meta, image, href, onClick, children }: { thumb: (
       {image !== undefined ? (
         <ImageTrigger index={image} className={`${cls} cursor-zoom-in`} aria-label={`Open ${children}`}>
           {/* Only the image morphs into the viewer (morphRef), not the whole tile with its labels. */}
-          {({ imageRef, morphRef }) => body((node) => { imageRef(node); morphRef(node) })}
+          {({ imageRef, morphRef }) =>
+            body((node) => {
+              imageRef(node)
+              morphRef(node)
+            })
+          }
         </ImageTrigger>
       ) : onClick ? (
-        <button type="button" className={cls} onClick={onClick}>{body()}</button>
+        <button type="button" className={cls} onClick={onClick}>
+          {body()}
+        </button>
       ) : href ? (
-        <a className={cls} href={href} target="_blank" rel="noreferrer">{body()}</a>
+        <a className={cls} href={href} target="_blank" rel="noreferrer">
+          {body()}
+        </a>
       ) : (
         <div className={cls}>{body()}</div>
       )}
@@ -200,7 +258,9 @@ function DiffThumb() {
   const rows = ['w-1/2 bg-foreground/10', 'w-3/4 bg-red-500/70', 'w-2/3 bg-emerald-500/70', 'w-4/5 bg-emerald-500/70', 'w-1/2 bg-emerald-500/70', 'w-3/5 bg-foreground/10']
   return (
     <div className="flex size-full flex-col justify-center gap-1.5 px-[18%]">
-      {rows.map((r, i) => <div key={i} className={`h-1.5 rounded-full ${r}`} />)}
+      {rows.map((r, i) => (
+        <div key={i} className={`h-1.5 rounded-full ${r}`} />
+      ))}
     </div>
   )
 }
@@ -210,11 +270,12 @@ function Changes({ changes, pr }: { changes: FileChange[]; pr?: ChatDetailsData[
   const [wrap, setWrap] = useState(false)
   const withPatch = changes.filter((c) => c.patch)
   const anyOpen = withPatch.some((c) => open.has(c.path))
-  const toggle = (path: string) => setOpen((current) => {
-    const next = new Set(current)
-    if (!next.delete(path)) next.add(path)
-    return next
-  })
+  const toggle = (path: string) =>
+    setOpen((current) => {
+      const next = new Set(current)
+      if (!next.delete(path)) next.add(path)
+      return next
+    })
   return (
     <div className="flex min-h-full flex-col text-sm">
       {/* Icons line up with the tab icons above (14px from the panel edge); the buttons sit 5px from the right, like the tab bar's. */}
@@ -228,16 +289,33 @@ function Changes({ changes, pr }: { changes: FileChange[]; pr?: ChatDetailsData[
         ) : (
           <span className="text-muted-foreground">No pull request yet</span>
         )}
-        {changes.length > 0 && <span className={`ml-auto text-xs ${withPatch.length > 0 ? "mr-1" : "pr-[9px]"}`}><Stat additions={sum(changes, 'additions')} deletions={sum(changes, 'deletions')} /></span>}
+        {changes.length > 0 && (
+          <span className={`ml-auto text-xs ${withPatch.length > 0 ? 'mr-1' : 'pr-[9px]'}`}>
+            <Stat additions={sum(changes, 'additions')} deletions={sum(changes, 'deletions')} />
+          </span>
+        )}
         {withPatch.length > 0 && (
           <div className="flex shrink-0 items-center gap-0.5">
             <Tip label="Wrap lines">
-              <Button variant="ghost" size="icon-sm" className={`${BAR_BUTTON} transition-none ${wrap ? 'bg-foreground/[0.07] text-foreground hover:bg-foreground/[0.07]' : ''}`} aria-label="Wrap lines" aria-pressed={wrap} onClick={() => setWrap(!wrap)}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className={`${BAR_BUTTON} transition-none ${wrap ? 'bg-foreground/[0.07] text-foreground hover:bg-foreground/[0.07]' : ''}`}
+                aria-label="Wrap lines"
+                aria-pressed={wrap}
+                onClick={() => setWrap(!wrap)}
+              >
                 <WrapTextIcon />
               </Button>
             </Tip>
             <Tip label={anyOpen ? 'Collapse all' : 'Expand all'}>
-              <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label={anyOpen ? 'Collapse all' : 'Expand all'} onClick={() => setOpen(anyOpen ? new Set() : new Set(withPatch.map((c) => c.path)))}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className={BAR_BUTTON}
+                aria-label={anyOpen ? 'Collapse all' : 'Expand all'}
+                onClick={() => setOpen(anyOpen ? new Set() : new Set(withPatch.map((c) => c.path)))}
+              >
                 {anyOpen ? <ChevronsDownUpIcon /> : <ChevronsUpDownIcon />}
               </Button>
             </Tip>
@@ -248,7 +326,9 @@ function Changes({ changes, pr }: { changes: FileChange[]; pr?: ChatDetailsData[
         <EmptyState figure="branches" title="No changes yet" description="Files the agent edits show up here, with their diff stats." />
       ) : (
         <ul className="divide-y border-b">
-          {changes.map((c) => <ChangeRow key={c.path} change={c} open={open.has(c.path)} onToggle={() => toggle(c.path)} wrap={wrap} />)}
+          {changes.map((c) => (
+            <ChangeRow key={c.path} change={c} open={open.has(c.path)} onToggle={() => toggle(c.path)} wrap={wrap} />
+          ))}
         </ul>
       )}
     </div>
@@ -274,7 +354,9 @@ function ChangeRow({ change: c, open, onToggle, wrap }: { change: FileChange; op
   return (
     <li>
       {c.patch ? (
-        <button type="button" aria-expanded={open} className={`${box} hover:bg-foreground/[0.04]`} onClick={onToggle}>{row}</button>
+        <button type="button" aria-expanded={open} className={`${box} hover:bg-foreground/[0.04]`} onClick={onToggle}>
+          {row}
+        </button>
       ) : (
         <div className={box}>{row}</div>
       )}
@@ -297,11 +379,19 @@ const OPEN_KEY = 'dorks.chat-details-open'
 /** Whether Chat details is shown beside a chat, remembered per browser. Open by default. */
 export function useDetailsOpen() {
   const [open, setOpen] = useState(() => {
-    try { return localStorage.getItem(OPEN_KEY) !== '0' } catch { return true }
+    try {
+      return localStorage.getItem(OPEN_KEY) !== '0'
+    } catch {
+      return true
+    }
   })
   const set = (next: boolean) => {
     setOpen(next)
-    try { localStorage.setItem(OPEN_KEY, next ? '1' : '0') } catch { /* private mode: keep it in memory */ }
+    try {
+      localStorage.setItem(OPEN_KEY, next ? '1' : '0')
+    } catch {
+      /* private mode: keep it in memory */
+    }
   }
   return [open, set] as const
 }
@@ -345,7 +435,13 @@ export function ChatSplit({ details, children }: { details?: ReactNode; children
   const chat = usePanelRef()
   if (!details || !wide) return <div className="flex min-h-0 min-w-0 flex-1">{children}</div>
   return (
-    <ResizablePanelGroup resizeTargetMinimumSize={{ fine: 24, coarse: 37 }} orientation="horizontal" className="min-h-0 flex-1" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
+    <ResizablePanelGroup
+      resizeTargetMinimumSize={{ fine: 24, coarse: 37 }}
+      orientation="horizontal"
+      className="min-h-0 flex-1"
+      defaultLayout={layout.defaultLayout}
+      onLayoutChanged={layout.onLayoutChanged}
+    >
       {/* The chat is 600px by default and keeps its width when the window resizes; Chat details takes everything else. */}
       <ResizablePanel id="chat" panelRef={chat} defaultSize={CHAT_WIDTH} minSize={360} groupResizeBehavior="preserve-pixel-size">
         <div className="flex h-full min-w-0">{children}</div>

@@ -1,8 +1,8 @@
 {
   "name": "@dorks/server",
   "private": true,
-  "type": "module",
   "description": "The local-first dorks server: SQLite state, lifecycle machine, timers, Boat driver, GitHub poller, UI API and bridge WebSocket.",
+  "type": "module",
   "scripts": {
     "dev": "bun run src/main.ts",
     "build": "bun run scripts/build.ts",

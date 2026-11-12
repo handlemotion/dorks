@@ -1,7 +1,6 @@
 {
   "name": "dorks",
   "private": true,
-  "packageManager": "pnpm@12.4.2",
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:server": "node scripts/dev.mjs --only server",
@@ -17,5 +16,6 @@
   },
   "devDependencies": {
     "vite-plus": "catalog:"
-  }
+  },
+  "packageManager": "pnpm@12.4.2"
 }

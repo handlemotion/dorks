@@ -53,7 +53,13 @@ export function findRepos(root: string, depth = MAX_DEPTH): string[] {
 /** `owner/name` from an https, ssh or file remote URL. */
 export function repoFromUrl(url: string | null): string | null {
   if (!url) return null;
-  const repo = url.replace(/\/+$/, "").replace(/\.git$/, "").split(/[/:]/).filter(Boolean).slice(-2).join("/");
+  const repo = url
+    .replace(/\/+$/, "")
+    .replace(/\.git$/, "")
+    .split(/[/:]/)
+    .filter(Boolean)
+    .slice(-2)
+    .join("/");
   return validRepo(repo) ? repo : null;
 }
 

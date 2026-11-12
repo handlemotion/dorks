@@ -278,8 +278,21 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     if (blocked) return fail(res, "onboarding_incomplete", blocked);
     const id = randomUUID();
     const now = Date.now();
-    dorks.set(id, { id, title: str(body.title) || message.slice(0, 48), repo, branch: `dorks/${id.slice(0, 8)}`, provider, state: "creating", archived: false, lastActivityAt: now, createdAt: now, events: [],
-      ...(provider === "claude" ? { model: str(body.model), effort: str(body.effort), agentModel: MOCK_MODELS.find((c) => c.model === (str(body.model) ?? "default"))?.resolved, modelChoices: MOCK_MODELS } : {}) });
+    dorks.set(id, {
+      id,
+      title: str(body.title) || message.slice(0, 48),
+      repo,
+      branch: `dorks/${id.slice(0, 8)}`,
+      provider,
+      state: "creating",
+      archived: false,
+      lastActivityAt: now,
+      createdAt: now,
+      events: [],
+      ...(provider === "claude"
+        ? { model: str(body.model), effort: str(body.effort), agentModel: MOCK_MODELS.find((c) => c.model === (str(body.model) ?? "default"))?.resolved, modelChoices: MOCK_MODELS }
+        : {}),
+    });
     append(id, { type: "status", state: "creating" });
     broadcast({ t: "dorks" });
     later(tick, () => startTurn(id, message));
@@ -318,49 +331,70 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   /** `/api/dorks/:id[/sub]`, keyed by `METHOD sub` (`*` for any method). */
   const dorkRoutes = new Map<string, (c: Ctx, d: MockDork) => void>([
     ["GET ", ({ res }, d) => json(res, 200, view(d))],
-    ["PATCH ", ({ body, res }, d) => {
-      const title = str(body.title)?.trim();
-      if (!title) return fail(res, "invalid", "title is required");
-      d.title = title;
-      touched(d);
-      return json(res, 200, {});
-    }],
-    ["DELETE ", ({ res }, d) => {
-      d.deleting = true;
-      broadcast({ t: "dorks" });
-      return json(res, 200, {});
-    }],
-    ["POST messages", ({ body, res }, d) => {
-      const text = str(body.text)?.trim();
-      if (!text) return fail(res, "invalid", "text is required");
-      if (d.archived) return fail(res, "archived", "This session is archived.");
-      startTurn(d.id, text);
-      return json(res, 200, {});
-    }],
-    ["POST interrupt", ({ res }, d) => {
-      if (d.state === "working") {
-        append(d.id, { type: "turn_complete", durationMs: 0, outcome: "stopped" });
-        append(d.id, { type: "status", state: "idle" });
-      }
-      return json(res, 200, {});
-    }],
-    ["POST desktop", ({ body, res }, d) => {
-      if (d.archived) return fail(res, "archived", "This session is archived.");
-      const dark = body.theme === "dark";
-      const page = `<!doctype html><meta charset="utf-8"><body style="margin:0;height:100vh;display:grid;place-items:center;background:${dark ? "#1d1f24" : "#3a6ea5"};color:#fff;font:15px system-ui">Mock desktop</body>`;
-      return json(res, 200, { url: `data:text/html;charset=utf-8,${encodeURIComponent(page)}` });
-    }],
-    ["POST archive", ({ body, res }, d) => {
-      d.archived = body.archived === true;
-      touched(d);
-      return json(res, 200, {});
-    }],
+    [
+      "PATCH ",
+      ({ body, res }, d) => {
+        const title = str(body.title)?.trim();
+        if (!title) return fail(res, "invalid", "title is required");
+        d.title = title;
+        touched(d);
+        return json(res, 200, {});
+      },
+    ],
+    [
+      "DELETE ",
+      ({ res }, d) => {
+        d.deleting = true;
+        broadcast({ t: "dorks" });
+        return json(res, 200, {});
+      },
+    ],
+    [
+      "POST messages",
+      ({ body, res }, d) => {
+        const text = str(body.text)?.trim();
+        if (!text) return fail(res, "invalid", "text is required");
+        if (d.archived) return fail(res, "archived", "This session is archived.");
+        startTurn(d.id, text);
+        return json(res, 200, {});
+      },
+    ],
+    [
+      "POST interrupt",
+      ({ res }, d) => {
+        if (d.state === "working") {
+          append(d.id, { type: "turn_complete", durationMs: 0, outcome: "stopped" });
+          append(d.id, { type: "status", state: "idle" });
+        }
+        return json(res, 200, {});
+      },
+    ],
+    [
+      "POST desktop",
+      ({ body, res }, d) => {
+        if (d.archived) return fail(res, "archived", "This session is archived.");
+        const dark = body.theme === "dark";
+        const page = `<!doctype html><meta charset="utf-8"><body style="margin:0;height:100vh;display:grid;place-items:center;background:${dark ? "#1d1f24" : "#3a6ea5"};color:#fff;font:15px system-ui">Mock desktop</body>`;
+        return json(res, 200, { url: `data:text/html;charset=utf-8,${encodeURIComponent(page)}` });
+      },
+    ],
+    [
+      "POST archive",
+      ({ body, res }, d) => {
+        d.archived = body.archived === true;
+        touched(d);
+        return json(res, 200, {});
+      },
+    ],
     ["POST model", setModel],
-    ["POST codex-model", ({ body, res }, d) => {
-      d.codexModel = { model: str(body.model) ?? "", effort: str(body.effort) ?? "" };
-      broadcast({ t: "dork", dorkId: d.id });
-      return json(res, 200, {});
-    }],
+    [
+      "POST codex-model",
+      ({ body, res }, d) => {
+        d.codexModel = { model: str(body.model) ?? "", effort: str(body.effort) ?? "" };
+        broadcast({ t: "dork", dorkId: d.id });
+        return json(res, 200, {});
+      },
+    ],
     ["GET events", listEvents],
     ["* subscriptions", ({ method, res }) => json(res, 200, method === "GET" ? [] : {})],
     ["* subscriptions/resume", ({ res }) => json(res, 200, {})],
@@ -396,43 +430,58 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
 
   /** Fixed paths, keyed by `METHOD path`. */
   const routes = new Map<string, (c: Ctx) => void>([
-    ["GET /api/dorks", ({ url, res }) => {
-      const archived = url.searchParams.get("archived") === "true";
-      const rows = [...dorks.values()].filter((d) => !d.deleting && d.archived === archived).sort((a, b) => b.lastActivityAt - a.lastActivityAt);
-      return json(res, 200, rows.slice(0, 200).map(view));
-    }],
+    [
+      "GET /api/dorks",
+      ({ url, res }) => {
+        const archived = url.searchParams.get("archived") === "true";
+        const rows = [...dorks.values()].filter((d) => !d.deleting && d.archived === archived).sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+        return json(res, 200, rows.slice(0, 200).map(view));
+      },
+    ],
     ["POST /api/dorks", createDork],
     ["GET /api/settings", ({ res }) => json(res, 200, settings)],
-    ["PUT /api/settings", ({ body, res }) => {
-      const error = saveSettings(body);
-      if (error) return fail(res, "invalid", error);
-      broadcast({ t: "settings" });
-      // Like apps/server: a new Boat key starts the base-snapshot build when there is no snapshot yet.
-      if (typeof body.boatKey === "string" && body.boatKey && !settings.baseSnapshotId && snap.state !== "building") startBuild();
-      return json(res, 200, {});
-    }],
-    ["POST /api/boat/check", ({ body, res }) => {
-      const key = typeof body.boatKey === "string" ? body.boatKey.trim() : "";
-      if (!key && !settings.boatKey) return fail(res, "not_configured", "Add your Boat API key first.");
-      if (key.startsWith("bad")) return json(res, 200, { status: "invalid", message: "Boat rejected that key. Check it and its access (create, use, save and delete sandboxes)." });
-      return json(res, 200, { status: "ok", message: "Boat accepted the key." });
-    }],
-    ["GET /api/usage", ({ res }) => {
-      const now = Date.now();
-      return json(res, 200, {
-        ...(settings.claudeToken ? { claude: { session: { used: 0.07, resetsAt: now + 3 * 3600_000 }, weekly: { used: 0.26, resetsAt: now + 4 * 86400_000 } } } : {}),
-        ...(settings.boatKey ? { cloud: { usedHours: 38.4, includedHours: 555.56, periodEnd: now + 29 * 86400_000 } } : {}),
-      });
-    }],
+    [
+      "PUT /api/settings",
+      ({ body, res }) => {
+        const error = saveSettings(body);
+        if (error) return fail(res, "invalid", error);
+        broadcast({ t: "settings" });
+        // Like apps/server: a new Boat key starts the base-snapshot build when there is no snapshot yet.
+        if (typeof body.boatKey === "string" && body.boatKey && !settings.baseSnapshotId && snap.state !== "building") startBuild();
+        return json(res, 200, {});
+      },
+    ],
+    [
+      "POST /api/boat/check",
+      ({ body, res }) => {
+        const key = typeof body.boatKey === "string" ? body.boatKey.trim() : "";
+        if (!key && !settings.boatKey) return fail(res, "not_configured", "Add your Boat API key first.");
+        if (key.startsWith("bad")) return json(res, 200, { status: "invalid", message: "Boat rejected that key. Check it and its access (create, use, save and delete sandboxes)." });
+        return json(res, 200, { status: "ok", message: "Boat accepted the key." });
+      },
+    ],
+    [
+      "GET /api/usage",
+      ({ res }) => {
+        const now = Date.now();
+        return json(res, 200, {
+          ...(settings.claudeToken ? { claude: { session: { used: 0.07, resetsAt: now + 3 * 3600_000 }, weekly: { used: 0.26, resetsAt: now + 4 * 86400_000 } } } : {}),
+          ...(settings.boatKey ? { cloud: { usedHours: 38.4, includedHours: 555.56, periodEnd: now + 29 * 86400_000 } } : {}),
+        });
+      },
+    ],
     ["GET /api/snapshot", ({ res }) => json(res, 200, snapView())],
-    ["POST /api/snapshot/build", ({ body, res }) => {
-      if (body.force !== undefined && typeof body.force !== "boolean") return fail(res, "invalid", "force must be a boolean");
-      if (!settings.boatKey) return fail(res, "not_configured", "Add your Boat API key first.");
-      const current = snapView();
-      if (snap.state === "building" || (!body.force && snap.state !== "failed" && snap.snapshot && current.managed && !current.stale)) return json(res, 202, current);
-      startBuild();
-      return json(res, 202, snapView());
-    }],
+    [
+      "POST /api/snapshot/build",
+      ({ body, res }) => {
+        if (body.force !== undefined && typeof body.force !== "boolean") return fail(res, "invalid", "force must be a boolean");
+        if (!settings.boatKey) return fail(res, "not_configured", "Add your Boat API key first.");
+        const current = snapView();
+        if (snap.state === "building" || (!body.force && snap.state !== "failed" && snap.snapshot && current.managed && !current.stale)) return json(res, 202, current);
+        startBuild();
+        return json(res, 202, snapView());
+      },
+    ],
     ["GET /api/secrets", ({ res }) => json(res, 200, [...secrets.keys()].sort())],
     // Builds are not mocked: the list is empty, so the UI shows its empty state (use `pnpm dev` for the real flow).
     ["GET /api/builds", ({ res }) => json(res, 200, [])],

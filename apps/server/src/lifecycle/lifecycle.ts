@@ -3,9 +3,21 @@ import type { App } from "../app";
 import { getDork, runtimeOf } from "../data";
 import { foldInbox } from "../services/notify";
 import {
-  append, beginPause, BRIDGE_STALE_MS, cancelTimer, dispatch, enqueueConfigure, finishPause, HEARTBEAT_MS, isAwake, patchDork, patchRuntime, queued, schedulePauseRetry, setTimer,
+  append,
+  beginPause,
+  BRIDGE_STALE_MS,
+  cancelTimer,
+  dispatch,
+  enqueueConfigure,
+  finishPause,
+  HEARTBEAT_MS,
+  isAwake,
+  patchDork,
+  patchRuntime,
+  queued,
+  schedulePauseRetry,
+  setTimer,
 } from "./dispatch";
-
 
 /** A user-visible timer fired (the scheduler already claimed its row). Runs in one transaction. */
 export function fireTimer(app: App, dorkId: string, name: string) {

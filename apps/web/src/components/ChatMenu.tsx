@@ -55,10 +55,22 @@ export function ChatMenu({ prUrl, onDelete, detailsOpen }: { prUrl?: string; onD
             </DialogHeader>
             <DialogFooter>
               <DialogClose render={<Button variant="outline" size="sm" />}>Cancel</DialogClose>
-              <Button variant="destructive" size="sm" disabled={deleting} onClick={async () => {
-                setDeleting(true)
-                try { await onDelete(); setConfirming(false) } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not delete the chat') } finally { setDeleting(false) }
-              }}>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={deleting}
+                onClick={async () => {
+                  setDeleting(true)
+                  try {
+                    await onDelete()
+                    setConfirming(false)
+                  } catch (e) {
+                    toast.error(e instanceof Error ? e.message : 'Could not delete the chat')
+                  } finally {
+                    setDeleting(false)
+                  }
+                }}
+              >
                 {deleting ? 'Deleting…' : 'Delete'}
               </Button>
             </DialogFooter>

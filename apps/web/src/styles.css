@@ -1,5 +1,5 @@
-@import "tailwindcss";
-@import "@dorks/ui/styles.css";
+@import 'tailwindcss';
+@import '@dorks/ui/styles.css';
 @source "../../../packages/ui/src";
 /* Streamdown (the markdown renderer) styles itself with Tailwind classes inside its own build: scan it or lists, tables and headings lose them. */
 @source "../../../node_modules/streamdown/dist/*.js";
@@ -20,7 +20,7 @@
     @apply flex w-full max-w-md flex-col gap-1.5 font-medium;
   }
 
-  .settings-group form input:not([type="checkbox"]),
+  .settings-group form input:not([type='checkbox']),
   .settings-group form textarea,
   .settings-group form select {
     @apply w-full max-w-md;
@@ -98,39 +98,65 @@
   --animate-ma-reply-head: ma-reply-head 520ms cubic-bezier(0.22, 1.15, 0.36, 1);
 
   @keyframes ma-thumb-up {
-    0% { transform: none; }
-    46% { transform: translateY(-1.5px) rotate(-6deg); }
-    100% { transform: none; }
+    0% {
+      transform: none;
+    }
+    46% {
+      transform: translateY(-1.5px) rotate(-6deg);
+    }
+    100% {
+      transform: none;
+    }
   }
   @keyframes ma-thumb-down {
-    0% { transform: none; }
-    46% { transform: translateY(1.5px) rotate(-6deg); }
-    100% { transform: none; }
+    0% {
+      transform: none;
+    }
+    46% {
+      transform: translateY(1.5px) rotate(-6deg);
+    }
+    100% {
+      transform: none;
+    }
   }
   @keyframes ma-draw-check {
-    from { stroke-dashoffset: 28; }
-    to { stroke-dashoffset: 0; }
+    from {
+      stroke-dashoffset: 28;
+    }
+    to {
+      stroke-dashoffset: 0;
+    }
   }
   @keyframes ma-reply-grow {
-    0%, 100% { transform: none; }
-    46% { transform: scaleX(1.25); }
+    0%,
+    100% {
+      transform: none;
+    }
+    46% {
+      transform: scaleX(1.25);
+    }
   }
   @keyframes ma-reply-head {
-    0%, 100% { transform: none; }
-    46% { transform: translateX(-12.5%); }
+    0%,
+    100% {
+      transform: none;
+    }
+    46% {
+      transform: translateX(-12.5%);
+    }
   }
 }
 
 /* 1 = the full ring choreography, 0 = every dot on the centre; registered so it can transition. */
 @property --orb-spread {
-  syntax: "<number>";
+  syntax: '<number>';
   inherits: true;
   initial-value: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .animate-pulse,
-  [data-slot="trace"] .animate-spin {
+  [data-slot='trace'] .animate-spin {
     animation: none;
   }
 }

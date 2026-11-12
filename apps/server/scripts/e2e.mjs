@@ -116,15 +116,27 @@ try {
 
   // ---- "Prepare Boat": the base-snapshot build, against the simulated provider
   const before = (await api("GET", "/api/snapshot")).json;
-  check("before a build there is no snapshot, and the bridge bundle is embedded", before.state === "none" && before.canBuild === true && typeof before.currentBundleId === "string", JSON.stringify(before));
+  check(
+    "before a build there is no snapshot, and the bridge bundle is embedded",
+    before.state === "none" && before.canBuild === true && typeof before.currentBundleId === "string",
+    JSON.stringify(before),
+  );
   const build = await api("POST", "/api/snapshot/build", {});
   check("a build starts (202) and reports its first step", build.status === 202 && build.json.state === "building", JSON.stringify(build.json));
   const built = await until(async () => {
     const v = (await api("GET", "/api/snapshot")).json;
     return v.state === "ready" || v.state === "failed" ? v : null;
   }, "the snapshot build finishes");
-  check("the build succeeded and sandboxes now start from the built snapshot", built.state === "ready" && built.managed && built.stale === false && (await api("GET", "/api/settings")).json.baseSnapshotId === built.snapshot, JSON.stringify(built));
-  check("the live stream announced build progress", live.filter((m) => m.t === "snapshot").length >= 3 && live.some((m) => m.t === "settings"), `${live.filter((m) => m.t === "snapshot").length} snapshot messages`);
+  check(
+    "the build succeeded and sandboxes now start from the built snapshot",
+    built.state === "ready" && built.managed && built.stale === false && (await api("GET", "/api/settings")).json.baseSnapshotId === built.snapshot,
+    JSON.stringify(built),
+  );
+  check(
+    "the live stream announced build progress",
+    live.filter((m) => m.t === "snapshot").length >= 3 && live.some((m) => m.t === "settings"),
+    `${live.filter((m) => m.t === "snapshot").length} snapshot messages`,
+  );
   const again = await api("POST", "/api/snapshot/build", {});
   check("building again when current is a no-op", again.status === 202 && again.json.state === "ready" && again.json.snapshot === built.snapshot);
 
@@ -137,9 +149,23 @@ try {
   await until(async () => (await dork()).state === "idle", "first turn finishes and the dork goes idle");
   const events = async () => (await api("GET", `/api/dorks/${id}/events?limit=200`)).json.events.reverse();
   const first = await events();
-  check("the transcript has the message, streamed text and a completed turn", ["user_message", "assistant_message", "turn_complete"].every((t) => first.some((e) => e.type === t)), first.map((e) => e.type).join(","));
-  check("event seq is dense", first.every((e, i) => e.seq === i + 1));
-  check("the state machine left a status trail", first.filter((e) => e.type === "status").map((e) => e.state).join(",").startsWith("creating,working,idle") || first.some((e) => e.type === "status" && e.state === "idle"));
+  check(
+    "the transcript has the message, streamed text and a completed turn",
+    ["user_message", "assistant_message", "turn_complete"].every((t) => first.some((e) => e.type === t)),
+    first.map((e) => e.type).join(","),
+  );
+  check(
+    "event seq is dense",
+    first.every((e, i) => e.seq === i + 1),
+  );
+  check(
+    "the state machine left a status trail",
+    first
+      .filter((e) => e.type === "status")
+      .map((e) => e.state)
+      .join(",")
+      .startsWith("creating,working,idle") || first.some((e) => e.type === "status" && e.state === "idle"),
+  );
   check("the live stream announced the transcript changes", live.some((m) => m.t === "events" && m.dorkId === id) && live.some((m) => m.t === "dork" && m.dorkId === id), `${live.length} messages`);
 
   const tail = (await api("GET", `/api/dorks/${id}/events?after=${first.length - 2}`)).json;
@@ -161,13 +187,19 @@ try {
   check("subscribe to a PR", sub.status === 200);
   const subs = (await api("GET", `/api/dorks/${id}/subscriptions`)).json;
   check("the subscription is listed with a lowercase repo", subs.length === 1 && subs[0].repo === "acme/demo" && subs[0].source === "user");
-  check("unsubscribe", (await api("DELETE", `/api/dorks/${id}/subscriptions`, { repo: "acme/demo", number: 5 })).status === 200 && (await api("GET", `/api/dorks/${id}/subscriptions`)).json.length === 0);
+  check(
+    "unsubscribe",
+    (await api("DELETE", `/api/dorks/${id}/subscriptions`, { repo: "acme/demo", number: 5 })).status === 200 && (await api("GET", `/api/dorks/${id}/subscriptions`)).json.length === 0,
+  );
 
   // ---- housekeeping
   check("rename", (await api("PATCH", `/api/dorks/${id}`, { title: "Readme" })).status === 200 && (await dork()).title === "Readme");
   check("archive", (await api("POST", `/api/dorks/${id}/archive`, { archived: true })).status === 200 && (await dork()).archived === true);
   check("a message to an archived dork is refused", (await api("POST", `/api/dorks/${id}/messages`, { text: "x" })).status === 409);
-  check("the archived list holds it", (await api("GET", "/api/dorks?archived=true")).json.some((d) => d.id === id));
+  check(
+    "the archived list holds it",
+    (await api("GET", "/api/dorks?archived=true")).json.some((d) => d.id === id),
+  );
   check("delete", (await api("DELETE", `/api/dorks/${id}`)).status === 200);
   await until(async () => (await api("GET", `/api/dorks/${id}`)).status === 404, "the deleted dork disappears");
   check("the deleted dork is gone from every list", !(await api("GET", "/api/dorks?archived=true")).json.some((d) => d.id === id) && !(await api("GET", "/api/dorks")).json.some((d) => d.id === id));
@@ -195,9 +227,23 @@ try {
   if (lastDork) {
     const d = await api("GET", `/api/dorks/${lastDork}`).catch(() => null);
     const ev = await api("GET", `/api/dorks/${lastDork}/events?limit=12`).catch(() => null);
-    console.error("dork:", JSON.stringify(d?.json), "\nlast events:", (ev?.json?.events ?? []).reverse().map((x) => `${x.seq}:${x.type}${x.state ? `(${x.state})` : ""}${x.message ? `[${x.message}]` : ""}`).join(" "));
+    console.error(
+      "dork:",
+      JSON.stringify(d?.json),
+      "\nlast events:",
+      (ev?.json?.events ?? [])
+        .reverse()
+        .map((x) => `${x.seq}:${x.type}${x.state ? `(${x.state})` : ""}${x.message ? `[${x.message}]` : ""}`)
+        .join(" "),
+    );
   }
-  console.error(logs.join("").split("\n").slice(process.env.E2E_VERBOSE ? 0 : -40).join("\n"));
+  console.error(
+    logs
+      .join("")
+      .split("\n")
+      .slice(process.env.E2E_VERBOSE ? 0 : -40)
+      .join("\n"),
+  );
   failed++;
 } finally {
   cleanup();

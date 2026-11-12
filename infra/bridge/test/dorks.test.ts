@@ -59,7 +59,16 @@ describe("dorks pr", () => {
 
   it("rejects bad references and arguments with exit 2, without calling the bridge", async () => {
     const b = await fakeBridge();
-    for (const args of [["pr", "sub"], ["pr", "sub", "12"], ["pr", "sub", "acme/demo"], ["pr", "unsub", "https://example.com/a/b/pull/1"], ["pr", "sub", "acme/demo#1", "acme/demo#2"], ["pr", "list", "extra"], ["pr", "merge"], ["repo", "list"]]) {
+    for (const args of [
+      ["pr", "sub"],
+      ["pr", "sub", "12"],
+      ["pr", "sub", "acme/demo"],
+      ["pr", "unsub", "https://example.com/a/b/pull/1"],
+      ["pr", "sub", "acme/demo#1", "acme/demo#2"],
+      ["pr", "list", "extra"],
+      ["pr", "merge"],
+      ["repo", "list"],
+    ]) {
       const r = await dorks(args, b.env);
       expect(r.code, args.join(" ")).toBe(2);
       expect(r.stderr, args.join(" ")).toMatch(/^dorks: /);

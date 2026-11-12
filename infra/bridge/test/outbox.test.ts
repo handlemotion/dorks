@@ -256,4 +256,3 @@ describe("Outbox", () => {
     expect(n).toBe(4);
   });
 });
-

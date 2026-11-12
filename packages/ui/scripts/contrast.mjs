@@ -6,32 +6,31 @@
 // Rule of thumb used in packages/ui/README.md: two adjacent fills separate on their own at >= 1.15:1. Below that, change the fill (never a drop
 // shadow, and only as a last resort a hairline). Form controls keep their border regardless: WCAG 1.4.11 asks 3:1 for their boundary.
 
-const clamp = (x) => Math.min(1, Math.max(0, x));
+const clamp = (x) => Math.min(1, Math.max(0, x))
 function oklchToLinear([L, C, h]) {
-  const a = C * Math.cos((h * Math.PI) / 180);
-  const b = C * Math.sin((h * Math.PI) / 180);
-  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
-  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
-  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
-  return [
-    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
-    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
-    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
-  ].map(clamp);
+  const a = C * Math.cos((h * Math.PI) / 180)
+  const b = C * Math.sin((h * Math.PI) / 180)
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3
+  return [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s].map(clamp)
 }
-const over = (top, alpha, below) => top.map((c, i) => c * alpha + below[i] * (1 - alpha));
+const over = (top, alpha, below) => top.map((c, i) => c * alpha + below[i] * (1 - alpha))
 const lum = ([r, g, b]) => {
-  const f = (c) => (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055);
-  const lin = (c) => { const s = f(c); return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; };
-  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-};
+  const f = (c) => (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055)
+  const lin = (c) => {
+    const s = f(c)
+    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+  }
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+}
 // The luminance above takes sRGB-encoded channels; the matrices above give linear light, so convert directly instead.
-const luminance = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+const luminance = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b
 const ratio = (x, y) => {
-  const [hi, lo] = [luminance(x), luminance(y)].sort((p, q) => q - p);
-  return (hi + 0.05) / (lo + 0.05);
-};
-void lum;
+  const [hi, lo] = [luminance(x), luminance(y)].sort((p, q) => q - p)
+  return (hi + 0.05) / (lo + 0.05)
+}
+void lum
 
 const themes = {
   light: {
@@ -54,11 +53,11 @@ const themes = {
     input: (below) => over(oklchToLinear([1, 0, 0]), 0.15, below),
     text: oklchToLinear([0.985, 0, 0]),
   },
-};
+}
 
 for (const [name, t] of Object.entries(themes)) {
-  const content = t.content(t.backdrop);
-  const sidebar = t.sidebar(t.backdrop);
+  const content = t.content(t.backdrop)
+  const sidebar = t.sidebar(t.backdrop)
   const rows = [
     ["content panel vs backdrop", ratio(content, t.backdrop)],
     ["sidebar glass vs backdrop", ratio(sidebar, t.backdrop)],
@@ -66,17 +65,17 @@ for (const [name, t] of Object.entries(themes)) {
     ["card vs content panel", ratio(t.card(content), content)],
     ["input fill vs card", ratio(t.input(t.card(content)), t.card(content))],
     ["body text vs content panel", ratio(t.text, content)],
-  ];
-  console.log(`\n${name}`);
-  for (const [label, r] of rows) console.log(`  ${r.toFixed(2).padStart(5)}:1  ${label}${r >= 1.15 ? "" : "   (< 1.15: needs a hairline)"}`);
+  ]
+  console.log(`\n${name}`)
+  for (const [label, r] of rows) console.log(`  ${r.toFixed(2).padStart(5)}:1  ${label}${r >= 1.15 ? "" : "   (< 1.15: needs a hairline)"}`)
 }
 
 // The flat app (glass.css today): one opaque fill, --app, and --surface raised on it. The rows above model the old glass layers.
 const flat = {
   light: { app: oklchToLinear([0.9612, 0, 0]) /* #f2f2f2 */, surface: oklchToLinear([1, 0, 0]) },
   dark: { app: oklchToLinear([0.165, 0, 0]), surface: oklchToLinear([0.24, 0, 0]) },
-};
+}
 for (const [name, t] of Object.entries(flat)) {
-  const r = ratio(t.surface, t.app);
-  console.log(`\nflat ${name}\n  ${r.toFixed(2).padStart(5)}:1  surface vs app${r >= 1.15 ? "" : "   (< 1.15: needs a hairline, --surface-line)"}`);
+  const r = ratio(t.surface, t.app)
+  console.log(`\nflat ${name}\n  ${r.toFixed(2).padStart(5)}:1  surface vs app${r >= 1.15 ? "" : "   (< 1.15: needs a hairline, --surface-line)"}`)
 }

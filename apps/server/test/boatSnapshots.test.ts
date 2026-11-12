@@ -16,7 +16,12 @@ function fakeBoat(handler: (r: Req) => Response | undefined) {
   const requests: Req[] = [];
   const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
-    const r: Req = { method: init?.method ?? "GET", path: `${url.pathname.replace("/api/v1", "")}${url.search}`, body: init?.body ? JSON.parse(String(init.body)) : undefined, headers: init?.headers as Record<string, string> };
+    const r: Req = {
+      method: init?.method ?? "GET",
+      path: `${url.pathname.replace("/api/v1", "")}${url.search}`,
+      body: init?.body ? JSON.parse(String(init.body)) : undefined,
+      headers: init?.headers as Record<string, string>,
+    };
     requests.push(r);
     return handler(r) ?? Response.json({ ok: false, code: "not_found" }, { status: 404 });
   }) as typeof fetch;
@@ -25,7 +30,9 @@ function fakeBoat(handler: (r: Req) => Response | undefined) {
 
 describe("boat snapshot driver requests", () => {
   it("creates a build sandbox with no credentials, a lifetime limit, a label and an idempotency key", async () => {
-    const { requests, driver } = fakeBoat((r) => (r.method === "POST" && r.path === "/sandboxes" ? Response.json({ ok: true, sandbox: { id: ID, state: "provisioning" } }, { status: 202 }) : undefined));
+    const { requests, driver } = fakeBoat((r) =>
+      r.method === "POST" && r.path === "/sandboxes" ? Response.json({ ok: true, sandbox: { id: ID, state: "provisioning" } }, { status: 202 }) : undefined,
+    );
     expect(await driver.createBuildSandbox({ name: "dorks-base-build", label: "abc", key: "k1" })).toEqual({ id: ID });
     expect(requests[0].body).toEqual({ name: "dorks-base-build", labels: { "dorks-build": "abc" }, noEnv: true, ttlSeconds: 7200 });
     expect(requests[0].headers["Idempotency-Key"]).toBe("k1");
@@ -34,7 +41,9 @@ describe("boat snapshot driver requests", () => {
 
   it("retries a create while the same key is still in flight", async () => {
     let n = 0;
-    const { requests, driver } = fakeBoat(() => (n++ < 2 ? Response.json({ ok: false, code: "idempotency_in_progress" }, { status: 409 }) : Response.json({ ok: true, sandbox: { id: ID } }, { status: 202 })));
+    const { requests, driver } = fakeBoat(() =>
+      n++ < 2 ? Response.json({ ok: false, code: "idempotency_in_progress" }, { status: 409 }) : Response.json({ ok: true, sandbox: { id: ID } }, { status: 202 }),
+    );
     expect(await driver.createBuildSandbox({ name: "n", label: "l", key: "k" })).toEqual({ id: ID });
     expect(requests).toHaveLength(3);
   });
@@ -84,7 +93,10 @@ describe("boat snapshot driver requests", () => {
   it("saves a snapshot (202), treats an already-running save as fine, and reads the status", async () => {
     let conflict = false;
     const { requests, driver } = fakeBoat((r) => {
-      if (r.method === "POST" && r.path === "/saved-snapshots") return conflict ? Response.json({ ok: false, code: "save_in_progress" }, { status: 409 }) : Response.json({ ok: true, status: "saving", snapshot: { name: r.body.name, status: "saving" } }, { status: 202 });
+      if (r.method === "POST" && r.path === "/saved-snapshots")
+        return conflict
+          ? Response.json({ ok: false, code: "save_in_progress" }, { status: 409 })
+          : Response.json({ ok: true, status: "saving", snapshot: { name: r.body.name, status: "saving" } }, { status: 202 });
       if (r.path === "/saved-snapshots/dorks-base-1234abcd") return Response.json({ ok: true, snapshot: { name: "dorks-base-1234abcd", status: "failed", error: "disk full", sourceSandboxId: ID } });
     });
     await driver.saveSnapshot(ID, "dorks-base-1234abcd");
@@ -110,10 +122,15 @@ describe("boat snapshot driver requests", () => {
 
   it("sends the organization header when one is set", async () => {
     const requests: Req[] = [];
-    const driver = boatSnapshotDriver({ apiKey: "k", org: "team_1", sleep: async () => {}, fetch: (async (_u: unknown, init?: RequestInit) => {
-      requests.push({ method: "GET", path: "", headers: init?.headers as Record<string, string> });
-      return Response.json({ ok: true, snapshot: { name: "n", status: "ready" } });
-    }) as typeof fetch });
+    const driver = boatSnapshotDriver({
+      apiKey: "k",
+      org: "team_1",
+      sleep: async () => {},
+      fetch: (async (_u: unknown, init?: RequestInit) => {
+        requests.push({ method: "GET", path: "", headers: init?.headers as Record<string, string> });
+        return Response.json({ ok: true, snapshot: { name: "n", status: "ready" } });
+      }) as typeof fetch,
+    });
     await driver.getSnapshot("n");
     expect(requests[0].headers["X-Boat-Org"]).toBe("team_1");
   });

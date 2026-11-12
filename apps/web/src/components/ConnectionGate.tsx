@@ -32,10 +32,26 @@ export function ConnectionGate({ children }: { children: ReactNode }) {
     )
   }
   if (!conn) return <ConnectForm onConnect={(c) => setConn(c)} />
-  const disconnect = conn.source === 'stored' ? () => { clearConnection(); setConn(null) } : null
+  const disconnect =
+    conn.source === 'stored'
+      ? () => {
+          clearConnection()
+          setConn(null)
+        }
+      : null
   return (
     <DISCONNECT.Provider value={disconnect}>
-      <Connected key={`${conn.serverUrl}|${conn.token}`} conn={conn} onChange={() => { clearConnection(); setConn(null) }} onReplace={setConn}>{children}</Connected>
+      <Connected
+        key={`${conn.serverUrl}|${conn.token}`}
+        conn={conn}
+        onChange={() => {
+          clearConnection()
+          setConn(null)
+        }}
+        onReplace={setConn}
+      >
+        {children}
+      </Connected>
     </DISCONNECT.Provider>
   )
 }
@@ -44,7 +60,9 @@ function Connected({ conn, onChange, onReplace, children }: { conn: Connection; 
   const client = useMemo(() => createClient({ baseUrl: conn.serverUrl, token: conn.token }), [conn.serverUrl, conn.token])
   return (
     <DorksProvider client={client}>
-      <Probe conn={conn} onChange={onChange} onReplace={onReplace}>{children}</Probe>
+      <Probe conn={conn} onChange={onChange} onReplace={onReplace}>
+        {children}
+      </Probe>
     </DorksProvider>
   )
 }
@@ -57,17 +75,36 @@ function Probe({ conn, onChange, onReplace, children }: { conn: Connection; onCh
     return conn.source === 'stored' ? (
       <ConnectForm initialUrl={conn.serverUrl} error="The server rejected that owner token." onConnect={onReplace} />
     ) : (
-      <GateScreen><GateCard><GateTitle>Token rejected</GateTitle><p role="alert">The dorks server did not accept the app's owner token. Quit and reopen Dorks.</p></GateCard></GateScreen>
+      <GateScreen>
+        <GateCard>
+          <GateTitle>Token rejected</GateTitle>
+          <p role="alert">The dorks server did not accept the app's owner token. Quit and reopen Dorks.</p>
+        </GateCard>
+      </GateScreen>
     )
   }
-  if (settings.status === 'loading') return <GateScreen><p role="status" className="text-sm text-muted-foreground">Connecting…</p></GateScreen>
+  if (settings.status === 'loading')
+    return (
+      <GateScreen>
+        <p role="status" className="text-sm text-muted-foreground">
+          Connecting…
+        </p>
+      </GateScreen>
+    )
   if (settings.status === 'error' && !settings.data) {
     return (
       <GateScreen>
         <GateCard>
           <GateTitle>Can’t reach the dorks server</GateTitle>
-          <p role="alert">Nothing answered at <code>{conn.serverUrl}</code>. {conn.source === 'desktop' ? 'The app is still starting it. This page keeps retrying.' : 'Start the server, or connect to a different one. This page keeps retrying.'}</p>
-          {conn.source === 'stored' && <Button variant="outline" onClick={onChange}>Change server</Button>}
+          <p role="alert">
+            Nothing answered at <code>{conn.serverUrl}</code>.{' '}
+            {conn.source === 'desktop' ? 'The app is still starting it. This page keeps retrying.' : 'Start the server, or connect to a different one. This page keeps retrying.'}
+          </p>
+          {conn.source === 'stored' && (
+            <Button variant="outline" onClick={onChange}>
+              Change server
+            </Button>
+          )}
         </GateCard>
       </GateScreen>
     )
@@ -97,10 +134,20 @@ function ConnectForm({ initialUrl, error, onConnect }: { initialUrl?: string; er
       <GateCard as="form" onSubmit={submit}>
         <GateTitle>Connect to your dorks server</GateTitle>
         <p className="text-muted-foreground">The desktop app does this for you. In a browser, enter the address of your local server and its owner token.</p>
-        <label className="flex flex-col gap-1.5 font-medium">Server <Input aria-label="server" value={url} onChange={(e) => setUrl(e.target.value)} autoComplete="off" spellCheck={false} /></label>
-        <label className="flex flex-col gap-1.5 font-medium">Owner token <Input aria-label="owner token" type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" /></label>
-        {(error || formError) && <p role="alert" className="text-destructive">{formError || error}</p>}
-        <Button type="submit" size="lg">Connect</Button>
+        <label className="flex flex-col gap-1.5 font-medium">
+          Server <Input aria-label="server" value={url} onChange={(e) => setUrl(e.target.value)} autoComplete="off" spellCheck={false} />
+        </label>
+        <label className="flex flex-col gap-1.5 font-medium">
+          Owner token <Input aria-label="owner token" type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" />
+        </label>
+        {(error || formError) && (
+          <p role="alert" className="text-destructive">
+            {formError || error}
+          </p>
+        )}
+        <Button type="submit" size="lg">
+          Connect
+        </Button>
       </GateCard>
     </GateScreen>
   )

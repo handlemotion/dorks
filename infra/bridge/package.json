@@ -1,11 +1,12 @@
 {
   "name": "@dorks/bridge",
-  "private": true,
-  "type": "module",
   "version": "0.1.0",
+  "private": true,
   "description": "The in-box bridge: runs the Claude Code CLI in a sandbox and speaks the dorks bridge protocol over a WebSocket.",
-  "bin": { "dorks-bridge": "./dist/cli.mjs" },
-  "engines": { "node": ">=22" },
+  "bin": {
+    "dorks-bridge": "./dist/cli.mjs"
+  },
+  "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
@@ -19,5 +20,8 @@
     "esbuild": "^0.28.1",
     "typescript": "^6.0.2",
     "vite-plus": "catalog:"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

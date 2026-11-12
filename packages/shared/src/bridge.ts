@@ -6,8 +6,7 @@ import { notifyKind, prRef } from "./autonomy";
  * only releases it at a turn boundary (never mid-turn) and never ahead of a pending user message. `text` is already wrapped in the
  * `<dorks-event>` envelope; the bridge writes it to stdin verbatim. `kinds`/`prs` are metadata for the bridge's hooks and logs.
  */
-const notifyFrame = () =>
-  z.object({ t: z.literal("notify"), id: z.string(), text: z.string(), kinds: z.array(notifyKind), prs: z.array(prRef) });
+const notifyFrame = () => z.object({ t: z.literal("notify"), id: z.string(), text: z.string(), kinds: z.array(notifyKind), prs: z.array(prRef) });
 
 export const effortLevel = z.enum(["none", "low", "medium", "high", "xhigh", "max"]);
 export type EffortLevel = z.infer<typeof effortLevel>;

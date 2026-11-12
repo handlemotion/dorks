@@ -50,9 +50,13 @@ export function boxInfo(app: App, dorkId: string): BoxInfo | null {
   // deleted, from the base snapshot.
   const build = dork.buildId ? getBuild(app, dork.buildId) : undefined;
   return {
-    boxId: dork.boxId ?? null, deleting: dork.deleting, snapshotId: build?.image ?? s.baseSnapshotId ?? app.cfg.baseSnapshotId ?? "", sleepMinutes: s.sleepMinutes,
+    boxId: dork.boxId ?? null,
+    deleting: dork.deleting,
+    snapshotId: build?.image ?? s.baseSnapshotId ?? app.cfg.baseSnapshotId ?? "",
+    sleepMinutes: s.sleepMinutes,
     machineType: build?.machineType,
-    requiresBoatEnvironment: codexOnBoat, boatEnvironment: codexOnBoat ? s.boatEnvironment : undefined,
+    requiresBoatEnvironment: codexOnBoat,
+    boatEnvironment: codexOnBoat ? s.boatEnvironment : undefined,
   };
 }
 
@@ -68,7 +72,9 @@ async function boxCreate(app: App, dorkId: string, gen: number) {
     if (!bridgeUrl) return settle(app, () => opFailed(app, dorkId, "Set up the public URL that sandboxes use to reach this app first", gen));
     // Only bridge connection details go in the create-time env; user secrets arrive over the bridge's configure call.
     const tunnelEnv = await sandboxTunnelEnv(app, dorkId);
-    const box = await (await app.getBox()).createFromSnapshot(info.snapshotId, {
+    const box = await (
+      await app.getBox()
+    ).createFromSnapshot(info.snapshotId, {
       name: dorkId,
       initCommand: "dorks-bridge",
       env: { DORK_ID: dorkId, BRIDGE_URL: bridgeUrl, BRIDGE_SECRET: await bridgeSecret(app.cfg.bridgeSecretKey, dorkId), ...tunnelEnv },
@@ -149,7 +155,13 @@ async function stallComment(app: App, subscriptionId: number, runUrl: string, at
   const token = await githubToken(app);
   if (!token) return;
   try {
-    await createIssueComment(app.fetch, token, sub.repo, sub.number, `CI is still failing after the agent's automatic fix attempts, so it has stopped. A human needs to take a look.\n\nFailing run: ${runUrl}\n\n${SERVER_COMMENT_MARK}`);
+    await createIssueComment(
+      app.fetch,
+      token,
+      sub.repo,
+      sub.number,
+      `CI is still failing after the agent's automatic fix attempts, so it has stopped. A human needs to take a look.\n\nFailing run: ${runUrl}\n\n${SERVER_COMMENT_MARK}`,
+    );
   } catch (e) {
     console.error("stall comment failed", subscriptionId, e instanceof GithubHttpError ? e.status : "unexpected");
     if (isTransientGithubError(e) && attempt < STALL_RETRY_MS.length) setTimer(app, owner, name, STALL_RETRY_MS[attempt], { subscriptionId, runUrl, attempt: attempt + 1 });
@@ -166,7 +178,15 @@ export function sweep(app: App) {
 }
 
 /** Timer names that are jobs (async, outside a transaction) rather than state-machine timers. */
-export const isJob = (name: string) => name.startsWith("box:") || name.startsWith("orphan:") || name.startsWith("stall:") || name === "poll" || name === "sweep" || name === SNAPSHOT_JOB || name.startsWith(RUN_JOB) || name.startsWith(FORGET_JOB);
+export const isJob = (name: string) =>
+  name.startsWith("box:") ||
+  name.startsWith("orphan:") ||
+  name.startsWith("stall:") ||
+  name === "poll" ||
+  name === "sweep" ||
+  name === SNAPSHOT_JOB ||
+  name.startsWith(RUN_JOB) ||
+  name.startsWith(FORGET_JOB);
 
 export async function runJob(app: App, owner: string, name: string, payload: any): Promise<void> {
   try {

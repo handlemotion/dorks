@@ -168,8 +168,16 @@ html.dark [data-app-frame] {
 /* On controls, focus is only the border changing colour (--ring), no halo: the components' 3px `ring-ring/30` glow is made transparent
    here instead of editing them. Only controls that also tint their border are listed; anything whose only focus mark is the ring
    (sidebar items, for one) keeps it. */
-:is([data-slot="button"], [data-slot="dropdown-menu-trigger"], [data-slot="popover-trigger"], [data-slot="dialog-close"], [data-slot="input"],
-  [data-slot="textarea"], [data-slot="select-trigger"], [data-slot="native-select"]):focus-visible,
+:is(
+  [data-slot="button"],
+  [data-slot="dropdown-menu-trigger"],
+  [data-slot="popover-trigger"],
+  [data-slot="dialog-close"],
+  [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="select-trigger"],
+  [data-slot="native-select"]
+):focus-visible,
 [data-slot="input-group"]:has([data-slot="input-group-control"]:focus-visible) {
   --tw-ring-color: transparent;
 }

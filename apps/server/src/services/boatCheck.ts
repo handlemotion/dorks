@@ -47,7 +47,8 @@ async function askBoat(call: ReturnType<typeof createBoatCall>): Promise<BoatChe
     return ACCEPTED;
   }
   // The trial forces auto-stop within 2 hours and cannot save snapshots (https://docs.boat.dev/free-trial): Dorks cannot run on it.
-  if (limits?.sandboxPlanKey === "trial") return { status: "credit_required", message: "Dorks needs a paid Boat plan: the free trial cannot save the snapshot sessions start from. End the trial in Boat, then continue." };
+  if (limits?.sandboxPlanKey === "trial")
+    return { status: "credit_required", message: "Dorks needs a paid Boat plan: the free trial cannot save the snapshot sessions start from. End the trial in Boat, then continue." };
   if (limits?.canStart === false) {
     const reason = typeof limits.startBlockedReason === "string" && limits.startBlockedReason ? ` (${limits.startBlockedReason.slice(0, 120)})` : "";
     return { status: "credit_required", message: `Boat cannot start sandboxes on this account right now${reason}. Add funds or fix billing in Boat, then continue.` };
@@ -60,7 +61,8 @@ function failureOf(e: BoatError, withOrg: boolean): BoatCheck {
   if (e.code === "api_key_expired") return { status: "invalid", message: "That Boat API key has expired. Create a new one in Boat." };
   if (e.code === "org_suspended") return { status: "credit_required", message: "This Boat organization's wallet is suspended. Fix billing in Boat, then continue." };
   if (e.status === 402) return { status: "credit_required", message: "Boat accepted the key but the account has no credit. Add funds or start a plan in Boat." };
-  if (withOrg && (e.code === "ambiguous_org" || e.status === 404 || e.status === 403)) return { status: "needs_org", message: "That key cannot use this organization. Use the organization's team_… id from Boat." };
+  if (withOrg && (e.code === "ambiguous_org" || e.status === 404 || e.status === 403))
+    return { status: "needs_org", message: "That key cannot use this organization. Use the organization's team_… id from Boat." };
   if (e.status === 401 || e.status === 403) return { status: "invalid", message: "Boat rejected that key. Check it and its access (create, use, save and delete sandboxes)." };
   return { status: "unreachable", message: "Could not reach Boat. Check your connection and try again." };
 }
