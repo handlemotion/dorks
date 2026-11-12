@@ -4,7 +4,7 @@ import { getDork } from "../data";
 import { BoatError } from "../lib/boat";
 import { bridgeSecret } from "../lib/bridgeAuth";
 import { forgetSandbox, sandboxTunnelEnv } from "../lib/tunnelService";
-import { createIssueComment, GithubHttpError, isTransientGithubError } from "../lib/github";
+import { createIssueComment, GithubError, isTransientGithubError } from "../lib/github";
 import { pollOnce } from "../services/poller";
 import { runBuild, SNAPSHOT_JOB } from "../services/snapshot";
 import { getBuild } from "../services/builds";
@@ -163,7 +163,7 @@ async function stallComment(app: App, subscriptionId: number, runUrl: string, at
       `CI is still failing after the agent's automatic fix attempts, so it has stopped. A human needs to take a look.\n\nFailing run: ${runUrl}\n\n${SERVER_COMMENT_MARK}`,
     );
   } catch (e) {
-    console.error("stall comment failed", subscriptionId, e instanceof GithubHttpError ? e.status : "unexpected");
+    console.error("stall comment failed", subscriptionId, e instanceof GithubError ? (e.status ?? e.reason) : "unexpected");
     if (isTransientGithubError(e) && attempt < STALL_RETRY_MS.length) setTimer(app, owner, name, STALL_RETRY_MS[attempt], { subscriptionId, runUrl, attempt: attempt + 1 });
   }
 }

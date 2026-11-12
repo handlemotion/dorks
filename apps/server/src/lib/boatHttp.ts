@@ -75,13 +75,6 @@ export function makeBoatCall(opts: Pick<BoatOptions, "apiKey" | "org" | "fetch">
     });
 }
 
-/** The Promise form of a Boat call, for code outside Effect (the Boat key check, usage). */
-export function createBoatCall(opts: Pick<BoatOptions, "apiKey" | "org" | "fetch">) {
-  const call = makeBoatCall(opts);
-  return (op: string, method: string, path: string, body?: unknown, headers?: Record<string, string>, timeoutMs?: number): Promise<any> =>
-    Effect.runPromise(call(op, method, path, { body, headers, timeoutMs }));
-}
-
 /** Decodes a response, failing with `message` (no response content) when it does not match. */
 export const decodeOr =
   <S extends Schema.Constraint & { readonly DecodingServices: never }>(schema: S, message: string) =>

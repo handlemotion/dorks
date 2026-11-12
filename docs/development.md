@@ -72,9 +72,12 @@ The server is moving to [Effect](https://effect.website) (v4). New server code i
 - **Boat driver** (`lib/boatHttp.ts`, `lib/boat.ts`, `lib/boatSnapshots.ts`): one `BoatError`, schema-decoded responses, and shared
   `pollUntil` / `retryWhile` loops. The drivers keep their Promise interfaces (`core/box.ts`, `core/snapshot.ts`) by running the
   effects at that edge.
+- **GitHub client and PR poller** (`lib/github.ts`, `services/poller.ts`): one `GithubError` with a `reason` (`rate_limited`,
+  `not_visible`, `auth`, `http`, `network`, `timeout`, `invalid_response`) and schema-decoded responses. `pollOnce` and
+  `createIssueComment` keep Promise forms for the jobs that call them.
 - **Scheduler** (`lifecycle/scheduler.ts`): the timer loop is one fiber woken by a `Latch`; jobs run as fibers in a `FiberSet`.
 
-`Effect.runPromise` rejects with the original error, so `instanceof` checks on `BoatError` and `BoxNotFoundError` keep working
+`Effect.runPromise` rejects with the original error, so `instanceof` checks on `BoatError`, `BoxNotFoundError` and `GithubError` keep working
 across the edge.
 
 ## Rules
