@@ -73,6 +73,11 @@ The server is moving to [Effect](https://effect.website) (v4). New server code i
   `pollUntil` / `retryWhile` loops. The drivers keep their Promise interfaces (`core/box.ts`, `core/snapshot.ts`) by running the
   effects at that edge.
 - **Scheduler** (`lifecycle/scheduler.ts`): the timer loop is one fiber woken by a `Latch`; jobs run as fibers in a `FiberSet`.
+- **Build jobs** (`services/snapshot.ts`, `services/buildRuns.ts`): each attempt is one Effect. What it holds is scoped to it: the
+  build sandbox (`Effect.acquireRelease`), a detached command (`acquireUseRelease`, killed unless it exited) and a saved image whose
+  build was deleted meanwhile (a finalizer), so cleanup runs however the attempt ends. A cancelled run's fiber is interrupted. The
+  jobs call the driver's Effect form (`snapshotOps` in `core/snapshot.ts`: Boat's own, else the Promise calls wrapped); interrupting
+  a Boat call aborts its request.
 
 `Effect.runPromise` rejects with the original error, so `instanceof` checks on `BoatError` and `BoxNotFoundError` keep working
 across the edge.

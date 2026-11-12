@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
+import { Cause, Data, Effect } from "effect";
 import { fail, touch, type App } from "../app";
-import type { SnapshotDriver } from "../core/snapshot";
+import { snapshotOps, type SnapshotOps } from "../core/snapshot";
 import { update } from "../db";
 import { boatBuildFailureMessage } from "../lib/boatSnapshots";
 import { instanceId } from "../lib/box";
@@ -17,6 +18,9 @@ import { boatKey, readSettings } from "./settings";
 // The job is one row in `timers`, claimed at-most-once like every job; a crash leaves the row `running`, and `recoverSnapshotBuild`
 // re-queues it on the next start with a new attempt number. Every attempt first deletes any build sandbox it finds (the one it
 // recorded, and any carrying this install's build label), so a crash never leaves a billing sandbox behind.
+//
+// The job is an Effect: the build sandbox is a scoped resource (`Effect.acquireRelease`), so it is deleted when the attempt ends,
+// however it ends (success, failure, a newer attempt taking over, or the fiber being interrupted).
 
 export const SNAPSHOT_JOB = "snapshot:build";
 
@@ -38,8 +42,9 @@ const BRIDGE_PATH = "/home/user/dorks-bridge.mjs";
 const INSTALLER_PATH = "/home/user/boat-install.sh";
 
 /** Failures whose message is already written for the person watching. */
-class BuildError extends Error {}
-class Superseded extends Error {}
+class BuildError extends Data.TaggedError("BuildError")<{ readonly message: string }> {}
+/** A newer attempt took the build over: this one stops without writing anything. */
+class Superseded extends Data.TaggedError("Superseded") {}
 
 interface BuildRow {
   status: "idle" | "running" | "failed";
@@ -180,111 +185,150 @@ export function recoverSnapshotBuild(app: App) {
 }
 
 // ---------------------------------------------------------------- the job
-function progress(app: App, attempt: number, step: StepId) {
-  const label = STEPS.find((s) => s.id === step)!.label;
-  app.db.tx(() => {
-    const row = readBuild(app);
-    if (row.status !== "running" || row.attempt !== attempt) throw new Superseded();
-    update(app.db, "snapshot_build", { id: 1 }, { step, message: label });
-    touch(app, { t: "snapshot" });
+/** Moves the build to `step`, or fails with `Superseded` when a newer attempt took it over. */
+const progress = (app: App, attempt: number, step: StepId) =>
+  Effect.suspend(() => {
+    const label = STEPS.find((s) => s.id === step)!.label;
+    const current = app.db.tx(() => {
+      const row = readBuild(app);
+      if (row.status !== "running" || row.attempt !== attempt) return false;
+      update(app.db, "snapshot_build", { id: 1 }, { step, message: label });
+      touch(app, { t: "snapshot" });
+      return true;
+    });
+    return current ? Effect.void : Effect.fail(new Superseded());
   });
-}
 
 const tail = (s: string) => {
   const t = s.trim().split("\n").slice(-4).join(" ").replace(/\s+/g, " ");
   return t ? t.slice(-300) : "";
 };
 
-export async function runBuild(app: App, attempt: number): Promise<void> {
-  const first = readBuild(app);
-  if (first.status !== "running" || first.attempt !== attempt) return; // superseded or cancelled
+/** A Promise from outside Effect (the app's seams), failing with what it rejects with. */
+const fromPromise = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e });
+
+/** The `snapshot:build` job (Promise edge for lifecycle/jobs.ts). */
+export function runBuild(app: App, attempt: number): Promise<void> {
+  return Effect.runPromise(buildJob(app, attempt));
+}
+
+/** One attempt of the build. Never fails: a failure is recorded on the build row, for the person watching. */
+export const buildJob = (app: App, attempt: number): Effect.Effect<void> =>
+  Effect.suspend(() => {
+    const first = readBuild(app);
+    if (first.status !== "running" || first.attempt !== attempt) return Effect.void; // superseded or cancelled
+    // The failure is recorded before the scope closes: the person sees it while the sandbox is still being deleted, as before.
+    return buildSteps(app, attempt, first).pipe(
+      Effect.catchCause((cause) => recordFailure(app, attempt, cause)),
+      Effect.scoped,
+    );
+  });
+
+const buildSteps = Effect.fnUntraced(function* (app: App, attempt: number, first: BuildRow) {
   const label = buildLabel(app);
   const name = snapshotName(app);
-  let driver: SnapshotDriver | undefined;
-  let sandboxId: string | undefined;
-  try {
-    driver = await app.getSnapshotDriver();
-    const assets = await app.snapshotAssets();
+  const driver = snapshotOps(yield* fromPromise(() => app.getSnapshotDriver()));
+  const assets = yield* fromPromise(() => app.snapshotAssets());
 
-    progress(app, attempt, "prepare");
-    await removeBuildSandboxes(app, driver, label, first.build_sandbox_id);
+  yield* progress(app, attempt, "prepare");
+  yield* removeBuildSandboxes(app, driver, label, first.build_sandbox_id);
 
-    progress(app, attempt, "create");
-    sandboxId = (await driver.createBuildSandbox({ name: "dorks-base-build", label, key: `dorks-build-${label.slice(0, 16)}-${attempt}` })).id;
-    app.db.tx(() => update(app.db, "snapshot_build", { id: 1 }, { buildSandboxId: sandboxId }));
+  yield* progress(app, attempt, "create");
+  const sandboxId = yield* buildSandbox(app, driver, label, attempt);
 
-    progress(app, attempt, "start");
-    await driver.waitReady(sandboxId);
+  yield* progress(app, attempt, "start");
+  yield* driver.waitReady(sandboxId);
 
-    progress(app, attempt, "upload");
-    await driver.writeFile(sandboxId, BRIDGE_PATH, Buffer.from(assets.bridge).toString("base64"), "base64");
-    await driver.writeFile(sandboxId, INSTALLER_PATH, assets.installer, "utf8");
-    const check = await driver.run(sandboxId, `echo "${assets.bridgeSha256}  ${BRIDGE_PATH}" | sha256sum -c -`, 60);
-    if (check.exitCode !== 0) throw new BuildError("The uploaded bridge did not match its checksum. Retry the build.");
+  yield* progress(app, attempt, "upload");
+  yield* driver.writeFile(sandboxId, BRIDGE_PATH, Buffer.from(assets.bridge).toString("base64"), "base64");
+  yield* driver.writeFile(sandboxId, INSTALLER_PATH, assets.installer, "utf8");
+  const check = yield* driver.run(sandboxId, `echo "${assets.bridgeSha256}  ${BRIDGE_PATH}" | sha256sum -c -`, 60);
+  if (check.exitCode !== 0) return yield* new BuildError({ message: "The uploaded bridge did not match its checksum. Retry the build." });
 
-    progress(app, attempt, "install");
-    const install = await driver.run(sandboxId, `cd /home/user && DORKS_BUNDLE_ID=${assets.bundleId} bash boat-install.sh`, INSTALL_TIMEOUT_SECONDS);
-    if (install.timedOut) throw new BuildError("The installer did not finish in 10 minutes.");
-    if (install.exitCode !== 0) throw new BuildError(`The installer failed (exit ${install.exitCode ?? "unknown"}). ${tail(install.stderr || install.stdout)}`.trim());
+  yield* progress(app, attempt, "install");
+  const install = yield* driver.run(sandboxId, `cd /home/user && DORKS_BUNDLE_ID=${assets.bundleId} bash boat-install.sh`, INSTALL_TIMEOUT_SECONDS);
+  if (install.timedOut) return yield* new BuildError({ message: "The installer did not finish in 10 minutes." });
+  if (install.exitCode !== 0) return yield* new BuildError({ message: `The installer failed (exit ${install.exitCode ?? "unknown"}). ${tail(install.stderr || install.stdout)}`.trim() });
 
-    progress(app, attempt, "save");
-    await driver.saveSnapshot(sandboxId, name);
-    await waitSaved(app, driver, name, sandboxId);
+  yield* progress(app, attempt, "save");
+  yield* driver.saveSnapshot(sandboxId, name);
+  yield* waitSaved(app, driver, name, sandboxId);
 
-    progress(app, attempt, "finish");
-    app.db.tx(() => {
+  yield* progress(app, attempt, "finish");
+  yield* finishBuild(app, attempt, name, assets.bundleId);
+  console.error(`snapshot build ready: ${name}`);
+});
+
+/** The build sandbox, deleted when the attempt's scope closes. Its id is recorded first, so a crash cannot lose track of it. */
+const buildSandbox = (app: App, driver: SnapshotOps, label: string, attempt: number) =>
+  Effect.acquireRelease(
+    driver.createBuildSandbox({ name: "dorks-base-build", label, key: `dorks-build-${label.slice(0, 16)}-${attempt}` }).pipe(
+      Effect.map(({ id }) => id),
+      Effect.tap((id) => Effect.sync(() => app.db.tx(() => update(app.db, "snapshot_build", { id: 1 }, { buildSandboxId: id })))),
+    ),
+    // Whatever happened, the build sandbox must not keep billing.
+    (id) => removeBuildSandbox(app, driver, id),
+  );
+
+const finishBuild = (app: App, attempt: number, name: string, bundleId: string) =>
+  Effect.suspend(() => {
+    const current = app.db.tx(() => {
       const row = readBuild(app);
-      if (row.attempt !== attempt) throw new Superseded();
+      if (row.attempt !== attempt) return false;
       const now = app.now();
-      update(app.db, "snapshot_build", { id: 1 }, { status: "idle", step: null, message: null, error: null, finishedAt: now, readyName: name, readyBundleId: assets.bundleId, readyAt: now });
+      update(app.db, "snapshot_build", { id: 1 }, { status: "idle", step: null, message: null, error: null, finishedAt: now, readyName: name, readyBundleId: bundleId, readyAt: now });
       update(app.db, "settings", { id: 1 }, { baseSnapshotId: name });
       touch(app, { t: "settings" });
       touch(app, { t: "snapshot" });
+      return true;
     });
-    console.error(`snapshot build ready: ${name}`);
-  } catch (e) {
-    if (!(e instanceof Superseded)) {
-      console.error("snapshot build failed", e instanceof Error ? e.message.slice(0, 200) : "unknown");
-      const message = e instanceof BuildError ? e.message : boatBuildFailureMessage(e);
-      app.db.tx(() => {
-        const row = readBuild(app);
-        if (row.attempt !== attempt) return;
-        update(app.db, "snapshot_build", { id: 1 }, { status: "failed", step: null, message: null, error: message, finishedAt: app.now() });
-        touch(app, { t: "snapshot" });
-      });
-    }
-  } finally {
-    // Whatever happened, the build sandbox must not keep billing.
-    if (driver && sandboxId) await removeBuildSandbox(app, driver, sandboxId);
-  }
+    return current ? Effect.void : Effect.fail(new Superseded());
+  });
+
+/** Marks the attempt failed with a message for the person watching, unless it was superseded or interrupted. */
+function recordFailure(app: App, attempt: number, cause: Cause.Cause<unknown>): Effect.Effect<void> {
+  if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause as Cause.Cause<never>);
+  const e = Cause.squash(cause);
+  if (e instanceof Superseded) return Effect.void;
+  return Effect.sync(() => {
+    console.error("snapshot build failed", e instanceof Error ? e.message.slice(0, 200) : "unknown");
+    const message = e instanceof BuildError ? e.message : boatBuildFailureMessage(e);
+    app.db.tx(() => {
+      const row = readBuild(app);
+      if (row.attempt !== attempt) return;
+      update(app.db, "snapshot_build", { id: 1 }, { status: "failed", step: null, message: null, error: message, finishedAt: app.now() });
+      touch(app, { t: "snapshot" });
+    });
+  });
 }
 
-async function waitSaved(app: App, driver: SnapshotDriver, name: string, sandboxId: string) {
+const waitSaved = Effect.fnUntraced(function* (app: App, driver: SnapshotOps, name: string, sandboxId: string) {
   for (let i = 0; i < SAVE_POLLS; i++) {
-    const info = await driver.getSnapshot(name);
+    const info = yield* driver.getSnapshot(name);
     // Re-saving a name replaces the old artifact only once the new one is ready: trust the status of OUR save, not of the old one.
     if (info?.sourceSandboxId === sandboxId) {
       if (info.status === "ready") return;
-      if (info.status === "failed") throw new BuildError(`Boat could not save the snapshot: ${(info.error ?? "no reason given").slice(0, 200)}`);
+      if (info.status === "failed") return yield* new BuildError({ message: `Boat could not save the snapshot: ${(info.error ?? "no reason given").slice(0, 200)}` });
     }
-    await app.sleep(SAVE_POLL_MS);
+    yield* Effect.promise(() => app.sleep(SAVE_POLL_MS));
   }
-  throw new BuildError("Boat took too long to save the snapshot. Check Boat, then retry.");
-}
+  return yield* new BuildError({ message: "Boat took too long to save the snapshot. Check Boat, then retry." });
+});
 
 /** Deletes one build sandbox; if Boat will not, retries in the background (the `orphan:` job) so it cannot leak silently. */
-async function removeBuildSandbox(app: App, driver: SnapshotDriver, id: string) {
-  try {
-    await driver.deleteSandbox(id);
-    app.db.tx(() => app.db.run("UPDATE snapshot_build SET build_sandbox_id = NULL WHERE id = 1 AND build_sandbox_id = ?", id));
-  } catch (e) {
-    console.error("could not delete the build sandbox; retrying", e instanceof Error ? e.message.slice(0, 200) : "unknown");
-    setTimer(app, "", `orphan:${id}`, 15_000, { boxId: id, attempt: 1 });
-  }
-}
+const removeBuildSandbox = (app: App, driver: SnapshotOps, id: string) =>
+  driver.deleteSandbox(id).pipe(
+    Effect.andThen(Effect.sync(() => app.db.tx(() => app.db.run("UPDATE snapshot_build SET build_sandbox_id = NULL WHERE id = 1 AND build_sandbox_id = ?", id)))),
+    Effect.catch((e) =>
+      Effect.sync(() => {
+        console.error("could not delete the build sandbox; retrying", e instanceof Error ? e.message.slice(0, 200) : "unknown");
+        setTimer(app, "", `orphan:${id}`, 15_000, { boxId: id, attempt: 1 });
+      }),
+    ),
+  );
 
-async function removeBuildSandboxes(app: App, driver: SnapshotDriver, label: string, recorded: string | null) {
+const removeBuildSandboxes = Effect.fnUntraced(function* (app: App, driver: SnapshotOps, label: string, recorded: string | null) {
   const ids = new Set<string>(recorded ? [recorded] : []);
-  for (const b of await driver.listBuildSandboxes(label)) ids.add(b.id);
-  for (const id of ids) await removeBuildSandbox(app, driver, id);
-}
+  for (const b of yield* driver.listBuildSandboxes(label)) ids.add(b.id);
+  for (const id of ids) yield* removeBuildSandbox(app, driver, id);
+});

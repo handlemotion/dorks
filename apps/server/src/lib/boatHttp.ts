@@ -49,7 +49,13 @@ export const boatFetch = (opts: Pick<BoatOptions, "apiKey" | "org" | "fetch">, o
   Effect.gen(function* () {
     const doFetch = opts.fetch ?? fetch;
     const res = yield* Effect.tryPromise({
-      try: () => doFetch(`${DEFAULT_BASE_URL}${path}`, { ...init, headers: headersFor(opts, init.headers as Record<string, string>), signal: AbortSignal.timeout(init.timeoutMs) }),
+      // Aborted by its timeout, or when the calling fiber is interrupted (a cancelled build run).
+      try: (interrupted) =>
+        doFetch(`${DEFAULT_BASE_URL}${path}`, {
+          ...init,
+          headers: headersFor(opts, init.headers as Record<string, string>),
+          signal: AbortSignal.any([interrupted, AbortSignal.timeout(init.timeoutMs)]),
+        }),
       catch: (e) => new BoatError(`boat ${op}: network error (${e instanceof Error ? e.name : "unknown"})`),
     });
     if (res.ok) return res;
