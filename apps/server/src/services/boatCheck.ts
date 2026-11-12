@@ -1,5 +1,7 @@
+import { Effect, Schema } from "effect";
 import { fail, type App } from "../app";
-import { BoatError, checkCodexEnvironment, createBoatCall } from "../lib/boat";
+import { checkCodexEnvironment } from "../lib/boat";
+import { decodeOr, makeBoatCall, type BoatCall, type BoatError } from "../lib/boatHttp";
 import { boatKey, readSettings } from "./settings";
 
 export type BoatCheckStatus = "ok" | "invalid" | "needs_org" | "credit_required" | "unreachable";
@@ -26,30 +28,29 @@ export async function checkBoat(app: App, input: { boatKey?: unknown; boatOrg?: 
   if (!apiKey) fail("not_configured", "Add your Boat API key first.");
   const org = input.boatOrg !== undefined ? input.boatOrg.trim() || undefined : readSettings(app).boatOrg;
   if (app.cfg.boxProvider === "sim") return { status: "ok", message: "Simulated sandboxes: nothing to check." };
-  try {
-    return await askBoat(createBoatCall({ apiKey, org, fetch: app.fetch }));
-  } catch (e) {
-    if (!(e instanceof BoatError)) throw e;
-    return failureOf(e, !!org);
-  }
+  return Effect.runPromise(askBoat(makeBoatCall({ apiKey, org, fetch: app.fetch })).pipe(Effect.catch((e) => Effect.succeed(failureOf(e, !!org)))));
 }
 
 const ACCEPTED: BoatCheck = { status: "ok", message: "Boat accepted the key." };
 
-/** `GET /limits`, or `GET /sandboxes?limit=1` for a key without `account.read`. Boat failures are thrown as `BoatError`. */
-async function askBoat(call: ReturnType<typeof createBoatCall>): Promise<BoatCheck> {
-  let limits: { sandboxPlanKey?: unknown; canStart?: unknown; startBlockedReason?: unknown };
-  try {
-    limits = await call("check key", "GET", "/limits", undefined, {}, TIMEOUT_MS);
-  } catch (e) {
-    if (!(e instanceof BoatError) || e.code !== "api_key_action_forbidden") throw e;
-    await call("check key", "GET", "/sandboxes?limit=1", undefined, {}, TIMEOUT_MS);
-    return ACCEPTED;
-  }
+const Limits = Schema.Struct({ sandboxPlanKey: Schema.optional(Schema.Unknown), canStart: Schema.optional(Schema.Unknown), startBlockedReason: Schema.optional(Schema.Unknown) });
+
+/** `GET /limits`, or `GET /sandboxes?limit=1` for a key without `account.read`. Boat failures fail as `BoatError`. */
+const askBoat = (call: BoatCall): Effect.Effect<BoatCheck, BoatError> =>
+  call("check key", "GET", "/limits", { timeoutMs: TIMEOUT_MS }).pipe(
+    Effect.flatMap(decodeOr(Limits, "boat check key: invalid response")),
+    Effect.map(planCheck),
+    Effect.catchIf(
+      (e) => e.code === "api_key_action_forbidden",
+      () => call("check key", "GET", "/sandboxes?limit=1", { timeoutMs: TIMEOUT_MS }).pipe(Effect.as(ACCEPTED)),
+    ),
+  );
+
+function planCheck(limits: typeof Limits.Type): BoatCheck {
   // The trial forces auto-stop within 2 hours and cannot save snapshots (https://docs.boat.dev/free-trial): Dorks cannot run on it.
-  if (limits?.sandboxPlanKey === "trial")
+  if (limits.sandboxPlanKey === "trial")
     return { status: "credit_required", message: "Dorks needs a paid Boat plan: the free trial cannot save the snapshot sessions start from. End the trial in Boat, then continue." };
-  if (limits?.canStart === false) {
+  if (limits.canStart === false) {
     const reason = typeof limits.startBlockedReason === "string" && limits.startBlockedReason ? ` (${limits.startBlockedReason.slice(0, 120)})` : "";
     return { status: "credit_required", message: `Boat cannot start sandboxes on this account right now${reason}. Add funds or fix billing in Boat, then continue.` };
   }
@@ -91,12 +92,10 @@ export async function assertCodexEnvironment(app: App, patch: { boatEnvironment?
   const apiKey = (typeof patch.boatKey === "string" && patch.boatKey.trim()) || (await boatKey(app));
   if (!apiKey) return;
   const org = typeof patch.boatOrg === "string" ? patch.boatOrg.trim() || undefined : readSettings(app).boatOrg;
-  try {
-    await checkCodexEnvironment(createBoatCall({ apiKey, org, fetch: app.fetch }), org, name);
-  } catch (e) {
-    if (!(e instanceof BoatError)) throw e;
-    if (e.message.startsWith("boat: selected environment")) fail("invalid", `Boat: ${e.message.slice("boat: ".length)}.`);
-    if (e.code === "api_key_action_forbidden") fail("invalid", "The Boat API key cannot read environments (environment.read). Give the key that action, then save again.");
-    // unreachable or another Boat failure: saved; the create job checks again
-  }
+  const checked = await Effect.runPromise(Effect.result(checkCodexEnvironment(makeBoatCall({ apiKey, org, fetch: app.fetch }), org, name)));
+  if (checked._tag === "Success") return;
+  const e = checked.failure;
+  if (e.message.startsWith("boat: selected environment")) fail("invalid", `Boat: ${e.message.slice("boat: ".length)}.`);
+  if (e.code === "api_key_action_forbidden") fail("invalid", "The Boat API key cannot read environments (environment.read). Give the key that action, then save again.");
+  // unreachable or another Boat failure: saved; the create job checks again
 }
