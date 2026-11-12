@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useDorksClient, useSecretNames, useSnapshot } from '@dorks/client/react'
-import type { Settings } from '@dorks/client'
+import type { Settings, SnapshotStatus } from '@dorks/client'
 import { Button } from '@dorks/ui/button'
 import { Input } from '@dorks/ui/input'
 import { NativeSelect, NativeSelectOption } from '@dorks/ui/native-select'
@@ -46,6 +46,48 @@ export function BoatForm({ settings, onSaved }: { settings: Settings; onSaved?: 
   )
 }
 
+/** The build's step and progress bar, while it runs. */
+function SnapshotProgress({ snap }: { snap: SnapshotStatus }) {
+  return (
+    <div role="status" aria-label="snapshot build progress" data-testid="snapshot-progress">
+      <p><strong>Step {snap.stepIndex + 1} of {snap.stepCount}:</strong> {snap.message}</p>
+      <Progress value={((snap.stepIndex + 1) / snap.stepCount) * 100} aria-label="build progress" />
+    </div>
+  )
+}
+
+/** What the snapshot in use is, when no build is running: failed, ready, out of date or entered by hand. */
+function SnapshotNotes({ snap, inUse }: { snap: SnapshotStatus; inUse: string | null }) {
+  const failed = snap.state === 'failed'
+  const stale = snap.managed && snap.stale
+  const keeps = snap.snapshot && inUse === snap.snapshot ? ` Sessions keep using ${snap.snapshot}.` : ''
+  return (
+    <>
+      {failed && (
+        <p role="alert" data-testid="snapshot-error">The build failed: {snap.error}{/[.!?]$/.test(snap.error ?? '') ? '' : '.'}{keeps}</p>
+      )}
+      {!failed && inUse && snap.managed && !snap.stale && (
+        <p role="status" data-testid="snapshot-ready">Ready. Sessions start from <code>{inUse}</code>.</p>
+      )}
+      {stale && (
+        <p role="status" data-testid="snapshot-stale">An update is available: this snapshot was built with an older bridge than this app carries. Update it so new sessions use the current one. Existing sessions keep what they have.</p>
+      )}
+      {inUse && !snap.managed && (
+        <p role="status">Sessions start from <code>{inUse}</code>, which you entered by hand. Prepare Boat can build a managed one instead.</p>
+      )}
+    </>
+  )
+}
+
+/** The one build button the snapshot's state calls for, if any. */
+function snapshotAction(snap: SnapshotStatus): { label: string; force?: boolean; variant?: 'outline' } | undefined {
+  if (snap.state === 'failed') return { label: 'Retry' }
+  if (!snap.managed) return { label: 'Prepare Boat' }
+  if (snap.stale) return { label: 'Update snapshot' }
+  if (snap.state === 'building') return undefined
+  return { label: 'Rebuild', force: true, variant: 'outline' }
+}
+
 /**
  * "Prepare Boat": builds the base snapshot in the user's Boat account with one click and follows the build step by step (the
  * server pushes each step over the live stream). A snapshot built some other way can still be entered by hand below.
@@ -54,76 +96,61 @@ export function SnapshotForm({ settings, onSaved }: { settings: Settings; onSave
   const { actions } = useDorksClient()
   const snap = useSnapshot()
   const { run, pending, error } = usePending()
-  const [manual, setManual] = useState(settings.baseSnapshotId ?? '')
-  const [manualSaved, setManualSaved] = useState(false)
-  const manualRun = usePending()
   const build = (force = false) => void run(async () => void (await actions.buildSnapshot(force)))
 
   if (!snap) return <p role="status">Checking the base snapshot…</p>
 
   const building = snap.state === 'building'
-  const inUse = settings.baseSnapshotId
   const blocked = !snap.canBuild
-  const button = (label: string, opts: { force?: boolean; variant?: 'outline' } = {}) => (
-    <Button type="button" variant={opts.variant} disabled={pending || building || blocked} onClick={() => build(opts.force)}>{pending ? 'Starting…' : label}</Button>
-  )
+  const action = snapshotAction(snap)
 
   return (
     <>
       <p>Every session starts from a saved snapshot in your Boat account that holds the bridge and the agent tools, with no credentials in it. Dorks builds it for you in a temporary sandbox, saves it, and deletes the sandbox. It takes a few minutes and counts as one saved snapshot in your Boat plan.</p>
 
-      {building && (
-        <div role="status" aria-label="snapshot build progress" data-testid="snapshot-progress">
-          <p><strong>Step {snap.stepIndex + 1} of {snap.stepCount}:</strong> {snap.message}</p>
-          <Progress value={((snap.stepIndex + 1) / snap.stepCount) * 100} aria-label="build progress" />
-        </div>
-      )}
-
-      {!building && snap.state === 'failed' && (
-        <p role="alert" data-testid="snapshot-error">The build failed: {snap.error}{/[.!?]$/.test(snap.error ?? '') ? '' : '.'}{snap.snapshot && inUse === snap.snapshot ? ` Sessions keep using ${snap.snapshot}.` : ''}</p>
-      )}
-
-      {!building && snap.state !== 'failed' && inUse && snap.managed && !snap.stale && (
-        <p role="status" data-testid="snapshot-ready">Ready. Sessions start from <code>{inUse}</code>.</p>
-      )}
-      {!building && snap.managed && snap.stale && (
-        <p role="status" data-testid="snapshot-stale">An update is available: this snapshot was built with an older bridge than this app carries. Update it so new sessions use the current one. Existing sessions keep what they have.</p>
-      )}
-      {!building && inUse && !snap.managed && (
-        <p role="status">Sessions start from <code>{inUse}</code>, which you entered by hand. Prepare Boat can build a managed one instead.</p>
-      )}
+      {building ? <SnapshotProgress snap={snap} /> : <SnapshotNotes snap={snap} inUse={settings.baseSnapshotId} />}
 
       {blocked && snap.cannotBuildReason && <p role="status">{snap.cannotBuildReason}</p>}
 
       <div hidden={building}>
-        {snap.state === 'failed' && button('Retry')}
-        {snap.state !== 'failed' && snap.managed && snap.stale && button('Update snapshot')}
-        {snap.state !== 'failed' && snap.managed && !snap.stale && !building && button('Rebuild', { force: true, variant: 'outline' })}
-        {snap.state !== 'failed' && !snap.managed && button('Prepare Boat')}
+        {action && (
+          <Button type="button" variant={action.variant} disabled={pending || building || blocked} onClick={() => build(action.force)}>{pending ? 'Starting…' : action.label}</Button>
+        )}
       </div>
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
 
-      <details>
-        <summary>Use a snapshot I built myself</summary>
-        <p>Enter the name of a saved snapshot in your Boat account (or a <code>bsh_</code> share code). It must contain the bridge and tools described in <a href="https://github.com/handlemotion/dorks/blob/main/docs/boat.md" target="_blank" rel="noreferrer">docs/boat.md</a>. Only use share codes from people you trust: a snapshot's code runs with your agent tokens.</p>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            setManualSaved(false)
-            void manualRun.run(async () => {
-              await actions.updateSettings({ baseSnapshotId: manual.trim() })
-              setManualSaved(true)
-              onSaved?.()
-            })
-          }}
-        >
-          <label>Base snapshot <Input aria-label="base snapshot" value={manual} onChange={(e) => setManual(e.target.value)} placeholder="dorks-base-20260101" /></label>
-          <Button type="submit" variant="outline" disabled={manualRun.pending || !manual.trim()}>{manualRun.pending ? 'Saving…' : 'Save snapshot'}</Button>
-          <Saved show={manualSaved} />
-          {manualRun.error && <p role="alert" className="text-sm text-destructive">{manualRun.error}</p>}
-        </form>
-      </details>
+      <ManualSnapshotForm settings={settings} onSaved={onSaved} />
     </>
+  )
+}
+
+/** A snapshot built some other way, entered by name or share code. */
+function ManualSnapshotForm({ settings, onSaved }: { settings: Settings; onSaved?: () => void }) {
+  const { actions } = useDorksClient()
+  const [manual, setManual] = useState(settings.baseSnapshotId ?? '')
+  const [manualSaved, setManualSaved] = useState(false)
+  const manualRun = usePending()
+  return (
+    <details>
+      <summary>Use a snapshot I built myself</summary>
+      <p>Enter the name of a saved snapshot in your Boat account (or a <code>bsh_</code> share code). It must contain the bridge and tools described in <a href="https://github.com/handlemotion/dorks/blob/main/docs/boat.md" target="_blank" rel="noreferrer">docs/boat.md</a>. Only use share codes from people you trust: a snapshot's code runs with your agent tokens.</p>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          setManualSaved(false)
+          void manualRun.run(async () => {
+            await actions.updateSettings({ baseSnapshotId: manual.trim() })
+            setManualSaved(true)
+            onSaved?.()
+          })
+        }}
+      >
+        <label>Base snapshot <Input aria-label="base snapshot" value={manual} onChange={(e) => setManual(e.target.value)} placeholder="dorks-base-20260101" /></label>
+        <Button type="submit" variant="outline" disabled={manualRun.pending || !manual.trim()}>{manualRun.pending ? 'Saving…' : 'Save snapshot'}</Button>
+        <Saved show={manualSaved} />
+        {manualRun.error && <p role="alert" className="text-sm text-destructive">{manualRun.error}</p>}
+      </form>
+    </details>
   )
 }
 

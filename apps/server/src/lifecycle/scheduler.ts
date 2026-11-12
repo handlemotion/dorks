@@ -1,3 +1,4 @@
+import { Cause, Effect, Fiber, FiberSet, Latch, Scope } from "effect";
 import type { App, SchedulerLike } from "../app";
 import { hasTimer, setTimer } from "./dispatch";
 import { isJob, runJob } from "./jobs";
@@ -15,24 +16,33 @@ interface TimerRow {
 
 const MAX_SLEEP_MS = 60_000; // re-check at least this often: a wall-clock jump must not strand a timer
 
+const errorText = (cause: Cause.Cause<unknown>) => {
+  const e = Cause.squash(cause);
+  return e instanceof Error ? e.message.slice(0, 200) : "unknown";
+};
+
 /**
  * Fires the durable timers table. State-machine timers run synchronously in one transaction with their claim; jobs (provider
- * calls) are claimed in a transaction and then run concurrently. A timer is claimed by deleting its row, so it fires at most once;
- * on boot everything already due fires at once.
+ * calls) are claimed in a transaction and then run concurrently, each a fiber in one `FiberSet`. A timer is claimed by deleting
+ * its row, so it fires at most once; on boot everything already due fires at once.
+ *
+ * The loop is one Effect fiber: it fires what is due, then sleeps until the next due time, the `MAX_SLEEP_MS` cap, or a `wake()`
+ * (a `Latch` it closes before each pass, so a wake that lands mid-pass is not lost). `stop()` interrupts the loop; jobs already
+ * running finish, and `idle()` waits for them.
  */
 export class Scheduler implements SchedulerLike {
-  private handle?: ReturnType<typeof setTimeout>;
-  private running = false;
-  private stopped = true;
-  private readonly inflight = new Set<Promise<void>>();
+  private readonly scope = Scope.makeUnsafe();
+  private readonly jobs: FiberSet.FiberSet<void, never> = Effect.runSync(FiberSet.make<void, never>().pipe(Scope.provide(this.scope)));
+  private readonly woken = Latch.makeUnsafe(false);
+  private loop?: Fiber.Fiber<never, never>;
 
   constructor(private readonly app: App) {}
 
   start() {
-    this.stopped = false;
+    if (this.loop) return;
     this.app.scheduler = this;
     this.recover();
-    this.wake();
+    this.loop = Effect.runFork(this.run());
   }
 
   /**
@@ -49,29 +59,32 @@ export class Scheduler implements SchedulerLike {
   }
 
   stop() {
-    this.stopped = true;
-    clearTimeout(this.handle);
+    const loop = this.loop;
+    this.loop = undefined;
+    if (loop) Effect.runFork(Fiber.interrupt(loop));
   }
 
   /** Re-evaluates the next due time. Called after any commit that added a timer. */
   wake() {
-    if (this.stopped) return;
-    clearTimeout(this.handle);
-    this.handle = setTimeout(() => void this.tick(), 0);
+    Latch.openUnsafe(this.woken);
   }
 
-  private async tick() {
-    if (this.stopped || this.running) return;
-    this.running = true;
-    try {
-      this.runDue();
-    } finally {
-      this.running = false;
-    }
-    if (this.stopped) return;
+  /** How long to sleep before the next pass: until the next timer is due, at most `MAX_SLEEP_MS`. */
+  private nextWait(): number {
     const next = this.app.db.get<{ due_at: number }>("SELECT MIN(due_at) AS due_at FROM timers");
-    const wait = next?.due_at == null ? MAX_SLEEP_MS : Math.min(Math.max(next.due_at - this.app.now(), 0), MAX_SLEEP_MS);
-    this.handle = setTimeout(() => void this.tick(), wait);
+    return next?.due_at == null ? MAX_SLEEP_MS : Math.min(Math.max(next.due_at - this.app.now(), 0), MAX_SLEEP_MS);
+  }
+
+  private run(): Effect.Effect<never> {
+    const pass = Effect.gen({ self: this }, function* () {
+      yield* Latch.close(this.woken);
+      this.runDue();
+      yield* Effect.sleep(this.nextWait()).pipe(Effect.raceFirst(this.woken.await));
+    }).pipe(
+      // A pass that throws (the database, say) is logged and retried after a pause instead of stopping every timer for good.
+      Effect.catchCause((cause) => Effect.sync(() => console.error("scheduler pass failed", errorText(cause))).pipe(Effect.andThen(Effect.sleep(1_000)))),
+    );
+    return Effect.forever(pass);
   }
 
   /** Fires everything due now. Returns how many timers fired. Jobs keep running after this returns; see `idle`. */
@@ -85,23 +98,35 @@ export class Scheduler implements SchedulerLike {
       const payload = row.payload ? JSON.parse(row.payload) : undefined;
       if (isJob(row.name)) {
         app.db.tx(() => app.db.run("DELETE FROM timers WHERE owner = ? AND name = ?", row.owner, row.name));
-        const p = runJob(app, row.owner, row.name, payload).finally(() => this.inflight.delete(p));
-        this.inflight.add(p);
+        this.fork(row, payload);
       } else {
-        try {
-          app.db.tx(() => {
-            app.db.run("DELETE FROM timers WHERE owner = ? AND name = ?", row.owner, row.name);
-            fireTimer(app, row.owner, row.name);
-          });
-        } catch (e) {
-          console.error(`timer ${row.name} failed`, e instanceof Error ? e.message.slice(0, 200) : "unknown"); // claimed and dropped: a poisoned timer must not loop
-        }
+        this.fire(row);
       }
     }
   }
 
+  /** Runs a claimed job as a fiber of the job set. A job reports its own failures; anything that escapes is logged here. */
+  private fork(row: TimerRow, payload: unknown) {
+    const job = Effect.promise(() => runJob(this.app, row.owner, row.name, payload)).pipe(
+      Effect.catchCause((cause) => Effect.sync(() => console.error(`job ${row.name} failed`, errorText(cause)))),
+    );
+    FiberSet.addUnsafe(this.jobs, Effect.runFork(job));
+  }
+
+  private fire(row: TimerRow) {
+    const { app } = this;
+    try {
+      app.db.tx(() => {
+        app.db.run("DELETE FROM timers WHERE owner = ? AND name = ?", row.owner, row.name);
+        fireTimer(app, row.owner, row.name);
+      });
+    } catch (e) {
+      console.error(`timer ${row.name} failed`, e instanceof Error ? e.message.slice(0, 200) : "unknown"); // claimed and dropped: a poisoned timer must not loop
+    }
+  }
+
   /** Resolves when no job is running (tests, graceful shutdown). */
-  async idle() {
-    while (this.inflight.size) await Promise.allSettled([...this.inflight]);
+  idle(): Promise<void> {
+    return Effect.runPromise(FiberSet.awaitEmpty(this.jobs));
   }
 }

@@ -143,32 +143,10 @@ export class Outbox {
         try {
           res = await this.transport.push(batch.map((b) => b.frame));
         } catch (e) {
-          if (this.transport.isFatal(e)) {
-            this.stopped = true;
-            return void this.o.onFatal(e);
-          }
-          const code = this.transport.errorCode(e);
-          if (code === "too_many_frames" && batch.length > 1) {
-            this.o.maxFrames = Math.max(1, Math.floor(batch.length / 2)); // the backend's per-push cap is below ours: split
-            this.log("push batch too large, splitting to", this.o.maxFrames, "frames");
-            continue;
-          }
-          if (code === "event_too_large" && this.stubOversized(batch)) continue;
-          await this.backoff(code ?? errTag(e));
+          if (await this.onPushError(batch, e)) return;
           continue;
         }
-        const r = res as { ok?: unknown; expectedBseq?: unknown } | null | undefined;
-        const expected = r?.expectedBseq;
-        if (typeof expected === "number" && Number.isInteger(expected)) {
-          this.log("backend reported a gap, replaying from", expected);
-          this.rewindFrom(expected);
-          await this.backoff("gap"); // bounded even if the backend keeps disagreeing
-          continue;
-        }
-        if (r?.ok === false) {
-          await this.backoff("rejected"); // refused without telling us where to resume: retry, never drop
-          continue;
-        }
+        if (await this.onPushRefused(res)) continue;
         this.attempt = 0;
         for (const b of batch) b.sent = true;
         this.advance();
@@ -178,6 +156,41 @@ export class Outbox {
       if (this.pending === 0) this.resolveWaiters();
       else if (!this.stopped && !this.timer) this.kick();
     }
+  }
+
+  /** A push threw. Returns true when the error is fatal and the outbox has stopped; otherwise the batch is retried. */
+  private async onPushError(batch: Item[], e: unknown): Promise<boolean> {
+    if (this.transport.isFatal(e)) {
+      this.stopped = true;
+      this.o.onFatal(e);
+      return true;
+    }
+    const code = this.transport.errorCode(e);
+    if (code === "too_many_frames" && batch.length > 1) {
+      this.o.maxFrames = Math.max(1, Math.floor(batch.length / 2)); // the backend's per-push cap is below ours: split
+      this.log("push batch too large, splitting to", this.o.maxFrames, "frames");
+      return false;
+    }
+    if (code === "event_too_large" && this.stubOversized(batch)) return false;
+    await this.backoff(code ?? errTag(e));
+    return false;
+  }
+
+  /** The push returned but the backend did not accept the batch (a gap, or a plain refusal). Returns true when it must be retried. */
+  private async onPushRefused(res: PushResult): Promise<boolean> {
+    const r = res as { ok?: unknown; expectedBseq?: unknown } | null | undefined;
+    const expected = r?.expectedBseq;
+    if (typeof expected === "number" && Number.isInteger(expected)) {
+      this.log("backend reported a gap, replaying from", expected);
+      this.rewindFrom(expected);
+      await this.backoff("gap"); // bounded even if the backend keeps disagreeing
+      return true;
+    }
+    if (r?.ok === false) {
+      await this.backoff("rejected"); // refused without telling us where to resume: retry, never drop
+      return true;
+    }
+    return false;
   }
 
   /**

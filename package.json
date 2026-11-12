@@ -10,6 +10,10 @@
     "dev:desktop": "pnpm --filter @dorks/desktop dev",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --if-present test",
-    "e2e": "node scripts/e2e.mjs"
+    "e2e": "node scripts/e2e.mjs",
+    "lint": "oxlint"
+  },
+  "devDependencies": {
+    "oxlint": "1.91.0"
   }
 }

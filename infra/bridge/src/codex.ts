@@ -10,6 +10,11 @@ type Json = Record<string, unknown>;
 const obj = (v: unknown): Json => v && typeof v === "object" && !Array.isArray(v) ? v as Json : {};
 const text = (v: unknown): string => typeof v === "string" ? v : "";
 const clip = (v: string) => v.slice(0, 16 * 1024);
+type Effort = "none" | "low" | "medium" | "high" | "xhigh" | "max";
+const EFFORTS: string[] = ["none", "low", "medium", "high", "xhigh", "max"];
+const effortsOf = (model: Json): Effort[] => Array.isArray(model.supportedReasoningEfforts)
+  ? model.supportedReasoningEfforts.map((e: unknown) => obj(e).reasoningEffort).filter((e): e is Effort => typeof e === "string" && EFFORTS.includes(e))
+  : [];
 
 export interface CodexOptions {
   cwd: string;
@@ -119,40 +124,14 @@ export class CodexAgent {
       const state = await this.request("account/read", { refreshToken: true });
       if (obj(state.account).type !== "chatgpt") throw new Error("ChatGPT sign-in is required");
       const selected = this.o.model ?? { model: "gpt-6-sol", effort: "high" };
-      const available = new Map<string, ("none" | "low" | "medium" | "high" | "xhigh" | "max")[]>();
-      let cursor: string | null = null;
-      let supported = false;
-      do {
-        const page = await this.request("model/list", { limit: 100, includeHidden: false, ...(cursor ? { cursor } : {}) });
-        for (const entry of Array.isArray(page.data) ? page.data : []) {
-          const model = obj(entry);
-          const id = text(model.model) || text(model.id);
-          if (!/^[a-zA-Z0-9._-]{1,64}$/.test(id)) continue;
-          const efforts = Array.isArray(model.supportedReasoningEfforts)
-            ? model.supportedReasoningEfforts.map((e: unknown) => obj(e).reasoningEffort)
-              .filter((e): e is "none" | "low" | "medium" | "high" | "xhigh" | "max" => typeof e === "string" && ["none", "low", "medium", "high", "xhigh", "max"].includes(e))
-            : [];
-          available.set(id, efforts);
-          this.models.set(id, efforts);
-          if (id === selected.model && efforts.includes(selected.effort as typeof efforts[number])) supported = true;
-        }
-        cursor = text(page.nextCursor) || null;
-      } while (!supported && cursor && available.size < 500);
+      const { available, supported } = await this.listModels(selected);
       if (!supported) {
         const choices = [...available].filter(([, efforts]) => efforts.length).slice(0, 100);
         this.o.onModels(choices.map(([model, efforts]) => ({ model, efforts })));
         this.o.onIssue(`${selected.model} (${selected.effort}) is not available to this ChatGPT account. ${choices.length ? "Choose another model shown in the thread." : "No compatible model is available; check this ChatGPT account."} No other model or billing method was selected.`);
         throw new Error("model unavailable");
       }
-      let result: Json;
-      const developerInstructions = FINAL_ANSWER_GUIDANCE;
-      if (this.o.resumeSessionId) {
-        try { result = await this.request("thread/resume", { threadId: this.o.resumeSessionId, excludeTurns: true, developerInstructions }); }
-        catch (e) {
-          if (!/not found|does not exist|no such thread/i.test((e as Error).message)) throw e;
-          result = await this.request("thread/start", { model: selected.model, cwd: this.o.cwd, approvalPolicy: "never", developerInstructions });
-        }
-      } else result = await this.request("thread/start", { model: selected.model, cwd: this.o.cwd, approvalPolicy: "never", developerInstructions });
+      const result = await this.startThread(selected.model);
       const id = text(obj(result.thread).id);
       if (!id) throw new Error("Codex did not return a thread");
       this.sessionId = id;
@@ -162,6 +141,39 @@ export class CodexAgent {
     } catch (e) {
       if ((e as Error).message !== "model unavailable") this.o.onIssue("Codex could not use your Boat ChatGPT connection. Check Boat Agents & Proxying, then retry.");
       this.child.kill();
+    }
+  }
+
+  /** Pages through the account's models (recording each one's efforts) until the selected model and effort turn up. */
+  private async listModels(selected: { model: string; effort: string }) {
+    const available = new Map<string, Effort[]>();
+    let cursor: string | null = null;
+    let supported = false;
+    do {
+      const page = await this.request("model/list", { limit: 100, includeHidden: false, ...(cursor ? { cursor } : {}) });
+      for (const entry of Array.isArray(page.data) ? page.data : []) {
+        const model = obj(entry);
+        const id = text(model.model) || text(model.id);
+        if (!/^[a-zA-Z0-9._-]{1,64}$/.test(id)) continue;
+        const efforts = effortsOf(model);
+        available.set(id, efforts);
+        this.models.set(id, efforts);
+        if (id === selected.model && efforts.includes(selected.effort as Effort)) supported = true;
+      }
+      cursor = text(page.nextCursor) || null;
+    } while (!supported && cursor && available.size < 500);
+    return { available, supported };
+  }
+
+  /** Resumes the saved thread, or starts a new one when there is none or Codex no longer has it. */
+  private async startThread(model: string): Promise<Json> {
+    const developerInstructions = FINAL_ANSWER_GUIDANCE;
+    const start = () => this.request("thread/start", { model, cwd: this.o.cwd, approvalPolicy: "never", developerInstructions });
+    if (!this.o.resumeSessionId) return start();
+    try { return await this.request("thread/resume", { threadId: this.o.resumeSessionId, excludeTurns: true, developerInstructions }); }
+    catch (e) {
+      if (!/not found|does not exist|no such thread/i.test((e as Error).message)) throw e;
+      return start();
     }
   }
 
@@ -176,26 +188,10 @@ export class CodexAgent {
   }
 
   private line(m: Json) {
-    if (typeof m.id === "number" && this.requests.has(m.id)) {
-      const pending = this.requests.get(m.id)!;
-      clearTimeout(pending.timer);
-      this.requests.delete(m.id);
-      if (m.error) pending.reject(new Error(text(obj(m.error).message) || "Codex request failed"));
-      else pending.resolve(obj(m.result));
-      return;
-    }
-    if (typeof m.id === "number") {
-      void this.write({ id: m.id, error: { code: -32601, message: "Unsupported request" } }).catch(() => {});
-      return;
-    }
+    if (typeof m.id === "number") return this.response(m.id, m);
     const p = obj(m.params);
     const sideTurn = this.side.get(text(p.threadId));
-    if (sideTurn) {
-      const it = obj(p.item);
-      if (m.method === "item/completed" && it.type === "agentMessage") sideTurn.text = text(it.text);
-      if (m.method === "turn/completed") sideTurn.done(obj(p.turn).status === "completed" ? sideTurn.text : null);
-      return;
-    }
+    if (sideTurn) return this.sideNotification(sideTurn, m.method, p);
     if (m.method === "account/updated" && this.ready && p.authMode !== "chatgpt") {
       this.o.onIssue("Your Boat ChatGPT connection is no longer available. Reconnect it in Boat Agents & Proxying, then retry.");
       this.child.kill();
@@ -205,24 +201,53 @@ export class CodexAgent {
       if (delta) this.o.onRaw({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: delta } } });
     }
     const item = obj(p.item);
-    const id = text(item.id);
-    if (m.method === "item/started" && id) {
-      if (item.type === "agentMessage") this.o.onRaw({ type: "stream_event", event: { type: "message_start", message: { id } } });
-      const tool = this.tool(item);
-      if (tool) this.o.onRaw({ type: "assistant", message: { id, content: [{ type: "tool_use", id, name: tool.name, input: { description: tool.summary } }] } });
-    }
-    if (m.method === "item/completed" && id) {
-      if (item.type === "agentMessage" && text(item.text)) {
-        this.o.onRaw({ type: "assistant", message: { id, content: [{ type: "text", text: item.text }] } });
-      }
-      const tool = this.tool(item);
-      if (tool) this.o.onRaw({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, is_error: item.status === "failed" || (typeof item.exitCode === "number" && item.exitCode !== 0), content: clip(this.o.redactor.scrub(text(item.aggregatedOutput) || text(item.result) || text(item.error))) }] } });
-    }
+    if (m.method === "item/started") this.itemStarted(item);
+    if (m.method === "item/completed") this.itemCompleted(item);
     if (m.method === "turn/started") {
       this.turnId = text(obj(p.turn).id);
       this.startedAt = Date.now();
     }
     if (m.method === "turn/completed") void this.complete(obj(p.turn));
+  }
+
+  /** A reply to one of our requests, or a request from Codex, which we do not serve. */
+  private response(id: number, m: Json) {
+    const pending = this.requests.get(id);
+    if (!pending) {
+      void this.write({ id, error: { code: -32601, message: "Unsupported request" } }).catch(() => {});
+      return;
+    }
+    clearTimeout(pending.timer);
+    this.requests.delete(id);
+    if (m.error) pending.reject(new Error(text(obj(m.error).message) || "Codex request failed"));
+    else pending.resolve(obj(m.result));
+  }
+
+  private sideNotification(sideTurn: { text: string; done: (text: string | null) => void }, method: unknown, p: Json) {
+    const it = obj(p.item);
+    if (method === "item/completed" && it.type === "agentMessage") sideTurn.text = text(it.text);
+    if (method === "turn/completed") sideTurn.done(obj(p.turn).status === "completed" ? sideTurn.text : null);
+  }
+
+  private itemStarted(item: Json) {
+    const id = text(item.id);
+    if (!id) return;
+    if (item.type === "agentMessage") this.o.onRaw({ type: "stream_event", event: { type: "message_start", message: { id } } });
+    const tool = this.tool(item);
+    if (tool) this.o.onRaw({ type: "assistant", message: { id, content: [{ type: "tool_use", id, name: tool.name, input: { description: tool.summary } }] } });
+  }
+
+  private itemCompleted(item: Json) {
+    const id = text(item.id);
+    if (!id) return;
+    if (item.type === "agentMessage" && text(item.text)) {
+      this.o.onRaw({ type: "assistant", message: { id, content: [{ type: "text", text: item.text }] } });
+    }
+    const tool = this.tool(item);
+    if (!tool) return;
+    const isError = item.status === "failed" || (typeof item.exitCode === "number" && item.exitCode !== 0);
+    const content = clip(this.o.redactor.scrub(text(item.aggregatedOutput) || text(item.result) || text(item.error)));
+    this.o.onRaw({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, is_error: isError, content }] } });
   }
 
   private tool(item: Json): { name: string; summary: string } | null {

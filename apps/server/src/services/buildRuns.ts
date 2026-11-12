@@ -7,7 +7,7 @@ import { boatBuildFailureMessage } from "../lib/boatSnapshots";
 import { instanceId } from "../lib/box";
 import { hasTimer, setTimer } from "../lifecycle/dispatch";
 import {
-  baseKey, buildVarValues, dorkBuild, draftView, getBuild, hashSpec, imageName, ownBuild, secretValues, specOf, varsDigest, varsOf,
+  baseKey, buildVarValues, dorkBuild, draftView, getBuild, hashSpec, imageName, ownBuild, secretValues, specOf, varsDigest, varsOf, type BuildRow,
 } from "./builds";
 import { boatKey, githubToken, readSettings } from "./settings";
 
@@ -178,6 +178,30 @@ const tail = (s: string, n = 6) => {
   return t.slice(-600);
 };
 
+/** One attempt of a run, and what it holds that must be cleaned up whatever happens. */
+interface Run {
+  app: App;
+  runId: string;
+  attempt: number;
+  r0: RunRow;
+  build: BuildRow;
+  driver?: SnapshotDriver;
+  sandboxId?: string;
+  processId?: number;
+  /** Set once a save started: if the build is deleted meanwhile, its image must not be left behind. */
+  savedName?: string;
+}
+
+/** What the run's steps need, worked out before any sandbox exists. */
+interface RunInputs {
+  base: string;
+  baseAt: string;
+  gh: string | undefined;
+  env: Record<string, string>;
+  varsAt: string;
+  redact: (s: string) => string;
+}
+
 export async function runBuildRun(app: App, runId: string, attempt: number): Promise<void> {
   const r0 = getRun(app, runId);
   if (!r0 || r0.attempt !== attempt || (r0.status !== "queued" && r0.status !== "running")) return;
@@ -192,149 +216,178 @@ export async function runBuildRun(app: App, runId: string, attempt: number): Pro
     touch(app, { t: "builds" });
   });
 
-  const spec = JSON.parse(r0.spec) as BuildSpec;
-  const isImage = r0.kind === "image";
-  const label = runLabel(app, build.id);
-  let driver: SnapshotDriver | undefined;
-  let sandboxId: string | undefined;
-  let processId: number | undefined;
-  let savedName: string | undefined; // set once a save started: if the build is deleted meanwhile, its image must not be left behind
+  const run: Run = { app, runId, attempt, r0, build };
   try {
-    driver = await app.getSnapshotDriver();
-    const base = readSettings(app).baseSnapshotId ?? app.cfg.baseSnapshotId;
-    if (!base) throw new RunError("Boat is still being prepared: wait for the base snapshot, then retry.");
-    const baseAt = baseKey(app);
-    const gh = spec.repos.length ? ((await githubToken(app)) ?? (app.cfg.boxProvider === "sim" ? "sim-github-token" : undefined)) : undefined;
-    if (spec.repos.length && !gh) throw new RunError("Add a GitHub token in Settings: the build clones repositories.");
-    // An image run of the approved spec gets the build-time variables; anything else gets the plain ones only.
-    const approved = isImage && build.approvedHash === r0.spec_hash;
-    const allBuildTime = await buildVarValues(app, build.id, true);
-    const secrets = new Set(varsOf(app, build.id).filter((v) => v.secret).map((v) => v.name));
-    const values = { ...allBuildTime };
-    for (const v of (spec as BuildSpec & { draftVars?: DraftVar[] }).draftVars ?? []) {
-      if (v.remove || v.secret) delete values[v.name];
-      else if (v.value !== undefined) values[v.name] = v.value;
-      if (v.secret) secrets.add(v.name);
-    }
-    const env = Object.fromEntries(Object.entries(values).filter(([k]) => spec.buildTimeVars.includes(k) && (approved || !secrets.has(k))));
-    const varsAt = varsDigest(app, build.id, allBuildTime);
-    const redact = redactor([...(await secretValues(app, build.id)), ...(gh && app.cfg.boxProvider !== "sim" ? [gh] : [])]);
-
-    progress(app, runId, attempt, "prepare");
-    const leftovers = new Set<string>(r0.sandbox_id ? [r0.sandbox_id] : []);
-    for (const b of await driver.listBuildSandboxes(label, "dorks-run")) leftovers.add(b.id);
-    for (const id of leftovers) await removeSandbox(app, driver, id);
-
-    progress(app, runId, attempt, "create");
-    sandboxId = (await driver.createBuildSandbox({ name: `dorks-build-${build.name}`.slice(0, 120), label, labelKey: "dorks-run", key: `dorks-run-${runId}-${attempt}`, from: base, type: spec.machineType })).id;
-    progress(app, runId, attempt, "start", { sandboxId });
-    await driver.waitReady(sandboxId);
-
-    if (spec.repos.length) {
-      progress(app, runId, attempt, "clone");
-      // The token lives in a 0600 file read by a one-shot credential helper, and both are gone before the setup script runs.
-      await driver.writeFile(sandboxId, `${TMP}/gh`, gh!, "utf8");
-      await driver.writeFile(sandboxId, `${TMP}/cred`, `#!/bin/sh\n[ "$1" = get ] || exit 0\necho username=x-access-token\necho "password=$(cat ${TMP}/gh)"\n`, "utf8");
-      try {
-        for (const repo of spec.repos) {
-          const dir = `${WORK}/${repo.repo}`;
-          const cmd = `chmod 600 ${TMP}/gh && chmod 700 ${TMP}/cred && mkdir -p ${q(dir.slice(0, dir.lastIndexOf("/")))} && rm -rf ${q(dir)} && ` +
-            `git -c credential.helper= -c credential.helper=${q(`${TMP}/cred`)} clone --quiet ${repo.branch ? `--branch ${q(repo.branch)} ` : ""}${q(`https://github.com/${repo.repo}.git`)} ${q(dir)}`;
-          const res = await execLong(driver, sandboxId, cmd, 20 * 60_000, app.now);
-          if (res.exitCode !== 0) throw new RunError(`Could not clone ${repo.repo}${res.timedOut ? " (it took more than 20 minutes)" : ""}. ${redact(tail(res.stderr || res.stdout, 3))}`.trim());
-        }
-      } finally {
-        await driver.run(sandboxId, `rm -rf ${TMP}/gh ${TMP}/cred`, 60).catch(() => undefined);
-      }
-    }
-
-    progress(app, runId, attempt, "setup");
-    const parts = ["set -e", "cd /home/user"];
-    if (Object.keys(env).length) {
-      await driver.writeFile(sandboxId, `${TMP}/env`, Object.entries(env).map(([k, v]) => `${k}=${q(v)}`).join("\n") + "\n", "utf8");
-      parts.push(`chmod 600 ${TMP}/env`, `set -a; . ${TMP}/env; set +a`, `rm -f ${TMP}/env`);
-    }
-    if (spec.setupScript.trim()) {
-      await driver.writeFile(sandboxId, `${TMP}/setup.sh`, spec.setupScript, "utf8");
-      parts.push(`echo "== setup script"`, `bash -e ${TMP}/setup.sh`);
-    }
-    spec.repos.forEach((repo, i) => {
-      if (!repo.setupScript?.trim()) return;
-      parts.push(`echo ${q(`== ${repo.repo}`)}`, `(cd ${q(`${WORK}/${repo.repo}`)} && bash -e ${TMP}/repo-${i}.sh)`);
-    });
-    for (const [i, repo] of spec.repos.entries()) if (repo.setupScript?.trim()) await driver.writeFile(sandboxId, `${TMP}/repo-${i}.sh`, repo.setupScript, "utf8");
-    parts.push(`echo "== done"`);
-    await driver.writeFile(sandboxId, `${TMP}/run`, parts.join("\n") + "\n", "utf8");
-    const started = await driver.runDetached(sandboxId, `bash ${TMP}/run`);
-    processId = started.processId;
-    progress(app, runId, attempt, "setup", { processId, commandId: started.commandId ?? null });
-    const exitCode = await follow(app, driver, runId, attempt, sandboxId, processId, redact);
-    processId = undefined;
-    app.db.tx(() => update(app.db, "build_runs", { id: runId }, { exitCode }));
-    if (exitCode !== 0) {
-      const log = getRun(app, runId)?.log ?? "";
-      throw new RunError(`The setup failed (exit ${exitCode ?? "unknown"}).\n${tail(log)}`.trim());
-    }
-
-    if (isImage) {
-      progress(app, runId, attempt, "scan");
-      const values = [...(await secretValues(app, build.id)), ...(gh && app.cfg.boxProvider !== "sim" ? [gh] : [])].filter((v) => v.length >= 4 && !v.includes("\n"));
-      if (values.length) {
-        await driver.writeFile(sandboxId, "/tmp/dorks-scan", values.join("\n") + "\n", "utf8");
-        const scan = await execLong(driver, sandboxId, `chmod 600 /tmp/dorks-scan; hits=$(sudo grep -rlsIF -f /tmp/dorks-scan /home /root /etc /usr/local /opt /var/lib 2>/dev/null | head -5); rm -f /tmp/dorks-scan; printf '%s' "$hits"`, 20 * 60_000, app.now);
-        if (scan.timedOut) throw new RunError("The secret check took more than 20 minutes, so the image was not saved. Retry the build.");
-        const hits = scan.stdout.trim();
-        if (hits) throw new RunError(`A secret value was found on the machine, so it was not saved: ${hits.split("\n").join(", ")}. Make the setup keep secrets out of files (pass them in the environment), then build again.`);
-        if (scan.exitCode !== 0 && !scan.stdout) throw new RunError("The secret check could not run. Retry the build.");
-      }
-      // Boat keeps every command's output in ~/.ascii/processes (and in its command history, 90 days): the build's own commands (the
-      // clone, the setup, the scan) are not part of the machine, so they do not go into the image.
-      await driver.run(sandboxId, `rm -rf ${TMP}; rm -f ~/.ascii/processes/*`, 60).catch(() => undefined);
-
-      progress(app, runId, attempt, "save");
-      const name = imageName(app, build.id);
-      savedName = name;
-      await driver.saveSnapshot(sandboxId, name);
-      await waitSaved(app, driver, name, sandboxId);
-
-      progress(app, runId, attempt, "finish");
-      app.db.tx(() => {
-        const r = getRun(app, runId);
-        if (!r || r.status !== "running" || r.attempt !== attempt) throw new Superseded();
-        const now = app.now();
-        update(app.db, "builds", { id: build.id }, { image: name, imageHash: r0.spec_hash, imageBase: baseAt, imageVars: varsAt, imageAt: now });
-        update(app.db, "build_runs", { id: runId }, { status: "succeeded", step: null, finishedAt: now });
-        touch(app, { t: "build", buildId: build.id });
-        touch(app, { t: "builds" });
-      });
-    } else {
-      app.db.tx(() => {
-        const r = getRun(app, runId);
-        if (!r || r.status !== "running" || r.attempt !== attempt) throw new Superseded();
-        update(app.db, "build_runs", { id: runId }, { status: "succeeded", step: null, finishedAt: app.now() });
-        touch(app, { t: "build", buildId: build.id });
-        touch(app, { t: "builds" });
-      });
-    }
+    await runSteps(run);
     console.error(`build run ${r0.kind} succeeded`, build.id.slice(0, 8));
   } catch (e) {
-    if (!(e instanceof Superseded)) {
-      console.error(`build run ${r0.kind} failed`, e instanceof Error ? e.message.split("\n")[0].slice(0, 200) : "unknown");
-      const message = e instanceof RunError ? e.message : boatBuildFailureMessage(e);
-      app.db.tx(() => {
-        const r = getRun(app, runId);
-        if (!r || r.attempt !== attempt || r.status !== "running") return;
-        update(app.db, "build_runs", { id: runId }, { status: "failed", error: message, finishedAt: app.now() });
-        touch(app, { t: "build", buildId: r.build_id });
-        touch(app, { t: "builds" });
-      });
+    if (!(e instanceof Superseded)) failRun(run, e);
+  } finally {
+    await cleanUp(run);
+  }
+}
+
+async function runSteps(run: Run) {
+  const { app, runId, attempt, r0, build } = run;
+  const driver = (run.driver = await app.getSnapshotDriver());
+  const inputs = await runInputs(run);
+
+  progress(app, runId, attempt, "prepare");
+  const leftovers = new Set<string>(r0.sandbox_id ? [r0.sandbox_id] : []);
+  for (const b of await driver.listBuildSandboxes(runLabel(app, build.id), "dorks-run")) leftovers.add(b.id);
+  for (const id of leftovers) await removeSandbox(app, driver, id);
+
+  progress(app, runId, attempt, "create");
+  const spec = JSON.parse(r0.spec) as BuildSpec;
+  const sandboxId = (run.sandboxId = (await driver.createBuildSandbox({ name: `dorks-build-${build.name}`.slice(0, 120), label: runLabel(app, build.id), labelKey: "dorks-run", key: `dorks-run-${runId}-${attempt}`, from: inputs.base, type: spec.machineType })).id);
+  progress(app, runId, attempt, "start", { sandboxId });
+  await driver.waitReady(sandboxId);
+
+  if (spec.repos.length) await cloneRepos(run, driver, sandboxId, spec, inputs);
+  await runSetup(run, driver, sandboxId, spec, inputs);
+  if (r0.kind === "image") await saveImage(run, driver, sandboxId, inputs);
+  else finishRun(run, () => update(app.db, "build_runs", { id: runId }, { status: "succeeded", step: null, finishedAt: app.now() }));
+}
+
+async function runInputs({ app, r0, build }: Run): Promise<RunInputs> {
+  const spec = JSON.parse(r0.spec) as BuildSpec & { draftVars?: DraftVar[] };
+  const base = readSettings(app).baseSnapshotId ?? app.cfg.baseSnapshotId;
+  if (!base) throw new RunError("Boat is still being prepared: wait for the base snapshot, then retry.");
+  const baseAt = baseKey(app);
+  const gh = spec.repos.length ? ((await githubToken(app)) ?? (app.cfg.boxProvider === "sim" ? "sim-github-token" : undefined)) : undefined;
+  if (spec.repos.length && !gh) throw new RunError("Add a GitHub token in Settings: the build clones repositories.");
+  // An image run of the approved spec gets the build-time variables; anything else gets the plain ones only.
+  const approved = r0.kind === "image" && build.approvedHash === r0.spec_hash;
+  const allBuildTime = await buildVarValues(app, build.id, true);
+  const secrets = new Set(varsOf(app, build.id).filter((v) => v.secret).map((v) => v.name));
+  const values = { ...allBuildTime };
+  for (const v of spec.draftVars ?? []) {
+    if (v.remove || v.secret) delete values[v.name];
+    else if (v.value !== undefined) values[v.name] = v.value;
+    if (v.secret) secrets.add(v.name);
+  }
+  const env = Object.fromEntries(Object.entries(values).filter(([k]) => spec.buildTimeVars.includes(k) && (approved || !secrets.has(k))));
+  const varsAt = varsDigest(app, build.id, allBuildTime);
+  const redact = redactor(await scannedValues(app, build.id, gh));
+  return { base, baseAt, gh, env, varsAt, redact };
+}
+
+/** The values that must never show in a log or on the saved disk: the build's secrets, and the GitHub token on a real provider. */
+async function scannedValues(app: App, buildId: string, gh: string | undefined): Promise<string[]> {
+  return [...(await secretValues(app, buildId)), ...(gh && app.cfg.boxProvider !== "sim" ? [gh] : [])];
+}
+
+async function cloneRepos({ app, runId, attempt }: Run, driver: SnapshotDriver, sandboxId: string, spec: BuildSpec, { gh, redact }: RunInputs) {
+  progress(app, runId, attempt, "clone");
+  // The token lives in a 0600 file read by a one-shot credential helper, and both are gone before the setup script runs.
+  await driver.writeFile(sandboxId, `${TMP}/gh`, gh!, "utf8");
+  await driver.writeFile(sandboxId, `${TMP}/cred`, `#!/bin/sh\n[ "$1" = get ] || exit 0\necho username=x-access-token\necho "password=$(cat ${TMP}/gh)"\n`, "utf8");
+  try {
+    for (const repo of spec.repos) {
+      const dir = `${WORK}/${repo.repo}`;
+      const cmd = `chmod 600 ${TMP}/gh && chmod 700 ${TMP}/cred && mkdir -p ${q(dir.slice(0, dir.lastIndexOf("/")))} && rm -rf ${q(dir)} && ` +
+        `git -c credential.helper= -c credential.helper=${q(`${TMP}/cred`)} clone --quiet ${repo.branch ? `--branch ${q(repo.branch)} ` : ""}${q(`https://github.com/${repo.repo}.git`)} ${q(dir)}`;
+      const res = await execLong(driver, sandboxId, cmd, 20 * 60_000, app.now);
+      if (res.exitCode !== 0) throw new RunError(`Could not clone ${repo.repo}${res.timedOut ? " (it took more than 20 minutes)" : ""}. ${redact(tail(res.stderr || res.stdout, 3))}`.trim());
     }
   } finally {
-    if (driver && savedName && !getBuild(app, build.id)) await driver.deleteSnapshot(savedName).catch(() => app.db.tx(() => setTimer(app, "", `${FORGET_JOB}${savedName}`, 30_000, { image: savedName, attempt: 1 })));
-    if (driver && sandboxId) {
-      if (processId !== undefined) await driver.killCommand(sandboxId, processId).catch(() => undefined);
-      await removeSandbox(app, driver, sandboxId);
-    }
+    await driver.run(sandboxId, `rm -rf ${TMP}/gh ${TMP}/cred`, 60).catch(() => undefined);
+  }
+}
+
+async function runSetup(run: Run, driver: SnapshotDriver, sandboxId: string, spec: BuildSpec, { env, redact }: RunInputs) {
+  const { app, runId, attempt } = run;
+  progress(app, runId, attempt, "setup");
+  const parts = ["set -e", "cd /home/user"];
+  if (Object.keys(env).length) {
+    await driver.writeFile(sandboxId, `${TMP}/env`, Object.entries(env).map(([k, v]) => `${k}=${q(v)}`).join("\n") + "\n", "utf8");
+    parts.push(`chmod 600 ${TMP}/env`, `set -a; . ${TMP}/env; set +a`, `rm -f ${TMP}/env`);
+  }
+  if (spec.setupScript.trim()) {
+    await driver.writeFile(sandboxId, `${TMP}/setup.sh`, spec.setupScript, "utf8");
+    parts.push(`echo "== setup script"`, `bash -e ${TMP}/setup.sh`);
+  }
+  spec.repos.forEach((repo, i) => {
+    if (!repo.setupScript?.trim()) return;
+    parts.push(`echo ${q(`== ${repo.repo}`)}`, `(cd ${q(`${WORK}/${repo.repo}`)} && bash -e ${TMP}/repo-${i}.sh)`);
+  });
+  for (const [i, repo] of spec.repos.entries()) if (repo.setupScript?.trim()) await driver.writeFile(sandboxId, `${TMP}/repo-${i}.sh`, repo.setupScript, "utf8");
+  parts.push(`echo "== done"`);
+  await driver.writeFile(sandboxId, `${TMP}/run`, parts.join("\n") + "\n", "utf8");
+  const started = await driver.runDetached(sandboxId, `bash ${TMP}/run`);
+  run.processId = started.processId;
+  progress(app, runId, attempt, "setup", { processId: started.processId, commandId: started.commandId ?? null });
+  const exitCode = await follow(app, driver, runId, attempt, sandboxId, started.processId, redact);
+  run.processId = undefined;
+  app.db.tx(() => update(app.db, "build_runs", { id: runId }, { exitCode }));
+  if (exitCode !== 0) {
+    const log = getRun(app, runId)?.log ?? "";
+    throw new RunError(`The setup failed (exit ${exitCode ?? "unknown"}).\n${tail(log)}`.trim());
+  }
+}
+
+/** Fails the run unless a secret value is on the machine's disk. */
+async function scanForSecrets({ app, build }: Run, driver: SnapshotDriver, sandboxId: string, gh: string | undefined) {
+  const values = (await scannedValues(app, build.id, gh)).filter((v) => v.length >= 4 && !v.includes("\n"));
+  if (!values.length) return;
+  await driver.writeFile(sandboxId, "/tmp/dorks-scan", values.join("\n") + "\n", "utf8");
+  const scan = await execLong(driver, sandboxId, `chmod 600 /tmp/dorks-scan; hits=$(sudo grep -rlsIF -f /tmp/dorks-scan /home /root /etc /usr/local /opt /var/lib 2>/dev/null | head -5); rm -f /tmp/dorks-scan; printf '%s' "$hits"`, 20 * 60_000, app.now);
+  if (scan.timedOut) throw new RunError("The secret check took more than 20 minutes, so the image was not saved. Retry the build.");
+  const hits = scan.stdout.trim();
+  if (hits) throw new RunError(`A secret value was found on the machine, so it was not saved: ${hits.split("\n").join(", ")}. Make the setup keep secrets out of files (pass them in the environment), then build again.`);
+  if (scan.exitCode !== 0 && !scan.stdout) throw new RunError("The secret check could not run. Retry the build.");
+}
+
+async function saveImage(run: Run, driver: SnapshotDriver, sandboxId: string, { gh, baseAt, varsAt }: RunInputs) {
+  const { app, runId, attempt, r0, build } = run;
+  progress(app, runId, attempt, "scan");
+  await scanForSecrets(run, driver, sandboxId, gh);
+  // Boat keeps every command's output in ~/.ascii/processes (and in its command history, 90 days): the build's own commands (the
+  // clone, the setup, the scan) are not part of the machine, so they do not go into the image.
+  await driver.run(sandboxId, `rm -rf ${TMP}; rm -f ~/.ascii/processes/*`, 60).catch(() => undefined);
+
+  progress(app, runId, attempt, "save");
+  const name = imageName(app, build.id);
+  run.savedName = name;
+  await driver.saveSnapshot(sandboxId, name);
+  await waitSaved(app, driver, name, sandboxId);
+
+  progress(app, runId, attempt, "finish");
+  finishRun(run, () => {
+    const now = app.now();
+    update(app.db, "builds", { id: build.id }, { image: name, imageHash: r0.spec_hash, imageBase: baseAt, imageVars: varsAt, imageAt: now });
+    update(app.db, "build_runs", { id: runId }, { status: "succeeded", step: null, finishedAt: now });
+  });
+}
+
+/** Applies the run's success in one transaction, unless a newer attempt (or a cancel) took the run over. */
+function finishRun({ app, runId, attempt, build }: Run, apply: () => void) {
+  app.db.tx(() => {
+    const r = getRun(app, runId);
+    if (!r || r.status !== "running" || r.attempt !== attempt) throw new Superseded();
+    apply();
+    touch(app, { t: "build", buildId: build.id });
+    touch(app, { t: "builds" });
+  });
+}
+
+function failRun({ app, runId, attempt, r0 }: Run, e: unknown) {
+  console.error(`build run ${r0.kind} failed`, e instanceof Error ? e.message.split("\n")[0].slice(0, 200) : "unknown");
+  const message = e instanceof RunError ? e.message : boatBuildFailureMessage(e);
+  app.db.tx(() => {
+    const r = getRun(app, runId);
+    if (!r || r.attempt !== attempt || r.status !== "running") return;
+    update(app.db, "build_runs", { id: runId }, { status: "failed", error: message, finishedAt: app.now() });
+    touch(app, { t: "build", buildId: r.build_id });
+    touch(app, { t: "builds" });
+  });
+}
+
+async function cleanUp({ app, build, driver, sandboxId, processId, savedName }: Run) {
+  if (driver && savedName && !getBuild(app, build.id)) await driver.deleteSnapshot(savedName).catch(() => app.db.tx(() => setTimer(app, "", `${FORGET_JOB}${savedName}`, 30_000, { image: savedName, attempt: 1 })));
+  if (driver && sandboxId) {
+    if (processId !== undefined) await driver.killCommand(sandboxId, processId).catch(() => undefined);
+    await removeSandbox(app, driver, sandboxId);
   }
 }
 

@@ -79,56 +79,56 @@ export function createHandler(opts: Options): (req: Request) => Promise<Response
     return key && INSTALL_KEY.test(key) ? tenantOf(key) : null;
   }
 
+  // The desktop shell: this install's tunnel and a fresh connector for it (365 days; any older one is revoked).
+  async function postTunnel(req: Request): Promise<Response> {
+    const tenant = await install(req);
+    if (!tenant) return refuse(401, "unauthorized", "Send this install's key as `Authorization: Bearer dti_…`.");
+    await embed.putTenant(tenant, { activeTunnels: opts.limits?.activeTunnels ?? 1, ...(opts.limits?.monthlyRequests !== undefined ? { monthlyRequests: opts.limits.monthlyRequests } : {}) });
+    await embed.putSubject(tenant, OWNER, "user");
+    const made = await tunnelOf(tenant);
+    const connector = made.connector ?? (await embed.connector(made.tunnel.id, { rotate: true, ttlSeconds: CONNECTOR_TTL_SECONDS }));
+    return json(200, { tunnel: { id: made.tunnel.id, url: made.tunnel.url }, connector: { connector: connector.connector, expiresAt: connector.expiresAt } });
+  }
+
+  // The owner's server: let a new sandbox reach the tunnel (and get its ticket), or forget a deleted one.
+  async function sandboxAccess(req: Request, rawId: string): Promise<Response> {
+    const tenant = await install(req);
+    if (!tenant) return refuse(401, "unauthorized", "Send this install's key as `Authorization: Bearer dti_…`.");
+    const dorkId = decodeURIComponent(rawId);
+    if (!DORK_ID.test(dorkId)) return refuse(400, "invalid", "A dork id is 1 to 100 letters, digits, - or _.");
+    const subject = `dork-${dorkId}`;
+    if (req.method === "DELETE") {
+      await embed.removeSubject(tenant, subject);
+      return new Response(null, { status: 204 });
+    }
+    const { tunnel } = await tunnelOf(tenant);
+    await embed.putSubject(tenant, subject, "service");
+    await embed.allow(tunnel.id, subject);
+    return json(200, { ticket: await signTicket({ t: tenant, u: tunnel.id, s: subject }) });
+  }
+
+  // A sandbox's bridge: a client grant for its own subject on its owner's tunnel, sent as `x-wurmhol-grant`.
+  async function postGrant(req: Request): Promise<Response> {
+    const ticket = await readTicket(bearer(req));
+    if (!ticket) return refuse(401, "unauthorized", "Send the sandbox's ticket as `Authorization: Bearer dts_…`.");
+    try {
+      const grant = await embed.issueClientGrant({ tunnel: ticket.u, subject: ticket.s, ttlSeconds: grantTtl });
+      if (!grant.token) throw new EmbedError(502, "wurmhol returned no grant token");
+      return json(200, { token: grant.token, expiresAt: grant.expiresAt });
+    } catch (e) {
+      // The subject was removed (its dork deleted) or the tunnel is gone: this ticket is finished.
+      if (e instanceof EmbedError && [403, 404, 409, 410].includes(e.status)) return refuse(403, "revoked", "This sandbox no longer has access to its owner's tunnel.");
+      throw e;
+    }
+  }
+
   async function route(req: Request): Promise<Response> {
-    const url = new URL(req.url);
-    const path = url.pathname.replace(/\/+$/, "");
-
+    const path = new URL(req.url).pathname.replace(/\/+$/, "");
     if (req.method === "GET" && path === "/health") return json(200, { ok: true });
-
-    // The desktop shell: this install's tunnel and a fresh connector for it (365 days; any older one is revoked).
-    if (req.method === "POST" && path === "/v1/tunnel") {
-      const tenant = await install(req);
-      if (!tenant) return refuse(401, "unauthorized", "Send this install's key as `Authorization: Bearer dti_…`.");
-      await embed.putTenant(tenant, { activeTunnels: opts.limits?.activeTunnels ?? 1, ...(opts.limits?.monthlyRequests !== undefined ? { monthlyRequests: opts.limits.monthlyRequests } : {}) });
-      await embed.putSubject(tenant, OWNER, "user");
-      const made = await tunnelOf(tenant);
-      const connector = made.connector ?? (await embed.connector(made.tunnel.id, { rotate: true, ttlSeconds: CONNECTOR_TTL_SECONDS }));
-      return json(200, { tunnel: { id: made.tunnel.id, url: made.tunnel.url }, connector: { connector: connector.connector, expiresAt: connector.expiresAt } });
-    }
-
-    // The owner's server: let a new sandbox reach the tunnel (and get its ticket), or forget a deleted one.
+    if (req.method === "POST" && path === "/v1/tunnel") return postTunnel(req);
     const sandbox = path.match(/^\/v1\/sandboxes\/([^/]+)$/);
-    if (sandbox && (req.method === "PUT" || req.method === "DELETE")) {
-      const tenant = await install(req);
-      if (!tenant) return refuse(401, "unauthorized", "Send this install's key as `Authorization: Bearer dti_…`.");
-      const dorkId = decodeURIComponent(sandbox[1]!);
-      if (!DORK_ID.test(dorkId)) return refuse(400, "invalid", "A dork id is 1 to 100 letters, digits, - or _.");
-      const subject = `dork-${dorkId}`;
-      if (req.method === "DELETE") {
-        await embed.removeSubject(tenant, subject);
-        return new Response(null, { status: 204 });
-      }
-      const { tunnel } = await tunnelOf(tenant);
-      await embed.putSubject(tenant, subject, "service");
-      await embed.allow(tunnel.id, subject);
-      return json(200, { ticket: await signTicket({ t: tenant, u: tunnel.id, s: subject }) });
-    }
-
-    // A sandbox's bridge: a client grant for its own subject on its owner's tunnel, sent as `x-wurmhol-grant`.
-    if (req.method === "POST" && path === "/v1/grants") {
-      const ticket = await readTicket(bearer(req));
-      if (!ticket) return refuse(401, "unauthorized", "Send the sandbox's ticket as `Authorization: Bearer dts_…`.");
-      try {
-        const grant = await embed.issueClientGrant({ tunnel: ticket.u, subject: ticket.s, ttlSeconds: grantTtl });
-        if (!grant.token) throw new EmbedError(502, "wurmhol returned no grant token");
-        return json(200, { token: grant.token, expiresAt: grant.expiresAt });
-      } catch (e) {
-        // The subject was removed (its dork deleted) or the tunnel is gone: this ticket is finished.
-        if (e instanceof EmbedError && [403, 404, 409, 410].includes(e.status)) return refuse(403, "revoked", "This sandbox no longer has access to its owner's tunnel.");
-        throw e;
-      }
-    }
-
+    if (sandbox && (req.method === "PUT" || req.method === "DELETE")) return sandboxAccess(req, sandbox[1]!);
+    if (req.method === "POST" && path === "/v1/grants") return postGrant(req);
     return refuse(404, "not_found", "No such route.");
   }
 

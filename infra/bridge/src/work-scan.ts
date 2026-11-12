@@ -59,6 +59,25 @@ export function repoFromUrl(url: string | null): string | null {
 
 const commits = (n: number) => `${n} ${n === 1 ? "commit" : "commits"}`;
 
+/** One local branch: unpushed commits, commits on no remote at all, or pushed beyond the default branch (a PR candidate). */
+async function classifyBranch(
+  branch: string,
+  upstream: string,
+  base: string | null,
+  count: (range: string) => Promise<number>,
+  exists: (ref: string) => Promise<boolean>,
+): Promise<{ kind: FindingKind; detail: string; pushed: boolean } | null> {
+  const isBase = base === `origin/${branch}`;
+  // `git checkout -b feat origin/main` leaves feat tracking the default branch, which says nothing about whether feat was pushed.
+  let remote: string | null = upstream && (isBase || upstream !== base) ? upstream : null;
+  if (!remote && (await exists(`refs/remotes/origin/${branch}`))) remote = `origin/${branch}`; // pushed without -u
+  const beyondBase = !isBase && base ? await count(`${base}..${branch}`) : 0;
+  if (!remote) return beyondBase > 0 ? { kind: "unpublished", detail: `${commits(beyondBase)} not pushed anywhere (no upstream)`, pushed: false } : null;
+  const ahead = await count(`${remote}..${branch}`);
+  if (ahead > 0) return { kind: "unpushed", detail: `${commits(ahead)} not pushed to ${remote}`, pushed: false };
+  return beyondBase > 0 ? { kind: "no_pr", detail: `pushed to ${remote}, no pull request`, pushed: true } : null;
+}
+
 async function scanRepo(dir: string, o: ScanOptions): Promise<{ done: Finding[]; pushed: Finding[] }> {
   const env = gitEnv(o.env, o.runAs);
   const out = async (...args: string[]) => {
@@ -80,16 +99,8 @@ async function scanRepo(dir: string, o: ScanOptions): Promise<{ done: Finding[];
   for (const line of heads ? heads.split("\n") : []) {
     const [branch = "", upstream = "", track = ""] = line.split("\t");
     if (!branch || track === "gone") continue; // gone: its remote branch was deleted (merged and cleaned up)
-    const isBase = base === `origin/${branch}`;
-    // `git checkout -b feat origin/main` leaves feat tracking the default branch, which says nothing about whether feat was pushed.
-    let remote: string | null = upstream && (isBase || upstream !== base) ? upstream : null;
-    if (!remote && (await exists(`refs/remotes/origin/${branch}`))) remote = `origin/${branch}`; // pushed without -u
-    const beyondBase = !isBase && base ? await count(`${base}..${branch}`) : 0;
-    if (remote) {
-      const ahead = await count(`${remote}..${branch}`);
-      if (ahead > 0) done.push(found("unpushed", branch, `${commits(ahead)} not pushed to ${remote}`));
-      else if (beyondBase > 0) pushed.push(found("no_pr", branch, `pushed to ${remote}, no pull request`));
-    } else if (beyondBase > 0) done.push(found("unpublished", branch, `${commits(beyondBase)} not pushed anywhere (no upstream)`));
+    const f = await classifyBranch(branch, upstream, base, count, exists);
+    if (f) (f.pushed ? pushed : done).push(found(f.kind, branch, f.detail));
   }
   return { done, pushed };
 }
