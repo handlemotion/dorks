@@ -72,6 +72,9 @@ The server is moving to [Effect](https://effect.website) (v4). New server code i
 - **Boat driver** (`lib/boatHttp.ts`, `lib/boat.ts`, `lib/boatSnapshots.ts`): one `BoatError`, schema-decoded responses, and shared
   `pollUntil` / `retryWhile` loops. The drivers keep their Promise interfaces (`core/box.ts`, `core/snapshot.ts`) by running the
   effects at that edge.
+- **GitHub client and PR poller** (`lib/github.ts`, `services/poller.ts`): one `GithubError` with a `reason` (`rate_limited`,
+  `not_visible`, `auth`, `http`, `network`, `timeout`, `invalid_response`) and schema-decoded responses. `pollOnce` and
+  `createIssueComment` keep Promise forms for the jobs that call them.
 - **Scheduler** (`lifecycle/scheduler.ts`): the timer loop is one fiber woken by a `Latch`; jobs run as fibers in a `FiberSet`.
 - **Jobs** (`lifecycle/jobs.ts`): each job is an `Effect<void, JobStepError>` that the scheduler forks straight into its `FiberSet`.
   A failed step (a provider call, the database) is a `JobStepError`; box jobs turn it into `op_failed`, and one that escapes is
@@ -80,8 +83,13 @@ The server is moving to [Effect](https://effect.website) (v4). New server code i
 - **App wiring** (`server.ts`, `listeners.ts`, `main.ts`): the process is a stack of Layers (config, database and hub, app, the UI
   and bridge listeners under `Bun.serve`, the scheduler). SIGTERM, SIGINT and the parent watch close it in reverse: scheduler and
   jobs, listeners, database. `createApp` stays the plain constructor tests use.
+- **Bridge socket** (`http/bridgeWs.ts`, `services/bridge.ts`): a `BridgeSession` is a `Scope` of fibers closed with the socket (auth
+  timer, a reader over an inbox `Queue`, a writer draining the outbox `Queue`, a snapshot publisher woken by a `Latch`); each rpc is
+  its own fiber, started in arrival order. A refused rpc is a typed `BridgeError` (its `AppError` is the `res` error), a frame that
+  ends the socket is a `Hangup` with its close code. Frame shapes stay the zod types of `packages/shared`; `decodePush` applies the
+  per-call limits and parses with them. `listeners.ts` drives it from Bun's callbacks (`open` / `onMessage` / `close`).
 
-`Effect.runPromise` rejects with the original error, so `instanceof` checks on `BoatError` and `BoxNotFoundError` keep working
+`Effect.runPromise` rejects with the original error, so `instanceof` checks on `BoatError`, `BoxNotFoundError` and `GithubError` keep working
 across the edge.
 
 ## Rules

@@ -23,7 +23,7 @@ import {
   type Sandbox,
 } from "./boatHttp";
 
-export { BoatError, BOX_ID, createBoatCall, DEFAULT_BASE_URL, READY, type BoatCall, type BoatOptions } from "./boatHttp";
+export { BoatError, BOX_ID, DEFAULT_BASE_URL, READY, type BoatCall, type BoatOptions } from "./boatHttp";
 
 const WAIT_MS = 240_000;
 /** How long a `provisioning` desktop (the first noVNC start) is waited for before the caller is told to retry. */
@@ -57,7 +57,7 @@ const passesOnlyItsProfile = (e: Environment) =>
  * (https://docs.boat.dev/api/reference/environments/list-sandbox-environments). Messages start with "boat: selected environment",
  * which the create job shows as is.
  */
-export const checkCodexEnvironmentEffect = (call: BoatCall, org: string | undefined, name: string) =>
+export const checkCodexEnvironment = (call: BoatCall, org: string | undefined, name: string) =>
   Effect.gen(function* () {
     const json = yield* call("list environments", "GET", `/environments${org ? `?org=${encodeURIComponent(org)}` : ""}`);
     const { environments } = yield* decodeOr(Environments, "boat list environments: invalid response")(json);
@@ -65,12 +65,6 @@ export const checkCodexEnvironmentEffect = (call: BoatCall, org: string | undefi
     if (!selected) return yield* new BoatError(`boat: selected environment "${name}" does not exist in this Boat account`);
     if (!passesOnlyItsProfile(selected)) return yield* new BoatError("boat: selected environment must disable other credentials and use a named AI credential profile");
   });
-
-/** The Promise form, for the settings check (services/boatCheck.ts). */
-export const checkCodexEnvironment = (call: (op: string, method: string, path: string) => Promise<any>, org: string | undefined, name: string): Promise<void> =>
-  Effect.runPromise(checkCodexEnvironmentEffect((op, method, path) => Effect.tryPromise({ try: () => call(op, method, path), catch: asBoatError }), org, name));
-
-const asBoatError = (e: unknown) => (e instanceof BoatError ? e : new BoatError(e instanceof Error ? e.message : "boat: request failed"));
 
 /** The Boat sandbox provider (core/box.ts). Each method is an Effect run at the Promise edge the lifecycle expects. */
 export function boatBox(opts: BoatOptions): BoxProvider {
@@ -163,7 +157,7 @@ function boatOps(call: BoatCall, pause: Pause, opts: BoatOptions) {
   const create = (snapshotId: string, { name, initCommand, env, generation, boatEnvironment, machineType }: CreateOptions) =>
     Effect.gen(function* () {
       if (initCommand !== "dorks-bridge") return yield* new BoatError("boat: unsupported bridge command");
-      if (boatEnvironment) yield* checkCodexEnvironmentEffect(call, opts.org, boatEnvironment);
+      if (boatEnvironment) yield* checkCodexEnvironment(call, opts.org, boatEnvironment);
       const label = yield* labelFor(name);
       const existing = yield* listSandboxes(call, "dorks", label);
       const live = existing.find((b) => b.state !== "error" && !isGone(b));

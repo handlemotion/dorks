@@ -5,7 +5,7 @@ import { getDork } from "../data";
 import { BoatError } from "../lib/boat";
 import { bridgeSecret } from "../lib/bridgeAuth";
 import { forgetSandbox, sandboxTunnelEnv } from "../lib/tunnelService";
-import { createIssueComment, GithubHttpError, isTransientGithubError } from "../lib/github";
+import { createIssueComment, GithubError, isTransientGithubError } from "../lib/github";
 import { pollOnce } from "../services/poller";
 import { runBuild, SNAPSHOT_JOB } from "../services/snapshot";
 import { getBuild } from "../services/builds";
@@ -184,7 +184,7 @@ const stallComment = (app: App, subscriptionId: number, runUrl: string, attempt:
     yield* promise(() => createIssueComment(app.fetch, token, sub.repo, sub.number, STALL_TEXT(runUrl))).pipe(
       Effect.catch(({ cause }) =>
         sync(() => {
-          console.error("stall comment failed", subscriptionId, cause instanceof GithubHttpError ? cause.status : "unexpected");
+          console.error("stall comment failed", subscriptionId, cause instanceof GithubError ? (cause.status ?? cause.reason) : "unexpected");
           if (isTransientGithubError(cause) && attempt < STALL_RETRY_MS.length) setTimer(app, owner, name, STALL_RETRY_MS[attempt], { subscriptionId, runUrl, attempt: attempt + 1 });
         }),
       ),

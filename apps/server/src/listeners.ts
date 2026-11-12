@@ -46,7 +46,7 @@ export class BridgeListener extends Context.Service<BridgeListener, { readonly u
               session.open();
             },
             message(ws, m) {
-              void ws.data.session?.onMessage(typeof m === "string" ? m : m.toString());
+              ws.data.session?.onMessage(typeof m === "string" ? m : m.toString());
             },
             close(ws) {
               ws.data.session?.close();
