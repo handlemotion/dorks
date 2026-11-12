@@ -73,6 +73,13 @@ The server is moving to [Effect](https://effect.website) (v4). New server code i
   `pollUntil` / `retryWhile` loops. The drivers keep their Promise interfaces (`core/box.ts`, `core/snapshot.ts`) by running the
   effects at that edge.
 - **Scheduler** (`lifecycle/scheduler.ts`): the timer loop is one fiber woken by a `Latch`; jobs run as fibers in a `FiberSet`.
+- **Jobs** (`lifecycle/jobs.ts`): each job is an `Effect<void, JobStepError>` that the scheduler forks straight into its `FiberSet`.
+  A failed step (a provider call, the database) is a `JobStepError`; box jobs turn it into `op_failed`, and one that escapes is
+  logged. Services not yet on Effect are called through the `promise` step helper. `Scheduler.shutdown` stops the loop, drains
+  jobs for up to 5 s, then interrupts the rest.
+- **App wiring** (`server.ts`, `listeners.ts`, `main.ts`): the process is a stack of Layers (config, database and hub, app, the UI
+  and bridge listeners under `Bun.serve`, the scheduler). SIGTERM, SIGINT and the parent watch close it in reverse: scheduler and
+  jobs, listeners, database. `createApp` stays the plain constructor tests use.
 
 `Effect.runPromise` rejects with the original error, so `instanceof` checks on `BoatError` and `BoxNotFoundError` keep working
 across the edge.
