@@ -30,7 +30,7 @@ const bridge = Bun.serve<{ session?: BridgeSession }>({
       session.open();
     },
     message(ws, m) {
-      void ws.data.session?.onMessage(typeof m === "string" ? m : m.toString());
+      ws.data.session?.onMessage(typeof m === "string" ? m : m.toString());
     },
     close(ws) {
       ws.data.session?.close();
