@@ -75,7 +75,7 @@ describe("events feed", () => {
     const { id } = await c.actions.createDork({ repo: "acme/demo", message: "fix the bug", provider: "codex" });
     watch(c.events(id));
     const view = await settled(c, id);
-    expect(view.blocks.map((b) => b.kind)).toEqual(["user", "assistant", "tool", "assistant", "turn"]);
+    expect(view.blocks.map((b) => b.kind)).toEqual(["user", "assistant", "tool", "tool", "assistant", "turn"]);
     const a = view.blocks.at(-2);
     expect(a).toMatchObject({ kind: "assistant", streaming: false, final: true }); // named by the turn's finalMessageId
     expect((a as { text: string }).text).toContain("Done: fix the bug");
