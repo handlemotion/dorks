@@ -61,7 +61,7 @@ export function progressTurns(blocks: readonly Block[]): ProgressTurn[] {
 export const progressSteps = (turns: readonly ProgressTurn[]) => turns.flatMap((turn) => turn.steps)
 
 type ProgressState = {
-  /** The step the thread last pointed at (a turn's card): Progress scrolls to it. */
+  /** The step selected in Progress, whose detail shows at its foot; a turn's card in the thread selects its first step. */
   readonly selectedKey: string | null
   /** Bumped when the thread asks for Progress to come up (a turn's card was clicked); Chat details switches to its tab. */
   readonly reveal: number
@@ -84,9 +84,11 @@ function createProgressStore() {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
+    /** Selects a step (its detail opens at the foot of Progress), or nothing (`null`: the foot shows the tasks). */
+    select: (selectedKey: string | null) => set({ ...state, selectedKey }),
     /** Opens Progress on a step. */
     show: (selectedKey: string | null) => set({ selectedKey, reveal: state.reveal + 1 }),
-    /** A new chat points at nothing. */
+    /** A new chat has nothing selected. */
     reset: () => set({ selectedKey: null, reveal: state.reveal }),
   }
 }

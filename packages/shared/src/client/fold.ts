@@ -5,7 +5,16 @@ export type Block =
   | { kind: "user"; id: string; text: string; at?: number }
   /** `final`: the server named this message the turn's final answer (`turn_complete.finalMessageId`). `at`: when it completed. */
   | { kind: "assistant"; id: string; text: string; streaming: boolean; final?: boolean; at?: number }
-  | { kind: "tool"; id: string; name: string; summary: string; status: "running" | "ok" | "error"; preview?: string; input?: Record<string, unknown> }
+  | {
+      kind: "tool";
+      id: string;
+      name: string;
+      summary: string;
+      status: "running" | "ok" | "error";
+      preview?: string;
+      input?: Record<string, unknown>;
+      /** When the call started (ms since epoch). */ at?: number;
+    }
   | { kind: "notice"; id: string; level: "info" | "error"; text: string }
   /** The agent submitted a draft of its machine for approval (docs/builds.md). `approved` is null until the owner decides. */
   | { kind: "build"; id: string; draftId: string; buildId: string | null; buildName: string; note?: string; approved: boolean | null; reason?: string }
@@ -54,7 +63,7 @@ const HANDLERS: Handlers = {
     else v.blocks[i] = done; // the complete message replaces streamed partials
   },
   tool_use(v, e) {
-    v.blocks.push({ kind: "tool", id: e.toolId, name: e.name, summary: e.summary, status: "running", ...(e.input ? { input: e.input } : {}) });
+    v.blocks.push({ kind: "tool", id: e.toolId, name: e.name, summary: e.summary, status: "running", at: e.ts, ...(e.input ? { input: e.input } : {}) });
   },
   tool_result(v, e) {
     const i = v.blocks.findIndex((b) => b.kind === "tool" && b.id === e.toolId);

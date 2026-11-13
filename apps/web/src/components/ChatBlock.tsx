@@ -372,9 +372,9 @@ function latestStep(work: WorkBlock[]): string {
 }
 
 /**
- * A turn's overview: how long it worked and what it did ("Ran 3 commands, edited 2 files"), the kinds of tools it used and its step
- * count. The work itself lives in Chat details' Progress; the card opens it there on this turn (`onOpen`), or, without Chat details
- * beside the chat, unfolds it below.
+ * A turn's overview, as one row: a chevron, the kinds of tools it used, how long it worked and its step count ("Worked for 2m 14s · 8
+ * steps"); while it runs, "Working" and its newest step. The work itself lives in Chat details' Progress; the row opens it there on
+ * this turn (`onOpen`), or, without Chat details beside the chat, unfolds it below.
  */
 function TurnCard({ work, end, onOpen }: { work: WorkBlock[]; end?: TurnBlock; onOpen?: () => void }) {
   const [open, setOpen] = useState(false)
@@ -389,7 +389,7 @@ function TurnCard({ work, end, onOpen }: { work: WorkBlock[]; end?: TurnBlock; o
       : end.outcome === 'failed'
         ? `Failed after ${workedFor(end.durationMs)}`
         : `Worked for ${workedFor(end.durationMs)}`
-  const summary = running ? latestStep(work) : tools.length > 0 ? toolGroupTitle(tools) : 'Thought it through'
+  const detail = running ? latestStep(work) : `${work.length} ${work.length === 1 ? 'step' : 'steps'}`
   const inline = !onOpen
   return (
     <>
@@ -398,30 +398,27 @@ function TurnCard({ work, end, onOpen }: { work: WorkBlock[]; end?: TurnBlock; o
         data-testid="turn-card"
         aria-expanded={inline ? open : undefined}
         aria-controls={inline ? historyId : undefined}
-        aria-label={inline ? undefined : `${title}. Show progress`}
+        aria-label={inline ? undefined : `${title}, ${detail}. Show progress`}
+        title={tools.length > 0 ? toolGroupTitle(tools) : undefined}
         onClick={() => (onOpen ? onOpen() : setOpen(!open))}
-        className="flex w-full min-w-0 items-center gap-3 rounded-[10px] border bg-surface px-3.5 py-2.5 text-left transition-colors outline-none hover:bg-foreground/[0.02] focus-visible:ring-2 focus-visible:ring-ring"
+        className="-mx-1 flex h-7 w-fit max-w-full min-w-0 items-center gap-2 rounded-(--control-radius) px-1 text-left text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-sm font-medium">{running ? <WordShimmer>{title}</WordShimmer> : title}</span>
-          <span className="truncate text-sm text-muted-foreground">{summary}</span>
-        </span>
+        <ChevronRightIcon aria-hidden className={`size-3.5 shrink-0 ${inline && open ? 'rotate-90' : ''}`} />
         {kinds.length > 0 && (
-          <span aria-hidden className="flex shrink-0 -space-x-1.5">
+          <span aria-hidden className="flex shrink-0 -space-x-1">
             {kinds.map((kind) => {
               const Icon = TOOL_KIND_ICONS[kind]
               return (
-                <span key={kind} className="grid size-6 place-items-center rounded-full bg-app text-muted-foreground ring-2 ring-surface">
+                <span key={kind} className="grid size-5 place-items-center rounded-full bg-app ring-2 ring-background">
                   <Icon className="size-3" />
                 </span>
               )
             })}
           </span>
         )}
-        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-          {work.length} {work.length === 1 ? 'step' : 'steps'}
-        </span>
-        <ChevronRightIcon aria-hidden className={`size-3.5 shrink-0 text-muted-foreground ${inline && open ? 'rotate-90' : ''}`} />
+        <span className="shrink-0">{running ? <WordShimmer>{title}</WordShimmer> : title}</span>
+        <span aria-hidden>·</span>
+        <span className="min-w-0 truncate tabular-nums">{detail}</span>
       </button>
       {inline && open && <WorkHistory id={historyId} blocks={work} />}
     </>

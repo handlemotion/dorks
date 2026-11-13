@@ -25,7 +25,7 @@ const demoUsage: Usage = {
   cloud: { usedHours: 12.5, includedHours: 50, periodEnd: Date.now() + 19 * 86_400_000 },
 }
 
-const initialBlocks: Block[] = [
+const demoBlocks: Block[] = [
   {
     kind: 'user',
     id: 'u1',
@@ -214,6 +214,9 @@ const details: ChatDetailsData = {
 }
 
 /** The app frame with a scripted conversation and no server: for looking at the design (dev builds only). */
+/** The demo's tool calls carry no times of their own: space them a few minutes apart, oldest first, so Progress shows its "ago" column. */
+const initialBlocks: Block[] = demoBlocks.map((b, i) => (b.kind === 'tool' && b.at === undefined ? { ...b, at: Date.now() - (demoBlocks.length - i) * 3 * 60_000 } : b))
+
 export function Demo() {
   const [blocks, setBlocks] = useState(initialBlocks)
   const [text, setText] = useState('')
