@@ -60,20 +60,8 @@ export function progressTurns(blocks: readonly Block[]): ProgressTurn[] {
 
 export const progressSteps = (turns: readonly ProgressTurn[]) => turns.flatMap((turn) => turn.steps)
 
-/** The step on screen: the one the owner picked while it is still in the chat, else the newest, so Progress follows a running chat. */
-export function progressSelectedIndex(steps: readonly ProgressStep[], selectedKey: string | null) {
-  if (steps.length === 0) return -1
-  const picked = selectedKey === null ? -1 : steps.findIndex((step) => step.key === selectedKey)
-  return picked === -1 ? steps.length - 1 : picked
-}
-
-/** The key to keep for a pick: picking the newest step follows the chat again (`null`), any other stays on that step. */
-export function progressPick(steps: readonly ProgressStep[], index: number) {
-  const clamped = Math.max(0, Math.min(index, steps.length - 1))
-  return clamped === steps.length - 1 ? null : (steps[clamped]?.key ?? null)
-}
-
 type ProgressState = {
+  /** The step the thread last pointed at (a turn's card): Progress scrolls to it. */
   readonly selectedKey: string | null
   /** Bumped when the thread asks for Progress to come up (a turn's card was clicked); Chat details switches to its tab. */
   readonly reveal: number
@@ -96,10 +84,9 @@ function createProgressStore() {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
-    select: (selectedKey: string | null) => set({ ...state, selectedKey }),
     /** Opens Progress on a step. */
     show: (selectedKey: string | null) => set({ selectedKey, reveal: state.reveal + 1 }),
-    /** A new chat starts at its newest step. */
+    /** A new chat points at nothing. */
     reset: () => set({ selectedKey: null, reveal: state.reveal }),
   }
 }
@@ -174,4 +161,55 @@ export function stepInputText(block: ProgressToolBlock): string | undefined {
   const command = str(input.command)
   if (command && Object.keys(input).every((k) => k === 'command' || k === 'description' || k === 'timeout')) return command
   return Object.keys(input).length > 0 ? JSON.stringify(input, null, 2) : ''
+}
+
+/** What a step is, for the filter's `type:` and its row's icon: a tool's kind, or `message` for what the agent said. */
+export function stepKind(block: WorkBlock): ToolKind | 'message' {
+  return block.kind === 'assistant' ? 'message' : toolStep(block.name, block.status).kind
+}
+
+/** A step's status, for the filter's `status:`: what its tool did, or `ok` for a message. */
+export function stepStatus(block: WorkBlock): 'running' | 'ok' | 'failed' {
+  if (block.kind === 'assistant') return block.streaming ? 'running' : 'ok'
+  return block.status === 'error' ? 'failed' : block.status
+}
+
+/** Words the filter accepts for a kind, besides the kind itself. */
+const KIND_ALIASES: Record<string, ToolKind | 'message'> = { shell: 'command', bash: 'command', file: 'read', write: 'edit', text: 'message', said: 'message' }
+
+/**
+ * Whether a step matches the search box: words match its text (command, path, message) and tool name; `type:shell` and
+ * `status:failed` match its kind and status; a leading `-` excludes. Every term must hold.
+ */
+export function matchesFilter(block: WorkBlock, query: string): boolean {
+  const haystack = (block.kind === 'assistant' ? block.text : `${block.name} ${block.summary}`).toLowerCase()
+  return query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((raw) => {
+      const negate = raw.startsWith('-') && raw.length > 1
+      const term = negate ? raw.slice(1) : raw
+      const [key, value] = term.includes(':') ? (term.split(':', 2) as [string, string]) : ['', term]
+      const hit = key === 'type' ? stepKind(block) === (KIND_ALIASES[value] ?? value) : key === 'status' ? stepStatus(block) === (value === 'error' ? 'failed' : value) : haystack.includes(term)
+      return negate ? !hit : hit
+    })
+}
+
+/** One of the agent's tasks, from its latest plan (a `TodoWrite` call). */
+export type ProgressTask = { content: string; status: 'pending' | 'in_progress' | 'completed' }
+
+/** The agent's tasks as its newest plan left them; none before it made one. */
+export function latestTasks(blocks: readonly Block[]): ProgressTask[] {
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i]
+    if (b.kind !== 'tool' || b.name !== 'TodoWrite' || !Array.isArray(b.input?.todos)) continue
+    return b.input.todos.flatMap((t) => {
+      const todo = (t ?? {}) as Record<string, unknown>
+      const content = str(todo.content)
+      const status = todo.status === 'completed' || todo.status === 'in_progress' ? todo.status : 'pending'
+      return content ? [{ content, status }] : []
+    })
+  }
+  return []
 }

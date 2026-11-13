@@ -15,7 +15,7 @@ import { InputGroup, InputGroupButton } from '@dorks/ui/input-group'
 import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport } from '@dorks/ui/message-scroller'
 import { ChatMessages, resolveSharedImages } from '../../../components/ChatBlock'
 import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, useWide, type ChatDetailsData } from '../../../components/ChatDetails'
-import { progressStore, progressTurns } from '../../../lib/progress'
+import { latestTasks, progressStore, progressTurns } from '../../../lib/progress'
 import { withImages, Composer, type AgentProvider, type ModelPicker } from '../../../components/ChatComposer'
 import { ChatMenu } from '../../../components/ChatMenu'
 import { ArchiveButton, PageHeader } from '../../../components/PageHeader'
@@ -205,6 +205,7 @@ function detailsData(dork: DorkView, blocks: Block[], actions: DorksActions, com
   return {
     // Shared screenshots resolve to their URLs here as they do in the thread, so a progress message still shows its images.
     progress: progressTurns(resolveSharedImages(blocks, actions.imageUrl).blocks),
+    tasks: latestTasks(blocks),
     pr: prOf(dork.prUrl),
     artifacts: dork.images?.map((i, n) => ({ id: i.id, name: i.caption ?? `Screenshot ${n + 1}`, type: 'Screenshot', src: actions.imageUrl(i.id), width: i.width, height: i.height })).reverse(),
     previews: dork.previews?.map((p) => ({ name: p.title ?? `Port ${p.port}`, url: p.url, port: p.port })),

@@ -9,7 +9,7 @@ import { UsageBarView } from '../components/UsageBar'
 import { AgentStatus } from '../components/AgentStatus'
 import { ChatMessages } from '../components/ChatBlock'
 import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, useWide, type ChatDetailsData } from '../components/ChatDetails'
-import { progressStore, progressTurns } from '../lib/progress'
+import { latestTasks, progressStore, progressTurns } from '../lib/progress'
 import { Composer, type AgentProvider } from '../components/ChatComposer'
 import { ChatMenu } from '../components/ChatMenu'
 import { ArchiveButton, PageHeader } from '../components/PageHeader'
@@ -49,6 +49,22 @@ const initialBlocks: Block[] = [
     text: `The reconnect test times out. The queue flushes before the handshake, so I’ll wait for it.\n\n![The timeout](${mockShot('#fdf0d5', '#e8c27a')})`,
     streaming: false,
     at: Date.now() - 28 * 60_000,
+  },
+  {
+    kind: 'tool',
+    id: 't2p',
+    name: 'TodoWrite',
+    summary: 'Plan the reconnect fix',
+    status: 'ok',
+    input: {
+      todos: [
+        { content: 'Find where the bridge resumes after a wake', status: 'completed' },
+        { content: 'Reproduce the reconnect test timeout', status: 'completed' },
+        { content: 'Wait for the handshake before flushing the queue', status: 'completed' },
+        { content: 'Add a regression test for messages sent while waking', status: 'in_progress' },
+        { content: 'Check the dispatch order after reconnect', status: 'pending' },
+      ],
+    },
   },
   { kind: 'tool', id: 't2a', name: 'Read', summary: 'infra/bridge/src/reconnect.ts', status: 'ok' },
   {
@@ -240,7 +256,7 @@ export function Demo() {
         details={
           detailsOpen && !showNew ? (
             <ChatDetails
-              data={{ ...details, progress: progressTurns(blocks) }}
+              data={{ ...details, progress: progressTurns(blocks), tasks: latestTasks(blocks) }}
               onClose={() => setDetailsOpen(false)}
               onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}
               onAsk={setText}

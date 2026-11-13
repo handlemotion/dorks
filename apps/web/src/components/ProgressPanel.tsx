@@ -1,19 +1,37 @@
-import { useEffect, useState } from 'react'
-import { ArrowLeftIcon, ArrowRightIcon, BracesIcon, CheckIcon, CopyIcon, FileDiffIcon, MessageSquareTextIcon, SquareTerminalIcon } from 'lucide-react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  BracesIcon,
+  CheckIcon,
+  ChevronRightIcon,
+  CircleCheckIcon,
+  CircleDotIcon,
+  CircleIcon,
+  CopyIcon,
+  FileDiffIcon,
+  ListFilterIcon,
+  ListTodoIcon,
+  MessageSquareIcon,
+  MessageSquareTextIcon,
+  SearchIcon,
+  SquareTerminalIcon,
+  XIcon,
+} from 'lucide-react'
 import { MultiFileDiff } from '@pierre/diffs/react'
 import { useTheme } from 'next-themes'
 import { Button } from '@dorks/ui/button'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@dorks/ui/dropdown-menu'
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@dorks/ui/input-group'
 import { Skeleton } from '@dorks/ui/skeleton'
 import {
-  progressPick,
-  progressSelectedIndex,
-  progressSteps,
-  progressStore,
+  matchesFilter,
   stepEdits,
   stepInputText,
+  stepKind,
+  stepStatus,
   toolStep,
   useProgress,
   type ProgressStep,
+  type ProgressTask,
   type ProgressToolBlock,
   type ProgressTurn,
   type StepEdit,
@@ -23,106 +41,312 @@ import { EmptyState } from './EmptyState'
 import { BAR_BUTTON } from './PreviewBrowser'
 import { TOOL_KIND_ICONS } from './toolIcons'
 import { Tip } from './Tip'
-import { WordShimmer } from './WordShimmer'
 
 type IoMode = 'input' | 'output'
 
-/**
- * The chat's progress, in Chat details: one step at a time (a tool call with its input or output in a large island, an edit as its
- * diff), and a bar of the chat's turns, each holding a notch per step, to move through them. It follows a running chat to its newest
- * step until the owner picks another.
- */
-export function ProgressPanel({ turns }: { turns: readonly ProgressTurn[] }) {
-  const { selectedKey } = useProgress()
-  const steps = progressSteps(turns)
-  const selectedIndex = progressSelectedIndex(steps, selectedKey)
-  const step = steps[selectedIndex]
-  const pick = (index: number) => progressStore.select(progressPick(steps, index))
+/** Ready filters for the menu beside the search box: each adds its term to the query (or takes it out again). */
+const FILTERS = [
+  { label: 'Commands', term: 'type:shell' },
+  { label: 'Edits', term: 'type:edit' },
+  { label: 'Messages', term: 'type:message' },
+  { label: 'Failed', term: 'status:failed' },
+  { label: 'Hide messages', term: '-type:message' },
+]
 
-  if (!step) return <EmptyState figure="stack" title="No steps yet" description="Each tool the agent uses in this chat shows here, with what it sent and what came back." />
+/**
+ * The chat's progress, in Chat details: every step the agent took, grouped under the message it answered. Each prompt is a header
+ * that stays pinned while its steps scroll under it; each step is one 24px row (a command in mono, a file by its path, a message by
+ * its first line) with a status dot, and opens in place onto its diff, input or output. A search box filters the steps
+ * (`type:shell`, `-status:failed`), and the agent's task list sits at the foot. A running chat stays scrolled to its newest step
+ * while the owner is at the bottom.
+ */
+export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressTurn[]; tasks?: readonly ProgressTask[] }) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState<Set<string>>(() => new Set())
+  const scroller = useRef<HTMLDivElement>(null)
+  const atEnd = useRef(true)
+  const { selectedKey, reveal } = useProgress()
+  const shown = turns.map((turn) => ({ ...turn, steps: query.trim() ? turn.steps.filter((s) => matchesFilter(s.block, query)) : turn.steps })).filter((t) => t.steps.length > 0)
+  const count = turns.reduce((n, t) => n + t.steps.length, 0)
+
+  // Follow a running chat: new steps keep the list at its end, unless the owner scrolled up to read.
+  useLayoutEffect(() => {
+    const el = scroller.current
+    if (el && atEnd.current) el.scrollTop = el.scrollHeight
+  }, [count])
+  // A turn's card in the thread brings its steps into view.
+  useEffect(() => {
+    if (!selectedKey) return
+    const el = scroller.current?.querySelector<HTMLElement>(`[data-turn-key="${CSS.escape(selectedKey)}"]`)
+    el?.scrollIntoView({ block: 'start' })
+  }, [reveal, selectedKey])
+
+  const toggle = (key: string) =>
+    setOpen((current) => {
+      const next = new Set(current)
+      if (!next.delete(key)) next.add(key)
+      return next
+    })
+  const toggleTerm = (term: string) =>
+    setQuery((q) =>
+      q.split(/\s+/).includes(term)
+        ? q
+            .split(/\s+/)
+            .filter((t) => t && t !== term)
+            .join(' ')
+        : `${q.trim()} ${term}`.trim(),
+    )
+
+  if (count === 0) return <EmptyState figure="stack" title="No steps yet" description="Each tool the agent uses in this chat shows here, under the message it answered." />
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 px-[14px] pt-1 pb-3">
-      <StepView key={step.key} step={step} />
-      <ProgressBar onPick={pick} selectedIndex={selectedIndex} turns={turns} />
-      <ProgressFooter onPick={pick} selectedIndex={selectedIndex} step={step} steps={steps} turns={turns} />
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="shrink-0 px-[5px] pb-[5px]">
+        <InputGroup className="h-[30px] rounded-(--control-radius)">
+          <InputGroupAddon>
+            <SearchIcon />
+          </InputGroupAddon>
+          <InputGroupInput
+            aria-label="Search or filter steps"
+            placeholder="Search or filter (type:shell, -status:failed)…"
+            value={query}
+            onChange={(e) => setQuery(e.currentTarget.value)}
+            className="text-sm"
+          />
+          <InputGroupAddon align="inline-end" className="gap-0.5 pr-1">
+            {query && (
+              <InputGroupButton size="icon-xs" aria-label="Clear the filter" onClick={() => setQuery('')}>
+                <XIcon />
+              </InputGroupButton>
+            )}
+            <DropdownMenu>
+              <Tip label="Filters">
+                <DropdownMenuTrigger render={<InputGroupButton size="icon-xs" aria-label="Filters" />}>
+                  <ListFilterIcon />
+                </DropdownMenuTrigger>
+              </Tip>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Show</DropdownMenuLabel>
+                  {FILTERS.map((f) => (
+                    <DropdownMenuItem key={f.term} onClick={() => toggleTerm(f.term)}>
+                      <span className="flex-1">{f.label}</span>
+                      {query.split(/\s+/).includes(f.term) && <CheckIcon />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </InputGroupAddon>
+        </InputGroup>
+      </div>
+      <div
+        ref={scroller}
+        onScroll={(e) => {
+          const el = e.currentTarget
+          atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
+        }}
+        className="min-h-0 flex-1 overflow-y-auto pb-2"
+      >
+        {shown.length === 0 ? (
+          <p className="px-[14px] py-3 text-sm text-muted-foreground">No steps match.</p>
+        ) : (
+          shown.map((turn) => (
+            <section key={turn.key} data-turn-key={turn.key} aria-label={turn.prompt ?? 'Steps'}>
+              {/* Pinned while its steps scroll under it, so the message they answer stays in view. */}
+              <h3 className="sticky top-0 z-10 flex h-7 items-center gap-2 bg-background px-[14px] text-sm font-normal text-foreground">
+                <MessageSquareIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 truncate" title={turn.prompt ?? undefined}>
+                  {turn.prompt ?? 'Without a message'}
+                </span>
+              </h3>
+              {/* The steps hang off a hairline under the prompt's icon. */}
+              <ul className="ml-[20.5px] border-l">
+                {turn.steps.map((step) => (
+                  <StepRow key={step.key} step={step} open={open.has(step.key)} onToggle={() => toggle(step.key)} />
+                ))}
+              </ul>
+            </section>
+          ))
+        )}
+      </div>
+      {tasks.length > 0 && <Tasks tasks={tasks} />}
     </div>
   )
 }
 
-/** The step's title, its Input/Output switch (a diff for an edit), and the island with the chosen side. */
-function StepView({ step }: { step: ProgressStep }) {
+/** A step's one line: what it ran, read, edited or said. */
+function stepLine(step: ProgressStep): { text: string; mono: boolean } {
   const { block } = step
   if (block.kind === 'assistant')
-    return (
-      <section aria-label="Message" className="flex min-h-0 flex-1 flex-col gap-2.5">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex min-w-0 flex-1 items-center gap-1.5 text-sm leading-6">
-            <span className="font-medium text-foreground">Said</span>
-            <MessageSquareTextIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-          </div>
-          <CopyButton text={block.text} />
-        </div>
-        <Island>
-          <div className="p-4 text-sm">
-            <AgentMarkdown>{block.text}</AgentMarkdown>
-          </div>
-        </Island>
-      </section>
-    )
-  return <ToolStepView block={block} />
+    return {
+      text:
+        block.text
+          .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+          .split('\n')
+          .find((l) => l.trim()) ?? 'Said',
+      mono: false,
+    }
+  if (block.name === 'Bash') return { text: block.summary, mono: true }
+  const kind = toolStep(block.name, block.status).kind
+  if (kind === 'read' || kind === 'edit' || kind === 'search') return { text: block.summary, mono: true }
+  // A plan's contents are the Tasks at the foot; its row only says it changed.
+  if (kind === 'plan') return { text: toolStep(block.name, block.status).verb, mono: false }
+  return { text: `${toolStep(block.name, block.status).verb} ${block.summary}`, mono: false }
 }
 
-function ToolStepView({ block }: { block: ProgressToolBlock }) {
+/** One step: icon, its line, a status dot (brand when it ran, red when it failed, pulsing while it runs). It opens onto its detail. */
+function StepRow({ step, open, onToggle }: { step: ProgressStep; open: boolean; onToggle: () => void }) {
+  const kind = stepKind(step.block)
+  const Icon = kind === 'message' ? MessageSquareTextIcon : TOOL_KIND_ICONS[kind]
+  const status = stepStatus(step.block)
+  const { text, mono } = stepLine(step)
+  return (
+    <li>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={onToggle}
+        className="flex h-6 w-full min-w-0 items-center gap-2 pr-[14px] pl-3 text-left text-muted-foreground outline-none hover:bg-foreground/[0.04] hover:text-foreground focus-visible:bg-foreground/[0.04] aria-expanded:text-foreground"
+      >
+        <Icon aria-hidden className="size-3.5 shrink-0" />
+        <span className={`min-w-0 flex-1 truncate ${mono ? 'font-mono text-xs' : 'text-sm'} ${status === 'failed' ? 'text-destructive' : ''}`} title={text}>
+          {text}
+        </span>
+        {kind !== 'message' && (
+          <span
+            role="img"
+            aria-label={status === 'failed' ? 'Failed' : status === 'running' ? 'Running' : 'Done'}
+            className={`size-1.5 shrink-0 rounded-full ${status === 'failed' ? 'bg-destructive' : 'bg-brand'} ${status === 'running' ? 'animate-pulse motion-reduce:animate-none' : ''}`}
+          />
+        )}
+      </button>
+      {open && (
+        <div className="py-1.5 pr-[14px] pl-3">
+          {step.block.kind === 'assistant' ? (
+            <Detail label="Message" title="Said" actions={<CopyButton text={step.block.text} />}>
+              <div className="p-3 text-sm">
+                <AgentMarkdown>{step.block.text}</AgentMarkdown>
+              </div>
+            </Detail>
+          ) : (
+            <ToolDetail block={step.block} />
+          )}
+        </div>
+      )}
+    </li>
+  )
+}
+
+/** A tool step opened: its diff (an edit), input or output, with the toggle between them and Copy. */
+function ToolDetail({ block }: { block: ProgressToolBlock }) {
   const edits = stepEdits(block)
   const input = stepInputText(block)
   const output = block.preview
   const running = block.status === 'running'
-  // An edit opens on its diff; anything else on its output once there is one, so a running call shows what it sent until its result
-  // arrives. A side the owner chose stays.
+  // An edit opens on its diff; anything else on its output once there is one. A side the owner chose stays.
   const [chosen, setMode] = useState<IoMode | null>(null)
   const mode = chosen ?? (edits.length === 0 && output ? 'output' : 'input')
   const text = mode === 'input' ? input : output
   const showDiff = mode === 'input' && edits.length > 0
   const copyText = showDiff ? edits.map((e) => e.after).join('\n') : text
   const waiting = !text && !showDiff && running
-
   return (
-    <section aria-label="Tool call" className="flex min-h-0 flex-1 flex-col gap-2.5">
-      <div className="flex min-w-0 items-start gap-3">
-        <StepTitle block={block} />
-        <div className="flex shrink-0 items-center gap-0.5">
+    <Detail
+      label="Tool call"
+      title={
+        <>
+          {showDiff ? 'Diff' : mode === 'input' ? 'Input' : 'Output'}
+          <code className="rounded-(--control-radius) bg-foreground/[0.05] px-1.5 font-mono text-xs leading-5">{block.name}</code>
+        </>
+      }
+      busy={waiting}
+      plain={showDiff}
+      actions={
+        <>
           <IoToggle mode={mode} onChange={setMode} diff={edits.length > 0} />
           <CopyButton text={copyText} />
+        </>
+      }
+    >
+      {showDiff ? (
+        <EditDiffs edits={edits} />
+      ) : text ? (
+        <pre className="p-3 font-mono text-xs leading-5 whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]">{text}</pre>
+      ) : waiting ? (
+        <div className="flex flex-col gap-2 p-3">
+          <output className="sr-only">Waiting for the tool</output>
+          {[72, 56, 40].map((width) => (
+            <Skeleton className="h-3 rounded-(--control-radius) motion-reduce:animate-none" key={width} style={{ width: `${width}%` }} />
+          ))}
         </div>
+      ) : (
+        <p className="p-3 text-sm text-muted-foreground">
+          {input === undefined && mode === 'input' ? 'This step ran before chats kept each tool’s input.' : mode === 'input' ? 'This tool was called with no input.' : 'This tool returned nothing.'}
+        </p>
+      )}
+    </Detail>
+  )
+}
+
+/**
+ * An opened step: one island (the app's fill with a hairline) whose top row (what it shows, then the toggle and Copy) is split from
+ * the content by a full hairline. The content scrolls inside, up to 360px. A diff's content is the page's fill, like Changes.
+ */
+function Detail({ label, title, actions, busy, plain, children }: { label: string; title: React.ReactNode; actions: React.ReactNode; busy?: boolean; plain?: boolean; children: React.ReactNode }) {
+  return (
+    <section aria-label={label} className="flex flex-col overflow-hidden rounded-[8px] border bg-app">
+      <div className="flex h-10 min-w-0 shrink-0 items-center gap-2 border-b pr-[5px] pl-3 text-xs text-muted-foreground">
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">{title}</span>
+        <div className="flex shrink-0 items-center gap-0.5">{actions}</div>
       </div>
-      <Island busy={waiting} plain={showDiff}>
-        {showDiff ? (
-          <EditDiffs edits={edits} />
-        ) : text ? (
-          <pre className="p-4 font-mono text-xs leading-5 whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]">{text}</pre>
-        ) : waiting ? (
-          <div className="flex flex-col gap-2 p-4">
-            <output className="sr-only">Waiting for the tool</output>
-            {[72, 56, 64, 40].map((width) => (
-              <Skeleton className="h-3 rounded-(--control-radius) motion-reduce:animate-none" key={width} style={{ width: `${width}%` }} />
-            ))}
-          </div>
-        ) : (
-          <p className="p-4 text-sm text-muted-foreground">
-            {input === undefined && mode === 'input' ? 'This step ran before chats kept each tool’s input.' : mode === 'input' ? 'This tool was called with no input.' : 'This tool returned nothing.'}
-          </p>
-        )}
-      </Island>
+      <div aria-busy={busy} className={`max-h-90 overflow-auto ${plain ? 'bg-background' : ''}`}>
+        {children}
+      </div>
     </section>
   )
 }
 
-/** The large framed area a step's content sits in: the app's fill with a hairline (the fill alone is too close to the panel's). */
-function Island({ busy, plain, children }: { busy?: boolean; plain?: boolean; children: React.ReactNode }) {
+/** The agent's task list at the foot: how far it is (a bar and `3/9 done`), opening onto each task with its state. */
+function Tasks({ tasks }: { tasks: readonly ProgressTask[] }) {
+  const [open, setOpen] = useState(true)
+  const done = tasks.filter((t) => t.status === 'completed').length
   return (
-    <div aria-busy={busy} className={`relative min-h-0 flex-1 overflow-auto rounded-[8px] border ${plain ? 'bg-background' : 'bg-app'}`}>
-      {children}
-    </div>
+    <section aria-label="Tasks" className="shrink-0 border-t">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="flex h-10 w-full items-center gap-2 px-[14px] text-left text-sm outline-none hover:bg-foreground/[0.03] focus-visible:bg-foreground/[0.04]"
+      >
+        <ListTodoIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="flex-1">Tasks</span>
+        <span aria-hidden className="h-1 w-24 overflow-hidden rounded-full bg-brand/20 dark:bg-brand/35">
+          <span className="block h-full rounded-full bg-brand" style={{ width: `${(done / tasks.length) * 100}%` }} />
+        </span>
+        <span className="text-xs text-muted-foreground tabular-nums">
+          {done}/{tasks.length} done
+        </span>
+        <ChevronRightIcon aria-hidden className={`size-3.5 shrink-0 text-muted-foreground ${open ? 'rotate-90' : ''}`} />
+      </button>
+      {open && (
+        <ol className="max-h-40 overflow-y-auto pb-2">
+          {tasks.map((task, i) => (
+            <li key={i} className="flex h-7 items-center gap-2 px-[14px] text-sm">
+              {task.status === 'completed' ? (
+                <CircleCheckIcon aria-label="Done" className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              ) : task.status === 'in_progress' ? (
+                <CircleDotIcon aria-label="In progress" className="size-3.5 shrink-0 text-brand" />
+              ) : (
+                <CircleIcon aria-label="To do" className="size-3.5 shrink-0 text-muted-foreground" />
+              )}
+              <span className={`min-w-0 truncate ${task.status === 'completed' ? 'text-muted-foreground' : ''}`} title={task.content}>
+                <span className="text-muted-foreground tabular-nums">#{i + 1}</span> {task.content}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
   )
 }
 
@@ -140,28 +364,6 @@ function EditDiffs({ edits }: { edits: StepEdit[] }) {
           options={{ diffStyle: 'unified', disableFileHeader: true, overflow: 'wrap', themeType: resolvedTheme === 'dark' ? 'dark' : 'light' }}
         />
       ))}
-    </div>
-  )
-}
-
-/** "Ran", the tool's icon and what it ran, then the tool's own name. */
-function StepTitle({ block }: { block: ProgressToolBlock }) {
-  const { kind, verb } = toolStep(block.name, block.status)
-  const Icon = TOOL_KIND_ICONS[kind]
-  return (
-    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 py-[3px] text-sm leading-6">
-      {block.status === 'running' ? (
-        <span className="font-medium">
-          <WordShimmer>{verb}</WordShimmer>
-        </span>
-      ) : (
-        <span className={`font-medium ${block.status === 'error' ? 'text-destructive' : 'text-foreground'}`}>{verb}</span>
-      )}
-      <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 truncate text-muted-foreground" title={block.summary}>
-        {block.summary}
-      </span>
-      <code className="rounded-(--control-radius) bg-app px-1.5 font-mono text-xs leading-5 text-muted-foreground">{block.name}</code>
     </div>
   )
 }
@@ -210,108 +412,5 @@ function CopyButton({ text }: { text: string | undefined }) {
         {copied ? <CheckIcon /> : <CopyIcon />}
       </Button>
     </Tip>
-  )
-}
-
-/**
- * The chat's turns as segments of one bar, each holding a notch per step. Everything up to the step on screen is filled. A native range
- * input lies over it, so pressing or dragging along it, the arrow keys, Home and End all move between steps.
- */
-function ProgressBar({ onPick, selectedIndex, turns }: { onPick: (index: number) => void; selectedIndex: number; turns: readonly ProgressTurn[] }) {
-  const steps = progressSteps(turns)
-  const step = steps[selectedIndex]
-  const valueText = step ? `Step ${selectedIndex + 1} of ${steps.length}: ${stepLabel(step)}` : ''
-
-  let index = 0
-  return (
-    <div className="relative -my-1.5 flex h-6 items-center rounded-[3px] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ring">
-      <div aria-hidden className="flex h-2 w-full gap-1.5">
-        {turns.map((turn) => (
-          <div
-            // The cells round the turn's ends themselves, so the marker can stand taller than the bar.
-            className="group/turn flex min-w-0 gap-px"
-            key={turn.key}
-            style={{ flexGrow: turn.steps.length, flexBasis: 0 }}
-          >
-            {turn.steps.map((turnStep) => {
-              const stepIndex = index++
-              const failed = turnStep.block.kind === 'tool' && turnStep.block.status === 'error'
-              const running = turnStep.block.kind === 'tool' ? turnStep.block.status === 'running' : turnStep.block.streaming
-              return (
-                <span
-                  className={[
-                    'relative h-full min-w-px flex-1 first:rounded-l-[3px] last:rounded-r-[3px] group-first/turn:first:rounded-l-full group-last/turn:last:rounded-r-full',
-                    stepIndex <= selectedIndex ? 'bg-brand' : failed ? 'bg-destructive/30' : 'bg-brand/20 dark:bg-brand/35',
-                    running ? 'animate-pulse motion-reduce:animate-none' : '',
-                  ].join(' ')}
-                  key={turnStep.key}
-                >
-                  {stepIndex === selectedIndex ? <span className="absolute -top-1 -right-0.5 -bottom-1 w-1 rounded-full bg-brand ring-2 ring-background" /> : null}
-                </span>
-              )
-            })}
-          </div>
-        ))}
-      </div>
-      <input
-        aria-label="Step"
-        aria-valuetext={valueText}
-        className="absolute inset-0 m-0 size-full cursor-pointer opacity-0"
-        max={steps.length - 1}
-        min={0}
-        onChange={(event) => onPick(Number(event.currentTarget.value))}
-        step={1}
-        type="range"
-        value={selectedIndex}
-      />
-    </div>
-  )
-}
-
-function stepLabel(step: ProgressStep) {
-  return step.block.kind === 'tool' ? `${toolStep(step.block.name, step.block.status).verb} ${step.block.summary}` : 'Said'
-}
-
-/** Where the step on screen sits (its number and the message it answers), and on the far side, previous and next. */
-function ProgressFooter({
-  onPick,
-  selectedIndex,
-  step,
-  steps,
-  turns,
-}: {
-  onPick: (index: number) => void
-  selectedIndex: number
-  step: ProgressStep
-  steps: readonly ProgressStep[]
-  turns: readonly ProgressTurn[]
-}) {
-  const turn = turns.find((candidate) => candidate.steps.includes(step))
-  return (
-    <div className="-mr-[9px] flex min-w-0 items-center gap-4">
-      <p className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-muted-foreground">
-        <span className="shrink-0 tabular-nums">
-          Step {selectedIndex + 1} of {steps.length}
-        </span>
-        {turn?.prompt ? (
-          <>
-            <span aria-hidden>·</span>
-            <span className="min-w-0 truncate">{turn.prompt}</span>
-          </>
-        ) : null}
-      </p>
-      <div className="flex shrink-0 items-center gap-0.5">
-        <Tip label="Previous step" side="top">
-          <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="Previous step" disabled={selectedIndex <= 0} onClick={() => onPick(selectedIndex - 1)}>
-            <ArrowLeftIcon />
-          </Button>
-        </Tip>
-        <Tip label="Next step" side="top">
-          <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="Next step" disabled={selectedIndex >= steps.length - 1} onClick={() => onPick(selectedIndex + 1)}>
-            <ArrowRightIcon />
-          </Button>
-        </Tip>
-      </div>
-    </div>
   )
 }

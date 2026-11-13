@@ -13,7 +13,7 @@ import { ImageLightbox, ImageTrigger, type LightboxImage } from './ImageLightbox
 import { BAR_BUTTON, port, PreviewBrowser, useShownServers, type PreviewServer } from './PreviewBrowser'
 import { Tip } from './Tip'
 import { ProgressPanel } from './ProgressPanel'
-import { useProgress, type ProgressTurn } from '../lib/progress'
+import { useProgress, type ProgressTask, type ProgressTurn } from '../lib/progress'
 
 /** A file the agent produced in the chat: a screenshot, a design, a document. */
 export type Artifact = {
@@ -31,6 +31,8 @@ export type FileChange = { path: string; additions: number; deletions: number; /
 export type ChatDetailsData = {
   /** The agent's work, by turn: every tool call, edit and progress message, which the thread leaves out. */
   progress?: ProgressTurn[]
+  /** The agent's task list, as its latest plan left it. */
+  tasks?: ProgressTask[]
   artifacts?: Artifact[]
   changes?: FileChange[]
   pr?: { url: string; number?: number }
@@ -120,7 +122,7 @@ export function ChatDetails({
           )}
         </div>
         <TabsContent value="progress" className="flex min-h-0 flex-col">
-          <ProgressPanel turns={data.progress ?? []} />
+          <ProgressPanel turns={data.progress ?? []} tasks={data.tasks} />
         </TabsContent>
         {openPreview ? (
           <TabsContent value="artifacts" className="mx-px mb-px flex min-h-0 flex-col overflow-hidden rounded-b-[9px]">
