@@ -87,6 +87,7 @@ The pattern to copy for any toolbar:
 | Sandbox health | `AgentStatus` at the end of the transcript (pushed down above the composer in short chats; it scrolls with longer chats and the scroll-to-end button takes its place): a dot and a few words; while something moves the words shimmer and the dot morphs circle → square → diamond with a quarter turn, landing on each shimmer pass (no pulsing). |
 | Sidebar | `AppSidebar`: a bare 48px title bar (traffic lights, then `WindowControls`, which float in AppFrame so they never move), the owner switcher with New session, Customize, Automations and Builds, then chats grouped by repository under plain labels, Settings at the foot. Rows are `SIDEBAR_ROW` (30px, 2px apart) under one springing hover fill (`useRowHover`). |
 | Chat actions | `ChatMenu`, the ••• on the right of the chat header. Archive is the icon beside the title. |
+| A running preview | An Artifacts tile (a green dot, `Running`, its port) whose thumbnail is the live page at a quarter scale. It opens `PreviewBrowser` in the Artifacts tab, and Back returns to the grid. There is no Previews tab. |
 | Element context for the agent | `PreviewBrowser`'s picker (`react-grab/primitives`, same-origin frames only). |
 | Resizing | `@dorks/ui/resizable` with `useDefaultLayout` to remember sizes; `@dorks/ui/panel-resize-handle` for the 4 × 32px grip, 6px beside the divider, shown on hover, focus and drag. A click resets the width. |
 

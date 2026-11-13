@@ -233,7 +233,7 @@ const HostAnswer = Schema.Struct({ url: Schema.String.check(Schema.isStartingWit
 
 /**
  * Boat's hosted ports (https://docs.boat.dev/hosting): `POST /host` answers `https://<sub>-<port>.on.boat.dev`, the same URL on every
- * call. Hosted `public`: a protected URL gates the page with a `_port_auth` cookie, which is third-party inside the Previews tab's
+ * call. Hosted `public`: a protected URL gates the page with a `_port_auth` cookie, which is third-party inside a running preview's
  * iframe, and the desktop shell's WebKit blocks it (the frame stays blank). A proxy through the server would have to rewrite every
  * root-relative asset and HMR socket of an unknown dev server. The URL is only as private as the sandbox subdomain.
  */

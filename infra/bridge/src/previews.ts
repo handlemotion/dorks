@@ -4,7 +4,7 @@ import { RpcError, type RpcMethods } from "./rpc";
 import type { Transport } from "./transport";
 
 // `preview.show`: the agent's dev server is up (the `preview_show` MCP tool). The backend hosts the port through the box provider and
-// keeps the URL on the dork, where the owner's Previews tab lists and opens it. Nothing is stored here.
+// keeps the URL on the dork, where the owner's Artifacts shows it as a running preview. Nothing is stored here.
 
 export type ShownPreview = { port: number; url: string; title?: string };
 

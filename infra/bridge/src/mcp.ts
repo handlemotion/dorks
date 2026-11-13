@@ -92,7 +92,7 @@ const TOOLS: Tool[] = [
     name: "preview_show",
     title: "Show a dev server to the user",
     description:
-      "Open a web server running in this box in the user's Previews tab, so they can see and click through it. Call it once the server answers " +
+      "Open a web server running in this box in the user's Artifacts as a running preview, so they can see and click through it. Call it once the server answers " +
       "(e.g. `curl -sI localhost:3000`), and again after restarting it on another port. Start servers on 0.0.0.0 when you can " +
       "(`--host 0.0.0.0`); pass `localhost: true` only for one that listens on 127.0.0.1 alone. The page is served from an *.on.boat.dev " +
       "host: Vite needs `server.allowedHosts: true` (or `.on.boat.dev`). Not for ports 22, 6080, 8090, 8911 or 47984-48010. " +
@@ -113,7 +113,7 @@ const TOOLS: Tool[] = [
       if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) throw new ToolError("`port` must be an integer from 1 to 65535.");
       if (args.title !== undefined && typeof args.title !== "string") throw new ToolError("`title` must be a string.");
       const shown = await rpcCall<ShownPreview>(sock, "preview.show", { port, title: args.title, localhost: args.localhost === true });
-      return `Showing port ${shown.port} in the user's Previews tab at ${shown.url}. If the page is blank or errors, check that the server answers on that port.`;
+      return `Showing port ${shown.port} in the user's Artifacts at ${shown.url}. If the page is blank or errors, check that the server answers on that port.`;
     },
   },
   {

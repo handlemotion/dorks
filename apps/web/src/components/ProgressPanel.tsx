@@ -274,7 +274,7 @@ function stepLabel(step: ProgressStep) {
   return step.block.kind === 'tool' ? `${toolStep(step.block.name, step.block.status).verb} ${step.block.summary}` : 'Said'
 }
 
-/** Previous and next, and where the step on screen sits: its number and the message it answers. */
+/** Where the step on screen sits (its number and the message it answers), and on the far side, previous and next. */
 function ProgressFooter({
   onPick,
   selectedIndex,
@@ -290,18 +290,8 @@ function ProgressFooter({
 }) {
   const turn = turns.find((candidate) => candidate.steps.includes(step))
   return (
-    <div className="-mx-[9px] flex min-w-0 items-center gap-0.5">
-      <Tip label="Previous step" side="top">
-        <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="Previous step" disabled={selectedIndex <= 0} onClick={() => onPick(selectedIndex - 1)}>
-          <ArrowLeftIcon />
-        </Button>
-      </Tip>
-      <Tip label="Next step" side="top">
-        <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="Next step" disabled={selectedIndex >= steps.length - 1} onClick={() => onPick(selectedIndex + 1)}>
-          <ArrowRightIcon />
-        </Button>
-      </Tip>
-      <p className="ml-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+    <div className="-mr-[9px] flex min-w-0 items-center gap-4">
+      <p className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-muted-foreground">
         <span className="shrink-0 tabular-nums">
           Step {selectedIndex + 1} of {steps.length}
         </span>
@@ -312,6 +302,18 @@ function ProgressFooter({
           </>
         ) : null}
       </p>
+      <div className="flex shrink-0 items-center gap-0.5">
+        <Tip label="Previous step" side="top">
+          <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="Previous step" disabled={selectedIndex <= 0} onClick={() => onPick(selectedIndex - 1)}>
+            <ArrowLeftIcon />
+          </Button>
+        </Tip>
+        <Tip label="Next step" side="top">
+          <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="Next step" disabled={selectedIndex >= steps.length - 1} onClick={() => onPick(selectedIndex + 1)}>
+            <ArrowRightIcon />
+          </Button>
+        </Tip>
+      </div>
     </div>
   )
 }
