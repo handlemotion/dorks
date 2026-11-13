@@ -149,7 +149,7 @@ function StepTitle({ block }: { block: ProgressToolBlock }) {
   const { kind, verb } = toolStep(block.name, block.status)
   const Icon = TOOL_KIND_ICONS[kind]
   return (
-    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm leading-6">
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 py-[3px] text-sm leading-6">
       {block.status === 'running' ? (
         <span className="font-medium">
           <WordShimmer>{verb}</WordShimmer>
