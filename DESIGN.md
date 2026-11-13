@@ -12,7 +12,7 @@ colors:
   user-bubble: "oklch(0.961 0 0)"     # light grey (dark: white)
 typography:
   family: "Geist Variable; Geist Mono Variable for code and paths"
-  sizes: "text-sm (14px) for content, text-xs (12px) for secondary; text-lg only for a focused page's one title"
+  sizes: "text-sm (13px) for the UI, text-xs (12px) for secondary, text-message (14px) only for the user's bubbles and the agent's replies; text-lg only for a focused page's one title"
   weights: "400 and 500 only; semibold and up are mapped to 500 and fail pnpm test"
 rounded:
   control: 6px                        # everything: buttons, inputs, menus, dialogs, bubbles, sidebar rows, tabs
@@ -45,7 +45,7 @@ Rules that tooling enforces live in `AGENTS.md` and `packages/ui/README.md`; thi
   hide below `lg`.
 - **Edges:** the page title and the composer start 20px from the column's edge (the composer 20px from the bottom too); the transcript
   is indented to 30px, a step in from both, so messages read as the content between them. The transcript keeps `max-w-3xl`.
-- **Headers** are 48px, one line, the title in regular 14px. No subtitles, no badges. A header divider exists only when it can span
+- **Headers** are 48px, one line, the title in regular 13px. No subtitles, no badges. A header divider exists only when it can span
   the full width; beside Chat details it is off, because a line that stops short of a panel looks broken.
 
 ## Bars and alignment (Chat details)
@@ -71,7 +71,8 @@ The pattern to copy for any toolbar:
 
 ## Type
 
-- Two sizes, two weights. Hierarchy comes from colour (`foreground` vs `muted-foreground`) and spacing, not size.
+- Two UI sizes, two weights: 13px (`text-sm`) for everything you work with (nav, tabs, rows, controls, panels) and 12px (`text-xs`) for
+  secondary. Conversation alone reads at 14px (`text-message`): the user's bubbles and the agent's replies. Hierarchy comes from colour (`foreground` vs `muted-foreground`) and spacing, not size.
 - Copy is short and plain: `No artifacts yet`, `Sandbox ready`, `Ask for a screenshot`. Sentences end in a period; labels don't.
 - Numbers that change (`+259 −80`, `2 / 5`) use `tabular-nums`; paths use mono at `text-xs` with the directory muted.
 

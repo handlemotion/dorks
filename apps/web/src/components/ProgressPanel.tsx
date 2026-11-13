@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, CopyIcon, MessageSquareTextIcon } from 'lucide-react'
+import { ArrowLeftIcon, ArrowRightIcon, BracesIcon, CheckIcon, CopyIcon, FileDiffIcon, MessageSquareTextIcon, SquareTerminalIcon } from 'lucide-react'
 import { MultiFileDiff } from '@pierre/diffs/react'
 import { useTheme } from 'next-themes'
 import { Button } from '@dorks/ui/button'
@@ -90,8 +90,8 @@ function ToolStepView({ block }: { block: ProgressToolBlock }) {
     <section aria-label="Tool call" className="flex min-h-0 flex-1 flex-col gap-2.5">
       <div className="flex min-w-0 items-start gap-3">
         <StepTitle block={block} />
-        <div className="flex shrink-0 items-center gap-1">
-          <IoSwitch mode={mode} onChange={setMode} inputLabel={edits.length > 0 ? 'Diff' : 'Input'} />
+        <div className="flex shrink-0 items-center gap-0.5">
+          <IoToggle mode={mode} onChange={setMode} diff={edits.length > 0} />
           <CopyButton text={copyText} />
         </div>
       </div>
@@ -166,22 +166,20 @@ function StepTitle({ block }: { block: ProgressToolBlock }) {
   )
 }
 
-function IoSwitch({ mode, onChange, inputLabel }: { mode: IoMode; onChange: (mode: IoMode) => void; inputLabel: string }) {
+/**
+ * Input or output, as one icon-only toggle beside Copy (same 30px bar button). Its icon and label name the side it switches to:
+ * braces for the input, a file diff for an edit's diff, a terminal for the output.
+ */
+function IoToggle({ mode, onChange, diff }: { mode: IoMode; onChange: (mode: IoMode) => void; diff: boolean }) {
+  const next: IoMode = mode === 'input' ? 'output' : 'input'
+  const label = next === 'output' ? 'Show output' : diff ? 'Show diff' : 'Show input'
+  const Icon = next === 'output' ? SquareTerminalIcon : diff ? FileDiffIcon : BracesIcon
   return (
-    <fieldset className="m-0 flex min-w-0 rounded-[8px] border-0 bg-foreground/[0.05] p-0.5">
-      <legend className="sr-only">Show</legend>
-      {(['input', 'output'] as const).map((side) => (
-        <button
-          aria-pressed={mode === side}
-          className="h-6 rounded-(--control-radius) px-2.5 text-xs leading-4 font-medium text-muted-foreground outline-none transition-colors duration-150 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:transition-none motion-reduce:transition-none"
-          key={side}
-          onClick={() => onChange(side)}
-          type="button"
-        >
-          {side === 'input' ? inputLabel : 'Output'}
-        </button>
-      ))}
-    </fieldset>
+    <Tip label={label}>
+      <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label={label} onClick={() => onChange(next)}>
+        <Icon />
+      </Button>
+    </Tip>
   )
 }
 

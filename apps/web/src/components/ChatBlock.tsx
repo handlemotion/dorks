@@ -128,9 +128,9 @@ const REHYPE = Object.values({
 const allowDataImages: typeof defaultUrlTransform = (url, key, node) => (key === 'src' && url.startsWith('data:image/') ? url : defaultUrlTransform(url, key, node))
 
 /** An agent message's markdown: its images large and openable, inline `data:image/…` screenshots kept. Progress shows messages with it too. */
-export function AgentMarkdown({ children }: { children: string }) {
+export function AgentMarkdown({ children, className }: { children: string; className?: string }) {
   return (
-    <Markdown components={MARKDOWN} urlTransform={allowDataImages} rehypePlugins={REHYPE}>
+    <Markdown components={MARKDOWN} urlTransform={allowDataImages} rehypePlugins={REHYPE} className={className}>
       {children}
     </Markdown>
   )
@@ -255,7 +255,8 @@ function ToolGroup({ tools }: { tools: ToolBlock[] }) {
  */
 function AgentText({ block }: { block: Extract<AgentBlock, { kind: 'assistant' }> }) {
   const { onReply } = useReply()
-  const markdown = <AgentMarkdown>{block.text}</AgentMarkdown>
+  // The agent's replies and the user's bubbles are the only text at 14px (`text-message`); the rest of the UI is 13px.
+  const markdown = <AgentMarkdown className="text-message">{block.text}</AgentMarkdown>
   if (block.streaming) return <div className="min-w-0">{markdown}</div>
   return (
     <HoverActions
@@ -504,7 +505,7 @@ export function ChatMessages({
                   {/* The wrapper takes the bubble's 80% cap, so it hugs the bubble and the time sits just left of it. */}
                   <Bubble align="end" className="max-w-full">
                     {/* The composer's grey in light, white in dark (see packages/ui/README.md). `!` beats the bubble variant background. */}
-                    <BubbleContent className="rounded-[10px]! px-3! py-2! bg-user-bubble! text-user-bubble-foreground!">{text}</BubbleContent>
+                    <BubbleContent className="rounded-[10px]! px-3! py-2! bg-user-bubble! text-(length:--text-message)! text-user-bubble-foreground!">{text}</BubbleContent>
                   </Bubble>
                 </HoverActions>
               )}
