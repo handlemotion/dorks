@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeftIcon, ExternalLinkIcon, GlobeIcon, RotateCwIcon, SquareMousePointerIcon } from 'lucide-react'
+import { ArrowLeftIcon, ExternalLinkIcon, RotateCwIcon, SquareMousePointerIcon } from 'lucide-react'
 import { Button, buttonVariants } from '@dorks/ui/button'
-import { EmptyState } from './EmptyState'
-import { List } from './onboarding/List'
 import { Tip } from './Tip'
 
 /** A dev server running in the sandbox. `html` renders an inline (same-origin) page instead of the URL; the dev demo uses it. */
@@ -43,7 +41,7 @@ type Primitives = typeof import('react-grab/primitives')
 type Box = { x: number; y: number; width: number; height: number; radius: string; label: string }
 
 /** `http://localhost:5173` reads as `:5173`; a URL with no port keeps its host. */
-function port(url: string) {
+export function port(url: string) {
   try {
     const u = new URL(url)
     return u.port ? `:${u.port}` : u.host
@@ -52,43 +50,17 @@ function port(url: string) {
   }
 }
 
-/** The page's favicon, a globe until it loads (or when the page has none). */
-function Favicon({ server }: { server: PreviewServer }) {
-  const [failed, setFailed] = useState(false)
-  let src = server.favicon
-  try {
-    src ??= new URL('/favicon.ico', server.url).href
-  } catch {
-    // not a URL: keep the globe
-  }
-  if (!src || failed) return <GlobeIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-  return <img src={src} alt="" aria-hidden className="size-4 shrink-0 rounded-[3px] object-contain" onError={() => setFailed(true)} />
-}
-
 /**
- * The Previews tab: what the agent showed with `preview_show` (its dev servers, hosted by the box provider). With nothing open it lists
- * them as an island of rows (the onboarding's `List`); a row opens its page under a bar with Back (to the list), Reload, the
- * server's name, the element picker and Open in a new tab. There is no address bar: the agent has its own Chrome (the Computer tab)
- * for browsing.
+ * A running preview, opened from its Artifacts tile: what the agent showed with `preview_show` (a dev server, hosted by the box
+ * provider), under a bar with Back (to the artifacts), Reload, the server's name, the element picker and Open in a new tab. There is
+ * no address bar: the agent has its own Chrome (the Computer tab) for browsing.
  *
  * The picker uses React Grab's primitives (`react-grab/primitives`, loaded on first use) on the preview's own document: hovering
  * highlights the element under the pointer, clicking hands its context (the same snippet React Grab copies: markup, component and source location) to `onGrab`, and
  * Escape leaves. Reaching into the frame's document needs it to be same-origin, so the picker only shows for a same-origin preview.
  */
-export function PreviewBrowser({
-  servers = [],
-  open,
-  onOpened,
-  onGrab,
-  onAsk,
-}: {
-  servers?: PreviewServer[]
-  /** A URL to open now (a server the agent just showed); `onOpened` clears it. */ open?: string
-  onOpened?: () => void
-  onGrab?: (snippet: string) => void
-  onAsk?: (text: string) => void
-}) {
-  const [current, setCurrent] = useState<string>()
+export function PreviewBrowser({ server, onBack, onGrab }: { server: PreviewServer; onBack: () => void; onGrab?: (snippet: string) => void }) {
+  const current = server.url
   const [reloads, setReloads] = useState(0)
   const [sameOrigin, setSameOrigin] = useState(false)
   const [picking, setPicking] = useState(false)
@@ -96,15 +68,7 @@ export function PreviewBrowser({
   const frame = useRef<HTMLIFrameElement>(null)
   const stage = useRef<HTMLDivElement>(null)
   const grab = useRef<Primitives | null>(null)
-  const server = current ? servers.find((s) => s.url === current) : undefined
-  const html = server?.html
-
-  useEffect(() => {
-    if (!open) return
-    setCurrent(open)
-    onOpened?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per URL to open
-  }, [open])
+  const html = server.html
 
   // Picking listens inside the preview's document (capture phase, so the page never sees the click) and draws the highlight in this
   // document, over the frame. Escape in either document leaves; so does any change of page.
@@ -167,12 +131,12 @@ export function PreviewBrowser({
     setPicking(true)
   }
 
-  return current && server ? (
+  return (
     <>
       {/* Same rhythm as the tab row above: 30px buttons, icons in line with the tab icons and the hide button (measured: same left and right edges). */}
       <div className="flex h-10 shrink-0 items-center gap-0.5 border-y pr-1 pl-[5px]">
-        <Tip label="All previews">
-          <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="All previews" onClick={() => setCurrent(undefined)}>
+        <Tip label="All artifacts">
+          <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="All artifacts" onClick={onBack}>
             <ArrowLeftIcon />
           </Button>
         </Tip>
@@ -230,32 +194,5 @@ export function PreviewBrowser({
         )}
       </div>
     </>
-  ) : servers.length > 0 ? (
-    <div className="flex min-h-0 flex-1 flex-col justify-center overflow-y-auto border-t p-8">
-      <section aria-label="Previews" className="mx-auto flex w-full max-w-sm flex-col gap-6">
-        <h2 className="text-center text-sm font-medium">Running in the sandbox</h2>
-        <List>
-          {servers.map((s) => (
-            <li key={s.url}>
-              <button type="button" className="group/row flex h-12 w-full items-center gap-3 px-4 text-left outline-none focus-visible:bg-muted" onClick={() => setCurrent(s.url)}>
-                <Favicon server={s} />
-                <span className="min-w-0 flex-1 truncate">{s.name}</span>
-                <span className="truncate text-muted-foreground transition-colors group-hover/row:text-foreground">{s.port ? `:${s.port}` : port(s.url)}</span>
-              </button>
-            </li>
-          ))}
-        </List>
-      </section>
-    </div>
-  ) : (
-    <div className="flex min-h-0 flex-1 flex-col border-t">
-      <EmptyState figure="window" title="No previews yet" description="When the agent starts a dev server, it opens here.">
-        {onAsk && (
-          <Button size="sm" variant="outline" onClick={() => onAsk('Start the dev server and show it to me in Previews.')}>
-            Ask for a preview
-          </Button>
-        )}
-      </EmptyState>
-    </div>
   )
 }

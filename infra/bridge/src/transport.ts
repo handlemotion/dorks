@@ -23,7 +23,7 @@ export interface Transport {
   /** Idempotent. `auto`: the gh shim saw this dork create the PR; `agent`: the agent asked (`dorks pr sub`). */
   subscribePr(ref: PrRef, source: "auto" | "agent"): Promise<void>;
   unsubscribePr(ref: PrRef): Promise<void>;
-  /** Hosts a port of this box and shows it in the owner's Previews tab; resolves with the stored preview. */
+  /** Hosts a port of this box and shows it in the owner's Artifacts as a running preview; resolves with the stored preview. */
   showPreview(port: number, opts: { title?: string; localhost?: boolean }): Promise<{ port: number; url: string; title?: string }>;
   /** Stores a screenshot (base64 PNG/JPEG/WebP/GIF) for the owner; resolves with its id, which `dorks-image:<id>` names in markdown. */
   shareImage(data: string, caption?: string): Promise<{ id: string; width?: number; height?: number }>;

@@ -57,7 +57,7 @@ by accident, and `pnpm test` enforces the first one.
    pill and round buttons), so it sets `--control-radius: 18px` on its wrapper.
    Focus on a control is its border turning the brand blue (`--ring`), with no glow around it. Dialogs and toasts are styled the same way
    (white sheet with an `--app` footer band; brand-blue toasts).
-6. **Nothing heavier than medium (500), and two text sizes.** `text-sm` for content, `text-xs` for secondary text (a focused page's one title: an onboarding step, the connect screen,
+6. **Nothing heavier than medium (500), and two UI text sizes.** `text-sm` (13px) for the UI, `text-xs` (12px) for secondary text; only the user's bubbles and the agent's replies use `text-message` (14px) (a focused page's one title: an onboarding step, the connect screen,
    the new-session page, is `text-lg`). The heavier weights are mapped to 500 in `src/glass.css`, and `pnpm test` fails on `font-semibold` or
    heavier in app code.
 

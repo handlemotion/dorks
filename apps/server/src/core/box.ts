@@ -18,7 +18,7 @@ export interface BoxProvider {
    */
   desktopUrl?(boxId: string, opts: DesktopOptions): Promise<string>;
   /**
-   * Exposes a port of the box at an https URL the owner's Previews tab can frame (docs/boat.md, "Hosted ports"). Idempotent: asking
+   * Exposes a port of the box at an https URL the owner's running previews (in Artifacts) can frame (docs/boat.md, "Hosted ports"). Idempotent: asking
    * again for a hosted port answers the same URL. The URL is public (no token), so it may be stored. Absent when the provider
    * cannot host ports.
    */

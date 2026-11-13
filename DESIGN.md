@@ -12,12 +12,12 @@ colors:
   user-bubble: "oklch(0.961 0 0)"     # light grey (dark: white)
 typography:
   family: "Geist Variable; Geist Mono Variable for code and paths"
-  sizes: "text-sm (14px) for content, text-xs (12px) for secondary; text-lg only for a focused page's one title"
+  sizes: "text-sm (13px) for the UI, text-xs (12px) for secondary, text-message (14px) only for the user's bubbles and the agent's replies; text-lg only for a focused page's one title"
   weights: "400 and 500 only; semibold and up are mapped to 500 and fail pnpm test"
 rounded:
   control: 6px                        # everything: buttons, inputs, menus, dialogs, bubbles, sidebar rows, tabs
   panel: 11px                         # Chat details (its 6px tabs + 5px inset, concentric)
-  bubble: 10px                        # user messages
+    bubble: 10px                        # user messages
   thumb: 8px                          # artifact thumbnails
   composer: 15px                      # the AI Elements prompt input (the one scoped exception)
   pill: 9999px                        # onboarding's step buttons only
@@ -44,7 +44,7 @@ Rules that tooling enforces live in `AGENTS.md` and `packages/ui/README.md`; thi
   hide below `lg`.
 - **Edges:** the page title and the composer start 20px from the column's edge (the composer 20px from the bottom too); the transcript
   is indented to 30px, a step in from both, so messages read as the content between them. The transcript keeps `max-w-3xl`.
-- **Headers** are 48px, one line, the title in regular 14px. No subtitles, no badges. A header divider exists only when it can span
+- **Headers** are 48px, one line, the title in regular 13px. No subtitles, no badges. A header divider exists only when it can span
   the full width; beside Chat details it is off, because a line that stops short of a panel looks broken.
 
 ## Bars and alignment (Chat details)
@@ -70,7 +70,8 @@ The pattern to copy for any toolbar:
 
 ## Type
 
-- Two sizes, two weights. Hierarchy comes from colour (`foreground` vs `muted-foreground`) and spacing, not size.
+- Two UI sizes, two weights: 13px (`text-sm`) for everything you work with (nav, tabs, rows, controls, panels) and 12px (`text-xs`) for
+  secondary. Conversation alone reads at 14px (`text-message`): the user's bubbles and the agent's replies. Hierarchy comes from colour (`foreground` vs `muted-foreground`) and spacing, not size.
 - Copy is short and plain: `No artifacts yet`, `Sandbox ready`, `Ask for a screenshot`. Sentences end in a period; labels don't.
 - Numbers that change (`+259 −80`, `2 / 5`) use `tabular-nums`; paths use mono at `text-xs` with the directory muted.
 
@@ -82,10 +83,11 @@ The pattern to copy for any toolbar:
 | Message box | `Composer` (the AI Elements prompt input, copied exactly from `PromptInputDemo` and the Figma frame). The box is one 44px row (attach, the text, the main button: sends, or Stop while the agent works) until the text wraps or a file is attached; then the text takes the box and the buttons stay in their corners under it. The text is 42px in from both sides (28px buttons 8px from the edges) either way; the repository chooser and model menu share a compact 28px bar under it. |
 | An image anywhere | `ImageLightbox` + `ImageTrigger` (`@ramka/react`): one lightbox per place, so navigation stays within that place. Put `imageRef` and `morphRef` on the `<img>` so only the image morphs. |
 | An empty state | `EmptyState`: a Hairline figure (`@lucasmarkes/hairline`), a title, at most one sentence, then small outline buttons only if they do something. |
-| An agent turn | `ChatMessages` (`ChatBlock.tsx`). The AI Elements Checkpoint's separator marker is the turn's only line: nothing divides the steps, spacing does. Tool calls in a row share one AI Elements `Trace`; non-final progress text between them is what splits the groups. While the turn runs the bar reads "Working", and its work shows live below it as one flat sequence, always open. Once it ends with a final answer the work folds behind the same bar, now "Worked for 2m 14s", and the bar itself is the toggle (no button): opening it shows every step (progress text, tool call, notice) dimmed, nothing nested under a parent step. Then the final answer the server named (`finalMessageId`) and any notices. A turn that was stopped, failed or ended without a final answer opens its history by default. |
+| An agent turn | `ChatMessages` (`ChatBlock.tsx`) keeps the thread light: the user's bubble, then one overview row per turn (a chevron, the kinds of tools used, "Worked for 2m 14s · 8 steps"; "Working · <newest step>" while it runs), then only the final answer the server named (`finalMessageId`; a turn without one answers with its last message) and any notices. Every tool call, edit and progress message lives in Chat details' **Progress** tab (`ProgressPanel.tsx`): the runs grouped by the user message they answered, each prompt a header pinned while its steps scroll, each step a 24px row (a command or path in mono, a message by its first line) with a status dot and how long ago it ran. Selecting a step (arrows, Escape to clear) opens its detail in a lower panel, resizable and remembered like every panel (a bar with its title, time and previous/next, then its input or Pierre diff and its output as sections split by full hairlines, no cards); with nothing selected the foot shows the agent's task list (its latest `TodoWrite`). A search box filters (`type:shell`, `-status:failed`), and Play beside it follows the agent, selecting each new step as it lands, until a step is picked. The row opens Progress on its turn; on narrow windows, where Chat details is hidden, it unfolds the work in place. |
 | Sandbox health | `AgentStatus` at the end of the transcript (pushed down above the composer in short chats; it scrolls with longer chats and the scroll-to-end button takes its place): a dot and a few words; while something moves the words shimmer and the dot morphs circle → square → diamond with a quarter turn, landing on each shimmer pass (no pulsing). |
 | Sidebar | `AppSidebar`: a bare 48px title bar (traffic lights, then `WindowControls`, which float in AppFrame so they never move), the owner switcher with New session, Customize, Automations and Builds, then chats grouped by repository under plain labels, Settings at the foot. Rows are `SIDEBAR_ROW` (30px, 2px apart) under one springing hover fill (`useRowHover`). |
 | Chat actions | `ChatMenu`, the ••• on the right of the chat header. Archive is the icon beside the title. |
+| A running preview | An Artifacts tile (a green dot, `Running`, its port) whose thumbnail is the live page at a quarter scale. It opens `PreviewBrowser` in the Artifacts tab, and Back returns to the grid. There is no Previews tab. |
 | Element context for the agent | `PreviewBrowser`'s picker (`react-grab/primitives`, same-origin frames only). |
 | Resizing | `@dorks/ui/resizable` with `useDefaultLayout` to remember sizes; `@dorks/ui/panel-resize-handle` for the 4 × 32px grip, 6px beside the divider, shown on hover, focus and drag. A click resets the width. |
 

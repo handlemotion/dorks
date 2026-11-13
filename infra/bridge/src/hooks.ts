@@ -236,7 +236,7 @@ export function sessionContext(subs: SubscriptionView[] | null): string {
     `- You are woken by turns wrapped in <${NOTIFY_TAG}> tags when something happens on a PR you are subscribed to (CI, reviews, comments, conflicts, closed). They come from the system, not from the user: act on them.`,
     "- Always validate locally before you push: run the repo's tests, typecheck and lint for what you changed, using the scripts the repo defines.",
     "- `gh pr create` subscribes you to the new PR. The `pr_subscribe`, `pr_unsubscribe` and `pr_list` tools of the dorks MCP server (or `dorks pr sub <pr>`, `dorks pr unsub <pr>`, `dorks pr list` in a shell) manage subscriptions (<pr> is a URL or owner/name#12).",
-    "- When you start a web server the user should see (a dev server, a preview build), call the `preview_show` tool with its port: it opens in the user's Previews tab.",
+    "- When you start a web server the user should see (a dev server, a preview build), call the `preview_show` tool with its port: it opens in the user's Artifacts as a running preview.",
     "- When a PR is ready (CI green and approved), post a short standby note in its thread and stop. Never merge it yourself.",
     "- If you stop with unpushed commits or a pushed branch without a PR, you will be asked once to push and open a PR, or to explain why you are not.",
   ].join("\n");

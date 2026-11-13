@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useDefaultLayout, usePanelRef } from 'react-resizable-panels'
 import { PanelResizeHandle } from '@dorks/ui/panel-resize-handle'
-import { AppWindowIcon, ChevronRightIcon, ChevronsDownUpIcon, ChevronsUpDownIcon, WrapTextIcon, ExternalLinkIcon, GitPullRequestIcon, LayersIcon, MonitorIcon, PanelLeftIcon } from 'lucide-react'
+import { ActivityIcon, ChevronRightIcon, ChevronsDownUpIcon, ChevronsUpDownIcon, WrapTextIcon, ExternalLinkIcon, GitPullRequestIcon, LayersIcon, MonitorIcon, PanelLeftIcon } from 'lucide-react'
 import { PatchDiff } from '@pierre/diffs/react'
 import { useTheme } from 'next-themes'
 import { Button } from '@dorks/ui/button'
@@ -10,8 +10,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@dorks/ui/tabs'
 import { ComputerView, type ComputerSource } from './ComputerView'
 import { EmptyState } from './EmptyState'
 import { ImageLightbox, ImageTrigger, type LightboxImage } from './ImageLightbox'
-import { BAR_BUTTON, PreviewBrowser, useShownServers, type PreviewServer } from './PreviewBrowser'
+import { BAR_BUTTON, port, PreviewBrowser, useShownServers, type PreviewServer } from './PreviewBrowser'
 import { Tip } from './Tip'
+import { ProgressPanel } from './ProgressPanel'
+import { useProgress, type ProgressTask, type ProgressTurn } from '../lib/progress'
 
 /** A file the agent produced in the chat: a screenshot, a design, a document. */
 export type Artifact = {
@@ -27,22 +29,26 @@ export type FileChange = { path: string; additions: number; deletions: number; /
 
 /** Everything Chat details can show. Missing parts show an empty state in their tab. */
 export type ChatDetailsData = {
+  /** The agent's work, by turn: every tool call, edit and progress message, which the thread leaves out. */
+  progress?: ProgressTurn[]
+  /** The agent's task list, as its latest plan left it. */
+  tasks?: ProgressTask[]
   artifacts?: Artifact[]
   changes?: FileChange[]
   pr?: { url: string; number?: number }
-  /** The dev servers the agent showed, listed in the Previews tab. */
+  /** The dev servers the agent showed: running previews, tiles in Artifacts that open in place. */
   previews?: PreviewServer[]
   /** The agent's own computer, streamed live in the Computer tab. */
   computer?: ComputerSource
 }
 
-type Tab = 'artifacts' | 'changes' | 'previews' | 'computer'
+type Tab = 'progress' | 'artifacts' | 'changes' | 'computer'
 
 /**
  * Chat details: a panel on the right of a chat, in the app's own fill with a soft hairline, inset 4px from the window and the chat, almost full height. Its tabs sit
  * inside it, at the top, as plain tabs: the selected one is a grey fill, the others are labels. Everything inside is concentric: the
  * panel's 11px radius is the tabs' 6px plus the 5px between them. Tabs and the hide button are 30px tall, with 5px around them on
- * every side. The tabs are fixed (always the same four, in the same order).
+ * every side. The tabs are fixed (always the same four, in the same order); Progress, the agent's work, comes first.
  * The tab row is placed so its labels share the chat title's centre line (24px from the top).
  */
 export function ChatDetails({
@@ -54,11 +60,18 @@ export function ChatDetails({
 }: {
   data: ChatDetailsData
   onClose?: () => void
-  /** An element picked in the Previews tab, as agent context. */ onGrab?: (snippet: string) => void
+  /** An element picked in a running preview, as agent context. */ onGrab?: (snippet: string) => void
   /** An empty state's action: puts a ready request in the composer. */ onAsk?: (text: string) => void
   className?: string
 }) {
-  const [tab, setTab] = useState<Tab>('artifacts')
+  const [tab, setTab] = useState<Tab>('progress')
+  // A turn's card in the thread asks for its work: bring Progress up (also when the card opened this panel).
+  const { reveal } = useProgress()
+  const seenReveal = useRef(0)
+  useEffect(() => {
+    if (reveal !== seenReveal.current) setTab('progress')
+    seenReveal.current = reveal
+  }, [reveal])
   const changes = data.changes ?? []
   // The first time the agent reaches for its computer while the chat is open, show its screen; a chat that opens on a computer
   // already used keeps the tab the owner was on.
@@ -68,11 +81,13 @@ export function ChatDetails({
     if (used && !wasUsed.current) setTab('computer')
     wasUsed.current = used
   }, [used])
-  // The agent just showed a dev server: bring the Previews tab up on it. Held here, since the tab's content unmounts while hidden.
-  const [opening, setOpening] = useState<string>()
+  // The preview open in Artifacts, by URL. The agent just showed a dev server: bring Artifacts up with it open. Held here, since the
+  // tab's content unmounts while hidden.
+  const [preview, setPreview] = useState<string>()
+  const openPreview = data.previews?.find((s) => s.url === preview)
   useShownServers(data.previews, (s) => {
-    setTab('previews')
-    setOpening(s.url)
+    setTab('artifacts')
+    setPreview(s.url)
   })
   return (
     <aside aria-label="Chat details" className={['flex h-full min-h-0 flex-col p-1', className].filter(Boolean).join(' ')}>
@@ -85,14 +100,14 @@ export function ChatDetails({
       >
         <div data-tauri-drag-region className="flex h-10 min-w-0 shrink-0 items-center gap-0.5 p-[5px]">
           <TabsList className="h-[30px]! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
+            <DetailsTab value="progress" icon={<ActivityIcon />}>
+              Progress
+            </DetailsTab>
             <DetailsTab value="artifacts" icon={<LayersIcon />}>
               Artifacts
             </DetailsTab>
             <DetailsTab value="changes" icon={<GitPullRequestIcon />} count={changes.length || undefined}>
               Changes
-            </DetailsTab>
-            <DetailsTab value="previews" icon={<AppWindowIcon />}>
-              Previews
             </DetailsTab>
             <DetailsTab value="computer" icon={<MonitorIcon />}>
               Computer
@@ -106,17 +121,30 @@ export function ChatDetails({
             </Tip>
           )}
         </div>
-        <TabsContent value="artifacts" className="flex min-h-0 flex-col overflow-y-auto">
-          <Artifacts artifacts={data.artifacts ?? []} changes={changes} onOpenChanges={() => setTab('changes')} onAsk={onAsk} />
+        <TabsContent value="progress" className="flex min-h-0 flex-col">
+          <ProgressPanel turns={data.progress ?? []} tasks={data.tasks} />
         </TabsContent>
+        {openPreview ? (
+          <TabsContent value="artifacts" className="mx-px mb-px flex min-h-0 flex-col overflow-hidden rounded-b-[9px]">
+            <PreviewBrowser server={openPreview} onBack={() => setPreview(undefined)} onGrab={onGrab} />
+          </TabsContent>
+        ) : (
+          <TabsContent value="artifacts" className="flex min-h-0 flex-col overflow-y-auto">
+            <Artifacts
+              artifacts={data.artifacts ?? []}
+              changes={changes}
+              previews={data.previews ?? []}
+              onOpenChanges={() => setTab('changes')}
+              onOpenPreview={(s) => setPreview(s.url)}
+              onAsk={onAsk}
+            />
+          </TabsContent>
+        )}
         <TabsContent value="changes" className="min-h-0 overflow-y-auto">
           <Changes changes={changes} pr={data.pr} />
         </TabsContent>
         <TabsContent value="computer" className="mx-px mb-px flex min-h-0 flex-col overflow-hidden rounded-b-[9px] border-t">
           <ComputerView source={data.computer} />
-        </TabsContent>
-        <TabsContent value="previews" className="mx-px mb-px flex min-h-0 flex-col overflow-hidden rounded-b-[9px]">
-          <PreviewBrowser servers={data.previews} open={opening} onOpened={() => setOpening(undefined)} onGrab={onGrab} onAsk={onAsk} />
         </TabsContent>
       </Tabs>
     </aside>
@@ -151,10 +179,24 @@ function Stat({ additions, deletions }: { additions: number; deletions: number }
  * A grid of tiles split by full hairlines (each tile draws its right and bottom edge; the grid hides only the outer right one, so the last row keeps its bottom line). The first tile
  * is the code changes, when there are any.
  */
-function Artifacts({ artifacts, changes, onOpenChanges, onAsk }: { artifacts: Artifact[]; changes: FileChange[]; onOpenChanges: () => void; onAsk?: (text: string) => void }) {
-  if (artifacts.length === 0 && changes.length === 0)
+function Artifacts({
+  artifacts,
+  changes,
+  previews,
+  onOpenChanges,
+  onOpenPreview,
+  onAsk,
+}: {
+  artifacts: Artifact[]
+  changes: FileChange[]
+  previews: PreviewServer[]
+  onOpenChanges: () => void
+  onOpenPreview: (server: PreviewServer) => void
+  onAsk?: (text: string) => void
+}) {
+  if (artifacts.length === 0 && changes.length === 0 && previews.length === 0)
     return (
-      <EmptyState figure="drawer" title="No artifacts yet" description="Screenshots, designs and files from this chat show up here.">
+      <EmptyState figure="drawer" title="No artifacts yet" description="Screenshots, running previews and files from this chat show up here.">
         {onAsk && (
           <Button size="sm" variant="outline" onClick={() => onAsk('Take a screenshot of the current UI and add it to the artifacts.')}>
             Ask for a screenshot
@@ -173,6 +215,22 @@ function Artifacts({ artifacts, changes, onOpenChanges, onAsk }: { artifacts: Ar
               Code changes
             </Tile>
           )}
+          {previews.map((server) => (
+            <Tile
+              key={server.url}
+              onClick={() => onOpenPreview(server)}
+              thumb={() => <PreviewThumb server={server} />}
+              label={
+                <span className="flex items-center gap-1.5">
+                  <span aria-hidden className="size-1.5 rounded-full bg-emerald-500" />
+                  Running
+                </span>
+              }
+              meta={server.port ? `:${server.port}` : port(server.url)}
+            >
+              {server.name}
+            </Tile>
+          ))}
           {artifacts.map((a) => {
             const index = images.findIndex((i) => i.id === a.id)
             return (
@@ -250,6 +308,26 @@ function Tile({
         <div className={cls}>{body()}</div>
       )}
     </li>
+  )
+}
+
+/**
+ * A running preview's thumbnail: the live page itself, laid out at four times the tile's width and scaled down to fit, so it reads
+ * like a screenshot of a desktop window. It takes no pointer or focus; the tile opens the real one.
+ */
+function PreviewThumb({ server }: { server: PreviewServer }) {
+  return (
+    <div className="relative size-full bg-white">
+      <iframe
+        src={server.html ? undefined : server.url}
+        srcDoc={server.html}
+        title={`${server.name} preview`}
+        tabIndex={-1}
+        aria-hidden
+        loading="lazy"
+        className="pointer-events-none absolute top-0 left-0 h-[400%] w-[400%] origin-top-left scale-25"
+      />
+    </div>
   )
 }
 
@@ -411,7 +489,7 @@ export function ShowDetailsButton({ onClick }: { onClick: () => void }) {
 }
 
 /** Whether the window is wide enough for Chat details beside the chat (Tailwind's `lg`). */
-function useWide() {
+export function useWide() {
   const query = '(min-width: 1024px)'
   const [wide, setWide] = useState(() => window.matchMedia(query).matches)
   useEffect(() => {

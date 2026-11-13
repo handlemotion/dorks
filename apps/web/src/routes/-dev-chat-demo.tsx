@@ -8,7 +8,8 @@ import { AppSidebarView } from '../components/AppSidebar'
 import { UsageBarView } from '../components/UsageBar'
 import { AgentStatus } from '../components/AgentStatus'
 import { ChatMessages } from '../components/ChatBlock'
-import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, type ChatDetailsData } from '../components/ChatDetails'
+import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, useWide, type ChatDetailsData } from '../components/ChatDetails'
+import { latestTasks, progressStore, progressTurns } from '../lib/progress'
 import { Composer, type AgentProvider } from '../components/ChatComposer'
 import { ChatMenu } from '../components/ChatMenu'
 import { ArchiveButton, PageHeader } from '../components/PageHeader'
@@ -16,7 +17,7 @@ import { withReply, type Reply } from '../lib/reply'
 
 /** A mock screenshot as an SVG data URL (parentheses escaped so it can sit inside markdown image syntax). */
 const mockShot = (tint: string, line: string) =>
-  `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000"><rect width="1600" height="1000" fill="${tint}"/><rect x="400" y="300" width="800" height="440" rx="40" fill="#fff"/><rect x="480" y="380" width="400" height="40" rx="20" fill="${line}"/><rect x="480" y="480" width="640" height="40" rx="20" fill="#e4e4e7"/></svg>`).replace(/\(/g, '%28').replace(/\)/g, '%29')}`
+  `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000"><rect width="1600" height="1000" fill="${tint}"/><rect x="400" y="300" width="800" height="440" rx="40" fill="#fff"/><rect x="480" y="380" width="400" height="40" rx="20" fill="${line}"/><rect x="480" y="480" width="640" height="40" rx="20" fill="#e4e4e7"/></svg>`).replace(/\(/g, '%28').replace(/\)/g, '%29')}`
 
 /** Static usage for the sidebar, so the demo needs no live client. */
 const demoUsage: Usage = {
@@ -24,7 +25,7 @@ const demoUsage: Usage = {
   cloud: { usedHours: 12.5, includedHours: 50, periodEnd: Date.now() + 19 * 86_400_000 },
 }
 
-const initialBlocks: Block[] = [
+const demoBlocks: Block[] = [
   {
     kind: 'user',
     id: 'u1',
@@ -37,13 +38,49 @@ const initialBlocks: Block[] = [
     id: 't1',
     name: 'Bash',
     summary: "rg -n 'wake|reconnect' infra/bridge/src",
+    input: { command: "rg -n 'wake|reconnect' infra/bridge/src" },
     status: 'ok',
     preview: 'infra/bridge/src/claude.ts:223: resume box\ninfra/bridge/src/claude.ts:228: reconnect bridge',
   },
   { kind: 'tool', id: 't2', name: 'Bash', summary: 'pnpm --filter @dorks/bridge test', status: 'error', preview: 'FAIL reconnect restores queued messages\nError: timed out waiting for bridge' },
-  { kind: 'assistant', id: 'a0b', text: 'The reconnect test times out. The queue flushes before the handshake, so I’ll wait for it.', streaming: false, at: Date.now() - 28 * 60_000 },
+  {
+    kind: 'assistant',
+    id: 'a0b',
+    text: `The reconnect test times out. The queue flushes before the handshake, so I’ll wait for it.\n\n![The timeout](${mockShot('#fdf0d5', '#e8c27a')})`,
+    streaming: false,
+    at: Date.now() - 28 * 60_000,
+  },
+  {
+    kind: 'tool',
+    id: 't2p',
+    name: 'TodoWrite',
+    summary: 'Plan the reconnect fix',
+    status: 'ok',
+    input: {
+      todos: [
+        { content: 'Find where the bridge resumes after a wake', status: 'completed' },
+        { content: 'Reproduce the reconnect test timeout', status: 'completed' },
+        { content: 'Wait for the handshake before flushing the queue', status: 'completed' },
+        { content: 'Add a regression test for messages sent while waking', status: 'in_progress' },
+        { content: 'Check the dispatch order after reconnect', status: 'pending' },
+      ],
+    },
+  },
   { kind: 'tool', id: 't2a', name: 'Read', summary: 'infra/bridge/src/reconnect.ts', status: 'ok' },
-  { kind: 'tool', id: 't2b', name: 'Edit', summary: 'infra/bridge/src/reconnect.ts', status: 'ok' },
+  {
+    kind: 'tool',
+    id: 't2b',
+    name: 'Edit',
+    summary: 'infra/bridge/src/reconnect.ts',
+    status: 'ok',
+    input: {
+      file_path: 'infra/bridge/src/reconnect.ts',
+      old_string: 'export async function reconnect(bridge: Bridge) {\n  await box.resume()\n  queue.flush()\n}\n',
+      new_string:
+        'export async function reconnect(bridge: Bridge) {\n  await box.resume()\n  // Queued messages wait for the handshake, or they land in the gap.\n  await bridge.ready()\n  queue.flush()\n}\n',
+    },
+    preview: 'The file infra/bridge/src/reconnect.ts has been updated.',
+  },
   { kind: 'tool', id: 't2c', name: 'Bash', summary: 'pnpm --filter @dorks/bridge test', status: 'ok', preview: 'PASS reconnect restores queued messages' },
   {
     kind: 'assistant',
@@ -177,6 +214,9 @@ const details: ChatDetailsData = {
 }
 
 /** The app frame with a scripted conversation and no server: for looking at the design (dev builds only). */
+/** The demo's tool calls carry no times of their own: space them a few minutes apart, oldest first, so Progress shows its "ago" column. */
+const initialBlocks: Block[] = demoBlocks.map((b, i) => (b.kind === 'tool' && b.at === undefined ? { ...b, at: Date.now() - (demoBlocks.length - i) * 3 * 60_000 } : b))
+
 export function Demo() {
   const [blocks, setBlocks] = useState(initialBlocks)
   const [text, setText] = useState('')
@@ -187,6 +227,7 @@ export function Demo() {
   const [provider, setProvider] = useState<AgentProvider>('claude')
   const [detailsOpen, setDetailsOpen] = useDetailsOpen()
   const [reply, setReply] = useState<Reply>()
+  const wide = useWide()
   const send = (message = withReply(reply, text)) => {
     const id = crypto.randomUUID()
     setReply(undefined)
@@ -217,7 +258,12 @@ export function Demo() {
       <ChatSplit
         details={
           detailsOpen && !showNew ? (
-            <ChatDetails data={details} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} onAsk={setText} />
+            <ChatDetails
+              data={{ ...details, progress: progressTurns(blocks), tasks: latestTasks(blocks) }}
+              onClose={() => setDetailsOpen(false)}
+              onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}
+              onAsk={setText}
+            />
           ) : undefined
         }
       >
@@ -252,6 +298,14 @@ export function Demo() {
                       <ChatMessages
                         blocks={blocks}
                         agent="Claude"
+                        onOpenStep={
+                          wide
+                            ? (key) => {
+                                setDetailsOpen(true)
+                                progressStore.show(key)
+                              }
+                            : undefined
+                        }
                         onReply={(quoted, draft) => {
                           setReply(quoted)
                           if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft))

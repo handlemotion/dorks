@@ -21,7 +21,16 @@
   --font-weight-black: 500;
 }
 
-/* Markdown and native elements default to bold; same cap. Headings in a reply also keep the body size: the app uses two sizes. */
+/* Type sizes, as in modern SaaS: 13px is the UI's base (nav, tabs, rows, controls, panels: everything written `text-sm`), 12px is
+   secondary (`text-xs`). Only conversation reads at 14px (`text-message`): the user's bubbles and the agent's replies. */
+@theme {
+  --text-sm: 13px;
+  --text-sm--line-height: 20px;
+  --text-message: 14px;
+  --text-message--line-height: 1.4286;
+}
+
+/* Markdown and native elements default to bold; same cap. Headings in a reply also keep the body size. */
 b,
 strong,
 th,
@@ -225,7 +234,7 @@ html [data-sonner-toast][data-styled="true"] {
   background: var(--brand);
   color: var(--brand-foreground);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 13px;
   letter-spacing: -0.02em;
   box-shadow: none; /* ui-rules: allow */
 }
