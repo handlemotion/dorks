@@ -192,11 +192,21 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     later(tick, () => {
       if (!alive()) return;
       append(dorkId, { type: "assistant_message", messageId: progress, text: "Running the tests first." });
-      append(dorkId, { type: "tool_use", toolId: tool, name: "Bash", summary: "pnpm test" });
+      append(dorkId, { type: "tool_use", toolId: tool, name: "Bash", summary: "pnpm test", input: { command: "pnpm test" } });
     });
     later(tick * 2, () => {
       if (!alive()) return;
       append(dorkId, { type: "tool_result", toolId: tool, ok: true, preview: "Test Files  3 passed (3)" });
+      const edit = `${tool}-edit`;
+      const file = "src/index.ts";
+      append(dorkId, {
+        type: "tool_use",
+        toolId: edit,
+        name: "Edit",
+        summary: file,
+        input: { file_path: file, old_string: "export const ready = false\n", new_string: "export const ready = true\n" },
+      });
+      append(dorkId, { type: "tool_result", toolId: edit, ok: true, preview: `The file ${file} has been updated.` });
     });
     let streamSeq = 0;
     later(tick * 3, () => {

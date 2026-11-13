@@ -8,7 +8,8 @@ import { AppSidebarView } from '../components/AppSidebar'
 import { UsageBarView } from '../components/UsageBar'
 import { AgentStatus } from '../components/AgentStatus'
 import { ChatMessages } from '../components/ChatBlock'
-import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, type ChatDetailsData } from '../components/ChatDetails'
+import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, useWide, type ChatDetailsData } from '../components/ChatDetails'
+import { progressStore, progressTurns } from '../lib/progress'
 import { Composer, type AgentProvider } from '../components/ChatComposer'
 import { ChatMenu } from '../components/ChatMenu'
 import { ArchiveButton, PageHeader } from '../components/PageHeader'
@@ -37,13 +38,27 @@ const initialBlocks: Block[] = [
     id: 't1',
     name: 'Bash',
     summary: "rg -n 'wake|reconnect' infra/bridge/src",
+    input: { command: "rg -n 'wake|reconnect' infra/bridge/src" },
     status: 'ok',
     preview: 'infra/bridge/src/claude.ts:223: resume box\ninfra/bridge/src/claude.ts:228: reconnect bridge',
   },
   { kind: 'tool', id: 't2', name: 'Bash', summary: 'pnpm --filter @dorks/bridge test', status: 'error', preview: 'FAIL reconnect restores queued messages\nError: timed out waiting for bridge' },
   { kind: 'assistant', id: 'a0b', text: 'The reconnect test times out. The queue flushes before the handshake, so I’ll wait for it.', streaming: false, at: Date.now() - 28 * 60_000 },
   { kind: 'tool', id: 't2a', name: 'Read', summary: 'infra/bridge/src/reconnect.ts', status: 'ok' },
-  { kind: 'tool', id: 't2b', name: 'Edit', summary: 'infra/bridge/src/reconnect.ts', status: 'ok' },
+  {
+    kind: 'tool',
+    id: 't2b',
+    name: 'Edit',
+    summary: 'infra/bridge/src/reconnect.ts',
+    status: 'ok',
+    input: {
+      file_path: 'infra/bridge/src/reconnect.ts',
+      old_string: 'export async function reconnect(bridge: Bridge) {\n  await box.resume()\n  queue.flush()\n}\n',
+      new_string:
+        'export async function reconnect(bridge: Bridge) {\n  await box.resume()\n  // Queued messages wait for the handshake, or they land in the gap.\n  await bridge.ready()\n  queue.flush()\n}\n',
+    },
+    preview: 'The file infra/bridge/src/reconnect.ts has been updated.',
+  },
   { kind: 'tool', id: 't2c', name: 'Bash', summary: 'pnpm --filter @dorks/bridge test', status: 'ok', preview: 'PASS reconnect restores queued messages' },
   {
     kind: 'assistant',
@@ -187,6 +202,7 @@ export function Demo() {
   const [provider, setProvider] = useState<AgentProvider>('claude')
   const [detailsOpen, setDetailsOpen] = useDetailsOpen()
   const [reply, setReply] = useState<Reply>()
+  const wide = useWide()
   const send = (message = withReply(reply, text)) => {
     const id = crypto.randomUUID()
     setReply(undefined)
@@ -217,7 +233,12 @@ export function Demo() {
       <ChatSplit
         details={
           detailsOpen && !showNew ? (
-            <ChatDetails data={details} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} onAsk={setText} />
+            <ChatDetails
+              data={{ ...details, progress: progressTurns(blocks) }}
+              onClose={() => setDetailsOpen(false)}
+              onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}
+              onAsk={setText}
+            />
           ) : undefined
         }
       >
@@ -252,6 +273,14 @@ export function Demo() {
                       <ChatMessages
                         blocks={blocks}
                         agent="Claude"
+                        onOpenStep={
+                          wide
+                            ? (key) => {
+                                setDetailsOpen(true)
+                                progressStore.show(key)
+                              }
+                            : undefined
+                        }
                         onReply={(quoted, draft) => {
                           setReply(quoted)
                           if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft))

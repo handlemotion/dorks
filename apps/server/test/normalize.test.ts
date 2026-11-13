@@ -32,7 +32,7 @@ describe("normalize", () => {
     );
     expect(a).toEqual([
       { type: "assistant_message", messageId: "m1", text: "ok" },
-      { type: "tool_use", toolId: "t1", name: "Bash", summary: "ls -la" },
+      { type: "tool_use", toolId: "t1", name: "Bash", summary: "ls -la", input: { command: "ls -la" } },
     ]);
     const r = bodies(n({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", is_error: true, content: "x".repeat(5000) }] } }));
     expect(r[0]).toMatchObject({ type: "tool_result", toolId: "t1", ok: false });

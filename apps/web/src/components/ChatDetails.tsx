@@ -1,7 +1,19 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useDefaultLayout, usePanelRef } from 'react-resizable-panels'
 import { PanelResizeHandle } from '@dorks/ui/panel-resize-handle'
-import { AppWindowIcon, ChevronRightIcon, ChevronsDownUpIcon, ChevronsUpDownIcon, WrapTextIcon, ExternalLinkIcon, GitPullRequestIcon, LayersIcon, MonitorIcon, PanelLeftIcon } from 'lucide-react'
+import {
+  ActivityIcon,
+  AppWindowIcon,
+  ChevronRightIcon,
+  ChevronsDownUpIcon,
+  ChevronsUpDownIcon,
+  WrapTextIcon,
+  ExternalLinkIcon,
+  GitPullRequestIcon,
+  LayersIcon,
+  MonitorIcon,
+  PanelLeftIcon,
+} from 'lucide-react'
 import { PatchDiff } from '@pierre/diffs/react'
 import { useTheme } from 'next-themes'
 import { Button } from '@dorks/ui/button'
@@ -12,6 +24,8 @@ import { EmptyState } from './EmptyState'
 import { ImageLightbox, ImageTrigger, type LightboxImage } from './ImageLightbox'
 import { BAR_BUTTON, PreviewBrowser, useShownServers, type PreviewServer } from './PreviewBrowser'
 import { Tip } from './Tip'
+import { ProgressPanel } from './ProgressPanel'
+import { useProgress, type ProgressTurn } from '../lib/progress'
 
 /** A file the agent produced in the chat: a screenshot, a design, a document. */
 export type Artifact = {
@@ -27,6 +41,8 @@ export type FileChange = { path: string; additions: number; deletions: number; /
 
 /** Everything Chat details can show. Missing parts show an empty state in their tab. */
 export type ChatDetailsData = {
+  /** The agent's work, by turn: every tool call, edit and progress message, which the thread leaves out. */
+  progress?: ProgressTurn[]
   artifacts?: Artifact[]
   changes?: FileChange[]
   pr?: { url: string; number?: number }
@@ -36,13 +52,13 @@ export type ChatDetailsData = {
   computer?: ComputerSource
 }
 
-type Tab = 'artifacts' | 'changes' | 'previews' | 'computer'
+type Tab = 'progress' | 'artifacts' | 'changes' | 'previews' | 'computer'
 
 /**
  * Chat details: a panel on the right of a chat, in the app's own fill with a soft hairline, inset 4px from the window and the chat, almost full height. Its tabs sit
  * inside it, at the top, as plain tabs: the selected one is a grey fill, the others are labels. Everything inside is concentric: the
  * panel's 11px radius is the tabs' 6px plus the 5px between them. Tabs and the hide button are 30px tall, with 5px around them on
- * every side. The tabs are fixed (always the same four, in the same order).
+ * every side. The tabs are fixed (always the same five, in the same order); Progress, the agent's work, comes first.
  * The tab row is placed so its labels share the chat title's centre line (24px from the top).
  */
 export function ChatDetails({
@@ -58,7 +74,14 @@ export function ChatDetails({
   /** An empty state's action: puts a ready request in the composer. */ onAsk?: (text: string) => void
   className?: string
 }) {
-  const [tab, setTab] = useState<Tab>('artifacts')
+  const [tab, setTab] = useState<Tab>('progress')
+  // A turn's card in the thread asks for its work: bring Progress up (also when the card opened this panel).
+  const { reveal } = useProgress()
+  const seenReveal = useRef(0)
+  useEffect(() => {
+    if (reveal !== seenReveal.current) setTab('progress')
+    seenReveal.current = reveal
+  }, [reveal])
   const changes = data.changes ?? []
   // The first time the agent reaches for its computer while the chat is open, show its screen; a chat that opens on a computer
   // already used keeps the tab the owner was on.
@@ -85,6 +108,9 @@ export function ChatDetails({
       >
         <div data-tauri-drag-region className="flex h-10 min-w-0 shrink-0 items-center gap-0.5 p-[5px]">
           <TabsList className="h-[30px]! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
+            <DetailsTab value="progress" icon={<ActivityIcon />}>
+              Progress
+            </DetailsTab>
             <DetailsTab value="artifacts" icon={<LayersIcon />}>
               Artifacts
             </DetailsTab>
@@ -106,6 +132,9 @@ export function ChatDetails({
             </Tip>
           )}
         </div>
+        <TabsContent value="progress" className="flex min-h-0 flex-col">
+          <ProgressPanel turns={data.progress ?? []} />
+        </TabsContent>
         <TabsContent value="artifacts" className="flex min-h-0 flex-col overflow-y-auto">
           <Artifacts artifacts={data.artifacts ?? []} changes={changes} onOpenChanges={() => setTab('changes')} onAsk={onAsk} />
         </TabsContent>
@@ -411,7 +440,7 @@ export function ShowDetailsButton({ onClick }: { onClick: () => void }) {
 }
 
 /** Whether the window is wide enough for Chat details beside the chat (Tailwind's `lg`). */
-function useWide() {
+export function useWide() {
   const query = '(min-width: 1024px)'
   const [wide, setWide] = useState(() => window.matchMedia(query).matches)
   useEffect(() => {

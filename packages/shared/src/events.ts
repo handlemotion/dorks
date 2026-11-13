@@ -13,7 +13,16 @@ export const clientEvent = z.discriminatedUnion("type", [
   z.object({ ...base, type: z.literal("user_message"), text: z.string() }),
   z.object({ ...base, type: z.literal("assistant_delta"), messageId: z.string(), text: z.string() }),
   z.object({ ...base, type: z.literal("assistant_message"), messageId: z.string(), text: z.string() }),
-  z.object({ ...base, type: z.literal("tool_use"), toolId: z.string(), name: z.string(), summary: z.string() }),
+  z.object({
+    ...base,
+    type: z.literal("tool_use"),
+    toolId: z.string(),
+    name: z.string(),
+    summary: z.string(),
+    // The call's arguments, each long string clipped: the progress panel shows them and draws an edit's diff from them. Absent on events
+    // stored before calls kept their input.
+    input: z.record(z.string(), z.unknown()).optional(),
+  }),
   z.object({ ...base, type: z.literal("tool_result"), toolId: z.string(), ok: z.boolean(), preview: z.string() }),
   z.object({ ...base, type: z.literal("status"), state: dorkState }),
   // The end of an agent turn. `finalMessageId` names the turn's final answer: the last assistant message with no tool call after it,

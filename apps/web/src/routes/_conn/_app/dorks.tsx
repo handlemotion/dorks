@@ -1,7 +1,7 @@
 import { CatchBoundary, createFileRoute, Link, Navigate, useNavigate } from '@tanstack/react-router'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { DesktopOptions } from '@dorks/client'
-import type { AgentModelChoice } from '@dorks/shared'
+import type { AgentModelChoice, Block } from '@dorks/shared'
 import { ChevronDownIcon, ChevronRightIcon, InfoIcon, MessageSquareIcon } from 'lucide-react'
 import { useBuilds, useConnection, useDork, useDorkEvents, useDorks, useDorksClient, useSettings } from '@dorks/client/react'
 import { List } from '../../../components/onboarding/List'
@@ -14,7 +14,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel
 import { InputGroup, InputGroupButton } from '@dorks/ui/input-group'
 import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport } from '@dorks/ui/message-scroller'
 import { ChatMessages } from '../../../components/ChatBlock'
-import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, type ChatDetailsData } from '../../../components/ChatDetails'
+import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, useWide, type ChatDetailsData } from '../../../components/ChatDetails'
+import { progressStore, progressTurns } from '../../../lib/progress'
 import { withImages, Composer, type AgentProvider, type ModelPicker } from '../../../components/ChatComposer'
 import { ChatMenu } from '../../../components/ChatMenu'
 import { ArchiveButton, PageHeader } from '../../../components/PageHeader'
@@ -199,9 +200,10 @@ function NewDork({
 type DorkView = NonNullable<ReturnType<typeof useDork>>
 type DorksActions = ReturnType<typeof useDorksClient>['actions']
 
-/** Chat details for a session: its pull request, screenshots (newest first), previews and computer. */
-function detailsData(dork: DorkView, actions: DorksActions, computer: Pick<NonNullable<ChatDetailsData['computer']>, 'used' | 'fetchUrl' | 'interrupt'>): ChatDetailsData {
+/** Chat details for a session: the agent's work, its pull request, screenshots (newest first), previews and computer. */
+function detailsData(dork: DorkView, blocks: Block[], actions: DorksActions, computer: Pick<NonNullable<ChatDetailsData['computer']>, 'used' | 'fetchUrl' | 'interrupt'>): ChatDetailsData {
   return {
+    progress: progressTurns(blocks),
     pr: prOf(dork.prUrl),
     artifacts: dork.images?.map((i, n) => ({ id: i.id, name: i.caption ?? `Screenshot ${n + 1}`, type: 'Screenshot', src: actions.imageUrl(i.id), width: i.width, height: i.height })).reverse(),
     previews: dork.previews?.map((p) => ({ name: p.title ?? `Port ${p.port}`, url: p.url, port: p.port })),
@@ -290,6 +292,9 @@ function Thread({ dorkId }: { dorkId: string }) {
   const modelSwitch = usePending()
   const settings = useSettings()
   const [detailsOpen, setDetailsOpen] = useDetailsOpen()
+  const wide = useWide()
+  // Each chat's Progress starts on its newest step.
+  useEffect(() => progressStore.reset(), [dorkId])
   const computerUsed = view.blocks.some((b) => b.kind === 'tool' && b.name.startsWith('mcp__computer__'))
   const fetchDesktopUrl = useCallback((opts: DesktopOptions) => actions.desktopUrl(dorkId, opts), [actions, dorkId])
   const interruptAgent = useCallback(() => actions.interrupt(dorkId), [actions, dorkId])
@@ -313,7 +318,7 @@ function Thread({ dorkId }: { dorkId: string }) {
       details={
         detailsOpen ? (
           <ChatDetails
-            data={detailsData(dork, actions, { used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent })}
+            data={detailsData(dork, view.blocks, actions, { used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent })}
             onClose={() => setDetailsOpen(false)}
             onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}
             onAsk={setText}
@@ -356,6 +361,14 @@ function Thread({ dorkId }: { dorkId: string }) {
                   blocks={view.blocks}
                   imageUrl={actions.imageUrl}
                   agent={dork.provider === 'codex' ? 'Codex' : 'Claude'}
+                  onOpenStep={
+                    wide
+                      ? (key) => {
+                          setDetailsOpen(true)
+                          progressStore.show(key)
+                        }
+                      : undefined
+                  }
                   onReply={
                     canReply
                       ? (quoted, draft) => {

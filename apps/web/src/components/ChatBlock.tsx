@@ -1,10 +1,9 @@
 import { useId, useMemo, useState, type ReactNode } from 'react'
-import { BoxIcon, CircleAlertIcon, CircleCheckIcon, CircleStopIcon, ReplyIcon, TerminalIcon, WrenchIcon } from 'lucide-react'
+import { BoxIcon, ChevronRightIcon, CircleAlertIcon, CircleCheckIcon, CircleStopIcon, ReplyIcon, TerminalIcon, WrenchIcon } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { Button } from '@dorks/ui/button'
 import type { Block } from '@dorks/shared'
 import { Bubble, BubbleContent } from '@dorks/ui/bubble'
-import { Marker, MarkerContent } from '@dorks/ui/marker'
 import { CodeBlock, CodeBlockContent } from '@dorks/ui/code-block'
 import { defaultRehypePlugins, defaultUrlTransform, Markdown, markdownComponents } from '@dorks/ui/markdown'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@dorks/ui/context-menu'
@@ -15,6 +14,9 @@ import { parseReply, quoteText } from '../lib/reply'
 import { ImageLightbox, ImageTrigger, useLightboxImages, type LightboxImage } from './ImageLightbox'
 import { Message, MessageContent } from '@dorks/ui/message'
 import { MessageScrollerItem } from '@dorks/ui/message-scroller'
+import { splitTurn, toolStep, type WorkBlock } from '../lib/progress'
+import { TOOL_KIND_ICONS } from './ProgressPanel'
+import { WordShimmer } from './WordShimmer'
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from '@dorks/ui/trace'
 
 type ToolBlock = Extract<Block, { kind: 'tool' }>
@@ -328,9 +330,6 @@ function turns(blocks: AgentBlock[]): { blocks: AgentBlock[]; end?: TurnBlock }[
   return out.filter((t) => t.blocks.length > 0 || t.end?.outcome === 'stopped')
 }
 
-/** Progress messages and tool calls are work; the final answer (named by the server) and notices stay in view. */
-const isWork = (b: AgentBlock) => b.kind === 'tool' || (b.kind === 'assistant' && !b.final)
-
 /** "12s", "2m 14s", "1h 3m": how long a turn worked. */
 export function workedFor(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000))
@@ -341,76 +340,102 @@ export function workedFor(ms: number): string {
 }
 
 /**
- * A turn's work as one flat sequence: progress text, then the tool calls that followed it as one group, and so on, plus notices.
- * Nothing nests inside a parent step, and nothing divides the steps: spacing does. The turn's checkpoint above is its only line.
+ * A turn's work as one flat sequence, dimmed: progress text, then the tool calls that followed it as one group, and so on. Only where
+ * Chat details cannot sit beside the chat (narrow windows); there the turn's card opens it in place.
  */
-function WorkHistory({ blocks, dimmed, id }: { blocks: AgentBlock[]; dimmed?: boolean; id?: string }) {
+function WorkHistory({ blocks, id }: { blocks: AgentBlock[]; id?: string }) {
   return (
-    <div id={id} data-testid="work-history" data-dimmed={dimmed ? '' : undefined} className={`flex flex-col gap-3 ${dimmed ? 'text-muted-foreground' : ''}`}>
+    <div id={id} data-testid="work-history" className="flex flex-col gap-3 text-muted-foreground">
       {agentContent(blocks)}
     </div>
   )
 }
 
-/**
- * The AI Elements Checkpoint's separator marker (`@dorks/ui/marker`): a line with a label in it, and the turn's only divider. The bar
- * itself is the toggle once the turn has ended (a real button, so it takes focus and Enter/Space); while the turn runs it only marks
- * where the work starts and cannot be collapsed.
- */
-function TurnCheckpoint({ label, open, onToggle, controls }: { label: string; open: boolean; onToggle?: () => void; controls: string }) {
-  if (!onToggle)
+/** The newest step of a running turn, as the card's second line: "Running pnpm test". */
+function latestStep(work: WorkBlock[]): string {
+  const last = work.at(-1)
+  if (!last) return 'Starting'
+  if (last.kind === 'assistant')
     return (
-      <Marker variant="separator" data-testid="turn-checkpoint">
-        <MarkerContent>{label}</MarkerContent>
-      </Marker>
+      last.text
+        .replace(IMAGE, '')
+        .split('\n')
+        .find((line) => line.trim()) ?? 'Thinking'
     )
+  return `${toolStep(last.name, last.status).verb} ${last.summary}`
+}
+
+/**
+ * A turn's overview: how long it worked and what it did ("Ran 3 commands, edited 2 files"), the kinds of tools it used and its step
+ * count. The work itself lives in Chat details' Progress; the card opens it there on this turn (`onOpen`), or, without Chat details
+ * beside the chat, unfolds it below.
+ */
+function TurnCard({ work, end, onOpen }: { work: WorkBlock[]; end?: TurnBlock; onOpen?: () => void }) {
+  const [open, setOpen] = useState(false)
+  const historyId = useId()
+  const tools = work.filter((b): b is ToolBlock => b.kind === 'tool')
+  const kinds = [...new Set(tools.map((t) => toolStep(t.name, t.status).kind))].slice(0, 4)
+  const running = !end
+  const title = running
+    ? 'Working'
+    : end.outcome === 'stopped'
+      ? `Stopped after ${workedFor(end.durationMs)}`
+      : end.outcome === 'failed'
+        ? `Failed after ${workedFor(end.durationMs)}`
+        : `Worked for ${workedFor(end.durationMs)}`
+  const summary = running ? latestStep(work) : tools.length > 0 ? toolGroupTitle(tools) : 'Thought it through'
+  const inline = !onOpen
   return (
-    <Marker
-      variant="separator"
-      data-testid="turn-checkpoint"
-      render={<button type="button" />}
-      aria-expanded={open}
-      aria-controls={controls}
-      onClick={onToggle}
-      className="cursor-pointer select-none rounded-[var(--control-radius)] outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <MarkerContent>{label}</MarkerContent>
-    </Marker>
+    <>
+      <button
+        type="button"
+        data-testid="turn-card"
+        aria-expanded={inline ? open : undefined}
+        aria-controls={inline ? historyId : undefined}
+        aria-label={inline ? undefined : `${title}. Show progress`}
+        onClick={() => (onOpen ? onOpen() : setOpen(!open))}
+        className="flex w-full min-w-0 items-center gap-3 rounded-[10px] border bg-surface px-3.5 py-2.5 text-left transition-colors outline-none hover:bg-foreground/[0.02] focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-sm font-medium">{running ? <WordShimmer>{title}</WordShimmer> : title}</span>
+          <span className="truncate text-sm text-muted-foreground">{summary}</span>
+        </span>
+        {kinds.length > 0 && (
+          <span aria-hidden className="flex shrink-0 -space-x-1.5">
+            {kinds.map((kind) => {
+              const Icon = TOOL_KIND_ICONS[kind]
+              return (
+                <span key={kind} className="grid size-6 place-items-center rounded-full bg-app text-muted-foreground ring-2 ring-surface">
+                  <Icon className="size-3" />
+                </span>
+              )
+            })}
+          </span>
+        )}
+        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+          {work.length} {work.length === 1 ? 'step' : 'steps'}
+        </span>
+        <ChevronRightIcon aria-hidden className={`size-3.5 shrink-0 text-muted-foreground ${inline && open ? 'rotate-90' : ''}`} />
+      </button>
+      {inline && open && <WorkHistory id={historyId} blocks={work} />}
+    </>
   )
 }
 
 /**
- * One turn. While it runs: a "Working" checkpoint, then its work live as it happens, always open. Once it ends with a final answer
- * the work folds behind the same checkpoint, now "Worked for 2m 14s" (click the bar to open it, shown dimmed), then the final answer
- * and any notices. A turn that was stopped or failed, or ended without a final answer, opens its history so what happened is in
- * view. The user's toggle wins.
+ * One turn, kept light: the card that sums up its work, then its answer and anything else it posted (notices, a machine draft). The
+ * tool calls, edits and progress text are in Progress.
  */
-function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock }) {
-  const [userOpen, setUserOpen] = useState<boolean>()
-  const historyId = useId()
-  // Turns stored before the server named final answers render as they always did.
-  if (end && end.outcome === null) return <>{agentContent(blocks)}</>
-  // Only notices or cards after the last turn (a machine draft, a PR event): nothing is working, so no "Working" bar.
-  if (!end && !blocks.some(isWork)) return <>{agentContent(blocks)}</>
-  if (!end)
-    return (
-      <>
-        <TurnCheckpoint label="Working" open controls={historyId} />
-        <WorkHistory id={historyId} blocks={blocks} />
-      </>
-    )
-  const work = blocks.filter(isWork)
-  const open = userOpen ?? (end.outcome !== 'done' || !end.finalId)
+function TurnContent({ blocks, end, onOpenStep }: { blocks: AgentBlock[]; end?: TurnBlock; onOpenStep?: (key: string) => void }) {
+  const { work, answer } = splitTurn(blocks, !!end)
+  const rest = blocks.filter((b) => b.kind !== 'tool' && b.kind !== 'assistant')
+  const first = work[0]
   return (
     <>
-      {work.length > 0 && (
-        <>
-          <TurnCheckpoint label={`Worked for ${workedFor(end.durationMs)}`} open={open} onToggle={() => setUserOpen(!open)} controls={historyId} />
-          {open && <WorkHistory id={historyId} blocks={work} dimmed />}
-        </>
-      )}
-      {agentContent(blocks.filter((b) => !isWork(b)))}
-      {end.outcome === 'stopped' && (
+      {first && <TurnCard work={work} end={end} onOpen={onOpenStep && (() => onOpenStep(first.id))} />}
+      {answer && <AgentText block={answer} />}
+      {agentContent(rest)}
+      {end?.outcome === 'stopped' && (
         <Trace role="status" data-testid="turn-stopped">
           <TraceLine>
             <TraceIcon>
@@ -434,6 +459,7 @@ export function ChatMessages({
   onReply,
   onReplySend,
   agent,
+  onOpenStep,
 }: {
   blocks: Block[]
   /** Resolves a shared screenshot's id to its URL. */
@@ -442,6 +468,8 @@ export function ChatMessages({
   onReplySend?: ReplyHandlers['onSend']
   /** The agent's name, for "Reply to Claude". */
   agent?: string
+  /** Opens a turn's work in Chat details' Progress, at its first step. Without it a turn's card unfolds its work in place. */
+  onOpenStep?: (key: string) => void
 }) {
   const { blocks, refs } = resolveSharedImages(raw, imageUrl)
   const images = transcriptImages(blocks)
@@ -487,7 +515,7 @@ export function ChatMessages({
         <Message {...{ [REPLY_SOURCE]: '' }}>
           <MessageContent className="gap-3">
             {turns(entry.blocks).map((turn, i) => (
-              <TurnContent key={`${entry.id}:${i}`} blocks={turn.blocks} end={turn.end} />
+              <TurnContent key={`${entry.id}:${i}`} blocks={turn.blocks} end={turn.end} onOpenStep={onOpenStep} />
             ))}
           </MessageContent>
         </Message>

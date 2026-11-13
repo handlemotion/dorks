@@ -14,6 +14,15 @@ const str = (v: unknown) => (typeof v === "string" ? v : undefined);
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
 
 export const PREVIEW_MAX = 2048;
+/** Each string in a tool call's input: enough for an edit's diff or a written file, small enough for the event log. */
+export const INPUT_MAX = 8192;
+
+const clipDeep = (v: unknown): unknown => {
+  if (typeof v === "string") return clip(v, INPUT_MAX);
+  if (Array.isArray(v)) return v.map(clipDeep);
+  const o = obj(v);
+  return o ? Object.fromEntries(Object.entries(o).map(([k, x]) => [k, clipDeep(x)])) : v;
+};
 
 export function summarizeTool(input: unknown): string {
   const i = obj(input) ?? {};
@@ -43,7 +52,10 @@ function fromAssistant(m: Json): Normalized[] {
   const out: Normalized[] = [];
   for (const block of blocks(msg?.content)) {
     if (block.type === "text" && str(block.text) && !m.parent_tool_use_id) out.push(event({ type: "assistant_message", messageId, text: block.text as string }));
-    if (block.type === "tool_use") out.push(event({ type: "tool_use", toolId: String(block.id), name: String(block.name), summary: summarizeTool(block.input) }));
+    if (block.type === "tool_use")
+      out.push(
+        event({ type: "tool_use", toolId: String(block.id), name: String(block.name), summary: summarizeTool(block.input), ...(obj(block.input) ? { input: clipDeep(block.input) as Json } : {}) }),
+      );
   }
   return out;
 }
