@@ -15,7 +15,7 @@ import { ImageLightbox, ImageTrigger, useLightboxImages, type LightboxImage } fr
 import { Message, MessageContent } from '@dorks/ui/message'
 import { MessageScrollerItem } from '@dorks/ui/message-scroller'
 import { splitTurn, toolStep, type WorkBlock } from '../lib/progress'
-import { TOOL_KIND_ICONS } from './ProgressPanel'
+import { TOOL_KIND_ICONS } from './toolIcons'
 import { WordShimmer } from './WordShimmer'
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from '@dorks/ui/trace'
 
@@ -44,7 +44,7 @@ function transcriptImages(blocks: Block[]): LightboxImage[] {
  * server, so the id becomes that server's image URL before the markdown renders.
  */
 const SHARED_IMAGE = /\(\s*dorks-image:([0-9a-f]{32})/g
-function resolveSharedImages(blocks: Block[], imageUrl?: (id: string) => string): { blocks: Block[]; refs: Map<string, string> } {
+export function resolveSharedImages(blocks: Block[], imageUrl?: (id: string) => string): { blocks: Block[]; refs: Map<string, string> } {
   // Each resolved URL remembers its id, so a reply to that image can name it to the agent again.
   const refs = new Map<string, string>()
   if (!imageUrl) return { blocks, refs }
@@ -126,6 +126,15 @@ const REHYPE = Object.values({
 }) as (typeof defaultRehypePlugins)[string][]
 
 const allowDataImages: typeof defaultUrlTransform = (url, key, node) => (key === 'src' && url.startsWith('data:image/') ? url : defaultUrlTransform(url, key, node))
+
+/** An agent message's markdown: its images large and openable, inline `data:image/…` screenshots kept. Progress shows messages with it too. */
+export function AgentMarkdown({ children }: { children: string }) {
+  return (
+    <Markdown components={MARKDOWN} urlTransform={allowDataImages} rehypePlugins={REHYPE}>
+      {children}
+    </Markdown>
+  )
+}
 
 function entries(blocks: Block[]): Entry[] {
   const result: Entry[] = []
@@ -246,11 +255,7 @@ function ToolGroup({ tools }: { tools: ToolBlock[] }) {
  */
 function AgentText({ block }: { block: Extract<AgentBlock, { kind: 'assistant' }> }) {
   const { onReply } = useReply()
-  const markdown = (
-    <Markdown components={MARKDOWN} urlTransform={allowDataImages} rehypePlugins={REHYPE}>
-      {block.text}
-    </Markdown>
-  )
+  const markdown = <AgentMarkdown>{block.text}</AgentMarkdown>
   if (block.streaming) return <div className="min-w-0">{markdown}</div>
   return (
     <HoverActions

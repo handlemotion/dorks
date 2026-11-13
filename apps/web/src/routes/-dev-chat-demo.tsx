@@ -43,7 +43,13 @@ const initialBlocks: Block[] = [
     preview: 'infra/bridge/src/claude.ts:223: resume box\ninfra/bridge/src/claude.ts:228: reconnect bridge',
   },
   { kind: 'tool', id: 't2', name: 'Bash', summary: 'pnpm --filter @dorks/bridge test', status: 'error', preview: 'FAIL reconnect restores queued messages\nError: timed out waiting for bridge' },
-  { kind: 'assistant', id: 'a0b', text: 'The reconnect test times out. The queue flushes before the handshake, so I’ll wait for it.', streaming: false, at: Date.now() - 28 * 60_000 },
+  {
+    kind: 'assistant',
+    id: 'a0b',
+    text: `The reconnect test times out. The queue flushes before the handshake, so I’ll wait for it.\n\n![The timeout](${mockShot('#fdf0d5', '#e8c27a')})`,
+    streaming: false,
+    at: Date.now() - 28 * 60_000,
+  },
   { kind: 'tool', id: 't2a', name: 'Read', summary: 'infra/bridge/src/reconnect.ts', status: 'ok' },
   {
     kind: 'tool',

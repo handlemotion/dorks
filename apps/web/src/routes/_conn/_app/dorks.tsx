@@ -13,7 +13,7 @@ import { Button } from '@dorks/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@dorks/ui/dropdown-menu'
 import { InputGroup, InputGroupButton } from '@dorks/ui/input-group'
 import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport } from '@dorks/ui/message-scroller'
-import { ChatMessages } from '../../../components/ChatBlock'
+import { ChatMessages, resolveSharedImages } from '../../../components/ChatBlock'
 import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, useWide, type ChatDetailsData } from '../../../components/ChatDetails'
 import { progressStore, progressTurns } from '../../../lib/progress'
 import { withImages, Composer, type AgentProvider, type ModelPicker } from '../../../components/ChatComposer'
@@ -203,7 +203,8 @@ type DorksActions = ReturnType<typeof useDorksClient>['actions']
 /** Chat details for a session: the agent's work, its pull request, screenshots (newest first), previews and computer. */
 function detailsData(dork: DorkView, blocks: Block[], actions: DorksActions, computer: Pick<NonNullable<ChatDetailsData['computer']>, 'used' | 'fetchUrl' | 'interrupt'>): ChatDetailsData {
   return {
-    progress: progressTurns(blocks),
+    // Shared screenshots resolve to their URLs here as they do in the thread, so a progress message still shows its images.
+    progress: progressTurns(resolveSharedImages(blocks, actions.imageUrl).blocks),
     pr: prOf(dork.prUrl),
     artifacts: dork.images?.map((i, n) => ({ id: i.id, name: i.caption ?? `Screenshot ${n + 1}`, type: 'Screenshot', src: actions.imageUrl(i.id), width: i.width, height: i.height })).reverse(),
     previews: dork.previews?.map((p) => ({ name: p.title ?? `Port ${p.port}`, url: p.url, port: p.port })),

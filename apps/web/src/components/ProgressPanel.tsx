@@ -1,24 +1,8 @@
-import { useEffect, useState, type ComponentType } from 'react'
-import {
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  BotIcon,
-  CheckIcon,
-  CopyIcon,
-  FilePenLineIcon,
-  FileTextIcon,
-  GlobeIcon,
-  ListTodoIcon,
-  MessageSquareTextIcon,
-  MonitorIcon,
-  SearchIcon,
-  TerminalIcon,
-  WrenchIcon,
-} from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, CopyIcon, MessageSquareTextIcon } from 'lucide-react'
 import { MultiFileDiff } from '@pierre/diffs/react'
 import { useTheme } from 'next-themes'
 import { Button } from '@dorks/ui/button'
-import { Markdown } from '@dorks/ui/markdown'
 import { Skeleton } from '@dorks/ui/skeleton'
 import {
   progressPick,
@@ -33,26 +17,15 @@ import {
   type ProgressToolBlock,
   type ProgressTurn,
   type StepEdit,
-  type ToolKind,
 } from '../lib/progress'
+import { AgentMarkdown } from './ChatBlock'
 import { EmptyState } from './EmptyState'
 import { BAR_BUTTON } from './PreviewBrowser'
+import { TOOL_KIND_ICONS } from './toolIcons'
 import { Tip } from './Tip'
 import { WordShimmer } from './WordShimmer'
 
 type IoMode = 'input' | 'output'
-
-export const TOOL_KIND_ICONS: Record<ToolKind, ComponentType<{ className?: string }>> = {
-  command: TerminalIcon,
-  read: FileTextIcon,
-  edit: FilePenLineIcon,
-  search: SearchIcon,
-  web: GlobeIcon,
-  agent: BotIcon,
-  plan: ListTodoIcon,
-  computer: MonitorIcon,
-  other: WrenchIcon,
-}
 
 /**
  * The chat's progress, in Chat details: one step at a time (a tool call with its input or output in a large island, an edit as its
@@ -91,7 +64,7 @@ function StepView({ step }: { step: ProgressStep }) {
         </div>
         <Island>
           <div className="p-4 text-sm">
-            <Markdown>{block.text}</Markdown>
+            <AgentMarkdown>{block.text}</AgentMarkdown>
           </div>
         </Island>
       </section>
