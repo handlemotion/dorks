@@ -256,15 +256,7 @@ function AppDialog({ app: c, keySaved, connected, onClose }: { app: ComposioApp;
         >
           <DialogHeader className="gap-2">
             <DialogTitle className="text-sm font-medium">{connected ? c.name : `Connect ${c.name}`}</DialogTitle>
-            <DialogDescription className="text-sm leading-5">
-              {editingKey
-                ? `${c.name} signs in through Composio. Add your Composio API key once, then each app is one sign-in.`
-                : connected
-                  ? `${c.description}. Agents reach it through the composio server.`
-                  : waiting
-                    ? 'Finish signing in on the page that opened. This closes when it is done.'
-                    : `${c.description}. You sign in once in your browser.`}
-            </DialogDescription>
+            <DialogDescription className="text-sm leading-5">{appHint(c, editingKey, connected, waiting)}</DialogDescription>
           </DialogHeader>
           {(editingKey || error) && (
             <div data-slot="dialog-body">
@@ -287,69 +279,107 @@ function AppDialog({ app: c, keySaved, connected, onClose }: { app: ComposioApp;
               )}
             </div>
           )}
-          <DialogFooter>
-            {editingKey && keySaved && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="sm:me-auto"
-                disabled={pending}
-                onClick={() =>
-                  void run(async () => {
-                    await actions.disconnectComposio()
-                    onClose()
-                  })
-                }
-              >
-                Remove key
-              </Button>
-            )}
-            {!editingKey && (
-              <Button type="button" variant="ghost" size="sm" className="sm:me-auto" disabled={pending} onClick={() => setEditingKey(true)}>
-                Composio key
-              </Button>
-            )}
-            {connected && !editingKey ? (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={pending}
-                  onClick={() =>
-                    void run(async () => {
-                      await actions.composioUnlink(c.toolkit)
-                      onClose()
-                    })
-                  }
-                >
-                  Disconnect
-                </Button>
-                <DialogClose render={<Button type="button" size="sm" />}>Done</DialogClose>
-              </>
-            ) : (
-              <>
-                <DialogClose render={<Button type="button" variant="outline" size="sm" />}>Cancel</DialogClose>
-                {editingKey ? (
-                  <Button type="submit" size="sm" disabled={pending || !key.trim()}>
-                    {pending ? 'Checking…' : 'Save key'}
-                  </Button>
-                ) : waiting ? (
-                  <Button type="button" size="sm" nativeButton={false} render={<a href={link} target="_blank" rel="noreferrer" />}>
-                    Open sign-in page
-                  </Button>
-                ) : (
-                  <Button type="submit" size="sm" disabled={pending}>
-                    {pending ? 'Opening…' : `Sign in to ${c.name}`}
-                  </Button>
-                )}
-              </>
-            )}
-          </DialogFooter>
+          <AppFooter
+            app={c}
+            keySaved={keySaved}
+            editingKey={editingKey}
+            connected={connected}
+            link={waiting ? link : null}
+            pending={pending}
+            canSaveKey={!!key.trim()}
+            run={run}
+            onEditKey={() => setEditingKey(true)}
+            onClose={onClose}
+          />
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function appHint(c: ComposioApp, editingKey: boolean, connected: boolean, waiting: boolean) {
+  if (editingKey) return `${c.name} signs in through Composio. Add your Composio API key once, then each app is one sign-in.`
+  if (connected) return `${c.description}. Agents reach it through the composio server.`
+  if (waiting) return 'Finish signing in on the page that opened. This closes when it is done.'
+  return `${c.description}. You sign in once in your browser.`
+}
+
+type AppFooterProps = {
+  app: ComposioApp
+  keySaved: boolean
+  editingKey: boolean
+  connected: boolean
+  link: string | null
+  pending: boolean
+  canSaveKey: boolean
+  run: (fn: () => Promise<unknown>) => Promise<boolean>
+  onEditKey: () => void
+  onClose: () => void
+}
+
+function AppFooter({ app: c, keySaved, editingKey, connected, link, pending, canSaveKey, run, onEditKey, onClose }: AppFooterProps) {
+  const { actions } = useDorksClient()
+  return (
+    <DialogFooter>
+      {editingKey && keySaved && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="sm:me-auto"
+          disabled={pending}
+          onClick={() =>
+            void run(async () => {
+              await actions.disconnectComposio()
+              onClose()
+            })
+          }
+        >
+          Remove key
+        </Button>
+      )}
+      {!editingKey && (
+        <Button type="button" variant="ghost" size="sm" className="sm:me-auto" disabled={pending} onClick={() => onEditKey()}>
+          Composio key
+        </Button>
+      )}
+      {connected && !editingKey ? (
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={pending}
+            onClick={() =>
+              void run(async () => {
+                await actions.composioUnlink(c.toolkit)
+                onClose()
+              })
+            }
+          >
+            Disconnect
+          </Button>
+          <DialogClose render={<Button type="button" size="sm" />}>Done</DialogClose>
+        </>
+      ) : (
+        <>
+          <DialogClose render={<Button type="button" variant="outline" size="sm" />}>Cancel</DialogClose>
+          {editingKey ? (
+            <Button type="submit" size="sm" disabled={pending || !canSaveKey}>
+              {pending ? 'Checking…' : 'Save key'}
+            </Button>
+          ) : link ? (
+            <Button type="button" size="sm" nativeButton={false} render={<a href={link} target="_blank" rel="noreferrer" />}>
+              Open sign-in page
+            </Button>
+          ) : (
+            <Button type="submit" size="sm" disabled={pending}>
+              {pending ? 'Opening…' : `Sign in to ${c.name}`}
+            </Button>
+          )}
+        </>
+      )}
+    </DialogFooter>
   )
 }
 

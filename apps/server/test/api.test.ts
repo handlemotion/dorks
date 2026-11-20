@@ -297,29 +297,31 @@ describe("settings", () => {
   it("connects Composio: the key opens a session, becomes the composio server, and signs apps in and out as one user", async () => {
     // Composio's documented answers (docs.composio.dev/reference/api-reference/tool-router, connected-accounts).
     const deleted: string[] = [];
+    const accounts = [
+      { id: "ca_f", toolkit: { slug: "figma" } },
+      { id: "ca_g", toolkit: { slug: "gmail" } },
+    ];
+    const routes: Record<string, (url: URL, init?: RequestInit) => Response> = {
+      "POST /api/v3.1/tool_router/session": (_url, init) => {
+        expect(JSON.parse(init?.body as string)).toEqual({ user_id: "dorks-owner" });
+        return Response.json({ session_id: "trs_1", mcp: { type: "http", url: "https://app.composio.dev/tool_router/v3/trs_1/mcp" } });
+      },
+      "POST /api/v3.1/tool_router/session/trs_1/link": () => Response.json({ redirect_url: "https://app.composio.dev/link/lt_1" }),
+      "GET /api/v3/connected_accounts": (url) => {
+        expect(url.searchParams.get("user_ids")).toBe("dorks-owner");
+        return Response.json({ items: accounts.filter((x) => !deleted.includes(x.id)) });
+      },
+      "DELETE /api/v3/connected_accounts": (url) => {
+        deleted.push(url.pathname.split("/").at(-1)!);
+        return Response.json({ success: true });
+      },
+    };
     const h = harness({
       fetch: (async (u: string | URL | Request, init?: RequestInit) => {
-        const url = new URL(String(u));
+        const url = new URL(u instanceof Request ? u.url : u);
         if (new Headers(init?.headers).get("x-api-key") !== "ck-1") return Response.json({ error: "bad key" }, { status: 401 });
-        const route = `${init?.method ?? "GET"} ${url.pathname}`;
-        if (route === "POST /api/v3.1/tool_router/session") {
-          expect(JSON.parse(String(init?.body))).toEqual({ user_id: "dorks-owner" });
-          return Response.json({ session_id: "trs_1", mcp: { type: "http", url: "https://app.composio.dev/tool_router/v3/trs_1/mcp" } });
-        }
-        if (route === "POST /api/v3.1/tool_router/session/trs_1/link") return Response.json({ redirect_url: "https://app.composio.dev/link/lt_1" });
-        if (route === "GET /api/v3/connected_accounts") {
-          expect(url.searchParams.get("user_ids")).toBe("dorks-owner");
-          const all = [
-            { id: "ca_f", toolkit: { slug: "figma" } },
-            { id: "ca_g", toolkit: { slug: "gmail" } },
-          ].filter((a) => !deleted.includes(a.id));
-          return Response.json({ items: all });
-        }
-        if (route.startsWith("DELETE /api/v3/connected_accounts/")) {
-          deleted.push(url.pathname.split("/").at(-1)!);
-          return Response.json({ success: true });
-        }
-        return new Response("{}", { status: 404 });
+        const path = url.pathname.startsWith("/api/v3/connected_accounts/") ? "/api/v3/connected_accounts" : url.pathname;
+        return routes[`${init?.method ?? "GET"} ${path}`]?.(url, init) ?? new Response("{}", { status: 404 });
       }) as typeof fetch,
     });
     const a = api(h);

@@ -608,6 +608,19 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     return fail(res, "not_found", "Unknown route.");
   };
 
+  const routeComposio = ({ method, res }: Ctx, toolkit: string, link: boolean) => {
+    if (!mcpServers.has("composio")) return fail(res, "not_configured", "Add your Composio API key first.");
+    if (method === "POST" && link) {
+      composioApps.add(toolkit);
+      return json(res, 200, { url: `https://app.composio.dev/link/mock_${toolkit}` });
+    }
+    if (method === "DELETE" && !link) {
+      composioApps.delete(toolkit);
+      return json(res, 200, {});
+    }
+    return fail(res, "not_found", "Unknown route.");
+  };
+
   const route = async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", "http://mock");
     const path = url.pathname;
@@ -632,17 +645,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     const sm = /^\/api\/secrets\/([^/]+)$/.exec(path);
     if (sm) return routeSecret(c, decodeURIComponent(sm[1]!));
     const cm = /^\/api\/composio\/toolkits\/([a-z0-9_]+)(\/link)?$/.exec(path);
-    if (cm) {
-      if (!mcpServers.has("composio")) return fail(res, "not_configured", "Add your Composio API key first.");
-      if (method === "POST" && cm[2]) {
-        composioApps.add(cm[1]!);
-        return json(res, 200, { url: `https://app.composio.dev/link/mock_${cm[1]}` });
-      }
-      if (method === "DELETE" && !cm[2]) {
-        composioApps.delete(cm[1]!);
-        return json(res, 200, {});
-      }
-    }
+    if (cm) return routeComposio(c, cm[1]!, !!cm[2]);
     const mm = /^\/api\/mcp-servers\/([^/]+)$/.exec(path);
     if (mm) return routeMcp(c, decodeURIComponent(mm[1]!));
     return fail(res, "not_found", "Unknown route.");
