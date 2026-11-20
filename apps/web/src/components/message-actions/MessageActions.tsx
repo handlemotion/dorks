@@ -156,7 +156,8 @@ export function MessageActions({
 
 /**
  * A message with its toolbar and time: hidden until the pointer is over the message or focus is in it, then the toolbar at its
- * top-right corner, just above it (24px tall, 4px clear of the text), and the time left of its first line, centered in the 40px gutter: the transcript is inset 20px
+ * top-right corner, just above it (24px tall, 4px clear of the text), and the time left of its first line, centered in the 40px gutter (or, with
+ * `timeBelow`, on a small line under the message): the transcript is inset 20px
  * more than the composer, so the time's center falls on the composer's left edge. The message's scroller item paints with
  * `content-visibility: auto`, which clips what is pulled outside it, so the items keep room above and left of it (see ChatBlock).
  */
@@ -165,6 +166,7 @@ export function HoverActions({
   className,
   sentAt,
   timeClassName,
+  timeBelow,
   ...actions
 }: Parameters<typeof MessageActions>[0] & {
   children: ReactNode
@@ -173,24 +175,35 @@ export function HoverActions({
   sentAt?: Date
   /** Moves the time down to the message's first line (a bubble's padding). */
   timeClassName?: string
+  /** The time on its own small line under the message (the agent's replies) instead of in the left gutter. */
+  timeBelow?: boolean
 }) {
+  const time = sentAt && (
+    <Tip label={formatAbsolute(sentAt)}>
+      <time dateTime={sentAt.toISOString()} className="cursor-default text-xs whitespace-nowrap text-muted-foreground tabular-nums">
+        {formatClock(sentAt)}
+      </time>
+    </Tip>
+  )
   return (
     <div data-testid="hover-actions" className={cn('group/msg relative min-w-0', className)}>
-      {sentAt && (
+      {time && !timeBelow && (
         <span
           className={cn(
             'absolute top-0 right-full flex h-[1lh] w-10 items-center justify-center opacity-0 transition-opacity duration-150 ease-out group-focus-within/msg:opacity-100 group-hover/msg:opacity-100 motion-reduce:transition-none',
             timeClassName,
           )}
         >
-          <Tip label={formatAbsolute(sentAt)}>
-            <time dateTime={sentAt.toISOString()} className="cursor-default text-xs whitespace-nowrap text-muted-foreground tabular-nums">
-              {formatClock(sentAt)}
-            </time>
-          </Tip>
+          {time}
         </span>
       )}
       {children}
+      {/* In flow, not pulled out: the scroller item clips paint outside it (see ChatBlock). */}
+      {time && timeBelow && (
+        <div className="mt-1 flex h-4 items-center opacity-0 transition-opacity duration-150 ease-out group-focus-within/msg:opacity-100 group-hover/msg:opacity-100 motion-reduce:transition-none">
+          {time}
+        </div>
+      )}
       <div className="pointer-events-none absolute right-0 bottom-full z-10 mb-1 opacity-0 transition-opacity duration-150 ease-out group-focus-within/msg:pointer-events-auto group-focus-within/msg:opacity-100 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100 motion-reduce:transition-none">
         <MessageActions {...actions} />
       </div>
