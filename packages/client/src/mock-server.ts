@@ -111,6 +111,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   const mcpServers = new Map<string, McpServerView>();
   // Composio: a sign-in "finishes" when its link is requested, so the UI's wait ends on the next read.
   const composioApps = new Set<string>();
+  let localAccessEnabled = true;
   const live = new Set<ServerResponse>();
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const settings: Settings = {
@@ -523,6 +524,17 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       },
     ],
     ["GET /api/secrets", ({ res }) => json(res, 200, [...secrets.keys()].sort())],
+    // Local access (docs/local-access.md): the switch only; the mock's agents never ask to use the computer.
+    ["GET /api/local-access", ({ res }) => json(res, 200, { enabled: localAccessEnabled, grants: [] })],
+    [
+      "PUT /api/local-access",
+      ({ body, res }) => {
+        if (typeof body.enabled !== "boolean") return fail(res, "invalid", "enabled must be a boolean");
+        localAccessEnabled = body.enabled;
+        broadcast({ t: "settings" });
+        return json(res, 200, {});
+      },
+    ],
     [
       "GET /api/mcp-servers",
       ({ res }) =>

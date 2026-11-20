@@ -109,6 +109,28 @@ export interface SettingsPatch {
 }
 
 /** `POST /api/boat/check`: whether Boat accepts a key (and organization) before anything is saved. */
+/** Local access (docs/local-access.md): whether agents may ask to use this computer, and the permissions granted for a while. */
+export interface LocalGrant {
+  id: string;
+  dorkId: string;
+  dorkTitle: string;
+  kind: "run" | "read";
+  /** run: this exact command in `cwd`. */
+  command?: string;
+  cwd?: string;
+  /** read: any file under this folder. */
+  dir?: string;
+  expiresAt: number;
+  createdAt: number;
+}
+
+export interface LocalAccess {
+  enabled: boolean;
+  grants: LocalGrant[];
+}
+
+export type LocalDecision = { decision: "deny" | "once" } | { decision: "grant"; minutes: 15 | 60 };
+
 export interface BoatCheck {
   status: "ok" | "invalid" | "needs_org" | "credit_required" | "unreachable";
   /** Plain words for the user. */

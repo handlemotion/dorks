@@ -3,6 +3,7 @@ import { Cause, Data, Effect, Exit, Fiber, Latch, Queue, Schema, Scope } from "e
 import { AppFail, type App, type Change } from "../app";
 import { verifyBridgeSecret } from "../lib/bridgeAuth";
 import { buildOp } from "../services/buildAgent";
+import { localOp } from "../services/local";
 import * as bridge from "../services/bridge";
 import { attempt, attemptPromise, BridgeError } from "../services/bridge";
 
@@ -48,6 +49,7 @@ const OPS = new Map<string, Op>([
   ["get_image", (app, id, a) => attempt(() => bridge.getImage(app, id, a.id))],
   ["share_image", (app, id, a) => attempt(() => bridge.shareImage(app, id, a.data, a.caption))],
   ["build", (app, id, a) => attemptPromise(() => buildOp(app, id, a))],
+  ["local", (app, id, a) => attemptPromise(() => localOp(app, id, a))],
 ]);
 
 const failed = (e: unknown): AppError => {

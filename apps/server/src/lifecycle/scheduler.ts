@@ -5,6 +5,7 @@ import { isJob, runJob } from "./jobs";
 import { fireTimer } from "./lifecycle";
 import { recoverSnapshotBuild } from "../services/snapshot";
 import { recoverBuildRuns } from "../services/buildRuns";
+import { recoverLocal } from "../services/local";
 import { pollable } from "../services/subscriptions";
 import { AppEnv } from "../http/route";
 
@@ -63,6 +64,7 @@ export class Scheduler implements SchedulerLike {
     if (!hasTimer(app, "", "sweep")) setTimer(app, "", "sweep", 60_000);
     recoverSnapshotBuild(app); // a build that was running when the process died runs again, as a new attempt
     recoverBuildRuns(app); // likewise for build runs (docs/builds.md)
+    recoverLocal(app); // a command that was running on the owner's computer is reported as lost (docs/local-access.md)
   }
 
   stop() {

@@ -1,4 +1,4 @@
-import type { DorkState, ClientEvent, TurnOutcome } from "../events";
+import type { DorkState, ClientEvent, LocalKind, TurnOutcome } from "../events";
 
 export type Block =
   /** `at`: when it was sent (ms since epoch). */
@@ -18,6 +18,28 @@ export type Block =
   | { kind: "notice"; id: string; level: "info" | "error"; text: string }
   /** The agent submitted a draft of its machine for approval (docs/builds.md). `approved` is null until the owner decides. */
   | { kind: "build"; id: string; draftId: string; buildId: string | null; buildName: string; note?: string; approved: boolean | null; reason?: string }
+  /**
+   * The agent asked to use the owner's computer (docs/local-access.md). `status` moves from `pending` to `denied` or `expired`, or to
+   * `allowed` and then `done` / `failed` once the command ran or the file was read.
+   */
+  | {
+      kind: "local";
+      id: string;
+      requestId: string;
+      request: LocalKind;
+      command?: string;
+      cwd?: string;
+      path?: string;
+      reason: string;
+      status: "pending" | "allowed" | "denied" | "expired" | "done" | "failed";
+      via?: "once" | "grant" | "standing";
+      grantId?: string;
+      minutes?: number;
+      exitCode?: number | null;
+      preview?: string;
+      truncated?: boolean;
+      at: number;
+    }
   /**
    * The end of an agent turn: everything since the previous turn (or user message) belongs to it. `outcome` is null for turns stored
    * before the server stamped outcomes and final answers; render those as they always were.
@@ -41,6 +63,7 @@ type EventOf<T extends ClientEvent["type"]> = Extract<ClientEvent, { type: T }>;
 type Handlers = { [T in ClientEvent["type"]]?: (v: DorkView, e: EventOf<T>) => void };
 
 const notice = (v: DorkView, e: ClientEvent, level: "info" | "error", text: string) => v.blocks.push({ kind: "notice", id: `n${e.seq}`, level, text });
+const findLocal = (v: DorkView, requestId: string) => v.blocks.findIndex((b) => b.kind === "local" && b.requestId === requestId);
 const findAssistant = (v: DorkView, id: string) => v.blocks.findIndex((b) => b.kind === "assistant" && b.id === id);
 
 const HANDLERS: Handlers = {
@@ -103,6 +126,21 @@ const HANDLERS: Handlers = {
     }
     if (i >= 0) v.blocks[i] = { ...(v.blocks[i] as Extract<Block, { kind: "build" }>), approved: e.approved, reason: e.reason };
     else notice(v, e, "info", `${e.approved ? "Approved" : "Rejected"} the machine draft for ${e.buildName}${e.reason ? `: ${e.reason}` : ""}`);
+  },
+  local_request(v, e) {
+    v.blocks.push({ kind: "local", id: `l${e.seq}`, requestId: e.requestId, request: e.kind, command: e.command, cwd: e.cwd, path: e.path, reason: e.reason, status: "pending", at: e.ts });
+  },
+  local_decision(v, e) {
+    const i = findLocal(v, e.requestId);
+    if (i < 0) return;
+    const b = v.blocks[i] as Extract<Block, { kind: "local" }>;
+    v.blocks[i] = { ...b, status: e.decision, via: e.via, grantId: e.grantId, minutes: e.minutes };
+  },
+  local_result(v, e) {
+    const i = findLocal(v, e.requestId);
+    if (i < 0) return;
+    const b = v.blocks[i] as Extract<Block, { kind: "local" }>;
+    v.blocks[i] = { ...b, status: e.ok ? "done" : "failed", exitCode: e.exitCode, preview: e.preview, truncated: e.truncated };
   },
   rate_limited(v, e) {
     v.rateLimitedUntil = e.resetsAt ?? null;

@@ -20,7 +20,7 @@ export function SettingsSections({ children }: { children: ReactNode }) {
 /** A titled set of groups. The title is a muted label, inset to the rows' text, with an optional one-line description. */
 export function SettingsSection({ title, description, actions, children }: { title: string; description?: ReactNode; actions?: ReactNode; children: ReactNode }) {
   return (
-    <section aria-label={title} className="flex min-w-0 flex-col gap-2">
+    <section aria-label={title} className={cn('flex min-w-0 flex-col', description ? 'gap-3' : 'gap-2')}>
       <div className="flex min-h-7 items-center justify-between gap-3 px-4">
         <div className="min-w-0">
           <h2 className="text-sm text-muted-foreground">{title}</h2>

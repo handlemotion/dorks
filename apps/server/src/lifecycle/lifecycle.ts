@@ -2,6 +2,7 @@ import { errorEvent } from "@dorks/shared";
 import type { App } from "../app";
 import { getDork, runtimeOf } from "../data";
 import { foldInbox } from "../services/notify";
+import { expireLocal } from "../services/local";
 import {
   append,
   beginPause,
@@ -23,6 +24,7 @@ import {
 export function fireTimer(app: App, dorkId: string, name: string) {
   const dork = getDork(app.db, dorkId);
   if (!dork || dork.deleting) return;
+  if (expireLocal(app, dorkId, name)) return; // `local:<request id>`: an unanswered request to use the owner's computer
   const rt = runtimeOf(app.db, dorkId);
   switch (name) {
     case "sleep":

@@ -17,6 +17,7 @@ import { MessageScrollerItem } from '@dorks/ui/message-scroller'
 import { splitTurn, toolStep, type WorkBlock } from '../lib/progress'
 import { TOOL_KIND_ICONS } from './toolIcons'
 import { WordShimmer } from './WordShimmer'
+import { LocalRequestCard } from './LocalRequest'
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from '@dorks/ui/trace'
 
 type ToolBlock = Extract<Block, { kind: 'tool' }>
@@ -311,6 +312,9 @@ function agentContent(blocks: AgentBlock[]): ReactNode[] {
           )}
         </Trace>,
       )
+    } else if (block.kind === 'local') {
+      // The agent asked to use the owner's computer (docs/local-access.md): what would run, its reason and the owner's answer.
+      content.push(<LocalRequestCard key={block.id} block={block} />)
     } else if (block.kind === 'notice') {
       content.push(
         <Trace key={block.id} role={block.level === 'error' ? 'alert' : 'status'}>

@@ -3,7 +3,23 @@ import { EventsFeed } from "./events.ts";
 import { createApi, ApiError, type ApiConfig, type DesktopOptions } from "./http.ts";
 import { connectLive, type LiveStatus } from "./live.ts";
 import { Query, type QueryOptions, type Store } from "./store.ts";
-import type { BuildInput, BuildVarInput, BuildView, CreateDorkInput, Dork, LiveMessage, PrRefInput, RunView, Settings, SettingsPatch, SnapshotStatus, Usage, GithubRepos } from "./types.ts";
+import type {
+  BuildInput,
+  BuildVarInput,
+  BuildView,
+  CreateDorkInput,
+  Dork,
+  LiveMessage,
+  PrRefInput,
+  RunView,
+  Settings,
+  SettingsPatch,
+  SnapshotStatus,
+  Usage,
+  GithubRepos,
+  LocalAccess,
+  LocalDecision,
+} from "./types.ts";
 
 export interface ClientConfig extends ApiConfig {
   /** Events fetched per page. */
@@ -111,6 +127,7 @@ export class DorksClient {
         this.invalidate("secrets");
         this.invalidate("mcp-servers");
         this.invalidate("composio");
+        this.invalidate("local-access");
         break;
       case "snapshot":
         this.invalidate("snapshot");
@@ -173,6 +190,10 @@ export class DorksClient {
   /** Reads Composio again: a sign-in finishes in the browser, with no event here. */
   refreshComposio() {
     this.invalidate("composio");
+  }
+  /** Local access: the switch and the permissions granted for a while (docs/local-access.md). */
+  localAccess() {
+    return this.query<LocalAccess>("local-access", () => this.api.localAccess());
   }
   mcpServers() {
     return this.query<McpServerView[]>("mcp-servers", () => this.api.listMcpServers());
@@ -322,6 +343,23 @@ export class DorksClient {
     composioUnlink: async (toolkit: string) => {
       await this.api.composioUnlink(toolkit);
       this.invalidate("composio");
+    },
+    /** The owner's answer to an agent's request to use this computer. The transcript shows the outcome. */
+    decideLocal: async (dorkId: string, requestId: string, d: LocalDecision) => {
+      await this.api.decideLocal(dorkId, requestId, d);
+      this.invalidate("local-access");
+    },
+    setLocalAccess: async (enabled: boolean) => {
+      await this.api.setLocalAccess(enabled);
+      this.invalidate("local-access");
+    },
+    revokeLocalGrant: async (grantId: string) => {
+      await this.api.revokeLocalGrant(grantId);
+      this.invalidate("local-access");
+    },
+    revokeLocalGrants: async (dorkId?: string) => {
+      await this.api.revokeLocalGrants(dorkId);
+      this.invalidate("local-access");
     },
     deleteMcpServer: async (name: string) => {
       await this.api.deleteMcpServer(name);

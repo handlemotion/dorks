@@ -22,6 +22,12 @@ export function previewMethods(t: Transport, log: Log): RpcMethods {
       if (!["get", "draft", "run", "logs", "submit"].includes(p.action as string)) throw new RpcError("invalid", "unknown build action");
       return callBackend(t, log, () => t.build(p), true);
     },
+    // `local`: the local_* MCP tools (docs/local-access.md). The owner decides in the app; the server checks and runs everything.
+    local: async (params) => {
+      const p = (params ?? {}) as Record<string, unknown>;
+      if (p.action !== "request" && p.action !== "wait") throw new RpcError("invalid", "unknown local action");
+      return callBackend(t, log, () => t.local(p), true);
+    },
     // `image.share`: a screenshot from the `screenshot_share` MCP tool, already read and checked in the agent's process.
     "image.share": async (params) => {
       const p = (params ?? {}) as { data?: unknown; caption?: unknown };

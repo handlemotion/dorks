@@ -3,7 +3,7 @@ import { toAppError, type ComposioStatus, type McpServerView, type SubscriptionV
 import type { DorksClient, ConnectionState } from "./client.ts";
 import type { EventsState } from "./events.ts";
 import type { QueryState, Store } from "./store.ts";
-import type { BuildView, Dork, RunView, Settings, SnapshotStatus, Usage, GithubRepos } from "./types.ts";
+import type { BuildView, Dork, RunView, Settings, SnapshotStatus, Usage, GithubRepos, LocalAccess } from "./types.ts";
 
 const Ctx = createContext<DorksClient | null>(null);
 
@@ -70,6 +70,11 @@ export function useGithubRepos(): GithubRepos | undefined {
 /** The MCP servers from Customize; `undefined` while loading. */
 export function useComposio(): ComposioStatus | undefined {
   return useStore(useDorksClient().composio()).data;
+}
+
+/** Local access: the switch and the active permissions; `undefined` while loading. */
+export function useLocalAccess(): LocalAccess | undefined {
+  return useStore(useDorksClient().localAccess()).data;
 }
 
 export function useMcpServers(): McpServerView[] | undefined {
