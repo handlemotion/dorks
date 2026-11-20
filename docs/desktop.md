@@ -68,7 +68,7 @@ The window is transparent, with a native material behind the page: **Liquid Glas
 | `data-window-effect` | `liquid-glass`, `vibrancy` or `none` |
 | `data-window-theme` | the theme the app asked for: `light`, `dark` or `system` |
 | `data-traffic-lights` | `true` in `app` mode, `false` in `onboarding` |
-| `--titlebar-inset-left` | px to keep free at the left of the header for the traffic lights (84px in `app`, 0 in `onboarding`) |
+| `--titlebar-inset-left` | px to keep free at the left of the header for the traffic lights (78px in `app`, 0 in `onboarding`) |
 | `--titlebar-height` | px of header strip to reserve at the top (52px in `app`, 0 in `onboarding`) |
 
 The title bar is an overlay: the page extends under it, so there is no native title bar to drag. Make the header a drag region with `data-tauri-drag-region` on the element (not on its interactive children), sized with `var(--titlebar-height)`, and start the header's own content at `var(--titlebar-inset-left)`. Double-clicking the region zooms the window. The permissions this needs (`core:window:allow-start-dragging`, `allow-internal-toggle-maximize`, `allow-toggle-maximize`) are in `capabilities/default.json`.
@@ -84,7 +84,7 @@ The shell remembers the last mode and the app-mode frame (`windowMode`, `windowF
 
 **Theme.** The material follows the window appearance, so the app must report its own theme or a light UI would sit on a dark dim. Call `set_window_theme` whenever the app theme changes (`"system"` while the user has not picked one). With no call, the window follows macOS, including when macOS switches by itself at sunset. The page's `prefers-color-scheme` follows the same setting. Remembered as `windowTheme`. Note that Tauri applies this app-wide, which is fine for a one-window app.
 
-**Shadow and border.** The window has no drop shadow (`shadow(false)`, re-asserted after the material is attached). Onboarding has a 1 px border using the theme's `--border` token, drawn as a click-through overlay inside the window with 16 px rounded corners (`packages/ui/src/glass.css`). It does not affect the page layout and disappears in app mode. The shell draws no border or outline of its own.
+**Shadow and border.** The window keeps macOS's native drop shadow (`shadow(true)`, re-asserted after the material is attached); the no-shadow rule is for the page, not the window. Onboarding has a 1 px border using the theme's `--border` token, drawn as a click-through overlay inside the window with 16 px rounded corners (`packages/ui/src/glass.css`). It does not affect the page layout and disappears in app mode. The shell draws no border or outline of its own.
 
 ### Checking the chrome without taking the screen
 

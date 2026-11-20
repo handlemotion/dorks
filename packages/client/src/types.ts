@@ -157,12 +157,19 @@ export interface PrRefInput {
   number: number;
 }
 
+/** `GET /api/github/repos`: the saved GitHub token's user (null without one), its organizations, and its repositories (`owner/name`, most recently pushed first). */
+export interface GithubRepos {
+  login: string | null;
+  orgs: string[];
+  repos: string[];
+}
+
 /** `GET /api/usage`: a part is missing when its credential is not set or its source failed. `used` is 0..1, times are epoch ms. */
 export interface UsageWindow {
   used: number;
   resetsAt?: number;
 }
 export interface Usage {
-  claude?: { session: UsageWindow; weekly: UsageWindow };
+  claude?: { session?: UsageWindow; weekly: UsageWindow };
   cloud?: { usedHours: number; includedHours: number; periodEnd?: number };
 }

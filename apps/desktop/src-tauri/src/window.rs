@@ -32,8 +32,8 @@ pub fn traffic_light_position() -> LogicalPosition<f64> {
 /// Finishes a freshly built (still hidden) main window: material, mode geometry, then shows it. Main thread.
 pub fn finish(app: &AppHandle, window: &WebviewWindow, mode: WindowMode, theme: WindowTheme, wanted: Effect) {
     let actual = native::apply_effect(window, wanted);
-    // Re-assert after the material is attached: no window shadow, ever.
-    let _ = window.set_shadow(false);
+    // Re-assert after the material is attached, which can drop it: the native window shadow.
+    let _ = window.set_shadow(true);
     let state = app.state::<AppState>();
     *state.chrome.lock().unwrap() = ChromeInfo::new(mode.spec(), actual, theme);
     apply_mode(app, window, mode);

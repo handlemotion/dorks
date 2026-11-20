@@ -12,7 +12,7 @@ export interface UsageWindow {
 /** `GET /api/usage`: what the sidebar's usage bar shows. A part is missing when its credential is not set or its source failed. */
 export interface Usage {
   /** The Claude subscription behind `claudeToken`: the 5-hour session and the weekly limit. */
-  claude?: { session: UsageWindow; weekly: UsageWindow };
+  claude?: { session?: UsageWindow; weekly: UsageWindow };
   /** Boat machine time included in the plan this period, in hours. */
   cloud?: { usedHours: number; includedHours: number; periodEnd?: number };
 }
@@ -76,11 +76,12 @@ async function claudeUsage(app: App): Promise<Usage["claude"]> {
   };
   const session = window("5h");
   const weekly = window("7d");
-  if (!session || !weekly) {
+  // The 5-hour headers are absent while no session window is open (nothing used in the last five hours); the weekly ones always come.
+  if (!weekly) {
     console.error("usage: claude", res.status); // status only, never the body
     return undefined;
   }
-  return { session, weekly };
+  return session ? { session, weekly } : { weekly };
 }
 
 /** `GET /limits`, the part this reads. Numbers may come as strings, so they are read with `Number`. */

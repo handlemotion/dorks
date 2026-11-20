@@ -3,7 +3,9 @@ import { useCallback, useEffect, useState } from 'react'
 import type { DesktopOptions } from '@dorks/client'
 import type { AgentModelChoice, Block } from '@dorks/shared'
 import { ChevronDownIcon, ChevronRightIcon, InfoIcon, MessageSquareIcon } from 'lucide-react'
-import { useBuilds, useConnection, useDork, useDorkEvents, useDorks, useDorksClient, useSettings } from '@dorks/client/react'
+import { useBuilds, useConnection, useDork, useDorkEvents, useDorks, useDorksClient, useGithubRepos, useSettings } from '@dorks/client/react'
+import { ownersOf, useOwnerScope } from '../../../components/ownerScope'
+import { ownerOf } from '../../../components/RepoAvatar'
 import { List } from '../../../components/onboarding/List'
 import { EmptyState } from '../../../components/EmptyState'
 import { AgentStatus } from '../../../components/AgentStatus'
@@ -130,6 +132,14 @@ function Dorks() {
   )
 }
 
+/** The build's repositories, then the ones chats used, then everything the GitHub token can see; only the owner in scope's. */
+function useNewSessionRepos(buildRepos: string[], dorks: { repo: string }[] | undefined): string[] {
+  const github = useGithubRepos()
+  const recent = [...new Set(dorks?.map((d) => d.repo).filter(Boolean) ?? [])].sort()
+  const [scope] = useOwnerScope(ownersOf(recent, github))
+  return [...new Set([...buildRepos, ...recent, ...(github?.repos ?? [])])].filter((r) => !scope || ownerOf(r) === scope)
+}
+
 function NewDork({
   initialRepo,
   onCreated,
@@ -154,8 +164,9 @@ function NewDork({
   // Until the owner picks one: the default build when it is built, else the base machine.
   const buildId = picked !== undefined ? picked : built.some((b) => b.id === settings?.defaultBuildId) ? (settings?.defaultBuildId ?? null) : null
   const buildRepos = built.find((b) => b.id === buildId)?.repos ?? []
-  const repositories = [...new Set([...buildRepos, ...[...new Set(dorks?.map((d) => d.repo).filter(Boolean) ?? [])].sort()])]
-  const [repo, setRepo] = useState(initialRepo ?? 'acme/demo')
+  const repositories = useNewSessionRepos(buildRepos, dorks)
+  const [chosen, setRepo] = useState(initialRepo)
+  const repo = chosen ?? repositories[0] ?? ''
   const [message, setMessage] = useState('')
   const [provider, setProvider] = useState<AgentProvider>(claudeReady ? 'claude' : codexReady ? 'codex' : 'claude')
   const { run, pending, error } = usePending()

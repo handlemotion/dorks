@@ -314,8 +314,8 @@ pub fn show_main(app: &AppHandle) {
         .transparent(wanted != Effect::None)
         .title_bar_style(tauri::TitleBarStyle::Overlay)
         .hidden_title(true)
-        // No drop shadow: the material and the page draw the edge (see docs/desktop.md, "Shadow and border").
-        .shadow(false)
+        // The native window shadow, like every other Mac window (docs/desktop.md, "Shadow and border").
+        .shadow(true)
         .traffic_light_position(window::traffic_light_position());
     match builder.build() {
         Ok(win) => window::finish(app, &win, mode, theme, wanted),

@@ -471,6 +471,21 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       },
     ],
     [
+      "GET /api/github/repos",
+      ({ res }) =>
+        json(
+          res,
+          200,
+          settings.github.configured
+            ? {
+                login: "octocat",
+                orgs: ["acme", "handlemotion"],
+                repos: ["acme/demo", "handlemotion/dorks", "handlemotion/transitive", "octocat/hello-world", "acme/api", "handlemotion/site", "octocat/dotfiles", "acme/design-system"],
+              }
+            : { login: null, orgs: [], repos: [] },
+        ),
+    ],
+    [
       "GET /api/usage",
       ({ res }) => {
         const now = Date.now();

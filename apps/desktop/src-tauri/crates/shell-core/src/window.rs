@@ -108,10 +108,11 @@ impl FromStr for WindowTheme {
     }
 }
 
-/// Where the close button's top-left corner sits (logical points from the window's top-left), and how much horizontal room
-/// the three buttons take, so the page can start its own content to the right of them.
-pub const TRAFFIC_LIGHTS_POSITION: (f64, f64) = (20.0, 20.0);
-pub const TRAFFIC_LIGHTS_INSET_LEFT: f64 = 84.0;
+/// Where AppKit puts the buttons (Tauri's inset: x is the close button's left edge, the button's top lands 9pt above y) and
+/// how much room they take. x lines the close button up with the sidebar's row icons (14pt); y centres the 14pt buttons on
+/// the header controls, whose centre is 24pt down (AppFrame's 48px strip).
+pub const TRAFFIC_LIGHTS_POSITION: (f64, f64) = (14.0, 26.0);
+pub const TRAFFIC_LIGHTS_INSET_LEFT: f64 = 78.0;
 /// Height of the draggable header strip the web app should reserve at the top in app mode.
 pub const TITLEBAR_HEIGHT: f64 = 52.0;
 

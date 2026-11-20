@@ -1,8 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useLocation } from '@tanstack/react-router'
-import { BlocksIcon, BoxIcon, ChevronDownIcon, PlusIcon, ServerIcon, SettingsIcon, WorkflowIcon } from 'lucide-react'
+import { BlocksIcon, BoxIcon, ChevronDownIcon, ChevronRightIcon, PlusIcon, ServerIcon, SettingsIcon, WorkflowIcon } from 'lucide-react'
 import type { DorkState } from '@dorks/shared'
-import { useDorks } from '@dorks/client/react'
+import { useDorks, useGithubRepos } from '@dorks/client/react'
+import { Badge } from '@dorks/ui/badge'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@dorks/ui/collapsible'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,11 +24,15 @@ import { useDisconnect } from './ConnectionGate'
 import { ChatList, type Chat, type ChatRoute } from './ChatList'
 import { Logo } from './onboarding/List'
 import { OwnerAvatar, ownerOf } from './RepoAvatar'
+import { ownersOf, useOwnerScope } from './ownerScope'
 import { SIDEBAR_ROW, SIDEBAR_SECTION } from './sidebarChrome'
 import { UsageBar } from './UsageBar'
 import { useRowHover } from './useRowHover'
 
 const PR_NUMBER = /\/pull\/(\d+)/
+
+/** The name of an `owner/name` repository. */
+const nameOf = (repo: string) => repo.slice(repo.indexOf('/') + 1)
 
 /** Pull request number from the stored PR url. The backend does not keep the number or merged/closed state yet. */
 function prOf(prUrl: string | undefined): Chat['pr'] {
@@ -40,18 +46,39 @@ const MOVING: ReadonlySet<DorkState> = new Set(['creating', 'working', 'waking']
 export function AppSidebar() {
   const dorks = useDorks(false)
   const disconnect = useDisconnect()
+  const github = useGithubRepos()
   const chats: Chat[] = (dorks ?? []).map((d) => ({ id: d.id, title: d.title, repo: d.repo, working: MOVING.has(d.state), pr: prOf(d.prUrl) }))
-  return <AppSidebarView chats={chats} onDisconnect={disconnect} usage={<UsageBar />} />
+  return <AppSidebarView chats={chats} accounts={github} onDisconnect={disconnect} usage={<UsageBar />} />
 }
 
 const ALL = ''
-const SCOPE_KEY = 'dorks.owner-scope'
 
-/** The owner the sidebar is scoped to (`ALL` for every chat), remembered per browser. A scope with no chats left falls back to all. */
-function useOwnerScope(owners: string[]) {
-  const [scope, setScope] = useState(() => localStorage.getItem(SCOPE_KEY) ?? ALL)
-  useEffect(() => localStorage.setItem(SCOPE_KEY, scope), [scope])
-  return [owners.includes(scope) ? scope : ALL, setScope] as const
+const COLLAPSED_KEY = 'dorks.collapsed-repos'
+
+/** The repository sections folded shut, remembered per browser. */
+function useCollapsedRepos() {
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '[]') as string[])
+    } catch {
+      return new Set()
+    }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed]))
+    } catch {
+      // Not remembered.
+    }
+  }, [collapsed])
+  const toggle = (repo: string, open: boolean) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (open) next.delete(repo)
+      else next.add(repo)
+      return next
+    })
+  return [collapsed, toggle] as const
 }
 
 function GithubMark() {
@@ -71,7 +98,8 @@ function OwnerSwitcher({ owners, scope, setScope, onDisconnect }: { owners: stri
         <span className="min-w-0 truncate">{name}</span>
         <ChevronDownIcon aria-hidden className="text-muted-foreground" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
+      {/* A little wider than the sidebar's row, so long organization names fit. */}
+      <DropdownMenuContent align="start" className="w-[calc(var(--anchor-width)+1.5rem)]">
         <DropdownMenuGroup>
           <DropdownMenuLabel>Owners</DropdownMenuLabel>
           <DropdownMenuRadioGroup value={scope} onValueChange={(value) => setScope(value as string)}>
@@ -87,6 +115,13 @@ function OwnerSwitcher({ owners, scope, setScope, onDisconnect }: { owners: stri
             ))}
           </DropdownMenuRadioGroup>
         </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        {/* Installing the Dorks GitHub App on another organization: the app does not exist yet. */}
+        <DropdownMenuItem disabled>
+          <PlusIcon />
+          <span className="min-w-0 flex-1 truncate">Add organization</span>
+          <Badge variant="secondary">Soon</Badge>
+        </DropdownMenuItem>
         {onDisconnect && (
           <>
             <DropdownMenuSeparator />
@@ -111,19 +146,22 @@ const PAGES = [
 /**
  * The app's sidebar: a 48px title bar (traffic lights, the toggle, back and forward); the owner switcher with New session and the
  * app's pages; then the chats of
- * the owner in scope, grouped by repository (a plain label per repository, alphabetical), each group reorderable and remembering its
- * order; Settings at the foot. Rows are 30px, 2px apart, with one hover fill springing between them; groups are 16px apart. It sits
+ * the owner in scope, grouped by repository (a label per repository, alphabetical, that folds its section shut and remembers it),
+ * each group reorderable and remembering its order; Settings at the foot. Rows are 30px, 2px apart, with one hover fill springing between them; groups are 16px apart. It sits
  * flat on the app fill in a resizable panel (see AppFrame); on phones it is shadcn's sheet.
  */
 /** The sidebar from props alone. `usage` is the slot above Settings: the live `<UsageBar />` in the app, static data (or nothing) in demos. */
 export function AppSidebarView({
   chats,
+  accounts,
   onDisconnect,
   orderKey = 'dorks.chat-order',
   chatTo,
   usage,
 }: {
   chats: Chat[]
+  /** What the GitHub token can see (`GET /api/github/repos`): its user and organizations fill the owner switcher. */
+  accounts?: { login: string | null; orgs: string[]; repos: string[] }
   onDisconnect?: (() => void) | null
   orderKey?: string
   chatTo?: ChatRoute
@@ -133,7 +171,10 @@ export function AppSidebarView({
   const { pathname, search } = useLocation()
   const dork = (search as { dork?: unknown }).dork
   const activeId = typeof dork === 'string' ? dork : undefined
-  const owners = [...new Set(chats.flatMap((c) => (c.repo ? [ownerOf(c.repo)] : [])))].sort((a, b) => a.localeCompare(b))
+  const owners = ownersOf(
+    chats.flatMap((c) => (c.repo ? [c.repo] : [])),
+    accounts,
+  )
   const [scope, setScope] = useOwnerScope(owners)
   const inScope = scope ? chats.filter((c) => c.repo && ownerOf(c.repo) === scope) : chats
   const repos = new Map<string, Chat[]>()
@@ -141,7 +182,11 @@ export function AppSidebarView({
     const repo = chat.repo ?? ''
     repos.set(repo, [...(repos.get(repo) ?? []), chat])
   }
-  const groups = [...repos].sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)))
+  const groups = [...repos].sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : nameOf(a).localeCompare(nameOf(b)) || a.localeCompare(b)))
+  // A section is named by the repository alone (`dorks`), with its owner only when two owners share the name.
+  const names = groups.map(([repo]) => nameOf(repo))
+  const label = (repo: string) => (!repo ? 'Other' : names.filter((n) => n === nameOf(repo)).length > 1 ? repo : nameOf(repo))
+  const [collapsed, toggle] = useCollapsedRepos()
   const hover = useRowHover()
   const rowLink = (active: boolean) => ({ 'data-active': active || undefined, 'aria-current': active ? ('page' as const) : undefined, className: SIDEBAR_ROW })
   return (
@@ -166,25 +211,34 @@ export function AppSidebarView({
                 </Link>
               ))}
             </nav>
-            {groups.map(([repo, list]) => (
-              <nav key={repo} aria-label={repo || 'Other chats'} className="flex shrink-0 flex-col gap-0.5">
-                <div className={`group/section ${SIDEBAR_SECTION} pr-1`} title={repo || undefined}>
-                  <span className="min-w-0 flex-1 truncate">{repo ? (scope ? repo.slice(scope.length + 1) : repo) : 'Other'}</span>
-                  {repo && (
-                    <Link
-                      to="/dorks"
-                      search={{ repo }}
-                      aria-label={`New session in ${repo}`}
-                      title={`New session in ${repo}`}
-                      className="flex size-5 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none group-hover/section:opacity-100 hover:bg-foreground/[0.05] hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring [@media(hover:none)]:opacity-100"
-                    >
-                      <PlusIcon aria-hidden className="size-3.5" />
-                    </Link>
-                  )}
-                </div>
-                <ChatList chats={list} orderKey={`${orderKey}.${repo || 'other'}`} to={chatTo} activeId={activeId} />
-              </nav>
-            ))}
+            {groups.map(([repo, list]) => {
+              const key = repo || 'other'
+              const open = !collapsed.has(key)
+              return (
+                <Collapsible key={key} open={open} onOpenChange={(next) => toggle(key, next)} render={<nav aria-label={repo || 'Other chats'} className="flex shrink-0 flex-col gap-0.5" />}>
+                  <div className={`group/section ${SIDEBAR_SECTION} pr-1 pl-0`} title={repo || undefined}>
+                    <CollapsibleTrigger className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-[6px] pl-2 text-left outline-none hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring">
+                      <span className="min-w-0 truncate">{label(repo)}</span>
+                      <ChevronRightIcon aria-hidden className={`size-3 shrink-0 transition-transform duration-150 motion-reduce:transition-none ${open ? 'rotate-90' : ''}`} />
+                    </CollapsibleTrigger>
+                    {repo && (
+                      <Link
+                        to="/dorks"
+                        search={{ repo }}
+                        aria-label={`New session in ${repo}`}
+                        title={`New session in ${repo}`}
+                        className="flex size-5 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none group-hover/section:opacity-100 hover:bg-foreground/[0.05] hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring [@media(hover:none)]:opacity-100"
+                      >
+                        <PlusIcon aria-hidden className="size-3.5" />
+                      </Link>
+                    )}
+                  </div>
+                  <CollapsibleContent className="flex flex-col gap-0.5">
+                    <ChatList chats={list} orderKey={`${orderKey}.${key}`} to={chatTo} activeId={activeId} />
+                  </CollapsibleContent>
+                </Collapsible>
+              )
+            })}
           </div>
           <div className="flex shrink-0 flex-col gap-2 pt-1.5">
             {usage}

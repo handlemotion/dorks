@@ -20,15 +20,26 @@ export function rememberModelChoices(app: App, models: AgentModelChoice[]) {
   touch(app, { t: "settings" });
 }
 
-/** The last model list a Claude agent reported, or `[]` before any did. */
+/**
+ * Before any agent has reported its list, the CLI's own stable aliases, so the first session can already pick a model. The
+ * efforts are left out (the default only) until the real list arrives and replaces this one.
+ */
+const FALLBACK_CHOICES: AgentModelChoice[] = [
+  { model: "default", name: "Default", efforts: [] },
+  { model: "opus", name: "Opus", efforts: [] },
+  { model: "sonnet", name: "Sonnet", efforts: [] },
+  { model: "haiku", name: "Haiku", efforts: [] },
+];
+
+/** The last model list a Claude agent reported, or the CLI's aliases before any did. */
 export function knownModelChoices(app: App): AgentModelChoice[] {
   const raw = app.db.get<{ value: string }>("SELECT value FROM meta WHERE key = ?", CACHE_KEY)?.value;
-  if (!raw) return [];
+  if (!raw) return FALLBACK_CHOICES;
   try {
     const parsed = z.array(agentModelChoice).safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : [];
+    return parsed.success && parsed.data.length ? parsed.data : FALLBACK_CHOICES;
   } catch {
-    return [];
+    return FALLBACK_CHOICES;
   }
 }
 

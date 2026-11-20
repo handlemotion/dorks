@@ -11,13 +11,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@dorks/ui/dropdown-menu'
-import { Input } from '@dorks/ui/input'
-import { Button } from '@dorks/ui/button'
+import { MENU_POPUP_CLASS } from '@dorks/ui/dropdown-menu'
+import { Command, CommandEmpty, CommandInput, CommandItem, CommandList, CommandSeparator } from '@dorks/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@dorks/ui/popover'
 import claudeLogo from '../assets/providers/claude.svg'
 import openaiDark from '../assets/providers/openai-dark.svg'
 import openaiLight from '../assets/providers/openai-light.svg'
 import { Logo } from './onboarding/List'
+import { OwnerAvatar, ownerOf } from './RepoAvatar'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@dorks/ui/input-group'
 import { Tip } from './Tip'
 import { ReplyBanner } from './Reply'
@@ -622,20 +623,46 @@ function MachineMenu({ machine, disabled }: { machine: MachinePicker; disabled?:
   )
 }
 
-/** Recent repositories are shortcuts; entering owner/repo also works for a first session. */
+const REPO = /^[\w.-]+\/[\w.-]+$/
+
+/** One repository row: the owner's avatar, then `owner/name` with the owner muted. */
+function RepoRow({ repo }: { repo: string }) {
+  const owner = ownerOf(repo)
+  return (
+    <>
+      <OwnerAvatar owner={owner} />
+      <span className="min-w-0 flex-1 truncate">
+        <span className="text-muted-foreground">{owner}/</span>
+        {repo.slice(owner.length + 1)}
+      </span>
+    </>
+  )
+}
+
+const REPO_ITEM = 'h-8 gap-2 rounded-[6px] px-2 py-0 font-normal data-selected:bg-foreground/[0.05] [&>svg:last-child]:size-3.5'
+
+/**
+ * The repository for a new session: a searchable list of the GitHub token's repositories (and the ones chats used), the chosen one
+ * first. Typing a full `owner/repo` that is not listed offers it too, since a first session may name any repository.
+ */
 function RepositoryPicker({ repo, setRepo, repositories, disabled }: { repo: string; setRepo: (repo: string) => void; repositories: string[]; disabled?: boolean }) {
   const [open, setOpen] = useState(false)
-  const [draft, setDraft] = useState(repo)
+  const [query, setQuery] = useState('')
   const choose = (value: string) => {
     setRepo(value.trim())
     setOpen(false)
   }
+  const q = query.trim().toLowerCase()
+  const others = repositories.filter((r) => r !== repo && (!q || r.toLowerCase().includes(q)))
+  const showSelected = !!repo && (!q || repo.toLowerCase().includes(q))
+  const typed = query.trim()
+  const canUseTyped = REPO.test(typed) && !repositories.some((r) => r.toLowerCase() === typed.toLowerCase()) && typed.toLowerCase() !== repo.toLowerCase()
   return (
     <Popover
       open={open}
       onOpenChange={(next) => {
         setOpen(next)
-        if (next) setDraft(repo)
+        if (next) setQuery('')
       }}
     >
       <PopoverTrigger
@@ -650,41 +677,37 @@ function RepositoryPicker({ repo, setRepo, repositories, disabled }: { repo: str
           />
         }
       >
-        <FolderIcon />
+        {repo ? <OwnerAvatar owner={ownerOf(repo)} size={16} className="size-3.5" /> : <FolderIcon />}
         <span className="max-w-48 truncate">{repo || 'Choose repository'}</span>
         <ChevronDownIcon />
       </PopoverTrigger>
-      <PopoverContent align="start" className="gap-2 border border-border p-2">
-        <label htmlFor="new-session-repo" className="px-1 text-xs text-muted-foreground">
-          Repository
-        </label>
-        <Input
-          id="new-session-repo"
-          aria-label="repo"
-          autoComplete="off"
-          placeholder="owner/repo"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault()
-              if (draft.trim()) choose(draft)
-            }
-          }}
-        />
-        {repositories.length > 0 && (
-          <div className="flex max-h-44 flex-col overflow-y-auto">
-            {repositories.map((value) => (
-              <Button key={value} variant="ghost" size="sm" className="justify-start" onClick={() => choose(value)}>
-                <FolderIcon />
-                <span className="truncate">{value}</span>
-              </Button>
+      {/* Styled as the app's dropdown menus (hairline, soft shadow, 32px rows), since that is what it is. */}
+      <PopoverContent align="start" className={`${MENU_POPUP_CLASS} w-80 gap-0 p-0`}>
+        <Command shouldFilter={false} loop className="rounded-none bg-transparent p-0">
+          <CommandInput aria-label="Search repositories" autoFocus value={query} onValueChange={setQuery} placeholder="Search repositories…" className="placeholder:text-muted-foreground" />
+          <CommandList className="max-h-72 p-1">
+            <CommandEmpty className="px-2 py-3 text-left text-xs text-muted-foreground">
+              {typed ? 'No repositories match. Type a full owner/repo to use it.' : 'No repositories yet. Type an owner/repo.'}
+            </CommandEmpty>
+            {canUseTyped && (
+              <CommandItem value={`use:${typed}`} onSelect={() => choose(typed)} className={REPO_ITEM}>
+                <PlusIcon className="size-3.5 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate">Use {typed}</span>
+              </CommandItem>
+            )}
+            {showSelected && (
+              <CommandItem value={repo} data-checked="true" onSelect={() => choose(repo)} className={REPO_ITEM}>
+                <RepoRow repo={repo} />
+              </CommandItem>
+            )}
+            {showSelected && others.length > 0 && <CommandSeparator className="-mx-1 my-1 bg-border" />}
+            {others.map((value) => (
+              <CommandItem key={value} value={value} onSelect={() => choose(value)} className={REPO_ITEM}>
+                <RepoRow repo={value} />
+              </CommandItem>
             ))}
-          </div>
-        )}
-        <Button size="sm" variant="outline" disabled={!draft.trim()} onClick={() => choose(draft)}>
-          Use repository
-        </Button>
+          </CommandList>
+        </Command>
       </PopoverContent>
     </Popover>
   )

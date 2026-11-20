@@ -3,7 +3,7 @@ import { EventsFeed } from "./events.ts";
 import { createApi, ApiError, type ApiConfig, type DesktopOptions } from "./http.ts";
 import { connectLive, type LiveStatus } from "./live.ts";
 import { Query, type QueryOptions, type Store } from "./store.ts";
-import type { BuildInput, BuildVarInput, BuildView, CreateDorkInput, Dork, LiveMessage, PrRefInput, RunView, Settings, SettingsPatch, SnapshotStatus, Usage } from "./types.ts";
+import type { BuildInput, BuildVarInput, BuildView, CreateDorkInput, Dork, LiveMessage, PrRefInput, RunView, Settings, SettingsPatch, SnapshotStatus, Usage, GithubRepos } from "./types.ts";
 
 export interface ClientConfig extends ApiConfig {
   /** Events fetched per page. */
@@ -107,6 +107,7 @@ export class DorksClient {
         break;
       case "settings":
         this.invalidate("settings");
+        this.invalidate("github-repos");
         this.invalidate("secrets");
         break;
       case "snapshot":
@@ -152,6 +153,11 @@ export class DorksClient {
   /** Claude subscription and Boat plan usage (the server caches it for five minutes). */
   usage() {
     return this.query<Usage>("usage", () => this.api.getUsage());
+  }
+
+  /** What the saved GitHub token can see (the server caches it briefly). Refetched when settings change, since the token may have. */
+  githubRepos() {
+    return this.query<GithubRepos>("github-repos", () => this.api.getGithubRepos());
   }
 
   secretNames() {

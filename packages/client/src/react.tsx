@@ -3,7 +3,7 @@ import { toAppError, type SubscriptionView } from "@dorks/shared";
 import type { DorksClient, ConnectionState } from "./client.ts";
 import type { EventsState } from "./events.ts";
 import type { QueryState, Store } from "./store.ts";
-import type { BuildView, Dork, RunView, Settings, SnapshotStatus, Usage } from "./types.ts";
+import type { BuildView, Dork, RunView, Settings, SnapshotStatus, Usage, GithubRepos } from "./types.ts";
 
 const Ctx = createContext<DorksClient | null>(null);
 
@@ -60,6 +60,11 @@ export function useSnapshot(): SnapshotStatus | undefined {
 /** Usage of the Claude subscription and the Boat plan; `undefined` while loading. */
 export function useUsage(): Usage | undefined {
   return useStore(useDorksClient().usage()).data;
+}
+
+/** What the saved GitHub token can see: its user, organizations and repositories; `undefined` while loading. */
+export function useGithubRepos(): GithubRepos | undefined {
+  return useStore(useDorksClient().githubRepos()).data;
 }
 
 export function useSecretNames(): string[] | undefined {
