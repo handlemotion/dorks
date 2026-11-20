@@ -31,7 +31,7 @@ import {
 
 export function SetupPage({ settings }: { settings: Settings }) {
   const done = stepDone(settings)
-  const rows = [...STEPS.map((s) => ({ id: s.id, title: s.title, done: done[s.id] })), { id: 'tunnel', title: 'Public URL for sandboxes (the tunnel)', done: settings.publicUrlConfigured }]
+  const rows = [...STEPS.map((s) => ({ id: s.id, title: s.title, done: done[s.id] })), { id: 'tunnel', title: 'Public URL', done: settings.publicUrlConfigured }]
   return (
     <SettingsSections>
       <SettingsSection title="Checklist">
@@ -48,7 +48,7 @@ export function SetupPage({ settings }: { settings: Settings }) {
           {!settings.publicUrlConfigured && (
             <SettingsGroupBody role="status">
               <p>
-                No public URL is configured, so sandboxes cannot reach this machine. The desktop app sets it up; when running the server by hand, set <code>DORKS_PUBLIC_URL</code>.
+                Sandboxes can't reach this machine yet. Set <code>DORKS_PUBLIC_URL</code>.
               </p>
             </SettingsGroupBody>
           )}
@@ -58,7 +58,6 @@ export function SetupPage({ settings }: { settings: Settings }) {
         <SettingsGroup>
           <SettingsRow
             label="Run the guided setup"
-            description="Walks through each step again, one screen at a time."
             control={
               <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/onboarding" />}>
                 Open
@@ -87,7 +86,7 @@ export function BoatPage({ settings }: { settings: Settings }) {
   const { run, pending, error } = usePending()
   return (
     <SettingsSections>
-      <SettingsSection title="Account" description="Sessions run in sandboxes in this Boat account.">
+      <SettingsSection title="Account">
         <SettingsGroup
           label="boat account"
           onSubmit={() => {
@@ -102,7 +101,7 @@ export function BoatPage({ settings }: { settings: Settings }) {
           <SettingsInputRow
             id="boat-key"
             label="API key"
-            description={settings.boatKey ? 'A key is saved.' : 'Not set.'}
+            description={settings.boatKey ? 'Saved' : 'Not set'}
             aria-label="boat api key"
             type="password"
             autoComplete="off"
@@ -113,7 +112,7 @@ export function BoatPage({ settings }: { settings: Settings }) {
           <SettingsInputRow
             id="boat-org"
             label="Organization"
-            description="Optional, only to bill a team wallet."
+            description="Optional"
             aria-label="boat organization"
             autoComplete="off"
             placeholder="Personal wallet"
@@ -127,7 +126,7 @@ export function BoatPage({ settings }: { settings: Settings }) {
               </Button>
             }
           >
-            Create the key in your Boat account with access to create, list, use and delete sandboxes. It is stored encrypted on this machine and never shown again.
+            Needs access to create, use and delete sandboxes.
           </SettingsGroupFooter>
         </SettingsGroup>
         <SettingsStatus saved={saved} error={error} />
@@ -167,11 +166,11 @@ export function SnapshotPage({ settings }: { settings: Settings }) {
   const inUse = settings.baseSnapshotId
   return (
     <SettingsSections>
-      <SettingsSection title="Base snapshot" description="Every session starts from a saved snapshot in your Boat account that holds the bridge and the agent tools, with no credentials in it.">
+      <SettingsSection title="Base snapshot" description="What every session starts from.">
         {!snap ? (
           <SettingsGroup>
             <SettingsGroupBody role="status">
-              <p>Checking the base snapshot…</p>
+              <p>Checking…</p>
             </SettingsGroupBody>
           </SettingsGroup>
         ) : (
@@ -193,7 +192,7 @@ function SnapshotGroup({ snap, inUse, pending, build }: { snap: SnapshotStatus; 
     <SettingsGroup>
       <SettingsRow
         label="Status"
-        description={inUse ? <code data-testid="snapshot-in-use">{inUse}</code> : 'Dorks builds it in a temporary sandbox, saves it, and deletes the sandbox.'}
+        description={inUse ? <code data-testid="snapshot-in-use">{inUse}</code> : undefined}
         control={
           <>
             <span className={`text-sm ${SETTINGS_TONE[state.tone]}`}>{state.value}</span>
@@ -219,9 +218,6 @@ function SnapshotGroup({ snap, inUse, pending, build }: { snap: SnapshotStatus; 
           <p>{snap.cannotBuildReason}</p>
         </SettingsGroupBody>
       )}
-      <SettingsGroupBody>
-        <p>A build takes a few minutes and counts as one saved snapshot in your Boat plan.</p>
-      </SettingsGroupBody>
     </SettingsGroup>
   )
 }
@@ -242,12 +238,12 @@ function SnapshotNotes({ snap, inUse }: { snap: SnapshotStatus; inUse: string | 
       )}
       {snap.managed && snap.stale && (
         <SettingsGroupBody role="status" data-testid="snapshot-stale">
-          <p>An update is available: this snapshot was built with an older bridge than this app carries. Update it so new sessions use the current one. Existing sessions keep what they have.</p>
+          <p>Built with an older bridge. Running sessions keep theirs.</p>
         </SettingsGroupBody>
       )}
       {inUse && !snap.managed && (
         <SettingsGroupBody role="status">
-          <p>You entered this snapshot by hand. Prepare Boat can build a managed one instead.</p>
+          <p>Entered by hand.</p>
         </SettingsGroupBody>
       )}
     </>
@@ -261,7 +257,7 @@ function ManualSnapshot({ settings }: { settings: Settings }) {
   const [saved, setSaved] = useState(false)
   const { run, pending, error } = usePending()
   return (
-    <SettingsSection title="Your own snapshot" description="A snapshot you built yourself, by its name in your Boat account or a bsh_ share code.">
+    <SettingsSection title="Your own snapshot" description="A name or bsh_ share code.">
       <SettingsGroup
         label="manual snapshot"
         onSubmit={() => {
@@ -287,11 +283,10 @@ function ManualSnapshot({ settings }: { settings: Settings }) {
         />
         <SettingsGroupBody>
           <p>
-            It must contain the bridge and tools described in{' '}
+            Only from people you trust: it runs with your tokens.{' '}
             <a href="https://github.com/handlemotion/dorks/blob/main/docs/boat.md" target="_blank" rel="noreferrer">
-              docs/boat.md
+              What it needs
             </a>
-            . Only use share codes from people you trust: a snapshot's code runs with your agent tokens.
           </p>
         </SettingsGroupBody>
       </SettingsGroup>
@@ -335,11 +330,6 @@ function SleepSection({ current }: { current: number }) {
         <SettingsRow
           label="Sleep after idle"
           htmlFor="sleep-minutes"
-          description={
-            <>
-              An idle sandbox is paused after this long. Currently <span data-testid="sleep-current">{current}</span> min.
-            </>
-          }
           control={
             <>
               <div className="flex items-center gap-2">
@@ -370,7 +360,7 @@ function CommentPolicySection({ settings }: { settings: Settings }) {
     .map((l) => l.trim())
     .filter(Boolean)
   return (
-    <SettingsSection title="Pull request comments" description="A comment on a session's pull request wakes it up and becomes its next message.">
+    <SettingsSection title="Pull request comments" description="A comment wakes the session.">
       <SettingsGroup
         label="comment policy"
         onSubmit={() => {
@@ -384,7 +374,7 @@ function CommentPolicySection({ settings }: { settings: Settings }) {
         <SettingsSelectRow label="Who can wake a session" value={mode} options={WHO} onValueChange={setMode} />
         {mode === 'allowlist' && (
           <SettingsGroupBody>
-            <label htmlFor="allowed-logins">GitHub logins, one per line or comma separated. Bots by login, e.g. coderabbitai[bot].</label>
+            <label htmlFor="allowed-logins">GitHub logins, one per line</label>
             <Textarea id="allowed-logins" aria-label="allowed logins" rows={3} value={logins} onChange={(e) => setLogins(e.target.value)} className="text-foreground" />
           </SettingsGroupBody>
         )}
@@ -395,7 +385,7 @@ function CommentPolicySection({ settings }: { settings: Settings }) {
             </Button>
           }
         >
-          Comments written by the token’s own account are always ignored: they are the agent’s own.
+          The agent's own comments never count.
         </SettingsGroupFooter>
       </SettingsGroup>
       <SettingsStatus saved={saved} error={error} />
@@ -411,7 +401,7 @@ export function VariablesPage() {
   const { run, pending, error } = usePending()
   return (
     <SettingsSections>
-      <SettingsSection title="Shared variables" description="Environment variables for every session, on any machine. A build’s own variable with the same name wins. Values are never displayed.">
+      <SettingsSection title="Shared variables" description="Every session gets these.">
         <SettingsGroup label="secret names">
           {names?.map((n) => (
             <SettingsRow
@@ -424,7 +414,7 @@ export function VariablesPage() {
               }
             />
           ))}
-          {names?.length === 0 && <EmptyState figure="drawer" title="No variables yet" description="Add one below and every new session gets it." />}
+          {names?.length === 0 && <EmptyState figure="drawer" title="No variables yet" />}
         </SettingsGroup>
       </SettingsSection>
       <SettingsSection title="Add a variable">
@@ -446,9 +436,7 @@ export function VariablesPage() {
                 Save variable
               </Button>
             }
-          >
-            Stored encrypted on this machine.
-          </SettingsGroupFooter>
+          />
         </SettingsGroup>
         <SettingsStatus error={error} />
       </SettingsSection>
@@ -464,10 +452,7 @@ export function PublicUrlPage({ settings }: { settings: Settings }) {
   const { run, pending, error } = usePending()
   return (
     <SettingsSections>
-      <SettingsSection
-        title="Public URL"
-        description="Boat sandboxes connect out to this address, which must forward to this machine’s bridge port. Only the bridge is exposed, never the app’s own API."
-      >
+      <SettingsSection title="Public URL" description="Where sandboxes reach this machine.">
         <SettingsGroup
           label="public url"
           onSubmit={() => {
@@ -481,7 +466,7 @@ export function PublicUrlPage({ settings }: { settings: Settings }) {
           <SettingsValueRow
             label="Status"
             valueTestId="tunnel-status"
-            value={settings.publicUrlConfigured ? 'A public URL is set' : 'No public URL yet'}
+            value={settings.publicUrlConfigured ? 'Set' : 'Not set'}
             tone={settings.publicUrlConfigured ? 'success' : 'muted'}
             description={tunnel ? `Tunnel: ${tunnel.kind}, ${tunnel.state}${tunnel.error ? ` (${tunnel.error})` : ''}.` : undefined}
           />

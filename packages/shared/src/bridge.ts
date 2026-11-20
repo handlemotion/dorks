@@ -20,6 +20,8 @@ export const agentModelChoice = z.object({
   /** The full id the alias resolves to today, when the CLI says. */
   resolved: modelValue.optional(),
   efforts: z.array(effortLevel),
+  /** The model offers fast mode (the CLI's `supportsFastMode`). */
+  fast: z.boolean().optional(),
 });
 export type AgentModelChoice = z.infer<typeof agentModelChoice>;
 
@@ -36,6 +38,8 @@ export const toBridge = z.discriminatedUnion("t", [
     // Claude: the model (a CLI alias such as `opus`, or a full id) and effort chosen in the UI; absent means the CLI's default.
     model: z.string().optional(),
     effort: z.string().optional(),
+    // Claude: fast mode on (the `fastMode` setting); only sent for a model that offers it.
+    fast: z.boolean().optional(),
     env: z.record(z.string(), z.string()), // CLAUDE_CODE_OAUTH_TOKEN + shared and build variables: passed to the agent child, never written to disk
     ghToken: z.string(),
     // null: a session with no starting repo (a machine-setup session, docs/builds.md): the agent starts in the work directory.

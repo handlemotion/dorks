@@ -265,6 +265,10 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE settings ADD COLUMN default_build_id TEXT;
   `,
   `
+  -- Claude: fast mode chosen in the UI (only for a model that offers it).
+  ALTER TABLE dorks ADD COLUMN fast INTEGER NOT NULL DEFAULT 0;
+  `,
+  `
   -- MCP servers from Customize (services/mcpServers.ts). Header and env values may be secrets: they live in secrets_enc, one AES-GCM
   -- envelope of a JSON object {headers, env}; the names alone are copied to secret_names for display.
   CREATE TABLE mcp_servers (

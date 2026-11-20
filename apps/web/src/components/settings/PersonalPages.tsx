@@ -23,7 +23,7 @@ export function AppearancePage() {
     <SettingsSections>
       <SettingsSection title="Theme">
         <SettingsGroup>
-          <SettingsSelectRow label="Appearance" description="System follows your computer's light or dark mode." value={current} options={THEMES} onValueChange={setTheme} />
+          <SettingsSelectRow label="Appearance" value={current} options={THEMES} onValueChange={setTheme} />
         </SettingsGroup>
       </SettingsSection>
     </SettingsSections>
@@ -60,7 +60,7 @@ function ClaudeSection({ settings }: { settings: Settings }) {
         <SettingsInputRow
           id="claude-token"
           label="Token"
-          description={settings.claudeToken ? 'A token is saved.' : 'Not set.'}
+          description={settings.claudeToken ? 'Saved' : 'Not set'}
           aria-label="claude token"
           type="password"
           autoComplete="off"
@@ -75,7 +75,7 @@ function ClaudeSection({ settings }: { settings: Settings }) {
         />
         <SettingsGroupBody>
           <p>
-            Run <code>claude setup-token</code> to get one. Stored encrypted; it is never shown again. Saving a new one replaces the old.
+            From <code>claude setup-token</code>
           </p>
         </SettingsGroupBody>
       </SettingsGroup>
@@ -91,7 +91,7 @@ function CodexSection({ settings }: { settings: Settings }) {
   const { run, pending, error } = usePending()
   const current = settings.boatEnvironment
   return (
-    <SettingsSection title="ChatGPT for Codex" description="Optional. Only for your own, trusted repositories: Codex needs the sign-in on each sandbox, so code running there can read it.">
+    <SettingsSection title="Codex" description="Optional. Trusted repositories only.">
       <SettingsGroup
         label="codex environment"
         onSubmit={() => {
@@ -105,7 +105,7 @@ function CodexSection({ settings }: { settings: Settings }) {
         <SettingsInputRow
           id="boat-environment"
           label="Boat environment"
-          description={current ? `New Codex sandboxes use ${current}.` : 'Needed before creating Codex sessions. Dorks does not store ChatGPT tokens.'}
+          description={current ? 'Saved' : 'Not set'}
           aria-label="Boat environment"
           value={environment}
           onChange={(e) => setEnvironment(e.target.value)}
@@ -118,14 +118,10 @@ function CodexSection({ settings }: { settings: Settings }) {
         />
         <SettingsGroupBody>
           <p>
-            Connect ChatGPT once in Boat’s Agents &amp; Proxying page using its short code. Use a profile containing only ChatGPT, and leave Boat’s account-wide AI credentials proxy off. Create an
-            environment using that profile: turn on Agents credentials, turn off Safe for third parties, GitHub, Secrets, Boat credentials, and Proxy AI credentials.{' '}
             <a href="https://docs.boat.dev/environments/access" target="_blank" rel="noreferrer">
-              Boat setup instructions
+              How to set up a Boat environment
             </a>
-            .
           </p>
-          {current && <p>Boat checks its access settings when each sandbox starts; saving does not confirm ChatGPT is connected yet.</p>}
         </SettingsGroupBody>
       </SettingsGroup>
       <SettingsStatus saved={saved} error={error} />
@@ -148,7 +144,7 @@ export function GithubPage({ settings }: { settings: Settings }) {
   const { configured, login } = settings.github
   return (
     <SettingsSections>
-      <SettingsSection title="Account" description="Dorks acts on GitHub as whoever owns this token: it clones, pushes and opens pull requests, and watches the PRs it opened.">
+      <SettingsSection title="Account">
         <SettingsGroup
           label="github token"
           onSubmit={() => {
@@ -161,7 +157,7 @@ export function GithubPage({ settings }: { settings: Settings }) {
           <SettingsInputRow
             id="github-token"
             label="Personal access token"
-            description="Fine-grained, limited to the repositories it should work on."
+            description="Fine-grained"
             aria-label="github token"
             type="password"
             autoComplete="off"
@@ -176,11 +172,10 @@ export function GithubPage({ settings }: { settings: Settings }) {
           />
           <SettingsGroupBody>
             <p>
-              Give it read and write access to contents, pull requests, issues and workflows. The token is sent to your sandbox so the agent can push.{' '}
+              Read and write on contents, pull requests, issues and workflows.{' '}
               <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">
                 Create one
               </a>
-              .
             </p>
           </SettingsGroupBody>
         </SettingsGroup>
@@ -188,7 +183,7 @@ export function GithubPage({ settings }: { settings: Settings }) {
           <SettingsGroup>
             <SettingsButtonRow
               label="GitHub CLI login"
-              description="Its login token usually has broad access to all your repositories, and it will be sent to your cloud sandbox. A scoped token is safer."
+              description="Reaches all your repositories. A scoped token is safer."
               actionLabel="Use my GitHub CLI login"
               disabled={pending}
               onAction={() => {

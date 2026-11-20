@@ -94,7 +94,10 @@ function checkBuild(app: App, input: unknown, setup: boolean): string | null {
   return buildId;
 }
 
-export function createDork(app: App, input: { repo?: string; message: string; title?: string; provider?: Provider; model?: unknown; effort?: unknown; buildId?: unknown; setup?: unknown }): string {
+export function createDork(
+  app: App,
+  input: { repo?: string; message: string; title?: string; provider?: Provider; model?: unknown; effort?: unknown; fast?: unknown; buildId?: unknown; setup?: unknown },
+): string {
   const { message, title, provider = "claude" } = input;
   const setup = input.setup === true;
   if (provider !== "claude" && provider !== "codex") fail("invalid", "provider must be claude or codex");
@@ -104,7 +107,7 @@ export function createDork(app: App, input: { repo?: string; message: string; ti
   const text = checkText(message);
   const missing = missingForSession(app, provider);
   if (missing) fail("onboarding_incomplete", missing);
-  const choice = provider === "claude" ? validModelChoice(knownModelChoices(app), input.model, input.effort) : {};
+  const choice = provider === "claude" ? validModelChoice(knownModelChoices(app), input.model, input.effort, input.fast) : { fast: false };
 
   const id = app.uuid();
   const now = app.now();

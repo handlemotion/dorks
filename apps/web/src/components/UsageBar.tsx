@@ -31,7 +31,8 @@ export function UsageBarView({ usage }: { usage: Usage }) {
       <div className="flex flex-col gap-3 rounded-[6px] border border-border bg-surface px-[10px] pt-[6.5px] pb-[10px]">
         {claude && (
           <>
-            <Meter label="Claude session" used={claude.session?.used ?? 0} title={claude.session?.resetsAt ? `Resets ${time.format(claude.session.resetsAt)}` : undefined} />
+            {/* No 5-hour window reported (plans without session limits, such as Ultra): no session meter. */}
+            {claude.session && <Meter label="Claude session" used={claude.session.used} title={claude.session.resetsAt ? `Resets ${time.format(claude.session.resetsAt)}` : undefined} />}
             <Meter label="Claude weekly" used={claude.weekly.used} title={claude.weekly.resetsAt ? `Resets ${day.format(claude.weekly.resetsAt)}` : undefined} />
           </>
         )}

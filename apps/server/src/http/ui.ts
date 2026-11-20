@@ -26,12 +26,12 @@ const safeEqual = (a: string, b: string) => {
 
 // Request bodies. A field a service checks itself (with its own message) stays `Unknown` here.
 const Loose = Schema.optional(Schema.Unknown);
-const CreateDork = Schema.Struct({ repo: Loose, message: Loose, title: Loose, provider: Loose, model: Loose, effort: Loose, buildId: Loose, setup: Loose });
+const CreateDork = Schema.Struct({ repo: Loose, message: Loose, title: Loose, provider: Loose, model: Loose, effort: Loose, fast: Loose, buildId: Loose, setup: Loose });
 const Text = Schema.Struct({ text: Loose });
 const Title = Schema.Struct({ title: Loose });
 const Theme = Schema.Struct({ theme: Loose });
 const Archived = Schema.Struct({ archived: Schema.Boolean });
-const ModelChoice = Schema.Struct({ model: Loose, effort: Loose });
+const ModelChoice = Schema.Struct({ model: Loose, effort: Loose, fast: Loose });
 const Pr = Schema.Struct({ repo: Schema.String, number: Schema.Int });
 const SecretValue = Schema.Struct({ value: Loose });
 const Force = Schema.Struct({ force: Schema.optional(Schema.Boolean) });
@@ -125,6 +125,7 @@ export function uiApp(app: App): Hono {
             provider: b.provider as never,
             model: b.model,
             effort: b.effort,
+            fast: b.fast,
             buildId: b.buildId,
             setup: b.setup,
           }),
@@ -187,7 +188,7 @@ export function uiApp(app: App): Hono {
     "/api/dorks/:id/model",
     on((c) =>
       body(c, ModelChoice).pipe(
-        Effect.flatMap((b) => service((a) => chooseModel(a, id(c), b.model, b.effort))),
+        Effect.flatMap((b) => service((a) => chooseModel(a, id(c), b.model, b.effort, b.fast))),
         ok(c),
       ),
     ),

@@ -81,8 +81,9 @@ function useCollapsedRepos() {
   return [collapsed, toggle] as const
 }
 
+/** 16px, but in the rows' 14px icon column (-1px each side), so its label starts where the other rows' do. */
 function GithubMark() {
-  return <Logo light={githubLight} dark={githubDark} className="size-4 shrink-0" />
+  return <Logo light={githubLight} dark={githubDark} className="-mx-px size-4 shrink-0" />
 }
 
 /**
@@ -94,7 +95,7 @@ function OwnerSwitcher({ owners, scope, setScope, onDisconnect }: { owners: stri
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger aria-label={`Switch owner, currently ${name}`} className={`${SIDEBAR_ROW} text-foreground aria-expanded:bg-foreground/[0.05]`}>
-        {scope ? <OwnerAvatar owner={scope} /> : <GithubMark />}
+        {scope ? <OwnerAvatar owner={scope} className="-mx-px" /> : <GithubMark />}
         <span className="min-w-0 truncate">{name}</span>
         <ChevronDownIcon aria-hidden className="text-muted-foreground" />
       </DropdownMenuTrigger>
@@ -201,7 +202,8 @@ export function AppSidebarView({
             <nav aria-label="App" className="flex shrink-0 flex-col gap-0.5">
               <OwnerSwitcher owners={owners} scope={scope} setScope={setScope} onDisconnect={onDisconnect} />
               <Link to="/dorks" search={{}} {...rowLink(pathname === '/dorks' && !activeId)}>
-                <PlusIcon />
+                {/* The plus is a narrow glyph: drawn at 16px in the 14px column so it reads as wide as the page icons under it. */}
+                <PlusIcon className="-mx-px size-4!" />
                 New session
               </Link>
               {PAGES.map(({ to, label, icon: Icon }) => (
