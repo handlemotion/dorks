@@ -239,7 +239,7 @@ function OpenTab({ value, icon, title, onClose, children }: { value: TabKey; ico
       <TabsTrigger
         value={value}
         title={title}
-        className={`${TAB_CLASS} max-w-48`}
+        className={`${TAB_CLASS} max-w-48 group-hover/tab:text-foreground dark:group-hover/tab:text-foreground group-hover/tab:not-data-active:bg-foreground/[0.04]`}
         onAuxClick={(e) => {
           if (e.button === 1) onClose()
         }}
@@ -256,7 +256,7 @@ function OpenTab({ value, icon, title, onClose, children }: { value: TabKey; ico
       <button
         type="button"
         aria-label={`Close ${title}`}
-        className="absolute top-1/2 left-[5px] flex size-5 -translate-y-1/2 items-center justify-center rounded-[4px] text-muted-foreground opacity-0 group-hover/tab:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring"
+        className="absolute top-1/2 left-[6px] flex size-[18px] -translate-y-1/2 items-center justify-center rounded-[4px] text-muted-foreground opacity-0 group-hover/tab:opacity-100 hover:bg-foreground/[0.08] hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring"
         onClick={onClose}
       >
         <XIcon className="size-3.5" />
