@@ -1,10 +1,15 @@
 import type { SubscriptionView } from '@dorks/shared'
-import { Link, type RegisteredRouter } from '@tanstack/react-router'
+import { Link, useRouter, type RegisteredRouter } from '@tanstack/react-router'
 import { move } from '@dnd-kit/helpers'
 import { Accessibility, defaultPreset, KeyboardSensor, PointerActivationConstraints, PointerSensor } from '@dnd-kit/dom'
 import { DragDropProvider, type DragEndEvent, type DragOverEvent, type DragStartEvent } from '@dnd-kit/react'
 import { isSortable, useSortable } from '@dnd-kit/react/sortable'
+import { ArchiveIcon, LinkIcon } from 'lucide-react'
+import { toast } from 'sonner'
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@dorks/ui/context-menu'
+import { DropdownMenuItem } from '@dorks/ui/dropdown-menu'
 import { useStoredOrder } from '../lib/storedOrder'
+import { Tip } from './Tip'
 import { Orb } from './Orb'
 import { SIDEBAR_ROW } from './sidebarChrome'
 import { prStatus } from './PrStatus'
@@ -62,7 +67,21 @@ const PLUGINS = [
  * Chats the user can reorder by dragging (or Space + arrow keys). The order is remembered per browser under `orderKey`.
  * One provider per list, so a chat cannot be dragged into another list.
  */
-export function ChatList({ chats, orderKey, to = '/dorks' as ChatRoute, activeId }: { chats: Chat[]; orderKey: string; to?: ChatRoute; /** The chat open in the page. */ activeId?: string }) {
+export function ChatList({
+  chats,
+  orderKey,
+  to = '/dorks' as ChatRoute,
+  activeId,
+  onArchive,
+}: {
+  chats: Chat[]
+  orderKey: string
+  to?: ChatRoute
+  /** The chat open in the page. */
+  activeId?: string
+  /** Archives a chat: the row's hover button and its right-click menu. Without it, neither shows. */
+  onArchive?: (id: string) => void
+}) {
   const [order, setOrder] = useStoredOrder(
     orderKey,
     chats.map((c) => c.id),
@@ -79,7 +98,7 @@ export function ChatList({ chats, orderKey, to = '/dorks' as ChatRoute, activeId
       }}
     >
       {order.map((id, index) => (
-        <ChatItem key={id} chat={byId.get(id)!} index={index} to={to} active={id === activeId} />
+        <ChatItem key={id} chat={byId.get(id)!} index={index} to={to} active={id === activeId} onArchive={onArchive} />
       ))}
     </DragDropProvider>
   )
@@ -88,13 +107,15 @@ export function ChatList({ chats, orderKey, to = '/dorks' as ChatRoute, activeId
 /**
  * A chat row. The leading Orb animates while the chat is working and settles into a small dot when it is not; the right edge
  * shows the pull request number, colored by PR state, when the chat has opened one. The row is active (`data-active`,
- * `aria-current`) while its chat is the one in the URL.
+ * `aria-current`) while its chat is the one in the URL. With `onArchive`, hovering the row swaps the PR number for an archive
+ * button, and a right click opens the row's menu.
  */
-function ChatItem({ chat, index, to, active }: { chat: Chat; index: number; to: ChatRoute; active: boolean }) {
+function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: number; to: ChatRoute; active: boolean; onArchive?: (id: string) => void }) {
   // `data` feeds announcements; the link is the handle so interactive-element filtering allows row drags.
   const { ref, handleRef, isDragging } = useSortable({ id: chat.id, index, data: chat })
-  return (
-    <div ref={ref} data-dragging={isDragging || undefined} className="relative flex min-w-0 data-[dragging]:z-30 data-[dragging]:opacity-60">
+  const router = useRouter()
+  const row = (
+    <div ref={ref} data-chat-id={chat.id} data-dragging={isDragging || undefined} className="group/row relative flex min-w-0 data-[dragging]:z-30 data-[dragging]:opacity-60">
       <Link
         ref={handleRef}
         to={to}
@@ -106,16 +127,53 @@ function ChatItem({ chat, index, to, active }: { chat: Chat; index: number; to: 
         draggable={false}
         data-working={chat.working || undefined}
         title={chat.title}
-        className={`${SIDEBAR_ROW} ${chat.pr ? 'pr-12' : ''}`}
+        className={`${SIDEBAR_ROW} ${chat.pr ? 'pr-12' : ''} ${onArchive ? 'group-hover/row:pr-8' : ''}`}
       >
         <Orb size={14} working={chat.working} label={chat.working ? 'Working…' : 'Idle'} className="text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate">{chat.title}</span>
       </Link>
       {chat.pr && (
-        <span data-pr={chat.pr.state} className={`pointer-events-none absolute top-1/2 right-2 z-20 -translate-y-1/2 text-xs tabular-nums ${prStatus(chat.pr.state).className}`}>
+        <span
+          data-pr={chat.pr.state}
+          className={`pointer-events-none absolute top-1/2 right-2 z-20 -translate-y-1/2 text-xs tabular-nums ${onArchive ? 'group-hover/row:opacity-0' : ''} ${prStatus(chat.pr.state).className}`}
+        >
           #{chat.pr.number}
         </span>
       )}
+      {onArchive && (
+        <Tip label="Archive">
+          <button
+            type="button"
+            aria-label={`Archive ${chat.title}`}
+            onClick={() => onArchive(chat.id)}
+            className="absolute top-1/2 right-1 z-20 flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-(--control-radius) text-muted-foreground opacity-0 outline-none group-hover/row:opacity-100 hover:bg-foreground/[0.05] hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring [@media(hover:none)]:hidden"
+          >
+            <ArchiveIcon aria-hidden className="size-3.5" />
+          </button>
+        </Tip>
+      )}
     </div>
+  )
+  if (!onArchive) return row
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger render={row} />
+      <ContextMenuContent>
+        <DropdownMenuItem onClick={() => onArchive(chat.id)}>
+          <ArchiveIcon />
+          Archive
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => {
+            const { href } = router.buildLocation({ to, search: { dork: chat.id } })
+            // `createHref` adds the history's own prefix (the `#` of hash routing).
+            void navigator.clipboard.writeText(new URL(router.history.createHref(href), window.location.origin).href).then(() => toast('Link copied'))
+          }}
+        >
+          <LinkIcon />
+          Copy link
+        </DropdownMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }

@@ -28,6 +28,7 @@ import { canCreate, onboarded } from '../../../lib/onboarding'
 import { usePending } from '../../../lib/pending'
 import { withReply, type Reply } from '../../../lib/reply'
 import { useDraft } from '../../../lib/draft'
+import { useArchiveDork } from '../../../lib/archive'
 
 // The selected dork lives in the `dork` search param (not local state) so the sidebar can highlight it and the URL is shareable.
 export const Route = createFileRoute('/_conn/_app/dorks')({
@@ -345,6 +346,7 @@ function Thread({ dorkId }: { dorkId: string }) {
   const { run, pending, error } = usePending()
   const { run: runStop, pending: stopping, error: stopError } = usePending()
   const { run: runArchive, pending: archiving, error: archiveError } = usePending()
+  const archiveDork = useArchiveDork()
   const modelSwitch = usePending()
   const settings = useSettings()
   const [detailsOpen, setDetailsOpen] = useDetailsOpen()
@@ -389,7 +391,7 @@ function Thread({ dorkId }: { dorkId: string }) {
       <section className="flex min-w-0 flex-1 flex-col" aria-label="thread" data-state={dork.state}>
         <PageHeader
           title={dork.title}
-          titleActions={<ArchiveButton archived={dork.archived} disabled={archiving} onClick={() => void runArchive(() => actions.archiveDork(dorkId, !dork.archived))} />}
+          titleActions={<ArchiveButton archived={dork.archived} disabled={archiving} onClick={() => void runArchive(() => archiveDork(dorkId, !dork.archived))} />}
           actions={
             <>
               <ChatMenu

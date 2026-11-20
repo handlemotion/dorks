@@ -19,6 +19,8 @@ import { FluidHoverHighlight } from '@dorks/ui/fluid-hover-highlight'
 import { Sidebar, useSidebar } from '@dorks/ui/sidebar'
 import githubDark from '../assets/providers/github-dark.svg'
 import githubLight from '../assets/providers/github-light.svg'
+import { toast } from 'sonner'
+import { useArchiveDork } from '../lib/archive'
 import { useDisconnect } from './ConnectionGate'
 import { ChatList, type Chat, type ChatRoute, type PrState } from './ChatList'
 import { Logo } from './onboarding/List'
@@ -46,8 +48,17 @@ export function AppSidebar() {
   const dorks = useDorks(false)
   const disconnect = useDisconnect()
   const github = useGithubRepos()
+  const archive = useArchiveDork()
   const chats: Chat[] = (dorks ?? []).map((d) => ({ id: d.id, title: d.title, repo: d.repo, working: MOVING.has(d.state), pr: prOf(d.prUrl, d.prState) }))
-  return <AppSidebarView chats={chats} accounts={github} onDisconnect={disconnect} usage={<UsageBar />} />
+  return (
+    <AppSidebarView
+      chats={chats}
+      accounts={github}
+      onDisconnect={disconnect}
+      usage={<UsageBar />}
+      onArchive={(id) => void archive(id).catch((e: unknown) => toast.error(e instanceof Error ? e.message : 'Could not archive the chat'))}
+    />
+  )
 }
 
 const ALL = ''
@@ -151,6 +162,7 @@ export function AppSidebarView({
   orderKey = 'dorks.chat-order',
   chatTo,
   usage,
+  onArchive,
 }: {
   chats: Chat[]
   /** What the GitHub CLI's login can see (`GET /api/github/repos`): its user and organizations fill the owner switcher. */
@@ -159,6 +171,8 @@ export function AppSidebarView({
   orderKey?: string
   chatTo?: ChatRoute
   usage?: ReactNode
+  /** Archives a chat from its row (hover button, right-click menu). */
+  onArchive?: (id: string) => void
 }) {
   const { isMobile } = useSidebar()
   const { pathname, search } = useLocation()
@@ -228,7 +242,7 @@ export function AppSidebarView({
                     )}
                   </div>
                   <CollapsibleContent className="flex flex-col gap-0.5">
-                    <ChatList chats={list} orderKey={`${orderKey}.${key}`} to={chatTo} activeId={activeId} />
+                    <ChatList chats={list} orderKey={`${orderKey}.${key}`} to={chatTo} activeId={activeId} onArchive={onArchive} />
                   </CollapsibleContent>
                 </Collapsible>
               )

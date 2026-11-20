@@ -6,39 +6,6 @@
 
 /* The design tokens, radius scale, dark mode and glass surfaces all come from @dorks/ui (a shadcn preset, see its README). */
 
-/* The forms inside a settings card (components/SettingsForms.tsx): stacked, left-aligned, fields capped at a readable width. */
-@layer components {
-  .settings-group {
-    @apply flex flex-col gap-3 text-sm;
-  }
-
-  .settings-group form {
-    @apply flex flex-col items-start gap-3;
-  }
-
-  .settings-group form label {
-    @apply flex w-full max-w-md flex-col gap-1.5 font-medium;
-  }
-
-  .settings-group form input:not([type='checkbox']),
-  .settings-group form textarea,
-  .settings-group form select {
-    @apply w-full max-w-md;
-  }
-
-  .settings-group ul {
-    @apply flex flex-col gap-1;
-  }
-
-  .settings-group a {
-    @apply font-medium underline underline-offset-4;
-  }
-
-  .settings-group pre {
-    @apply overflow-x-auto rounded-xl bg-muted p-3 text-xs;
-  }
-}
-
 @layer base {
   html,
   body,
