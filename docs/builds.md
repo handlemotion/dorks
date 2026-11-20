@@ -206,8 +206,10 @@ create passes the build's `type`. Existing boxes are untouched by rebuilds; a re
 
 - The composer's machine menu, defaulting to `settings.defaultBuildId` (set on the build's page: "Use for new sessions"), else the base.
 - A dork keeps its build for life. Moving a dork to another build would mean re-creating its box (losing on-disk state); not in v1.
-- **Setup session**: "Set up with an agent" on a build's page creates a dork with `buildId` = that build, `setup: true`, no repo, and a
-  first message asking the agent to set the machine up with the `machine_` tools. It starts from the build's image if it has one, else
+- **Setup session**: "Set up with an agent" on a build's page asks for the target repository (the build's first one preselected, or none)
+  and optional notes, then creates a dork with `buildId` = that build, `setup: true`, that repo (cloned in its box) and a first message
+  (`setupBrief` in `builds.tsx`) that has the agent prepare the build end to end on its own: read the repo to work out its toolchains,
+  CLIs, services and variables, make install, build and tests pass in its box, draft, trial-run until it succeeds, and submit. It starts from the build's image if it has one, else
   from the base. It is a normal dork in every other way (sleep, transcript, Computer tab), so the agent can try commands live in its own
   box before it writes them into the draft.
 - **Fresh code on an old image**: a repo baked into an image can be weeks old. The bridge fetches at start, and a new dork branch starts
