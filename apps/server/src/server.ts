@@ -32,7 +32,7 @@ export function createApp(cfg: Config, o: Overrides = {}): App {
     now: o.now ?? Date.now,
     uuid: () => randomUUID(),
     fetch: o.fetch ?? fetch,
-    ghLogin: o.ghLogin ?? (() => readGhLogin()),
+    ghLogin: o.ghLogin ?? (() => readGhLogin(cfg.githubEnvToken)),
     getBox: () => (o.getBox ?? (() => getBox(app)))(),
     bridgeUrl: () => (cfg.publicUrl ? `${cfg.publicUrl.replace(/^https:/, "wss:")}/bridge` : cfg.boxProvider === "sim" ? `ws://127.0.0.1:${cfg.bridgePort}/bridge` : undefined),
     getSnapshotDriver: () => (o.getSnapshotDriver ?? (() => getSnapshotDriver(app)))(),

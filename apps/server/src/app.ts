@@ -56,6 +56,8 @@ export interface Config {
   uiOrigins: string[];
   /** Base snapshot used when settings do not name one (dev and tests). */
   baseSnapshotId?: string;
+  /** `GH_TOKEN`, else `GITHUB_TOKEN`: overrides the GitHub CLI's login the way `gh` itself does (development and the e2e). */
+  githubEnvToken?: string;
 }
 
 export interface SchedulerLike {

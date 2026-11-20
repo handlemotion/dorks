@@ -112,7 +112,9 @@ async function githubConnection(app: App, connect: unknown): Promise<Record<stri
     if (app.cfg.boxProvider === "sim") return { githubConnected: 1, githubLogin: null };
     fail("invalid", GH_PROBLEM[read.problem]);
   }
-  return { githubConnected: 1, githubLogin: await githubLoginOf(app, read.token, read.source) };
+  const githubLogin = await githubLoginOf(app, read.token, read.source);
+  confirmed.set(app, read.token); // checked just now: its login is the one saved below
+  return { githubConnected: 1, githubLogin };
 }
 
 const boatEnvironmentOf = (v: unknown) => {
@@ -180,6 +182,7 @@ export async function boatKey(app: App): Promise<string | undefined> {
 // ---------------------------------------------------------------- the GitHub CLI's login (never stored; cached in memory for a minute)
 const GH_TTL_MS = 60_000;
 const ghCache = new WeakMap<App, { at: number; login: GhLogin }>();
+const confirmed = new WeakMap<App, string>();
 
 /** Forget the cached login, so the next read asks `gh` again (connecting, disconnecting, an explicit refresh). */
 export function forgetGhLogin(app: App): void {
@@ -187,16 +190,20 @@ export function forgetGhLogin(app: App): void {
 }
 
 /**
- * The GitHub CLI's login when the owner connected GitHub, null when they did not. A changed token (after `gh auth switch` or a new
- * login) clears the remembered login, so the poller learns whose it is again.
+ * The GitHub CLI's login when the owner connected GitHub, null when they did not. A token this process has not confirmed (after a
+ * restart, `gh auth switch` or a new login) clears the remembered login, so the poller learns whose it is again.
  */
 export async function githubLogin(app: App): Promise<GhLogin | null> {
   if (!readSettings(app).githubConnected) return null;
   const cached = ghCache.get(app);
   if (cached && app.now() - cached.at < GH_TTL_MS) return cached.login;
   const login = await app.ghLogin();
-  const before = cached && "token" in cached.login ? cached.login.token : undefined;
-  if ("token" in login && before && before !== login.token) update(app.db, "settings", { id: 1 }, { githubLogin: null });
+  // The token this process last confirmed. On the first read after a restart it is unknown, and gh may have switched accounts
+  // meanwhile, so the remembered login is dropped then too: the poller and the repository list learn it again.
+  if ("token" in login && confirmed.get(app) !== login.token) {
+    update(app.db, "settings", { id: 1 }, { githubLogin: null });
+    confirmed.set(app, login.token);
+  }
   // Only a working login is cached: after `gh auth login` the next read picks it up.
   if ("token" in login) ghCache.set(app, { at: app.now(), login });
   else ghCache.delete(app);

@@ -33,10 +33,12 @@ export const parseToken = (stdout: string): string | null => {
   return t && !/\s/.test(t) ? t : null;
 };
 
-/** Reads the login from the environment, else from `gh`. Never logs or throws; the token stays in memory. */
-export async function readGhLogin(env: NodeJS.ProcessEnv = process.env): Promise<GhLogin> {
-  const fromEnv = env.GH_TOKEN?.trim() || env.GITHUB_TOKEN?.trim();
-  if (fromEnv) return { token: fromEnv, source: "env" };
+/**
+ * Reads the login: `envToken` (config's `GH_TOKEN` / `GITHUB_TOKEN`) when set, else `gh`. Never logs or throws; the token stays in
+ * memory. `env` is what `gh` runs with.
+ */
+export async function readGhLogin(envToken: string | undefined, env: NodeJS.ProcessEnv = process.env): Promise<GhLogin> {
+  if (envToken) return { token: envToken, source: "env" };
   const gh = findGh(env.PATH);
   if (!gh) return { problem: "gh_missing" };
   const stdout = await new Promise<string | null>((resolve) => {
