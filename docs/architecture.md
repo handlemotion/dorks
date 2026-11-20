@@ -93,10 +93,10 @@ IDs are UUID strings. Times are epoch milliseconds.
 | `POST /api/dorks/:id/model` | `{model: string\|null, effort: string\|null}` | `{}`. Claude only: a model and effort from `modelChoices` (null: the default). While the sandbox is up the bridge restarts the CLI on the same session with `--model`/`--effort` once the current turn ends; asleep, the next wake uses it |
 | `POST /api/dorks/:id/codex-model` | `{model, effort}` | `{}` |
 | `GET /api/dorks/:id/events` | `?before=<seq>&limit=<1..200, default 50>` or `?after=<seq>` | `{events: ClientEvent[], hasMore}`. `before` (or neither) returns newest first; `after` returns ascending, inclusive of `seq > after` |
-| `GET /api/dorks/:id/pr` | | `PullRequestView`: the session's PR read live from GitHub as the gh login (state, mergeability, checks, files with patches, comments); 404 without one |
-| `POST /api/dorks/:id/pr/merge` | `{method: "squash"\|"merge"\|"rebase", sha?}` | `{merged, sha}`; `sha` pins the reviewed head (409 `conflict` if it moved, or GitHub refuses: conflicts, required checks or reviews) |
-| `POST /api/dorks/:id/pr/update-branch` | `{sha?}` | `{}` (merges the base branch into the PR's branch) |
-| `GET /api/dorks/:id/subscriptions` | | `SubscriptionView[]` (non-ended) |
+| `GET /api/dorks/:id/pr?url=` | | `PullRequestView`: one of the session's PRs read live from GitHub as the gh login (state, mergeability, checks, files with patches, comments). `url` picks it (its headline PR or any PR it has a subscription to, ended ones included); without it, the headline (the latest it opened). 404 for any other PR or without one |
+| `POST /api/dorks/:id/pr/merge` | `{method: "squash"\|"merge"\|"rebase", sha?, url?}` | `{merged, sha}`; `sha` pins the reviewed head (409 `conflict` if it moved, or GitHub refuses: conflicts, required checks or reviews) |
+| `POST /api/dorks/:id/pr/update-branch` | `{sha?, url?}` | `{}` (merges the base branch into the PR's branch) |
+| `GET /api/dorks/:id/subscriptions` | | `SubscriptionView[]`: live ones, plus ended ones the session opened itself or that were merged or closed (the session's PR history); the bridge gets live ones only |
 | `POST /api/dorks/:id/subscriptions` | `{repo, number}` | `{}` (user subscribe; un-stalls and resets the CI budget) |
 | `DELETE /api/dorks/:id/subscriptions` | `{repo, number}` | `{}` |
 | `POST /api/dorks/:id/subscriptions/resume` | `{repo, number}` | `{}` |

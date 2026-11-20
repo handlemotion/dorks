@@ -1,6 +1,6 @@
 import type { MergeableState, MergeMethod, PullRequestChecks, PullRequestComment, PullRequestFile, PullRequestPerson, PullRequestSection, PullRequestView } from "@dorks/shared";
 import { fail, type App } from "../app";
-import { validRepo } from "../lib/repo";
+import { normalizeRepo, validRepo } from "../lib/repo";
 import { setTimer } from "../lifecycle/dispatch";
 import { owned } from "./dorks";
 import { githubToken } from "./settings";
@@ -17,12 +17,23 @@ const MAX_PAGES = 30;
 const MAX_FAILING = 5;
 export const MERGE_METHODS: readonly MergeMethod[] = ["squash", "merge", "rebase"];
 
-/** `owner/name` and the number from the session's PR URL, or `not_found` when it has none. */
-export function prRef(app: App, dorkId: string): { repo: string; number: number } {
+/**
+ * `owner/name` and the number of one of the session's pull requests: `url` when given (a PR the session opened or follows: its
+ * headline PR or any of its subscriptions, ended ones included), else its headline PR (the latest it opened). `not_found` otherwise,
+ * so the endpoints cannot be pointed at an arbitrary PR.
+ */
+export function prRef(app: App, dorkId: string, url?: unknown): { repo: string; number: number } {
   const dork = owned(app, dorkId);
-  const m = dork.prUrl && /^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(dork.prUrl);
-  if (!m || !validRepo(m[1])) return fail("not_found", "This session has no pull request yet.");
-  return { repo: m[1], number: Number(m[2]) };
+  if (url !== undefined && url !== null && url !== "" && typeof url !== "string") return fail("invalid", "url must be a pull request URL");
+  const target = (url as string | undefined) || dork.prUrl;
+  const m = target && /^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)$/.exec(target);
+  if (!m || !validRepo(m[1])) return fail("not_found", url ? "Not a pull request URL." : "This session has no pull request yet.");
+  const repo = normalizeRepo(m[1]);
+  const number = Number(m[2]);
+  if (target !== dork.prUrl && !app.db.get("SELECT 1 FROM pr_subscriptions WHERE dork_id = ? AND repo = ? AND number = ?", dorkId, repo, number)) {
+    return fail("not_found", "This session does not follow that pull request.");
+  }
+  return { repo, number };
 }
 
 async function tokenOf(app: App): Promise<string> {
@@ -169,8 +180,8 @@ function commentsOf(issueComments: Json[], reviews: Json[], reviewComments: Json
 }
 
 /** `GET /api/dorks/:id/pr`: everything Chat details shows about the session's pull request, in one round of parallel reads. */
-export async function getPullRequest(app: App, dorkId: string): Promise<PullRequestView> {
-  const { repo, number } = prRef(app, dorkId);
+export async function getPullRequest(app: App, dorkId: string, url?: unknown): Promise<PullRequestView> {
+  const { repo, number } = prRef(app, dorkId, url);
   const token = await tokenOf(app);
   const base = `/repos/${repo}`;
   const pr = obj(await get(app, token, `${base}/pulls/${number}`));
@@ -236,10 +247,10 @@ export async function getPullRequest(app: App, dorkId: string): Promise<PullRequ
  * `POST /api/dorks/:id/pr/merge`: merges with `method`, pinned to `sha` (the head the owner looked at) so a push that lands in
  * between is not merged unseen. GitHub's reason for a refusal (conflicts, required checks or reviews, a moved head) is passed on.
  */
-export async function mergePullRequest(app: App, dorkId: string, method: unknown, sha: unknown): Promise<{ merged: true; sha?: string }> {
+export async function mergePullRequest(app: App, dorkId: string, method: unknown, sha: unknown, url?: unknown): Promise<{ merged: true; sha?: string }> {
   if (typeof method !== "string" || !MERGE_METHODS.includes(method as MergeMethod)) return fail("invalid", "method must be squash, merge or rebase");
   if (sha !== undefined && (typeof sha !== "string" || !/^[0-9a-f]{40}$/.test(sha))) return fail("invalid", "sha must be a commit sha");
-  const { repo, number } = prRef(app, dorkId);
+  const { repo, number } = prRef(app, dorkId, url);
   const token = await tokenOf(app);
   // GitHub answers a merge of an already merged PR with success, and checks `sha` only loosely: look first.
   const pr = obj(await get(app, token, `/repos/${repo}/pulls/${number}`));
@@ -266,9 +277,9 @@ function mergeRefused(status: number, message: string | undefined): never {
 }
 
 /** `POST /api/dorks/:id/pr/update-branch`: merges the base branch into the PR's branch (GitHub's "Update branch"). */
-export async function updatePullRequestBranch(app: App, dorkId: string, sha: unknown): Promise<void> {
+export async function updatePullRequestBranch(app: App, dorkId: string, sha: unknown, url?: unknown): Promise<void> {
   if (sha !== undefined && (typeof sha !== "string" || !/^[0-9a-f]{40}$/.test(sha))) return fail("invalid", "sha must be a commit sha");
-  const { repo, number } = prRef(app, dorkId);
+  const { repo, number } = prRef(app, dorkId, url);
   const token = await tokenOf(app);
   const r = await call(app, token, "PUT", `/repos/${repo}/pulls/${number}/update-branch`, sha ? { expected_head_sha: sha } : {});
   if (r.status === 202 || r.status === 200) return;

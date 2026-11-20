@@ -185,11 +185,11 @@ export class DorksClient {
     return this.query<string[]>("secrets", () => this.api.listSecrets());
   }
 
-  /** The session's pull request, live from GitHub; `null` when it has none. Refetched when the poller sees the PR change. */
-  pullRequest(dorkId: string) {
-    return this.query<PullRequestView | null>(`pr:${dorkId}`, async () => {
+  /** One of the session's pull requests (`url`; default its latest), live from GitHub; `null` when it has none. Refetched when the poller sees a PR change. */
+  pullRequest(dorkId: string, url?: string) {
+    return this.query<PullRequestView | null>(url ? `pr:${dorkId}:${url}` : `pr:${dorkId}`, async () => {
       try {
-        return await this.api.getPullRequest(dorkId);
+        return await this.api.getPullRequest(dorkId, url);
       } catch (e) {
         if (e instanceof ApiError && e.status === 404 && e.code === "not_found") return null;
         throw e;
@@ -312,17 +312,17 @@ export class DorksClient {
     },
     /** Reads the pull request from GitHub again. */
     refreshPullRequest: (id: string) => this.invalidate(`pr:${id}`),
-    mergePullRequest: async (id: string, method: MergeMethod, sha?: string) => {
+    mergePullRequest: async (id: string, method: MergeMethod, sha?: string, url?: string) => {
       try {
-        return await this.api.mergePullRequest(id, method, sha);
+        return await this.api.mergePullRequest(id, method, sha, url);
       } finally {
         this.invalidate(`pr:${id}`);
         this.invalidate(`dork:${id}`);
       }
     },
-    updatePullRequestBranch: async (id: string, sha?: string) => {
+    updatePullRequestBranch: async (id: string, sha?: string, url?: string) => {
       try {
-        await this.api.updatePullRequestBranch(id, sha);
+        await this.api.updatePullRequestBranch(id, sha, url);
       } finally {
         this.invalidate(`pr:${id}`);
       }

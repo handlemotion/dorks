@@ -60,10 +60,15 @@ export function Stat({ additions, deletions }: { additions: number; deletions: n
 
 type Section = 'overview' | 'files' | 'checks' | 'comments'
 
+/** One PR of a stack, as the overview lists it: root first, `current` the one shown. */
+export type PrStackEntry = { url: string; number?: number; state?: PrStatusState; draft?: boolean; current: boolean }
+
 export function PullRequestPanel({
   changes,
   pr,
   pullRequest,
+  stack,
+  onOpenPr,
   onAsk,
 }: {
   /** What the agent changed locally, shown before a pull request exists. */
@@ -71,6 +76,10 @@ export function PullRequestPanel({
   /** The PR link alone, when the live read is not available (the design demo, older data). */
   pr?: { url: string; number?: number; state?: PrStatusState }
   pullRequest?: PullRequestPanelData
+  /** The stack this PR is part of (PRs on each other's branches), when it is in one. */
+  stack?: PrStackEntry[]
+  /** Opens another of the session's PRs (a stack entry) in its tab. */
+  onOpenPr?: (url: string) => void
   onAsk?: (text: string) => void
 }) {
   const view = pullRequest?.view
@@ -92,7 +101,7 @@ export function PullRequestPanel({
       </div>
     )
   }
-  return <PullRequestView view={view} data={pullRequest} now={now} onAsk={onAsk} />
+  return <PullRequestView view={view} data={pullRequest} now={now} stack={stack} onOpenPr={onOpenPr} onAsk={onAsk} />
 }
 
 /** The bar above the plain file list: the PR link (or that there is none yet) and the diff stats. */
@@ -141,7 +150,21 @@ function FilesBar({
   )
 }
 
-function PullRequestView({ view, data, now, onAsk }: { view: PullRequestView; data?: PullRequestPanelData; now: number; onAsk?: (text: string) => void }) {
+function PullRequestView({
+  view,
+  data,
+  now,
+  stack,
+  onOpenPr,
+  onAsk,
+}: {
+  view: PullRequestView
+  data?: PullRequestPanelData
+  now: number
+  stack?: PrStackEntry[]
+  onOpenPr?: (url: string) => void
+  onAsk?: (text: string) => void
+}) {
   // A section GitHub did not return this time: say so, rather than show it as empty.
   const gone = (section: PullRequestSection) => (view.unavailable?.includes(section) ? <Unavailable section={section} onRetry={data?.refresh} /> : undefined)
   const [section, setSection] = useState<Section>('overview')
@@ -195,7 +218,7 @@ function PullRequestView({ view, data, now, onAsk }: { view: PullRequestView; da
           <PrActions view={view} data={data} onAsk={onAsk} />
         </div>
         <TabsContent value="overview">
-          <Overview view={view} />
+          <Overview view={view} stack={stack} onOpenPr={onOpenPr} />
         </TabsContent>
         <TabsContent value="files">
           {withPatch.length > 0 && (
@@ -482,7 +505,7 @@ function MergeButton({ view, method, setMethod, disabled, onMerge }: { view: Pul
 }
 
 /** Who opened it, from which branch into which, when, its checks and size; then the description, its sections collapsible. */
-function Overview({ view }: { view: PullRequestView }) {
+function Overview({ view, stack, onOpenPr }: { view: PullRequestView; stack?: PrStackEntry[]; onOpenPr?: (url: string) => void }) {
   const sections = useMemo(() => descriptionSections(view.body), [view.body])
   const opened = new Date(view.createdAt)
   return (
@@ -502,6 +525,11 @@ function Overview({ view }: { view: PullRequestView }) {
             {view.headRef} <span className="text-muted-foreground">→ {view.baseRef}</span>
           </span>
         </Meta>
+        {stack && (
+          <Meta label="Stack">
+            <StackPath stack={stack} onOpenPr={onOpenPr} />
+          </Meta>
+        )}
         <Meta label="Opened">
           <span className="tabular-nums">
             {opened.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} {opened.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -524,6 +552,32 @@ function Overview({ view }: { view: PullRequestView }) {
         )}
       </div>
     </div>
+  )
+}
+
+/** A stack, root first: each PR's number in its state's colour, the one shown in full weight; the others open their tab. */
+function StackPath({ stack, onOpenPr }: { stack: PrStackEntry[]; onOpenPr?: (url: string) => void }) {
+  return (
+    <span className="flex min-w-0 flex-wrap items-center justify-end gap-x-1 tabular-nums">
+      {stack.map((p, i) => {
+        const { className } = prStatus(p.state, p.draft)
+        const label = p.number ? `#${p.number}` : 'PR'
+        return (
+          <span key={p.url} className="flex items-center gap-1">
+            {i > 0 && <span className="text-muted-foreground">→</span>}
+            {p.current || !onOpenPr ? (
+              <span className={`${className} ${p.current ? 'font-medium' : ''}`} aria-current={p.current || undefined}>
+                {label}
+              </span>
+            ) : (
+              <button type="button" className={`${className} hover:underline`} onClick={() => onOpenPr(p.url)}>
+                {label}
+              </button>
+            )}
+          </span>
+        )
+      })}
+    </span>
   )
 }
 

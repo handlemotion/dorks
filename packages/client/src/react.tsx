@@ -100,8 +100,8 @@ export function useRuns(buildId: string): RunView[] | undefined {
 }
 
 /** The session's pull request, live from GitHub: `data` null when it has none; `error` when GitHub could not be read. */
-export function usePullRequest(dorkId: string): QueryState<PullRequestView | null> {
-  return useStore(useDorksClient().pullRequest(dorkId));
+export function usePullRequest(dorkId: string, url?: string): QueryState<PullRequestView | null> {
+  return useStore(useDorksClient().pullRequest(dorkId, url));
 }
 
 export function useSubscriptions(dorkId: string): SubscriptionView[] | undefined {

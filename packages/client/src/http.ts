@@ -138,11 +138,12 @@ export function createApi(config: ApiConfig) {
     unsubscribe: (id: string, pr: PrRefInput) => request<object>("DELETE", `${dork(id)}/subscriptions`, pr),
     resumeSubscription: (id: string, pr: PrRefInput) => request<object>("POST", `${dork(id)}/subscriptions/resume`, pr),
     /** The session's pull request, read live from GitHub (404 `not_found` when the session has none). */
-    getPullRequest: (id: string) => request<PullRequestView>("GET", `${dork(id)}/pr`),
+    /** One of the session's pull requests by `url` (a PR it opened or follows), else its latest. */
+    getPullRequest: (id: string, url?: string) => request<PullRequestView>("GET", `${dork(id)}/pr${url ? `?url=${enc(url)}` : ""}`),
     /** Merges it; `sha` pins the head that was reviewed (a newer push answers 409 `conflict`). */
-    mergePullRequest: (id: string, method: MergeMethod, sha?: string) => request<{ merged: true; sha?: string }>("POST", `${dork(id)}/pr/merge`, { method, sha }),
+    mergePullRequest: (id: string, method: MergeMethod, sha?: string, url?: string) => request<{ merged: true; sha?: string }>("POST", `${dork(id)}/pr/merge`, { method, sha, url }),
     /** Merges the base branch into the PR's branch (GitHub's "Update branch"). */
-    updatePullRequestBranch: (id: string, sha?: string) => request<object>("POST", `${dork(id)}/pr/update-branch`, { sha }),
+    updatePullRequestBranch: (id: string, sha?: string, url?: string) => request<object>("POST", `${dork(id)}/pr/update-branch`, { sha, url }),
     getSettings: () => request<Settings>("GET", "/api/settings"),
     decideLocal: (id: string, requestId: string, d: LocalDecision) => request<object>("POST", `${dork(id)}/local/${enc(requestId)}`, d),
     localAccess: () => request<LocalAccess>("GET", "/api/local-access"),

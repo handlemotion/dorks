@@ -41,15 +41,17 @@ Rules that tooling enforces live in `AGENTS.md` and `packages/ui/README.md`; thi
 - **Chat:** `ChatSplit` puts the chat and Chat details side by side (chat 600px by default, details everything else, both at least 360px; on window resize the sidebar and the chat keep their widths and details absorbs the change; a click on the handle snaps the chat back to 600px). Details
   run the full height, flush to the window's right edge, with no card or outer border: one full-height hairline (`border-l`) separates
   them from the chat, and the resize handle sits on it. Details hide below `lg`.
-- **Chat details tabs** work like a browser's: an open-tabs strip (Progress, Artifacts, Changes, which reads `#N` once a PR exists,
-  Computer, and one tab per pull request, keyed by its url, always named `#N`, never its title), each a 28px 6px-radius tab whose icon turns into an X on hover (nothing
+- **Chat details tabs** work like a browser's: an open-tabs strip (Progress, Artifacts, Changes (the local diff, before any PR),
+  Computer, and one tab per pull request, keyed by its url, always named `#N`, never its title; a session can have many PRs, merged
+  and closed ones included, and each keeps its tab), each a 28px 6px-radius tab whose icon turns into an X on hover (nothing
   moves), then `+` for a New tab. Closing the selected tab selects its neighbour; closing the last leaves a New tab. Opening a panel
   that is already open focuses it; the agent's reveals (Progress, Computer, a shown preview in Artifacts, a pull request it
   just opened) open or focus their tab.
   Open tabs and the selected one are remembered per session. A **New tab** is an index in a centred 420px column: a search box
-  ("Search PRs, artifacts and tools") that filters by name, then Pull requests, Artifacts and Tools (the panels), each a titled list of 30px rows that
-  open in the New tab's place (a PR on one row: icon, title, `#N`, diff stats; image thumbnails get a 15% hairline; a panel the
-  sections above already list, like the PR's `#N`, is left out); empty sections are left out, and a search with no results says `No matches`.
+  ("Search PRs, artifacts and tools") that filters by name, then Pull requests, Tools (the panels) and Artifacts last (it can run long), each a titled list of 30px rows, 8px
+  under its title, that open in the New tab's place (a PR on one row: state icon, title, `#N`, diff stats when known; a PR stacked on
+  another PR's branch is indented under it, and its overview gets a `Stack` row, `#7 → #8`, each number opening its tab; image
+  thumbnails get a 15% hairline; Changes is left out once PRs have their rows); empty sections are left out, and a search with no results says `No matches`.
 - **Edges:** the page title and the composer start 20px from the column's edge (the composer 20px from the bottom too); the transcript
   is indented to 30px, a step in from both, so messages read as the content between them. The transcript keeps `max-w-3xl`.
 - **Headers** are 48px, one line, the title in regular 13px. No subtitles, no badges. A header divider exists only when it can span

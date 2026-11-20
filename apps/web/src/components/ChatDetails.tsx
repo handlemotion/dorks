@@ -3,7 +3,7 @@ import { useTheme } from 'next-themes'
 import type { SubscriptionView } from '@dorks/shared'
 import { useDefaultLayout, usePanelRef } from 'react-resizable-panels'
 import { PanelResizeHandle } from '@dorks/ui/panel-resize-handle'
-import { ActivityIcon, AppWindowIcon, ExternalLinkIcon, FileIcon, GitPullRequestIcon, LayersIcon, MonitorIcon, PanelLeftIcon, PlusIcon, SearchIcon, XIcon } from 'lucide-react'
+import { ActivityIcon, AppWindowIcon, FileIcon, GitPullRequestIcon, LayersIcon, MonitorIcon, PanelLeftIcon, PlusIcon, SearchIcon, XIcon } from 'lucide-react'
 import { Button } from '@dorks/ui/button'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@dorks/ui/input-group'
 import { ResizablePanel, ResizablePanelGroup } from '@dorks/ui/resizable'
@@ -15,7 +15,7 @@ import { BAR_BUTTON, port, PreviewBrowser, useShownServers, type PreviewServer }
 import { Tip } from './Tip'
 import { ProgressPanel } from './ProgressPanel'
 import { useProgress, type ProgressTask, type ProgressTurn } from '../lib/progress'
-import { PullRequestPanel, Stat, sum, TAB_CLASS, type FileChange, type PullRequestPanelData } from './PullRequestPanel'
+import { PullRequestPanel, Stat, sum, TAB_CLASS, type FileChange, type PrStackEntry, type PullRequestPanelData } from './PullRequestPanel'
 import { PrIcon, type PrStatusState } from './PrStatus'
 
 /** A file the agent produced in the chat: a screenshot, a design, a document. */
@@ -39,19 +39,21 @@ export type ChatDetailsData = {
   artifacts?: Artifact[]
   changes?: FileChange[]
   pr?: { url: string; number?: number; state?: PrStatusState }
-  /** The pull request read live from GitHub, with its merge; the Changes tab shows it first. */
+  /** The headline pull request (the latest the agent opened) read live from GitHub, with its merge. */
   pullRequest?: PullRequestPanelData
+  /** A hook reading any of the session's other pull requests live by url (stable across renders); without it they show their link only. */
+  usePullRequest?: (url: string) => PullRequestPanelData | undefined
   /** The dev servers the agent showed: running previews, tiles in Artifacts that open in place. */
   previews?: PreviewServer[]
   /** The agent's own computer, streamed live in the Computer tab. */
   computer?: ComputerSource
-  /** The pull requests the session watches (it opened them, or the agent or the owner subscribed): the New tab lists them. */
+  /** The pull requests the session has (it opened them, or the agent or the owner subscribed; merged and closed ones too): each gets a tab. */
   subscriptions?: SubscriptionView[]
 }
 
 /** A panel Chat details can show in a tab. */
 type Panel = 'progress' | 'artifacts' | 'changes' | 'computer'
-/** An open tab: a panel, a pull request (by url, so a session can hold more than one later) or a New tab. */
+/** An open tab: a panel, a pull request (by url: a session can hold several) or a New tab. `changes` is the local diff before any PR. */
 type TabKey = Panel | `pr:${string}` | `new:${string}`
 
 const PANELS: Panel[] = ['progress', 'artifacts', 'changes', 'computer']
@@ -95,17 +97,21 @@ export function ChatDetails({
     handledReveal = reveal
   }, [reveal, open])
   const changes = data.changes ?? []
-  // Once the agent opens a pull request, the Changes tab is that PR, named by its number.
   const view = data.pullRequest?.view
-  const prNumber = view?.number ?? data.pr?.number
-  const prState = view?.state ?? data.pr?.state
-  const prIcon = <PrIcon state={prState} draft={view?.draft} />
+  const headline = data.pr?.url
+  // Every pull request the session has, stacked ones under the PR whose branch they build on.
+  const prs = sessionPrs(data)
   // The agent just opened a pull request: bring its tab up. A chat that opens with one already open keeps the tab the owner was on.
-  const hadPr = useRef(!!prNumber)
+  const seenHeadline = useRef(headline)
   useEffect(() => {
-    if (prNumber && !hadPr.current) open('changes')
-    hadPr.current = !!prNumber
-  }, [prNumber, open])
+    if (headline && headline !== seenHeadline.current) open(`pr:${headline}`)
+    seenHeadline.current = headline
+  }, [headline, open])
+  // The local diff's tab becomes the PR once there is one (tabs remembered from before PRs had their own).
+  const { keys, replace } = tabs
+  useEffect(() => {
+    if (headline && keys.includes('changes')) replace('changes', `pr:${headline}`)
+  }, [headline, keys, replace])
   // The first time the agent reaches for its computer while the chat is open, show its screen; a chat that opens on a computer
   // already used keeps the tab the owner was on.
   const used = data.computer?.used ?? false
@@ -133,31 +139,9 @@ export function ChatDetails({
       return { icon: <PrIcon state={pr?.state} draft={pr?.draft} />, text: <span className="tabular-nums">{text}</span>, title: pr?.title ?? text }
     }
     const panel = key as Panel
-    if (panel === 'changes' && prNumber) return { icon: prIcon, text: <span className="tabular-nums">#{prNumber}</span>, title: `#${prNumber}` }
     return { icon: PANEL_ICON[panel], text: PANEL_LABEL[panel], title: PANEL_LABEL[panel] }
   }
-  // The session's own pull request first (live, with its diff stats), then the others it watches, keyed by url.
-  const own: IndexPr[] = view
-    ? [{ url: view.url, title: view.title, repo: view.repo, number: view.number, additions: view.additions, deletions: view.deletions, state: view.state, draft: view.draft }]
-    : data.pr
-      ? [
-          {
-            url: data.pr.url,
-            title: 'Pull request',
-            number: data.pr.number,
-            state: data.pr.state,
-            repo: repoOf(data.pr.url),
-            additions: sum(changes, 'additions'),
-            deletions: sum(changes, 'deletions'),
-          },
-        ]
-      : []
-  const prs: IndexPr[] = [
-    ...own,
-    ...(data.subscriptions ?? [])
-      .filter((s) => !own.some((o) => o.url === s.url))
-      .map((s) => ({ url: s.url, title: s.title ?? `Pull request #${s.number}`, repo: s.repo, number: s.number, state: s.state, external: true })),
-  ]
+  const openPr = (url: string) => open(`pr:${url}`)
 
   const panel = (key: TabKey) => {
     if (key.startsWith('new:'))
@@ -166,9 +150,9 @@ export function ChatDetails({
           prs={prs}
           artifacts={data.artifacts ?? []}
           previews={data.previews ?? []}
-          hidePanel={(p) => p === 'changes' && own.length > 0}
-          panelLabel={(p) => (p === 'changes' && prNumber ? `#${prNumber}` : PANEL_LABEL[p])}
-          panelIcon={(p) => (p === 'changes' && prNumber ? prIcon : PANEL_ICON[p])}
+          hidePanel={(p) => p === 'changes' && prs.length > 0}
+          panelLabel={(p) => PANEL_LABEL[p]}
+          panelIcon={(p) => PANEL_ICON[p]}
           computer={data.computer}
           computerOpen={tabs.keys.includes('computer')}
           onOpen={(target) => tabs.replace(key, target)}
@@ -180,10 +164,15 @@ export function ChatDetails({
       )
     if (key.startsWith('pr:')) {
       const url = key.slice(3)
-      const current = view?.url === url || data.pr?.url === url
+      const isHeadline = url === headline || view?.url === url
+      const listed = prs.find((p) => p.url === url)
       return (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <PullRequestPanel changes={current ? changes : []} pr={current ? data.pr : { url }} pullRequest={current ? data.pullRequest : undefined} onAsk={onAsk} />
+          {isHeadline ? (
+            <PullRequestPanel changes={changes} pr={data.pr} pullRequest={data.pullRequest} stack={stackOf(prs, url)} onOpenPr={openPr} onAsk={onAsk} />
+          ) : (
+            <OtherPr url={url} state={listed?.state} usePr={data.usePullRequest} stack={stackOf(prs, url)} onOpenPr={openPr} onAsk={onAsk} />
+          )}
         </div>
       )
     }
@@ -195,7 +184,14 @@ export function ChatDetails({
           <PreviewBrowser server={openPreview} onBack={() => setPreview(undefined)} onGrab={onGrab} />
         ) : (
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-            <Artifacts artifacts={data.artifacts ?? []} changes={changes} previews={data.previews ?? []} onOpenChanges={() => open('changes')} onOpenPreview={(s) => setPreview(s.url)} onAsk={onAsk} />
+            <Artifacts
+              artifacts={data.artifacts ?? []}
+              changes={changes}
+              previews={data.previews ?? []}
+              onOpenChanges={() => open(headline ? `pr:${headline}` : 'changes')}
+              onOpenPreview={(s) => setPreview(s.url)}
+              onAsk={onAsk}
+            />
           </div>
         )
       case 'changes':
@@ -348,8 +344,107 @@ function useOpenTabs(sessionId?: string) {
   }
 }
 
-/** A pull request in the New tab. `external`: one the session only watches, opened on GitHub (no panel holds its details yet). */
-type IndexPr = { url: string; title: string; repo?: string; number?: number; additions?: number; deletions?: number; state?: PrStatusState; draft?: boolean; external?: boolean }
+/**
+ * One of the session's pull requests. `depth`: how far down a stack it sits (0: on a branch no other PR of the session has; 1: on
+ * another PR's branch, as GitHub stacked PRs are; and so on). `foreign`: in another repository than the session's PRs mostly are.
+ */
+type IndexPr = {
+  url: string
+  title: string
+  repo?: string
+  number?: number
+  additions?: number
+  deletions?: number
+  state?: PrStatusState
+  draft?: boolean
+  headRef?: string
+  baseRef?: string
+  depth: number
+  parent?: string
+}
+
+/**
+ * The session's pull requests: its subscriptions (merged and closed ones too) and its headline PR, the headline's live read
+ * filling in what the subscription lacks. Ordered as stacks read: a PR, then the PRs built on its branch (by number), then the
+ * next root.
+ */
+function sessionPrs(data: ChatDetailsData): IndexPr[] {
+  const byUrl = new Map<string, Omit<IndexPr, 'depth'>>()
+  for (const s of data.subscriptions ?? []) {
+    byUrl.set(s.url, { url: s.url, title: s.title ?? `Pull request #${s.number}`, repo: s.repo, number: s.number, state: s.state, headRef: s.headRef, baseRef: s.baseRef })
+  }
+  if (data.pr) byUrl.set(data.pr.url, headlinePr(data, data.pr, byUrl.get(data.pr.url)))
+  return stackOrder([...byUrl.values()].sort((a, b) => (a.number ?? 0) - (b.number ?? 0)))
+}
+
+/** The headline PR: its live read when there is one, else what its subscription and the stored link know. */
+function headlinePr(data: ChatDetailsData, pr: NonNullable<ChatDetailsData['pr']>, known: Omit<IndexPr, 'depth'> | undefined): Omit<IndexPr, 'depth'> {
+  const view = data.pullRequest?.view
+  if (view && view.url === pr.url) {
+    const { title, repo, number, state, draft, headRef, baseRef, additions, deletions } = view
+    return { url: pr.url, title, repo, number, state, draft, headRef, baseRef, additions, deletions }
+  }
+  const changes = data.changes ?? []
+  return {
+    ...known,
+    url: pr.url,
+    title: known?.title ?? 'Pull request',
+    repo: known?.repo ?? repoOf(pr.url),
+    number: known?.number ?? pr.number,
+    state: pr.state ?? known?.state,
+    additions: sum(changes, 'additions'),
+    deletions: sum(changes, 'deletions'),
+  }
+}
+
+/** Each PR, then the PRs built on its branch (another PR of the same repo whose head is its base), depth first. */
+function stackOrder(all: Omit<IndexPr, 'depth'>[]): IndexPr[] {
+  const parentOf = (p: Omit<IndexPr, 'depth'>) => (p.baseRef ? all.find((o) => o !== p && o.repo === p.repo && o.headRef === p.baseRef) : undefined)
+  const out: IndexPr[] = []
+  const placed = new Set<string>()
+  const place = (p: Omit<IndexPr, 'depth'>, depth: number, parent?: string) => {
+    if (placed.has(p.url)) return
+    placed.add(p.url)
+    out.push({ ...p, depth, parent })
+    for (const child of all) if (parentOf(child) === p) place(child, depth + 1, p.url)
+  }
+  for (const p of all) if (!parentOf(p)) place(p, 0)
+  for (const p of all) place(p, 0) // a cycle of branches: list what is left flat
+  return out
+}
+
+/** The stack a PR belongs to, root first (the PR's whole tree, in list order); undefined when it stands alone. */
+function stackOf(prs: IndexPr[], url: string): PrStackEntry[] | undefined {
+  const at = prs.findIndex((p) => p.url === url)
+  if (at < 0) return undefined
+  let root = at
+  while (prs[root].depth > 0) root--
+  let end = root + 1
+  while (end < prs.length && prs[end].depth > 0) end++
+  if (end - root < 2) return undefined
+  return prs.slice(root, end).map((p) => ({ url: p.url, number: p.number, state: p.state, draft: p.draft, current: p.url === url }))
+}
+
+/** A PR of the session other than its headline: read live through the host's hook when there is one. */
+function OtherPr({
+  url,
+  state,
+  usePr,
+  stack,
+  onOpenPr,
+  onAsk,
+}: {
+  url: string
+  state?: PrStatusState
+  usePr?: (url: string) => PullRequestPanelData | undefined
+  stack?: PrStackEntry[]
+  onOpenPr: (url: string) => void
+  onAsk?: (text: string) => void
+}) {
+  const live = usePr?.(url)
+  const number = Number(/\/pull\/(\d+)/.exec(url)?.[1]) || undefined
+  return <PullRequestPanel changes={[]} pr={{ url, number, state }} pullRequest={live} stack={stack} onOpenPr={onOpenPr} onAsk={onAsk} />
+}
 
 /** "owner/name" from a GitHub pull request url. */
 function repoOf(url: string) {
@@ -379,7 +474,7 @@ function NewTab({
   prs: IndexPr[]
   artifacts: Artifact[]
   previews: PreviewServer[]
-  /** Panels the sections above already list (the session's own PR is the Changes panel). */ hidePanel: (p: Panel) => boolean
+  /** Panels another section already lists (the local diff, once the PRs have their own rows). */ hidePanel: (p: Panel) => boolean
   panelLabel: (p: Panel) => string
   panelIcon: (p: Panel) => ReactNode
   computer?: ComputerSource
@@ -390,6 +485,7 @@ function NewTab({
   const [query, setQuery] = useState('')
   const q = query.trim().toLowerCase()
   const match = (...names: (string | undefined)[]) => !q || names.some((n) => n?.toLowerCase().includes(q))
+  const manyRepos = new Set(prs.map((p) => p.repo)).size > 1
   const shownPrs = prs.filter((p) => match(p.title, p.repo, p.number ? `#${p.number}` : undefined))
   const shownPreviews = previews.filter((s) => match(s.name))
   const shownArtifacts = artifacts.filter((a) => (a.src || a.href) && match(a.name, a.type))
@@ -419,7 +515,19 @@ function NewTab({
           <IndexSection title="Pull requests">
             {shownPrs.map((p) => (
               <li key={p.url}>
-                <PrRow pr={p} onOpen={() => onOpen('changes')} />
+                <PrRow pr={p} showRepo={manyRepos} indent={!q} onOpen={() => onOpen(`pr:${p.url}`)} />
+              </li>
+            ))}
+          </IndexSection>
+        )}
+        {shownPanels.length > 0 && (
+          <IndexSection title="Tools">
+            {shownPanels.map((p) => (
+              <li key={p}>
+                <button type="button" className={INDEX_ROW} onClick={() => onOpen(p)}>
+                  {panelIcon(p)}
+                  <span className="truncate">{panelLabel(p)}</span>
+                </button>
               </li>
             ))}
           </IndexSection>
@@ -475,45 +583,24 @@ function NewTab({
             </IndexSection>
           </ImageLightbox>
         )}
-        {shownPanels.length > 0 && (
-          <IndexSection title="Tools">
-            {shownPanels.map((p) => (
-              <li key={p}>
-                <button type="button" className={INDEX_ROW} onClick={() => onOpen(p)}>
-                  {panelIcon(p)}
-                  <span className="truncate">{panelLabel(p)}</span>
-                </button>
-              </li>
-            ))}
-          </IndexSection>
-        )}
       </div>
     </div>
   )
 }
 
-/** A pull request on one row: its icon, title, number (with the repo when it is another one's) and diff stats. The session's own opens
- * its tab; a watched one opens GitHub. */
-function PrRow({ pr: p, onOpen }: { pr: IndexPr; onOpen: () => void }) {
-  const ref = p.number ? `${p.external && p.repo ? p.repo : ''}#${p.number}` : p.repo
-  const body = (
-    <>
+/** A pull request on one row: its state icon, title, number (with the repo when the session's PRs span several) and diff stats.
+ * A stacked PR is indented under the PR whose branch it builds on (not while searching, when its parent may be filtered out). */
+function PrRow({ pr: p, showRepo, indent, onOpen }: { pr: IndexPr; showRepo: boolean; indent: boolean; onOpen: () => void }) {
+  const ref = p.number ? `${showRepo && p.repo ? p.repo : ''}#${p.number}` : p.repo
+  const depth = indent ? Math.min(p.depth, 4) : 0
+  return (
+    <button type="button" className={INDEX_ROW} style={depth ? { paddingLeft: `${8 + depth * 18}px` } : undefined} onClick={onOpen}>
       <PrIcon state={p.state} draft={p.draft} />
       <span className="min-w-0 flex-1 truncate">{p.title}</span>
       <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
         {ref}
         {p.additions !== undefined && <Stat additions={p.additions} deletions={p.deletions ?? 0} />}
-        {p.external && <ExternalLinkIcon className="size-3!" />}
       </span>
-    </>
-  )
-  return p.external ? (
-    <a className={INDEX_ROW} href={p.url} target="_blank" rel="noreferrer">
-      {body}
-    </a>
-  ) : (
-    <button type="button" className={INDEX_ROW} onClick={onOpen}>
-      {body}
     </button>
   )
 }
@@ -577,7 +664,7 @@ function ComputerWindow({ source, live, onOpen }: { source: ComputerSource; live
 
 function IndexSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section aria-label={title} className="flex flex-col gap-1">
+    <section aria-label={title} className="flex flex-col gap-2">
       <h3 className="px-2 text-sm font-normal text-muted-foreground">{title}</h3>
       <ul className="flex flex-col">{children}</ul>
     </section>
