@@ -101,7 +101,7 @@ export function PullRequestPanel({
 /** The bar above the plain file list: the PR link (or that there is none yet) and the diff stats. */
 function FilesBar({ pr, loading, error, onRetry, changes }: { pr?: { url: string; number?: number }; loading?: boolean; error?: string; onRetry?: () => void; changes: FileChange[] }) {
   return (
-    <div className="flex h-10 shrink-0 items-center gap-2 border-y pr-[14px] pl-[14px]">
+    <div className="flex h-10 shrink-0 items-center gap-2 border-y px-(--details-text)">
       <GitPullRequestIcon className="size-3.5 shrink-0 text-muted-foreground" />
       {pr ? (
         <a href={pr.url} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 hover:underline">
@@ -143,10 +143,10 @@ function PullRequestView({ view, data, now, onAsk }: { view: PullRequestView; da
   const anyOpen = withPatch.some((c) => open.has(c.path))
   return (
     <div className="flex min-h-full flex-col text-sm">
-      <div className="border-t px-[14px] pt-5 pb-4">
+      <div className="border-t px-(--details-text) pt-5 pb-4">
         <div className="flex items-center gap-2">
           <PrState view={view} now={now} />
-          <span className="ml-auto flex items-center gap-0.5 -mr-[9px] -my-2">
+          <span className="ml-auto flex items-center gap-0.5 -mr-[8px] -my-2">
             {data?.refresh && (
               <Tip label="Refresh">
                 <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="Refresh" onClick={data.refresh}>
@@ -166,7 +166,7 @@ function PullRequestView({ view, data, now, onAsk }: { view: PullRequestView; da
         </h2>
       </div>
       <Tabs value={section} onValueChange={(v) => setSection(v as Section)} className="min-h-0 flex-1 gap-0">
-        <div className="flex shrink-0 items-center gap-0.5 border-b px-[14px] pb-3">
+        <div className="flex shrink-0 items-center gap-0.5 border-b px-(--details-edge) pb-3">
           <TabsList className="h-7! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
             <TabsTrigger value="overview" className={TAB_CLASS}>
               Overview
@@ -190,7 +190,7 @@ function PullRequestView({ view, data, now, onAsk }: { view: PullRequestView; da
         </TabsContent>
         <TabsContent value="files">
           {withPatch.length > 0 && (
-            <div className="flex h-9 items-center gap-0.5 border-b pr-[5px] pl-[14px]">
+            <div className="flex h-9 items-center gap-0.5 border-b pr-(--details-edge) pl-(--details-text)">
               <span className="text-xs">
                 <Stat additions={view.additions} deletions={view.deletions} />
               </span>
@@ -446,7 +446,7 @@ function Checks({ view }: { view: PullRequestView }) {
             {c.url && <ExternalLinkIcon className="ml-auto size-3 shrink-0 text-muted-foreground" />}
           </>
         )
-        const box = 'flex h-9 items-center gap-2 px-[14px]'
+        const box = 'flex h-9 items-center gap-2 px-(--details-text)'
         return (
           <li key={`${c.name}-${i}`}>
             {c.url ? (
@@ -497,7 +497,7 @@ function Overview({ view }: { view: PullRequestView }) {
   const opened = new Date(view.createdAt)
   return (
     <div className="pb-6">
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2.5 px-[14px] py-3">
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2.5 px-(--details-text) py-3">
         <Meta label="Author">
           <Person login={view.author.login} avatarUrl={view.author.avatarUrl} />
         </Meta>
@@ -526,7 +526,7 @@ function Overview({ view }: { view: PullRequestView }) {
           </span>
         </Meta>
       </dl>
-      <div className="border-t px-[14px] pt-2">
+      <div className="border-t px-(--details-text) pt-2">
         {sections.length === 0 ? (
           <p className="text-muted-foreground">No description.</p>
         ) : (
@@ -618,7 +618,7 @@ function Comments({ view, now, onAsk }: { view: PullRequestView; now: number; on
         ))}
       </ul>
       {onAsk && view.state === 'open' && (
-        <div className="px-[14px] py-4">
+        <div className="px-(--details-text) py-4">
           <Button size="sm" variant="outline" onClick={() => onAsk('Read the comments and reviews on the pull request, address them, push, and reply to each one.')}>
             Ask to address comments
           </Button>
@@ -632,7 +632,7 @@ function CommentRow({ comment: c, now }: { comment: PullRequestComment; now: num
   const review = c.reviewState ? REVIEW[c.reviewState] : undefined
   const body = c.body.replace(/<!--[\s\S]*?-->/g, '').trim()
   return (
-    <li className="px-[14px] py-3.5">
+    <li className="px-(--details-text) py-3.5">
       <div className="flex items-center gap-1.5 text-xs">
         <Person login={c.author.login} avatarUrl={c.author.avatarUrl} />
         {review && <span className={review.className}>{review.text}</span>}
@@ -688,7 +688,7 @@ function ChangeRow({ change: c, open, onToggle, wrap }: { change: FileChange; op
       <Stat additions={c.additions} deletions={c.deletions} />
     </>
   )
-  const box = 'flex h-9 w-full items-center gap-2 px-[14px] text-left font-mono text-xs'
+  const box = 'flex h-9 w-full items-center gap-2 px-(--details-text) text-left font-mono text-xs'
   return (
     <li>
       {c.patch ? (

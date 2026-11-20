@@ -93,7 +93,7 @@ export function ComputerView({ source }: { source?: ComputerSource }) {
         <div className="flex-1" />
       )}
       {/* Under the screen, like a player's controls: 30px buttons, the status dot on the same x as the tab icons. */}
-      <div className="flex h-10 shrink-0 items-center gap-0.5 border-t pr-1 pl-[5px]">
+      <div className="flex h-10 shrink-0 items-center gap-0.5 border-t px-(--details-edge)">
         <StreamStatus state={error ? 'offline' : loaded ? 'live' : 'connecting'} />
         <Tip side="top" label={control ? 'Hand back control' : source.working ? 'Take over (stops the agent)' : 'Take over'}>
           <Button

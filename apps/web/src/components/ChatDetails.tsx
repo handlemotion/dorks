@@ -192,10 +192,10 @@ export function ChatDetails({
   }
 
   return (
-    <aside aria-label="Chat details" className={['flex h-full min-h-0 min-w-0 flex-col border-l border-border', className].filter(Boolean).join(' ')}>
+    <aside aria-label="Chat details" className={['flex h-full min-h-0 min-w-0 flex-col border-l border-border [--details-edge:10px] [--details-text:18px]', className].filter(Boolean).join(' ')}>
       <Tabs value={tabs.selected} onValueChange={(value) => tabs.select(value as TabKey)} className="min-h-0 min-w-0 flex-1 gap-0">
         {/* 40px, 4px down from the top, so its labels sit on the chat title's 24px line. */}
-        <div data-tauri-drag-region className="mt-1 flex h-10 min-w-0 shrink-0 items-center gap-0.5 pr-[10px] pl-[10px]">
+        <div data-tauri-drag-region className="mt-1 mb-2 flex h-10 min-w-0 shrink-0 items-center gap-0.5 px-(--details-edge)">
           <TabsList className="h-7! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
             {tabs.keys.map((key) => {
               const { icon, text, title } = label(key)
@@ -588,7 +588,7 @@ function Tile({
       </div>
     </>
   )
-  const cls = 'block w-full px-5 pt-5 pb-4 text-left transition-colors hover:bg-foreground/[0.03] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring'
+  const cls = 'block w-full px-(--details-text) pt-5 pb-4 text-left transition-colors hover:bg-foreground/[0.03] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring'
   return (
     <li className="border-r border-b">
       {image !== undefined ? (
