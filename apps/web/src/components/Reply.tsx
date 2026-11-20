@@ -138,14 +138,14 @@ export function SelectionReply() {
           finalFocus={false}
           data-testid="selection-reply-button"
           data-selection-reply=""
-          className="w-auto gap-0 rounded-[7px] p-0.5"
+          className="w-auto gap-0 rounded-[8px] p-0.5"
         >
           <button
             type="button"
             // Keeps the selection: a press on a button would otherwise clear it before the click.
             onPointerDown={(e) => e.preventDefault()}
             onClick={() => setExpanded(true)}
-            className="flex h-6 cursor-pointer items-center gap-1 rounded-[5px] px-1.5 text-xs text-foreground outline-none hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05]"
+            className="flex h-6 cursor-pointer items-center gap-1 rounded-(--control-radius) px-1.5 text-xs text-foreground outline-none hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05]"
           >
             <ReplyIcon aria-hidden className="size-3 text-muted-foreground" />
             Reply
