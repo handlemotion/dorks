@@ -108,6 +108,7 @@ export class DorksClient {
         break;
       case "settings":
         this.invalidate("settings");
+        this.invalidate("pr"); // a new GitHub login may see a PR the old one could not
         this.invalidate("github-repos");
         this.invalidate("secrets");
         break;
@@ -301,6 +302,7 @@ export class DorksClient {
       await this.api.getGithubRepos(true);
       this.invalidate("github-repos");
       this.invalidate("settings");
+      this.invalidate("pr");
     },
     checkBoat: (input: { boatKey?: string; boatOrg?: string }) => this.api.checkBoat(input),
     /** Starts "Prepare Boat". Resolves with the status right after it started; follow progress with `snapshot()` / `useSnapshot()`. */

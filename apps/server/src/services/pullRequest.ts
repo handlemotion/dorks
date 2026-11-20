@@ -63,7 +63,8 @@ const ghMessage = (json: unknown) => {
 
 async function get(app: App, token: string, path: string): Promise<unknown> {
   const r = await call(app, token, "GET", path);
-  if (r.status === 404) return fail("not_found", "GitHub could not find this pull request, or the GitHub CLI's login cannot see it.");
+  // Not `not_found`: that means "this session has no PR", and the client would cache it as such.
+  if (r.status === 404) return fail("github_error", "GitHub could not find this pull request, or the GitHub CLI's login cannot see it.");
   if (r.status === 401) return fail("github_error", "GitHub rejected the GitHub CLI's login. Run `gh auth login` again.");
   if (r.status === 403 || r.status === 429) return fail("rate_limited", ghMessage(r.json) ?? "GitHub refused the request.");
   if (r.status >= 300) return fail("github_error", `GitHub answered ${r.status}${ghMessage(r.json) ? `: ${ghMessage(r.json)}` : ""}`);

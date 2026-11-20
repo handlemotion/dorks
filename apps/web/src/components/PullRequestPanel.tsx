@@ -85,7 +85,7 @@ export function PullRequestPanel({
     const loading = pullRequest && view === undefined && !pullRequest.error
     return (
       <div className="flex min-h-full flex-col text-sm">
-        <FilesBar pr={pr} loading={loading} error={pullRequest?.error} changes={changes} />
+        <FilesBar pr={pr} loading={loading} error={pullRequest?.error} onRetry={pullRequest?.refresh} changes={changes} />
         <FileList changes={changes} />
       </div>
     )
@@ -94,7 +94,7 @@ export function PullRequestPanel({
 }
 
 /** The bar above the plain file list: the PR link (or that there is none yet) and the diff stats. */
-function FilesBar({ pr, loading, error, changes }: { pr?: { url: string; number?: number }; loading?: boolean; error?: string; changes: FileChange[] }) {
+function FilesBar({ pr, loading, error, onRetry, changes }: { pr?: { url: string; number?: number }; loading?: boolean; error?: string; onRetry?: () => void; changes: FileChange[] }) {
   return (
     <div className="flex h-10 shrink-0 items-center gap-2 border-y pr-[14px] pl-[14px]">
       <GitPullRequestIcon className="size-3.5 shrink-0 text-muted-foreground" />
@@ -110,6 +110,13 @@ function FilesBar({ pr, loading, error, changes }: { pr?: { url: string; number?
         <span className="min-w-0 truncate text-xs text-red-600 dark:text-red-400" title={error}>
           {error}
         </span>
+      )}
+      {error && onRetry && (
+        <Tip label="Try again">
+          <Button variant="ghost" size="icon-sm" className={`-my-2 shrink-0 ${BAR_BUTTON}`} aria-label="Try again" onClick={onRetry}>
+            <RefreshCwIcon />
+          </Button>
+        </Tip>
       )}
       {changes.length > 0 && (
         <span className="ml-auto text-xs">
