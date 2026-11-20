@@ -34,6 +34,7 @@ export interface FakeBox extends BoxProvider {
   failResumes: number;
   failPauses: number;
   failCreates: number;
+  failDeletes: number;
   missing: Set<string>;
   created: { name: string; env: Record<string, string>; boatEnvironment?: string }[];
 }
@@ -44,6 +45,7 @@ export function fakeBox(): FakeBox {
     failResumes: 0,
     failPauses: 0,
     failCreates: 0,
+    failDeletes: 0,
     missing: new Set(),
     created: [],
     async createFromSnapshot(_s, o) {
@@ -63,6 +65,7 @@ export function fakeBox(): FakeBox {
     },
     async delete(id) {
       box.calls.push("delete");
+      if (box.failDeletes-- > 0) throw new Error("delete down");
       box.missing.add(id);
     },
   };

@@ -420,6 +420,21 @@ describe("review fixes", () => {
       expect(h.state(id)).toBe("waking"); // the next message wakes the fresh box
     });
 
+    it("a failed delete keeps the box: no create, and the next message resumes it", async () => {
+      const h = harness();
+      const id = h.seed("waking", { bridgeSeenAt: 0 });
+      h.box.failDeletes = 1;
+      h.timer(id, "watchdog");
+      await h.settle(); // the delete fails: error, and a flush of the old box's bridge
+      await h.advance(11_000); // nobody answers the flush -> pause
+      expect(h.box.calls).toEqual(["delete", "pause"]); // never created over a box the provider would adopt
+      expect(h.dork(id).boxId).toBe("box-1");
+      expect(h.state(id)).toBe("sleeping");
+      h.sendMessage(id);
+      await h.settle();
+      expect(h.box.calls).toEqual(["delete", "pause", "resume"]);
+    });
+
     it("an archived dork is not replaced", async () => {
       const h = harness();
       const id = h.seed("waking", { archived: true, bridgeSeenAt: 0 });
