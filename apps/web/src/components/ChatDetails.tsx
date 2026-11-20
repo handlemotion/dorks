@@ -99,7 +99,7 @@ export function ChatDetails({
         className="relative min-h-0 min-w-0 flex-1 gap-0 overflow-hidden rounded-[11px] after:pointer-events-none after:absolute after:inset-0 after:z-20 after:rounded-[inherit] after:border after:border-border"
       >
         <div data-tauri-drag-region className="flex h-10 min-w-0 shrink-0 items-center gap-0.5 p-[5px]">
-          <TabsList className="h-[30px]! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
+          <TabsList className="h-[26px]! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
             <DetailsTab value="progress" icon={<ActivityIcon />}>
               Progress
             </DetailsTab>
@@ -151,12 +151,12 @@ export function ChatDetails({
   )
 }
 
-/** A plain tab: the same 32px box selected or not (nothing moves), a grey fill when selected, a lighter one on hover. Instant. */
+/** A plain tab: the same 26px box selected or not (nothing moves), a grey fill when selected, a lighter one on hover. Instant. */
 function DetailsTab({ value, icon, count, children }: { value: Tab; icon: ReactNode; count?: number; children: ReactNode }) {
   return (
     <TabsTrigger
       value={value}
-      className="h-[30px] flex-none gap-1.5 rounded-(--control-radius) px-2 py-0 transition-none text-sm font-normal text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground data-active:bg-foreground/[0.07] data-active:text-foreground dark:data-active:bg-foreground/[0.08] [&_svg:not([class*='size-'])]:size-3.5"
+      className="h-[26px] flex-none gap-1.5 rounded-(--control-radius) px-2 py-0 transition-none text-[13px] font-normal text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground data-active:bg-foreground/[0.07] data-active:text-foreground dark:data-active:bg-foreground/[0.08] [&_svg:not([class*='size-'])]:size-3.5"
     >
       {icon}
       {children}

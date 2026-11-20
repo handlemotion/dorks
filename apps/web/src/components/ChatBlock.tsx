@@ -1,5 +1,5 @@
 import { useId, useMemo, useState, type ReactNode } from 'react'
-import { BoxIcon, ChevronRightIcon, CircleAlertIcon, CircleCheckIcon, CircleStopIcon, ReplyIcon, TerminalIcon, WrenchIcon } from 'lucide-react'
+import { BoxIcon, ChevronRightIcon, CircleAlertIcon, CircleCheckIcon, CircleStopIcon, PanelRightOpenIcon, ReplyIcon, TerminalIcon, WrenchIcon } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { Button } from '@dorks/ui/button'
 import type { Block } from '@dorks/shared'
@@ -373,7 +373,7 @@ function latestStep(work: WorkBlock[]): string {
 }
 
 /**
- * A turn's overview, as one row: a chevron, the kinds of tools it used, how long it worked and its step count ("Worked for 2m 14s · 8
+ * A turn's overview, as one row: the kinds of tools it used, how long it worked and its step count ("Worked for 2m 14s · 8
  * steps"); while it runs, "Working" and its newest step. The work itself lives in Chat details' Progress; the row opens it there on
  * this turn (`onOpen`), or, without Chat details beside the chat, unfolds it below.
  */
@@ -402,9 +402,10 @@ function TurnCard({ work, end, onOpen }: { work: WorkBlock[]; end?: TurnBlock; o
         aria-label={inline ? undefined : `${title}, ${detail}. Show progress`}
         title={tools.length > 0 ? toolGroupTitle(tools) : undefined}
         onClick={() => (onOpen ? onOpen() : setOpen(!open))}
-        className="-mx-1 flex h-7 w-fit max-w-full min-w-0 items-center gap-2 rounded-(--control-radius) px-1 text-left text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="group/turn -mx-1 flex h-7 w-fit max-w-full min-w-0 items-center gap-2 rounded-(--control-radius) px-1 text-left text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <ChevronRightIcon aria-hidden className={`size-3.5 shrink-0 ${inline && open ? 'rotate-90' : ''}`} />
+        {/* A chevron only where the row unfolds in place; where it opens Progress, a panel icon says so on hover instead. */}
+        {inline && <ChevronRightIcon aria-hidden className={`size-3.5 shrink-0 ${open ? 'rotate-90' : ''}`} />}
         {kinds.length > 0 && (
           <span aria-hidden className="flex shrink-0 -space-x-1">
             {kinds.map((kind) => {
@@ -420,6 +421,7 @@ function TurnCard({ work, end, onOpen }: { work: WorkBlock[]; end?: TurnBlock; o
         <span className="shrink-0">{running ? <WordShimmer>{title}</WordShimmer> : title}</span>
         <span aria-hidden>·</span>
         <span className="min-w-0 truncate tabular-nums">{detail}</span>
+        {!inline && <PanelRightOpenIcon aria-hidden className="size-3.5 shrink-0 opacity-0 transition-opacity group-hover/turn:opacity-100 group-focus-visible/turn:opacity-100" />}
       </button>
       {inline && open && <WorkHistory id={historyId} blocks={work} />}
     </>

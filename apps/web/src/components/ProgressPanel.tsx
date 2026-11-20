@@ -22,7 +22,9 @@ import { useTheme } from 'next-themes'
 import { Button } from '@dorks/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@dorks/ui/dropdown-menu'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@dorks/ui/input-group'
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@dorks/ui/resizable'
+import { ResizablePanel, ResizablePanelGroup } from '@dorks/ui/resizable'
+import { usePanelRef } from 'react-resizable-panels'
+import { PanelResizeHandle } from '@dorks/ui/panel-resize-handle'
 import { Skeleton } from '@dorks/ui/skeleton'
 import {
   matchesFilter,
@@ -55,6 +57,7 @@ const FILTERS = [
 ]
 
 const DETAIL_KEY = 'dorks.progress-detail-size'
+const DEFAULT_DETAIL_SIZE = '45%'
 
 /**
  * The detail's height, remembered per browser like every resizable panel's. It is kept apart from the group's layout: the detail only
@@ -63,9 +66,9 @@ const DETAIL_KEY = 'dorks.progress-detail-size'
 function savedDetailSize(): string {
   try {
     const n = Number(localStorage.getItem(DETAIL_KEY))
-    return n > 0 && n < 100 ? `${n}%` : '45%'
+    return n > 0 && n < 100 ? `${n}%` : DEFAULT_DETAIL_SIZE
   } catch {
-    return '45%'
+    return DEFAULT_DETAIL_SIZE
   }
 }
 
@@ -114,6 +117,7 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
   // Live: Progress follows the agent, selecting each new step as it lands (its detail open at the foot). Picking a step pauses it.
   const [live, setLive] = useState(false)
   const scroller = useRef<HTMLDivElement>(null)
+  const detail = usePanelRef()
   const atEnd = useRef(true)
   const now = useNow()
   const { selectedKey, reveal } = useProgress()
@@ -183,7 +187,8 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
     >
       <div className="shrink-0 px-[5px] pb-[5px]">
         {/* Icons in line with the tab icons above: the search icon 14px from the panel edge, the last button centred under the hide button. */}
-        <InputGroup className="h-[30px] rounded-(--control-radius)">
+        {/* Outlined with no fill, like the composer. */}
+        <InputGroup className="h-[30px] rounded-(--control-radius) border-border bg-transparent dark:bg-transparent">
           <InputGroupAddon className="pl-2">
             <SearchIcon className="size-3.5" />
           </InputGroupAddon>
@@ -253,7 +258,7 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
               shown.map((turn) => (
                 <div key={turn.key} role="group" data-turn-key={turn.key} aria-label={turn.prompt ?? 'Steps'}>
                   {/* Pinned while its steps scroll under it, so the message they answer stays in view. */}
-                  <div className="sticky top-0 z-10 flex h-7 items-center gap-2 bg-background px-[14px] text-sm text-foreground">
+                  <div className="sticky top-0 z-10 box-content flex h-7 items-center gap-2 bg-background px-[14px] pb-1 text-sm text-foreground">
                     <MessageSquareIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
                     <span className="min-w-0 flex-1 truncate" title={turn.prompt ?? undefined}>
                       {turn.prompt ?? 'Without a message'}
@@ -285,9 +290,9 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
         </ResizablePanel>
         {selected && (
           <>
-            {/* The divider is the detail's top edge: a full hairline, draggable along a wider band. */}
-            <ResizableHandle aria-label="Resize steps and detail" className="after:h-3!" />
-            <ResizablePanel id="detail" defaultSize={savedDetailSize()} minSize={120}>
+            {/* The detail's top edge: the side panels' grip, laid down. A click puts the detail back to its default height. */}
+            <PanelResizeHandle axis="y" aria-label="Resize steps and detail" onReset={() => detail.current?.resize(DEFAULT_DETAIL_SIZE)} />
+            <ResizablePanel id="detail" panelRef={detail} defaultSize={savedDetailSize()} minSize={120}>
               <StepDetail
                 key={selected.key}
                 step={selected}
