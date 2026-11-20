@@ -1,23 +1,37 @@
 import type { McpServerInput } from '@dorks/client'
-import { siCloudflare, siLinear, siNeon, siNotion, siPosthog, siSentry, siStripe, siSupabase } from 'simple-icons'
+import { siAsana, siCloudflare, siFigma, siGmail, siGooglecalendar, siGoogledrive, siHubspot, siJira, siLinear, siNeon, siNotion, siPosthog, siSentry, siStripe, siSupabase } from 'simple-icons'
 
-// The connector catalog in Customize (docs/mcp.md): popular MCP servers that a sandbox can reach without a browser, each set up from
-// one key. A connector saves an ordinary MCP server named after its `id`, so it shows as connected when a server with that name exists.
-// Only servers that accept a static token belong here: a sandbox has no one to finish an OAuth sign-in.
+// The connector catalog in Customize (docs/mcp.md). Two kinds:
+// - a key connector is a vendor MCP server that takes a static token: it saves an ordinary MCP server named after its `id`, so it
+//   shows as connected when a server with that name exists;
+// - a Composio app (`toolkit`) only signs in with OAuth, which a sandbox cannot finish: the owner signs in once in a browser through
+//   Composio, and agents reach it through the one `composio` server.
 
-export interface Connector {
+export type Connector = KeyConnector | ComposioApp
+
+interface Base {
   id: string
   name: string
   by: string
   description: string
   /** A 24×24 path (simple-icons, or our own below) and brand colour; a monogram when there is none. */
   icon?: { path: string; hex: string; evenodd?: boolean }
+}
+export interface KeyConnector extends Base {
+  toolkit?: undefined
   /** What the key is called where you get it, and where that is. */
   keyLabel: string
   keyUrl: string
   /** The server to save for a key. */
   server: (key: string) => McpServerInput
 }
+export interface ComposioApp extends Base {
+  /** Composio's toolkit slug. */
+  toolkit: string
+}
+
+/** The Composio key, saved as the `composio` MCP server. */
+export const COMPOSIO = { id: 'composio', keyLabel: 'API key', keyUrl: 'https://platform.composio.dev/settings' } as const
 
 const bearer =
   (url: string, scheme = 'Bearer') =>
@@ -41,7 +55,29 @@ const CONTEXT7 = {
     'M13 6h5v1.2L16.6 9v3h-2.2V9L13 7.2zM14.4 13h2.2v3l1.4 1.8V19h-5v-1.2l1.4-1.8z',
 }
 
+const SLACK = {
+  hex: '4A154B',
+  path: 'M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z',
+}
+
+const app = (toolkit: string, name: string, description: string, mark?: { path: string; hex: string }): ComposioApp => ({
+  id: `composio-${toolkit}`,
+  toolkit,
+  name,
+  by: name,
+  description,
+  icon: mark && icon(mark),
+})
+
 export const CONNECTORS: Connector[] = [
+  app('figma', 'Figma', 'Read files, frames, components and comments', siFigma),
+  app('slack', 'Slack', 'Read channels and threads, and post messages', SLACK),
+  app('gmail', 'Gmail', 'Search, read and draft email', siGmail),
+  app('googledrive', 'Google Drive', 'Find, read and organise files', siGoogledrive),
+  app('googlecalendar', 'Google Calendar', 'See and schedule events', siGooglecalendar),
+  app('jira', 'Jira', 'Search, create and update issues', siJira),
+  app('asana', 'Asana', 'Tasks, projects and comments', siAsana),
+  app('hubspot', 'HubSpot', 'Contacts, companies and deals', siHubspot),
   {
     id: 'linear',
     name: 'Linear',
@@ -144,4 +180,5 @@ export const CONNECTORS: Connector[] = [
   },
 ]
 
-export const connectorById = (id: string) => CONNECTORS.find((c) => c.id === id)
+/** The key connector saved under this server name, if any. */
+export const connectorById = (id: string) => CONNECTORS.find((c): c is KeyConnector => !c.toolkit && c.id === id)

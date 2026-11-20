@@ -1,4 +1,4 @@
-import type { McpServerInput, McpServerView, SubscriptionView } from "@dorks/shared";
+import type { ComposioStatus, McpServerInput, McpServerView, SubscriptionView } from "@dorks/shared";
 import { EventsFeed } from "./events.ts";
 import { createApi, ApiError, type ApiConfig, type DesktopOptions } from "./http.ts";
 import { connectLive, type LiveStatus } from "./live.ts";
@@ -110,6 +110,7 @@ export class DorksClient {
         this.invalidate("github-repos");
         this.invalidate("secrets");
         this.invalidate("mcp-servers");
+        this.invalidate("composio");
         break;
       case "snapshot":
         this.invalidate("snapshot");
@@ -166,6 +167,13 @@ export class DorksClient {
   }
 
   /** The MCP servers from Customize: names of headers and variables, never their values. */
+  composio() {
+    return this.query<ComposioStatus>("composio", () => this.api.composio());
+  }
+  /** Reads Composio again: a sign-in finishes in the browser, with no event here. */
+  refreshComposio() {
+    this.invalidate("composio");
+  }
   mcpServers() {
     return this.query<McpServerView[]>("mcp-servers", () => this.api.listMcpServers());
   }
@@ -299,6 +307,21 @@ export class DorksClient {
     putMcpServer: async (name: string, input: McpServerInput) => {
       await this.api.putMcpServer(name, input);
       this.invalidate("mcp-servers");
+    },
+    connectComposio: async (apiKey: string) => {
+      await this.api.connectComposio(apiKey);
+      this.invalidate("mcp-servers");
+      this.invalidate("composio");
+    },
+    disconnectComposio: async () => {
+      await this.api.disconnectComposio();
+      this.invalidate("mcp-servers");
+      this.invalidate("composio");
+    },
+    composioLink: (toolkit: string) => this.api.composioLink(toolkit),
+    composioUnlink: async (toolkit: string) => {
+      await this.api.composioUnlink(toolkit);
+      this.invalidate("composio");
     },
     deleteMcpServer: async (name: string) => {
       await this.api.deleteMcpServer(name);

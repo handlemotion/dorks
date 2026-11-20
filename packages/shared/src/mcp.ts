@@ -41,3 +41,9 @@ export interface McpServerInput {
   args?: string[];
   env?: Record<string, string | null>;
 }
+
+/** Composio (docs/mcp.md): whether its key is saved, and the toolkit slugs (`figma`, `gmail`…) signed in through it. */
+export interface ComposioStatus {
+  connected: boolean;
+  toolkits: string[];
+}

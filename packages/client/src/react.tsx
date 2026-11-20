@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useSyncExternalStore, type ReactNode } from "react";
-import { toAppError, type McpServerView, type SubscriptionView } from "@dorks/shared";
+import { toAppError, type ComposioStatus, type McpServerView, type SubscriptionView } from "@dorks/shared";
 import type { DorksClient, ConnectionState } from "./client.ts";
 import type { EventsState } from "./events.ts";
 import type { QueryState, Store } from "./store.ts";
@@ -68,6 +68,10 @@ export function useGithubRepos(): GithubRepos | undefined {
 }
 
 /** The MCP servers from Customize; `undefined` while loading. */
+export function useComposio(): ComposioStatus | undefined {
+  return useStore(useDorksClient().composio()).data;
+}
+
 export function useMcpServers(): McpServerView[] | undefined {
   return useStore(useDorksClient().mcpServers()).data;
 }

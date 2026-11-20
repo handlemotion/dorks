@@ -109,6 +109,8 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   const dorks = new Map<string, MockDork>();
   const secrets = new Map<string, string>();
   const mcpServers = new Map<string, McpServerView>();
+  // Composio: a sign-in "finishes" when its link is requested, so the UI's wait ends on the next read.
+  const composioApps = new Set<string>();
   const live = new Set<ServerResponse>();
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const settings: Settings = {
@@ -530,6 +532,35 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
           [...mcpServers.values()].sort((a, b) => a.name.localeCompare(b.name)),
         ),
     ],
+    ["GET /api/composio", ({ res }) => json(res, 200, { connected: mcpServers.has("composio"), toolkits: [...composioApps].sort() })],
+    [
+      "PUT /api/composio",
+      ({ body, res }) => {
+        if (!str(body.apiKey)) return fail(res, "invalid", "enter a Composio API key");
+        const createdAt = Date.now();
+        mcpServers.set("composio", {
+          name: "composio",
+          transport: "http",
+          url: "https://app.composio.dev/tool_router/v3/trs_mock/mcp",
+          command: null,
+          args: [],
+          headerNames: ["x-api-key"],
+          envNames: [],
+          createdAt,
+        });
+        broadcast({ t: "settings" });
+        return json(res, 200, {});
+      },
+    ],
+    [
+      "DELETE /api/composio",
+      ({ res }) => {
+        mcpServers.delete("composio");
+        composioApps.clear();
+        broadcast({ t: "settings" });
+        return json(res, 200, {});
+      },
+    ],
     // Builds are not mocked: the list is empty, so the UI shows its empty state (use `pnpm dev` for the real flow).
     ["GET /api/builds", ({ res }) => json(res, 200, [])],
   ]);
@@ -600,6 +631,18 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     if (m) return routeDork(c, m);
     const sm = /^\/api\/secrets\/([^/]+)$/.exec(path);
     if (sm) return routeSecret(c, decodeURIComponent(sm[1]!));
+    const cm = /^\/api\/composio\/toolkits\/([a-z0-9_]+)(\/link)?$/.exec(path);
+    if (cm) {
+      if (!mcpServers.has("composio")) return fail(res, "not_configured", "Add your Composio API key first.");
+      if (method === "POST" && cm[2]) {
+        composioApps.add(cm[1]!);
+        return json(res, 200, { url: `https://app.composio.dev/link/mock_${cm[1]}` });
+      }
+      if (method === "DELETE" && !cm[2]) {
+        composioApps.delete(cm[1]!);
+        return json(res, 200, {});
+      }
+    }
     const mm = /^\/api\/mcp-servers\/([^/]+)$/.exec(path);
     if (mm) return routeMcp(c, decodeURIComponent(mm[1]!));
     return fail(res, "not_found", "Unknown route.");

@@ -1,15 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { CheckIcon, PlusIcon, XIcon } from 'lucide-react'
 import type { McpServerInput, McpServerView } from '@dorks/client'
-import { useDorksClient, useMcpServers } from '@dorks/client/react'
+import { useComposio, useDorksClient, useMcpServers } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@dorks/ui/dialog'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@dorks/ui/field'
 import { Input } from '@dorks/ui/input'
 import { NativeSelect, NativeSelectOption } from '@dorks/ui/native-select'
 import { Textarea } from '@dorks/ui/textarea'
-import { CONNECTORS, connectorById, type Connector } from '../../../components/connectors'
+import { COMPOSIO, CONNECTORS, connectorById, type ComposioApp, type Connector, type KeyConnector } from '../../../components/connectors'
 import { PageHeader } from '../../../components/PageHeader'
 import { SettingsGroup, SettingsRow, SettingsSection, SettingsSections } from '../../../components/settings/kit'
 import { usePending } from '../../../lib/pending'
@@ -41,8 +41,10 @@ function Customize() {
   const servers = useMcpServers()
   const [draft, setDraft] = useState<Draft | null>(null)
   const [connecting, setConnecting] = useState<Connector | null>(null)
+  const composio = useComposio()
   const saved = new Set(servers?.map((s) => s.name))
-  const custom = servers?.filter((s) => !connectorById(s.name)) ?? []
+  const custom = servers?.filter((s) => !connectorById(s.name) && s.name !== COMPOSIO.id) ?? []
+  const isConnected = (c: Connector) => (c.toolkit ? !!composio?.toolkits.includes(c.toolkit) : saved.has(c.id))
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
@@ -60,7 +62,7 @@ function Customize() {
             <SettingsSection title="Connectors">
               <ul aria-label="connectors" className="grid gap-2 md:grid-cols-2">
                 {CONNECTORS.map((c) => (
-                  <ConnectorCard key={c.id} connector={c} connected={saved.has(c.id)} loading={!servers} onOpen={() => setConnecting(c)} />
+                  <ConnectorCard key={c.id} connector={c} connected={isConnected(c)} loading={!servers || (!!c.toolkit && !composio)} onOpen={() => setConnecting(c)} />
                 ))}
               </ul>
             </SettingsSection>
@@ -77,7 +79,12 @@ function Customize() {
         </div>
       </div>
       {draft && <ServerDialog key={`${draft.name}:${draft.editing}`} initial={draft} onClose={() => setDraft(null)} />}
-      {connecting && <ConnectDialog key={connecting.id} connector={connecting} connected={saved.has(connecting.id)} onClose={() => setConnecting(null)} />}
+      {connecting &&
+        (connecting.toolkit !== undefined ? (
+          <AppDialog key={connecting.id} app={connecting} keySaved={!!composio?.connected} connected={isConnected(connecting)} onClose={() => setConnecting(null)} />
+        ) : (
+          <ConnectDialog key={connecting.id} connector={connecting} connected={saved.has(connecting.id)} onClose={() => setConnecting(null)} />
+        ))}
     </div>
   )
 }
@@ -133,7 +140,7 @@ function ConnectorCard({ connector: c, connected, loading, onOpen }: { connector
 }
 
 /** Connect a catalog server with its one key, or, once connected, replace the key or remove it. */
-function ConnectDialog({ connector: c, connected, onClose }: { connector: Connector; connected: boolean; onClose: () => void }) {
+function ConnectDialog({ connector: c, connected, onClose }: { connector: KeyConnector; connected: boolean; onClose: () => void }) {
   const { actions } = useDorksClient()
   const { run, pending, error } = usePending()
   const [key, setKey] = useState('')
@@ -195,6 +202,150 @@ function ConnectDialog({ connector: c, connected, onClose }: { connector: Connec
             <Button type="submit" size="sm" disabled={pending || !key.trim()}>
               {pending ? 'Saving…' : connected ? 'Replace key' : 'Connect'}
             </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/**
+ * An app that signs in through Composio. Without a Composio key the dialog asks for it first; then the sign-in opens in a browser
+ * and the dialog waits, reading Composio every few seconds, until the app shows up as connected.
+ */
+function AppDialog({ app: c, keySaved, connected, onClose }: { app: ComposioApp; keySaved: boolean; connected: boolean; onClose: () => void }) {
+  const client = useDorksClient()
+  const { actions } = client
+  const { run, pending, error } = usePending()
+  const [key, setKey] = useState('')
+  const [editingKey, setEditingKey] = useState(!keySaved)
+  const [link, setLink] = useState<string | null>(null)
+  const waiting = !!link && !connected
+
+  useEffect(() => {
+    if (!waiting) return
+    const t = setInterval(() => client.refreshComposio(), 3000)
+    return () => clearInterval(t)
+  }, [waiting, client])
+  useEffect(() => {
+    if (link && connected) onClose()
+  }, [link, connected, onClose])
+
+  const signIn = () =>
+    void run(async () => {
+      const { url } = await actions.composioLink(c.toolkit)
+      setLink(url)
+      window.open(url, '_blank', 'noopener,noreferrer')
+    })
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <form
+          className="flex flex-col"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (editingKey)
+              void run(async () => {
+                await actions.connectComposio(key.trim())
+                setKey('')
+                setEditingKey(false)
+              })
+            else if (!connected) signIn()
+          }}
+        >
+          <DialogHeader className="gap-2">
+            <DialogTitle className="text-sm font-medium">{connected ? c.name : `Connect ${c.name}`}</DialogTitle>
+            <DialogDescription className="text-sm leading-5">
+              {editingKey
+                ? `${c.name} signs in through Composio. Add your Composio API key once, then each app is one sign-in.`
+                : connected
+                  ? `${c.description}. Agents reach it through the composio server.`
+                  : waiting
+                    ? 'Finish signing in on the page that opened. This closes when it is done.'
+                    : `${c.description}. You sign in once in your browser.`}
+            </DialogDescription>
+          </DialogHeader>
+          {(editingKey || error) && (
+            <div data-slot="dialog-body">
+              {editingKey && (
+                <Field>
+                  <FieldLabel htmlFor="composio-key">Composio {COMPOSIO.keyLabel}</FieldLabel>
+                  <Input id="composio-key" type="password" autoComplete="off" placeholder={keySaved ? 'Saved' : ''} value={key} onChange={(e) => setKey(e.target.value)} autoFocus />
+                  <FieldDescription>
+                    <a href={COMPOSIO.keyUrl} target="_blank" rel="noreferrer">
+                      Get your Composio API key
+                    </a>
+                    . Stored encrypted and never shown again.
+                  </FieldDescription>
+                </Field>
+              )}
+              {error && (
+                <p role="alert" className={editingKey ? 'mt-4 text-xs text-destructive' : 'text-xs text-destructive'}>
+                  {error}
+                </p>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            {editingKey && keySaved && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="sm:me-auto"
+                disabled={pending}
+                onClick={() =>
+                  void run(async () => {
+                    await actions.disconnectComposio()
+                    onClose()
+                  })
+                }
+              >
+                Remove key
+              </Button>
+            )}
+            {!editingKey && (
+              <Button type="button" variant="ghost" size="sm" className="sm:me-auto" disabled={pending} onClick={() => setEditingKey(true)}>
+                Composio key
+              </Button>
+            )}
+            {connected && !editingKey ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={pending}
+                  onClick={() =>
+                    void run(async () => {
+                      await actions.composioUnlink(c.toolkit)
+                      onClose()
+                    })
+                  }
+                >
+                  Disconnect
+                </Button>
+                <DialogClose render={<Button type="button" size="sm" />}>Done</DialogClose>
+              </>
+            ) : (
+              <>
+                <DialogClose render={<Button type="button" variant="outline" size="sm" />}>Cancel</DialogClose>
+                {editingKey ? (
+                  <Button type="submit" size="sm" disabled={pending || !key.trim()}>
+                    {pending ? 'Checking…' : 'Save key'}
+                  </Button>
+                ) : waiting ? (
+                  <Button type="button" size="sm" nativeButton={false} render={<a href={link} target="_blank" rel="noreferrer" />}>
+                    Open sign-in page
+                  </Button>
+                ) : (
+                  <Button type="submit" size="sm" disabled={pending}>
+                    {pending ? 'Opening…' : `Sign in to ${c.name}`}
+                  </Button>
+                )}
+              </>
+            )}
           </DialogFooter>
         </form>
       </DialogContent>

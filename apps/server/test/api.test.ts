@@ -293,6 +293,52 @@ describe("settings", () => {
     expect((await a.del("/api/mcp-servers/fs")).status).toBe(200);
     expect((await a.get("/api/mcp-servers")).json).toHaveLength(1);
   });
+
+  it("connects Composio: the key opens a session, becomes the composio server, and signs apps in and out as one user", async () => {
+    // Composio's documented answers (docs.composio.dev/reference/api-reference/tool-router, connected-accounts).
+    const deleted: string[] = [];
+    const h = harness({
+      fetch: (async (u: string | URL | Request, init?: RequestInit) => {
+        const url = new URL(String(u));
+        if (new Headers(init?.headers).get("x-api-key") !== "ck-1") return Response.json({ error: "bad key" }, { status: 401 });
+        const route = `${init?.method ?? "GET"} ${url.pathname}`;
+        if (route === "POST /api/v3.1/tool_router/session") {
+          expect(JSON.parse(String(init?.body))).toEqual({ user_id: "dorks-owner" });
+          return Response.json({ session_id: "trs_1", mcp: { type: "http", url: "https://app.composio.dev/tool_router/v3/trs_1/mcp" } });
+        }
+        if (route === "POST /api/v3.1/tool_router/session/trs_1/link") return Response.json({ redirect_url: "https://app.composio.dev/link/lt_1" });
+        if (route === "GET /api/v3/connected_accounts") {
+          expect(url.searchParams.get("user_ids")).toBe("dorks-owner");
+          const all = [
+            { id: "ca_f", toolkit: { slug: "figma" } },
+            { id: "ca_g", toolkit: { slug: "gmail" } },
+          ].filter((a) => !deleted.includes(a.id));
+          return Response.json({ items: all });
+        }
+        if (route.startsWith("DELETE /api/v3/connected_accounts/")) {
+          deleted.push(url.pathname.split("/").at(-1)!);
+          return Response.json({ success: true });
+        }
+        return new Response("{}", { status: 404 });
+      }) as typeof fetch,
+    });
+    const a = api(h);
+    expect((await a.get("/api/composio")).json).toEqual({ connected: false, toolkits: [] });
+    expect((await a.post("/api/composio/toolkits/figma/link")).json.error.code).toBe("not_configured");
+    expect((await a.put("/api/composio", { apiKey: "wrong" })).json.error.code).toBe("invalid");
+    expect((await a.put("/api/composio", { apiKey: "ck-1" })).status).toBe(200);
+    const { mcpServerConfigs } = await import("../src/services/mcpServers");
+    expect(await mcpServerConfigs(h.app)).toEqual([{ name: "composio", transport: "http", url: "https://app.composio.dev/tool_router/v3/trs_1/mcp", headers: { "x-api-key": "ck-1" } }]);
+    expect(JSON.stringify((await a.get("/api/mcp-servers")).json)).not.toContain("ck-1");
+    expect((await a.get("/api/composio")).json).toEqual({ connected: true, toolkits: ["figma", "gmail"] });
+    expect((await a.post("/api/composio/toolkits/figma/link")).json).toEqual({ url: "https://app.composio.dev/link/lt_1" });
+    expect((await a.del("/api/composio/toolkits/figma")).status).toBe(200);
+    expect(deleted).toEqual(["ca_f"]); // only Figma's account, even if Composio ignored the filter
+    expect((await a.get("/api/composio")).json.toolkits).toEqual(["gmail"]);
+    expect((await a.post("/api/composio/toolkits/..%2Fx/link")).json.error.code).toBe("invalid");
+    expect((await a.del("/api/composio")).status).toBe(200);
+    expect((await a.get("/api/composio")).json.connected).toBe(false);
+  });
 });
 
 describe("creating a dork", () => {

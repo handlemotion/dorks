@@ -15,6 +15,7 @@ import * as subs from "../services/subscriptions";
 import * as builds from "../services/builds";
 import * as runs from "../services/buildRuns";
 import { forgetUsage, getUsage } from "../services/usage";
+import { composioLink, composioStatus, composioUnlink, connectComposio, disconnectComposio } from "../services/composio";
 import { deleteMcpServer, listMcpServers, putMcpServer } from "../services/mcpServers";
 import { forgetGithubRepos, githubRepos } from "../services/githubRepos";
 
@@ -313,6 +314,33 @@ export function uiApp(app: App): Hono {
   api.delete(
     "/api/mcp-servers/:name",
     on((c) => ok(c)(service((a) => deleteMcpServer(a, name(c))))),
+  );
+
+  // ---- Composio (services/composio.ts): one key for the OAuth-only apps, each signed in to in a browser
+  api.get(
+    "/api/composio",
+    on((c) => serviceAsync(composioStatus).pipe(Effect.map((v) => c.json(v)))),
+  );
+  api.put(
+    "/api/composio",
+    on((c) =>
+      looseBody(c).pipe(
+        Effect.flatMap((b) => serviceAsync((a) => connectComposio(a, b.apiKey))),
+        ok(c),
+      ),
+    ),
+  );
+  api.delete(
+    "/api/composio",
+    on((c) => ok(c)(service(disconnectComposio))),
+  );
+  api.post(
+    "/api/composio/toolkits/:toolkit/link",
+    on((c) => serviceAsync((a) => composioLink(a, c.req.param("toolkit") as string)).pipe(Effect.map((v) => c.json(v)))),
+  );
+  api.delete(
+    "/api/composio/toolkits/:toolkit",
+    on((c) => serviceAsync((a) => composioUnlink(a, c.req.param("toolkit") as string)).pipe(ok(c))),
   );
 
   // ---- usage of the Claude subscription and Boat plan (services/usage.ts), cached for five minutes
