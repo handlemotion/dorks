@@ -1,9 +1,12 @@
 import { spawn } from "node:child_process";
 import { symlinkSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
 import { claudeMcpConfig, userMcpServers } from "../src/hooks";
 import { McpServer } from "../src/mcp";
+import { McpOAuthProxy } from "../src/mcp-proxy";
 import { RpcError } from "../src/rpc";
 import { builtCli, closeBridges, fakeBridge, fakeView, tmp } from "./helpers";
 
@@ -216,5 +219,58 @@ describe("the owner's MCP servers", () => {
     expect(config.fs).toEqual({ type: "stdio", command: "npx", args: ["-y", "fs-mcp"], env: { TOKEN: "${DORKS_MCP_1_E0}" } });
     expect(env).toEqual({ DORKS_MCP_0_URL: "https://mcp.composio.dev/s/key-in-url", DORKS_MCP_0_H0: "ck-1", DORKS_MCP_1_E0: "t-2" });
     expect(JSON.parse(file).mcpServers.dorks.command).toBe("/node");
+  });
+});
+
+describe("OAuth MCP proxy", () => {
+  it("adds a current token, retries a 401 once with a refreshed one, streams the answer, and serves only its secret path", async () => {
+    const seen: { auth?: string; session?: string; key?: string }[] = [];
+    const upstream = createServer((req, res) => {
+      seen.push({ auth: req.headers.authorization, session: req.headers["mcp-session-id"] as string, key: req.headers["x-key"] as string });
+      if (req.headers.authorization !== "Bearer new") return void res.writeHead(401).end();
+      res.writeHead(200, { "content-type": "text/event-stream", "mcp-session-id": "s-1" });
+      res.write('data: {"jsonrpc":"2.0","id":1,"result":{}}\n\n');
+      setTimeout(() => res.end(), 20);
+    });
+    await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", r));
+    const port = (upstream.address() as AddressInfo).port;
+    const asked: (string | undefined)[] = [];
+    const redacted: string[] = [];
+    const proxy = new McpOAuthProxy(
+      async (_name, stale) => {
+        asked.push(stale);
+        return { authorization: stale ? "Bearer new" : "Bearer old", expiresAt: null };
+      },
+      () => {},
+      (v) => redacted.push(v),
+    );
+    await proxy.start();
+    try {
+      proxy.set(new Map([["omni", { url: `http://127.0.0.1:${port}/mcp`, headers: { "x-key": "k" } }]]));
+      const res = await fetch(proxy.urlFor("omni"), { method: "POST", headers: { "mcp-session-id": "s-1", authorization: "Bearer agent-made-up" }, body: "{}" });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("mcp-session-id")).toBe("s-1");
+      expect(await res.text()).toContain('"result":{}');
+      expect(seen).toEqual([
+        { auth: "Bearer old", session: "s-1", key: "k" },
+        { auth: "Bearer new", session: "s-1", key: "k" },
+      ]);
+      expect(asked).toEqual([undefined, "old"]);
+      expect(redacted).toEqual(["old", "new"]);
+      await fetch(proxy.urlFor("omni"), { method: "POST", body: "{}" }).then((r) => r.text());
+      expect(asked).toHaveLength(2); // cached until it is refused or expires
+      expect((await fetch(proxy.urlFor("omni").replace(/\/[0-9a-f]{32}\//, "/guess/"), { method: "POST", body: "{}" })).status).toBe(404);
+      proxy.set(new Map());
+      expect((await fetch(proxy.urlFor("omni"), { method: "POST", body: "{}" })).status).toBe(404);
+    } finally {
+      proxy.close();
+      upstream.close();
+    }
+  });
+
+  it("an OAuth server reaches the agent's config only as a reference to the proxy", () => {
+    const { config, env } = userMcpServers([{ name: "omni", transport: "http", url: "https://omni.example/mcp", headers: { "x-key": "k" }, oauth: true }], () => "http://127.0.0.1:1/secret/omni");
+    expect(config.omni).toEqual({ type: "http", url: "${DORKS_MCP_0_URL}" });
+    expect(env).toEqual({ DORKS_MCP_0_URL: "http://127.0.0.1:1/secret/omni" });
   });
 });

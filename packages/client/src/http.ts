@@ -1,4 +1,15 @@
-import { appError, type AppError, type AppErrorCode, type ComposioStatus, type McpServerInput, type McpServerView, type MergeMethod, type PullRequestView, type SubscriptionView } from "@dorks/shared";
+import {
+  appError,
+  type AppError,
+  type AppErrorCode,
+  type ComposioStatus,
+  type McpOAuthState,
+  type McpServerInput,
+  type McpServerView,
+  type MergeMethod,
+  type PullRequestView,
+  type SubscriptionView,
+} from "@dorks/shared";
 import type {
   BoatCheck,
   BuildInput,
@@ -151,8 +162,11 @@ export function createApi(config: ApiConfig) {
     setSecret: (name: string, value: string) => request<object>("PUT", `/api/secrets/${enc(name)}`, { value }),
     deleteSecret: (name: string) => request<object>("DELETE", `/api/secrets/${enc(name)}`),
     listMcpServers: () => request<McpServerView[]>("GET", "/api/mcp-servers"),
-    putMcpServer: (name: string, input: McpServerInput) => request<object>("PUT", `/api/mcp-servers/${enc(name)}`, input),
+    putMcpServer: (name: string, input: McpServerInput) => request<{ oauth?: McpOAuthState | null }>("PUT", `/api/mcp-servers/${enc(name)}`, input),
     deleteMcpServer: (name: string) => request<object>("DELETE", `/api/mcp-servers/${enc(name)}`),
+    /** A sign-in page for an OAuth server; the browser comes back to this server, so it sends the URL it reaches it at. */
+    mcpSignIn: (name: string) => request<{ url: string }>("POST", `/api/mcp-servers/${enc(name)}/oauth`, { base: new URL(base || "/", globalThis.location?.href).origin }),
+    mcpSignOut: (name: string) => request<object>("DELETE", `/api/mcp-servers/${enc(name)}/oauth`),
     composio: () => request<ComposioStatus>("GET", "/api/composio"),
     connectComposio: (apiKey: string) => request<object>("PUT", "/api/composio", { apiKey }),
     disconnectComposio: () => request<object>("DELETE", "/api/composio"),

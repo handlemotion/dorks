@@ -31,6 +31,11 @@ export interface Transport {
   build(args: Record<string, unknown>): Promise<unknown>;
   /** Local access (docs/local-access.md): `action` request asks to run a command or read a file on the owner's computer, wait waits for the answer. */
   local(args: Record<string, unknown>): Promise<unknown>;
+  /**
+   * A current access token for the owner's OAuth MCP server `name` (docs/mcp.md, "OAuth"). `stale` is a token the server just
+   * refused, so the backend refreshes even before it expires.
+   */
+  mcpToken(name: string, stale?: string): Promise<{ authorization: string; expiresAt: number | null }>;
   /** An image the owner attached to one of this dork's messages, as base64; null when it is not this dork's. */
   getImage(id: string): Promise<{ mime: string; data: string } | null>;
   /** This dork's non-ended PR subscriptions (SubscriptionView[], validated by the caller), pushed on every change. */
@@ -257,6 +262,8 @@ export class WsTransport implements Transport {
   };
 
   showPreview = async (port: number, opts: { title?: string; localhost?: boolean }) => this.rpc<{ port: number; url: string; title?: string }>("show_preview", { port, ...opts });
+
+  mcpToken = async (name: string, stale?: string) => this.rpc<{ authorization: string; expiresAt: number | null }>("mcp_token", { name, ...(stale ? { stale } : {}) });
 
   getImage = async (id: string) => this.rpc<{ mime: string; data: string } | null>("get_image", { id });
 
