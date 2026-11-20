@@ -796,7 +796,7 @@ export function useDetailsOpen() {
 export function ShowDetailsButton({ onClick }: { onClick: () => void }) {
   return (
     <Tip label="Show chat details">
-      <Button variant="ghost" size="icon-sm" className={`-mr-[11px] hidden lg:inline-flex ${ACTION}`} aria-label="Show chat details" onClick={onClick}>
+      <Button variant="ghost" size="icon-sm" className={`-mr-[3px] hidden lg:inline-flex ${ACTION}`} aria-label="Show chat details" onClick={onClick}>
         <PanelLeftIcon className="rotate-180" />
       </Button>
     </Tip>

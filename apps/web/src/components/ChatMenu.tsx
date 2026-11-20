@@ -18,7 +18,7 @@ export function ChatMenu({ prUrl, onDelete, detailsOpen }: { prUrl?: string; onD
     <>
       <DropdownMenu>
         <Tip label="Chat actions">
-          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className={`${BAR_BUTTON} ${detailsOpen ? 'lg:-mr-[11px]' : ''}`} aria-label="Chat actions" />}>
+          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className={`${BAR_BUTTON} ${detailsOpen ? 'lg:-mr-[2px]' : ''}`} aria-label="Chat actions" />}>
             <MoreHorizontalIcon />
           </DropdownMenuTrigger>
         </Tip>
