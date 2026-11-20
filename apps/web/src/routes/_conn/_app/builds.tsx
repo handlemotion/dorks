@@ -149,12 +149,12 @@ function BuildDetails({ build }: { build: BuildView }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader
-        title={
-          <Link to="/builds" className="text-muted-foreground hover:text-foreground">
+        parent={
+          <Link to="/builds" className="hover:text-foreground">
             Builds
           </Link>
         }
-        subtitle={<span className="text-sm text-foreground">{build.name}</span>}
+        title={build.name}
         actions={
           <>
             <Button size="sm" variant="ghost" disabled={pending} onClick={() => void startSetup()}>

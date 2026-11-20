@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ArchiveIcon, ArchiveRestoreIcon } from 'lucide-react'
+import { ArchiveIcon, ArchiveRestoreIcon, ChevronRightIcon } from 'lucide-react'
 import { Button } from '@dorks/ui/button'
 import { useSidebar } from '@dorks/ui/sidebar'
 import { BAR_BUTTON } from './PreviewBrowser'
@@ -19,19 +19,24 @@ export function ArchiveButton({ archived, disabled, onClick }: { archived?: bool
 }
 
 /**
- * The toolbar of a page in the app frame, one line: title and subtitle, then the page's actions. No divider: the page's content sits
+ * The toolbar of a page in the app frame, one line: the title (after its `parent` crumb on a nested page), then the page's actions. No divider: the page's content sits
  * straight under it. The sidebar toggle shows here only while the sidebar is hidden; otherwise it lives in the sidebar's own header.
  * `titleActions` sit right after the title.
  */
-export function PageHeader({ title, subtitle, titleActions, actions }: { title: ReactNode; subtitle?: ReactNode; titleActions?: ReactNode; actions?: ReactNode }) {
+export function PageHeader({ title, parent, titleActions, actions }: { title: ReactNode; parent?: ReactNode; titleActions?: ReactNode; actions?: ReactNode }) {
   const { open, isMobile } = useSidebar()
   return (
     // While the sidebar is hidden, the floating title bar controls (AppFrame) sit over the header's start, so the title begins after them.
     <header data-tauri-drag-region className="flex h-12 shrink-0 items-center gap-0.5 px-5" style={!open || isMobile ? { paddingLeft: TITLEBAR_CONTROLS_END } : undefined}>
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        <div className="flex min-w-0 items-baseline gap-2">
+        <div className="flex min-w-0 items-center gap-1.5 text-sm">
+          {parent && (
+            <>
+              <span className="shrink-0 text-muted-foreground">{parent}</span>
+              <ChevronRightIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+            </>
+          )}
           <h1 className="truncate text-sm font-normal!">{title}</h1>
-          {subtitle && <p className="truncate text-xs text-muted-foreground">{subtitle}</p>}
         </div>
         {titleActions && <div className="-ml-1 flex shrink-0 items-center gap-0.5">{titleActions}</div>}
       </div>
