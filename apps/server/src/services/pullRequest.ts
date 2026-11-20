@@ -12,6 +12,8 @@ import { githubToken } from "./settings";
 const API = "https://api.github.com";
 const TIMEOUT_MS = 20_000;
 const PAGE = 100;
+/** GitHub lists at most 3000 files for a PR; comments and checks rarely pass a few pages. */
+const MAX_PAGES = 30;
 const MAX_FAILING = 5;
 export const MERGE_METHODS: readonly MergeMethod[] = ["squash", "merge", "rebase"];
 
@@ -66,6 +68,17 @@ async function get(app: App, token: string, path: string): Promise<unknown> {
   if (r.status === 403 || r.status === 429) return fail("rate_limited", ghMessage(r.json) ?? "GitHub refused the request.");
   if (r.status >= 300) return fail("github_error", `GitHub answered ${r.status}${ghMessage(r.json) ? `: ${ghMessage(r.json)}` : ""}`);
   return r.json;
+}
+
+/** Every page of a list read (`per_page=100` until a short page), up to `MAX_PAGES`; `pick` finds the list in a page. */
+async function getAll(app: App, token: string, path: string, pick: (page: unknown) => unknown = (p) => p): Promise<Json[]> {
+  const out: Json[] = [];
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const items = arr(pick(await get(app, token, `${path}${path.includes("?") ? "&" : "?"}per_page=${PAGE}&page=${page}`)));
+    out.push(...items);
+    if (items.length < PAGE) break;
+  }
+  return out;
 }
 
 const obj = (v: unknown): Json => (v && typeof v === "object" && !Array.isArray(v) ? (v as Json) : {});
@@ -157,14 +170,15 @@ export async function getPullRequest(app: App, dorkId: string): Promise<PullRequ
   const headSha = s(obj(pr.head).sha);
   // Comments, files and checks are best effort: a failure there should not hide the PR and its merge button.
   const soft = (path: string) => get(app, token, path).catch(() => null);
+  const softAll = (path: string, pick?: (page: unknown) => unknown) => getAll(app, token, path, pick).catch((): Json[] => []);
   const [repoInfo, files, issueComments, reviews, reviewComments, runs, status] = await Promise.all([
     soft(base),
-    soft(`${base}/pulls/${number}/files?per_page=${PAGE}`),
-    soft(`${base}/issues/${number}/comments?per_page=${PAGE}`),
-    soft(`${base}/pulls/${number}/reviews?per_page=${PAGE}`),
-    soft(`${base}/pulls/${number}/comments?per_page=${PAGE}`),
-    headSha ? soft(`${base}/commits/${headSha}/check-runs?per_page=${PAGE}`) : null,
-    headSha ? soft(`${base}/commits/${headSha}/status`) : null,
+    softAll(`${base}/pulls/${number}/files`),
+    softAll(`${base}/issues/${number}/comments`),
+    softAll(`${base}/pulls/${number}/reviews`),
+    softAll(`${base}/pulls/${number}/comments`),
+    headSha ? softAll(`${base}/commits/${headSha}/check-runs`, (p) => obj(p).check_runs) : [],
+    headSha ? soft(`${base}/commits/${headSha}/status?per_page=${PAGE}`) : null,
   ]);
   const r = obj(repoInfo);
   const allowed = { squash: r.allow_squash_merge, merge: r.allow_merge_commit, rebase: r.allow_rebase_merge };
@@ -193,10 +207,10 @@ export async function getPullRequest(app: App, dorkId: string): Promise<PullRequ
     additions: n(pr.additions),
     deletions: n(pr.deletions),
     changedFiles: n(pr.changed_files),
-    checks: checksOf(arr(obj(runs).check_runs), arr(obj(status).statuses)),
+    checks: checksOf(runs, arr(obj(status).statuses)),
     mergeMethods: mergeMethods.length ? mergeMethods : [...MERGE_METHODS],
-    files: filesOf(arr(files)),
-    comments: commentsOf(arr(issueComments), arr(reviews), arr(reviewComments)),
+    files: filesOf(files),
+    comments: commentsOf(issueComments, reviews, reviewComments),
   };
 }
 
