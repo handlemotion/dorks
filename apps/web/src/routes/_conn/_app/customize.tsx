@@ -133,7 +133,7 @@ function ConnectorCard({ connector: c, connected, loading, onOpen }: { connector
         aria-label={connected ? `manage ${c.name}` : `connect ${c.name}`}
         disabled={loading}
         onClick={onOpen}
-        className="group flex w-full min-w-0 items-center gap-3 rounded-[8px] bg-surface px-3 py-2.5 text-start outline-none hover:bg-foreground/[0.03] focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+        className="group flex w-full min-w-0 items-center gap-3.5 rounded-[8px] bg-surface px-4 py-2.5 text-start outline-none hover:bg-foreground/[0.03] focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
       >
         <ConnectorIcon connector={c} />
         <span className="flex min-w-0 flex-1 flex-col">
