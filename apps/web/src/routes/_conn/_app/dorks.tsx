@@ -355,6 +355,7 @@ function Thread({ dorkId }: { dorkId: string }) {
       details={
         detailsOpen ? (
           <ChatDetails
+            sessionId={dorkId}
             data={{ ...detailsData(dork, view.blocks, actions, { used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent }), pullRequest }}
             onClose={() => setDetailsOpen(false)}
             onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}

@@ -360,6 +360,7 @@ export function Demo() {
         details={
           detailsOpen && !showNew ? (
             <ChatDetails
+              sessionId="preview"
               data={{ ...details, progress: progressTurns(blocks), tasks: latestTasks(blocks), pullRequest: demoPullRequest }}
               onClose={() => setDetailsOpen(false)}
               onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}
