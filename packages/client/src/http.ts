@@ -1,4 +1,4 @@
-import { appError, type AppError, type AppErrorCode, type SubscriptionView } from "@dorks/shared";
+import { appError, type AppError, type AppErrorCode, type McpServerInput, type McpServerView, type SubscriptionView } from "@dorks/shared";
 import type {
   BoatCheck,
   BuildInput,
@@ -136,6 +136,9 @@ export function createApi(config: ApiConfig) {
     listSecrets: () => request<string[]>("GET", "/api/secrets"),
     setSecret: (name: string, value: string) => request<object>("PUT", `/api/secrets/${enc(name)}`, { value }),
     deleteSecret: (name: string) => request<object>("DELETE", `/api/secrets/${enc(name)}`),
+    listMcpServers: () => request<McpServerView[]>("GET", "/api/mcp-servers"),
+    putMcpServer: (name: string, input: McpServerInput) => request<object>("PUT", `/api/mcp-servers/${enc(name)}`, input),
+    deleteMcpServer: (name: string) => request<object>("DELETE", `/api/mcp-servers/${enc(name)}`),
     // builds (docs/builds.md)
     listBuilds: () => request<BuildView[]>("GET", "/api/builds"),
     getBuild: (id: string) => request<BuildView>("GET", `/api/builds/${enc(id)}`),

@@ -4,7 +4,7 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { ClientEvent } from "@dorks/shared";
+import type { ClientEvent, McpServerView } from "@dorks/shared";
 import type { Dork, Settings, SnapshotStatus } from "./types.ts";
 
 const SNAPSHOT_STEPS = [
@@ -104,6 +104,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   const tick = opts.tick ?? 150;
   const dorks = new Map<string, MockDork>();
   const secrets = new Map<string, string>();
+  const mcpServers = new Map<string, McpServerView>();
   const live = new Set<ServerResponse>();
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const settings: Settings = {
@@ -508,6 +509,15 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       },
     ],
     ["GET /api/secrets", ({ res }) => json(res, 200, [...secrets.keys()].sort())],
+    [
+      "GET /api/mcp-servers",
+      ({ res }) =>
+        json(
+          res,
+          200,
+          [...mcpServers.values()].sort((a, b) => a.name.localeCompare(b.name)),
+        ),
+    ],
     // Builds are not mocked: the list is empty, so the UI shows its empty state (use `pnpm dev` for the real flow).
     ["GET /api/builds", ({ res }) => json(res, 200, [])],
   ]);
@@ -521,6 +531,34 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     }
     if (method === "DELETE") {
       secrets.delete(name);
+      broadcast({ t: "settings" });
+      return json(res, 200, {});
+    }
+    return fail(res, "not_found", "Unknown route.");
+  };
+
+  // A loose stand-in for services/mcpServers.ts: no values are kept, only the names the views show.
+  const routeMcp = ({ method, body, res }: Ctx, name: string) => {
+    if (method === "PUT") {
+      if (!/^[a-z][a-z0-9_-]{0,31}$/.test(name) || name === "dorks" || name === "computer") return fail(res, "invalid", "Pick another name.");
+      const http = body.transport === "http";
+      if (http ? !str(body.url) : !str(body.command)) return fail(res, "invalid", http ? "URL is required" : "command is required");
+      const keys = (v: unknown) => (v && typeof v === "object" ? Object.keys(v).sort() : []);
+      mcpServers.set(name, {
+        name,
+        transport: http ? "http" : "stdio",
+        url: http ? (str(body.url) ?? null) : null,
+        command: http ? null : (str(body.command) ?? null),
+        args: !http && Array.isArray(body.args) ? body.args.map(String) : [],
+        headerNames: http ? keys(body.headers) : [],
+        envNames: http ? [] : keys(body.env),
+        createdAt: mcpServers.get(name)?.createdAt ?? Date.now(),
+      });
+      broadcast({ t: "settings" });
+      return json(res, 200, {});
+    }
+    if (method === "DELETE") {
+      mcpServers.delete(name);
       broadcast({ t: "settings" });
       return json(res, 200, {});
     }
@@ -550,6 +588,8 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     if (m) return routeDork(c, m);
     const sm = /^\/api\/secrets\/([^/]+)$/.exec(path);
     if (sm) return routeSecret(c, decodeURIComponent(sm[1]!));
+    const mm = /^\/api\/mcp-servers\/([^/]+)$/.exec(path);
+    if (mm) return routeMcp(c, decodeURIComponent(mm[1]!));
     return fail(res, "not_found", "Unknown route.");
   };
 

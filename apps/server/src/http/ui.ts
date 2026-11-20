@@ -15,6 +15,7 @@ import * as subs from "../services/subscriptions";
 import * as builds from "../services/builds";
 import * as runs from "../services/buildRuns";
 import { forgetUsage, getUsage } from "../services/usage";
+import { deleteMcpServer, listMcpServers, putMcpServer } from "../services/mcpServers";
 import { forgetGithubRepos, githubRepos } from "../services/githubRepos";
 
 const safeEqual = (a: string, b: string) => {
@@ -292,6 +293,25 @@ export function uiApp(app: App): Hono {
   api.delete(
     "/api/secrets/:name",
     on((c) => ok(c)(service((a) => deleteSecret(a, name(c))))),
+  );
+
+  // ---- MCP servers from Customize (services/mcpServers.ts): views carry header and env names, never values
+  api.get(
+    "/api/mcp-servers",
+    on((c) => service((a) => c.json(listMcpServers(a)))),
+  );
+  api.put(
+    "/api/mcp-servers/:name",
+    on((c) =>
+      looseBody(c).pipe(
+        Effect.flatMap((b) => serviceAsync((a) => putMcpServer(a, name(c), b))),
+        ok(c),
+      ),
+    ),
+  );
+  api.delete(
+    "/api/mcp-servers/:name",
+    on((c) => ok(c)(service((a) => deleteMcpServer(a, name(c))))),
   );
 
   // ---- usage of the Claude subscription and Boat plan (services/usage.ts), cached for five minutes

@@ -46,4 +46,5 @@ export const aad = {
   secret: (userId: string, name: string) => `${userId}|secret|${name}`,
   boatKey: (userId: string) => `${userId}|boat_key`,
   githubToken: (userId: string) => `${userId}|github_token`,
+  mcpServer: (userId: string, name: string) => `${userId}|mcp_server|${name}`,
 };

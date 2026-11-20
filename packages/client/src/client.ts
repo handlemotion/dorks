@@ -1,4 +1,4 @@
-import type { SubscriptionView } from "@dorks/shared";
+import type { McpServerInput, McpServerView, SubscriptionView } from "@dorks/shared";
 import { EventsFeed } from "./events.ts";
 import { createApi, ApiError, type ApiConfig, type DesktopOptions } from "./http.ts";
 import { connectLive, type LiveStatus } from "./live.ts";
@@ -109,6 +109,7 @@ export class DorksClient {
         this.invalidate("settings");
         this.invalidate("github-repos");
         this.invalidate("secrets");
+        this.invalidate("mcp-servers");
         break;
       case "snapshot":
         this.invalidate("snapshot");
@@ -162,6 +163,11 @@ export class DorksClient {
 
   secretNames() {
     return this.query<string[]>("secrets", () => this.api.listSecrets());
+  }
+
+  /** The MCP servers from Customize: names of headers and variables, never their values. */
+  mcpServers() {
+    return this.query<McpServerView[]>("mcp-servers", () => this.api.listMcpServers());
   }
 
   subscriptions(dorkId: string) {
@@ -282,6 +288,14 @@ export class DorksClient {
     deleteSecret: async (name: string) => {
       await this.api.deleteSecret(name);
       this.invalidate("secrets");
+    },
+    putMcpServer: async (name: string, input: McpServerInput) => {
+      await this.api.putMcpServer(name, input);
+      this.invalidate("mcp-servers");
+    },
+    deleteMcpServer: async (name: string) => {
+      await this.api.deleteMcpServer(name);
+      this.invalidate("mcp-servers");
     },
     createBuild: async (input: BuildInput & { name: string }) => {
       const r = await this.api.createBuild(input);

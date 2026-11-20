@@ -264,4 +264,18 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE dorks ADD COLUMN build_id TEXT REFERENCES builds (id) ON DELETE SET NULL;
   ALTER TABLE settings ADD COLUMN default_build_id TEXT;
   `,
+  `
+  -- MCP servers from Customize (services/mcpServers.ts). Header and env values may be secrets: they live in secrets_enc, one AES-GCM
+  -- envelope of a JSON object {headers, env}; the names alone are copied to secret_names for display.
+  CREATE TABLE mcp_servers (
+    name TEXT PRIMARY KEY,
+    transport TEXT NOT NULL CHECK (transport IN ('http', 'stdio')),
+    url TEXT,
+    command TEXT,
+    args TEXT NOT NULL DEFAULT '[]',
+    secret_names TEXT NOT NULL DEFAULT '{"headers":[],"env":[]}',
+    secrets_enc TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  `,
 ];

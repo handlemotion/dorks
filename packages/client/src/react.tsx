@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useSyncExternalStore, type ReactNode } from "react";
-import { toAppError, type SubscriptionView } from "@dorks/shared";
+import { toAppError, type McpServerView, type SubscriptionView } from "@dorks/shared";
 import type { DorksClient, ConnectionState } from "./client.ts";
 import type { EventsState } from "./events.ts";
 import type { QueryState, Store } from "./store.ts";
@@ -65,6 +65,11 @@ export function useUsage(): Usage | undefined {
 /** What the saved GitHub token can see: its user, organizations and repositories; `undefined` while loading. */
 export function useGithubRepos(): GithubRepos | undefined {
   return useStore(useDorksClient().githubRepos()).data;
+}
+
+/** The MCP servers from Customize; `undefined` while loading. */
+export function useMcpServers(): McpServerView[] | undefined {
+  return useStore(useDorksClient().mcpServers()).data;
 }
 
 export function useSecretNames(): string[] | undefined {

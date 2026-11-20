@@ -106,6 +106,9 @@ IDs are UUID strings. Times are epoch milliseconds.
 | `GET /api/secrets` | | sorted names `string[]` |
 | `PUT /api/secrets/:name` | `{value}` | `{}` (`^[A-Z][A-Z0-9_]{0,63}$`, 16 KB max) |
 | `DELETE /api/secrets/:name` | | `{}` |
+| `GET /api/mcp-servers` | | `McpServerView[]` sorted by name: `{name, transport, url, command, args, headerNames, envNames, createdAt}`, never header or env values |
+| `PUT /api/mcp-servers/:name` | `{transport: "http", url, headers?}` or `{transport: "stdio", command, args?, env?}` | `{}`. Adds or replaces; a `null` header/env value keeps the saved one. Restarts awake Claude agents once their turn ends. See [MCP servers](mcp.md) |
+| `DELETE /api/mcp-servers/:name` | | `{}` |
 | `GET/POST /api/builds`, `GET/PATCH/DELETE /api/builds/:id`, `PUT /api/builds/:id/default`, `PUT/DELETE /api/builds/:id/vars/:name`, `GET/POST /api/builds/:id/runs`, `GET /api/builds/:id/runs/:runId/log`, `POST /api/builds/:id/runs/:runId/cancel`, `POST /api/builds/:id/drafts/:draftId/approve\|reject` | | Builds: named machine setups, see [builds](builds.md) ("UI and API") |
 | `GET /api/health` | no auth | `{ok: true}` |
 

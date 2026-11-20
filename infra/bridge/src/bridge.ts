@@ -7,7 +7,7 @@ import { Agent, childEnv, computerArgs, configDirOf, findTranscripts } from "./c
 import { CodexAgent } from "./codex";
 import type { Config } from "./config";
 import { GithubToken, helperCommand } from "./credentials";
-import { HookService, mcpConfigPath, settingsPath, writeClaudeMcpConfig, writeClaudeSettings } from "./hooks";
+import { HookService, mcpConfigPath, settingsPath, userMcpServers, writeClaudeMcpConfig, writeClaudeSettings } from "./hooks";
 import { resolveIdentity, type Identity } from "./runas";
 import { EventPipeline } from "./events";
 import { prepareRepo, prepareWorkDir, SetupError } from "./git";
@@ -343,11 +343,13 @@ export class Bridge {
     if (!cfg) return this.log("configure refused (the backend recorded why)");
     this.redactor.add(cfg.ghToken);
     this.redactor.addAll(Object.values(cfg.env));
+    const userMcp = userMcpServers(cfg.mcpServers ?? []);
+    this.redactor.addAll(Object.values(userMcp.env));
     this.github.set(cfg.ghToken);
 
     const provider = cfg.provider ?? "claude";
     const key = createHash("sha256")
-      .update(JSON.stringify([provider, cfg.codexModel, cfg.model ?? null, cfg.effort ?? null, cfg.repo, Object.entries(cfg.env).sort()]))
+      .update(JSON.stringify([provider, cfg.codexModel, cfg.model ?? null, cfg.effort ?? null, cfg.repo, Object.entries(cfg.env).sort(), cfg.mcpServers ?? []]))
       .digest("hex");
     if (this.agent?.alive && key === this.agentKey) {
       // Already running with this config (a reconnect re-sends configure): nothing to do but say so again.
@@ -361,6 +363,9 @@ export class Bridge {
 
     const env = childEnv(this.d.baseEnv ?? process.env, cfg.env, this.log, this.runAs);
     env.DORKS_SOCK = this.rpc.sockPath; // how `dorks`, the gh shim and hooks (children of the CLI) find this process
+    // The owner's MCP servers (Customize): the config file names them with `${DORKS_MCP_…}` references the CLI expands from this env.
+    Object.assign(env, userMcp.env);
+    writeClaudeMcpConfig(this.cfg.stateDir, this.self, this.rpc.sockPath, userMcp.config);
     this.agentCtx = { dir, env };
     this.agentKey = key;
     this.provider = provider;

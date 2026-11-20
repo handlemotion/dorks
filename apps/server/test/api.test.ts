@@ -237,6 +237,26 @@ describe("settings", () => {
     expect((await a.del("/api/secrets/AAA")).status).toBe(200);
     expect((await a.get("/api/secrets")).json).toEqual(["DEPLOY_TOKEN"]);
   });
+  it("MCP servers: views name headers and variables but never show values; a null value keeps the saved one", async () => {
+    const h = harness();
+    const a = api(h);
+    const http = { transport: "http", url: "https://mcp.example.com/mcp", headers: { Authorization: "Bearer k-1" } };
+    expect((await a.put("/api/mcp-servers/example", http)).status).toBe(200);
+    expect((await a.put("/api/mcp-servers/fs", { transport: "stdio", command: "npx", args: ["-y", "fs-mcp"], env: { ROOT: "/w" } })).status).toBe(200);
+    const list = (await a.get("/api/mcp-servers")).json;
+    expect(list.map((s: { name: string }) => s.name)).toEqual(["example", "fs"]);
+    expect(list[0]).toMatchObject({ transport: "http", url: "https://mcp.example.com/mcp", headerNames: ["Authorization"], envNames: [] });
+    expect(JSON.stringify(list)).not.toContain("k-1");
+    // Editing the URL without retyping the token keeps it; a header with no saved value is refused.
+    expect((await a.put("/api/mcp-servers/example", { ...http, url: "https://mcp.example.com/v2", headers: { Authorization: null } })).status).toBe(200);
+    expect((await a.put("/api/mcp-servers/example", { ...http, headers: { "X-New": null } })).json.error.code).toBe("invalid");
+    const { mcpServerConfigs } = await import("../src/services/mcpServers");
+    expect((await mcpServerConfigs(h.app))[0]).toEqual({ name: "example", transport: "http", url: "https://mcp.example.com/v2", headers: { Authorization: "Bearer k-1" } });
+    for (const bad of ["dorks", "Upper", "1x"]) expect((await a.put(`/api/mcp-servers/${bad}`, http)).json.error.code).toBe("invalid");
+    expect((await a.put("/api/mcp-servers/x", { transport: "http", url: "file:///etc/passwd" })).json.error.code).toBe("invalid");
+    expect((await a.del("/api/mcp-servers/fs")).status).toBe(200);
+    expect((await a.get("/api/mcp-servers")).json).toHaveLength(1);
+  });
 });
 
 describe("creating a dork", () => {
