@@ -26,6 +26,15 @@ interface Row {
 interface Sealed {
   headers: Record<string, string>;
   env: Record<string, string>;
+  /** The full URL: hosted servers often carry a key in the query or userinfo, so the `url` column keeps it redacted. */
+  url?: string;
+}
+
+/** The URL without what may be a credential: userinfo and the query string become `…`. */
+function redactUrl(u: URL): string {
+  if (!u.username && !u.password && !u.search) return u.href;
+  const auth = u.username || u.password ? "…@" : "";
+  return `${u.protocol}//${auth}${u.host}${u.pathname}${u.search ? "?…" : ""}`;
 }
 
 const viewOf = (r: Row): McpServerView => {
@@ -44,7 +53,7 @@ export async function mcpServerConfigs(app: App): Promise<McpServerConfig[]> {
     const s = await open(app, r);
     out.push(
       r.transport === "http"
-        ? { name: r.name, transport: "http", url: r.url ?? "", headers: s.headers }
+        ? { name: r.name, transport: "http", url: s.url ?? r.url ?? "", headers: s.headers }
         : { name: r.name, transport: "stdio", command: r.command ?? "", args: JSON.parse(r.args) as string[], env: s.env },
     );
   }
@@ -107,6 +116,8 @@ export async function putMcpServer(app: App, name: string, input: Record<string,
   const sealed: Sealed = { headers: {}, env: {} };
   if (transport === "http") {
     url = str(input.url, "URL", MAX_URL);
+    // The redacted URL the view showed comes back unchanged from an edit: keep the saved one.
+    if (prev?.transport === "http" && url === prev.url && saved.url) url = saved.url;
     let parsed: URL;
     try {
       parsed = new URL(url);
@@ -115,6 +126,8 @@ export async function putMcpServer(app: App, name: string, input: Record<string,
     }
     if (parsed.protocol !== "https:" && parsed.protocol !== "http:") fail("invalid", "the URL must be http or https");
     sealed.headers = entries(input.headers, saved.headers, "headers", HEADER_NAME);
+    sealed.url = url;
+    url = redactUrl(parsed);
   } else if (transport === "stdio") {
     command = str(input.command, "command", 512);
     if (input.args !== undefined) {

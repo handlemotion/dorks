@@ -1,5 +1,5 @@
 import type { ComposioStatus } from "@dorks/shared";
-import { fail, OWNER, type App } from "../app";
+import { AppFail, fail, OWNER, type App } from "../app";
 import { aad, decrypt } from "../core/crypto";
 import { deleteMcpServer, putMcpServer } from "./mcpServers";
 
@@ -67,7 +67,13 @@ async function accounts(app: App, key: string, toolkit?: string): Promise<Accoun
 export async function composioStatus(app: App): Promise<ComposioStatus> {
   const key = await savedKey(app);
   if (!key) return { connected: false, toolkits: [] };
-  const slugs = (await accounts(app, key)).map((a) => a.toolkit?.slug).filter((s): s is string => !!s);
+  let list: Account[];
+  try {
+    list = await accounts(app, key);
+  } catch (e) {
+    return { connected: true, toolkits: [], error: e instanceof AppFail ? e.error.message : "Composio could not be read" };
+  }
+  const slugs = list.map((a) => a.toolkit?.slug).filter((s): s is string => !!s);
   return { connected: true, toolkits: [...new Set(slugs)].sort() };
 }
 

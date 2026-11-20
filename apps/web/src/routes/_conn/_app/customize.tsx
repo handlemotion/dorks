@@ -42,9 +42,14 @@ function Customize() {
   const [draft, setDraft] = useState<Draft | null>(null)
   const [connecting, setConnecting] = useState<Connector | null>(null)
   const composio = useComposio()
-  const saved = new Set(servers?.map((s) => s.name))
-  const custom = servers?.filter((s) => !connectorById(s.name) && s.name !== COMPOSIO.id) ?? []
-  const isConnected = (c: Connector) => (c.toolkit ? !!composio?.toolkits.includes(c.toolkit) : saved.has(c.id))
+  const custom = servers?.filter((s) => !isPreset(s) && s.name !== COMPOSIO.id) ?? []
+  const isConnected = (c: Connector) => (c.toolkit ? !!composio?.toolkits.includes(c.toolkit) : !!servers?.some((s) => s.name === c.id && isPreset(s)))
+  /** A card opens its dialog, or the editor when a custom server already holds its name (the card would replace it). */
+  const open = (c: Connector) => {
+    const taken = !c.toolkit && servers?.find((s) => s.name === c.id && !isPreset(s))
+    if (taken) setDraft(draftOf(taken))
+    else setConnecting(c)
+  }
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader
@@ -62,7 +67,7 @@ function Customize() {
             <SettingsSection title="Connectors">
               <ul aria-label="connectors" className="grid gap-2 md:grid-cols-2">
                 {CONNECTORS.map((c) => (
-                  <ConnectorCard key={c.id} connector={c} connected={isConnected(c)} loading={!servers || (!!c.toolkit && !composio)} onOpen={() => setConnecting(c)} />
+                  <ConnectorCard key={c.id} connector={c} connected={isConnected(c)} loading={!servers || (!!c.toolkit && !composio)} onOpen={() => open(c)} />
                 ))}
               </ul>
             </SettingsSection>
@@ -81,12 +86,21 @@ function Customize() {
       {draft && <ServerDialog key={`${draft.name}:${draft.editing}`} initial={draft} onClose={() => setDraft(null)} />}
       {connecting &&
         (connecting.toolkit !== undefined ? (
-          <AppDialog key={connecting.id} app={connecting} keySaved={!!composio?.connected} connected={isConnected(connecting)} onClose={() => setConnecting(null)} />
+          <AppDialog key={connecting.id} app={connecting} keySaved={!!composio?.connected} statusError={composio?.error} connected={isConnected(connecting)} onClose={() => setConnecting(null)} />
         ) : (
-          <ConnectDialog key={connecting.id} connector={connecting} connected={saved.has(connecting.id)} onClose={() => setConnecting(null)} />
+          <ConnectDialog key={connecting.id} connector={connecting} connected={isConnected(connecting)} onClose={() => setConnecting(null)} />
         ))}
     </div>
   )
+}
+
+/** Whether a saved server is a key connector's own preset, not a custom server that only shares its name. */
+function isPreset(s: McpServerView) {
+  const c = connectorById(s.name)
+  if (!c) return false
+  const p = c.server('')
+  if (p.transport !== s.transport) return false
+  return p.transport === 'http' ? p.url === s.url : p.command === s.command && JSON.stringify(p.args) === JSON.stringify(s.args)
 }
 
 /** The brand mark: the path in its colour (the foreground when the colour is too dark to read), or a monogram. */
@@ -213,7 +227,7 @@ function ConnectDialog({ connector: c, connected, onClose }: { connector: KeyCon
  * An app that signs in through Composio. Without a Composio key the dialog asks for it first; then the sign-in opens in a browser
  * and the dialog waits, reading Composio every few seconds, until the app shows up as connected.
  */
-function AppDialog({ app: c, keySaved, connected, onClose }: { app: ComposioApp; keySaved: boolean; connected: boolean; onClose: () => void }) {
+function AppDialog({ app: c, keySaved, statusError, connected, onClose }: { app: ComposioApp; keySaved: boolean; statusError?: string; connected: boolean; onClose: () => void }) {
   const client = useDorksClient()
   const { actions } = client
   const { run, pending, error } = usePending()
@@ -256,7 +270,7 @@ function AppDialog({ app: c, keySaved, connected, onClose }: { app: ComposioApp;
         >
           <DialogHeader className="gap-2">
             <DialogTitle className="text-sm font-medium">{connected ? c.name : `Connect ${c.name}`}</DialogTitle>
-            <DialogDescription className="text-sm leading-5">{appHint(c, editingKey, connected, waiting)}</DialogDescription>
+            <DialogDescription className="text-sm leading-5">{(!editingKey && statusError) || appHint(c, editingKey, connected, waiting)}</DialogDescription>
           </DialogHeader>
           {(editingKey || error) && (
             <div data-slot="dialog-body">

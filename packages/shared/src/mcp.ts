@@ -46,4 +46,6 @@ export interface McpServerInput {
 export interface ComposioStatus {
   connected: boolean;
   toolkits: string[];
+  /** Why the apps could not be read (a revoked key, Composio down); the key can still be replaced or removed. */
+  error?: string;
 }

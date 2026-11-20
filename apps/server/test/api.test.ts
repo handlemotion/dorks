@@ -290,6 +290,13 @@ describe("settings", () => {
     expect((await mcpServerConfigs(h.app))[0]).toEqual({ name: "example", transport: "http", url: "https://mcp.example.com/v2", headers: { Authorization: "Bearer k-1" } });
     for (const bad of ["dorks", "Upper", "1x"]) expect((await a.put(`/api/mcp-servers/${bad}`, http)).json.error.code).toBe("invalid");
     expect((await a.put("/api/mcp-servers/x", { transport: "http", url: "file:///etc/passwd" })).json.error.code).toBe("invalid");
+    // A key in the URL is sealed: the view shows it redacted, and the redacted URL sent back by an edit keeps the saved one.
+    expect((await a.put("/api/mcp-servers/q", { transport: "http", url: "https://u:p@mcp.example.com/mcp?key=s3cret" })).status).toBe(200);
+    const q = (await a.get("/api/mcp-servers")).json.find((s: { name: string }) => s.name === "q");
+    expect(q.url).toBe("https://…@mcp.example.com/mcp?…");
+    expect((await a.put("/api/mcp-servers/q", { transport: "http", url: q.url })).status).toBe(200);
+    expect((await mcpServerConfigs(h.app)).find((s) => s.name === "q")).toMatchObject({ url: "https://u:p@mcp.example.com/mcp?key=s3cret" });
+    expect((await a.del("/api/mcp-servers/q")).status).toBe(200);
     expect((await a.del("/api/mcp-servers/fs")).status).toBe(200);
     expect((await a.get("/api/mcp-servers")).json).toHaveLength(1);
   });
@@ -297,6 +304,7 @@ describe("settings", () => {
   it("connects Composio: the key opens a session, becomes the composio server, and signs apps in and out as one user", async () => {
     // Composio's documented answers (docs.composio.dev/reference/api-reference/tool-router, connected-accounts).
     const deleted: string[] = [];
+    let revoked = false;
     const accounts = [
       { id: "ca_f", toolkit: { slug: "figma" } },
       { id: "ca_g", toolkit: { slug: "gmail" } },
@@ -319,7 +327,7 @@ describe("settings", () => {
     const h = harness({
       fetch: (async (u: string | URL | Request, init?: RequestInit) => {
         const url = new URL(u instanceof Request ? u.url : u);
-        if (new Headers(init?.headers).get("x-api-key") !== "ck-1") return Response.json({ error: "bad key" }, { status: 401 });
+        if (revoked || new Headers(init?.headers).get("x-api-key") !== "ck-1") return Response.json({ error: "bad key" }, { status: 401 });
         const path = url.pathname.startsWith("/api/v3/connected_accounts/") ? "/api/v3/connected_accounts" : url.pathname;
         return routes[`${init?.method ?? "GET"} ${path}`]?.(url, init) ?? new Response("{}", { status: 404 });
       }) as typeof fetch,
@@ -338,6 +346,9 @@ describe("settings", () => {
     expect(deleted).toEqual(["ca_f"]); // only Figma's account, even if Composio ignored the filter
     expect((await a.get("/api/composio")).json.toolkits).toEqual(["gmail"]);
     expect((await a.post("/api/composio/toolkits/..%2Fx/link")).json.error.code).toBe("invalid");
+    accounts.push({ id: "ca_x", toolkit: { slug: "x" } });
+    revoked = true; // a revoked key: the status still says a key is saved, so it can be replaced or removed
+    expect((await a.get("/api/composio")).json).toEqual({ connected: true, toolkits: [], error: "Composio did not accept this API key" });
     expect((await a.del("/api/composio")).status).toBe(200);
     expect((await a.get("/api/composio")).json.connected).toBe(false);
   });
