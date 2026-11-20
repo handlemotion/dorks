@@ -192,6 +192,15 @@ describe("poller", () => {
     expect(s.inbox().filter((r) => r.kind === "conflict")).toHaveLength(1);
   });
 
+  it("a PR that already conflicts on the first look is a conflict, once", async () => {
+    const s = await setup();
+    s.gh.state.pr.mergeable = false;
+    await pollOnce(s.h.app);
+    await s.tick();
+    expect(s.sub().mergeable).toBe(false);
+    expect(s.inbox().filter((r) => r.kind === "conflict")).toHaveLength(1);
+  });
+
   it("mergeability GitHub has not computed yet is asked for again, not cached", async () => {
     const s = await setup();
     s.gh.state.pr.mergeable = null;
