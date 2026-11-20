@@ -46,6 +46,18 @@
     @apply h-full;
   }
 
+  /* A fixed-height shell: only inner panes scroll, and nothing rubber-bands or chains its scroll to the window. overscroll-behavior
+     is not inherited, so it is set on every element; `none` (not `contain`) also stops a pane's own bounce in WebKit (the desktop
+     shell's WKWebView). */
+  html,
+  body {
+    @apply overflow-hidden;
+  }
+
+  * {
+    @apply overscroll-none;
+  }
+
   body {
     @apply bg-background font-sans text-foreground antialiased;
   }
