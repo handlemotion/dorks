@@ -107,6 +107,8 @@ const observePr = (look: Look): Effect.Effect<PrLook, GithubError> =>
       Object.assign(baseline, { title: pr.title, headRef: pr.head.ref, headSha: pr.head.sha, baseRef: pr.base.ref, state, mergeable: pr.mergeable });
       poll.baseSha = pr.base.sha;
       if (state !== "open") return { done: { events, baseline, end: state, poll } };
+      // A PR that already conflicts when subscribed (a branch cut from an old base) is news, unlike history: say so now.
+      if (pr.mergeable === false) events.push({ kind: "mergeable", baseSha: pr.base.sha, mergeable: false });
     } else if (state !== "open") {
       events.push({ kind: "pr_closed", merged: state === "merged", sender: actor(pr.merged_by) });
       return { done: { events, baseline, poll } };
