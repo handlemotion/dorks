@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useSyncExternalStore, type ReactNode } from "react";
-import { toAppError, type SubscriptionView } from "@dorks/shared";
+import { toAppError, type PullRequestView, type SubscriptionView } from "@dorks/shared";
 import type { DorksClient, ConnectionState } from "./client.ts";
 import type { EventsState } from "./events.ts";
 import type { QueryState, Store } from "./store.ts";
@@ -83,6 +83,11 @@ export function useBuild(id: string): BuildView | null | undefined {
 
 export function useRuns(buildId: string): RunView[] | undefined {
   return useStore(useDorksClient().runs(buildId)).data;
+}
+
+/** The session's pull request, live from GitHub: `data` null when it has none; `error` when GitHub could not be read. */
+export function usePullRequest(dorkId: string): QueryState<PullRequestView | null> {
+  return useStore(useDorksClient().pullRequest(dorkId));
 }
 
 export function useSubscriptions(dorkId: string): SubscriptionView[] | undefined {

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { DesktopOptions } from '@dorks/client'
 import type { AgentModelChoice, Block } from '@dorks/shared'
 import { ChevronDownIcon, ChevronRightIcon, InfoIcon, MessageSquareIcon } from 'lucide-react'
-import { useBuilds, useConnection, useDork, useDorkEvents, useDorks, useDorksClient, useGithubRepos, useSettings } from '@dorks/client/react'
+import { useBuilds, useConnection, useDork, useDorkEvents, useDorks, useDorksClient, useGithubRepos, usePullRequest, useSettings } from '@dorks/client/react'
 import { ownersOf, useOwnerScope } from '../../../components/ownerScope'
 import { ownerOf } from '../../../components/RepoAvatar'
 import { List } from '../../../components/onboarding/List'
@@ -17,6 +17,7 @@ import { InputGroup, InputGroupButton } from '@dorks/ui/input-group'
 import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport } from '@dorks/ui/message-scroller'
 import { ChatMessages, resolveSharedImages } from '../../../components/ChatBlock'
 import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, useWide, type ChatDetailsData } from '../../../components/ChatDetails'
+import type { PullRequestPanelData } from '../../../components/PullRequestPanel'
 import { latestTasks, progressStore, progressTurns } from '../../../lib/progress'
 import { withImages, Composer, type AgentProvider, type ModelPicker } from '../../../components/ChatComposer'
 import { ChatMenu } from '../../../components/ChatMenu'
@@ -224,6 +225,25 @@ function detailsData(dork: DorkView, blocks: Block[], actions: DorksActions, com
   }
 }
 
+/** The session's pull request, read live from GitHub, and the merge and branch update Chat details offers on it. */
+function usePullRequestPanel(dorkId: string, prUrl: string | undefined): PullRequestPanelData | undefined {
+  const { actions } = useDorksClient()
+  const pr = usePullRequest(dorkId)
+  // The agent just opened (or moved to) a pull request: read it now rather than at the next poller change.
+  useEffect(() => {
+    if (prUrl) actions.refreshPullRequest(dorkId)
+  }, [actions, dorkId, prUrl])
+  const refresh = useCallback(() => actions.refreshPullRequest(dorkId), [actions, dorkId])
+  if (!prUrl) return undefined
+  return {
+    view: pr.data,
+    error: pr.error?.message,
+    refresh,
+    merge: async (method, sha) => void (await actions.mergePullRequest(dorkId, method, sha)),
+    updateBranch: (sha) => actions.updatePullRequestBranch(dorkId, sha),
+  }
+}
+
 /** Claude's model menu for a running session; Codex has none. */
 function claudePicker(dork: DorkView, fallback: AgentModelChoice[] | undefined, onChange: ModelPicker['onChange']): ModelPicker | undefined {
   if (dork.provider !== 'claude') return undefined
@@ -313,6 +333,7 @@ function Thread({ dorkId }: { dorkId: string }) {
   const fetchDesktopUrl = useCallback((opts: DesktopOptions) => actions.desktopUrl(dorkId, opts), [actions, dorkId])
   const interruptAgent = useCallback(() => actions.interrupt(dorkId), [actions, dorkId])
   const { live } = useConnection()
+  const pullRequest = usePullRequestPanel(dorkId, dork?.prUrl)
   if (dork === undefined || loading)
     return (
       <p className="mt-4 px-6 text-sm text-muted-foreground" role="status">
@@ -332,7 +353,7 @@ function Thread({ dorkId }: { dorkId: string }) {
       details={
         detailsOpen ? (
           <ChatDetails
-            data={detailsData(dork, view.blocks, actions, { used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent })}
+            data={{ ...detailsData(dork, view.blocks, actions, { used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent }), pullRequest }}
             onClose={() => setDetailsOpen(false)}
             onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}
             onAsk={setText}

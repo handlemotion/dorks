@@ -16,6 +16,7 @@ import * as builds from "../services/builds";
 import * as runs from "../services/buildRuns";
 import { forgetUsage, getUsage } from "../services/usage";
 import { forgetGithubRepos, githubRepos } from "../services/githubRepos";
+import { getPullRequest, mergePullRequest, updatePullRequestBranch } from "../services/pullRequest";
 
 const safeEqual = (a: string, b: string) => {
   const x = Buffer.from(a);
@@ -38,6 +39,8 @@ const RunKind = Schema.Struct({ kind: Schema.Literals(["image", "trial"]) });
 const Approve = Schema.Struct({ reviewed: Loose, run: Loose });
 const Reject = Schema.Struct({ reason: Loose });
 const Default = Schema.Struct({ default: Loose });
+const Merge = Schema.Struct({ method: Loose, sha: Loose });
+const Sha = Schema.Struct({ sha: Loose });
 
 const str = (v: unknown) => v as string;
 
@@ -208,6 +211,37 @@ export function uiApp(app: App): Hono {
         const q = { before: yield* intQuery(c, "before"), after: yield* intQuery(c, "after"), limit: yield* intQuery(c, "limit") };
         return c.json(yield* service((a) => listEvents(a, id(c), q)));
       }),
+    ),
+  );
+
+  // ---- the session's pull request, read live from GitHub; merged from Chat details
+  api.get(
+    "/api/dorks/:id/pr",
+    on((c) =>
+      serviceAsync((a) => getPullRequest(a, id(c))).pipe(
+        Effect.map((pr) => {
+          c.header("Cache-Control", "no-store");
+          return c.json(pr);
+        }),
+      ),
+    ),
+  );
+  api.post(
+    "/api/dorks/:id/pr/merge",
+    on((c) =>
+      body(c, Merge).pipe(
+        Effect.flatMap((b) => serviceAsync((a) => mergePullRequest(a, id(c), b.method, b.sha))),
+        Effect.map((r) => c.json(r)),
+      ),
+    ),
+  );
+  api.post(
+    "/api/dorks/:id/pr/update-branch",
+    on((c) =>
+      body(c, Sha).pipe(
+        Effect.flatMap((b) => serviceAsync((a) => updatePullRequestBranch(a, id(c), b.sha))),
+        ok(c),
+      ),
     ),
   );
 

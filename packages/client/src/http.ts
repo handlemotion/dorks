@@ -1,4 +1,4 @@
-import { appError, type AppError, type AppErrorCode, type SubscriptionView } from "@dorks/shared";
+import { appError, type AppError, type AppErrorCode, type MergeMethod, type PullRequestView, type SubscriptionView } from "@dorks/shared";
 import type {
   BoatCheck,
   BuildInput,
@@ -124,6 +124,12 @@ export function createApi(config: ApiConfig) {
     subscribe: (id: string, pr: PrRefInput) => request<object>("POST", `${dork(id)}/subscriptions`, pr),
     unsubscribe: (id: string, pr: PrRefInput) => request<object>("DELETE", `${dork(id)}/subscriptions`, pr),
     resumeSubscription: (id: string, pr: PrRefInput) => request<object>("POST", `${dork(id)}/subscriptions/resume`, pr),
+    /** The session's pull request, read live from GitHub (404 `not_found` when the session has none). */
+    getPullRequest: (id: string) => request<PullRequestView>("GET", `${dork(id)}/pr`),
+    /** Merges it; `sha` pins the head that was reviewed (a newer push answers 409 `conflict`). */
+    mergePullRequest: (id: string, method: MergeMethod, sha?: string) => request<{ merged: true; sha?: string }>("POST", `${dork(id)}/pr/merge`, { method, sha }),
+    /** Merges the base branch into the PR's branch (GitHub's "Update branch"). */
+    updatePullRequestBranch: (id: string, sha?: string) => request<object>("POST", `${dork(id)}/pr/update-branch`, { sha }),
     getSettings: () => request<Settings>("GET", "/api/settings"),
     updateSettings: (patch: SettingsPatch) => request<object>("PUT", "/api/settings", patch),
     /** Checks the given key (or the saved one) against Boat without saving it. */
