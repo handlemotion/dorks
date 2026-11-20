@@ -90,4 +90,8 @@ export interface PullRequestView {
   files: PullRequestFile[];
   /** Conversation comments, reviews with a body or a verdict, and inline comments, oldest first. */
   comments: PullRequestComment[];
+  /** Sections GitHub did not return this time (rate limit, outage): shown as failed, not as empty. */
+  unavailable?: PullRequestSection[];
 }
+
+export type PullRequestSection = "files" | "comments" | "checks";

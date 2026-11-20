@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import { PatchDiff } from '@pierre/diffs/react'
 import { useTheme } from 'next-themes'
-import type { MergeMethod, PullRequestComment, PullRequestView } from '@dorks/client'
+import type { MergeMethod, PullRequestComment, PullRequestSection, PullRequestView } from '@dorks/client'
 import { Button } from '@dorks/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@dorks/ui/dropdown-menu'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@dorks/ui/tabs'
@@ -46,7 +46,7 @@ export type PullRequestPanelData = {
 
 /** The tab look of Chat details and of the PR inside it: one 28px box selected or not, a grey fill when selected. Instant. */
 export const TAB_CLASS =
-  "h-7 flex-none gap-1.5 rounded-(--control-radius) px-2.5 py-0 transition-none text-[13px] font-normal text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground data-active:bg-foreground/[0.07] data-active:text-foreground dark:data-active:bg-foreground/[0.08] [&_svg:not([class*='size-'])]:size-3.5"
+  "h-7 flex-none gap-1.5 rounded-(--control-radius) px-2 py-0 transition-none text-[13px] font-normal text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground data-active:bg-foreground/[0.07] data-active:text-foreground dark:data-active:bg-foreground/[0.08] [&_svg:not([class*='size-'])]:size-3.5"
 
 /** The PR's action buttons, as tall as the tabs beside them. */
 const ACTION_BUTTON = 'h-7 px-2.5'
@@ -133,6 +133,8 @@ function FilesBar({ pr, loading, error, onRetry, changes }: { pr?: { url: string
 }
 
 function PullRequestView({ view, data, now, onAsk }: { view: PullRequestView; data?: PullRequestPanelData; now: number; onAsk?: (text: string) => void }) {
+  // A section GitHub did not return this time: say so, rather than show it as empty.
+  const gone = (section: PullRequestSection) => (view.unavailable?.includes(section) ? <Unavailable section={section} onRetry={data?.refresh} /> : undefined)
   const [section, setSection] = useState<Section>('overview')
   const files: FileChange[] = view.files.map((f) => ({ path: f.path, additions: f.additions, deletions: f.deletions, patch: f.patch }))
   const [open, setOpen] = useState<Set<string>>(() => new Set())
@@ -141,7 +143,7 @@ function PullRequestView({ view, data, now, onAsk }: { view: PullRequestView; da
   const anyOpen = withPatch.some((c) => open.has(c.path))
   return (
     <div className="flex min-h-full flex-col text-sm">
-      <div className="border-t px-[14px] pt-3 pb-5">
+      <div className="border-t px-[14px] pt-5 pb-4">
         <div className="flex items-center gap-2">
           <PrState view={view} now={now} />
           <span className="ml-auto flex items-center gap-0.5 -mr-[9px] -my-2">
@@ -164,7 +166,7 @@ function PullRequestView({ view, data, now, onAsk }: { view: PullRequestView; da
         </h2>
       </div>
       <Tabs value={section} onValueChange={(v) => setSection(v as Section)} className="min-h-0 flex-1 gap-0">
-        <div className="flex h-10 shrink-0 items-center gap-0.5 border-b pr-[6px] pl-1">
+        <div className="flex shrink-0 items-center gap-0.5 border-b px-[14px] pb-3">
           <TabsList className="h-7! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
             <TabsTrigger value="overview" className={TAB_CLASS}>
               Overview
@@ -172,7 +174,7 @@ function PullRequestView({ view, data, now, onAsk }: { view: PullRequestView; da
             <TabsTrigger value="files" className={TAB_CLASS}>
               Files <span className="text-muted-foreground tabular-nums">{view.changedFiles || files.length}</span>
             </TabsTrigger>
-            {view.checks.total > 0 && (
+            {(view.checks.total > 0 || view.unavailable?.includes('checks')) && (
               <TabsTrigger value="checks" className={TAB_CLASS}>
                 Checks <ChecksCount checks={view.checks} />
               </TabsTrigger>
@@ -220,6 +222,7 @@ function PullRequestView({ view, data, now, onAsk }: { view: PullRequestView; da
             </div>
           )}
           <FileList
+            unavailable={gone('files')}
             changes={files}
             open={open}
             wrap={wrap}
@@ -232,12 +235,8 @@ function PullRequestView({ view, data, now, onAsk }: { view: PullRequestView; da
             }
           />
         </TabsContent>
-        <TabsContent value="checks">
-          <Checks view={view} />
-        </TabsContent>
-        <TabsContent value="comments">
-          <Comments view={view} now={now} onAsk={onAsk} />
-        </TabsContent>
+        <TabsContent value="checks">{gone('checks') ?? <Checks view={view} />}</TabsContent>
+        <TabsContent value="comments">{gone('comments') ?? <Comments view={view} now={now} onAsk={onAsk} />}</TabsContent>
       </Tabs>
     </div>
   )
@@ -301,6 +300,8 @@ function useMergeMethod(allowed: MergeMethod[]) {
 
 /** GitHub's merge green, at the small control size. */
 const MERGE_BUTTON = 'bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500'
+/** A blocker the agent can fix (conflicts, failing checks): red fill, white text. */
+const BLOCKER_BUTTON = 'bg-red-600 text-white hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-500'
 
 /**
  * The PR's one next step, on the right of its tabs, GitHub's way: the green merge button when it can merge (a click asks once more
@@ -364,12 +365,7 @@ function nextStep({ view, data, onAsk, method, setMethod, confirming, setConfirm
   if (view.mergeableState === 'dirty')
     return (
       onAsk && (
-        <Button
-          size="xs"
-          variant="outline"
-          className={`${ACTION_BUTTON} text-red-600 dark:text-red-400`}
-          onClick={() => onAsk(`Merge ${baseRef} into this branch, resolve the conflicts, run the tests and push.`)}
-        >
+        <Button size="xs" className={`${ACTION_BUTTON} ${BLOCKER_BUTTON}`} onClick={() => onAsk(`Merge ${baseRef} into this branch, resolve the conflicts, run the tests and push.`)}>
           Resolve conflicts
         </Button>
       )
@@ -401,8 +397,7 @@ function nextStep({ view, data, onAsk, method, setMethod, confirming, setConfirm
       {checks.failed > 0 && onAsk && (
         <Button
           size="xs"
-          variant="outline"
-          className={`${ACTION_BUTTON} text-red-600 dark:text-red-400`}
+          className={`${ACTION_BUTTON} ${BLOCKER_BUTTON}`}
           onClick={() => onAsk(`The pull request's checks are failing (${checks.failing.join(', ')}). Find out why, fix it and push.`)}
         >
           Fix checks
@@ -410,6 +405,19 @@ function nextStep({ view, data, onAsk, method, setMethod, confirming, setConfirm
       )}
       <MergeButton view={view} method={method} setMethod={setMethod} disabled={busy !== undefined} onMerge={() => setConfirming(true)} />
     </>
+  )
+}
+
+/** A section GitHub did not return (rate limit, outage), with a retry. */
+function Unavailable({ section, onRetry }: { section: PullRequestSection; onRetry?: () => void }) {
+  return (
+    <EmptyState figure="relay" title={`Couldn't load ${section} from GitHub`}>
+      {onRetry && (
+        <Button size="sm" variant="outline" onClick={onRetry}>
+          Try again
+        </Button>
+      )}
+    </EmptyState>
   )
 }
 
@@ -500,7 +508,7 @@ function Overview({ view }: { view: PullRequestView }) {
           </span>
         </Meta>
         <Meta label="Branch">
-          <span className="truncate font-mono text-xs" title={`${view.headRef} → ${view.baseRef}`}>
+          <span className="truncate font-mono text-[13px]" title={`${view.headRef} → ${view.baseRef}`}>
             {view.headRef} <span className="text-muted-foreground">→ {view.baseRef}</span>
           </span>
         </Meta>
@@ -510,8 +518,8 @@ function Overview({ view }: { view: PullRequestView }) {
           </span>
         </Meta>
         <Meta label="Changes">
-          <span className="text-xs">
-            <Stat additions={view.additions} deletions={view.deletions} />{' '}
+          <span className="flex items-baseline gap-2">
+            <Stat additions={view.additions} deletions={view.deletions} />
             <span className="text-muted-foreground">
               in {view.changedFiles} {view.changedFiles === 1 ? 'file' : 'files'}
             </span>
@@ -545,7 +553,7 @@ function Person({ login, avatarUrl, size = 16 }: { login: string; avatarUrl?: st
       {avatarUrl && !broken ? (
         <img src={avatarUrl} alt="" width={size} height={size} className="shrink-0 rounded-full bg-muted" style={{ width: size, height: size }} onError={() => setBroken(true)} />
       ) : (
-        <span aria-hidden className="grid shrink-0 place-items-center rounded-full bg-muted text-[10px] text-muted-foreground uppercase" style={{ width: size, height: size }}>
+        <span aria-hidden className="grid shrink-0 place-items-center rounded-full bg-muted text-[10px] leading-none text-muted-foreground uppercase" style={{ width: size, height: size }}>
           {login[0]}
         </span>
       )}
@@ -643,7 +651,8 @@ function CommentRow({ comment: c, now }: { comment: PullRequestComment; now: num
   )
 }
 
-function FileList({ changes, open, wrap = false, onToggle }: { changes: FileChange[]; open?: Set<string>; wrap?: boolean; onToggle?: (path: string) => void }) {
+function FileList({ changes, open, wrap = false, onToggle, unavailable }: { changes: FileChange[]; open?: Set<string>; wrap?: boolean; onToggle?: (path: string) => void; unavailable?: ReactNode }) {
+  if (unavailable && changes.length === 0) return unavailable
   const [own, setOwn] = useState<Set<string>>(() => new Set())
   const opened = open ?? own
   const toggle =

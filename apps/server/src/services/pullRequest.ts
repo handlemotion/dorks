@@ -1,4 +1,4 @@
-import type { MergeableState, MergeMethod, PullRequestChecks, PullRequestComment, PullRequestFile, PullRequestPerson, PullRequestView } from "@dorks/shared";
+import type { MergeableState, MergeMethod, PullRequestChecks, PullRequestComment, PullRequestFile, PullRequestPerson, PullRequestSection, PullRequestView } from "@dorks/shared";
 import { fail, type App } from "../app";
 import { validRepo } from "../lib/repo";
 import { setTimer } from "../lifecycle/dispatch";
@@ -176,16 +176,26 @@ export async function getPullRequest(app: App, dorkId: string): Promise<PullRequ
   const pr = obj(await get(app, token, `${base}/pulls/${number}`));
   const headSha = s(obj(pr.head).sha);
   // Comments, files and checks are best effort: a failure there should not hide the PR and its merge button.
-  const soft = (path: string) => get(app, token, path).catch(() => null);
-  const softAll = (path: string, pick?: (page: unknown) => unknown) => getAll(app, token, path, pick).catch((): Json[] => []);
+  // A failed section is reported as unavailable, so the panel does not show it as empty.
+  const unavailable = new Set<PullRequestSection>();
+  const soft = (path: string, section?: PullRequestSection) =>
+    get(app, token, path).catch(() => {
+      if (section) unavailable.add(section);
+      return null;
+    });
+  const softAll = (path: string, section: PullRequestSection, pick?: (page: unknown) => unknown) =>
+    getAll(app, token, path, pick).catch((): Json[] => {
+      unavailable.add(section);
+      return [];
+    });
   const [repoInfo, files, issueComments, reviews, reviewComments, runs, status] = await Promise.all([
     soft(base),
-    softAll(`${base}/pulls/${number}/files`),
-    softAll(`${base}/issues/${number}/comments`),
-    softAll(`${base}/pulls/${number}/reviews`),
-    softAll(`${base}/pulls/${number}/comments`),
-    headSha ? softAll(`${base}/commits/${headSha}/check-runs`, (p) => obj(p).check_runs) : [],
-    headSha ? soft(`${base}/commits/${headSha}/status?per_page=${PAGE}`) : null,
+    softAll(`${base}/pulls/${number}/files`, "files"),
+    softAll(`${base}/issues/${number}/comments`, "comments"),
+    softAll(`${base}/pulls/${number}/reviews`, "comments"),
+    softAll(`${base}/pulls/${number}/comments`, "comments"),
+    headSha ? softAll(`${base}/commits/${headSha}/check-runs`, "checks", (p) => obj(p).check_runs) : [],
+    headSha ? soft(`${base}/commits/${headSha}/status?per_page=${PAGE}`, "checks") : null,
   ]);
   const r = obj(repoInfo);
   const allowed = { squash: r.allow_squash_merge, merge: r.allow_merge_commit, rebase: r.allow_rebase_merge };
@@ -218,6 +228,7 @@ export async function getPullRequest(app: App, dorkId: string): Promise<PullRequ
     mergeMethods: mergeMethods.length ? mergeMethods : [...MERGE_METHODS],
     files: filesOf(files),
     comments: commentsOf(issueComments, reviews, reviewComments),
+    ...(unavailable.size ? { unavailable: [...unavailable] } : {}),
   };
 }
 
