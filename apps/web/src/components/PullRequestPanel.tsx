@@ -44,9 +44,12 @@ export type PullRequestPanelData = {
   refresh?: () => void
 }
 
-/** The tab look Chat details uses for its own tabs: the same box selected or not, a grey fill when selected. Instant. */
+/** The tab look of Chat details and of the PR inside it: one 28px box selected or not, a grey fill when selected. Instant. */
 export const TAB_CLASS =
-  "h-[30px] flex-none gap-1.5 rounded-(--control-radius) px-2 py-0 transition-none text-sm font-normal text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground data-active:bg-foreground/[0.07] data-active:text-foreground dark:data-active:bg-foreground/[0.08] [&_svg:not([class*='size-'])]:size-3.5"
+  "h-7 flex-none gap-1.5 rounded-(--control-radius) px-2.5 py-0 transition-none text-[13px] font-normal text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground data-active:bg-foreground/[0.07] data-active:text-foreground dark:data-active:bg-foreground/[0.08] [&_svg:not([class*='size-'])]:size-3.5"
+
+/** The PR's action buttons, as tall as the tabs beside them. */
+const ACTION_BUTTON = 'h-7 px-2.5'
 
 export const sum = (changes: FileChange[], key: 'additions' | 'deletions') => changes.reduce((n, c) => n + c[key], 0)
 
@@ -138,7 +141,7 @@ function PullRequestView({ view, data, now, onAsk }: { view: PullRequestView; da
   const anyOpen = withPatch.some((c) => open.has(c.path))
   return (
     <div className="flex min-h-full flex-col text-sm">
-      <div className="border-t px-[14px] pt-3 pb-3">
+      <div className="border-t px-[14px] pt-3 pb-5">
         <div className="flex items-center gap-2">
           <PrState view={view} now={now} />
           <span className="ml-auto flex items-center gap-0.5 -mr-[9px] -my-2">
@@ -161,8 +164,8 @@ function PullRequestView({ view, data, now, onAsk }: { view: PullRequestView; da
         </h2>
       </div>
       <Tabs value={section} onValueChange={(v) => setSection(v as Section)} className="min-h-0 flex-1 gap-0">
-        <div className="flex h-10 shrink-0 items-center gap-0.5 border-b p-[5px]">
-          <TabsList className="h-[30px]! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
+        <div className="flex h-10 shrink-0 items-center gap-0.5 border-b pr-[6px] pl-1">
+          <TabsList className="h-7! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
             <TabsTrigger value="overview" className={TAB_CLASS}>
               Overview
             </TabsTrigger>
@@ -361,7 +364,12 @@ function nextStep({ view, data, onAsk, method, setMethod, confirming, setConfirm
   if (view.mergeableState === 'dirty')
     return (
       onAsk && (
-        <Button size="xs" variant="outline" className="text-red-600 dark:text-red-400" onClick={() => onAsk(`Merge ${baseRef} into this branch, resolve the conflicts, run the tests and push.`)}>
+        <Button
+          size="xs"
+          variant="outline"
+          className={`${ACTION_BUTTON} text-red-600 dark:text-red-400`}
+          onClick={() => onAsk(`Merge ${baseRef} into this branch, resolve the conflicts, run the tests and push.`)}
+        >
           Resolve conflicts
         </Button>
       )
@@ -369,7 +377,7 @@ function nextStep({ view, data, onAsk, method, setMethod, confirming, setConfirm
   if (view.mergeableState === 'behind')
     return (
       updateBranch && (
-        <Button size="xs" variant="outline" disabled={busy === 'update'} onClick={() => void run('update', () => updateBranch(view.headSha))}>
+        <Button size="xs" variant="outline" className={ACTION_BUTTON} disabled={busy === 'update'} onClick={() => void run('update', () => updateBranch(view.headSha))}>
           {busy === 'update' && <LoaderIcon className="animate-spin" />}
           Update branch
         </Button>
@@ -379,10 +387,10 @@ function nextStep({ view, data, onAsk, method, setMethod, confirming, setConfirm
   if (confirming)
     return (
       <>
-        <Button size="xs" variant="ghost" disabled={busy === 'merge'} onClick={() => setConfirming(false)}>
+        <Button size="xs" variant="ghost" className={ACTION_BUTTON} disabled={busy === 'merge'} onClick={() => setConfirming(false)}>
           Cancel
         </Button>
-        <Button size="xs" className={MERGE_BUTTON} disabled={busy === 'merge'} onClick={() => void run('merge', () => merge(method, view.headSha))}>
+        <Button size="xs" className={`${ACTION_BUTTON} ${MERGE_BUTTON}`} disabled={busy === 'merge'} onClick={() => void run('merge', () => merge(method, view.headSha))}>
           {busy === 'merge' && <LoaderIcon className="animate-spin" />}
           Confirm {METHOD_BUTTON[method].toLowerCase()}
         </Button>
@@ -394,7 +402,7 @@ function nextStep({ view, data, onAsk, method, setMethod, confirming, setConfirm
         <Button
           size="xs"
           variant="outline"
-          className="text-red-600 dark:text-red-400"
+          className={`${ACTION_BUTTON} text-red-600 dark:text-red-400`}
           onClick={() => onAsk(`The pull request's checks are failing (${checks.failing.join(', ')}). Find out why, fix it and push.`)}
         >
           Fix checks
@@ -451,11 +459,11 @@ function Checks({ view }: { view: PullRequestView }) {
 function MergeButton({ view, method, setMethod, disabled, onMerge }: { view: PullRequestView; method: MergeMethod; setMethod: (m: MergeMethod) => void; disabled: boolean; onMerge: () => void }) {
   return (
     <div className="flex items-center">
-      <Button size="xs" className={`rounded-r-none ${MERGE_BUTTON}`} disabled={disabled} onClick={onMerge}>
+      <Button size="xs" className={`${ACTION_BUTTON} rounded-r-none ${MERGE_BUTTON}`} disabled={disabled} onClick={onMerge}>
         {METHOD_BUTTON[method]}
       </Button>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button size="xs" className={`rounded-l-none border-l border-l-white/25 px-1.5 ${MERGE_BUTTON}`} disabled={disabled} aria-label="Merge method" />}>
+        <DropdownMenuTrigger render={<Button size="xs" className={`h-7 rounded-l-none border-l border-l-white/25 px-2 ${MERGE_BUTTON}`} disabled={disabled} aria-label="Merge method" />}>
           <ChevronDownIcon />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-max">

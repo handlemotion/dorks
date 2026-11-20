@@ -102,8 +102,8 @@ export function ChatDetails({
         onValueChange={(value) => setTab(value as Tab)}
         className="relative min-h-0 min-w-0 flex-1 gap-0 overflow-hidden rounded-[11px] after:pointer-events-none after:absolute after:inset-0 after:z-20 after:rounded-[inherit] after:border after:border-border"
       >
-        <div data-tauri-drag-region className="flex h-10 min-w-0 shrink-0 items-center gap-0.5 p-[5px]">
-          <TabsList className="h-[26px]! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
+        <div data-tauri-drag-region className="flex h-10 min-w-0 shrink-0 items-center gap-0.5 pr-[6px] pl-1">
+          <TabsList className="h-7! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
             <DetailsTab value="progress" icon={<ActivityIcon />}>
               Progress
             </DetailsTab>
@@ -125,7 +125,7 @@ export function ChatDetails({
           </TabsList>
           {onClose && (
             <Tip label="Hide chat details">
-              <Button variant="ghost" size="icon-sm" className={`ml-auto shrink-0 ${ACTION}`} aria-label="Hide chat details" onClick={onClose}>
+              <Button variant="ghost" size="icon-sm" className={`ml-auto shrink-0 ${ACTION} size-7!`} aria-label="Hide chat details" onClick={onClose}>
                 <PanelLeftIcon className="rotate-180" />
               </Button>
             </Tip>
@@ -161,7 +161,7 @@ export function ChatDetails({
   )
 }
 
-/** A plain tab: the same 26px box selected or not (nothing moves), a grey fill when selected, a lighter one on hover. Instant. */
+/** A plain tab: the same 28px box selected or not (nothing moves), a grey fill when selected, a lighter one on hover. Instant. */
 function DetailsTab({ value, icon, count, children }: { value: Tab; icon: ReactNode; count?: number; children: ReactNode }) {
   return (
     <TabsTrigger value={value} className={TAB_CLASS}>

@@ -227,8 +227,9 @@ function detailsData(dork: DorkView, blocks: Block[], actions: DorksActions, com
 }
 
 /** The session's pull request, read live from GitHub, and the merge and branch update Chat details offers on it. */
-function usePullRequestPanel(dorkId: string, prUrl: string | undefined): PullRequestPanelData | undefined {
+function usePullRequestPanel(dorkId: string, dork: { prUrl?: string } | null | undefined): PullRequestPanelData | undefined {
   const { actions } = useDorksClient()
+  const prUrl = dork?.prUrl
   const pr = usePullRequest(dorkId)
   // The agent just opened (or moved to) a pull request: read it now rather than at the next poller change.
   useEffect(() => {
@@ -334,7 +335,7 @@ function Thread({ dorkId }: { dorkId: string }) {
   const fetchDesktopUrl = useCallback((opts: DesktopOptions) => actions.desktopUrl(dorkId, opts), [actions, dorkId])
   const interruptAgent = useCallback(() => actions.interrupt(dorkId), [actions, dorkId])
   const { live } = useConnection()
-  const pullRequest = usePullRequestPanel(dorkId, dork?.prUrl)
+  const pullRequest = usePullRequestPanel(dorkId, dork)
   if (dork === undefined || loading)
     return (
       <p className="mt-4 px-6 text-sm text-muted-foreground" role="status">
