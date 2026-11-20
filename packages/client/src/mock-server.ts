@@ -4,7 +4,7 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { ClientEvent, McpServerView } from "@dorks/shared";
+import type { ClientEvent, McpServerView, PullRequestView } from "@dorks/shared";
 import type { Dork, Settings, SnapshotStatus } from "./types.ts";
 
 const SNAPSHOT_STEPS = [
@@ -107,6 +107,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   const token = opts.token ?? "mock-owner-token";
   const tick = opts.tick ?? 150;
   const dorks = new Map<string, MockDork>();
+  const prs = new Map<string, PullRequestView>();
   const secrets = new Map<string, string>();
   const mcpServers = new Map<string, McpServerView>();
   // Composio: a sign-in "finishes" when its link is requested, so the UI's wait ends on the next read.
@@ -225,7 +226,12 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     later(tick * 5, () => {
       if (!alive()) return;
       append(dorkId, { type: "assistant_message", messageId: msg, text: answer });
-      if (/\bpr\b/i.test(prompt)) append(dorkId, { type: "pr_opened", url: `https://github.com/${d.repo}/pull/7`, number: 7 });
+      if (/\bpr\b/i.test(prompt)) {
+        append(dorkId, { type: "pr_opened", url: `https://github.com/${d.repo}/pull/7`, number: 7 });
+        d.prUrl = `https://github.com/${d.repo}/pull/7`;
+        prs.set(dorkId, mockPullRequest(d.repo, 7, d.title));
+        broadcast({ t: "dork", dorkId });
+      }
       append(dorkId, { type: "turn_complete", durationMs: tick * 5, outcome: "done", finalMessageId: msg });
       append(dorkId, { type: "status", state: "idle" });
     });
@@ -421,6 +427,36 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       },
     ],
     ["GET events", listEvents],
+    [
+      "GET pr",
+      ({ res }, d) => {
+        const pr = prs.get(d.id);
+        return pr ? json(res, 200, pr) : fail(res, "not_found", "This session has no pull request yet.");
+      },
+    ],
+    [
+      "POST pr/merge",
+      ({ body, res }, d) => {
+        const pr = prs.get(d.id);
+        if (!pr) return fail(res, "not_found", "This session has no pull request yet.");
+        if (pr.state !== "open") return fail(res, "conflict", "Pull Request is not mergeable");
+        if (pr.mergeableState === "dirty") return fail(res, "conflict", "Pull Request is not mergeable");
+        Object.assign(pr, { state: "merged", mergedAt: Date.now(), mergedBy: pr.author, mergeableState: "unknown" });
+        append(d.id, { type: "pr_merged", url: pr.url, number: pr.number });
+        broadcast({ t: "subscriptions", dorkId: d.id });
+        return json(res, 200, { merged: true, sha: "f".repeat(40), method: body.method });
+      },
+    ],
+    [
+      "POST pr/update-branch",
+      ({ res }, d) => {
+        const pr = prs.get(d.id);
+        if (!pr) return fail(res, "not_found", "This session has no pull request yet.");
+        if (pr.mergeableState === "behind") pr.mergeableState = "clean";
+        broadcast({ t: "subscriptions", dorkId: d.id });
+        return json(res, 200, {});
+      },
+    ],
     ["* subscriptions", ({ method, res }) => json(res, 200, method === "GET" ? [] : {})],
     ["* subscriptions/resume", ({ res }) => json(res, 200, {})],
   ]);
@@ -652,7 +688,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
 
     const handle = routes.get(`${method} ${path}`);
     if (handle) return handle(c);
-    const m = /^\/api\/dorks\/([^/]+)(?:\/(messages|interrupt|desktop|archive|model|codex-model|events|subscriptions(?:\/resume)?))?$/.exec(path);
+    const m = /^\/api\/dorks\/([^/]+)(?:\/(messages|interrupt|desktop|archive|model|codex-model|events|pr(?:\/merge|\/update-branch)?|subscriptions(?:\/resume)?))?$/.exec(path);
     if (m) return routeDork(c, m);
     const sm = /^\/api\/secrets\/([^/]+)$/.exec(path);
     if (sm) return routeSecret(c, decodeURIComponent(sm[1]!));
@@ -701,5 +737,52 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },
+  };
+}
+
+/** A pull request as GitHub would show it for the mock's scripted "open a PR" turn: a body with sections, a diff, comments, checks. */
+function mockPullRequest(repo: string, number: number, title: string): PullRequestView {
+  const now = Date.now();
+  const author = { login: "handlemotion" };
+  return {
+    repo,
+    number,
+    url: `https://github.com/${repo}/pull/${number}`,
+    title,
+    body: "## Problem\n\nThe app reported `ready = false` even after setup finished, so the first run always waited for a timeout.\n\n## Approach\n\nFlip the flag once setup completes and cover it with a test.\n\n## Testing\n\n- `pnpm test` passes\n- Checked by hand in the desktop app",
+    state: "open",
+    draft: false,
+    author,
+    headRef: "dorks/ready-flag",
+    baseRef: "main",
+    headSha: "a".repeat(40),
+    createdAt: now - 12 * 60_000,
+    mergeable: true,
+    mergeableState: "clean",
+    additions: 1,
+    deletions: 1,
+    changedFiles: 1,
+    checks: { total: 3, passed: 3, failed: 0, pending: 0, failing: [], runs: ["check", "test", "e2e"].map((name) => ({ name, outcome: "pass" as const })) },
+    mergeMethods: ["squash", "merge", "rebase"],
+    files: [
+      {
+        path: "src/index.ts",
+        status: "modified",
+        additions: 1,
+        deletions: 1,
+        patch: "--- a/src/index.ts\n+++ b/src/index.ts\n@@ -1,3 +1,3 @@\n import { setup } from './setup'\n-export const ready = false\n+export const ready = true\n export default setup\n",
+      },
+    ],
+    comments: [
+      {
+        id: "c1",
+        kind: "comment",
+        author: { login: "octocat" },
+        body: "Nice catch. Does this also fix the retry loop on wake?",
+        url: `https://github.com/${repo}/pull/${number}#issuecomment-1`,
+        createdAt: now - 8 * 60_000,
+      },
+      { id: "r1", kind: "review", author: { login: "octocat" }, body: "", reviewState: "APPROVED", url: `https://github.com/${repo}/pull/${number}#pullrequestreview-1`, createdAt: now - 5 * 60_000 },
+    ],
   };
 }

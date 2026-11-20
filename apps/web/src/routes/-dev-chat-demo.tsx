@@ -9,6 +9,8 @@ import { UsageBarView } from '../components/UsageBar'
 import { AgentStatus } from '../components/AgentStatus'
 import { ChatMessages } from '../components/ChatBlock'
 import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, useWide, type ChatDetailsData } from '../components/ChatDetails'
+import type { PullRequestPanelData } from '../components/PullRequestPanel'
+import type { PullRequestView } from '@dorks/client'
 import { latestTasks, progressStore, progressTurns } from '../lib/progress'
 import { Composer, type AgentProvider } from '../components/ChatComposer'
 import { ChatMenu } from '../components/ChatMenu'
@@ -213,6 +215,94 @@ const details: ChatDetailsData = {
   })),
 }
 
+/** The demo's pull request: `?pr=dirty|behind|blocked|draft|merged` shows the other merge states. */
+const DEMO_PR_STATE = new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('pr')
+const DEMO_PR: PullRequestView = {
+  repo: 'acme/demo',
+  number: 142,
+  url: 'https://github.com/acme/demo/pull/142',
+  title: 'Fix flaky bridge reconnect after wake',
+  body: `<!-- claude-projects-attribution -->
+## Problem
+
+After the laptop wakes, the bridge sometimes reconnects twice and the second socket drops queued frames. The agent then waits for a reply that never comes.
+
+## Approach
+
+Reconnects go through one \`ReconnectGate\`: a wake starts at most one attempt, backs off with jitter, and flushes the queue only once the new socket is open.
+
+## Testing
+
+- \`pnpm test\` covers the double-wake case
+- Slept and woke the desktop app five times; every turn finished`,
+  state: DEMO_PR_STATE === 'merged' ? 'merged' : 'open',
+  draft: DEMO_PR_STATE === 'draft',
+  author: { login: 'handlemotion', avatarUrl: 'https://avatars.githubusercontent.com/handlemotion' },
+  headRef: 'dorks/bridge-reconnect',
+  baseRef: 'main',
+  headSha: 'a'.repeat(40),
+  createdAt: Date.now() - 3 * 3600_000,
+  mergedAt: DEMO_PR_STATE === 'merged' ? Date.now() - 5 * 60_000 : undefined,
+  mergedBy: DEMO_PR_STATE === 'merged' ? { login: 'handlemotion' } : undefined,
+  mergeable: DEMO_PR_STATE !== 'dirty',
+  mergeableState: (DEMO_PR_STATE === 'dirty' || DEMO_PR_STATE === 'behind' || DEMO_PR_STATE === 'blocked'
+    ? DEMO_PR_STATE
+    : DEMO_PR_STATE === 'draft'
+      ? 'draft'
+      : 'clean') as PullRequestView['mergeableState'],
+  additions: 259,
+  deletions: 80,
+  changedFiles: 5,
+  checks:
+    DEMO_PR_STATE === 'blocked'
+      ? {
+          total: 4,
+          passed: 3,
+          failed: 1,
+          pending: 0,
+          failing: ['e2e'],
+          runs: [{ name: 'e2e', outcome: 'fail', summary: '2 tests failed', url: '#' }, ...['check', 'test', 'build'].map((name) => ({ name, outcome: 'pass' as const, url: '#' }))],
+        }
+      : {
+          total: 4,
+          passed: 4,
+          failed: 0,
+          pending: 0,
+          failing: [],
+          runs: ['build', 'check', 'e2e', 'test'].map((name) => ({ name, outcome: 'pass' as const, summary: name === 'e2e' ? '42 tests passed' : undefined, url: '#' })),
+        },
+  mergeMethods: ['squash', 'merge', 'rebase'],
+  files: [
+    { path: 'infra/bridge/src/claude.ts', status: 'modified', additions: 48, deletions: 12 },
+    { path: 'infra/bridge/src/reconnect.ts', status: 'modified', additions: 112, deletions: 64, patch: RECONNECT_PATCH },
+    { path: 'infra/bridge/test/reconnect.test.ts', status: 'added', additions: 86, deletions: 0 },
+    { path: 'apps/server/src/services/dorks.ts', status: 'modified', additions: 9, deletions: 3 },
+    { path: 'docs/architecture.md', status: 'modified', additions: 4, deletions: 1, patch: DOCS_PATCH },
+  ],
+  comments: [
+    { id: 'c1', kind: 'comment', author: { login: 'octocat' }, body: 'Does this also cover the case where the wake happens mid-turn?', url: '#', createdAt: Date.now() - 90 * 60_000 },
+    {
+      id: 'l1',
+      kind: 'review_comment',
+      author: { login: 'octocat' },
+      body: 'Jitter of 0–250ms seems small for a fleet; maybe up to 1s?',
+      path: 'infra/bridge/src/reconnect.ts',
+      line: 42,
+      url: '#',
+      createdAt: Date.now() - 80 * 60_000,
+    },
+    {
+      id: 'c2',
+      kind: 'comment',
+      author: { login: 'handlemotion' },
+      body: 'Yes: a wake mid-turn queues the frames and the gate flushes them once. Bumped the jitter to 1s.',
+      url: '#',
+      createdAt: Date.now() - 40 * 60_000,
+    },
+    { id: 'r1', kind: 'review', author: { login: 'octocat' }, body: '', reviewState: 'APPROVED', url: '#', createdAt: Date.now() - 20 * 60_000 },
+  ],
+}
+
 /** The app frame with a scripted conversation and no server: for looking at the design (dev builds only). */
 /** The demo's tool calls carry no times of their own: space them a few minutes apart, oldest first, so Progress shows its "ago" column. */
 const initialBlocks: Block[] = demoBlocks.map((b, i) => (b.kind === 'tool' && b.at === undefined ? { ...b, at: Date.now() - (demoBlocks.length - i) * 3 * 60_000 } : b))
@@ -228,6 +318,17 @@ export function Demo() {
   const [detailsOpen, setDetailsOpen] = useDetailsOpen()
   const [reply, setReply] = useState<Reply>()
   const wide = useWide()
+  const [demoPr, setDemoPr] = useState(DEMO_PR)
+  const demoPullRequest: PullRequestPanelData = {
+    view: demoPr,
+    refresh: () => {},
+    merge: async (method) => {
+      await new Promise((r) => setTimeout(r, 600))
+      setDemoPr((p) => ({ ...p, state: 'merged', mergedAt: Date.now(), mergedBy: p.author }))
+      console.info('demo merge', method)
+    },
+    updateBranch: async () => setDemoPr((p) => ({ ...p, mergeableState: 'clean' })),
+  }
   const send = (message = withReply(reply, text)) => {
     const id = crypto.randomUUID()
     setReply(undefined)
@@ -259,7 +360,7 @@ export function Demo() {
         details={
           detailsOpen && !showNew ? (
             <ChatDetails
-              data={{ ...details, progress: progressTurns(blocks), tasks: latestTasks(blocks) }}
+              data={{ ...details, progress: progressTurns(blocks), tasks: latestTasks(blocks), pullRequest: demoPullRequest }}
               onClose={() => setDetailsOpen(false)}
               onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}
               onAsk={setText}

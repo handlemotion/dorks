@@ -1,4 +1,4 @@
-import type { ComposioStatus, McpServerInput, McpServerView, SubscriptionView } from "@dorks/shared";
+import type { ComposioStatus, McpServerInput, McpServerView, MergeMethod, PullRequestView, SubscriptionView } from "@dorks/shared";
 import { EventsFeed } from "./events.ts";
 import { createApi, ApiError, type ApiConfig, type DesktopOptions } from "./http.ts";
 import { connectLive, type LiveStatus } from "./live.ts";
@@ -120,9 +120,11 @@ export class DorksClient {
         break;
       case "subscriptions":
         this.invalidate(`subs:${m.dorkId}`);
+        this.invalidate(`pr:${m.dorkId}`);
         break;
       case "settings":
         this.invalidate("settings");
+        this.invalidate("pr"); // a new GitHub login may see a PR the old one could not
         this.invalidate("github-repos");
         this.invalidate("secrets");
         this.invalidate("mcp-servers");
@@ -181,6 +183,18 @@ export class DorksClient {
 
   secretNames() {
     return this.query<string[]>("secrets", () => this.api.listSecrets());
+  }
+
+  /** The session's pull request, live from GitHub; `null` when it has none. Refetched when the poller sees the PR change. */
+  pullRequest(dorkId: string) {
+    return this.query<PullRequestView | null>(`pr:${dorkId}`, async () => {
+      try {
+        return await this.api.getPullRequest(dorkId);
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404 && e.code === "not_found") return null;
+        throw e;
+      }
+    });
   }
 
   /** The MCP servers from Customize: names of headers and variables, never their values. */
@@ -296,6 +310,23 @@ export class DorksClient {
       await this.api.resumeSubscription(id, pr);
       this.invalidate(`subs:${id}`);
     },
+    /** Reads the pull request from GitHub again. */
+    refreshPullRequest: (id: string) => this.invalidate(`pr:${id}`),
+    mergePullRequest: async (id: string, method: MergeMethod, sha?: string) => {
+      try {
+        return await this.api.mergePullRequest(id, method, sha);
+      } finally {
+        this.invalidate(`pr:${id}`);
+        this.invalidate(`dork:${id}`);
+      }
+    },
+    updatePullRequestBranch: async (id: string, sha?: string) => {
+      try {
+        await this.api.updatePullRequestBranch(id, sha);
+      } finally {
+        this.invalidate(`pr:${id}`);
+      }
+    },
     updateSettings: async (patch: SettingsPatch) => {
       await this.api.updateSettings(patch);
       this.invalidate("settings");
@@ -306,6 +337,7 @@ export class DorksClient {
       await this.api.getGithubRepos(true);
       this.invalidate("github-repos");
       this.invalidate("settings");
+      this.invalidate("pr");
     },
     checkBoat: (input: { boatKey?: string; boatOrg?: string }) => this.api.checkBoat(input),
     /** Starts "Prepare Boat". Resolves with the status right after it started; follow progress with `snapshot()` / `useSnapshot()`. */

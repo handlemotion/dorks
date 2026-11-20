@@ -18,6 +18,7 @@ import { forgetUsage, getUsage } from "../services/usage";
 import { composioLink, composioStatus, composioUnlink, connectComposio, disconnectComposio } from "../services/composio";
 import { deleteMcpServer, listMcpServers, putMcpServer } from "../services/mcpServers";
 import { forgetGithubRepos, githubRepos } from "../services/githubRepos";
+import { getPullRequest, mergePullRequest, updatePullRequestBranch } from "../services/pullRequest";
 import { decideLocal, localAccessView, revokeGrant, revokeGrants, setLocalAccess } from "../services/local";
 
 const safeEqual = (a: string, b: string) => {
@@ -41,6 +42,8 @@ const RunKind = Schema.Struct({ kind: Schema.Literals(["image", "trial"]) });
 const Approve = Schema.Struct({ reviewed: Loose, run: Loose });
 const Reject = Schema.Struct({ reason: Loose });
 const Default = Schema.Struct({ default: Loose });
+const Merge = Schema.Struct({ method: Loose, sha: Loose });
+const Sha = Schema.Struct({ sha: Loose });
 const LocalDecision = Schema.Struct({ decision: Loose, minutes: Loose });
 const Enabled = Schema.Struct({ enabled: Loose });
 
@@ -216,6 +219,36 @@ export function uiApp(app: App): Hono {
     ),
   );
 
+  // ---- the session's pull request, read live from GitHub; merged from Chat details
+  api.get(
+    "/api/dorks/:id/pr",
+    on((c) =>
+      serviceAsync((a) => getPullRequest(a, id(c))).pipe(
+        Effect.map((pr) => {
+          c.header("Cache-Control", "no-store");
+          return c.json(pr);
+        }),
+      ),
+    ),
+  );
+  api.post(
+    "/api/dorks/:id/pr/merge",
+    on((c) =>
+      body(c, Merge).pipe(
+        Effect.flatMap((b) => serviceAsync((a) => mergePullRequest(a, id(c), b.method, b.sha))),
+        Effect.map((r) => c.json(r)),
+      ),
+    ),
+  );
+  api.post(
+    "/api/dorks/:id/pr/update-branch",
+    on((c) =>
+      body(c, Sha).pipe(
+        Effect.flatMap((b) => serviceAsync((a) => updatePullRequestBranch(a, id(c), b.sha))),
+        ok(c),
+      ),
+    ),
+  );
   // ---- local access: the agent's requests to use this computer (services/local.ts, docs/local-access.md)
   api.post(
     "/api/dorks/:id/local/:requestId",

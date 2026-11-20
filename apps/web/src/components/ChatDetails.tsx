@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useDefaultLayout, usePanelRef } from 'react-resizable-panels'
 import { PanelResizeHandle } from '@dorks/ui/panel-resize-handle'
-import { ActivityIcon, ChevronRightIcon, ChevronsDownUpIcon, ChevronsUpDownIcon, WrapTextIcon, ExternalLinkIcon, GitPullRequestIcon, LayersIcon, MonitorIcon, PanelLeftIcon } from 'lucide-react'
-import { PatchDiff } from '@pierre/diffs/react'
-import { useTheme } from 'next-themes'
+import { ActivityIcon, GitMergeIcon, GitPullRequestIcon, LayersIcon, MonitorIcon, PanelLeftIcon } from 'lucide-react'
 import { Button } from '@dorks/ui/button'
 import { ResizablePanel, ResizablePanelGroup } from '@dorks/ui/resizable'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@dorks/ui/tabs'
@@ -14,6 +12,7 @@ import { BAR_BUTTON, port, PreviewBrowser, useShownServers, type PreviewServer }
 import { Tip } from './Tip'
 import { ProgressPanel } from './ProgressPanel'
 import { useProgress, type ProgressTask, type ProgressTurn } from '../lib/progress'
+import { PullRequestPanel, Stat, sum, TAB_CLASS, type FileChange, type PullRequestPanelData } from './PullRequestPanel'
 
 /** A file the agent produced in the chat: a screenshot, a design, a document. */
 export type Artifact = {
@@ -25,7 +24,7 @@ export type Artifact = {
   /** Pixel size of an image, when known. */ width?: number
   height?: number
 }
-export type FileChange = { path: string; additions: number; deletions: number; /** The file's unified diff (`git diff` output), when loaded: the row opens it. */ patch?: string }
+export type { FileChange } from './PullRequestPanel'
 
 /** Everything Chat details can show. Missing parts show an empty state in their tab. */
 export type ChatDetailsData = {
@@ -36,6 +35,8 @@ export type ChatDetailsData = {
   artifacts?: Artifact[]
   changes?: FileChange[]
   pr?: { url: string; number?: number }
+  /** The pull request read live from GitHub, with its merge; the Changes tab shows it first. */
+  pullRequest?: PullRequestPanelData
   /** The dev servers the agent showed: running previews, tiles in Artifacts that open in place. */
   previews?: PreviewServer[]
   /** The agent's own computer, streamed live in the Computer tab. */
@@ -73,6 +74,9 @@ export function ChatDetails({
     seenReveal.current = reveal
   }, [reveal])
   const changes = data.changes ?? []
+  // Once the agent opens a pull request, the Changes tab is that PR, named by its number.
+  const prNumber = data.pullRequest?.view?.number ?? data.pr?.number
+  const prMerged = data.pullRequest?.view?.state === 'merged'
   // The first time the agent reaches for its computer while the chat is open, show its screen; a chat that opens on a computer
   // already used keeps the tab the owner was on.
   const used = data.computer?.used ?? false
@@ -98,24 +102,30 @@ export function ChatDetails({
         onValueChange={(value) => setTab(value as Tab)}
         className="relative min-h-0 min-w-0 flex-1 gap-0 overflow-hidden rounded-[11px] after:pointer-events-none after:absolute after:inset-0 after:z-20 after:rounded-[inherit] after:border after:border-border"
       >
-        <div data-tauri-drag-region className="flex h-10 min-w-0 shrink-0 items-center gap-0.5 p-[5px]">
-          <TabsList className="h-[26px]! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
+        <div data-tauri-drag-region className="flex h-10 min-w-0 shrink-0 items-center gap-0.5 pr-[6px] pl-1.5">
+          <TabsList className="h-7! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
             <DetailsTab value="progress" icon={<ActivityIcon />}>
               Progress
             </DetailsTab>
             <DetailsTab value="artifacts" icon={<LayersIcon />}>
               Artifacts
             </DetailsTab>
-            <DetailsTab value="changes" icon={<GitPullRequestIcon />} count={changes.length || undefined}>
-              Changes
-            </DetailsTab>
+            {prNumber ? (
+              <DetailsTab value="changes" icon={prMerged ? <GitMergeIcon /> : <GitPullRequestIcon />}>
+                <span className="tabular-nums">#{prNumber}</span>
+              </DetailsTab>
+            ) : (
+              <DetailsTab value="changes" icon={<GitPullRequestIcon />} count={changes.length || undefined}>
+                Changes
+              </DetailsTab>
+            )}
             <DetailsTab value="computer" icon={<MonitorIcon />}>
               Computer
             </DetailsTab>
           </TabsList>
           {onClose && (
             <Tip label="Hide chat details">
-              <Button variant="ghost" size="icon-sm" className={`ml-auto shrink-0 ${ACTION}`} aria-label="Hide chat details" onClick={onClose}>
+              <Button variant="ghost" size="icon-sm" className={`ml-auto shrink-0 ${ACTION} size-7!`} aria-label="Hide chat details" onClick={onClose}>
                 <PanelLeftIcon className="rotate-180" />
               </Button>
             </Tip>
@@ -141,7 +151,7 @@ export function ChatDetails({
           </TabsContent>
         )}
         <TabsContent value="changes" className="min-h-0 overflow-y-auto">
-          <Changes changes={changes} pr={data.pr} />
+          <PullRequestPanel changes={changes} pr={data.pr} pullRequest={data.pullRequest} onAsk={onAsk} />
         </TabsContent>
         <TabsContent value="computer" className="mx-px mb-px flex min-h-0 flex-col overflow-hidden rounded-b-[9px] border-t">
           <ComputerView source={data.computer} />
@@ -151,27 +161,14 @@ export function ChatDetails({
   )
 }
 
-/** A plain tab: the same 26px box selected or not (nothing moves), a grey fill when selected, a lighter one on hover. Instant. */
+/** A plain tab: the same 28px box selected or not (nothing moves), a grey fill when selected, a lighter one on hover. Instant. */
 function DetailsTab({ value, icon, count, children }: { value: Tab; icon: ReactNode; count?: number; children: ReactNode }) {
   return (
-    <TabsTrigger
-      value={value}
-      className="h-[26px] flex-none gap-1.5 rounded-(--control-radius) px-2 py-0 transition-none text-[13px] font-normal text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground data-active:bg-foreground/[0.07] data-active:text-foreground dark:data-active:bg-foreground/[0.08] [&_svg:not([class*='size-'])]:size-3.5"
-    >
+    <TabsTrigger value={value} className={TAB_CLASS}>
       {icon}
       {children}
       {count !== undefined && <span className="text-muted-foreground tabular-nums">{count}</span>}
     </TabsTrigger>
-  )
-}
-
-const sum = (changes: FileChange[], key: 'additions' | 'deletions') => changes.reduce((n, c) => n + c[key], 0)
-
-function Stat({ additions, deletions }: { additions: number; deletions: number }) {
-  return (
-    <span className="tabular-nums">
-      <span className="text-emerald-600 dark:text-emerald-400">+{additions}</span> <span className="text-red-600 dark:text-red-400">−{deletions}</span>
-    </span>
   )
 }
 
@@ -340,112 +337,6 @@ function DiffThumb() {
         <div key={i} className={`h-1.5 rounded-full ${r}`} />
       ))}
     </div>
-  )
-}
-
-function Changes({ changes, pr }: { changes: FileChange[]; pr?: ChatDetailsData['pr'] }) {
-  const [open, setOpen] = useState<Set<string>>(() => new Set())
-  const [wrap, setWrap] = useState(false)
-  const withPatch = changes.filter((c) => c.patch)
-  const anyOpen = withPatch.some((c) => open.has(c.path))
-  const toggle = (path: string) =>
-    setOpen((current) => {
-      const next = new Set(current)
-      if (!next.delete(path)) next.add(path)
-      return next
-    })
-  return (
-    <div className="flex min-h-full flex-col text-sm">
-      {/* Icons line up with the tab icons above (14px from the panel edge); the buttons sit 5px from the right, like the tab bar's. */}
-      <div className="flex h-10 shrink-0 items-center gap-2 border-y pr-[5px] pl-[14px]">
-        <GitPullRequestIcon className="size-3.5 text-muted-foreground" />
-        {pr ? (
-          <a href={pr.url} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 hover:underline">
-            <span className="truncate">{pr.number ? `Pull request #${pr.number}` : 'Pull request'}</span>
-            <ExternalLinkIcon className="size-3 shrink-0 text-muted-foreground" />
-          </a>
-        ) : (
-          <span className="text-muted-foreground">No pull request yet</span>
-        )}
-        {changes.length > 0 && (
-          <span className={`ml-auto text-xs ${withPatch.length > 0 ? 'mr-1' : 'pr-[9px]'}`}>
-            <Stat additions={sum(changes, 'additions')} deletions={sum(changes, 'deletions')} />
-          </span>
-        )}
-        {withPatch.length > 0 && (
-          <div className="flex shrink-0 items-center gap-0.5">
-            <Tip label="Wrap lines">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className={`${BAR_BUTTON} transition-none ${wrap ? 'bg-foreground/[0.07] text-foreground hover:bg-foreground/[0.07]' : ''}`}
-                aria-label="Wrap lines"
-                aria-pressed={wrap}
-                onClick={() => setWrap(!wrap)}
-              >
-                <WrapTextIcon />
-              </Button>
-            </Tip>
-            <Tip label={anyOpen ? 'Collapse all' : 'Expand all'}>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className={BAR_BUTTON}
-                aria-label={anyOpen ? 'Collapse all' : 'Expand all'}
-                onClick={() => setOpen(anyOpen ? new Set() : new Set(withPatch.map((c) => c.path)))}
-              >
-                {anyOpen ? <ChevronsDownUpIcon /> : <ChevronsUpDownIcon />}
-              </Button>
-            </Tip>
-          </div>
-        )}
-      </div>
-      {changes.length === 0 ? (
-        <EmptyState figure="branches" title="No changes yet" description="Files the agent edits show up here, with their diff stats." />
-      ) : (
-        <ul className="divide-y border-b">
-          {changes.map((c) => (
-            <ChangeRow key={c.path} change={c} open={open.has(c.path)} onToggle={() => toggle(c.path)} wrap={wrap} />
-          ))}
-        </ul>
-      )}
-    </div>
-  )
-}
-
-/** One changed file: its path and stats, and with a patch, a toggle that opens the diff below it (Pierre diffs, unified, no header of its own). */
-function ChangeRow({ change: c, open, onToggle, wrap }: { change: FileChange; open: boolean; onToggle: () => void; wrap: boolean }) {
-  const { resolvedTheme } = useTheme()
-  const slash = c.path.lastIndexOf('/')
-  const row = (
-    <>
-      {/* Without a patch the chevron's slot stays, so every path starts on the same x. */}
-      <ChevronRightIcon className={`size-3.5 shrink-0 text-muted-foreground ${c.patch ? '' : 'invisible'} ${open ? 'rotate-90' : ''}`} />
-      <span className="min-w-0 flex-1 truncate" title={c.path}>
-        <span className="text-muted-foreground">{c.path.slice(0, slash + 1)}</span>
-        {c.path.slice(slash + 1)}
-      </span>
-      <Stat additions={c.additions} deletions={c.deletions} />
-    </>
-  )
-  const box = 'flex h-9 w-full items-center gap-2 px-[14px] text-left font-mono text-xs'
-  return (
-    <li>
-      {c.patch ? (
-        <button type="button" aria-expanded={open} className={`${box} hover:bg-foreground/[0.04]`} onClick={onToggle}>
-          {row}
-        </button>
-      ) : (
-        <div className={box}>{row}</div>
-      )}
-      {open && c.patch && (
-        <PatchDiff
-          patch={c.patch}
-          className="block border-t [--diffs-bg:var(--background)] [--diffs-font-size:12px] [--diffs-line-height:20px] [--diffs-font-family:var(--font-mono)] [--diffs-header-font-family:var(--font-sans)]"
-          options={{ diffStyle: 'unified', disableFileHeader: true, overflow: wrap ? 'wrap' : 'scroll', themeType: resolvedTheme === 'dark' ? 'dark' : 'light' }}
-        />
-      )}
-    </li>
   )
 }
 
