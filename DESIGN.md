@@ -42,12 +42,14 @@ Rules that tooling enforces live in `AGENTS.md` and `packages/ui/README.md`; thi
   run the full height, flush to the window's right edge, with no card or outer border: one full-height hairline (`border-l`) separates
   them from the chat, and the resize handle sits on it. Details hide below `lg`.
 - **Chat details tabs** work like a browser's: an open-tabs strip (Progress, Artifacts, Changes, which reads `#N` once a PR exists,
-  Computer, and one tab per pull request, keyed by its url), each a 28px 6px-radius tab whose icon turns into an X on hover (nothing
+  Computer, and one tab per pull request, keyed by its url, always named `#N`, never its title), each a 28px 6px-radius tab whose icon turns into an X on hover (nothing
   moves), then `+` for a New tab. Closing the selected tab selects its neighbour; closing the last leaves a New tab. Opening a panel
-  that is already open focuses it; the agent's reveals (Progress, Computer, a shown preview in Artifacts) open or focus their tab.
+  that is already open focuses it; the agent's reveals (Progress, Computer, a shown preview in Artifacts, a pull request it
+  just opened) open or focus their tab.
   Open tabs and the selected one are remembered per session. A **New tab** is an index in a centred 420px column: a search box
   ("Search PRs, artifacts and tools") that filters by name, then Pull requests, Artifacts and Panels, each a list of 30px rows that
-  open in the New tab's place; empty sections are left out, and a search with no results says `No matches`.
+  open in the New tab's place (a PR on one row: icon, title, `#N`, diff stats; image thumbnails get a 15% hairline; a panel the
+  sections above already list, like the PR's `#N`, is left out); empty sections are left out, and a search with no results says `No matches`.
 - **Edges:** the page title and the composer start 20px from the column's edge (the composer 20px from the bottom too); the transcript
   is indented to 30px, a step in from both, so messages read as the content between them. The transcript keeps `max-w-3xl`.
 - **Headers** are 48px, one line, the title in regular 13px. No subtitles, no badges. A header divider exists only when it can span
