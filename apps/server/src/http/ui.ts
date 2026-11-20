@@ -18,6 +18,7 @@ import { forgetUsage, getUsage } from "../services/usage";
 import { composioLink, composioStatus, composioUnlink, connectComposio, disconnectComposio } from "../services/composio";
 import { deleteMcpServer, listMcpServers, putMcpServer } from "../services/mcpServers";
 import { forgetGithubRepos, githubRepos } from "../services/githubRepos";
+import { decideLocal, localAccessView, revokeGrant, revokeGrants, setLocalAccess } from "../services/local";
 
 const safeEqual = (a: string, b: string) => {
   const x = Buffer.from(a);
@@ -40,6 +41,8 @@ const RunKind = Schema.Struct({ kind: Schema.Literals(["image", "trial"]) });
 const Approve = Schema.Struct({ reviewed: Loose, run: Loose });
 const Reject = Schema.Struct({ reason: Loose });
 const Default = Schema.Struct({ default: Loose });
+const LocalDecision = Schema.Struct({ decision: Loose, minutes: Loose });
+const Enabled = Schema.Struct({ enabled: Loose });
 
 const str = (v: unknown) => v as string;
 
@@ -211,6 +214,38 @@ export function uiApp(app: App): Hono {
         return c.json(yield* service((a) => listEvents(a, id(c), q)));
       }),
     ),
+  );
+
+  // ---- local access: the agent's requests to use this computer (services/local.ts, docs/local-access.md)
+  api.post(
+    "/api/dorks/:id/local/:requestId",
+    on((c) =>
+      body(c, LocalDecision).pipe(
+        Effect.flatMap((b) => service((a) => decideLocal(a, owned(a, id(c)).id, c.req.param("requestId") as string, b.decision, b.minutes))),
+        ok(c),
+      ),
+    ),
+  );
+  api.get(
+    "/api/local-access",
+    on((c) => service((a) => c.json(localAccessView(a)))),
+  );
+  api.put(
+    "/api/local-access",
+    on((c) =>
+      body(c, Enabled).pipe(
+        Effect.flatMap((b) => service((a) => setLocalAccess(a, b.enabled))),
+        ok(c),
+      ),
+    ),
+  );
+  api.delete(
+    "/api/local-access/grants",
+    on((c) => ok(c)(service((a) => revokeGrants(a, c.req.query("dork") || undefined)))),
+  );
+  api.delete(
+    "/api/local-access/grants/:grantId",
+    on((c) => ok(c)(service((a) => revokeGrant(a, c.req.param("grantId") as string)))),
   );
 
   // ---- PR subscriptions

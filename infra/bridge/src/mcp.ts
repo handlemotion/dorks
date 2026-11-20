@@ -159,6 +159,77 @@ const TOOLS: Tool[] = [
       return content;
     },
   },
+  // ---- local_*: the owner's own computer (docs/local-access.md). Every call asks the owner, who sees the exact command or path in the
+  // chat and allows it (once, or the same thing for a while) or declines; the tool waits for that answer and returns the result.
+  {
+    name: "local_run",
+    title: "Run a command on the user's computer",
+    description:
+      "Ask the user to run one shell command on their own computer (not this sandbox) and get its output. Use it only for what exists there " +
+      "and not here: a CLI signed in to their accounts, a local-only service, their simulators or devices, files outside this repo. The user " +
+      "sees `command`, `cwd` and `reason` in the chat and must allow it; this call waits for their answer (up to 5 minutes, then use local_wait). " +
+      "One request at a time. Runs non-interactively in their login shell (stdin closed, no TTY), so pass flags that skip prompts. Prefer " +
+      "read-only commands; never ask for secrets, keychains or credential files, and never to delete or change things unless the user asked " +
+      "for exactly that. If they decline, do not ask again for the same thing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        command: { type: "string", description: "The exact shell command, e.g. `xcrun simctl list devices booted`. Shown to the user verbatim." },
+        cwd: { type: "string", description: "Optional: the folder to run in, absolute or starting with ~/. Default: the user's home folder." },
+        reason: { type: "string", description: "One sentence for the user: why you need this and what you will do with the output." },
+        timeoutSeconds: { type: "integer", minimum: 1, maximum: 600, description: "Optional: stop it after this many seconds. Default 120." },
+      },
+      required: ["command", "reason"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: true, openWorldHint: true },
+    async run(args, sock) {
+      if (typeof args.command !== "string" || !args.command.trim()) throw new ToolError("`command` is required.");
+      if (typeof args.reason !== "string" || !args.reason.trim()) throw new ToolError("`reason` must tell the user why you need it.");
+      return askLocal(sock, { kind: "run", command: args.command, cwd: args.cwd, reason: args.reason, timeoutSeconds: args.timeoutSeconds });
+    },
+  },
+  {
+    name: "local_read",
+    title: "Read a file on the user's computer",
+    description:
+      "Ask the user to let you read one text file on their own computer (not this sandbox), e.g. a local config, a log, a file they mentioned " +
+      "that is not in the repo. The user sees `path` and `reason` in the chat and must allow it; this call waits for their answer. At most " +
+      "256 KB of text. Never ask for keys, tokens, keychains or other credentials.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "The file, absolute or starting with ~/, e.g. ~/Library/Logs/MyApp/app.log." },
+        reason: { type: "string", description: "One sentence for the user: why you need it." },
+      },
+      required: ["path", "reason"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true },
+    async run(args, sock) {
+      if (typeof args.path !== "string" || !args.path.trim()) throw new ToolError("`path` is required.");
+      if (typeof args.reason !== "string" || !args.reason.trim()) throw new ToolError("`reason` must tell the user why you need it.");
+      return askLocal(sock, { kind: "read", path: args.path, reason: args.reason });
+    },
+  },
+  {
+    name: "local_wait",
+    title: "Keep waiting for a request on the user's computer",
+    description:
+      "Keep waiting for a local_run or local_read request that was still waiting for the user (or still running) when that call returned. " +
+      "Waits up to 5 more minutes and returns the answer and the result. A request the user did not answer expires 10 minutes after you asked.",
+    inputSchema: {
+      type: "object",
+      properties: { requestId: { type: "string", description: "The request id the earlier call returned." } },
+      required: ["requestId"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
+    async run(args, sock) {
+      if (typeof args.requestId !== "string" || !args.requestId) throw new ToolError("`requestId` is required.");
+      return waitLocal(sock, args.requestId);
+    },
+  },
   // ---- machine_*: the build this session's machine starts from (docs/builds.md). Deferred like every MCP tool, so a session that never
   // touches its machine pays only for these names. The server scopes every call to this dork's own build and never returns a secret.
   {
@@ -302,6 +373,52 @@ const TOOLS: Tool[] = [
     },
   },
 ];
+
+// ---- local_*: ask, then wait in short polls (the backend answers each within 8 s) until the owner answered and it finished.
+const LOCAL_WAIT_MS = 5 * 60_000;
+type LocalResult = {
+  requestId: string;
+  kind: "run" | "read";
+  status: "pending" | "running" | "denied" | "expired" | "done" | "failed";
+  exitCode?: number | null;
+  output?: string;
+  truncated?: boolean;
+  error?: string;
+};
+
+async function askLocal(sock: string, args: Record<string, unknown>): Promise<string> {
+  const r = await rpcCall<LocalResult>(sock, "local", { action: "request", ...args });
+  return waitLocal(sock, r.requestId, r);
+}
+
+async function waitLocal(sock: string, requestId: string, first?: LocalResult): Promise<string> {
+  const deadline = Date.now() + LOCAL_WAIT_MS;
+  let r = first;
+  while (!r || ((r.status === "pending" || r.status === "running") && Date.now() < deadline)) {
+    r = await rpcCall<LocalResult>(sock, "local", { action: "wait", requestId, waitMs: 8_000 });
+  }
+  return describeLocal(r);
+}
+
+export function describeLocal(r: LocalResult): string {
+  const kind = r.kind;
+  const id = `(request ${r.requestId})`;
+  switch (r.status) {
+    case "pending":
+      return `Still waiting for the user to answer ${id}. Call local_wait with this requestId to keep waiting, or carry on without it. Do not ask again meanwhile.`;
+    case "running":
+      return `The user allowed it and it is still running ${id}. Call local_wait with this requestId for the result.`;
+    case "denied":
+      return `The user declined ${id}. Do not ask again for the same thing: continue without it, or say in your final answer what they could run themselves.`;
+    case "expired":
+      return `The user did not answer in time ${id}. Continue without it, or ask in your final answer.`;
+  }
+  const body = r.output ?? "";
+  const cut = r.truncated ? (kind === "read" ? "\n\n[Only the first 256 KB of the file.]" : "\n\n[The middle of the output was cut.]") : "";
+  if (kind === "read") return r.status === "done" ? body + cut : `Could not read it: ${r.error ?? "unknown error"}`;
+  const head = r.error ? `${r.error}${r.exitCode != null ? ` Exit code ${r.exitCode}.` : ""}` : `Exit code ${r.exitCode ?? "unknown"}.`;
+  return body.trim() ? `${head}\n\n${body}${cut}` : `${head} No output.`;
+}
 
 type MachineRun = { id: string; kind: string; status: string; step: string | null; error: string | null; exitCode: number | null; startedBy: string; createdAt: number; finishedAt: number | null };
 type MachineVar = { name: string; secret: boolean; buildTime: boolean; value?: string; requested: boolean };

@@ -288,4 +288,42 @@ export const MIGRATIONS: string[] = [
     created_at INTEGER NOT NULL
   );
   `,
+  `
+  -- Local access (services/local.ts, docs/local-access.md): an agent's requests to run a command or read a file on the owner's own
+  -- computer, and the time-limited permissions the owner granted. Nothing runs without a row the owner allowed.
+  CREATE TABLE local_requests (
+    id TEXT PRIMARY KEY,
+    dork_id TEXT NOT NULL REFERENCES dorks (id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('run', 'read')),
+    command TEXT,
+    cwd TEXT,
+    path TEXT,
+    reason TEXT NOT NULL,
+    timeout_ms INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'denied', 'expired', 'done', 'failed')),
+    grant_id TEXT,
+    exit_code INTEGER,
+    output TEXT,
+    truncated INTEGER NOT NULL DEFAULT 0,
+    error TEXT,
+    expires_at INTEGER NOT NULL,
+    decided_at INTEGER,
+    finished_at INTEGER,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX local_requests_dork ON local_requests (dork_id, status);
+
+  CREATE TABLE local_grants (
+    id TEXT PRIMARY KEY,
+    dork_id TEXT NOT NULL REFERENCES dorks (id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('run', 'read')),
+    command TEXT,           -- run: this exact command ...
+    cwd TEXT,               -- ... in this exact folder
+    dir TEXT,               -- read: any file under this folder (resolved, symlinks followed)
+    expires_at INTEGER NOT NULL,
+    revoked INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX local_grants_dork ON local_grants (dork_id, revoked, expires_at);
+  `,
 ];

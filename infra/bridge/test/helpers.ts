@@ -169,6 +169,7 @@ export class FakeTransport implements Transport {
   showPreview = async (port: number, opts: { title?: string }) => ({ port, url: `https://sim-${port}.example/`, ...(opts.title ? { title: opts.title } : {}) });
   shareImage = async (_data: string) => ({ id: "0".repeat(32) });
   getImage = async (_id: string) => null;
+  local = async (_args: Record<string, unknown>) => ({ requestId: "r1", status: "pending" });
   unsubscribePr = async (ref: PrRef) => {
     this.prCalls.push({ op: "unsub", ref });
     if (this.prError) throw this.prError;
