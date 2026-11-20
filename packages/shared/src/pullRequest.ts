@@ -49,6 +49,17 @@ export interface PullRequestChecks {
   pending: number;
   /** The failing checks' names (at most a few). */
   failing: string[];
+  /** Every check, failing first, then running, then passed. */
+  runs: PullRequestCheck[];
+}
+
+export interface PullRequestCheck {
+  name: string;
+  outcome: "pass" | "fail" | "pending";
+  /** GitHub's page for it (the run's log), when it has one. */
+  url?: string;
+  /** What it said: a run's title, a status's description. */
+  summary?: string;
 }
 
 export interface PullRequestView {

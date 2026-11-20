@@ -116,12 +116,21 @@ function filesOf(list: Json[]): PullRequestFile[] {
   });
 }
 
+/** A check run's outcome; null for cancelled or stale runs (superseded, they say nothing about the code). */
+function runOutcome(r: Json): "pass" | "fail" | "pending" | null {
+  if (r.status !== "completed") return "pending";
+  if (["success", "neutral", "skipped"].includes(s(r.conclusion))) return "pass";
+  if (["failure", "timed_out", "startup_failure", "action_required"].includes(s(r.conclusion))) return "fail";
+  return null;
+}
+
 /** Check runs (Actions and apps) and legacy commit statuses, folded into one count. */
 function checksOf(runs: Json[], statuses: Json[]): PullRequestChecks {
-  const c: PullRequestChecks = { total: 0, passed: 0, failed: 0, pending: 0, failing: [] };
-  const add = (outcome: "pass" | "fail" | "pending" | null, name: string) => {
+  const c: PullRequestChecks = { total: 0, passed: 0, failed: 0, pending: 0, failing: [], runs: [] };
+  const add = (outcome: "pass" | "fail" | "pending" | null, name: string, url?: string, summary?: string) => {
     if (!outcome) return;
     c.total++;
+    c.runs.push({ name, outcome, url: url || undefined, summary: summary || undefined });
     if (outcome === "pass") c.passed++;
     else if (outcome === "pending") c.pending++;
     else {
@@ -129,14 +138,11 @@ function checksOf(runs: Json[], statuses: Json[]): PullRequestChecks {
       if (c.failing.length < MAX_FAILING) c.failing.push(name);
     }
   };
-  for (const r of runs) {
-    if (r.status !== "completed") add("pending", s(r.name));
-    else if (["success", "neutral", "skipped"].includes(s(r.conclusion))) add("pass", s(r.name));
-    else if (["failure", "timed_out", "startup_failure", "action_required"].includes(s(r.conclusion))) add("fail", s(r.name));
-    else add(null, s(r.name)); // cancelled or stale: superseded, says nothing about the code
-  }
+  for (const r of runs) add(runOutcome(r), s(r.name), s(r.html_url) || s(r.details_url), s(obj(r.output).title));
   // The combined status lists each context's latest state.
-  for (const st of statuses) add(st.state === "success" ? "pass" : st.state === "pending" ? "pending" : "fail", s(st.context));
+  for (const st of statuses) add(st.state === "success" ? "pass" : st.state === "pending" ? "pending" : "fail", s(st.context), s(st.target_url), s(st.description));
+  const order = { fail: 0, pending: 1, pass: 2 };
+  c.runs.sort((a, b) => order[a.outcome] - order[b.outcome] || a.name.localeCompare(b.name));
   return c;
 }
 

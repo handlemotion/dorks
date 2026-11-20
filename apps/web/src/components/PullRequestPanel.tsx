@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
-  CheckIcon,
   CircleAlertIcon,
   CircleCheckIcon,
-  CircleDotIcon,
   CircleXIcon,
   ChevronDownIcon,
   ChevronRightIcon,
@@ -60,7 +58,7 @@ export function Stat({ additions, deletions }: { additions: number; deletions: n
   )
 }
 
-type Section = 'overview' | 'files' | 'comments'
+type Section = 'overview' | 'files' | 'checks' | 'comments'
 
 export function PullRequestPanel({
   changes,
@@ -158,11 +156,10 @@ function PullRequestView({ view, data, now, onAsk }: { view: PullRequestView; da
             </Tip>
           </span>
         </div>
-        <h2 className="mt-2 text-sm font-medium text-pretty">
-          {view.title} <span className="font-normal text-muted-foreground tabular-nums">#{view.number}</span>
+        <h2 className="mt-1.5 text-lg leading-snug text-pretty">
+          {view.title} <span className="text-muted-foreground tabular-nums">#{view.number}</span>
         </h2>
       </div>
-      <MergeBox view={view} data={data} onAsk={onAsk} />
       <Tabs value={section} onValueChange={(v) => setSection(v as Section)} className="min-h-0 flex-1 gap-0">
         <div className="flex h-10 shrink-0 items-center gap-0.5 border-b p-[5px]">
           <TabsList className="h-[30px]! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
@@ -172,45 +169,53 @@ function PullRequestView({ view, data, now, onAsk }: { view: PullRequestView; da
             <TabsTrigger value="files" className={TAB_CLASS}>
               Files <span className="text-muted-foreground tabular-nums">{view.changedFiles || files.length}</span>
             </TabsTrigger>
+            {view.checks.total > 0 && (
+              <TabsTrigger value="checks" className={TAB_CLASS}>
+                Checks <ChecksCount checks={view.checks} />
+              </TabsTrigger>
+            )}
             <TabsTrigger value="comments" className={TAB_CLASS}>
               Comments {view.comments.length > 0 && <span className="text-muted-foreground tabular-nums">{view.comments.length}</span>}
             </TabsTrigger>
           </TabsList>
-          {section === 'files' && withPatch.length > 0 && (
-            <div className="ml-auto flex shrink-0 items-center gap-0.5">
-              <span className="mr-1 text-xs">
-                <Stat additions={view.additions} deletions={view.deletions} />
-              </span>
-              <Tip label="Wrap lines">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className={`${BAR_BUTTON} transition-none ${wrap ? 'bg-foreground/[0.07] text-foreground hover:bg-foreground/[0.07]' : ''}`}
-                  aria-label="Wrap lines"
-                  aria-pressed={wrap}
-                  onClick={() => setWrap(!wrap)}
-                >
-                  <WrapTextIcon />
-                </Button>
-              </Tip>
-              <Tip label={anyOpen ? 'Collapse all' : 'Expand all'}>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className={BAR_BUTTON}
-                  aria-label={anyOpen ? 'Collapse all' : 'Expand all'}
-                  onClick={() => setOpen(anyOpen ? new Set() : new Set(withPatch.map((c) => c.path)))}
-                >
-                  {anyOpen ? <ChevronsDownUpIcon /> : <ChevronsUpDownIcon />}
-                </Button>
-              </Tip>
-            </div>
-          )}
+          <PrActions view={view} data={data} onAsk={onAsk} />
         </div>
         <TabsContent value="overview">
           <Overview view={view} />
         </TabsContent>
         <TabsContent value="files">
+          {withPatch.length > 0 && (
+            <div className="flex h-9 items-center gap-0.5 border-b pr-[5px] pl-[14px]">
+              <span className="text-xs">
+                <Stat additions={view.additions} deletions={view.deletions} />
+              </span>
+              <span className="ml-auto flex items-center gap-0.5">
+                <Tip label="Wrap lines">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className={`${BAR_BUTTON} size-7! transition-none ${wrap ? 'bg-foreground/[0.07] text-foreground hover:bg-foreground/[0.07]' : ''}`}
+                    aria-label="Wrap lines"
+                    aria-pressed={wrap}
+                    onClick={() => setWrap(!wrap)}
+                  >
+                    <WrapTextIcon />
+                  </Button>
+                </Tip>
+                <Tip label={anyOpen ? 'Collapse all' : 'Expand all'}>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className={`${BAR_BUTTON} size-7!`}
+                    aria-label={anyOpen ? 'Collapse all' : 'Expand all'}
+                    onClick={() => setOpen(anyOpen ? new Set() : new Set(withPatch.map((c) => c.path)))}
+                  >
+                    {anyOpen ? <ChevronsDownUpIcon /> : <ChevronsUpDownIcon />}
+                  </Button>
+                </Tip>
+              </span>
+            </div>
+          )}
           <FileList
             changes={files}
             open={open}
@@ -223,6 +228,9 @@ function PullRequestView({ view, data, now, onAsk }: { view: PullRequestView; da
               })
             }
           />
+        </TabsContent>
+        <TabsContent value="checks">
+          <Checks view={view} />
         </TabsContent>
         <TabsContent value="comments">
           <Comments view={view} now={now} onAsk={onAsk} />
@@ -288,92 +296,16 @@ function useMergeMethod(allowed: MergeMethod[]) {
   return [method, set] as const
 }
 
-const count = (n: number) => `${n} ${n === 1 ? 'check' : 'checks'}`
-
-type Tone = 'ok' | 'warn' | 'bad' | 'muted' | 'busy'
-
-/** One line of the merge box, as on GitHub: a status icon, a few words, and at most one small action on the right. */
-type Row = { tone: Tone; title: string; action?: ReactNode }
-
-const ROW_ICON: Record<Tone, ReactNode> = {
-  ok: <CircleCheckIcon className="size-3.5 text-emerald-600 dark:text-emerald-400" />,
-  warn: <CircleDotIcon className="size-3.5 text-amber-600 dark:text-amber-400" />,
-  bad: <CircleXIcon className="size-3.5 text-red-600 dark:text-red-400" />,
-  muted: <CircleAlertIcon className="size-3.5 text-muted-foreground" />,
-  busy: <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />,
-}
-
-/** The checks line: all passed, some failing (named), or still running. Absent when the PR has no checks. */
-function checksRow(view: PullRequestView, onAsk?: (text: string) => void): Row | undefined {
-  const { checks } = view
-  if (!checks.total) return undefined
-  if (checks.failed) {
-    const names = checks.failing.length === checks.failed ? checks.failing.join(', ') : count(checks.failed)
-    return {
-      tone: 'bad',
-      title: `${names} failing`,
-      action: onAsk && (
-        <Button size="xs" variant="outline" onClick={() => onAsk(`The pull request's checks are failing (${checks.failing.join(', ')}). Find out why, fix it and push.`)}>
-          Ask to fix
-        </Button>
-      ),
-    }
-  }
-  if (checks.pending) return { tone: 'warn', title: `${count(checks.pending)} running` }
-  return { tone: 'ok', title: `${count(checks.passed)} passed` }
-}
-
-/** The branch line: draft, conflicts, out of date, still being checked, or clean. */
-function branchRow(view: PullRequestView, busy: boolean, onAsk?: (text: string) => void, onUpdate?: () => void): Row {
-  const base = view.baseRef
-  if (view.draft) return { tone: 'muted', title: 'Draft. Mark it ready on GitHub to merge.' }
-  switch (view.mergeableState) {
-    case 'dirty':
-      return {
-        tone: 'bad',
-        title: `Conflicts with ${base}`,
-        action: onAsk && (
-          <Button size="xs" variant="outline" onClick={() => onAsk(`Merge ${base} into this branch, resolve the conflicts, run the tests and push.`)}>
-            Ask to resolve
-          </Button>
-        ),
-      }
-    case 'behind':
-      return {
-        tone: 'warn',
-        title: `Behind ${base}`,
-        action: onUpdate && (
-          <Button size="xs" variant="outline" disabled={busy} onClick={onUpdate}>
-            {busy && <LoaderIcon className="animate-spin" />}
-            Update branch
-          </Button>
-        ),
-      }
-    case 'unknown':
-      return view.mergeable === false ? { tone: 'bad', title: `Can't merge into ${base}` } : { tone: 'busy', title: 'Checking for conflicts' }
-    default:
-      return { tone: 'ok', title: `No conflicts with ${base}` }
-  }
-}
-
-/** Branch protection that is not a check: a required review. */
-function reviewRow(view: PullRequestView): Row | undefined {
-  if (view.mergeableState !== 'blocked' || view.checks.failed || view.checks.pending) return undefined
-  return { tone: 'warn', title: 'Review required' }
-}
-
-/** Whether the merge button is offered: GitHub's own rule (clean, unstable, blocked for admins, or not computed yet). */
-const canMerge = (view: PullRequestView) => !view.draft && view.mergeableState !== 'dirty' && view.mergeableState !== 'behind' && view.mergeableState !== 'draft' && view.mergeable !== false
-
 /** GitHub's merge green, at the small control size. */
 const MERGE_BUTTON = 'bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500'
 
 /**
- * The merge box, laid out like GitHub's: status rows (checks, review, branch) split by full hairlines, then the green merge button
- * when merging is possible. A click asks once more in place, since a merge cannot be taken back; GitHub's reason shows when it
- * refuses. When it can't merge, there is no dead button: the rows say why and offer the fix.
+ * The PR's one next step, on the right of its tabs, GitHub's way: the green merge button when it can merge (a click asks once more
+ * in place, since a merge cannot be taken back), or the button that unblocks it, which names the problem itself ("Resolve
+ * conflicts", "Update branch", "Fix checks"). Nothing for a draft, a merged or a closed PR: the state above says so. GitHub's
+ * reason shows under the title when it refuses.
  */
-function MergeBox({ view, data, onAsk }: { view: PullRequestView; data?: PullRequestPanelData; onAsk?: (text: string) => void }) {
+function PrActions({ view, data, onAsk }: { view: PullRequestView; data?: PullRequestPanelData; onAsk?: (text: string) => void }) {
   const [method, setMethod] = useMergeMethod(view.mergeMethods)
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState<'merge' | 'update'>()
@@ -383,8 +315,7 @@ function MergeBox({ view, data, onAsk }: { view: PullRequestView; data?: PullReq
     setConfirming(false)
     setError(undefined)
   }, [view.headSha, view.state])
-
-  if (view.state !== 'open') return <Closed view={view} />
+  if (view.state !== 'open' || view.draft) return null
   const run = async (kind: 'merge' | 'update', f: () => Promise<void>) => {
     setBusy(kind)
     setError(undefined)
@@ -397,51 +328,122 @@ function MergeBox({ view, data, onAsk }: { view: PullRequestView; data?: PullReq
       setBusy(undefined)
     }
   }
-  const { merge, updateBranch } = data ?? {}
-  const rows = [checksRow(view, onAsk), reviewRow(view), branchRow(view, busy === 'update', onAsk, updateBranch && (() => void run('update', () => updateBranch(view.headSha))))].filter(
-    (r): r is Row => r !== undefined,
-  )
+  const action = nextStep({ view, data, onAsk, method, setMethod, confirming, setConfirming, busy, run })
+  if (!action && !error && !data?.error) return null
   return (
-    <div className="border-t">
-      <ul className="divide-y">
-        {rows.map((r) => (
-          <li key={r.title} className="flex h-9 items-center gap-2 px-[14px]">
-            <span className="shrink-0">{ROW_ICON[r.tone]}</span>
-            <span className="min-w-0 flex-1 truncate">{r.title}</span>
-            {r.action && <span className="shrink-0">{r.action}</span>}
-          </li>
-        ))}
-      </ul>
-      {merge && canMerge(view) && (
-        <div className="flex h-11 items-center gap-2 border-t px-[14px]">
-          {confirming ? (
-            <>
-              <Button size="xs" className={MERGE_BUTTON} disabled={busy === 'merge'} onClick={() => void run('merge', () => merge(method, view.headSha))}>
-                {busy === 'merge' && <LoaderIcon className="animate-spin" />}
-                Confirm {METHOD_BUTTON[method].toLowerCase()}
-              </Button>
-              <Button size="xs" variant="ghost" disabled={busy === 'merge'} onClick={() => setConfirming(false)}>
-                Cancel
-              </Button>
-            </>
-          ) : (
-            <MergeButton view={view} method={method} setMethod={setMethod} disabled={busy !== undefined} onMerge={() => setConfirming(true)} />
-          )}
-        </div>
+    <div className="ml-auto flex shrink-0 items-center gap-1.5 pr-[1px]">
+      {(error || data?.error) && (
+        <Tip label={error ?? `Could not refresh from GitHub: ${data?.error}`}>
+          <CircleAlertIcon className="size-3.5 text-red-600 dark:text-red-400" aria-label={error ?? data?.error} />
+        </Tip>
       )}
-      {(error || data?.error) && <p className="border-t px-[14px] py-2.5 text-xs text-red-600 dark:text-red-400">{error ?? `Could not refresh from GitHub: ${data?.error}`}</p>}
+      {action}
     </div>
   )
 }
 
-/** A merged or closed PR: who merged it, from which branch into which. */
-function Closed({ view }: { view: PullRequestView }) {
-  if (view.state === 'closed') return <p className="border-t px-[14px] py-2.5 text-xs text-muted-foreground">Closed without merging.</p>
+type Step = {
+  view: PullRequestView
+  data?: PullRequestPanelData
+  onAsk?: (text: string) => void
+  method: MergeMethod
+  setMethod: (m: MergeMethod) => void
+  confirming: boolean
+  setConfirming: (c: boolean) => void
+  busy?: 'merge' | 'update'
+  run: (kind: 'merge' | 'update', f: () => Promise<void>) => Promise<void>
+}
+
+/** The buttons for the PR's next step: unblock it, or merge it (with the confirm). */
+function nextStep({ view, data, onAsk, method, setMethod, confirming, setConfirming, busy, run }: Step): ReactNode {
+  const { merge, updateBranch } = data ?? {}
+  const { checks, baseRef } = view
+  if (view.mergeableState === 'dirty')
+    return (
+      onAsk && (
+        <Button size="xs" variant="outline" className="text-red-600 dark:text-red-400" onClick={() => onAsk(`Merge ${baseRef} into this branch, resolve the conflicts, run the tests and push.`)}>
+          Resolve conflicts
+        </Button>
+      )
+    )
+  if (view.mergeableState === 'behind')
+    return (
+      updateBranch && (
+        <Button size="xs" variant="outline" disabled={busy === 'update'} onClick={() => void run('update', () => updateBranch(view.headSha))}>
+          {busy === 'update' && <LoaderIcon className="animate-spin" />}
+          Update branch
+        </Button>
+      )
+    )
+  if (!merge || view.mergeable === false) return null
+  if (confirming)
+    return (
+      <>
+        <Button size="xs" variant="ghost" disabled={busy === 'merge'} onClick={() => setConfirming(false)}>
+          Cancel
+        </Button>
+        <Button size="xs" className={MERGE_BUTTON} disabled={busy === 'merge'} onClick={() => void run('merge', () => merge(method, view.headSha))}>
+          {busy === 'merge' && <LoaderIcon className="animate-spin" />}
+          Confirm {METHOD_BUTTON[method].toLowerCase()}
+        </Button>
+      </>
+    )
   return (
-    <p className="flex flex-wrap items-center gap-1.5 border-t px-[14px] py-2.5 text-xs text-muted-foreground">
-      <CheckIcon className="size-3.5 text-violet-600 dark:text-violet-400" />
-      {view.mergedBy ? `${view.mergedBy.login} merged` : 'Merged'} {view.headRef ? <Branch name={view.headRef} /> : null} into <Branch name={view.baseRef} />
-    </p>
+    <>
+      {checks.failed > 0 && onAsk && (
+        <Button
+          size="xs"
+          variant="outline"
+          className="text-red-600 dark:text-red-400"
+          onClick={() => onAsk(`The pull request's checks are failing (${checks.failing.join(', ')}). Find out why, fix it and push.`)}
+        >
+          Fix checks
+        </Button>
+      )}
+      <MergeButton view={view} method={method} setMethod={setMethod} disabled={busy !== undefined} onMerge={() => setConfirming(true)} />
+    </>
+  )
+}
+
+/** "4", or "1 failing" in red, or "2 running": the Checks tab's count. */
+function ChecksCount({ checks }: { checks: PullRequestView['checks'] }) {
+  if (checks.failed) return <span className="text-red-600 tabular-nums dark:text-red-400">{checks.failed}</span>
+  return <span className="text-muted-foreground tabular-nums">{checks.total}</span>
+}
+
+const CHECK_ICON = {
+  pass: <CircleCheckIcon className="size-3.5 text-emerald-600 dark:text-emerald-400" />,
+  fail: <CircleXIcon className="size-3.5 text-red-600 dark:text-red-400" />,
+  pending: <LoaderIcon className="size-3.5 animate-spin text-amber-600 dark:text-amber-400" />,
+}
+
+/** Every check on the head commit, failing first: its outcome, its name, what it said; a row opens its log on GitHub. */
+function Checks({ view }: { view: PullRequestView }) {
+  return (
+    <ul className="divide-y border-b">
+      {view.checks.runs.map((c, i) => {
+        const row = (
+          <>
+            {CHECK_ICON[c.outcome]}
+            <span className="shrink-0">{c.name}</span>
+            {c.summary && <span className="min-w-0 truncate text-xs text-muted-foreground">{c.summary}</span>}
+            {c.url && <ExternalLinkIcon className="ml-auto size-3 shrink-0 text-muted-foreground" />}
+          </>
+        )
+        const box = 'flex h-9 items-center gap-2 px-[14px]'
+        return (
+          <li key={`${c.name}-${i}`}>
+            {c.url ? (
+              <a href={c.url} target="_blank" rel="noreferrer" className={`${box} hover:bg-foreground/[0.04]`}>
+                {row}
+              </a>
+            ) : (
+              <div className={box}>{row}</div>
+            )}
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 
@@ -471,10 +473,6 @@ function MergeButton({ view, method, setMethod, disabled, onMerge }: { view: Pul
       </DropdownMenu>
     </div>
   )
-}
-
-function Branch({ name }: { name: string }) {
-  return <span className="rounded-sm bg-muted px-1 py-0.5 font-mono text-xs text-foreground">{name}</span>
 }
 
 /** Who opened it, from which branch into which, when, its checks and size; then the description, its sections collapsible. */

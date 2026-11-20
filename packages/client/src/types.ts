@@ -1,7 +1,7 @@
 import type { AgentModelChoice, BuildRepo, ClientEvent, CommentPolicy, DorkState, MachineType, RunView } from "@dorks/shared";
 
 export type { BuildView, BuildVarView, DraftView, RunView, BuildRepo, MachineType } from "@dorks/shared";
-export type { MergeMethod, MergeableState, PullRequestView, PullRequestFile, PullRequestComment, PullRequestChecks, PullRequestPerson } from "@dorks/shared";
+export type { MergeMethod, MergeableState, PullRequestView, PullRequestFile, PullRequestComment, PullRequestChecks, PullRequestCheck, PullRequestPerson } from "@dorks/shared";
 
 export type Provider = "claude" | "codex";
 

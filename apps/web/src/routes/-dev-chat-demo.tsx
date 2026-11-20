@@ -253,7 +253,24 @@ Reconnects go through one \`ReconnectGate\`: a wake starts at most one attempt, 
   additions: 259,
   deletions: 80,
   changedFiles: 5,
-  checks: DEMO_PR_STATE === 'blocked' ? { total: 4, passed: 3, failed: 1, pending: 0, failing: ['e2e'] } : { total: 4, passed: 4, failed: 0, pending: 0, failing: [] },
+  checks:
+    DEMO_PR_STATE === 'blocked'
+      ? {
+          total: 4,
+          passed: 3,
+          failed: 1,
+          pending: 0,
+          failing: ['e2e'],
+          runs: [{ name: 'e2e', outcome: 'fail', summary: '2 tests failed', url: '#' }, ...['check', 'test', 'build'].map((name) => ({ name, outcome: 'pass' as const, url: '#' }))],
+        }
+      : {
+          total: 4,
+          passed: 4,
+          failed: 0,
+          pending: 0,
+          failing: [],
+          runs: ['build', 'check', 'e2e', 'test'].map((name) => ({ name, outcome: 'pass' as const, summary: name === 'e2e' ? '42 tests passed' : undefined, url: '#' })),
+        },
   mergeMethods: ['squash', 'merge', 'rebase'],
   files: [
     { path: 'infra/bridge/src/claude.ts', status: 'modified', additions: 48, deletions: 12 },

@@ -664,7 +664,7 @@ function mockPullRequest(repo: string, number: number, title: string): PullReque
     additions: 1,
     deletions: 1,
     changedFiles: 1,
-    checks: { total: 3, passed: 3, failed: 0, pending: 0, failing: [] },
+    checks: { total: 3, passed: 3, failed: 0, pending: 0, failing: [], runs: ["check", "test", "e2e"].map((name) => ({ name, outcome: "pass" as const })) },
     mergeMethods: ["squash", "merge", "rebase"],
     files: [
       {
