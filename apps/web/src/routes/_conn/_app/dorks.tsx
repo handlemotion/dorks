@@ -20,7 +20,7 @@ import { LocalAccessProvider } from '../../../components/LocalRequest'
 import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, useWide, type ChatDetailsData } from '../../../components/ChatDetails'
 import type { PullRequestPanelData } from '../../../components/PullRequestPanel'
 import { latestTasks, progressStore, progressTurns } from '../../../lib/progress'
-import { withImages, Composer, type AgentProvider, type ModelPicker } from '../../../components/ChatComposer'
+import { withImages, Composer, preferredModel, type AgentProvider, type ModelPicker } from '../../../components/ChatComposer'
 import { ChatMenu } from '../../../components/ChatMenu'
 import { ArchiveButton, PageHeader } from '../../../components/PageHeader'
 import { SetupStatus } from '../../../components/SetupStatus'
@@ -196,7 +196,12 @@ function NewDork({
         pending={pending}
         disabled={disabled || needsClaudeToken}
         error={error}
-        picker={{ choices: settings?.claudeModels ?? [], ...choice, onChange: (model, effort, fast) => setChoice({ model, effort, fast }) }}
+        picker={{
+          choices: settings?.claudeModels ?? [],
+          ...choice,
+          model: choice.model ?? preferredModel(settings?.claudeModels ?? []),
+          onChange: (model, effort, fast) => setChoice({ model, effort, fast }),
+        }}
         upload={actions.uploadImage}
         machine={{ builds: built, buildId, onChange: setPicked }}
         onSubmit={(images) =>

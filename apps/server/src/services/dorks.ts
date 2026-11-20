@@ -107,7 +107,10 @@ export function createDork(
   const text = checkText(message);
   const missing = missingForSession(app, provider);
   if (missing) fail("onboarding_incomplete", missing);
-  const choice = provider === "claude" ? validModelChoice(knownModelChoices(app), input.model, input.effort, input.fast) : { fast: false };
+  // A Claude session with no model chosen starts on Opus (the current one, by its alias) when the agent offers it, not the CLI's default.
+  const choices = provider === "claude" ? knownModelChoices(app) : [];
+  const model = input.model || (choices.some((c) => c.model === "opus") ? "opus" : input.model);
+  const choice = provider === "claude" ? validModelChoice(choices, model, input.effort, input.fast) : { fast: false };
 
   const id = app.uuid();
   const now = app.now();
