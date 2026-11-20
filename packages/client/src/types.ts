@@ -24,6 +24,8 @@ export interface Dork {
   /** Claude: the model and effort chosen for this session (absent: the agent's default). */
   model?: string;
   effort?: string;
+  /** Claude: fast mode on (only for a model that offers it). Absent on older servers. */
+  fast?: boolean;
   /** What the agent confirmed it runs: the model from its init event (a full id), the effort it was started with. */
   agentModel?: string;
   agentEffort?: string;
@@ -48,6 +50,8 @@ export interface CreateDorkInput {
   /** Claude: one of `Settings.claudeModels` (omit for the default), and one of its efforts. */
   model?: string;
   effort?: string;
+  /** Claude: fast mode, for a model that offers it. */
+  fast?: boolean;
 }
 
 /** Plain values and booleans only: the server never returns a secret. */

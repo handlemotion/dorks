@@ -487,10 +487,10 @@ const agentSecrets = Effect.fnUntraced(function* (app: App, dork: DorkRow): Effe
   return { gh, env: { ...secrets, ...buildVars, ...(claude ? { CLAUDE_CODE_OAUTH_TOKEN: claude } : {}) } };
 });
 
-/** The agent's model and effort: Codex's chosen pair, or Claude's model and effort when set. */
+/** The agent's model and effort: Codex's chosen pair, or Claude's model, effort and fast mode when set. */
 function modelFields(dork: DorkRow) {
   if (dork.provider === "codex") return { codexModel: dork.codexModel };
-  return { ...(dork.model ? { model: dork.model } : {}), ...(dork.effort ? { effort: dork.effort } : {}) };
+  return { ...(dork.model ? { model: dork.model } : {}), ...(dork.effort ? { effort: dork.effort } : {}), ...(dork.fast ? { fast: true } : {}) };
 }
 
 const configureFrame = (app: App, dork: DorkRow): Effect.Effect<ToBridge, OnboardingIncomplete> =>

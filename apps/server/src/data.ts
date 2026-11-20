@@ -31,6 +31,8 @@ export interface DorkRow {
   /** Claude: chosen in the UI (undefined: the CLI's default). */
   model?: string;
   effort?: string;
+  /** Claude: fast mode on (only for a model that offers it). */
+  fast: boolean;
   /** What the agent confirmed: the model from its init event, the effort the bridge started it with. */
   agentModel?: string;
   agentEffort?: string;
@@ -97,6 +99,7 @@ export const dorkOf = (r: Row): DorkRow => ({
   codexModelChoices: json(r.codex_model_choices),
   model: u(r.model as string | null),
   effort: u(r.effort as string | null),
+  fast: bool(r.fast),
   agentModel: u(r.agent_model as string | null),
   agentEffort: u(r.agent_effort as string | null),
   modelChoices: json(r.model_choices),
@@ -163,6 +166,7 @@ export const dorkView = (d: DorkRow) => ({
   codexModelChoices: d.codexModelChoices,
   model: d.model,
   effort: d.effort,
+  fast: d.fast,
   agentModel: d.agentModel,
   agentEffort: d.agentEffort,
   modelChoices: d.modelChoices,
