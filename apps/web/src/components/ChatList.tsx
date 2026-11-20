@@ -7,6 +7,7 @@ import { isSortable, useSortable } from '@dnd-kit/react/sortable'
 import { useStoredOrder } from '../lib/storedOrder'
 import { Orb } from './Orb'
 import { SIDEBAR_ROW } from './sidebarChrome'
+import { prStatus } from './PrStatus'
 
 export type PrState = SubscriptionView['state']
 
@@ -111,10 +112,7 @@ function ChatItem({ chat, index, to, active }: { chat: Chat; index: number; to: 
         <span className="min-w-0 flex-1 truncate">{chat.title}</span>
       </Link>
       {chat.pr && (
-        <span
-          data-pr={chat.pr.state ?? 'open'}
-          className="pointer-events-none absolute top-1/2 right-2 z-20 -translate-y-1/2 text-xs tabular-nums data-[pr=closed]:text-muted-foreground data-[pr=merged]:text-violet-600 data-[pr=open]:text-emerald-600 dark:data-[pr=merged]:text-violet-400 dark:data-[pr=open]:text-emerald-400"
-        >
+        <span data-pr={chat.pr.state} className={`pointer-events-none absolute top-1/2 right-2 z-20 -translate-y-1/2 text-xs tabular-nums ${prStatus(chat.pr.state).className}`}>
           #{chat.pr.number}
         </span>
       )}

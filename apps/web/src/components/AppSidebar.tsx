@@ -20,7 +20,7 @@ import { Sidebar, useSidebar } from '@dorks/ui/sidebar'
 import githubDark from '../assets/providers/github-dark.svg'
 import githubLight from '../assets/providers/github-light.svg'
 import { useDisconnect } from './ConnectionGate'
-import { ChatList, type Chat, type ChatRoute } from './ChatList'
+import { ChatList, type Chat, type ChatRoute, type PrState } from './ChatList'
 import { Logo } from './onboarding/List'
 import { OwnerAvatar, ownerOf } from './RepoAvatar'
 import { ownersOf, useOwnerScope } from './ownerScope'
@@ -33,10 +33,10 @@ const PR_NUMBER = /\/pull\/(\d+)/
 /** The name of an `owner/name` repository. */
 const nameOf = (repo: string) => repo.slice(repo.indexOf('/') + 1)
 
-/** Pull request number from the stored PR url. The backend does not keep the number or merged/closed state yet. */
-function prOf(prUrl: string | undefined): Chat['pr'] {
+/** Pull request number from the stored PR url, and its state as the server last saw it. */
+function prOf(prUrl: string | undefined, state: PrState | undefined): Chat['pr'] {
   const n = prUrl && PR_NUMBER.exec(prUrl)?.[1]
-  return n ? { number: Number(n) } : undefined
+  return n ? { number: Number(n), state } : undefined
 }
 
 /** Dork states in which something is moving. Everything else (idle, sleeping, error) is shown as still. */
@@ -46,7 +46,7 @@ export function AppSidebar() {
   const dorks = useDorks(false)
   const disconnect = useDisconnect()
   const github = useGithubRepos()
-  const chats: Chat[] = (dorks ?? []).map((d) => ({ id: d.id, title: d.title, repo: d.repo, working: MOVING.has(d.state), pr: prOf(d.prUrl) }))
+  const chats: Chat[] = (dorks ?? []).map((d) => ({ id: d.id, title: d.title, repo: d.repo, working: MOVING.has(d.state), pr: prOf(d.prUrl, d.prState) }))
   return <AppSidebarView chats={chats} accounts={github} onDisconnect={disconnect} usage={<UsageBar />} />
 }
 

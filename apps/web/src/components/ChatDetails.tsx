@@ -3,7 +3,7 @@ import { useTheme } from 'next-themes'
 import type { SubscriptionView } from '@dorks/shared'
 import { useDefaultLayout, usePanelRef } from 'react-resizable-panels'
 import { PanelResizeHandle } from '@dorks/ui/panel-resize-handle'
-import { ActivityIcon, AppWindowIcon, ExternalLinkIcon, FileIcon, GitMergeIcon, GitPullRequestIcon, LayersIcon, MonitorIcon, PanelLeftIcon, PlusIcon, SearchIcon, XIcon } from 'lucide-react'
+import { ActivityIcon, AppWindowIcon, ExternalLinkIcon, FileIcon, GitPullRequestIcon, LayersIcon, MonitorIcon, PanelLeftIcon, PlusIcon, SearchIcon, XIcon } from 'lucide-react'
 import { Button } from '@dorks/ui/button'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@dorks/ui/input-group'
 import { ResizablePanel, ResizablePanelGroup } from '@dorks/ui/resizable'
@@ -16,6 +16,7 @@ import { Tip } from './Tip'
 import { ProgressPanel } from './ProgressPanel'
 import { useProgress, type ProgressTask, type ProgressTurn } from '../lib/progress'
 import { PullRequestPanel, Stat, sum, TAB_CLASS, type FileChange, type PullRequestPanelData } from './PullRequestPanel'
+import { PrIcon, type PrStatusState } from './PrStatus'
 
 /** A file the agent produced in the chat: a screenshot, a design, a document. */
 export type Artifact = {
@@ -37,7 +38,7 @@ export type ChatDetailsData = {
   tasks?: ProgressTask[]
   artifacts?: Artifact[]
   changes?: FileChange[]
-  pr?: { url: string; number?: number }
+  pr?: { url: string; number?: number; state?: PrStatusState }
   /** The pull request read live from GitHub, with its merge; the Changes tab shows it first. */
   pullRequest?: PullRequestPanelData
   /** The dev servers the agent showed: running previews, tiles in Artifacts that open in place. */
@@ -97,8 +98,14 @@ export function ChatDetails({
   // Once the agent opens a pull request, the Changes tab is that PR, named by its number.
   const view = data.pullRequest?.view
   const prNumber = view?.number ?? data.pr?.number
-  const prMerged = view?.state === 'merged'
-  const prIcon = prMerged ? <GitMergeIcon /> : <GitPullRequestIcon />
+  const prState = view?.state ?? data.pr?.state
+  const prIcon = <PrIcon state={prState} draft={view?.draft} />
+  // The agent just opened a pull request: bring its tab up. A chat that opens with one already open keeps the tab the owner was on.
+  const hadPr = useRef(!!prNumber)
+  useEffect(() => {
+    if (prNumber && !hadPr.current) open('changes')
+    hadPr.current = !!prNumber
+  }, [prNumber, open])
   // The first time the agent reaches for its computer while the chat is open, show its screen; a chat that opens on a computer
   // already used keeps the tab the owner was on.
   const used = data.computer?.used ?? false
@@ -121,8 +128,9 @@ export function ChatDetails({
     if (key.startsWith('pr:')) {
       const url = key.slice(3)
       const pr = prs.find((p) => p.url === url)
-      const text = pr?.title ?? (pr?.number ? `#${pr.number}` : 'Pull request')
-      return { icon: pr?.merged ? <GitMergeIcon /> : <GitPullRequestIcon />, text, title: text }
+      const number = pr?.number ?? Number(/\/pull\/(\d+)/.exec(url)?.[1])
+      const text = number ? `#${number}` : 'Pull request'
+      return { icon: <PrIcon state={pr?.state} draft={pr?.draft} />, text: <span className="tabular-nums">{text}</span>, title: pr?.title ?? text }
     }
     const panel = key as Panel
     if (panel === 'changes' && prNumber) return { icon: prIcon, text: <span className="tabular-nums">#{prNumber}</span>, title: `#${prNumber}` }
@@ -130,13 +138,14 @@ export function ChatDetails({
   }
   // The session's own pull request first (live, with its diff stats), then the others it watches, keyed by url.
   const own: IndexPr[] = view
-    ? [{ url: view.url, title: view.title, repo: view.repo, number: view.number, additions: view.additions, deletions: view.deletions, merged: prMerged }]
+    ? [{ url: view.url, title: view.title, repo: view.repo, number: view.number, additions: view.additions, deletions: view.deletions, state: view.state, draft: view.draft }]
     : data.pr
       ? [
           {
             url: data.pr.url,
-            title: data.pr.number ? `Pull request #${data.pr.number}` : 'Pull request',
+            title: 'Pull request',
             number: data.pr.number,
+            state: data.pr.state,
             repo: repoOf(data.pr.url),
             additions: sum(changes, 'additions'),
             deletions: sum(changes, 'deletions'),
@@ -147,7 +156,7 @@ export function ChatDetails({
     ...own,
     ...(data.subscriptions ?? [])
       .filter((s) => !own.some((o) => o.url === s.url))
-      .map((s) => ({ url: s.url, title: s.title ?? `Pull request #${s.number}`, repo: s.repo, number: s.number, merged: s.state === 'merged', external: true })),
+      .map((s) => ({ url: s.url, title: s.title ?? `Pull request #${s.number}`, repo: s.repo, number: s.number, state: s.state, external: true })),
   ]
 
   const panel = (key: TabKey) => {
@@ -157,6 +166,7 @@ export function ChatDetails({
           prs={prs}
           artifacts={data.artifacts ?? []}
           previews={data.previews ?? []}
+          hidePanel={(p) => p === 'changes' && own.length > 0}
           panelLabel={(p) => (p === 'changes' && prNumber ? `#${prNumber}` : PANEL_LABEL[p])}
           panelIcon={(p) => (p === 'changes' && prNumber ? prIcon : PANEL_ICON[p])}
           computer={data.computer}
@@ -339,7 +349,7 @@ function useOpenTabs(sessionId?: string) {
 }
 
 /** A pull request in the New tab. `external`: one the session only watches, opened on GitHub (no panel holds its details yet). */
-type IndexPr = { url: string; title: string; repo?: string; number?: number; additions?: number; deletions?: number; merged?: boolean; external?: boolean }
+type IndexPr = { url: string; title: string; repo?: string; number?: number; additions?: number; deletions?: number; state?: PrStatusState; draft?: boolean; external?: boolean }
 
 /** "owner/name" from a GitHub pull request url. */
 function repoOf(url: string) {
@@ -358,6 +368,7 @@ function NewTab({
   prs,
   artifacts,
   previews,
+  hidePanel,
   panelLabel,
   panelIcon,
   computer,
@@ -368,6 +379,7 @@ function NewTab({
   prs: IndexPr[]
   artifacts: Artifact[]
   previews: PreviewServer[]
+  /** Panels the sections above already list (the session's own PR is the Changes panel). */ hidePanel: (p: Panel) => boolean
   panelLabel: (p: Panel) => string
   panelIcon: (p: Panel) => ReactNode
   computer?: ComputerSource
@@ -381,7 +393,7 @@ function NewTab({
   const shownPrs = prs.filter((p) => match(p.title, p.repo, p.number ? `#${p.number}` : undefined))
   const shownPreviews = previews.filter((s) => match(s.name))
   const shownArtifacts = artifacts.filter((a) => (a.src || a.href) && match(a.name, a.type))
-  const shownPanels = PANELS.filter((p) => match(PANEL_LABEL[p], panelLabel(p)))
+  const shownPanels = PANELS.filter((p) => !hidePanel(p) && match(PANEL_LABEL[p], panelLabel(p)))
   const images: LightboxImage[] = artifacts.filter((a) => a.src).map((a) => ({ id: a.id, src: a.src!, alt: a.name, caption: a.name, width: a.width, height: a.height }))
   const showComputer = !!computer?.used && match('Computer')
   const nothing = shownPrs.length + shownPreviews.length + shownArtifacts.length + shownPanels.length === 0 && !showComputer
@@ -407,7 +419,7 @@ function NewTab({
           <IndexSection title="Pull requests">
             {shownPrs.map((p) => (
               <li key={p.url}>
-                <PrRow pr={p} onOpen={() => onOpen(`pr:${p.url}`)} />
+                <PrRow pr={p} onOpen={() => onOpen('changes')} />
               </li>
             ))}
           </IndexSection>
@@ -443,7 +455,7 @@ function NewTab({
                               }}
                               src={a.src}
                               alt=""
-                              className="size-3.5 shrink-0 rounded-[2px] object-cover"
+                              className="size-3.5 shrink-0 rounded-[2px] object-cover outline-1 -outline-offset-1 outline-foreground/15"
                             />
                             <span className="min-w-0 flex-1 truncate">{a.name}</span>
                             {meta}
@@ -464,7 +476,7 @@ function NewTab({
           </ImageLightbox>
         )}
         {shownPanels.length > 0 && (
-          <ul aria-label="Panels" className="flex flex-col">
+          <IndexSection title="Tools">
             {shownPanels.map((p) => (
               <li key={p}>
                 <button type="button" className={INDEX_ROW} onClick={() => onOpen(p)}>
@@ -473,38 +485,34 @@ function NewTab({
                 </button>
               </li>
             ))}
-          </ul>
+          </IndexSection>
         )}
       </div>
     </div>
   )
 }
 
-/** A pull request: its title, then its icon, repo#number and diff stats. The session's own opens its tab; a watched one opens GitHub. */
+/** A pull request on one row: its icon, title, number (with the repo when it is another one's) and diff stats. The session's own opens
+ * its tab; a watched one opens GitHub. */
 function PrRow({ pr: p, onOpen }: { pr: IndexPr; onOpen: () => void }) {
+  const ref = p.number ? `${p.external && p.repo ? p.repo : ''}#${p.number}` : p.repo
   const body = (
     <>
-      <span className="flex min-w-0 items-center gap-1.5">
-        <span className="truncate">{p.title}</span>
-        {p.external && <ExternalLinkIcon className="size-3! text-muted-foreground" />}
-      </span>
-      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        {p.merged ? <GitMergeIcon /> : <GitPullRequestIcon />}
-        <span className="truncate tabular-nums">
-          {p.repo}
-          {p.number ? `#${p.number}` : ''}
-        </span>
+      <PrIcon state={p.state} draft={p.draft} />
+      <span className="min-w-0 flex-1 truncate">{p.title}</span>
+      <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
+        {ref}
         {p.additions !== undefined && <Stat additions={p.additions} deletions={p.deletions ?? 0} />}
+        {p.external && <ExternalLinkIcon className="size-3!" />}
       </span>
     </>
   )
-  const cls = `${INDEX_ROW} h-auto flex-col items-stretch gap-0.5 py-1.5`
   return p.external ? (
-    <a className={cls} href={p.url} target="_blank" rel="noreferrer">
+    <a className={INDEX_ROW} href={p.url} target="_blank" rel="noreferrer">
       {body}
     </a>
   ) : (
-    <button type="button" className={cls} onClick={onOpen}>
+    <button type="button" className={INDEX_ROW} onClick={onOpen}>
       {body}
     </button>
   )
@@ -569,7 +577,7 @@ function ComputerWindow({ source, live, onOpen }: { source: ComputerSource; live
 
 function IndexSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-1">
+    <section aria-label={title} className="flex flex-col gap-1">
       <h3 className="px-2 text-sm font-normal text-muted-foreground">{title}</h3>
       <ul className="flex flex-col">{children}</ul>
     </section>

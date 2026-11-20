@@ -131,7 +131,13 @@ const find = (app: App, dorkId: string, repo: string, number: number): Subscript
 export function updateSubscription(app: App, id: number, patch: Partial<Omit<Subscription, "id" | "dorkId" | "repo" | "number">>) {
   update(app.db, "pr_subscriptions", { id }, { ...patch, lastEventAt: app.now() });
   const dorkId = app.db.get<{ dork_id: string }>("SELECT dork_id FROM pr_subscriptions WHERE id = ?", id)?.dork_id;
-  if (dorkId) touch(app, { t: "subscriptions", dorkId });
+  if (!dorkId) return;
+  touch(app, { t: "subscriptions", dorkId });
+  if (patch.state) {
+    // The session's own PR shows its state in the sidebar and the chat (`prState` on the dork).
+    touch(app, { t: "dork", dorkId });
+    touch(app, { t: "dorks" });
+  }
 }
 
 /** Bookkeeping that is not a subscription change: no `lastEventAt`, no notification to listeners. */
