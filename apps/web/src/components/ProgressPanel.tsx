@@ -185,8 +185,8 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
         }
       }}
     >
-      <div className="shrink-0 px-[5px] pb-[5px]">
-        {/* Icons in line with the tab icons above: the search icon 14px from the panel edge, the last button centred under the hide button. */}
+      <div className="shrink-0 px-(--details-edge) pb-2.5">
+        {/* Icons in line with the tab icons above: the search box at the tabs' edge, the last button centred under the hide button. */}
         {/* Outlined with no fill, like the composer. */}
         <InputGroup className="h-[30px] rounded-(--control-radius) border-border bg-transparent dark:bg-transparent">
           <InputGroupAddon className="pl-2">
@@ -253,19 +253,19 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
             className="h-full overflow-y-auto pb-2 outline-none"
           >
             {shown.length === 0 ? (
-              <p className="px-[14px] py-3 text-sm text-muted-foreground">No steps match.</p>
+              <p className="px-(--details-text) py-3 text-sm text-muted-foreground">No steps match.</p>
             ) : (
               shown.map((turn) => (
                 <div key={turn.key} role="group" data-turn-key={turn.key} aria-label={turn.prompt ?? 'Steps'}>
                   {/* Pinned while its steps scroll under it, so the message they answer stays in view. */}
-                  <div className="sticky top-0 z-10 box-content flex h-7 items-center gap-2 bg-background px-[14px] pb-1 text-sm text-foreground">
+                  <div className="sticky top-0 z-10 box-content flex h-7 items-center gap-2 bg-background px-(--details-text) pb-1 text-sm text-foreground">
                     <MessageSquareIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
                     <span className="min-w-0 flex-1 truncate" title={turn.prompt ?? undefined}>
                       {turn.prompt ?? 'Without a message'}
                     </span>
                   </div>
                   {/* The steps hang off a hairline under the prompt's icon. */}
-                  <div className="ml-[20.5px] border-l">
+                  <div className="ml-[calc(var(--details-text)+6.5px)] border-l">
                     {turn.steps.map((step) => (
                       <StepRow
                         key={step.key}
@@ -351,7 +351,7 @@ function StepRow({ step, now, selected, onSelect }: { step: ProgressStep; now: n
       aria-selected={selected}
       data-step-key={step.key}
       onClick={onSelect}
-      className={`relative flex h-6 w-full min-w-0 cursor-default items-center gap-2 pr-[14px] pl-3 text-left ${selected ? 'bg-foreground/[0.07] text-foreground' : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground'}`}
+      className={`relative flex h-6 w-full min-w-0 cursor-default items-center gap-2 pr-(--details-text) pl-3 text-left ${selected ? 'bg-foreground/[0.07] text-foreground' : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground'}`}
     >
       {selected && <span aria-hidden className="absolute top-0 -left-px h-full w-0.5 bg-brand" />}
       <Icon aria-hidden className="size-3.5 shrink-0" />
@@ -378,7 +378,7 @@ function StepDetail({ step, onPrevious, onNext }: { step: ProgressStep; onPrevio
   const time = step.block.at ? new Date(step.block.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) : undefined
   return (
     <section aria-label="Step detail" className="flex h-full flex-col">
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b pr-[5px] pl-[14px]">
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b pr-(--details-edge) pl-(--details-text)">
         <h3 className="min-w-0 flex-1 truncate text-sm font-normal" title={stepTitle(step)}>
           {stepTitle(step)}
         </h3>
@@ -393,7 +393,7 @@ function StepDetail({ step, onPrevious, onNext }: { step: ProgressStep; onPrevio
       <div className="min-h-0 flex-1 divide-y overflow-y-auto">
         {step.block.kind === 'assistant' ? (
           <Part label="Message" copy={step.block.text}>
-            <div className="px-[14px] pb-3 text-sm">
+            <div className="px-(--details-text) pb-3 text-sm">
               <AgentMarkdown>{step.block.text}</AgentMarkdown>
             </div>
           </Part>
@@ -436,7 +436,7 @@ function ToolParts({ block }: { block: ProgressToolBlock }) {
         {output ? (
           <Pre>{output}</Pre>
         ) : running ? (
-          <div className="flex flex-col gap-2 px-[14px] pb-3">
+          <div className="flex flex-col gap-2 px-(--details-text) pb-3">
             <output className="sr-only">Waiting for the tool</output>
             {[72, 56, 40].map((width) => (
               <Skeleton className="h-3 rounded-(--control-radius) motion-reduce:animate-none" key={width} style={{ width: `${width}%` }} />
@@ -450,8 +450,8 @@ function ToolParts({ block }: { block: ProgressToolBlock }) {
   )
 }
 
-const Pre = ({ children }: { children: string }) => <pre className="px-[14px] pb-3 font-mono text-xs leading-5 whitespace-pre-wrap [overflow-wrap:anywhere]">{children}</pre>
-const Note = ({ children }: { children: string }) => <p className="px-[14px] pb-3 text-sm text-muted-foreground">{children}</p>
+const Pre = ({ children }: { children: string }) => <pre className="px-(--details-text) pb-3 font-mono text-xs leading-5 whitespace-pre-wrap [overflow-wrap:anywhere]">{children}</pre>
+const Note = ({ children }: { children: string }) => <p className="px-(--details-text) pb-3 text-sm text-muted-foreground">{children}</p>
 
 /**
  * A section of the detail: a 40px label row with Copy (its icon in line with the bar's buttons), then the content; sections are split
@@ -460,7 +460,7 @@ const Note = ({ children }: { children: string }) => <p className="px-[14px] pb-
 function Part({ label, copy, plain, children }: { label: string; copy?: string; plain?: boolean; children: ReactNode }) {
   return (
     <section aria-label={label}>
-      <div className={`flex h-10 items-center pr-[5px] pl-[14px] text-xs text-muted-foreground ${plain ? 'border-b' : ''}`}>
+      <div className={`flex h-10 items-center pr-(--details-edge) pl-(--details-text) text-xs text-muted-foreground ${plain ? 'border-b' : ''}`}>
         <span className="flex-1">{label}</span>
         <CopyButton text={copy} />
       </div>
@@ -479,7 +479,7 @@ function Tasks({ tasks }: { tasks: readonly ProgressTask[] }) {
         type="button"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="flex h-10 w-full items-center gap-2 px-[14px] text-left text-sm outline-none hover:bg-foreground/[0.03] focus-visible:bg-foreground/[0.04]"
+        className="flex h-10 w-full items-center gap-2 px-(--details-text) text-left text-sm outline-none hover:bg-foreground/[0.03] focus-visible:bg-foreground/[0.04]"
       >
         <ListTodoIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="flex-1">Tasks</span>
@@ -494,7 +494,7 @@ function Tasks({ tasks }: { tasks: readonly ProgressTask[] }) {
       {open && (
         <ol className="max-h-40 overflow-y-auto pb-2">
           {tasks.map((task, i) => (
-            <li key={i} className="flex h-7 items-center gap-2 px-[14px] text-sm">
+            <li key={i} className="flex h-7 items-center gap-2 px-(--details-text) text-sm">
               {task.status === 'completed' ? (
                 <CircleCheckIcon aria-label="Done" className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
               ) : task.status === 'in_progress' ? (

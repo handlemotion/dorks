@@ -4,7 +4,7 @@ description: A flat, quiet workspace for cloud coding agents. Off white, one rad
 colors:
   background: "#fafafa"               # the main app frame, a slight off white (dark: oklch(0.145 0 0))
   app: "#f2f2f2"                      # onboarding's fill, thumbnails, the user bubble's family (dark: oklch(0.165 0 0))
-  border: "oklch(0 0 0 / 6%)"         # full dividers and the Chat details hairline (dark: oklch(1 0 0 / 7%))
+  border: "oklch(0 0 0 / 6%)"         # full dividers, including the one between the chat and Chat details (dark: oklch(1 0 0 / 7%))
   input: "oklch(0.922 0 0)"           # form control borders; the composer fill at 50% in dark
   ring-app: "oklch(0.85 0 0)"         # focus in the main app: a darker tone of the border, never blue (dark: oklch(1 0 0 / 28%))
   brand: "#3b6be8"                    # the composer's send/stop, onboarding's step and focus, the lightbox's active thumbnail, the picker; never text
@@ -16,7 +16,6 @@ typography:
   weights: "400 and 500 only; semibold and up are mapped to 500 and fail pnpm test"
 rounded:
   control: 6px                        # everything: buttons, inputs, menus, dialogs, bubbles, sidebar rows, tabs
-  panel: 11px                         # Chat details (its 6px tabs + 5px inset, concentric)
     bubble: 10px                        # user messages
   thumb: 8px                          # artifact thumbnails
   composer: 15px                      # the AI Elements prompt input (the one scoped exception)
@@ -24,15 +23,14 @@ rounded:
 spacing:
   edge: 20px                          # chat title and composer share one edge; the transcript is indented to 30px
   bar: "40px rows, 30px buttons and tabs, 5px around them"
-  panel-inset: 4px                    # Chat details from the window and the chat
 elevation: none                       # no shadows, glows or blur, except the dropdown menu's soft shadow
 ---
 
 # Dorks design
 
 The app gets out of the way of the agent's work. Everything sits on one off-white plane; sections are split by full-height or
-full-width hairlines, never by cards floating on cards. The only framed thing is Chat details, and even that is the app's own fill
-with a 6% hairline. When in doubt, remove: fewer borders, fewer sizes, fewer weights, fewer words.
+full-width hairlines, never by cards floating on cards. Chat details is no exception: it runs the full height
+of the window, split from the chat by one full-height 6% hairline. When in doubt, remove: fewer borders, fewer sizes, fewer weights, fewer words.
 
 Rules that tooling enforces live in `AGENTS.md` and `packages/ui/README.md`; this file is how to make things that fit.
 
@@ -40,8 +38,16 @@ Rules that tooling enforces live in `AGENTS.md` and `packages/ui/README.md`; thi
 
 - **Frame:** `AppFrame` is a resizable split (shadcn `resizable`, react-resizable-panels v4): sidebar (275px by default, 200–420px, keeps its width on window resize, a click on the divider snaps it back, collapsible,
   remembered) | page. The divider is the resize handle. Phones get shadcn's sheet instead.
-- **Chat:** `ChatSplit` puts the chat and Chat details side by side (chat 600px by default, details everything else, both at least 360px; on window resize the sidebar and the chat keep their widths and details absorbs the change; a click on the handle snaps the chat back to 600px; invisible handle in the 4px gap). Details
-  hide below `lg`.
+- **Chat:** `ChatSplit` puts the chat and Chat details side by side (chat 600px by default, details everything else, both at least 360px; on window resize the sidebar and the chat keep their widths and details absorbs the change; a click on the handle snaps the chat back to 600px). Details
+  run the full height, flush to the window's right edge, with no card or outer border: one full-height hairline (`border-l`) separates
+  them from the chat, and the resize handle sits on it. Details hide below `lg`.
+- **Chat details tabs** work like a browser's: an open-tabs strip (Progress, Artifacts, Changes, which reads `#N` once a PR exists,
+  Computer, and one tab per pull request, keyed by its url), each a 28px 6px-radius tab whose icon turns into an X on hover (nothing
+  moves), then `+` for a New tab. Closing the selected tab selects its neighbour; closing the last leaves a New tab. Opening a panel
+  that is already open focuses it; the agent's reveals (Progress, Computer, a shown preview in Artifacts) open or focus their tab.
+  Open tabs and the selected one are remembered per session. A **New tab** is an index in a centred 420px column: a search box
+  ("Search PRs, artifacts and tools") that filters by name, then Pull requests, Artifacts and Panels, each a list of 30px rows that
+  open in the New tab's place; empty sections are left out, and a search with no results says `No matches`.
 - **Edges:** the page title and the composer start 20px from the column's edge (the composer 20px from the bottom too); the transcript
   is indented to 30px, a step in from both, so messages read as the content between them. The transcript keeps `max-w-3xl`.
 - **Headers** are 48px, one line, the title in regular 13px. No subtitles, no badges. A header divider exists only when it can span

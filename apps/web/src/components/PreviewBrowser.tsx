@@ -134,7 +134,7 @@ export function PreviewBrowser({ server, onBack, onGrab }: { server: PreviewServ
   return (
     <>
       {/* Same rhythm as the tab row above: 30px buttons, icons in line with the tab icons and the hide button (measured: same left and right edges). */}
-      <div className="flex h-10 shrink-0 items-center gap-0.5 border-y pr-1 pl-[5px]">
+      <div className="flex h-10 shrink-0 items-center gap-0.5 border-y px-(--details-edge)">
         <Tip label="All artifacts">
           <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="All artifacts" onClick={onBack}>
             <ArrowLeftIcon />

@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useTheme } from 'next-themes'
+import type { SubscriptionView } from '@dorks/shared'
 import { useDefaultLayout, usePanelRef } from 'react-resizable-panels'
 import { PanelResizeHandle } from '@dorks/ui/panel-resize-handle'
-import { ActivityIcon, GitMergeIcon, GitPullRequestIcon, LayersIcon, MonitorIcon, PanelLeftIcon } from 'lucide-react'
+import { ActivityIcon, AppWindowIcon, ExternalLinkIcon, FileIcon, GitMergeIcon, GitPullRequestIcon, LayersIcon, MonitorIcon, PanelLeftIcon, PlusIcon, SearchIcon, XIcon } from 'lucide-react'
 import { Button } from '@dorks/ui/button'
+import { InputGroup, InputGroupAddon, InputGroupInput } from '@dorks/ui/input-group'
 import { ResizablePanel, ResizablePanelGroup } from '@dorks/ui/resizable'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@dorks/ui/tabs'
 import { ComputerView, type ComputerSource } from './ComputerView'
@@ -41,87 +44,184 @@ export type ChatDetailsData = {
   previews?: PreviewServer[]
   /** The agent's own computer, streamed live in the Computer tab. */
   computer?: ComputerSource
+  /** The pull requests the session watches (it opened them, or the agent or the owner subscribed): the New tab lists them. */
+  subscriptions?: SubscriptionView[]
 }
 
-type Tab = 'progress' | 'artifacts' | 'changes' | 'computer'
+/** A panel Chat details can show in a tab. */
+type Panel = 'progress' | 'artifacts' | 'changes' | 'computer'
+/** An open tab: a panel, a pull request (by url, so a session can hold more than one later) or a New tab. */
+type TabKey = Panel | `pr:${string}` | `new:${string}`
+
+const PANELS: Panel[] = ['progress', 'artifacts', 'changes', 'computer']
+const PANEL_ICON: Record<Panel, ReactNode> = { progress: <ActivityIcon />, artifacts: <LayersIcon />, changes: <GitPullRequestIcon />, computer: <MonitorIcon /> }
+const PANEL_LABEL: Record<Panel, string> = { progress: 'Progress', artifacts: 'Artifacts', changes: 'Changes', computer: 'Computer' }
 
 /**
- * Chat details: a panel on the right of a chat, in the app's own fill with a soft hairline, inset 4px from the window and the chat, almost full height. Its tabs sit
- * inside it, at the top, as plain tabs: the selected one is a grey fill, the others are labels. Everything inside is concentric: the
- * panel's 11px radius is the tabs' 6px plus the 5px between them. Tabs and the hide button are 30px tall, with 5px around them on
- * every side. The tabs are fixed (always the same four, in the same order); Progress, the agent's work, comes first.
- * The tab row is placed so its labels share the chat title's centre line (24px from the top).
+ * Chat details: the right side of a chat, full height and flush to the window's edge, split from the chat by one full-height hairline
+ * (the resize handle sits on it). Its top bar is 40px, placed so its labels share the chat title's centre line (24px from the top),
+ * and holds the open tabs like a browser: Progress, Artifacts, Changes, Computer and one per pull request, in any order, each closable
+ * (its icon turns into an X on hover, nothing moves), then "+" for a New tab, an index of the session's pull requests, artifacts and
+ * panels. The open tabs and the selected one are remembered per session. The hide button keeps ShowDetailsButton's spot.
  */
+/**
+ * The last Progress reveal a panel acted on, kept outside the component so a remount (hide and show, another session) does not
+ * replay an old reveal over the restored tabs, while a card that opens the panel still brings Progress up.
+ */
+let handledReveal = 0
+
 export function ChatDetails({
   data,
+  sessionId,
   onClose,
   onGrab,
   onAsk,
   className,
 }: {
   data: ChatDetailsData
+  /** Whose open tabs to remember. Without it they last as long as the panel. */ sessionId?: string
   onClose?: () => void
   /** An element picked in a running preview, as agent context. */ onGrab?: (snippet: string) => void
   /** An empty state's action: puts a ready request in the composer. */ onAsk?: (text: string) => void
   className?: string
 }) {
-  const [tab, setTab] = useState<Tab>('progress')
+  const tabs = useOpenTabs(sessionId)
+  const { open } = tabs
   // A turn's card in the thread asks for its work: bring Progress up (also when the card opened this panel).
   const { reveal } = useProgress()
-  const seenReveal = useRef(0)
   useEffect(() => {
-    if (reveal !== seenReveal.current) setTab('progress')
-    seenReveal.current = reveal
-  }, [reveal])
+    if (reveal !== handledReveal) open('progress')
+    handledReveal = reveal
+  }, [reveal, open])
   const changes = data.changes ?? []
   // Once the agent opens a pull request, the Changes tab is that PR, named by its number.
-  const prNumber = data.pullRequest?.view?.number ?? data.pr?.number
-  const prMerged = data.pullRequest?.view?.state === 'merged'
+  const view = data.pullRequest?.view
+  const prNumber = view?.number ?? data.pr?.number
+  const prMerged = view?.state === 'merged'
+  const prIcon = prMerged ? <GitMergeIcon /> : <GitPullRequestIcon />
   // The first time the agent reaches for its computer while the chat is open, show its screen; a chat that opens on a computer
   // already used keeps the tab the owner was on.
   const used = data.computer?.used ?? false
   const wasUsed = useRef(used)
   useEffect(() => {
-    if (used && !wasUsed.current) setTab('computer')
+    if (used && !wasUsed.current) open('computer')
     wasUsed.current = used
-  }, [used])
+  }, [used, open])
   // The preview open in Artifacts, by URL. The agent just showed a dev server: bring Artifacts up with it open. Held here, since the
   // tab's content unmounts while hidden.
   const [preview, setPreview] = useState<string>()
   const openPreview = data.previews?.find((s) => s.url === preview)
   useShownServers(data.previews, (s) => {
-    setTab('artifacts')
+    open('artifacts')
     setPreview(s.url)
   })
+
+  const label = (key: TabKey): { icon: ReactNode; text: ReactNode; title: string } => {
+    if (key.startsWith('new:')) return { icon: <SearchIcon />, text: 'New tab', title: 'New tab' }
+    if (key.startsWith('pr:')) {
+      const url = key.slice(3)
+      const pr = prs.find((p) => p.url === url)
+      const text = pr?.title ?? (pr?.number ? `#${pr.number}` : 'Pull request')
+      return { icon: pr?.merged ? <GitMergeIcon /> : <GitPullRequestIcon />, text, title: text }
+    }
+    const panel = key as Panel
+    if (panel === 'changes' && prNumber) return { icon: prIcon, text: <span className="tabular-nums">#{prNumber}</span>, title: `#${prNumber}` }
+    return { icon: PANEL_ICON[panel], text: PANEL_LABEL[panel], title: PANEL_LABEL[panel] }
+  }
+  // The session's own pull request first (live, with its diff stats), then the others it watches, keyed by url.
+  const own: IndexPr[] = view
+    ? [{ url: view.url, title: view.title, repo: view.repo, number: view.number, additions: view.additions, deletions: view.deletions, merged: prMerged }]
+    : data.pr
+      ? [
+          {
+            url: data.pr.url,
+            title: data.pr.number ? `Pull request #${data.pr.number}` : 'Pull request',
+            number: data.pr.number,
+            repo: repoOf(data.pr.url),
+            additions: sum(changes, 'additions'),
+            deletions: sum(changes, 'deletions'),
+          },
+        ]
+      : []
+  const prs: IndexPr[] = [
+    ...own,
+    ...(data.subscriptions ?? [])
+      .filter((s) => !own.some((o) => o.url === s.url))
+      .map((s) => ({ url: s.url, title: s.title ?? `Pull request #${s.number}`, repo: s.repo, number: s.number, merged: s.state === 'merged', external: true })),
+  ]
+
+  const panel = (key: TabKey) => {
+    if (key.startsWith('new:'))
+      return (
+        <NewTab
+          prs={prs}
+          artifacts={data.artifacts ?? []}
+          previews={data.previews ?? []}
+          panelLabel={(p) => (p === 'changes' && prNumber ? `#${prNumber}` : PANEL_LABEL[p])}
+          panelIcon={(p) => (p === 'changes' && prNumber ? prIcon : PANEL_ICON[p])}
+          computer={data.computer}
+          computerOpen={tabs.keys.includes('computer')}
+          onOpen={(target) => tabs.replace(key, target)}
+          onOpenPreview={(s) => {
+            setPreview(s.url)
+            tabs.replace(key, 'artifacts')
+          }}
+        />
+      )
+    if (key.startsWith('pr:')) {
+      const url = key.slice(3)
+      const current = view?.url === url || data.pr?.url === url
+      return (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <PullRequestPanel changes={current ? changes : []} pr={current ? data.pr : { url }} pullRequest={current ? data.pullRequest : undefined} onAsk={onAsk} />
+        </div>
+      )
+    }
+    switch (key as Panel) {
+      case 'progress':
+        return <ProgressPanel turns={data.progress ?? []} tasks={data.tasks} />
+      case 'artifacts':
+        return openPreview ? (
+          <PreviewBrowser server={openPreview} onBack={() => setPreview(undefined)} onGrab={onGrab} />
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+            <Artifacts artifacts={data.artifacts ?? []} changes={changes} previews={data.previews ?? []} onOpenChanges={() => open('changes')} onOpenPreview={(s) => setPreview(s.url)} onAsk={onAsk} />
+          </div>
+        )
+      case 'changes':
+        return (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <PullRequestPanel changes={changes} pr={data.pr} pullRequest={data.pullRequest} onAsk={onAsk} />
+          </div>
+        )
+      case 'computer':
+        return (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t">
+            <ComputerView source={data.computer} />
+          </div>
+        )
+    }
+  }
+
   return (
-    <aside aria-label="Chat details" className={['flex h-full min-h-0 flex-col p-1', className].filter(Boolean).join(' ')}>
-      {/* Same fill as the app; the only edge is a soft hairline (the --border tone), drawn as an overlay above the content so it takes no
-          space and nothing inside (a diff paints its own layer) can cover it. */}
-      <Tabs
-        value={tab}
-        onValueChange={(value) => setTab(value as Tab)}
-        className="relative min-h-0 min-w-0 flex-1 gap-0 overflow-hidden rounded-[11px] after:pointer-events-none after:absolute after:inset-0 after:z-20 after:rounded-[inherit] after:border after:border-border"
-      >
-        <div data-tauri-drag-region className="flex h-10 min-w-0 shrink-0 items-center gap-0.5 pr-[6px] pl-1.5">
+    <aside aria-label="Chat details" className={['flex h-full min-h-0 min-w-0 flex-col border-l border-border [--details-edge:10px] [--details-text:18px]', className].filter(Boolean).join(' ')}>
+      <Tabs value={tabs.selected} onValueChange={(value) => tabs.select(value as TabKey)} className="min-h-0 min-w-0 flex-1 gap-0">
+        {/* 40px, 4px down from the top, so its labels sit on the chat title's 24px line. */}
+        <div data-tauri-drag-region className="mt-1 mb-2 flex h-10 min-w-0 shrink-0 items-center gap-0.5 px-(--details-edge)">
           <TabsList className="h-7! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
-            <DetailsTab value="progress" icon={<ActivityIcon />}>
-              Progress
-            </DetailsTab>
-            <DetailsTab value="artifacts" icon={<LayersIcon />}>
-              Artifacts
-            </DetailsTab>
-            {prNumber ? (
-              <DetailsTab value="changes" icon={prMerged ? <GitMergeIcon /> : <GitPullRequestIcon />}>
-                <span className="tabular-nums">#{prNumber}</span>
-              </DetailsTab>
-            ) : (
-              <DetailsTab value="changes" icon={<GitPullRequestIcon />} count={changes.length || undefined}>
-                Changes
-              </DetailsTab>
-            )}
-            <DetailsTab value="computer" icon={<MonitorIcon />}>
-              Computer
-            </DetailsTab>
+            {tabs.keys.map((key) => {
+              const { icon, text, title } = label(key)
+              return (
+                <OpenTab key={key} value={key} icon={icon} title={title} onClose={() => tabs.close(key)}>
+                  {text}
+                </OpenTab>
+              )
+            })}
+            <Tip label="New tab">
+              <Button variant="ghost" size="icon-sm" className={`shrink-0 ${ACTION} size-7!`} aria-label="New tab" onClick={tabs.add}>
+                <PlusIcon />
+              </Button>
+            </Tip>
           </TabsList>
           {onClose && (
             <Tip label="Hide chat details">
@@ -131,44 +231,348 @@ export function ChatDetails({
             </Tip>
           )}
         </div>
-        <TabsContent value="progress" className="flex min-h-0 flex-col">
-          <ProgressPanel turns={data.progress ?? []} tasks={data.tasks} />
-        </TabsContent>
-        {openPreview ? (
-          <TabsContent value="artifacts" className="mx-px mb-px flex min-h-0 flex-col overflow-hidden rounded-b-[9px]">
-            <PreviewBrowser server={openPreview} onBack={() => setPreview(undefined)} onGrab={onGrab} />
+        {tabs.keys.map((key) => (
+          <TabsContent key={key} value={key} className="flex min-h-0 flex-col">
+            {panel(key)}
           </TabsContent>
-        ) : (
-          <TabsContent value="artifacts" className="flex min-h-0 flex-col overflow-y-auto">
-            <Artifacts
-              artifacts={data.artifacts ?? []}
-              changes={changes}
-              previews={data.previews ?? []}
-              onOpenChanges={() => setTab('changes')}
-              onOpenPreview={(s) => setPreview(s.url)}
-              onAsk={onAsk}
-            />
-          </TabsContent>
-        )}
-        <TabsContent value="changes" className="min-h-0 overflow-y-auto">
-          <PullRequestPanel changes={changes} pr={data.pr} pullRequest={data.pullRequest} onAsk={onAsk} />
-        </TabsContent>
-        <TabsContent value="computer" className="mx-px mb-px flex min-h-0 flex-col overflow-hidden rounded-b-[9px] border-t">
-          <ComputerView source={data.computer} />
-        </TabsContent>
+        ))}
       </Tabs>
     </aside>
   )
 }
 
-/** A plain tab: the same 28px box selected or not (nothing moves), a grey fill when selected, a lighter one on hover. Instant. */
-function DetailsTab({ value, icon, count, children }: { value: Tab; icon: ReactNode; count?: number; children: ReactNode }) {
+/**
+ * An open tab: the same 28px box selected or not (nothing moves), a grey fill when selected, a lighter one on hover. On hover (or
+ * keyboard focus) its icon gives way to an X in the same spot that closes it; a middle click closes it too.
+ */
+function OpenTab({ value, icon, title, onClose, children }: { value: TabKey; icon: ReactNode; title: string; onClose: () => void; children: ReactNode }) {
   return (
-    <TabsTrigger value={value} className={TAB_CLASS}>
-      {icon}
-      {children}
-      {count !== undefined && <span className="text-muted-foreground tabular-nums">{count}</span>}
-    </TabsTrigger>
+    <div className="group/tab relative flex-none">
+      <TabsTrigger
+        value={value}
+        title={title}
+        className={`${TAB_CLASS} max-w-48 group-hover/tab:text-foreground dark:group-hover/tab:text-foreground group-hover/tab:not-data-active:bg-foreground/[0.04]`}
+        onAuxClick={(e) => {
+          if (e.button === 1) onClose()
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Delete' || e.key === 'Backspace') {
+            e.preventDefault()
+            onClose()
+          }
+        }}
+      >
+        <span className="flex shrink-0 group-hover/tab:invisible group-has-[button:focus-visible]/tab:invisible">{icon}</span>
+        <span className="truncate">{children}</span>
+      </TabsTrigger>
+      <button
+        type="button"
+        aria-label={`Close ${title}`}
+        className="absolute top-1/2 left-[6px] flex size-[18px] -translate-y-1/2 items-center justify-center rounded-[4px] text-muted-foreground opacity-0 group-hover/tab:opacity-100 hover:bg-foreground/[0.08] hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring"
+        onClick={onClose}
+      >
+        <XIcon className="size-3.5" />
+      </button>
+    </div>
+  )
+}
+
+type OpenTabs = { keys: TabKey[]; selected: TabKey }
+const TABS_KEY = 'dorks.chat-details-tabs.'
+const DEFAULT_TABS: OpenTabs = { keys: ['progress'], selected: 'progress' }
+const newTab = (): TabKey => `new:${Math.random().toString(36).slice(2, 8)}`
+const isKey = (k: unknown): k is TabKey => typeof k === 'string' && ((PANELS as string[]).includes(k) || /^(pr|new):./.test(k))
+
+function loadTabs(sessionId?: string): OpenTabs {
+  if (!sessionId) return DEFAULT_TABS
+  try {
+    const raw = JSON.parse(localStorage.getItem(TABS_KEY + sessionId) ?? 'null') as Partial<OpenTabs> | null
+    const keys = Array.isArray(raw?.keys) ? [...new Set(raw.keys.filter(isKey))] : []
+    if (keys.length === 0) return DEFAULT_TABS
+    return { keys, selected: raw?.selected && keys.includes(raw.selected) ? raw.selected : keys[0] }
+  } catch {
+    return DEFAULT_TABS
+  }
+}
+
+/** The open tabs and the selected one, remembered per session. Opening a tab that is already open focuses it. */
+function useOpenTabs(sessionId?: string) {
+  const [state, setState] = useState(() => loadTabs(sessionId))
+  const [loadedFor, setLoadedFor] = useState(sessionId)
+  if (loadedFor !== sessionId) {
+    setLoadedFor(sessionId)
+    setState(loadTabs(sessionId))
+  }
+  useEffect(() => {
+    if (!sessionId) return
+    try {
+      localStorage.setItem(TABS_KEY + sessionId, JSON.stringify(state))
+    } catch {
+      /* private mode: keep it in memory */
+    }
+  }, [sessionId, state])
+  const open = useCallback((key: TabKey) => setState((s) => (s.keys.includes(key) ? { ...s, selected: key } : { keys: [...s.keys, key], selected: key })), [])
+  return {
+    keys: state.keys,
+    selected: state.selected,
+    open,
+    select: (key: TabKey) => setState((s) => ({ ...s, selected: key })),
+    add: () => open(newTab()),
+    /** Closing the selected tab selects its neighbour (the next one, else the previous); closing the last leaves a New tab. */
+    close: (key: TabKey) =>
+      setState((s) => {
+        const i = s.keys.indexOf(key)
+        const keys = s.keys.filter((k) => k !== key)
+        if (keys.length === 0) {
+          const k = newTab()
+          return { keys: [k], selected: k }
+        }
+        return { keys, selected: s.selected === key ? keys[Math.min(i, keys.length - 1)] : s.selected }
+      }),
+    /** A New tab becomes what it opened, in its place; if that is already open elsewhere, it is focused there instead. */
+    replace: (key: TabKey, target: TabKey) =>
+      setState((s) => {
+        if (s.keys.includes(target)) return { keys: s.keys.filter((k) => k !== key), selected: target }
+        return { keys: s.keys.map((k) => (k === key ? target : k)), selected: target }
+      }),
+  }
+}
+
+/** A pull request in the New tab. `external`: one the session only watches, opened on GitHub (no panel holds its details yet). */
+type IndexPr = { url: string; title: string; repo?: string; number?: number; additions?: number; deletions?: number; merged?: boolean; external?: boolean }
+
+/** "owner/name" from a GitHub pull request url. */
+function repoOf(url: string) {
+  return /github\.com\/([^/]+\/[^/]+)\/pull\//.exec(url)?.[1]
+}
+
+/** A 30px row in the New tab: an icon and a label, the hover fill of the bar's buttons. */
+const INDEX_ROW =
+  'flex h-[30px] w-full items-center gap-2 rounded-(--control-radius) px-2 text-left text-sm transition-colors hover:bg-foreground/[0.04] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-muted-foreground'
+
+/**
+ * A New tab: an index of what the session holds. A search box filters the pull requests, artifacts and panels below by name; each
+ * opens in this tab's place. Sections with nothing in them are left out.
+ */
+function NewTab({
+  prs,
+  artifacts,
+  previews,
+  panelLabel,
+  panelIcon,
+  computer,
+  computerOpen,
+  onOpen,
+  onOpenPreview,
+}: {
+  prs: IndexPr[]
+  artifacts: Artifact[]
+  previews: PreviewServer[]
+  panelLabel: (p: Panel) => string
+  panelIcon: (p: Panel) => ReactNode
+  computer?: ComputerSource
+  /** The Computer tab is open: its stream is the one live view, so the window here shows the state only. */ computerOpen: boolean
+  onOpen: (target: TabKey) => void
+  onOpenPreview: (server: PreviewServer) => void
+}) {
+  const [query, setQuery] = useState('')
+  const q = query.trim().toLowerCase()
+  const match = (...names: (string | undefined)[]) => !q || names.some((n) => n?.toLowerCase().includes(q))
+  const shownPrs = prs.filter((p) => match(p.title, p.repo, p.number ? `#${p.number}` : undefined))
+  const shownPreviews = previews.filter((s) => match(s.name))
+  const shownArtifacts = artifacts.filter((a) => (a.src || a.href) && match(a.name, a.type))
+  const shownPanels = PANELS.filter((p) => match(PANEL_LABEL[p], panelLabel(p)))
+  const images: LightboxImage[] = artifacts.filter((a) => a.src).map((a) => ({ id: a.id, src: a.src!, alt: a.name, caption: a.name, width: a.width, height: a.height }))
+  const showComputer = !!computer?.used && match('Computer')
+  const nothing = shownPrs.length + shownPreviews.length + shownArtifacts.length + shownPanels.length === 0 && !showComputer
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto flex w-full max-w-[420px] flex-col gap-6 px-5 pt-[20vh] pb-10">
+        <InputGroup className="h-[30px] rounded-(--control-radius) border-border bg-transparent dark:bg-transparent">
+          <InputGroupAddon className="pl-2">
+            <SearchIcon className="size-3.5" />
+          </InputGroupAddon>
+          <InputGroupInput
+            autoFocus
+            aria-label="Search pull requests, artifacts and tools"
+            placeholder="Search PRs, artifacts and tools"
+            value={query}
+            onChange={(e) => setQuery(e.currentTarget.value)}
+            className="text-sm"
+          />
+        </InputGroup>
+        {showComputer && <ComputerWindow source={computer!} live={!computerOpen} onOpen={() => onOpen('computer')} />}
+        {nothing && <EmptyState figure="drawer" title="No matches" />}
+        {shownPrs.length > 0 && (
+          <IndexSection title="Pull requests">
+            {shownPrs.map((p) => (
+              <li key={p.url}>
+                <PrRow pr={p} onOpen={() => onOpen(`pr:${p.url}`)} />
+              </li>
+            ))}
+          </IndexSection>
+        )}
+        {shownPreviews.length + shownArtifacts.length > 0 && (
+          <ImageLightbox images={images} label="Artifacts">
+            <IndexSection title="Artifacts">
+              {shownPreviews.map((s) => (
+                <li key={s.url}>
+                  <button type="button" className={INDEX_ROW} onClick={() => onOpenPreview(s)}>
+                    <AppWindowIcon />
+                    <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                    <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
+                      <span aria-hidden className="size-1.5 rounded-full bg-emerald-500" />
+                      {s.port ? `:${s.port}` : port(s.url)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+              {shownArtifacts.map((a) => {
+                const index = images.findIndex((i) => i.id === a.id)
+                const meta = <span className="shrink-0 text-xs text-muted-foreground">{a.type}</span>
+                return (
+                  <li key={a.id}>
+                    {index >= 0 ? (
+                      <ImageTrigger index={index} className={`${INDEX_ROW} cursor-zoom-in`} aria-label={`Open ${a.name}`}>
+                        {({ imageRef, morphRef }) => (
+                          <>
+                            <img
+                              ref={(node) => {
+                                imageRef(node)
+                                morphRef(node)
+                              }}
+                              src={a.src}
+                              alt=""
+                              className="size-3.5 shrink-0 rounded-[2px] object-cover"
+                            />
+                            <span className="min-w-0 flex-1 truncate">{a.name}</span>
+                            {meta}
+                          </>
+                        )}
+                      </ImageTrigger>
+                    ) : a.href ? (
+                      <a className={INDEX_ROW} href={a.href} target="_blank" rel="noreferrer">
+                        <FileIcon />
+                        <span className="min-w-0 flex-1 truncate">{a.name}</span>
+                        {meta}
+                      </a>
+                    ) : null}
+                  </li>
+                )
+              })}
+            </IndexSection>
+          </ImageLightbox>
+        )}
+        {shownPanels.length > 0 && (
+          <ul aria-label="Panels" className="flex flex-col">
+            {shownPanels.map((p) => (
+              <li key={p}>
+                <button type="button" className={INDEX_ROW} onClick={() => onOpen(p)}>
+                  {panelIcon(p)}
+                  <span className="truncate">{panelLabel(p)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** A pull request: its title, then its icon, repo#number and diff stats. The session's own opens its tab; a watched one opens GitHub. */
+function PrRow({ pr: p, onOpen }: { pr: IndexPr; onOpen: () => void }) {
+  const body = (
+    <>
+      <span className="flex min-w-0 items-center gap-1.5">
+        <span className="truncate">{p.title}</span>
+        {p.external && <ExternalLinkIcon className="size-3! text-muted-foreground" />}
+      </span>
+      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        {p.merged ? <GitMergeIcon /> : <GitPullRequestIcon />}
+        <span className="truncate tabular-nums">
+          {p.repo}
+          {p.number ? `#${p.number}` : ''}
+        </span>
+        {p.additions !== undefined && <Stat additions={p.additions} deletions={p.deletions ?? 0} />}
+      </span>
+    </>
+  )
+  const cls = `${INDEX_ROW} h-auto flex-col items-stretch gap-0.5 py-1.5`
+  return p.external ? (
+    <a className={cls} href={p.url} target="_blank" rel="noreferrer">
+      {body}
+    </a>
+  ) : (
+    <button type="button" className={cls} onClick={onOpen}>
+      {body}
+    </button>
+  )
+}
+
+/**
+ * A small window on the agent's computer, between the search box and the lists: its screen at a quarter scale when it is awake
+ * and the Computer tab is not open (stream links are single-use, so only one view streams at a time), else the frame with its
+ * state. It takes no pointer; a click opens the Computer tab in the New tab's place.
+ */
+function ComputerWindow({ source, live, onOpen }: { source: ComputerSource; live: boolean; onOpen: () => void }) {
+  const { resolvedTheme } = useTheme()
+  const theme = resolvedTheme === 'dark' ? 'dark' : 'light'
+  const [url, setUrl] = useState<string>()
+  const { awake, fetchUrl } = source
+  useEffect(() => {
+    setUrl(undefined)
+    if (!live || !awake) return
+    let on = true
+    fetchUrl({ theme }).then(
+      (u) => on && setUrl(u),
+      () => {},
+    )
+    return () => {
+      on = false
+    }
+  }, [live, awake, fetchUrl, theme])
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="group/win flex w-full flex-col gap-1 rounded-[8px] text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+    >
+      <span className="relative block aspect-[16/10] w-full overflow-hidden rounded-[8px] bg-app outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10">
+        {url ? (
+          <iframe
+            src={url}
+            title="Agent's computer, preview"
+            tabIndex={-1}
+            aria-hidden
+            referrerPolicy="no-referrer"
+            allow="autoplay"
+            className="pointer-events-none absolute top-0 left-0 h-[400%] w-[400%] origin-top-left scale-25"
+          />
+        ) : (
+          <span className="absolute inset-0 flex items-center justify-center text-muted-foreground">
+            <MonitorIcon className="size-6" strokeWidth={1.5} />
+          </span>
+        )}
+      </span>
+      <span className={`${INDEX_ROW} group-hover/win:bg-foreground/[0.04]`}>
+        <MonitorIcon />
+        <span className="flex-1">Computer</span>
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          {awake && <span aria-hidden className="size-1.5 rounded-full bg-emerald-500" />}
+          {awake ? 'Awake' : 'Asleep'}
+        </span>
+      </span>
+    </button>
+  )
+}
+
+function IndexSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-1">
+      <h3 className="px-2 text-sm font-normal text-muted-foreground">{title}</h3>
+      <ul className="flex flex-col">{children}</ul>
+    </section>
   )
 }
 
@@ -280,7 +684,7 @@ function Tile({
       </div>
     </>
   )
-  const cls = 'block w-full px-5 pt-5 pb-4 text-left transition-colors hover:bg-foreground/[0.03] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring'
+  const cls = 'block w-full px-(--details-text) pt-5 pb-4 text-left transition-colors hover:bg-foreground/[0.03] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring'
   return (
     <li className="border-r border-b">
       {image !== undefined ? (
@@ -372,7 +776,7 @@ export function useDetailsOpen() {
 export function ShowDetailsButton({ onClick }: { onClick: () => void }) {
   return (
     <Tip label="Show chat details">
-      <Button variant="ghost" size="icon-sm" className={`-mr-[11px] hidden lg:inline-flex ${ACTION}`} aria-label="Show chat details" onClick={onClick}>
+      <Button variant="ghost" size="icon-sm" className={`-mr-[3px] hidden lg:inline-flex ${ACTION}`} aria-label="Show chat details" onClick={onClick}>
         <PanelLeftIcon className="rotate-180" />
       </Button>
     </Tip>
@@ -394,7 +798,7 @@ export function useWide() {
 
 /**
  * The chat and, when given and the window is wide, Chat details beside it in a resizable split (react-resizable-panels, through
- * shadcn's Resizable). The split is remembered. The divider is invisible: the panel's 4px inset already separates the two.
+ * shadcn's Resizable). The split is remembered. The divider is Chat details' own full-height hairline; the handle sits on it.
  */
 const CHAT_WIDTH = 600
 

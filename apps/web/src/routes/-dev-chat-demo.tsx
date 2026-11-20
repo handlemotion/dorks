@@ -177,6 +177,34 @@ const details: ChatDetailsData = {
     interrupt: async () => {},
   },
   pr: { url: 'https://github.com/acme/demo/pull/142', number: 142 },
+  subscriptions: [
+    {
+      repo: 'acme/demo',
+      number: 142,
+      url: 'https://github.com/acme/demo/pull/142',
+      title: 'Fix flaky bridge reconnect after wake',
+      source: 'auto',
+      status: 'active',
+      ci: 'passing',
+      review: 'approved',
+      mergeable: true,
+      ciFixAttempts: 0,
+      state: 'open',
+    },
+    {
+      repo: 'acme/bridge',
+      number: 57,
+      url: 'https://github.com/acme/bridge/pull/57',
+      title: 'Expose the handshake state to clients',
+      source: 'agent',
+      status: 'ended',
+      ci: 'passing',
+      review: 'approved',
+      mergeable: null,
+      ciFixAttempts: 0,
+      state: 'merged',
+    },
+  ],
   previews: [
     {
       name: 'Web app',
@@ -360,6 +388,7 @@ export function Demo() {
         details={
           detailsOpen && !showNew ? (
             <ChatDetails
+              sessionId="preview"
               data={{ ...details, progress: progressTurns(blocks), tasks: latestTasks(blocks), pullRequest: demoPullRequest }}
               onClose={() => setDetailsOpen(false)}
               onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}
