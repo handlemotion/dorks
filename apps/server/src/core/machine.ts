@@ -28,6 +28,7 @@ export type Input =
   | { t: "agent_exited" }
   | { t: "op_failed" }
   | { t: "watchdog" }
+  | { t: "wake_failed" } // the watchdog fired while a box was resuming: it never came back
   | { t: "archive" }
   | { t: "unarchive" }
   | { t: "interrupt" }
@@ -35,6 +36,7 @@ export type Input =
 
 export type Effect =
   | "create_box"
+  | "replace_box" // forget the current box (it is deleted), then create a fresh one
   | "resume_box"
   | "pause_box" // flush the bridge, then box.pause()
   | "cancel_pause" // drop a pending/in-flight pause: someone needs the box awake
@@ -105,6 +107,13 @@ const onTurnIdle: Handler = (c, { stay, go }) => {
 
 const onFailure: Handler = (c, { stay, go }) => (AWAKE.includes(c.state) ? go("error", FAILED(c)) : stay());
 
+/**
+ * A resume that never reached `ready`: the box is stuck or its bridge cannot dial in (created against an older URL, ticket or bridge).
+ * Resuming it again would fail the same way, so the dork starts over on a fresh box once; the queued message is delivered there.
+ * A fresh box that also times out is a plain `watchdog` failure (it fires in `creating`).
+ */
+const onWakeFailed: Handler = (c, s, i) => (c.state === "waking" && c.hasBox && !c.archived ? s.go("creating", ["replace_box", "arm_watchdog"]) : onFailure(c, s, i));
+
 const onArchive: Handler = (c, { stay, go }) => {
   if (c.archived) return stay();
   switch (c.state) {
@@ -131,6 +140,7 @@ const HANDLERS: Record<Input["t"], Handler> = {
   agent_exited: onFailure,
   op_failed: onFailure,
   watchdog: onFailure,
+  wake_failed: onWakeFailed,
   archive: onArchive,
   unarchive: (c, { go }) => go(c.state, [], false), // never wakes
   interrupt: (c, { stay }) => (c.state === "working" ? stay(["interrupt_agent"]) : stay()),

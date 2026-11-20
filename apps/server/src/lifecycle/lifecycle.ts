@@ -31,6 +31,19 @@ export function fireTimer(app: App, dorkId: string, name: string) {
       dispatch(app, dorkId, { t: "sleep_due" });
       break;
     case "watchdog":
+      if (dork.state === "waking" && dork.boxId && !dork.archived) {
+        console.error(`${new Date(app.now()).toISOString()} watchdog: ${dorkId} did not wake; replacing its box`);
+        append(
+          app,
+          dorkId,
+          errorEvent({
+            code: "timeout",
+            message: "The sandbox did not wake up, so Dork is starting a fresh one. Unpushed changes in the old sandbox are lost, and the agent starts without its earlier context.",
+          }),
+        );
+        dispatch(app, dorkId, { t: "wake_failed" });
+        break;
+      }
       if (isAwake(dork.state)) append(app, dorkId, errorEvent({ code: "timeout", message: "timed out waiting for the sandbox" }));
       dispatch(app, dorkId, { t: "watchdog" });
       break;
@@ -112,9 +125,10 @@ export function boxCreated(app: App, dorkId: string, boxId: string, sleepMinutes
  * If the dork gave up on this resume meanwhile the box is running unwanted, and any pause issued before this point may have
  * finished before the resume did: pause again, ordered after it.
  */
-export function boxResumed(app: App, dorkId: string) {
+export function boxResumed(app: App, dorkId: string, boxId?: string) {
   const dork = getDork(app.db, dorkId);
   if (!dork || dork.deleting) return;
+  if (boxId !== undefined && dork.boxId !== boxId) return; // the dork gave up on this box and replaced it; the replace deletes it
   if (dork.state === "error" || dork.state === "sleeping") return beginPause(app, dorkId, true);
   enqueueConfigure(app, dorkId); // idempotent on the bridge side
 }
