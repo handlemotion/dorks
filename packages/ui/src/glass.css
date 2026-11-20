@@ -386,3 +386,10 @@ html.dark [data-slot="dialog-footer"] {
   --tw-exit-translate-x: 0;
   --tw-exit-translate-y: 0;
 }
+
+/* Nothing rubber-bands (apps/web/src/styles.css sets overscroll-behavior: none on every element). The published shadcn / AI Elements
+   scrollers (message-scroller viewport, attachment group, suggestions row) ask for `contain`, which still lets a pane bounce on its own in
+   WebKit; this unlayered rule outranks their utilities without editing those files. */
+:is(.overscroll-contain, .overscroll-x-contain, .overscroll-y-contain) {
+  overscroll-behavior: none;
+}

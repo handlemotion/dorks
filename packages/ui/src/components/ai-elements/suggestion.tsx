@@ -83,7 +83,7 @@ export function SuggestionDemo() {
         </div>
       )}
       <div className="flex flex-col gap-2">
-        <div className="flex scroll-fade-x scrollbar-none gap-2 overflow-x-auto overscroll-x-none">
+        <div className="flex scroll-fade-x scrollbar-none gap-2 overflow-x-auto overscroll-x-contain">
           {suggestions.map((suggestion) => (
             <Button
               key={suggestion}
