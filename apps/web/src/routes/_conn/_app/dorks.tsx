@@ -27,6 +27,7 @@ import { SetupStatus } from '../../../components/SetupStatus'
 import { canCreate, onboarded } from '../../../lib/onboarding'
 import { usePending } from '../../../lib/pending'
 import { withReply, type Reply } from '../../../lib/reply'
+import { useDraft } from '../../../lib/draft'
 
 // The selected dork lives in the `dork` search param (not local state) so the sidebar can highlight it and the URL is shareable.
 export const Route = createFileRoute('/_conn/_app/dorks')({
@@ -169,7 +170,7 @@ function NewDork({
   const repositories = useNewSessionRepos(buildRepos, dorks)
   const [chosen, setRepo] = useState(initialRepo)
   const repo = chosen ?? repositories[0] ?? ''
-  const [message, setMessage] = useState('')
+  const [message, setMessage] = useDraft('new')
   const [provider, setProvider] = useState<AgentProvider>(claudeReady ? 'claude' : codexReady ? 'codex' : 'claude')
   const { run, pending, error } = usePending()
   const needsClaudeToken = provider === 'claude' && !claudeReady
@@ -325,7 +326,7 @@ function Thread({ dorkId }: { dorkId: string }) {
   const navigate = useNavigate()
   const dork = useDork(dorkId)
   const { view, canLoadMore, loadMore, loading, error: eventsError, send } = useDorkEvents(dorkId)
-  const [text, setText] = useState('')
+  const [text, setText] = useDraft(dorkId)
   const [reply, setReply] = useState<Reply>()
   const { run, pending, error } = usePending()
   const { run: runStop, pending: stopping, error: stopError } = usePending()
