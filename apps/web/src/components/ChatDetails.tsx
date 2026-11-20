@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useDefaultLayout, usePanelRef } from 'react-resizable-panels'
 import { PanelResizeHandle } from '@dorks/ui/panel-resize-handle'
-import { ActivityIcon, GitPullRequestIcon, LayersIcon, MonitorIcon, PanelLeftIcon } from 'lucide-react'
+import { ActivityIcon, GitMergeIcon, GitPullRequestIcon, LayersIcon, MonitorIcon, PanelLeftIcon } from 'lucide-react'
 import { Button } from '@dorks/ui/button'
 import { ResizablePanel, ResizablePanelGroup } from '@dorks/ui/resizable'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@dorks/ui/tabs'
@@ -74,6 +74,9 @@ export function ChatDetails({
     seenReveal.current = reveal
   }, [reveal])
   const changes = data.changes ?? []
+  // Once the agent opens a pull request, the Changes tab is that PR, named by its number.
+  const prNumber = data.pullRequest?.view?.number ?? data.pr?.number
+  const prMerged = data.pullRequest?.view?.state === 'merged'
   // The first time the agent reaches for its computer while the chat is open, show its screen; a chat that opens on a computer
   // already used keeps the tab the owner was on.
   const used = data.computer?.used ?? false
@@ -107,9 +110,15 @@ export function ChatDetails({
             <DetailsTab value="artifacts" icon={<LayersIcon />}>
               Artifacts
             </DetailsTab>
-            <DetailsTab value="changes" icon={<GitPullRequestIcon />} count={data.pullRequest?.view?.changedFiles || changes.length || undefined}>
-              Changes
-            </DetailsTab>
+            {prNumber ? (
+              <DetailsTab value="changes" icon={prMerged ? <GitMergeIcon /> : <GitPullRequestIcon />}>
+                <span className="tabular-nums">#{prNumber}</span>
+              </DetailsTab>
+            ) : (
+              <DetailsTab value="changes" icon={<GitPullRequestIcon />} count={changes.length || undefined}>
+                Changes
+              </DetailsTab>
+            )}
             <DetailsTab value="computer" icon={<MonitorIcon />}>
               Computer
             </DetailsTab>

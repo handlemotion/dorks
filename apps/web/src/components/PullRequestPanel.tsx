@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   CheckIcon,
+  CircleAlertIcon,
+  CircleCheckIcon,
+  CircleDotIcon,
+  CircleXIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   ChevronsDownUpIcon,
@@ -136,7 +140,7 @@ function PullRequestView({ view, data, now, onAsk }: { view: PullRequestView; da
   const anyOpen = withPatch.some((c) => open.has(c.path))
   return (
     <div className="flex min-h-full flex-col text-sm">
-      <div className="border-t px-[14px] pt-4 pb-4">
+      <div className="border-t px-[14px] pt-3 pb-3">
         <div className="flex items-center gap-2">
           <PrState view={view} now={now} />
           <span className="ml-auto flex items-center gap-0.5 -mr-[9px] -my-2">
@@ -157,10 +161,10 @@ function PullRequestView({ view, data, now, onAsk }: { view: PullRequestView; da
         <h2 className="mt-2 text-sm font-medium text-pretty">
           {view.title} <span className="font-normal text-muted-foreground tabular-nums">#{view.number}</span>
         </h2>
-        <MergeBox view={view} data={data} onAsk={onAsk} />
       </div>
+      <MergeBox view={view} data={data} onAsk={onAsk} />
       <Tabs value={section} onValueChange={(v) => setSection(v as Section)} className="min-h-0 flex-1 gap-0">
-        <div className="flex h-10 shrink-0 items-center gap-0.5 border-y p-[5px]">
+        <div className="flex h-10 shrink-0 items-center gap-0.5 border-b p-[5px]">
           <TabsList className="h-[30px]! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
             <TabsTrigger value="overview" className={TAB_CLASS}>
               Overview
@@ -261,7 +265,7 @@ function PrState({ view, now }: { view: PullRequestView; now: number }) {
 
 const METHOD_KEY = 'dorks.merge-method'
 const METHOD_LABEL: Record<MergeMethod, string> = { squash: 'Squash and merge', merge: 'Create a merge commit', rebase: 'Rebase and merge' }
-const METHOD_BUTTON: Record<MergeMethod, string> = { squash: 'Squash and merge', merge: 'Merge', rebase: 'Rebase and merge' }
+const METHOD_BUTTON: Record<MergeMethod, string> = { squash: 'Squash and merge', merge: 'Merge pull request', rebase: 'Rebase and merge' }
 
 /** The merge method last used, remembered per browser, when this repository allows it. */
 function useMergeMethod(allowed: MergeMethod[]) {
@@ -284,48 +288,90 @@ function useMergeMethod(allowed: MergeMethod[]) {
   return [method, set] as const
 }
 
-type Readiness = { tone: 'ok' | 'warn' | 'bad' | 'muted'; text: string; canMerge: boolean }
-
-/** What stands between the PR and a merge, in a few words, and whether the button should be offered. */
 const count = (n: number) => `${n} ${n === 1 ? 'check' : 'checks'}`
 
-/** "e2e failing", "2 checks running", "4 checks passed", or nothing when the PR has no checks. */
-function checksText({ checks }: PullRequestView) {
-  if (checks.failed) return `${checks.failing.length === checks.failed ? checks.failing.join(', ') : count(checks.failed)} failing`
-  if (checks.pending) return `${count(checks.pending)} running`
-  return checks.total ? `${count(checks.passed)} passed` : ''
+type Tone = 'ok' | 'warn' | 'bad' | 'muted' | 'busy'
+
+/** One line of the merge box, as on GitHub: a status icon, a few words, and at most one small action on the right. */
+type Row = { tone: Tone; title: string; action?: ReactNode }
+
+const ROW_ICON: Record<Tone, ReactNode> = {
+  ok: <CircleCheckIcon className="size-3.5 text-emerald-600 dark:text-emerald-400" />,
+  warn: <CircleDotIcon className="size-3.5 text-amber-600 dark:text-amber-400" />,
+  bad: <CircleXIcon className="size-3.5 text-red-600 dark:text-red-400" />,
+  muted: <CircleAlertIcon className="size-3.5 text-muted-foreground" />,
+  busy: <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />,
 }
 
-function readiness(view: PullRequestView): Readiness {
+/** The checks line: all passed, some failing (named), or still running. Absent when the PR has no checks. */
+function checksRow(view: PullRequestView, onAsk?: (text: string) => void): Row | undefined {
   const { checks } = view
-  const checkText = checksText(view)
-  if (view.draft) return { tone: 'muted', text: 'Draft. Mark it ready for review on GitHub to merge.', canMerge: false }
+  if (!checks.total) return undefined
+  if (checks.failed) {
+    const names = checks.failing.length === checks.failed ? checks.failing.join(', ') : count(checks.failed)
+    return {
+      tone: 'bad',
+      title: `${names} failing`,
+      action: onAsk && (
+        <Button size="xs" variant="outline" onClick={() => onAsk(`The pull request's checks are failing (${checks.failing.join(', ')}). Find out why, fix it and push.`)}>
+          Ask to fix
+        </Button>
+      ),
+    }
+  }
+  if (checks.pending) return { tone: 'warn', title: `${count(checks.pending)} running` }
+  return { tone: 'ok', title: `${count(checks.passed)} passed` }
+}
+
+/** The branch line: draft, conflicts, out of date, still being checked, or clean. */
+function branchRow(view: PullRequestView, busy: boolean, onAsk?: (text: string) => void, onUpdate?: () => void): Row {
+  const base = view.baseRef
+  if (view.draft) return { tone: 'muted', title: 'Draft. Mark it ready on GitHub to merge.' }
   switch (view.mergeableState) {
     case 'dirty':
-      return { tone: 'bad', text: `Conflicts with ${view.baseRef}`, canMerge: false }
+      return {
+        tone: 'bad',
+        title: `Conflicts with ${base}`,
+        action: onAsk && (
+          <Button size="xs" variant="outline" onClick={() => onAsk(`Merge ${base} into this branch, resolve the conflicts, run the tests and push.`)}>
+            Ask to resolve
+          </Button>
+        ),
+      }
     case 'behind':
-      return { tone: 'warn', text: `Behind ${view.baseRef}. Update the branch to merge.`, canMerge: false }
-    case 'blocked':
-      return { tone: checks.failed ? 'bad' : 'warn', text: checks.failed || checks.pending ? `${checkText}. Required to merge.` : 'Waiting on a required review', canMerge: true }
-    case 'unstable':
-      return { tone: 'warn', text: checkText || 'Some checks are failing', canMerge: true }
+      return {
+        tone: 'warn',
+        title: `Behind ${base}`,
+        action: onUpdate && (
+          <Button size="xs" variant="outline" disabled={busy} onClick={onUpdate}>
+            {busy && <LoaderIcon className="animate-spin" />}
+            Update branch
+          </Button>
+        ),
+      }
     case 'unknown':
-      return { tone: 'muted', text: checkText ? `${checkText}. Checking mergeability.` : 'Checking mergeability', canMerge: view.mergeable !== false }
+      return view.mergeable === false ? { tone: 'bad', title: `Can't merge into ${base}` } : { tone: 'busy', title: 'Checking for conflicts' }
     default:
-      return { tone: checks.pending ? 'warn' : 'ok', text: checkText ? `Ready to merge · ${checkText}` : 'Ready to merge', canMerge: true }
+      return { tone: 'ok', title: `No conflicts with ${base}` }
   }
 }
 
-const TONE: Record<Readiness['tone'], string> = {
-  ok: 'bg-emerald-500',
-  warn: 'bg-amber-500',
-  bad: 'bg-red-500',
-  muted: 'bg-muted-foreground/50',
+/** Branch protection that is not a check: a required review. */
+function reviewRow(view: PullRequestView): Row | undefined {
+  if (view.mergeableState !== 'blocked' || view.checks.failed || view.checks.pending) return undefined
+  return { tone: 'warn', title: 'Review required' }
 }
 
+/** Whether the merge button is offered: GitHub's own rule (clean, unstable, blocked for admins, or not computed yet). */
+const canMerge = (view: PullRequestView) => !view.draft && view.mergeableState !== 'dirty' && view.mergeableState !== 'behind' && view.mergeableState !== 'draft' && view.mergeable !== false
+
+/** GitHub's merge green, at the small control size. */
+const MERGE_BUTTON = 'bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500'
+
 /**
- * The merge: the readiness line, then a split button (the method, remembered, behind its chevron). A click asks once more in place,
- * since a merge cannot be taken back; GitHub's own reason shows under it when it refuses.
+ * The merge box, laid out like GitHub's: status rows (checks, review, branch) split by full hairlines, then the green merge button
+ * when merging is possible. A click asks once more in place, since a merge cannot be taken back; GitHub's reason shows when it
+ * refuses. When it can't merge, there is no dead button: the rows say why and offer the fix.
  */
 function MergeBox({ view, data, onAsk }: { view: PullRequestView; data?: PullRequestPanelData; onAsk?: (text: string) => void }) {
   const [method, setMethod] = useMergeMethod(view.mergeMethods)
@@ -339,7 +385,6 @@ function MergeBox({ view, data, onAsk }: { view: PullRequestView; data?: PullReq
   }, [view.headSha, view.state])
 
   if (view.state !== 'open') return <Closed view={view} />
-  const ready = readiness(view)
   const run = async (kind: 'merge' | 'update', f: () => Promise<void>) => {
     setBusy(kind)
     setError(undefined)
@@ -352,45 +397,48 @@ function MergeBox({ view, data, onAsk }: { view: PullRequestView; data?: PullReq
       setBusy(undefined)
     }
   }
-  const merge = data?.merge
+  const { merge, updateBranch } = data ?? {}
+  const rows = [checksRow(view, onAsk), reviewRow(view), branchRow(view, busy === 'update', onAsk, updateBranch && (() => void run('update', () => updateBranch(view.headSha))))].filter(
+    (r): r is Row => r !== undefined,
+  )
   return (
-    <div className="mt-3">
-      <p className="flex items-start gap-2 text-xs text-muted-foreground">
-        <span aria-hidden className={`mt-[5px] size-1.5 shrink-0 rounded-full ${TONE[ready.tone]}`} />
-        <span>{ready.text}</span>
-      </p>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        {confirming && merge ? (
-          <>
-            <Button size="sm" disabled={busy === 'merge'} onClick={() => void run('merge', () => merge(method, view.headSha))}>
-              {busy === 'merge' ? <LoaderIcon className="animate-spin" /> : <GitMergeIcon />}
-              Confirm {METHOD_BUTTON[method].toLowerCase()}
-            </Button>
-            <Button size="sm" variant="ghost" disabled={busy === 'merge'} onClick={() => setConfirming(false)}>
-              Cancel
-            </Button>
-            <span className="text-xs text-muted-foreground">
-              into <Branch name={view.baseRef} />
-            </span>
-          </>
-        ) : (
-          <>
-            {merge && <MergeButton view={view} method={method} setMethod={setMethod} disabled={!ready.canMerge || busy !== undefined} onMerge={() => setConfirming(true)} />}
-            <Remedies view={view} busy={busy} onAsk={onAsk} onUpdate={data?.updateBranch && ((update) => void run('update', () => update(view.headSha)))} updateBranch={data?.updateBranch} />
-          </>
-        )}
-      </div>
-      {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
-      {data?.error && <p className="mt-2 text-xs text-muted-foreground">Could not refresh from GitHub: {data.error}</p>}
+    <div className="border-t">
+      <ul className="divide-y">
+        {rows.map((r) => (
+          <li key={r.title} className="flex h-9 items-center gap-2 px-[14px]">
+            <span className="shrink-0">{ROW_ICON[r.tone]}</span>
+            <span className="min-w-0 flex-1 truncate">{r.title}</span>
+            {r.action && <span className="shrink-0">{r.action}</span>}
+          </li>
+        ))}
+      </ul>
+      {merge && canMerge(view) && (
+        <div className="flex h-11 items-center gap-2 border-t px-[14px]">
+          {confirming ? (
+            <>
+              <Button size="xs" className={MERGE_BUTTON} disabled={busy === 'merge'} onClick={() => void run('merge', () => merge(method, view.headSha))}>
+                {busy === 'merge' && <LoaderIcon className="animate-spin" />}
+                Confirm {METHOD_BUTTON[method].toLowerCase()}
+              </Button>
+              <Button size="xs" variant="ghost" disabled={busy === 'merge'} onClick={() => setConfirming(false)}>
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <MergeButton view={view} method={method} setMethod={setMethod} disabled={busy !== undefined} onMerge={() => setConfirming(true)} />
+          )}
+        </div>
+      )}
+      {(error || data?.error) && <p className="border-t px-[14px] py-2.5 text-xs text-red-600 dark:text-red-400">{error ?? `Could not refresh from GitHub: ${data?.error}`}</p>}
     </div>
   )
 }
 
 /** A merged or closed PR: who merged it, from which branch into which. */
 function Closed({ view }: { view: PullRequestView }) {
-  if (view.state === 'closed') return <p className="mt-3 text-xs text-muted-foreground">Closed without merging.</p>
+  if (view.state === 'closed') return <p className="border-t px-[14px] py-2.5 text-xs text-muted-foreground">Closed without merging.</p>
   return (
-    <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+    <p className="flex flex-wrap items-center gap-1.5 border-t px-[14px] py-2.5 text-xs text-muted-foreground">
       <CheckIcon className="size-3.5 text-violet-600 dark:text-violet-400" />
       {view.mergedBy ? `${view.mergedBy.login} merged` : 'Merged'} {view.headRef ? <Branch name={view.headRef} /> : null} into <Branch name={view.baseRef} />
     </p>
@@ -401,12 +449,11 @@ function Closed({ view }: { view: PullRequestView }) {
 function MergeButton({ view, method, setMethod, disabled, onMerge }: { view: PullRequestView; method: MergeMethod; setMethod: (m: MergeMethod) => void; disabled: boolean; onMerge: () => void }) {
   return (
     <div className="flex items-center">
-      <Button size="sm" className="rounded-r-none" disabled={disabled} onClick={onMerge}>
-        <GitMergeIcon />
+      <Button size="xs" className={`rounded-r-none ${MERGE_BUTTON}`} disabled={disabled} onClick={onMerge}>
         {METHOD_BUTTON[method]}
       </Button>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button size="sm" className="rounded-l-none border-l border-l-primary-foreground/20 px-2" disabled={disabled} aria-label="Merge method" />}>
+        <DropdownMenuTrigger render={<Button size="xs" className={`rounded-l-none border-l border-l-white/25 px-1.5 ${MERGE_BUTTON}`} disabled={disabled} aria-label="Merge method" />}>
           <ChevronDownIcon />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-max">
@@ -426,43 +473,6 @@ function MergeButton({ view, method, setMethod, disabled, onMerge }: { view: Pul
   )
 }
 
-/** What gets a blocked PR moving: bring the branch up to date, or ask the agent to resolve conflicts or fix the checks. */
-function Remedies({
-  view,
-  busy,
-  onAsk,
-  onUpdate,
-  updateBranch,
-}: {
-  view: PullRequestView
-  busy?: 'merge' | 'update'
-  onAsk?: (text: string) => void
-  onUpdate?: (update: (sha: string) => Promise<void>) => void
-  updateBranch?: (sha: string) => Promise<void>
-}) {
-  if (view.mergeableState === 'behind' && onUpdate && updateBranch)
-    return (
-      <Button size="sm" variant="outline" disabled={busy !== undefined} onClick={() => onUpdate(updateBranch)}>
-        {busy === 'update' && <LoaderIcon className="animate-spin" />}
-        Update branch
-      </Button>
-    )
-  if (!onAsk) return null
-  if (view.mergeableState === 'dirty')
-    return (
-      <Button size="sm" variant="outline" onClick={() => onAsk(`Merge ${view.baseRef} into this branch, resolve the conflicts, run the tests and push.`)}>
-        Ask to resolve conflicts
-      </Button>
-    )
-  if (view.checks.failed > 0)
-    return (
-      <Button size="sm" variant="outline" onClick={() => onAsk(`The pull request's checks are failing (${view.checks.failing.join(', ')}). Find out why, fix it and push.`)}>
-        Ask to fix checks
-      </Button>
-    )
-  return null
-}
-
 function Branch({ name }: { name: string }) {
   return <span className="rounded-sm bg-muted px-1 py-0.5 font-mono text-xs text-foreground">{name}</span>
 }
@@ -471,10 +481,9 @@ function Branch({ name }: { name: string }) {
 function Overview({ view }: { view: PullRequestView }) {
   const sections = useMemo(() => descriptionSections(view.body), [view.body])
   const opened = new Date(view.createdAt)
-  const { checks } = view
   return (
     <div className="pb-6">
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2.5 px-[14px] pt-4 pb-4">
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2.5 px-[14px] py-3">
         <Meta label="Author">
           <Person login={view.author.login} avatarUrl={view.author.avatarUrl} />
         </Meta>
@@ -494,15 +503,6 @@ function Overview({ view }: { view: PullRequestView }) {
             {opened.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} {opened.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
           </span>
         </Meta>
-        {checks.total > 0 && (
-          <Meta label="Checks">
-            <span className="tabular-nums">
-              {checks.passed}/{checks.total} passed
-              {checks.failed > 0 && <span className="text-red-600 dark:text-red-400"> · {checks.failed} failing</span>}
-              {checks.pending > 0 && <span className="text-muted-foreground"> · {checks.pending} running</span>}
-            </span>
-          </Meta>
-        )}
         <Meta label="Changes">
           <span className="text-xs">
             <Stat additions={view.additions} deletions={view.deletions} />{' '}
@@ -512,7 +512,7 @@ function Overview({ view }: { view: PullRequestView }) {
           </span>
         </Meta>
       </dl>
-      <div className="border-t px-[14px] pt-4">
+      <div className="border-t px-[14px] pt-2">
         {sections.length === 0 ? (
           <p className="text-muted-foreground">No description.</p>
         ) : (
