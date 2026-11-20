@@ -31,8 +31,8 @@ interface Sealed {
 }
 
 /** The URL without what may be a credential: userinfo and the query string become `…`. */
-function redactUrl(u: URL): string {
-  if (!u.username && !u.password && !u.search) return u.href;
+function redactUrl(raw: string, u: URL): string {
+  if (!u.username && !u.password && !u.search) return raw; // as typed, so a catalog preset still matches it
   const auth = u.username || u.password ? "…@" : "";
   return `${u.protocol}//${auth}${u.host}${u.pathname}${u.search ? "?…" : ""}`;
 }
@@ -127,7 +127,7 @@ export async function putMcpServer(app: App, name: string, input: Record<string,
     if (parsed.protocol !== "https:" && parsed.protocol !== "http:") fail("invalid", "the URL must be http or https");
     sealed.headers = entries(input.headers, saved.headers, "headers", HEADER_NAME);
     sealed.url = url;
-    url = redactUrl(parsed);
+    url = redactUrl(url, parsed);
   } else if (transport === "stdio") {
     command = str(input.command, "command", 512);
     if (input.args !== undefined) {
