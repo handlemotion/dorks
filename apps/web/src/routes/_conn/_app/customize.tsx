@@ -8,6 +8,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@dorks/ui/field'
 import { Input } from '@dorks/ui/input'
 import { NativeSelect, NativeSelectOption } from '@dorks/ui/native-select'
+import { Textarea } from '@dorks/ui/textarea'
 import { EmptyState } from '../../../components/EmptyState'
 import { PageHeader } from '../../../components/PageHeader'
 import { SettingsGroup, SettingsRow, SettingsSection, SettingsSections } from '../../../components/settings/kit'
@@ -33,7 +34,7 @@ const draftOf = (s: McpServerView): Draft => ({
   transport: s.transport,
   url: s.url ?? '',
   command: s.command ?? '',
-  args: s.args.join(' '),
+  args: s.args.join('\n'),
   headers: s.headerNames.map((key) => ({ key, value: '', saved: true })),
   env: s.envNames.map((key) => ({ key, value: '', saved: true })),
 })
@@ -125,7 +126,7 @@ function ServerDialog({ initial, onClose }: { initial: Draft; onClose: () => voi
       const values = Object.fromEntries(pairs.filter((p) => p.key.trim()).map((p) => [p.key.trim(), p.value || (p.saved ? null : '')]))
       const input: McpServerInput = http
         ? { transport: 'http', url: d.url.trim(), headers: values }
-        : { transport: 'stdio', command: d.command.trim(), args: d.args.split(/\s+/).filter(Boolean), env: values }
+        : { transport: 'stdio', command: d.command.trim(), args: d.args.split('\n').filter((a, i, all) => a !== '' || i < all.length - 1), env: values }
       await actions.putMcpServer(d.name.trim(), input)
       onClose()
     })
@@ -177,8 +178,8 @@ function ServerDialog({ initial, onClose }: { initial: Draft; onClose: () => voi
                   </Field>
                   <Field>
                     <FieldLabel htmlFor="mcp-args">Arguments</FieldLabel>
-                    <Input id="mcp-args" className="font-mono" placeholder="-y @modelcontextprotocol/server-memory" value={d.args} onChange={(e) => set({ args: e.target.value })} />
-                    <FieldDescription>Separated by spaces.</FieldDescription>
+                    <Textarea id="mcp-args" rows={3} className="font-mono" placeholder={'-y\n@modelcontextprotocol/server-memory'} value={d.args} onChange={(e) => set({ args: e.target.value })} />
+                    <FieldDescription>One per line, exactly as written.</FieldDescription>
                   </Field>
                 </>
               )}
