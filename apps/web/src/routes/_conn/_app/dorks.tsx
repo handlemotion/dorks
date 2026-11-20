@@ -156,7 +156,7 @@ function NewDork({
   const { actions } = useDorksClient()
   const settings = useSettings()
   // Sent with the first message (the server checks it against the models the agent reported), then kept by the session.
-  const [choice, setChoice] = useState<{ model?: string; effort?: string }>({})
+  const [choice, setChoice] = useState<{ model?: string; effort?: string; fast?: boolean }>({})
   const dorks = useDorks()
   const builds = useBuilds()
   const built = (builds ?? []).filter((b) => b.image).map((b) => ({ id: b.id, name: b.name, repos: b.repos.map((r) => r.repo) }))
@@ -194,7 +194,7 @@ function NewDork({
         pending={pending}
         disabled={disabled || needsClaudeToken}
         error={error}
-        picker={{ choices: settings?.claudeModels ?? [], ...choice, onChange: (model, effort) => setChoice({ model, effort }) }}
+        picker={{ choices: settings?.claudeModels ?? [], ...choice, onChange: (model, effort, fast) => setChoice({ model, effort, fast }) }}
         upload={actions.uploadImage}
         machine={{ builds: built, buildId, onChange: setPicked }}
         onSubmit={(images) =>
@@ -231,6 +231,7 @@ function claudePicker(dork: DorkView, fallback: AgentModelChoice[] | undefined, 
     choices: dork.modelChoices ?? fallback ?? [],
     model: dork.model,
     effort: dork.effort,
+    fast: dork.fast,
     active: { model: dork.agentModel, effort: dork.agentEffort },
     onChange,
   }
@@ -414,7 +415,7 @@ function Thread({ dorkId }: { dorkId: string }) {
           disabled={dork.archived}
           error={[error, stopError, archiveError, modelSwitch.error].find(Boolean) ?? ''}
           agentLabel={dork.codexModel?.model}
-          picker={claudePicker(dork, settings?.claudeModels, (model, effort) => void modelSwitch.run(() => actions.chooseModel(dorkId, model ?? null, effort ?? null)))}
+          picker={claudePicker(dork, settings?.claudeModels, (model, effort, fast) => void modelSwitch.run(() => actions.chooseModel(dorkId, model ?? null, effort ?? null, fast)))}
           upload={actions.uploadImage}
           reply={reply}
           onClearReply={() => setReply(undefined)}

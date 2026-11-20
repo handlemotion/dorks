@@ -52,7 +52,7 @@ export class Bridge {
   private agent: Agent | CodexAgent | null = null;
   private provider: "claude" | "codex" = "claude";
   private codexModel: { model: string; effort: string } | undefined;
-  private claudeModel: { model?: string; effort?: string } = {};
+  private claudeModel: { model?: string; effort?: string; fast?: boolean } = {};
   private agentKey = "";
   private lastSessionId: string | null = null;
   private latest: CommandEntry[] = [];
@@ -347,7 +347,7 @@ export class Bridge {
 
     const provider = cfg.provider ?? "claude";
     const key = createHash("sha256")
-      .update(JSON.stringify([provider, cfg.codexModel, cfg.model ?? null, cfg.effort ?? null, cfg.repo, Object.entries(cfg.env).sort()]))
+      .update(JSON.stringify([provider, cfg.codexModel, cfg.model ?? null, cfg.effort ?? null, cfg.fast ?? false, cfg.repo, Object.entries(cfg.env).sort()]))
       .digest("hex");
     if (this.agent?.alive && key === this.agentKey) {
       // Already running with this config (a reconnect re-sends configure): nothing to do but say so again.
@@ -365,7 +365,7 @@ export class Bridge {
     this.agentKey = key;
     this.provider = provider;
     this.codexModel = cfg.codexModel;
-    this.claudeModel = { model: cfg.model, effort: cfg.effort };
+    this.claudeModel = { model: cfg.model, effort: cfg.effort, fast: cfg.fast };
     this.startAgent(this.resumableSession(provider, env, cfg.resumeSessionId), []);
     this.pipeline.control({ t: "ack", id: cid });
     this.nameFrom = cfg.nameFrom ?? null;
@@ -472,7 +472,7 @@ export class Bridge {
               const effort = this.claudeModel.effort;
               this.pipeline.control({ t: "agent_models", models, effort: effort && (EFFORTS as readonly string[]).includes(effort) ? (effort as EffortLevel) : null }, true);
             },
-            settingsFile: settingsPath(this.cfg.stateDir),
+            settingsFile: settingsPath(this.cfg.stateDir, !!this.claudeModel.fast),
             mcpConfigFile: mcpConfigPath(this.cfg.stateDir),
           });
     this.agent = agent;

@@ -94,8 +94,8 @@ const view = (d: MockDork): Dork => {
 const MOCK_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 /** What a Claude agent reports from the CLI's `initialize` answer. */
 const MOCK_MODELS = [
-  { model: "default", name: "Default (recommended)", description: "Mock Opus 1", resolved: "mock-opus-1", efforts: [...MOCK_EFFORTS] },
-  { model: "opus", name: "Mock Opus 1", description: "The thorough one", resolved: "mock-opus-1", efforts: [...MOCK_EFFORTS] },
+  { model: "default", name: "Default (recommended)", description: "Mock Opus 1", resolved: "mock-opus-1", efforts: [...MOCK_EFFORTS], fast: true },
+  { model: "opus", name: "Mock Opus 1", description: "The thorough one", resolved: "mock-opus-1", efforts: [...MOCK_EFFORTS], fast: true },
   { model: "haiku", name: "Mock Haiku 1", description: "The quick one", resolved: "mock-haiku-1", efforts: [...MOCK_EFFORTS] },
 ];
 
@@ -300,7 +300,13 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       createdAt: now,
       events: [],
       ...(provider === "claude"
-        ? { model: str(body.model), effort: str(body.effort), agentModel: MOCK_MODELS.find((c) => c.model === (str(body.model) ?? "default"))?.resolved, modelChoices: MOCK_MODELS }
+        ? {
+            model: str(body.model),
+            effort: str(body.effort),
+            fast: body.fast === true,
+            agentModel: MOCK_MODELS.find((c) => c.model === (str(body.model) ?? "default"))?.resolved,
+            modelChoices: MOCK_MODELS,
+          }
         : {}),
     });
     append(id, { type: "status", state: "creating" });
@@ -331,9 +337,10 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   const setModel = ({ body, res }: Ctx, d: MockDork) => {
     const model = str(body.model) || undefined;
     const effort = str(body.effort) || undefined;
+    const fast = body.fast === true;
     const choice = MOCK_MODELS.find((c) => c.model === (model ?? "default"));
-    if ((model || effort) && (!choice || (effort && !choice.efforts.includes(effort as never)))) return fail(res, "invalid", "not offered by the agent");
-    Object.assign(d, { model, effort, agentModel: choice?.resolved ?? "mock-opus-1", agentEffort: effort });
+    if ((model || effort || fast) && (!choice || (effort && !choice.efforts.includes(effort as never)) || (fast && !choice.fast))) return fail(res, "invalid", "not offered by the agent");
+    Object.assign(d, { model, effort, fast, agentModel: choice?.resolved ?? "mock-opus-1", agentEffort: effort });
     broadcast({ t: "dork", dorkId: d.id });
     return json(res, 200, {});
   };

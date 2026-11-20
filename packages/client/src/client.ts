@@ -230,8 +230,8 @@ export class DorksClient {
       await this.api.interrupt(id);
       this.invalidate(`dork:${id}`);
     },
-    chooseModel: async (id: string, model: string | null, effort: string | null) => {
-      await this.api.chooseModel(id, model, effort);
+    chooseModel: async (id: string, model: string | null, effort: string | null, fast = false) => {
+      await this.api.chooseModel(id, model, effort, fast);
       this.invalidate(`dork:${id}`);
     },
     /** A fresh live-view URL of the dork's computer, absolute (the simulator answers with a path on the server). Minted per view. */

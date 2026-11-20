@@ -87,6 +87,26 @@ function CommandInput({
   )
 }
 
+/** A menu's search row: no fill, a hairline under it as part of the menu, about a row's height, its icon on the rows' icon column. */
+function CommandMenuInput({
+  className,
+  ...props
+}: React.ComponentProps<typeof CommandPrimitive.Input>) {
+  return (
+    <div data-slot="command-input-wrapper" className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
+      <SearchIcon className="size-3.5 shrink-0 text-muted-foreground" />
+      <CommandPrimitive.Input
+        data-slot="command-input"
+        className={cn(
+          "h-full min-w-0 flex-1 bg-transparent text-sm outline-hidden placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
+          className
+        )}
+        {...props}
+      />
+    </div>
+  )
+}
+
 function CommandList({
   className,
   ...props
@@ -185,6 +205,7 @@ export {
   Command,
   CommandDialog,
   CommandInput,
+  CommandMenuInput,
   CommandList,
   CommandEmpty,
   CommandGroup,

@@ -18,8 +18,8 @@ import { scanWork, type Finding } from "./work-scan";
 // A handler that throws answers nothing (Claude Code carries on as if the hook did not exist); `dorks hook` does the same when this
 // process is unreachable.
 
-/** Where the bridge writes the settings it hands to `claude --settings`. */
-export const settingsPath = (stateDir: string) => join(stateDir, "claude-settings.json");
+/** Where the bridge writes the settings it hands to `claude --settings`; `fast` is the same file with fast mode on. */
+export const settingsPath = (stateDir: string, fast = false) => join(stateDir, fast ? "claude-settings-fast.json" : "claude-settings.json");
 
 /**
  * The hooks as Claude Code settings. `--settings` is applied above the user's and the project's files, and hooks from every source
@@ -39,10 +39,13 @@ export function claudeSettings(self: [node: string, cli: string]) {
 
 /** No secrets in it, but the Claude user must be able to read it (the state dir is only traversable for them under privilege separation). */
 export function writeClaudeSettings(stateDir: string, self: [string, string]) {
-  const file = settingsPath(stateDir);
-  writeFileSync(file, JSON.stringify(claudeSettings(self), null, 2) + "\n");
-  chmodSync(file, 0o644);
-  return file;
+  // Two files, so fast mode (the CLI's `fastMode` setting) rides on the one `--settings` flag next to the hooks.
+  for (const fast of [false, true]) {
+    const file = settingsPath(stateDir, fast);
+    writeFileSync(file, JSON.stringify({ ...claudeSettings(self), ...(fast ? { fastMode: true } : {}) }, null, 2) + "\n");
+    chmodSync(file, 0o644);
+  }
+  return settingsPath(stateDir);
 }
 
 /** Where the bridge writes the MCP server config it hands to `claude --mcp-config`. */

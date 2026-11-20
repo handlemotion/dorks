@@ -24,7 +24,7 @@ export function AppearancePage() {
     <SettingsSections>
       <SettingsSection title="Theme">
         <SettingsGroup>
-          <SettingsSelectRow label="Appearance" description="System follows your computer's light or dark mode." value={current} options={THEMES} onValueChange={setTheme} />
+          <SettingsSelectRow label="Appearance" value={current} options={THEMES} onValueChange={setTheme} />
         </SettingsGroup>
       </SettingsSection>
     </SettingsSections>
@@ -61,7 +61,7 @@ function ClaudeSection({ settings }: { settings: Settings }) {
         <SettingsInputRow
           id="claude-token"
           label="Token"
-          description={settings.claudeToken ? 'A token is saved.' : 'Not set.'}
+          description={settings.claudeToken ? 'Saved' : 'Not set'}
           aria-label="claude token"
           type="password"
           autoComplete="off"
@@ -76,7 +76,7 @@ function ClaudeSection({ settings }: { settings: Settings }) {
         />
         <SettingsGroupBody>
           <p>
-            Run <code>claude setup-token</code> to get one. Stored encrypted; it is never shown again. Saving a new one replaces the old.
+            From <code>claude setup-token</code>
           </p>
         </SettingsGroupBody>
       </SettingsGroup>
@@ -92,7 +92,7 @@ function CodexSection({ settings }: { settings: Settings }) {
   const { run, pending, error } = usePending()
   const current = settings.boatEnvironment
   return (
-    <SettingsSection title="ChatGPT for Codex" description="Optional. Only for your own, trusted repositories: Codex needs the sign-in on each sandbox, so code running there can read it.">
+    <SettingsSection title="Codex" description="Optional. Trusted repositories only.">
       <SettingsGroup
         label="codex environment"
         onSubmit={() => {
@@ -106,7 +106,7 @@ function CodexSection({ settings }: { settings: Settings }) {
         <SettingsInputRow
           id="boat-environment"
           label="Boat environment"
-          description={current ? `New Codex sandboxes use ${current}.` : 'Needed before creating Codex sessions. Dorks does not store ChatGPT tokens.'}
+          description={current ? 'Saved' : 'Not set'}
           aria-label="Boat environment"
           value={environment}
           onChange={(e) => setEnvironment(e.target.value)}
@@ -119,14 +119,10 @@ function CodexSection({ settings }: { settings: Settings }) {
         />
         <SettingsGroupBody>
           <p>
-            Connect ChatGPT once in Boat’s Agents &amp; Proxying page using its short code. Use a profile containing only ChatGPT, and leave Boat’s account-wide AI credentials proxy off. Create an
-            environment using that profile: turn on Agents credentials, turn off Safe for third parties, GitHub, Secrets, Boat credentials, and Proxy AI credentials.{' '}
             <a href="https://docs.boat.dev/environments/access" target="_blank" rel="noreferrer">
-              Boat setup instructions
+              How to set up a Boat environment
             </a>
-            .
           </p>
-          {current && <p>Boat checks its access settings when each sandbox starts; saving does not confirm ChatGPT is connected yet.</p>}
         </SettingsGroupBody>
       </SettingsGroup>
       <SettingsStatus saved={saved} error={error} />
@@ -156,7 +152,7 @@ export function GithubPage({ settings }: { settings: Settings }) {
   )
   return (
     <SettingsSections>
-      <SettingsSection title="Account" description="Dorks acts on GitHub as your GitHub CLI login: it clones, pushes and opens pull requests, and watches the PRs it opened." actions={check}>
+      <SettingsSection title="Account" actions={check}>
         <SettingsGroup>
           <SettingsValueRow label="Signed in as" value={signedInAs} tone={configured && !problem ? 'default' : 'muted'} valueTestId="github-status" />
           <SettingsButtonRow
@@ -183,14 +179,14 @@ export function GithubPage({ settings }: { settings: Settings }) {
   )
 }
 
-const GH_CONNECT = 'Use whoever gh is signed in as, with every organization and repository it can reach. Its token is sent to your sandboxes so agents can push.'
-const GH_CONNECTED = 'Read from gh each time it is needed, so gh auth login, refresh or switch take effect here right away.'
+const GH_CONNECT = 'Agents act as your gh login'
+const GH_CONNECTED = 'Read live from gh'
 
 /** The GitHub CLI login's organizations, how to add one it cannot see, and the scopes it lacks. */
 function GithubOrganizations({ github }: { github: GithubRepos }) {
   const missing = github.auth.missingScopes
   return (
-    <SettingsSection title="Organizations" description="Every organization your GitHub CLI login belongs to. Their repositories show in the owner switcher and the repository picker.">
+    <SettingsSection title="Organizations">
       <SettingsGroup>
         {github.orgs.map((org) => (
           <SettingsRow
@@ -203,11 +199,11 @@ function GithubOrganizations({ github }: { github: GithubRepos }) {
             }
           />
         ))}
-        {!github.orgs.length && <SettingsRow label="No organizations" description="Your GitHub CLI login isn’t a member of any organization it can see." />}
+        {!github.orgs.length && <SettingsRow label="No organizations" />}
         <SettingsButtonRow
           label="Missing an organization?"
-          description="An organization that restricts OAuth apps hides its private repositories until it grants the GitHub CLI access. Request it on GitHub, then check again."
-          actionLabel="Grant access on GitHub"
+          description="Grant gh access to it on GitHub"
+          actionLabel="Grant access"
           onAction={() => window.open(GH_ORG_ACCESS_URL, '_blank', 'noopener')}
         />
         {missing.length > 0 && (
