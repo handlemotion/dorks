@@ -5,7 +5,7 @@ import type { LocalDecision } from '@dorks/client'
 import { useDorksClient, useLocalAccess } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
 import { CodeBlock, CodeBlockContent } from '@dorks/ui/code-block'
-import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from '@dorks/ui/trace'
+import { TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger } from '@dorks/ui/trace'
 import { usePending } from '../lib/pending'
 
 // An agent's request to use the owner's own computer (docs/local-access.md), as a card in the chat. While it waits, the card shows
@@ -77,21 +77,25 @@ export function LocalRequestCard({ block }: { block: LocalBlock }) {
   const ctx = useContext(LocalAccessContext)
   const agent = ctx?.agent ?? 'The agent'
   const pending = block.status === 'pending'
-  const line = (
-    <TraceLine status={block.status === 'failed' ? 'error' : block.status === 'allowed' ? 'running' : undefined}>
-      <TraceIcon>{icon(block)}</TraceIcon>
-      <TraceTitle className={pending ? 'text-foreground' : undefined}>{title(block, agent)}</TraceTitle>
-    </TraceLine>
-  )
+  // A card, the way Settings raises a group: the surface fill with its hairline, rows split by full 6% lines, the answer in a footer.
   return (
-    <Trace role={pending ? 'alert' : 'status'} data-testid="local-request" data-status={block.status}>
-      {line}
-      <div className="flex min-w-0 flex-col gap-2 pl-6">
+    <div
+      role={pending ? 'alert' : 'status'}
+      data-testid="local-request"
+      data-status={block.status}
+      className="flex w-full min-w-0 flex-col divide-y divide-border overflow-hidden rounded-[6px] border border-surface-line bg-surface"
+    >
+      <div className={`flex min-w-0 items-center gap-2.5 px-4 py-3 text-sm ${block.status === 'failed' ? 'text-destructive' : 'text-foreground'}`}>
+        <span aria-hidden className="flex size-4 shrink-0 items-center justify-center text-muted-foreground [&_svg]:size-4">
+          {icon(block)}
+        </span>
+        <span className="min-w-0 truncate">{title(block, agent)}</span>
+      </div>
+      <div className="flex min-w-0 flex-col gap-3 px-4 py-3">
         <Target block={block} />
         <p className="text-sm text-muted-foreground">
           <span className="text-foreground">{agent}’s reason:</span> {block.reason}
         </p>
-        {pending ? <Answer block={block} /> : <Decided block={block} />}
         {!pending && block.preview && (
           <TraceCollapsible>
             <TraceCollapsibleTrigger className="text-xs">{block.request === 'run' ? 'Output' : 'Contents'}</TraceCollapsibleTrigger>
@@ -106,7 +110,8 @@ export function LocalRequestCard({ block }: { block: LocalBlock }) {
           </TraceCollapsible>
         )}
       </div>
-    </Trace>
+      {pending ? <Answer block={block} /> : <Decided block={block} />}
+    </div>
   )
 }
 
@@ -118,7 +123,7 @@ function Answer({ block }: { block: LocalBlock }) {
   const answer = (d: LocalDecision) => void run(() => actions.decideLocal(ctx.dorkId, block.requestId, d))
   const run1 = block.request === 'run'
   return (
-    <div className="flex flex-col gap-2 pt-1">
+    <div className="flex flex-col gap-2 bg-app/40 px-4 py-3">
       <div className="flex flex-wrap gap-2">
         <Button size="sm" disabled={pending} onClick={() => answer({ decision: 'once' })}>
           Allow once
@@ -130,11 +135,7 @@ function Answer({ block }: { block: LocalBlock }) {
           Deny
         </Button>
       </div>
-      <p className="text-xs text-muted-foreground">
-        {run1
-          ? 'Runs in your login shell, as you, with no terminal. For 1 hour lets this session run this exact command in this folder again without asking.'
-          : 'Shares this one text file. For 1 hour lets this session read other files in the same folder without asking.'}
-      </p>
+      <p className="text-xs text-muted-foreground">{run1 ? 'Runs as you. 1 hour covers only this command in this folder.' : 'Shares this one file. 1 hour covers files in this folder.'}</p>
       {error && (
         <p role="alert" className="text-xs text-destructive">
           {error}
@@ -148,7 +149,7 @@ function Decided({ block }: { block: LocalBlock }) {
   const ctx = useContext(LocalAccessContext)
   if (block.status === 'denied' || block.status === 'expired') return null
   return (
-    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+    <div className="flex min-h-11 flex-wrap items-center gap-2 bg-app/40 px-4 py-2 text-xs text-muted-foreground">
       <ShieldCheckIcon aria-hidden className="size-3.5" />
       <span>{decidedText(block)}</span>
       {ctx && block.grantId && <StopAllowing grantId={block.grantId} />}

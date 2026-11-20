@@ -26,11 +26,11 @@ export function ComputerPage() {
   if (!access) return <p className="px-4 text-sm text-muted-foreground">Loading…</p>
   return (
     <SettingsSections>
-      <SettingsSection title="Access" description="Agents run in the cloud. When one needs something that only exists here, a signed-in CLI or a local file, it can ask.">
+      <SettingsSection title="Access" description="For CLIs and files that only exist here.">
         <SettingsGroup>
           <SettingsSelectRow
-            label="Agents may ask to use this computer"
-            description={access.enabled ? 'You see the exact command or file in the chat and decide. Nothing runs without your answer.' : 'Agents are told it is off and cannot ask.'}
+            label="Agents can ask"
+            description={access.enabled ? 'Nothing runs without your OK.' : 'Agents cannot ask.'}
             value={access.enabled ? 'ask' : 'off'}
             options={MODES}
             onValueChange={(v) => void run(() => actions.setLocalAccess(v === 'ask'))}
@@ -55,7 +55,7 @@ export function ComputerPage() {
             ))}
           </SettingsGroup>
         ) : (
-          <EmptyState figure="laptop" title="Nothing allowed for now" description="When you allow a request for 1 hour, it shows here until it ends or you stop it." />
+          <EmptyState figure="laptop" title="Nothing allowed for now" description="Requests you allow for 1 hour show here." />
         )}
       </SettingsSection>
     </SettingsSections>
