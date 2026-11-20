@@ -491,7 +491,7 @@ const agentSecrets = Effect.fnUntraced(function* (app: App, dork: DorkRow): Effe
   const claude = dork.provider === "claude" ? yield* Effect.promise(() => claudeToken(app)) : undefined;
   if (dork.provider === "claude" && !claude) return yield* new OnboardingIncomplete({ message: "Claude token not set" });
   const gh = (yield* Effect.promise(() => githubToken(app))) ?? (sim ? "sim-github-token" : undefined);
-  if (!gh) return yield* new OnboardingIncomplete({ message: "GitHub token not set" });
+  if (!gh) return yield* new OnboardingIncomplete({ message: "GitHub is not connected, or the GitHub CLI is signed out" });
   const secrets = yield* Effect.promise(() => cliSecrets(app));
   // Build variables (docs/builds.md) over the shared ones; decrypted only here, for an authenticated bridge allowed to mint secrets.
   const buildId = dork.buildId && getBuild(app, dork.buildId) ? dork.buildId : undefined;
@@ -521,7 +521,7 @@ const configureFrame = (app: App, dork: DorkRow): Effect.Effect<ToBridge, Onboar
     })),
   );
 
-/** The stored GitHub token, for the bridge's refresh path. Same gating as `configure`. */
+/** The GitHub CLI's current token, for the bridge's refresh path. Same gating as `configure`. */
 export async function ghToken(app: App, dorkId: string): Promise<{ token: string } | null> {
   const dork = getDork(app.db, dorkId);
   if (!dork || dork.deleting) fail("forbidden", "forbidden");

@@ -31,7 +31,6 @@ pub fn quit(app: &AppHandle) {
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| boot::show_main(app)))
-        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init());
     #[cfg(feature = "updater")]
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
@@ -45,8 +44,6 @@ pub fn run() {
             commands::set_public_url,
             commands::tunnel_status,
             commands::open_data_dir,
-            commands::gh_status,
-            commands::read_gh_token,
             commands::set_keep_awake,
             commands::keep_awake_mode,
             commands::set_keep_awake_mode,

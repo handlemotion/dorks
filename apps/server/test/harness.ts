@@ -222,8 +222,10 @@ export function fakeFetch(handler: Handler) {
   return Object.assign(f, { calls });
 }
 
-export function harness(opts: { fetch?: typeof fetch; config?: Partial<Config> } = {}) {
+export function harness(opts: { fetch?: typeof fetch; config?: Partial<Config>; ghToken?: string } = {}) {
   const clock = { t: NOW };
+  // The GitHub CLI's login: signed in with this token unless a test sets it to null (logged out).
+  const gh = { token: (opts.ghToken ?? "gh-token") as string | null };
   const box = fakeBox();
   // Tests never reach the real network: by default GitHub knows one user, and anything else fails loudly.
   const offline = fakeFetch((url) => (url.pathname === "/user" ? Response.json({ login: "agent-bot" }) : new Response("{}", { status: 404 })));
@@ -233,6 +235,7 @@ export function harness(opts: { fetch?: typeof fetch; config?: Partial<Config> }
     db: new Db(),
     now: () => clock.t,
     fetch: opts.fetch ?? offline,
+    ghLogin: async () => (gh.token ? { token: gh.token, source: "gh" } : { problem: "gh_logged_out" }),
     getBox: async () => box,
     getSnapshotDriver: async () => snapshotDriver,
     snapshotAssets: async () => assets.current,
@@ -243,6 +246,7 @@ export function harness(opts: { fetch?: typeof fetch; config?: Partial<Config> }
 
   const h = {
     app,
+    gh,
     box,
     clock,
     scheduler,

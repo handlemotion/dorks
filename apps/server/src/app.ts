@@ -1,3 +1,4 @@
+import type { GhLogin } from "./lib/ghCli";
 import type { AppError, AppErrorCode } from "@dorks/shared";
 import type { BoxProvider } from "./core/box";
 import type { SnapshotDriver } from "./core/snapshot";
@@ -55,6 +56,8 @@ export interface Config {
   uiOrigins: string[];
   /** Base snapshot used when settings do not name one (dev and tests). */
   baseSnapshotId?: string;
+  /** `GH_TOKEN`, else `GITHUB_TOKEN`: overrides the GitHub CLI's login the way `gh` itself does (development and the e2e). */
+  githubEnvToken?: string;
 }
 
 export interface SchedulerLike {
@@ -70,6 +73,8 @@ export interface App {
   now(): number;
   uuid(): string;
   fetch: typeof fetch;
+  /** The GitHub CLI's login (lib/ghCli.ts), read fresh on every call: callers go through services/github.ts, which caches it. Tests replace it. */
+  ghLogin(): Promise<GhLogin>;
   /** The sandbox provider for the current settings. Tests replace it. */
   getBox(): Promise<BoxProvider>;
   /** Where a freshly created sandbox's bridge connects. */

@@ -36,7 +36,7 @@ pnpm install
 pnpm dev     # real server with simulated sandboxes + the web UI; prints the URL to open
 ```
 
-Open the printed URL (it carries the dev owner token), then follow setup: Boat key, base snapshot ([docs/boat.md](docs/boat.md)), agent sign-in, GitHub token. With `pnpm dev` sandboxes are simulated, so you can create and drive sessions without a Boat account.
+Open the printed URL (it carries the dev owner token), then follow setup: Boat key, base snapshot ([docs/boat.md](docs/boat.md)), agent sign-in, GitHub (your `gh` login). With `pnpm dev` sandboxes are simulated, so you can create and drive sessions without a Boat account.
 
 To try the UI with no server at all: `pnpm dev:mock` serves an in-memory mock server on :4747 with a scripted fake agent.
 

@@ -62,7 +62,7 @@ export function useUsage(): Usage | undefined {
   return useStore(useDorksClient().usage()).data;
 }
 
-/** What the saved GitHub token can see: its user, organizations and repositories; `undefined` while loading. */
+/** What the GitHub CLI login can see: its user, organizations and repositories; `undefined` while loading. */
 export function useGithubRepos(): GithubRepos | undefined {
   return useStore(useDorksClient().githubRepos()).data;
 }

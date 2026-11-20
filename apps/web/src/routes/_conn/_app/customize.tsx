@@ -12,7 +12,6 @@ import { Textarea } from '@dorks/ui/textarea'
 import { CONNECTORS, connectorById, type Connector } from '../../../components/connectors'
 import { PageHeader } from '../../../components/PageHeader'
 import { SettingsGroup, SettingsRow, SettingsSection, SettingsSections } from '../../../components/settings/kit'
-import { Tip } from '../../../components/Tip'
 import { usePending } from '../../../lib/pending'
 
 // Customize (docs/mcp.md): the connector catalog and the owner's custom MCP servers. Every agent gets them, in every sandbox, next to the built-in `dorks` server.
@@ -49,16 +48,17 @@ function Customize() {
       <PageHeader
         title="Customize"
         actions={
-          <Button size="sm" variant="outline" onClick={() => setDraft(BLANK)}>
-            Add custom server
+          <Button size="sm" onClick={() => setDraft(BLANK)}>
+            <PlusIcon />
+            Add server
           </Button>
         }
       />
       <div className="app-main min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-4xl px-4 pt-8 pb-16 sm:px-6">
           <SettingsSections>
-            <SettingsSection title="Connectors" description="Every agent gets these tools, in every sandbox. Running sessions pick up a change when their current turn ends.">
-              <ul aria-label="connectors" className="grid gap-2.5 md:grid-cols-2">
+            <SettingsSection title="Connectors">
+              <ul aria-label="connectors" className="grid gap-2 md:grid-cols-2">
                 {CONNECTORS.map((c) => (
                   <ConnectorCard key={c.id} connector={c} connected={saved.has(c.id)} loading={!servers} onOpen={() => setConnecting(c)} />
                 ))}
@@ -82,19 +82,14 @@ function Customize() {
   )
 }
 
-/** The brand mark in a small tile: the simple-icons path in its colour (the foreground when the colour is too dark to read), or a monogram. */
+/** The brand mark: the path in its colour (the foreground when the colour is too dark to read), or a monogram. */
 function ConnectorIcon({ connector: c }: { connector: Connector }) {
-  const dark = c.icon && luminance(c.icon.hex) < 0.12
+  if (!c.icon) return <span aria-hidden className="flex size-5 shrink-0 items-center justify-center text-xs text-foreground">{c.name[0]}</span>
+  const dark = luminance(c.icon.hex) < 0.12
   return (
-    <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-[8px] border border-surface-line bg-app">
-      {c.icon ? (
-        <svg viewBox="0 0 24 24" className="size-5" fill={dark ? 'currentColor' : `#${c.icon.hex}`}>
-          <path d={c.icon.path} />
-        </svg>
-      ) : (
-        <span className="text-sm text-foreground">{c.name[0]}</span>
-      )}
-    </span>
+    <svg aria-hidden viewBox="0 0 24 24" className="size-5 shrink-0" fill={dark ? 'currentColor' : `#${c.icon.hex}`} fillRule={c.icon.evenodd ? 'evenodd' : undefined}>
+      <path d={c.icon.path} />
+    </svg>
   )
 }
 
@@ -103,28 +98,31 @@ function luminance(hex: string) {
   return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
 }
 
+/** One catalog entry: the whole card opens its dialog. */
 function ConnectorCard({ connector: c, connected, loading, onOpen }: { connector: Connector; connected: boolean; loading: boolean; onOpen: () => void }) {
   return (
-    <li className="flex min-w-0 items-start gap-3 rounded-[10px] bg-surface p-4">
-      <ConnectorIcon connector={c} />
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="text-sm leading-5 text-foreground">{c.name}</span>
-        <span className="line-clamp-2 text-xs text-pretty text-muted-foreground">{c.description}</span>
-        <span className="text-xs text-muted-foreground">by {c.by}</span>
-      </div>
-      <Tip label={connected ? `Manage ${c.name}` : `Connect ${c.name}`}>
-        <Button
-          type="button"
-          size="icon-sm"
-          variant="ghost"
-          aria-label={connected ? `manage ${c.name}` : `connect ${c.name}`}
-          disabled={loading}
-          className={connected ? 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15 dark:text-emerald-400' : 'bg-foreground/[0.04]'}
-          onClick={onOpen}
-        >
-          {connected ? <CheckIcon /> : <PlusIcon />}
-        </Button>
-      </Tip>
+    <li className="min-w-0">
+      <button
+        type="button"
+        aria-label={connected ? `manage ${c.name}` : `connect ${c.name}`}
+        disabled={loading}
+        onClick={onOpen}
+        className="group flex w-full min-w-0 items-center gap-3 rounded-[8px] bg-surface px-3 py-2.5 text-start outline-none hover:bg-foreground/[0.03] focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+      >
+        <ConnectorIcon connector={c} />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="text-sm text-foreground">{c.name}</span>
+          <span className="truncate text-xs text-muted-foreground">{c.description}</span>
+        </span>
+        {connected ? (
+          <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+            <CheckIcon className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+            Connected
+          </span>
+        ) : (
+          <PlusIcon className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
+        )}
+      </button>
     </li>
   )
 }

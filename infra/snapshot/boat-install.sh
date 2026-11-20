@@ -10,6 +10,8 @@ node -e 'const [major, minor] = process.versions.node.split(".").map(Number); pr
 sudo install -m 0755 "$HOME/dorks-bridge.mjs" /usr/local/bin/dorks-bridge
 sudo ln -sf dorks-bridge /usr/local/bin/dorks
 sudo npm install -g @openai/codex@0.166.0
+# Pinned so the agent offers the current models by version (Opus 5.5, Sonnet 5.5, Fable 5.2, Haiku 5.5), not the image's older CLI.
+sudo npm install -g @anthropic-ai/claude-code@2.1.329
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -31,6 +33,7 @@ sudo ln -sf dorks-bridge /usr/local/bin/gh
 
 git --version
 claude --version
+test "$(claude --version | cut -d" " -f1)" = 2.1.329
 codex --version
 test "$(command -v gh)" = /usr/local/bin/gh
 /usr/bin/gh --version

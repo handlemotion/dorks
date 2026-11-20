@@ -322,7 +322,7 @@ async function runInputs({ app, r0, build }: Run): Promise<RunInputs> {
   if (!base) throw runError("Boat is still being prepared: wait for the base snapshot, then retry.");
   const baseAt = baseKey(app);
   const gh = spec.repos.length ? ((await githubToken(app)) ?? (app.cfg.boxProvider === "sim" ? "sim-github-token" : undefined)) : undefined;
-  if (spec.repos.length && !gh) throw runError("Add a GitHub token in Settings: the build clones repositories.");
+  if (spec.repos.length && !gh) throw runError("Connect GitHub in Settings (sign in with the GitHub CLI): the build clones repositories.");
   // An image run of the approved spec gets the build-time variables; anything else gets the plain ones only.
   const approved = r0.kind === "image" && build.approvedHash === r0.spec_hash;
   const allBuildTime = await buildVarValues(app, build.id, true);

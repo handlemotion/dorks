@@ -94,9 +94,13 @@ const view = (d: MockDork): Dork => {
 const MOCK_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 /** What a Claude agent reports from the CLI's `initialize` answer. */
 const MOCK_MODELS = [
-  { model: "default", name: "Default (recommended)", description: "Mock Opus 1", resolved: "mock-opus-1", efforts: [...MOCK_EFFORTS], fast: true },
-  { model: "opus", name: "Mock Opus 1", description: "The thorough one", resolved: "mock-opus-1", efforts: [...MOCK_EFFORTS], fast: true },
-  { model: "haiku", name: "Mock Haiku 1", description: "The quick one", resolved: "mock-haiku-1", efforts: [...MOCK_EFFORTS] },
+  { model: "default", name: "Default (recommended)", description: "Opus 5.5 · Best for everyday, complex tasks", resolved: "claude-opus-5-5", efforts: [...MOCK_EFFORTS], fast: true },
+  { model: "opus", name: "Opus 5.5", description: "Best for everyday, complex tasks", resolved: "claude-opus-5-5", efforts: [...MOCK_EFFORTS], fast: true },
+  { model: "fable", name: "Fable 5.2", description: "Most capable for your hardest tasks", resolved: "claude-fable-5-2", efforts: [...MOCK_EFFORTS], fast: true },
+  { model: "sonnet", name: "Sonnet 5.5", description: "Efficient for routine tasks", resolved: "claude-sonnet-5-5", efforts: [...MOCK_EFFORTS] },
+  { model: "haiku", name: "Haiku 5.5", description: "Fastest for quick answers", resolved: "claude-haiku-5-5", efforts: [...MOCK_EFFORTS] },
+  { model: "claude-opus-4-8", name: "Opus 4.8", description: "Best for everyday, complex tasks", resolved: "claude-opus-4-8", efforts: [...MOCK_EFFORTS], fast: true },
+  { model: "claude-sonnet-4-6", name: "Sonnet 4.6", description: "Efficient for routine tasks", resolved: "claude-sonnet-4-6", efforts: [...MOCK_EFFORTS] },
 ];
 
 export async function startMockServer(opts: MockOptions = {}): Promise<MockServer> {
@@ -341,7 +345,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     const fast = body.fast === true;
     const choice = MOCK_MODELS.find((c) => c.model === (model ?? "default"));
     if ((model || effort || fast) && (!choice || (effort && !choice.efforts.includes(effort as never)) || (fast && !choice.fast))) return fail(res, "invalid", "not offered by the agent");
-    Object.assign(d, { model, effort, fast, agentModel: choice?.resolved ?? "mock-opus-1", agentEffort: effort });
+    Object.assign(d, { model, effort, fast, agentModel: choice?.resolved ?? "claude-opus-5-5", agentEffort: effort });
     broadcast({ t: "dork", dorkId: d.id });
     return json(res, 200, {});
   };
@@ -436,7 +440,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     };
     set("boatKey");
     set("claudeToken");
-    if (typeof body.githubToken === "string") settings.github = body.githubToken ? { configured: true, login: "octocat" } : { configured: false };
+    if (typeof body.githubConnected === "boolean") settings.github = body.githubConnected ? { configured: true, login: "octocat" } : { configured: false, login: null };
     for (const k of ["boatOrg", "boatEnvironment", "baseSnapshotId"] as const) if (typeof body[k] === "string") settings[k] = body[k] || null;
     if (typeof body.sleepMinutes === "number") {
       if (!Number.isFinite(body.sleepMinutes) || body.sleepMinutes <= 0 || body.sleepMinutes > 1440) return "minutes must be between 0 and 1440";
@@ -489,8 +493,9 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
                 login: "octocat",
                 orgs: ["acme", "handlemotion"],
                 repos: ["acme/demo", "handlemotion/dorks", "handlemotion/transitive", "octocat/hello-world", "acme/api", "handlemotion/site", "octocat/dotfiles", "acme/design-system"],
+                auth: { state: "ok", source: "gh", missingScopes: [] },
               }
-            : { login: null, orgs: [], repos: [] },
+            : { login: null, orgs: [], repos: [], auth: { state: "not_connected", source: null, missingScopes: [] } },
         ),
     ],
     [

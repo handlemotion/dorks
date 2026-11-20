@@ -25,7 +25,7 @@ pnpm --filter @dorks/web test       # unit tests
 ## Layout
 
 - `src/routes/_conn.tsx` the owner-token gate; everything that talks to the server lives under it.
-  - `setup.tsx` first-run guide (Boat key, base snapshot, agent sign-in, GitHub token).
+  - `setup.tsx` first-run guide (Boat key, base snapshot, agent sign-in, GitHub CLI login).
   - `_app/dorks.tsx`, `_app/settings.tsx` the app with the sidebar.
 - `src/components/SettingsForms.tsx` one form per setting group, shared by setup and settings.
 - `src/lib/desktop.ts` the desktop shell contract; `src/lib/connection.ts` server discovery.

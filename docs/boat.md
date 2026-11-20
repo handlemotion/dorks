@@ -12,7 +12,7 @@ Boat's `default` machine is 4 vCPU and 8 GB RAM at $0.036/hour, billed per secon
 2. **Public URL.** Sandboxes reach your server through a tunnel to the bridge port. Set the tunnel's `https://` URL in Settings or as `DORKS_PUBLIC_URL`. See [architecture](architecture.md). A dork cannot be created before this is set, and the URL must stay stable, because a sandbox keeps the one it was created with.
 3. **Base snapshot**: built for you in the background as soon as the Boat key is saved (below).
 4. **Agent sign-in**: a Claude token (the default and the recommended agent); a ChatGPT (Codex) environment is optional (below).
-5. **GitHub token** ([GitHub](github.md)).
+5. **GitHub**: your GitHub CLI login ([GitHub](github.md)).
 
 ## Build the base snapshot ("Prepare Boat")
 

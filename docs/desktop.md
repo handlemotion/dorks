@@ -19,7 +19,7 @@ Dorks.app
 
 ## Contract with the server
 
-Defined in one file, `crates/shell-core/src/contract.rs`. The server gets this environment (and only this plus `PATH`, `HOME`, `TMPDIR`, `LANG`, `USER`):
+Defined in one file, `crates/shell-core/src/contract.rs`. The server gets this environment (and only this plus `PATH`, `HOME`, `TMPDIR`, `LANG`, `LC_ALL`, `USER`, `LOGNAME`, and `GH_CONFIG_DIR` / `XDG_CONFIG_HOME` so the server's `gh auth token` finds the GitHub CLI's login):
 
 | Variable | Value |
 |---|---|
@@ -43,8 +43,6 @@ Commands (`invoke` from `@tauri-apps/api/core`, or `window.__TAURI__.core.invoke
 | `set_public_url(url \| null)` | validate (https, or http for localhost), save, restart tunnel and server |
 | `tunnel_status()` | `{ kind, state, error }`; `state` is `ready`, `error` or `lost` |
 | `open_data_dir()` | reveal the app directory in Finder |
-| `gh_status()` | `{ installed, loggedIn }` for the GitHub CLI |
-| `read_gh_token()` | **asks the user in a native dialog**, then returns `gh auth token`, or `null` if gh is missing or logged out; `"consent_denied"` if declined. The UI then stores it with `PUT /api/settings { githubToken }` |
 | `set_keep_awake(active)` | tell the shell dorks are (not) working; returns whether the assertion is held |
 | `keep_awake_mode()` / `set_keep_awake_mode(mode)` | the setting |
 | `set_window_mode("onboarding" \| "app")` | switch the window chrome (see "Window chrome" below); remembered for the next launch. Returns the new `chrome` |

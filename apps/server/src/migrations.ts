@@ -269,6 +269,12 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE dorks ADD COLUMN fast INTEGER NOT NULL DEFAULT 0;
   `,
   `
+  -- GitHub is the GitHub CLI's login, read live (lib/ghCli.ts): settings keep only the owner's consent. A stored token (pasted, or
+  -- copied from gh once) is dropped; an install that had one stays connected and now reads gh. The login is learned again.
+  ALTER TABLE settings ADD COLUMN github_connected INTEGER NOT NULL DEFAULT 0;
+  UPDATE settings SET github_connected = (github_token_enc IS NOT NULL), github_token_enc = NULL, github_login = NULL;
+  `,
+  `
   -- MCP servers from Customize (services/mcpServers.ts). Header and env values may be secrets: they live in secrets_enc, one AES-GCM
   -- envelope of a JSON object {headers, env}; the names alone are copied to secret_names for display.
   CREATE TABLE mcp_servers (

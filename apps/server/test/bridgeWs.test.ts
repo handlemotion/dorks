@@ -109,7 +109,8 @@ describe("bridge socket: rpc", () => {
 
   it("configure returns the secrets over the socket only", async () => {
     const { h, id, t } = await setup("waking", { provider: "claude", repo: "o/r" });
-    await updateSettings(h.app, { claudeToken: "claude-token-xyz", githubToken: "gh-token-abc" });
+    h.gh.token = "gh-token-abc";
+    await updateSettings(h.app, { claudeToken: "claude-token-xyz", githubConnected: true });
     await h.app.db.tx(() => {});
     const { setSecret } = await import("../src/services/settings");
     await setSecret(h.app, "DEPLOY_TOKEN", "dp-123");
@@ -130,7 +131,7 @@ describe("bridge socket: rpc", () => {
 
   it("configure is refused for an archived dork", async () => {
     const { h, t } = await setup("idle", { archived: true });
-    await updateSettings(h.app, { claudeToken: "c", githubToken: "g" });
+    await updateSettings(h.app, { claudeToken: "c", githubConnected: true });
     expect(await t.configure()).toBeNull();
     await t.close();
   });
