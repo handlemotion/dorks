@@ -81,7 +81,7 @@ function BuildList() {
   if (builds && builds.length === 0)
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <PageHeader title="Builds" divider={false} />
+        <PageHeader title="Builds" />
         <div className="flex min-h-0 flex-1 items-center justify-center pb-12">
           <EmptyState figure="stack" title="No builds yet" description="A build is a machine set up once: tools installed, variables set, repositories cloned.">
             {newButton}
@@ -118,7 +118,7 @@ function BuildPage({ id }: { id: string }) {
   if (build === null)
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <PageHeader title="Builds" divider={false} />
+        <PageHeader title="Builds" />
         <div className="flex min-h-0 flex-1 items-center justify-center pb-12">
           <EmptyState figure="stack" title="This build no longer exists">
             <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/builds" />}>

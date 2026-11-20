@@ -61,7 +61,7 @@ function Dorks() {
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-onboarding={settings ? (ready ? 'complete' : 'preparing') : 'loading'}>
-      {!selected && <PageHeader title="New session" divider={false} />}
+      {!selected && <PageHeader title="New session" />}
       {settings && ready && !settings.claudeToken && (
         <Notice>
           Add a{' '}
@@ -370,7 +370,6 @@ function Thread({ dorkId }: { dorkId: string }) {
     >
       <section className="flex min-w-0 flex-1 flex-col" aria-label="thread" data-state={dork.state}>
         <PageHeader
-          divider={false}
           title={dork.title}
           titleActions={<ArchiveButton archived={dork.archived} disabled={archiving} onClick={() => void runArchive(() => actions.archiveDork(dorkId, !dork.archived))} />}
           actions={
