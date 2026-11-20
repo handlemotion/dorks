@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useLocation } from '@tanstack/react-router'
 import { BlocksIcon, BoxIcon, ChevronDownIcon, ChevronRightIcon, PlusIcon, ServerIcon, SettingsIcon, WorkflowIcon } from 'lucide-react'
 import type { DorkState } from '@dorks/shared'
-import { useDorks, useDorksClient, useGithubRepos } from '@dorks/client/react'
+import { useDorks, useGithubRepos } from '@dorks/client/react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@dorks/ui/collapsible'
 import {
   DropdownMenu,
@@ -19,7 +19,6 @@ import { FluidHoverHighlight } from '@dorks/ui/fluid-hover-highlight'
 import { Sidebar, useSidebar } from '@dorks/ui/sidebar'
 import githubDark from '../assets/providers/github-dark.svg'
 import githubLight from '../assets/providers/github-light.svg'
-import { GH_ORG_ACCESS_URL } from '../lib/github'
 import { useDisconnect } from './ConnectionGate'
 import { ChatList, type Chat, type ChatRoute } from './ChatList'
 import { Logo } from './onboarding/List'
@@ -47,18 +46,8 @@ export function AppSidebar() {
   const dorks = useDorks(false)
   const disconnect = useDisconnect()
   const github = useGithubRepos()
-  const { actions } = useDorksClient()
   const chats: Chat[] = (dorks ?? []).map((d) => ({ id: d.id, title: d.title, repo: d.repo, working: MOVING.has(d.state), pr: prOf(d.prUrl) }))
-  return <AppSidebarView chats={chats} accounts={github} onDisconnect={disconnect} onAddOrganization={() => addOrganization(actions.refreshGithub)} usage={<UsageBar />} />
-}
-
-/**
- * Organizations come from the GitHub CLI's login. One missing from the switcher has not granted the GitHub CLI access (an OAuth app
- * policy), so this opens GitHub's page to request it, and reads GitHub again when the window is back in focus.
- */
-function addOrganization(refresh: () => Promise<void>) {
-  window.open(GH_ORG_ACCESS_URL, '_blank', 'noopener')
-  window.addEventListener('focus', () => void refresh().catch(() => {}), { once: true })
+  return <AppSidebarView chats={chats} accounts={github} onDisconnect={disconnect} usage={<UsageBar />} />
 }
 
 const ALL = ''
@@ -100,19 +89,7 @@ function GithubMark() {
  * The header's switcher, the way an organization switcher works: the current owner (a GitHub user or organization) with its avatar,
  * and a menu to scope the sidebar to another owner or to all of them. Below that, the connection: change the server.
  */
-function OwnerSwitcher({
-  owners,
-  scope,
-  setScope,
-  onDisconnect,
-  onAddOrganization,
-}: {
-  owners: string[]
-  scope: string
-  setScope: (scope: string) => void
-  onDisconnect?: (() => void) | null
-  onAddOrganization?: () => void
-}) {
+function OwnerSwitcher({ owners, scope, setScope, onDisconnect }: { owners: string[]; scope: string; setScope: (scope: string) => void; onDisconnect?: (() => void) | null }) {
   const name = scope || 'All repositories'
   return (
     <DropdownMenu modal={false}>
@@ -138,13 +115,6 @@ function OwnerSwitcher({
             ))}
           </DropdownMenuRadioGroup>
         </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        {onAddOrganization && (
-          <DropdownMenuItem onClick={onAddOrganization}>
-            <PlusIcon />
-            <span className="min-w-0 flex-1 truncate">Add organization</span>
-          </DropdownMenuItem>
-        )}
         {onDisconnect && (
           <>
             <DropdownMenuSeparator />
@@ -178,7 +148,6 @@ export function AppSidebarView({
   chats,
   accounts,
   onDisconnect,
-  onAddOrganization,
   orderKey = 'dorks.chat-order',
   chatTo,
   usage,
@@ -187,8 +156,6 @@ export function AppSidebarView({
   /** What the GitHub CLI's login can see (`GET /api/github/repos`): its user and organizations fill the owner switcher. */
   accounts?: { login: string | null; orgs: string[]; repos: string[] }
   onDisconnect?: (() => void) | null
-  /** "Add organization" in the owner switcher; hidden without it. */
-  onAddOrganization?: () => void
   orderKey?: string
   chatTo?: ChatRoute
   usage?: ReactNode
@@ -225,7 +192,7 @@ export function AppSidebarView({
           <FluidHoverHighlight className="z-0 rounded-[6px] bg-foreground/[0.05]" rect={hover.rect} session={hover.session} />
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto overscroll-y-contain">
             <nav aria-label="App" className="flex shrink-0 flex-col gap-0.5">
-              <OwnerSwitcher owners={owners} scope={scope} setScope={setScope} onDisconnect={onDisconnect} onAddOrganization={onAddOrganization} />
+              <OwnerSwitcher owners={owners} scope={scope} setScope={setScope} onDisconnect={onDisconnect} />
               <Link to="/dorks" search={{}} {...rowLink(pathname === '/dorks' && !activeId)}>
                 {/* The plus is a narrow glyph: drawn at 16px in the 14px column so it reads as wide as the page icons under it. */}
                 <PlusIcon className="-mx-px size-4!" />

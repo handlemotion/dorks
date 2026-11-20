@@ -30,7 +30,7 @@ The server reads the token the way `gh` itself resolves it (`apps/server/src/lib
 
 `GET /api/github/repos` lists `/user/orgs`, your 300 most recently pushed repositories (`/user/repos`), and one page of each organization's (`/orgs/{org}/repos`), and reports `auth`: the connection state and any of `repo`, `read:org`, `workflow` the token lacks (from `X-OAuth-Scopes`). The owner switcher shows your user, every organization, and the owners of those repositories.
 
-An organization can restrict OAuth apps. Until it approves the GitHub CLI, its private repositories are invisible to your `gh` token, in Dorks as in `gh` itself. **Add organization** in the owner switcher (and **Grant access on GitHub** in Settings) opens [the GitHub CLI's page in your GitHub settings](https://github.com/settings/connections/applications/178c6fc778ccc68e1d6a), where you grant or request access per organization; Dorks reads GitHub again when you come back.
+An organization can restrict OAuth apps. Until it approves the GitHub CLI, its private repositories are invisible to your `gh` token, in Dorks as in `gh` itself. **Grant access** in Settings, GitHub opens [the GitHub CLI's page in your GitHub settings](https://github.com/settings/connections/applications/178c6fc778ccc68e1d6a), where you grant or request access per organization; then choose **Check again**.
 
 The token reaches everything your `gh` login can, and it lives inside cloud sandboxes while they run. Read [what a sandbox can read](../SECURITY.md#what-a-sandbox-can-read). To narrow it, sign `gh` in as a dedicated account that only has the repositories dorks should touch.
 
