@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vite-plus/test";
@@ -13,6 +13,20 @@ const status = (h: ReturnType<typeof harness>, id: string) => h.app.db.get<{ sta
 async function settled(h: ReturnType<typeof harness>, dorkId: string, id: string) {
   for (let i = 0; i < 200 && status(h, id) === "running"; i++) await new Promise((r) => setTimeout(r, 20));
   return waitLocal(h.app, dorkId, id, 0);
+}
+
+/** Running, not merely an unreaped zombie (a container's init may never reap it). */
+function alive(pid: number) {
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return false;
+  }
+  try {
+    return readFileSync(`/proc/${pid}/stat`, "utf8").split(" ")[2] !== "Z";
+  } catch {
+    return true; // no /proc (macOS): kill(0) answered, so it runs
+  }
 }
 
 const code = (f: () => unknown) => {
@@ -92,6 +106,18 @@ describe("running a command on the owner's computer", () => {
     expect(out.status).toBe("failed");
     expect(out.error).toContain("time limit");
     expect(out.output).toContain("started");
+  });
+
+  it("ends what a command left running in the background once it returns", async () => {
+    const h = harness();
+    const dork = h.seed("working");
+    const r = requestLocal(h.app, dork, { kind: "run", command: "sleep 30 >/dev/null 2>&1 & echo $!", reason: "background" });
+    decideLocal(h.app, dork, r.requestId, "once", undefined);
+    const out = await settled(h, dork, r.requestId);
+    expect(out.status).toBe("done");
+    const pid = Number(out.output!.trim());
+    await new Promise((res) => setTimeout(res, 100));
+    expect(alive(pid)).toBe(false);
   });
 });
 

@@ -459,6 +459,8 @@ export function runCommand(command: string, cwd: string, timeoutMs: number, env 
     });
     child.on("close", (code, signal) => {
       clearTimeout(timer);
+      // Whatever the command left running in the background (`cmd &`) would escape its time limit: end the rest of its group too.
+      killGroup("SIGKILL");
       if (child.pid) runningGroups.delete(child.pid);
       const output = out.text();
       if (timedOut) return done({ ok: false, exitCode: code, output, truncated: out.truncated, error: `Stopped after ${Math.round(timeoutMs / 1000)} s (the time limit).` });
