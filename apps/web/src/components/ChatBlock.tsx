@@ -433,15 +433,16 @@ function TurnCard({ work, end, onOpen }: { work: WorkBlock[]; end?: TurnBlock; o
 }
 
 /**
- * One turn, kept light: the card that sums up its work, then its answer and anything else it posted (notices, a machine draft). The
+ * One turn, kept light: what the agent said first, the card that sums up its work, then its answer and anything else it posted (notices, a machine draft). The
  * tool calls, edits and progress text are in Progress.
  */
 function TurnContent({ blocks, end, running, onOpenStep }: { blocks: AgentBlock[]; end?: TurnBlock; running?: boolean; onOpenStep?: (key: string) => void }) {
-  const { work, answer } = splitTurn(blocks, !!end, running)
+  const { work, answer, opening } = splitTurn(blocks, !!end, running)
   const rest = blocks.filter((b) => b.kind !== 'tool' && b.kind !== 'assistant')
   const first = work[0]
   return (
     <>
+      {opening && <AgentText block={opening} />}
       {first && <TurnCard work={work} end={end} onOpen={onOpenStep && (() => onOpenStep(first.id))} />}
       {answer && <AgentText block={answer} />}
       {agentContent(rest)}
