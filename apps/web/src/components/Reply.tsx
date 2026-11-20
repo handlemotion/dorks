@@ -26,6 +26,9 @@ const HIGHLIGHT = 'dorks-reply'
 
 type Target = { range: Range; text: string }
 
+/** Whether a node is inside one of the agent's messages, whose text can be replied to. */
+const within = (node: Node) => !!(node instanceof Element ? node : node.parentElement)?.closest(`[${REPLY_SOURCE}]`)
+
 /** ⌘ on Apple platforms, Ctrl elsewhere: the key that turns Enter into send. */
 const SEND_KEY = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl'
 
@@ -57,7 +60,6 @@ export function SelectionReply() {
         const selection = window.getSelection()
         if (!selection || selection.isCollapsed || !selection.rangeCount) return
         const range = selection.getRangeAt(0)
-        const within = (node: Node) => (node instanceof Element ? node : node.parentElement)?.closest(`[${REPLY_SOURCE}]`)
         if (!within(range.startContainer) || !within(range.endContainer)) return
         const quoted = quoteText(selection.toString())
         if (!quoted) return
@@ -70,12 +72,15 @@ export function SelectionReply() {
     return () => document.removeEventListener('pointerup', onUp)
   }, [enabled])
 
-  // While only the button shows, it follows the real selection: cleared (a click elsewhere, Escape), the button goes too.
+  // While only the button shows, it follows the real selection: adjusted (Shift+Arrow), it quotes the new passage; cleared (a click
+  // elsewhere, Escape) or moved out of the agent's messages, the button goes too.
   useEffect(() => {
     if (!target || expanded) return
     const onChange = () => {
       const selection = window.getSelection()
-      if (!selection || selection.isCollapsed) setTarget(undefined)
+      const range = selection && !selection.isCollapsed && selection.rangeCount ? selection.getRangeAt(0) : undefined
+      const quoted = range && within(range.startContainer) && within(range.endContainer) ? quoteText(selection!.toString()) : undefined
+      setTarget(range && quoted ? { range: range.cloneRange(), text: quoted } : undefined)
     }
     document.addEventListener('selectionchange', onChange)
     return () => document.removeEventListener('selectionchange', onChange)
