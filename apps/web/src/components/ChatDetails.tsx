@@ -493,76 +493,88 @@ const TileNote = ({ children }: { children: ReactNode }) => <span className="m-a
  * pull request or the changed files, Computer whether it is awake. Never a blank box: a tile with nothing says so in a word.
  */
 function TilePreview({ panel, data, pr }: { panel: Panel; data: ChatDetailsData; pr?: IndexPr }) {
-  if (panel === 'progress') {
-    const steps = progressSteps(data.progress ?? [])
-    if (steps.length === 0) return <TileNote>No steps yet</TileNote>
-    const tasks = data.tasks ?? []
-    const running = steps.some((s) => stepStatus(s.block) === 'running')
-    return (
-      <>
-        <span className="flex min-h-0 flex-1 flex-col justify-end gap-1.5 overflow-hidden">
-          {steps.slice(-5).map((s, i, shown) => {
-            const { text, mono } = stepLine(s)
-            return (
-              <span key={s.key} className={`truncate ${mono ? 'font-mono' : ''} ${i === shown.length - 1 ? 'text-foreground' : ''}`}>
-                {text}
-              </span>
-            )
-          })}
-        </span>
-        <span className="mt-3 flex items-center gap-1.5 tabular-nums">
-          {running && <span aria-hidden className="size-1.5 rounded-full bg-brand" />}
-          {running ? 'Working' : null}
-          {running && tasks.length > 0 ? ' · ' : null}
-          {tasks.length > 0 ? `${tasks.filter((t) => t.status === 'completed').length} / ${tasks.length} tasks` : running ? null : `${steps.length} steps`}
-        </span>
-      </>
-    )
-  }
-  if (panel === 'artifacts') {
-    const items = [
-      ...(data.previews ?? []).map((s) => ({ id: s.url, src: undefined as string | undefined, preview: true })),
-      ...(data.artifacts ?? []).map((a) => ({ id: a.id, src: a.src, preview: false })),
-    ].slice(-4)
-    if (items.length === 0) return <TileNote>None yet</TileNote>
-    return (
-      <span className="grid flex-1 grid-cols-2 grid-rows-2 gap-1.5">
-        {items.map((it) => (
-          <span key={it.id} className="relative flex items-center justify-center overflow-hidden rounded-[4px] bg-foreground/[0.04]">
-            {it.src ? <img src={it.src} alt="" className="size-full object-cover" /> : <AppWindowIcon className="size-4" />}
-            {it.preview && <span aria-hidden className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-emerald-500" />}
-          </span>
-        ))}
+  if (panel === 'progress') return <ProgressTile data={data} />
+  if (panel === 'artifacts') return <ArtifactsTile data={data} />
+  if (panel === 'changes') return <ChangesTile changes={data.changes ?? []} pr={pr} />
+  return <ComputerTile computer={data.computer} />
+}
+
+/** Progress's tile status: "Working · 3 / 5 tasks", the task count, or how many steps ran. */
+function progressStatus(running: boolean, tasks: ProgressTask[], steps: number) {
+  const done = tasks.length > 0 ? `${tasks.filter((t) => t.status === 'completed').length} / ${tasks.length} tasks` : ''
+  if (running) return done ? `Working · ${done}` : 'Working'
+  return done || `${steps} steps`
+}
+
+function ProgressTile({ data }: { data: ChatDetailsData }) {
+  const steps = progressSteps(data.progress ?? [])
+  if (steps.length === 0) return <TileNote>No steps yet</TileNote>
+  const running = steps.some((s) => stepStatus(s.block) === 'running')
+  return (
+    <>
+      <span className="flex min-h-0 flex-1 flex-col justify-end gap-1.5 overflow-hidden">
+        {steps.slice(-5).map((s, i, shown) => {
+          const { text, mono } = stepLine(s)
+          return (
+            <span key={s.key} className={`truncate ${mono ? 'font-mono' : ''} ${i === shown.length - 1 ? 'text-foreground' : ''}`}>
+              {text}
+            </span>
+          )
+        })}
       </span>
-    )
-  }
-  if (panel === 'changes') {
-    const changes = data.changes ?? []
-    if (!pr && changes.length === 0) return <TileNote>No changes</TileNote>
-    return (
-      <>
-        {pr ? (
-          <span className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden">
-            <span className="tabular-nums">{pr.repo ? `${pr.repo}#${pr.number ?? ''}` : `#${pr.number ?? ''}`}</span>
-            <span className="line-clamp-4 text-sm text-foreground">{pr.title}</span>
-          </span>
-        ) : (
-          <span className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden font-mono">
-            {changes.slice(0, 5).map((c) => (
-              <span key={c.path} className="truncate">
-                {c.path.split('/').pop()}
-              </span>
-            ))}
-          </span>
-        )}
-        <span className="mt-3 flex items-center gap-1.5">
-          <Stat additions={pr?.additions ?? sum(changes, 'additions')} deletions={pr?.deletions ?? sum(changes, 'deletions')} />
-          {changes.length > 0 && <span className="tabular-nums">{changes.length} files</span>}
+      <span className="mt-3 flex items-center gap-1.5 tabular-nums">
+        {running && <span aria-hidden className="size-1.5 rounded-full bg-brand" />}
+        {progressStatus(running, data.tasks ?? [], steps.length)}
+      </span>
+    </>
+  )
+}
+
+function ArtifactsTile({ data }: { data: ChatDetailsData }) {
+  const items = [
+    ...(data.previews ?? []).map((s) => ({ id: s.url, src: undefined as string | undefined, preview: true })),
+    ...(data.artifacts ?? []).map((a) => ({ id: a.id, src: a.src, preview: false })),
+  ].slice(-4)
+  if (items.length === 0) return <TileNote>None yet</TileNote>
+  return (
+    <span className="grid flex-1 grid-cols-2 grid-rows-2 gap-1.5">
+      {items.map((it) => (
+        <span key={it.id} className="relative flex items-center justify-center overflow-hidden rounded-[4px] bg-foreground/[0.04]">
+          {it.src ? <img src={it.src} alt="" className="size-full object-cover" /> : <AppWindowIcon className="size-4" />}
+          {it.preview && <span aria-hidden className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-emerald-500" />}
         </span>
-      </>
-    )
-  }
-  const c = data.computer
+      ))}
+    </span>
+  )
+}
+
+function ChangesTile({ changes, pr }: { changes: FileChange[]; pr?: IndexPr }) {
+  if (!pr && changes.length === 0) return <TileNote>No changes</TileNote>
+  return (
+    <>
+      {pr ? (
+        <span className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden">
+          <span className="tabular-nums">{`${pr.repo ?? ''}#${pr.number ?? ''}`}</span>
+          <span className="line-clamp-4 text-sm text-foreground">{pr.title}</span>
+        </span>
+      ) : (
+        <span className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden font-mono">
+          {changes.slice(0, 5).map((c) => (
+            <span key={c.path} className="truncate">
+              {c.path.split('/').pop()}
+            </span>
+          ))}
+        </span>
+      )}
+      <span className="mt-3 flex items-center gap-1.5">
+        <Stat additions={pr?.additions ?? sum(changes, 'additions')} deletions={pr?.deletions ?? sum(changes, 'deletions')} />
+        {changes.length > 0 && <span className="tabular-nums">{changes.length} files</span>}
+      </span>
+    </>
+  )
+}
+
+function ComputerTile({ computer: c }: { computer?: ComputerSource }) {
   const state = !c || (!c.awake && !c.used) ? 'Not used' : c.awake ? 'Awake' : 'Asleep'
   return (
     <span className="m-auto flex flex-col items-center gap-2">
