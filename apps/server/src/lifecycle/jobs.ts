@@ -85,8 +85,11 @@ const createBlocker = (info: BoxInfo, bridgeUrl: string | undefined) => {
   return undefined;
 };
 
-const boxCreate = (app: App, dorkId: string, gen: number) =>
+const boxCreate = (app: App, dorkId: string, gen: number, replace?: string) =>
   Effect.gen(function* () {
+    // A box that would not wake goes first (deletes are idempotent): left in place, the provider would adopt it again for this name.
+    // If the delete fails the create fails too (the next message retries it), and the old box is deleted with backoff meanwhile.
+    if (replace) yield* onBox(app, (box) => box.delete(replace)).pipe(Effect.tapError(() => sync(() => setTimer(app, "", `orphan:${replace}`, 15_000, { boxId: replace, attempt: 1 }))));
     const info = yield* sync(() => boxInfo(app, dorkId));
     if (!info || info.deleting) return; // deleted before we started: do not create a box nobody will clean up
     const bridgeUrl = yield* sync(() => app.bridgeUrl());
@@ -136,7 +139,7 @@ const boxResume = (app: App, dorkId: string, gen: number) =>
         () => Effect.succeed(true),
       ),
     );
-    if (!gone) return yield* settle(app, () => boxResumed(app, dorkId));
+    if (!gone) return yield* settle(app, () => boxResumed(app, dorkId, boxId));
     console.error("resume_box: box no longer exists, clearing boxId");
     yield* settle(app, () => boxGone(app, dorkId, boxId, "The sandbox no longer exists; it will be recreated on your next message"));
   }).pipe(orOpFailed(app, dorkId, "resume_box", gen));
@@ -221,7 +224,7 @@ export const isJob = (name: string) =>
 export const runJob = (app: App, owner: string, name: string, payload: any): Effect.Effect<void, JobStepError> => sync(() => pick(app, owner, name, payload)).pipe(Effect.flatten); // a malformed payload is a step error, not a throw out of the scheduler
 
 function pick(app: App, owner: string, name: string, payload: any): Effect.Effect<void, JobStepError> {
-  if (name.startsWith("box:create")) return boxCreate(app, owner, payload.gen);
+  if (name.startsWith("box:create")) return boxCreate(app, owner, payload.gen, payload.replace);
   if (name.startsWith("box:resume")) return boxResume(app, owner, payload.gen);
   if (name.startsWith("box:pause")) return boxPause(app, owner, payload.gen);
   if (name === "box:destroy") return boxDestroy(app, owner);

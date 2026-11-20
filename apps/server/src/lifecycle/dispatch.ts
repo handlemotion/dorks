@@ -129,18 +129,9 @@ export function dispatch(app: App, dorkId: string, input: Input): Result | null 
 function runEffect(app: App, dorkId: string, effect: Effect) {
   switch (effect) {
     case "create_box":
-    case "resume_box": {
-      // A new box operation supersedes any pause, and control rows left by the previous run must not replay into this one.
-      dropPause(app, dorkId);
-      cancelTimer(app, dorkId, "pause_retry");
-      clearControlRows(app, dorkId);
-      const rt = runtimeOf(app.db, dorkId);
-      const gen = rt.opGen + 1;
-      patchRuntime(app, dorkId, { opGen: gen, pauseRetries: 0, bridgeSeenAt: app.now(), bridgeLost: false }); // grace period for the new bridge to dial in
-      setTimer(app, dorkId, "bridge_watch", HEARTBEAT_MS);
-      setTimer(app, dorkId, `${effect === "create_box" ? "box:create" : "box:resume"}:${gen}`, 0, { gen }); // one row per operation: a superseded one still runs, and its result is ignored
-      return;
-    }
+    case "replace_box":
+    case "resume_box":
+      return startBoxOp(app, dorkId, effect);
     case "pause_box":
       return beginPause(app, dorkId);
     case "cancel_pause":
@@ -163,6 +154,23 @@ function runEffect(app: App, dorkId: string, effect: Effect) {
     case "cancel_watchdog":
       return cancelTimer(app, dorkId, "watchdog");
   }
+}
+
+/** Launches a box job. A new box operation supersedes any pause, and control rows left by the previous run must not replay into this one. */
+function startBoxOp(app: App, dorkId: string, effect: "create_box" | "replace_box" | "resume_box") {
+  dropPause(app, dorkId);
+  cancelTimer(app, dorkId, "pause_retry");
+  clearControlRows(app, dorkId);
+  // Replacing: the dork forgets the box (and the session and previews that lived on it) now, so nothing resumes it again; the
+  // create job deletes it before creating, or the provider would hand the same box back for this dork's name.
+  const replace = effect === "replace_box" ? getDork(app.db, dorkId)?.boxId : undefined;
+  if (effect === "replace_box") patchDork(app, dorkId, { boxId: undefined, claudeSessionId: undefined, codexThreadId: undefined, previews: undefined });
+  const rt = runtimeOf(app.db, dorkId);
+  const gen = rt.opGen + 1;
+  patchRuntime(app, dorkId, { opGen: gen, pauseRetries: 0, bridgeSeenAt: app.now(), bridgeLost: false }); // grace period for the new bridge to dial in
+  setTimer(app, dorkId, "bridge_watch", HEARTBEAT_MS);
+  // One row per operation: a superseded one still runs, and its result is ignored.
+  setTimer(app, dorkId, `${effect === "resume_box" ? "box:resume" : "box:create"}:${gen}`, 0, replace ? { gen, replace } : { gen });
 }
 
 /**

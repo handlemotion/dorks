@@ -393,21 +393,40 @@ describe("R5: box results are tied to the operation that produced them", () => {
 describe("review fixes", () => {
   const errors = (h: ReturnType<typeof harness>, id: string) => h.events(id).filter((e) => e.body.type === "error");
 
-  describe("error with a queued message does not loop resume/pause", () => {
-    it("a wake that never produces a bridge ends in sleeping, once", async () => {
+  describe("a wake that never produces a bridge starts over on a fresh box, once", () => {
+    it("replaces the box with the message still queued, and a fresh box that also fails ends in sleeping", async () => {
       const h = harness();
-      const id = h.seed("sleeping");
+      const id = h.seed("sleeping", { boxId: "box-old" });
+      update(h.app.db, "dorks", { id }, { claudeSessionId: "sess-1" });
       h.sendMessage(id); // waking, the message stays queued (the bridge never comes up)
       await h.settle();
-      h.timer(id, "watchdog"); // -> error -> flush (nobody answers) -> pause -> sleeping, message still queued
+      h.timer(id, "watchdog"); // the resume never came back: delete the old box, create a fresh one
+      await h.settle();
+      expect(h.state(id)).toBe("creating");
+      expect(h.box.calls).toEqual(["resume", "delete", "create"]);
+      expect(h.box.missing.has("box-old")).toBe(true);
+      expect(h.dork(id).boxId).toBe(`box-${id}`);
+      expect(h.dork(id).claudeSessionId).toBeUndefined(); // the session lived on the old box's disk
+      expect(h.kinds(id)).toEqual(["user_message"]); // delivered once the fresh bridge is ready
+      expect(h.hasTimer(id, "watchdog")).toBe(true);
+      h.timer(id, "watchdog"); // the fresh box never connects either: a plain failure, no second replace
       await h.advance(11_000);
       expect(h.state(id)).toBe("sleeping");
       await h.advance(600_000);
-      expect(h.box.calls).toEqual(["resume", "pause"]); // not resume, pause, resume, pause, ...
-      expect(errors(h, id)).toHaveLength(1);
+      expect(h.box.calls).toEqual(["resume", "delete", "create", "pause"]); // no resume/pause loop
+      expect(errors(h, id)).toHaveLength(2);
       expect(h.kinds(id)).toEqual(["user_message"]); // still there for the next wake
       h.sendMessage(id, "again");
-      expect(h.state(id)).toBe("waking"); // the next message wakes it
+      expect(h.state(id)).toBe("waking"); // the next message wakes the fresh box
+    });
+
+    it("an archived dork is not replaced", async () => {
+      const h = harness();
+      const id = h.seed("waking", { archived: true, bridgeSeenAt: 0 });
+      h.timer(id, "watchdog");
+      await h.settle();
+      expect(h.box.calls).toEqual(["pause"]);
+      expect(h.dork(id).boxId).toBe("box-1");
     });
   });
 
@@ -482,10 +501,10 @@ describe("review fixes", () => {
     it("a resume that finishes after the dork went to error, even after its pause already landed", async () => {
       const h = harness();
       const id = h.seed("waking", { opGen: 1, bridgeSeenAt: 0 });
-      h.timer(id, "watchdog"); // error + pause (gen 2)
+      h.input(id, { t: "agent_exited" }); // error + pause (gen 2)
       await h.settle();
       expect(h.state(id)).toBe("sleeping"); // the pause beat the slow resume
-      h.app.db.tx(() => boxResumed(h.app, id)); // now the resume lands: the box is running again
+      h.app.db.tx(() => boxResumed(h.app, id, "box-1")); // now the resume lands: the box is running again
       await h.settle();
       expect(h.box.calls).toEqual(["pause", "pause"]);
       expect(h.state(id)).toBe("sleeping");
@@ -494,12 +513,23 @@ describe("review fixes", () => {
     it("a resume that lands while the dork's own pause is still in flight pauses again (the old one may finish first)", async () => {
       const h = harness();
       const id = h.seed("waking", { opGen: 1, bridgeSeenAt: 0 });
-      h.timer(id, "watchdog"); // error + pause (gen 2), job scheduled but not run yet
+      h.input(id, { t: "agent_exited" }); // error + pause (gen 2), job scheduled but not run yet
       expect(h.rt(id).pause?.phase).toBe("pausing");
-      h.app.db.tx(() => boxResumed(h.app, id));
+      h.app.db.tx(() => boxResumed(h.app, id, "box-1"));
       await h.settle();
       expect(h.box.calls).toEqual(["pause", "pause"]); // one issued after the resume landed, so it is ordered after it
       expect(h.state(id)).toBe("sleeping");
+    });
+
+    it("a resume of a box the dork already replaced is ignored", async () => {
+      const h = harness();
+      const id = h.seed("waking", { opGen: 1, bridgeSeenAt: 0 });
+      h.timer(id, "watchdog"); // replace: box-1 is forgotten and deleted
+      await h.settle();
+      h.app.db.tx(() => boxResumed(h.app, id, "box-1")); // the slow resume of box-1 lands late
+      await h.settle();
+      expect(h.box.calls).toEqual(["delete", "create"]);
+      expect(h.kinds(id)).toEqual([]); // no configure for the dead box
     });
 
     it("a resume the dork is still waiting for just queues configure", async () => {
