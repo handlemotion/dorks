@@ -127,7 +127,7 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
         draggable={false}
         data-working={chat.working || undefined}
         title={chat.title}
-        className={`${SIDEBAR_ROW} ${chat.pr ? 'pr-12' : ''} ${onArchive ? 'group-hover/row:pr-8 group-focus-within/row:pr-8' : ''}`}
+        className={`${SIDEBAR_ROW} ${chat.pr ? 'pr-12' : ''} ${onArchive ? 'group-hover/row:pr-8' : ''}`}
       >
         <Orb size={14} working={chat.working} label={chat.working ? 'Working…' : 'Idle'} className="text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate">{chat.title}</span>
@@ -135,7 +135,7 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
       {chat.pr && (
         <span
           data-pr={chat.pr.state}
-          className={`pointer-events-none absolute top-1/2 right-2 z-20 -translate-y-1/2 text-xs tabular-nums ${onArchive ? 'group-hover/row:opacity-0 group-focus-within/row:opacity-0' : ''} ${prStatus(chat.pr.state).className}`}
+          className={`pointer-events-none absolute top-1/2 right-2 z-20 -translate-y-1/2 text-xs tabular-nums ${onArchive ? 'group-hover/row:opacity-0' : ''} ${prStatus(chat.pr.state).className}`}
         >
           #{chat.pr.number}
         </span>
@@ -146,7 +146,7 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
             type="button"
             aria-label={`Archive ${chat.title}`}
             onClick={() => onArchive(chat.id)}
-            className="absolute top-1/2 right-1 z-20 flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-(--control-radius) text-muted-foreground opacity-0 outline-none group-hover/row:opacity-100 hover:bg-foreground/[0.05] hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring group-focus-within/row:opacity-100 [@media(hover:none)]:hidden"
+            className="absolute top-1/2 right-1 z-20 flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-(--control-radius) text-muted-foreground opacity-0 outline-none group-hover/row:opacity-100 hover:bg-foreground/[0.05] hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring [@media(hover:none)]:hidden"
           >
             <ArchiveIcon aria-hidden className="size-3.5" />
           </button>
