@@ -3,8 +3,10 @@
 The owner adds MCP servers in **Customize**; every Claude agent gets their tools, in every sandbox, next to the built-in `dorks` server
 (`infra/bridge/src/mcp.ts`). A server's tools show up as `mcp__<name>__<tool>`.
 
-- **Remote (HTTP):** a URL plus optional headers, for hosted servers (Streamable HTTP). **Add Composio** is this with the name
-  `composio` and an `X-API-Key` header: paste the MCP URL from the Composio project (`session.mcp.url` in its SDK) and the API key.
+- **Connectors** (`apps/web/src/components/connectors.ts`): cards for popular servers (GitHub, Linear, Sentry, Cloudflare, Firecrawl,
+  Notion, Supabase, Stripe, PostHog, Neon, Context7). Each takes one key and saves an ordinary server named after the card. Only
+  servers that accept a static token belong here: a sandbox has no browser to finish an OAuth sign-in.
+- **Custom remote (HTTP):** a URL plus optional headers, for any other hosted server (Streamable HTTP), Composio's included.
 - **Local command (stdio):** a command, arguments and environment variables. The command runs inside the sandbox, so it must exist
   there (`npx` does on the base image; anything else belongs in a build's setup, see `builds.md`).
 

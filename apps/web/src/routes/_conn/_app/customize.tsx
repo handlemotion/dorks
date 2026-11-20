@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { XIcon } from 'lucide-react'
+import { CheckIcon, PlusIcon, XIcon } from 'lucide-react'
 import type { McpServerInput, McpServerView } from '@dorks/client'
 import { useDorksClient, useMcpServers } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
@@ -9,24 +9,23 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from '@dorks/ui/field
 import { Input } from '@dorks/ui/input'
 import { NativeSelect, NativeSelectOption } from '@dorks/ui/native-select'
 import { Textarea } from '@dorks/ui/textarea'
-import { EmptyState } from '../../../components/EmptyState'
+import { CONNECTORS, connectorById, type Connector } from '../../../components/connectors'
 import { PageHeader } from '../../../components/PageHeader'
 import { SettingsGroup, SettingsRow, SettingsSection, SettingsSections } from '../../../components/settings/kit'
+import { Tip } from '../../../components/Tip'
 import { usePending } from '../../../lib/pending'
 
-// Customize (docs/mcp.md): the owner's MCP servers. Every agent gets them, in every sandbox, next to the built-in `dorks` server.
+// Customize (docs/mcp.md): the connector catalog and the owner's custom MCP servers. Every agent gets them, in every sandbox, next to the built-in `dorks` server.
 // Header and variable values are write-only: the list shows their names, and an edit keeps a saved value unless a new one is typed.
 
 export const Route = createFileRoute('/_conn/_app/customize')({ component: Customize })
 
-/** What the add/edit dialog starts from: a blank server, Composio's hosted MCP, or a saved server. */
+/** What the custom server dialog starts from: a blank server or a saved one. */
 type Draft = { editing: boolean; name: string; transport: 'http' | 'stdio'; url: string; command: string; args: string; headers: Pair[]; env: Pair[] }
 /** A header or variable. `saved` means the server holds a value: an empty field keeps it. */
 type Pair = { key: string; value: string; saved: boolean }
 
 const BLANK: Draft = { editing: false, name: '', transport: 'http', url: '', command: '', args: '', headers: [], env: [] }
-// Composio: the URL from the dashboard (or `session.mcp.url` from its SDK), and the project's API key as `X-API-Key`.
-const COMPOSIO: Draft = { ...BLANK, name: 'composio', headers: [{ key: 'X-API-Key', value: '', saved: false }] }
 
 const draftOf = (s: McpServerView): Draft => ({
   editing: true,
@@ -42,43 +41,161 @@ const draftOf = (s: McpServerView): Draft => ({
 function Customize() {
   const servers = useMcpServers()
   const [draft, setDraft] = useState<Draft | null>(null)
-  const add = (
-    <>
-      <Button size="sm" variant="outline" onClick={() => setDraft(BLANK)}>
-        Add server
-      </Button>
-      <Button size="sm" variant="outline" onClick={() => setDraft(COMPOSIO)}>
-        Add Composio
-      </Button>
-    </>
-  )
+  const [connecting, setConnecting] = useState<Connector | null>(null)
+  const saved = new Set(servers?.map((s) => s.name))
+  const custom = servers?.filter((s) => !connectorById(s.name)) ?? []
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <PageHeader title="Customize" divider={!!servers?.length} actions={servers?.length ? <div className="flex gap-2">{add}</div> : undefined} />
-      {servers?.length === 0 && (
-        <div className="flex min-h-0 flex-1 items-center justify-center pb-12">
-          <EmptyState figure="plug" title="No MCP servers yet" description="Servers you add here will be available to every agent, in every sandbox.">
-            {add}
-          </EmptyState>
-        </div>
-      )}
-      {!!servers?.length && (
-        <div className="app-main min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-160 px-4 pt-8 pb-16 sm:px-6">
-            <SettingsSections>
-              <SettingsSection title="MCP servers" description="Every agent gets these tools, in every sandbox. Running sessions pick up a change when their current turn ends.">
-                <SettingsGroup label="mcp servers">
-                  {servers.map((s) => (
+      <PageHeader
+        title="Customize"
+        actions={
+          <Button size="sm" variant="outline" onClick={() => setDraft(BLANK)}>
+            Add custom server
+          </Button>
+        }
+      />
+      <div className="app-main min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-4xl px-4 pt-8 pb-16 sm:px-6">
+          <SettingsSections>
+            <SettingsSection title="Connectors" description="Every agent gets these tools, in every sandbox. Running sessions pick up a change when their current turn ends.">
+              <ul aria-label="connectors" className="grid gap-2.5 md:grid-cols-2">
+                {CONNECTORS.map((c) => (
+                  <ConnectorCard key={c.id} connector={c} connected={saved.has(c.id)} loading={!servers} onOpen={() => setConnecting(c)} />
+                ))}
+              </ul>
+            </SettingsSection>
+            {custom.length > 0 && (
+              <SettingsSection title="Custom servers">
+                <SettingsGroup label="custom servers">
+                  {custom.map((s) => (
                     <ServerRow key={s.name} server={s} onEdit={() => setDraft(draftOf(s))} />
                   ))}
                 </SettingsGroup>
               </SettingsSection>
-            </SettingsSections>
-          </div>
+            )}
+          </SettingsSections>
         </div>
-      )}
+      </div>
       {draft && <ServerDialog key={`${draft.name}:${draft.editing}`} initial={draft} onClose={() => setDraft(null)} />}
+      {connecting && <ConnectDialog key={connecting.id} connector={connecting} connected={saved.has(connecting.id)} onClose={() => setConnecting(null)} />}
     </div>
+  )
+}
+
+/** The brand mark in a small tile: the simple-icons path in its colour (the foreground when the colour is too dark to read), or a monogram. */
+function ConnectorIcon({ connector: c }: { connector: Connector }) {
+  const dark = c.icon && luminance(c.icon.hex) < 0.12
+  return (
+    <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-[8px] border border-surface-line bg-app">
+      {c.icon ? (
+        <svg viewBox="0 0 24 24" className="size-5" fill={dark ? 'currentColor' : `#${c.icon.hex}`}>
+          <path d={c.icon.path} />
+        </svg>
+      ) : (
+        <span className="text-sm text-foreground">{c.name[0]}</span>
+      )}
+    </span>
+  )
+}
+
+function luminance(hex: string) {
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
+}
+
+function ConnectorCard({ connector: c, connected, loading, onOpen }: { connector: Connector; connected: boolean; loading: boolean; onOpen: () => void }) {
+  return (
+    <li className="flex min-w-0 items-start gap-3 rounded-[10px] bg-surface p-4">
+      <ConnectorIcon connector={c} />
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="text-sm leading-5 text-foreground">{c.name}</span>
+        <span className="line-clamp-2 text-xs text-pretty text-muted-foreground">{c.description}</span>
+        <span className="text-xs text-muted-foreground">by {c.by}</span>
+      </div>
+      <Tip label={connected ? `Manage ${c.name}` : `Connect ${c.name}`}>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="ghost"
+          aria-label={connected ? `manage ${c.name}` : `connect ${c.name}`}
+          disabled={loading}
+          className={connected ? 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15 dark:text-emerald-400' : 'bg-foreground/[0.04]'}
+          onClick={onOpen}
+        >
+          {connected ? <CheckIcon /> : <PlusIcon />}
+        </Button>
+      </Tip>
+    </li>
+  )
+}
+
+/** Connect a catalog server with its one key, or, once connected, replace the key or remove it. */
+function ConnectDialog({ connector: c, connected, onClose }: { connector: Connector; connected: boolean; onClose: () => void }) {
+  const { actions } = useDorksClient()
+  const { run, pending, error } = usePending()
+  const [key, setKey] = useState('')
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <form
+          className="flex flex-col"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void run(async () => {
+              await actions.putMcpServer(c.id, c.server(key.trim()))
+              onClose()
+            })
+          }}
+        >
+          <DialogHeader className="gap-2">
+            <DialogTitle className="text-sm font-medium">{connected ? c.name : `Connect ${c.name}`}</DialogTitle>
+            <DialogDescription className="text-sm leading-5">
+              {c.description}. Agents see its tools as mcp__{c.id}__*.
+            </DialogDescription>
+          </DialogHeader>
+          <div data-slot="dialog-body">
+            <Field>
+              <FieldLabel htmlFor="connector-key">{c.keyLabel}</FieldLabel>
+              <Input id="connector-key" type="password" autoComplete="off" placeholder={connected ? 'Saved' : ''} value={key} onChange={(e) => setKey(e.target.value)} autoFocus />
+              <FieldDescription>
+                <a href={c.keyUrl} target="_blank" rel="noreferrer">
+                  Get your {c.keyLabel.toLowerCase()}
+                </a>
+                . Stored encrypted and never shown again.
+              </FieldDescription>
+            </Field>
+            {error && (
+              <p role="alert" className="mt-4 text-xs text-destructive">
+                {error}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            {connected && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="sm:me-auto"
+                disabled={pending}
+                onClick={() =>
+                  void run(async () => {
+                    await actions.deleteMcpServer(c.id)
+                    onClose()
+                  })
+                }
+              >
+                Disconnect
+              </Button>
+            )}
+            <DialogClose render={<Button type="button" variant="outline" size="sm" />}>Cancel</DialogClose>
+            <Button type="submit" size="sm" disabled={pending || !key.trim()}>
+              {pending ? 'Saving…' : connected ? 'Replace key' : 'Connect'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -118,7 +235,6 @@ function ServerDialog({ initial, onClose }: { initial: Draft; onClose: () => voi
   const http = d.transport === 'http'
   const pairs = http ? d.headers : d.env
   const setPairs = (next: Pair[]) => set(http ? { headers: next } : { env: next })
-  const composio = d.name === 'composio' && http
 
   const ready = !!d.name.trim() && (http ? !!d.url.trim() : !!d.command.trim()) && pairs.every((p) => !p.key.trim() || p.value || p.saved)
   const submit = () =>
@@ -142,11 +258,9 @@ function ServerDialog({ initial, onClose }: { initial: Draft; onClose: () => voi
           }}
         >
           <DialogHeader className="gap-2">
-            <DialogTitle className="text-sm font-medium">{d.editing ? `Edit ${d.name}` : composio ? 'Add Composio' : 'Add an MCP server'}</DialogTitle>
+            <DialogTitle className="text-sm font-medium">{d.editing ? `Edit ${d.name}` : 'Add a custom server'}</DialogTitle>
             <DialogDescription className="text-sm leading-5">
-              {composio
-                ? 'Paste the MCP URL from your Composio project and its API key. Its tools reach every agent as mcp__composio__*.'
-                : 'A hosted server speaks HTTP; a local one is a command each sandbox runs. Values are stored encrypted and never shown again.'}
+              {'A hosted server speaks HTTP; a local one is a command each sandbox runs. Values are stored encrypted and never shown again.'}
             </DialogDescription>
           </DialogHeader>
           <div data-slot="dialog-body" className="min-h-0 overflow-y-auto">
@@ -156,7 +270,7 @@ function ServerDialog({ initial, onClose }: { initial: Draft; onClose: () => voi
                 <Input id="mcp-name" className="font-mono" placeholder="linear" disabled={d.editing} value={d.name} onChange={(e) => set({ name: e.target.value.toLowerCase() })} />
                 <FieldDescription>Agents see its tools as mcp__{d.name.trim() || 'name'}__*.</FieldDescription>
               </Field>
-              {!composio && (
+              {
                 <Field>
                   <FieldLabel htmlFor="mcp-transport">Type</FieldLabel>
                   <NativeSelect id="mcp-transport" value={d.transport} onChange={(e) => set({ transport: e.target.value as Draft['transport'] })}>
@@ -164,11 +278,11 @@ function ServerDialog({ initial, onClose }: { initial: Draft; onClose: () => voi
                     <NativeSelectOption value="stdio">Local command</NativeSelectOption>
                   </NativeSelect>
                 </Field>
-              )}
+              }
               {http ? (
                 <Field>
                   <FieldLabel htmlFor="mcp-url">URL</FieldLabel>
-                  <Input id="mcp-url" placeholder={composio ? 'https://backend.composio.dev/…/mcp' : 'https://mcp.example.com/mcp'} value={d.url} onChange={(e) => set({ url: e.target.value })} />
+                  <Input id="mcp-url" placeholder="https://mcp.example.com/mcp" value={d.url} onChange={(e) => set({ url: e.target.value })} />
                 </Field>
               ) : (
                 <>
