@@ -174,6 +174,36 @@ html.dark [data-app-frame] {
   border-radius: var(--control-radius);
 }
 
+/* Compact buttons, without editing the published button: a default button is 32px (the preset's 36), a small one 28px (its 32), and the
+   default icon button 32px. Matched on the size's own height class, so a button that sets its own height keeps it. */
+[data-slot="button"].h-9 {
+  height: 2rem;
+}
+[data-slot="button"].h-8 {
+  height: 1.75rem;
+}
+[data-slot="button"].size-9 {
+  width: 2rem;
+  height: 2rem;
+}
+/* ...and less padded: 10px on a label's side, 8px on an icon's (marked `data-icon="inline-start"` / `"inline-end"`, as the preset expects).
+   Matched on the preset's own padding class, so a button that sets its own padding keeps it. */
+[data-slot="button"]:is(.h-9, .h-8).px-3 {
+  padding-inline: 0.625rem;
+}
+[data-slot="button"]:is(.h-9, .h-8).px-3:has(> [data-icon="inline-start"]) {
+  padding-left: 0.5rem;
+}
+[data-slot="button"]:is(.h-9, .h-8).px-3:has(> [data-icon="inline-end"]) {
+  padding-right: 0.5rem;
+}
+/* An icon beside a label sits on the label's optical centre, not the line box's: Geist's 13px caps centre about half a pixel below the
+   line box's middle and its lowercase lower still, so a centred 16px icon (the + in "Add connector") reads high. Icon-only buttons
+   (size-6 to size-10) stay centred. */
+[data-slot="button"]:not(.size-6, .size-7, .size-8, .size-9, .size-10) > svg {
+  translate: 0 0.5px;
+}
+
 /* On controls, focus is only the border changing colour (--ring), no halo: the components' 3px `ring-ring/30` glow is made transparent
    here instead of editing them. Only controls that also tint their border are listed; anything whose only focus mark is the ring
    (sidebar items, for one) keeps it. */
@@ -355,4 +385,11 @@ html.dark [data-slot="dialog-footer"] {
   --tw-enter-translate-y: 0;
   --tw-exit-translate-x: 0;
   --tw-exit-translate-y: 0;
+}
+
+/* Nothing rubber-bands (apps/web/src/styles.css sets overscroll-behavior: none on every element). The published shadcn / AI Elements
+   scrollers (message-scroller viewport, attachment group, suggestions row) ask for `contain`, which still lets a pane bounce on its own in
+   WebKit; this unlayered rule outranks their utilities without editing those files. */
+:is(.overscroll-contain, .overscroll-x-contain, .overscroll-y-contain) {
+  overscroll-behavior: none;
 }
