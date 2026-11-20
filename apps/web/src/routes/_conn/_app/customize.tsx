@@ -19,7 +19,7 @@ import { usePending } from '../../../lib/pending'
 
 export const Route = createFileRoute('/_conn/_app/customize')({ component: Customize })
 
-/** What the custom server dialog starts from: a blank server or a saved one. */
+/** What the custom connector dialog starts from: a blank one or a saved one. */
 type Draft = { editing: boolean; name: string; transport: 'http' | 'stdio'; url: string; command: string; args: string; headers: Pair[]; env: Pair[] }
 /** A header or variable. `saved` means the server holds a value: an empty field keeps it. */
 type Pair = { key: string; value: string; saved: boolean }
@@ -57,7 +57,7 @@ function Customize() {
         actions={
           <Button size="sm" onClick={() => setDraft(BLANK)}>
             <PlusIcon data-icon="inline-start" />
-            Add server
+            Add connector
           </Button>
         }
       />
@@ -72,8 +72,8 @@ function Customize() {
               </ul>
             </SettingsSection>
             {custom.length > 0 && (
-              <SettingsSection title="Custom servers">
-                <SettingsGroup label="custom servers">
+              <SettingsSection title="Custom connectors">
+                <SettingsGroup label="custom connectors">
                   {custom.map((s) => (
                     <ServerRow key={s.name} server={s} onEdit={() => setDraft(draftOf(s))} />
                   ))}
@@ -136,7 +136,7 @@ function ConnectorCard({ connector: c, connected, loading, onOpen }: { connector
         aria-label={connected ? `manage ${c.name}` : `connect ${c.name}`}
         disabled={loading}
         onClick={onOpen}
-        className="group flex w-full min-w-0 items-center gap-3.5 rounded-[8px] border border-surface-line bg-surface px-4 py-2.5 text-start outline-none hover:bg-foreground/[0.03] focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+        className="group flex w-full min-w-0 items-center gap-3.5 rounded-[8px] border border-foreground/[0.06] bg-surface dark:border-transparent px-4 py-2.5 text-start outline-none hover:bg-foreground/[0.03] focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
       >
         <ConnectorIcon connector={c} />
         <span className="flex min-w-0 flex-1 flex-col">
@@ -459,9 +459,9 @@ function ServerDialog({ initial, onClose }: { initial: Draft; onClose: () => voi
           }}
         >
           <DialogHeader className="gap-2">
-            <DialogTitle className="text-sm font-medium">{d.editing ? `Edit ${d.name}` : 'Add a custom server'}</DialogTitle>
+            <DialogTitle className="text-sm font-medium">{d.editing ? `Edit ${d.name}` : 'Add a custom connector'}</DialogTitle>
             <DialogDescription className="text-sm leading-5">
-              {'A hosted server speaks HTTP; a local one is a command each sandbox runs. Values are stored encrypted and never shown again.'}
+              {'A remote connector speaks HTTP; a local one is a command each sandbox runs. Values are stored encrypted and never shown again.'}
             </DialogDescription>
           </DialogHeader>
           <div data-slot="dialog-body" className="min-h-0 overflow-y-auto">
