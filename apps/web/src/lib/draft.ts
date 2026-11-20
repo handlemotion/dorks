@@ -1,4 +1,4 @@
-import { useCallback, useState, type Dispatch, type SetStateAction } from 'react'
+import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 
 const PREFIX = 'dorks.draft.'
 
@@ -22,13 +22,15 @@ function write(key: string, value: string) {
 /** A composer's text, kept in localStorage under `key` so it survives leaving the page (another tab, another chat) and a reload. Clearing it removes the entry. */
 export function useDraft(key: string): [string, Dispatch<SetStateAction<string>>] {
   const [text, setState] = useState(() => read(key))
+  // Written here, not in a state updater: a send that resolves after the composer unmounted (the owner already left) must still clear the saved draft.
+  const latest = useRef(text)
   const setText = useCallback<Dispatch<SetStateAction<string>>>(
-    (next) =>
-      setState((prev) => {
-        const value = typeof next === 'function' ? next(prev) : next
-        write(key, value)
-        return value
-      }),
+    (next) => {
+      const value = typeof next === 'function' ? next(latest.current) : next
+      latest.current = value
+      write(key, value)
+      setState(value)
+    },
     [key],
   )
   return [text, setText]
