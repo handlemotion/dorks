@@ -132,7 +132,7 @@ function Dorks() {
   )
 }
 
-/** The build's repositories, then the ones chats used, then everything the GitHub token can see; only the owner in scope's. */
+/** The build's repositories, then the ones chats used, then everything the GitHub CLI login can see; only the owner in scope's. */
 function useNewSessionRepos(buildRepos: string[], dorks: { repo: string }[] | undefined): string[] {
   const github = useGithubRepos()
   const recent = [...new Set(dorks?.map((d) => d.repo).filter(Boolean) ?? [])].sort()

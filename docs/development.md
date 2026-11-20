@@ -134,7 +134,7 @@ the owner token from `.context/live-data/secrets.json` (read it privately; never
 
 - Boat API key (and organization id if needed), with snapshot/sandbox permissions; see [Boat](boat.md). Saving it builds the base snapshot.
 - Claude token from `claude setup-token`, or a configured Boat ChatGPT environment for Codex.
-- GitHub token with access to the test repository; see [GitHub](github.md).
+- A GitHub CLI login with access to the test repository (or `GH_TOKEN` in the server's environment); see [GitHub](github.md).
 
 Wait for Prepare Boat to finish, choose a real `owner/repo`, and send a small task. Check that text streams, a follow-up gets a
 reply, Stop interrupts, reload preserves the transcript, and a message after idle sleep wakes the sandbox. Tokens from a Doppler

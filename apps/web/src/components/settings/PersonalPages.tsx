@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useTheme } from 'next-themes'
-import type { Settings } from '@dorks/client'
-import { useDorksClient } from '@dorks/client/react'
+import type { GithubRepos, Settings } from '@dorks/client'
+import { useDorksClient, useGithubRepos } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
-import { isDesktop, readGhToken } from '../../lib/desktop'
+import { GH_LOGIN_COMMAND, GH_ORG_ACCESS_URL, githubProblem, missingScopesText, scopeFixCommand } from '../../lib/github'
 import { usePending } from '../../lib/pending'
-import { SettingsButtonRow, SettingsGroup, SettingsGroupBody, SettingsInputRow, SettingsSection, SettingsSections, SettingsSelectRow, SettingsStatus, SettingsValueRow } from './kit'
+import { OwnerAvatar } from '../RepoAvatar'
+import { SettingsButtonRow, SettingsGroup, SettingsGroupBody, SettingsInputRow, SettingsRow, SettingsSection, SettingsSections, SettingsSelectRow, SettingsStatus, SettingsValueRow } from './kit'
 
 // The person's own pages: how the app looks, the AI accounts the agents run on, and the GitHub account they act as. Token fields are
 // write-only: the server only says whether one is stored, and the input is cleared after saving.
@@ -135,81 +136,88 @@ function CodexSection({ settings }: { settings: Settings }) {
 
 export function GithubPage({ settings }: { settings: Settings }) {
   const { actions } = useDorksClient()
-  const [token, setToken] = useState('')
+  const github = useGithubRepos()
   const [saved, setSaved] = useState(false)
-  const [ghError, setGhError] = useState('')
   const { run, pending, error } = usePending()
-  const save = (value: string) =>
-    run(async () => {
-      await actions.updateSettings({ githubToken: value })
-      setToken('')
+  const act = (fn: () => Promise<void>) => {
+    setSaved(false)
+    void run(async () => {
+      await fn()
       setSaved(true)
     })
-  const { configured, login } = settings.github
+  }
+  const { configured } = settings.github
+  const problem = configured ? githubProblem(github) : null
+  const signedInAs = !configured ? 'Not connected' : problem ? 'Not working' : (github?.login ?? settings.github.login ?? 'Checking…')
+  const check = configured && (
+    <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => act(actions.refreshGithub)}>
+      Check again
+    </Button>
+  )
   return (
     <SettingsSections>
-      <SettingsSection title="Account" description="Dorks acts on GitHub as whoever owns this token: it clones, pushes and opens pull requests, and watches the PRs it opened.">
-        <SettingsGroup
-          label="github token"
-          onSubmit={() => {
-            setSaved(false)
-            setGhError('')
-            void save(token.trim())
-          }}
-        >
-          <SettingsValueRow label="Signed in as" value={configured ? (login ?? 'Token saved') : 'No GitHub token yet'} tone={configured ? 'default' : 'muted'} valueTestId="github-status" />
-          <SettingsInputRow
-            id="github-token"
-            label="Personal access token"
-            description="Fine-grained, limited to the repositories it should work on."
-            aria-label="github token"
-            type="password"
-            autoComplete="off"
-            placeholder={configured ? 'Replace the token' : 'github_pat_…'}
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            trailing={
-              <Button type="submit" size="sm" disabled={pending || !token.trim()}>
-                Save token
-              </Button>
+      <SettingsSection title="Account" description="Dorks acts on GitHub as your GitHub CLI login: it clones, pushes and opens pull requests, and watches the PRs it opened." actions={check}>
+        <SettingsGroup>
+          <SettingsValueRow label="Signed in as" value={signedInAs} tone={configured && !problem ? 'default' : 'muted'} valueTestId="github-status" />
+          <SettingsButtonRow
+            label="GitHub CLI"
+            description={configured ? GH_CONNECTED : GH_CONNECT}
+            actionLabel={configured ? 'Disconnect' : 'Connect'}
+            variant={configured ? 'outline' : 'default'}
+            disabled={pending}
+            onAction={() => act(() => actions.updateSettings({ githubConnected: !configured }))}
+          />
+          {(problem || !configured) && (
+            <SettingsGroupBody>
+              <p>
+                {problem && <>{problem} </>}
+                To sign in, run <code>{GH_LOGIN_COMMAND}</code> in a terminal{configured ? ', then check again' : ''}.
+              </p>
+            </SettingsGroupBody>
+          )}
+        </SettingsGroup>
+        <SettingsStatus saved={saved} error={error} />
+      </SettingsSection>
+      {configured && !problem && github && <GithubOrganizations github={github} />}
+    </SettingsSections>
+  )
+}
+
+const GH_CONNECT = 'Use whoever gh is signed in as, with every organization and repository it can reach. Its token is sent to your sandboxes so agents can push.'
+const GH_CONNECTED = 'Read from gh each time it is needed, so gh auth login, refresh or switch take effect here right away.'
+
+/** The GitHub CLI login's organizations, how to add one it cannot see, and the scopes it lacks. */
+function GithubOrganizations({ github }: { github: GithubRepos }) {
+  const missing = github.auth.missingScopes
+  return (
+    <SettingsSection title="Organizations" description="Every organization your GitHub CLI login belongs to. Their repositories show in the owner switcher and the repository picker.">
+      <SettingsGroup>
+        {github.orgs.map((org) => (
+          <SettingsRow
+            key={org}
+            label={
+              <span className="flex min-w-0 items-center gap-2">
+                <OwnerAvatar owner={org} />
+                <span className="truncate">{org}</span>
+              </span>
             }
           />
+        ))}
+        {!github.orgs.length && <SettingsRow label="No organizations" description="Your GitHub CLI login isn’t a member of any organization it can see." />}
+        <SettingsButtonRow
+          label="Missing an organization?"
+          description="An organization that restricts OAuth apps hides its private repositories until it grants the GitHub CLI access. Request it on GitHub, then check again."
+          actionLabel="Grant access on GitHub"
+          onAction={() => window.open(GH_ORG_ACCESS_URL, '_blank', 'noopener')}
+        />
+        {missing.length > 0 && (
           <SettingsGroupBody>
             <p>
-              Give it read and write access to contents, pull requests, issues and workflows. The token is sent to your sandbox so the agent can push.{' '}
-              <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">
-                Create one
-              </a>
-              .
+              {missingScopesText(missing)} Run <code>{scopeFixCommand(missing)}</code>, then check again.
             </p>
           </SettingsGroupBody>
-        </SettingsGroup>
-        {isDesktop() && (
-          <SettingsGroup>
-            <SettingsButtonRow
-              label="GitHub CLI login"
-              description="Its login token usually has broad access to all your repositories, and it will be sent to your cloud sandbox. A scoped token is safer."
-              actionLabel="Use my GitHub CLI login"
-              disabled={pending}
-              onAction={() => {
-                setSaved(false)
-                setGhError('')
-                void readGhToken().then((r) => {
-                  if (r.ok) return save(r.token)
-                  setGhError(
-                    r.reason === 'declined'
-                      ? 'Cancelled: no token was read.'
-                      : r.reason === 'missing'
-                        ? 'The GitHub CLI is not signed in. Run `gh auth login` in a terminal first.'
-                        : 'Could not read the GitHub CLI token.',
-                  )
-                })
-              }}
-            />
-          </SettingsGroup>
         )}
-        <SettingsStatus saved={saved} error={error || ghError} />
-      </SettingsSection>
-    </SettingsSections>
+      </SettingsGroup>
+    </SettingsSection>
   )
 }

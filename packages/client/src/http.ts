@@ -132,7 +132,8 @@ export function createApi(config: ApiConfig) {
     /** Starts the build (idempotent: returns the current status if one is running or the snapshot is current). */
     buildSnapshot: (force = false) => request<SnapshotStatus>("POST", "/api/snapshot/build", force ? { force: true } : {}),
     getUsage: () => request<Usage>("GET", "/api/usage"),
-    getGithubRepos: () => request<GithubRepos>("GET", "/api/github/repos"),
+    /** `fresh`: read the GitHub CLI and GitHub again instead of the server's short cache. */
+    getGithubRepos: (fresh = false) => request<GithubRepos>("GET", fresh ? "/api/github/repos?fresh=1" : "/api/github/repos"),
     listSecrets: () => request<string[]>("GET", "/api/secrets"),
     setSecret: (name: string, value: string) => request<object>("PUT", `/api/secrets/${enc(name)}`, { value }),
     deleteSecret: (name: string) => request<object>("DELETE", `/api/secrets/${enc(name)}`),

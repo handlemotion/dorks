@@ -96,7 +96,8 @@ export interface SettingsPatch {
   boatKey?: string;
   boatOrg?: string;
   claudeToken?: string;
-  githubToken?: string;
+  /** true: act as the GitHub CLI's login (the server checks it with GitHub first); false: disconnect. */
+  githubConnected?: boolean;
   boatEnvironment?: string;
   baseSnapshotId?: string;
   sleepMinutes?: number;
@@ -157,11 +158,24 @@ export interface PrRefInput {
   number: number;
 }
 
-/** `GET /api/github/repos`: the saved GitHub token's user (null without one), its organizations, and its repositories (`owner/name`, most recently pushed first). */
+/**
+ * How the GitHub connection stands: `ok`; `not_connected`; `gh_missing` / `gh_logged_out` (the GitHub CLI is not installed, or
+ * not signed in); `rejected` (GitHub refused its token); `unreachable`.
+ */
+export type GithubAuthState = "ok" | "not_connected" | "gh_missing" | "gh_logged_out" | "rejected" | "unreachable";
+
+/** `GET /api/github/repos`: the GitHub CLI login's user (null without one), its organizations, and its repositories (`owner/name`). */
 export interface GithubRepos {
   login: string | null;
   orgs: string[];
   repos: string[];
+  auth: {
+    state: GithubAuthState;
+    /** `gh`: the GitHub CLI's login; `env`: `GH_TOKEN` in the server's environment (development). */
+    source: "gh" | "env" | null;
+    /** OAuth scopes Dorks needs that the login lacks: `read:org` (lists organizations), `workflow` (pushes CI files). */
+    missingScopes: string[];
+  };
 }
 
 /** `GET /api/usage`: a part is missing when its credential is not set or its source failed. `used` is 0..1, times are epoch ms. */

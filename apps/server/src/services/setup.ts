@@ -13,7 +13,7 @@ export function missingForSession(app: App, provider: Provider): string | null {
   if (!sim && !s.boatKeyEnc) return "Connect Boat first: add your Boat API key.";
   if (provider === "claude" && !s.claudeTokenEnc) return "Connect Claude Code first: add your Claude token.";
   if (provider === "codex" && !sim && !s.boatEnvironment) return "Codex is optional: connect ChatGPT once in Boat and select your Boat environment in Settings, or use Claude Code.";
-  if (!s.githubTokenEnc) return "Connect GitHub first: add a GitHub token.";
+  if (!s.githubConnected) return "Connect GitHub first: sign in with the GitHub CLI.";
   if (!(s.baseSnapshotId ?? app.cfg.baseSnapshotId)) return "Boat is still being prepared: wait for the base snapshot, or retry it if it failed.";
   if (!sim && !app.cfg.publicUrl) return "Set up the public URL that sandboxes use to reach this app first.";
   return null;

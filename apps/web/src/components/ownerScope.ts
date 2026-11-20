@@ -39,8 +39,8 @@ export function useOwnerScope(owners: readonly string[]): [string, (owner: strin
 }
 
 /**
- * The owners to switch between: the GitHub token's user first, then its organizations and the owners of `repos` (the token's
- * repositories and the chats'; a fine-grained token may not list its organizations), alphabetical.
+ * The owners to switch between: the GitHub CLI login's user first, then its organizations and the owners of `repos` (the GitHub CLI
+ * login's repositories and the chats', which may name an owner the login no longer reaches), alphabetical.
  */
 export function ownersOf(repos: readonly string[], accounts?: { login: string | null; orgs: string[]; repos: string[] }): string[] {
   const login = accounts?.login ?? undefined

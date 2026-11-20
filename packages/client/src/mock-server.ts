@@ -428,7 +428,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     };
     set("boatKey");
     set("claudeToken");
-    if (typeof body.githubToken === "string") settings.github = body.githubToken ? { configured: true, login: "octocat" } : { configured: false };
+    if (typeof body.githubConnected === "boolean") settings.github = body.githubConnected ? { configured: true, login: "octocat" } : { configured: false, login: null };
     for (const k of ["boatOrg", "boatEnvironment", "baseSnapshotId"] as const) if (typeof body[k] === "string") settings[k] = body[k] || null;
     if (typeof body.sleepMinutes === "number") {
       if (!Number.isFinite(body.sleepMinutes) || body.sleepMinutes <= 0 || body.sleepMinutes > 1440) return "minutes must be between 0 and 1440";
@@ -481,8 +481,9 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
                 login: "octocat",
                 orgs: ["acme", "handlemotion"],
                 repos: ["acme/demo", "handlemotion/dorks", "handlemotion/transitive", "octocat/hello-world", "acme/api", "handlemotion/site", "octocat/dotfiles", "acme/design-system"],
+                auth: { state: "ok", source: "gh", missingScopes: [] },
               }
-            : { login: null, orgs: [], repos: [] },
+            : { login: null, orgs: [], repos: [], auth: { state: "not_connected", source: null, missingScopes: [] } },
         ),
     ],
     [

@@ -642,7 +642,7 @@ function RepoRow({ repo }: { repo: string }) {
 const REPO_ITEM = 'h-8 gap-2 rounded-[6px] px-2 py-0 font-normal data-selected:bg-foreground/[0.05] [&>svg:last-child]:size-3.5'
 
 /**
- * The repository for a new session: a searchable list of the GitHub token's repositories (and the ones chats used), the chosen one
+ * The repository for a new session: a searchable list of the GitHub CLI login's repositories (and the ones chats used), the chosen one
  * first. Typing a full `owner/repo` that is not listed offers it too, since a first session may name any repository.
  */
 function RepositoryPicker({ repo, setRepo, repositories, disabled }: { repo: string; setRepo: (repo: string) => void; repositories: string[]; disabled?: boolean }) {

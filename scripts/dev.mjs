@@ -72,7 +72,7 @@ const ready = await new Promise((resolve) => {
 });
 console.log(`[dev] server: UI ${ready.ui}, bridge ${ready.bridge}`);
 
-// The simulator never calls Boat, GitHub or an AI provider. Seed only missing settings so the real UI can create a
+// The simulator never calls Boat or an AI provider. Seed only missing settings so the real UI can create a
 // session immediately, without asking the developer to paste live credentials into a simulated sandbox.
 const api = async (path, method = "GET", body) => {
   const res = await fetch(`${ready.ui}/api/${path}`, {
@@ -88,7 +88,8 @@ try {
   await api("settings", "PUT", {
     ...(!settings.boatKey ? { boatKey: "dev-simulated-boat" } : {}),
     ...(!settings.claudeToken ? { claudeToken: "dev-simulated-claude" } : {}),
-    ...(!settings.github.configured ? { githubToken: "dev-simulated-github" } : {}),
+    // GitHub is your gh login when it has one (the owner switcher then shows your real organizations); the simulator connects without.
+    ...(!settings.github.configured ? { githubConnected: true } : {}),
   });
   if (!settings.baseSnapshotId) await api("snapshot/build", "POST", {});
 } catch (error) {

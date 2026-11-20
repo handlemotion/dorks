@@ -9,7 +9,7 @@ import { harness } from "./harness";
 
 async function ready() {
   const h = harness();
-  await updateSettings(h.app, { boatKey: "bk", githubToken: "gt", baseSnapshotId: "base-1" });
+  await updateSettings(h.app, { boatKey: "bk", githubConnected: true, baseSnapshotId: "base-1" });
   return h;
 }
 

@@ -3,6 +3,7 @@ import { knownModelChoices } from "./models";
 import { fail, OWNER, touch, type App } from "../app";
 import { aad, decrypt, encrypt } from "../core/crypto";
 import { json, update } from "../db";
+import type { GhLogin } from "../lib/ghCli";
 
 export const MAX_TOKEN_CHARS = 4 * 1024;
 export const MAX_SECRET_BYTES = 16 * 1024;
@@ -16,7 +17,8 @@ export interface Settings {
   boatOrg?: string;
   boatEnvironment?: string;
   baseSnapshotId?: string;
-  githubTokenEnc?: string;
+  /** The owner chose to let Dorks act as their GitHub CLI login (the token itself is never stored: see githubLogin below). */
+  githubConnected: boolean;
   githubLogin?: string;
   commentPolicy?: CommentPolicy;
 }
@@ -32,7 +34,7 @@ export function readSettings(app: App): Settings {
     boatOrg: n(r.boat_org as string | null),
     boatEnvironment: n(r.boat_environment as string | null),
     baseSnapshotId: n(r.base_snapshot_id as string | null),
-    githubTokenEnc: n(r.github_token_enc as string | null),
+    githubConnected: !!r.github_connected,
     githubLogin: n(r.github_login as string | null),
     commentPolicy: json(r.comment_policy),
   };
@@ -47,7 +49,7 @@ export function settingsView(app: App) {
     boatOrg: s.boatOrg ?? null,
     boatEnvironment: s.boatEnvironment ?? null,
     baseSnapshotId: s.baseSnapshotId ?? app.cfg.baseSnapshotId ?? null,
-    github: { configured: !!s.githubTokenEnc, login: s.githubLogin ?? null },
+    github: { configured: s.githubConnected, login: s.githubLogin ?? null },
     sleepMinutes: s.sleepMinutes,
     commentPolicy: s.commentPolicy ?? DEFAULT_COMMENT_POLICY,
     publicUrlConfigured: !!app.cfg.publicUrl,
@@ -63,7 +65,8 @@ export interface SettingsPatch {
   boatKey?: string;
   boatOrg?: string;
   claudeToken?: string;
-  githubToken?: string;
+  /** true: act as the GitHub CLI's login (checked with GitHub first); false: disconnect. */
+  githubConnected?: boolean;
   boatEnvironment?: string;
   baseSnapshotId?: string;
   sleepMinutes?: number;
@@ -78,7 +81,7 @@ const text = (v: unknown, what: string, max: number) => {
 };
 
 /** Looks up whose token this is, so the poller can ignore the agent's own activity. Null when GitHub cannot be reached. */
-async function githubLoginOf(app: App, token: string): Promise<string | null> {
+async function githubLoginOf(app: App, token: string, source: "env" | "gh"): Promise<string | null> {
   if (app.cfg.boxProvider === "sim") return null; // local simulation: no GitHub
   let res: Response;
   try {
@@ -86,10 +89,30 @@ async function githubLoginOf(app: App, token: string): Promise<string | null> {
   } catch {
     return null;
   }
-  if (res.status === 401 || res.status === 403) fail("invalid", "GitHub rejected that token");
+  if (res.status === 401 || res.status === 403)
+    fail("invalid", source === "env" ? "GitHub rejected the GH_TOKEN this server was started with." : "GitHub rejected the GitHub CLI’s login. Run `gh auth login` in a terminal, then connect again.");
   if (!res.ok) return null;
   const j = (await res.json().catch(() => null)) as { login?: unknown } | null;
   return typeof j?.login === "string" ? j.login : null;
+}
+
+/** Plain words for a GitHub CLI that cannot give a login. */
+export const GH_PROBLEM: Record<"gh_missing" | "gh_logged_out", string> = {
+  gh_missing: "The GitHub CLI isn’t installed. Install it (`brew install gh`), run `gh auth login`, then connect again.",
+  gh_logged_out: "The GitHub CLI isn’t signed in. Run `gh auth login` in a terminal, then connect again.",
+};
+
+/** Connecting checks the GitHub CLI's login with GitHub before it is saved. The local simulation connects without one. */
+async function githubConnection(app: App, connect: unknown): Promise<Record<string, unknown>> {
+  if (typeof connect !== "boolean") fail("invalid", "githubConnected must be true or false");
+  forgetGhLogin(app);
+  if (!connect) return { githubConnected: 0, githubLogin: null };
+  const read = await app.ghLogin();
+  if ("problem" in read) {
+    if (app.cfg.boxProvider === "sim") return { githubConnected: 1, githubLogin: null };
+    fail("invalid", GH_PROBLEM[read.problem]);
+  }
+  return { githubConnected: 1, githubLogin: await githubLoginOf(app, read.token, read.source) };
 }
 
 const boatEnvironmentOf = (v: unknown) => {
@@ -120,11 +143,7 @@ export async function updateSettings(app: App, patch: SettingsPatch): Promise<vo
   if (patch.boatKey !== undefined) row.boatKeyEnc = await sealed(text(patch.boatKey, "Boat API key", 512), aad.boatKey(OWNER));
   if (patch.boatOrg !== undefined) row.boatOrg = text(patch.boatOrg, "Boat organization", 128) || null;
   if (patch.claudeToken !== undefined) row.claudeTokenEnc = await sealed(text(patch.claudeToken, "token", MAX_TOKEN_CHARS), aad.claudeToken(OWNER));
-  if (patch.githubToken !== undefined) {
-    const t = text(patch.githubToken, "GitHub token", MAX_TOKEN_CHARS);
-    row.githubTokenEnc = await sealed(t, aad.githubToken(OWNER));
-    row.githubLogin = t ? await githubLoginOf(app, t) : null;
-  }
+  if (patch.githubConnected !== undefined) Object.assign(row, await githubConnection(app, patch.githubConnected));
   if (patch.boatEnvironment !== undefined) row.boatEnvironment = boatEnvironmentOf(patch.boatEnvironment);
   if (patch.baseSnapshotId !== undefined) row.baseSnapshotId = text(patch.baseSnapshotId, "snapshot", 200) || null;
   if (patch.sleepMinutes !== undefined) row.sleepMinutes = sleepMinutesOf(patch.sleepMinutes);
@@ -158,10 +177,38 @@ export async function boatKey(app: App): Promise<string | undefined> {
   const s = readSettings(app);
   return s.boatKeyEnc ? decrypt(app.ring, s.boatKeyEnc, aad.boatKey(OWNER)) : undefined;
 }
-export async function githubToken(app: App): Promise<string | undefined> {
-  const s = readSettings(app);
-  return s.githubTokenEnc ? decrypt(app.ring, s.githubTokenEnc, aad.githubToken(OWNER)) : undefined;
+// ---------------------------------------------------------------- the GitHub CLI's login (never stored; cached in memory for a minute)
+const GH_TTL_MS = 60_000;
+const ghCache = new WeakMap<App, { at: number; login: GhLogin }>();
+
+/** Forget the cached login, so the next read asks `gh` again (connecting, disconnecting, an explicit refresh). */
+export function forgetGhLogin(app: App): void {
+  ghCache.delete(app);
 }
+
+/**
+ * The GitHub CLI's login when the owner connected GitHub, null when they did not. A changed token (after `gh auth switch` or a new
+ * login) clears the remembered login, so the poller learns whose it is again.
+ */
+export async function githubLogin(app: App): Promise<GhLogin | null> {
+  if (!readSettings(app).githubConnected) return null;
+  const cached = ghCache.get(app);
+  if (cached && app.now() - cached.at < GH_TTL_MS) return cached.login;
+  const login = await app.ghLogin();
+  const before = cached && "token" in cached.login ? cached.login.token : undefined;
+  if ("token" in login && before && before !== login.token) update(app.db, "settings", { id: 1 }, { githubLogin: null });
+  // Only a working login is cached: after `gh auth login` the next read picks it up.
+  if ("token" in login) ghCache.set(app, { at: app.now(), login });
+  else ghCache.delete(app);
+  return login;
+}
+
+/** The token every GitHub call and every sandbox uses: the GitHub CLI's, when connected. */
+export async function githubToken(app: App): Promise<string | undefined> {
+  const login = await githubLogin(app);
+  return login && "token" in login ? login.token : undefined;
+}
+
 export async function claudeToken(app: App): Promise<string | undefined> {
   const s = readSettings(app);
   return s.claudeTokenEnc ? decrypt(app.ring, s.claudeTokenEnc, aad.claudeToken(OWNER)) : undefined;
