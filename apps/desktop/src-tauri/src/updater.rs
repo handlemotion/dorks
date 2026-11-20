@@ -41,6 +41,13 @@ pub struct Updater {
     status: Mutex<UpdateStatus>,
     #[cfg(feature = "updater")]
     pending: tokio::sync::Mutex<Option<tauri_plugin_updater::Update>>,
+    /// Held by a check, and by an install from start to relaunch, so a check can never land in the middle of an install and
+    /// offer the update again.
+    #[cfg(feature = "updater")]
+    busy: tokio::sync::Mutex<()>,
+    /// Set while an install is wanted or running, so a second Update click does nothing.
+    #[cfg(feature = "updater")]
+    installing: std::sync::atomic::AtomicBool,
 }
 
 impl Updater {
@@ -49,6 +56,10 @@ impl Updater {
             status: Mutex::new(if cfg!(feature = "updater") { UpdateStatus::Idle { checking: false } } else { UpdateStatus::Unsupported }),
             #[cfg(feature = "updater")]
             pending: tokio::sync::Mutex::new(None),
+            #[cfg(feature = "updater")]
+            busy: tokio::sync::Mutex::new(()),
+            #[cfg(feature = "updater")]
+            installing: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -89,10 +100,21 @@ pub fn start_background_checks(app: &AppHandle) {
     let _ = app;
 }
 
-/// Asks GitHub for a newer version. Leaves a download or install in progress alone. A failed check is logged and changes
-/// nothing the UI shows (being offline is not worth a banner); the error is returned to whoever asked.
+/// Asks GitHub for a newer version. While another check or an install runs it does nothing and returns the current status. A
+/// failed check is logged and changes nothing the UI shows (being offline is not worth a banner); the error is returned to
+/// whoever asked.
 #[cfg(feature = "updater")]
 pub async fn check(app: &AppHandle) -> Result<UpdateStatus, String> {
+    let updater = app.state::<Updater>();
+    let Ok(_busy) = updater.busy.try_lock() else {
+        return Ok(updater.status());
+    };
+    check_locked(app).await
+}
+
+/// The check itself; the caller holds `busy`.
+#[cfg(feature = "updater")]
+async fn check_locked(app: &AppHandle) -> Result<UpdateStatus, String> {
     use tauri_plugin_updater::UpdaterExt;
 
     let before = app.state::<Updater>().status();
@@ -134,11 +156,24 @@ pub async fn check(_app: &AppHandle) -> Result<UpdateStatus, String> {
 pub async fn install(app: &AppHandle) -> Result<(), String> {
     use std::sync::atomic::Ordering;
 
-    if matches!(app.state::<Updater>().status(), UpdateStatus::Downloading { .. } | UpdateStatus::Installing { .. }) {
+    let updater = app.state::<Updater>();
+    if updater.installing.swap(true, Ordering::SeqCst) {
         return Ok(());
     }
+    // Waits for a check in flight to finish; from here to the relaunch no check can run.
+    let _busy = updater.busy.lock().await;
+    let result = install_locked(app).await;
+    updater.installing.store(false, Ordering::SeqCst);
+    result
+}
+
+/// The install itself; the caller holds `busy`. Only returns on failure (success relaunches).
+#[cfg(feature = "updater")]
+async fn install_locked(app: &AppHandle) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
+
     if app.state::<Updater>().pending.lock().await.is_none() {
-        check(app).await?;
+        check_locked(app).await?;
     }
     let Some(update) = app.state::<Updater>().pending.lock().await.take() else {
         return Err("Dorks is up to date".into());
