@@ -262,6 +262,7 @@ function AgentText({ block }: { block: Extract<AgentBlock, { kind: 'assistant' }
     <HoverActions
       text={block.text}
       sentAt={block.at ? new Date(block.at) : undefined}
+      timeBelow
       rate={block.final}
       onReply={onReply && (() => onReply({ kind: 'text', text: quoteText(block.text.replace(IMAGE, '')) }))}
     >
@@ -429,8 +430,8 @@ function TurnCard({ work, end, onOpen }: { work: WorkBlock[]; end?: TurnBlock; o
  * One turn, kept light: the card that sums up its work, then its answer and anything else it posted (notices, a machine draft). The
  * tool calls, edits and progress text are in Progress.
  */
-function TurnContent({ blocks, end, onOpenStep }: { blocks: AgentBlock[]; end?: TurnBlock; onOpenStep?: (key: string) => void }) {
-  const { work, answer } = splitTurn(blocks, !!end)
+function TurnContent({ blocks, end, running, onOpenStep }: { blocks: AgentBlock[]; end?: TurnBlock; running?: boolean; onOpenStep?: (key: string) => void }) {
+  const { work, answer } = splitTurn(blocks, !!end, running)
   const rest = blocks.filter((b) => b.kind !== 'tool' && b.kind !== 'assistant')
   const first = work[0]
   return (
@@ -477,7 +478,8 @@ export function ChatMessages({
   const { blocks, refs } = resolveSharedImages(raw, imageUrl)
   const images = transcriptImages(blocks)
   const reply = useMemo<ReplyHandlers>(() => ({ onReply, onSend: onReplySend, agent, refOf: (src) => refs.get(src) }), [onReply, onReplySend, agent, refs])
-  const messages = entries(blocks).map((entry) => {
+  const all = entries(blocks)
+  const messages = all.map((entry, n) => {
     if (entry.kind === 'user') {
       const { reply: quoted, body } = parseReply(entry.block.text)
       const text = body.replace(IMAGE, '').trim()
@@ -517,8 +519,9 @@ export function ChatMessages({
       <MessageScrollerItem key={entry.id} messageId={entry.id} className="-mt-7 -ml-10 pt-7 pl-10">
         <Message {...{ [REPLY_SOURCE]: '' }}>
           <MessageContent className="gap-3">
-            {turns(entry.blocks).map((turn, i) => (
-              <TurnContent key={`${entry.id}:${i}`} blocks={turn.blocks} end={turn.end} onOpenStep={onOpenStep} />
+            {turns(entry.blocks).map((turn, i, list) => (
+              // Only the chat's last turn can still be running.
+              <TurnContent key={`${entry.id}:${i}`} blocks={turn.blocks} end={turn.end} running={n === all.length - 1 && i === list.length - 1} onOpenStep={onOpenStep} />
             ))}
           </MessageContent>
         </Message>

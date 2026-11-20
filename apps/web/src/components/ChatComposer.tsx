@@ -244,6 +244,11 @@ function ClaudeModels({
   label: string
 }) {
   if (provider === 'claude' && models && choices.length > 0) {
+    // The CLI lists each family's current model by its alias (`opus`) and pinned older versions by full id (`claude-opus-4-8`):
+    // the current ones up front, the rest (and never the one chosen) one level down.
+    const chosen = models.model ?? DEFAULT
+    const latest = choices.filter((c) => !c.model.startsWith('claude-') || c.model === chosen)
+    const older = choices.filter((c) => !latest.includes(c))
     return (
       <DropdownMenuRadioGroup
         value={models.model ?? DEFAULT}
@@ -253,12 +258,22 @@ function ClaudeModels({
           models.onChange(value === DEFAULT ? undefined : value, models.effort && next?.efforts.includes(models.effort as never) ? models.effort : undefined, !!models.fast && !!next?.fast)
         }}
       >
-        {choices.map((c) => (
-          <DropdownMenuRadioItem key={c.model} value={c.model} closeOnClick title={c.description}>
-            <ProviderIcon provider="claude" />
-            <span className="min-w-0 truncate">{c.name}</span>
-          </DropdownMenuRadioItem>
+        {latest.map((c) => (
+          <ModelItem key={c.model} choice={c} choices={choices} />
         ))}
+        {older.length > 0 && (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <ProviderIcon provider="claude" />
+              <span className="flex-1">Older models</span>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-44">
+              {older.map((c) => (
+                <ModelItem key={c.model} choice={c} choices={choices} />
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        )}
       </DropdownMenuRadioGroup>
     )
   }
@@ -269,6 +284,18 @@ function ClaudeModels({
         {provider === 'claude' ? label : AGENT_NAMES.claude}
       </DropdownMenuRadioItem>
     </DropdownMenuRadioGroup>
+  )
+}
+
+/** One Claude model. The default names the model it stands for in grey ("Default  Opus 5.5"), so it never truncates. */
+function ModelItem({ choice: c, choices }: { choice: AgentModelChoice; choices: AgentModelChoice[] }) {
+  const stands = c.model === DEFAULT ? modelName(choices, c.model) : undefined
+  return (
+    <DropdownMenuRadioItem value={c.model} closeOnClick title={c.description}>
+      <ProviderIcon provider="claude" />
+      <span className="min-w-0 truncate">{c.model === DEFAULT ? 'Default' : c.name}</span>
+      {stands && stands !== c.name && <span className="min-w-0 truncate text-muted-foreground">{stands}</span>}
+    </DropdownMenuRadioItem>
   )
 }
 
@@ -612,8 +639,9 @@ export function Composer({
             <MainButton onStop={onStop} isNewSession={isNewSession} pending={pending} canSend={canSend} />
           </div>
         </InputGroup>
-        {/* Compact, shared baseline for the repository and model controls. */}
-        <div className="flex items-center gap-2 px-2.5 pt-2 text-[13px] [--control-radius:6px]">
+        {/* Compact, shared baseline for the repository and model controls. 9px in (8px plus the box's 1px border), like attach and send, so the repository
+            button lines up under attach and the model button under send. */}
+        <div className="flex items-center gap-2 px-[9px] pt-2 text-[13px] [--control-radius:6px]">
           <RepositoryControl repo={repo} setRepo={setRepo} repositories={repositories} disabled={locked} />
           {machine && machine.builds.length > 0 && <MachineMenu machine={machine} disabled={locked} />}
           <ModelMenu provider={provider} setProvider={setProvider} codexEnabled={codexEnabled} picker={picker} agentLabel={agentLabel} isNewSession={isNewSession} disabled={locked} />
