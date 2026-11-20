@@ -53,7 +53,8 @@ export class McpOAuthProxy {
 
   async start(): Promise<void> {
     if (this.server) return;
-    const server = createServer((req, res) => void this.handle(req, res));
+    // A failure in one request (a bad path, a dropped socket) answers that request; it must never take the bridge down.
+    const server = createServer((req, res) => this.handle(req, res).catch(() => end(res, 500, "proxy error")));
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(0, "127.0.0.1", () => resolve());
@@ -91,7 +92,7 @@ export class McpOAuthProxy {
   private async handle(req: IncomingMessage, res: ServerResponse) {
     const url = new URL(req.url ?? "/", "http://proxy");
     const [, secret, rawName, ...rest] = url.pathname.split("/");
-    const name = decodeURIComponent(rawName ?? "");
+    const name = decodeName(rawName);
     const route = secret === this.secret && rest.length === 0 ? this.routes.get(name) : undefined;
     if (!route) return end(res, 404, "not found");
 
@@ -120,6 +121,14 @@ export class McpOAuthProxy {
       return end(res, 502, why);
     }
     relay(upstream, res);
+  }
+}
+
+function decodeName(raw = ""): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return "";
   }
 }
 

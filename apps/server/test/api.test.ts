@@ -377,6 +377,25 @@ describe("settings", () => {
     expect(await mcpAccessToken(h.app, "omni", "access-1")).toMatchObject({ authorization: "Bearer access-2" }); // refused: refresh now
     expect(await mcpAccessToken(h.app, "omni", "access-1")).toMatchObject({ authorization: "Bearer access-2" }); // already refreshed
     expect(tokenCalls.at(-1)?.get("resource")).toBe(MCP);
+    // A sign-out while a refresh is in flight wins: the refreshed tokens are dropped, not saved over it.
+    const { signOutMcp } = await import("../src/services/mcpOAuth");
+    let release!: () => void;
+    const slow = routes[`POST ${AS}/token`]!;
+    routes[`POST ${AS}/token`] = (init) => {
+      const r = slow(init);
+      return new Promise<Response>((done) => (release = () => done(r))) as unknown as Response;
+    };
+    const inFlight = mcpAccessToken(h.app, "omni", "access-2");
+    await new Promise((r) => setTimeout(r, 0));
+    await signOutMcp(h.app, "omni");
+    release();
+    await expect(inFlight).rejects.toMatchObject({ error: { code: "not_configured" } });
+    expect((await a.get("/api/mcp-servers")).json[0].oauth).toBe("signed_out");
+    routes[`POST ${AS}/token`] = slow;
+    const again = new URL((await a.post("/api/mcp-servers/omni/oauth", { base: "http://127.0.0.1:4747" })).json.url);
+    challenge = again.searchParams.get("code_challenge")!;
+    expect((await a.app.request(`/oauth/mcp/callback?state=${again.searchParams.get("state")}&code=code-2`)).status).toBe(200);
+    grant = "refresh-1";
     // Editing the server keeps the sign-in.
     expect((await a.put("/api/mcp-servers/omni", { transport: "http", url: MCP })).json).toEqual({ oauth: "signed_in" });
     await h.advance(3600_000);

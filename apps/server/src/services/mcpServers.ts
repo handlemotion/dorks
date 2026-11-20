@@ -190,14 +190,19 @@ async function oauthOf(app: App, prev: Row | undefined, saved: Sealed, next: Sea
   return (await asksForOAuth(app, next.url!, next.headers)) ? "signed_out" : null;
 }
 
-/** Replaces a server's OAuth state and sealed values (sign-in, refresh, sign-out); agents restart only when `reconfigure` says so. */
-export async function saveOAuth(app: App, name: string, oauth: McpOAuthState, sealed: Sealed, reconfigure: boolean): Promise<void> {
+/**
+ * Replaces a server's OAuth state and sealed values (sign-in, refresh, sign-out); agents restart only when `reconfigure` says so.
+ * `from` is the envelope the caller read: when the row changed meanwhile (a sign-out or an edit during a token request), nothing is
+ * written and the answer is false, so a slow refresh never undoes a sign-out.
+ */
+export async function saveOAuth(app: App, name: string, oauth: McpOAuthState, sealed: Sealed, reconfigure: boolean, from: string): Promise<boolean> {
   const enc = (await encrypt(app.ring, JSON.stringify(sealed), aad.mcpServer(OWNER, name))).value;
-  app.db.tx(() => {
-    if (!app.db.get("SELECT name FROM mcp_servers WHERE name = ?", name)) return; // removed meanwhile
+  return app.db.tx(() => {
+    if (app.db.get<{ secrets_enc: string }>("SELECT secrets_enc FROM mcp_servers WHERE name = ?", name)?.secrets_enc !== from) return false;
     app.db.run("UPDATE mcp_servers SET secrets_enc = ?, oauth = ? WHERE name = ?", enc, oauth, name);
     if (reconfigure) reconfigureAwake(app);
     touch(app, { t: "settings" });
+    return true;
   });
 }
 

@@ -260,6 +260,7 @@ describe("OAuth MCP proxy", () => {
       await fetch(proxy.urlFor("omni"), { method: "POST", body: "{}" }).then((r) => r.text());
       expect(asked).toHaveLength(2); // cached until it is refused or expires
       expect((await fetch(proxy.urlFor("omni").replace(/\/[0-9a-f]{32}\//, "/guess/"), { method: "POST", body: "{}" })).status).toBe(404);
+      expect((await fetch(proxy.urlFor("omni").replace(/\/[0-9a-f]{32}\/omni/, "/x/%ZZ"), { method: "POST", body: "{}" })).status).toBe(404); // no crash
       proxy.set(new Map());
       expect((await fetch(proxy.urlFor("omni"), { method: "POST", body: "{}" })).status).toBe(404);
     } finally {

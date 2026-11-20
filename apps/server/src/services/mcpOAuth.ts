@@ -198,7 +198,7 @@ export async function startMcpSignIn(app: App, name: string, base: unknown): Pro
   }
   const { registrationEndpoint: _, ...where } = d;
   sealed.oauth = { ...where, client, tokens: prev?.tokens };
-  await saveOAuth(app, name, row.oauth ?? "signed_out", sealed, false);
+  if (!(await saveOAuth(app, name, row.oauth ?? "signed_out", sealed, false, row.secrets_enc))) fail("failed", `${name} changed meanwhile; try again`);
 
   const verifier = b64url(randomBytes(32));
   const state = b64url(randomBytes(32));
@@ -262,7 +262,7 @@ export async function finishMcpSignIn(app: App, q: { state?: string; code?: stri
     const sealed = await open(app, row);
     const o = sealedOf(sealed, p.name);
     o.tokens = await tokenRequest(app, o, { grant_type: "authorization_code", code: q.code, code_verifier: p.verifier });
-    await saveOAuth(app, p.name, "signed_in", sealed, true);
+    if (!(await saveOAuth(app, p.name, "signed_in", sealed, true, row.secrets_enc))) fail("failed", `${p.name} changed during the sign-in; start it again`);
     return { ok: true, message: `Signed in to ${p.name}. Agents get its tools from their next turn. You can close this tab.` };
   } catch (e) {
     const why = e instanceof AppFail ? e.error.message : e instanceof GrantGone ? `the server refused the code (${e.message})` : "something went wrong";
@@ -296,20 +296,37 @@ async function accessToken(app: App, name: string, stale: string | undefined): P
   const t = o.tokens;
   const fresh = t && t.access !== stale && (t.expiresAt === null || t.expiresAt - MARGIN_MS > app.now());
   if (fresh) return { authorization: `Bearer ${t.access}`, expiresAt: t.expiresAt };
-  if (!t?.refresh) return signOut(app, name, sealed, "its token expired");
+  if (!t?.refresh) return signOut(app, name, sealed, row.secrets_enc, "its token expired");
+  let tokens: NonNullable<OAuthSealed["tokens"]>;
   try {
-    o.tokens = await tokenRequest(app, o, { grant_type: "refresh_token", refresh_token: t.refresh });
+    tokens = await tokenRequest(app, o, { grant_type: "refresh_token", refresh_token: t.refresh });
   } catch (e) {
-    if (e instanceof GrantGone) return signOut(app, name, sealed, "its sign-in was revoked or expired");
+    if (e instanceof GrantGone) return signOut(app, name, sealed, row.secrets_enc, "its sign-in was revoked or expired");
     throw e;
   }
-  await saveOAuth(app, name, "signed_in", sealed, false);
-  return { authorization: `Bearer ${o.tokens.access}`, expiresAt: o.tokens.expiresAt };
+  await commitTokens(app, name, t.refresh, tokens);
+  return { authorization: `Bearer ${tokens.access}`, expiresAt: tokens.expiresAt };
 }
 
-async function signOut(app: App, name: string, sealed: McpServerSealed, why: string): Promise<never> {
+/**
+ * Saves refreshed tokens onto the row as it is now. An edit made during the request (a header, say) is kept; a sign-out, a new
+ * sign-in or a removal wins, and the refreshed tokens are dropped.
+ */
+async function commitTokens(app: App, name: string, usedRefresh: string, tokens: NonNullable<OAuthSealed["tokens"]>): Promise<void> {
+  for (let i = 0; i < 3; i++) {
+    const row = serverRow(app, name);
+    if (row?.oauth !== "signed_in") break;
+    const sealed = await open(app, row);
+    if (sealed.oauth?.tokens?.refresh !== usedRefresh) break;
+    sealed.oauth.tokens = tokens;
+    if (await saveOAuth(app, name, "signed_in", sealed, false, row.secrets_enc)) return;
+  }
+  fail("not_configured", `${name} was signed out or changed. Sign in again in Customize.`);
+}
+
+async function signOut(app: App, name: string, sealed: McpServerSealed, from: string, why: string): Promise<never> {
   if (sealed.oauth) delete sealed.oauth.tokens;
-  await saveOAuth(app, name, "signed_out", sealed, false);
+  await saveOAuth(app, name, "signed_out", sealed, false, from);
   fail("not_configured", `${name}: ${why}. Sign in again in Customize.`);
 }
 
@@ -319,7 +336,7 @@ export async function signOutMcp(app: App, name: string): Promise<void> {
   if (!row.oauth) fail("invalid", `${name} has no sign-in`);
   const sealed = await open(app, row);
   if (sealed.oauth) delete sealed.oauth.tokens;
-  await saveOAuth(app, name, "signed_out", sealed, true);
+  if (!(await saveOAuth(app, name, "signed_out", sealed, true, row.secrets_enc))) fail("failed", `${name} changed meanwhile; try again`);
 }
 
 /** The page the browser lands on after a sign-in. Static text, nothing from the query echoed unescaped. */
