@@ -133,21 +133,21 @@ export function SelectionReply() {
           anchor={anchor}
           side="top"
           align="start"
-          sideOffset={6}
+          sideOffset={8}
           initialFocus={false}
           finalFocus={false}
           data-testid="selection-reply-button"
           data-selection-reply=""
-          className="w-auto gap-0 rounded-[8px] p-0.5"
+          className="w-auto gap-0 rounded-[7px] p-0.5"
         >
           <button
             type="button"
             // Keeps the selection: a press on a button would otherwise clear it before the click.
             onPointerDown={(e) => e.preventDefault()}
             onClick={() => setExpanded(true)}
-            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-[6px] px-2 text-[13px] text-foreground outline-none hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05]"
+            className="flex h-6 cursor-pointer items-center gap-1 rounded-[5px] px-1.5 text-xs text-foreground outline-none hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05]"
           >
-            <ReplyIcon aria-hidden className="size-3.5 text-muted-foreground" />
+            <ReplyIcon aria-hidden className="size-3 text-muted-foreground" />
             Reply
           </button>
         </PopoverContent>
@@ -169,8 +169,7 @@ export function SelectionReply() {
         finalFocus={false}
         data-testid="selection-reply"
         data-selection-reply=""
-        // Portaled outside the app frame, so it sets the main app's grey focus ring itself (glass.css) instead of the brand blue.
-        className="w-72 gap-1.5 rounded-[10px] p-1.5 [--control-radius:6px] [--ring:oklch(0.85_0_0)] dark:[--ring:oklch(1_0_0/28%)]"
+        className="w-72 gap-1.5 rounded-[10px] p-1.5 [--control-radius:6px]"
       >
         <blockquote className="mx-1 mt-0.5 truncate border-l-2 border-foreground/15 pl-2 text-xs leading-4 text-muted-foreground">{target.text}</blockquote>
         <form
@@ -179,7 +178,8 @@ export function SelectionReply() {
             attach()
           }}
         >
-          <InputGroup className="h-8 rounded-(--control-radius)">
+          {/* Fill only: the field is always focused in the box, so the focus border and ring would just frame it twice. */}
+          <InputGroup className="h-8 rounded-(--control-radius) has-[[data-slot=input-group-control]:focus-visible]:border-transparent has-[[data-slot=input-group-control]:focus-visible]:ring-0">
             <InputGroupInput
               ref={inputRef}
               aria-label={`Reply to ${agent ?? 'the agent'}`}
