@@ -22,7 +22,7 @@ export function SettingsSidebar() {
         <div data-tauri-drag-region className="h-12 shrink-0" />
         <div ref={hover.containerRef} className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-1.5 pt-1 pb-1.5">
           <FluidHoverHighlight className="z-0 rounded-[6px] bg-foreground/[0.05]" rect={hover.rect} session={hover.session} />
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto overscroll-y-contain">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto overscroll-y-none">
             <nav aria-label="Settings" className="flex shrink-0 flex-col gap-0.5">
               <Link
                 to="/dorks"

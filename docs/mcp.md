@@ -3,11 +3,13 @@
 The owner adds MCP servers in **Customize**; every Claude agent gets their tools, in every sandbox, next to the built-in `dorks` server
 (`infra/bridge/src/mcp.ts`). A server's tools show up as `mcp__<name>__<tool>`.
 
-- **Connectors** (`apps/web/src/components/connectors.ts`): cards for popular servers (Linear, Sentry, Cloudflare, Firecrawl,
-  Notion, Supabase, Stripe, PostHog, Neon, Context7). Each takes one key and saves an ordinary server named after the card. Only
+- **Connectors** (`apps/web/src/components/connectors.ts`): cards for popular servers, shown in sections by kind
+  (Engineering, Web and docs, Planning, Design, Communication, Docs and files, Customers; `KINDS`). Key connectors (Sentry, PostHog,
+  Cloudflare, Render, Supabase, Neon, Context7, Firecrawl, Exa, Brave Search, Apify, Linear, Notion, Stripe) each take one key and saves an ordinary server named after the card. Only
   servers that accept a static token belong here: a sandbox has no browser to finish an OAuth sign-in.
-- **Apps through Composio** (Figma, Slack, Gmail, Google Drive and Calendar, Jira, Asana, HubSpot): apps that only sign in with
-  OAuth. The owner saves a Composio API key once (`PUT /api/composio`); the server checks it by opening a Composio tool router session
+- **Apps through Composio** (Figma, Canva, Miro, Slack, Gmail, Outlook, Microsoft Teams, Discord, Zoom, Google Docs, Sheets, Drive
+  and Calendar, Confluence, Airtable, Dropbox, Jira, Asana, Trello, ClickUp, Calendly, HubSpot, Salesforce, Intercom, Zendesk): apps
+  that only sign in with OAuth. Only toolkits with a Composio-managed OAuth app belong here, since the owner brings no OAuth app. The owner saves a Composio API key once (`PUT /api/composio`); the server checks it by opening a Composio tool router session
   and saves that session as the ordinary server `composio` (its MCP URL, the key as the `x-api-key` header). Each app card then asks
   for a sign-in link (`POST /api/composio/toolkits/:toolkit/link`), opens it in the browser, and polls `GET /api/composio` until the
   app is a connected account of the one Composio user `dorks-owner`. `DELETE /api/composio/toolkits/:toolkit` signs one app out;

@@ -25,6 +25,22 @@ export const agentModelChoice = z.object({
 });
 export type AgentModelChoice = z.infer<typeof agentModelChoice>;
 
+/** `claude-opus-5-5` -> `Opus 5.5`, `claude-haiku-4-5-20251001` -> `Haiku 4.5`, `claude-opus-5` -> `Opus 5`; anything else: undefined. */
+export function versionedName(id: string | undefined): string | undefined {
+  const m = id && /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(id);
+  if (!m) return undefined;
+  return `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}${m[3] ? `.${m[3]}` : ""}`;
+}
+
+/**
+ * A model's name with its version: older CLIs (and lists stored from them) name an alias by its family alone ("Opus"), so it is named
+ * by the model it resolves to ("Opus 5.5") instead. The `default` alias keeps its own name.
+ */
+export function modelLabel(choice: Pick<AgentModelChoice, "model" | "name" | "resolved">): string {
+  if (choice.model === "default" || /\d/.test(choice.name)) return choice.name;
+  return versionedName(choice.resolved) ?? versionedName(choice.model) ?? choice.name;
+}
+
 /** DO -> bridge (inside the box). */
 export const toBridge = z.discriminatedUnion("t", [
   // `afterBridgeSeq` is the last `event.bseq` the DO has stored. The bridge MUST number new events from

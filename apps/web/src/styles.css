@@ -46,6 +46,13 @@
     @apply h-full;
   }
 
+  /* Nothing rubber-bands or chains its scroll to the window. overscroll-behavior is not inherited, so it is set on every element;
+     `none` (not `contain`) also stops a pane's own bounce in WebKit (the desktop shell's WKWebView). The app shell is fixed-height and
+     never scrolls the document; onboarding still can, on a short window or at high zoom. */
+  * {
+    @apply overscroll-none;
+  }
+
   body {
     @apply bg-background font-sans text-foreground antialiased;
   }

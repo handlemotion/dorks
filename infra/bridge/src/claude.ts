@@ -3,7 +3,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import type { AgentModelChoice } from "@dorks/shared";
+import { modelLabel, type AgentModelChoice } from "@dorks/shared";
 import { CHILD_ENV_DENY } from "./config";
 import { FINAL_ANSWER_GUIDANCE } from "./guidance";
 import { asIdentity, type Identity } from "./runas";
@@ -341,13 +341,6 @@ export class Agent {
 const MODEL_VALUE = /^[a-zA-Z0-9._:[\]-]{1,64}$/;
 const EFFORTS = ["none", "low", "medium", "high", "xhigh", "max"] as const;
 
-/** `claude-opus-5-5` -> `Opus 5.5`, `claude-haiku-4-5-20251001` -> `Haiku 4.5`, `claude-opus-5` -> `Opus 5`; anything else: undefined. */
-export function versionedName(id: string | undefined): string | undefined {
-  const m = id && /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(id);
-  if (!m) return undefined;
-  return `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}${m[3] ? `.${m[3]}` : ""}`;
-}
-
 /** The CLI's `initialize` model list (`{value, displayName, description, resolvedModel, supportedEffortLevels, supportsFastMode}`) in the wire shape. */
 export function modelChoices(raw: unknown): AgentModelChoice[] {
   if (!Array.isArray(raw)) return [];
@@ -357,8 +350,7 @@ export function modelChoices(raw: unknown): AgentModelChoice[] {
     if (typeof o.value !== "string" || !MODEL_VALUE.test(o.value)) continue;
     const resolved = typeof o.resolvedModel === "string" && MODEL_VALUE.test(o.resolvedModel) ? o.resolvedModel : undefined;
     const shown = typeof o.displayName === "string" && o.displayName ? o.displayName.slice(0, 80) : o.value;
-    // Older CLIs name an alias by its family alone ("Opus"): name it by the model it resolves to ("Opus 5.5") instead.
-    const name = o.value !== "default" && !/\d/.test(shown) ? (versionedName(resolved) ?? shown) : shown;
+    const name = modelLabel({ model: o.value, name: shown, resolved });
     const efforts = Array.isArray(o.supportedEffortLevels) ? o.supportedEffortLevels.filter((e): e is AgentModelChoice["efforts"][number] => EFFORTS.includes(e)) : [];
     out.push({
       model: o.value,
