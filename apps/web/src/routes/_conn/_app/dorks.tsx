@@ -252,6 +252,20 @@ function usePullRequestPanel(dorkId: string, dork: { prUrl?: string } | null | u
   }
 }
 
+/** Another of the session's pull requests (by url), read live from GitHub, with its own merge and branch update. */
+function useSessionPullRequest(dorkId: string, url: string): PullRequestPanelData {
+  const { actions } = useDorksClient()
+  const pr = usePullRequest(dorkId, url)
+  const refresh = useCallback(() => actions.refreshPullRequest(dorkId), [actions, dorkId])
+  return {
+    view: pr.data,
+    error: pr.error?.message,
+    refresh,
+    merge: async (method, sha) => void (await actions.mergePullRequest(dorkId, method, sha, url)),
+    updateBranch: (sha) => actions.updatePullRequestBranch(dorkId, sha, url),
+  }
+}
+
 /** Claude's model menu for a running session; Codex has none. */
 function claudePicker(dork: DorkView, fallback: AgentModelChoice[] | undefined, onChange: ModelPicker['onChange']): ModelPicker | undefined {
   if (dork.provider !== 'claude') return undefined
@@ -343,6 +357,7 @@ function Thread({ dorkId }: { dorkId: string }) {
   const { live } = useConnection()
   const pullRequest = usePullRequestPanel(dorkId, dork)
   const subscriptions = useSubscriptions(dorkId)
+  const usePr = useCallback((url: string) => useSessionPullRequest(dorkId, url), [dorkId])
   if (dork === undefined || loading)
     return (
       <p className="mt-4 px-6 text-sm text-muted-foreground" role="status">
@@ -363,7 +378,7 @@ function Thread({ dorkId }: { dorkId: string }) {
         detailsOpen ? (
           <ChatDetails
             sessionId={dorkId}
-            data={{ ...detailsData(dork, view.blocks, actions, { used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent }), pullRequest, subscriptions }}
+            data={{ ...detailsData(dork, view.blocks, actions, { used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent }), pullRequest, subscriptions, usePullRequest: usePr }}
             onClose={() => setDetailsOpen(false)}
             onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}
             onAsk={setText}

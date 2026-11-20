@@ -113,6 +113,15 @@ export const liveSubscriptionViews = (app: App, dorkId: string): SubscriptionVie
     .filter((s) => s.status !== "ended")
     .map(toView);
 
+/**
+ * The session's pull requests as the UI lists them: live subscriptions, plus ended ones the session opened itself or that ended
+ * merged or closed (they stay part of its history). An open PR someone stopped following drops out.
+ */
+export const sessionSubscriptionViews = (app: App, dorkId: string): SubscriptionView[] =>
+  subscriptionsOfDork(app, dorkId)
+    .filter((s) => s.status !== "ended" || s.source === "auto" || s.state !== "open")
+    .map(toView);
+
 /** Subscriptions the poller must look at: not ended, still open, and the dork is neither archived nor being deleted. */
 export const pollable = (app: App): Subscription[] =>
   app.db

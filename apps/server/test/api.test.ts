@@ -672,6 +672,25 @@ describe("a dork's life through the API", () => {
     expect((await a.get(`/api/dorks/${id}/subscriptions`)).json).toEqual([]);
   });
 
+  it("the PR endpoints reach only the session's own pull requests, picked by url", async () => {
+    const { a, h, id } = await dork();
+    await a.post(`/api/dorks/${id}/subscriptions`, { repo: "octo/hello", number: 9 });
+    const fetched: string[] = [];
+    h.app.fetch = (async (url: string) => {
+      fetched.push(new URL(url).pathname);
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch;
+    // Not one of the session's PRs: refused before GitHub is asked anything.
+    for (const url of ["https://github.com/other/repo/pull/1", "https://github.com/octo/hello/pull/10", "not a url"]) {
+      expect((await a.get(`/api/dorks/${id}/pr?url=${encodeURIComponent(url)}`)).json.error.code).toBe("not_found");
+      expect((await a.post(`/api/dorks/${id}/pr/merge`, { method: "squash", url })).json.error.code).toBe("not_found");
+    }
+    expect(fetched).toEqual([]);
+    // A PR it follows (any case of the repo) is read.
+    await a.get(`/api/dorks/${id}/pr?url=${encodeURIComponent("https://github.com/Octo/Hello/pull/9")}`);
+    expect(fetched).toContain("/repos/octo/hello/pulls/9");
+  });
+
   it("a generated title replaces the first-message placeholder, never a name the user typed", async () => {
     const { a, h } = await onboarded();
     const id = (await a.post("/api/dorks", { repo: "o/r", message: "the login tests flake on CI, fix them" })).json.id as string;

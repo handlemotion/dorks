@@ -43,8 +43,8 @@ const RunKind = Schema.Struct({ kind: Schema.Literals(["image", "trial"]) });
 const Approve = Schema.Struct({ reviewed: Loose, run: Loose });
 const Reject = Schema.Struct({ reason: Loose });
 const Default = Schema.Struct({ default: Loose });
-const Merge = Schema.Struct({ method: Loose, sha: Loose });
-const Sha = Schema.Struct({ sha: Loose });
+const Merge = Schema.Struct({ method: Loose, sha: Loose, url: Loose });
+const Sha = Schema.Struct({ sha: Loose, url: Loose });
 const LocalDecision = Schema.Struct({ decision: Loose, minutes: Loose });
 const Enabled = Schema.Struct({ enabled: Loose });
 
@@ -227,11 +227,11 @@ export function uiApp(app: App): Hono {
     ),
   );
 
-  // ---- the session's pull request, read live from GitHub; merged from Chat details
+  // ---- the session's pull requests, read live from GitHub; merged from Chat details. `url` picks one (default: the latest opened)
   api.get(
     "/api/dorks/:id/pr",
     on((c) =>
-      serviceAsync((a) => getPullRequest(a, id(c))).pipe(
+      serviceAsync((a) => getPullRequest(a, id(c), c.req.query("url"))).pipe(
         Effect.map((pr) => {
           c.header("Cache-Control", "no-store");
           return c.json(pr);
@@ -243,7 +243,7 @@ export function uiApp(app: App): Hono {
     "/api/dorks/:id/pr/merge",
     on((c) =>
       body(c, Merge).pipe(
-        Effect.flatMap((b) => serviceAsync((a) => mergePullRequest(a, id(c), b.method, b.sha))),
+        Effect.flatMap((b) => serviceAsync((a) => mergePullRequest(a, id(c), b.method, b.sha, b.url))),
         Effect.map((r) => c.json(r)),
       ),
     ),
@@ -252,7 +252,7 @@ export function uiApp(app: App): Hono {
     "/api/dorks/:id/pr/update-branch",
     on((c) =>
       body(c, Sha).pipe(
-        Effect.flatMap((b) => serviceAsync((a) => updatePullRequestBranch(a, id(c), b.sha))),
+        Effect.flatMap((b) => serviceAsync((a) => updatePullRequestBranch(a, id(c), b.sha, b.url))),
         ok(c),
       ),
     ),
@@ -293,7 +293,8 @@ export function uiApp(app: App): Hono {
   const pr = (c: Context) => body(c, Pr, "repo and number are required");
   api.get(
     "/api/dorks/:id/subscriptions",
-    on((c) => service((a) => c.json(getDorkView(a, id(c)) ? subs.liveSubscriptionViews(a, id(c)) : []))),
+    // Merged and closed ones too (they stay in the session's list); the agent's bridge sees only live ones.
+    on((c) => service((a) => c.json(getDorkView(a, id(c)) ? subs.sessionSubscriptionViews(a, id(c)) : []))),
   );
   api.post(
     "/api/dorks/:id/subscriptions",

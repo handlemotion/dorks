@@ -107,7 +107,13 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   const token = opts.token ?? "mock-owner-token";
   const tick = opts.tick ?? 150;
   const dorks = new Map<string, MockDork>();
-  const prs = new Map<string, PullRequestView>();
+  /** Each session's pull requests, oldest first; the last is its headline (`prUrl`). */
+  const prs = new Map<string, PullRequestView[]>();
+  /** The session's PR by `url` (a query param or body field), else its latest. */
+  const prOf = (dorkId: string, url: unknown) => {
+    const list = prs.get(dorkId) ?? [];
+    return typeof url === "string" && url ? list.find((p) => p.url === url) : list.at(-1);
+  };
   const secrets = new Map<string, string>();
   const mcpServers = new Map<string, McpServerView>();
   // Composio: a sign-in "finishes" when its link is requested, so the UI's wait ends on the next read.
@@ -227,11 +233,19 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       if (!alive()) return;
       append(dorkId, { type: "assistant_message", messageId: msg, text: answer });
       if (/\bpr\b/i.test(prompt)) {
-        append(dorkId, { type: "pr_opened", url: `https://github.com/${d.repo}/pull/7`, number: 7 });
-        d.prUrl = `https://github.com/${d.repo}/pull/7`;
+        // Every "pr" turn opens another one; "stack" stacks it on the previous PR's branch, as with GitHub stacked PRs.
+        const list = prs.get(dorkId) ?? [];
+        const number = 7 + list.length;
+        const pr = mockPullRequest(d.repo, number, list.length ? prompt.slice(0, 60) : d.title);
+        const parent = list.at(-1);
+        if (parent && /\bstack/i.test(prompt)) pr.baseRef = parent.headRef;
+        prs.set(dorkId, [...list, pr]);
+        append(dorkId, { type: "pr_opened", url: pr.url, number });
+        d.prUrl = pr.url;
         d.prState = "open";
-        prs.set(dorkId, mockPullRequest(d.repo, 7, d.title));
         broadcast({ t: "dork", dorkId });
+        broadcast({ t: "dorks" });
+        broadcast({ t: "subscriptions", dorkId });
       }
       append(dorkId, { type: "turn_complete", durationMs: tick * 5, outcome: "done", finalMessageId: msg });
       append(dorkId, { type: "status", state: "idle" });
@@ -430,22 +444,24 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     ["GET events", listEvents],
     [
       "GET pr",
-      ({ res }, d) => {
-        const pr = prs.get(d.id);
+      ({ url, res }, d) => {
+        const pr = prOf(d.id, url.searchParams.get("url"));
         return pr ? json(res, 200, pr) : fail(res, "not_found", "This session has no pull request yet.");
       },
     ],
     [
       "POST pr/merge",
       ({ body, res }, d) => {
-        const pr = prs.get(d.id);
+        const pr = prOf(d.id, body.url);
         if (!pr) return fail(res, "not_found", "This session has no pull request yet.");
         if (pr.state !== "open") return fail(res, "conflict", "Pull Request is not mergeable");
         if (pr.mergeableState === "dirty") return fail(res, "conflict", "Pull Request is not mergeable");
         Object.assign(pr, { state: "merged", mergedAt: Date.now(), mergedBy: pr.author, mergeableState: "unknown" });
         append(d.id, { type: "pr_merged", url: pr.url, number: pr.number });
         broadcast({ t: "subscriptions", dorkId: d.id });
-        d.prState = "merged";
+        if (pr.url === d.prUrl) d.prState = "merged";
+        // GitHub retargets PRs stacked on the merged branch to its base.
+        for (const child of prs.get(d.id) ?? []) if (child.state === "open" && child.baseRef === pr.headRef) child.baseRef = pr.baseRef;
         broadcast({ t: "dork", dorkId: d.id });
         broadcast({ t: "dorks" });
         return json(res, 200, { merged: true, sha: "f".repeat(40), method: body.method });
@@ -453,15 +469,40 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     ],
     [
       "POST pr/update-branch",
-      ({ res }, d) => {
-        const pr = prs.get(d.id);
+      ({ body, res }, d) => {
+        const pr = prOf(d.id, body.url);
         if (!pr) return fail(res, "not_found", "This session has no pull request yet.");
         if (pr.mergeableState === "behind") pr.mergeableState = "clean";
         broadcast({ t: "subscriptions", dorkId: d.id });
         return json(res, 200, {});
       },
     ],
-    ["* subscriptions", ({ method, res }) => json(res, 200, method === "GET" ? [] : {})],
+    [
+      "* subscriptions",
+      ({ method, res }, d) =>
+        json(
+          res,
+          200,
+          method === "GET"
+            ? (prs.get(d.id) ?? []).map((p) => ({
+                repo: p.repo,
+                number: p.number,
+                url: p.url,
+                title: p.title,
+                headRef: p.headRef,
+                baseRef: p.baseRef,
+                headSha: p.headSha,
+                source: "auto",
+                status: p.state === "open" ? "active" : "ended",
+                ci: "passing",
+                review: "approved",
+                mergeable: true,
+                ciFixAttempts: 0,
+                state: p.state,
+              }))
+            : {},
+        ),
+    ],
     ["* subscriptions/resume", ({ res }) => json(res, 200, {})],
   ]);
 
@@ -773,7 +814,7 @@ function mockPullRequest(repo: string, number: number, title: string): PullReque
     state: "open",
     draft: false,
     author,
-    headRef: "dorks/ready-flag",
+    headRef: number === 7 ? "dorks/ready-flag" : `dorks/change-${number}`,
     baseRef: "main",
     headSha: "a".repeat(40),
     createdAt: now - 12 * 60_000,
