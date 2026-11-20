@@ -48,8 +48,12 @@ function ago(ms: number) {
 }
 
 /** One line on where a build stands, for the list and the page header. */
+/** An image run can start: nothing running, no build-time value missing, and not an agent's proposal the owner has not approved. */
+const canBuild = (b: BuildView, missing: string[]) => !b.activeRun && missing.length === 0 && (b.approved || !!b.image)
+
 function status(b: BuildView): string {
   if (b.activeRun) return b.activeRun.status === 'queued' ? 'Waiting to build' : `${b.activeRun.kind === 'trial' ? 'Trying' : 'Building'}: ${STEP_NAMES[b.activeRun.step ?? ''] ?? 'starting'}`
+  if (!b.image && !b.approved) return 'Proposed by an agent, waiting for your approval'
   if (!b.image) return b.lastRun?.kind === 'image' && b.lastRun.status === 'failed' ? 'Build failed' : 'Not built yet'
   if (b.image.stale) return 'Out of date'
   return `Built ${ago(b.image.at)}`
@@ -160,7 +164,7 @@ function BuildDetails({ build }: { build: BuildView }) {
             <Button size="sm" variant="ghost" disabled={pending} onClick={() => void startSetup()}>
               Set up with an agent
             </Button>
-            <Button size="sm" variant="outline" disabled={pending || !!build.activeRun || missing.length > 0} onClick={() => void run(() => actions.startRun(build.id, 'image'))}>
+            <Button size="sm" variant="outline" disabled={pending || !canBuild(build, missing)} onClick={() => void run(() => actions.startRun(build.id, 'image'))}>
               {buildLabel}
             </Button>
           </>
