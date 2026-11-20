@@ -50,20 +50,14 @@ impl Settings {
     /// Missing file means defaults. A corrupt file is an error; it is not overwritten.
     pub fn load(path: &Path) -> io::Result<Settings> {
         match std::fs::read(path) {
-            Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("{}: {e}", path.display()),
-                )
-            }),
+            Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("{}: {e}", path.display()))),
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Settings::default()),
             Err(e) => Err(e),
         }
     }
 
     pub fn save(&self, path: &Path) -> io::Result<()> {
-        let mut json = serde_json::to_vec_pretty(self)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+        let mut json = serde_json::to_vec_pretty(self).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
         json.push(b'\n');
         write_private(path, &json)
     }
@@ -73,9 +67,7 @@ impl Settings {
 /// Returns it normalised without a trailing slash.
 pub fn validate_public_url(raw: &str) -> Result<String, String> {
     let url = raw.trim();
-    let (scheme, rest) = url
-        .split_once("://")
-        .ok_or("the URL must start with https://")?;
+    let (scheme, rest) = url.split_once("://").ok_or("the URL must start with https://")?;
     if rest.is_empty() || rest.contains(char::is_whitespace) {
         return Err("the URL is not valid".into());
     }
@@ -87,11 +79,7 @@ pub fn validate_public_url(raw: &str) -> Result<String, String> {
     if tail.contains(['?', '#']) {
         return Err("the URL must not have a query or fragment".into());
     }
-    let host = authority
-        .rsplit_once(':')
-        .map(|(h, _)| h)
-        .unwrap_or(authority)
-        .trim_matches(['[', ']']);
+    let host = authority.rsplit_once(':').map(|(h, _)| h).unwrap_or(authority).trim_matches(['[', ']']);
     let loopback = matches!(host, "localhost" | "127.0.0.1" | "::1");
     match scheme {
         "https" => {}
@@ -99,10 +87,7 @@ pub fn validate_public_url(raw: &str) -> Result<String, String> {
         "http" => return Err("use https, plain http is only allowed for localhost".into()),
         _ => return Err("the URL must start with https://".into()),
     }
-    Ok(format!(
-        "{scheme}://{authority}{}",
-        tail.trim_end_matches('/')
-    ))
+    Ok(format!("{scheme}://{authority}{}", tail.trim_end_matches('/')))
 }
 
 #[cfg(test)]
@@ -124,12 +109,7 @@ mod tests {
             tunnel_service: Some("https://tunnels.example".into()),
             window_mode: WindowMode::App,
             window_theme: WindowTheme::Dark,
-            window_frame: Some(WindowFrame {
-                x: -5,
-                y: 7,
-                width: 1000,
-                height: 700,
-            }),
+            window_frame: Some(WindowFrame { x: -5, y: 7, width: 1000, height: 700 }),
         };
         s.save(&path).unwrap();
         assert_eq!(Settings::load(&path).unwrap(), s);
@@ -139,11 +119,7 @@ mod tests {
     fn unknown_and_missing_fields_are_tolerated() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("settings.json");
-        std::fs::write(
-            &path,
-            r#"{"publicUrl":"https://a.example","somethingNew":1}"#,
-        )
-        .unwrap();
+        std::fs::write(&path, r#"{"publicUrl":"https://a.example","somethingNew":1}"#).unwrap();
         let s = Settings::load(&path).unwrap();
         assert_eq!(s.public_url.as_deref(), Some("https://a.example"));
         assert_eq!(s.keep_awake, KeepAwake::WhileActive);
@@ -155,22 +131,9 @@ mod tests {
         let path = dir.path().join("settings.json");
         assert_eq!(Settings::default().window_mode, WindowMode::Onboarding);
         std::fs::write(&path, r#"{"keepAwake":"always"}"#).unwrap();
-        assert_eq!(
-            Settings::load(&path).unwrap().window_mode,
-            WindowMode::Onboarding
-        );
+        assert_eq!(Settings::load(&path).unwrap().window_mode, WindowMode::Onboarding);
 
-        let s = Settings {
-            window_mode: WindowMode::App,
-            window_theme: WindowTheme::Light,
-            window_frame: Some(WindowFrame {
-                x: 10,
-                y: 20,
-                width: 1000,
-                height: 700,
-            }),
-            ..Settings::default()
-        };
+        let s = Settings { window_mode: WindowMode::App, window_theme: WindowTheme::Light, window_frame: Some(WindowFrame { x: 10, y: 20, width: 1000, height: 700 }), ..Settings::default() };
         s.save(&path).unwrap();
         let raw = std::fs::read_to_string(&path).unwrap();
         assert!(raw.contains("\"windowMode\": \"app\""), "{raw}");
@@ -188,18 +151,9 @@ mod tests {
 
     #[test]
     fn public_url_validation() {
-        assert_eq!(
-            validate_public_url(" https://me.example.com/ ").unwrap(),
-            "https://me.example.com"
-        );
-        assert_eq!(
-            validate_public_url("https://me.example.com:8443/bridge/").unwrap(),
-            "https://me.example.com:8443/bridge"
-        );
-        assert_eq!(
-            validate_public_url("http://localhost:9000").unwrap(),
-            "http://localhost:9000"
-        );
+        assert_eq!(validate_public_url(" https://me.example.com/ ").unwrap(), "https://me.example.com");
+        assert_eq!(validate_public_url("https://me.example.com:8443/bridge/").unwrap(), "https://me.example.com:8443/bridge");
+        assert_eq!(validate_public_url("http://localhost:9000").unwrap(), "http://localhost:9000");
         assert!(validate_public_url("http://me.example.com").is_err());
         assert!(validate_public_url("me.example.com").is_err());
         assert!(validate_public_url("ftp://me.example.com").is_err());

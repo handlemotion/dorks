@@ -35,14 +35,8 @@ fn port(name: &str) -> u16 {
 fn main() {
     // SAFETY: installing an async-signal-safe handler that only stores to an atomic.
     unsafe {
-        libc::signal(
-            libc::SIGTERM,
-            on_term as extern "C" fn(libc::c_int) as libc::sighandler_t,
-        );
-        libc::signal(
-            libc::SIGINT,
-            on_term as extern "C" fn(libc::c_int) as libc::sighandler_t,
-        );
+        libc::signal(libc::SIGTERM, on_term as extern "C" fn(libc::c_int) as libc::sighandler_t);
+        libc::signal(libc::SIGINT, on_term as extern "C" fn(libc::c_int) as libc::sighandler_t);
     }
     let ui_port = port("DORKS_UI_PORT");
     let bridge_port = port("DORKS_BRIDGE_PORT");
@@ -62,8 +56,7 @@ fn main() {
         std::process::exit(code);
     }
     // Proves the data dir is usable, like a database would.
-    std::fs::write(std::path::Path::new(&data_dir).join("stub.db"), b"stub")
-        .expect("data dir is writable");
+    std::fs::write(std::path::Path::new(&data_dir).join("stub.db"), b"stub").expect("data dir is writable");
 
     let sick = Arc::new(AtomicBool::new(false));
     let public_url_set = env("DORKS_PUBLIC_URL").is_some();
@@ -88,9 +81,7 @@ fn main() {
             for stream in ui.incoming().flatten() {
                 let sick = sick.clone();
                 let token = token.clone();
-                thread::spawn(move || {
-                    ui_request(stream, &sick, &token, bridge_port, public_url_set)
-                });
+                thread::spawn(move || ui_request(stream, &sick, &token, bridge_port, public_url_set));
             }
         });
     }
@@ -130,19 +121,9 @@ fn respond(stream: &mut TcpStream, status: u16, body: &str) {
     let _ = write!(stream, "HTTP/1.1 {status} {reason}\r\nContent-Length: {}\r\nConnection: close\r\nContent-Type: text/plain\r\n\r\n{body}", body.len());
 }
 
-fn ui_request(
-    mut stream: TcpStream,
-    sick: &AtomicBool,
-    token: &str,
-    bridge_port: u16,
-    public_url_set: bool,
-) {
+fn ui_request(mut stream: TcpStream, sick: &AtomicBool, token: &str, bridge_port: u16, public_url_set: bool) {
     let head = read_head(&mut stream);
-    let path = head
-        .lines()
-        .next()
-        .and_then(|l| l.split_whitespace().nth(1))
-        .unwrap_or("/");
+    let path = head.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("/");
     match path {
         "/api/health" if sick.load(Ordering::SeqCst) => respond(&mut stream, 503, "sick"),
         "/api/health" => respond(&mut stream, 200, "ok"),

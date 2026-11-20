@@ -24,10 +24,7 @@ pub fn ensure_owner_token(path: &Path) -> io::Result<String> {
             if !is_valid_token(&token) {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!(
-                        "{} does not contain a valid owner token; delete it to create a new one",
-                        path.display()
-                    ),
+                    format!("{} does not contain a valid owner token; delete it to create a new one", path.display()),
                 ));
             }
             restrict(path)?;
@@ -43,10 +40,7 @@ pub fn ensure_owner_token(path: &Path) -> io::Result<String> {
 }
 
 /// Reads a generated value from `path`, creating it with `make` (mode 0600) on first run.
-pub fn ensure_generated(
-    path: &Path,
-    make: impl FnOnce() -> io::Result<String>,
-) -> io::Result<String> {
+pub fn ensure_generated(path: &Path, make: impl FnOnce() -> io::Result<String>) -> io::Result<String> {
     if let Some(existing) = read_secret(path)? {
         return Ok(existing);
     }
@@ -62,13 +56,7 @@ pub fn ensure_install_key(path: &Path) -> io::Result<String> {
     if key.strip_prefix("dti_").is_some_and(is_valid_token) {
         Ok(key)
     } else {
-        Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "{} does not contain a valid install key; delete it to make a new one",
-                path.display()
-            ),
-        ))
+        Err(io::Error::new(io::ErrorKind::InvalidData, format!("{} does not contain a valid install key; delete it to make a new one", path.display())))
     }
 }
 
@@ -110,21 +98,12 @@ pub fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
 #[cfg(unix)]
 fn open_private(path: &Path) -> io::Result<std::fs::File> {
     use std::os::unix::fs::OpenOptionsExt;
-    std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)
+    std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(path)
 }
 
 #[cfg(not(unix))]
 fn open_private(path: &Path) -> io::Result<std::fs::File> {
-    std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(path)
+    std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path)
 }
 
 #[cfg(unix)]
@@ -162,16 +141,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("owner-token");
         ensure_owner_token(&path).unwrap();
-        assert_eq!(
-            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
         ensure_owner_token(&path).unwrap();
-        assert_eq!(
-            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
     }
 
     #[test]

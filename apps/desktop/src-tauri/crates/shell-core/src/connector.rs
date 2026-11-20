@@ -56,20 +56,12 @@ struct Refusal {
 }
 
 fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
 /// `whc_` and 43 base64url characters (wurmhol's shape for every embedded credential).
 pub fn is_connector(value: &str) -> bool {
-    value.strip_prefix("whc_").is_some_and(|rest| {
-        rest.len() == 43
-            && rest
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-    })
+    value.strip_prefix("whc_").is_some_and(|rest| rest.len() == 43 && rest.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'))
 }
 
 /// Asks the service for this install's tunnel and a new connector.
@@ -77,59 +69,25 @@ pub async fn request(service: &str, install_key: &str) -> Result<Connector, Stri
     let url = format!("{}/v1/tunnel", service.trim_end_matches('/'));
     // reqwest is built without a crypto provider; ring is the one the app already carries. Installing twice is a no-op.
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let client = reqwest::Client::builder()
-        .timeout(REQUEST_TIMEOUT)
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = reqwest::Client::builder().timeout(REQUEST_TIMEOUT).build().map_err(|e| e.to_string())?;
     let res = client
         .post(&url)
         .bearer_auth(install_key)
-        .header(
-            "user-agent",
-            concat!("dorks-desktop/", env!("CARGO_PKG_VERSION")),
-        )
+        .header("user-agent", concat!("dorks-desktop/", env!("CARGO_PKG_VERSION")))
         .send()
         .await
-        .map_err(|e| {
-            format!(
-                "cannot reach the Dorks tunnel service at {service}: {}",
-                e.without_url()
-            )
-        })?;
+        .map_err(|e| format!("cannot reach the Dorks tunnel service at {service}: {}", e.without_url()))?;
     let status = res.status();
     if !status.is_success() {
-        let fix = res
-            .json::<Refusal>()
-            .await
-            .ok()
-            .and_then(|r| r.fix)
-            .unwrap_or_default();
-        return Err(format!(
-            "the Dorks tunnel service refused ({status}){}",
-            if fix.is_empty() {
-                String::new()
-            } else {
-                format!(": {fix}")
-            }
-        ));
+        let fix = res.json::<Refusal>().await.ok().and_then(|r| r.fix).unwrap_or_default();
+        return Err(format!("the Dorks tunnel service refused ({status}){}", if fix.is_empty() { String::new() } else { format!(": {fix}") }));
     }
-    let answer: Answer = res
-        .json()
-        .await
-        .map_err(|_| "the Dorks tunnel service sent an answer that cannot be read".to_string())?;
+    let answer: Answer = res.json().await.map_err(|_| "the Dorks tunnel service sent an answer that cannot be read".to_string())?;
     if !is_connector(&answer.connector.connector) {
         return Err("the Dorks tunnel service sent no connector".into());
     }
-    let url = validate_public_url(&answer.tunnel.url).map_err(|e| {
-        format!("the Dorks tunnel service sent a tunnel URL that cannot be used: {e}")
-    })?;
-    Ok(Connector {
-        connector: answer.connector.connector,
-        tunnel_id: answer.tunnel.id,
-        url,
-        fetched_at: now(),
-        service: normalize(service),
-    })
+    let url = validate_public_url(&answer.tunnel.url).map_err(|e| format!("the Dorks tunnel service sent a tunnel URL that cannot be used: {e}"))?;
+    Ok(Connector { connector: answer.connector.connector, tunnel_id: answer.tunnel.id, url, fetched_at: now(), service: normalize(service) })
 }
 
 fn normalize(service: &str) -> String {
@@ -140,20 +98,12 @@ fn normalize(service: &str) -> String {
 pub fn stored(file: &Path, service: &str) -> Option<Connector> {
     let text = read_secret(file).ok().flatten()?;
     let c: Connector = serde_json::from_str(&text).ok()?;
-    (is_connector(&c.connector)
-        && c.service == normalize(service)
-        && now().saturating_sub(c.fetched_at) < REFRESH_AFTER.as_secs())
-    .then_some(c)
+    (is_connector(&c.connector) && c.service == normalize(service) && now().saturating_sub(c.fetched_at) < REFRESH_AFTER.as_secs()).then_some(c)
 }
 
 /// The connector to open the tunnel with: the stored one, or (when there is none, it is due, or `fresh` is asked for) a new one
 /// from the service, which is then stored.
-pub async fn obtain(
-    file: &Path,
-    service: &str,
-    install_key: &str,
-    fresh: bool,
-) -> Result<Connector, String> {
+pub async fn obtain(file: &Path, service: &str, install_key: &str, fresh: bool) -> Result<Connector, String> {
     if !fresh {
         if let Some(c) = stored(file, service) {
             return Ok(c);
@@ -183,20 +133,10 @@ mod tests {
         let file = dir.path().join("wurmhol-connector");
         let svc = "https://tunnels.example";
         assert_eq!(stored(&file, svc), None);
-        let mut c = Connector {
-            connector: format!("whc_{}", "b".repeat(43)),
-            tunnel_id: "t1".into(),
-            url: "https://e1.pipe.example".into(),
-            fetched_at: now(),
-            service: svc.into(),
-        };
+        let mut c = Connector { connector: format!("whc_{}", "b".repeat(43)), tunnel_id: "t1".into(), url: "https://e1.pipe.example".into(), fetched_at: now(), service: svc.into() };
         write_private(&file, &serde_json::to_vec(&c).unwrap()).unwrap();
         assert_eq!(stored(&file, "https://tunnels.example/"), Some(c.clone()));
-        assert_eq!(
-            stored(&file, "https://staging-tunnels.example"),
-            None,
-            "another service's connector is not used"
-        );
+        assert_eq!(stored(&file, "https://staging-tunnels.example"), None, "another service's connector is not used");
         c.fetched_at = now() - REFRESH_AFTER.as_secs() - 1;
         write_private(&file, &serde_json::to_vec(&c).unwrap()).unwrap();
         assert_eq!(stored(&file, svc), None);

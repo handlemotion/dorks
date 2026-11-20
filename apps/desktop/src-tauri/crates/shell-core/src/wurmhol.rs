@@ -34,15 +34,7 @@ use crate::supervisor::{terminate, INHERITED_ENV};
 use crate::tunnel::{BoxFuture, Tunnel, TunnelEndpoint, TunnelError, TunnelHealth, TunnelTarget};
 
 /// Variables the client needs besides [`INHERITED_ENV`]: proxies (the client dials out through `HTTPS_PROXY`) and a proxy CA.
-const PASSTHROUGH_ENV: &[&str] = &[
-    "HTTPS_PROXY",
-    "https_proxy",
-    "HTTP_PROXY",
-    "http_proxy",
-    "NO_PROXY",
-    "no_proxy",
-    "NODE_EXTRA_CA_CERTS",
-];
+const PASSTHROUGH_ENV: &[&str] = &["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy", "NODE_EXTRA_CA_CERTS"];
 
 /// Where a GUI app on macOS usually will not look but `node` (which the client runs on) usually lives.
 const EXTRA_BIN_DIRS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
@@ -100,21 +92,16 @@ struct ReadyJson {
 
 /// Parses the client's first stdout line (`--json`): `{"url":"https://…","port":4748,"id":"k3x9p2abcd"}`.
 pub fn parse_ready_line(line: &str) -> Result<Ready, String> {
-    let parsed: ReadyJson = serde_json::from_str(line.trim())
-        .map_err(|_| format!("unexpected output from wurmhol: {}", truncate(line)))?;
+    let parsed: ReadyJson = serde_json::from_str(line.trim()).map_err(|_| format!("unexpected output from wurmhol: {}", truncate(line)))?;
     // The id is later passed to `wurmhol stop <id>`: it must not be able to look like a flag.
     let id_ok = !parsed.id.is_empty()
         && parsed.id.len() <= 64
         && parsed.id.starts_with(|c: char| c.is_ascii_alphanumeric())
-        && parsed
-            .id
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+        && parsed.id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
     if !id_ok {
         return Err("wurmhol reported a pipe id that is not valid".into());
     }
-    let url = validate_public_url(&parsed.url)
-        .map_err(|e| format!("wurmhol reported a URL that cannot be used: {e}"))?;
+    let url = validate_public_url(&parsed.url).map_err(|e| format!("wurmhol reported a URL that cannot be used: {e}"))?;
     Ok(Ready { url, id: parsed.id })
 }
 
@@ -133,8 +120,7 @@ pub fn listing_has(output: &str, id: &str) -> bool {
     struct Item {
         id: String,
     }
-    serde_json::from_str::<Vec<Item>>(output.trim())
-        .is_ok_and(|items| items.iter().any(|i| i.id == id))
+    serde_json::from_str::<Vec<Item>>(output.trim()).is_ok_and(|items| items.iter().any(|i| i.id == id))
 }
 
 /// Arguments after the program name: the bridge port, JSON output, then the user's extras.
@@ -146,9 +132,7 @@ pub fn start_args(port: u16, extra: &[String]) -> Vec<OsString> {
 
 /// The client's `PATH`: the shell's own, plus the usual places `node` lives (a menu-bar app starts with a minimal PATH).
 pub fn child_path(path_var: Option<&OsStr>, home: Option<&Path>) -> OsString {
-    let mut dirs: Vec<PathBuf> = path_var
-        .map(|p| std::env::split_paths(p).collect())
-        .unwrap_or_default();
+    let mut dirs: Vec<PathBuf> = path_var.map(|p| std::env::split_paths(p).collect()).unwrap_or_default();
     let mut extra: Vec<PathBuf> = EXTRA_BIN_DIRS.iter().map(PathBuf::from).collect();
     if let Some(home) = home {
         extra.push(home.join(".local/bin"));
@@ -162,21 +146,14 @@ pub fn child_path(path_var: Option<&OsStr>, home: Option<&Path>) -> OsString {
 }
 
 /// `$WURMHOL_BIN`; else `wurmhol` next to the app executable; else on the extended PATH.
-pub fn find_wurmhol(
-    env_bin: Option<&OsStr>,
-    exe_dir: Option<&Path>,
-    path_var: Option<&OsStr>,
-    home: Option<&Path>,
-) -> Option<PathBuf> {
+pub fn find_wurmhol(env_bin: Option<&OsStr>, exe_dir: Option<&Path>, path_var: Option<&OsStr>, home: Option<&Path>) -> Option<PathBuf> {
     if let Some(bin) = env_bin.map(PathBuf::from).filter(|p| p.is_file()) {
         return Some(bin);
     }
     if let Some(sibling) = exe_dir.map(|d| d.join("wurmhol")).filter(|p| p.is_file()) {
         return Some(sibling);
     }
-    std::env::split_paths(&child_path(path_var, home))
-        .map(|d| d.join("wurmhol"))
-        .find(|p| p.is_file())
+    std::env::split_paths(&child_path(path_var, home)).map(|d| d.join("wurmhol")).find(|p| p.is_file())
 }
 
 enum Mode {
@@ -200,30 +177,15 @@ pub struct WurmholTunnel {
 impl WurmholTunnel {
     pub fn new(cfg: WurmholConfig) -> Self {
         let (health, _) = watch::channel(TunnelHealth::Up);
-        Self {
-            cfg,
-            health,
-            active: tokio::sync::Mutex::new(None),
-        }
+        Self { cfg, health, active: tokio::sync::Mutex::new(None) }
     }
 
-    async fn launch(
-        &self,
-        port: u16,
-        token: &str,
-    ) -> Result<(Ready, Mode, Arc<Mutex<String>>), TunnelError> {
-        let mut cmd = command(
-            &self.cfg,
-            &start_args(port, &self.cfg.extra_args),
-            Some(token),
-        );
+    async fn launch(&self, port: u16, token: &str) -> Result<(Ready, Mode, Arc<Mutex<String>>), TunnelError> {
+        let mut cmd = command(&self.cfg, &start_args(port, &self.cfg.extra_args), Some(token));
         cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-        let mut child = spawn_retrying(&mut cmd).await.map_err(|e| {
-            TunnelError::Failed(format!(
-                "cannot run {}: {e}; install it with `npm i -g wurmhol` or set WURMHOL_BIN",
-                self.cfg.bin.display()
-            ))
-        })?;
+        let mut child = spawn_retrying(&mut cmd)
+            .await
+            .map_err(|e| TunnelError::Failed(format!("cannot run {}: {e}; install it with `npm i -g wurmhol` or set WURMHOL_BIN", self.cfg.bin.display())))?;
         let stdout = child.stdout.take().expect("piped");
         let stderr = child.stderr.take().expect("piped");
         let last_error = Arc::new(Mutex::new(String::new()));
@@ -237,18 +199,11 @@ impl WurmholTunnel {
                 let _ = timeout(Duration::from_secs(2), child.wait()).await;
                 sleep(Duration::from_millis(100)).await;
                 let why = last_error.lock().unwrap().clone();
-                return Err(TunnelError::Failed(if why.is_empty() {
-                    "wurmhol exited without opening the tunnel".into()
-                } else {
-                    why
-                }));
+                return Err(TunnelError::Failed(if why.is_empty() { "wurmhol exited without opening the tunnel".into() } else { why }));
             }
             Err(_) => {
                 let _ = child.kill().await;
-                return Err(TunnelError::Failed(format!(
-                    "wurmhol did not open a pipe within {} s",
-                    self.cfg.start_timeout.as_secs()
-                )));
+                return Err(TunnelError::Failed(format!("wurmhol did not open a pipe within {} s", self.cfg.start_timeout.as_secs())));
             }
         };
         let ready = match parse_ready_line(&first) {
@@ -263,11 +218,7 @@ impl WurmholTunnel {
         // Detaching clients exit within milliseconds of printing; one that is still running after this is the pipe itself.
         let mode = match timeout(Duration::from_millis(750), child.wait()).await {
             Ok(Ok(status)) if status.success() => Mode::Detached,
-            Ok(Ok(status)) => {
-                return Err(TunnelError::Failed(format!(
-                    "wurmhol exited ({status}) right after opening the pipe"
-                )))
-            }
+            Ok(Ok(status)) => return Err(TunnelError::Failed(format!("wurmhol exited ({status}) right after opening the pipe"))),
             Ok(Err(e)) => return Err(TunnelError::Failed(format!("cannot wait for wurmhol: {e}"))),
             Err(_) => Mode::Foreground(child),
         };
@@ -286,46 +237,23 @@ impl Tunnel for WurmholTunnel {
             if let Some(old) = active.take() {
                 finish(old).await;
             }
-            let source = self.cfg.source.as_ref().ok_or_else(|| {
-                TunnelError::Failed("this install has no key for the Dorks tunnel service".into())
-            })?;
+            let source = self.cfg.source.as_ref().ok_or_else(|| TunnelError::Failed("this install has no key for the Dorks tunnel service".into()))?;
             let from_store = connector::stored(&source.file, &source.service).is_some();
-            let current =
-                connector::obtain(&source.file, &source.service, &source.install_key, false)
-                    .await
-                    .map_err(TunnelError::Failed)?;
-            let (ready, mode, last_error) = match self
-                .launch(target.bridge_port, &current.connector)
-                .await
-            {
+            let current = connector::obtain(&source.file, &source.service, &source.install_key, false).await.map_err(TunnelError::Failed)?;
+            let (ready, mode, last_error) = match self.launch(target.bridge_port, &current.connector).await {
                 // A stored connector may have been revoked or rotated since: ask for a new one once.
                 Err(TunnelError::Failed(why)) if from_store => {
                     eprintln!("dorks: wurmhol refused the stored connector ({why}); asking the tunnel service for a new one");
-                    let fresh =
-                        connector::obtain(&source.file, &source.service, &source.install_key, true)
-                            .await
-                            .map_err(TunnelError::Failed)?;
+                    let fresh = connector::obtain(&source.file, &source.service, &source.install_key, true).await.map_err(TunnelError::Failed)?;
                     self.launch(target.bridge_port, &fresh.connector).await?
                 }
                 other => other?,
             };
             let (stop_tx, stop_rx) = oneshot::channel();
-            let monitor = tokio::spawn(monitor(
-                self.cfg.clone(),
-                ready.id,
-                mode,
-                last_error,
-                stop_rx,
-                self.health.clone(),
-            ));
-            *active = Some(Active {
-                stop: Some(stop_tx),
-                monitor,
-            });
+            let monitor = tokio::spawn(monitor(self.cfg.clone(), ready.id, mode, last_error, stop_rx, self.health.clone()));
+            *active = Some(Active { stop: Some(stop_tx), monitor });
             let _ = self.health.send(TunnelHealth::Up);
-            Ok(TunnelEndpoint {
-                public_url: ready.url,
-            })
+            Ok(TunnelEndpoint { public_url: ready.url })
         })
     }
 
@@ -384,24 +312,12 @@ async fn monitor(
                     }
                     _ = sleep(cfg.poll_interval) => {}
                 }
-                let listing = timeout(
-                    Duration::from_secs(10),
-                    command(
-                        &cfg,
-                        &[OsString::from("ls"), OsString::from("--json")],
-                        None,
-                    )
-                    .stderr(Stdio::null())
-                    .output(),
-                )
-                .await;
+                let listing = timeout(Duration::from_secs(10), command(&cfg, &[OsString::from("ls"), OsString::from("--json")], None).stderr(Stdio::null()).output()).await;
                 match listing {
                     Ok(Ok(out)) if out.status.success() => {
                         misses = 0;
                         if !listing_has(&String::from_utf8_lossy(&out.stdout), &id) {
-                            let _ = health.send(TunnelHealth::Lost(
-                                "the pipe ended (stopped, expired or revoked)".into(),
-                            ));
+                            let _ = health.send(TunnelHealth::Lost("the pipe ended (stopped, expired or revoked)".into()));
                             return;
                         }
                     }
@@ -409,9 +325,7 @@ async fn monitor(
                     _ => {
                         misses += 1;
                         if misses >= 3 {
-                            let _ = health.send(TunnelHealth::Lost(
-                                "cannot check the pipe: `wurmhol ls` keeps failing".into(),
-                            ));
+                            let _ = health.send(TunnelHealth::Lost("cannot check the pipe: `wurmhol ls` keeps failing".into()));
                             return;
                         }
                     }
@@ -442,24 +356,14 @@ async fn spawn_retrying(cmd: &mut Command) -> std::io::Result<Child> {
 /// to the local daemon and get none.
 fn command(cfg: &WurmholConfig, args: &[OsString], token: Option<&str>) -> Command {
     let mut cmd = Command::new(&cfg.bin);
-    cmd.args(args)
-        .stdin(Stdio::null())
-        .kill_on_drop(true)
-        .env_clear();
+    cmd.args(args).stdin(Stdio::null()).kill_on_drop(true).env_clear();
     let home = std::env::var_os("HOME").map(PathBuf::from);
-    for name in INHERITED_ENV
-        .iter()
-        .filter(|n| **n != "PATH")
-        .chain(PASSTHROUGH_ENV)
-    {
+    for name in INHERITED_ENV.iter().filter(|n| **n != "PATH").chain(PASSTHROUGH_ENV) {
         if let Some(value) = std::env::var_os(name) {
             cmd.env(name, value);
         }
     }
-    cmd.env(
-        "PATH",
-        child_path(std::env::var_os("PATH").as_deref(), home.as_deref()),
-    );
+    cmd.env("PATH", child_path(std::env::var_os("PATH").as_deref(), home.as_deref()));
     if let Some(token) = token {
         cmd.env("WURMHOL_TOKEN", token);
     }
@@ -472,22 +376,13 @@ fn command(cfg: &WurmholConfig, args: &[OsString], token: Option<&str>) -> Comma
 /// Appends the client's stderr to the log and remembers its last line (it states the fix in one line).
 fn drain_stderr(stderr: tokio::process::ChildStderr, log_file: PathBuf, last: Arc<Mutex<String>>) {
     tokio::spawn(async move {
-        let mut file = tokio::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log_file)
-            .await
-            .ok();
+        let mut file = tokio::fs::OpenOptions::new().create(true).append(true).open(&log_file).await.ok();
         let mut lines = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = lines.next_line().await {
             if let Some(f) = file.as_mut() {
                 let _ = f.write_all(format!("{line}\n").as_bytes()).await;
             }
-            *last.lock().unwrap() = line
-                .trim()
-                .strip_prefix("wurmhol: ")
-                .unwrap_or(line.trim())
-                .to_string();
+            *last.lock().unwrap() = line.trim().strip_prefix("wurmhol: ").unwrap_or(line.trim()).to_string();
         }
     });
 }
@@ -498,21 +393,9 @@ mod tests {
 
     #[test]
     fn ready_line_is_parsed_and_validated() {
-        let ok = parse_ready_line(
-            r#"{"url":"https://ek3x9p2abcd12345.pipe.wurmhol.com","port":4748,"id":"k3x9p2abcd"}"#,
-        )
-        .unwrap();
-        assert_eq!(
-            ok,
-            Ready {
-                url: "https://ek3x9p2abcd12345.pipe.wurmhol.com".into(),
-                id: "k3x9p2abcd".into()
-            }
-        );
-        assert!(
-            parse_ready_line("https://k3x9p2abcd.pipe.wurmhol.com").is_err(),
-            "plain mode output is not accepted"
-        );
+        let ok = parse_ready_line(r#"{"url":"https://ek3x9p2abcd12345.pipe.wurmhol.com","port":4748,"id":"k3x9p2abcd"}"#).unwrap();
+        assert_eq!(ok, Ready { url: "https://ek3x9p2abcd12345.pipe.wurmhol.com".into(), id: "k3x9p2abcd".into() });
+        assert!(parse_ready_line("https://k3x9p2abcd.pipe.wurmhol.com").is_err(), "plain mode output is not accepted");
         assert!(parse_ready_line(r#"{"url":"http://insecure.example","id":"abc"}"#).is_err());
         assert!(parse_ready_line(r#"{"url":"https://a.example","id":"--all"}"#).is_err());
         assert!(parse_ready_line(r#"{"url":"https://a.example","id":""}"#).is_err());
@@ -531,9 +414,7 @@ mod tests {
     #[test]
     fn arguments_carry_only_the_port_then_extras() {
         let args = start_args(4748, &["--verbose".into()]);
-        assert_eq!(
-            args,
-            vec![OsString::from("4748"), "--json".into(), "--verbose".into()]
-        );
+        assert_eq!(args, vec![OsString::from("4748"), "--json".into(), "--verbose".into()]);
     }
+
 }
