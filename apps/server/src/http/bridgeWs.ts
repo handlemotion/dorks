@@ -4,6 +4,7 @@ import { AppFail, type App, type Change } from "../app";
 import { verifyBridgeSecret } from "../lib/bridgeAuth";
 import { buildOp } from "../services/buildAgent";
 import { localOp } from "../services/local";
+import { mcpAccessToken } from "../services/mcpOAuth";
 import * as bridge from "../services/bridge";
 import { attempt, attemptPromise, BridgeError } from "../services/bridge";
 
@@ -50,6 +51,7 @@ const OPS = new Map<string, Op>([
   ["share_image", (app, id, a) => attempt(() => bridge.shareImage(app, id, a.data, a.caption))],
   ["build", (app, id, a) => attemptPromise(() => buildOp(app, id, a))],
   ["local", (app, id, a) => attemptPromise(() => localOp(app, id, a))],
+  ["mcp_token", (app, _id, a) => attemptPromise(() => mcpAccessToken(app, a.name, a.stale))],
 ]);
 
 const failed = (e: unknown): AppError => {

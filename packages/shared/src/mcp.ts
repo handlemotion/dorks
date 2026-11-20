@@ -11,7 +11,14 @@ export const MCP_NAME = /^[a-z][a-z0-9_-]{0,31}$/;
 export const RESERVED_MCP_NAMES = ["dorks", "computer"];
 
 export const mcpServerConfig = z.discriminatedUnion("transport", [
-  z.object({ name: z.string(), transport: z.literal("http"), url: z.string(), headers: z.record(z.string(), z.string()) }),
+  z.object({
+    name: z.string(),
+    transport: z.literal("http"),
+    url: z.string(),
+    headers: z.record(z.string(), z.string()),
+    /** Signed in with OAuth (docs/mcp.md, "OAuth"): the bridge proxies it and asks the server for a fresh token (`mcp_token`). */
+    oauth: z.boolean().optional(),
+  }),
   z.object({ name: z.string(), transport: z.literal("stdio"), command: z.string(), args: z.array(z.string()), env: z.record(z.string(), z.string()) }),
 ]);
 /** A server as the bridge receives it: values in clear, for the agent only. */
@@ -26,8 +33,15 @@ export interface McpServerView {
   args: string[];
   headerNames: string[];
   envNames: string[];
+  /**
+   * OAuth (docs/mcp.md): `signed_out` when the server asked for a sign-in (it answered 401 with OAuth metadata) and has no tokens,
+   * `signed_in` once the owner signed in; null for a server that needs none.
+   */
+  oauth: McpOAuthState | null;
   createdAt: number;
 }
+
+export type McpOAuthState = "signed_in" | "signed_out";
 
 /**
  * What a client sends to add or replace a server. On a replace, a header or env entry whose value is `null` keeps its saved value,

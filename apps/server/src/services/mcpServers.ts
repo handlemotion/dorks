@@ -1,7 +1,8 @@
-import { MCP_NAME, RESERVED_MCP_NAMES, type McpServerConfig, type McpServerView } from "@dorks/shared";
+import { MCP_NAME, RESERVED_MCP_NAMES, type McpOAuthState, type McpServerConfig, type McpServerView } from "@dorks/shared";
 import { fail, OWNER, touch, type App } from "../app";
 import { aad, decrypt, encrypt } from "../core/crypto";
 import { enqueueConfigure, isAwake } from "../lifecycle/dispatch";
+import { asksForOAuth, type OAuthSealed } from "./mcpOAuth";
 
 // MCP servers from Customize (docs/mcp.md): every agent gets them through the bridge's `configure` frame, next to the built-in `dorks`
 // server. Header and env values may be secrets, so they are sealed in one envelope per server and only opened for that frame.
@@ -21,6 +22,7 @@ interface Row {
   args: string;
   secret_names: string;
   secrets_enc: string;
+  oauth: McpOAuthState | null;
   created_at: number;
 }
 interface Sealed {
@@ -28,6 +30,8 @@ interface Sealed {
   env: Record<string, string>;
   /** The full URL: hosted servers often carry a key in the query or userinfo, so the `url` column keeps it redacted. */
   url?: string;
+  /** The OAuth client registration and tokens (services/mcpOAuth.ts). */
+  oauth?: OAuthSealed;
 }
 
 /** The URL without what may be a credential: userinfo and the query string become `…`. */
@@ -39,21 +43,32 @@ function redactUrl(raw: string, u: URL): string {
 
 const viewOf = (r: Row): McpServerView => {
   const names = JSON.parse(r.secret_names) as { headers: string[]; env: string[] };
-  return { name: r.name, transport: r.transport, url: r.url, command: r.command, args: JSON.parse(r.args) as string[], headerNames: names.headers, envNames: names.env, createdAt: r.created_at };
+  return {
+    name: r.name,
+    transport: r.transport,
+    url: r.url,
+    command: r.command,
+    args: JSON.parse(r.args) as string[],
+    headerNames: names.headers,
+    envNames: names.env,
+    oauth: r.oauth ?? null,
+    createdAt: r.created_at,
+  };
 };
 
 export const listMcpServers = (app: App): McpServerView[] => app.db.all<Row>("SELECT * FROM mcp_servers ORDER BY name").map(viewOf);
 
-const open = async (app: App, r: Row): Promise<Sealed> => JSON.parse(await decrypt(app.ring, r.secrets_enc, aad.mcpServer(OWNER, r.name))) as Sealed;
+export const open = async (app: App, r: Row): Promise<Sealed> => JSON.parse(await decrypt(app.ring, r.secrets_enc, aad.mcpServer(OWNER, r.name))) as Sealed;
 
 /** Every server with its values in clear, for the `configure` frame of an authenticated bridge only. */
 export async function mcpServerConfigs(app: App): Promise<McpServerConfig[]> {
   const out: McpServerConfig[] = [];
   for (const r of app.db.all<Row>("SELECT * FROM mcp_servers ORDER BY name")) {
+    if (r.oauth === "signed_out") continue; // its tools would only answer 401 until the owner signs in
     const s = await open(app, r);
     out.push(
       r.transport === "http"
-        ? { name: r.name, transport: "http", url: s.url ?? r.url ?? "", headers: s.headers }
+        ? { name: r.name, transport: "http", url: s.url ?? r.url ?? "", headers: s.headers, ...(r.oauth === "signed_in" ? { oauth: true } : {}) }
         : { name: r.name, transport: "stdio", command: r.command ?? "", args: JSON.parse(r.args) as string[], env: s.env },
     );
   }
@@ -93,7 +108,7 @@ function entries(v: unknown, saved: Record<string, string>, what: string, nameRe
 }
 
 /** The agents that are up now restart on their session with the new list, once their turn ends (as for a model change). */
-function reconfigureAwake(app: App) {
+export function reconfigureAwake(app: App) {
   for (const { id, state } of app.db.all<{ id: string; state: string }>("SELECT id, state FROM dorks WHERE archived = 0 AND provider = 'claude'")) {
     if (!isAwake(state)) continue;
     app.db.run("DELETE FROM commands WHERE dork_id = ? AND kind = 'configure' AND acked = 0", id);
@@ -102,7 +117,7 @@ function reconfigureAwake(app: App) {
 }
 
 /** Adds or replaces the server `name`. Encryption happens before the write transaction. */
-export async function putMcpServer(app: App, name: string, input: Record<string, unknown>): Promise<void> {
+export async function putMcpServer(app: App, name: string, input: Record<string, unknown>): Promise<{ oauth: McpOAuthState | null }> {
   if (!MCP_NAME.test(name)) fail("invalid", "a server name is lowercase letters, digits, - and _, starting with a letter (at most 32)");
   if (RESERVED_MCP_NAMES.includes(name)) fail("invalid", `${name} is taken by a built-in server`);
   const prev = app.db.get<Row>("SELECT * FROM mcp_servers WHERE name = ?", name);
@@ -113,6 +128,7 @@ export async function putMcpServer(app: App, name: string, input: Record<string,
   let url: string | null = null;
   let command: string | null = null;
   let args: string[] = [];
+  let oauth: McpOAuthState | null = null;
   const sealed: Sealed = { headers: {}, env: {} };
   if (transport === "http") {
     url = str(input.url, "URL", MAX_URL);
@@ -128,6 +144,7 @@ export async function putMcpServer(app: App, name: string, input: Record<string,
     sealed.headers = entries(input.headers, saved.headers, "headers", HEADER_NAME);
     sealed.url = url;
     url = redactUrl(url, parsed);
+    oauth = await oauthOf(app, prev, saved, sealed);
   } else if (transport === "stdio") {
     command = str(input.command, "command", 512);
     if (input.args !== undefined) {
@@ -141,9 +158,9 @@ export async function putMcpServer(app: App, name: string, input: Record<string,
   const names = JSON.stringify({ headers: Object.keys(sealed.headers).sort(), env: Object.keys(sealed.env).sort() });
   app.db.tx(() => {
     app.db.run(
-      `INSERT INTO mcp_servers (name, transport, url, command, args, secret_names, secrets_enc, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO mcp_servers (name, transport, url, command, args, secret_names, secrets_enc, oauth, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (name) DO UPDATE SET transport = excluded.transport, url = excluded.url, command = excluded.command, args = excluded.args,
-         secret_names = excluded.secret_names, secrets_enc = excluded.secrets_enc`,
+         secret_names = excluded.secret_names, secrets_enc = excluded.secrets_enc, oauth = excluded.oauth`,
       name,
       transport as string,
       url,
@@ -151,12 +168,46 @@ export async function putMcpServer(app: App, name: string, input: Record<string,
       JSON.stringify(args),
       names,
       secretsEnc,
+      oauth,
       app.now(),
     );
     reconfigureAwake(app);
     touch(app, { t: "settings" });
   });
+  return { oauth };
 }
+
+/**
+ * Whether a remote server needs an OAuth sign-in. The same URL keeps its sign-in (and tokens); a new one, or one without its own
+ * Authorization header, is asked (one unauthenticated request) and becomes `signed_out` when it answers 401 the OAuth way.
+ */
+async function oauthOf(app: App, prev: Row | undefined, saved: Sealed, next: Sealed): Promise<McpOAuthState | null> {
+  if (Object.keys(next.headers).some((h) => h.toLowerCase() === "authorization")) return null; // the owner's own token
+  if (prev?.transport === "http" && prev.oauth && saved.url === next.url) {
+    next.oauth = saved.oauth;
+    return prev.oauth;
+  }
+  return (await asksForOAuth(app, next.url!, next.headers)) ? "signed_out" : null;
+}
+
+/**
+ * Replaces a server's OAuth state and sealed values (sign-in, refresh, sign-out); agents restart only when `reconfigure` says so.
+ * `from` is the envelope the caller read: when the row changed meanwhile (a sign-out or an edit during a token request), nothing is
+ * written and the answer is false, so a slow refresh never undoes a sign-out.
+ */
+export async function saveOAuth(app: App, name: string, oauth: McpOAuthState, sealed: Sealed, reconfigure: boolean, from: string): Promise<boolean> {
+  const enc = (await encrypt(app.ring, JSON.stringify(sealed), aad.mcpServer(OWNER, name))).value;
+  return app.db.tx(() => {
+    if (app.db.get<{ secrets_enc: string }>("SELECT secrets_enc FROM mcp_servers WHERE name = ?", name)?.secrets_enc !== from) return false;
+    app.db.run("UPDATE mcp_servers SET secrets_enc = ?, oauth = ? WHERE name = ?", enc, oauth, name);
+    if (reconfigure) reconfigureAwake(app);
+    touch(app, { t: "settings" });
+    return true;
+  });
+}
+
+export const serverRow = (app: App, name: string) => app.db.get<Row>("SELECT * FROM mcp_servers WHERE name = ?", name);
+export type { Row as McpServerRow, Sealed as McpServerSealed };
 
 export function deleteMcpServer(app: App, name: string): void {
   app.db.tx(() => {

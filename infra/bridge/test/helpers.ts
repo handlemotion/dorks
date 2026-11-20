@@ -166,6 +166,7 @@ export class FakeTransport implements Transport {
     const repo = ref.repo.toLowerCase(); // the backend stores repos lowercase
     if (!this.subscriptions.some((s) => s.repo === repo && s.number === ref.number)) this.setSubscriptions([...this.subscriptions, fakeView({ ...ref, repo }, source)]);
   };
+  mcpToken = async (name: string) => ({ authorization: `Bearer token-for-${name}`, expiresAt: null });
   showPreview = async (port: number, opts: { title?: string }) => ({ port, url: `https://sim-${port}.example/`, ...(opts.title ? { title: opts.title } : {}) });
   shareImage = async (_data: string) => ({ id: "0".repeat(32) });
   getImage = async (_id: string) => null;

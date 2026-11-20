@@ -1,4 +1,4 @@
-import { commandFrame, effortLevel, type EffortLevel, type FromBridge, type PrRef } from "@dorks/shared";
+import { commandFrame, effortLevel, type EffortLevel, type FromBridge, type McpServerConfig, type PrRef } from "@dorks/shared";
 import { createHash } from "node:crypto";
 import { appendFileSync, chmodSync, closeSync, fsyncSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
@@ -7,6 +7,7 @@ import { Agent, childEnv, computerArgs, configDirOf, findTranscripts } from "./c
 import { CodexAgent } from "./codex";
 import type { Config } from "./config";
 import { GithubToken, helperCommand } from "./credentials";
+import { McpOAuthProxy, type ProxyRoute } from "./mcp-proxy";
 import { HookService, mcpConfigPath, settingsPath, userMcpServers, writeClaudeMcpConfig, writeClaudeSettings } from "./hooks";
 import { resolveIdentity, type Identity } from "./runas";
 import { EventPipeline } from "./events";
@@ -48,6 +49,8 @@ export class Bridge {
   private github: GithubToken;
   private prs: PrSubscriptions;
   private hooks: HookService;
+  /** The owner's OAuth MCP servers, behind a loopback proxy that adds a current token (mcp-proxy.ts). */
+  private mcpProxy: McpOAuthProxy;
   private runAs: Identity | null;
   private agent: Agent | CodexAgent | null = null;
   private provider: "claude" | "codex" = "claude";
@@ -113,6 +116,11 @@ export class Bridge {
     // With privilege separation the socket lives in a directory only the Claude user can enter (the state dir itself stays root-only,
     // traversable so that path resolves).
     const sockDir = this.cfg.sockDir ?? this.cfg.stateDir;
+    this.mcpProxy = new McpOAuthProxy(
+      (name, stale) => this.t.mcpToken(name, stale),
+      this.log,
+      (v) => this.redactor.add(v),
+    );
     this.rpc = new RpcServer(join(sockDir, this.runAs ? "cred/cred.sock" : "cred.sock"), this.rpcMethods(), this.runAs);
     this.written = this.loadWritten();
   }
@@ -130,6 +138,7 @@ export class Bridge {
       chmodSync(sockDir, 0o711);
     }
     await this.rpc.start();
+    await this.mcpProxy.start();
     await this.handshake(true);
     this.prs.start();
     this.unsubs.push(
@@ -199,6 +208,7 @@ export class Bridge {
     this.outbox.stop();
     this.prs.stop();
     this.rpc.close();
+    this.mcpProxy.close();
     await this.t.close();
   }
 
@@ -343,7 +353,8 @@ export class Bridge {
     if (!cfg) return this.log("configure refused (the backend recorded why)");
     this.redactor.add(cfg.ghToken);
     this.redactor.addAll(Object.values(cfg.env));
-    const userMcp = userMcpServers(cfg.mcpServers ?? []);
+    const userMcp = userMcpServers(cfg.mcpServers ?? [], (name) => this.mcpProxy.urlFor(name));
+    this.proxyOAuthServers(cfg.mcpServers ?? []);
     this.redactor.addAll(Object.values(userMcp.env));
     this.github.set(cfg.ghToken);
 
@@ -379,6 +390,17 @@ export class Bridge {
       this.name();
     }
     this.process(); // messages that arrived before the agent was up, and interrupts deferred during configure
+  }
+
+  /** The OAuth servers go behind the proxy; their saved headers stay out of the agent's env, but not out of the redactor. */
+  private proxyOAuthServers(servers: readonly McpServerConfig[]) {
+    const proxied = new Map<string, ProxyRoute>();
+    for (const s of servers) {
+      if (s.transport !== "http" || !s.oauth) continue;
+      proxied.set(s.name, { url: s.url, headers: s.headers });
+      this.redactor.addAll(Object.values(s.headers));
+    }
+    this.mcpProxy.set(proxied);
   }
 
   /** Config changed (a new model, say): restart on the same session, but never mid-turn. Messages queue behind this job, so the next one goes to the restarted agent. */

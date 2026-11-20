@@ -109,9 +109,11 @@ IDs are UUID strings. Times are epoch milliseconds.
 | `GET /api/secrets` | | sorted names `string[]` |
 | `PUT /api/secrets/:name` | `{value}` | `{}` (`^[A-Z][A-Z0-9_]{0,63}$`, 16 KB max) |
 | `DELETE /api/secrets/:name` | | `{}` |
-| `GET /api/mcp-servers` | | `McpServerView[]` sorted by name: `{name, transport, url, command, args, headerNames, envNames, createdAt}`, never header or env values |
-| `PUT /api/mcp-servers/:name` | `{transport: "http", url, headers?}` or `{transport: "stdio", command, args?, env?}` | `{}`. Adds or replaces; a `null` header/env value keeps the saved one. Restarts awake Claude agents once their turn ends. See [MCP servers](mcp.md) |
+| `GET /api/mcp-servers` | | `McpServerView[]` sorted by name: `{name, transport, url, command, args, headerNames, envNames, oauth, createdAt}`, never header or env values |
+| `PUT /api/mcp-servers/:name` | `{transport: "http", url, headers?}` or `{transport: "stdio", command, args?, env?}` | `{oauth}`: `signed_out` when the server asks for a sign-in. Adds or replaces; a `null` header/env value keeps the saved one. Restarts awake Claude agents once their turn ends. See [MCP servers](mcp.md) |
 | `DELETE /api/mcp-servers/:name` | | `{}` |
+| `POST /api/mcp-servers/:name/oauth` | `{base}` | `{url}`: the sign-in page of a server that asks for OAuth; the browser comes back to `GET /oauth/mcp/callback` (no token). See [MCP servers](mcp.md#oauth) |
+| `DELETE /api/mcp-servers/:name/oauth` | | `{}`. Signs out: forgets the tokens |
 | `GET /api/composio` | | `{connected, toolkits}`: whether a Composio key is saved, and the apps signed in through it. See [MCP servers](mcp.md) |
 | `PUT /api/composio` | `{apiKey}` | `{}`. Checks the key with a Composio session and saves it as the `composio` server |
 | `DELETE /api/composio` | | `{}`. Removes the key and the `composio` server |
@@ -160,6 +162,7 @@ One stream per client. Messages are `data: <json>\n\n`; a `: ping` comment every
 | `unsubscribe_pr` | `{repo, number}` | `{}` |
 | `build` | `{action: "get"\|"draft"\|"run"\|"logs"\|"submit", ...}` | The agent's `machine_*` MCP tools ([builds](builds.md), "Agent tooling"), scoped to this dork's build. Never returns a secret value |
 | `local` | `{action: "request"\|"wait", ...}` | The agent's `local_run`/`local_read`/`local_wait` tools: ask to run a command or read a file on the owner's computer, and wait for the answer and the result. Nothing runs without the owner's Allow: [local access](local-access.md) |
+| `mcp_token` | `{name, stale?}` | `{authorization, expiresAt}`: a current access token for an OAuth MCP server, refreshed when about to expire or when `stale` (the token the server just refused) is still the saved one. Errors `not_configured` (not signed in, or the grant is gone) |
 | `show_preview` | `{port, title?, localhost?}` | `{port, url, title?}`. The agent's `preview_show` MCP tool (bridge RPC `preview.show`). The box provider hosts the port (Boat `POST /host`, public; see [Boat](boat.md#hosted-ports)) and the URL is stored in the dork's `previews` (one per port, the newest replaces). Errors `invalid` (bad or reserved port), `sleeping` (no box), `not_configured`, `failed` |
 
 **Pushes** (server to bridge): `{"t":"commands","cmds":[{cid, frame: CommandFrame}]}` is the **snapshot of unacknowledged commands** and is re-sent whenever it changes (and once right after `auth_ok`). Delivery is idempotent: the bridge dedupes by `cid`/message id and acknowledges with a `push` `ack` frame, which removes the command. This gives resume-after-reconnect for free: after a drop the bridge re-auths, calls `connect` (learning `afterBridgeSeq`, the event cursor, so it replays events above it) and receives the current snapshot. `{"t":"subscriptions","views":SubscriptionView[]}` is sent likewise for the bridge's PR cache.

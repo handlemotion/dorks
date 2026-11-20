@@ -326,4 +326,9 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX local_grants_dork ON local_grants (dork_id, revoked, expires_at);
   `,
+  `
+  -- MCP OAuth (services/mcpOAuth.ts, docs/mcp.md): whether a remote server asked for a sign-in and holds tokens. The client
+  -- registration and the tokens themselves are in the server's sealed envelope.
+  ALTER TABLE mcp_servers ADD COLUMN oauth TEXT CHECK (oauth IN ('signed_in', 'signed_out'));
+  `,
 ];

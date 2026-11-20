@@ -594,6 +594,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
           args: [],
           headerNames: ["x-api-key"],
           envNames: [],
+          oauth: null,
           createdAt,
         });
         broadcast({ t: "settings" });
@@ -628,6 +629,9 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     return fail(res, "not_found", "Unknown route.");
   };
 
+  /** A remote server saved without headers stands in for one that asks for an OAuth sign-in. */
+  const mockOAuth = (name: string, http: boolean, headers: string[]) => (http && !headers.length ? (mcpServers.get(name)?.oauth ?? "signed_out") : null);
+
   // A loose stand-in for services/mcpServers.ts: no values are kept, only the names the views show.
   const routeMcp = ({ method, body, res }: Ctx, name: string) => {
     if (method === "PUT") {
@@ -643,10 +647,11 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         args: !http && Array.isArray(body.args) ? body.args.map(String) : [],
         headerNames: http ? keys(body.headers) : [],
         envNames: http ? [] : keys(body.env),
+        oauth: mockOAuth(name, http, keys(body.headers)),
         createdAt: mcpServers.get(name)?.createdAt ?? Date.now(),
       });
       broadcast({ t: "settings" });
-      return json(res, 200, {});
+      return json(res, 200, { oauth: mcpServers.get(name)!.oauth });
     }
     if (method === "DELETE") {
       mcpServers.delete(name);
@@ -654,6 +659,15 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       return json(res, 200, {});
     }
     return fail(res, "not_found", "Unknown route.");
+  };
+
+  // Sign-in "finishes" as soon as its page is requested, like Composio's above.
+  const routeMcpOAuth = ({ method, res }: Ctx, name: string) => {
+    const s = mcpServers.get(name);
+    if (!s?.oauth) return fail(res, "invalid", `${name} does not ask for a sign-in.`);
+    mcpServers.set(name, { ...s, oauth: method === "POST" ? "signed_in" : "signed_out" });
+    broadcast({ t: "settings" });
+    return json(res, 200, method === "POST" ? { url: `https://auth.example.com/authorize?mock=${name}` } : {});
   };
 
   const routeComposio = ({ method, res }: Ctx, toolkit: string, link: boolean) => {
@@ -694,6 +708,8 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     if (sm) return routeSecret(c, decodeURIComponent(sm[1]!));
     const cm = /^\/api\/composio\/toolkits\/([a-z0-9_]+)(\/link)?$/.exec(path);
     if (cm) return routeComposio(c, cm[1]!, !!cm[2]);
+    const mo = /^\/api\/mcp-servers\/([^/]+)\/oauth$/.exec(path);
+    if (mo) return routeMcpOAuth(c, decodeURIComponent(mo[1]!));
     const mm = /^\/api\/mcp-servers\/([^/]+)$/.exec(path);
     if (mm) return routeMcp(c, decodeURIComponent(mm[1]!));
     return fail(res, "not_found", "Unknown route.");

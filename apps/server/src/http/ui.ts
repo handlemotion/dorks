@@ -17,6 +17,7 @@ import * as runs from "../services/buildRuns";
 import { forgetUsage, getUsage } from "../services/usage";
 import { composioLink, composioStatus, composioUnlink, connectComposio, disconnectComposio } from "../services/composio";
 import { deleteMcpServer, listMcpServers, putMcpServer } from "../services/mcpServers";
+import { CALLBACK_PATH, callbackPage, finishMcpSignIn, signOutMcp, startMcpSignIn } from "../services/mcpOAuth";
 import { forgetGithubRepos, githubRepos } from "../services/githubRepos";
 import { getPullRequest, mergePullRequest, updatePullRequestBranch } from "../services/pullRequest";
 import { decideLocal, localAccessView, revokeGrant, revokeGrants, setLocalAccess } from "../services/local";
@@ -83,6 +84,13 @@ export function uiApp(app: App): Hono {
         "cross-origin-resource-policy": "cross-origin",
       },
     });
+  });
+
+  // Where a remote MCP server's sign-in sends the browser back (services/mcpOAuth.ts). No token: the single-use, random `state` from
+  // the owner's own sign-in request is the capability.
+  api.get(CALLBACK_PATH, async (c) => {
+    const r = await finishMcpSignIn(app, c.req.query());
+    return c.html(callbackPage(r), r.ok ? 200 : 400, { "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'", "referrer-policy": "no-referrer" });
   });
 
   api.use("/api/*", async (c, next) => {
@@ -375,13 +383,27 @@ export function uiApp(app: App): Hono {
     on((c) =>
       looseBody(c).pipe(
         Effect.flatMap((b) => serviceAsync((a) => putMcpServer(a, name(c), b))),
-        ok(c),
+        Effect.map((v) => c.json(v)),
       ),
     ),
   );
   api.delete(
     "/api/mcp-servers/:name",
     on((c) => ok(c)(service((a) => deleteMcpServer(a, name(c))))),
+  );
+  // OAuth sign-in for a remote server (services/mcpOAuth.ts): `base` is the URL the browser reaches this server at, for the callback
+  api.post(
+    "/api/mcp-servers/:name/oauth",
+    on((c) =>
+      looseBody(c).pipe(
+        Effect.flatMap((b) => serviceAsync((a) => startMcpSignIn(a, name(c), b.base))),
+        Effect.map((v) => c.json(v)),
+      ),
+    ),
+  );
+  api.delete(
+    "/api/mcp-servers/:name/oauth",
+    on((c) => serviceAsync((a) => signOutMcp(a, name(c))).pipe(ok(c))),
   );
 
   // ---- Composio (services/composio.ts): one key for the OAuth-only apps, each signed in to in a browser
