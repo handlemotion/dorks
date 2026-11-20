@@ -77,7 +77,9 @@ pub struct UserUrlTunnel {
 
 impl UserUrlTunnel {
     pub fn new(url: &str) -> Result<Self, TunnelError> {
-        validate_public_url(url).map(|url| Self { url }).map_err(TunnelError::Invalid)
+        validate_public_url(url)
+            .map(|url| Self { url })
+            .map_err(TunnelError::Invalid)
     }
 }
 
@@ -87,7 +89,11 @@ impl Tunnel for UserUrlTunnel {
     }
 
     fn start(&self, _target: TunnelTarget) -> BoxFuture<'_, Result<TunnelEndpoint, TunnelError>> {
-        Box::pin(async move { Ok(TunnelEndpoint { public_url: self.url.clone() }) })
+        Box::pin(async move {
+            Ok(TunnelEndpoint {
+                public_url: self.url.clone(),
+            })
+        })
     }
 
     fn stop(&self) -> BoxFuture<'_, ()> {
@@ -96,8 +102,14 @@ impl Tunnel for UserUrlTunnel {
 }
 
 /// Chooses the tunnel: a URL from the environment, else one saved in settings, else wurmhol.
-pub fn select(env_url: Option<&str>, settings_url: Option<&str>, wurmhol: WurmholConfig) -> Result<Box<dyn Tunnel>, TunnelError> {
-    let url = env_url.filter(|u| !u.trim().is_empty()).or(settings_url.filter(|u| !u.trim().is_empty()));
+pub fn select(
+    env_url: Option<&str>,
+    settings_url: Option<&str>,
+    wurmhol: WurmholConfig,
+) -> Result<Box<dyn Tunnel>, TunnelError> {
+    let url = env_url
+        .filter(|u| !u.trim().is_empty())
+        .or(settings_url.filter(|u| !u.trim().is_empty()));
     match url {
         Some(url) => Ok(Box::new(UserUrlTunnel::new(url)?)),
         None => Ok(Box::new(WurmholTunnel::new(wurmhol))),
@@ -120,8 +132,22 @@ mod tests {
     #[test]
     fn selection_prefers_environment_then_settings_then_wurmhol() {
         let cfg = || WurmholConfig::new("wurmhol".into(), "wurmhol.log".into());
-        assert_eq!(select(Some("https://env.example"), Some("https://saved.example"), cfg()).unwrap().kind(), "user-url");
-        assert_eq!(select(None, Some("https://saved.example"), cfg()).unwrap().kind(), "user-url");
+        assert_eq!(
+            select(
+                Some("https://env.example"),
+                Some("https://saved.example"),
+                cfg()
+            )
+            .unwrap()
+            .kind(),
+            "user-url"
+        );
+        assert_eq!(
+            select(None, Some("https://saved.example"), cfg())
+                .unwrap()
+                .kind(),
+            "user-url"
+        );
         assert_eq!(select(Some(" "), None, cfg()).unwrap().kind(), "wurmhol");
         assert_eq!(select(None, None, cfg()).unwrap().kind(), "wurmhol");
         assert!(select(Some("http://insecure.example"), None, cfg()).is_err());

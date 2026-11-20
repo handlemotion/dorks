@@ -63,7 +63,12 @@ mod tests {
         let port = serve_once("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok").await;
         assert!(is_healthy(port, "/api/health", Duration::from_secs(2)).await);
         let port = serve_once("HTTP/1.1 503 Service Unavailable\r\n\r\n").await;
-        assert_eq!(http_status(port, "/api/health", Duration::from_secs(2)).await.unwrap(), 503);
+        assert_eq!(
+            http_status(port, "/api/health", Duration::from_secs(2))
+                .await
+                .unwrap(),
+            503
+        );
     }
 
     #[test]

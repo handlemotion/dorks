@@ -13,12 +13,17 @@ pub fn pick_port(preferred: Option<u16>, exclude: &[u16]) -> io::Result<u16> {
         }
     }
     for _ in 0..32 {
-        let port = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))?.local_addr()?.port();
+        let port = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))?
+            .local_addr()?
+            .port();
         if !exclude.contains(&port) {
             return Ok(port);
         }
     }
-    Err(io::Error::new(io::ErrorKind::AddrNotAvailable, "no free port"))
+    Err(io::Error::new(
+        io::ErrorKind::AddrNotAvailable,
+        "no free port",
+    ))
 }
 
 #[cfg(test)]

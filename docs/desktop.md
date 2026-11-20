@@ -19,7 +19,7 @@ Dorks.app
 
 ## Contract with the server
 
-Defined in one file, `crates/shell-core/src/contract.rs`. The server gets this environment (and only this plus `PATH`, `HOME`, `TMPDIR`, `LANG`, `USER`):
+Defined in one file, `crates/shell-core/src/contract.rs`. The server gets this environment (and only this plus `PATH`, `HOME`, `TMPDIR`, `LANG`, `LC_ALL`, `USER`, `LOGNAME`, and `GH_CONFIG_DIR` / `XDG_CONFIG_HOME` so the server's `gh auth token` finds the GitHub CLI's login):
 
 | Variable | Value |
 |---|---|

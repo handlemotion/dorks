@@ -23,15 +23,27 @@ impl Paths {
         )
     }
 
-    pub fn resolve(app_dir: Option<PathBuf>, home: Option<PathBuf>, xdg_data: Option<PathBuf>) -> Self {
+    pub fn resolve(
+        app_dir: Option<PathBuf>,
+        home: Option<PathBuf>,
+        xdg_data: Option<PathBuf>,
+    ) -> Self {
         if let Some(dir) = app_dir.filter(|d| !d.as_os_str().is_empty()) {
             return Self::new(dir);
         }
         let home = home.unwrap_or_else(|| PathBuf::from("."));
         if cfg!(target_os = "macos") {
-            Self::new(home.join("Library").join("Application Support").join("Dorks"))
+            Self::new(
+                home.join("Library")
+                    .join("Application Support")
+                    .join("Dorks"),
+            )
         } else {
-            Self::new(xdg_data.unwrap_or_else(|| home.join(".local").join("share")).join("Dorks"))
+            Self::new(
+                xdg_data
+                    .unwrap_or_else(|| home.join(".local").join("share"))
+                    .join("Dorks"),
+            )
         }
     }
 
@@ -110,7 +122,10 @@ mod tests {
         let p = Paths::new(tmp.path().join("app"));
         p.ensure().unwrap();
         for d in [p.root().to_path_buf(), p.server_data_dir(), p.logs_dir()] {
-            assert_eq!(std::fs::metadata(d).unwrap().permissions().mode() & 0o777, 0o700);
+            assert_eq!(
+                std::fs::metadata(d).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
         }
     }
 }

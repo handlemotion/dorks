@@ -44,7 +44,18 @@ pub struct SidecarSpec {
 }
 
 /// Variables copied from the shell's environment to the child.
-pub const INHERITED_ENV: &[&str] = &["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "USER", "LOGNAME"];
+/// `GH_CONFIG_DIR` and `XDG_CONFIG_HOME` tell the server's `gh auth token` where the GitHub CLI keeps its login.
+pub const INHERITED_ENV: &[&str] = &[
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "LANG",
+    "LC_ALL",
+    "USER",
+    "LOGNAME",
+    "GH_CONFIG_DIR",
+    "XDG_CONFIG_HOME",
+];
 
 #[derive(Debug, Clone)]
 pub struct Policy {
@@ -109,7 +120,11 @@ impl Supervisor {
         let (status_tx, status) = watch::channel(Status::Starting);
         let (cmd, cmd_rx) = mpsc::unbounded_channel();
         let task = tokio::spawn(run(spec, policy, status_tx, cmd_rx));
-        Supervisor { status, cmd, task: Mutex::new(Some(task)) }
+        Supervisor {
+            status,
+            cmd,
+            task: Mutex::new(Some(task)),
+        }
     }
 
     pub fn status(&self) -> Status {
@@ -152,7 +167,12 @@ impl Supervisor {
     }
 }
 
-async fn run(spec: SidecarSpec, policy: Policy, status: watch::Sender<Status>, mut cmd_rx: mpsc::UnboundedReceiver<Cmd>) {
+async fn run(
+    spec: SidecarSpec,
+    policy: Policy,
+    status: watch::Sender<Status>,
+    mut cmd_rx: mpsc::UnboundedReceiver<Cmd>,
+) {
     let mut failures: VecDeque<Instant> = VecDeque::new();
     let mut backoff = policy.backoff_initial;
     let mut attempt = 0u32;
@@ -177,7 +197,10 @@ async fn run(spec: SidecarSpec, policy: Policy, status: watch::Sender<Status>, m
                 }
                 let now = Instant::now();
                 failures.push_back(now);
-                while failures.front().is_some_and(|t| now.duration_since(*t) > policy.failure_window) {
+                while failures
+                    .front()
+                    .is_some_and(|t| now.duration_since(*t) > policy.failure_window)
+                {
                     failures.pop_front();
                 }
                 if failures.len() as u32 > policy.max_failures {
@@ -227,7 +250,12 @@ async fn run_one(
 ) -> (Exit, Option<Instant>) {
     let mut child = match spawn(spec, policy) {
         Ok(child) => child,
-        Err(e) => return (Exit::Failure(format!("could not start {}: {e}", spec.program.display())), None),
+        Err(e) => {
+            return (
+                Exit::Failure(format!("could not start {}: {e}", spec.program.display())),
+                None,
+            )
+        }
     };
     if let (Some(pid), Some(file)) = (child.id(), spec.pid_file.as_ref()) {
         let _ = std::fs::write(file, pid.to_string());
@@ -237,7 +265,11 @@ async fn run_one(
     let mut failed_checks = 0u32;
 
     let exit = loop {
-        let wait = if ready_at.is_some() { policy.health_interval } else { policy.startup_poll };
+        let wait = if ready_at.is_some() {
+            policy.health_interval
+        } else {
+            policy.startup_poll
+        };
         tokio::select! {
             exited = child.wait() => {
                 break Exit::Failure(match exited {
@@ -282,7 +314,10 @@ fn spawn(spec: &SidecarSpec, policy: &Policy) -> io::Result<Child> {
         std::fs::create_dir_all(dir)?;
     }
     rotate_log(&spec.log_file, policy.max_log_bytes);
-    let log = std::fs::OpenOptions::new().create(true).append(true).open(&spec.log_file)?;
+    let log = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&spec.log_file)?;
     let log_err = log.try_clone()?;
 
     let mut command = Command::new(&spec.program);
@@ -293,7 +328,11 @@ fn spawn(spec: &SidecarSpec, policy: &Policy) -> io::Result<Child> {
         }
     }
     command.envs(spec.env.iter().map(|(k, v)| (k, v)));
-    command.stdin(Stdio::null()).stdout(Stdio::from(log)).stderr(Stdio::from(log_err)).kill_on_drop(true);
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(log))
+        .stderr(Stdio::from(log_err))
+        .kill_on_drop(true);
     #[cfg(unix)]
     command.process_group(0); // a Ctrl-C in a dev terminal reaches the shell, which then stops the server itself
     command.spawn()
@@ -327,7 +366,11 @@ pub(crate) async fn terminate(child: &mut Child, grace: Duration) {
 /// after `grace`) and removes the file. Handles a shell that was killed without stopping its server. Returns the pid stopped.
 #[cfg(unix)]
 pub fn reap_stale(pid_file: &Path, expected_name: &str, grace: Duration) -> Option<u32> {
-    let pid: u32 = std::fs::read_to_string(pid_file).ok()?.trim().parse().ok()?;
+    let pid: u32 = std::fs::read_to_string(pid_file)
+        .ok()?
+        .trim()
+        .parse()
+        .ok()?;
     let _ = std::fs::remove_file(pid_file);
     if pid <= 1 || !process_alive(pid) || !process_name(pid)?.starts_with(expected_name) {
         return None;
@@ -353,7 +396,12 @@ fn process_alive(pid: u32) -> bool {
 
 #[cfg(unix)]
 fn process_name(pid: u32) -> Option<String> {
-    let out = std::process::Command::new("/bin/ps").args(["-p", &pid.to_string(), "-o", "comm="]).output().ok()?;
+    let out = std::process::Command::new("/bin/ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
+        .output()
+        .ok()?;
     let comm = String::from_utf8(out.stdout).ok()?;
-    Path::new(comm.trim()).file_name().map(|n| n.to_string_lossy().into_owned())
+    Path::new(comm.trim())
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
 }
