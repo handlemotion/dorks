@@ -21,7 +21,7 @@ on top.
 | 5 | **The base snapshot stays.** "Prepare Boat" builds it exactly as today. A dork on no build starts from it. Builds are opt-in, so nothing migrates by force. |
 | 6 | **Agents edit a draft, never the build.** Any Claude dork gets five deferred MCP tools scoped to its own build: read it, edit a draft, run the draft in a throwaway sandbox, read the logs, submit the draft. Only the owner turns a draft into the build. |
 | 7 | **No image from a spec the owner has not seen, and no secret value in a script the owner has not seen.** Every spec has a hash. Saving an image and injecting build-time secrets both require the owner to have approved that hash (an owner edit approves itself; an agent's draft is approved by the owner's click). Trial runs (no save, no secrets) do not. |
-| 8 | **"Set up a machine" is an ordinary dork**, opened from a build's page (`POST /api/dorks {setup: true, buildId}`): no repo required, and the build needs no image yet (it starts from the base). It is not a special environment: the tools in decision 6 are the same in every dork on a build, so a dork working on a repo can also say "I installed X; add it to the build?" A dork on the base machine cannot draft: the owner creates a build first. |
+| 8 | **"Set up a machine" is an ordinary dork**, opened from a build's page (`POST /api/dorks {setup: true, buildId}`): no repo required, and the build needs no image yet (it starts from the base). It is not a special environment: the tools in decision 6 are the same in every dork on a build, so a dork working on a repo can also say "I installed X; add it to the build?" A dork on the base machine can propose a new build: its first `machine_draft` creates an empty, unapproved build (named by the agent, or after its repo) and moves the dork onto it, so trials and submit work as on any build. Nothing can be imaged from it until the owner approves the draft; rejecting it deletes the build and the dork is back on the base machine. |
 | 9 | **Tools load on demand.** Claude Code defers MCP tool schemas by default (tool search): only tool names and a one-sentence server instruction reach every session. No change to the base prompt (`infra/bridge/src/guidance.ts`) or SessionStart context. |
 | 10 | **Logs come from Boat.** A run's setup is one detached Boat command; the server follows its output stream and keeps a capped, redacted tail. Boat keeps the full log for 90 days in command history. |
 
@@ -233,8 +233,8 @@ local RPC method, `build`, that forwards it. No secret ever crosses the socket.
 
 | Tool | What it does |
 |---|---|
-| `machine_get` | The dork's build: name, size, setup script, repos and their scripts, variables (plain values; secrets by name only), image status and staleness, the last run, and this dork's draft if any. On the base machine it says so and that the owner has to create a build first. |
-| `machine_draft` | Writes this dork's draft: any of `setupScript` (full text), `repos` (full list), `machineType`, `vars` (changes merged by name: `{name, value?, secret?, buildTime?, why?, remove?}`; a secret with a value is refused). Validated like the API. Returns the draft. |
+| `machine_get` | The dork's build: name, size, setup script, repos and their scripts, variables (plain values; secrets by name only), image status and staleness, the last run, and this dork's draft if any. On the base machine it says so and that `machine_draft` proposes a new build. |
+| `machine_draft` | Writes this dork's draft: any of `setupScript` (full text), `repos` (full list), `machineType`, `vars` (changes merged by name: `{name, value?, secret?, buildTime?, why?, remove?}`; a secret with a value is refused), and `name` (on the base machine only: the proposed build's name). Validated like the API. Returns the draft. |
 | `machine_run` | `kind: "trial"` (default) runs the draft (or the build as it is) without saving or secrets, within the caps below. `kind: "image"` rebuilds the approved spec, never the draft. Returns the run id at once. |
 | `machine_logs` | A run's status and its redacted log: `tail` lines (default 200), or lines containing `grep` (a plain substring: a regular expression from the agent would run on the server), 64 KB at most. `wait` (up to 120 s) polls in short calls until the run ends, so the agent waits without a sleep loop. |
 | `machine_submit` | Submits the draft with a `note` for the owner's approval: a card in the chat and on the build's page. The decision comes back as a turn. |
@@ -310,7 +310,8 @@ The owner approved the recommendations: variables through `configure` (not Boat 
 at build time only, agents may rebuild an approved spec, and the caps above. From the spec review:
 
 - A setup session can start on a build that has no image yet (`setup: true`).
-- A dork on the base machine cannot draft a new build: the owner creates the build, then starts a setup session on it.
+- A dork on the base machine proposes a new build with its first draft (decision 8). The proposal is a build with no approved spec, so
+  neither the agent nor the owner's Build button can image it until the owner approves the draft; a rejection deletes it.
 - Build-time values count for staleness, through a keyed hash, without putting a secret in the approval hash.
 - A new dork branch starts from the fetched upstream, so a clone baked into an image never starts work on old code.
 

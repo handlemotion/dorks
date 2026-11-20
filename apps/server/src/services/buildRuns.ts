@@ -7,7 +7,7 @@ import { insert, update } from "../db";
 import { boatBuildFailureMessage } from "../lib/boatSnapshots";
 import { instanceId } from "../lib/box";
 import { hasTimer, setTimer } from "../lifecycle/dispatch";
-import { baseKey, buildVarValues, dorkBuild, draftView, getBuild, hashSpec, imageName, ownBuild, secretValues, specOf, varsDigest, varsOf, type BuildRow } from "./builds";
+import { baseKey, buildVarValues, dorkBuild, draftView, getBuild, hashSpec, imageName, isProposal, ownBuild, secretValues, specOf, varsDigest, varsOf, type BuildRow } from "./builds";
 import { boatKey, githubToken, readSettings } from "./settings";
 
 // A build run (docs/builds.md, "A run, step by step"): a sandbox from the base snapshot runs the build's setup; an `image` run then
@@ -123,6 +123,7 @@ export function startRun(app: App, buildId: string, o: StartOpts): RunView {
       }
     }
     if (o.kind === "image") {
+      if (isProposal(b)) fail("forbidden", "This build was proposed by an agent and is not approved yet: review its draft first.");
       const missing = vars.filter((v) => v.buildTime && !v.valueEnc).map((v) => v.name);
       if (missing.length) fail("not_configured", `Fill in ${missing.join(", ")} first: the setup script needs ${missing.length === 1 ? "it" : "them"}.`);
     }
@@ -618,6 +619,6 @@ export async function forgetImage(app: App, image: string, attempt: number) {
 /** The agent's way in (machine_run): its own dork's build only. */
 export function startRunForDork(app: App, dorkId: string, kind: RunKind): RunView {
   const b = dorkBuild(app, dorkId);
-  if (!b) return fail("not_configured", "This session runs on the base machine, not on a build.");
+  if (!b) return fail("not_configured", "This session runs on the base machine, not on a build. Propose one with machine_draft first.");
   return startRun(app, b.id, { kind, by: `dork:${dorkId}`, draftOf: dorkId });
 }

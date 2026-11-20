@@ -20,6 +20,8 @@ export interface Dork {
   /** Screenshots the agent shared (its `screenshot_share` tool), oldest first; load one with `client.imageUrl(id)`. */
   images?: { id: string; caption?: string; width?: number; height?: number; createdAt: number }[];
   prUrl?: string;
+  /** The PR's state as the server's poller last saw it; absent before its first look and on older servers. */
+  prState?: "open" | "merged" | "closed";
   codexModel?: { model: string; effort: string };
   codexModelChoices?: { model: string; efforts: string[] }[];
   /** Claude: the model and effort chosen for this session (absent: the agent's default). */

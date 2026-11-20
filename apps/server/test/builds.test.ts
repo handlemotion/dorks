@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { update } from "../src/db";
-import { approveDraft, buildView, createBuild, getBuild, imageName, setBuildVar, submitDraft, writeDraft } from "../src/services/builds";
+import { approveDraft, buildView, createBuild, getBuild, imageName, rejectDraft, setBuildVar, submitDraft, writeDraft } from "../src/services/builds";
 import { startRun, startRunForDork } from "../src/services/buildRuns";
 import { updateSettings } from "../src/services/settings";
 import { harness } from "./harness";
@@ -123,5 +123,30 @@ describe("agents", () => {
     expect(view.vars).toEqual([{ name: "API_KEY", secret: true, buildTime: false, requested: true }]);
     expect(h.events(dork).map((e) => e.body.type)).toContain("build_decision");
     expect(h.cmds(dork).some((c) => c.kind === "user_message" && c.text?.includes("approved your machine draft"))).toBe(true);
+  });
+
+  it("on the base machine propose a new build that cannot be imaged until approved; a rejection deletes it and the dork is back on the base", async () => {
+    const h = await ready();
+    const dork = h.seed("idle");
+    const draft = writeDraft(h.app, dork, { name: "tools", setupScript: "sudo apt-get install -y doppler" });
+    const id = h.app.db.get<{ build_id: string }>("SELECT build_id FROM dorks WHERE id = ?", dork)!.build_id;
+    expect(getBuild(h.app, id)).toMatchObject({ name: "tools", setupScript: "", approvedHash: null });
+    expect(() => startRunForDork(h.app, dork, "image")).toThrow(/not approved/);
+    expect(() => startRun(h.app, id, { kind: "image", by: "owner" })).toThrow(/not approved yet/);
+    startRunForDork(h.app, dork, "trial");
+    await h.settle();
+
+    submitDraft(h.app, dork, "doppler for secrets");
+    rejectDraft(h.app, id, draft.id, "not now");
+    expect(getBuild(h.app, id)).toBeUndefined();
+    expect(h.app.db.get<{ build_id: string | null }>("SELECT build_id FROM dorks WHERE id = ?", dork)!.build_id).toBeNull();
+    expect(h.cmds(dork).some((c) => c.kind === "user_message" && c.text?.includes("back on the base machine"))).toBe(true);
+
+    // Proposed again and approved: an ordinary build the owner can image.
+    const again = submitDraft(h.app, dork, (writeDraft(h.app, dork, { setupScript: "echo ok" }), "retry"));
+    const next = h.app.db.get<{ build_id: string }>("SELECT build_id FROM dorks WHERE id = ?", dork)!.build_id;
+    await approveDraft(h.app, next, again.id, again.updatedAt);
+    expect(getBuild(h.app, next)).toMatchObject({ setupScript: "echo ok" });
+    expect((await buildView(h.app, getBuild(h.app, next)!)).approved).toBe(true);
   });
 });

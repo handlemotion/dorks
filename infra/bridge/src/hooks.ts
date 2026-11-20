@@ -64,12 +64,20 @@ export function claudeMcpConfig(self: [node: string, cli: string], sock: string,
  * The owner's MCP servers (Customize) as Claude Code config entries, with every header and env value replaced by a `${DORKS_MCP_…}`
  * reference: the CLI expands those from its own environment, so the values reach the agent's environment (like any shared secret)
  * but never the config file on disk. The URL is a reference too, since hosted servers often put a key in it. `env` holds the values to add to the agent's environment.
+ * An OAuth server points at `proxyUrl` instead (left out without one), so no token reaches the config or the environment.
  */
-export function userMcpServers(servers: readonly McpServerConfig[]): { config: Record<string, unknown>; env: Record<string, string> } {
+export function userMcpServers(servers: readonly McpServerConfig[], proxyUrl?: (name: string) => string): { config: Record<string, unknown>; env: Record<string, string> } {
   const config: Record<string, unknown> = {};
   const env: Record<string, string> = {};
   servers.forEach((s, i) => {
     if (RESERVED_MCP_NAMES.includes(s.name)) return;
+    if (s.transport === "http" && s.oauth) {
+      // Signed in with OAuth: the bridge's loopback proxy (mcp-proxy.ts) adds a current token and the server's headers.
+      if (!proxyUrl) return;
+      env[`DORKS_MCP_${i}_URL`] = proxyUrl(s.name); // a reference too: the path is the proxy's secret, and this file is world-readable
+      config[s.name] = { type: "http", url: `\${DORKS_MCP_${i}_URL}` };
+      return;
+    }
     const refs = (values: Record<string, string>, kind: string) =>
       Object.fromEntries(
         Object.entries(values).map(([k, v], j) => {

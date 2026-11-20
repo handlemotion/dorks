@@ -402,9 +402,15 @@ function AppFooter({ app: c, keySaved, editingKey, connected, link, pending, can
   )
 }
 
+/** Opens a remote server's OAuth sign-in in the browser; the row turns to "Signed in" when the callback lands (a settings event). */
+async function signIn(actions: ReturnType<typeof useDorksClient>['actions'], name: string) {
+  const { url } = await actions.mcpSignIn(name)
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
 function ServerRow({ server: s, onEdit }: { server: McpServerView; onEdit: () => void }) {
   const { actions } = useDorksClient()
-  const { run, pending } = usePending()
+  const { run, pending, error } = usePending()
   const secrets = [...s.headerNames, ...s.envNames]
   const where = s.transport === 'http' ? s.url : [s.command, ...s.args].join(' ')
   return (
@@ -414,10 +420,23 @@ function ServerRow({ server: s, onEdit }: { server: McpServerView; onEdit: () =>
         <span className="block truncate">
           <span className="font-mono">{where}</span>
           {secrets.length > 0 && <span> · {secrets.join(', ')}</span>}
+          {s.oauth === 'signed_in' && <span> · Signed in</span>}
+          {s.oauth === 'signed_out' && <span> · Agents get it once you sign in</span>}
+          {error && <span className="text-destructive"> · {error}</span>}
         </span>
       }
       control={
         <>
+          {s.oauth === 'signed_out' && (
+            <Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => void run(() => signIn(actions, s.name))}>
+              Sign in
+            </Button>
+          )}
+          {s.oauth === 'signed_in' && (
+            <Button type="button" variant="ghost" size="sm" disabled={pending} onClick={() => void run(() => actions.mcpSignOut(s.name))}>
+              Sign out
+            </Button>
+          )}
           <Button type="button" variant="ghost" size="sm" onClick={onEdit}>
             Edit
           </Button>
@@ -446,7 +465,8 @@ function ServerDialog({ initial, onClose }: { initial: Draft; onClose: () => voi
       const input: McpServerInput = http
         ? { transport: 'http', url: d.url.trim(), headers: values }
         : { transport: 'stdio', command: d.command.trim(), args: d.args.split('\n').filter((a, i, all) => a !== '' || i < all.length - 1), env: values }
-      await actions.putMcpServer(d.name.trim(), input)
+      const { oauth } = await actions.putMcpServer(d.name.trim(), input)
+      if (oauth === 'signed_out') await signIn(actions, d.name.trim())
       onClose()
     })
 
@@ -463,7 +483,9 @@ function ServerDialog({ initial, onClose }: { initial: Draft; onClose: () => voi
           <DialogHeader className="gap-2">
             <DialogTitle className="text-sm font-medium">{d.editing ? `Edit ${d.name}` : 'Add a custom connector'}</DialogTitle>
             <DialogDescription className="text-sm leading-5">
-              {'A remote connector speaks HTTP; a local one is a command each sandbox runs. Values are stored encrypted and never shown again.'}
+              {
+                'A remote connector speaks HTTP; one that asks for a sign-in opens it in your browser when you save. A local one is a command each sandbox runs. Values are stored encrypted and never shown again.'
+              }
             </DialogDescription>
           </DialogHeader>
           <div data-slot="dialog-body" className="min-h-0 overflow-y-auto">

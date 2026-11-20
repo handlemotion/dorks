@@ -1,6 +1,6 @@
 import type { ClientEvent } from "@dorks/shared";
 import { fail, touch, type App } from "../app";
-import { dorkOf, dorkView, eventOf, getDork, type DorkRow, type DorkView, type Provider } from "../data";
+import { dorkOf, dorkView, eventOf, getDork, prStateOf, type DorkRow, type DorkView, type Provider } from "../data";
 import { insert } from "../db";
 import { append, dispatch, enqueue, MAX_MESSAGE_CHARS, patchDork, patchRuntime, setTimer } from "../lifecycle/dispatch";
 import { knownModelChoices, validModelChoice } from "./models";
@@ -45,12 +45,15 @@ function persistMessage(app: App, dork: DorkRow, text: string) {
 }
 
 export function listDorks(app: App, archived = false): DorkView[] {
-  return app.db.all("SELECT * FROM dorks WHERE archived = ? AND deleting = 0 ORDER BY last_activity_at DESC LIMIT 200", archived ? 1 : 0).map((r) => dorkView(dorkOf(r)));
+  return app.db.all("SELECT * FROM dorks WHERE archived = ? AND deleting = 0 ORDER BY last_activity_at DESC LIMIT 200", archived ? 1 : 0).map((r) => {
+    const d = dorkOf(r);
+    return dorkView(d, prStateOf(app.db, d));
+  });
 }
 
 export function getDorkView(app: App, dorkId: string): DorkView | null {
   const d = getDork(app.db, dorkId);
-  return d && !d.deleting ? dorkView(d) : null;
+  return d && !d.deleting ? dorkView(d, prStateOf(app.db, d)) : null;
 }
 
 /**

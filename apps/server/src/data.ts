@@ -149,8 +149,14 @@ export const commandOf = (r: Row): CommandRow => ({
 
 export const openCommands = (db: Db, dorkId: string): CommandRow[] => db.all("SELECT * FROM commands WHERE dork_id = ? AND acked = 0 ORDER BY id", dorkId).map(commandOf);
 
+/** The state of the session's own pull request, as its subscription last saw it (absent until the poller has looked). */
+export const prStateOf = (db: Db, d: DorkRow): "open" | "merged" | "closed" | undefined =>
+  d.prUrl
+    ? (db.get<{ state: string }>("SELECT state FROM pr_subscriptions WHERE dork_id = ? AND url = ? ORDER BY id DESC LIMIT 1", d.id, d.prUrl)?.state as "open" | "merged" | "closed" | undefined)
+    : undefined;
+
 /** The wire shape of a dork for the UI: no box id, session ids or other internals. */
-export const dorkView = (d: DorkRow) => ({
+export const dorkView = (d: DorkRow, prState?: "open" | "merged" | "closed") => ({
   id: d.id,
   title: d.title,
   repo: d.repo,
@@ -162,6 +168,7 @@ export const dorkView = (d: DorkRow) => ({
   previews: d.previews ?? [],
   images: d.images ?? [],
   prUrl: d.prUrl,
+  prState,
   codexModel: d.codexModel,
   codexModelChoices: d.codexModelChoices,
   model: d.model,

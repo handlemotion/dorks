@@ -22,11 +22,13 @@ export type ProgressTurn = {
 export type WorkBlock = ProgressToolBlock | ProgressTextBlock
 
 /**
- * A turn's blocks split into its work (tool calls and progress text, which Progress shows) and its answer (the one message the thread
- * shows). The answer is the message the server named final; a turn that ended without one (stopped, failed, or stored before the
- * server named answers) answers with its last message. A running turn has no answer yet. Notices and machine drafts are neither.
+ * A turn's blocks split into its opening (the first thing the agent said), its work (tool calls and progress text, which Progress
+ * shows) and its answer (the message the thread shows last). The answer is the message the server named final; a turn that ended
+ * without one (stopped, failed, or stored before the server named answers) answers with its last message. A running turn has no answer
+ * yet. The opening is the turn's first message when it is not also the answer: the thread shows it above the turn's card, so a turn
+ * reads as what the agent set out to do, how long it worked, then what it found. Notices and machine drafts are none of these.
  */
-export function splitTurn(blocks: readonly Block[], ended: boolean, running = false): { work: WorkBlock[]; answer?: ProgressTextBlock } {
+export function splitTurn(blocks: readonly Block[], ended: boolean, running = false): { work: WorkBlock[]; answer?: ProgressTextBlock; opening?: ProgressTextBlock } {
   const texts = blocks.filter((b): b is ProgressTextBlock => b.kind === 'assistant')
   const answer = texts.find((b) => b.final) ?? (ended ? texts.at(-1) : undefined)
   // While the chat's last turn runs, its latest text with nothing after it may still become the answer: kept out of the work until a tool
@@ -35,7 +37,11 @@ export function splitTurn(blocks: readonly Block[], ended: boolean, running = fa
   const steps = blocks.filter((b): b is WorkBlock => b.kind === 'tool' || b.kind === 'assistant')
   const last = blocks.at(-1)
   const candidate = running && !ended && !answer && last?.kind === 'assistant' ? last : undefined
-  return { work: steps.filter((b) => b !== answer && b !== candidate), answer }
+  // The first text opens the turn. Said before any tool call it shows at once, even as it streams: should it end up the answer, the
+  // turn had no work and no card, so it stays where it is. A first text that came after tool calls and may still be the answer waits.
+  const first = texts[0]
+  const opening = first && first !== answer && (first !== candidate || steps[0] === first) ? first : undefined
+  return { work: steps.filter((b) => b !== answer && b !== candidate && b !== opening), answer, opening }
 }
 
 const IMAGE = /!\[[^\]]*\]\([^)]*\)/g

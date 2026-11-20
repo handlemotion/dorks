@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vite-plus/test";
 import { uiApp } from "../src/http/ui";
 import { githubToken, updateSettings } from "../src/services/settings";
@@ -301,6 +302,109 @@ describe("settings", () => {
     expect((await a.del("/api/mcp-servers/context7")).status).toBe(200);
     expect((await a.del("/api/mcp-servers/fs")).status).toBe(200);
     expect((await a.get("/api/mcp-servers")).json).toHaveLength(1);
+  });
+
+  it("MCP OAuth: a 401 server is signed in to in the browser (discovery, registration, PKCE), refreshed on demand, and signed out when the grant is gone", async () => {
+    // A server shaped like a real one (RFC 9728 metadata on the 401, an RFC 8414 authorization server with a path, RFC 7591 registration).
+    const MCP = "https://mcp.example.com/mcp";
+    const AS = "https://auth.example.com/api/auth";
+    let challenge = "";
+    let grant = "refresh-1";
+    const tokenCalls: URLSearchParams[] = [];
+    const routes: Record<string, (init?: RequestInit) => Response> = {
+      [`POST ${MCP}`]: (init) =>
+        new Headers(init?.headers).get("authorization")
+          ? Response.json({})
+          : Response.json({}, { status: 401, headers: { "www-authenticate": `Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource/mcp", scope="read write"` } }),
+      ["GET https://mcp.example.com/.well-known/oauth-protected-resource/mcp"]: () => Response.json({ resource: MCP, authorization_servers: [AS] }),
+      ["GET https://auth.example.com/.well-known/oauth-authorization-server/api/auth"]: () =>
+        Response.json({
+          issuer: AS,
+          authorization_endpoint: `${AS}/authorize`,
+          token_endpoint: `${AS}/token`,
+          registration_endpoint: `${AS}/register`,
+          scopes_supported: ["read", "write", "offline_access"],
+        }),
+      [`POST ${AS}/register`]: (init) => {
+        expect(JSON.parse(init?.body as string)).toMatchObject({ redirect_uris: ["http://127.0.0.1:4747/oauth/mcp/callback"], token_endpoint_auth_method: "none" });
+        return Response.json({ client_id: "client-1", token_endpoint_auth_method: "none" }, { status: 201 });
+      },
+      [`POST ${AS}/token`]: (init) => {
+        const f = new URLSearchParams(init?.body as string);
+        tokenCalls.push(f);
+        if (f.get("grant_type") === "authorization_code") {
+          expect(createHash("sha256").update(f.get("code_verifier")!).digest("base64url")).toBe(challenge);
+          return Response.json({ access_token: "access-1", refresh_token: "refresh-1", expires_in: 3600, token_type: "Bearer" });
+        }
+        if (f.get("refresh_token") !== grant) return Response.json({ error: "invalid_grant" }, { status: 400 });
+        grant = "refresh-2"; // rotates
+        return Response.json({ access_token: "access-2", refresh_token: "refresh-2", expires_in: 3600 });
+      },
+    };
+    const h = harness({
+      fetch: (async (u: string | URL | Request, init?: RequestInit) => {
+        const url = new URL(u instanceof Request ? u.url : u);
+        return routes[`${init?.method ?? "GET"} ${url.origin}${url.pathname}`]?.(init) ?? new Response("{}", { status: 404 });
+      }) as typeof fetch,
+    });
+    const a = api(h);
+    const { mcpServerConfigs } = await import("../src/services/mcpServers");
+    const { mcpAccessToken } = await import("../src/services/mcpOAuth");
+
+    expect((await a.put("/api/mcp-servers/omni", { transport: "http", url: MCP })).json).toEqual({ oauth: "signed_out" });
+    expect(await mcpServerConfigs(h.app)).toEqual([]); // agents only get it once signed in
+    const start = (await a.post("/api/mcp-servers/omni/oauth", { base: "http://127.0.0.1:4747/" })).json;
+    const auth = new URL(start.url);
+    expect(`${auth.origin}${auth.pathname}`).toBe(`${AS}/authorize`);
+    expect(Object.fromEntries(auth.searchParams)).toMatchObject({
+      client_id: "client-1",
+      code_challenge_method: "S256",
+      resource: MCP,
+      scope: "read write offline_access",
+      redirect_uri: "http://127.0.0.1:4747/oauth/mcp/callback",
+    });
+    challenge = auth.searchParams.get("code_challenge")!;
+
+    expect((await a.app.request("/oauth/mcp/callback?state=forged&code=c")).status).toBe(400);
+    const done = await a.app.request(`/oauth/mcp/callback?state=${auth.searchParams.get("state")}&code=code-1`);
+    expect(done.status).toBe(200);
+    expect((await a.app.request(`/oauth/mcp/callback?state=${auth.searchParams.get("state")}&code=code-1`)).status).toBe(400); // single use
+    expect((await a.get("/api/mcp-servers")).json[0]).toMatchObject({ name: "omni", oauth: "signed_in", headerNames: [] });
+    expect(await mcpServerConfigs(h.app)).toEqual([{ name: "omni", transport: "http", url: MCP, headers: {}, oauth: true }]);
+    expect(JSON.stringify((await a.get("/api/mcp-servers")).json)).not.toContain("access-1");
+
+    expect(await mcpAccessToken(h.app, "omni")).toEqual({ authorization: "Bearer access-1", expiresAt: h.clock.t + 3600_000 });
+    expect(await mcpAccessToken(h.app, "omni", "access-1")).toMatchObject({ authorization: "Bearer access-2" }); // refused: refresh now
+    expect(await mcpAccessToken(h.app, "omni", "access-1")).toMatchObject({ authorization: "Bearer access-2" }); // already refreshed
+    expect(tokenCalls.at(-1)?.get("resource")).toBe(MCP);
+    // A sign-out while a refresh is in flight wins: the refreshed tokens are dropped, not saved over it.
+    const { signOutMcp } = await import("../src/services/mcpOAuth");
+    let release!: () => void;
+    const slow = routes[`POST ${AS}/token`]!;
+    routes[`POST ${AS}/token`] = (init) => {
+      const r = slow(init);
+      return new Promise<Response>((done) => (release = () => done(r))) as unknown as Response;
+    };
+    const inFlight = mcpAccessToken(h.app, "omni", "access-2");
+    await new Promise((r) => setTimeout(r, 0));
+    await signOutMcp(h.app, "omni");
+    release();
+    await expect(inFlight).rejects.toMatchObject({ error: { code: "not_configured" } });
+    expect((await a.get("/api/mcp-servers")).json[0].oauth).toBe("signed_out");
+    routes[`POST ${AS}/token`] = slow;
+    const again = new URL((await a.post("/api/mcp-servers/omni/oauth", { base: "http://127.0.0.1:4747" })).json.url);
+    challenge = again.searchParams.get("code_challenge")!;
+    expect((await a.app.request(`/oauth/mcp/callback?state=${again.searchParams.get("state")}&code=code-2`)).status).toBe(200);
+    grant = "refresh-1";
+    // Editing the server keeps the sign-in.
+    expect((await a.put("/api/mcp-servers/omni", { transport: "http", url: MCP })).json).toEqual({ oauth: "signed_in" });
+    await h.advance(3600_000);
+    grant = "revoked";
+    await expect(mcpAccessToken(h.app, "omni")).rejects.toMatchObject({ error: { code: "not_configured" } });
+    expect((await a.get("/api/mcp-servers")).json[0].oauth).toBe("signed_out");
+    // A server that takes a token of its own asks for no sign-in.
+    expect((await a.put("/api/mcp-servers/keyed", { transport: "http", url: MCP, headers: { Authorization: "Bearer k" } })).json).toEqual({ oauth: null });
+    expect((await a.post("/api/mcp-servers/keyed/oauth", { base: "http://127.0.0.1:4747" })).json.error.code).toBe("invalid");
   });
 
   it("connects Composio: the key opens a session, becomes the composio server, and signs apps in and out as one user", async () => {

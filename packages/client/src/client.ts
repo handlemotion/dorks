@@ -358,8 +358,9 @@ export class DorksClient {
       this.invalidate("secrets");
     },
     putMcpServer: async (name: string, input: McpServerInput) => {
-      await this.api.putMcpServer(name, input);
+      const r = await this.api.putMcpServer(name, input);
       this.invalidate("mcp-servers");
+      return r;
     },
     connectComposio: async (apiKey: string) => {
       await this.api.connectComposio(apiKey);
@@ -372,6 +373,11 @@ export class DorksClient {
       this.invalidate("composio");
     },
     composioLink: (toolkit: string) => this.api.composioLink(toolkit),
+    mcpSignIn: (name: string) => this.api.mcpSignIn(name),
+    mcpSignOut: async (name: string) => {
+      await this.api.mcpSignOut(name);
+      this.invalidate("mcp-servers");
+    },
     composioUnlink: async (toolkit: string) => {
       await this.api.composioUnlink(toolkit);
       this.invalidate("composio");

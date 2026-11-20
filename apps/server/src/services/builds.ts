@@ -419,20 +419,48 @@ function mergeVars(current: { name: string; buildTime: boolean }[], changes: Dra
 }
 
 const draftInput = z.object({
+  name: z.string().optional(),
   machineType: machineTypeSchema.optional(),
   setupScript: z.string().max(MAX_SCRIPT_CHARS, "the setup script is longer than 64 KB").optional(),
   repos: z.array(buildRepo).max(MAX_BUILD_REPOS).optional(),
   vars: z.array(draftVar).max(MAX_VARS).optional(),
 });
 
-/** Writes (creates or edits) the dork's draft. Fields left out keep the draft's (or, for a new draft, the build's) value. */
+/** A build an agent proposed from the base machine that the owner has never approved or built: rejecting its draft deletes it. */
+export const isProposal = (b: BuildRow) => b.approvedHash === null && !b.image;
+
+/**
+ * A dork on the base machine proposes a new build (docs/builds.md, decision 8): an empty build that is not approved, so nothing can be
+ * imaged from it until the owner approves the draft, and the dork moves onto it so its draft, trials and submit work as on any build.
+ */
+function proposeBuild(app: App, dorkId: string, requested: string | undefined): BuildRow {
+  const dork = getDork(app.db, dorkId)!;
+  const base = requested !== undefined ? cleanName(requested) : (dork.repo.split("/").pop() || "Machine").slice(0, MAX_BUILD_NAME_CHARS);
+  if (requested !== undefined) nameTaken(app, base);
+  let name = base;
+  for (let i = 2; app.db.get("SELECT 1 FROM builds WHERE lower(name) = lower(?)", name); i++) name = `${base.slice(0, MAX_BUILD_NAME_CHARS - 4)} ${i}`;
+  if ((app.db.get<{ n: number }>("SELECT count(*) AS n FROM builds")?.n ?? 0) >= MAX_BUILDS) fail("limit", `At most ${MAX_BUILDS} builds.`);
+  const id = app.uuid();
+  const now = app.now();
+  const row: Pick<BuildRow, "machineType" | "setupScript" | "repos"> = { machineType: "default", setupScript: "", repos: [] };
+  insert(app.db, "builds", { id, name, ...row, rev: 1, specHash: hashSpec(specOf(row, [])), approvedHash: null, createdAt: now, updatedAt: now });
+  update(app.db, "dorks", { id: dorkId }, { buildId: id });
+  touch(app, { t: "builds" });
+  touch(app, { t: "dorks" });
+  touch(app, { t: "dork", dorkId });
+  return getBuild(app, id)!;
+}
+
+/**
+ * Writes (creates or edits) the dork's draft. Fields left out keep the draft's (or, for a new draft, the build's) value. On the base
+ * machine it first proposes a new build, named `name` (otherwise after the dork's repo); `name` is ignored on an existing build.
+ */
 export function writeDraft(app: App, dorkId: string, input: unknown): DraftView {
   const patch = parse(draftInput, input ?? {});
   if (patch.repos) uniqueRepos(patch.repos);
   for (const v of patch.vars ?? []) if (v.secret && v.value !== undefined) fail("invalid", `${v.name} is a secret: never put its value in a draft. Leave it out; the owner types it in.`);
   return app.db.tx(() => {
-    const b = dorkBuild(app, dorkId);
-    if (!b) return fail("not_configured", "This session runs on the base machine, not on a build. Ask the owner to create a build and start a setup session on it.");
+    const b = dorkBuild(app, dorkId) ?? proposeBuild(app, dorkId, patch.name);
     const existing = draftOfDork(app, b.id, dorkId);
     // A submitted draft is frozen until the owner decides: what they review is what they approve.
     if (existing?.status === "submitted") fail("conflict", "Your draft is waiting for the owner's decision; it cannot change until they approve or reject it.");
@@ -465,7 +493,7 @@ export function submitDraft(app: App, dorkId: string, note: unknown): DraftView 
   if (note !== undefined && (typeof note !== "string" || note.length > 2000)) fail("invalid", "note must be at most 2000 characters");
   return app.db.tx(() => {
     const b = dorkBuild(app, dorkId);
-    if (!b) return fail("not_configured", "This session runs on the base machine, not on a build.");
+    if (!b) return fail("not_configured", "This session runs on the base machine, not on a build. Propose one with machine_draft first.");
     const d = draftOfDork(app, b.id, dorkId);
     if (!d || d.status !== "editing") return fail("invalid", "There is no draft to submit. Write one with machine_draft first.");
     const text = typeof note === "string" ? note.trim() : "";
@@ -485,14 +513,14 @@ function ownDraft(app: App, buildId: string, draftId: string): DraftRow {
 }
 
 /** Tells the agent: a card in its transcript, and the same words as its next turn. */
-function decide(app: App, d: DraftRow, buildName: string, approved: boolean, reason: string) {
+function decide(app: App, d: DraftRow, buildName: string, approved: boolean, reason: string, dropped = false) {
   update(app.db, "build_drafts", { id: d.id }, { status: approved ? "approved" : "rejected", updatedAt: app.now() });
   const dork = getDork(app.db, d.dork_id);
   if (!dork || dork.deleting) return;
   append(app, d.dork_id, { type: "build_decision", draftId: d.id, buildId: d.build_id, buildName, approved, ...(reason ? { reason } : {}) });
   const text = approved
     ? `<dorks-event>The owner approved your machine draft for the build "${buildName}"; it is now the build${reason ? ` (${reason})` : ""}. An image build may be running: check it with machine_logs and fix it if it fails.</dorks-event>`
-    : `<dorks-event>The owner rejected your machine draft for the build "${buildName}"${reason ? `: ${reason}` : "."} Do not resubmit it unchanged.</dorks-event>`;
+    : `<dorks-event>The owner rejected your machine draft for the build "${buildName}"${reason ? `: ${reason}` : "."}${dropped ? " That proposed build was deleted and this session is back on the base machine." : ""} Do not resubmit it unchanged.</dorks-event>`;
   enqueue(app, d.dork_id, "user_message", text);
   dispatch(app, d.dork_id, { t: "user_message" });
 }
@@ -549,7 +577,10 @@ export function rejectDraft(app: App, buildId: string, draftId: string, reason: 
   app.db.tx(() => {
     const d = ownDraft(app, buildId, draftId);
     const b = ownBuild(app, buildId);
-    decide(app, d, b.name, false, typeof reason === "string" ? reason.trim() : "");
+    // A proposed build the owner turned down never existed for them: delete it, and its dork is back on the base machine.
+    const dropped = isProposal(b);
+    decide(app, d, b.name, false, typeof reason === "string" ? reason.trim() : "", dropped);
+    if (dropped) deleteBuild(app, buildId);
     touch(app, { t: "build", buildId });
     touch(app, { t: "builds" });
   });
