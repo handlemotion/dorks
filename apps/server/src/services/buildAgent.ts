@@ -35,7 +35,7 @@ export async function buildOp(app: App, dorkId: string, args: Record<string, unk
 
 function logs(app: App, dorkId: string, args: Record<string, unknown>) {
   const b = dorkBuild(app, dorkId);
-  if (!b) return fail("not_configured", "This session runs on the base machine, not on a build.");
+  if (!b) return fail("not_configured", "This session runs on the base machine, not on a build. Propose one with machine_draft first.");
   const runId = typeof args.runId === "string" ? args.runId : app.db.get<RunRow>("SELECT * FROM build_runs WHERE build_id = ? ORDER BY created_at DESC LIMIT 1", b.id)?.id;
   if (!runId) return fail("not_found", "This build has no runs yet. Start one with machine_run.");
   const { text, run } = runLog(app, b.id, runId);

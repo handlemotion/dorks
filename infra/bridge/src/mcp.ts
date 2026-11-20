@@ -246,7 +246,11 @@ const TOOLS: Tool[] = [
     async run(_args, sock) {
       const r = await rpcCall<{ build: MachineBuild | null; draft: MachineDraft | null }>(sock, "build", { action: "get" });
       if (!r.build)
-        return "This session runs on the base machine, not on a build, so there is nothing to change here. Ask the owner to create a build (Settings, Builds) and start a setup session on it.";
+        return (
+          "This session runs on the base machine, not on a build. To set one up, propose a new build: machine_draft (give it a `name`) " +
+          "creates it with your draft and moves this session onto it; then machine_run (trial), machine_logs and machine_submit as usual. " +
+          "Nothing can be built from it until the owner approves; if they reject it, it is deleted and this session is back on the base machine."
+        );
       return describeBuild(r.build, r.draft);
     },
   },
@@ -259,10 +263,12 @@ const TOOLS: Tool[] = [
       "time only, never at session start): write it idempotent and non-interactive, e.g. `sudo apt-get install -y ...`. `repos` is the whole list; each is " +
       "cloned to ~/work/<owner>/<name>, and its `setupScript` runs inside the clone (e.g. `pnpm install`). `vars` changes variables: a plain one may carry " +
       "`value`; for a secret give only the name and why, never a value (the owner types it in). Set `buildTime` only when the setup script needs the " +
-      "value; every variable reaches future sessions' environment anyway. Then run it with machine_run. A submitted draft cannot change until the owner decides.",
+      "value; every variable reaches future sessions' environment anyway. Then run it with machine_run. A submitted draft cannot change until the owner decides. " +
+      "On the base machine (no build yet) this proposes a new build named `name` and moves this session onto it.",
     inputSchema: {
       type: "object",
       properties: {
+        name: { type: "string", description: "Only on the base machine: the name of the build you propose. Default: the session's repository name." },
         setupScript: { type: "string", description: "The full setup script (bash). Replaces the draft's script." },
         repos: {
           type: "array",
