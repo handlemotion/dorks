@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vite-plus/test";
@@ -42,7 +42,7 @@ describe("running a command on the owner's computer", () => {
   it("waits for the owner, runs only what was allowed, scrubs the server's env, and a grant covers only the same command until revoked", async () => {
     const h = harness();
     const dork = h.seed("working");
-    const dir = mkdtempSync(join(tmpdir(), "dorks-local-"));
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "dorks-local-"))); // macOS: /var is /private/var, and `pwd` prints the latter
     process.env.DORKS_OWNER_TOKEN = "must-not-leak";
     const command = 'echo "hi from $PWD"; echo "token=${DORKS_OWNER_TOKEN:-none}"';
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import type { Change } from "../src/app";
 import { BoatError } from "../src/lib/boat";
 import { readSettings, updateSettings } from "../src/services/settings";
-import { buildLabel, recoverSnapshotBuild, runBuild, snapshotName, snapshotView, startBuild } from "../src/services/snapshot";
+import { buildLabel, rebuildIfStale, recoverSnapshotBuild, runBuild, snapshotName, snapshotView, startBuild } from "../src/services/snapshot";
 import { hasTimer } from "../src/lifecycle/dispatch";
 import { harness, testAssets, type Harness } from "./harness";
 
@@ -232,6 +232,21 @@ describe("restarts", () => {
     recoverSnapshotBuild(preset.app);
     await preset.settle();
     expect((await snapshotView(preset.app)).state).toBe("none");
+  });
+
+  it("after an app update with a newer bridge, the next start rebuilds the snapshot in use", async () => {
+    const h = await ready();
+    await startBuild(h.app);
+    await h.settle();
+    const attempt = buildRow(h).attempt;
+    await rebuildIfStale(h.app); // current: nothing to do
+    expect(buildRow(h).attempt).toBe(attempt);
+
+    h.assets.current = testAssets("bridge-v2", "installer-v1");
+    await rebuildIfStale(h.app);
+    expect(buildRow(h).attempt).toBe(attempt + 1);
+    await h.settle();
+    expect(await snapshotView(h.app)).toMatchObject({ state: "ready", stale: false, builtBundleId: h.assets.current.bundleId });
   });
 
   it("a stale job from an earlier attempt does nothing", async () => {
