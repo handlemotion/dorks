@@ -1,4 +1,4 @@
-import { ArrowUpIcon, BoxIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon } from 'lucide-react'
+import { ArrowUpIcon, BoxIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon, ZapIcon } from 'lucide-react'
 import type { AgentModelChoice } from '@dorks/shared'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import {
@@ -9,10 +9,13 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@dorks/ui/dropdown-menu'
 import { MENU_POPUP_CLASS } from '@dorks/ui/dropdown-menu'
-import { Command, CommandEmpty, CommandInput, CommandItem, CommandList, CommandSeparator } from '@dorks/ui/command'
+import { Command, CommandEmpty, CommandItem, CommandMenuInput, CommandList, CommandSeparator } from '@dorks/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@dorks/ui/popover'
 import claudeLogo from '../assets/providers/claude.svg'
 import openaiDark from '../assets/providers/openai-dark.svg'
@@ -54,14 +57,16 @@ const barsFor = (efforts: string[], effort: string) => Math.max(1, Math.ceil(((e
 
 /**
  * The Claude model menu's state. `choices` are the models the agent itself reported (the CLI's own list, never one kept here);
- * `model` and `effort` are the session's choice (absent: the agent's default); `active` is what the agent confirmed it runs.
+ * `model`, `effort` and `fast` are the session's choice (absent: the agent's default, fast mode off); `active` is what the agent
+ * confirmed it runs.
  */
 export interface ModelPicker {
   choices: AgentModelChoice[]
   model?: string
   effort?: string
+  fast?: boolean
   active?: { model?: string; effort?: string }
-  onChange: (model: string | undefined, effort: string | undefined) => void
+  onChange: (model: string | undefined, effort: string | undefined, fast: boolean) => void
 }
 
 /** The agent's own name for a model id or alias, preferring a concrete model over the `default` alias. */
@@ -216,8 +221,12 @@ function modelMenuState(provider: AgentProvider, picker: ModelPicker | undefined
   const chosen = models && (modelName(choices, active?.model) ?? modelName(choices, models.model ?? DEFAULT))
   const label = chosen || agentLabel || AGENT_NAMES[provider]
   const effort = active ? active.effort : models?.effort
-  const efforts: string[] = choices.find((c) => c.model === (models?.model ?? DEFAULT))?.efforts ?? []
-  return { models, choices, active, label, effort, efforts }
+  const choice = choices.find((c) => c.model === (models?.model ?? DEFAULT))
+  const efforts: string[] = choice?.efforts ?? []
+  // Fast mode only for a model that offers it.
+  const fastOffered = !!choice?.fast
+  const fast = fastOffered && !!models?.fast
+  return { models, choices, active, label, effort, efforts, fastOffered, fast }
 }
 
 /** Claude's group: the models the agent reported, or Claude Code as a single choice. */
@@ -240,8 +249,8 @@ function ClaudeModels({
         value={models.model ?? DEFAULT}
         onValueChange={(value) => {
           const next = choices.find((c) => c.model === value)
-          // An effort the new model does not support falls back to its default.
-          models.onChange(value === DEFAULT ? undefined : value, models.effort && next?.efforts.includes(models.effort as never) ? models.effort : undefined)
+          // An effort the new model does not support falls back to its default; fast mode stays on only where the model offers it.
+          models.onChange(value === DEFAULT ? undefined : value, models.effort && next?.efforts.includes(models.effort as never) ? models.effort : undefined, !!models.fast && !!next?.fast)
         }}
       >
         {choices.map((c) => (
@@ -263,25 +272,63 @@ function ClaudeModels({
   )
 }
 
-/** The chosen model's efforts, with the agent's default first. */
-function EffortGroup({ models, efforts }: { models: ModelPicker; efforts: string[] }) {
+/** A submenu row: its name, then the current value in grey before the chevron. */
+function SubRow({ icon, name, value }: { icon: ReactNode; name: string; value: string }) {
+  return (
+    <>
+      {icon}
+      <span className="flex-1">{name}</span>
+      <span className="text-muted-foreground">{value}</span>
+    </>
+  )
+}
+
+/** The chosen model's efforts (the agent's default first) and fast mode, each in its own submenu so the menu stays short. */
+function ModelOptions({ models, efforts, fastOffered, fast }: { models: ModelPicker; efforts: string[]; fastOffered: boolean; fast: boolean }) {
+  if (!efforts.length && !fastOffered) return null
+  const effort = models.effort
   return (
     <>
       <DropdownMenuSeparator />
       <DropdownMenuGroup>
-        <DropdownMenuLabel>Effort</DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={models.effort ?? DEFAULT} onValueChange={(value) => models.onChange(models.model, value === DEFAULT ? undefined : value)}>
-          <DropdownMenuRadioItem value={DEFAULT} closeOnClick>
-            <EffortBars level={0} />
-            Default
-          </DropdownMenuRadioItem>
-          {efforts.map((e) => (
-            <DropdownMenuRadioItem key={e} value={e} closeOnClick>
-              <EffortBars level={barsFor(efforts, e)} />
-              {effortName(e)}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
+        {efforts.length > 0 && (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <SubRow icon={<EffortBars level={effort ? barsFor(efforts, effort) : 0} />} name="Effort" value={effort ? effortName(effort) : 'Default'} />
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-40">
+              <DropdownMenuRadioGroup value={effort ?? DEFAULT} onValueChange={(value) => models.onChange(models.model, value === DEFAULT ? undefined : value, fast)}>
+                <DropdownMenuRadioItem value={DEFAULT} closeOnClick>
+                  <EffortBars level={0} />
+                  Default
+                </DropdownMenuRadioItem>
+                {efforts.map((e) => (
+                  <DropdownMenuRadioItem key={e} value={e} closeOnClick>
+                    <EffortBars level={barsFor(efforts, e)} />
+                    {effortName(e)}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        )}
+        {fastOffered && (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <SubRow icon={<ZapIcon />} name="Fast mode" value={fast ? 'On' : 'Off'} />
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-32">
+              <DropdownMenuRadioGroup value={fast ? 'on' : 'off'} onValueChange={(value) => models.onChange(models.model, models.effort, value === 'on')}>
+                <DropdownMenuRadioItem value="on" closeOnClick>
+                  On
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="off" closeOnClick>
+                  Off
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        )}
       </DropdownMenuGroup>
     </>
   )
@@ -326,7 +373,7 @@ function ModelMenu({
   isNewSession: boolean
   disabled: boolean
 }) {
-  const { models, choices, active, label, effort, efforts } = modelMenuState(provider, picker, agentLabel)
+  const { models, choices, active, label, effort, efforts, fastOffered, fast } = modelMenuState(provider, picker, agentLabel)
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -335,7 +382,7 @@ function ModelMenu({
           <InputGroupButton
             size="sm"
             variant="ghost"
-            aria-label={`Model: ${label}${effort ? `, effort: ${effortName(effort)}` : ''}`}
+            aria-label={`Model: ${label}${effort ? `, effort: ${effortName(effort)}` : ''}${fast ? ', fast mode' : ''}`}
             className="ml-auto h-7 gap-1.5 px-2 text-[13px] text-muted-foreground hover:text-foreground"
           />
         }
@@ -346,6 +393,7 @@ function ModelMenu({
             <EffortBars level={barsFor(efforts, effort)} />
           </span>
         )}
+        {fast && <ZapIcon className="text-muted-foreground" />}
         <ChevronDownIcon />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
@@ -362,7 +410,7 @@ function ModelMenu({
             </DropdownMenuRadioItem>
           </DropdownMenuRadioGroup>
         </DropdownMenuGroup>
-        {models && efforts.length > 0 && <EffortGroup models={models} efforts={efforts} />}
+        {models && <ModelOptions models={models} efforts={efforts} fastOffered={fastOffered} fast={fast} />}
         {models && !isNewSession && <ModelConfirmation active={active} />}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -541,9 +589,9 @@ export function Composer({
             disabled={locked}
             ref={textRef}
             rows={1}
-            // A 44px row: 12px above and below a 20px line, the text 42px in from each side (past the 28px buttons, 8px from the
+            // A 44px row: 12px above and below a 20px line of 15px text, 42px in from each side (past the 28px buttons, 8px from the
             // edge, and 6px more). Stacked, the bottom inset makes room for the button row (16px gap, 28px button, 8px edge).
-            className={`max-h-[40vh] min-h-0 py-3 px-[42px] leading-5 ${stacked ? 'pb-13' : ''}`}
+            className={`max-h-[40vh] min-h-0 py-3 px-[42px] leading-5 md:text-[15px] ${stacked ? 'pb-13' : ''}`}
           />
           {/* Attach and the main button keep one spot, 8px from the bottom corners, whether the box is one row or stacked. */}
           <div className="absolute bottom-2 left-2">
@@ -684,7 +732,7 @@ function RepositoryPicker({ repo, setRepo, repositories, disabled }: { repo: str
       {/* Styled as the app's dropdown menus (hairline, soft shadow, 32px rows), since that is what it is. */}
       <PopoverContent align="start" className={`${MENU_POPUP_CLASS} w-80 gap-0 p-0`}>
         <Command shouldFilter={false} loop className="rounded-none bg-transparent p-0">
-          <CommandInput aria-label="Search repositories" autoFocus value={query} onValueChange={setQuery} placeholder="Search repositories…" className="placeholder:text-muted-foreground" />
+          <CommandMenuInput aria-label="Search repositories" autoFocus value={query} onValueChange={setQuery} placeholder="Search repositories…" />
           <CommandList className="max-h-72 p-1">
             <CommandEmpty className="px-2 py-3 text-left text-xs text-muted-foreground">
               {typed ? 'No repositories match. Type a full owner/repo to use it.' : 'No repositories yet. Type an owner/repo.'}

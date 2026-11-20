@@ -264,4 +264,8 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE dorks ADD COLUMN build_id TEXT REFERENCES builds (id) ON DELETE SET NULL;
   ALTER TABLE settings ADD COLUMN default_build_id TEXT;
   `,
+  `
+  -- Claude: fast mode chosen in the UI (only for a model that offers it).
+  ALTER TABLE dorks ADD COLUMN fast INTEGER NOT NULL DEFAULT 0;
+  `,
 ];

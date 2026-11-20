@@ -115,8 +115,8 @@ export function createApi(config: ApiConfig) {
     uploadImage: (image: Blob) => request<{ id: string }>("POST", "/api/images", image),
     desktopUrl: (id: string, opts: DesktopOptions) => request<{ url: string }>("POST", `${dork(id)}/desktop`, opts),
     setArchived: (id: string, archived: boolean) => request<object>("POST", `${dork(id)}/archive`, { archived }),
-    /** Claude: `model` null for the agent's default, `effort` null for the model's default. */
-    chooseModel: (id: string, model: string | null, effort: string | null) => request<object>("POST", `${dork(id)}/model`, { model, effort }),
+    /** Claude: `model` null for the agent's default, `effort` null for the model's default, `fast` for fast mode. */
+    chooseModel: (id: string, model: string | null, effort: string | null, fast = false) => request<object>("POST", `${dork(id)}/model`, { model, effort, fast }),
     chooseCodexModel: (id: string, model: string, effort: string) => request<object>("POST", `${dork(id)}/codex-model`, { model, effort }),
     /** Newest first with `before` (or neither); ascending with `after` (everything with seq > after). */
     events: (id: string, q: { before?: number; after?: number; limit?: number } = {}) => request<EventsPage>("GET", `${dork(id)}/events`, undefined, q),

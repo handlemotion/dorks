@@ -341,7 +341,7 @@ export class Agent {
 const MODEL_VALUE = /^[a-zA-Z0-9._:[\]-]{1,64}$/;
 const EFFORTS = ["none", "low", "medium", "high", "xhigh", "max"] as const;
 
-/** The CLI's `initialize` model list (`{value, displayName, description, resolvedModel, supportedEffortLevels}`) in the wire shape. */
+/** The CLI's `initialize` model list (`{value, displayName, description, resolvedModel, supportedEffortLevels, supportsFastMode}`) in the wire shape. */
 export function modelChoices(raw: unknown): AgentModelChoice[] {
   if (!Array.isArray(raw)) return [];
   const out: AgentModelChoice[] = [];
@@ -356,6 +356,7 @@ export function modelChoices(raw: unknown): AgentModelChoice[] {
       ...(typeof o.description === "string" && o.description ? { description: o.description.slice(0, 200) } : {}),
       ...(typeof o.resolvedModel === "string" && MODEL_VALUE.test(o.resolvedModel) ? { resolved: o.resolvedModel } : {}),
       efforts,
+      ...(o.supportsFastMode === true ? { fast: true } : {}),
     });
   }
   return out;
