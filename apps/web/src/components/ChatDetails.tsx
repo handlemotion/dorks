@@ -11,8 +11,8 @@ import { EmptyState } from './EmptyState'
 import { ImageLightbox, ImageTrigger, type LightboxImage } from './ImageLightbox'
 import { BAR_BUTTON, port, PreviewBrowser, useShownServers, type PreviewServer } from './PreviewBrowser'
 import { Tip } from './Tip'
-import { ProgressPanel } from './ProgressPanel'
-import { useProgress, type ProgressTask, type ProgressTurn } from '../lib/progress'
+import { ProgressPanel, stepLine } from './ProgressPanel'
+import { progressSteps, stepStatus, useProgress, type ProgressTask, type ProgressTurn } from '../lib/progress'
 import { PullRequestPanel, Stat, sum, TAB_CLASS, type FileChange, type PullRequestPanelData } from './PullRequestPanel'
 
 /** A file the agent produced in the chat: a screenshot, a design, a document. */
@@ -149,6 +149,7 @@ export function ChatDetails({
           previews={data.previews ?? []}
           panelLabel={(p) => (p === 'changes' && prNumber ? `#${prNumber}` : PANEL_LABEL[p])}
           panelIcon={(p) => (p === 'changes' && prNumber ? prIcon : PANEL_ICON[p])}
+          tilePreview={(p) => <TilePreview panel={p} data={data} pr={prs[0]} />}
           onOpen={(target) => tabs.replace(key, target)}
           onOpenPreview={(s) => {
             setPreview(s.url)
@@ -347,6 +348,7 @@ function NewTab({
   previews,
   panelLabel,
   panelIcon,
+  tilePreview,
   onOpen,
   onOpenPreview,
 }: {
@@ -355,6 +357,7 @@ function NewTab({
   previews: PreviewServer[]
   panelLabel: (p: Panel) => string
   panelIcon: (p: Panel) => ReactNode
+  /** What a panel's tile shows of it. */ tilePreview: (p: Panel) => ReactNode
   onOpen: (target: TabKey) => void
   onOpenPreview: (server: PreviewServer) => void
 }) {
@@ -455,26 +458,127 @@ function NewTab({
           </ImageLightbox>
         )}
         {shownPanels.length > 0 && (
-          <IndexSection title="Panels" hideTitle>
-            {shownPanels.map((p) => (
-              <li key={p}>
-                <button type="button" className={INDEX_ROW} onClick={() => onOpen(p)}>
-                  {panelIcon(p)}
-                  <span className="truncate">{panelLabel(p)}</span>
-                </button>
-              </li>
-            ))}
-          </IndexSection>
+          <section aria-label="Panels">
+            <ul className="grid grid-cols-2 gap-x-3 gap-y-4">
+              {shownPanels.map((p) => (
+                <li key={p}>
+                  <button
+                    type="button"
+                    className="group/tile flex w-full flex-col gap-2 rounded-[8px] text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                    onClick={() => onOpen(p)}
+                  >
+                    <span className="flex aspect-square w-full flex-col overflow-hidden rounded-[8px] bg-foreground/[0.03] p-3 text-xs text-muted-foreground transition-colors group-hover/tile:bg-foreground/[0.05]">
+                      {tilePreview(p)}
+                    </span>
+                    <span className="flex items-center gap-2 px-0.5 [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-muted-foreground">
+                      {panelIcon(p)}
+                      <span className="truncate">{panelLabel(p)}</span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
         )}
       </div>
     </div>
   )
 }
 
-function IndexSection({ title, hideTitle, children }: { title: string; /** The panels list reads without a heading, as in the reference. */ hideTitle?: boolean; children: ReactNode }) {
+/** A word or two in the middle of an empty tile. */
+const TileNote = ({ children }: { children: ReactNode }) => <span className="m-auto flex items-center gap-1.5 text-center">{children}</span>
+
+/**
+ * What a New tab's panel tile shows: Progress its latest steps and the task count, Artifacts its newest thumbnails, Changes the
+ * pull request or the changed files, Computer whether it is awake. Never a blank box: a tile with nothing says so in a word.
+ */
+function TilePreview({ panel, data, pr }: { panel: Panel; data: ChatDetailsData; pr?: IndexPr }) {
+  if (panel === 'progress') {
+    const steps = progressSteps(data.progress ?? [])
+    if (steps.length === 0) return <TileNote>No steps yet</TileNote>
+    const tasks = data.tasks ?? []
+    const running = steps.some((s) => stepStatus(s.block) === 'running')
+    return (
+      <>
+        <span className="flex min-h-0 flex-1 flex-col justify-end gap-1.5 overflow-hidden">
+          {steps.slice(-5).map((s, i, shown) => {
+            const { text, mono } = stepLine(s)
+            return (
+              <span key={s.key} className={`truncate ${mono ? 'font-mono' : ''} ${i === shown.length - 1 ? 'text-foreground' : ''}`}>
+                {text}
+              </span>
+            )
+          })}
+        </span>
+        <span className="mt-3 flex items-center gap-1.5 tabular-nums">
+          {running && <span aria-hidden className="size-1.5 rounded-full bg-brand" />}
+          {running ? 'Working' : null}
+          {running && tasks.length > 0 ? ' · ' : null}
+          {tasks.length > 0 ? `${tasks.filter((t) => t.status === 'completed').length} / ${tasks.length} tasks` : running ? null : `${steps.length} steps`}
+        </span>
+      </>
+    )
+  }
+  if (panel === 'artifacts') {
+    const items = [
+      ...(data.previews ?? []).map((s) => ({ id: s.url, src: undefined as string | undefined, preview: true })),
+      ...(data.artifacts ?? []).map((a) => ({ id: a.id, src: a.src, preview: false })),
+    ].slice(-4)
+    if (items.length === 0) return <TileNote>None yet</TileNote>
+    return (
+      <span className="grid flex-1 grid-cols-2 grid-rows-2 gap-1.5">
+        {items.map((it) => (
+          <span key={it.id} className="relative flex items-center justify-center overflow-hidden rounded-[4px] bg-foreground/[0.04]">
+            {it.src ? <img src={it.src} alt="" className="size-full object-cover" /> : <AppWindowIcon className="size-4" />}
+            {it.preview && <span aria-hidden className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-emerald-500" />}
+          </span>
+        ))}
+      </span>
+    )
+  }
+  if (panel === 'changes') {
+    const changes = data.changes ?? []
+    if (!pr && changes.length === 0) return <TileNote>No changes</TileNote>
+    return (
+      <>
+        {pr ? (
+          <span className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden">
+            <span className="tabular-nums">{pr.repo ? `${pr.repo}#${pr.number ?? ''}` : `#${pr.number ?? ''}`}</span>
+            <span className="line-clamp-4 text-sm text-foreground">{pr.title}</span>
+          </span>
+        ) : (
+          <span className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden font-mono">
+            {changes.slice(0, 5).map((c) => (
+              <span key={c.path} className="truncate">
+                {c.path.split('/').pop()}
+              </span>
+            ))}
+          </span>
+        )}
+        <span className="mt-3 flex items-center gap-1.5">
+          <Stat additions={pr?.additions ?? sum(changes, 'additions')} deletions={pr?.deletions ?? sum(changes, 'deletions')} />
+          {changes.length > 0 && <span className="tabular-nums">{changes.length} files</span>}
+        </span>
+      </>
+    )
+  }
+  const c = data.computer
+  const state = !c || (!c.awake && !c.used) ? 'Not used' : c.awake ? 'Awake' : 'Asleep'
+  return (
+    <span className="m-auto flex flex-col items-center gap-2">
+      <MonitorIcon className="size-6" strokeWidth={1.5} />
+      <span className="flex items-center gap-1.5">
+        {state === 'Awake' && <span aria-hidden className="size-1.5 rounded-full bg-emerald-500" />}
+        {state}
+      </span>
+    </span>
+  )
+}
+
+function IndexSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-1">
-      <h3 className={hideTitle ? 'sr-only' : 'px-2 text-sm font-normal text-muted-foreground'}>{title}</h3>
+      <h3 className="px-2 text-sm font-normal text-muted-foreground">{title}</h3>
       <ul className="flex flex-col">{children}</ul>
     </section>
   )
