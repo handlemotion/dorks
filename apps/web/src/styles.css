@@ -46,11 +46,21 @@
     @apply h-full;
   }
 
-  /* Nothing rubber-bands or chains its scroll to the window. overscroll-behavior is not inherited, so it is set on every element;
-     `none` (not `contain`) also stops a pane's own bounce in WebKit (the desktop shell's WKWebView). The app shell is fixed-height and
-     never scrolls the document; onboarding still can, on a short window or at high zoom. */
-  * {
+  /* Nothing rubber-bands or chains its scroll to the window. overscroll-behavior is not inherited, so it is set on the document and on
+     each real scroller; `none` (not `contain`) also stops a pane's own bounce in WebKit (the desktop shell's WKWebView). Not on every
+     element: an `overflow: hidden` box (a clipped bubble, a truncated label) is a scroll container too, and `none` there stops the wheel
+     before it reaches the pane, so the page would not scroll under the pointer. */
+  html,
+  body,
+  .overflow-y-auto,
+  [data-slot='scroll-area-viewport'] {
     @apply overscroll-none;
+  }
+
+  /* A sideways scroller (a code block, a row of chips) only stops its own axis, so a vertical wheel over it still scrolls the pane. */
+  .overflow-auto,
+  .overflow-x-auto {
+    @apply overscroll-x-none;
   }
 
   body {
