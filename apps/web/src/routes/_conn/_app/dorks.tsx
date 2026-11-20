@@ -20,7 +20,7 @@ import { LocalAccessProvider } from '../../../components/LocalRequest'
 import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, useWide, type ChatDetailsData } from '../../../components/ChatDetails'
 import type { PullRequestPanelData } from '../../../components/PullRequestPanel'
 import { latestTasks, progressStore, progressTurns } from '../../../lib/progress'
-import { withImages, Composer, type AgentProvider, type ModelPicker } from '../../../components/ChatComposer'
+import { withImages, Composer, preferredModel, type AgentProvider, type ModelPicker } from '../../../components/ChatComposer'
 import { ChatMenu } from '../../../components/ChatMenu'
 import { ArchiveButton, PageHeader } from '../../../components/PageHeader'
 import { SetupStatus } from '../../../components/SetupStatus'
@@ -61,7 +61,7 @@ function Dorks() {
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-onboarding={settings ? (ready ? 'complete' : 'preparing') : 'loading'}>
-      {!selected && <PageHeader title="New session" divider={false} />}
+      {!selected && <PageHeader title="New session" />}
       {settings && ready && !settings.claudeToken && (
         <Notice>
           Add a{' '}
@@ -196,7 +196,12 @@ function NewDork({
         pending={pending}
         disabled={disabled || needsClaudeToken}
         error={error}
-        picker={{ choices: settings?.claudeModels ?? [], ...choice, onChange: (model, effort, fast) => setChoice({ model, effort, fast }) }}
+        picker={{
+          choices: settings?.claudeModels ?? [],
+          ...choice,
+          model: choice.model ?? preferredModel(settings?.claudeModels ?? []),
+          onChange: (model, effort, fast) => setChoice({ model, effort, fast }),
+        }}
         upload={actions.uploadImage}
         machine={{ builds: built, buildId, onChange: setPicked }}
         onSubmit={(images) =>
@@ -366,7 +371,6 @@ function Thread({ dorkId }: { dorkId: string }) {
     >
       <section className="flex min-w-0 flex-1 flex-col" aria-label="thread" data-state={dork.state}>
         <PageHeader
-          divider={false}
           title={dork.title}
           titleActions={<ArchiveButton archived={dork.archived} disabled={archiving} onClick={() => void runArchive(() => actions.archiveDork(dorkId, !dork.archived))} />}
           actions={

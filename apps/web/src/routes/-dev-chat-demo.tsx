@@ -371,7 +371,6 @@ export function Demo() {
       >
         <div className="flex min-w-0 flex-1 flex-col">
           <PageHeader
-            divider={showNew}
             title={showNew ? 'New session' : 'Fix flaky bridge reconnect after wake'}
             titleActions={!showNew && <ArchiveButton archived={archived} onClick={() => setArchived((a) => !a)} />}
             actions={

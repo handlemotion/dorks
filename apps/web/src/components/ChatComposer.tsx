@@ -1,5 +1,5 @@
 import { ArrowUpIcon, BoxIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon, ZapIcon } from 'lucide-react'
-import type { AgentModelChoice } from '@dorks/shared'
+import { modelLabel, type AgentModelChoice } from '@dorks/shared'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import {
   DropdownMenu,
@@ -52,6 +52,10 @@ const MAIN =
   'size-7 rounded-(--control-radius) [--control-radius:6px] [&_svg]:size-3.5 bg-brand text-brand-foreground hover:bg-brand-hover disabled:bg-foreground/[0.08] disabled:text-foreground/35 disabled:opacity-100'
 const EFFORT_NAMES: Record<string, string> = { none: 'None', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max' }
 const DEFAULT = 'default'
+/** The model a new session starts on when nothing else is chosen: Opus, the family's current version. */
+export const PREFERRED = 'opus'
+/** Opus when the agent offers it; otherwise nothing, the CLI's own default. */
+export const preferredModel = (choices: readonly AgentModelChoice[]) => (choices.some((c) => c.model === PREFERRED) ? PREFERRED : undefined)
 /** An effort among the model's as one to three bars. */
 const barsFor = (efforts: string[], effort: string) => Math.max(1, Math.ceil(((efforts.indexOf(effort) + 1) / efforts.length) * 3))
 
@@ -74,7 +78,7 @@ function modelName(choices: AgentModelChoice[], id: string | undefined): string 
   if (!id) return undefined
   const resolved = choices.find((c) => c.model === id)?.resolved ?? id
   const named = choices.find((c) => c.model !== DEFAULT && (c.resolved ?? c.model) === resolved) ?? choices.find((c) => c.model === id)
-  return named?.name ?? (id === DEFAULT ? undefined : id)
+  return named ? modelLabel(named) : id === DEFAULT ? undefined : id
 }
 
 /** An attached image: shown at once from a local object URL while it uploads; `imageId` is the server's once it has. */
@@ -247,8 +251,10 @@ function ClaudeModels({
     // The CLI lists each family's current model by its alias (`opus`) and pinned older versions by full id (`claude-opus-4-8`):
     // the current ones up front, the rest (and never the one chosen) one level down.
     const chosen = models.model ?? DEFAULT
-    const latest = choices.filter((c) => !c.model.startsWith('claude-') || c.model === chosen)
-    const older = choices.filter((c) => !latest.includes(c))
+    // Dorks defaults to Opus, so the CLI's own `default` (whatever it resolves to) is listed only while a session still uses it.
+    const offered = choices.filter((c) => c.model !== DEFAULT || chosen === DEFAULT || !choices.some((o) => o.model === PREFERRED))
+    const latest = offered.filter((c) => !c.model.startsWith('claude-') || c.model === chosen)
+    const older = offered.filter((c) => !latest.includes(c))
     return (
       <DropdownMenuRadioGroup
         value={models.model ?? DEFAULT}
@@ -293,7 +299,7 @@ function ModelItem({ choice: c, choices }: { choice: AgentModelChoice; choices: 
   return (
     <DropdownMenuRadioItem value={c.model} closeOnClick title={c.description}>
       <ProviderIcon provider="claude" />
-      <span className="min-w-0 truncate">{c.model === DEFAULT ? 'Default' : c.name}</span>
+      <span className="min-w-0 truncate">{c.model === DEFAULT ? 'Default' : modelLabel(c)}</span>
       {stands && stands !== c.name && <span className="min-w-0 truncate text-muted-foreground">{stands}</span>}
     </DropdownMenuRadioItem>
   )
