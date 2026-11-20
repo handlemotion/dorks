@@ -138,7 +138,7 @@ export function SelectionReply() {
           finalFocus={false}
           data-testid="selection-reply-button"
           data-selection-reply=""
-          className="w-auto gap-0 rounded-[8px] p-0.5"
+          className="w-auto gap-0 rounded-[8px] p-0.5 [--control-radius:6px]"
         >
           <button
             type="button"
