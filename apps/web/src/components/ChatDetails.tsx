@@ -195,7 +195,7 @@ export function ChatDetails({
     <aside aria-label="Chat details" className={['flex h-full min-h-0 min-w-0 flex-col border-l border-border', className].filter(Boolean).join(' ')}>
       <Tabs value={tabs.selected} onValueChange={(value) => tabs.select(value as TabKey)} className="min-h-0 min-w-0 flex-1 gap-0">
         {/* 40px, 4px down from the top, so its labels sit on the chat title's 24px line. */}
-        <div data-tauri-drag-region className="mt-1 flex h-10 min-w-0 shrink-0 items-center gap-0.5 pr-[10px] pl-1.5">
+        <div data-tauri-drag-region className="mt-1 flex h-10 min-w-0 shrink-0 items-center gap-0.5 pr-[10px] pl-[10px]">
           <TabsList className="h-7! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
             {tabs.keys.map((key) => {
               const { icon, text, title } = label(key)
