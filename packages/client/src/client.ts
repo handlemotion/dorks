@@ -155,7 +155,7 @@ export class DorksClient {
     return this.query<Usage>("usage", () => this.api.getUsage());
   }
 
-  /** What the saved GitHub token can see (the server caches it briefly). Refetched when settings change, since the token may have. */
+  /** What the GitHub CLI's login can see (the server caches it briefly). Refetched when settings change. */
   githubRepos() {
     return this.query<GithubRepos>("github-repos", () => this.api.getGithubRepos());
   }
@@ -263,6 +263,13 @@ export class DorksClient {
     },
     updateSettings: async (patch: SettingsPatch) => {
       await this.api.updateSettings(patch);
+      this.invalidate("settings");
+      if ("githubConnected" in patch) this.invalidate("github-repos");
+    },
+    /** Reads the GitHub CLI and GitHub again (after `gh auth refresh`, or granting it an organization) and refreshes `githubRepos()`. */
+    refreshGithub: async () => {
+      await this.api.getGithubRepos(true);
+      this.invalidate("github-repos");
       this.invalidate("settings");
     },
     checkBoat: (input: { boatKey?: string; boatOrg?: string }) => this.api.checkBoat(input),

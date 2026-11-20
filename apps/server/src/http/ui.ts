@@ -268,7 +268,7 @@ export function uiApp(app: App): Hono {
         yield* serviceAsync((a) => updateSettings(a, patch));
         yield* service((a) => {
           if ("claudeToken" in patch || "boatKey" in patch || "boatOrg" in patch) forgetUsage(a);
-          if ("githubToken" in patch) forgetGithubRepos(a);
+          if ("githubConnected" in patch) forgetGithubRepos(a);
           console.error(`settings saved: ${Object.keys(patch).sort().join(", ")}`); // names only, never values
           // A new Boat key starts the base-snapshot build in the background (onboarding has no "Prepare Boat" step), or retries a failed one.
           if (typeof patch.boatKey === "string" && patch.boatKey.trim()) buildIfMissing(a, { retryFailed: true });
@@ -301,10 +301,11 @@ export function uiApp(app: App): Hono {
     on((c) => serviceAsync(getUsage).pipe(Effect.map((u) => c.json(u)))),
   );
 
-  // ---- what the saved GitHub token can see: its user, organizations and repositories (services/githubRepos.ts), cached briefly
+  // ---- what the GitHub CLI's login can see: its user, organizations and repositories (services/githubRepos.ts), cached briefly;
+  // `?fresh=1` reads gh and GitHub again (after `gh auth refresh`, or granting the GitHub CLI access to an organization)
   api.get(
     "/api/github/repos",
-    on((c) => serviceAsync(githubRepos).pipe(Effect.map((r) => c.json(r)))),
+    on((c) => serviceAsync((a) => githubRepos(a, { fresh: c.req.query("fresh") === "1" })).pipe(Effect.map((r) => c.json(r)))),
   );
 
   // ---- Boat key check (nothing is saved)

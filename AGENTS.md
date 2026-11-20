@@ -46,7 +46,7 @@ DORKS_PUBLIC_URL=$(jq -r .tunnel.url /tmp/tunnel.json) DORKS_TUNNEL_SERVICE=$SVC
   DORKS_BRIDGE_PORT=4748 DORKS_UI_PORT=0 DORKS_OWNER_TOKEN=dev-owner-token DORKS_DATA_DIR=<temp dir> bun run apps/server/src/main.ts
 ```
 
-Then `PUT /api/settings` with `boatKey`, `boatOrg`, `claudeToken` and `githubToken` from Doppler (one piped JSON body, as above). Saving the Boat key builds the base snapshot on Boat (about a minute); poll `GET /api/snapshot` until `ready`, then create a dork on a real repo. This spends Boat credit: `DELETE /api/dorks/:id` when done (it destroys the box), and `npx wurmhol stop 4748`.
+Start the server with `GH_TOKEN` set to Doppler's `GITHUB_TOKEN` (GitHub is the GitHub CLI's login, and the server resolves it like `gh` does: `GH_TOKEN` first), then `PUT /api/settings` with `boatKey`, `boatOrg` and `claudeToken` from Doppler (one piped JSON body, as above) plus `githubConnected: true`. Saving the Boat key builds the base snapshot on Boat (about a minute); poll `GET /api/snapshot` until `ready`, then create a dork on a real repo. This spends Boat credit: `DELETE /api/dorks/:id` when done (it destroys the box), and `npx wurmhol stop 4748`.
 
 ## Testing
 

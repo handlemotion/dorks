@@ -8,9 +8,9 @@ Claude Code stays stock. Autonomy is built from the bridge, plus hooks, a `gh` s
 
 | # | Decision |
 |---|---|
-| 1 | **Repos:** any repo the GitHub token can reach. A starting repo is picked when the first message is sent (`POST /api/dorks {repo}`), and the agent may work in others. |
+| 1 | **Repos:** any repo the GitHub CLI login can reach. A starting repo is picked when the first message is sent (`POST /api/dorks {repo}`), and the agent may work in others. |
 | 2 | **Comment authors:** a `commentPolicy` setting (`packages/shared/src/autonomy.ts`): `all` (the default) or an `allowlist` of GitHub logins (bots by login, for example `coderabbitai[bot]`). The token's owner always passes. The agent comments as the token's owner too, so a comment or review by that login counts as the agent's (and is dropped) when GitHub stamped it while a dork subscribed to the PR was mid-turn, or within 15 s after; written while every such dork was idle or asleep, it is the owner's and wakes the dork. An owner comment made mid-turn is dropped: say it in the chat instead. |
-| 3 | **Identity:** the dork comments and pushes as the owner of the GitHub token ([GitHub](github.md)). |
+| 3 | **Identity:** the dork comments and pushes as your GitHub CLI login ([GitHub](github.md)). |
 | 4 | **Subscriptions:** several dorks may subscribe to one PR. A dork auto-subscribes to PRs it creates. The user can subscribe it to any other PR. At most 50 live subscriptions per dork. |
 | 5 | **After green and approved:** the agent posts a short "on standby" note in the thread and goes idle (then sleeps). It never auto-merges. |
 | 6 | **Workflows:** the token needs workflow write access, so the agent may fix CI configuration. |
@@ -83,7 +83,7 @@ Bridge-facing operations (`rpc` over the socket, see [architecture](architecture
 | `subscribe_pr { repo, number, source: "auto" \| "agent" }` | Idempotent. Appends a `subscription` event. |
 | `unsubscribe_pr { repo, number }` | Sets `status: ended`. Appends an event. |
 | `subscriptions` push | `SubscriptionView[]` for this dork's non-ended subscriptions, re-sent on change. The bridge caches it for hooks and the CLI. |
-| `configure` / `gh_token` | Return the stored GitHub token (the same token for every repo it can reach). |
+| `configure` / `gh_token` | Return the GitHub CLI's current token (the same token for every repo it can reach). |
 
 UI operations: `GET/POST/DELETE /api/dorks/:id/subscriptions`, `POST .../subscriptions/resume` (un-stall: resets `ciFixAttempts`), and the `commentPolicy` setting.
 

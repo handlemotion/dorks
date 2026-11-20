@@ -6,6 +6,7 @@ import { loadConfig } from "./config";
 import { Db } from "./db";
 import { AppEnv } from "./http/route";
 import { getBox, getSnapshotDriver } from "./lib/box";
+import { readGhLogin } from "./lib/ghCli";
 import { loadAssets, makeAssets, type SnapshotAssets } from "./snapshot/assets";
 
 export interface Overrides {
@@ -13,6 +14,7 @@ export interface Overrides {
   hub?: Hub;
   now?: () => number;
   fetch?: typeof fetch;
+  ghLogin?: App["ghLogin"];
   getBox?: App["getBox"];
   getSnapshotDriver?: App["getSnapshotDriver"];
   snapshotAssets?: App["snapshotAssets"];
@@ -30,6 +32,7 @@ export function createApp(cfg: Config, o: Overrides = {}): App {
     now: o.now ?? Date.now,
     uuid: () => randomUUID(),
     fetch: o.fetch ?? fetch,
+    ghLogin: o.ghLogin ?? (() => readGhLogin()),
     getBox: () => (o.getBox ?? (() => getBox(app)))(),
     bridgeUrl: () => (cfg.publicUrl ? `${cfg.publicUrl.replace(/^https:/, "wss:")}/bridge` : cfg.boxProvider === "sim" ? `ws://127.0.0.1:${cfg.bridgePort}/bridge` : undefined),
     getSnapshotDriver: () => (o.getSnapshotDriver ?? (() => getSnapshotDriver(app)))(),

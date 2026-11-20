@@ -33,7 +33,7 @@ function api(h: Harness) {
 async function onboarded(over: Parameters<typeof harness>[0] = {}) {
   const h = harness(over);
   const a = api(h);
-  await updateSettings(h.app, { claudeToken: "ct", githubToken: "gt", boatKey: "bk", boatEnvironment: "chatgpt-only" });
+  await updateSettings(h.app, { claudeToken: "ct", githubConnected: true, boatKey: "bk", boatEnvironment: "chatgpt-only" });
   return { h, a };
 }
 
@@ -114,20 +114,49 @@ describe("settings", () => {
     expect((await a.get("/api/settings")).json.commentPolicy).toEqual({ mode: "allowlist", logins: ["alice"] });
   });
 
-  it("a GitHub token GitHub rejects is refused; an accepted one records whose it is", async () => {
-    const calls: string[] = [];
+  it("connecting GitHub reads the GitHub CLI's login: refused when gh is signed out or GitHub rejects it, never stored", async () => {
     const h = harness({
-      fetch: (async (u: string | URL | Request, init?: RequestInit) => {
+      ghToken: "bad",
+      fetch: (async (_u: string | URL | Request, init?: RequestInit) => {
         const tok = new Headers(init?.headers).get("authorization");
-        calls.push(String(u));
         return tok === "Bearer good" ? Response.json({ login: "robot" }) : new Response("{}", { status: 401 });
       }) as typeof fetch,
     });
     const a = api(h);
-    expect((await a.put("/api/settings", { githubToken: "bad" })).json.error.code).toBe("invalid");
+    expect((await a.put("/api/settings", { githubConnected: true })).json.error.message).toMatch(/rejected/);
+    h.gh.token = null;
+    expect((await a.put("/api/settings", { githubConnected: true })).json.error.message).toMatch(/gh auth login/);
     expect((await a.get("/api/settings")).json.github.configured).toBe(false);
-    expect((await a.put("/api/settings", { githubToken: "good" })).status).toBe(200);
+    h.gh.token = "good";
+    expect((await a.put("/api/settings", { githubConnected: true })).status).toBe(200);
     expect((await a.get("/api/settings")).json.github).toEqual({ configured: true, login: "robot" });
+    expect(JSON.stringify(h.app.db.all("SELECT * FROM settings"))).not.toContain("good");
+    expect((await a.put("/api/settings", { githubConnected: false })).status).toBe(200);
+    expect((await a.get("/api/settings")).json.github).toEqual({ configured: false, login: null });
+  });
+
+  it("lists every organization the GitHub CLI's login belongs to, their repositories, and the scopes it lacks", async () => {
+    const h = harness({
+      fetch: fakeFetch((url) => {
+        if (url.pathname === "/user") return Response.json({ login: "me" }, { headers: { "x-oauth-scopes": "gist, repo" } });
+        if (url.pathname === "/user/orgs") return Response.json([{ login: "zeta" }, { login: "acme" }]);
+        if (url.pathname === "/user/repos") return Response.json([{ full_name: "me/app" }, { full_name: "acme/old", archived: true }]);
+        if (url.pathname === "/orgs/acme/repos") return Response.json([{ full_name: "acme/api" }]);
+        if (url.pathname === "/orgs/zeta/repos") return new Response("{}", { status: 403 }); // hidden from this login: adds nothing
+        return new Response("{}", { status: 404 });
+      }),
+    });
+    const a = api(h);
+    expect((await a.get("/api/github/repos")).json.auth.state).toBe("not_connected");
+    await updateSettings(h.app, { githubConnected: true });
+    expect((await a.get("/api/github/repos")).json).toEqual({
+      login: "me",
+      orgs: ["acme", "zeta"],
+      repos: ["me/app", "acme/api"],
+      auth: { state: "ok", source: "gh", missingScopes: ["read:org", "workflow"] },
+    });
+    h.gh.token = null; // `gh auth logout`: shows on the next fresh read
+    expect((await a.get("/api/github/repos?fresh=1")).json.auth.state).toBe("gh_logged_out");
   });
 
   it("checks a Boat key against Boat's limits before it is saved: wrong key, trial, blocked wallet, wrong org", async () => {
@@ -249,8 +278,8 @@ describe("creating a dork", () => {
     await updateSettings(h.app, { boatKey: "bk" });
     expect((await create()).json.error.message).toMatch(/Claude token/);
     await updateSettings(h.app, { claudeToken: "ct" });
-    expect((await create()).json.error.message).toMatch(/GitHub token/);
-    await updateSettings(h.app, { githubToken: "gt" });
+    expect((await create()).json.error.message).toMatch(/GitHub CLI/);
+    await updateSettings(h.app, { githubConnected: true });
     expect((await create()).status).toBe(201);
     expect((await create("codex")).json.error.message).toContain("ChatGPT"); // Codex needs the Boat environment
     await updateSettings(h.app, { boatEnvironment: "chatgpt-only" });

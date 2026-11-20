@@ -68,9 +68,9 @@ function github() {
 
 async function setup() {
   const gh = github();
-  const h = harness({ fetch: gh.fetch });
+  const h = harness({ fetch: gh.fetch, ghToken: gh.state.token });
   const id = h.seed("idle");
-  await updateSettings(h.app, { githubToken: gh.state.token });
+  await updateSettings(h.app, { githubConnected: true });
   h.app.db.tx(() => subs.subscribe(h.app, h.dork(id), "octo/hello", 7, "agent"));
   const sub = () => subs.subscriptionsOfDork(h.app, id)[0];
   const inbox = () => h.app.db.all<{ kind: string; summary: string }>("SELECT kind, summary FROM inbox WHERE dork_id = ? ORDER BY id", id);

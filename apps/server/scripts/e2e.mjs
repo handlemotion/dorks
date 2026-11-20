@@ -32,7 +32,7 @@ const until = async (fn, what, ms = 30_000) => {
   }
 };
 
-const env = { ...process.env, DORKS_DATA_DIR: dataDir, DORKS_UI_PORT: "0", DORKS_BRIDGE_PORT: "0", BOX_PROVIDER: "sim", SIM_HOST_KEY, SIM_BUILD_STEP_MS: "30" };
+const env = { ...process.env, DORKS_DATA_DIR: dataDir, DORKS_UI_PORT: "0", DORKS_BRIDGE_PORT: "0", BOX_PROVIDER: "sim", SIM_HOST_KEY, SIM_BUILD_STEP_MS: "30", GH_TOKEN: GITHUB }; // GitHub: the token gh would use (lib/ghCli.ts)
 delete env.DORKS_PUBLIC_URL;
 const [cmd, ...args] = process.env.SERVER_BIN ? [process.env.SERVER_BIN] : ["bun", "run", join(here, "../src/main.ts")];
 const server = spawn(cmd, args, { env, stdio: ["ignore", "pipe", "pipe"] });
@@ -89,7 +89,7 @@ try {
   // ---- onboarding gates
   const early = await api("POST", "/api/dorks", { repo: "acme/demo", message: "hi", provider: "claude" });
   check("creating a dork before onboarding is refused", early.status === 412 && early.json.error.code === "onboarding_incomplete", JSON.stringify(early.json));
-  const set = await api("PUT", "/api/settings", { claudeToken: CLAUDE, githubToken: GITHUB, baseSnapshotId: "sim-snap", sleepMinutes: 0.05 });
+  const set = await api("PUT", "/api/settings", { claudeToken: CLAUDE, githubConnected: true, baseSnapshotId: "sim-snap", sleepMinutes: 0.05 });
   check("settings saved", set.status === 200);
   check("secret CLI value saved", (await api("PUT", "/api/secrets/DEPLOY_TOKEN", { value: CLI_SECRET })).status === 200);
   const view = (await api("GET", "/api/settings")).json;

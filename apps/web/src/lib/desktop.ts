@@ -37,18 +37,6 @@ const invoke = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
 
 export const isDesktop = () => !!window.__TAURI__?.core
 
-export type GhTokenResult = { ok: true; token: string } | { ok: false; reason: 'missing' | 'declined' | 'failed' }
-
-/** Asks the user in a native dialog, then returns `gh auth token`. The caller stores it with `PUT /api/settings`. */
-export async function readGhToken(): Promise<GhTokenResult> {
-  try {
-    const token = await invoke<string | null>('read_gh_token')
-    return token ? { ok: true, token } : { ok: false, reason: 'missing' }
-  } catch (e) {
-    return { ok: false, reason: String(e) === 'consent_denied' ? 'declined' : 'failed' }
-  }
-}
-
 /** Tells the shell whether dorks are working, so it can hold the Mac awake (a no-op outside the app). */
 export function setKeepAwake(active: boolean) {
   if (isDesktop()) void invoke('set_keep_awake', { active }).catch(() => {})

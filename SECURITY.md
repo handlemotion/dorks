@@ -12,7 +12,7 @@ Dorks is a single-owner app. The owner runs the server on their own machine, and
 |---|---|---|
 | UI API and live stream | `127.0.0.1:<ui port>` only | Bearer owner token, CORS limited to `DORKS_UI_ORIGINS`. |
 | Bridge socket | `127.0.0.1:<bridge port>`, and the **only** thing the tunnel forwards (`DORKS_PUBLIC_URL`) | Only `/bridge` upgrades to a WebSocket; `/` answers 404. The first frame must authenticate as one dork with `HMAC-SHA256(bridgeSecretKey, "bridge|" + dorkId)`. Wrong secret, unknown or deleting dork, or no first frame within 5 s closes the socket (code 4403). |
-| Data at rest | `<data dir>/dorks.db` and `secrets.json` | Boat key, Claude token, GitHub token and CLI secrets are AES-GCM encrypted, with additional data binding each to its purpose. `secrets.json` is mode 600 and holds the three server keys. |
+| Data at rest | `<data dir>/dorks.db` and `secrets.json` | Boat key, Claude token and CLI secrets are AES-GCM encrypted (the GitHub token is never stored: the server reads it from the GitHub CLI when needed), with additional data binding each to its purpose. `secrets.json` is mode 600 and holds the three server keys. |
 | Secrets in transit to a sandbox | Bridge socket | Decrypted only inside the `configure` rpc of an authenticated socket. Never stored in a command row, never in the sandbox's creation environment. The creation environment holds only `DORK_ID`, `BRIDGE_URL` and `BRIDGE_SECRET`, plus `DORKS_TUNNEL_SERVICE` and `DORKS_TUNNEL_TICKET` with the embedded tunnel. |
 
 ### The tunnel and who can reach it
@@ -41,7 +41,7 @@ Code running in a sandbox runs with the agent's privileges and should be treated
 
 The Computer tab's stream URL is a bearer credential to that interactive desktop. The server mints it per view, returns it only over the owner-authenticated UI API with `Cache-Control: no-store`, and never stores or logs it ([computer use](docs/computer-use.md)).
 
-So: use dorks only on repositories you trust, scope the GitHub token to the repositories you need (a fine-grained token, see [GitHub](docs/github.md)), and do not hand a dork a token that can do more than you would let its code do. A sandbox cannot reach other dorks' bridge sessions (secrets are per dork) or the UI API (loopback only).
+So: use dorks only on repositories you trust, and remember the GitHub token is your GitHub CLI login's: it can do everything you can. To narrow it, sign `gh` in as a dedicated account that only has the repositories dorks should touch ([GitHub](docs/github.md)). A sandbox cannot reach other dorks' bridge sessions (secrets are per dork) or the UI API (loopback only).
 
 ### Dev server previews
 

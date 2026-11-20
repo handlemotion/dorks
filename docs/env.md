@@ -1,6 +1,6 @@
 # Configuration
 
-There is no `.env` file and no hosted config. The server reads a few environment variables, and everything else is a **setting** you change in the UI (Boat key, Claude token, GitHub token, CLI secrets). Settings are stored encrypted in SQLite. The desktop app sets the variables below for you when it starts the server.
+There is no `.env` file and no hosted config. The server reads a few environment variables, and everything else is a **setting** you change in the UI (Boat key, Claude token, connecting GitHub, CLI secrets). Settings are stored encrypted in SQLite. The desktop app sets the variables below for you when it starts the server.
 
 ## Server (`apps/server`)
 
@@ -32,7 +32,7 @@ On start the server prints one JSON line, for example `{"ready":true,"ui":"http:
 | `baseSnapshotId` | The Boat snapshot new sandboxes start from. |
 | `boatEnvironment` | Name of the Boat environment that signs Codex in with your ChatGPT account. |
 | `claudeToken` | A `claude setup-token` value. Sent to a sandbox only over its authenticated bridge socket. |
-| `githubToken` | See [GitHub](github.md). |
+| `githubConnected` | Act as the GitHub CLI's login. See [GitHub](github.md). |
 | `sleepMinutes` | Idle minutes before a sandbox is paused (default 5). |
 | `commentPolicy` | Whose PR comments wake a dork: `all`, or an allowlist of logins. |
 | Secrets (`PUT /api/secrets/:name`) | Environment variables exported inside every sandbox (for example a deploy token). Names match `^[A-Z][A-Z0-9_]{0,63}$`, values are at most 16 KB, and they are never shown again. |

@@ -2,12 +2,10 @@
 
 use std::sync::atomic::Ordering;
 
-use dorks_shell_core::github::{self, GhStatus};
 use dorks_shell_core::settings::{validate_public_url, KeepAwake};
 use dorks_shell_core::supervisor::Status;
 use dorks_shell_core::window::{ChromeInfo, WindowMode, WindowTheme};
 use tauri::{AppHandle, Manager, State};
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::boot;
@@ -64,38 +62,6 @@ pub fn tunnel_status(state: State<'_, AppState>) -> Option<TunnelInfo> {
 #[tauri::command]
 pub fn open_data_dir(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     app.opener().open_path(state.paths.root().display().to_string(), None::<&str>).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn gh_status() -> GhStatus {
-    github::status().await
-}
-
-/// Reads the token of the user's `gh` CLI. A native dialog asks first, because the token ends up in cloud sandboxes; the
-/// UI cannot skip or auto-answer it. `Err("consent_denied")` if declined, `Ok(None)` if `gh` is missing or logged out.
-#[tauri::command]
-pub async fn read_gh_token(app: AppHandle) -> Result<Option<String>, String> {
-    let dialog_app = app.clone();
-    let allowed = tauri::async_runtime::spawn_blocking(move || {
-        dialog_app
-            .dialog()
-            .message(
-                "Dorks wants to read the GitHub token from your GitHub CLI (`gh auth token`).\n\n\
-                 It is stored on this Mac and sent to the Boat sandboxes that run your dorks, so agents there can push and \
-                 open pull requests as you. It carries all the access your gh login has. A token limited to the repositories \
-                 you choose is safer.",
-            )
-            .title("Share your GitHub CLI token?")
-            .kind(MessageDialogKind::Warning)
-            .buttons(MessageDialogButtons::OkCancelCustom("Allow".into(), "Cancel".into()))
-            .blocking_show()
-    })
-    .await
-    .map_err(|e| e.to_string())?;
-    if !allowed {
-        return Err("consent_denied".into());
-    }
-    Ok(github::read_token().await)
 }
 
 /// The UI reports whether dorks are working. With the default setting the Mac is kept awake only then.
