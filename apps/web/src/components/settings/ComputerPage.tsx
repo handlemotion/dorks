@@ -3,7 +3,8 @@ import type { LocalGrant } from '@dorks/client'
 import { useDorksClient, useLocalAccess } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
 import { usePending } from '../../lib/pending'
-import { SettingsGroup, SettingsGroupBody, SettingsRow, SettingsSection, SettingsSections, SettingsSelectRow, SettingsStatus } from './kit'
+import { EmptyState } from '../EmptyState'
+import { SettingsGroup, SettingsRow, SettingsSection, SettingsSections, SettingsSelectRow, SettingsStatus } from './kit'
 
 // Your computer (docs/local-access.md): whether agents may ask to run a command or read a file on this computer, and the permissions
 // granted from the chat for an hour. Turning it off ends every permission and refuses what is waiting.
@@ -47,15 +48,15 @@ export function ComputerPage() {
           ) : undefined
         }
       >
-        <SettingsGroup>
-          {access.grants.length ? (
-            access.grants.map((g) => <GrantRow key={g.id} grant={g} />)
-          ) : (
-            <SettingsGroupBody>
-              <p>Nothing. When you choose Allow for 1 hour on a request, it shows here until it ends or you stop it.</p>
-            </SettingsGroupBody>
-          )}
-        </SettingsGroup>
+        {access.grants.length ? (
+          <SettingsGroup>
+            {access.grants.map((g) => (
+              <GrantRow key={g.id} grant={g} />
+            ))}
+          </SettingsGroup>
+        ) : (
+          <EmptyState figure="laptop" title="Nothing allowed for now" description="When you allow a request for 1 hour, it shows here until it ends or you stop it." />
+        )}
       </SettingsSection>
     </SettingsSections>
   )

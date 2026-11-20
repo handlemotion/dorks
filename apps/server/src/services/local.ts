@@ -403,6 +403,27 @@ export class HeadTail {
   }
 }
 
+/**
+ * Process groups of approved commands still running. Their time limits are timers in this process, so when the server exits (quit,
+ * restart, crash) it ends them too: a command must never outlive the approval's limit.
+ */
+const runningGroups = new Set<number>();
+let exitHookInstalled = false;
+function trackGroup(pid: number) {
+  runningGroups.add(pid);
+  if (exitHookInstalled) return;
+  exitHookInstalled = true;
+  process.once("exit", () => {
+    for (const g of runningGroups) {
+      try {
+        process.kill(-g, "SIGKILL");
+      } catch {
+        // already gone
+      }
+    }
+  });
+}
+
 /** Runs one command in the owner's login shell, stdin closed, its whole process group killed at the timeout. */
 export function runCommand(command: string, cwd: string, timeoutMs: number, env = process.env): Promise<Outcome> {
   let st;
@@ -415,6 +436,7 @@ export function runCommand(command: string, cwd: string, timeoutMs: number, env 
   return new Promise((done) => {
     const out = new HeadTail();
     const child = spawn(loginShell(env), ["-lc", command], { cwd, env: commandEnv(env), stdio: ["ignore", "pipe", "pipe"], detached: true, windowsHide: true });
+    if (child.pid) trackGroup(child.pid);
     let timedOut = false;
     const killGroup = (signal: NodeJS.Signals) => {
       try {
@@ -432,10 +454,12 @@ export function runCommand(command: string, cwd: string, timeoutMs: number, env 
     child.stderr!.setEncoding("utf8").on("data", (d: string) => out.push(d));
     child.on("error", (e) => {
       clearTimeout(timer);
+      if (child.pid) runningGroups.delete(child.pid);
       done({ ok: false, exitCode: null, output: null, truncated: false, error: `Could not start the shell: ${e.message.slice(0, 200)}` });
     });
     child.on("close", (code, signal) => {
       clearTimeout(timer);
+      if (child.pid) runningGroups.delete(child.pid);
       const output = out.text();
       if (timedOut) return done({ ok: false, exitCode: code, output, truncated: out.truncated, error: `Stopped after ${Math.round(timeoutMs / 1000)} s (the time limit).` });
       done({ ok: code === 0, exitCode: code ?? (signal ? 128 : null), output, truncated: out.truncated });
