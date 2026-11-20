@@ -221,11 +221,16 @@ export async function mergePullRequest(app: App, dorkId: string, method: unknown
     const merged = obj(r.json).sha;
     return { merged: true, sha: typeof merged === "string" ? merged : undefined };
   }
-  if (r.status === 409) return fail("conflict", "New commits landed on the branch. Look them over, then merge again.");
-  if (r.status === 405) return fail("conflict", message ?? "GitHub says this pull request cannot be merged yet.");
-  if (r.status === 401) return fail("github_error", "GitHub rejected the GitHub CLI's login. Run `gh auth login` again.");
-  if (r.status === 403 || r.status === 404) return fail("github_error", message ? `GitHub refused the merge: ${message}` : "The GitHub CLI's login cannot merge into this repository.");
-  return fail("github_error", message ? `GitHub refused the merge: ${message}` : `GitHub answered ${r.status}.`);
+  return mergeRefused(r.status, message);
+}
+
+/** Why GitHub refused a merge, as the owner should read it. */
+function mergeRefused(status: number, message: string | undefined): never {
+  if (status === 409) return fail("conflict", "New commits landed on the branch. Look them over, then merge again.");
+  if (status === 405) return fail("conflict", message ?? "GitHub says this pull request cannot be merged yet.");
+  if (status === 401) return fail("github_error", "GitHub rejected the GitHub CLI's login. Run `gh auth login` again.");
+  if (status === 403 || status === 404) return fail("github_error", message ? `GitHub refused the merge: ${message}` : "The GitHub CLI's login cannot merge into this repository.");
+  return fail("github_error", message ? `GitHub refused the merge: ${message}` : `GitHub answered ${status}.`);
 }
 
 /** `POST /api/dorks/:id/pr/update-branch`: merges the base branch into the PR's branch (GitHub's "Update branch"). */
