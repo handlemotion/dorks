@@ -60,6 +60,12 @@ const PANEL_LABEL: Record<Panel, string> = { progress: 'Progress', artifacts: 'A
  * (its icon turns into an X on hover, nothing moves), then "+" for a New tab, an index of the session's pull requests, artifacts and
  * panels. The open tabs and the selected one are remembered per session. The hide button keeps ShowDetailsButton's spot.
  */
+/**
+ * The last Progress reveal a panel acted on, kept outside the component so a remount (hide and show, another session) does not
+ * replay an old reveal over the restored tabs, while a card that opens the panel still brings Progress up.
+ */
+let handledReveal = 0
+
 export function ChatDetails({
   data,
   sessionId,
@@ -79,10 +85,9 @@ export function ChatDetails({
   const { open } = tabs
   // A turn's card in the thread asks for its work: bring Progress up (also when the card opened this panel).
   const { reveal } = useProgress()
-  const seenReveal = useRef(0)
   useEffect(() => {
-    if (reveal !== seenReveal.current) open('progress')
-    seenReveal.current = reveal
+    if (reveal !== handledReveal) open('progress')
+    handledReveal = reveal
   }, [reveal, open])
   const changes = data.changes ?? []
   // Once the agent opens a pull request, the Changes tab is that PR, named by its number.
@@ -378,7 +383,7 @@ function NewTab({
             className="text-sm"
           />
         </InputGroup>
-        {nothing && <p className="px-2 text-sm text-muted-foreground">No matches</p>}
+        {nothing && <EmptyState figure="drawer" title="No matches" />}
         {shownPrs.length > 0 && (
           <IndexSection title="Pull requests">
             {shownPrs.map((p) => (
