@@ -446,7 +446,7 @@ function Checks({ view }: { view: PullRequestView }) {
             {c.url && <ExternalLinkIcon className="ml-auto size-3 shrink-0 text-muted-foreground" />}
           </>
         )
-        const box = 'flex h-9 items-center gap-2 px-(--details-text)'
+        const box = 'flex items-center gap-2 p-(--details-text)'
         return (
           <li key={`${c.name}-${i}`}>
             {c.url ? (
@@ -496,8 +496,8 @@ function Overview({ view }: { view: PullRequestView }) {
   const sections = useMemo(() => descriptionSections(view.body), [view.body])
   const opened = new Date(view.createdAt)
   return (
-    <div className="pb-6">
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2.5 px-(--details-text) py-3">
+    <div>
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2.5 p-(--details-text)">
         <Meta label="Author">
           <Person login={view.author.login} avatarUrl={view.author.avatarUrl} />
         </Meta>
@@ -526,7 +526,7 @@ function Overview({ view }: { view: PullRequestView }) {
           </span>
         </Meta>
       </dl>
-      <div className="border-t px-(--details-text) pt-2">
+      <div className="border-t p-(--details-text) [&>:first-child]:mt-0 [&>:last-child]:mb-0 [&>:last-child>:last-child]:mb-0">
         {sections.length === 0 ? (
           <p className="text-muted-foreground">No description.</p>
         ) : (
@@ -632,7 +632,7 @@ function CommentRow({ comment: c, now }: { comment: PullRequestComment; now: num
   const review = c.reviewState ? REVIEW[c.reviewState] : undefined
   const body = c.body.replace(/<!--[\s\S]*?-->/g, '').trim()
   return (
-    <li className="px-(--details-text) py-3.5">
+    <li className="p-(--details-text)">
       <div className="flex items-center gap-1.5 text-xs">
         <Person login={c.author.login} avatarUrl={c.author.avatarUrl} />
         {review && <span className={review.className}>{review.text}</span>}
@@ -688,7 +688,7 @@ function ChangeRow({ change: c, open, onToggle, wrap }: { change: FileChange; op
       <Stat additions={c.additions} deletions={c.deletions} />
     </>
   )
-  const box = 'flex h-9 w-full items-center gap-2 px-(--details-text) text-left font-mono text-xs'
+  const box = 'flex w-full items-center gap-2 p-(--details-text) text-left font-mono text-xs'
   return (
     <li>
       {c.patch ? (

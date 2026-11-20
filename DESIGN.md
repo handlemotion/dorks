@@ -73,6 +73,9 @@ The pattern to copy for any toolbar:
 - Dropdown menus have a 6% hairline, a soft two-layer shadow (the app's only one), 32px rows with a fill that springs between
   them. Cards and dialogs have no ring or shadow.
 - Radii are concentric: an inner radius is the outer minus the padding between them.
+- Padding is balanced: a block or list row split by hairlines (PR properties, description, checks, files, comments) has the same padding top and bottom as
+  left and right (`p-(--details-text)`, 18px in Chat details), not a fixed short height under wide side padding. Dense lists
+  without lines (Progress steps, tasks, menus) keep their compact rows.
 
 ## Type
 
