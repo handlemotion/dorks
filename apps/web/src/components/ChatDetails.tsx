@@ -386,6 +386,29 @@ function NewTab({
             className="text-sm"
           />
         </InputGroup>
+        {shownPanels.length > 0 && (
+          <section aria-label="Panels">
+            <ul className="grid grid-cols-2 gap-x-3 gap-y-4">
+              {shownPanels.map((p) => (
+                <li key={p}>
+                  <button
+                    type="button"
+                    className="group/tile flex w-full flex-col gap-2 rounded-[8px] text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                    onClick={() => onOpen(p)}
+                  >
+                    <span className="flex aspect-square w-full flex-col overflow-hidden rounded-[8px] bg-foreground/[0.03] p-3 text-xs text-muted-foreground transition-colors group-hover/tile:bg-foreground/[0.05]">
+                      {tilePreview(p)}
+                    </span>
+                    <span className="flex items-center gap-2 px-0.5 [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-muted-foreground">
+                      {panelIcon(p)}
+                      <span className="truncate">{panelLabel(p)}</span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         {nothing && <EmptyState figure="drawer" title="No matches" />}
         {shownPrs.length > 0 && (
           <IndexSection title="Pull requests">
@@ -456,29 +479,6 @@ function NewTab({
               })}
             </IndexSection>
           </ImageLightbox>
-        )}
-        {shownPanels.length > 0 && (
-          <section aria-label="Panels">
-            <ul className="grid grid-cols-2 gap-x-3 gap-y-4">
-              {shownPanels.map((p) => (
-                <li key={p}>
-                  <button
-                    type="button"
-                    className="group/tile flex w-full flex-col gap-2 rounded-[8px] text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-                    onClick={() => onOpen(p)}
-                  >
-                    <span className="flex aspect-square w-full flex-col overflow-hidden rounded-[8px] bg-foreground/[0.03] p-3 text-xs text-muted-foreground transition-colors group-hover/tile:bg-foreground/[0.05]">
-                      {tilePreview(p)}
-                    </span>
-                    <span className="flex items-center gap-2 px-0.5 [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-muted-foreground">
-                      {panelIcon(p)}
-                      <span className="truncate">{panelLabel(p)}</span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
         )}
       </div>
     </div>
