@@ -8,10 +8,6 @@ import {
   ChevronsDownUpIcon,
   ChevronsUpDownIcon,
   ExternalLinkIcon,
-  GitMergeIcon,
-  GitPullRequestClosedIcon,
-  GitPullRequestDraftIcon,
-  GitPullRequestIcon,
   LoaderIcon,
   RefreshCwIcon,
   WrapTextIcon,
@@ -26,6 +22,7 @@ import { AgentMarkdown } from './ChatBlock'
 import { EmptyState } from './EmptyState'
 import { BAR_BUTTON } from './PreviewBrowser'
 import { Tip } from './Tip'
+import { PrIcon, prStatus, type PrStatusState } from './PrStatus'
 
 // The Changes tab of Chat details, pull request first: its state, title and merge button on top, then in-panel tabs for its
 // overview (who, where, checks, the description in collapsible sections), its files (the diff) and its comments. Before a pull
@@ -72,7 +69,7 @@ export function PullRequestPanel({
   /** What the agent changed locally, shown before a pull request exists. */
   changes: FileChange[]
   /** The PR link alone, when the live read is not available (the design demo, older data). */
-  pr?: { url: string; number?: number }
+  pr?: { url: string; number?: number; state?: PrStatusState }
   pullRequest?: PullRequestPanelData
   onAsk?: (text: string) => void
 }) {
@@ -99,10 +96,22 @@ export function PullRequestPanel({
 }
 
 /** The bar above the plain file list: the PR link (or that there is none yet) and the diff stats. */
-function FilesBar({ pr, loading, error, onRetry, changes }: { pr?: { url: string; number?: number }; loading?: boolean; error?: string; onRetry?: () => void; changes: FileChange[] }) {
+function FilesBar({
+  pr,
+  loading,
+  error,
+  onRetry,
+  changes,
+}: {
+  pr?: { url: string; number?: number; state?: PrStatusState }
+  loading?: boolean
+  error?: string
+  onRetry?: () => void
+  changes: FileChange[]
+}) {
   return (
     <div className="flex h-10 shrink-0 items-center gap-2 border-y px-(--details-text)">
-      <GitPullRequestIcon className="size-3.5 shrink-0 text-muted-foreground" />
+      <PrIcon state={pr?.state} className="size-3.5 shrink-0" />
       {pr ? (
         <a href={pr.url} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 hover:underline">
           <span className="truncate">{pr.number ? `Pull request #${pr.number}` : 'Pull request'}</span>
@@ -244,31 +253,12 @@ function PullRequestView({ view, data, now, onAsk }: { view: PullRequestView; da
 
 /** "Open", "Draft", "Merged 5m ago", "Closed": the PR's state in its colour, as on GitHub. */
 function PrState({ view, now }: { view: PullRequestView; now: number }) {
-  if (view.state === 'merged')
-    return (
-      <span className="flex items-center gap-1.5 text-violet-600 dark:text-violet-400">
-        <GitMergeIcon className="size-3.5" />
-        Merged {view.mergedAt ? ago(view.mergedAt, now) : ''}
-      </span>
-    )
-  if (view.state === 'closed')
-    return (
-      <span className="flex items-center gap-1.5 text-red-600 dark:text-red-400">
-        <GitPullRequestClosedIcon className="size-3.5" />
-        Closed
-      </span>
-    )
-  if (view.draft)
-    return (
-      <span className="flex items-center gap-1.5 text-muted-foreground">
-        <GitPullRequestDraftIcon className="size-3.5" />
-        Draft
-      </span>
-    )
+  const { Icon, label, className } = prStatus(view.state, view.draft)
   return (
-    <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-      <GitPullRequestIcon className="size-3.5" />
-      Open
+    <span className={`flex items-center gap-1.5 ${className}`}>
+      <Icon className="size-3.5" />
+      {label}
+      {view.state === 'merged' && view.mergedAt ? ` ${ago(view.mergedAt, now)}` : ''}
     </span>
   )
 }
@@ -446,7 +436,7 @@ function Checks({ view }: { view: PullRequestView }) {
             {c.url && <ExternalLinkIcon className="ml-auto size-3 shrink-0 text-muted-foreground" />}
           </>
         )
-        const box = 'flex h-9 items-center gap-2 px-(--details-text)'
+        const box = 'flex items-center gap-2 p-(--details-text)'
         return (
           <li key={`${c.name}-${i}`}>
             {c.url ? (
@@ -496,8 +486,8 @@ function Overview({ view }: { view: PullRequestView }) {
   const sections = useMemo(() => descriptionSections(view.body), [view.body])
   const opened = new Date(view.createdAt)
   return (
-    <div className="pb-6">
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2.5 px-(--details-text) py-3">
+    <div>
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2.5 p-(--details-text)">
         <Meta label="Author">
           <Person login={view.author.login} avatarUrl={view.author.avatarUrl} />
         </Meta>
@@ -526,7 +516,7 @@ function Overview({ view }: { view: PullRequestView }) {
           </span>
         </Meta>
       </dl>
-      <div className="border-t px-(--details-text) pt-2">
+      <div className="border-t p-(--details-text) [&>:first-child]:mt-0 [&>:last-child]:mb-0 [&>:last-child>:last-child]:mb-0">
         {sections.length === 0 ? (
           <p className="text-muted-foreground">No description.</p>
         ) : (
@@ -632,7 +622,7 @@ function CommentRow({ comment: c, now }: { comment: PullRequestComment; now: num
   const review = c.reviewState ? REVIEW[c.reviewState] : undefined
   const body = c.body.replace(/<!--[\s\S]*?-->/g, '').trim()
   return (
-    <li className="px-(--details-text) py-3.5">
+    <li className="p-(--details-text)">
       <div className="flex items-center gap-1.5 text-xs">
         <Person login={c.author.login} avatarUrl={c.author.avatarUrl} />
         {review && <span className={review.className}>{review.text}</span>}
@@ -688,7 +678,7 @@ function ChangeRow({ change: c, open, onToggle, wrap }: { change: FileChange; op
       <Stat additions={c.additions} deletions={c.deletions} />
     </>
   )
-  const box = 'flex h-9 w-full items-center gap-2 px-(--details-text) text-left font-mono text-xs'
+  const box = 'flex w-full items-center gap-2 p-(--details-text) text-left font-mono text-xs'
   return (
     <li>
       {c.patch ? (

@@ -225,7 +225,7 @@ function detailsData(dork: DorkView, blocks: Block[], actions: DorksActions, com
     // Shared screenshots resolve to their URLs here as they do in the thread, so a progress message still shows its images.
     progress: progressTurns(resolveSharedImages(blocks, actions.imageUrl).blocks),
     tasks: latestTasks(blocks),
-    pr: prOf(dork.prUrl),
+    pr: prOf(dork.prUrl, dork.prState),
     artifacts: dork.images?.map((i, n) => ({ id: i.id, name: i.caption ?? `Screenshot ${n + 1}`, type: 'Screenshot', src: actions.imageUrl(i.id), width: i.width, height: i.height })).reverse(),
     previews: dork.previews?.map((p) => ({ name: p.title ?? `Port ${p.port}`, url: p.url, port: p.port })),
     computer: { awake: dork.state === 'working' || dork.state === 'idle', working: dork.state === 'working', ...computer },
@@ -474,9 +474,9 @@ function Thread({ dorkId }: { dorkId: string }) {
   )
 }
 
-/** The pull request from the stored url; the number is read from it, since the backend does not keep it separately. */
-function prOf(url: string | undefined) {
+/** The pull request from the stored url (the number is read from it, since the backend does not keep it separately) and its state. */
+function prOf(url: string | undefined, state: DorkView['prState']) {
   if (!url) return undefined
   const n = /\/pull\/(\d+)/.exec(url)?.[1]
-  return { url, number: n ? Number(n) : undefined }
+  return { url, number: n ? Number(n) : undefined, state }
 }

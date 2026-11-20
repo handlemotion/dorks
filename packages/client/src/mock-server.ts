@@ -229,6 +229,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       if (/\bpr\b/i.test(prompt)) {
         append(dorkId, { type: "pr_opened", url: `https://github.com/${d.repo}/pull/7`, number: 7 });
         d.prUrl = `https://github.com/${d.repo}/pull/7`;
+        d.prState = "open";
         prs.set(dorkId, mockPullRequest(d.repo, 7, d.title));
         broadcast({ t: "dork", dorkId });
       }
@@ -444,6 +445,9 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         Object.assign(pr, { state: "merged", mergedAt: Date.now(), mergedBy: pr.author, mergeableState: "unknown" });
         append(d.id, { type: "pr_merged", url: pr.url, number: pr.number });
         broadcast({ t: "subscriptions", dorkId: d.id });
+        d.prState = "merged";
+        broadcast({ t: "dork", dorkId: d.id });
+        broadcast({ t: "dorks" });
         return json(res, 200, { merged: true, sha: "f".repeat(40), method: body.method });
       },
     ],
