@@ -42,7 +42,7 @@ function Customize() {
   const [draft, setDraft] = useState<Draft | null>(null)
   const [connecting, setConnecting] = useState<Connector | null>(null)
   const composio = useComposio()
-  const custom = servers?.filter((s) => !isPreset(s) && s.name !== COMPOSIO.id) ?? []
+  const custom = servers?.filter((s) => !isPreset(s) && !isComposio(s)) ?? []
   const isConnected = (c: Connector) => (c.toolkit ? !!composio?.toolkits.includes(c.toolkit) : !!servers?.some((s) => s.name === c.id && isPreset(s)))
   /** A card opens its dialog, or the editor when a custom server already holds its name (the card would replace it). */
   const open = (c: Connector) => {
@@ -93,6 +93,9 @@ function Customize() {
     </div>
   )
 }
+
+/** The server a Composio key saves (services/composio.ts), not a custom server that only shares the name. */
+const isComposio = (s: McpServerView) => s.name === COMPOSIO.id && s.transport === 'http' && s.headerNames.includes('x-api-key')
 
 /** Whether a saved server is a key connector's own preset, not a custom server that only shares its name. */
 function isPreset(s: McpServerView) {
