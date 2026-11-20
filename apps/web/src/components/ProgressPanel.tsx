@@ -309,7 +309,7 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
 }
 
 /** A step's one line: what it ran, read, edited or said. */
-export function stepLine(step: ProgressStep): { text: string; mono: boolean } {
+function stepLine(step: ProgressStep): { text: string; mono: boolean } {
   const { block } = step
   if (block.kind === 'assistant')
     return {

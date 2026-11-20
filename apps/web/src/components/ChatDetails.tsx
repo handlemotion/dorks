@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useTheme } from 'next-themes'
+import type { SubscriptionView } from '@dorks/shared'
 import { useDefaultLayout, usePanelRef } from 'react-resizable-panels'
 import { PanelResizeHandle } from '@dorks/ui/panel-resize-handle'
-import { ActivityIcon, AppWindowIcon, FileIcon, GitMergeIcon, GitPullRequestIcon, LayersIcon, MonitorIcon, PanelLeftIcon, PlusIcon, SearchIcon, XIcon } from 'lucide-react'
+import { ActivityIcon, AppWindowIcon, ExternalLinkIcon, FileIcon, GitMergeIcon, GitPullRequestIcon, LayersIcon, MonitorIcon, PanelLeftIcon, PlusIcon, SearchIcon, XIcon } from 'lucide-react'
 import { Button } from '@dorks/ui/button'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@dorks/ui/input-group'
 import { ResizablePanel, ResizablePanelGroup } from '@dorks/ui/resizable'
@@ -11,8 +13,8 @@ import { EmptyState } from './EmptyState'
 import { ImageLightbox, ImageTrigger, type LightboxImage } from './ImageLightbox'
 import { BAR_BUTTON, port, PreviewBrowser, useShownServers, type PreviewServer } from './PreviewBrowser'
 import { Tip } from './Tip'
-import { ProgressPanel, stepLine } from './ProgressPanel'
-import { progressSteps, stepStatus, useProgress, type ProgressTask, type ProgressTurn } from '../lib/progress'
+import { ProgressPanel } from './ProgressPanel'
+import { useProgress, type ProgressTask, type ProgressTurn } from '../lib/progress'
 import { PullRequestPanel, Stat, sum, TAB_CLASS, type FileChange, type PullRequestPanelData } from './PullRequestPanel'
 
 /** A file the agent produced in the chat: a screenshot, a design, a document. */
@@ -42,6 +44,8 @@ export type ChatDetailsData = {
   previews?: PreviewServer[]
   /** The agent's own computer, streamed live in the Computer tab. */
   computer?: ComputerSource
+  /** The pull requests the session watches (it opened them, or the agent or the owner subscribed): the New tab lists them. */
+  subscriptions?: SubscriptionView[]
 }
 
 /** A panel Chat details can show in a tab. */
@@ -124,8 +128,8 @@ export function ChatDetails({
     if (panel === 'changes' && prNumber) return { icon: prIcon, text: <span className="tabular-nums">#{prNumber}</span>, title: `#${prNumber}` }
     return { icon: PANEL_ICON[panel], text: PANEL_LABEL[panel], title: PANEL_LABEL[panel] }
   }
-  // The session's pull requests: one today, keyed by url so more can come.
-  const prs: IndexPr[] = view
+  // The session's own pull request first (live, with its diff stats), then the others it watches, keyed by url.
+  const own: IndexPr[] = view
     ? [{ url: view.url, title: view.title, repo: view.repo, number: view.number, additions: view.additions, deletions: view.deletions, merged: prMerged }]
     : data.pr
       ? [
@@ -139,6 +143,12 @@ export function ChatDetails({
           },
         ]
       : []
+  const prs: IndexPr[] = [
+    ...own,
+    ...(data.subscriptions ?? [])
+      .filter((s) => !own.some((o) => o.url === s.url))
+      .map((s) => ({ url: s.url, title: s.title ?? `Pull request #${s.number}`, repo: s.repo, number: s.number, merged: s.state === 'merged', external: true })),
+  ]
 
   const panel = (key: TabKey) => {
     if (key.startsWith('new:'))
@@ -149,7 +159,8 @@ export function ChatDetails({
           previews={data.previews ?? []}
           panelLabel={(p) => (p === 'changes' && prNumber ? `#${prNumber}` : PANEL_LABEL[p])}
           panelIcon={(p) => (p === 'changes' && prNumber ? prIcon : PANEL_ICON[p])}
-          tilePreview={(p) => <TilePreview panel={p} data={data} pr={prs[0]} />}
+          computer={data.computer}
+          computerOpen={tabs.keys.includes('computer')}
           onOpen={(target) => tabs.replace(key, target)}
           onOpenPreview={(s) => {
             setPreview(s.url)
@@ -327,7 +338,8 @@ function useOpenTabs(sessionId?: string) {
   }
 }
 
-type IndexPr = { url: string; title: string; repo?: string; number?: number; additions: number; deletions: number; merged?: boolean }
+/** A pull request in the New tab. `external`: one the session only watches, opened on GitHub (no panel holds its details yet). */
+type IndexPr = { url: string; title: string; repo?: string; number?: number; additions?: number; deletions?: number; merged?: boolean; external?: boolean }
 
 /** "owner/name" from a GitHub pull request url. */
 function repoOf(url: string) {
@@ -348,7 +360,8 @@ function NewTab({
   previews,
   panelLabel,
   panelIcon,
-  tilePreview,
+  computer,
+  computerOpen,
   onOpen,
   onOpenPreview,
 }: {
@@ -357,7 +370,8 @@ function NewTab({
   previews: PreviewServer[]
   panelLabel: (p: Panel) => string
   panelIcon: (p: Panel) => ReactNode
-  /** What a panel's tile shows of it. */ tilePreview: (p: Panel) => ReactNode
+  computer?: ComputerSource
+  /** The Computer tab is open: its stream is the one live view, so the window here shows the state only. */ computerOpen: boolean
   onOpen: (target: TabKey) => void
   onOpenPreview: (server: PreviewServer) => void
 }) {
@@ -369,7 +383,8 @@ function NewTab({
   const shownArtifacts = artifacts.filter((a) => (a.src || a.href) && match(a.name, a.type))
   const shownPanels = PANELS.filter((p) => match(PANEL_LABEL[p], panelLabel(p)))
   const images: LightboxImage[] = artifacts.filter((a) => a.src).map((a) => ({ id: a.id, src: a.src!, alt: a.name, caption: a.name, width: a.width, height: a.height }))
-  const nothing = shownPrs.length + shownPreviews.length + shownArtifacts.length + shownPanels.length === 0
+  const showComputer = !!computer?.used && match('Computer')
+  const nothing = shownPrs.length + shownPreviews.length + shownArtifacts.length + shownPanels.length === 0 && !showComputer
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-[420px] flex-col gap-6 px-5 pt-[20vh] pb-10">
@@ -386,45 +401,13 @@ function NewTab({
             className="text-sm"
           />
         </InputGroup>
-        {shownPanels.length > 0 && (
-          <section aria-label="Panels">
-            <ul className="grid grid-cols-2 gap-x-3 gap-y-4">
-              {shownPanels.map((p) => (
-                <li key={p}>
-                  <button
-                    type="button"
-                    className="group/tile flex w-full flex-col gap-2 rounded-[8px] text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-                    onClick={() => onOpen(p)}
-                  >
-                    <span className="flex aspect-square w-full flex-col overflow-hidden rounded-[8px] bg-foreground/[0.03] p-3 text-xs text-muted-foreground transition-colors group-hover/tile:bg-foreground/[0.05]">
-                      {tilePreview(p)}
-                    </span>
-                    <span className="flex items-center gap-2 px-0.5 [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-muted-foreground">
-                      {panelIcon(p)}
-                      <span className="truncate">{panelLabel(p)}</span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
+        {showComputer && <ComputerWindow source={computer!} live={!computerOpen} onOpen={() => onOpen('computer')} />}
         {nothing && <EmptyState figure="drawer" title="No matches" />}
         {shownPrs.length > 0 && (
           <IndexSection title="Pull requests">
             {shownPrs.map((p) => (
               <li key={p.url}>
-                <button type="button" className={`${INDEX_ROW} h-auto flex-col items-stretch gap-0.5 py-1.5`} onClick={() => onOpen(`pr:${p.url}`)}>
-                  <span className="truncate">{p.title}</span>
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    {p.merged ? <GitMergeIcon /> : <GitPullRequestIcon />}
-                    <span className="truncate tabular-nums">
-                      {p.repo}
-                      {p.number ? `#${p.number}` : ''}
-                    </span>
-                    <Stat additions={p.additions} deletions={p.deletions} />
-                  </span>
-                </button>
+                <PrRow pr={p} onOpen={() => onOpen(`pr:${p.url}`)} />
               </li>
             ))}
           </IndexSection>
@@ -480,110 +463,107 @@ function NewTab({
             </IndexSection>
           </ImageLightbox>
         )}
+        {shownPanels.length > 0 && (
+          <ul aria-label="Panels" className="flex flex-col">
+            {shownPanels.map((p) => (
+              <li key={p}>
+                <button type="button" className={INDEX_ROW} onClick={() => onOpen(p)}>
+                  {panelIcon(p)}
+                  <span className="truncate">{panelLabel(p)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   )
 }
 
-/** A word or two in the middle of an empty tile. */
-const TileNote = ({ children }: { children: ReactNode }) => <span className="m-auto flex items-center gap-1.5 text-center">{children}</span>
+/** A pull request: its title, then its icon, repo#number and diff stats. The session's own opens its tab; a watched one opens GitHub. */
+function PrRow({ pr: p, onOpen }: { pr: IndexPr; onOpen: () => void }) {
+  const body = (
+    <>
+      <span className="flex min-w-0 items-center gap-1.5">
+        <span className="truncate">{p.title}</span>
+        {p.external && <ExternalLinkIcon className="size-3! text-muted-foreground" />}
+      </span>
+      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        {p.merged ? <GitMergeIcon /> : <GitPullRequestIcon />}
+        <span className="truncate tabular-nums">
+          {p.repo}
+          {p.number ? `#${p.number}` : ''}
+        </span>
+        {p.additions !== undefined && <Stat additions={p.additions} deletions={p.deletions ?? 0} />}
+      </span>
+    </>
+  )
+  const cls = `${INDEX_ROW} h-auto flex-col items-stretch gap-0.5 py-1.5`
+  return p.external ? (
+    <a className={cls} href={p.url} target="_blank" rel="noreferrer">
+      {body}
+    </a>
+  ) : (
+    <button type="button" className={cls} onClick={onOpen}>
+      {body}
+    </button>
+  )
+}
 
 /**
- * What a New tab's panel tile shows: Progress its latest steps and the task count, Artifacts its newest thumbnails, Changes the
- * pull request or the changed files, Computer whether it is awake. Never a blank box: a tile with nothing says so in a word.
+ * A small window on the agent's computer, between the search box and the lists: its screen at a quarter scale when it is awake
+ * and the Computer tab is not open (stream links are single-use, so only one view streams at a time), else the frame with its
+ * state. It takes no pointer; a click opens the Computer tab in the New tab's place.
  */
-function TilePreview({ panel, data, pr }: { panel: Panel; data: ChatDetailsData; pr?: IndexPr }) {
-  if (panel === 'progress') return <ProgressTile data={data} />
-  if (panel === 'artifacts') return <ArtifactsTile data={data} />
-  if (panel === 'changes') return <ChangesTile changes={data.changes ?? []} pr={pr} />
-  return <ComputerTile computer={data.computer} />
-}
-
-/** Progress's tile status: "Working · 3 / 5 tasks", the task count, or how many steps ran. */
-function progressStatus(running: boolean, tasks: ProgressTask[], steps: number) {
-  const done = tasks.length > 0 ? `${tasks.filter((t) => t.status === 'completed').length} / ${tasks.length} tasks` : ''
-  if (running) return done ? `Working · ${done}` : 'Working'
-  return done || `${steps} steps`
-}
-
-function ProgressTile({ data }: { data: ChatDetailsData }) {
-  const steps = progressSteps(data.progress ?? [])
-  if (steps.length === 0) return <TileNote>No steps yet</TileNote>
-  const running = steps.some((s) => stepStatus(s.block) === 'running')
+function ComputerWindow({ source, live, onOpen }: { source: ComputerSource; live: boolean; onOpen: () => void }) {
+  const { resolvedTheme } = useTheme()
+  const theme = resolvedTheme === 'dark' ? 'dark' : 'light'
+  const [url, setUrl] = useState<string>()
+  const { awake, fetchUrl } = source
+  useEffect(() => {
+    setUrl(undefined)
+    if (!live || !awake) return
+    let on = true
+    fetchUrl({ theme }).then(
+      (u) => on && setUrl(u),
+      () => {},
+    )
+    return () => {
+      on = false
+    }
+  }, [live, awake, fetchUrl, theme])
   return (
-    <>
-      <span className="flex min-h-0 flex-1 flex-col justify-end gap-1.5 overflow-hidden">
-        {steps.slice(-5).map((s, i, shown) => {
-          const { text, mono } = stepLine(s)
-          return (
-            <span key={s.key} className={`truncate ${mono ? 'font-mono' : ''} ${i === shown.length - 1 ? 'text-foreground' : ''}`}>
-              {text}
-            </span>
-          )
-        })}
+    <button
+      type="button"
+      onClick={onOpen}
+      className="group/win flex w-full flex-col gap-1 rounded-[8px] text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+    >
+      <span className="relative block aspect-[16/10] w-full overflow-hidden rounded-[8px] bg-app outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10">
+        {url ? (
+          <iframe
+            src={url}
+            title="Agent's computer, preview"
+            tabIndex={-1}
+            aria-hidden
+            referrerPolicy="no-referrer"
+            allow="autoplay"
+            className="pointer-events-none absolute top-0 left-0 h-[400%] w-[400%] origin-top-left scale-25"
+          />
+        ) : (
+          <span className="absolute inset-0 flex items-center justify-center text-muted-foreground">
+            <MonitorIcon className="size-6" strokeWidth={1.5} />
+          </span>
+        )}
       </span>
-      <span className="mt-3 flex items-center gap-1.5 tabular-nums">
-        {running && <span aria-hidden className="size-1.5 rounded-full bg-brand" />}
-        {progressStatus(running, data.tasks ?? [], steps.length)}
-      </span>
-    </>
-  )
-}
-
-function ArtifactsTile({ data }: { data: ChatDetailsData }) {
-  const items = [
-    ...(data.previews ?? []).map((s) => ({ id: s.url, src: undefined as string | undefined, preview: true })),
-    ...(data.artifacts ?? []).map((a) => ({ id: a.id, src: a.src, preview: false })),
-  ].slice(-4)
-  if (items.length === 0) return <TileNote>None yet</TileNote>
-  return (
-    <span className="grid flex-1 grid-cols-2 grid-rows-2 gap-1.5">
-      {items.map((it) => (
-        <span key={it.id} className="relative flex items-center justify-center overflow-hidden rounded-[4px] bg-foreground/[0.04]">
-          {it.src ? <img src={it.src} alt="" className="size-full object-cover" /> : <AppWindowIcon className="size-4" />}
-          {it.preview && <span aria-hidden className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-emerald-500" />}
+      <span className={`${INDEX_ROW} group-hover/win:bg-foreground/[0.04]`}>
+        <MonitorIcon />
+        <span className="flex-1">Computer</span>
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          {awake && <span aria-hidden className="size-1.5 rounded-full bg-emerald-500" />}
+          {awake ? 'Awake' : 'Asleep'}
         </span>
-      ))}
-    </span>
-  )
-}
-
-function ChangesTile({ changes, pr }: { changes: FileChange[]; pr?: IndexPr }) {
-  if (!pr && changes.length === 0) return <TileNote>No changes</TileNote>
-  return (
-    <>
-      {pr ? (
-        <span className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden">
-          <span className="tabular-nums">{`${pr.repo ?? ''}#${pr.number ?? ''}`}</span>
-          <span className="line-clamp-4 text-sm text-foreground">{pr.title}</span>
-        </span>
-      ) : (
-        <span className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden font-mono">
-          {changes.slice(0, 5).map((c) => (
-            <span key={c.path} className="truncate">
-              {c.path.split('/').pop()}
-            </span>
-          ))}
-        </span>
-      )}
-      <span className="mt-3 flex items-center gap-1.5">
-        <Stat additions={pr?.additions ?? sum(changes, 'additions')} deletions={pr?.deletions ?? sum(changes, 'deletions')} />
-        {changes.length > 0 && <span className="tabular-nums">{changes.length} files</span>}
       </span>
-    </>
-  )
-}
-
-function ComputerTile({ computer: c }: { computer?: ComputerSource }) {
-  const state = !c || (!c.awake && !c.used) ? 'Not used' : c.awake ? 'Awake' : 'Asleep'
-  return (
-    <span className="m-auto flex flex-col items-center gap-2">
-      <MonitorIcon className="size-6" strokeWidth={1.5} />
-      <span className="flex items-center gap-1.5">
-        {state === 'Awake' && <span aria-hidden className="size-1.5 rounded-full bg-emerald-500" />}
-        {state}
-      </span>
-    </span>
+    </button>
   )
 }
 

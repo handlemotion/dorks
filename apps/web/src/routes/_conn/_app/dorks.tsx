@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { DesktopOptions } from '@dorks/client'
 import type { AgentModelChoice, Block } from '@dorks/shared'
 import { ChevronDownIcon, ChevronRightIcon, InfoIcon, MessageSquareIcon } from 'lucide-react'
-import { useBuilds, useConnection, useDork, useDorkEvents, useDorks, useDorksClient, useGithubRepos, usePullRequest, useSettings } from '@dorks/client/react'
+import { useBuilds, useConnection, useDork, useDorkEvents, useDorks, useDorksClient, useGithubRepos, usePullRequest, useSettings, useSubscriptions } from '@dorks/client/react'
 import { ownersOf, useOwnerScope } from '../../../components/ownerScope'
 import { ownerOf } from '../../../components/RepoAvatar'
 import { List } from '../../../components/onboarding/List'
@@ -341,6 +341,7 @@ function Thread({ dorkId }: { dorkId: string }) {
   const interruptAgent = useCallback(() => actions.interrupt(dorkId), [actions, dorkId])
   const { live } = useConnection()
   const pullRequest = usePullRequestPanel(dorkId, dork)
+  const subscriptions = useSubscriptions(dorkId)
   if (dork === undefined || loading)
     return (
       <p className="mt-4 px-6 text-sm text-muted-foreground" role="status">
@@ -361,7 +362,7 @@ function Thread({ dorkId }: { dorkId: string }) {
         detailsOpen ? (
           <ChatDetails
             sessionId={dorkId}
-            data={{ ...detailsData(dork, view.blocks, actions, { used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent }), pullRequest }}
+            data={{ ...detailsData(dork, view.blocks, actions, { used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent }), pullRequest, subscriptions }}
             onClose={() => setDetailsOpen(false)}
             onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}
             onAsk={setText}
