@@ -9,7 +9,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from '@dorks/ui/field
 import { Input } from '@dorks/ui/input'
 import { NativeSelect, NativeSelectOption } from '@dorks/ui/native-select'
 import { Textarea } from '@dorks/ui/textarea'
-import { COMPOSIO, CONNECTORS, connectorById, type ComposioApp, type Connector, type KeyConnector } from '../../../components/connectors'
+import { COMPOSIO, CONNECTORS, connectorById, KINDS, type ComposioApp, type Connector, type KeyConnector } from '../../../components/connectors'
 import { PageHeader } from '../../../components/PageHeader'
 import { SettingsGroup, SettingsRow, SettingsSection, SettingsSections } from '../../../components/settings/kit'
 import { usePending } from '../../../lib/pending'
@@ -64,13 +64,15 @@ function Customize() {
       <div className="app-main min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-4xl px-4 pt-8 pb-16 sm:px-6">
           <SettingsSections>
-            <SettingsSection title="Connectors">
-              <ul aria-label="connectors" className="grid gap-2 md:grid-cols-2">
-                {CONNECTORS.map((c) => (
-                  <ConnectorCard key={c.id} connector={c} connected={isConnected(c)} loading={!servers || (!!c.toolkit && !composio)} onOpen={() => open(c)} />
-                ))}
-              </ul>
-            </SettingsSection>
+            {KINDS.map((k) => (
+              <SettingsSection key={k.id} title={k.title}>
+                <ul aria-label={k.title} className="grid gap-2 md:grid-cols-2">
+                  {CONNECTORS.filter((c) => c.kind === k.id).map((c) => (
+                    <ConnectorCard key={c.id} connector={c} connected={isConnected(c)} loading={!servers || (!!c.toolkit && !composio)} onOpen={() => open(c)} />
+                  ))}
+                </ul>
+              </SettingsSection>
+            ))}
             {custom.length > 0 && (
               <SettingsSection title="Custom servers">
                 <SettingsGroup label="custom servers">
