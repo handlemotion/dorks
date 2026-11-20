@@ -84,7 +84,12 @@ function Customize() {
 
 /** The brand mark: the path in its colour (the foreground when the colour is too dark to read), or a monogram. */
 function ConnectorIcon({ connector: c }: { connector: Connector }) {
-  if (!c.icon) return <span aria-hidden className="flex size-5 shrink-0 items-center justify-center text-xs text-foreground">{c.name[0]}</span>
+  if (!c.icon)
+    return (
+      <span aria-hidden className="flex size-5 shrink-0 items-center justify-center text-xs text-foreground">
+        {c.name[0]}
+      </span>
+    )
   const dark = luminance(c.icon.hex) < 0.12
   return (
     <svg aria-hidden viewBox="0 0 24 24" className="size-5 shrink-0" fill={dark ? 'currentColor' : `#${c.icon.hex}`} fillRule={c.icon.evenodd ? 'evenodd' : undefined}>
