@@ -197,6 +197,12 @@ html.dark [data-app-frame] {
 [data-slot="button"]:is(.h-9, .h-8).px-3:has(> [data-icon="inline-end"]) {
   padding-right: 0.5rem;
 }
+/* An icon beside a label sits on the label's optical centre, not the line box's: Geist's 13px caps centre about half a pixel below the
+   line box's middle and its lowercase lower still, so a centred 16px icon (the + in "Add connector") reads high. Icon-only buttons
+   (size-6 to size-10) stay centred. */
+[data-slot="button"]:not(.size-6, .size-7, .size-8, .size-9, .size-10) > svg {
+  translate: 0 0.5px;
+}
 
 /* On controls, focus is only the border changing colour (--ring), no halo: the components' 3px `ring-ring/30` glow is made transparent
    here instead of editing them. Only controls that also tint their border are listed; anything whose only focus mark is the ring
