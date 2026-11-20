@@ -114,13 +114,17 @@ describe("bridge socket: rpc", () => {
     await h.app.db.tx(() => {});
     const { setSecret } = await import("../src/services/settings");
     await setSecret(h.app, "DEPLOY_TOKEN", "dp-123");
+    const { putMcpServer } = await import("../src/services/mcpServers");
+    await putMcpServer(h.app, "linear", { transport: "http", url: "https://mcp.linear.app/mcp", headers: { Authorization: "Bearer lin-456" } });
     const cfg = await t.configure();
+    expect(cfg?.mcpServers).toEqual([{ name: "linear", transport: "http", url: "https://mcp.linear.app/mcp", headers: { Authorization: "Bearer lin-456" } }]);
     expect(cfg).toMatchObject({ t: "configure", provider: "claude", repo: { fullName: "o/r", branch: "agent/x" }, ghToken: "gh-token-abc", resumeSessionId: null });
     expect(cfg?.env).toEqual({ CLAUDE_CODE_OAUTH_TOKEN: "claude-token-xyz", DEPLOY_TOKEN: "dp-123" });
     // Nothing secret was written to a command row or an event.
     const dump = JSON.stringify([h.cmds(id), h.events(id), h.app.db.all("SELECT * FROM commands")]);
     expect(dump).not.toContain("claude-token-xyz");
     expect(dump).not.toContain("gh-token-abc");
+    expect(JSON.stringify([dump, h.app.db.all("SELECT * FROM mcp_servers")])).not.toContain("lin-456");
     expect(await t.ghToken()).toBe("gh-token-abc");
     await t.close();
   });

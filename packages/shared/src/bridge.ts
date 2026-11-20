@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { mcpServerConfig } from "./mcp";
 import { notifyKind, prRef } from "./autonomy";
 
 /**
@@ -47,6 +48,8 @@ export const toBridge = z.discriminatedUnion("t", [
     // Set while the dork still carries its first message as a title: the bridge asks a small model for a short name for this
     // text (once per bridge process) and sends it back as a `title` frame. Absent once the title was generated or typed.
     nameFrom: z.string().optional(),
+    // The owner's MCP servers (Customize, see mcp.ts), added to the agent's next to `dorks`. Absent from an older server: none.
+    mcpServers: z.array(mcpServerConfig).max(50).optional(),
   }),
   z.object({ t: z.literal("user_message"), id: z.string(), text: z.string() }), // bridge dedupes by id
   notifyFrame(),

@@ -273,6 +273,87 @@ describe("settings", () => {
     expect((await a.del("/api/secrets/AAA")).status).toBe(200);
     expect((await a.get("/api/secrets")).json).toEqual(["DEPLOY_TOKEN"]);
   });
+  it("MCP servers: views name headers and variables but never show values; a null value keeps the saved one", async () => {
+    const h = harness();
+    const a = api(h);
+    const http = { transport: "http", url: "https://mcp.example.com/mcp", headers: { Authorization: "Bearer k-1" } };
+    expect((await a.put("/api/mcp-servers/example", http)).status).toBe(200);
+    expect((await a.put("/api/mcp-servers/fs", { transport: "stdio", command: "npx", args: ["-y", "fs-mcp"], env: { ROOT: "/w" } })).status).toBe(200);
+    const list = (await a.get("/api/mcp-servers")).json;
+    expect(list.map((s: { name: string }) => s.name)).toEqual(["example", "fs"]);
+    expect(list[0]).toMatchObject({ transport: "http", url: "https://mcp.example.com/mcp", headerNames: ["Authorization"], envNames: [] });
+    expect(JSON.stringify(list)).not.toContain("k-1");
+    // Editing the URL without retyping the token keeps it; a header with no saved value is refused.
+    expect((await a.put("/api/mcp-servers/example", { ...http, url: "https://mcp.example.com/v2", headers: { Authorization: null } })).status).toBe(200);
+    expect((await a.put("/api/mcp-servers/example", { ...http, headers: { "X-New": null } })).json.error.code).toBe("invalid");
+    const { mcpServerConfigs } = await import("../src/services/mcpServers");
+    expect((await mcpServerConfigs(h.app))[0]).toEqual({ name: "example", transport: "http", url: "https://mcp.example.com/v2", headers: { Authorization: "Bearer k-1" } });
+    for (const bad of ["dorks", "Upper", "1x"]) expect((await a.put(`/api/mcp-servers/${bad}`, http)).json.error.code).toBe("invalid");
+    expect((await a.put("/api/mcp-servers/x", { transport: "http", url: "file:///etc/passwd" })).json.error.code).toBe("invalid");
+    // A key in the URL is sealed: the view shows it redacted, and the redacted URL sent back by an edit keeps the saved one.
+    expect((await a.put("/api/mcp-servers/q", { transport: "http", url: "https://u:p@mcp.example.com/mcp?key=s3cret" })).status).toBe(200);
+    const q = (await a.get("/api/mcp-servers")).json.find((s: { name: string }) => s.name === "q");
+    expect(q.url).toBe("https://…@mcp.example.com/mcp?…");
+    expect((await a.put("/api/mcp-servers/q", { transport: "http", url: q.url })).status).toBe(200);
+    expect((await mcpServerConfigs(h.app)).find((s) => s.name === "q")).toMatchObject({ url: "https://u:p@mcp.example.com/mcp?key=s3cret" });
+    expect((await a.del("/api/mcp-servers/q")).status).toBe(200);
+    expect((await a.put("/api/mcp-servers/context7", { transport: "http", url: "https://mcp.context7.com/mcp", headers: { CONTEXT7_API_KEY: "c7" } })).status).toBe(200);
+    expect((await a.del("/api/mcp-servers/context7")).status).toBe(200);
+    expect((await a.del("/api/mcp-servers/fs")).status).toBe(200);
+    expect((await a.get("/api/mcp-servers")).json).toHaveLength(1);
+  });
+
+  it("connects Composio: the key opens a session, becomes the composio server, and signs apps in and out as one user", async () => {
+    // Composio's documented answers (docs.composio.dev/reference/api-reference/tool-router, connected-accounts).
+    const deleted: string[] = [];
+    let revoked = false;
+    const accounts = [
+      { id: "ca_f", toolkit: { slug: "figma" } },
+      { id: "ca_g", toolkit: { slug: "gmail" } },
+    ];
+    const routes: Record<string, (url: URL, init?: RequestInit) => Response> = {
+      "POST /api/v3.1/tool_router/session": (_url, init) => {
+        expect(JSON.parse(init?.body as string)).toEqual({ user_id: "dorks-owner" });
+        return Response.json({ session_id: "trs_1", mcp: { type: "http", url: "https://app.composio.dev/tool_router/v3/trs_1/mcp" } });
+      },
+      "POST /api/v3.1/tool_router/session/trs_1/link": () => Response.json({ redirect_url: "https://app.composio.dev/link/lt_1" }),
+      "GET /api/v3/connected_accounts": (url) => {
+        expect(url.searchParams.get("user_ids")).toBe("dorks-owner");
+        return Response.json({ items: accounts.filter((x) => !deleted.includes(x.id)) });
+      },
+      "DELETE /api/v3/connected_accounts": (url) => {
+        deleted.push(url.pathname.split("/").at(-1)!);
+        return Response.json({ success: true });
+      },
+    };
+    const h = harness({
+      fetch: (async (u: string | URL | Request, init?: RequestInit) => {
+        const url = new URL(u instanceof Request ? u.url : u);
+        if (revoked || new Headers(init?.headers).get("x-api-key") !== "ck-1") return Response.json({ error: "bad key" }, { status: 401 });
+        const path = url.pathname.startsWith("/api/v3/connected_accounts/") ? "/api/v3/connected_accounts" : url.pathname;
+        return routes[`${init?.method ?? "GET"} ${path}`]?.(url, init) ?? new Response("{}", { status: 404 });
+      }) as typeof fetch,
+    });
+    const a = api(h);
+    expect((await a.get("/api/composio")).json).toEqual({ connected: false, toolkits: [] });
+    expect((await a.post("/api/composio/toolkits/figma/link")).json.error.code).toBe("not_configured");
+    expect((await a.put("/api/composio", { apiKey: "wrong" })).json.error.code).toBe("invalid");
+    expect((await a.put("/api/composio", { apiKey: "ck-1" })).status).toBe(200);
+    const { mcpServerConfigs } = await import("../src/services/mcpServers");
+    expect(await mcpServerConfigs(h.app)).toEqual([{ name: "composio", transport: "http", url: "https://app.composio.dev/tool_router/v3/trs_1/mcp", headers: { "x-api-key": "ck-1" } }]);
+    expect(JSON.stringify((await a.get("/api/mcp-servers")).json)).not.toContain("ck-1");
+    expect((await a.get("/api/composio")).json).toEqual({ connected: true, toolkits: ["figma", "gmail"] });
+    expect((await a.post("/api/composio/toolkits/figma/link")).json).toEqual({ url: "https://app.composio.dev/link/lt_1" });
+    expect((await a.del("/api/composio/toolkits/figma")).status).toBe(200);
+    expect(deleted).toEqual(["ca_f"]); // only Figma's account, even if Composio ignored the filter
+    expect((await a.get("/api/composio")).json.toolkits).toEqual(["gmail"]);
+    expect((await a.post("/api/composio/toolkits/..%2Fx/link")).json.error.code).toBe("invalid");
+    accounts.push({ id: "ca_x", toolkit: { slug: "x" } });
+    revoked = true; // a revoked key: the status still says a key is saved, so it can be replaced or removed
+    expect((await a.get("/api/composio")).json).toEqual({ connected: true, toolkits: [], error: "Composio did not accept this API key" });
+    expect((await a.del("/api/composio")).status).toBe(200);
+    expect((await a.get("/api/composio")).json.connected).toBe(false);
+  });
 });
 
 describe("creating a dork", () => {

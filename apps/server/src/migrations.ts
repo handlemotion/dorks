@@ -274,4 +274,18 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE settings ADD COLUMN github_connected INTEGER NOT NULL DEFAULT 0;
   UPDATE settings SET github_connected = (github_token_enc IS NOT NULL), github_token_enc = NULL, github_login = NULL;
   `,
+  `
+  -- MCP servers from Customize (services/mcpServers.ts). Header and env values may be secrets: they live in secrets_enc, one AES-GCM
+  -- envelope of a JSON object {headers, env}; the names alone are copied to secret_names for display.
+  CREATE TABLE mcp_servers (
+    name TEXT PRIMARY KEY,
+    transport TEXT NOT NULL CHECK (transport IN ('http', 'stdio')),
+    url TEXT,
+    command TEXT,
+    args TEXT NOT NULL DEFAULT '[]',
+    secret_names TEXT NOT NULL DEFAULT '{"headers":[],"env":[]}',
+    secrets_enc TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  `,
 ];
