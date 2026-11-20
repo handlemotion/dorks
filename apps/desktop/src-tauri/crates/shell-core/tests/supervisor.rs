@@ -23,11 +23,7 @@ impl Rig {
     fn new() -> Rig {
         let ui = pick_port(None, &[]).unwrap();
         let bridge = pick_port(None, &[ui]).unwrap();
-        Rig {
-            dir: tempfile::tempdir().unwrap(),
-            ui,
-            bridge,
-        }
+        Rig { dir: tempfile::tempdir().unwrap(), ui, bridge }
     }
 
     fn spec(&self, extra: &[(&str, &str)]) -> SidecarSpec {
@@ -38,14 +34,8 @@ impl Rig {
             ("DORKS_OWNER_TOKEN".to_string(), TOKEN.to_string()),
             ("DORKS_UI_PORT".to_string(), self.ui.to_string()),
             ("DORKS_BRIDGE_PORT".to_string(), self.bridge.to_string()),
-            (
-                "DORKS_PUBLIC_URL".to_string(),
-                "https://me.example.com".to_string(),
-            ),
-            (
-                "DORKS_PARENT_PID".to_string(),
-                std::process::id().to_string(),
-            ),
+            ("DORKS_PUBLIC_URL".to_string(), "https://me.example.com".to_string()),
+            ("DORKS_PARENT_PID".to_string(), std::process::id().to_string()),
         ];
         env.extend(extra.iter().map(|(k, v)| (k.to_string(), v.to_string())));
         SidecarSpec {
@@ -79,28 +69,13 @@ fn fast() -> Policy {
 
 fn get(port: u16, path: &str, bearer: Option<&str>) -> (u16, String) {
     let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
-    stream
-        .set_read_timeout(Some(Duration::from_secs(3)))
-        .unwrap();
-    let auth = bearer
-        .map(|t| format!("Authorization: Bearer {t}\r\n"))
-        .unwrap_or_default();
-    write!(
-        stream,
-        "GET {path} HTTP/1.1\r\nHost: x\r\n{auth}Connection: close\r\n\r\n"
-    )
-    .unwrap();
+    stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+    let auth = bearer.map(|t| format!("Authorization: Bearer {t}\r\n")).unwrap_or_default();
+    write!(stream, "GET {path} HTTP/1.1\r\nHost: x\r\n{auth}Connection: close\r\n\r\n").unwrap();
     let mut raw = String::new();
     let _ = stream.read_to_string(&mut raw);
-    let status = raw
-        .split_whitespace()
-        .nth(1)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
-    (
-        status,
-        raw.split("\r\n\r\n").nth(1).unwrap_or("").to_string(),
-    )
+    let status = raw.split_whitespace().nth(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+    (status, raw.split("\r\n\r\n").nth(1).unwrap_or("").to_string())
 }
 
 const LONG: Duration = Duration::from_secs(15);
@@ -109,11 +84,7 @@ const LONG: Duration = Duration::from_secs(15);
 async fn runs_the_server_with_the_contract_and_stops_it_gracefully() {
     let rig = Rig::new();
     let sup = Supervisor::start(rig.spec(&[]), fast());
-    assert!(
-        sup.wait_for(|s| *s == Status::Running, LONG).await,
-        "status: {:?}",
-        sup.status()
-    );
+    assert!(sup.wait_for(|s| *s == Status::Running, LONG).await, "status: {:?}", sup.status());
 
     // token plumbing: the owner token reached the server, wrong or missing tokens are refused
     assert_eq!(get(rig.ui, "/api/ping", Some(TOKEN)).0, 200);
@@ -122,32 +93,18 @@ async fn runs_the_server_with_the_contract_and_stops_it_gracefully() {
     // the bridge port is up, the public URL and parent pid arrived, data dir is writable
     assert_eq!(get(rig.bridge, "/", None).0, 200);
     let (_, env) = get(rig.ui, "/env", None);
-    assert!(
-        env.contains("\"publicUrlSet\":true") && env.contains("\"parentPidSet\":true"),
-        "{env}"
-    );
+    assert!(env.contains("\"publicUrlSet\":true") && env.contains("\"parentPidSet\":true"), "{env}");
     assert!(rig.dir.path().join("data").join("stub.db").exists());
     assert!(rig.dir.path().join("server.pid").exists());
 
     sup.shutdown().await;
     assert_eq!(sup.status(), Status::Stopped);
-    assert!(
-        http_status(rig.ui, "/api/health", Duration::from_millis(300))
-            .await
-            .is_err(),
-        "port must be closed"
-    );
+    assert!(http_status(rig.ui, "/api/health", Duration::from_millis(300)).await.is_err(), "port must be closed");
     assert!(!rig.dir.path().join("server.pid").exists());
     let log = std::fs::read_to_string(rig.dir.path().join("logs").join("server.log")).unwrap();
     assert!(log.contains("listening"), "{log}");
-    assert!(
-        log.contains("terminated cleanly"),
-        "SIGTERM must reach the server and let it exit: {log}"
-    );
-    assert!(
-        !log.contains(TOKEN),
-        "the owner token must not appear in the log"
-    );
+    assert!(log.contains("terminated cleanly"), "SIGTERM must reach the server and let it exit: {log}");
+    assert!(!log.contains(TOKEN), "the owner token must not appear in the log");
 }
 
 #[tokio::test]
@@ -164,11 +121,7 @@ async fn restarts_after_a_crash() {
         if !now.is_empty() && now != first && sup.status() == Status::Running {
             break;
         }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "no restart; status: {:?}",
-            sup.status()
-        );
+        assert!(std::time::Instant::now() < deadline, "no restart; status: {:?}", sup.status());
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     assert_eq!(get(rig.ui, "/api/ping", Some(TOKEN)).0, 200);
@@ -183,20 +136,12 @@ async fn restarts_a_server_that_stops_answering_health_checks() {
     assert_eq!(get(rig.ui, "/sick", None).0, 200);
     assert_eq!(get(rig.ui, "/api/health", None).0, 503);
     assert!(
-        sup.wait_for(
-            |s| matches!(s, Status::Restarting { reason, .. } if reason.contains("health")),
-            LONG
-        )
-        .await,
+        sup.wait_for(|s| matches!(s, Status::Restarting { reason, .. } if reason.contains("health")), LONG).await,
         "status: {:?}",
         sup.status()
     );
     assert!(sup.wait_for(|s| *s == Status::Running, LONG).await);
-    assert_eq!(
-        get(rig.ui, "/api/health", None).0,
-        200,
-        "a fresh process is healthy again"
-    );
+    assert_eq!(get(rig.ui, "/api/health", None).0, 200, "a fresh process is healthy again");
     sup.shutdown().await;
 }
 
@@ -209,20 +154,9 @@ async fn waits_for_a_slow_start_and_gives_up_on_a_stuck_one() {
     sup.shutdown().await;
 
     let rig = Rig::new();
-    let policy = Policy {
-        startup_timeout: Duration::from_millis(400),
-        ..fast()
-    };
+    let policy = Policy { startup_timeout: Duration::from_millis(400), ..fast() };
     let sup = Supervisor::start(rig.spec(&[("STUB_STARTUP_DELAY_MS", "30000")]), policy);
-    assert!(
-        sup.wait_for(
-            |s| matches!(s, Status::Restarting { reason, .. } if reason.contains("did not answer")),
-            LONG
-        )
-        .await,
-        "{:?}",
-        sup.status()
-    );
+    assert!(sup.wait_for(|s| matches!(s, Status::Restarting { reason, .. } if reason.contains("did not answer")), LONG).await, "{:?}", sup.status());
     sup.shutdown().await;
 }
 
@@ -230,29 +164,13 @@ async fn waits_for_a_slow_start_and_gives_up_on_a_stuck_one() {
 async fn gives_up_on_a_crash_loop_until_asked_to_restart() {
     let rig = Rig::new();
     let sup = Supervisor::start(rig.spec(&[("STUB_EXIT_CODE", "3")]), fast());
-    assert!(
-        sup.wait_for(|s| matches!(s, Status::Failed { .. }), LONG)
-            .await,
-        "status: {:?}",
-        sup.status()
-    );
-    let Status::Failed { reason } = sup.status() else {
-        unreachable!()
-    };
+    assert!(sup.wait_for(|s| matches!(s, Status::Failed { .. }), LONG).await, "status: {:?}", sup.status());
+    let Status::Failed { reason } = sup.status() else { unreachable!() };
     assert!(reason.contains("exited"), "{reason}");
     // restart() leaves Failed and tries again (and fails again, since the stub still exits)
     sup.restart();
-    assert!(
-        sup.wait_for(
-            |s| matches!(s, Status::Starting | Status::Restarting { .. }),
-            LONG
-        )
-        .await
-    );
-    assert!(
-        sup.wait_for(|s| matches!(s, Status::Failed { .. }), LONG)
-            .await
-    );
+    assert!(sup.wait_for(|s| matches!(s, Status::Starting | Status::Restarting { .. }), LONG).await);
+    assert!(sup.wait_for(|s| matches!(s, Status::Failed { .. }), LONG).await);
     sup.shutdown().await;
     assert_eq!(sup.status(), Status::Stopped);
 }
@@ -263,15 +181,7 @@ async fn a_missing_binary_is_a_failure_not_a_panic() {
     let mut spec = rig.spec(&[]);
     spec.program = rig.dir.path().join("does-not-exist");
     let sup = Supervisor::start(spec, fast());
-    assert!(
-        sup.wait_for(
-            |s| matches!(s, Status::Failed { reason } if reason.contains("could not start")),
-            LONG
-        )
-        .await,
-        "{:?}",
-        sup.status()
-    );
+    assert!(sup.wait_for(|s| matches!(s, Status::Failed { reason } if reason.contains("could not start")), LONG).await, "{:?}", sup.status());
     sup.shutdown().await;
 }
 
@@ -294,43 +204,23 @@ fn reaps_an_orphaned_server_but_not_an_unrelated_process() {
     let rig = Rig::new();
     let spec = rig.spec(&[]);
     let mut orphan = Command::new(STUB);
-    orphan
-        .env_clear()
-        .envs(spec.env.iter().map(|(k, v)| (k, v)))
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+    orphan.env_clear().envs(spec.env.iter().map(|(k, v)| (k, v))).stdout(Stdio::null()).stderr(Stdio::null());
     let mut orphan = orphan.spawn().unwrap();
     std::thread::sleep(Duration::from_millis(300));
     let pid_file = rig.dir.path().join("stale.pid");
     std::fs::write(&pid_file, orphan.id().to_string()).unwrap();
-    assert_eq!(
-        reap_stale(&pid_file, "dorks-server", Duration::from_secs(3)),
-        Some(orphan.id())
-    );
+    assert_eq!(reap_stale(&pid_file, "dorks-server", Duration::from_secs(3)), Some(orphan.id()));
     assert!(orphan.wait().is_ok(), "the orphan is gone");
     assert!(!pid_file.exists());
 
     let mut bystander = Command::new("sleep").arg("30").spawn().unwrap();
     std::fs::write(&pid_file, bystander.id().to_string()).unwrap();
-    assert_eq!(
-        reap_stale(&pid_file, "dorks-server", Duration::from_secs(1)),
-        None
-    );
-    assert!(
-        bystander.try_wait().unwrap().is_none(),
-        "a process with another name must be left alone"
-    );
+    assert_eq!(reap_stale(&pid_file, "dorks-server", Duration::from_secs(1)), None);
+    assert!(bystander.try_wait().unwrap().is_none(), "a process with another name must be left alone");
     bystander.kill().unwrap();
     let _ = bystander.wait();
 
-    assert_eq!(
-        reap_stale(
-            &rig.dir.path().join("none.pid"),
-            "dorks-server",
-            Duration::from_secs(1)
-        ),
-        None
-    );
+    assert_eq!(reap_stale(&rig.dir.path().join("none.pid"), "dorks-server", Duration::from_secs(1)), None);
 }
 
 #[test]
@@ -339,11 +229,7 @@ fn the_server_exits_when_the_shell_is_gone() {
     let mut parent = Command::new("sleep").arg("1").spawn().unwrap();
     let spec = rig.spec(&[("DORKS_PARENT_PID", &parent.id().to_string())]);
     let mut child = Command::new(STUB);
-    child
-        .env_clear()
-        .envs(spec.env.iter().map(|(k, v)| (k, v)))
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+    child.env_clear().envs(spec.env.iter().map(|(k, v)| (k, v))).stdout(Stdio::null()).stderr(Stdio::null());
     let mut child = child.spawn().unwrap();
     let _ = parent.wait();
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
@@ -351,10 +237,7 @@ fn the_server_exits_when_the_shell_is_gone() {
         if child.try_wait().unwrap().is_some() {
             break;
         }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "the server kept running without its parent"
-        );
+        assert!(std::time::Instant::now() < deadline, "the server kept running without its parent");
         std::thread::sleep(Duration::from_millis(100));
     }
 }
@@ -363,12 +246,9 @@ fn the_server_exits_when_the_shell_is_gone() {
 fn get_ignoring_reset(port: u16, path: &str) -> Option<u16> {
     let mut stream = TcpStream::connect(("127.0.0.1", port)).ok()?;
     stream.set_read_timeout(Some(Duration::from_secs(2))).ok()?;
-    write!(
-        stream,
-        "GET {path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"
-    )
-    .ok()?;
+    write!(stream, "GET {path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n").ok()?;
     let mut raw = String::new();
     let _ = stream.read_to_string(&mut raw);
     raw.split_whitespace().nth(1).and_then(|s| s.parse().ok())
 }
+
