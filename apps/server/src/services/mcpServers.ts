@@ -10,7 +10,7 @@ const MAX_SERVERS = 50;
 const MAX_URL = 2048;
 const MAX_VALUE_BYTES = 16 * 1024;
 const MAX_ENTRIES = 32;
-const HEADER_NAME = /^[A-Za-z0-9-]{1,64}$/;
+const HEADER_NAME = /^[A-Za-z0-9_-]{1,64}$/; // HTTP token characters in practice: CONTEXT7_API_KEY has underscores
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 
 interface Row {

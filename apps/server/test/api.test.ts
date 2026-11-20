@@ -297,6 +297,8 @@ describe("settings", () => {
     expect((await a.put("/api/mcp-servers/q", { transport: "http", url: q.url })).status).toBe(200);
     expect((await mcpServerConfigs(h.app)).find((s) => s.name === "q")).toMatchObject({ url: "https://u:p@mcp.example.com/mcp?key=s3cret" });
     expect((await a.del("/api/mcp-servers/q")).status).toBe(200);
+    expect((await a.put("/api/mcp-servers/context7", { transport: "http", url: "https://mcp.context7.com/mcp", headers: { CONTEXT7_API_KEY: "c7" } })).status).toBe(200);
+    expect((await a.del("/api/mcp-servers/context7")).status).toBe(200);
     expect((await a.del("/api/mcp-servers/fs")).status).toBe(200);
     expect((await a.get("/api/mcp-servers")).json).toHaveLength(1);
   });
