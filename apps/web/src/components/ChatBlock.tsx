@@ -262,6 +262,7 @@ function AgentText({ block }: { block: Extract<AgentBlock, { kind: 'assistant' }
     <HoverActions
       text={block.text}
       sentAt={block.at ? new Date(block.at) : undefined}
+      timeBelow
       rate={block.final}
       onReply={onReply && (() => onReply({ kind: 'text', text: quoteText(block.text.replace(IMAGE, '')) }))}
     >
