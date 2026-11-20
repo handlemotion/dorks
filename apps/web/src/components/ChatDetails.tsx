@@ -154,7 +154,11 @@ export function ChatDetails({
     if (key.startsWith('pr:')) {
       const url = key.slice(3)
       const current = view?.url === url || data.pr?.url === url
-      return <PullRequestPanel changes={current ? changes : []} pr={current ? data.pr : { url }} pullRequest={current ? data.pullRequest : undefined} onAsk={onAsk} />
+      return (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <PullRequestPanel changes={current ? changes : []} pr={current ? data.pr : { url }} pullRequest={current ? data.pullRequest : undefined} onAsk={onAsk} />
+        </div>
+      )
     }
     switch (key as Panel) {
       case 'progress':
