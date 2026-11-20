@@ -26,10 +26,16 @@ export type WorkBlock = ProgressToolBlock | ProgressTextBlock
  * shows). The answer is the message the server named final; a turn that ended without one (stopped, failed, or stored before the
  * server named answers) answers with its last message. A running turn has no answer yet. Notices and machine drafts are neither.
  */
-export function splitTurn(blocks: readonly Block[], ended: boolean): { work: WorkBlock[]; answer?: ProgressTextBlock } {
+export function splitTurn(blocks: readonly Block[], ended: boolean, running = false): { work: WorkBlock[]; answer?: ProgressTextBlock } {
   const texts = blocks.filter((b): b is ProgressTextBlock => b.kind === 'assistant')
   const answer = texts.find((b) => b.final) ?? (ended ? texts.at(-1) : undefined)
-  return { work: blocks.filter((b): b is WorkBlock => (b.kind === 'tool' || b.kind === 'assistant') && b !== answer), answer }
+  // While the chat's last turn runs, its latest text with nothing after it may still become the answer: kept out of the work until a tool
+  // call follows it, so it never shows as a step and then vanishes into the thread. Anything after it (a tool call, or the notice an agent
+  // that exited mid-turn leaves) releases it.
+  const steps = blocks.filter((b): b is WorkBlock => b.kind === 'tool' || b.kind === 'assistant')
+  const last = blocks.at(-1)
+  const candidate = running && !ended && !answer && last?.kind === 'assistant' ? last : undefined
+  return { work: steps.filter((b) => b !== answer && b !== candidate), answer }
 }
 
 const IMAGE = /!\[[^\]]*\]\([^)]*\)/g
@@ -42,8 +48,8 @@ export function progressTurns(blocks: readonly Block[]): ProgressTurn[] {
   const turns: ProgressTurn[] = []
   let prompt: string | null = null
   let pending: AgentBlock[] = []
-  const close = (ended: boolean, durationMs?: number) => {
-    const steps = splitTurn(pending, ended).work.map((block) => ({ key: block.id, block }))
+  const close = (ended: boolean, durationMs?: number, running = false) => {
+    const steps = splitTurn(pending, ended, running).work.map((block) => ({ key: block.id, block }))
     if (steps.length > 0) turns.push({ key: steps[0].key, prompt, steps, durationMs })
     pending = []
   }
@@ -54,7 +60,7 @@ export function progressTurns(blocks: readonly Block[]): ProgressTurn[] {
     } else if (block.kind === 'turn') close(true, block.durationMs)
     else pending.push(block)
   }
-  close(false)
+  close(false, undefined, true)
   return turns
 }
 

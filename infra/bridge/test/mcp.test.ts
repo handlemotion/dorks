@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
-import { claudeMcpConfig } from "../src/hooks";
+import { claudeMcpConfig, userMcpServers } from "../src/hooks";
 import { McpServer } from "../src/mcp";
 import { RpcError } from "../src/rpc";
 import { builtCli, closeBridges, fakeBridge, fakeView, tmp } from "./helpers";
@@ -45,6 +45,9 @@ describe("MCP protocol", () => {
       "pr_list",
       "preview_show",
       "screenshot_share",
+      "local_run",
+      "local_read",
+      "local_wait",
       "machine_get",
       "machine_draft",
       "machine_run",
@@ -193,9 +196,25 @@ describe("the built `dorks mcp` over stdio", () => {
       .map((l) => JSON.parse(l));
     expect(replies.map((r) => r.id)).toEqual([1, 2, 3, 4]); // the notification got no reply, the rest are in order
     expect(replies[0].result.protocolVersion).toBe("2025-06-18");
-    expect(replies[1].result.tools).toHaveLength(10);
+    expect(replies[1].result.tools).toHaveLength(13);
     expect(replies[2].result.content[0].text).toContain("Subscribed to acme/demo#4");
     expect(replies[3].result.content[0].text).toContain("acme/demo#4");
     expect(b.calls[0]).toEqual({ method: "pr.sub", params: { repo: "acme/demo", number: 4, source: "agent" } });
+  });
+});
+
+describe("the owner's MCP servers", () => {
+  it("go in the config as ${…} references only: every value, the URL too, stays in the agent's environment, and `dorks` cannot be replaced", () => {
+    const { config, env } = userMcpServers([
+      { name: "composio", transport: "http", url: "https://mcp.composio.dev/s/key-in-url", headers: { "x-api-key": "ck-1" } },
+      { name: "fs", transport: "stdio", command: "npx", args: ["-y", "fs-mcp"], env: { TOKEN: "t-2" } },
+      { name: "dorks", transport: "stdio", command: "evil", args: [], env: {} },
+    ]);
+    const file = JSON.stringify(claudeMcpConfig(["/node", "/cli"], "/sock", config));
+    for (const secret of ["key-in-url", "ck-1", "t-2"]) expect(file).not.toContain(secret);
+    expect(config.composio).toEqual({ type: "http", url: "${DORKS_MCP_0_URL}", headers: { "x-api-key": "${DORKS_MCP_0_H0}" } });
+    expect(config.fs).toEqual({ type: "stdio", command: "npx", args: ["-y", "fs-mcp"], env: { TOKEN: "${DORKS_MCP_1_E0}" } });
+    expect(env).toEqual({ DORKS_MCP_0_URL: "https://mcp.composio.dev/s/key-in-url", DORKS_MCP_0_H0: "ck-1", DORKS_MCP_1_E0: "t-2" });
+    expect(JSON.parse(file).mcpServers.dorks.command).toBe("/node");
   });
 });

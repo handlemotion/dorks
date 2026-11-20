@@ -4,7 +4,7 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { ClientEvent, PullRequestView } from "@dorks/shared";
+import type { ClientEvent, McpServerView, PullRequestView } from "@dorks/shared";
 import type { Dork, Settings, SnapshotStatus } from "./types.ts";
 
 const SNAPSHOT_STEPS = [
@@ -109,6 +109,10 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   const dorks = new Map<string, MockDork>();
   const prs = new Map<string, PullRequestView>();
   const secrets = new Map<string, string>();
+  const mcpServers = new Map<string, McpServerView>();
+  // Composio: a sign-in "finishes" when its link is requested, so the UI's wait ends on the next read.
+  const composioApps = new Set<string>();
+  let localAccessEnabled = true;
   const live = new Set<ServerResponse>();
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const settings: Settings = {
@@ -556,6 +560,55 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       },
     ],
     ["GET /api/secrets", ({ res }) => json(res, 200, [...secrets.keys()].sort())],
+    // Local access (docs/local-access.md): the switch only; the mock's agents never ask to use the computer.
+    ["GET /api/local-access", ({ res }) => json(res, 200, { enabled: localAccessEnabled, grants: [] })],
+    [
+      "PUT /api/local-access",
+      ({ body, res }) => {
+        if (typeof body.enabled !== "boolean") return fail(res, "invalid", "enabled must be a boolean");
+        localAccessEnabled = body.enabled;
+        broadcast({ t: "settings" });
+        return json(res, 200, {});
+      },
+    ],
+    [
+      "GET /api/mcp-servers",
+      ({ res }) =>
+        json(
+          res,
+          200,
+          [...mcpServers.values()].sort((a, b) => a.name.localeCompare(b.name)),
+        ),
+    ],
+    ["GET /api/composio", ({ res }) => json(res, 200, { connected: mcpServers.has("composio"), toolkits: [...composioApps].sort() })],
+    [
+      "PUT /api/composio",
+      ({ body, res }) => {
+        if (!str(body.apiKey)) return fail(res, "invalid", "enter a Composio API key");
+        const createdAt = Date.now();
+        mcpServers.set("composio", {
+          name: "composio",
+          transport: "http",
+          url: "https://app.composio.dev/tool_router/v3/trs_mock/mcp",
+          command: null,
+          args: [],
+          headerNames: ["x-api-key"],
+          envNames: [],
+          createdAt,
+        });
+        broadcast({ t: "settings" });
+        return json(res, 200, {});
+      },
+    ],
+    [
+      "DELETE /api/composio",
+      ({ res }) => {
+        mcpServers.delete("composio");
+        composioApps.clear();
+        broadcast({ t: "settings" });
+        return json(res, 200, {});
+      },
+    ],
     // Builds are not mocked: the list is empty, so the UI shows its empty state (use `pnpm dev` for the real flow).
     ["GET /api/builds", ({ res }) => json(res, 200, [])],
   ]);
@@ -570,6 +623,47 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     if (method === "DELETE") {
       secrets.delete(name);
       broadcast({ t: "settings" });
+      return json(res, 200, {});
+    }
+    return fail(res, "not_found", "Unknown route.");
+  };
+
+  // A loose stand-in for services/mcpServers.ts: no values are kept, only the names the views show.
+  const routeMcp = ({ method, body, res }: Ctx, name: string) => {
+    if (method === "PUT") {
+      if (!/^[a-z][a-z0-9_-]{0,31}$/.test(name) || name === "dorks" || name === "computer") return fail(res, "invalid", "Pick another name.");
+      const http = body.transport === "http";
+      if (http ? !str(body.url) : !str(body.command)) return fail(res, "invalid", http ? "URL is required" : "command is required");
+      const keys = (v: unknown) => (v && typeof v === "object" ? Object.keys(v).sort() : []);
+      mcpServers.set(name, {
+        name,
+        transport: http ? "http" : "stdio",
+        url: http ? (str(body.url) ?? null) : null,
+        command: http ? null : (str(body.command) ?? null),
+        args: !http && Array.isArray(body.args) ? body.args.map(String) : [],
+        headerNames: http ? keys(body.headers) : [],
+        envNames: http ? [] : keys(body.env),
+        createdAt: mcpServers.get(name)?.createdAt ?? Date.now(),
+      });
+      broadcast({ t: "settings" });
+      return json(res, 200, {});
+    }
+    if (method === "DELETE") {
+      mcpServers.delete(name);
+      broadcast({ t: "settings" });
+      return json(res, 200, {});
+    }
+    return fail(res, "not_found", "Unknown route.");
+  };
+
+  const routeComposio = ({ method, res }: Ctx, toolkit: string, link: boolean) => {
+    if (!mcpServers.has("composio")) return fail(res, "not_configured", "Add your Composio API key first.");
+    if (method === "POST" && link) {
+      composioApps.add(toolkit);
+      return json(res, 200, { url: `https://app.composio.dev/link/mock_${toolkit}` });
+    }
+    if (method === "DELETE" && !link) {
+      composioApps.delete(toolkit);
       return json(res, 200, {});
     }
     return fail(res, "not_found", "Unknown route.");
@@ -598,6 +692,10 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     if (m) return routeDork(c, m);
     const sm = /^\/api\/secrets\/([^/]+)$/.exec(path);
     if (sm) return routeSecret(c, decodeURIComponent(sm[1]!));
+    const cm = /^\/api\/composio\/toolkits\/([a-z0-9_]+)(\/link)?$/.exec(path);
+    if (cm) return routeComposio(c, cm[1]!, !!cm[2]);
+    const mm = /^\/api\/mcp-servers\/([^/]+)$/.exec(path);
+    if (mm) return routeMcp(c, decodeURIComponent(mm[1]!));
     return fail(res, "not_found", "Unknown route.");
   };
 

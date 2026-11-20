@@ -274,4 +274,56 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE settings ADD COLUMN github_connected INTEGER NOT NULL DEFAULT 0;
   UPDATE settings SET github_connected = (github_token_enc IS NOT NULL), github_token_enc = NULL, github_login = NULL;
   `,
+  `
+  -- MCP servers from Customize (services/mcpServers.ts). Header and env values may be secrets: they live in secrets_enc, one AES-GCM
+  -- envelope of a JSON object {headers, env}; the names alone are copied to secret_names for display.
+  CREATE TABLE mcp_servers (
+    name TEXT PRIMARY KEY,
+    transport TEXT NOT NULL CHECK (transport IN ('http', 'stdio')),
+    url TEXT,
+    command TEXT,
+    args TEXT NOT NULL DEFAULT '[]',
+    secret_names TEXT NOT NULL DEFAULT '{"headers":[],"env":[]}',
+    secrets_enc TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  `,
+  `
+  -- Local access (services/local.ts, docs/local-access.md): an agent's requests to run a command or read a file on the owner's own
+  -- computer, and the time-limited permissions the owner granted. Nothing runs without a row the owner allowed.
+  CREATE TABLE local_requests (
+    id TEXT PRIMARY KEY,
+    dork_id TEXT NOT NULL REFERENCES dorks (id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('run', 'read')),
+    command TEXT,
+    cwd TEXT,
+    path TEXT,
+    reason TEXT NOT NULL,
+    timeout_ms INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'denied', 'expired', 'done', 'failed')),
+    grant_id TEXT,
+    exit_code INTEGER,
+    output TEXT,
+    truncated INTEGER NOT NULL DEFAULT 0,
+    error TEXT,
+    expires_at INTEGER NOT NULL,
+    decided_at INTEGER,
+    finished_at INTEGER,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX local_requests_dork ON local_requests (dork_id, status);
+
+  CREATE TABLE local_grants (
+    id TEXT PRIMARY KEY,
+    dork_id TEXT NOT NULL REFERENCES dorks (id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('run', 'read')),
+    command TEXT,           -- run: this exact command ...
+    cwd TEXT,               -- ... in this exact folder
+    dir TEXT,               -- read: any file under this folder (resolved, symlinks followed)
+    expires_at INTEGER NOT NULL,
+    revoked INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX local_grants_dork ON local_grants (dork_id, revoked, expires_at);
+  `,
 ];

@@ -281,7 +281,7 @@ html [data-sonner-toast][data-styled="true"] [data-close-button] svg {
 }
 
 /* Dialogs: a white sheet, 540px wide, with the actions on a bottom band in the app fill under a hairline, and a small bare close in the
-   corner. A body between header and footer is a `data-slot="dialog-body"` element, with the header's 24px sides. */
+   corner. A body between header and footer is a `data-slot="dialog-body"` element, with the header's 18px sides. */
 [data-slot="dialog-content"] {
   gap: 0;
   padding: 0;
@@ -295,13 +295,13 @@ html [data-sonner-toast][data-styled="true"] [data-close-button] svg {
   }
 }
 [data-slot="dialog-header"] {
-  padding: 24px 48px 20px 24px;
+  padding: 18px 44px 14px 18px;
 }
 [data-slot="dialog-body"] {
-  padding: 0 24px 24px;
+  padding: 0 18px 18px;
 }
 [data-slot="dialog-footer"] {
-  padding: 12px 16px;
+  padding: 10px 12px;
   background-color: var(--app);
   border-top: 1px solid var(--surface-line);
 }
@@ -310,8 +310,8 @@ html.dark [data-slot="dialog-footer"] {
 }
 /* Only the corner close: a Cancel rendered through DialogClose also takes this slot name, and stays a normal button. */
 [data-slot="dialog-content"] > [data-slot="dialog-close"] {
-  top: 16px;
-  right: 16px;
+  top: 14px;
+  right: 14px;
   width: 24px;
   height: 24px;
   background: transparent;

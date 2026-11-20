@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useSyncExternalStore, type ReactNode } from "react";
-import { toAppError, type PullRequestView, type SubscriptionView } from "@dorks/shared";
+import { toAppError, type ComposioStatus, type McpServerView, type PullRequestView, type SubscriptionView } from "@dorks/shared";
 import type { DorksClient, ConnectionState } from "./client.ts";
 import type { EventsState } from "./events.ts";
 import type { QueryState, Store } from "./store.ts";
-import type { BuildView, Dork, RunView, Settings, SnapshotStatus, Usage, GithubRepos } from "./types.ts";
+import type { BuildView, Dork, RunView, Settings, SnapshotStatus, Usage, GithubRepos, LocalAccess } from "./types.ts";
 
 const Ctx = createContext<DorksClient | null>(null);
 
@@ -65,6 +65,20 @@ export function useUsage(): Usage | undefined {
 /** What the GitHub CLI login can see: its user, organizations and repositories; `undefined` while loading. */
 export function useGithubRepos(): GithubRepos | undefined {
   return useStore(useDorksClient().githubRepos()).data;
+}
+
+/** The MCP servers from Customize; `undefined` while loading. */
+export function useComposio(): ComposioStatus | undefined {
+  return useStore(useDorksClient().composio()).data;
+}
+
+/** Local access: the switch and the active permissions; `undefined` while loading. */
+export function useLocalAccess(): LocalAccess | undefined {
+  return useStore(useDorksClient().localAccess()).data;
+}
+
+export function useMcpServers(): McpServerView[] | undefined {
+  return useStore(useDorksClient().mcpServers()).data;
 }
 
 export function useSecretNames(): string[] | undefined {

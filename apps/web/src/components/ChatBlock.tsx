@@ -1,5 +1,5 @@
 import { useId, useMemo, useState, type ReactNode } from 'react'
-import { BoxIcon, ChevronRightIcon, CircleAlertIcon, CircleCheckIcon, CircleStopIcon, ReplyIcon, TerminalIcon, WrenchIcon } from 'lucide-react'
+import { BoxIcon, ChevronRightIcon, CircleAlertIcon, CircleCheckIcon, CircleStopIcon, PanelRightOpenIcon, ReplyIcon, TerminalIcon, WrenchIcon } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { Button } from '@dorks/ui/button'
 import type { Block } from '@dorks/shared'
@@ -17,6 +17,7 @@ import { MessageScrollerItem } from '@dorks/ui/message-scroller'
 import { splitTurn, toolStep, type WorkBlock } from '../lib/progress'
 import { TOOL_KIND_ICONS } from './toolIcons'
 import { WordShimmer } from './WordShimmer'
+import { LocalRequestCard } from './LocalRequest'
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from '@dorks/ui/trace'
 
 type ToolBlock = Extract<Block, { kind: 'tool' }>
@@ -311,6 +312,9 @@ function agentContent(blocks: AgentBlock[]): ReactNode[] {
           )}
         </Trace>,
       )
+    } else if (block.kind === 'local') {
+      // The agent asked to use the owner's computer (docs/local-access.md): what would run, its reason and the owner's answer.
+      content.push(<LocalRequestCard key={block.id} block={block} />)
     } else if (block.kind === 'notice') {
       content.push(
         <Trace key={block.id} role={block.level === 'error' ? 'alert' : 'status'}>
@@ -373,7 +377,7 @@ function latestStep(work: WorkBlock[]): string {
 }
 
 /**
- * A turn's overview, as one row: a chevron, the kinds of tools it used, how long it worked and its step count ("Worked for 2m 14s · 8
+ * A turn's overview, as one row: the kinds of tools it used, how long it worked and its step count ("Worked for 2m 14s · 8
  * steps"); while it runs, "Working" and its newest step. The work itself lives in Chat details' Progress; the row opens it there on
  * this turn (`onOpen`), or, without Chat details beside the chat, unfolds it below.
  */
@@ -402,9 +406,10 @@ function TurnCard({ work, end, onOpen }: { work: WorkBlock[]; end?: TurnBlock; o
         aria-label={inline ? undefined : `${title}, ${detail}. Show progress`}
         title={tools.length > 0 ? toolGroupTitle(tools) : undefined}
         onClick={() => (onOpen ? onOpen() : setOpen(!open))}
-        className="-mx-1 flex h-7 w-fit max-w-full min-w-0 items-center gap-2 rounded-(--control-radius) px-1 text-left text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="group/turn -mx-1 flex h-7 w-fit max-w-full min-w-0 items-center gap-2 rounded-(--control-radius) px-1 text-left text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <ChevronRightIcon aria-hidden className={`size-3.5 shrink-0 ${inline && open ? 'rotate-90' : ''}`} />
+        {/* A chevron only where the row unfolds in place; where it opens Progress, a panel icon says so on hover instead. */}
+        {inline && <ChevronRightIcon aria-hidden className={`size-3.5 shrink-0 ${open ? 'rotate-90' : ''}`} />}
         {kinds.length > 0 && (
           <span aria-hidden className="flex shrink-0 -space-x-1">
             {kinds.map((kind) => {
@@ -420,6 +425,7 @@ function TurnCard({ work, end, onOpen }: { work: WorkBlock[]; end?: TurnBlock; o
         <span className="shrink-0">{running ? <WordShimmer>{title}</WordShimmer> : title}</span>
         <span aria-hidden>·</span>
         <span className="min-w-0 truncate tabular-nums">{detail}</span>
+        {!inline && <PanelRightOpenIcon aria-hidden className="size-3.5 shrink-0 opacity-0 transition-opacity group-hover/turn:opacity-100 group-focus-visible/turn:opacity-100" />}
       </button>
       {inline && open && <WorkHistory id={historyId} blocks={work} />}
     </>
@@ -430,8 +436,8 @@ function TurnCard({ work, end, onOpen }: { work: WorkBlock[]; end?: TurnBlock; o
  * One turn, kept light: the card that sums up its work, then its answer and anything else it posted (notices, a machine draft). The
  * tool calls, edits and progress text are in Progress.
  */
-function TurnContent({ blocks, end, onOpenStep }: { blocks: AgentBlock[]; end?: TurnBlock; onOpenStep?: (key: string) => void }) {
-  const { work, answer } = splitTurn(blocks, !!end)
+function TurnContent({ blocks, end, running, onOpenStep }: { blocks: AgentBlock[]; end?: TurnBlock; running?: boolean; onOpenStep?: (key: string) => void }) {
+  const { work, answer } = splitTurn(blocks, !!end, running)
   const rest = blocks.filter((b) => b.kind !== 'tool' && b.kind !== 'assistant')
   const first = work[0]
   return (
@@ -478,7 +484,8 @@ export function ChatMessages({
   const { blocks, refs } = resolveSharedImages(raw, imageUrl)
   const images = transcriptImages(blocks)
   const reply = useMemo<ReplyHandlers>(() => ({ onReply, onSend: onReplySend, agent, refOf: (src) => refs.get(src) }), [onReply, onReplySend, agent, refs])
-  const messages = entries(blocks).map((entry) => {
+  const all = entries(blocks)
+  const messages = all.map((entry, n) => {
     if (entry.kind === 'user') {
       const { reply: quoted, body } = parseReply(entry.block.text)
       const text = body.replace(IMAGE, '').trim()
@@ -518,8 +525,9 @@ export function ChatMessages({
       <MessageScrollerItem key={entry.id} messageId={entry.id} className="-mt-7 -ml-10 pt-7 pl-10">
         <Message {...{ [REPLY_SOURCE]: '' }}>
           <MessageContent className="gap-3">
-            {turns(entry.blocks).map((turn, i) => (
-              <TurnContent key={`${entry.id}:${i}`} blocks={turn.blocks} end={turn.end} onOpenStep={onOpenStep} />
+            {turns(entry.blocks).map((turn, i, list) => (
+              // Only the chat's last turn can still be running.
+              <TurnContent key={`${entry.id}:${i}`} blocks={turn.blocks} end={turn.end} running={n === all.length - 1 && i === list.length - 1} onOpenStep={onOpenStep} />
             ))}
           </MessageContent>
         </Message>

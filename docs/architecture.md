@@ -109,7 +109,16 @@ IDs are UUID strings. Times are epoch milliseconds.
 | `GET /api/secrets` | | sorted names `string[]` |
 | `PUT /api/secrets/:name` | `{value}` | `{}` (`^[A-Z][A-Z0-9_]{0,63}$`, 16 KB max) |
 | `DELETE /api/secrets/:name` | | `{}` |
+| `GET /api/mcp-servers` | | `McpServerView[]` sorted by name: `{name, transport, url, command, args, headerNames, envNames, createdAt}`, never header or env values |
+| `PUT /api/mcp-servers/:name` | `{transport: "http", url, headers?}` or `{transport: "stdio", command, args?, env?}` | `{}`. Adds or replaces; a `null` header/env value keeps the saved one. Restarts awake Claude agents once their turn ends. See [MCP servers](mcp.md) |
+| `DELETE /api/mcp-servers/:name` | | `{}` |
+| `GET /api/composio` | | `{connected, toolkits}`: whether a Composio key is saved, and the apps signed in through it. See [MCP servers](mcp.md) |
+| `PUT /api/composio` | `{apiKey}` | `{}`. Checks the key with a Composio session and saves it as the `composio` server |
+| `DELETE /api/composio` | | `{}`. Removes the key and the `composio` server |
+| `POST /api/composio/toolkits/:toolkit/link` | | `{url}`: a Composio sign-in page for one app |
+| `DELETE /api/composio/toolkits/:toolkit` | | `{}`. Signs that app out |
 | `GET/POST /api/builds`, `GET/PATCH/DELETE /api/builds/:id`, `PUT /api/builds/:id/default`, `PUT/DELETE /api/builds/:id/vars/:name`, `GET/POST /api/builds/:id/runs`, `GET /api/builds/:id/runs/:runId/log`, `POST /api/builds/:id/runs/:runId/cancel`, `POST /api/builds/:id/drafts/:draftId/approve\|reject` | | Builds: named machine setups, see [builds](builds.md) ("UI and API") |
+| `POST /api/dorks/:id/local/:requestId`, `GET/PUT /api/local-access`, `DELETE /api/local-access/grants[/:grantId]` | | The owner's answers to an agent's requests to use this computer, the on/off switch and the time-limited permissions: [local access](local-access.md) |
 | `GET /api/health` | no auth | `{ok: true}` |
 
 `ClientEvent` and `SubscriptionView` are the zod types in `packages/shared`. A `turn_complete` carries `outcome` (`done`, `stopped` after the user's Stop, `failed`) and, for a `done` turn, `finalMessageId`: the turn's final answer, the last assistant message with no tool call after it, named by the server from the agent's stream. Clients show the final answer and fold the rest of the turn behind a checkpoint, "Worked for 2m 14s" (`durationMs`), that opens the turn's whole history; they never infer the final answer from position. Turns stored before these fields existed have neither. Every agent session is told this (`infra/bridge/src/guidance.ts`, as Claude's `--append-system-prompt` and Codex's `developerInstructions`), so it writes a self-contained final answer. The event log is append-only; a growing assistant message keeps **one** row whose text grows in place (same `seq`), so a client that tails must re-read from its last known `seq` inclusive.
@@ -150,6 +159,7 @@ One stream per client. Messages are `data: <json>\n\n`; a `: ping` comment every
 | `subscribe_pr` | `{repo, number, source: "auto"\|"agent"}` | `{}` (idempotent) |
 | `unsubscribe_pr` | `{repo, number}` | `{}` |
 | `build` | `{action: "get"\|"draft"\|"run"\|"logs"\|"submit", ...}` | The agent's `machine_*` MCP tools ([builds](builds.md), "Agent tooling"), scoped to this dork's build. Never returns a secret value |
+| `local` | `{action: "request"\|"wait", ...}` | The agent's `local_run`/`local_read`/`local_wait` tools: ask to run a command or read a file on the owner's computer, and wait for the answer and the result. Nothing runs without the owner's Allow: [local access](local-access.md) |
 | `show_preview` | `{port, title?, localhost?}` | `{port, url, title?}`. The agent's `preview_show` MCP tool (bridge RPC `preview.show`). The box provider hosts the port (Boat `POST /host`, public; see [Boat](boat.md#hosted-ports)) and the URL is stored in the dork's `previews` (one per port, the newest replaces). Errors `invalid` (bad or reserved port), `sleeping` (no box), `not_configured`, `failed` |
 
 **Pushes** (server to bridge): `{"t":"commands","cmds":[{cid, frame: CommandFrame}]}` is the **snapshot of unacknowledged commands** and is re-sent whenever it changes (and once right after `auth_ok`). Delivery is idempotent: the bridge dedupes by `cid`/message id and acknowledges with a `push` `ack` frame, which removes the command. This gives resume-after-reconnect for free: after a drop the bridge re-auths, calls `connect` (learning `afterBridgeSeq`, the event cursor, so it replays events above it) and receives the current snapshot. `{"t":"subscriptions","views":SubscriptionView[]}` is sent likewise for the bridge's PR cache.

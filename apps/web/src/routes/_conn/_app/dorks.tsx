@@ -16,6 +16,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel
 import { InputGroup, InputGroupButton } from '@dorks/ui/input-group'
 import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport } from '@dorks/ui/message-scroller'
 import { ChatMessages, resolveSharedImages } from '../../../components/ChatBlock'
+import { LocalAccessProvider } from '../../../components/LocalRequest'
 import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, useWide, type ChatDetailsData } from '../../../components/ChatDetails'
 import type { PullRequestPanelData } from '../../../components/PullRequestPanel'
 import { latestTasks, progressStore, progressTurns } from '../../../lib/progress'
@@ -392,28 +393,30 @@ function Thread({ dorkId }: { dorkId: string }) {
                     </Button>
                   </div>
                 )}
-                <ChatMessages
-                  blocks={view.blocks}
-                  imageUrl={actions.imageUrl}
-                  agent={dork.provider === 'codex' ? 'Codex' : 'Claude'}
-                  onOpenStep={
-                    wide
-                      ? (key) => {
-                          setDetailsOpen(true)
-                          progressStore.show(key)
-                        }
-                      : undefined
-                  }
-                  onReply={
-                    canReply
-                      ? (quoted, draft) => {
-                          setReply(quoted)
-                          if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft))
-                        }
-                      : undefined
-                  }
-                  onReplySend={canReply ? (quoted, answer) => run(() => send(withReply(quoted, answer))) : undefined}
-                />
+                <LocalAccessProvider dorkId={dork.id} agent={dork.provider === 'codex' ? 'Codex' : 'Claude'}>
+                  <ChatMessages
+                    blocks={view.blocks}
+                    imageUrl={actions.imageUrl}
+                    agent={dork.provider === 'codex' ? 'Codex' : 'Claude'}
+                    onOpenStep={
+                      wide
+                        ? (key) => {
+                            setDetailsOpen(true)
+                            progressStore.show(key)
+                          }
+                        : undefined
+                    }
+                    onReply={
+                      canReply
+                        ? (quoted, draft) => {
+                            setReply(quoted)
+                            if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft))
+                          }
+                        : undefined
+                    }
+                    onReplySend={canReply ? (quoted, answer) => run(() => send(withReply(quoted, answer))) : undefined}
+                  />
+                </LocalAccessProvider>
                 {eventsError && (
                   <p role="alert" className="text-sm text-destructive">
                     Could not load messages: {eventsError.message}. Retrying…

@@ -1,4 +1,4 @@
-import { appError, type AppError, type AppErrorCode, type MergeMethod, type PullRequestView, type SubscriptionView } from "@dorks/shared";
+import { appError, type AppError, type AppErrorCode, type ComposioStatus, type McpServerInput, type McpServerView, type MergeMethod, type PullRequestView, type SubscriptionView } from "@dorks/shared";
 import type {
   BoatCheck,
   BuildInput,
@@ -11,6 +11,8 @@ import type {
   RunLog,
   RunView,
   Settings,
+  LocalAccess,
+  LocalDecision,
   SettingsPatch,
   SnapshotStatus,
   Usage,
@@ -131,6 +133,11 @@ export function createApi(config: ApiConfig) {
     /** Merges the base branch into the PR's branch (GitHub's "Update branch"). */
     updatePullRequestBranch: (id: string, sha?: string) => request<object>("POST", `${dork(id)}/pr/update-branch`, { sha }),
     getSettings: () => request<Settings>("GET", "/api/settings"),
+    decideLocal: (id: string, requestId: string, d: LocalDecision) => request<object>("POST", `${dork(id)}/local/${enc(requestId)}`, d),
+    localAccess: () => request<LocalAccess>("GET", "/api/local-access"),
+    setLocalAccess: (enabled: boolean) => request<object>("PUT", "/api/local-access", { enabled }),
+    revokeLocalGrant: (grantId: string) => request<object>("DELETE", `/api/local-access/grants/${enc(grantId)}`),
+    revokeLocalGrants: (dorkId?: string) => request<object>("DELETE", dorkId ? `/api/local-access/grants?dork=${enc(dorkId)}` : "/api/local-access/grants"),
     updateSettings: (patch: SettingsPatch) => request<object>("PUT", "/api/settings", patch),
     /** Checks the given key (or the saved one) against Boat without saving it. */
     checkBoat: (input: { boatKey?: string; boatOrg?: string }) => request<BoatCheck>("POST", "/api/boat/check", input),
@@ -143,6 +150,14 @@ export function createApi(config: ApiConfig) {
     listSecrets: () => request<string[]>("GET", "/api/secrets"),
     setSecret: (name: string, value: string) => request<object>("PUT", `/api/secrets/${enc(name)}`, { value }),
     deleteSecret: (name: string) => request<object>("DELETE", `/api/secrets/${enc(name)}`),
+    listMcpServers: () => request<McpServerView[]>("GET", "/api/mcp-servers"),
+    putMcpServer: (name: string, input: McpServerInput) => request<object>("PUT", `/api/mcp-servers/${enc(name)}`, input),
+    deleteMcpServer: (name: string) => request<object>("DELETE", `/api/mcp-servers/${enc(name)}`),
+    composio: () => request<ComposioStatus>("GET", "/api/composio"),
+    connectComposio: (apiKey: string) => request<object>("PUT", "/api/composio", { apiKey }),
+    disconnectComposio: () => request<object>("DELETE", "/api/composio"),
+    composioLink: (toolkit: string) => request<{ url: string }>("POST", `/api/composio/toolkits/${enc(toolkit)}/link`),
+    composioUnlink: (toolkit: string) => request<object>("DELETE", `/api/composio/toolkits/${enc(toolkit)}`),
     // builds (docs/builds.md)
     listBuilds: () => request<BuildView[]>("GET", "/api/builds"),
     getBuild: (id: string) => request<BuildView>("GET", `/api/builds/${enc(id)}`),

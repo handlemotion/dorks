@@ -1,9 +1,25 @@
-import type { MergeMethod, PullRequestView, SubscriptionView } from "@dorks/shared";
+import type { ComposioStatus, McpServerInput, McpServerView, MergeMethod, PullRequestView, SubscriptionView } from "@dorks/shared";
 import { EventsFeed } from "./events.ts";
 import { createApi, ApiError, type ApiConfig, type DesktopOptions } from "./http.ts";
 import { connectLive, type LiveStatus } from "./live.ts";
 import { Query, type QueryOptions, type Store } from "./store.ts";
-import type { BuildInput, BuildVarInput, BuildView, CreateDorkInput, Dork, LiveMessage, PrRefInput, RunView, Settings, SettingsPatch, SnapshotStatus, Usage, GithubRepos } from "./types.ts";
+import type {
+  BuildInput,
+  BuildVarInput,
+  BuildView,
+  CreateDorkInput,
+  Dork,
+  LiveMessage,
+  PrRefInput,
+  RunView,
+  Settings,
+  SettingsPatch,
+  SnapshotStatus,
+  Usage,
+  GithubRepos,
+  LocalAccess,
+  LocalDecision,
+} from "./types.ts";
 
 export interface ClientConfig extends ApiConfig {
   /** Events fetched per page. */
@@ -111,6 +127,9 @@ export class DorksClient {
         this.invalidate("pr"); // a new GitHub login may see a PR the old one could not
         this.invalidate("github-repos");
         this.invalidate("secrets");
+        this.invalidate("mcp-servers");
+        this.invalidate("composio");
+        this.invalidate("local-access");
         break;
       case "snapshot":
         this.invalidate("snapshot");
@@ -176,6 +195,22 @@ export class DorksClient {
         throw e;
       }
     });
+  }
+
+  /** The MCP servers from Customize: names of headers and variables, never their values. */
+  composio() {
+    return this.query<ComposioStatus>("composio", () => this.api.composio());
+  }
+  /** Reads Composio again: a sign-in finishes in the browser, with no event here. */
+  refreshComposio() {
+    this.invalidate("composio");
+  }
+  /** Local access: the switch and the permissions granted for a while (docs/local-access.md). */
+  localAccess() {
+    return this.query<LocalAccess>("local-access", () => this.api.localAccess());
+  }
+  mcpServers() {
+    return this.query<McpServerView[]>("mcp-servers", () => this.api.listMcpServers());
   }
 
   subscriptions(dorkId: string) {
@@ -321,6 +356,46 @@ export class DorksClient {
     deleteSecret: async (name: string) => {
       await this.api.deleteSecret(name);
       this.invalidate("secrets");
+    },
+    putMcpServer: async (name: string, input: McpServerInput) => {
+      await this.api.putMcpServer(name, input);
+      this.invalidate("mcp-servers");
+    },
+    connectComposio: async (apiKey: string) => {
+      await this.api.connectComposio(apiKey);
+      this.invalidate("mcp-servers");
+      this.invalidate("composio");
+    },
+    disconnectComposio: async () => {
+      await this.api.disconnectComposio();
+      this.invalidate("mcp-servers");
+      this.invalidate("composio");
+    },
+    composioLink: (toolkit: string) => this.api.composioLink(toolkit),
+    composioUnlink: async (toolkit: string) => {
+      await this.api.composioUnlink(toolkit);
+      this.invalidate("composio");
+    },
+    /** The owner's answer to an agent's request to use this computer. The transcript shows the outcome. */
+    decideLocal: async (dorkId: string, requestId: string, d: LocalDecision) => {
+      await this.api.decideLocal(dorkId, requestId, d);
+      this.invalidate("local-access");
+    },
+    setLocalAccess: async (enabled: boolean) => {
+      await this.api.setLocalAccess(enabled);
+      this.invalidate("local-access");
+    },
+    revokeLocalGrant: async (grantId: string) => {
+      await this.api.revokeLocalGrant(grantId);
+      this.invalidate("local-access");
+    },
+    revokeLocalGrants: async (dorkId?: string) => {
+      await this.api.revokeLocalGrants(dorkId);
+      this.invalidate("local-access");
+    },
+    deleteMcpServer: async (name: string) => {
+      await this.api.deleteMcpServer(name);
+      this.invalidate("mcp-servers");
     },
     createBuild: async (input: BuildInput & { name: string }) => {
       const r = await this.api.createBuild(input);

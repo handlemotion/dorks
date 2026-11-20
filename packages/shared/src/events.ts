@@ -4,6 +4,10 @@ import { appError, type AppError } from "./errors";
 
 export const dorkState = z.enum(["creating", "working", "idle", "sleeping", "waking", "error"]);
 
+/** What an agent may ask to do on the owner's computer: run a shell command, or read one text file. */
+export const localKind = z.enum(["run", "read"]);
+export type LocalKind = z.infer<typeof localKind>;
+
 export const turnOutcome = z.enum(["done", "stopped", "failed"]);
 export type TurnOutcome = z.infer<typeof turnOutcome>;
 
@@ -44,6 +48,29 @@ export const clientEvent = z.discriminatedUnion("type", [
   // Builds (docs/builds.md): the agent submitted a draft of its machine for the owner's approval, and the owner's answer.
   z.object({ ...base, type: z.literal("build_draft"), draftId: z.string(), buildId: z.string().nullable(), buildName: z.string(), note: z.string().optional() }),
   z.object({ ...base, type: z.literal("build_decision"), draftId: z.string(), buildId: z.string().nullable(), buildName: z.string(), approved: z.boolean(), reason: z.string().optional() }),
+  // Local access (docs/local-access.md): the agent asked to run a command or read a file on the owner's own computer, the owner's
+  // answer (or a standing permission's), and what came back. The command, folder and path are shown to the owner verbatim.
+  z.object({
+    ...base,
+    type: z.literal("local_request"),
+    requestId: z.string(),
+    kind: localKind,
+    command: z.string().optional(),
+    cwd: z.string().optional(),
+    path: z.string().optional(),
+    reason: z.string(),
+  }),
+  z.object({
+    ...base,
+    type: z.literal("local_decision"),
+    requestId: z.string(),
+    decision: z.enum(["allowed", "denied", "expired"]),
+    // `once`: the owner allowed this request; `grant`: the owner allowed it and similar ones for `minutes`; `standing`: an earlier grant covered it.
+    via: z.enum(["once", "grant", "standing"]).optional(),
+    grantId: z.string().optional(),
+    minutes: z.number().optional(),
+  }),
+  z.object({ ...base, type: z.literal("local_result"), requestId: z.string(), ok: z.boolean(), exitCode: z.number().nullable().optional(), preview: z.string(), truncated: z.boolean().optional() }),
   z.object({ ...base, type: z.literal("rate_limited"), resetsAt: z.number().optional() }),
   z.object({ ...base, type: z.literal("agent_exited"), message: z.string() }),
   // `error` is the typed form (absent on events stored before the taxonomy); `message` is always present for display.

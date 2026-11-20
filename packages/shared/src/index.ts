@@ -5,3 +5,4 @@ export * from "./autonomy";
 export * from "./errors";
 export * from "./builds";
 export * from "./pullRequest";
+export * from "./mcp";

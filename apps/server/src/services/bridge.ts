@@ -1,4 +1,15 @@
-import { errorEvent, fromBridge, type AppError, type AppErrorCode, type ClientEventBody, type CommandFrame, type FromBridge, type SubscriptionView, type ToBridge } from "@dorks/shared";
+import {
+  errorEvent,
+  fromBridge,
+  type AppError,
+  type AppErrorCode,
+  type ClientEventBody,
+  type CommandFrame,
+  type FromBridge,
+  type McpServerConfig,
+  type SubscriptionView,
+  type ToBridge,
+} from "@dorks/shared";
 import { Cause, Data, Effect, Exit } from "effect";
 import { AppFail, fail, touch, type App } from "../app";
 import { createNormalizer } from "../core/normalize";
@@ -8,6 +19,7 @@ import { append, bridgeSeen, dispatch, enqueueConfigure, finishPause, patchDork 
 import { opFailed } from "../lifecycle/lifecycle";
 import { rememberModelChoices } from "./models";
 import { claudeToken, cliSecrets, githubToken } from "./settings";
+import { mcpServerConfigs } from "./mcpServers";
 import { buildVarValues, getBuild } from "./builds";
 import * as subs from "./subscriptions";
 import { randomBytes } from "node:crypto";
@@ -474,7 +486,7 @@ export const configure = Effect.fnUntraced(function* (app: App, dorkId: string):
 });
 
 /** The tokens and variables the agent runs with. Decryption runs here, never inside a transaction; a failure is a defect. */
-const agentSecrets = Effect.fnUntraced(function* (app: App, dork: DorkRow): Effect.fn.Return<{ gh: string; env: Record<string, string> }, OnboardingIncomplete> {
+const agentSecrets = Effect.fnUntraced(function* (app: App, dork: DorkRow): Effect.fn.Return<{ gh: string; env: Record<string, string>; mcpServers: McpServerConfig[] }, OnboardingIncomplete> {
   const sim = app.cfg.boxProvider === "sim";
   const claude = dork.provider === "claude" ? yield* Effect.promise(() => claudeToken(app)) : undefined;
   if (dork.provider === "claude" && !claude) return yield* new OnboardingIncomplete({ message: "Claude token not set" });
@@ -484,7 +496,8 @@ const agentSecrets = Effect.fnUntraced(function* (app: App, dork: DorkRow): Effe
   // Build variables (docs/builds.md) over the shared ones; decrypted only here, for an authenticated bridge allowed to mint secrets.
   const buildId = dork.buildId && getBuild(app, dork.buildId) ? dork.buildId : undefined;
   const buildVars = buildId ? yield* Effect.promise(() => buildVarValues(app, buildId)) : {};
-  return { gh, env: { ...secrets, ...buildVars, ...(claude ? { CLAUDE_CODE_OAUTH_TOKEN: claude } : {}) } };
+  const mcpServers = yield* Effect.promise(() => mcpServerConfigs(app));
+  return { gh, env: { ...secrets, ...buildVars, ...(claude ? { CLAUDE_CODE_OAUTH_TOKEN: claude } : {}) }, mcpServers };
 });
 
 /** The agent's model and effort: Codex's chosen pair, or Claude's model, effort and fast mode when set. */
@@ -495,12 +508,13 @@ function modelFields(dork: DorkRow) {
 
 const configureFrame = (app: App, dork: DorkRow): Effect.Effect<ToBridge, OnboardingIncomplete> =>
   agentSecrets(app, dork).pipe(
-    Effect.map(({ gh, env }) => ({
+    Effect.map(({ gh, env, mcpServers }) => ({
       t: "configure" as const,
       provider: dork.provider,
       ...modelFields(dork),
       env,
       ghToken: gh,
+      ...(mcpServers.length ? { mcpServers } : {}),
       repo: dork.repo ? { fullName: dork.repo, branch: dork.branch } : null,
       resumeSessionId: (dork.provider === "codex" ? dork.codexThreadId : dork.claudeSessionId) ?? null,
       ...(dork.titleSource === "message" ? nameFrom(app, dork.id) : {}),
