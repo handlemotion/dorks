@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { uiApp } from "../src/http/ui";
-import { updateSettings } from "../src/services/settings";
+import { githubToken, updateSettings } from "../src/services/settings";
 import { bridgeSecret } from "../src/lib/bridgeAuth";
 import { fakeFetch, harness, type Harness } from "./harness";
 
@@ -131,6 +131,13 @@ describe("settings", () => {
     expect((await a.put("/api/settings", { githubConnected: true })).status).toBe(200);
     expect((await a.get("/api/settings")).json.github).toEqual({ configured: true, login: "robot" });
     expect(JSON.stringify(h.app.db.all("SELECT * FROM settings"))).not.toContain("good");
+    // `gh auth switch`: once the cached token expires, the remembered login is dropped so the poller learns the new one.
+    expect(await githubToken(h.app)).toBe("good");
+    expect((await a.get("/api/settings")).json.github.login).toBe("robot");
+    h.gh.token = "other";
+    h.clock.t += 61_000;
+    expect(await githubToken(h.app)).toBe("other");
+    expect((await a.get("/api/settings")).json.github.login).toBeNull();
     expect((await a.put("/api/settings", { githubConnected: false })).status).toBe(200);
     expect((await a.get("/api/settings")).json.github).toEqual({ configured: false, login: null });
   });

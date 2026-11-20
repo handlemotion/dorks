@@ -84,5 +84,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       .map((s) => s.trim())
       .filter(Boolean),
     baseSnapshotId: env.BASE_SNAPSHOT_ID || undefined,
+    githubEnvToken: env.GH_TOKEN?.trim() || env.GITHUB_TOKEN?.trim() || undefined,
   };
 }

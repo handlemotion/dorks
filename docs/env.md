@@ -19,6 +19,7 @@ All optional.
 | `BASE_SNAPSHOT_ID` | none | Default Boat base snapshot. The `baseSnapshotId` setting wins when set. |
 | `BOX_PROVIDER` | `boat` | `boat`, or `sim` for the local simulator and tests. |
 | `SIM_HOST_KEY` | none | Required when `BOX_PROVIDER=sim`; guards the `/sim/*` routes. |
+| `GH_TOKEN`, then `GITHUB_TOKEN` | none (the GitHub CLI's login) | Secret. Overrides the GitHub CLI's login, the way `gh` itself resolves them, for development and the e2e. GitHub must still be connected (`githubConnected`). The desktop app never passes them. See [GitHub](github.md). |
 
 `secrets.json` holds three keys, generated on first run: `bridgeSecretKey` (the per-dork bridge secret is `HMAC-SHA256(bridgeSecretKey, "bridge|" + dorkId)`), `encryptionKey` (AES-GCM, 32 bytes, base64) and `ownerToken`. Back it up together with `dorks.db`: without `encryptionKey` the stored tokens cannot be decrypted.
 

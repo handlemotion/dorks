@@ -80,7 +80,11 @@ export function missingScopes(scopes: string[] | null): string[] {
 
 /** What the GitHub CLI's login can see, cached briefly. Never fails: every problem is an `auth.state` with empty lists. */
 export async function githubRepos(app: App, opts: { fresh?: boolean } = {}): Promise<GithubRepos> {
-  if (opts.fresh) forgetGhLogin(app);
+  if (opts.fresh) {
+    // Read gh and GitHub again, and let a failure replace a cached success.
+    forgetGhLogin(app);
+    cache.delete(app);
+  }
   const cached = cache.get(app);
   if (!opts.fresh && cached && app.now() - cached.at < TTL_MS) return cached.value;
   const read = await githubLogin(app);
