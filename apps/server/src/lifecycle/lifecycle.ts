@@ -103,6 +103,13 @@ export function boxGone(app: App, dorkId: string, boxId: string, message: string
   dispatch(app, dorkId, { t: "op_failed" });
 }
 
+/** The box a dork gave up on is deleted: forget it and the session and previews that lived on it. No-op if the dork moved on. */
+export function boxReplaced(app: App, dorkId: string, boxId: string) {
+  const dork = getDork(app.db, dorkId);
+  if (!dork || dork.boxId !== boxId) return;
+  patchDork(app, dorkId, { boxId: undefined, claudeSessionId: undefined, codexThreadId: undefined, previews: undefined });
+}
+
 /**
  * Records the freshly created box. Returns "orphaned" if the dork was deleted (or already purged) while `createFromSnapshot`
  * was in flight, or if a newer create attempt already recorded a different box: nothing tracks this one, so the caller must delete it.
@@ -128,7 +135,8 @@ export function boxCreated(app: App, dorkId: string, boxId: string, sleepMinutes
 export function boxResumed(app: App, dorkId: string, boxId?: string) {
   const dork = getDork(app.db, dorkId);
   if (!dork || dork.deleting) return;
-  if (boxId !== undefined && dork.boxId !== boxId) return; // the dork gave up on this box and replaced it; the replace deletes it
+  // The dork gave up on this box: it is being replaced (and deleted), or already was.
+  if (dork.state === "creating" || (boxId !== undefined && dork.boxId !== boxId)) return;
   if (dork.state === "error" || dork.state === "sleeping") return beginPause(app, dorkId, true);
   enqueueConfigure(app, dorkId); // idempotent on the bridge side
 }

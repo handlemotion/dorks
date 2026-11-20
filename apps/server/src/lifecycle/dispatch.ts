@@ -161,10 +161,9 @@ function startBoxOp(app: App, dorkId: string, effect: "create_box" | "replace_bo
   dropPause(app, dorkId);
   cancelTimer(app, dorkId, "pause_retry");
   clearControlRows(app, dorkId);
-  // Replacing: the dork forgets the box (and the session and previews that lived on it) now, so nothing resumes it again; the
-  // create job deletes it before creating, or the provider would hand the same box back for this dork's name.
+  // Replacing: the create job deletes the current box first, or the provider would hand the same box back for this dork's name.
+  // The dork keeps pointing at it until that delete succeeds, so a failed delete leaves a box the next message can resume or replace.
   const replace = effect === "replace_box" ? getDork(app.db, dorkId)?.boxId : undefined;
-  if (effect === "replace_box") patchDork(app, dorkId, { boxId: undefined, claudeSessionId: undefined, codexThreadId: undefined, previews: undefined });
   const rt = runtimeOf(app.db, dorkId);
   const gen = rt.opGen + 1;
   patchRuntime(app, dorkId, { opGen: gen, pauseRetries: 0, bridgeSeenAt: app.now(), bridgeLost: false }); // grace period for the new bridge to dial in

@@ -13,7 +13,7 @@ import { FORGET_JOB, forgetImage, RUN_JOB, runBuildRun } from "../services/build
 import { githubToken, readSettings } from "../services/settings";
 import { getSub } from "../services/subscriptions";
 import { SERVER_COMMENT_MARK } from "../services/githubIngest";
-import { boxCreated, boxGone, boxPaused, boxResumed, opFailed } from "./lifecycle";
+import { boxCreated, boxGone, boxPaused, boxReplaced, boxResumed, opFailed } from "./lifecycle";
 import { patchDork, setTimer } from "./dispatch";
 
 // Work that must call out to a provider, so it cannot run inside a transaction. Each job is a timer row claimed by the scheduler
@@ -87,9 +87,12 @@ const createBlocker = (info: BoxInfo, bridgeUrl: string | undefined) => {
 
 const boxCreate = (app: App, dorkId: string, gen: number, replace?: string) =>
   Effect.gen(function* () {
-    // A box that would not wake goes first (deletes are idempotent): left in place, the provider would adopt it again for this name.
-    // If the delete fails the create fails too (the next message retries it), and the old box is deleted with backoff meanwhile.
-    if (replace) yield* onBox(app, (box) => box.delete(replace)).pipe(Effect.tapError(() => sync(() => setTimer(app, "", `orphan:${replace}`, 15_000, { boxId: replace, attempt: 1 }))));
+    // A box that would not wake goes first: left in place, the provider would adopt it again for this name. Only once it is deleted
+    // does the dork forget it; a failed delete fails the create, and the dork still owns the box.
+    if (replace) {
+      yield* onBox(app, (box) => box.delete(replace));
+      yield* settle(app, () => boxReplaced(app, dorkId, replace));
+    }
     const info = yield* sync(() => boxInfo(app, dorkId));
     if (!info || info.deleting) return; // deleted before we started: do not create a box nobody will clean up
     const bridgeUrl = yield* sync(() => app.bridgeUrl());
