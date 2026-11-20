@@ -204,7 +204,8 @@ export function HoverActions({
           {time}
         </div>
       )}
-      <div className="pointer-events-none absolute right-0 bottom-full z-10 mb-1 opacity-0 transition-opacity duration-150 ease-out group-focus-within/msg:pointer-events-auto group-focus-within/msg:opacity-100 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100 motion-reduce:transition-none">
+      {/* `pb-1`, not a margin: the 4px gap belongs to the toolbar, so the pointer stays over the message on its way up to it. */}
+      <div className="pointer-events-none absolute right-0 bottom-full z-10 pb-1 opacity-0 transition-opacity duration-150 ease-out group-focus-within/msg:pointer-events-auto group-focus-within/msg:opacity-100 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100 motion-reduce:transition-none">
         <MessageActions {...actions} />
       </div>
     </div>
