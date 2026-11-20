@@ -27,6 +27,7 @@ import { Logo } from './onboarding/List'
 import { OwnerAvatar, ownerOf } from './RepoAvatar'
 import { ownersOf, useOwnerScope } from './ownerScope'
 import { SIDEBAR_ROW, SIDEBAR_SECTION } from './sidebarChrome'
+import { UpdatePrompt } from './UpdatePrompt'
 import { UsageBar } from './UsageBar'
 import { useRowHover } from './useRowHover'
 
@@ -55,7 +56,12 @@ export function AppSidebar() {
       chats={chats}
       accounts={github}
       onDisconnect={disconnect}
-      usage={<UsageBar />}
+      usage={
+        <>
+          <UpdatePrompt />
+          <UsageBar />
+        </>
+      }
       onArchive={(id) => void archive(id).catch((e: unknown) => toast.error(e instanceof Error ? e.message : 'Could not archive the chat'))}
     />
   )
@@ -154,7 +160,7 @@ const PAGES = [
  * each group reorderable and remembering its order; Settings at the foot. Rows are 30px, 2px apart, with one hover fill springing between them; groups are 16px apart. It sits
  * flat on the app fill in a resizable panel (see AppFrame); on phones it is shadcn's sheet.
  */
-/** The sidebar from props alone. `usage` is the slot above Settings: the live `<UsageBar />` in the app, static data (or nothing) in demos. */
+/** The sidebar from props alone. `usage` is the slot above Settings: the live update prompt and `<UsageBar />` in the app, static data (or nothing) in demos. */
 export function AppSidebarView({
   chats,
   accounts,

@@ -9,6 +9,7 @@ use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::boot;
+use crate::updater::{self, UpdateStatus, Updater};
 use crate::window;
 use crate::state::{AppState, RuntimeConfig, TunnelInfo};
 
@@ -113,21 +114,21 @@ pub fn set_window_theme(app: AppHandle, theme: String) -> Result<ChromeInfo, Str
     window::set_theme(&app, theme)
 }
 
-/// Checks for an update and installs it. Real only in builds with the `updater` feature (the release workflow).
-#[cfg(feature = "updater")]
+/// Where the in-app update stands (see `updater.rs`); `dorks://update` carries every change.
 #[tauri::command]
-pub async fn install_update(app: AppHandle) -> Result<Option<String>, String> {
-    use tauri_plugin_updater::UpdaterExt;
-    let Some(update) = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())? else {
-        return Ok(None);
-    };
-    let version = update.version.clone();
-    update.download_and_install(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
-    Ok(Some(version))
+pub fn update_status(updater: State<'_, Updater>) -> UpdateStatus {
+    updater.status()
 }
 
-#[cfg(not(feature = "updater"))]
+/// Checks GitHub for a newer version now and returns the resulting status.
 #[tauri::command]
-pub async fn install_update() -> Result<Option<String>, String> {
-    Err("updates are not enabled in this build".into())
+pub async fn check_for_update(app: AppHandle) -> Result<UpdateStatus, String> {
+    updater::check(&app).await
+}
+
+/// Downloads and installs the offered update, then relaunches the app (the server is stopped first). Progress arrives as
+/// `dorks://update` events; the call only returns if it failed.
+#[tauri::command]
+pub async fn install_update(app: AppHandle) -> Result<(), String> {
+    updater::install(&app).await
 }

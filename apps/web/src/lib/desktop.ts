@@ -20,7 +20,7 @@ export interface RuntimeConfig {
 
 interface TauriGlobal {
   core?: { invoke: <T>(cmd: string, args?: Record<string, unknown>) => Promise<T> }
-  event?: { listen: (event: string, handler: () => void) => Promise<() => void> }
+  event?: { listen: <T>(event: string, handler: (event: { payload: T }) => void) => Promise<() => void> }
 }
 
 declare global {
@@ -79,5 +79,46 @@ export function onRuntimeConfig(handler: () => void): () => void {
   return () => {
     closed = true
     off?.()
+  }
+}
+
+/**
+ * Where the shell's in-app update stands (`updater.rs` in the desktop app). `unsupported` in a plain browser and in builds that
+ * cannot update themselves (local and unsigned ones).
+ */
+export type UpdateStatus =
+  | { state: 'unsupported' }
+  | { state: 'idle'; checking: boolean }
+  | { state: 'available'; version: string; notes?: string | null }
+  | { state: 'downloading'; version: string; downloaded: number; total?: number | null }
+  | { state: 'installing'; version: string }
+  | { state: 'failed'; version: string; message: string }
+
+const UNSUPPORTED: UpdateStatus = { state: 'unsupported' }
+
+/** The current update status; `unsupported` outside the app and from a shell that predates updates. */
+export function updateStatus(): Promise<UpdateStatus> {
+  return isDesktop() ? invoke<UpdateStatus>('update_status').catch(() => UNSUPPORTED) : Promise.resolve(UNSUPPORTED)
+}
+
+/** Calls `handler` with every change of the update status. Returns an unsubscribe. */
+export function onUpdateStatus(handler: (status: UpdateStatus) => void): () => void {
+  const listen = window.__TAURI__?.event?.listen
+  if (!listen) return () => {}
+  let off: (() => void) | undefined
+  let closed = false
+  void listen<UpdateStatus>('dorks://update', (e) => handler(e.payload)).then((u) => (closed ? u() : (off = u)))
+  return () => {
+    closed = true
+    off?.()
+  }
+}
+
+/** Downloads and installs the offered update, then the app relaunches. Progress arrives through `onUpdateStatus`. */
+export async function installUpdate(): Promise<void> {
+  try {
+    await invoke('install_update')
+  } catch (e) {
+    throw new Error(typeof e === 'string' ? e : 'Could not install the update.')
   }
 }

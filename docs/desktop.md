@@ -15,6 +15,7 @@ Dorks.app
 - **Supervises the server:** spawns it with the environment below, polls `GET /api/health`, restarts it when it exits or stops answering (exponential backoff, gives up after 5 failures in 2 minutes and shows "failed" until you choose Restart Server), stops it with SIGTERM and then SIGKILL after 5 s on quit. Its output goes to `logs/server.log`. A server orphaned by a killed shell is stopped on the next start (`server.pid`).
 - **Menu bar:** server and tunnel status, Open Dorks, Open Data Folder, Open Server Log, Restart Server, Quit. Closing the window leaves the app running in the menu bar.
 - **Tunnel:** the interface lives in `crates/shell-core/src/tunnel.rs`. A user-supplied public URL (`DORKS_PUBLIC_URL` in the environment, or saved from the UI with `set_public_url`) always wins and starts nothing. Otherwise the [wurmhol provider](#tunnel-wurmhol) opens this install's private embedded tunnel to the bridge port. Only the bridge port is ever exposed; the UI port stays on loopback.
+- **Updates:** checks GitHub Releases shortly after launch and every 4 hours, offers a newer version in the sidebar and the menu bar, and installs it in place (see [Updates](#updates)).
 - **Keep awake:** a power assertion (`caffeinate -i -w <pid>`, released automatically if the app dies) while the UI reports active dorks. Setting: `whileActive` (default), `always`, `never`.
 
 ## Contract with the server
@@ -48,7 +49,9 @@ Commands (`invoke` from `@tauri-apps/api/core`, or `window.__TAURI__.core.invoke
 | `set_window_mode("onboarding" \| "app")` | switch the window chrome (see "Window chrome" below); remembered for the next launch. Returns the new `chrome` |
 | `set_window_theme("light" \| "dark" \| "system")` | the window appearance, hence the material behind the page; remembered. Returns the new `chrome` |
 | `window_chrome()` | the current `chrome` (`window.__DORKS__.chrome` is the same value at load time) |
-| `install_update()` | check for and install an update (release builds only) |
+| `update_status()` | where the in-app update stands (see "Updates"); `dorks://update` carries every change |
+| `check_for_update()` | ask GitHub for a newer version now; returns the new status |
+| `install_update()` | download and install the offered update, stop the server and relaunch; returns only if it failed |
 
 The window only ever shows the bundled UI; other `http(s)` links open in the browser.
 
@@ -155,6 +158,33 @@ pnpm --filter @dorks/desktop prepare:stub # stand-in server + placeholder page, 
 - Use a throwaway data directory when trying things: `DORKS_APP_DIR=/tmp/dorks-test`.
 - The app icon's source is `src-tauri/icons/source.svg`: a `#f2f2f2` tile with a thin grey ring after onboarding's (`BrandCircle`): 1.1x the tile's width, its top 10% down, its sides and bottom cut off by the tile. Render it to `source.png` at 1024px, then run `pnpm tauri icon src-tauri/icons/source.png` and keep the files `tauri.conf.json` lists. The web favicon is `apps/web/public/favicon.svg`, the same drawing full-bleed. The menu-bar `tray.png` still comes from `scripts/make-icons.mjs`.
 
+## Updates
+
+Release builds update themselves from GitHub Releases with Tauri's updater (`src/updater.rs`). Local and unsigned builds do not have the `updater` cargo feature: their status is `unsupported` and nothing about updates shows.
+
+- **Check.** 10 seconds after launch, then every 4 hours, the shell fetches `https://github.com/handlemotion/dorks/releases/latest/download/latest.json` (the endpoint the release workflow bakes in) and compares its version with the app's (`version` in `tauri.conf.json`). A failed check (offline, GitHub down) is logged and shows nothing.
+- **Status**, from `update_status()` and every `dorks://update` event, tagged by `state`:
+
+  | `state` | Fields | Shown |
+  |---|---|---|
+  | `unsupported` | | nothing (a build that cannot update, or a plain browser) |
+  | `idle` | `checking` | nothing |
+  | `available` | `version`, `notes` | the sidebar prompt with Update; the menu bar's "Update to Dorks x…" |
+  | `downloading` | `version`, `downloaded`, `total` | the prompt with a progress bar; "Downloading Update… n%" |
+  | `installing` | `version` | "Installing update, Dorks will restart" |
+  | `failed` | `version`, `message` | "Update failed" with Try again (the message is the prompt's tooltip) |
+
+- **Install.** Update in the sidebar (`UpdatePrompt`, a solid brand-blue block above the usage meters) or in the menu bar downloads the bundle, checks its signature against the public key baked into the app, replaces `Dorks.app`, stops the server like Quit does, and relaunches. The menu bar item reads "Check for Updates…" otherwise, and says "Dorks Is Up to Date" for a few seconds after a check it started finds nothing.
+- **Trying the prompt without a release:** the web app's `UpdatePromptView` takes a status as a prop; in a browser, a stand-in `window.__TAURI__` whose `invoke('update_status')` returns one of the states above shows it.
+
+Ship an update (the signing secrets are already set up; see below):
+
+```sh
+pnpm --filter @dorks/desktop release 0.0.2 --push
+```
+
+That sets the version in `tauri.conf.json`, `Cargo.toml` and `Cargo.lock`, commits `Desktop 0.0.2`, tags `desktop-v0.0.2` and pushes both. The tag runs the release workflow, which drafts the release with the `.dmg`, the signed updater bundle and `latest.json`. Write the notes on the draft and **publish it** (not as a pre-release): only then does `releases/latest` point at it and installed apps see the update. Without `--push` the script stops after the tag and prints the push command. The version must be newer than the current one, or the updater would never offer it.
+
 ## Release
 
 One-time signing setup: `apps/desktop/scripts/release-setup.sh csr` makes a key and a certificate request to upload to Apple, and `release-setup.sh secrets` (after Apple issues the certificate) builds the `.p12` and sets the secrets and the updater public key below with your own `gh` login. Key material stays in `~/.dorks-release`, never in the repo.
@@ -174,6 +204,6 @@ The sidecar is signed with the app's identity and the hardened runtime. `src-tau
 - Deploying the tunnel service and bundling the wurmhol client (see "Tunnel: wurmhol", "What is left"); until then you set `DORKS_PUBLIC_URL`.
 - The window was run with the real server and the real SPA (first-run setup renders and talks to the sidecar); the tunnel state is shown in Settings only as one line.
 - Real icons.
-- The release workflow has not run: it needs the secrets above.
+- The update path from one signed release to the next has not been run end to end yet: 0.0.1 predates the update prompt (it has the updater but no check), so 0.0.1 users install 0.0.2 by hand once, and the first real in-app update is 0.0.2 to 0.0.3.
 - Window chrome was verified on macOS 26 only (Liquid Glass). The classic vibrancy fallback (macOS 12 to 25) is code-complete but has not been seen on a real older Mac; neither has a second monitor or a changed screen layout for the remembered frame (the placement rules are unit-tested).
 - How the translucency looks over a real backdrop in the light and dark system appearances was looked at by hand once, before the no-screen rule, and measured as clearly light for the light theme and clearly dark for the dark one; it is not covered by an automated check (see "Checking the chrome without taking the screen").
