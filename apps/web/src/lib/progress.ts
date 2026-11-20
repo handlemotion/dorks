@@ -29,10 +29,12 @@ export type WorkBlock = ProgressToolBlock | ProgressTextBlock
 export function splitTurn(blocks: readonly Block[], ended: boolean, running = false): { work: WorkBlock[]; answer?: ProgressTextBlock } {
   const texts = blocks.filter((b): b is ProgressTextBlock => b.kind === 'assistant')
   const answer = texts.find((b) => b.final) ?? (ended ? texts.at(-1) : undefined)
-  // While the chat's last turn runs, its latest text with no tool call after it may still become the answer: kept out of the work until a tool
-  // call follows it, so it never shows as a step and then vanishes into the thread.
+  // While the chat's last turn runs, its latest text with nothing after it may still become the answer: kept out of the work until a tool
+  // call follows it, so it never shows as a step and then vanishes into the thread. Anything after it (a tool call, or the notice an agent
+  // that exited mid-turn leaves) releases it.
   const steps = blocks.filter((b): b is WorkBlock => b.kind === 'tool' || b.kind === 'assistant')
-  const candidate = running && !ended && !answer && steps.at(-1)?.kind === 'assistant' ? steps.at(-1) : undefined
+  const last = blocks.at(-1)
+  const candidate = running && !ended && !answer && last?.kind === 'assistant' ? last : undefined
   return { work: steps.filter((b) => b !== answer && b !== candidate), answer }
 }
 
