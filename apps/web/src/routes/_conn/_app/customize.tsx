@@ -56,7 +56,7 @@ function Customize() {
         title="Customize"
         actions={
           <Button size="sm" onClick={() => setDraft(BLANK)}>
-            <PlusIcon />
+            <PlusIcon data-icon="inline-start" />
             Add server
           </Button>
         }

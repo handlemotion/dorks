@@ -27,7 +27,7 @@ export function PageHeader({ title, parent, titleActions, actions }: { title: Re
   const { open, isMobile } = useSidebar()
   return (
     // While the sidebar is hidden, the floating title bar controls (AppFrame) sit over the header's start, so the title begins after them.
-    <header data-tauri-drag-region className="flex h-12 shrink-0 items-center gap-0.5 px-5" style={!open || isMobile ? { paddingLeft: TITLEBAR_CONTROLS_END } : undefined}>
+    <header data-tauri-drag-region className="flex h-12 shrink-0 items-center gap-0.5 pr-3 pl-5" style={!open || isMobile ? { paddingLeft: TITLEBAR_CONTROLS_END } : undefined}>
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <div className="flex min-w-0 items-center gap-1.5 text-sm">
           {parent && (
