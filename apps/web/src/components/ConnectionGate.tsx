@@ -17,7 +17,7 @@ export const useDisconnect = () => useContext(DISCONNECT)
  */
 export function ConnectionGate({ children }: { children: ReactNode }) {
   const [conn, setConn] = useState<Connection | null>(currentConnection)
-  // The shell republishes its config when it changes (a new public URL restarts the server); pick up a changed port or token.
+  // The shell republishes its config when it changes (after a restart); pick up a changed port or token.
   useEffect(() => onRuntimeConfig(() => setConn(currentConnection())), [])
   const bootError = window.__DORKS__?.bootError
   if (bootError) {

@@ -1,10 +1,9 @@
 import { Data, Effect } from "effect";
 import type { App } from "../app";
-import { isBoxNotFound, type BoxProvider } from "../core/box";
+import { BRIDGE_PORT, isBoxNotFound, type BoxProvider } from "../core/box";
 import { getDork } from "../data";
 import { BoatError } from "../lib/boat";
 import { bridgeSecret } from "../lib/bridgeAuth";
-import { forgetSandbox, sandboxTunnelEnv } from "../lib/tunnelService";
 import { createIssueComment, GithubError, isTransientGithubError } from "../lib/github";
 import { pollOnce } from "../services/poller";
 import { runBuild, SNAPSHOT_JOB } from "../services/snapshot";
@@ -80,10 +79,9 @@ const orOpFailed =
     job.pipe(Effect.catch((e) => settle(app, () => opFailed(app, dorkId, safe(e.cause, what), gen))));
 
 /** Why a box cannot be created right now, in words the user can act on; undefined when it can. */
-const createBlocker = (info: BoxInfo, bridgeUrl: string | undefined) => {
+const createBlocker = (info: BoxInfo) => {
   if (!info.snapshotId) return "No base snapshot configured";
   if (info.requiresBoatEnvironment && !info.boatEnvironment) return "Set your Boat ChatGPT environment in Settings";
-  if (!bridgeUrl) return "Set up the public URL that sandboxes use to reach this app first";
   return undefined;
 };
 
@@ -97,17 +95,16 @@ const boxCreate = (app: App, dorkId: string, gen: number, replace?: string) =>
     }
     const info = yield* sync(() => boxInfo(app, dorkId));
     if (!info || info.deleting) return; // deleted before we started: do not create a box nobody will clean up
-    const bridgeUrl = yield* sync(() => app.bridgeUrl());
-    const blocker = createBlocker(info, bridgeUrl);
+    const blocker = createBlocker(info);
     if (blocker) return yield* settle(app, () => opFailed(app, dorkId, blocker, gen));
-    // Only bridge connection details go in the create-time env; user secrets arrive over the bridge's configure call.
-    const tunnelEnv = yield* promise(() => sandboxTunnelEnv(app, dorkId));
+    // Only the bridge's identity goes in the create-time env; user secrets arrive over the bridge's configure call. The server
+    // dials the bridge on BRIDGE_PORT once the box is up (http/bridgeLinks.ts).
     const secret = yield* promise(() => bridgeSecret(app.cfg.bridgeSecretKey, dorkId));
     const box = yield* onBox(app, (p) =>
       p.createFromSnapshot(info.snapshotId, {
         name: dorkId,
         initCommand: "dorks-bridge",
-        env: { DORK_ID: dorkId, BRIDGE_URL: bridgeUrl!, BRIDGE_SECRET: secret, ...tunnelEnv },
+        env: { DORK_ID: dorkId, BRIDGE_PORT: String(BRIDGE_PORT), BRIDGE_SECRET: secret },
         boatEnvironment: info.boatEnvironment,
         machineType: info.machineType,
         generation: gen,
@@ -171,7 +168,6 @@ const boxDestroy = (app: App, dorkId: string) =>
       }),
     );
     if (!deleted) return;
-    yield* promise(() => forgetSandbox(app, dorkId));
     yield* settle(app, () => {
       app.db.run("DELETE FROM dorks WHERE id = ?", dorkId); // events, commands, runtime, subscriptions and the inbox cascade
       app.db.run("DELETE FROM timers WHERE owner = ?", dorkId);

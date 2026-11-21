@@ -18,8 +18,6 @@ export const NOW = 1_700_000_000_000;
 export const testConfig = (over: Partial<Config> = {}): Config => ({
   dataDir: "/nonexistent",
   uiPort: 0,
-  bridgePort: 0,
-  publicUrl: "https://dorks.example",
   ownerToken: "owner-token-for-tests",
   bridgeSecretKey: "test-bridge-key",
   encryptionKey: Buffer.alloc(32, 7).toString("base64"),
@@ -48,6 +46,9 @@ export function fakeBox(): FakeBox {
     failDeletes: 0,
     missing: new Set(),
     created: [],
+    async bridgeEndpoint(id) {
+      return { url: `wss://${id}.example/`, headers: {} };
+    },
     async createFromSnapshot(_s, o) {
       box.calls.push("create");
       if (box.failCreates-- > 0) throw new Error("create down");

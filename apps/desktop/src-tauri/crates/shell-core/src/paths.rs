@@ -60,25 +60,17 @@ impl Paths {
         self.root.join("owner-token")
     }
 
-    /// This install's key for the Dorks tunnel service (0600), made once. Its wurmhol tenant, and so its tunnel and URL, follow
-    /// from it.
-    pub fn tunnel_install_key_file(&self) -> PathBuf {
-        self.root.join("tunnel-install-key")
-    }
-
-    /// The tunnel's connector from the tunnel service (0600, JSON): what the wurmhol client opens this install's tunnel with.
-    pub fn wurmhol_connector_file(&self) -> PathBuf {
-        self.root.join("wurmhol-connector")
-    }
-
-    /// Files of the access-key pipe that embedded tunnels replaced (a personal token, the pipe's access key and name). The shell
-    /// deletes them at start.
-    pub fn legacy_wurmhol_files(&self) -> [PathBuf; 3] {
-        ["wurmhol-token", "wurmhol-access-key", "wurmhol-name"].map(|f| self.root.join(f))
-    }
-
-    pub fn wurmhol_log(&self) -> PathBuf {
-        self.logs_dir().join("wurmhol.log")
+    /// Files left by the removed tunnel (its install key, connector, older wurmhol credentials and log). The server now
+    /// dials out to each sandbox, so nothing reads them; the shell deletes them at start.
+    pub fn legacy_tunnel_files(&self) -> [PathBuf; 6] {
+        [
+            self.root.join("tunnel-install-key"),
+            self.root.join("wurmhol-connector"),
+            self.root.join("wurmhol-token"),
+            self.root.join("wurmhol-access-key"),
+            self.root.join("wurmhol-name"),
+            self.logs_dir().join("wurmhol.log"),
+        ]
     }
 
     pub fn server_pid_file(&self) -> PathBuf {

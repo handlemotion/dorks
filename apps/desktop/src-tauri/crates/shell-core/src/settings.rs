@@ -20,22 +20,13 @@ pub enum KeepAwake {
     Never,
 }
 
+/// Unknown keys are ignored, so files from older versions (with `publicUrl`, `bridgePort`, `tunnelService`, `wurmhol*`) load.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
-    /// User-supplied public URL of the bridge port (own domain, reverse proxy, other tunnel). Overrides wurmhol.
-    pub public_url: Option<String>,
-    /// Last ports used, tried first on the next start so URLs stay stable.
+    /// Last UI port used, tried first on the next start so the URL stays stable.
     pub ui_port: Option<u16>,
-    pub bridge_port: Option<u16>,
     pub keep_awake: KeepAwake,
-    /// A self-hosted wurmhol install (`WURMHOL_URL`); unset means the hosted one. It must be the one the tunnel service uses.
-    pub wurmhol_server: Option<String>,
-    /// Extra arguments for the wurmhol client, after `<port> --json`. A connector refuses `--name` and `--only`. The connector
-    /// never goes here; it has its own 0600 file.
-    pub wurmhol_args: Vec<String>,
-    /// Another Dorks tunnel service than the hosted one (`DEFAULT_TUNNEL_SERVICE`), e.g. a staging deploy.
-    pub tunnel_service: Option<String>,
     /// The chrome the window had last (the web app sets it with `set_window_mode`). The next launch opens in it, so there is
     /// no flash of the wrong chrome. A fresh install has none and starts in onboarding.
     pub window_mode: WindowMode,
@@ -63,33 +54,6 @@ impl Settings {
     }
 }
 
-/// A public URL must be https, or http on a loopback host (local testing). No credentials, no query, no fragment.
-/// Returns it normalised without a trailing slash.
-pub fn validate_public_url(raw: &str) -> Result<String, String> {
-    let url = raw.trim();
-    let (scheme, rest) = url.split_once("://").ok_or("the URL must start with https://")?;
-    if rest.is_empty() || rest.contains(char::is_whitespace) {
-        return Err("the URL is not valid".into());
-    }
-    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    let (authority, tail) = rest.split_at(authority_end);
-    if authority.is_empty() || authority.contains('@') {
-        return Err("the URL must have a host and no credentials".into());
-    }
-    if tail.contains(['?', '#']) {
-        return Err("the URL must not have a query or fragment".into());
-    }
-    let host = authority.rsplit_once(':').map(|(h, _)| h).unwrap_or(authority).trim_matches(['[', ']']);
-    let loopback = matches!(host, "localhost" | "127.0.0.1" | "::1");
-    match scheme {
-        "https" => {}
-        "http" if loopback => {}
-        "http" => return Err("use https, plain http is only allowed for localhost".into()),
-        _ => return Err("the URL must start with https://".into()),
-    }
-    Ok(format!("{scheme}://{authority}{}", tail.trim_end_matches('/')))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,13 +64,8 @@ mod tests {
         let path = dir.path().join("settings.json");
         assert_eq!(Settings::load(&path).unwrap(), Settings::default());
         let s = Settings {
-            public_url: Some("https://x.example".into()),
             ui_port: Some(1),
-            bridge_port: Some(2),
             keep_awake: KeepAwake::Always,
-            wurmhol_server: Some("https://wh.example".into()),
-            wurmhol_args: vec!["--verbose".into()],
-            tunnel_service: Some("https://tunnels.example".into()),
             window_mode: WindowMode::App,
             window_theme: WindowTheme::Dark,
             window_frame: Some(WindowFrame { x: -5, y: 7, width: 1000, height: 700 }),
@@ -119,9 +78,10 @@ mod tests {
     fn unknown_and_missing_fields_are_tolerated() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("settings.json");
-        std::fs::write(&path, r#"{"publicUrl":"https://a.example","somethingNew":1}"#).unwrap();
+        // Keys from the removed tunnel, plus one from the future.
+        std::fs::write(&path, r#"{"publicUrl":"https://a.example","bridgePort":4748,"tunnelService":"https://t.example","wurmholServer":null,"wurmholArgs":["-v"],"uiPort":4747,"somethingNew":1}"#).unwrap();
         let s = Settings::load(&path).unwrap();
-        assert_eq!(s.public_url.as_deref(), Some("https://a.example"));
+        assert_eq!(s.ui_port, Some(4747));
         assert_eq!(s.keep_awake, KeepAwake::WhileActive);
     }
 
@@ -147,19 +107,5 @@ mod tests {
         std::fs::write(&path, "{nope").unwrap();
         assert!(Settings::load(&path).is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "{nope");
-    }
-
-    #[test]
-    fn public_url_validation() {
-        assert_eq!(validate_public_url(" https://me.example.com/ ").unwrap(), "https://me.example.com");
-        assert_eq!(validate_public_url("https://me.example.com:8443/bridge/").unwrap(), "https://me.example.com:8443/bridge");
-        assert_eq!(validate_public_url("http://localhost:9000").unwrap(), "http://localhost:9000");
-        assert!(validate_public_url("http://me.example.com").is_err());
-        assert!(validate_public_url("me.example.com").is_err());
-        assert!(validate_public_url("ftp://me.example.com").is_err());
-        assert!(validate_public_url("https://user:pw@me.example.com").is_err());
-        assert!(validate_public_url("https://me.example.com/?a=1").is_err());
-        assert!(validate_public_url("https://").is_err());
-        assert!(validate_public_url("https://a b.example").is_err());
     }
 }

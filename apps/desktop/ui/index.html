@@ -82,15 +82,6 @@
         cursor: pointer;
         margin: 4px 6px 0 0;
       }
-      input[type="text"] {
-        font: inherit;
-        padding: 4px 8px;
-        width: 60%;
-        border-radius: 6px;
-        border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
-        background: transparent;
-        color: inherit;
-      }
       .err {
         color: #d1242f;
       }
@@ -116,8 +107,6 @@
         <dd id="api">…</dd>
         <dt>Reachable</dt>
         <dd id="reach">…</dd>
-        <dt>Bridge port</dt>
-        <dd id="bridge">…</dd>
         <dt>Owner token</dt>
         <dd id="token">…</dd>
         <dt>Data</dt>
@@ -127,18 +116,6 @@
       </dl>
       <button id="restart">Restart server</button>
       <button id="open-data">Open data folder</button>
-    </section>
-
-    <section>
-      <h2>Tunnel</h2>
-      <dl>
-        <dt>Provider</dt>
-        <dd id="tunnel">…</dd>
-        <dt>Public URL</dt>
-        <dd id="public">none</dd>
-      </dl>
-      <p><input id="url" type="text" placeholder="https://your-public-url.example" /> <button id="save-url">Save</button> <button id="clear-url">Use wurmhol</button></p>
-      <pre id="url-msg"></pre>
     </section>
 
     <section>

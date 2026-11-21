@@ -47,7 +47,7 @@ async function setup(
     PATH: process.env.PATH,
     HOME: tmp("home-"),
     DORK_ID: "dork_test_1",
-    BRIDGE_URL: "wss://example.test/bridge",
+    BRIDGE_PORT: "4748",
     BRIDGE_SECRET,
     SIM_HOST_KEY: "host-key-should-not-leak",
     BRIDGE_SECRET_KEY: "master-should-not-leak",
@@ -163,7 +163,7 @@ describe("bridge with a fake claude CLI", () => {
     expect(rep.env.CLAUDE_CODE_OAUTH_TOKEN).toBe(OAUTH);
     expect(rep.env.CF_TOKEN).toBe(CLI_SECRET);
     expect(rep.env.CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS).toBe("1");
-    for (const k of ["BRIDGE_SECRET", "BRIDGE_URL", "DORK_ID", "SIM_HOST_KEY", "BRIDGE_SECRET_KEY", "DORKS_STATE_DIR", "CLAUDE_BIN"]) expect(rep.envKeys, k).not.toContain(k);
+    for (const k of ["BRIDGE_SECRET", "BRIDGE_PORT", "DORK_ID", "SIM_HOST_KEY", "BRIDGE_SECRET_KEY", "DORKS_STATE_DIR", "CLAUDE_BIN"]) expect(rep.envKeys, k).not.toContain(k);
     expect(JSON.stringify(rep.env)).not.toContain(BRIDGE_SECRET);
     // the bridge's own env (the one we passed and process.env) never received them
     expect(process.env.CLAUDE_CODE_OAUTH_TOKEN).not.toBe(OAUTH);

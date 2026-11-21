@@ -93,7 +93,6 @@ describe("settings", () => {
       boatKey: true,
       boatEnvironment: "chatgpt-only",
       github: { configured: true },
-      publicUrlConfigured: true,
       sleepMinutes: 5,
       commentPolicy: { mode: "all" },
     });
@@ -519,13 +518,6 @@ describe("creating a dork", () => {
     expect((await create("codex")).status).toBe(201);
   });
 
-  it("needs the public URL for a real sandbox", async () => {
-    const { a } = await onboarded({ config: { publicUrl: undefined } });
-    const r = await a.post("/api/dorks", { repo: "o/r", message: "hi", provider: "claude" });
-    expect(r.status).toBe(412);
-    expect(r.json.error.message).toContain("public URL");
-  });
-
   it("defaults to Claude and validates the input", async () => {
     const { a, h } = await onboarded();
     const id = (await a.post("/api/dorks", { repo: "o/r", message: "hi" })).json.id;
@@ -540,35 +532,15 @@ describe("creating a dork", () => {
     expect((await a.post("/api/dorks", { repo: "dotted.name/repo-1.x", message: "hi", title: "t".repeat(120) })).status).toBe(201);
   });
 
-  it("starts the sandbox with the bridge's address and its own secret, never the user's", async () => {
+  it("starts the sandbox with the bridge's port and its own secret, never the user's", async () => {
     const { a, h } = await onboarded();
     const id = (await a.post("/api/dorks", { repo: "o/r", message: "hi", provider: "claude" })).json.id;
     await h.settle();
     expect(h.box.created).toHaveLength(1);
     const env = h.box.created[0].env;
-    expect(env).toEqual({ DORK_ID: id, BRIDGE_URL: "wss://dorks.example/bridge", BRIDGE_SECRET: await bridgeSecret("test-bridge-key", id) });
+    expect(env).toEqual({ DORK_ID: id, BRIDGE_PORT: "4748", BRIDGE_SECRET: await bridgeSecret("test-bridge-key", id) });
     expect(JSON.stringify(h.box.created)).not.toMatch(/"ct"|"gt"|"bk"/);
     expect(h.dork(id).boxId).toBe(`box-${id}`);
-  });
-
-  it("with an embedded tunnel, registers the sandbox for a ticket before creating it and removes it once its box is deleted", async () => {
-    const svc = { url: "https://tunnels.example", installKey: `dti_${"a".repeat(64)}` };
-    const fetch = fakeFetch((url, init) =>
-      url.pathname === "/user"
-        ? Response.json({ login: "agent-bot" })
-        : url.host === "tunnels.example" && init?.method === "PUT"
-          ? Response.json({ ticket: "dts_payload.sig" })
-          : new Response(null, { status: 204 }),
-    );
-    const { a, h } = await onboarded({ fetch, config: { tunnelService: svc } });
-    const id = (await a.post("/api/dorks", { repo: "o/r", message: "hi", provider: "claude" })).json.id;
-    await h.settle();
-    expect(h.box.created[0].env).toMatchObject({ DORKS_TUNNEL_SERVICE: svc.url, DORKS_TUNNEL_TICKET: "dts_payload.sig" });
-    await a.del(`/api/dorks/${id}`);
-    await h.settle();
-    const toService = fetch.calls.filter((c) => c.url.startsWith("/v1/sandboxes/"));
-    expect(toService.map((c) => `${c.method} ${c.url}`)).toEqual([`PUT /v1/sandboxes/${id}`, `DELETE /v1/sandboxes/${id}`]);
-    expect(toService.every((c) => c.headers.get("authorization") === `Bearer ${svc.installKey}`)).toBe(true);
   });
 
   it("a Codex dork passes the Boat environment to the sandbox; a Claude one does not", async () => {

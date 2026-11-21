@@ -9,7 +9,6 @@ import { Switch } from '@dorks/ui/switch'
 import { Textarea } from '@dorks/ui/textarea'
 import { EmptyState } from '../EmptyState'
 import { saveBoat } from '../../lib/boat'
-import { isDesktop, setPublicUrl } from '../../lib/desktop'
 import { STEPS, stepDone } from '../../lib/onboarding'
 import { usePending } from '../../lib/pending'
 import { StepProgress } from '../StepProgress'
@@ -28,11 +27,11 @@ import {
 } from './kit'
 
 // The pages shared by everyone using this server: the setup checklist, the Boat account sessions run in, the base snapshot they start
-// from, how sessions behave, the variables they all get, and the public URL sandboxes dial back to.
+// from, how sessions behave, and the variables they all get.
 
 export function SetupPage({ settings }: { settings: Settings }) {
   const done = stepDone(settings)
-  const rows = [...STEPS.map((s) => ({ id: s.id, title: s.title, done: done[s.id] })), { id: 'tunnel', title: 'Public URL', done: settings.publicUrlConfigured }]
+  const rows = STEPS.map((s) => ({ id: s.id, title: s.title, done: done[s.id] }))
   return (
     <SettingsSections>
       <SettingsSection title="Checklist">
@@ -46,13 +45,6 @@ export function SetupPage({ settings }: { settings: Settings }) {
               tone={r.done ? 'success' : 'muted'}
             />
           ))}
-          {!settings.publicUrlConfigured && (
-            <SettingsGroupBody role="status">
-              <p>
-                Sandboxes can't reach this machine yet. Set <code>DORKS_PUBLIC_URL</code>.
-              </p>
-            </SettingsGroupBody>
-          )}
         </SettingsGroup>
       </SettingsSection>
       <SettingsSection title="Guided setup">
@@ -459,52 +451,6 @@ export function VariablesPage() {
           />
         </SettingsGroup>
         <SettingsStatus error={error} />
-      </SettingsSection>
-    </SettingsSections>
-  )
-}
-
-/** Desktop app only: the public https URL that Boat sandboxes use to reach this machine (the tunnel's address). */
-export function PublicUrlPage({ settings }: { settings: Settings }) {
-  const tunnel = window.__DORKS__?.tunnel
-  const [url, setUrl] = useState(window.__DORKS__?.publicUrl ?? '')
-  const [saved, setSaved] = useState(false)
-  const { run, pending, error } = usePending()
-  return (
-    <SettingsSections>
-      <SettingsSection title="Public URL" description="Where sandboxes reach this machine.">
-        <SettingsGroup
-          label="public url"
-          onSubmit={() => {
-            setSaved(false)
-            void run(async () => {
-              await setPublicUrl(url.trim() || null)
-              setSaved(true)
-            })
-          }}
-        >
-          <SettingsValueRow
-            label="Status"
-            valueTestId="tunnel-status"
-            value={settings.publicUrlConfigured ? 'Set' : 'Not set'}
-            tone={settings.publicUrlConfigured ? 'success' : 'muted'}
-            description={tunnel ? `Tunnel: ${tunnel.kind}, ${tunnel.state}${tunnel.error ? ` (${tunnel.error})` : ''}.` : undefined}
-          />
-          <SettingsInputRow
-            id="public-url"
-            label="Address"
-            aria-label="public url"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://dorks.example.com"
-            trailing={
-              <Button type="submit" size="sm" disabled={pending || !isDesktop()}>
-                {pending ? 'Saving…' : 'Save and restart'}
-              </Button>
-            }
-          />
-        </SettingsGroup>
-        <SettingsStatus saved={saved} error={error} />
       </SettingsSection>
     </SettingsSections>
   )

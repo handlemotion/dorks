@@ -154,7 +154,6 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     commentPolicy: { mode: "all" },
     claudeCodeMode: true,
     localAlwaysAllow: false,
-    publicUrlConfigured: true,
     claudeModels: MOCK_MODELS,
   };
 

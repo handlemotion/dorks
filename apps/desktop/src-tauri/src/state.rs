@@ -7,20 +7,9 @@ use dorks_shell_core::paths::Paths;
 use dorks_shell_core::power::KeepAwake;
 use dorks_shell_core::settings::Settings;
 use dorks_shell_core::supervisor::{Status, Supervisor};
-use dorks_shell_core::tunnel::Tunnel;
 use dorks_shell_core::window::{ChromeInfo, Effect, WindowMode, WindowTheme};
 use serde::Serialize;
 use tauri::async_runtime::JoinHandle;
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct TunnelInfo {
-    /// `"user-url"`, `"wurmhol"`.
-    pub kind: String,
-    /// `"ready"`, `"error"` (could not start) or `"lost"` (it was up and went away; the shell is restarting it).
-    pub state: String,
-    pub error: Option<String>,
-}
 
 /// What the UI needs to talk to the server. Contains the owner token, so it only ever goes to the app's own window.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -29,13 +18,9 @@ pub struct RuntimeConfig {
     /// Loopback origin of the UI/API, e.g. `http://127.0.0.1:47821`.
     pub api_url: String,
     pub ui_port: u16,
-    pub bridge_port: u16,
-    /// Public URL of the bridge port, when a tunnel or user URL is available.
-    pub public_url: Option<String>,
     pub owner_token: String,
     pub data_dir: String,
     pub version: String,
-    pub tunnel: TunnelInfo,
 }
 
 /// Set on `window.__DORKS__` before any page script runs.
@@ -60,10 +45,7 @@ impl WindowConfig {
 
 pub struct Runtime {
     pub supervisor: Arc<Supervisor>,
-    pub tunnel: Arc<dyn Tunnel>,
     pub watcher: JoinHandle<()>,
-    /// Waits for the tunnel to report it is gone (only tunnels that can be observed).
-    pub tunnel_watcher: Option<JoinHandle<()>>,
 }
 
 pub struct AppState {
@@ -76,7 +58,7 @@ pub struct AppState {
     pub keep_awake: Mutex<KeepAwake>,
     /// The UI's statement that dorks are working (see the `set_keep_awake` command).
     pub ui_active: AtomicBool,
-    /// True once the sidecar and tunnel are stopped and the app may exit.
+    /// True once the sidecar is stopped and the app may exit.
     pub shutdown_done: AtomicBool,
     pub quitting: AtomicBool,
     /// The mode and material the main window currently has (see `window.rs`).

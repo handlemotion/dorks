@@ -1,8 +1,8 @@
 // Stands in for sandbox hosting in local dev and tests (BOX_PROVIDER=sim): polls the server's sim box table and runs/kills one
 // sim-bridge.mjs per running box. A "paused" box = a killed process (its state lives in the server, like a real paused box keeps only disk).
 //   SIM_HOST_KEY=… node host.mjs
-// Where things are (all optional): SIM_UI_URL (default http://127.0.0.1:4747), SIM_BRIDGE_URL (default ws://127.0.0.1:4748/bridge),
-// BRIDGE_SECRET_KEY (default: read from <DORKS_DATA_DIR>/secrets.json, the file the server generates).
+// Each box's bridge listens on the loopback port the server gave it; the server dials it, as it dials a real box's.
+// Where things are (all optional): SIM_UI_URL (default http://127.0.0.1:4747), BRIDGE_SECRET_KEY (default: read from <DORKS_DATA_DIR>/secrets.json, the file the server generates).
 // Opt in to the real in-box bridge (infra/bridge) instead of sim-bridge.mjs: BRIDGE_IMPL=real (CLAUDE_BIN=<claude> to override the fake CLI).
 import { spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
@@ -14,7 +14,6 @@ import { fileURLToPath } from "node:url";
 const { SIM_HOST_KEY } = process.env;
 if (!SIM_HOST_KEY) throw new Error("SIM_HOST_KEY is required");
 const uiUrl = (process.env.SIM_UI_URL || "http://127.0.0.1:4747").replace(/\/+$/, "");
-const bridgeUrl = process.env.SIM_BRIDGE_URL || "ws://127.0.0.1:4748/bridge";
 const dataDir =
   process.env.DORKS_DATA_DIR ||
   (process.platform === "darwin" ? join(homedir(), "Library", "Application Support", "Dorks") : join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "dorks"));
@@ -43,8 +42,8 @@ function reconcile(boxes) {
     if (!b.running) continue;
     console.log(`[host] ${b.name.slice(-6)} running (gen ${b.gen})`);
     const child = real
-      ? spawn(process.execPath, [real.cli], { stdio: "inherit", env: real.envFor(b.name, secretFor(b.name), bridgeUrl) })
-      : spawn("node", [sim], { stdio: "inherit", env: { ...process.env, DORK_ID: b.name, BRIDGE_URL: bridgeUrl, BRIDGE_SECRET: secretFor(b.name) } });
+      ? spawn(process.execPath, [real.cli], { stdio: "inherit", env: real.envFor(b.name, secretFor(b.name), b.bridgePort) })
+      : spawn("node", [sim], { stdio: "inherit", env: { ...process.env, DORK_ID: b.name, BRIDGE_PORT: String(b.bridgePort), BRIDGE_SECRET: secretFor(b.name) } });
     procs.set(b.name, { gen: b.gen, child });
   }
 }

@@ -23,7 +23,18 @@ export interface BoxProvider {
    * cannot host ports.
    */
   hostPort?(boxId: string, port: number, opts: HostPortOptions): Promise<{ url: string }>;
+  /**
+   * Where the server dials this box's bridge (docs/architecture.md, "Bridge protocol"): a `wss://` (or, for the local simulator,
+   * `ws://`) URL and the headers the provider needs to let the socket through. Boat hosts the bridge port behind its per-port
+   * token, sent as a cookie. A bearer credential: never store or log it. Idempotent; the box must be running.
+   */
+  bridgeEndpoint(boxId: string): Promise<BridgeEndpoint>;
 }
+
+/** The port the bridge listens on inside a box (its `BRIDGE_PORT`). The local simulator gives each box its own instead. */
+export const BRIDGE_PORT = 4748;
+
+export type BridgeEndpoint = { url: string; headers: Record<string, string> };
 
 export type DesktopOptions = { theme: "light" | "dark" };
 
@@ -48,5 +59,5 @@ export function unconfiguredBox(message: string): BoxProvider {
   const fail = async () => {
     throw new Error(message);
   };
-  return { createFromSnapshot: fail, resume: fail, pause: fail, delete: fail };
+  return { createFromSnapshot: fail, resume: fail, pause: fail, delete: fail, bridgeEndpoint: fail };
 }

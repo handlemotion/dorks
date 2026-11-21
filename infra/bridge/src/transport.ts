@@ -1,5 +1,4 @@
-import { appError, skillBundle, type SkillBundle, type AppErrorCode, type CommandFrame, type FromBridge, type PrRef, type ToBridge } from "@dorks/shared";
-import { type GrantSource, TicketRefused } from "./grants";
+import { appError, checkProof, isNonce, newNonce, proof, skillBundle, type SkillBundle, type AppErrorCode, type CommandFrame, type FromBridge, type PrRef, type ToBridge } from "@dorks/shared";
 
 export interface CommandEntry {
   cid: string;
@@ -63,26 +62,39 @@ const code = (e: unknown): AppErrorCode | undefined => {
 const typed = (error: unknown) => Object.assign(new Error((error as { message?: string })?.message ?? "request failed"), { data: error });
 
 const RPC_TIMEOUT_MS = 60_000;
-const AUTH_TIMEOUT_MS = 10_000;
-const BACKOFF_START_MS = 500;
-const BACKOFF_MAX_MS = 15_000;
-/** The server's "forbidden", and also Wurmhol's "grant revoked": both final. */
-const CLOSE_FORBIDDEN = 4403;
-/** Wurmhol: the grant this socket was opened with ran out. Get a new one and reconnect. */
-const CLOSE_GRANT_EXPIRED = 4401;
+/** How long an rpc waits for the server to (re)connect before it fails; callers retry. */
+const OPEN_WAIT_MS = 15_000;
+/** A socket that has not finished the handshake by then is closed. */
+const HANDSHAKE_MS = 10_000;
+/** At most this many sockets may be mid-handshake at once; more are turned away. */
+const MAX_HANDSHAKES = 4;
 
 type Pending = { resolve: (v: any) => void; reject: (e: unknown) => void; timer: ReturnType<typeof setTimeout> };
+type Waiter = { resolve: () => void; reject: (e: unknown) => void; timer: ReturnType<typeof setTimeout> };
+
+/** The part of a WebSocket the transport uses: both the `ws` library's server-side socket and a test's in-process one fit. */
+export interface BridgeSocket {
+  readonly readyState: number;
+  send(text: string): void;
+  close(code?: number, reason?: string): void;
+  onmessage: ((m: { data: unknown }) => void) | null;
+  onclose: ((e: { code: number }) => void) | null;
+}
+
+/** Starts handing every incoming socket to `onSocket`; the function it returns stops listening. */
+export type Accept = (onSocket: (ws: BridgeSocket) => void) => () => void;
 
 /**
- * The bridge protocol (docs/architecture.md) over one WebSocket: a first `auth` frame, request/response `rpc` frames, and two
- * server pushes (the commands snapshot, the PR subscriptions). The socket is opened lazily, re-opened with backoff after a drop
- * while anything is subscribed, and the server re-sends the snapshots on every new connection, so nothing needs replaying here.
+ * The bridge protocol (docs/architecture.md) over one WebSocket that the server opens to this bridge: a handshake in which each
+ * side proves it holds the per-dork secret without sending it, then request/response `rpc` frames from here and two server pushes
+ * (the commands snapshot, the PR subscriptions). The server reconnects after a drop and re-sends the snapshots on every new
+ * connection, so nothing needs replaying here. A socket that fails the handshake is closed and changes nothing.
  */
 export class WsTransport implements Transport {
-  private ws?: WebSocket;
-  private opening?: Promise<void>;
+  private ws?: BridgeSocket;
   private nextId = 1;
   private readonly pending = new Map<number, Pending>();
+  private readonly waiters = new Set<Waiter>();
   private readonly commandSubs = new Set<{ on: (c: CommandEntry[]) => void; err: () => void }>();
   private readonly listSubs = new Set<{ on: (v: unknown) => void; err: () => void }>();
   private readonly reconnects = new Set<() => void>();
@@ -90,99 +102,114 @@ export class WsTransport implements Transport {
   private lastList?: unknown;
   private everConnected = false;
   private closed = false;
-  private fatalError?: unknown;
-  private backoff = BACKOFF_START_MS;
-  private retry?: ReturnType<typeof setTimeout>;
+  private handshaking = 0;
+  private readonly stopAccepting: () => void;
 
   constructor(
-    private readonly url: string,
+    accept: Accept,
     private readonly dorkId: string,
     private readonly secret: string,
-    private readonly WS: typeof WebSocket = WebSocket,
-    /** When the public URL is an embedded Wurmhol tunnel: its grants, sent as `x-wurmhol-grant` on every handshake. */
-    private readonly grants: GrantSource | null = null,
-  ) {}
+  ) {
+    this.stopAccepting = accept((ws) => this.incoming(ws));
+  }
 
   // ---------------------------------------------------------------- connection
+  /** Resolves once a verified server socket is up; rejects if none comes within OPEN_WAIT_MS. */
   private open(): Promise<void> {
-    if (this.fatalError) return Promise.reject(this.fatalError);
-    if (this.ws?.readyState === 1 && !this.opening) return Promise.resolve();
-    this.opening ??= this.grant().then((grant) => this.dial(grant));
-    return this.opening;
-  }
-
-  /** The grant to open with, or null without a tunnel. A refused ticket is final, like a refused secret. */
-  private async grant(): Promise<string | null> {
-    if (!this.grants) return null;
-    try {
-      return await this.grants.get();
-    } catch (e) {
-      this.opening = undefined;
-      if (e instanceof TicketRefused) this.fatalError = typed({ code: "forbidden", message: e.message });
-      throw this.fatalError ?? e;
-    }
-  }
-
-  private dial(grant: string | null): Promise<void> {
+    if (this.closed) return Promise.reject(new Error("transport closed"));
+    if (this.ws?.readyState === 1) return Promise.resolve();
     return new Promise<void>((resolve, reject) => {
-      let settled = false;
-      let opened = false;
-      // Node's built-in WebSocket takes request headers as a non-standard `headers` init option.
-      const ws = grant ? new this.WS(this.url, { headers: { "x-wurmhol-grant": grant } } as unknown as string[]) : new this.WS(this.url);
-      const done = (err?: unknown) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        this.opening = undefined;
-        // The relay refuses the handshake of a grant that just ran out or was revoked: try the next attempt with a fresh one.
-        if (err && !opened) this.grants?.drop();
-        if (err) {
-          try {
-            ws.close();
-          } catch {
-            /* already closed */
-          }
-          reject(err);
-        } else resolve();
+      const w: Waiter = {
+        resolve,
+        reject,
+        timer: setTimeout(() => {
+          this.waiters.delete(w);
+          reject(new Error("not connected"));
+        }, OPEN_WAIT_MS),
       };
-      const timer = setTimeout(() => done(new Error("connection timed out")), AUTH_TIMEOUT_MS);
-      ws.onopen = () => {
-        opened = true;
-        ws.send(JSON.stringify({ t: "auth", dorkId: this.dorkId, secret: this.secret }));
-      };
-      ws.onmessage = (m) => {
-        let msg: any;
-        try {
-          msg = JSON.parse(String(m.data));
-        } catch {
-          return;
-        }
-        if (msg.t === "auth_ok") {
-          this.ws = ws;
-          const re = this.everConnected;
-          this.everConnected = true;
-          this.backoff = BACKOFF_START_MS;
-          done();
-          if (re) for (const cb of [...this.reconnects]) cb();
-        } else this.onFrame(msg);
-      };
-      ws.onerror = () => done(new Error("connection failed"));
-      ws.onclose = (ev) => {
-        if (ev.code === CLOSE_GRANT_EXPIRED) this.grants?.drop();
-        if (ev.code === CLOSE_FORBIDDEN) {
-          this.fatalError = typed({ code: "forbidden", message: "forbidden" });
-          done(this.fatalError);
-        } else done(new Error("connection closed"));
-        if (this.ws === ws) {
-          this.ws = undefined;
-          this.lost();
-        }
-      };
+      this.waiters.add(w);
     });
   }
 
-  /** The socket dropped: fail what was in flight, tell subscribers, and reopen (with backoff) if anyone still listens. */
-  private lost() {
+  /**
+   * A socket from the server: it sends `hello` with its nonce, this bridge answers `auth` with its own nonce and its proof, and the
+   * server's `auth_ok` must carry the server's proof. Frames are handled one at a time in arrival order, so a snapshot sent right
+   * after `auth_ok` waits for the proof check.
+   */
+  private incoming(ws: BridgeSocket) {
+    if (this.closed || this.handshaking >= MAX_HANDSHAKES) return ws.close(1013, "busy");
+    this.handshaking++;
+    const mine = newNonce();
+    let theirs = "";
+    let stage: "hello" | "auth" | "done" = "hello";
+    const finish = (ok: boolean) => {
+      if (stage === "done") return;
+      stage = "done";
+      clearTimeout(timer);
+      this.handshaking--;
+      if (ok) this.adopt(ws);
+      else
+        try {
+          ws.close(1008, "handshake failed");
+        } catch {
+          /* already closed */
+        }
+    };
+    const timer = setTimeout(() => finish(false), HANDSHAKE_MS);
+    const handle = async (raw: unknown) => {
+      let msg: any;
+      try {
+        msg = JSON.parse(String(raw));
+      } catch {
+        return stage === "done" ? undefined : finish(false);
+      }
+      if (stage === "done") {
+        if (this.ws === ws) this.onFrame(msg);
+      } else if (stage === "hello") {
+        if (msg?.t !== "hello" || !isNonce(msg.nonce)) return finish(false);
+        theirs = msg.nonce;
+        stage = "auth";
+        ws.send(JSON.stringify({ t: "auth", dorkId: this.dorkId, nonce: mine, proof: await proof(this.secret, "bridge", theirs, mine) }));
+      } else {
+        finish(msg?.t === "auth_ok" && (await checkProof(this.secret, "server", mine, theirs, msg.proof)));
+      }
+    };
+    let chain = Promise.resolve();
+    ws.onmessage = (m) => {
+      chain = chain.then(() => handle(m.data)).catch(() => finish(false));
+    };
+    ws.onclose = () => finish(false);
+  }
+
+  /** A verified socket becomes the connection; one it replaces (the server reconnected before this side saw the drop) is closed. */
+  private adopt(ws: BridgeSocket) {
+    const old = this.ws;
+    this.ws = ws;
+    if (old) {
+      this.dropped();
+      try {
+        old.close(4000, "replaced");
+      } catch {
+        /* already closed */
+      }
+    }
+    ws.onclose = () => {
+      if (this.ws !== ws) return;
+      this.ws = undefined;
+      this.dropped();
+    };
+    const re = this.everConnected;
+    this.everConnected = true;
+    for (const w of [...this.waiters]) {
+      clearTimeout(w.timer);
+      w.resolve();
+    }
+    this.waiters.clear();
+    if (re) for (const cb of [...this.reconnects]) cb();
+  }
+
+  /** The connection is gone: fail what was in flight and tell subscribers. The server reconnects; nothing is scheduled here. */
+  private dropped() {
     for (const [id, p] of this.pending) {
       clearTimeout(p.timer);
       p.reject(new Error("connection lost"));
@@ -191,11 +218,6 @@ export class WsTransport implements Transport {
     if (this.closed) return;
     for (const s of [...this.commandSubs]) s.err();
     for (const s of [...this.listSubs]) s.err();
-    if (this.fatalError || (!this.commandSubs.size && !this.listSubs.size)) return;
-    this.retry = setTimeout(() => {
-      this.open().catch(() => this.lost());
-    }, this.backoff);
-    this.backoff = Math.min(this.backoff * 2, BACKOFF_MAX_MS);
   }
 
   private onFrame(msg: any) {
@@ -253,7 +275,6 @@ export class WsTransport implements Transport {
     const sub = { on: onCommands, err: onError };
     this.commandSubs.add(sub);
     if (this.lastCommands) queueMicrotask(() => this.commandSubs.has(sub) && onCommands(this.lastCommands!));
-    void this.open().catch(() => this.lost()); // the snapshot arrives with the connection
     return () => void this.commandSubs.delete(sub);
   }
 
@@ -282,7 +303,6 @@ export class WsTransport implements Transport {
     const sub = { on: onList, err: onError };
     this.listSubs.add(sub);
     if (this.lastList !== undefined) queueMicrotask(() => this.listSubs.has(sub) && onList(this.lastList));
-    void this.open().catch(() => this.lost());
     return () => void this.listSubs.delete(sub);
   }
 
@@ -297,8 +317,13 @@ export class WsTransport implements Transport {
 
   close = async () => {
     this.closed = true;
-    clearTimeout(this.retry);
-    this.lost();
+    this.stopAccepting();
+    for (const w of this.waiters) {
+      clearTimeout(w.timer);
+      w.reject(new Error("transport closed"));
+    }
+    this.waiters.clear();
+    this.dropped();
     try {
       this.ws?.close();
     } catch {

@@ -1,4 +1,4 @@
-//! Menu-bar status item: server and tunnel state, plus the few actions that matter without opening the window.
+//! Menu-bar status item: server state, plus the few actions that matter without opening the window.
 
 use dorks_shell_core::supervisor::Status;
 use tauri::image::Image;
@@ -15,14 +15,12 @@ const TRAY_ID: &str = "dorks";
 
 pub struct TrayItems {
     server: MenuItem<tauri::Wry>,
-    tunnel: MenuItem<tauri::Wry>,
     /// Only in builds that can update themselves.
     update: Option<MenuItem<tauri::Wry>>,
 }
 
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let server = MenuItem::with_id(app, "server", server_line(&Status::Starting), false, None::<&str>)?;
-    let tunnel = MenuItem::with_id(app, "tunnel", "Tunnel: not started", false, None::<&str>)?;
     let open = MenuItem::with_id(app, "open", "Open Dorks", true, None::<&str>)?;
     let data = MenuItem::with_id(app, "data", "Open Data Folder", true, None::<&str>)?;
     let logs = MenuItem::with_id(app, "logs", "Open Server Log", true, None::<&str>)?;
@@ -35,7 +33,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     };
     let separator = PredefinedMenuItem::separator(app)?;
     let separator2 = PredefinedMenuItem::separator(app)?;
-    let mut items: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![&server, &tunnel, &separator, &open];
+    let mut items: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![&server, &separator, &open];
     if let Some(update) = &update {
         items.push(update);
     }
@@ -83,7 +81,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             _ => {}
         })
         .build(app)?;
-    app.manage(TrayItems { server, tunnel, update });
+    app.manage(TrayItems { server, update });
     Ok(())
 }
 
@@ -98,28 +96,12 @@ pub fn server_line(status: &Status) -> String {
     }
 }
 
-pub fn tunnel_line(kind: Option<&str>, state: Option<&str>) -> String {
-    match (kind, state) {
-        (Some(kind), Some("ready")) => format!("Tunnel: {kind} connected"),
-        (Some(kind), Some(_)) => format!("Tunnel: {kind} unavailable"),
-        _ => "Tunnel: not started".into(),
-    }
-}
-
 /// Re-renders the menu texts and tooltip from the current state.
 pub fn refresh(app: &AppHandle) {
     let state = app.state::<AppState>();
     let status = state.status.lock().unwrap().clone();
-    let (kind, tunnel_state) = state
-        .config
-        .lock()
-        .unwrap()
-        .as_ref()
-        .map(|c| (Some(c.tunnel.kind.clone()), Some(c.tunnel.state.clone())))
-        .unwrap_or((None, None));
     if let Some(items) = app.try_state::<TrayItems>() {
         let _ = items.server.set_text(server_line(&status));
-        let _ = items.tunnel.set_text(tunnel_line(kind.as_deref(), tunnel_state.as_deref()));
     }
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         let _ = tray.set_tooltip(Some(format!("Dorks – {}", server_line(&status).to_lowercase())));

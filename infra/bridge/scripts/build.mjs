@@ -14,6 +14,7 @@ await build({
   target: "node22",
   format: "esm",
   banner: { js: "#!/usr/bin/env node\nimport { createRequire as __cr } from 'node:module';const require = __cr(import.meta.url);" },
+  external: ["bufferutil", "utf-8-validate"], // optional speedups of `ws`; it falls back to plain JS without them
   logLevel: "warning",
 });
 chmodSync(outfile, 0o755);

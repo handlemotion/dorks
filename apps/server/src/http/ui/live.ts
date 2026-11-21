@@ -42,6 +42,6 @@ export const simFeedRoutes: Routes = (api, app) => {
   api.get("/sim/boxes", (c) => {
     const key = c.req.header("x-sim-host-key");
     if (app.cfg.boxProvider !== "sim" || !app.cfg.simHostKey || !key || !safeEqual(key, app.cfg.simHostKey)) return c.json(errBody({ code: "forbidden", message: "forbidden" }), 401);
-    return c.json(app.db.all("SELECT name, running, gen FROM sim_boxes").map((b) => ({ name: b.name, running: b.running === 1, gen: b.gen })));
+    return c.json(app.db.all("SELECT name, running, gen, bridge_port FROM sim_boxes").map((b) => ({ name: b.name, running: b.running === 1, gen: b.gen, bridgePort: b.bridge_port })));
   });
 };

@@ -2,15 +2,14 @@ import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
-/** Everything the bridge reads from its own environment. The box provides the first three; the rest are optional knobs. */
+/** The bridge's port inside a box when BRIDGE_PORT is unset (the server sets it; the local simulator gives each box its own). */
+export const DEFAULT_BRIDGE_PORT = 4748;
+
+/** Everything the bridge reads from its own environment. The box provides DORK_ID, BRIDGE_SECRET and BRIDGE_PORT; the rest are optional knobs. */
 export interface Config {
   dorkId: string;
-  bridgeUrl: string;
-  /**
-   * When the bridge URL is the owner's embedded Wurmhol tunnel: the Dorks tunnel service and this sandbox's ticket for it, traded
-   * for the grants the relay wants. Not an authenticator: the per-dork secret is. Never logged, never forwarded to the child.
-   */
-  tunnel: { service: string; ticket: string } | null;
+  /** The loopback port the bridge listens on; the box provider exposes it, and the server dials it (docs/architecture.md). */
+  bridgePort: number;
   /** Never logged, never forwarded to the Claude child. */
   bridgeSecret: string;
   claudeBin: string;
@@ -61,14 +60,15 @@ function readSecret(env: NodeJS.ProcessEnv): string | undefined {
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const { DORK_ID: dorkId, BRIDGE_URL: bridgeUrl } = env;
+  const { DORK_ID: dorkId } = env;
   const bridgeSecret = readSecret(env);
-  if (!dorkId || !bridgeUrl || !bridgeSecret) throw new Error("DORK_ID, BRIDGE_URL and BRIDGE_SECRET (or BRIDGE_SECRET_FILE) are required");
+  if (!dorkId || !bridgeSecret) throw new Error("DORK_ID and BRIDGE_SECRET (or BRIDGE_SECRET_FILE) are required");
+  const bridgePort = Number(env.BRIDGE_PORT || DEFAULT_BRIDGE_PORT);
+  if (!Number.isInteger(bridgePort) || bridgePort < 1 || bridgePort > 65535) throw new Error("BRIDGE_PORT must be a port number");
   const stateDir = env.DORKS_STATE_DIR || join(homedir(), ".dorks-bridge");
   return {
     dorkId,
-    bridgeUrl,
-    tunnel: env.DORKS_TUNNEL_SERVICE && env.DORKS_TUNNEL_TICKET ? { service: env.DORKS_TUNNEL_SERVICE, ticket: env.DORKS_TUNNEL_TICKET } : null,
+    bridgePort,
     bridgeSecret,
     claudeBin: env.CLAUDE_BIN || "claude",
     claudeExtraArgs: (env.DORKS_CLAUDE_ARGS ?? "").split(/\s+/).filter(Boolean),

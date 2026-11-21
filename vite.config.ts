@@ -6,7 +6,7 @@ export default defineConfig({
   // The shadcn / AI Elements files in packages/ui are installed by the shadcn CLI and overwritten on every update, so they stay as published.
   fmt: {
     printWidth: 200,
-    ignorePatterns: ["**/*.md", "packages/ui/src/components/ui/**", "packages/ui/src/components/ai-elements/**", "**/*.gen.ts", "**/.cloudflare/**", "**/dist/**"],
+    ignorePatterns: ["**/*.md", "packages/ui/src/components/ui/**", "packages/ui/src/components/ai-elements/**", "**/*.gen.ts", "**/dist/**"],
     overrides: [
       { files: ["apps/web/**"], options: { singleQuote: true, semi: false } },
       { files: ["packages/ui/**"], options: { semi: false } },
@@ -16,7 +16,7 @@ export default defineConfig({
     jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],
     // complexity (max 20) is an error: split branchy code into named helpers or handler maps rather than disabling it.
     rules: { complexity: "error", "vite-plus/prefer-vite-plus-imports": "error" },
-    ignorePatterns: ["**/dist/**", "**/node_modules/**", "**/*.gen.ts", "**/.cloudflare/**"],
+    ignorePatterns: ["**/dist/**", "**/node_modules/**", "**/*.gen.ts"],
     // typeCheck stays off: each package type-checks itself with its own tsconfig (`pnpm typecheck`); one shared program mixes DOM, Bun and Workers globals.
     options: { typeAware: true },
   },

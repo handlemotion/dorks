@@ -1,73 +1,88 @@
-// Stand-in for the in-box bridge, speaking the same protocol (packages/shared/src/bridge.ts) over the server's bridge WebSocket
+// Stand-in for the in-box bridge, speaking the same protocol (packages/shared/src/bridge.ts) on the WebSocket the server dials
 // (docs/architecture.md, "Bridge protocol") without Claude, git or a sandbox.
-// Usage: DORK_ID=… BRIDGE_SECRET=… BRIDGE_URL=ws://127.0.0.1:4748/bridge node sim-bridge.mjs
+// Usage: DORK_ID=… BRIDGE_SECRET=… BRIDGE_PORT=<port> node sim-bridge.mjs
 //   commands  <- the server's commands snapshot (pushed on every change)
 //   frames    -> the push rpc, batched (assistant text deltas coalesce for DELTA_BATCH_MS)
 //   secrets   <- the configure / gh_token rpcs (never in the snapshot)
 
-const { DORK_ID: dorkId, BRIDGE_SECRET: secret, BRIDGE_URL: url } = process.env;
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { WebSocketServer } from "ws";
+
+const { DORK_ID: dorkId, BRIDGE_SECRET: secret } = process.env;
+const port = Number(process.env.BRIDGE_PORT);
 const DELTA_BATCH_MS = Number(process.env.DELTA_BATCH_MS ?? 150);
 const HEARTBEAT_MS = Number(process.env.HEARTBEAT_MS ?? 30_000);
 const DELTAS = Number(process.env.SIM_DELTAS ?? 40); // fake text deltas per turn
 const DELTA_GAP_MS = Number(process.env.SIM_DELTA_GAP_MS ?? 40);
-if (!dorkId || !secret || !url) throw new Error("DORK_ID, BRIDGE_SECRET and BRIDGE_URL are required");
+if (!dorkId || !secret || !port) throw new Error("DORK_ID, BRIDGE_SECRET and BRIDGE_PORT are required");
 
-// ---- a minimal client for the bridge protocol: auth frame, rpc request/response, snapshot pushes, reconnect with backoff
+// ---- a minimal bridge end of the protocol: listen, answer the server's handshake, rpc request/response, snapshot pushes
 let ws = null;
+let everConnected = false;
 let nextId = 1;
 const pendingRpc = new Map();
+const waiters = [];
 let onCommandsCb = null;
 let lastCmds = null; // a snapshot can arrive before the handler is registered
-let lastOpened = false;
-const openSocket = () =>
-  new Promise((resolve, reject) => {
-    const sock = new WebSocket(url);
-    sock.onopen = () => sock.send(JSON.stringify({ t: "auth", dorkId, secret }));
-    sock.onmessage = (m) => {
-      const msg = JSON.parse(String(m.data));
-      if (msg.t === "auth_ok") {
-        ws = sock;
-        lastOpened = true;
-        resolve();
-      } else if (msg.t === "res") {
-        const p = pendingRpc.get(msg.id);
-        if (!p) return;
-        pendingRpc.delete(msg.id);
-        if (msg.ok) p.resolve(msg.result);
-        else p.reject(Object.assign(new Error(msg.error?.message ?? "rpc failed"), { data: msg.error }));
-      } else if (msg.t === "commands") {
-        lastCmds = msg.cmds;
-        onCommandsCb?.(msg.cmds);
-      }
-    };
-    sock.onerror = () => reject(new Error("connection failed"));
-    sock.onclose = (ev) => {
-      if (ws === sock) ws = null;
-      for (const [id, p] of pendingRpc) {
-        p.reject(new Error("connection lost"));
-        pendingRpc.delete(id);
-      }
-      if (ev.code === 4403) {
-        console.log("[bridge-sim] refused by the server");
-        process.exit(0);
-      }
-      reject(new Error("connection closed"));
-      if (lastOpened) setTimeout(() => reopen().catch(() => {}), 1000);
-    };
-  });
-async function reopen() {
-  for (let delay = 500; ; delay = Math.min(delay * 2, 10_000)) {
+const proofOf = (label, theirs, mine) => createHmac("sha256", secret).update(`${label}|${theirs}|${mine}`).digest("hex");
+const sameHex = (a, b) => typeof a === "string" && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+const wss = new WebSocketServer({ host: "127.0.0.1", port });
+wss.on("error", (e) => {
+  console.log(`[bridge-sim] cannot listen on ${port}: ${e.message}`);
+  process.exit(1);
+});
+wss.on("connection", (sock) => {
+  const mine = randomBytes(32).toString("hex");
+  let theirs = null;
+  let verified = false;
+  sock.on("message", (data) => {
+    let msg;
     try {
-      await openSocket();
-      await rpc("connect");
-      return;
+      msg = JSON.parse(String(data));
     } catch {
-      await new Promise((r) => setTimeout(r, delay));
+      return sock.close(1008);
     }
-  }
-}
+    if (!verified) {
+      if (!theirs) {
+        if (msg.t !== "hello" || !/^[0-9a-f]{64}$/.test(msg.nonce ?? "")) return sock.close(1008);
+        theirs = msg.nonce;
+        return sock.send(JSON.stringify({ t: "auth", dorkId, nonce: mine, proof: proofOf("bridge", theirs, mine) }));
+      }
+      if (msg.t !== "auth_ok" || !sameHex(msg.proof, proofOf("server", mine, theirs))) return sock.close(1008);
+      verified = true;
+      const old = ws;
+      ws = sock;
+      if (old) old.close(4000, "replaced");
+      const again = everConnected;
+      everConnected = true;
+      for (const resolve of waiters.splice(0)) resolve();
+      if (again) rpc("connect").catch(() => {});
+      return;
+    }
+    if (ws !== sock) return;
+    if (msg.t === "res") {
+      const p = pendingRpc.get(msg.id);
+      if (!p) return;
+      pendingRpc.delete(msg.id);
+      if (msg.ok) p.resolve(msg.result);
+      else p.reject(Object.assign(new Error(msg.error?.message ?? "rpc failed"), { data: msg.error }));
+    } else if (msg.t === "commands") {
+      lastCmds = msg.cmds;
+      onCommandsCb?.(msg.cmds);
+    }
+  });
+  sock.on("close", () => {
+    if (ws !== sock) return;
+    ws = null;
+    for (const [id, p] of pendingRpc) {
+      p.reject(new Error("connection lost"));
+      pendingRpc.delete(id);
+    }
+  });
+});
+const connected = () => (ws ? Promise.resolve() : new Promise((resolve) => waiters.push(resolve)));
 async function rpc(op, args = {}) {
-  if (!ws) await openSocket();
+  await connected();
   const id = nextId++;
   return new Promise((resolve, reject) => {
     pendingRpc.set(id, { resolve, reject });

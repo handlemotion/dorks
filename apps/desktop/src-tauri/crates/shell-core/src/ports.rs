@@ -1,4 +1,4 @@
-//! Port picking for the sidecar's two listeners.
+//! Port picking for the sidecar's UI listener.
 
 use std::io;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener};

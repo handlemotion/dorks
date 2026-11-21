@@ -430,4 +430,9 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE local_requests DROP COLUMN grant_id;
   DROP TABLE local_grants;
   `,
+  `
+  -- The server now dials each box's bridge (docs/architecture.md, "Bridge protocol"). A simulated box's bridge runs on this machine,
+  -- so each gets a loopback port of its own.
+  ALTER TABLE sim_boxes ADD COLUMN bridge_port INTEGER;
+  `,
 ];

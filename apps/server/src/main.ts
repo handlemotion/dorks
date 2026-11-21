@@ -1,23 +1,23 @@
 import { Cause, Deferred, Effect, Exit, Layer } from "effect";
-import { BridgeListener, UiListener } from "./listeners";
+import { BridgeLinks, UiListener } from "./listeners";
 import { Scheduler } from "./lifecycle/scheduler";
 import { parentPid, watchParent } from "./parentWatch";
 import { appLayer } from "./server";
 
-// The sidecar entry point (Bun). The app is a stack of Layers: config, then the database and hub, the app, both listeners, and the
+// The sidecar entry point (Bun). The app is a stack of Layers: config, then the database and hub, the app, the UI listener and the bridge links, and the
 // scheduler last. Shutdown (SIGTERM, SIGINT, or the supervisor going away) closes the stack in reverse: stop the scheduler and
-// drain its jobs (at most 5 s), stop both listeners, close the database.
+// drain its jobs (at most 5 s), stop the listener and the bridge links, close the database.
 
-const main = Scheduler.layer.pipe(Layer.provideMerge(Layer.mergeAll(UiListener.layer, BridgeListener.layer)), Layer.provideMerge(appLayer));
+const main = Scheduler.layer.pipe(Layer.provideMerge(Layer.mergeAll(UiListener.layer, BridgeLinks.layer)), Layer.provideMerge(appLayer));
 
 const stopRequested = Deferred.makeUnsafe<void>();
 const requestStop = () => void Deferred.doneUnsafe(stopRequested, Effect.void); // a second signal is a no-op
 
 const program = Effect.gen(function* () {
   const ui = yield* UiListener;
-  const bridge = yield* BridgeListener;
+  yield* BridgeLinks;
   // One JSON line for the supervisor (the desktop shell and scripts/e2e wait for it).
-  console.log(JSON.stringify({ ready: true, ui: ui.url, bridge: bridge.url }));
+  console.log(JSON.stringify({ ready: true, ui: ui.url }));
   yield* Deferred.await(stopRequested);
 }).pipe(Effect.provide(main));
 

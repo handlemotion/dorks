@@ -1,4 +1,4 @@
-//! Secrets the shell generates: the owner token and the tunnel install key. Stored in 0600 files; never logged.
+//! Secrets the shell generates: the owner token. Stored in 0600 files; never logged.
 
 use std::io::{self, Write};
 use std::path::Path;
@@ -36,27 +36,6 @@ pub fn ensure_owner_token(path: &Path) -> io::Result<String> {
             Ok(token)
         }
         Err(e) => Err(e),
-    }
-}
-
-/// Reads a generated value from `path`, creating it with `make` (mode 0600) on first run.
-pub fn ensure_generated(path: &Path, make: impl FnOnce() -> io::Result<String>) -> io::Result<String> {
-    if let Some(existing) = read_secret(path)? {
-        return Ok(existing);
-    }
-    let value = make()?;
-    write_private(path, value.as_bytes())?;
-    Ok(value)
-}
-
-/// This install's key for the Dorks tunnel service: `dti_` and 64 hex characters. It is the install's identity there (its
-/// wurmhol tenant), so a malformed file is an error, never silently replaced: a new key would mean a new tunnel and URL.
-pub fn ensure_install_key(path: &Path) -> io::Result<String> {
-    let key = ensure_generated(path, || generate_token().map(|t| format!("dti_{t}")))?;
-    if key.strip_prefix("dti_").is_some_and(is_valid_token) {
-        Ok(key)
-    } else {
-        Err(io::Error::new(io::ErrorKind::InvalidData, format!("{} does not contain a valid install key; delete it to make a new one", path.display())))
     }
 }
 
@@ -150,26 +129,15 @@ mod tests {
     #[test]
     fn secrets_round_trip_and_clear() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("wurmhol-token");
+        let path = dir.path().join("some-secret");
         assert_eq!(read_secret(&path).unwrap(), None);
-        write_secret(&path, Some("  wh_abc \n")).unwrap();
-        assert_eq!(read_secret(&path).unwrap().as_deref(), Some("wh_abc"));
+        write_secret(&path, Some("  abc \n")).unwrap();
+        assert_eq!(read_secret(&path).unwrap().as_deref(), Some("abc"));
         write_secret(&path, None).unwrap();
         assert_eq!(read_secret(&path).unwrap(), None);
         write_secret(&path, None).unwrap();
         std::fs::write(&path, " \n").unwrap();
         assert_eq!(read_secret(&path).unwrap(), None);
-    }
-
-    #[test]
-    fn install_key_is_made_once_and_checked() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("tunnel-install-key");
-        let key = ensure_install_key(&path).unwrap();
-        assert!(key.starts_with("dti_") && key.len() == 68);
-        assert_eq!(ensure_install_key(&path).unwrap(), key);
-        std::fs::write(&path, "dti_nope").unwrap();
-        assert!(ensure_install_key(&path).is_err());
     }
 
     #[test]
