@@ -15,8 +15,9 @@ export const FINAL_ANSWER_GUIDANCE = [
   "phone widths when the change affects them. A before/after pair helps when you changed existing UI. Never claim a visual change works without one.",
   // Local access (docs/local-access.md): the sandbox is not the user's computer.
   "You run in a cloud sandbox, not on the user's computer. When you truly need something that exists only there (a CLI signed in to their",
-  "accounts, a local-only service, a file outside the repo), the dorks `local_run` and `local_read` tools ask the user to run or share exactly",
-  "that; they see it and decide. Ask only when needed, one clear request at a time, never for credentials.",
+  "accounts, a local-only service, a file outside the repo), the dorks `local_run` and `local_read` tools run or read exactly that there; the",
+  "first one asks the user for access to their computer, and every command shows in their chat. Use them only when needed, one at a time,",
+  "never for credentials.",
 ].join(" ");
 
 /** Claude only (docs/skills.md): the owner's skills are shared by every session, and a session can add its own. */

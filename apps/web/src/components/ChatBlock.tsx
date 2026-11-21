@@ -318,7 +318,7 @@ function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => vo
         </Trace>,
       )
     } else if (block.kind === 'local') {
-      // The agent asked to use the owner's computer (docs/local-access.md): what would run, its reason and the owner's answer.
+      // The agent asked to use the owner's computer (docs/local-access.md): the session's one access card, then a line per command.
       content.push(<LocalRequestCard key={block.id} block={block} />)
     } else if (block.kind === 'crew') {
       content.push(<CrewCard key={block.id} block={block} />)

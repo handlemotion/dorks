@@ -212,7 +212,7 @@ export class DorksClient {
   refreshComposio() {
     this.invalidate("composio");
   }
-  /** Local access: the switch and the permissions granted for a while (docs/local-access.md). */
+  /** Local access: the switch and the sessions allowed to use this computer (docs/local-access.md). */
   localAccess() {
     return this.query<LocalAccess>("local-access", () => this.api.localAccess());
   }
@@ -418,17 +418,16 @@ export class DorksClient {
     decideLocal: async (dorkId: string, requestId: string, d: LocalDecision) => {
       await this.api.decideLocal(dorkId, requestId, d);
       this.invalidate("local-access");
+      this.invalidate("settings"); // Always allow is a setting
     },
     setLocalAccess: async (enabled: boolean) => {
       await this.api.setLocalAccess(enabled);
       this.invalidate("local-access");
+      this.invalidate("settings"); // turning it off also turns Always allow off
     },
-    revokeLocalGrant: async (grantId: string) => {
-      await this.api.revokeLocalGrant(grantId);
-      this.invalidate("local-access");
-    },
-    revokeLocalGrants: async (dorkId?: string) => {
-      await this.api.revokeLocalGrants(dorkId);
+    /** Ends one session's permission to use this computer, or every session's. */
+    revokeLocalSessions: async (dorkId?: string) => {
+      await this.api.revokeLocalSessions(dorkId);
       this.invalidate("local-access");
     },
     deleteMcpServer: async (name: string) => {

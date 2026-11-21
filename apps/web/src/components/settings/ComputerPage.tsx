@@ -1,79 +1,78 @@
-import { FileTextIcon, TerminalIcon } from 'lucide-react'
-import type { LocalGrant } from '@dorks/client'
+import type { LocalSession, Settings } from '@dorks/client'
 import { useDorksClient, useLocalAccess } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
+import { Switch } from '@dorks/ui/switch'
 import { usePending } from '../../lib/pending'
 import { EmptyState } from '../EmptyState'
 import { SettingsGroup, SettingsRow, SettingsSection, SettingsSections, SettingsSelectRow, SettingsStatus } from './kit'
 
-// Your computer (docs/local-access.md): whether agents may ask to run a command or read a file on this computer, and the permissions
-// granted from the chat for an hour. Turning it off ends every permission and refuses what is waiting.
+// Your computer (docs/local-access.md): whether agents may ask to use this computer, whether every session may without asking
+// (Always allow, also set from a chat's access card), and the sessions allowed from the chat. Turning access off ends all of it.
 
 const MODES = [
-  { value: 'ask', label: 'Ask every time' },
+  { value: 'ask', label: 'Ask once per session' },
   { value: 'off', label: 'Off' },
 ] as const
 
-const left = (at: number) => {
-  const m = Math.max(1, Math.round((at - Date.now()) / 60_000))
-  return m >= 60 ? '1 hour left' : `${m} min left`
-}
-
-export function ComputerPage() {
+export function ComputerPage({ settings }: { settings: Settings }) {
   const access = useLocalAccess()
   const { actions } = useDorksClient()
   const { run, pending, error } = usePending()
   if (!access) return <p className="px-4 text-sm text-muted-foreground">Loading…</p>
+  const always = access.enabled && !!settings.localAlwaysAllow
   return (
     <SettingsSections>
       <SettingsSection title="Access" description="For CLIs and files that only exist here.">
         <SettingsGroup>
           <SettingsSelectRow
             label="Agents can ask"
-            description={access.enabled ? 'Nothing runs without your OK.' : 'Agents cannot ask.'}
+            description={access.enabled ? 'A session asks once, then runs what it needs as you.' : 'Agents cannot ask.'}
             value={access.enabled ? 'ask' : 'off'}
             options={MODES}
             onValueChange={(v) => void run(() => actions.setLocalAccess(v === 'ask'))}
+          />
+          <SettingsRow
+            label="Allow sessions to access this computer without asking"
+            htmlFor="local-always-allow"
+            description={always ? 'No session asks. Turn off to have each session ask again.' : 'Each session asks the first time it needs this computer.'}
+            control={<Switch id="local-always-allow" checked={always} disabled={pending || !access.enabled} onCheckedChange={(v) => void run(() => actions.updateSettings({ localAlwaysAllow: v }))} />}
           />
         </SettingsGroup>
         <SettingsStatus error={error} />
       </SettingsSection>
       <SettingsSection
-        title="Allowed for now"
+        title="Allowed sessions"
         actions={
-          access.grants.length > 1 ? (
-            <Button size="sm" variant="outline" disabled={pending} onClick={() => void run(() => actions.revokeLocalGrants())}>
+          access.sessions.length > 1 ? (
+            <Button size="sm" variant="outline" disabled={pending} onClick={() => void run(() => actions.revokeLocalSessions())}>
               Stop all
             </Button>
           ) : undefined
         }
       >
-        {access.grants.length ? (
+        {access.sessions.length ? (
           <SettingsGroup>
-            {access.grants.map((g) => (
-              <GrantRow key={g.id} grant={g} />
+            {access.sessions.map((s) => (
+              <SessionRow key={s.dorkId} session={s} />
             ))}
           </SettingsGroup>
         ) : (
-          <EmptyState figure="laptop" title="Nothing allowed for now" description="Requests you allow for 1 hour show here." />
+          <EmptyState figure="laptop" title="No sessions allowed" description="Sessions you allow from the chat show here." />
         )}
       </SettingsSection>
     </SettingsSections>
   )
 }
 
-function GrantRow({ grant }: { grant: LocalGrant }) {
+function SessionRow({ session }: { session: LocalSession }) {
   const { actions } = useDorksClient()
   const { run, pending } = usePending()
-  const target = grant.kind === 'run' ? grant.command : `Files in ${grant.dir}`
-  const where = grant.kind === 'run' ? `in ${grant.cwd} · ` : ''
   return (
     <SettingsRow
-      icon={grant.kind === 'run' ? TerminalIcon : FileTextIcon}
-      label={<span className="font-mono text-xs">{target}</span>}
-      description={`${where}${grant.dorkTitle || 'A session'} · ${left(grant.expiresAt)}`}
+      label={session.dorkTitle || 'A session'}
+      description={`Allowed ${new Date(session.allowedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`}
       control={
-        <Button size="sm" variant="outline" disabled={pending} onClick={() => void run(() => actions.revokeLocalGrant(grant.id))}>
+        <Button size="sm" variant="outline" disabled={pending} onClick={() => void run(() => actions.revokeLocalSessions(session.dorkId))}>
           Stop
         </Button>
       }
