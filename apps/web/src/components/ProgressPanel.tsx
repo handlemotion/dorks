@@ -132,12 +132,23 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
     const el = scroller.current
     if (el && atEnd.current) el.scrollTop = el.scrollHeight
   }, [count])
-  // A tool line or the status line in the thread brings its steps into view, centred so the pinned prompt never covers them.
+  // A tool line or the status line in the thread brings its steps into view, centred so the pinned prompt never covers them. A filter
+  // that hides the step is cleared first, or the thread's click would seem to do nothing; the scroll then waits for the rows.
+  const revealed = useRef(false)
   useEffect(() => {
     if (!selectedKey) return
-    atEnd.current = false
-    scroller.current?.querySelector<HTMLElement>(`[data-step-key="${CSS.escape(selectedKey)}"]`)?.scrollIntoView({ block: 'center' })
+    revealed.current = true
+    const step = turns.flatMap((t) => t.steps).find((s) => s.key === selectedKey)
+    if (step && query.trim() && !matchesFilter(step.block, query)) setQuery('')
   }, [reveal]) // eslint-disable-line react-hooks/exhaustive-deps -- only when the thread asks, not on every pick
+  useEffect(() => {
+    if (!revealed.current || !selectedKey) return
+    const row = scroller.current?.querySelector<HTMLElement>(`[data-step-key="${CSS.escape(selectedKey)}"]`)
+    if (!row) return
+    revealed.current = false
+    atEnd.current = false
+    row.scrollIntoView({ block: 'center' })
+  }, [reveal, query]) // eslint-disable-line react-hooks/exhaustive-deps -- only when the thread asks, not on every pick
   // The selected row stays in view as the arrows move it (a clicked row is already in view: the list stays where it is).
   const clicked = useRef(false)
   useEffect(() => {
