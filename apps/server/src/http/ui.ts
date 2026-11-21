@@ -17,6 +17,7 @@ import * as runs from "../services/buildRuns";
 import { forgetUsage, getUsage } from "../services/usage";
 import { composioLink, composioStatus, composioUnlink, connectComposio, disconnectComposio } from "../services/composio";
 import { deleteMcpServer, listMcpServers, putMcpServer } from "../services/mcpServers";
+import { deleteSkill, installSkills, listSkills, resolveSkills, updateSkill } from "../services/skills";
 import { CALLBACK_PATH, callbackPage, finishMcpSignIn, signOutMcp, startMcpSignIn } from "../services/mcpOAuth";
 import { forgetGithubRepos, githubRepos } from "../services/githubRepos";
 import { getPullRequest, mergePullRequest, updatePullRequestBranch } from "../services/pullRequest";
@@ -411,6 +412,38 @@ export function uiApp(app: App): Hono {
   api.delete(
     "/api/mcp-servers/:name/oauth",
     on((c) => serviceAsync((a) => signOutMcp(a, name(c))).pipe(ok(c))),
+  );
+
+  // ---- Skills from Customize (services/skills.ts, docs/skills.md): installed once from GitHub, shared by every sandbox
+  api.get(
+    "/api/skills",
+    on((c) => service((a) => c.json(listSkills(a)))),
+  );
+  api.post(
+    "/api/skills/resolve",
+    on((c) =>
+      looseBody(c).pipe(
+        Effect.flatMap((b) => serviceAsync((a) => resolveSkills(a, b.source))),
+        Effect.map((v) => c.json(v)),
+      ),
+    ),
+  );
+  api.post(
+    "/api/skills",
+    on((c) =>
+      looseBody(c).pipe(
+        Effect.flatMap((b) => serviceAsync((a) => installSkills(a, b))),
+        Effect.map((v) => c.json(v)),
+      ),
+    ),
+  );
+  api.post(
+    "/api/skills/:name/update",
+    on((c) => serviceAsync((a) => updateSkill(a, name(c))).pipe(Effect.map((v) => c.json(v)))),
+  );
+  api.delete(
+    "/api/skills/:name",
+    on((c) => ok(c)(service((a) => deleteSkill(a, name(c))))),
   );
 
   // ---- Composio (services/composio.ts): one key for the OAuth-only apps, each signed in to in a browser

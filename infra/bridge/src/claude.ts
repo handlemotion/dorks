@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { modelLabel, type AgentModelChoice } from "@dorks/shared";
 import { CHILD_ENV_DENY } from "./config";
-import { COORDINATOR_GUIDANCE, FINAL_ANSWER_GUIDANCE, WORKER_GUIDANCE } from "./guidance";
+import { COORDINATOR_GUIDANCE, FINAL_ANSWER_GUIDANCE, SKILLS_GUIDANCE, WORKER_GUIDANCE } from "./guidance";
 import type { CrewRole } from "@dorks/shared";
 import { asIdentity, type Identity } from "./runas";
 import type { Log } from "./redact";
@@ -154,7 +154,7 @@ export function claudeArgs(o: {
     ...(o.model ? ["--model", o.model] : []),
     ...(o.effort ? ["--effort", o.effort] : []),
     "--append-system-prompt",
-    FINAL_ANSWER_GUIDANCE,
+    `${FINAL_ANSWER_GUIDANCE} ${SKILLS_GUIDANCE}`,
     ...(o.settingsFile ? ["--settings", o.settingsFile] : []),
     ...(o.mcpConfigFile ? ["--mcp-config", o.mcpConfigFile] : []),
     ...(o.resumeSessionId ? ["--resume", o.resumeSessionId] : []),
