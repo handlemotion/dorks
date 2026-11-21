@@ -45,7 +45,7 @@ export function SetupStatus({ settings }: { settings: Settings }) {
       </header>
       <ol className="flex flex-col rounded-(--control-radius) border border-border py-1">
         {steps.map((step) => (
-          <li key={step.id} data-state={step.state} className="flex min-h-9 items-center gap-2.5 px-3 py-1.5">
+          <li key={step.id} data-state={step.state} className="flex min-h-9 items-center gap-2 px-3 py-1.5">
             <StepMark state={step.state} />
             <div className="flex min-w-0 flex-1 flex-col">
               <span className={step.state === 'done' ? 'text-muted-foreground' : undefined}>{step.title}</span>
@@ -62,12 +62,12 @@ export function SetupStatus({ settings }: { settings: Settings }) {
 function StepMark({ state }: { state: StepState }) {
   if (state === 'done')
     return (
-      <span aria-label="Done" className="grid size-4 shrink-0 place-items-center rounded-full bg-brand text-brand-foreground">
-        <CheckIcon className="size-2.5" strokeWidth={3} />
+      <span aria-label="Done" className="grid size-3.5 shrink-0 place-items-center rounded-full bg-brand text-brand-foreground">
+        <CheckIcon className="size-2" strokeWidth={3.5} />
       </span>
     )
-  if (state === 'running') return <LoaderCircleIcon aria-label="In progress" className="size-4 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
-  return <span aria-label={state === 'failed' ? 'Failed' : 'To do'} className={`size-4 shrink-0 rounded-full border ${state === 'failed' ? 'border-destructive' : 'border-input bg-muted'}`} />
+  if (state === 'running') return <LoaderCircleIcon aria-label="In progress" className="size-3.5 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
+  return <span aria-label={state === 'failed' ? 'Failed' : 'To do'} className={`size-3.5 shrink-0 rounded-full border ${state === 'failed' ? 'border-destructive' : 'border-input bg-muted'}`} />
 }
 
 const SettingsLink = ({ page, children }: { page: string; children: ReactNode }) => (
@@ -116,12 +116,11 @@ function snapshotStep(snap: SnapshotStatus | undefined, boat: boolean, have: boo
   if (snap?.state === 'building') {
     return {
       id: 'snapshot',
-      title: have ? 'Update Boat for this version' : 'Prepare Boat',
+      title: have ? 'Updating Boat' : 'Preparing Boat',
       state: 'running',
-      detail: `${snap.message ?? 'Starting'}${have ? '. New sessions start meanwhile.' : ''}`,
       trailing: (
-        <span className="text-xs tabular-nums text-muted-foreground">
-          {snap.stepIndex + 1} of {snap.stepCount}
+        <span className="truncate text-xs tabular-nums text-muted-foreground">
+          {snap.message ?? 'Starting'} · {snap.stepIndex + 1} of {snap.stepCount}
         </span>
       ),
     }
@@ -130,7 +129,7 @@ function snapshotStep(snap: SnapshotStatus | undefined, boat: boolean, have: boo
     const error = snap.error ?? 'The build failed'
     return {
       id: 'snapshot',
-      title: have ? 'Update Boat for this version' : 'Prepare Boat',
+      title: have ? 'Updating Boat failed' : 'Preparing Boat failed',
       state: 'failed',
       detail: `${error}${/[.!?]$/.test(error) ? '' : '.'}${have ? ' Sessions keep using the previous one.' : ''}`,
       trailing: buildButton('Retry'),
