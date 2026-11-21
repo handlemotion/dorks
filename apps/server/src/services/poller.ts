@@ -3,6 +3,7 @@ import type { App } from "../app";
 import {
   getCached,
   GhComments,
+  GhIssue,
   GhIssueEvents,
   GhPr,
   GhReviews,
@@ -110,7 +111,15 @@ const observePr = (look: Look): Effect.Effect<PrLook, GithubError> =>
       // A PR that already conflicts when subscribed (a branch cut from an old base) is news, unlike history: say so now.
       if (pr.mergeable === false) events.push({ kind: "mergeable", baseSha: pr.base.sha, mergeable: false });
     } else if (state !== "open") {
-      events.push({ kind: "pr_closed", merged: state === "merged", sender: actor(pr.merged_by) });
+      // merged_by is null for a plain close; only the issue endpoint says who closed it (one extra read, once per PR). A failed read names nobody.
+      const by =
+        state === "merged"
+          ? pr.merged_by
+          : yield* getCached(look.gh, GhIssue, `${look.base}/issues/${sub.number}`).pipe(
+              Effect.map((i) => (i.status === 200 ? i.json.closed_by : null)),
+              Effect.orElseSucceed(() => null),
+            );
+      events.push({ kind: "pr_closed", merged: state === "merged", sender: actor(by) });
       return { done: { events, baseline, poll } };
     } else {
       yield* observePrChanges(look, pr);

@@ -140,6 +140,8 @@ export const GhComments = Schema.Array(
 );
 export type GhComment = (typeof GhComments.Type)[number];
 
+export const GhIssue = Schema.Struct({ closed_by: Actor });
+
 export const GhIssueEvents = Schema.Array(Schema.Struct({ event: Schema.String, actor: Actor, created_at: Schema.String }));
 
 export const GhSuites = Schema.Struct({
