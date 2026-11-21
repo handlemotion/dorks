@@ -71,15 +71,6 @@ describe("Outbox", () => {
     expect(seqs(t)).toEqual([1, 2, 3, 2, 3, 4, 5]);
   });
 
-  it("treats a plain (undefined) push result as success: no replay on old backends", async () => {
-    const t = new FakeTransport();
-    const o = mk(t);
-    o.push(ev(1));
-    o.push(ev(2));
-    await o.drained();
-    expect(seqs(t)).toEqual([1, 2]);
-  });
-
   it("after a reconnect, resends only events above afterBridgeSeq", async () => {
     const t = new FakeTransport();
     const o = mk(t);

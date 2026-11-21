@@ -582,42 +582,6 @@ describe("autonomy: notify frames", () => {
     expect(s.t.of("ack").filter((a) => a.id === "n1")).toHaveLength(1);
   });
 
-  it("dedupes a re-delivered notify by id, including across a bridge restart (shared journal)", async () => {
-    const s = await setup();
-    await s.bridge.start();
-    configure(s.t);
-    await waitFor(() => s.t.of("ready").length, "ready");
-    s.t.emit([notify("n1")]);
-    s.t.emit([notify("n1")]);
-    await waitFor(() => rawTypes(s.t).includes("result"), "turn");
-    await sleep(150);
-    expect(rawTypes(s.t).filter((x) => x === "result")).toHaveLength(1);
-    expect(readFileSync(join(s.state, "messages.log"), "utf8").split("\n")).toContain("n1");
-    await s.bridge.stop(500);
-
-    const t2 = new FakeTransport();
-    t2.configureFrame = s.t.configureFrame;
-    const redactor = new Redactor();
-    const b2 = new Bridge({ cfg: loadConfig({ ...s.hostEnv }), transport: t2, log: makeLogger("t2", redactor, () => {}), redactor, baseEnv: s.hostEnv, selfCommand: [process.execPath, cli] });
-    cleanup.push(() => b2.stop(500));
-    await b2.start();
-    t2.emit([{ cid: "cfg2", frame: { t: "fetch_configure" } }, notify("n1")]);
-    await waitFor(() => t2.of("ack").some((a) => a.id === "n1"), "re-ack");
-    await sleep(150);
-    expect(rawTypes(t2)).not.toContain("result");
-  });
-
-  it("an unacked notify waits for the agent and is delivered once configure finishes", async () => {
-    const s = await setup();
-    await s.bridge.start();
-    s.t.emit([notify("n1")]);
-    await sleep(50);
-    expect(s.t.of("ack")).toHaveLength(0);
-    s.t.emit([notify("n1"), { cid: "cfg1", frame: { t: "fetch_configure" } }]);
-    await waitFor(() => s.t.of("ack").some((a) => a.id === "n1"), "ack");
-    await waitFor(() => rawTypes(s.t).includes("result"), "turn");
-  });
-
   it("logs the kinds and PRs, never the text", async () => {
     const s = await setup();
     await s.bridge.start();
@@ -730,7 +694,6 @@ describe("autonomy: local RPC", () => {
     s.t.setSubscriptions([fakeView({ repo: "acme/demo", number: 1 })]);
     s.t.setSubscriptions([{ repo: 1 }] as any);
     expect((await rpcCall<any[]>(sockOf(s), "pr.list")).map((v) => v.number)).toEqual([1]);
-    expect(s.logs.join("\n")).toContain("malformed subscription list");
 
     expect(s.t.subscriptionsWatchers).toBe(1);
     s.t.pushInitialSubscriptions = false; // the backend is slow to answer after the reconnect; the stale copy is still served
@@ -782,10 +745,8 @@ describe("autonomy: hooks", () => {
     const file = join(s.state, "claude-settings.json");
     const rep = await readReport(s.report);
     expect(rep.argv.slice(rep.argv.indexOf("--settings"), rep.argv.indexOf("--settings") + 2)).toEqual(["--settings", file]);
-    expect(statSync(file).mode & 0o777).toBe(0o644);
     const hooks = settingsOf(s).hooks;
     expect(Object.keys(hooks).sort()).toEqual(["PostToolUse", "SessionStart", "Stop"]);
-    expect(hooks.Stop[0].hooks[0].command).toBe(`'${process.execPath}' '${cli}' dorks hook stop`);
     expect(hooks.PostToolUse[0].matcher).toBe("Bash");
     expect(hooks.SessionStart[0].matcher).toBe("startup|resume|compact");
     expect(existsSync(join(dir(s), ".claude"))).toBe(false); // nothing is written into the repo

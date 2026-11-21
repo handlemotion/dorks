@@ -26,7 +26,7 @@ export const settingsPath = (stateDir: string, fast = false) => join(stateDir, f
  * run, so the repo's own `.claude/settings.json` hooks still fire next to these. `dorks` is the bridge binary under its CLI role: run
  * through its absolute path so it does not depend on PATH inside the hook's shell.
  */
-export function claudeSettings(self: [node: string, cli: string]) {
+function claudeSettings(self: [node: string, cli: string]) {
   const run = (event: HookEvent) => [{ type: "command", command: `${shellQuote(self[0])} ${shellQuote(self[1])} dorks hook ${event}`, timeout: HOOK_EVENTS[event].timeoutS }];
   return {
     hooks: {
@@ -261,7 +261,7 @@ function describe(s: SubscriptionView) {
 }
 
 /** `subs` is null when the backend has not answered yet. */
-export function sessionContext(subs: SubscriptionView[] | null): string {
+function sessionContext(subs: SubscriptionView[] | null): string {
   return [
     subs === null
       ? "Pull requests you are subscribed to: could not be loaded just now; call the `pr_list` tool (or run `dorks pr list`)."
