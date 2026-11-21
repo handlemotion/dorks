@@ -67,7 +67,7 @@ Boat's desktop sits next to the code, so `localhost:3000` just works in its Chro
    - `/desktop` answered at once with a `desktopUrl`.
    - The stream page sends no `X-Frame-Options` or `frame-ancestors`.
    - The noVNC variant answered `provisioning` first.
-   - Not yet checked: that WebRTC actually plays inside the Tauri webview.
+   - The desktop shell's CSP must allow it: `frame-src https://*.on.boat.dev` in `apps/desktop/src-tauri/tauri.conf.json`. Without it WebKit refuses the frame, never fires `load`, and the tab sits on Connecting.
 4. **API key**: a key with the actions in [boat.md](boat.md) could mint the URL. No new action had to be added.
 5. **Owner and agent input**: the agent's input goes to a target window through XSendEvent, with its own cursor, so a watching owner does not disturb it. Two hands clicking at once is still confusing, so the tab stays view-only until the owner takes over.
 
