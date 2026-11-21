@@ -54,4 +54,13 @@ describe("skill sync", () => {
     expect(existsSync(join(skills, "pdf"))).toBe(false);
     expect(existsSync(join(skills, "mine", "SKILL.md"))).toBe(true);
   });
+
+  it("never takes over a session's skill whose name is an object property", async () => {
+    const configDir = join(tmp(), ".claude");
+    mkdirSync(join(configDir, "skills", "constructor"), { recursive: true });
+    writeFileSync(join(configDir, "skills", "constructor", "SKILL.md"), "session");
+    const fetch = async (n: string): Promise<SkillBundle> => ({ name: n, digest: "4".repeat(64), files: [{ path: "SKILL.md", data: b64("shared") }] });
+    await syncSkills({ stateDir: tmp(), configDir, runAs: null, log: () => {}, fetch }, [{ name: "constructor", digest: "4".repeat(64) }]);
+    expect(readFileSync(join(configDir, "skills", "constructor", "SKILL.md"), "utf8")).toBe("session");
+  });
 });

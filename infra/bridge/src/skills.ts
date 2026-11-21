@@ -23,13 +23,16 @@ export interface SkillSyncDeps {
 
 const manifestPath = (stateDir: string) => join(stateDir, "skills.json");
 
+/** Prototype-free, so a skill named `constructor` or `toString` is never mistaken for one this bridge wrote. */
 function readManifest(stateDir: string): Manifest {
+  const out: Manifest = Object.create(null);
   try {
     const m = JSON.parse(readFileSync(manifestPath(stateDir), "utf8")) as unknown;
-    return m && typeof m === "object" ? (m as Manifest) : {};
+    if (m && typeof m === "object") for (const [k, v] of Object.entries(m)) if (typeof v === "string") out[k] = v;
   } catch {
-    return {};
+    /* none yet */
   }
+  return out;
 }
 
 /** A file path inside the skill folder, or null for one that would escape it. */
@@ -78,7 +81,7 @@ export async function syncSkills(d: SkillSyncDeps, want: readonly SkillRef[]): P
   const had = readManifest(d.stateDir);
   if (!want.length && !Object.keys(had).length) return;
   const root = join(d.configDir, "skills");
-  const next: Manifest = {};
+  const next: Manifest = Object.create(null);
   try {
     ensureDir(root, d.runAs);
   } catch (e) {
