@@ -15,6 +15,8 @@ export const MAX_TARBALL_BYTES = 64 * 1024 * 1024;
 const MAX_UNPACKED_BYTES = 256 * 1024 * 1024;
 export const MAX_SKILL_FILES = 1000;
 export const MAX_SKILL_BYTES = 8 * 1024 * 1024;
+/** A file's path in its skill folder; the bridge's schema refuses longer ones (`skillFile` in @dorks/shared). */
+export const MAX_SKILL_PATH = 512;
 const SKIP_DIRS = new Set(["node_modules", ".git"]);
 
 const text = (b: Uint8Array) => new TextDecoder().decode(b);
@@ -131,11 +133,12 @@ export function findSkills(files: TarFile[], root: string, fallback: string): Fo
   const isSkill = (f: TarFile) => /(^|\/)SKILL\.md$/i.test(f.path) && under(f.path, root) && !skipped(f.path);
   const marks = files.filter(isSkill);
   const top = marks.find((f) => dirOf(f.path) === root);
-  const dirs = (top ? [top] : marks).map((f) => dirOf(f.path));
+  const all = marks.map((f) => dirOf(f.path));
+  const dirs = top ? [root] : all;
   const seen = new Set<string>();
   const out: FoundSkill[] = [];
   for (const dir of dirs.sort()) {
-    const nested = dirs.filter((d) => d !== dir && under(d, dir));
+    const nested = all.filter((d) => d !== dir && under(d, dir)); // every skill folder below, also when only this one is chosen
     const own = files.filter((f) => under(f.path, dir) && !skipped(f.path) && !nested.some((d) => under(f.path, d)));
     const rel = own.map((f) => ({ ...f, path: dir ? f.path.slice(dir.length + 1) : f.path }));
     const md = rel.find((f) => /^SKILL\.md$/i.test(f.path));

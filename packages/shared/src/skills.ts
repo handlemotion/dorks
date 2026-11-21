@@ -11,7 +11,7 @@ export const SKILL_NAME = /^(?!-)(?!.*--)[a-z0-9-]{1,64}(?<!-)$/;
 export const skillRef = z.object({ name: z.string().regex(SKILL_NAME), digest: z.string().regex(/^[0-9a-f]{64}$/) });
 export type SkillRef = z.infer<typeof skillRef>;
 
-/** One file of a skill, relative to its folder; `data` is base64, `exec` keeps a script's executable bit. */
+/** One file of a skill, relative to its folder (at most 512 characters, which the server checks on install); `data` is base64, `exec` keeps a script's executable bit. */
 export const skillFile = z.object({ path: z.string().min(1).max(512), data: z.string(), exec: z.boolean().optional() });
 export type SkillFile = z.infer<typeof skillFile>;
 

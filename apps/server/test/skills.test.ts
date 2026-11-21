@@ -2,7 +2,7 @@ import { gzipSync } from "node:zlib";
 import { Effect } from "effect";
 import { describe, expect, it } from "vite-plus/test";
 import { uiApp } from "../src/http/ui";
-import { untar } from "../src/lib/skillRepo";
+import { findSkills, untar } from "../src/lib/skillRepo";
 import { parseSkillSource } from "../src/lib/skillSource";
 import * as bridge from "../src/services/bridge";
 import { skillBundle } from "../src/services/skills";
@@ -135,5 +135,21 @@ describe("skills from GitHub", () => {
     expect(await installSkills(h.app, { source: "o/r/skills/inner" })).toEqual({ installed: ["inner"] });
     head = "d".repeat(40);
     expect(await updateSkill(h.app, "inner")).toEqual({ updated: false }); // a new commit, same files: found, not "gone"
+  });
+
+  it("a chosen skill leaves out the skills nested in it", () => {
+    const files = untar(tarball({ "SKILL.md": md("root", "r"), "big.txt": "x", "skills/inner/SKILL.md": md("inner", "i"), "skills/inner/asset.bin": "y" }));
+    const [root] = findSkills(files, "", "r");
+    expect(root!.files.map((f) => f.path).sort()).toEqual(["SKILL.md", "big.txt"]);
+  });
+
+  it("refuses a skill with a path the bridge would reject", async () => {
+    const h = harness();
+    const repo = tarball({ "SKILL.md": md("long", "l"), [`${"a".repeat(300)}/${"b".repeat(300)}.md`]: "z" });
+    h.app.fetch = fakeFetch((url) =>
+      url.pathname.endsWith("/commits/HEAD") ? new Response("e".repeat(40)) : url.pathname.includes("/tarball/") ? new Response(repo) : new Response("{}", { status: 404 }),
+    );
+    const { installSkills } = await import("../src/services/skills");
+    await expect(installSkills(h.app, { source: "o/r" })).rejects.toThrow(/longer than 512/);
   });
 });

@@ -2,7 +2,7 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import type { SkillBundle, SkillRef, SkillResolution, SkillView } from "@dorks/shared";
 import { AppFail, fail, type App } from "../app";
 import { getDork } from "../data";
-import { findSkills, MAX_SKILL_BYTES, MAX_SKILL_FILES, MAX_TARBALL_BYTES, skillDigest, untar, type FoundSkill, type TarFile } from "../lib/skillRepo";
+import { findSkills, MAX_SKILL_BYTES, MAX_SKILL_FILES, MAX_SKILL_PATH, MAX_TARBALL_BYTES, skillDigest, untar, type FoundSkill, type TarFile } from "../lib/skillRepo";
 import { parseSkillSource, SourceError, type ParsedSource } from "../lib/skillSource";
 import { reconfigureAwake } from "./mcpServers";
 import { githubToken } from "./settings";
@@ -183,6 +183,8 @@ export async function resolveSkills(app: App, source: unknown): Promise<SkillRes
 function checkSize(s: FoundSkill) {
   if (s.files.length > MAX_SKILL_FILES) fail("invalid", `${s.name} has too many files (over ${MAX_SKILL_FILES}).`);
   if (s.bytes > MAX_SKILL_BYTES) fail("invalid", `${s.name} is too large (over 8 MB).`);
+  const long = s.files.find((f) => f.path.length > MAX_SKILL_PATH);
+  if (long) fail("invalid", `${s.name} has a file path longer than ${MAX_SKILL_PATH} characters: ${long.path.slice(0, 80)}…`);
 }
 
 const packFiles = (s: FoundSkill) => gzipSync(JSON.stringify(s.files.map((f) => ({ path: f.path, data: Buffer.from(f.data).toString("base64"), ...(f.exec ? { exec: true } : {}) }))));
