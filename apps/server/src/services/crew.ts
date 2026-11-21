@@ -66,12 +66,14 @@ const only = (scope: Scope, ...who: Scope["who"][]) => {
 // ---------------------------------------------------------------- views
 
 /**
- * Done with its turn: idle or asleep with nothing waiting to be delivered, or failed. A failed dork keeps its undelivered message for a
+ * Done with its turn: idle or asleep with nothing waiting to be delivered (commands or buffered crew reports), or failed. A failed dork keeps its undelivered message for a
  * retry, but nothing moves until someone sends another one, so it counts as settled.
  */
 export function isSettled(app: App, d: DorkRow): boolean {
   if (d.state === "error") return true;
-  return SETTLED.has(d.state) && !openCommands(app.db, d.id).some((c) => c.kind === "user_message" || c.kind === "notify");
+  if (!SETTLED.has(d.state) || openCommands(app.db, d.id).some((c) => c.kind === "user_message" || c.kind === "notify")) return false;
+  // A report or note still in its debounce window (crew_notify) is a turn already on its way.
+  return !app.db.get("SELECT 1 FROM crew_inbox WHERE dork_id = ? AND delivered = 0 LIMIT 1", d.id);
 }
 
 const eventBody = (row: { body: string } | undefined) => (row ? (JSON.parse(row.body) as ClientEventBody) : undefined);

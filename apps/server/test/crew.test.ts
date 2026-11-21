@@ -93,6 +93,9 @@ describe("reports", () => {
     const w = await c.worker(a);
     c.finishTurn(w, "Opened https://github.com/acme/app/pull/7; tests pass.");
     expect(c.h.hasTimer(a, "crew_notify")).toBe(true);
+    // A coordinator with a report on its way is not settled yet, so dork_wait keeps waiting for it to read it.
+    c.h.app.db.tx(() => update(c.h.app.db, "dorks", { id: a }, { state: "idle" }));
+    expect(((await c.call(OWNER, "dork_get", { id: a })) as { dork: { settled: boolean } }).dork.settled).toBe(false);
     c.h.timer(a, "crew_notify");
     const notify = c.h.cmds(a).find((x) => x.kind === "notify");
     expect(notify?.text).toContain('<dorks-event source="crew">');
