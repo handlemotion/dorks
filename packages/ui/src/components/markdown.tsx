@@ -46,9 +46,22 @@ function MarkdownCode({ node, className, children, ...props }: React.ComponentPr
   return <MarkdownCodeBlock code={typeof children === "string" ? children : ""} language={/language-(\S+)/.exec(className ?? "")?.[1] ?? ""} />
 }
 
+// Streamdown's own table sits in a bordered, padded card (room for its copy/download controls, which we turn off) around a second
+// bordered box: a table in a card. Just the table in one 6px border: it scrolls sideways when wide, its header fill and row rules come from
+// Streamdown's thead/tr/td.
+function MarkdownTable({ node: _node, className, children, ...props }: React.ComponentProps<"table"> & ExtraProps) {
+  return (
+    <div data-streamdown="table-wrapper" className="my-4 overflow-x-auto rounded-md border border-border">
+      <table data-streamdown="table" className={cn("w-full divide-y divide-border", className)} {...props}>
+        {children}
+      </table>
+    </div>
+  )
+}
+
 // Streamdown memoizes on components, so keep the default stable. Exported so an app can add its own (an `img` override, say) and
-// keep the code blocks: spread it into a module-level object.
-const DEFAULT_COMPONENTS = { code: MarkdownCode }
+// keep the code blocks and tables: spread it into a module-level object.
+const DEFAULT_COMPONENTS = { code: MarkdownCode, table: MarkdownTable }
 
 function Markdown({ className, components = DEFAULT_COMPONENTS, controls = false, ...props }: React.ComponentProps<typeof Streamdown>) {
   return <Streamdown data-slot="markdown" components={components} controls={controls} className={cn("cn-markdown w-full min-w-0 overflow-hidden", className)} {...props} />
