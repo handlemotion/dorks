@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { autoConnectBoat, startBoatSignIn } from "../src/services/boatSignIn";
-import { boatKey, readSettings, settingsView, updateSettings } from "../src/services/settings";
+import { autoConnectGithub, boatKey, readSettings, settingsView, updateSettings } from "../src/services/settings";
 import { harness } from "./harness";
 
 // Connecting Boat with the Boat CLI's login (services/boatSignIn.ts) against a fake CLI and Boat's documented /limits answers.
@@ -91,5 +91,25 @@ describe("Boat sign-in with the Boat CLI", () => {
     expect(await boatKey(trial.app)).toBeUndefined();
     expect(settingsView(trial.app).boatSignIn).toMatchObject({ state: "failed", error: expect.stringMatching(/paid Boat plan/) });
     expect(trial.boatCli.state.revoked).toEqual(["key-1"]);
+  });
+});
+
+describe("GitHub with the GitHub CLI", () => {
+  it("an automatic connect still in flight never undoes the owner's disconnect", async () => {
+    const h = harness();
+    let release!: () => void;
+    const slow = new Promise<void>((r) => (release = r));
+    const ghLogin = h.app.ghLogin;
+    h.app.ghLogin = async () => {
+      await slow;
+      return ghLogin();
+    };
+    const auto = autoConnectGithub(h.app);
+    h.app.ghLogin = ghLogin;
+    await updateSettings(h.app, { githubConnected: true });
+    await updateSettings(h.app, { githubConnected: false });
+    release();
+    await auto;
+    expect(readSettings(h.app)).toMatchObject({ githubConnected: false, githubAuto: false });
   });
 });

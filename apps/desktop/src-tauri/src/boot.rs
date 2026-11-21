@@ -77,7 +77,7 @@ async fn try_start(app: &AppHandle, state: &AppState) -> Result<RuntimeConfig, S
 }
 
 pub fn server_spec(paths: &Paths, program: PathBuf, ui_port: u16, owner_token: &str) -> SidecarSpec {
-    let env = vec![
+    let mut env = vec![
         (ENV_DATA_DIR.to_string(), paths.server_data_dir().display().to_string()),
         (ENV_OWNER_TOKEN.to_string(), owner_token.to_string()),
         (ENV_UI_PORT.to_string(), ui_port.to_string()),

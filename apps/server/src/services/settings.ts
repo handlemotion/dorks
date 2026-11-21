@@ -151,6 +151,11 @@ const boatEnvironmentOf = (v: unknown) => {
   return t || null;
 };
 
+const flagOf = (v: unknown, name: string) => {
+  if (typeof v !== "boolean") fail("invalid", `${name} must be true or false`);
+  return v;
+};
+
 const sleepMinutesOf = (v: unknown) => {
   // NaN slips through Math.min/max and would corrupt every timer computed from it.
   if (typeof v !== "number" || !Number.isFinite(v)) fail("invalid", "minutes must be a finite number");
@@ -189,23 +194,23 @@ export async function updateSettings(app: App, patch: SettingsPatch, opts: { fro
   if (patch.baseSnapshotId !== undefined) row.baseSnapshotId = text(patch.baseSnapshotId, "snapshot", 200) || null;
   if (patch.sleepMinutes !== undefined) row.sleepMinutes = sleepMinutesOf(patch.sleepMinutes);
   if (patch.commentPolicy !== undefined) row.commentPolicy = commentPolicyOf(patch.commentPolicy);
-  if (patch.claudeCodeMode !== undefined) {
-    if (typeof patch.claudeCodeMode !== "boolean") fail("invalid", "claudeCodeMode must be true or false");
-    row.claudeCodeMode = patch.claudeCodeMode;
-  }
-  if (patch.localAlwaysAllow !== undefined) {
-    if (typeof patch.localAlwaysAllow !== "boolean") fail("invalid", "localAlwaysAllow must be true or false");
-    row.localAlwaysAllow = patch.localAlwaysAllow;
-  }
+  if (patch.claudeCodeMode !== undefined) row.claudeCodeMode = flagOf(patch.claudeCodeMode, "claudeCodeMode");
+  if (patch.localAlwaysAllow !== undefined) row.localAlwaysAllow = flagOf(patch.localAlwaysAllow, "localAlwaysAllow");
   if (!Object.keys(row).length) return;
   if (opts.unless?.()) throw new StaleSignIn("superseded");
   app.db.tx(() => {
     update(app.db, "settings", { id: 1 }, row);
     touch(app, { t: "settings" });
   });
+  await afterSave(app, patch, row, before.boatKeyId, !!opts.fromSignIn);
+}
+
+/** What a saved change sets off: the Boat sign-in and GitHub's automatic connect learn the owner decided, waiting requests run. */
+async function afterSave(app: App, patch: SettingsPatch, row: Record<string, unknown>, previousBoatKeyId: string | undefined, fromSignIn: boolean) {
+  if (patch.boatKey !== undefined) boatKeyChanged(app, previousBoatKeyId, fromSignIn);
+  if (patch.githubConnected !== undefined) githubGeneration.set(app, (githubGeneration.get(app) ?? 0) + 1);
   // Turning Always allow on also answers the requests already waiting (local.ts imports this module, hence the dynamic import).
   if (row.localAlwaysAllow === true) (await import("./local")).startWaitingLocal(app);
-  if (patch.boatKey !== undefined) boatKeyChanged(app, before.boatKeyId, !!opts.fromSignIn);
 }
 
 /**
@@ -220,6 +225,8 @@ function boatKeyChanged(app: App, previousKeyId: string | undefined, fromSignIn:
 // ---------------------------------------------------------------- connecting GitHub by itself
 const GITHUB_RECHECK_MS = 10_000;
 const githubTried = new WeakMap<App, number>();
+/** Bumped when the owner connects or disconnects GitHub, so an automatic attempt still in flight cannot undo it. */
+const githubGeneration = new WeakMap<App, number>();
 /** Why GitHub could not connect by itself (the GitHub CLI is missing or signed out), for the setup checklist. */
 const githubProblem = new WeakMap<App, string>();
 
@@ -233,14 +240,18 @@ export async function autoConnectGithub(app: App): Promise<void> {
   const at = githubTried.get(app);
   if (at !== undefined && app.now() - at < GITHUB_RECHECK_MS) return;
   githubTried.set(app, app.now());
+  const gen = githubGeneration.get(app) ?? 0;
   try {
     const row = await githubConnection(app, true);
     githubProblem.delete(app);
-    app.db.tx(() => {
+    const saved = app.db.tx(() => {
+      const now = readSettings(app);
+      if ((githubGeneration.get(app) ?? 0) !== gen || now.githubConnected || !now.githubAuto) return false; // the owner decided meanwhile
       update(app.db, "settings", { id: 1 }, row);
       touch(app, { t: "settings" });
+      return true;
     });
-    console.error("github: connected with the GitHub CLI's login");
+    if (saved) console.error("github: connected with the GitHub CLI's login");
   } catch (e) {
     const problem = e instanceof Error ? e.message : "GitHub could not be reached.";
     if (githubProblem.get(app) !== problem) {
