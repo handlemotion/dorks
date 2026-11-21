@@ -22,7 +22,7 @@ sandbox, repo, branch and PRs), follows them, and reports to the owner. Together
 | Coordinator → worker messages are user turns (they steer); worker → coordinator and worker → worker messages are notes held for the recipient's turn boundary | The coordinator is its workers' user. A peer note never interrupts and never counts as the owner's consent |
 | Depth 1: only the owner creates coordinators, a coordinator creates workers, a worker creates nothing | Teams forbid nesting, subagents cap it; deeper trees multiply cost faster than they help |
 | At most 8 live (not archived) workers per coordinator, 30 crew notes per sender per hour | Server-side limits, not prompt rules (runaway fan-out and ping-pong loops are the documented failure modes) |
-| Archiving or deleting a coordinator archives its workers | Stopping a parent stops its children |
+| Archiving or deleting a coordinator archives its workers, and an archived coordinator or worker can only read, stop and archive (a late tool call cannot start, wake or restore a dork) | Stopping a parent stops its children |
 | The worker's final answer is its report | `turn_complete.finalMessageId` already names it; guidance tells workers to make it a report (outcome, PR, verification, blockers) |
 
 ## Data

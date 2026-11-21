@@ -83,6 +83,9 @@ describe("crew scope", () => {
     expect(ws.every((w) => c.h.dork(w).archived)).toBe(true);
     // A late tool call from the archived coordinator cannot bring a crew back.
     expect(await c.code(c.call({ dorkId: a }, "dork_create", { message: "late", repo: "acme/app" }))).toBe("archived");
+    expect(await c.code(c.call({ dorkId: a }, "dork_archive", { id: ws[1], archived: false }))).toBe("archived");
+    expect(await c.code(c.call({ dorkId: a }, "dork_send", { id: ws[1], text: "wake up" }))).toBe("archived");
+    expect(await c.code(c.call({ dorkId: a }, "dork_list"))).toBe("ok");
   });
 });
 

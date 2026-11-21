@@ -157,8 +157,6 @@ function create(app: App, scope: Scope, a: Args): CrewResult {
   const input = { message: a.message as string, repo: str(a.repo), title: str(a.title), buildId: a.buildId, model: a.model, effort: a.effort };
   let id: string;
   if (scope.who === "coordinator") {
-    // A tool call that lands after the owner archived the coordinator must not start a worker the archive did not stop.
-    if (scope.self.archived) fail("archived", "You are archived: you cannot start workers.");
     if (a.coordinator === true) fail("forbidden", "A coordinator starts workers only; it cannot start another coordinator.");
     if (!input.repo) fail("invalid", "`repo` is required: a worker works in a repository (owner/name).");
     checkWorkerRoom(app, scope.self.id);
@@ -297,6 +295,13 @@ const TOOLS: Record<string, (app: App, scope: Scope, a: Args) => CrewResult | Pr
   repo_list: repos,
 };
 
+/**
+ * What an archived coordinator or worker may still do: a tool call can land after the owner archived it, and it must not undo the
+ * archive (starting, waking or restoring a dork). Reading, stopping and archiving only wind the crew down.
+ */
+const WINDING = new Set(["dork_list", "dork_get", "dork_read", "dork_wait", "dork_stop", "build_list", "repo_list"]);
+const winding = (tool: string, a: Args) => WINDING.has(tool) || (tool === "dork_archive" && a.archived !== false);
+
 export const CREW_TOOL_NAMES = Object.keys(TOOLS);
 
 /** One crew tool call. Throws `AppFail` for anything the caller should read (it becomes a tool error with that message). */
@@ -304,7 +309,9 @@ export async function crewCall(app: App, caller: Caller, tool: unknown, args: un
   const run = typeof tool === "string" && Object.hasOwn(TOOLS, tool) ? TOOLS[tool] : undefined;
   if (!run) return fail("invalid", `Unknown tool "${String(tool)}".`);
   const a = args && typeof args === "object" && !Array.isArray(args) ? (args as Args) : {};
-  return run(app, scopeOf(app, caller), a);
+  const scope = scopeOf(app, caller);
+  if (scope.who !== "owner" && scope.self.archived && !winding(tool as string, a)) fail("archived", "You are archived: you can read your crew and stop or archive workers, nothing that starts work.");
+  return run(app, scope, a);
 }
 
 /** The `crew` bridge op: `{tool, args}` from the authenticated dork's in-box MCP server. */
