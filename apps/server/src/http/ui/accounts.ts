@@ -1,5 +1,6 @@
 import { Effect, Schema } from "effect";
 import { checkBoat } from "../../services/boatCheck";
+import { startBoatSignIn } from "../../services/boatSignIn";
 import { githubRepos } from "../../services/githubRepos";
 import { snapshotView, startBuild } from "../../services/snapshot";
 import { getUsage } from "../../services/usage";
@@ -34,6 +35,13 @@ export const accountRoutes: Routes = (api, app) => {
         Effect.map((r) => c.json(r)),
       ),
     ),
+  );
+
+  // ---- Boat sign-in with the Boat CLI (services/boatSignIn.ts): connects at once when the CLI is signed in, else returns the
+  // browser link `boat login` printed; the key is saved when that sign-in finishes
+  api.post(
+    "/api/boat/sign-in",
+    on((c) => serviceAsync(startBoatSignIn).pipe(Effect.map((v) => c.json({ boatSignIn: v })))),
   );
 
   // ---- base snapshot ("Prepare Boat")

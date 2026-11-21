@@ -506,7 +506,7 @@ describe("creating a dork", () => {
     const a = api(h);
     const create = (provider = "claude") => a.post("/api/dorks", { repo: "o/r", message: "hi", provider });
     // Asked in onboarding order, so the reason is always the next thing to do.
-    expect((await create()).json.error).toMatchObject({ code: "onboarding_incomplete", message: expect.stringMatching(/Boat API key/) });
+    expect((await create()).json.error).toMatchObject({ code: "onboarding_incomplete", message: expect.stringMatching(/Connect Boat first/) });
     await updateSettings(h.app, { boatKey: "bk" });
     expect((await create()).json.error.message).toMatch(/Claude token/);
     await updateSettings(h.app, { claudeToken: "ct" });

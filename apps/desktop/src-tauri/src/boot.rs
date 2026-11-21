@@ -77,12 +77,15 @@ async fn try_start(app: &AppHandle, state: &AppState) -> Result<RuntimeConfig, S
 }
 
 pub fn server_spec(paths: &Paths, program: PathBuf, ui_port: u16, owner_token: &str) -> SidecarSpec {
-    let env = vec![
+    let mut env = vec![
         (ENV_DATA_DIR.to_string(), paths.server_data_dir().display().to_string()),
         (ENV_OWNER_TOKEN.to_string(), owner_token.to_string()),
         (ENV_UI_PORT.to_string(), ui_port.to_string()),
         (ENV_PARENT_PID.to_string(), std::process::id().to_string()),
     ];
+    if let Some(boat) = resolve_bundled_bin(BOAT_BIN_NAME) {
+        env.push((ENV_BOAT_BIN.to_string(), boat.display().to_string()));
+    }
     SidecarSpec {
         program,
         args: vec![],
@@ -100,13 +103,18 @@ pub fn resolve_server_bin() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os(ENV_SERVER_BIN).map(PathBuf::from).filter(|p| p.is_file()) {
         return Some(path);
     }
+    resolve_bundled_bin(SERVER_BIN_NAME)
+}
+
+/// An externalBin: next to the app executable (where Tauri puts it in a bundle), else the development copy in `src-tauri/binaries`.
+fn resolve_bundled_bin(name: &str) -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    let sibling = exe.parent()?.join(SERVER_BIN_NAME);
+    let sibling = exe.parent()?.join(name);
     if sibling.is_file() {
         return Some(sibling);
     }
     let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries");
-    let prefix = format!("{SERVER_BIN_NAME}-");
+    let prefix = format!("{name}-");
     std::fs::read_dir(dev)
         .ok()?
         .flatten()
@@ -180,6 +188,7 @@ pub fn show_main(app: &AppHandle) {
     *state.chrome.lock().unwrap() = ChromeInfo::new(spec, wanted, theme);
     let script = state.window_config().init_script();
     let handle = app.clone();
+    let opener = app.clone();
     let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("Dorks")
         .inner_size(spec.size.0, spec.size.1)
@@ -189,7 +198,8 @@ pub fn show_main(app: &AppHandle) {
         .focused(!window::verification_mode())
         .theme(window::tauri_theme(theme))
         .initialization_script(script)
-        .on_navigation(move |url| allow_navigation(&handle, url));
+        .on_navigation(move |url| allow_navigation(&handle, url))
+        .on_new_window(move |url, _features| open_new_window(&opener, url));
     // A transparent webview is what lets the material show through the page; only ask for it when there is one behind it.
     #[cfg(target_os = "macos")]
     let builder = builder
@@ -214,6 +224,16 @@ fn allow_navigation(app: &AppHandle, url: &tauri::Url) -> bool {
         let _ = app.opener().open_url(url.as_str(), None::<&str>);
     }
     local
+}
+
+/// A link that asks for a new window (`target="_blank"`, `window.open`): WebKit drops these unless someone handles them, so a
+/// click did nothing. Web pages open in the default browser; the app never opens a second window.
+fn open_new_window(app: &AppHandle, url: tauri::Url) -> tauri::webview::NewWindowResponse<tauri::Wry> {
+    if matches!(url.scheme(), "http" | "https" | "mailto") {
+        use tauri_plugin_opener::OpenerExt;
+        let _ = app.opener().open_url(url.as_str(), None::<&str>);
+    }
+    tauri::webview::NewWindowResponse::Deny
 }
 
 /// Pushes a changed config to the open window (e.g. after the window chrome changed).

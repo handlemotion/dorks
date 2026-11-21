@@ -30,6 +30,10 @@ pub const DEFAULT_UI_PORT: u16 = 4747;
 pub const SERVER_BIN_NAME: &str = "dorks-server";
 /// Overrides the sidecar path (development).
 pub const ENV_SERVER_BIN: &str = "DORKS_SERVER_BIN";
+/// The Boat CLI bundled with the app (externalBin `boat`), handed to the server as `DORKS_BOAT_BIN`: it connects Boat with the
+/// owner's Boat login when no `boat` is on PATH (apps/server/src/lib/boatCli.ts).
+pub const BOAT_BIN_NAME: &str = "boat";
+pub const ENV_BOAT_BIN: &str = "DORKS_BOAT_BIN";
 
 /// Shell-side only: overrides the app directory (default: `~/Library/Application Support/Dorks`). The server gets
 /// `<app dir>/server` as `DORKS_DATA_DIR`.

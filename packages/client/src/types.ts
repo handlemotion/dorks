@@ -72,7 +72,10 @@ export interface CreateDorkInput {
 export interface Settings {
   claudeToken: boolean;
   boatKey: boolean;
-  github: { configured: boolean; login?: string | null };
+  /** `problem`: why GitHub did not connect by itself (the GitHub CLI is missing or signed out). */
+  github: { configured: boolean; login?: string | null; problem?: string };
+  /** Connecting Boat with the Boat CLI's login while no key is saved; null once one is, or with simulated sandboxes. Absent on older servers. */
+  boatSignIn?: BoatSignIn | null;
   boatOrg: string | null;
   boatEnvironment: string | null;
   baseSnapshotId: string | null;
@@ -127,6 +130,18 @@ export interface SettingsPatch {
   claudeCodeMode?: boolean;
   /** Every session may use this computer without asking. Off: each session asks once again; sessions already allowed stay allowed. */
   localAlwaysAllow?: boolean;
+}
+
+/**
+ * Boat sign-in with the Boat CLI on the owner's computer: `unavailable` (no CLI: paste a key in Settings), `checking`,
+ * `signed_out` (one Sign in press), `signing_in` (finish in the browser at `url`), `connecting` (making Dorks' key), `failed`.
+ */
+export interface BoatSignIn {
+  state: "unavailable" | "checking" | "signed_out" | "signing_in" | "connecting" | "failed";
+  url?: string;
+  userCode?: string;
+  expiresAt?: string;
+  error?: string;
 }
 
 /** `POST /api/boat/check`: whether Boat accepts a key (and organization) before anything is saved. */

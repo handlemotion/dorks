@@ -1,6 +1,19 @@
 # Onboarding design brief
 
-First run walks a new owner from nothing to a first session in four full-page steps. Only what the owner has to type is a step: the base snapshot builds in the background. The code is `apps/web/src/routes/_conn/onboarding.tsx` and `apps/web/src/components/onboarding/`.
+**First run is the setup checklist under the new-session composer** (`apps/web/src/components/SetupStatus.tsx`). The app opens straight on the new-session screen, and the checklist lists what stands between the owner and a first session, doing every step it can by itself:
+
+| Row | How it gets done |
+|---|---|
+| Connect Boat | By itself when the Boat CLI is signed in: the server makes its own key with it ([Boat](boat.md#sign-in-with-the-boat-cli)). Signed out, **Sign in** opens Boat's browser sign-in and the row waits for it. Without the CLI (not the desktop app, which bundles one), Add key opens Settings |
+| Connect Claude | A paste: `claude setup-token` prints its token only in a terminal. Codex is in Settings |
+| Connect GitHub | By itself when the GitHub CLI is signed in. Otherwise the row says why (`gh` missing or signed out) and Connect checks again |
+| Prepare Boat | Builds by itself once Boat is connected |
+
+Boat and GitHub connect by themselves on start and whenever the settings are read (at most every 10 s, so a `boat login` or `gh auth login` in a terminal is picked up). Disconnecting either one in Settings turns that off until the owner connects again.
+
+The full-page flow below (`apps/web/src/routes/_conn/onboarding.tsx`, `apps/web/src/components/onboarding/`) is kept but no longer opened: nothing redirects or links to `/onboarding`. The rest of this brief describes it.
+
+First run used to walk a new owner from nothing to a first session in four full-page steps. Only what the owner has to type is a step: the base snapshot builds in the background.
 
 ## What the references taught us
 

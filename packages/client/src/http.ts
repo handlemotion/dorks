@@ -17,6 +17,7 @@ import {
 } from "@dorks/shared";
 import type {
   BoatCheck,
+  BoatSignIn,
   BuildInput,
   BuildVarInput,
   BuildView,
@@ -157,6 +158,8 @@ export function createApi(config: ApiConfig) {
     updateSettings: (patch: SettingsPatch) => request<object>("PUT", "/api/settings", patch),
     /** Checks the given key (or the saved one) against Boat without saving it. */
     checkBoat: (input: { boatKey?: string; boatOrg?: string }) => request<BoatCheck>("POST", "/api/boat/check", input),
+    /** Connects Boat with the Boat CLI: at once when it is signed in, else returns the browser sign-in link to open. */
+    signInBoat: () => request<{ boatSignIn: BoatSignIn | null }>("POST", "/api/boat/sign-in", {}),
     getSnapshot: () => request<SnapshotStatus>("GET", "/api/snapshot"),
     /** Starts the build (idempotent: returns the current status if one is running or the snapshot is current). */
     buildSnapshot: (force = false) => request<SnapshotStatus>("POST", "/api/snapshot/build", force ? { force: true } : {}),

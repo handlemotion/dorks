@@ -33,6 +33,11 @@ const invoke = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
 
 export const isDesktop = () => !!window.__TAURI__?.core
 
+/** Opens a web page in the default browser: in the desktop app the shell takes the new window and hands it over (boot.rs, `on_new_window`). */
+export function openExternal(url: string) {
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
 /** Tells the shell whether dorks are working, so it can hold the Mac awake (a no-op outside the app). */
 export function setKeepAwake(active: boolean) {
   if (isDesktop()) void invoke('set_keep_awake', { active }).catch(() => {})

@@ -64,6 +64,8 @@ h6 {
   /* In light the user bubble is a light grey on the off-white app; white in dark. */
   --user-bubble: oklch(0.961 0 0);
   --user-bubble-foreground: oklch(0.145 0 0);
+  /* Links in text (messages, markdown): a blue darker than the brand's, 5.6:1 on the app. The brand blue is never text. */
+  --link: #2f5fd6;
   /* The brand blue: focus, the current onboarding step, and toast fills. */
   --brand: #3b6be8;
   /* Text on a brand fill (toasts): white is 4.9:1 on #3b6be8. */
@@ -104,6 +106,8 @@ html:root {
   --brand: #3b6be8;
   --brand-foreground: #ffffff;
   --brand-line: oklch(1 0 0 / 8%);
+  /* Lighter in dark, to read on the dark app. */
+  --link: #8aabff;
   --app: oklch(0.165 0 0);
   --surface: oklch(0.24 0 0);
   /* Dark fills separate on their own (1.17:1), so no hairline. */
@@ -151,6 +155,7 @@ html.dark [data-app-frame] {
   --color-glass-content: var(--glass-content);
   --color-user-bubble: var(--user-bubble);
   --color-user-bubble-foreground: var(--user-bubble-foreground);
+  --color-link: var(--link);
   --color-brand: var(--brand);
   --color-brand-foreground: var(--brand-foreground);
   --color-brand-hover: var(--brand-hover);

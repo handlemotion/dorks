@@ -147,6 +147,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     claudeToken: !!opts.configured,
     boatKey: !!opts.configured,
     github: opts.configured ? { configured: true, login: "octocat" } : { configured: false },
+    boatSignIn: opts.configured ? null : { state: "signed_out" },
     boatOrg: null,
     boatEnvironment: opts.configured ? "dorks-codex" : null,
     baseSnapshotId: opts.configured ? "dorks-base-20260101" : null,
@@ -261,7 +262,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     const alive = () => dorks.get(dorkId)?.state === "working";
     const tool = `tool-${randomUUID().slice(0, 8)}`;
     const msg = `msg-${randomUUID().slice(0, 8)}`;
-    const answer = `Done: ${prompt.slice(0, 60)}. I read the code, made the change and the tests pass.`;
+    const answer = `Done: ${prompt.slice(0, 60)}. I read the code, made the change and the tests pass: [the change](https://github.com/octocat/hello-world/pull/1).`;
     const progress = `progress-${randomUUID().slice(0, 8)}`;
     later(tick, () => {
       if (!alive()) return;
@@ -646,6 +647,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     };
     set("boatKey");
     set("claudeToken");
+    if (typeof body.boatKey === "string") settings.boatSignIn = body.boatKey ? null : { state: "signed_out" };
     if (typeof body.githubConnected === "boolean") settings.github = body.githubConnected ? { configured: true, login: "octocat" } : { configured: false, login: null };
     for (const k of ["boatOrg", "boatEnvironment", "baseSnapshotId"] as const) if (typeof body[k] === "string") settings[k] = body[k] || null;
     if (typeof body.sleepMinutes === "number") {
@@ -679,6 +681,23 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         // Like apps/server: a new Boat key starts the base-snapshot build when there is no snapshot yet.
         if (typeof body.boatKey === "string" && body.boatKey && !settings.baseSnapshotId && snap.state !== "building") startBuild();
         return json(res, 200, {});
+      },
+    ],
+    [
+      // Like apps/server's Boat CLI sign-in: the browser sign-in "finishes" a few seconds after its link is handed out.
+      "POST /api/boat/sign-in",
+      ({ res }) => {
+        if (settings.boatKey) return json(res, 200, { boatSignIn: null });
+        settings.boatSignIn = { state: "signing_in", url: "https://boat.dev/sign-in?mock=1", userCode: "MOCK-CODE", expiresAt: new Date(Date.now() + 600_000).toISOString() };
+        broadcast({ t: "settings" });
+        const t = setTimeout(() => {
+          timers.delete(t);
+          Object.assign(settings, { boatKey: true, boatSignIn: null });
+          broadcast({ t: "settings" });
+          if (!settings.baseSnapshotId && snap.state !== "building") startBuild();
+        }, 3000);
+        timers.add(t);
+        return json(res, 200, { boatSignIn: settings.boatSignIn });
       },
     ],
     [
