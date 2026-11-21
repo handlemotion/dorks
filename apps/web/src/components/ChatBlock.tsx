@@ -208,7 +208,8 @@ function ToolLine({ tools, onOpen }: { tools: ToolBlock[]; onOpen?: (keys: strin
   const failed = tools.filter((t) => t.status === 'error').length
   const title = toolGroupTitle(tools)
   const line = (
-    <TraceLine status={running ? 'running' : undefined}>
+    // Dim and at the messages' 14px: a pointer over it lifts it a little, never to the full black of the agent's words.
+    <TraceLine status={running ? 'running' : undefined} className="text-(length:--text-message) in-[button:hover]:text-foreground/65">
       <TraceTitle>{title}</TraceTitle>
       {failed > 0 && <span className="shrink-0 text-destructive">{failed === tools.length && failed === 1 ? 'failed' : `${failed} failed`}</span>}
       {onOpen && <ChevronRightIcon aria-hidden className="-ml-1 size-3.5 shrink-0" />}
@@ -263,7 +264,7 @@ function ToolCall({ block }: { block: ToolBlock }) {
  */
 function AgentText({ block }: { block: Extract<AgentBlock, { kind: 'assistant' }> }) {
   const { onReply } = useReply()
-  // The agent's replies and the user's bubbles are the only text at 14px (`text-message`); the rest of the UI is 13px.
+  // The conversation reads at 14px (`text-message`): the agent's replies, the user's bubbles, the tool lines and the status line under them.
   const markdown = <AgentMarkdown className="text-message">{block.text}</AgentMarkdown>
   if (block.streaming) return <div className="min-w-0">{markdown}</div>
   return (

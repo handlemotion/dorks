@@ -91,7 +91,7 @@ The pattern to copy for any toolbar:
 ## Type
 
 - Two UI sizes, two weights: 13px (`text-sm`) for everything you work with (nav, tabs, rows, controls, panels) and 12px (`text-xs`) for
-  secondary. Conversation alone reads at 14px (`text-message`): the user's bubbles and the agent's replies. Hierarchy comes from colour (`foreground` vs `muted-foreground`) and spacing, not size.
+  secondary. Conversation alone reads at 14px (`text-message`): the user's bubbles, the agent's replies, and the tool lines and status line between and under them. Hierarchy comes from colour (`foreground` vs `muted-foreground`) and spacing, not size.
 - Copy is short and plain: `No artifacts yet`, `Sandbox ready`, `Ask for a screenshot`. Sentences end in a period; labels don't.
 - Numbers that change (`+259 −80`, `2 / 5`) use `tabular-nums`; paths use mono at `text-xs` with the directory muted.
 

@@ -85,7 +85,7 @@ export function AgentStatus({
     </>
   )
   return (
-    <div role="status" aria-live="polite" className="flex min-w-0 text-sm text-foreground" data-testid="agent-status">
+    <div role="status" aria-live="polite" className="flex min-w-0 text-(length:--text-message) text-foreground" data-testid="agent-status">
       {onOpen ? (
         <button
           type="button"
