@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { PANELS, type TabKey } from './types'
 
 type OpenTabs = { keys: TabKey[]; selected: TabKey }
-const TABS_KEY = 'dorks.chat-details-tabs.'
+const TABS_KEY = 'dorks.chat-details-tabs.v2.'
+const LEGACY_TABS_KEY = 'dorks.chat-details-tabs.'
 const newTab = (): TabKey => `new:${Math.random().toString(36).slice(2, 8)}`
 /** A chat opens its details on a New tab, the index of what it has; Progress comes up when the thread asks for it. */
 function defaultTabs(): OpenTabs {
@@ -11,14 +12,19 @@ function defaultTabs(): OpenTabs {
 }
 const isKey = (k: unknown): k is TabKey => typeof k === 'string' && ((PANELS as string[]).includes(k) || /^(pr|new):./.test(k))
 
+function parseTabs(raw: string | null, legacy: boolean): OpenTabs | undefined {
+  const saved = JSON.parse(raw ?? 'null') as Partial<OpenTabs> | null
+  const keys = Array.isArray(saved?.keys) ? [...new Set(saved.keys.filter(isKey))] : []
+  // Before v2, Progress alone was the default, saved by every chat that opened: read it as no choice at all.
+  if (keys.length === 0 || (legacy && keys.length === 1 && keys[0] === 'progress')) return undefined
+  return { keys, selected: saved?.selected && keys.includes(saved.selected) ? saved.selected : keys[0] }
+}
+
 function loadTabs(sessionId?: string): OpenTabs {
   if (!sessionId) return defaultTabs()
   try {
-    const raw = JSON.parse(localStorage.getItem(TABS_KEY + sessionId) ?? 'null') as Partial<OpenTabs> | null
-    const keys = Array.isArray(raw?.keys) ? [...new Set(raw.keys.filter(isKey))] : []
-    // Progress alone was the old default, saved by every chat that opened: read it as no choice at all.
-    if (keys.length === 0 || (keys.length === 1 && keys[0] === 'progress')) return defaultTabs()
-    return { keys, selected: raw?.selected && keys.includes(raw.selected) ? raw.selected : keys[0] }
+    const current = localStorage.getItem(TABS_KEY + sessionId)
+    return (current !== null ? parseTabs(current, false) : parseTabs(localStorage.getItem(LEGACY_TABS_KEY + sessionId), true)) ?? defaultTabs()
   } catch {
     return defaultTabs()
   }

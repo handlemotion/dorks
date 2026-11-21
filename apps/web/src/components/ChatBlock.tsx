@@ -11,7 +11,9 @@ import { HoverActions } from './message-actions/MessageActions'
 import { REPLY_SOURCE, ReplyContext, ReplyQuote, SelectionReply, useReply, type ReplyHandlers } from './Reply'
 import { parseReply, quoteText } from '../lib/reply'
 import { ImageLightbox, ImageTrigger, useLightboxImages, type LightboxImage } from './ImageLightbox'
+import { CodeBlock, CodeBlockContent } from '@dorks/ui/code-block'
 import { Message, MessageContent } from '@dorks/ui/message'
+import { toolStep } from '../lib/progress'
 import { MessageScrollerItem } from '@dorks/ui/message-scroller'
 import { LocalRequestCard } from './LocalRequest'
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from '@dorks/ui/trace'
@@ -198,14 +200,16 @@ export function toolGroupTitle(tools: { name: string }[]): string {
 /**
  * A run of tool calls between the agent's messages: one plain line that counts them ("Ran 2 commands, read a file"), its failures
  * after it. The calls themselves live in Progress: with `onOpen` the line is a button, a chevron after it, that opens Progress on
- * them. It shimmers while one of them runs.
+ * them. Where there is no Progress (a narrow window, a worker in a dork's panel) the line unfolds in place to each call and its
+ * output instead. It shimmers while one of them runs.
  */
 function ToolLine({ tools, onOpen }: { tools: ToolBlock[]; onOpen?: (keys: string[]) => void }) {
   const running = tools.some((t) => t.status === 'running')
   const failed = tools.filter((t) => t.status === 'error').length
+  const title = toolGroupTitle(tools)
   const line = (
     <TraceLine status={running ? 'running' : undefined}>
-      <TraceTitle>{toolGroupTitle(tools)}</TraceTitle>
+      <TraceTitle>{title}</TraceTitle>
       {failed > 0 && <span className="shrink-0 text-destructive">{failed === tools.length && failed === 1 ? 'failed' : `${failed} failed`}</span>}
       {onOpen && <ChevronRightIcon aria-hidden className="-ml-1 size-3.5 shrink-0" />}
     </TraceLine>
@@ -214,13 +218,42 @@ function ToolLine({ tools, onOpen }: { tools: ToolBlock[]; onOpen?: (keys: strin
     // `my-1.5`: 22px from the text around it, a step more than a paragraph break (19px), so the tool line reads as its own beat.
     <Trace data-testid="tool-steps" className="my-1.5">
       {onOpen ? (
-        <button type="button" aria-label={`${toolGroupTitle(tools)}: show in Progress`} onClick={() => onOpen(tools.map((t) => t.id))}>
+        <button type="button" aria-label={`${title}: show in Progress`} onClick={() => onOpen(tools.map((t) => t.id))}>
           {line}
         </button>
       ) : (
-        line
+        <TraceCollapsible>
+          <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
+          <TraceCollapsibleContent>
+            <div className="flex flex-col gap-2 pt-2">
+              {tools.map((tool) => (
+                <ToolCall key={tool.id} block={tool} />
+              ))}
+            </div>
+          </TraceCollapsibleContent>
+        </TraceCollapsible>
       )}
     </Trace>
+  )
+}
+
+/** One call, unfolded under its line where Progress is not at hand: "Ran pnpm test" and its output. */
+function ToolCall({ block }: { block: ToolBlock }) {
+  const { kind, verb } = toolStep(block.name, block.status)
+  const title = kind === 'other' ? `${verb} ${toolAction(block.name).one}${block.summary ? `: ${block.summary}` : ''}` : `${verb} ${block.summary}`
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <span className={`truncate text-sm ${block.status === 'error' ? 'text-destructive' : 'text-muted-foreground'}`} title={title}>
+        {title}
+      </span>
+      {block.preview && (
+        <CodeBlock size="sm" variant={block.status === 'error' ? 'destructive' : 'default'}>
+          <CodeBlockContent wrap className="max-h-64">
+            {block.preview}
+          </CodeBlockContent>
+        </CodeBlock>
+      )}
+    </div>
   )
 }
 

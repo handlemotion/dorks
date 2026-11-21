@@ -138,6 +138,8 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
   useEffect(() => {
     if (!selectedKey) return
     revealed.current = true
+    // The owner asked for this step: stop following the agent, or the next step would take its place.
+    setLive(false)
     const step = turns.flatMap((t) => t.steps).find((s) => s.key === selectedKey)
     if (step && query.trim() && !matchesFilter(step.block, query)) setQuery('')
   }, [reveal]) // eslint-disable-line react-hooks/exhaustive-deps -- only when the thread asks, not on every pick
