@@ -18,13 +18,15 @@ Test changes against running servers, not only unit tests.
 
 ## Credentials and cloud sessions
 
-Live credentials are in Doppler, project `dorks`, config `dev_live`: `CLAUDE_CODE_OAUTH_TOKEN`, `GITHUB_TOKEN`, `BOAT_API_KEY`, `BOAT_ORG`. Cloud sessions have `DOPPLER_TOKEN` set but no `doppler` CLI, so read one value with the API and pipe it straight where it goes, never into the transcript:
+Live credentials are in Doppler, project `dorks`, config `dev_live`: `CLAUDE_CODE_OAUTH_TOKEN`, `GITHUB_TOKEN`, `BOAT_API_KEY`, `BOAT_ORG`. Cloud sessions have `DOPPLER_TOKEN` set and the `doppler` CLI installed. Pipe values straight where they go, never into the transcript:
 
 ```sh
-curl -sS -u "$DOPPLER_TOKEN:" "https://api.doppler.com/v3/configs/config/secret?project=dorks&config=dev_live&name=CLAUDE_CODE_OAUTH_TOKEN" \
-  | python3 -c 'import json,sys; print(json.dumps({"claudeToken": json.load(sys.stdin)["value"]["raw"]}))' \
+doppler secrets download --no-file --format json -p dorks -c dev_live \
+  | jq -c '{claudeToken: .CLAUDE_CODE_OAUTH_TOKEN}' \
   | curl -sS -X PUT "$UI/api/settings" -H "Authorization: Bearer dev-owner-token" -H "Content-Type: application/json" --data-binary @-
 ```
+
+For a single value in an env var, use `doppler secrets get NAME --plain -p dorks -c dev_live`, e.g. `GH_TOKEN=$(doppler secrets get GITHUB_TOKEN --plain -p dorks -c dev_live)`.
 
 Real Claude through the whole stack in a cloud container (verified): the container runs as root, so add an unprivileged user (`useradd -m dorkrun`), drop the session's own Claude variables from the server's env (`ANTHROPIC_BASE_URL`, `SESSION_INGRESS_URL`, every `CLAUDE_CODE_*`) so the bridge's child CLI only sees the token you saved, then:
 
@@ -46,7 +48,7 @@ DORKS_PUBLIC_URL=$(jq -r .tunnel.url /tmp/tunnel.json) DORKS_TUNNEL_SERVICE=$SVC
   DORKS_BRIDGE_PORT=4748 DORKS_UI_PORT=0 DORKS_OWNER_TOKEN=dev-owner-token DORKS_DATA_DIR=<temp dir> bun run apps/server/src/main.ts
 ```
 
-Start the server with `GH_TOKEN` set to Doppler's `GITHUB_TOKEN` (GitHub is the GitHub CLI's login, and the server resolves it like `gh` does: `GH_TOKEN` first), then `PUT /api/settings` with `boatKey`, `boatOrg` and `claudeToken` from Doppler (one piped JSON body, as above) plus `githubConnected: true`. Saving the Boat key builds the base snapshot on Boat (about a minute); poll `GET /api/snapshot` until `ready`, then create a dork on a real repo. This spends Boat credit: `DELETE /api/dorks/:id` when done (it destroys the box), and `npx wurmhol stop 4748`.
+Start the server with `GH_TOKEN` set to Doppler's `GITHUB_TOKEN` (GitHub is the GitHub CLI's login, and the server resolves it like `gh` does: `GH_TOKEN` first), then `PUT /api/settings` with `boatKey`, `boatOrg` and `claudeToken` from Doppler plus `githubConnected: true`, one piped body as above with `jq -c '{claudeToken: .CLAUDE_CODE_OAUTH_TOKEN, boatKey: .BOAT_API_KEY, boatOrg: .BOAT_ORG, githubConnected: true}'`. Saving the Boat key builds the base snapshot on Boat (about a minute); poll `GET /api/snapshot` until `ready`, then create a dork on a real repo. This spends Boat credit: `DELETE /api/dorks/:id` when done (it destroys the box), and `npx wurmhol stop 4748`.
 
 ## Testing
 
