@@ -399,7 +399,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     const message = str(body.message)?.trim();
     if (!(coordinator && !repo) && !/^[\w.-]+\/[\w.-]+$/.test(repo)) return fail(res, "invalid", "repo must look like owner/name");
     if (!message) return fail(res, "invalid", "message is required");
-    const provider = body.provider === "codex" ? "codex" : "claude";
+    const provider = body.provider === "codex" || body.provider === "opencode" ? body.provider : "claude";
     const blocked = cannotCreate(provider);
     if (blocked) return fail(res, "onboarding_incomplete", blocked);
     const id = addDork({ ...body, repo, message, provider });

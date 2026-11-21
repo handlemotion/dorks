@@ -14,11 +14,13 @@ import { currentStep, stepLabel } from '../lib/progress'
 
 export type DorkView = NonNullable<ReturnType<typeof useDork>>
 
-/** Claude's model menu for a running session; Codex has none. */
+const AGENT_NAMES: Record<DorkView['provider'], string> = { claude: 'Claude', codex: 'Codex', opencode: 'OpenCode' }
+
+/** The model menu for a running session: Claude's models, or the ones OpenCode's providers offer; Codex has none. */
 export function claudePicker(dork: DorkView, fallback: AgentModelChoice[] | undefined, onChange: ModelPicker['onChange']): ModelPicker | undefined {
-  if (dork.provider !== 'claude') return undefined
+  if (dork.provider === 'codex') return undefined
   return {
-    choices: dork.modelChoices ?? fallback ?? [],
+    choices: dork.modelChoices ?? (dork.provider === 'claude' ? fallback : undefined) ?? [],
     model: dork.model,
     effort: dork.effort,
     fast: dork.fast,
@@ -65,7 +67,7 @@ export function SessionChat({
   const modelSwitch = usePending()
   const settings = useSettings()
   const { live } = useConnection()
-  const agent = dork.provider === 'codex' ? 'Codex' : 'Claude'
+  const agent = AGENT_NAMES[dork.provider]
   const canReply = !dork.archived
   const current = dork.state === 'working' ? currentStep(view.blocks) : {}
   return (

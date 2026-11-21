@@ -3,7 +3,7 @@ import { fail, touch, type App } from "../app";
 import { dorkOf, dorkView, eventOf, getDork, prStateOf, type DorkKind, type DorkRow, type DorkView, type Provider } from "../data";
 import { insert } from "../db";
 import { append, dispatch, enqueue, MAX_MESSAGE_CHARS, patchDork, patchRuntime, setTimer } from "../lifecycle/dispatch";
-import { knownModelChoices, validModelChoice } from "./models";
+import { knownModelChoices, validModelChoice, validOpenCodeModel } from "./models";
 import { validRepo } from "../lib/repo";
 import { isBoxNotFound, type DesktopOptions } from "../core/box";
 import { missingForSession } from "./setup";
@@ -117,7 +117,7 @@ export function createDork(
 ): string {
   const { message, title, provider = "claude" } = input;
   const setup = input.setup === true;
-  if (provider !== "claude" && provider !== "codex") fail("invalid", "provider must be claude or codex");
+  if (provider !== "claude" && provider !== "codex" && provider !== "opencode") fail("invalid", "provider must be claude, codex or opencode");
   const { kind, icon } = checkKind(input, setup, parent);
   // A coordinator plans and delegates (docs/crew.md): it needs no repository of its own.
   const repo = checkRepo(input.repo, setup || kind === "coordinator");
@@ -129,7 +129,7 @@ export function createDork(
   // A Claude session with no model chosen starts on Opus (the current one, by its alias) when the agent offers it, not the CLI's default.
   const choices = provider === "claude" ? knownModelChoices(app) : [];
   const model = input.model || (choices.some((c) => c.model === "opus") ? "opus" : input.model);
-  const choice = provider === "claude" ? validModelChoice(choices, model, input.effort, input.fast) : { fast: false };
+  const choice = provider === "claude" ? validModelChoice(choices, model, input.effort, input.fast) : provider === "opencode" ? validOpenCodeModel(undefined, input.model) : { fast: false };
 
   const id = app.uuid();
   const now = app.now();

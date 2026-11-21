@@ -149,7 +149,8 @@ function useNewSessionRepos(buildRepos: string[], dorks: { repo: string }[] | un
  * above the box: with no agent at all the setup checklist asks for the token, so only an owner who has Codex and picked Claude.
  */
 const agentGate = (provider: AgentProvider, claudeReady: boolean, codexReady: boolean) => {
-  const missing = provider === 'claude' ? !claudeReady : !codexReady
+  // OpenCode has no sign-in of its own: its provider keys are shared secrets, and a missing one shows up in the thread.
+  const missing = provider === 'claude' ? !claudeReady : provider === 'codex' ? !codexReady : false
   return { missing, notice: missing && provider === 'claude' && codexReady }
 }
 
@@ -209,12 +210,17 @@ function NewDork({
         pending={pending}
         disabled={disabled || agent.missing}
         error={error}
-        picker={{
-          choices: settings?.claudeModels ?? [],
-          ...choice,
-          model: choice.model ?? preferredModel(settings?.claudeModels ?? []),
-          onChange: (model, effort, fast) => setChoice({ model, effort, fast }),
-        }}
+        picker={
+          // OpenCode's models are known once its sandbox is up: a new session starts on its default and changes it from the thread.
+          provider === 'claude'
+            ? {
+                choices: settings?.claudeModels ?? [],
+                ...choice,
+                model: choice.model ?? preferredModel(settings?.claudeModels ?? []),
+                onChange: (model, effort, fast) => setChoice({ model, effort, fast }),
+              }
+            : undefined
+        }
         upload={actions.uploadImage}
         machine={{ builds: built, buildId, onChange: setPicked }}
         focusKey={visit}

@@ -235,12 +235,12 @@ const FRAME_HANDLERS: { [T in FromBridge["t"]]: (b: Batch, f: FrameOf<T>) => voi
     if (fresh.titleSource === "message" && title) patchDork(app, dorkId, { title, titleSource: "auto" });
   },
   agent_models: ({ app, dorkId, dork }, f) => {
-    if (dork.provider !== "claude") return;
+    if (dork.provider === "codex") return;
     patchDork(app, dorkId, { modelChoices: f.models, agentEffort: f.effort ?? undefined });
-    rememberModelChoices(app, f.models);
+    if (dork.provider === "claude") rememberModelChoices(app, f.models); // the global cache offers Claude's models to new sessions
   },
   codex_issue: ({ app, dorkId, dork }, f) => {
-    if (dork.provider === "codex") append(app, dorkId, errorEvent({ code: "failed", message: f.message }));
+    if (dork.provider !== "claude") append(app, dorkId, errorEvent({ code: "failed", message: f.message }));
   },
   event: applyEvent,
   ready: ({ app, dorkId, dork, flush }) => {
@@ -506,6 +506,7 @@ const agentSecrets = Effect.fnUntraced(function* (app: App, dork: DorkRow): Effe
 /** The agent's model and effort: Codex's chosen pair, or Claude's model, effort, fast mode and Code Mode when set. */
 function modelFields(dork: DorkRow) {
   if (dork.provider === "codex") return { codexModel: dork.codexModel };
+  if (dork.provider === "opencode") return dork.model ? { model: dork.model } : {};
   return {
     ...(dork.model ? { model: dork.model } : {}),
     ...(dork.effort ? { effort: dork.effort } : {}),

@@ -13,6 +13,8 @@ sudo npm install -g @openai/codex@0.166.0
 # Pinned so the agent offers the current models by version (Opus 5.5, Sonnet 5.5, Fable 5.2, Haiku 5.5), not the image's older CLI.
 # 2.1.330 or later: the first that turns on Code Mode in claude -p (from the env block of --settings).
 sudo npm install -g @anthropic-ai/claude-code@2.1.330
+# OpenCode, the third agent (infra/bridge/src/opencode.ts): pinned for its server API (`opencode serve`, /session, /event).
+sudo npm install -g opencode-ai@1.19.5
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -36,6 +38,7 @@ git --version
 claude --version
 test "$(claude --version | cut -d" " -f1)" = 2.1.330
 codex --version
+test "$(opencode --version)" = 1.19.5
 test "$(command -v gh)" = /usr/local/bin/gh
 /usr/bin/gh --version
 gh stack --help >/dev/null
