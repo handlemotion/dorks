@@ -27,7 +27,7 @@ export function claudePicker(dork: DorkView, fallback: AgentModelChoice[] | unde
 }
 
 /**
- * A session's conversation: its transcript (the thread, light as everywhere: bubbles, one overview row per turn, final answers) and
+ * A session's conversation: its transcript (the thread, light as everywhere: bubbles, then each turn's messages with its tool calls between them) and
  * the composer under it, with Stop, replies and the model menu. The page's chat and a dork's worker panel (CrewDetails) both use it;
  * `compact` is the panel's narrower column.
  */
@@ -35,7 +35,6 @@ export function SessionChat({
   dork,
   compact,
   error: extraError,
-  onOpenStep,
   draft,
 }: {
   dork: DorkView
@@ -47,8 +46,6 @@ export function SessionChat({
   compact?: boolean
   /** Another action's failure to show over the composer (archive, the page's own controls). */
   error?: string
-  /** A turn's overview row was opened: show its work (Chat details' Progress). Without it, the work unfolds in place. */
-  onOpenStep?: (key: string) => void
 }) {
   const dorkId = dork.id
   const { actions } = useDorksClient()
@@ -81,7 +78,6 @@ export function SessionChat({
                   blocks={view.blocks}
                   imageUrl={actions.imageUrl}
                   agent={agent}
-                  onOpenStep={onOpenStep}
                   onReply={
                     canReply
                       ? (quoted, draft) => {

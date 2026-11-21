@@ -1,5 +1,5 @@
-import { useId, useMemo, useState, type ReactNode } from 'react'
-import { BoxIcon, ChevronRightIcon, MessageSquareIcon, UsersIcon, CircleAlertIcon, CircleCheckIcon, CircleStopIcon, PanelRightOpenIcon, ReplyIcon, TerminalIcon, WrenchIcon } from 'lucide-react'
+import { useMemo, type ReactNode } from 'react'
+import { BoxIcon, MessageSquareIcon, UsersIcon, CircleAlertIcon, CircleCheckIcon, CircleStopIcon, ReplyIcon, WrenchIcon } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { Button } from '@dorks/ui/button'
 import type { Block } from '@dorks/shared'
@@ -14,9 +14,8 @@ import { parseReply, quoteText } from '../lib/reply'
 import { ImageLightbox, ImageTrigger, useLightboxImages, type LightboxImage } from './ImageLightbox'
 import { Message, MessageContent } from '@dorks/ui/message'
 import { MessageScrollerItem } from '@dorks/ui/message-scroller'
-import { splitTurn, toolStep, type WorkBlock } from '../lib/progress'
+import { toolStep } from '../lib/progress'
 import { TOOL_KIND_ICONS } from './toolIcons'
-import { WordShimmer } from './WordShimmer'
 import { LocalRequestCard } from './LocalRequest'
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from '@dorks/ui/trace'
 
@@ -152,12 +151,14 @@ function entries(blocks: Block[]): Entry[] {
 }
 
 function ToolRow({ block }: { block: ToolBlock }) {
-  const command = block.summary
-  const title = block.name === 'Bash' ? `${block.status === 'running' ? 'Running' : block.status === 'error' ? 'Failed to run' : 'Ran'} ${command}` : `${block.name}: ${command}`
+  const { kind, verb } = toolStep(block.name, block.status)
+  const Icon = TOOL_KIND_ICONS[kind]
+  // Known tools read as a verb and their target ("Ran pnpm test", "Read src/app.ts"); any other tool also names itself.
+  const title = kind === 'other' ? `${verb} ${toolAction(block.name).one}${block.summary ? `: ${block.summary}` : ''}` : `${verb} ${block.summary}`
   const line = (
     <TraceLine status={block.status === 'ok' ? undefined : block.status}>
       <TraceIcon>
-        <TerminalIcon />
+        <Icon />
       </TraceIcon>
       <TraceTitle>{title}</TraceTitle>
     </TraceLine>
@@ -353,108 +354,20 @@ export function workedFor(ms: number): string {
 }
 
 /**
- * A turn's work as one flat sequence, dimmed: progress text, then the tool calls that followed it as one group, and so on. Only where
- * Chat details cannot sit beside the chat (narrow windows); there the turn's card opens it in place.
+ * One turn, in the order it happened: every message the agent wrote, the tool calls between them (a run of calls folds under one
+ * summary line), notices and machine drafts. The agent's thinking never reaches the transcript.
  */
-function WorkHistory({ blocks, id }: { blocks: AgentBlock[]; id?: string }) {
+function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock }) {
   return (
-    <div id={id} data-testid="work-history" className="flex flex-col gap-3 text-muted-foreground">
+    <>
       {agentContent(blocks)}
-    </div>
-  )
-}
-
-/** The newest step of a running turn, as the card's second line: "Running pnpm test". */
-function latestStep(work: WorkBlock[]): string {
-  const last = work.at(-1)
-  if (!last) return 'Starting'
-  if (last.kind === 'assistant')
-    return (
-      last.text
-        .replace(IMAGE, '')
-        .split('\n')
-        .find((line) => line.trim()) ?? 'Thinking'
-    )
-  return `${toolStep(last.name, last.status).verb} ${last.summary}`
-}
-
-/**
- * A turn's overview, as one row: the kinds of tools it used, how long it worked and its step count ("Worked for 2m 14s · 8
- * steps"); while it runs, "Working" and its newest step. The work itself lives in Chat details' Progress; the row opens it there on
- * this turn (`onOpen`), or, without Chat details beside the chat, unfolds it below.
- */
-function TurnCard({ work, end, onOpen }: { work: WorkBlock[]; end?: TurnBlock; onOpen?: () => void }) {
-  const [open, setOpen] = useState(false)
-  const historyId = useId()
-  const tools = work.filter((b): b is ToolBlock => b.kind === 'tool')
-  const kinds = [...new Set(tools.map((t) => toolStep(t.name, t.status).kind))].slice(0, 4)
-  const running = !end
-  const title = running
-    ? 'Working'
-    : end.outcome === 'stopped'
-      ? `Stopped after ${workedFor(end.durationMs)}`
-      : end.outcome === 'failed'
-        ? `Failed after ${workedFor(end.durationMs)}`
-        : `Worked for ${workedFor(end.durationMs)}`
-  const detail = running ? latestStep(work) : `${work.length} ${work.length === 1 ? 'step' : 'steps'}`
-  const inline = !onOpen
-  return (
-    <>
-      <button
-        type="button"
-        data-testid="turn-card"
-        aria-expanded={inline ? open : undefined}
-        aria-controls={inline ? historyId : undefined}
-        aria-label={inline ? undefined : `${title}, ${detail}. Show progress`}
-        title={tools.length > 0 ? toolGroupTitle(tools) : undefined}
-        onClick={() => (onOpen ? onOpen() : setOpen(!open))}
-        className="group/turn -mx-1 flex h-7 w-fit max-w-full min-w-0 items-center gap-2 rounded-(--control-radius) px-1 text-left text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        {/* A chevron only where the row unfolds in place; where it opens Progress, a panel icon says so on hover instead. */}
-        {inline && <ChevronRightIcon aria-hidden className={`size-3.5 shrink-0 ${open ? 'rotate-90' : ''}`} />}
-        {kinds.length > 0 && (
-          <span aria-hidden className="flex shrink-0 -space-x-1">
-            {kinds.map((kind) => {
-              const Icon = TOOL_KIND_ICONS[kind]
-              return (
-                <span key={kind} className="grid size-5 place-items-center rounded-full bg-app ring-2 ring-background">
-                  <Icon className="size-3" />
-                </span>
-              )
-            })}
-          </span>
-        )}
-        <span className="shrink-0">{running ? <WordShimmer>{title}</WordShimmer> : title}</span>
-        <span aria-hidden>·</span>
-        <span className="min-w-0 truncate tabular-nums">{detail}</span>
-        {!inline && <PanelRightOpenIcon aria-hidden className="size-3.5 shrink-0 opacity-0 transition-opacity group-hover/turn:opacity-100 group-focus-visible/turn:opacity-100" />}
-      </button>
-      {inline && open && <WorkHistory id={historyId} blocks={work} />}
-    </>
-  )
-}
-
-/**
- * One turn, kept light: what the agent said first, the card that sums up its work, then its answer and anything else it posted (notices, a machine draft). The
- * tool calls, edits and progress text are in Progress.
- */
-function TurnContent({ blocks, end, running, onOpenStep }: { blocks: AgentBlock[]; end?: TurnBlock; running?: boolean; onOpenStep?: (key: string) => void }) {
-  const { work, answer, opening } = splitTurn(blocks, !!end, running)
-  const rest = blocks.filter((b) => b.kind !== 'tool' && b.kind !== 'assistant')
-  const first = work[0]
-  return (
-    <>
-      {opening && <AgentText block={opening} />}
-      {first && <TurnCard work={work} end={end} onOpen={onOpenStep && (() => onOpenStep(first.id))} />}
-      {answer && <AgentText block={answer} />}
-      {agentContent(rest)}
       {end?.outcome === 'stopped' && (
         <Trace role="status" data-testid="turn-stopped">
           <TraceLine>
             <TraceIcon>
               <CircleStopIcon />
             </TraceIcon>
-            <TraceTitle>Stopped</TraceTitle>
+            <TraceTitle>Stopped after {workedFor(end.durationMs)}</TraceTitle>
           </TraceLine>
         </Trace>
       )}
@@ -472,7 +385,6 @@ export function ChatMessages({
   onReply,
   onReplySend,
   agent,
-  onOpenStep,
 }: {
   blocks: Block[]
   /** Resolves a shared screenshot's id to its URL. */
@@ -481,14 +393,12 @@ export function ChatMessages({
   onReplySend?: ReplyHandlers['onSend']
   /** The agent's name, for "Reply to Claude". */
   agent?: string
-  /** Opens a turn's work in Chat details' Progress, at its first step. Without it a turn's card unfolds its work in place. */
-  onOpenStep?: (key: string) => void
 }) {
   const { blocks, refs } = resolveSharedImages(raw, imageUrl)
   const images = transcriptImages(blocks)
   const reply = useMemo<ReplyHandlers>(() => ({ onReply, onSend: onReplySend, agent, refOf: (src) => refs.get(src) }), [onReply, onReplySend, agent, refs])
   const all = entries(blocks)
-  const messages = all.map((entry, n) => {
+  const messages = all.map((entry) => {
     if (entry.kind === 'user') {
       const { reply: quoted, body } = parseReply(entry.block.text)
       const text = body.replace(IMAGE, '').trim()
@@ -528,9 +438,8 @@ export function ChatMessages({
       <MessageScrollerItem key={entry.id} messageId={entry.id} className="-mt-7 -ml-10 pt-7 pl-10">
         <Message {...{ [REPLY_SOURCE]: '' }}>
           <MessageContent className="gap-3">
-            {turns(entry.blocks).map((turn, i, list) => (
-              // Only the chat's last turn can still be running.
-              <TurnContent key={`${entry.id}:${i}`} blocks={turn.blocks} end={turn.end} running={n === all.length - 1 && i === list.length - 1} onOpenStep={onOpenStep} />
+            {turns(entry.blocks).map((turn, i) => (
+              <TurnContent key={`${entry.id}:${i}`} blocks={turn.blocks} end={turn.end} />
             ))}
           </MessageContent>
         </Message>
