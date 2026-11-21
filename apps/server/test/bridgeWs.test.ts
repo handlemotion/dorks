@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { BridgeSession } from "../src/http/bridgeWs";
 import { updateSettings } from "../src/services/settings";
-import { WsTransport, type CommandEntry } from "../../../infra/bridge/src/transport";
+import { WsTransport, type Accept, type BridgeSocket, type CommandEntry } from "../../../infra/bridge/src/transport";
 import { ev, harness, type Harness } from "./harness";
 
 // The real bridge transport (infra/bridge) talking to the real session and services, joined by an in-process "socket".
@@ -15,72 +15,93 @@ const until = async (cond: () => boolean, what: string, ms = 2000) => {
   }
 };
 
-function loopback(h: Harness) {
-  const sockets: LoopbackWS[] = [];
-  class LoopbackWS {
-    readyState = 0;
-    onopen?: () => void;
-    onmessage?: (m: { data: string }) => void;
-    onerror?: () => void;
-    onclose?: (e: { code: number }) => void;
-    private session?: BridgeSession;
-    constructor(readonly url: string) {
-      sockets.push(this);
-      setTimeout(() => {
-        this.readyState = 1;
-        this.session = new BridgeSession(h.app, { send: (t) => void setTimeout(() => this.readyState === 1 && this.onmessage?.({ data: t }), 0), close: (code) => this.end(code) });
-        this.session.open();
-        this.onopen?.();
-      }, 0);
-    }
-    send(t: string) {
-      setTimeout(() => this.session?.onMessage(t), 0);
-    }
-    close() {
-      this.end(1000);
-    }
-    /** Either side hangs up. */
-    end(code: number) {
-      if (this.readyState === 3) return;
-      this.readyState = 3;
-      this.session?.close();
-      setTimeout(() => this.onclose?.({ code }), 0);
-    }
-  }
-  return { WS: LoopbackWS as unknown as typeof WebSocket, sockets };
+/**
+ * The server dialing the bridge, in process: each `dial()` opens one "socket" whose server end is a real BridgeSession expecting
+ * `expected` and whose bridge end goes to the transport's acceptor.
+ */
+function loopback(h: Harness, expected: string) {
+  let onSocket: ((ws: BridgeSocket) => void) | undefined;
+  const accept: Accept = (cb) => {
+    onSocket = cb;
+    return () => void (onSocket = undefined);
+  };
+  const sockets: { end(code: number): void; closedWith?: number }[] = [];
+  const dial = () => {
+    let closed = false;
+    const bridgeEnd: BridgeSocket & { readyState: number } = {
+      readyState: 1,
+      onmessage: null,
+      onclose: null,
+      send: (t) => void setTimeout(() => !closed && session.onMessage(t), 0),
+      close: (code = 1000) => pair.end(code),
+    };
+    const pair = {
+      closedWith: undefined as number | undefined,
+      end(code: number) {
+        if (closed) return;
+        closed = true;
+        pair.closedWith = code;
+        bridgeEnd.readyState = 3;
+        session.close();
+        setTimeout(() => bridgeEnd.onclose?.({ code }), 0);
+      },
+    };
+    const session = new BridgeSession(h.app, { send: (t) => void setTimeout(() => !closed && bridgeEnd.onmessage?.({ data: t }), 0), close: (code) => pair.end(code) }, expected);
+    sockets.push(pair);
+    onSocket?.(bridgeEnd);
+    session.open();
+    return pair;
+  };
+  return { accept, dial, sockets };
 }
 
 async function setup(state: Parameters<Harness["seed"]>[0], over: Parameters<Harness["seed"]>[1] = {}) {
   const h = harness({ config: { boxProvider: "sim", simHostKey: "k" } });
   const id = h.seed(state, over);
-  const { WS, sockets } = loopback(h);
-  const t = new WsTransport("ws://x/bridge", id, await h.secret(id), WS);
-  return { h, id, t, sockets };
+  const { accept, dial, sockets } = loopback(h, id);
+  const t = new WsTransport(accept, id, await h.secret(id));
+  dial();
+  return { h, id, t, dial, sockets };
 }
 
-describe("bridge socket: authentication", () => {
-  it("a wrong secret is refused and is fatal", async () => {
+describe("bridge socket: the handshake", () => {
+  it("a bridge with a wrong secret is refused, and so is one for another dork, or an unknown or deleting one", async () => {
     const h = harness({ config: { boxProvider: "sim", simHostKey: "k" } });
     const id = h.seed("waking");
-    const { WS } = loopback(h);
-    const t = new WsTransport("ws://x/bridge", id, "0".repeat(64), WS);
-    const err = await t.connect().catch((e) => e);
-    expect(t.isFatal(err)).toBe(true);
-    await t.close();
+    const other = h.seed("waking");
+    const refused = async (expected: string, as: string, secret: string) => {
+      const { accept, dial } = loopback(h, expected);
+      const t = new WsTransport(accept, as, secret);
+      const pair = dial();
+      await until(() => pair.closedWith !== undefined, "server hangs up");
+      await t.close();
+      return pair.closedWith;
+    };
+    expect(await refused(id, id, "0".repeat(64))).toBe(4403);
+    expect(await refused(id, other, await h.secret(other))).toBe(4403); // a valid bridge, but not the one this socket was opened to
+    expect(await refused("no-such-dork", "no-such-dork", await h.secret("no-such-dork"))).toBe(4403);
+    h.app.db.run("UPDATE dorks SET deleting = 1 WHERE id = ?", id);
+    expect(await refused(id, id, await h.secret(id))).toBe(4403);
   });
 
-  it("an unknown or deleting dork is refused", async () => {
+  it("the bridge never sends its secret, and closes on a server that cannot prove it holds it", async () => {
     const h = harness({ config: { boxProvider: "sim", simHostKey: "k" } });
-    const { WS } = loopback(h);
-    const ghost = "no-such-dork";
-    const t = new WsTransport("ws://x/bridge", ghost, await h.secret(ghost), WS);
-    expect(t.isFatal(await t.connect().catch((e) => e))).toBe(true);
-    const id = h.seed("idle");
-    h.app.db.run("UPDATE dorks SET deleting = 1 WHERE id = ?", id);
-    const t2 = new WsTransport("ws://x/bridge", id, await h.secret(id), WS);
-    expect(t2.isFatal(await t2.connect().catch((e) => e))).toBe(true);
+    const id = h.seed("waking");
+    const secret = await h.secret(id);
+    let onSocket: ((ws: BridgeSocket) => void) | undefined;
+    const t = new WsTransport((cb) => ((onSocket = cb), () => {}), id, secret);
+    const sent: string[] = [];
+    let closedWith: number | undefined;
+    const ws: BridgeSocket = { readyState: 1, onmessage: null, onclose: null, send: (x) => void sent.push(x), close: (code) => void (closedWith = code) };
+    onSocket!(ws);
+    ws.onmessage!({ data: JSON.stringify({ t: "hello", nonce: "a".repeat(64) }) });
+    await until(() => sent.length === 1, "auth frame");
+    expect(JSON.parse(sent[0])).toMatchObject({ t: "auth", dorkId: id });
+    expect(sent[0]).not.toContain(secret);
+    ws.onmessage!({ data: JSON.stringify({ t: "auth_ok", proof: "b".repeat(64) }) });
+    await until(() => closedWith !== undefined, "bridge hangs up");
+    expect(closedWith).toBe(1008);
     await t.close();
-    await t2.close();
   });
 });
 
@@ -193,7 +214,7 @@ describe("bridge socket: a whole turn through the real transport", () => {
   });
 
   it("a dropped socket reconnects, fires onReconnect, and the snapshot is re-sent", async () => {
-    const { h, id, t, sockets } = await setup("waking");
+    const { h, id, t, dial, sockets } = await setup("waking");
     const snaps: CommandEntry[][] = [];
     let reconnects = 0;
     t.onReconnect(() => reconnects++);
@@ -205,7 +226,8 @@ describe("bridge socket: a whole turn through the real transport", () => {
     await until(() => snaps.length > 0, "first snapshot");
     const before = snaps.length;
     h.sendMessage(id, "queued while away");
-    sockets[0].end(1006); // the tunnel dropped
+    sockets[0].end(1006); // the connection dropped; the server dials again
+    dial();
     await until(() => reconnects === 1, "reconnect", 5000);
     await until(() => snaps.length > before, "snapshot after reconnect");
     expect(await t.connect()).toEqual({ afterBridgeSeq: 0 });

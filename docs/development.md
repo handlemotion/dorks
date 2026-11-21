@@ -41,7 +41,7 @@ pnpm dev:desktop         # the Tauri app (builds the real server and web UI into
 
 `pnpm dev` keeps its data in `.dev-data` (git-ignored); delete it for a clean start. It uses fixed, dev-only values for the owner token (`dev-owner-token`) and sandbox host key, so no secret or `.env` is needed. `BRIDGE_IMPL=real pnpm dev` runs the real in-box bridge with a fake Claude CLI instead of the sim bridge. Port `0` picks a free port (`DORKS_UI_PORT=0`). Every variable is in [docs/env.md](env.md).
 
-Outside `pnpm dev` the server's owner token is generated into `<data dir>/secrets.json`. To test against real Boat sandboxes you also need a tunnel URL in `DORKS_PUBLIC_URL` that forwards to the bridge port.
+Outside `pnpm dev` the server's owner token is generated into `<data dir>/secrets.json`. Real Boat sandboxes need nothing extra on this machine: the server dials out to each box's bridge, so there is no inbound port or public URL to set up.
 
 ## Tests
 
@@ -86,13 +86,13 @@ The server is moving to [Effect](https://effect.website) (v4). New server code i
   logged. Services not yet on Effect are called through the `promise` step helper. `Scheduler.shutdown` stops the loop, drains
   jobs for up to 5 s, then interrupts the rest.
 - **App wiring** (`server.ts`, `listeners.ts`, `main.ts`): the process is a stack of Layers (config, database and hub, app, the UI
-  and bridge listeners under `Bun.serve`, the scheduler). SIGTERM, SIGINT and the parent watch close it in reverse: scheduler and
+  listener under `Bun.serve`, the bridge links, the scheduler). SIGTERM, SIGINT and the parent watch close it in reverse: scheduler and
   jobs, listeners, database. `createApp` stays the plain constructor tests use.
 - **Bridge socket** (`http/bridgeWs.ts`, `services/bridge.ts`): a `BridgeSession` is a `Scope` of fibers closed with the socket (auth
   timer, a reader over an inbox `Queue`, a writer draining the outbox `Queue`, a snapshot publisher woken by a `Latch`); each rpc is
   its own fiber, started in arrival order. A refused rpc is a typed `BridgeError` (its `AppError` is the `res` error), a frame that
   ends the socket is a `Hangup` with its close code. Frame shapes stay the zod types of `packages/shared`; `decodePush` applies the
-  per-call limits and parses with them. `listeners.ts` drives it from Bun's callbacks (`open` / `onMessage` / `close`).
+  per-call limits and parses with them. `http/bridgeLinks.ts` dials each awake box's bridge and drives it from the socket's callbacks (`open` / `onMessage` / `close`).
 
 `Effect.runPromise` rejects with the original error, so `instanceof` checks on `BoatError`, `BoxNotFoundError` and `GithubError` keep working
 across the edge.
@@ -105,9 +105,9 @@ across the edge.
 - Branch from `main`. Small commits, with a message that says why.
 - Keep functions under Oxlint's `complexity` limit (20, `pnpm lint`): split branchy code into named helpers or handler maps rather than disabling the rule.
 
-## Real Claude, no Boat or tunnel
+## Real Claude, no Boat
 
-To see real Claude Code work through the whole stack without a Boat account or a tunnel, run the real bridge locally with the real CLI:
+To see real Claude Code work through the whole stack without a Boat account, run the real bridge locally with the real CLI:
 
 ```sh
 BRIDGE_IMPL=real CLAUDE_BIN="$(command -v claude)" DORKS_E2E_ROOT=/tmp/de pnpm dev
@@ -125,11 +125,11 @@ Doppler is optional: account credentials are encrypted settings, not environment
 outside `pnpm dev` (which always selects the simulator):
 
 ```sh
-DORKS_DATA_DIR="$PWD/.context/live-data" DORKS_UI_PORT=4747 DORKS_BRIDGE_PORT=4748 DORKS_PUBLIC_URL=https://your-tunnel.example bun run apps/server/src/main.ts
+DORKS_DATA_DIR="$PWD/.context/live-data" DORKS_UI_PORT=4747 bun run apps/server/src/main.ts
 pnpm dev:web
 ```
 
-Forward the tunnel to **4748**, the bridge listener. Open `http://localhost:3000` and connect to `http://127.0.0.1:4747` using
+Open `http://localhost:3000` and connect to `http://127.0.0.1:4747` using
 the owner token from `.context/live-data/secrets.json` (read it privately; never paste it in chat or logs). Complete onboarding:
 
 - Boat API key (and organization id if needed), with snapshot/sandbox permissions; see [Boat](boat.md). Saving it builds the base snapshot.

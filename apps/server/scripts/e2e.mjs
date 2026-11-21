@@ -1,5 +1,5 @@
 // End-to-end run against the real server process (the compiled binary, or `bun run src/main.ts`) with the simulated sandbox host:
-// UI API over HTTP + SSE, the bridge over a real WebSocket, timers, pause/resume, and a secret scan of everything on disk.
+// UI API over HTTP + SSE, the bridge over a real WebSocket the server dials, timers, pause/resume, and a secret scan of everything on disk.
 //   node scripts/e2e.mjs            SERVER_BIN=<path> to use a compiled binary (default: bun run src/main.ts)
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
@@ -32,8 +32,7 @@ const until = async (fn, what, ms = 30_000) => {
   }
 };
 
-const env = { ...process.env, DORKS_DATA_DIR: dataDir, DORKS_UI_PORT: "0", DORKS_BRIDGE_PORT: "0", BOX_PROVIDER: "sim", SIM_HOST_KEY, SIM_BUILD_STEP_MS: "30", GH_TOKEN: GITHUB }; // GitHub: the token gh would use (lib/ghCli.ts)
-delete env.DORKS_PUBLIC_URL;
+const env = { ...process.env, DORKS_DATA_DIR: dataDir, DORKS_UI_PORT: "0", BOX_PROVIDER: "sim", SIM_HOST_KEY, SIM_BUILD_STEP_MS: "30", GH_TOKEN: GITHUB }; // GitHub: the token gh would use (lib/ghCli.ts)
 const [cmd, ...args] = process.env.SERVER_BIN ? [process.env.SERVER_BIN] : ["bun", "run", join(here, "../src/main.ts")];
 const server = spawn(cmd, args, { env, stdio: ["ignore", "pipe", "pipe"] });
 server.stderr.on("data", (d) => logs.push(String(d)));
@@ -59,7 +58,7 @@ const api = async (method, path, body) => {
 };
 
 const host = spawn("node", [join(root, "infra/bridge-sim/host.mjs")], {
-  env: { ...env, SIM_UI_URL: UI, SIM_BRIDGE_URL: ready.bridge, BRIDGE_SECRET_KEY: secrets.bridgeSecretKey, SIM_DELTAS: "20", SIM_DELTA_GAP_MS: "10", HEARTBEAT_MS: "1000" },
+  env: { ...env, SIM_UI_URL: UI, BRIDGE_SECRET_KEY: secrets.bridgeSecretKey, SIM_DELTAS: "20", SIM_DELTA_GAP_MS: "10", HEARTBEAT_MS: "1000" },
   stdio: ["ignore", "pipe", "pipe"],
 });
 host.stdout.on("data", (d) => logs.push(String(d)));
@@ -76,15 +75,6 @@ try {
   check("health needs no token", (await fetch(`${UI}/api/health`)).status === 200);
   check("the API refuses a request without the owner token", (await fetch(`${UI}/api/dorks`)).status === 401);
   check("the API refuses a wrong token", (await fetch(`${UI}/api/dorks`, { headers: { Authorization: "Bearer nope" } })).status === 401);
-  const http = ready.bridge.replace(/^ws/, "http");
-  check("the bridge listener serves nothing but /bridge", (await fetch(`${http.replace("/bridge", "/")}`)).status === 404);
-  const badWs = await new Promise((resolve) => {
-    const ws = new WebSocket(ready.bridge);
-    ws.onopen = () => ws.send(JSON.stringify({ t: "auth", dorkId: "x", secret: "0".repeat(64) }));
-    ws.onclose = (e) => resolve(e.code);
-    setTimeout(() => resolve("timeout"), 5000);
-  });
-  check("a bridge socket with a bad secret is closed with 4403", badWs === 4403, String(badWs));
 
   // ---- onboarding gates
   const early = await api("POST", "/api/dorks", { repo: "acme/demo", message: "hi", provider: "claude" });

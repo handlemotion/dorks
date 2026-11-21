@@ -2,7 +2,7 @@
 
 Run coding agents (Claude Code first, Codex optional) in your own [Boat](https://boat.dev) sandboxes and drive them from one desktop app: a chat per task, and PRs the agent keeps working on until they merge. Your sandboxes, your Boat account, your Claude or ChatGPT sign-in. Nothing is hosted for you. Site: [dorks.build](https://dorks.build).
 
-> **Status: early.** The server, web UI and desktop shell are in the repo and tested separately. Not yet shipped: an Intel build, the hosted tunnel service and a bundled wurmhol client (use your own tunnel URL for now), a bundled server binary, and a finished first-run flow. [docs/desktop.md](docs/desktop.md) lists what is missing.
+> **Status: early.** The server, web UI and desktop shell are in the repo and tested separately. Not yet shipped: an Intel build, a bundled server binary, and a finished first-run flow. [docs/desktop.md](docs/desktop.md) lists what is missing.
 
 ## How it works
 
@@ -12,15 +12,15 @@ Run coding agents (Claude Code first, Codex optional) in your own [Boat](https:/
  │ web UI (static SPA)                  │             │ sandbox (one per dork)      │
  │    │ HTTP + SSE, owner token         │             │  dorks-bridge ─▶ claude/    │
  │    ▼                                 │             │  codex, git, gh             │
- │ dorks-server (SQLite, timers, Boat   │◀── wss ─────│       │                     │
- │ driver, GitHub poller)               │  tunnel,    └───────┼─────────────────────┘
- │  UI port 127.0.0.1:4747              │  bridge port        │
- │  bridge port 127.0.0.1:4748          │  only               ▼
+ │ dorks-server (SQLite, timers, Boat   │─── wss ────▶│       │                     │
+ │ driver, GitHub poller)               │  Boat       └───────┼─────────────────────┘
+ │  UI port 127.0.0.1:4747              │  hosted port        │
+ │  (opens no other port)               │  URL                ▼
  └──────────────────────────────────────┘                  GitHub, Anthropic, OpenAI
 ```
 
 - **Server** (`apps/server`): one local process with a SQLite database. It runs the lifecycle state machine (create, work, idle, sleep, wake), calls Boat, and polls GitHub for PR events.
-- **Bridge** (`infra/bridge`): runs inside each sandbox, drives the agent, and connects *out* to your server over a WebSocket. Your Mac needs a public tunnel URL for that, and only the bridge port is exposed through it.
+- **Bridge** (`infra/bridge`): runs inside each sandbox and drives the agent. The server connects *out* to it over a WebSocket through Boat's hosted-port URL for that box, so your Mac needs no public URL and opens no inbound port.
 - **Web** (`apps/web`) with `packages/client`: the UI. It loads inside the desktop app, or in a browser.
 - **Desktop** (`apps/desktop`): a Tauri shell that starts and supervises the server, hands the UI its token, and keeps the Mac awake while dorks work.
 - **Autonomy**: a dork opens PRs, subscribes to them and keeps fixing CI failures, review comments and conflicts ([docs/autonomy.md](docs/autonomy.md)).
@@ -42,7 +42,7 @@ To try the UI with no server at all: `pnpm dev:mock` serves an in-memory mock se
 
 To run the server on its own against your real data (`~/Library/Application Support/Dorks`): `pnpm --filter @dorks/server dev`, then connect the UI with the `ownerToken` from `secrets.json` in that directory (see [docs/github.md](docs/github.md#the-owner-token)).
 
-For real sandboxes the server needs `DORKS_PUBLIC_URL`, the `https://` URL of a tunnel that forwards to the bridge port (default 4748). All variables are in [docs/env.md](docs/env.md).
+Real sandboxes need nothing extra on your machine: the server dials each sandbox's bridge through Boat. All variables are in [docs/env.md](docs/env.md).
 
 ## Quickstart from the app
 

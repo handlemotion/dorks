@@ -41,7 +41,7 @@ async function setup(
     PATH: `${bin}:${process.env.PATH}`,
     HOME: home,
     DORK_ID: "codex_dork",
-    BRIDGE_URL: "https://bridge.example.test",
+    BRIDGE_PORT: "4748",
     BRIDGE_SECRET: "b".repeat(64),
     DORKS_STATE_DIR: state,
     DORKS_SOCK_DIR: state,

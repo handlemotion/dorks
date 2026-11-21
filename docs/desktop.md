@@ -11,10 +11,10 @@ Dorks.app
 
 ## What the shell does
 
-- **First run:** creates `~/Library/Application Support/Dorks` (0700; override with `DORKS_APP_DIR`), generates the owner token (`owner-token`, 0600), picks ports (tries 4747 and 4748, then free ones, and remembers them in `settings.json`).
+- **First run:** creates `~/Library/Application Support/Dorks` (0700; override with `DORKS_APP_DIR`), generates the owner token (`owner-token`, 0600), picks the UI port (tries 4747, then a free one, and remembers it in `settings.json`).
 - **Supervises the server:** spawns it with the environment below, polls `GET /api/health`, restarts it when it exits or stops answering (exponential backoff, gives up after 5 failures in 2 minutes and shows "failed" until you choose Restart Server), stops it with SIGTERM and then SIGKILL after 5 s on quit. Its output goes to `logs/server.log`. A server orphaned by a killed shell is stopped on the next start (`server.pid`).
-- **Menu bar:** server and tunnel status, Open Dorks, Open Data Folder, Open Server Log, Restart Server, Quit. Closing the window leaves the app running in the menu bar.
-- **Tunnel:** the interface lives in `crates/shell-core/src/tunnel.rs`. A user-supplied public URL (`DORKS_PUBLIC_URL` in the environment, or saved from the UI with `set_public_url`) always wins and starts nothing. Otherwise the [wurmhol provider](#tunnel-wurmhol) opens this install's private embedded tunnel to the bridge port. Only the bridge port is ever exposed; the UI port stays on loopback.
+- **Menu bar:** server status, Open Dorks, Open Data Folder, Open Server Log, Restart Server, Quit. Closing the window leaves the app running in the menu bar.
+- **Sandboxes:** the shell starts only the server, which listens on the UI port on loopback and nothing else. Sandboxes are reached by the server dialing out to each box's bridge ([architecture.md](architecture.md#bridge-protocol-websocket-dialed-by-the-server)), so the Mac opens no inbound port and needs no public URL. On start the shell deletes files left by the removed tunnel: `tunnel-install-key`, `wurmhol-connector`, `wurmhol-token`, `wurmhol-access-key`, `wurmhol-name` and `logs/wurmhol.log`.
 - **Updates:** checks GitHub Releases shortly after launch and every 4 hours, offers a newer version in the sidebar and the menu bar, and installs it in place (see [Updates](#updates)).
 - **Keep awake:** a power assertion (`caffeinate -i -w <pid>`, released automatically if the app dies) while the UI reports active dorks. Setting: `whileActive` (default), `always`, `never`.
 
@@ -26,14 +26,12 @@ Defined in one file, `crates/shell-core/src/contract.rs`. The server gets this e
 |---|---|
 | `DORKS_DATA_DIR` | `<app dir>/server` |
 | `DORKS_OWNER_TOKEN` | the owner token |
-| `DORKS_UI_PORT`, `DORKS_BRIDGE_PORT` | loopback ports |
-| `DORKS_PUBLIC_URL` | `https://` URL of the bridge port, when a tunnel or user URL is available |
-| `DORKS_TUNNEL_SERVICE`, `DORKS_TUNNEL_INSTALL_KEY` | the Dorks tunnel service and this install's key for it, when the public URL is the embedded wurmhol tunnel (not for a user URL) |
+| `DORKS_UI_PORT` | the loopback UI port |
 | `DORKS_PARENT_PID` | the shell's pid. The server should exit if it disappears (optional; the shell also reaps orphans) |
 
 ## What the UI gets
 
-`window.__DORKS__` is set before any page script runs: `{ apiUrl, uiPort, bridgePort, publicUrl, ownerToken, dataDir, version, tunnel: { kind, state, error }, bootError, chrome }` (`chrome` is described under "Window chrome"). `tunnel.state` is `ready`, `error` (could not start; `error` says why) or `lost` (it was up and went away; the shell restarts it after 30 s, then `publicUrl` is set again). Call the API with `Authorization: Bearer <ownerToken>` against `apiUrl`. If the server could not be set up, only `bootError` is present. `window.__DORKS__` is replaced when the config changes, and the event `dorks://runtime-config` fires; `dorks://server-status` carries `{ state: "starting" | "running" | "restarting" | "failed" | "stopped", ... }`.
+`window.__DORKS__` is set before any page script runs: `{ apiUrl, uiPort, ownerToken, dataDir, version, bootError, chrome }` (`chrome` is described under "Window chrome"). Call the API with `Authorization: Bearer <ownerToken>` against `apiUrl`. If the server could not be set up, only `bootError` is present. `window.__DORKS__` is replaced when the config changes, and the event `dorks://runtime-config` fires; `dorks://server-status` carries `{ state: "starting" | "running" | "restarting" | "failed" | "stopped", ... }`.
 
 Commands (`invoke` from `@tauri-apps/api/core`, or `window.__TAURI__.core.invoke`):
 
@@ -41,8 +39,6 @@ Commands (`invoke` from `@tauri-apps/api/core`, or `window.__TAURI__.core.invoke
 |---|---|
 | `runtime_config()` / `server_status()` | current config / status |
 | `restart_server()` | restart now, reset the failure history |
-| `set_public_url(url \| null)` | validate (https, or http for localhost), save, restart tunnel and server |
-| `tunnel_status()` | `{ kind, state, error }`; `state` is `ready`, `error` or `lost` |
 | `open_data_dir()` | reveal the app directory in Finder |
 | `set_keep_awake(active)` | tell the shell dorks are (not) working; returns whether the assertion is held |
 | `keep_awake_mode()` / `set_keep_awake_mode(mode)` | the setting |
@@ -95,49 +91,6 @@ The shell remembers the last mode and the app-mode frame (`windowMode`, `windowF
 - **`screencapture -x -o -l <window id>`** renders that one window only (it never captures the desktop). Find the id with `CGWindowListCopyWindowInfo(.optionAll, ...)`; the window is listed even while it is off screen. Such a capture has no backdrop, so it cannot show how translucent the glass looks, only the chrome, the buttons, the sizes, the corners and the page.
 
 Launch the binary directly (`DORKS_WINDOW_NOFOCUS=1 Dorks.app/Contents/MacOS/dorks-desktop`) or with `open -g`; never `open -a` or an activating AppleScript. Quit with `tell application "Dorks" to quit`, which does not activate the app. Judging the translucency itself (how the glass looks over what is behind it) needs a look at the real screen; do that by hand.
-
-## Tunnel: wurmhol
-
-Boat sandboxes connect *out* to the server, so the bridge port needs a public URL. Each install gets its own **private embedded wurmhol tunnel** (wurmhol ADR 0032): only this install's sandboxes can reach it, and nobody in Dorks' wurmhol org, owners included, can open it. No wurmhol account, login or approval is needed on the Mac.
-
-```
-desktop shell ──install key──► Dorks tunnel service (infra/tunnels, holds Dorks' wurmhol integration key)
-      │                              │  tenant = this install, subject "owner", one tunnel; answers with a connector
-      ▼                              │
-wurmhol <bridge port> --json  (WURMHOL_TOKEN=whc_…)  ──► wurmhol relay ◄── x-wurmhol-grant: whg_… ── sandbox bridge
-                                     ▲                                                                   │
-server ──install key──► PUT /v1/sandboxes/<dork>: subject "dork-<id>" on the tunnel's list, a ticket ─────┘
-                                                        bridge ──ticket──► POST /v1/grants: a 12 h grant
-```
-
-- **Install key.** Made once (`tunnel-install-key`, 0600, `dti_` + 64 hex). It is this install's identity at the tunnel service: its wurmhol tenant (`install-<sha256 prefix>`), and so its tunnel and URL, follow from it. Deleting it gives the install a new tunnel and URL.
-- **Connector.** `crates/shell-core/src/connector.rs` asks the service (`POST /v1/tunnel`, the install key as bearer) for the tunnel and a connector (`whc_…`, 365 days; asking again revokes the older ones). It is kept in `wurmhol-connector` (0600) with the service it came from, and asked for again after 180 days, when the service setting changes, or once when the client refuses the stored one. The service is `DORKS_TUNNEL_SERVICE` in the shell's environment, else `tunnelService` in `settings.json`, else `https://tunnels.dorks.build` (`DEFAULT_TUNNEL_SERVICE` in `contract.rs`).
-- **The client.** `crates/shell-core/src/wurmhol.rs` runs the wurmhol client (`packages/cli` of handlemotion/wurmhol, MIT, **0.8.0 or newer**) as `wurmhol <bridge port> --json` with the connector as `WURMHOL_TOKEN` in its environment, never an argument, and reads `{"url","port","id"}` from its first stdout line. No `--name`, `--only` or `WURMHOL_ACCESS_KEY`: a connector refuses them, since the tunnel already has its URL and its access list. The URL is the tunnel's own and stays the same across reopens. It needs Node 20+ and the `wurmhol` package on the Mac (`npm i -g wurmhol`, or `$WURMHOL_BIN`).
-- **Sandboxes.** The shell gives the server `DORKS_TUNNEL_SERVICE` and `DORKS_TUNNEL_INSTALL_KEY`. Before creating a box the server registers it (`PUT /v1/sandboxes/<dork id>`): the service adds subject `dork-<id>` to the tunnel's access list and returns a ticket (`dts_…`, signed by the service), which goes into the box's creation environment with the service URL. The bridge trades the ticket for a client grant (`POST /v1/grants`, 12 hours) and sends it as `x-wurmhol-grant` on its WebSocket handshake; it fetches a new one before the old one runs out and when the relay closes the socket with `4401` (expired). `4403` (revoked) and a refused ticket are final. Deleting a dork removes its subject (`DELETE /v1/sandboxes/<id>`), which revokes its grants. The grant only gets a client to the bridge socket: the per-dork HMAC is still the authentication (SECURITY.md).
-- `settings.json` may hold `wurmholServer` (a self-hosted wurmhol, `WURMHOL_URL`; it must be the one the tunnel service uses) and `wurmholArgs` (extra arguments after `<port> --json`).
-- **Finding the client:** `$WURMHOL_BIN`, else `wurmhol` next to the app, else `PATH` plus `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin` (a menu-bar app starts with a minimal PATH).
-- **Both client shapes work.** Today's client prints and exits while a daemon keeps the tunnel: health is `wurmhol ls --json` still listing the id, stop is `wurmhol stop <id>`. A client that stays in the foreground is supervised as a process and stopped with SIGTERM.
-- **Lost tunnel:** reported once; the shell marks `tunnel.state = "lost"`, waits 30 s, then restarts tunnel and server. A session is capped by the relay (`expired`); the same restart reopens it at the same URL.
-- The client's stderr goes to `logs/wurmhol.log`.
-
-### Moving from the access-key pipe
-
-Earlier builds opened a named pipe (`dorks-<10 hex>`) with the user's own wurmhol login (the "Approve this Mac" step) and an access key that every sandbox sent as `x-wurmhol-key`. On the first start of this build the shell deletes `wurmhol-token`, `wurmhol-access-key` and `wurmhol-name`, makes an install key, and opens the embedded tunnel instead; there is nothing to approve. Two things do not carry over:
-
-- **The URL changes.** A sandbox keeps the `BRIDGE_URL` and key it was created with, so existing sandboxes cannot reach the new tunnel. Delete those sessions (or their boxes) and start new ones.
-- **The bridge changed**, so the base snapshot is stale; rebuild it from Settings (the app offers it).
-
-The old pipe's wurmhol login stays in the wurmhol client's own credentials file; `wurmhol logout` removes it if it is no longer used.
-
-### Why the server does not embed wurmhol's `openPipe`
-
-Tried and rejected: the package's `openPipe` runs in-process, but it takes the share's URL from the WebSocket `upgrade` event, which Bun's `ws` shim does not implement (it prints "ws.WebSocket 'upgrade' event is not implemented in bun"), and a failed connection ends in an unhandled `ErrorEvent` that kills the process. Embedding needs either a Bun-compatible wurmhol client or running the Node client as a child; the latter is what the shell does. (wurmhol 0.8's `keepOpen` runs on Bun and takes a connector, so this can be revisited.)
-
-### What is left
-
-1. **Deploy the tunnel service** (`infra/tunnels/README.md`): a wurmhol application for Dorks on the Business plan, its integration key and a ticket key as Worker secrets, and the route behind `DEFAULT_TUNNEL_SERVICE`. Until then the desktop app's tunnel reports `error` and a public URL has to be set by hand.
-2. **Embedded mode on wurmhol.com** (`EMBEDDED_ENABLED`): if `/v1/embed` answers 404 there, it has not deployed yet, and the service says so.
-3. **The `wurmhol` client must be 0.8.0 or newer**; older ones do not know connectors.
 
 ## Develop
 
@@ -195,8 +148,7 @@ The sidecar is signed with the app's identity and the hardened runtime. `src-tau
 
 ## Not done yet
 
-- Deploying the tunnel service and bundling the wurmhol client (see "Tunnel: wurmhol", "What is left"); until then you set `DORKS_PUBLIC_URL`.
-- The window was run with the real server and the real SPA (first-run setup renders and talks to the sidecar); the tunnel state is shown in Settings only as one line.
+- The window was run with the real server and the real SPA (first-run setup renders and talks to the sidecar).
 - Real icons.
 - The update path from one signed release to the next has not been run end to end yet: 0.0.1 predates the update prompt (it has the updater but no check), so 0.0.1 users install 0.1.0 by hand once, and the first real in-app update is 0.1.0 to the next release.
 - No Intel build: releases are Apple silicon only. `prepare-sidecar --target universal-apple-darwin` still works locally.

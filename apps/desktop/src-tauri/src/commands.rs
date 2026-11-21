@@ -2,16 +2,16 @@
 
 use std::sync::atomic::Ordering;
 
-use dorks_shell_core::settings::{validate_public_url, KeepAwake};
+use dorks_shell_core::settings::KeepAwake;
 use dorks_shell_core::supervisor::Status;
 use dorks_shell_core::window::{ChromeInfo, WindowMode, WindowTheme};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::boot;
 use crate::updater::{self, UpdateStatus, Updater};
 use crate::window;
-use crate::state::{AppState, RuntimeConfig, TunnelInfo};
+use crate::state::{AppState, RuntimeConfig};
 
 #[tauri::command]
 pub fn runtime_config(state: State<'_, AppState>) -> Option<RuntimeConfig> {
@@ -32,32 +32,6 @@ pub async fn restart_server(state: State<'_, AppState>) -> Result<(), String> {
         }
         None => Err("the server is not set up; see the boot error".into()),
     }
-}
-
-/// Saves (or, with `None`, clears) the user-supplied public URL and restarts tunnel and server so the new URL takes effect.
-#[tauri::command]
-pub async fn set_public_url(app: AppHandle, url: Option<String>) -> Result<Option<RuntimeConfig>, String> {
-    let url = url.map(|u| u.trim().to_string()).filter(|u| !u.is_empty());
-    let normalised = url.as_deref().map(validate_public_url).transpose()?;
-    {
-        let state = app.state::<AppState>();
-        let mut settings = state.settings.lock().unwrap();
-        settings.public_url = normalised;
-        settings.save(&state.paths.settings_file()).map_err(|e| format!("cannot save settings: {e}"))?;
-    }
-    restart_runtime(&app).await.map(Some)
-}
-
-async fn restart_runtime(app: &AppHandle) -> Result<RuntimeConfig, String> {
-    boot::stop_runtime(app).await;
-    let result = boot::start_runtime(app).await;
-    boot::publish_config(app);
-    result
-}
-
-#[tauri::command]
-pub fn tunnel_status(state: State<'_, AppState>) -> Option<TunnelInfo> {
-    state.config.lock().unwrap().as_ref().map(|c| c.tunnel.clone())
 }
 
 #[tauri::command]

@@ -39,14 +39,6 @@ export class Hub {
 export interface Config {
   dataDir: string;
   uiPort: number;
-  bridgePort: number;
-  /** `https://` URL of the tunnel that forwards to the bridge listener. */
-  publicUrl?: string;
-  /**
-   * The Dorks tunnel service (infra/tunnels) and this install's key for it, when the public URL is this install's embedded
-   * Wurmhol tunnel. Each new sandbox is registered there and gets a ticket its bridge trades for short-lived Wurmhol grants.
-   */
-  tunnelService?: { url: string; installKey: string };
   ownerToken: string;
   /** HMAC key for per-dork bridge secrets. */
   bridgeSecretKey: string;
@@ -78,8 +70,6 @@ export interface App {
   ghLogin(): Promise<GhLogin>;
   /** The sandbox provider for the current settings. Tests replace it. */
   getBox(): Promise<BoxProvider>;
-  /** Where a freshly created sandbox's bridge connects. */
-  bridgeUrl(): string | undefined;
   /** The provider calls the base-snapshot build makes (services/snapshot.ts). Tests replace it. */
   getSnapshotDriver(): Promise<SnapshotDriver>;
   /** What the base snapshot is built from: the bridge bundle and the installer. Tests replace it. */

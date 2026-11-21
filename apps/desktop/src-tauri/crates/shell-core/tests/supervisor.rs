@@ -16,14 +16,12 @@ const TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789a
 struct Rig {
     dir: tempfile::TempDir,
     ui: u16,
-    bridge: u16,
 }
 
 impl Rig {
     fn new() -> Rig {
         let ui = pick_port(None, &[]).unwrap();
-        let bridge = pick_port(None, &[ui]).unwrap();
-        Rig { dir: tempfile::tempdir().unwrap(), ui, bridge }
+        Rig { dir: tempfile::tempdir().unwrap(), ui }
     }
 
     fn spec(&self, extra: &[(&str, &str)]) -> SidecarSpec {
@@ -33,8 +31,6 @@ impl Rig {
             ("DORKS_DATA_DIR".to_string(), data.display().to_string()),
             ("DORKS_OWNER_TOKEN".to_string(), TOKEN.to_string()),
             ("DORKS_UI_PORT".to_string(), self.ui.to_string()),
-            ("DORKS_BRIDGE_PORT".to_string(), self.bridge.to_string()),
-            ("DORKS_PUBLIC_URL".to_string(), "https://me.example.com".to_string()),
             ("DORKS_PARENT_PID".to_string(), std::process::id().to_string()),
         ];
         env.extend(extra.iter().map(|(k, v)| (k.to_string(), v.to_string())));
@@ -90,10 +86,9 @@ async fn runs_the_server_with_the_contract_and_stops_it_gracefully() {
     assert_eq!(get(rig.ui, "/api/ping", Some(TOKEN)).0, 200);
     assert_eq!(get(rig.ui, "/api/ping", Some("wrong")).0, 401);
     assert_eq!(get(rig.ui, "/api/ping", None).0, 401);
-    // the bridge port is up, the public URL and parent pid arrived, data dir is writable
-    assert_eq!(get(rig.bridge, "/", None).0, 200);
+    // the parent pid arrived, data dir is writable
     let (_, env) = get(rig.ui, "/env", None);
-    assert!(env.contains("\"publicUrlSet\":true") && env.contains("\"parentPidSet\":true"), "{env}");
+    assert!(env.contains("\"parentPidSet\":true"), "{env}");
     assert!(rig.dir.path().join("data").join("stub.db").exists());
     assert!(rig.dir.path().join("server.pid").exists());
 

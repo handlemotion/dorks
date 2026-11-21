@@ -27,7 +27,7 @@ describe.skipIf(!token && !apiKey)("real claude CLI through the bridge", () => {
       PATH: process.env.PATH,
       HOME: home,
       DORK_ID: "live_1",
-      BRIDGE_URL: "wss://x.example/bridge",
+      BRIDGE_PORT: "4748",
       BRIDGE_SECRET: "c".repeat(64),
       DORKS_STATE_DIR: state,
       DORKS_SOCK_DIR: state,

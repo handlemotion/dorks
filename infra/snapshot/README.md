@@ -17,7 +17,7 @@ The snapshot must contain:
 | `gh stack` extension ([github/gh-stack](https://github.com/github/gh-stack)), pinned | stacked PRs. Installed by placing the release binary and a `manifest.yml` under `~/.local/share/gh/extensions/gh-stack/`; needs gh ≥ 2.90 |
 | `flock` | the bridge is started under a lock |
 
-The snapshot must **not** contain secrets: no Anthropic key, GitHub token, `DORK_ID`, `BRIDGE_URL` or `BRIDGE_SECRET`. Create the build sandbox with `--no-env` and do not sign in to any agent in it.
+The snapshot must **not** contain secrets: no Anthropic key, GitHub token, `DORK_ID`, `BRIDGE_PORT` or `BRIDGE_SECRET`. Create the build sandbox with `--no-env` and do not sign in to any agent in it.
 
 Extra command-line tools, variables or pre-cloned repositories for your dorks belong in a [build](../../docs/builds.md) (the **Builds** page): its own saved snapshot layered on this one, so this image stays the same for every install. Variables every session needs go under **Settings → Shared variables** (exported as environment variables inside each of your sandboxes, values never displayed). After this snapshot is rebuilt, builds made on the old one show as out of date until they are rebuilt.
 

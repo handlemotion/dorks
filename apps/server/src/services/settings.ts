@@ -56,7 +56,6 @@ export function settingsView(app: App) {
     sleepMinutes: s.sleepMinutes,
     commentPolicy: s.commentPolicy ?? DEFAULT_COMMENT_POLICY,
     claudeCodeMode: s.claudeCodeMode,
-    publicUrlConfigured: !!app.cfg.publicUrl,
     boxProvider: app.cfg.boxProvider,
     claudeModels: knownModelChoices(app),
     defaultBuildId: app.db.get<{ default_build_id: string | null }>("SELECT default_build_id FROM settings WHERE id = 1")?.default_build_id ?? null,

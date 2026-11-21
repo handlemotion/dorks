@@ -10,7 +10,7 @@ import { makeLogger, Redactor } from "../src/redact";
 import { builtCli, FAKE_CLAUDE, FakeTransport, makeRemote, tmp, waitFor } from "./helpers";
 
 describe("BRIDGE_SECRET_FILE", () => {
-  const base = { DORK_ID: "d", BRIDGE_URL: "wss://x.example/bridge" };
+  const base = { DORK_ID: "d", BRIDGE_PORT: "4748" };
 
   it("is read once and unlinked, so the secret never sits in the environment", () => {
     const f = join(tmp("secret-"), "bridge-secret");
@@ -76,7 +76,7 @@ describe.skipIf(typeof process.getuid !== "function" || process.getuid() !== 0)(
       PATH: "/usr/local/bin:/usr/bin:/bin",
       HOME: "/root",
       DORK_ID: "d1",
-      BRIDGE_URL: "wss://x.example/bridge",
+      BRIDGE_PORT: "4748",
       BRIDGE_SECRET_FILE: secretFile,
       DORKS_STATE_DIR: state,
       DORKS_SOCK_DIR: state,

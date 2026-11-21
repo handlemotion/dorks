@@ -6,27 +6,18 @@ Email the maintainers through the address on the GitHub profile of the repositor
 
 ## Threat model
 
-Dorks is a single-owner app. The owner runs the server on their own machine, and agents run in the owner's Boat sandboxes. The one hosted piece is the tunnel service (below), which hands out tunnel access and never sees traffic.
+Dorks is a single-owner app. The owner runs the server on their own machine, and agents run in the owner's Boat sandboxes. Nothing is hosted for Dorks itself: the owner's machine dials out to the sandboxes and accepts no inbound connections.
 
 | Surface | Exposure | Protection |
 |---|---|---|
 | UI API and live stream | `127.0.0.1:<ui port>` only | Bearer owner token, CORS limited to `DORKS_UI_ORIGINS`. |
-| Bridge socket | `127.0.0.1:<bridge port>`, and the **only** thing the tunnel forwards (`DORKS_PUBLIC_URL`) | Only `/bridge` upgrades to a WebSocket; `/` answers 404. The first frame must authenticate as one dork with `HMAC-SHA256(bridgeSecretKey, "bridge|" + dorkId)`. Wrong secret, unknown or deleting dork, or no first frame within 5 s closes the socket (code 4403). |
+| Bridge socket | Inside each sandbox, reached by the server through Boat's hosted-port URL for that box | Boat's per-port token (`_port_auth` cookie) in front; then a challenge-response in both directions proving the per-dork HMAC secret before anything else crosses the socket. The secret is never sent. |
 | Data at rest | `<data dir>/dorks.db` and `secrets.json` | Boat key, Claude token and CLI secrets are AES-GCM encrypted (the GitHub token is never stored: the server reads it from the GitHub CLI when needed), with additional data binding each to its purpose. `secrets.json` is mode 600 and holds the three server keys. |
-| Secrets in transit to a sandbox | Bridge socket | Decrypted only inside the `configure` rpc of an authenticated socket. Never stored in a command row, never in the sandbox's creation environment. The creation environment holds only `DORK_ID`, `BRIDGE_URL` and `BRIDGE_SECRET`, plus `DORKS_TUNNEL_SERVICE` and `DORKS_TUNNEL_TICKET` with the embedded tunnel. |
+| Secrets in transit to a sandbox | Bridge socket | Decrypted only inside the `configure` rpc of an authenticated socket. Never stored in a command row, never in the sandbox's creation environment. The creation environment holds only `DORK_ID`, `BRIDGE_PORT` and `BRIDGE_SECRET`. |
 
-### The tunnel and who can reach it
+### How the server reaches a sandbox
 
-The desktop app's public URL is a private embedded wurmhol tunnel (wurmhol ADR 0032), one per install. The relay lets a request through only with a grant for a subject on that tunnel's access list, and the list holds only this install's sandboxes (`dork-<id>`). Members of Dorks' wurmhol org, owners included, see the tunnel's health and can stop or delete it, but cannot open it.
-
-- **The tunnel service** (`infra/tunnels`) is the only holder of Dorks' wurmhol integration key (`whk_`). It knows an install by its install key (`tunnel-install-key`, 0600 on the Mac, `dti_` + 64 hex): the install's tenant is derived from it, so no install can reach another's tunnel or sandboxes. It stores nothing and never sees traffic.
-- **The connector** (`whc_`, 0600 in `wurmhol-connector`) opens that one tunnel and nothing else. Asking for a new one revokes the old.
-- **A sandbox** holds a ticket (`dts_`, signed by the service) for its own subject only, and trades it for 12-hour grants (`whg_`) that it sends as `x-wurmhol-grant`. Deleting the dork removes the subject, which revokes its grants and makes the ticket worthless. Code in a sandbox can read its ticket; it only ever reaches this one bridge socket.
-- **What it does not do:** it does not authenticate a dork. A grant gets a client to the bridge socket's front door; the first frame still needs that dork's HMAC, or the socket closes.
-- **What it does not hide:** whoever runs the tunnel service can issue a grant for a subject on the list, as any embedding app's backend can. Each grant is in the tunnel's grant log at wurmhol. Even then the per-dork HMAC, which never leaves the owner's Mac and the dork's own box, keeps them out of the bridge protocol. And the relay terminates TLS, as for every wurmhol pipe: this is access isolation, not end-to-end encryption.
-- Not used for a public URL you supply.
-
-What the tunnel exposes is one authenticated WebSocket endpoint, not the UI API. Keep it that way: forward the bridge port and never the UI port. Use a tunnel with TLS (the server requires an `https://` public URL).
+The server reaches each sandbox's bridge through Boat's hosted-port URL for that box (protected by Boat's per-port token, sent as the `_port_auth` cookie). The owner's machine opens no inbound port. Both sides prove they hold the per-dork HMAC secret with a challenge-response before anything else crosses the socket; the secret itself never does.
 
 ### What a sandbox can read
 
@@ -51,7 +42,7 @@ When the agent shows a dev server (`preview_show`), the port is hosted on Boat *
 
 - Anyone with access to your user account on the machine (they can read `secrets.json`).
 - A malicious repository run by the agent, which can use the credentials above.
-- A leaked `DORKS_PUBLIC_URL` together with a leaked per-dork secret: the socket would accept that dork's bridge. Deleting the dork ends that. Changing `bridgeSecretKey` in `secrets.json` invalidates every existing sandbox.
+- A leaked per-dork secret together with that box's hosted-port token: whoever holds both could pass the challenge-response as that dork's server. Deleting the dork ends that. Changing `bridgeSecretKey` in `secrets.json` invalidates every existing sandbox.
 
 ## Supply chain
 

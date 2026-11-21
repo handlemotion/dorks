@@ -5,13 +5,9 @@
 export interface RuntimeConfig {
   apiUrl?: string
   uiPort?: number
-  bridgePort?: number
-  publicUrl?: string | null
   ownerToken?: string
   dataDir?: string
   version?: string
-  /** `kind` is `wurmhol` (this install's private tunnel) or `user-url`; `state` is `ready`, `error` or `lost` (restarting). */
-  tunnel?: { kind: string; state: string; error?: string | null }
   /** The window is natively translucent (macOS vibrancy): the page must leave its backdrop transparent. */
   vibrancy?: boolean
   /** Present instead of the rest when the shell could not set the server up. */
@@ -42,15 +38,6 @@ export function setKeepAwake(active: boolean) {
   if (isDesktop()) void invoke('set_keep_awake', { active }).catch(() => {})
 }
 
-/** Validates (https, or http for localhost), saves, and restarts the tunnel and server. Rejects with the shell's message. */
-export async function setPublicUrl(url: string | null): Promise<void> {
-  try {
-    await invoke('set_public_url', { url })
-  } catch (e) {
-    throw new Error(typeof e === 'string' ? e : 'Could not save the public URL.')
-  }
-}
-
 export type WindowMode = 'onboarding' | 'app'
 
 /**
@@ -69,7 +56,7 @@ export function setWindowTheme(theme: 'light' | 'dark') {
   if (isDesktop()) void invoke('set_window_theme', { theme }).catch(() => {})
 }
 
-/** Calls `handler` when the shell publishes a changed config (for example after the public URL changed). Returns an unsubscribe. */
+/** Calls `handler` when the shell publishes a changed config (for example after the window chrome changed). Returns an unsubscribe. */
 export function onRuntimeConfig(handler: () => void): () => void {
   const listen = window.__TAURI__?.event?.listen
   if (!listen) return () => {}

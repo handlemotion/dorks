@@ -39,7 +39,6 @@ fn main() {
         libc::signal(libc::SIGINT, on_term as extern "C" fn(libc::c_int) as libc::sighandler_t);
     }
     let ui_port = port("DORKS_UI_PORT");
-    let bridge_port = port("DORKS_BRIDGE_PORT");
     let token = env("DORKS_OWNER_TOKEN").unwrap_or_else(|| {
         eprintln!("stub: DORKS_OWNER_TOKEN is required");
         std::process::exit(2);
@@ -59,10 +58,8 @@ fn main() {
     std::fs::write(std::path::Path::new(&data_dir).join("stub.db"), b"stub").expect("data dir is writable");
 
     let sick = Arc::new(AtomicBool::new(false));
-    let public_url_set = env("DORKS_PUBLIC_URL").is_some();
     let ui = TcpListener::bind((Ipv4Addr::LOCALHOST, ui_port)).expect("bind ui port");
-    let bridge = TcpListener::bind((Ipv4Addr::LOCALHOST, bridge_port)).expect("bind bridge port");
-    println!("stub: listening ui={ui_port} bridge={bridge_port}");
+    println!("stub: listening ui={ui_port}");
 
     if let Some(parent) = env("DORKS_PARENT_PID").and_then(|v| v.parse::<i32>().ok()) {
         thread::spawn(move || loop {
@@ -81,16 +78,10 @@ fn main() {
             for stream in ui.incoming().flatten() {
                 let sick = sick.clone();
                 let token = token.clone();
-                thread::spawn(move || ui_request(stream, &sick, &token, bridge_port, public_url_set));
+                thread::spawn(move || ui_request(stream, &sick, &token));
             }
         });
     }
-    thread::spawn(move || {
-        for mut stream in bridge.incoming().flatten() {
-            let _ = read_head(&mut stream);
-            respond(&mut stream, 200, "bridge");
-        }
-    });
 
     while !TERMINATED.load(Ordering::SeqCst) {
         thread::sleep(Duration::from_millis(50));
@@ -121,7 +112,7 @@ fn respond(stream: &mut TcpStream, status: u16, body: &str) {
     let _ = write!(stream, "HTTP/1.1 {status} {reason}\r\nContent-Length: {}\r\nConnection: close\r\nContent-Type: text/plain\r\n\r\n{body}", body.len());
 }
 
-fn ui_request(mut stream: TcpStream, sick: &AtomicBool, token: &str, bridge_port: u16, public_url_set: bool) {
+fn ui_request(mut stream: TcpStream, sick: &AtomicBool, token: &str) {
     let head = read_head(&mut stream);
     let path = head.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("/");
     match path {
@@ -141,7 +132,7 @@ fn ui_request(mut stream: TcpStream, sick: &AtomicBool, token: &str, bridge_port
                 respond(&mut stream, 401, "no");
             }
         }
-        "/env" => respond(&mut stream, 200, &format!("{{\"bridgePort\":{bridge_port},\"publicUrlSet\":{public_url_set},\"parentPidSet\":{}}}", env("DORKS_PARENT_PID").is_some())),
+        "/env" => respond(&mut stream, 200, &format!("{{\"parentPidSet\":{}}}", env("DORKS_PARENT_PID").is_some())),
         _ => respond(&mut stream, 404, "not found"),
     }
 }

@@ -80,7 +80,6 @@ export interface Settings {
   commentPolicy: CommentPolicy;
   /** New Claude sessions start in Code Mode; absent on older servers. */
   claudeCodeMode?: boolean;
-  publicUrlConfigured: boolean;
   /** `boat` or `sim`; absent on older servers. */
   boxProvider?: string;
   /** The models a Claude agent last reported (empty before any session started); what a new session can choose from. */

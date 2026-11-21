@@ -43,7 +43,7 @@ export function prepareRealBridge({ repos = ["acme/demo"] } = {}) {
   return {
     cli: join(here, "../dist/cli.mjs"),
     /** Env for one bridge process: only what a real box provides (plus test knobs). No host keys. */
-    envFor(dorkId, bridgeSecret, bridgeUrl) {
+    envFor(dorkId, bridgeSecret, bridgePort) {
       const short = dorkId.slice(-12);
       return {
         PATH: process.env.PATH,
@@ -54,7 +54,7 @@ export function prepareRealBridge({ repos = ["acme/demo"] } = {}) {
         // Outbound proxy / extra CA for hosts that need them to reach Anthropic (CI and sandboxes often do).
         ...Object.fromEntries(["HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE"].filter((k) => process.env[k]).map((k) => [k, process.env[k]])),
         DORK_ID: dorkId,
-        BRIDGE_URL: bridgeUrl,
+        BRIDGE_PORT: String(bridgePort),
         BRIDGE_SECRET: bridgeSecret,
         CLAUDE_BIN: process.env.CLAUDE_BIN || fakeClaude,
         // A host running as root (a CI or cloud container) needs privilege separation for the real CLI, which refuses

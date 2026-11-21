@@ -1,4 +1,4 @@
-//! Keep-awake: while dorks are active the Mac must not idle-sleep, or the tunnel and server stop with it.
+//! Keep-awake: while dorks are active the Mac must not idle-sleep, or the server stops with it.
 //!
 //! On macOS this holds a power assertion by running `caffeinate -i -w <our pid>`: `-i` is the "prevent idle system sleep"
 //! assertion, and `-w` ties its lifetime to this process, so even a crash of the shell releases it. The display may still

@@ -422,4 +422,9 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE settings ADD COLUMN claude_code_mode INTEGER NOT NULL DEFAULT 1;
   ALTER TABLE dorks ADD COLUMN code_mode INTEGER NOT NULL DEFAULT 0;
   `,
+  `
+  -- The server now dials each box's bridge (docs/architecture.md, "Bridge protocol"). A simulated box's bridge runs on this machine,
+  -- so each gets a loopback port of its own.
+  ALTER TABLE sim_boxes ADD COLUMN bridge_port INTEGER;
+  `,
 ];

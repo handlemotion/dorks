@@ -4,7 +4,6 @@ import { CheckIcon, LoaderCircleIcon } from 'lucide-react'
 import { useDorksClient, useSnapshot } from '@dorks/client/react'
 import type { Settings, SnapshotStatus } from '@dorks/client'
 import { Button } from '@dorks/ui/button'
-import { isDesktop } from '../lib/desktop'
 import { stepDone } from '../lib/onboarding'
 import { usePending } from '../lib/pending'
 import { StepProgress } from './StepProgress'
@@ -81,10 +80,8 @@ function useSteps(settings: Settings, snap: SnapshotStatus | undefined): Step[] 
   const { actions } = useDorksClient()
   const build = usePending()
   const d = stepDone(settings)
-  const tunnelNeeded = settings.boxProvider !== 'sim'
-  const tunnelDone = !tunnelNeeded || settings.publicUrlConfigured
   const snapBusy = snap?.state === 'building' || snap?.state === 'failed'
-  if (d.boat && d.agents && d.github && d.snapshot && tunnelDone && !snapBusy) return null
+  if (d.boat && d.agents && d.github && d.snapshot && !snapBusy) return null
 
   const buildButton = (label: string) => (
     <Button size="sm" variant="outline" disabled={build.pending || !snap?.canBuild} onClick={() => void build.run(async () => void (await actions.buildSnapshot()))}>
@@ -100,7 +97,6 @@ function useSteps(settings: Settings, snap: SnapshotStatus | undefined): Step[] 
     accountStep('github', 'Connect GitHub', d.github, 'github', 'Connect'),
     snapshot,
   ]
-  if (tunnelNeeded) steps.push(tunnelStep(tunnelDone))
   return steps
 }
 
@@ -138,17 +134,4 @@ function snapshotStep(snap: SnapshotStatus | undefined, boat: boolean, have: boo
   if (have) return { id: 'snapshot', title: 'Prepare Boat', state: 'done' }
   if (!boat) return { id: 'snapshot', title: 'Prepare Boat', state: 'todo', detail: 'Starts once Boat is connected.' }
   return { id: 'snapshot', title: 'Prepare Boat', state: 'todo', detail: snap?.cannotBuildReason ?? 'A few minutes, in the background.', trailing: buildButton('Prepare Boat') }
-}
-
-/** Sandboxes reach this Mac through a public address: the desktop app's own private tunnel, or an address in Settings. */
-function tunnelStep(done: boolean): Step {
-  const step: Step = { id: 'tunnel', title: 'Let sandboxes reach this Mac', state: done ? 'done' : 'todo' }
-  if (done) return step
-  if (!isDesktop()) return { ...step, detail: 'Start the server with DORKS_PUBLIC_URL set to your tunnel’s address.' }
-  const error = window.__DORKS__?.tunnel?.error
-  return {
-    ...step,
-    detail: error ? `The tunnel could not start: ${error}.` : 'Sessions start once sandboxes can reach this Mac.',
-    trailing: <SettingsLink page="network">Set address</SettingsLink>,
-  }
 }

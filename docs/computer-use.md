@@ -39,7 +39,7 @@ Boat has native computer use ([computer use](https://docs.boat.dev/integrated-ag
 | Option | Gives | Live view | Price/hour | Verdict |
 |---|---|---|---|---|
 | **Boat native** | full Linux desktop and Chrome, in the agent's own sandbox | iframe, interactive | $0.036 (already paid) | **chosen** |
-| Browser Use Cloud | headless browser | live view | ~$0.02 | browser only, a second vendor, cannot reach the sandbox's dev server without a public URL |
+| Browser Use Cloud | headless browser | live view | ~$0.02 | browser only, a second vendor, cannot reach the sandbox's dev server unless it is hosted publicly |
 | Steel.dev | browser, CDP, self-hostable | live view | $0.08–0.10 | 15 min sessions on the entry plan; same second-vendor cost |
 | Browserbase | browser, CDP | iframe | $0.10–0.12 | same |
 | Kernel | browser on a microVM | live view | $0.06 headless, $0.48 headful | same |
@@ -50,7 +50,7 @@ Boat has native computer use ([computer use](https://docs.boat.dev/integrated-ag
 The outside browser vendors each add:
 - a second machine, a second bill and a second key,
 - a split between the agent's code (on Boat) and its browser (elsewhere),
-- a tunnel back to reach the dev server.
+- a publicly hosted port so their browser can reach the dev server.
 
 Boat's desktop sits next to the code, so `localhost:3000` just works in its Chrome.
 

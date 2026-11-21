@@ -1,3 +1,4 @@
+import { createServer, type AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
 import type { App } from "../app";
 import { BoxNotFoundError, unconfiguredBox, type BoxProvider } from "../core/box";
@@ -116,12 +117,23 @@ function simSnapshotDriver(stepMs: number): SnapshotDriver {
 // bridge process (still connected) would be handed the next message and then killed with it.
 const simLatency = () => new Promise((r) => setTimeout(r, Number(process.env.SIM_LATENCY_MS ?? 700)));
 
+/** A loopback port nothing listens on right now, for a simulated box's bridge. */
+const freePort = () =>
+  new Promise<number>((resolve, reject) => {
+    const srv = createServer();
+    srv.once("error", reject);
+    srv.listen(0, "127.0.0.1", () => {
+      const { port } = srv.address() as AddressInfo;
+      srv.close(() => resolve(port));
+    });
+  });
+
 function simBox(app: App): BoxProvider {
   const { db } = app;
   return {
     async createFromSnapshot(_snap, opts) {
       const existing = db.get("SELECT name FROM sim_boxes WHERE name = ?", opts.name); // idempotent on name
-      if (!existing) db.run("INSERT INTO sim_boxes (name, running, gen) VALUES (?, 1, 1)", opts.name);
+      if (!existing) db.run("INSERT INTO sim_boxes (name, running, gen, bridge_port) VALUES (?, 1, 1, ?)", opts.name, await freePort());
       return { id: opts.name };
     },
     async resume(id) {
@@ -144,6 +156,12 @@ function simBox(app: App): BoxProvider {
       const b = db.get<{ running: number }>("SELECT running FROM sim_boxes WHERE name = ?", id);
       if (!b) throw new BoxNotFoundError("no such box");
       return `/sim/desktop?${new URLSearchParams({ theme })}`;
+    },
+    async bridgeEndpoint(id) {
+      // The sim host runs this box's bridge on this machine, listening on the box's own loopback port.
+      const b = db.get<{ bridge_port: number | null }>("SELECT bridge_port FROM sim_boxes WHERE name = ?", id);
+      if (!b?.bridge_port) throw new BoxNotFoundError("no such box");
+      return { url: `ws://127.0.0.1:${b.bridge_port}/`, headers: {} };
     },
     async hostPort(id, port) {
       // A sim box's bridge and agent run on this machine, so its dev server already answers on localhost.

@@ -17,7 +17,7 @@ Test changes against running servers, not only unit tests.
 
 - Whole stack: `pnpm dev` runs the real server with simulated sandboxes plus the web app (data in `.dev-data`, delete it for a clean start). It prints the URL to open, with the dev owner token in it. `pnpm dev:server` runs only the server and the sandbox simulator.
 - Web against an in-memory mock server: `pnpm dev:mock`. Desktop shell: `pnpm dev:desktop`.
-- For a throwaway instance that cannot collide with another one, set `DORKS_DATA_DIR=<temp dir>`, `DORKS_UI_PORT=0` and `DORKS_BRIDGE_PORT=0`; the server prints one JSON `ready` line with the ports.
+- For a throwaway instance that cannot collide with another one, set `DORKS_DATA_DIR=<temp dir>` and `DORKS_UI_PORT=0`; the server prints one JSON `ready` line with the UI URL.
 - `pnpm check` checks formatting and lints the workspace (Vite+, `vp check`; `pnpm fmt` fixes formatting); `pnpm test` runs every package; `pnpm e2e` builds the compiled server and runs the server e2e (sim and real bridge, with a secret scan).
 
 ## Credentials and cloud sessions
@@ -36,23 +36,19 @@ Real Claude through the whole stack in a cloud container (verified): the contain
 
 ```sh
 BRIDGE_IMPL=real CLAUDE_BIN="$(command -v claude)" CLAUDE_RUN_AS=dorkrun DORKS_E2E_ROOT=/tmp/de \
-  DORKS_DATA_DIR=<temp dir> DORKS_UI_PORT=0 DORKS_BRIDGE_PORT=0 node scripts/dev.mjs --only server
+  DORKS_DATA_DIR=<temp dir> DORKS_UI_PORT=0 node scripts/dev.mjs --only server
 ```
 
 Save the token as above, then drive it with `POST /api/dorks` and `GET /api/dorks/:id/events` ([docs/architecture.md](docs/architecture.md)).
 
-Real Boat sandboxes from a cloud session: a Boat box dials back to the bridge, so give the bridge port a public URL with an embedded [Wurmhol](https://wurmhol.com/docs) tunnel from the Dorks tunnel service, the same way the desktop shell does ([docs/desktop.md](docs/desktop.md), "Tunnel: wurmhol"). It needs the service deployed (`infra/tunnels`) and only an outbound WebSocket through the proxy. Not yet run end to end: the access-key pipe this replaced was.
+Real Boat sandboxes from a cloud session: the server dials out to each box's bridge through Boat's hosted port, so nothing needs a tunnel or an inbound port; an outbound WebSocket through the proxy is enough ([docs/architecture.md](docs/architecture.md), "Bridge protocol").
 
 ```sh
-SVC=https://tunnels.dorks.build
-KEY=dti_$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')   # this session's install key; keep it out of the transcript
-curl -s -X POST $SVC/v1/tunnel -H "authorization: Bearer $KEY" > /tmp/tunnel.json   # {tunnel: {url}, connector: {connector}}
-WURMHOL_TOKEN=$(jq -r .connector.connector /tmp/tunnel.json) npx -y wurmhol@0.8 4748 --json   # prints {"url": ...} and returns
-DORKS_PUBLIC_URL=$(jq -r .tunnel.url /tmp/tunnel.json) DORKS_TUNNEL_SERVICE=$SVC DORKS_TUNNEL_INSTALL_KEY=$KEY \
-  DORKS_BRIDGE_PORT=4748 DORKS_UI_PORT=0 DORKS_OWNER_TOKEN=dev-owner-token DORKS_DATA_DIR=<temp dir> bun run apps/server/src/main.ts
+GH_TOKEN=$(doppler secrets get GITHUB_TOKEN --plain -p dorks -c dev_live) \
+  DORKS_UI_PORT=0 DORKS_OWNER_TOKEN=dev-owner-token DORKS_DATA_DIR=<temp dir> bun run apps/server/src/main.ts
 ```
 
-Start the server with `GH_TOKEN` set to Doppler's `GITHUB_TOKEN` (GitHub is the GitHub CLI's login, and the server resolves it like `gh` does: `GH_TOKEN` first), then `PUT /api/settings` with `boatKey`, `boatOrg` and `claudeToken` from Doppler plus `githubConnected: true`, one piped body as above with `jq -c '{claudeToken: .CLAUDE_CODE_OAUTH_TOKEN, boatKey: .BOAT_API_KEY, boatOrg: .BOAT_ORG, githubConnected: true}'`. Saving the Boat key builds the base snapshot on Boat (about a minute); poll `GET /api/snapshot` until `ready`, then create a dork on a real repo. This spends Boat credit: `DELETE /api/dorks/:id` when done (it destroys the box), and `npx wurmhol stop 4748`.
+Start the server with `GH_TOKEN` set to Doppler's `GITHUB_TOKEN` (GitHub is the GitHub CLI's login, and the server resolves it like `gh` does: `GH_TOKEN` first), then `PUT /api/settings` with `boatKey`, `boatOrg` and `claudeToken` from Doppler plus `githubConnected: true`, one piped body as above with `jq -c '{claudeToken: .CLAUDE_CODE_OAUTH_TOKEN, boatKey: .BOAT_API_KEY, boatOrg: .BOAT_ORG, githubConnected: true}'`. Saving the Boat key builds the base snapshot on Boat (about a minute); poll `GET /api/snapshot` until `ready`, then create a dork on a real repo. This spends Boat credit: `DELETE /api/dorks/:id` when done (it destroys the box).
 
 ## Testing
 

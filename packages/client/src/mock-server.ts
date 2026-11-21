@@ -150,7 +150,6 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     sleepMinutes: 10,
     commentPolicy: { mode: "all" },
     claudeCodeMode: true,
-    publicUrlConfigured: true,
     claudeModels: MOCK_MODELS,
   };
 

@@ -1,8 +1,9 @@
 # dorks-bridge: the in-box bridge
 
 The process that runs inside every sandbox. It runs the Claude Code CLI (or Codex) headlessly, and speaks the bridge protocol
-(`packages/shared/src/bridge.ts`) to the dorks server (`apps/server`) over one WebSocket, `WsTransport` in `src/transport.ts`. The wire
-protocol (auth frame, rpc ops, command snapshot) is specified in [docs/architecture.md](../../docs/architecture.md).
+(`packages/shared/src/bridge.ts`) to the dorks server (`apps/server`) over one WebSocket, `WsTransport` in `src/transport.ts`. The bridge listens on loopback
+(`src/listen.ts`) and the server dials it through the box provider's hosted URL for that port. The wire
+protocol (handshake, rpc ops, command snapshot) is specified in [docs/architecture.md](../../docs/architecture.md).
 
 ```
  server ──push: commands snapshot──▶ dorks-bridge ──stdin (stream-json)──▶ claude -p …
@@ -25,24 +26,24 @@ the credential socket serves the `dorks` CLI and the `gh` shim (see "Local RPC, 
 | **git** (any version with `credential.helper` and `check-ref-format`; 2.30+) | Clone/fetch/checkout. The bridge sets `credential.helper` once, in the Claude user's global config (see "Git"). |
 | **Claude Code CLI on `PATH`** (or `CLAUDE_BIN`) | `curl -fsSL https://claude.ai/install.sh \| bash -s <version>` (native) or `npm i -g @anthropic-ai/claude-code`. Pin a version in the image and set `DISABLE_UPDATES=1` in the box env so it does not self-update. Verified against 2.1.293; the interrupt/stream-json flags used are the documented ones. |
 | `sync` (coreutils) | Used on `flush`; optional (the bridge ignores its absence). |
-| Outbound HTTPS and WSS to your server's public URL (`DORKS_PUBLIC_URL`), `github.com`, and Anthropic | |
+| Outbound HTTPS to `github.com` and Anthropic; the box provider hosting `127.0.0.1:BRIDGE_PORT` for the server to dial (Boat's protected hosted port) | The bridge never connects to the server: the server connects to it. |
 | `dorks-bridge` installed | `pnpm --filter @dorks/bridge build`, then copy `infra/bridge/dist/cli.mjs` to `/usr/local/bin/dorks-bridge` (it has a `#!/usr/bin/env node` shebang and is self-contained: the shared schemas are bundled, no `node_modules`). Symlink it as `dorks` and `gh` too (below). |
 | **`gh`** (pinned) at `/usr/bin/gh`, the **`gh stack`** extension | Not needed by the bridge itself; the `gh` shim runs them. `infra/snapshot` installs both. |
 
 ### How it is started
 
 The box entrypoint (owned by `infra/snapshot`) must start `dorks-bridge` as the box user, once per boot/resume, with these env vars (the
-server's box jobs provide them: the Boat driver sets `DORK_ID`, `BRIDGE_URL` and `BRIDGE_SECRET` when it creates the sandbox):
+server's box jobs provide them: the Boat driver sets `DORK_ID`, `BRIDGE_PORT` and `BRIDGE_SECRET` when it creates the sandbox):
 
 ```
-DORK_ID=<dork id>   BRIDGE_URL=wss://<your tunnel host>/bridge   BRIDGE_SECRET_FILE=<path to a 0400 file holding the 64-hex secret>
+DORK_ID=<dork id>   BRIDGE_PORT=4748   BRIDGE_SECRET_FILE=<path to a 0400 file holding the 64-hex secret>
 CLAUDE_RUN_AS=dork
 ```
 
 The secret is `HMAC-SHA256(bridgeSecretKey, "bridge|" + dorkId)`, with the key from the server's `secrets.json`. Prefer **`BRIDGE_SECRET_FILE`**: the bridge reads the file once and unlinks it, so the secret never sits in the process environment. `BRIDGE_SECRET` in env still works as a fallback (and is needed again if the box restarts the bridge after the file was consumed; have the entrypoint write the file on every start).
 
 Exit codes: `0` = clean (SIGTERM/SIGINT, or `connect` was refused with `sleeping`: the backend thinks this box is paused, so do **not**
-restart it); `1` = fatal (backend answered `forbidden`: wrong secret or the dork was deleted). Restart policy: restart on a crash or a
+restart it); `1` = fatal (the backend answered `forbidden` because the dork was deleted, or `BRIDGE_PORT` could not be bound). Restart policy: restart on a crash or a
 non-zero exit with backoff, never on `0`. On a pause the box is frozen or killed; on resume the entrypoint starts the bridge again and
 the backend re-sends `configure`.
 
@@ -51,12 +52,9 @@ The same binary has other entry points (below): `dorks-bridge credential --sock 
 
 ## Config and env it reads
 
-Required (provided by the box): `DORK_ID`, `BRIDGE_URL`, and `BRIDGE_SECRET_FILE` (or `BRIDGE_SECRET`).
-
-Behind the desktop app's embedded wurmhol tunnel the box also gets `DORKS_TUNNEL_SERVICE` and `DORKS_TUNNEL_TICKET`: the bridge
-trades the ticket at the tunnel service for a wurmhol grant (`src/grants.ts`), sends it as `x-wurmhol-grant` on every WebSocket
-handshake, renews it before it runs out and after the relay closes with `4401`, and stops for good when the ticket is refused or
-the relay closes with `4403` (docs/desktop.md, "Tunnel: wurmhol").
+Required (provided by the box): `DORK_ID` and `BRIDGE_SECRET_FILE` (or `BRIDGE_SECRET`). `BRIDGE_PORT` (default `4748`) is the
+port the bridge listens on, on `127.0.0.1` only; the server sets it, and the local simulator gives each box its own. If the port
+cannot be bound the bridge exits 1.
 
 | Var | Default | Meaning |
 |---|---|---|
@@ -83,9 +81,13 @@ is, optional) passes through.
 ## How it behaves
 
 **Connect / numbering.** The `connect` rpc returns `afterBridgeSeq`; new events are numbered from `max(local, afterBridgeSeq) + 1`.
-`WsTransport` re-opens its socket with backoff (0.5 s to 15 s) and re-authenticates; on every reconnect the bridge calls `connect` again
+The server dials the bridge and redials after a drop (0.5 s to 10 s backoff). Each socket must finish the handshake within 10 s: the
+server's `hello` nonce, the bridge's `auth` with its own nonce and proof, and the server's `auth_ok` with its proof, which the bridge
+checks (closes 1008 if wrong); the secret never crosses the socket. At most 4 sockets may be mid-handshake (more are closed 1013), and
+a newly verified socket replaces the old one (closed 4000). The listener pings every 30 s and drops a socket that misses a pong. An rpc
+waits up to 15 s for a connection before it fails. On every new connection the bridge calls `connect` again
 (idempotent), continues numbering and replays any retained event above the new `afterBridgeSeq`, and the server re-sends the commands
-snapshot. `connect` refused with `sleeping` → exit 0. A close with code 4403 means the secret was refused or the dork is gone: fatal, exit 1.
+snapshot. `connect` refused with `sleeping` → exit 0. An rpc answered `forbidden` means the dork is gone: fatal, exit 1.
 
 **Outbound buffer** (`src/outbox.ts`). One ordered queue, one batch in flight. A failed push is retried with capped exponential backoff
 (0.5 s → 30 s, jittered) forever; a batch is never dropped. Delivered events stay in a 2000-event replay window. If the `push` rpc returns

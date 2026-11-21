@@ -1,3 +1,4 @@
+import { BRIDGE_PORT } from "../core/box";
 import {
   errorEvent,
   fromBridge,
@@ -321,8 +322,8 @@ export function unsubscribePr(app: App, dorkId: string, repo: string, number: nu
 // `preview_show` (the bridge's MCP tool): the agent says its dev server is up; the box provider hosts the port and the URL is kept on
 // the dork, where Chat details' Artifacts shows it as a running preview.
 
-/** Ports Boat itself uses in every sandbox (https://docs.boat.dev/hosting): SSH, the desktop stream, its agents. */
-const RESERVED_PORTS = new Set([22, 6080, 8090, 8911]);
+/** Ports Boat itself uses in every sandbox (https://docs.boat.dev/hosting): SSH, the desktop stream, its agents; and the bridge's own. */
+const RESERVED_PORTS = new Set([22, 6080, 8090, 8911, BRIDGE_PORT]);
 const reserved = (port: number) => RESERVED_PORTS.has(port) || (port >= 47984 && port <= 48010);
 const MAX_PREVIEWS = 20;
 const MAX_TITLE = 60;

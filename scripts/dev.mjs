@@ -3,7 +3,7 @@
 //   pnpm dev:server          server + sim host only
 // Data lives in .dev-data (git-ignored) so sessions survive restarts; delete it for a fresh start. No secrets or .env needed:
 // the owner token and sim host key are fixed, dev-only values (override with DORKS_OWNER_TOKEN, SIM_HOST_KEY, DORKS_DATA_DIR,
-// DORKS_UI_PORT, DORKS_BRIDGE_PORT). BRIDGE_IMPL=real runs the real in-box bridge with a fake Claude CLI instead of the sim bridge.
+// DORKS_UI_PORT). BRIDGE_IMPL=real runs the real in-box bridge with a fake Claude CLI instead of the sim bridge.
 import { createServer } from "node:net";
 import { spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
@@ -38,7 +38,6 @@ const env = {
   SIM_HOST_KEY: simKey,
   ...(!onlyServer ? { DORKS_UI_ORIGINS: [process.env.DORKS_UI_ORIGINS || "http://localhost:3000,http://127.0.0.1:3000", `http://localhost:${webPort}`, `http://127.0.0.1:${webPort}`].join(",") } : {}),
 };
-delete env.DORKS_PUBLIC_URL;
 
 const children = [];
 let stopping = false;
@@ -70,7 +69,7 @@ const ready = await new Promise((resolve) => {
     else process.stdout.write(d);
   });
 });
-console.log(`[dev] server: UI ${ready.ui}, bridge ${ready.bridge}`);
+console.log(`[dev] server: UI ${ready.ui}`);
 
 // The simulator never calls Boat or an AI provider. Seed only missing settings so the real UI can create a
 // session immediately, without asking the developer to paste live credentials into a simulated sandbox.
@@ -99,7 +98,7 @@ try {
 console.log("[dev] Simulated sandboxes and AI replies; no live credentials required.");
 
 run("sim host", "node", [join(root, "infra/bridge-sim/host.mjs")], {
-  env: { ...env, SIM_UI_URL: ready.ui, SIM_BRIDGE_URL: ready.bridge },
+  env: { ...env, SIM_UI_URL: ready.ui },
   stdio: "inherit",
 });
 

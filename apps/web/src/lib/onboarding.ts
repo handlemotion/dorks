@@ -18,12 +18,12 @@ export const stepDone = (s: Settings): Record<StepId, boolean> => ({
 })
 
 /** What creating a session needs. Agent sign-in is checked per provider when one is chosen. */
-export const canCreate = (s: Settings) => s.boatKey && !!s.baseSnapshotId && s.github.configured && (s.boxProvider === 'sim' || s.publicUrlConfigured)
+export const canCreate = (s: Settings) => s.boatKey && !!s.baseSnapshotId && s.github.configured
 
 // ---- The full-page first-run flow (routes/_conn/onboarding.tsx) --------------------------------------------------------
 //
 // Only the things the owner has to type are steps. The base snapshot builds in the background once the Boat key is saved (the
-// server starts it), and the public URL is asked for where sessions are created, the first time it is missing.
+// server starts it).
 
 export type OnboardingStepId = 'intro' | 'boat' | 'agent' | 'github'
 

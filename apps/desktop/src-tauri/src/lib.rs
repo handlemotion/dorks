@@ -14,7 +14,7 @@ use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 
 use crate::state::AppState;
 
-/// Graceful quit: stop the server and tunnel, then exit. Called from the tray and from Cmd+Q.
+/// Graceful quit: stop the server, then exit. Called from the tray and from Cmd+Q.
 pub fn quit(app: &AppHandle) {
     let state = app.state::<AppState>();
     if state.quitting.swap(true, Ordering::SeqCst) {
@@ -43,8 +43,6 @@ pub fn run() {
             commands::runtime_config,
             commands::server_status,
             commands::restart_server,
-            commands::set_public_url,
-            commands::tunnel_status,
             commands::open_data_dir,
             commands::set_keep_awake,
             commands::keep_awake_mode,

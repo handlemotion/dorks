@@ -1,7 +1,7 @@
-import type { AppError } from "@dorks/shared";
+import { checkProof, isNonce, newNonce, proof, type AppError } from "@dorks/shared";
 import { Cause, Data, Effect, Exit, Fiber, Latch, Queue, Schema, Scope } from "effect";
 import { AppFail, type App, type Change } from "../app";
-import { verifyBridgeSecret } from "../lib/bridgeAuth";
+import { bridgeSecret } from "../lib/bridgeAuth";
 import { buildOp } from "../services/buildAgent";
 import { localOp } from "../services/local";
 import { crewOp } from "../services/crew";
@@ -10,8 +10,9 @@ import { skillBundle } from "../services/skills";
 import * as bridge from "../services/bridge";
 import { attempt, attemptPromise, BridgeError } from "../services/bridge";
 
-// One authenticated bridge socket (docs/architecture.md, "Bridge protocol"). Transport-neutral: the listener (main.ts) feeds it
-// text frames and gives it `send` / `close`, so the protocol is testable without a socket.
+// One authenticated bridge socket (docs/architecture.md, "Bridge protocol"). The server opened it to one dork's bridge
+// (http/bridgeLinks.ts). Transport-neutral: the dialer feeds it text frames and gives it `send` / `close`, so the protocol is
+// testable without a socket.
 
 export const AUTH_TIMEOUT_MS = 5_000;
 export const CLOSE_FORBIDDEN = 4403;
@@ -33,7 +34,7 @@ const parseFrame = (raw: string): Effect.Effect<unknown, Hangup> =>
     ? Effect.fail(new Hangup({ code: 1009, reason: "frame too large" }))
     : Effect.try({ try: (): unknown => JSON.parse(raw), catch: () => new Hangup({ code: 1003, reason: "bad json" }) });
 
-const isAuth = Schema.is(Schema.Struct({ t: Schema.Literal("auth"), dorkId: Schema.String, secret: Schema.String }));
+const isAuth = Schema.is(Schema.Struct({ t: Schema.Literal("auth"), dorkId: Schema.String, nonce: Schema.String, proof: Schema.String }));
 /** Anything else after auth is ignored. */
 const isRpc = Schema.is(Schema.Struct({ t: Schema.Literal("rpc"), id: Schema.Number, op: Schema.String, args: Schema.optional(Schema.Unknown) }));
 
@@ -95,13 +96,20 @@ export class BridgeSession {
   private lastSubs = "";
   private closed = false;
   private authenticating = false;
+  /** This side's handshake nonce, sent in `hello`. */
+  private readonly nonce = newNonce();
 
   constructor(
     private readonly app: App,
     private readonly io: SocketIO,
+    /** The dork whose bridge this socket was opened to: the bridge must prove it is that one. */
+    private readonly expected: string,
+    private readonly onAuthenticated: () => void = () => {},
   ) {}
 
+  /** Call once the socket is open: sends `hello` and starts the session. */
   open() {
+    this.send({ t: "hello", nonce: this.nonce });
     const fork = Effect.forkIn(this.scope);
     this.authTimer = Effect.runSync(Effect.sleep(AUTH_TIMEOUT_MS).pipe(Effect.andThen(this.hangUp(forbidden("auth timeout"))), fork));
     Effect.runSync(Effect.forever(Queue.take(this.outbox).pipe(Effect.flatMap((o) => this.write(o)))).pipe(fork));
@@ -139,7 +147,7 @@ export class BridgeSession {
     );
   }
 
-  /** The first frame authenticates; frames that arrive while it is checked are dropped (one attempt at a time). */
+  /** The first frame answers `hello`; frames that arrive while it is checked are dropped (one attempt at a time). */
   private auth(msg: unknown): Effect.Effect<void> {
     if (this.authenticating) return Effect.void;
     this.authenticating = true;
@@ -149,14 +157,16 @@ export class BridgeSession {
   private authenticate(msg: unknown): Effect.Effect<void, Hangup> {
     const { app } = this;
     return Effect.gen({ self: this }, function* () {
-      if (!isAuth(msg)) return yield* forbidden();
-      const ok = yield* Effect.tryPromise(() => verifyBridgeSecret(app.cfg.bridgeSecretKey, msg.dorkId, msg.secret)).pipe(Effect.orElseSucceed(() => false));
+      if (!isAuth(msg) || msg.dorkId !== this.expected || !isNonce(msg.nonce)) return yield* forbidden();
+      const secret = yield* Effect.tryPromise(() => bridgeSecret(app.cfg.bridgeSecretKey, msg.dorkId)).pipe(Effect.orElseSucceed(() => ""));
+      const ok = !!secret && (yield* Effect.promise(() => checkProof(secret, "bridge", this.nonce, msg.nonce, msg.proof)));
       if (!ok) return yield* forbidden();
       yield* Effect.try({ try: () => bridge.bridgeDork(app, msg.dorkId), catch: () => forbidden() }); // deleted or unknown
       if (this.closed) return yield* forbidden();
       if (this.authTimer) yield* Fiber.interrupt(this.authTimer);
       this.dorkId = msg.dorkId;
-      this.send({ t: "auth_ok" });
+      this.send({ t: "auth_ok", proof: yield* Effect.promise(() => proof(secret, "server", msg.nonce, this.nonce)) });
+      this.onAuthenticated();
       const off = app.hub.on((c) => this.onChange(c));
       yield* Scope.addFinalizer(this.scope, Effect.sync(off));
       yield* this.publisher().pipe(Effect.forkIn(this.scope));

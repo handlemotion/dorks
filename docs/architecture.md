@@ -4,13 +4,13 @@ Status: accepted. This replaces `apps/convex` with `apps/server`. There are no u
 
 ## Decision
 
-Dorks runs as a **local server on the owner's machine** (a single compiled binary, started as a sidecar by the desktop app, or by hand). It owns a SQLite database, the lifecycle state machine, a durable timer queue, the Boat driver and a GitHub poller. The agent's in-sandbox **bridge** connects *out* to it over a WebSocket through a tunnel; the UI talks to it over loopback HTTP.
+Dorks runs as a **local server on the owner's machine** (a single compiled binary, started as a sidecar by the desktop app, or by hand). It owns a SQLite database, the lifecycle state machine, a durable timer queue, the Boat driver and a GitHub poller. The server dials *out* to each awake sandbox's **bridge** over a WebSocket (the box provider's hosted URL for the bridge port), so the owner's machine opens no inbound port and needs no public URL; the UI talks to it over loopback HTTP.
 
 ### Why not keep Convex
 
 Convex gave us live queries, a durable scheduler, transactions and a WebSocket the bridge connects out over. For a local, single-owner product it costs more than it gives:
 
-- **The tunnel would publish the whole Convex API.** The bridge must reach the backend from Boat's cloud, so the backend needs a public URL. Convex serves everything (UI queries, mutations, admin) on one origin, so a tunnel to it exposes all of it. With our own server, the tunnel forwards only the bridge listener, which speaks one narrow, authenticated protocol.
+- **Convex would have to be public.** With Convex the bridge must reach the backend from Boat's cloud, so the backend needs a public URL, and Convex serves everything (UI queries, mutations, admin) on one origin, so exposing it exposes all of it. Our own server dials each box's bridge instead, so it exposes nothing, and the bridge socket speaks one narrow, mutually authenticated protocol.
 - **Deploy toolchain and licence.** Running functions locally needs the self-hosted `convex-backend` binary (FSL licence), a CLI plus bundler to deploy functions, admin-key handling and env sync. That is a lot of moving parts to ship inside a desktop app.
 - **No local-first sync story.** Convex is the database; there is nothing to replicate to or from a cloud later.
 - **What we actually used is small.** Three live queries, a scheduler used as a timer table, and single-document transactions. SQLite with a single writer gives the same atomicity (`BEGIN IMMEDIATE`), a `timers` table gives durable timers, and a Server-Sent-Events invalidation stream gives live UI updates.
@@ -26,7 +26,7 @@ The per-dork `events` table is append-only with a dense `seq`. That is the repli
 ```
  desktop app (Tauri) ── spawns ──► apps/server  (one binary, Bun)
    UI (static SPA) ──HTTP+SSE──►  UI listener   127.0.0.1:<ui port>     owner-token auth
- Boat sandbox: dorks-bridge ──WS─► bridge listener 127.0.0.1:<bridge port>  ◄── tunnel (wurmhol) ◄── public URL
+                                  bridge links  ──WS, dials out──► Boat hosted URL ──► dorks-bridge 127.0.0.1:4748 (each awake box)
                                       │
                                       ├─ SQLite (WAL)       <data dir>/dorks.db
                                       ├─ lifecycle driver   one SQLite transaction per input
@@ -52,9 +52,6 @@ Environment (all optional except where noted); a desktop shell sets these when i
 |---|---|---|
 | `DORKS_DATA_DIR` | `~/Library/Application Support/Dorks` (macOS), `$XDG_DATA_HOME/dorks` | Holds `dorks.db` and `secrets.json` |
 | `DORKS_UI_PORT` | `4747` (`0` = random) | UI listener, bound to `127.0.0.1` |
-| `DORKS_BRIDGE_PORT` | `4748` (`0` = random) | Bridge listener, bound to `127.0.0.1`; the tunnel forwards to this |
-| `DORKS_PUBLIC_URL` | none | Public `https://` URL of the tunnel. The sandbox is created with `BRIDGE_URL` = this (as `wss://`). Required before a Boat dork can be created |
-| `DORKS_TUNNEL_SERVICE`, `DORKS_TUNNEL_INSTALL_KEY` | none | Set together by the desktop shell when the public URL is this install's embedded wurmhol tunnel: the Dorks tunnel service (`https://`) and the install's key for it (`dti_` + 64 hex). Before creating a box the server registers the dork there and puts the ticket it gets in the box's creation environment (`DORKS_TUNNEL_SERVICE`, `DORKS_TUNNEL_TICKET`); the bridge trades it for wurmhol grants and sends them as `x-wurmhol-grant`. Deleting the dork removes it there. Not authentication: the per-dork HMAC is (docs/desktop.md, "Tunnel: wurmhol") |
 | `DORKS_OWNER_TOKEN` | generated | Bearer token for the UI API. Generated once into `secrets.json` if unset |
 | `DORKS_UI_ORIGINS` | tauri + localhost:3000 | Comma-separated browser origins allowed by CORS |
 | `BOX_PROVIDER` | `boat` | `boat`, or `sim` for the local simulator and tests |
@@ -100,7 +97,7 @@ IDs are UUID strings. Times are epoch milliseconds.
 | `POST /api/dorks/:id/subscriptions` | `{repo, number}` | `{}` (user subscribe; un-stalls and resets the CI budget) |
 | `DELETE /api/dorks/:id/subscriptions` | `{repo, number}` | `{}` |
 | `POST /api/dorks/:id/subscriptions/resume` | `{repo, number}` | `{}` |
-| `GET /api/settings` | | `{claudeToken, boatKey, github: {configured, login?}, boatOrg, boatEnvironment, baseSnapshotId, sleepMinutes, commentPolicy, claudeCodeMode, publicUrlConfigured, boxProvider, claudeModels, defaultBuildId}`: booleans and plain values only, never secrets. `claudeModels` is the model list a Claude agent last reported (empty before the first session), what a new session can choose from |
+| `GET /api/settings` | | `{claudeToken, boatKey, github: {configured, login?}, boatOrg, boatEnvironment, baseSnapshotId, sleepMinutes, commentPolicy, claudeCodeMode, boxProvider, claudeModels, defaultBuildId}`: booleans and plain values only, never secrets. `claudeModels` is the model list a Claude agent last reported (empty before the first session), what a new session can choose from |
 | `PUT /api/settings` | any subset of `{boatKey, boatOrg, claudeToken, githubConnected, boatEnvironment, baseSnapshotId, sleepMinutes, commentPolicy, claudeCodeMode}` | `{}`. `claudeCodeMode` (default true) starts new Claude sessions in Code Mode; a dork keeps the value it was created with. Token fields are write-only; an empty string clears one. Provider values are checked before anything is saved: `boatKey`/`boatOrg` with the same check as `POST /api/boat/check`, `boatEnvironment` against Boat's environment list, `githubConnected: true` reads the GitHub CLI's login and checks it with GitHub `GET /user` (a missing or signed-out `gh` is refused too); a refusal is `invalid` (400) with Boat's or GitHub's reason in plain words, and an unreachable provider does not block the save. Saving a non-empty `boatKey` with no base snapshot (in Settings or `BASE_SNAPSHOT_ID`) queues the base-snapshot build; so does the next start, if the process stopped in between. A failed build is never retried by itself |
 | `GET /api/github/repos` | `?fresh=1` reads `gh` and GitHub again | `{login, orgs, repos, auth: {state, source, missingScopes}}`: the GitHub CLI login's user (null when not connected), its organizations' logins, and the non-archived `owner/name` repositories it can see (300 most recently pushed, then a page of each organization's). `auth.state` is `ok`, `not_connected`, `gh_missing`, `gh_logged_out`, `rejected` or `unreachable`; `missingScopes` names any of `repo`, `read:org`, `workflow` the token lacks. Cached for two minutes, dropped on connect and disconnect; a problem answers empty lists. Feeds the repository picker and the sidebar's owner switcher |
 | `POST /api/boat/check` | `{boatKey?, boatOrg?}` (the saved ones when omitted) | `{status: "ok"\|"invalid"\|"needs_org"\|"credit_required"\|"unreachable", message}`: asks Boat's `GET /limits` with that key (a free trial or `canStart: false` is `credit_required`), or `GET /sandboxes?limit=1` when the key lacks `account.read`; nothing is saved. Error `not_configured` (412) with no key at all |
@@ -151,11 +148,22 @@ One stream per client. Messages are `data: <json>\n\n`; a `: ping` comment every
 
 `packages/client` wraps this (`useDorks`, `useDork`, `useDorkEvents`, `useSettings`), replacing `@dorks/convex/client` and `convex/react`.
 
-## Bridge protocol (WebSocket, the only thing exposed through the tunnel)
+## Bridge protocol (WebSocket, dialed by the server)
 
-`GET /bridge` upgrades to a WebSocket on the bridge listener. Frames are JSON text. Nothing else is served there (`/` answers 404).
+**Where the bridge listens.** In the box the bridge listens on `127.0.0.1:BRIDGE_PORT` (`4748`). The box is created with exactly `DORK_ID`, `BRIDGE_PORT` and `BRIDGE_SECRET` in its environment. Frames are JSON text.
 
-**Auth.** The first frame must be `{"t":"auth","dorkId","secret"}` where `secret = HMAC-SHA256(bridgeSecretKey, "bridge|" + dorkId)` hex, as before. The server answers `{"t":"auth_ok"}`; on a wrong secret, an unknown or deleting dork, or no first frame within 5 s it closes with code 4403. Nothing is served to an unauthenticated socket.
+**Endpoint.** `BoxProvider.bridgeEndpoint(boxId)` (`core/box.ts`) gives the URL and headers to dial. For Boat (`lib/boat.ts`) it is `POST /sandboxes/<id>/host` with `{port: 4748, public: false, localhost: true, title: "Dorks bridge"}`; Boat answers a protected URL `https://<sub>-4748.on.boat.dev?_token=…`, and the server dials `wss://<sub>-4748.on.boat.dev/` with `Cookie: _port_auth=<token>`. The token is a bearer credential: never stored or logged. Port 4748 is reserved, so `preview_show` refuses it. The simulator gives each sim box its own loopback port (`sim_boxes.bridge_port`, `bridgePort` in `/sim/boxes`) and the server dials `ws://127.0.0.1:<port>/`.
+
+**Links** (`http/bridgeLinks.ts`). Every 500 ms the server reconciles the dorks that have a `box_id`, are not deleting and are `creating`, `waking`, `working` or `idle`, and keeps one socket per dork. A dropped or refused socket is dialed again with backoff from 0.5 s to 10 s; after every 5 failed dials in a row it asks the provider for the endpoint again. A socket silent for 100 s is dropped and redialed (the bridge heartbeats every 30 s). On its side the bridge's listener pings every 30 s and terminates sockets that miss a pong.
+
+**Handshake.** Each side proves it holds the per-dork secret, `secret = HMAC-SHA256(bridgeSecretKey, "bridge|" + dorkId)` hex, without sending it (`packages/shared/src/bridgeProof.ts`):
+
+1. On open the server sends `{"t":"hello","nonce":Ns}` (32 random bytes, hex).
+2. The bridge answers `{"t":"auth","dorkId","nonce":Nb,"proof"}` with `proof = HMAC-SHA256(secret, "bridge|" + Ns + "|" + Nb)` hex.
+3. The server checks that `dorkId` is the dork it dialed, the proof, and that the dork exists and is not deleting; otherwise, or with no first frame within 5 s, it closes with 4403.
+4. The server sends `{"t":"auth_ok","proof"}` with `proof = HMAC-SHA256(secret, "server|" + Nb + "|" + Ns)`; the bridge checks it and closes with 1008 if it is wrong.
+
+The bridge closes a socket that has not finished the handshake within 10 s and takes at most 4 handshakes at once (more are closed with 1013). A newly verified socket replaces the old one, which is closed with 4000. Nothing is served to an unauthenticated socket.
 
 **Requests** (bridge to server): `{"t":"rpc","id":<n>,"op":"<op>","args":{...}}`. **Responses**: `{"t":"res","id":<n>,"ok":true,"result":...}` or `{"t":"res","id":<n>,"ok":false,"error":AppError}`.
 
@@ -179,7 +187,7 @@ One stream per client. Messages are `data: <json>\n\n`; a `: ping` comment every
 
 `push` frames, `ToBridge`, `FromBridge` and `CommandFrame` are the zod types in `packages/shared/src/bridge.ts`. The server does not queue `gh_token` commands. For Claude, `configure` carries `model`/`effort` when chosen; the bridge sends the CLI an `initialize` control request and relays its model list as an `agent_models` frame (`{models: AgentModelChoice[], effort}`), and passes the `model` of `system/init` through. `configure` lists the owner's skills as `skills: {name, digest}[]`; the bridge writes changed ones into `~/.claude/skills` before it starts the agent, and a change to them alone never restarts it ([skills](skills.md)). A `configure` whose model or effort changed restarts the CLI on the same session after the current turn. Codex authenticates only through a Boat environment (there is no per-box sign-in); `codex_issue` becomes an error event and `codex_models` fills the model choices. While a dork's title is still its first message (`title_source = 'message'`), `configure` carries that message as `nameFrom`: the bridge asks a light model beside the agent (Haiku through `claude -p`, or a `luna`/mini Codex model on a side thread) for a 5–7 word name and sends a `title` frame; the server applies it only over the placeholder, never over a name the user typed.
 
-The `Transport` interface in `infra/bridge/src/transport.ts` is unchanged; `WsTransport` implements it over this protocol with reconnect and resume.
+The `Transport` interface in `infra/bridge/src/transport.ts` is unchanged; `WsTransport` implements it over this protocol. It takes an acceptor (the loopback listener, `infra/bridge/src/listen.ts`) instead of a URL, and an rpc waits up to 15 s for the server to connect before it fails.
 
 ## Base snapshot ("Prepare Boat")
 
@@ -217,9 +225,8 @@ Identity: the dork acts as whoever owns the token. Events authored by the token'
 ## Security model
 
 - UI listener: loopback only, bearer owner token, CORS limited to configured origins.
-- Bridge listener: loopback only; the tunnel forwards to it. Only `/bridge` upgrades; authentication is the per-dork HMAC; secrets are returned only over an authenticated socket and never persisted in command rows.
+- Bridge: the server dials out; nothing on the owner's machine listens for sandboxes. In the box the bridge listens on loopback only, reachable through the provider's protected hosted URL (Boat's per-port token). Authentication is the mutual per-dork HMAC handshake; secrets are returned only over an authenticated socket and never persisted in command rows.
 - At rest: Boat key, Claude token and CLI secrets are AES-GCM encrypted (the GitHub token is not stored: it stays in `gh`) (`core/crypto.ts`, additional data binds each to its purpose); `secrets.json` is mode 600.
-- The sandbox's `BRIDGE_URL` is fixed at creation, so `DORKS_PUBLIC_URL` must be stable (a stable tunnel hostname). The embedded tunnel keeps its URL across reopens, and a sandbox's ticket buys fresh grants for as long as its dork exists.
 
 ## Build and test
 
@@ -235,4 +242,4 @@ The compiled sidecar is about 64 MB (arm64) / 70 MB (x64): that is the Bun runti
 
 ## Out of scope here
 
-The Tauri shell and the tunnel sidecar (`docs/desktop.md`). The web client lives in `packages/client` and `apps/web`; `apps/convex` has been removed.
+The Tauri shell (`docs/desktop.md`). The web client lives in `packages/client` and `apps/web`; `apps/convex` has been removed.

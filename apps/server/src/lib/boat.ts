@@ -1,5 +1,5 @@
 import { Effect, Option, Schema } from "effect";
-import { BoxNotFoundError, type BoxProvider, type DesktopOptions, type HostPortOptions } from "../core/box";
+import { BoxNotFoundError, BRIDGE_PORT, type BoxProvider, type DesktopOptions, type HostPortOptions } from "../core/box";
 import {
   BoatError,
   BOX_ID,
@@ -80,6 +80,7 @@ export function boatBox(opts: BoatOptions): BoxProvider {
     delete: (id) => run(deleteSandbox(call, id)),
     desktopUrl: (id, o) => run(sandboxPath(id, "/desktop").pipe(Effect.flatMap((p) => desktopUrl(call, p, o, pause)))),
     hostPort: (id, port, o) => run(sandboxPath(id, "/host").pipe(Effect.flatMap((p) => hostPort(call, p, port, o)))),
+    bridgeEndpoint: (id) => run(sandboxPath(id, "/host").pipe(Effect.flatMap((p) => bridgeEndpoint(call, p)))),
   };
 }
 
@@ -237,6 +238,25 @@ const HostAnswer = Schema.Struct({ url: Schema.String.check(Schema.isStartingWit
  * iframe, and the desktop shell's WebKit blocks it (the frame stays blank). A proxy through the server would have to rewrite every
  * root-relative asset and HMR socket of an unknown dev server. The URL is only as private as the sandbox subdomain.
  */
+/**
+ * The bridge's port, hosted protected (Boat's default): the answer carries `?_token=`, which Boat also takes as the `_port_auth`
+ * cookie, so the server dials the bare `wss://` URL with that cookie. The token is a bearer credential and is never stored; the
+ * handshake on the socket is the authentication (docs/architecture.md, "Bridge protocol").
+ */
+export const bridgeEndpoint = (call: BoatCall, path: string) =>
+  call("host bridge", "POST", path, { body: { port: BRIDGE_PORT, public: false, localhost: true, title: "Dorks bridge" } }).pipe(
+    Effect.flatMap(decodeOr(HostAnswer, "boat host: response had no URL")),
+    Effect.flatMap(({ url }) => {
+      const u = new URL(url);
+      const token = u.searchParams.get("_token");
+      if (!token) return Effect.fail(new BoatError("boat host: the bridge port is not protected"));
+      u.search = "";
+      u.hash = "";
+      u.protocol = "wss:";
+      return Effect.succeed({ url: u.toString(), headers: { cookie: `_port_auth=${token}` } });
+    }),
+  );
+
 export const hostPort = (call: BoatCall, path: string, port: number, opts: HostPortOptions) =>
   call("host", "POST", path, { body: { port, public: true, ...(opts.title ? { title: opts.title } : {}), ...(opts.localhost ? { localhost: true } : {}) } }).pipe(
     Effect.flatMap(decodeOr(HostAnswer, "boat host: response had no URL")),
