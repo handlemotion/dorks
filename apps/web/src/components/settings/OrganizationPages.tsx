@@ -5,13 +5,13 @@ import type { Settings, SnapshotStatus } from '@dorks/client'
 import { useDorksClient, useSecretNames, useSnapshot } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
 import { Input } from '@dorks/ui/input'
-import { Progress } from '@dorks/ui/progress'
 import { Textarea } from '@dorks/ui/textarea'
 import { EmptyState } from '../EmptyState'
 import { saveBoat } from '../../lib/boat'
 import { isDesktop, setPublicUrl } from '../../lib/desktop'
 import { STEPS, stepDone } from '../../lib/onboarding'
 import { usePending } from '../../lib/pending'
+import { StepProgress } from '../StepProgress'
 import {
   SettingsGroup,
   SettingsGroupBody,
@@ -209,7 +209,7 @@ function SnapshotGroup({ snap, inUse, pending, build }: { snap: SnapshotStatus; 
           <p className="text-foreground">
             Step {snap.stepIndex + 1} of {snap.stepCount}: {snap.message}
           </p>
-          <Progress value={((snap.stepIndex + 1) / snap.stepCount) * 100} aria-label="build progress" />
+          <StepProgress step={snap.stepIndex + 1} of={snap.stepCount} label="build progress" />
         </SettingsGroupBody>
       )}
       {!building && <SnapshotNotes snap={snap} inUse={inUse} />}
