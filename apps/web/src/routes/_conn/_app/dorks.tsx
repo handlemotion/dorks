@@ -144,8 +144,14 @@ function useNewSessionRepos(buildRepos: string[], dorks: { repo: string }[] | un
   return [...new Set([...buildRepos, ...recent, ...(github?.repos ?? [])])].filter((r) => !scope || ownerOf(r) === scope)
 }
 
-/** With no agent at all the setup checklist asks for the token; this is for an owner who has Codex and picked Claude. */
-const claudeTokenMissing = (provider: AgentProvider, claudeReady: boolean, codexReady: boolean) => provider === 'claude' && !claudeReady && codexReady
+/**
+ * Whether the chosen agent can start (sending stays off until it can, like the server's `missingForSession`), and whether to say so
+ * above the box: with no agent at all the setup checklist asks for the token, so only an owner who has Codex and picked Claude.
+ */
+const agentGate = (provider: AgentProvider, claudeReady: boolean, codexReady: boolean) => {
+  const missing = provider === 'claude' ? !claudeReady : !codexReady
+  return { missing, notice: missing && provider === 'claude' && codexReady }
+}
 
 function NewDork({
   initialRepo,
@@ -179,10 +185,10 @@ function NewDork({
   const [message, setMessage] = useDraft('new')
   const [provider, setProvider] = useState<AgentProvider>(claudeReady ? 'claude' : codexReady ? 'codex' : 'claude')
   const { run, pending, error } = usePending()
-  const needsClaudeToken = claudeTokenMissing(provider, claudeReady, codexReady)
+  const agent = agentGate(provider, claudeReady, codexReady)
   return (
     <div className="[&>div]:max-w-none">
-      {needsClaudeToken && (
+      {agent.notice && (
         <p className="mx-5 mb-2 text-sm text-destructive" role="status">
           Add a{' '}
           <Link to="/settings" className="font-medium underline underline-offset-4">
@@ -201,7 +207,7 @@ function NewDork({
         setProvider={setProvider}
         codexEnabled={codexReady}
         pending={pending}
-        disabled={disabled || needsClaudeToken}
+        disabled={disabled || agent.missing}
         error={error}
         picker={{
           choices: settings?.claudeModels ?? [],
