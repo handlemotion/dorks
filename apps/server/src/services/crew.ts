@@ -154,7 +154,7 @@ const int = (v: unknown, d: number, lo: number, hi: number) => (typeof v === "nu
 
 function create(app: App, scope: Scope, a: Args): CrewResult {
   only(scope, "owner", "coordinator");
-  const input = { message: a.message as string, repo: str(a.repo), title: str(a.title), buildId: a.buildId, model: a.model, effort: a.effort };
+  const input = { message: a.message as string, repo: str(a.repo), title: str(a.title), buildId: a.buildId, model: a.model, effort: a.effort, icon: str(a.icon) };
   let id: string;
   if (scope.who === "coordinator") {
     if (a.coordinator === true) fail("forbidden", "A coordinator starts workers only; it cannot start another coordinator.");

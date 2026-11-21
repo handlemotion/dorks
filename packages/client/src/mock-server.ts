@@ -249,11 +249,37 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       }
       append(dorkId, { type: "turn_complete", durationMs: tick * 5, outcome: "done", finalMessageId: msg });
       append(dorkId, { type: "status", state: "idle" });
+      crewTurnEnded(d, answer);
     });
   };
 
-  const startTurn = (dorkId: string, text: string) => {
-    append(dorkId, { type: "user_message", text });
+  /**
+   * Crews (docs/crew.md), scripted: a coordinator's first turn delegates to two workers; a worker's turn end reaches its coordinator
+   * as a crew report, the way the server folds them.
+   */
+  const crewTurnEnded = (d: MockDork, answer: string) => {
+    if (d.kind === "coordinator" && ![...dorks.values()].some((w) => w.parentId === d.id)) {
+      const repo = "acme/demo";
+      for (const task of ["Add the invoices table and its migration, then open a pr", "Wire the billing API to the invoices table, then open a pr"]) {
+        const id = addDork({ repo, message: task, provider: "claude" }, d);
+        later(tick, () => startTurn(id, task, { id: d.id, title: d.title }));
+      }
+      return;
+    }
+    const parent = d.parentId ? dorks.get(d.parentId) : undefined;
+    if (!parent || parent.archived) return;
+    append(parent.id, {
+      type: "crew",
+      direction: "in",
+      peer: { id: d.id, title: d.title },
+      kind: "report",
+      text: `Its turn ended: done.${d.prUrl ? ` PR: ${d.prUrl}` : ""}\nFinal answer:\n${answer}`,
+    });
+    touched(parent);
+  };
+
+  const startTurn = (dorkId: string, text: string, from?: { id: string; title: string }) => {
+    append(dorkId, { type: "user_message", text, ...(from ? { from } : {}) });
     append(dorkId, { type: "status", state: "working" });
     runTurn(dorkId, text);
   };
@@ -308,18 +334,30 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   };
 
   const createDork = ({ body, res }: Ctx) => {
-    const repo = str(body.repo)?.trim();
+    const coordinator = body.kind === "coordinator";
+    const repo = str(body.repo)?.trim() ?? "";
     const message = str(body.message)?.trim();
-    if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo)) return fail(res, "invalid", "repo must look like owner/name");
+    if (!(coordinator && !repo) && !/^[\w.-]+\/[\w.-]+$/.test(repo)) return fail(res, "invalid", "repo must look like owner/name");
     if (!message) return fail(res, "invalid", "message is required");
     const provider = body.provider === "codex" ? "codex" : "claude";
     const blocked = cannotCreate(provider);
     if (blocked) return fail(res, "onboarding_incomplete", blocked);
+    const id = addDork({ ...body, repo, message, provider });
+    later(tick, () => startTurn(id, message));
+    return json(res, 200, { id });
+  };
+
+  /** A new session row (a worker when `parent` is set) and its first status. The caller starts its turn. */
+  const addDork = (body: Record<string, unknown> & { repo: string; message: string; provider: Dork["provider"] }, parent?: MockDork): string => {
+    const { repo, message, provider } = body;
     const id = randomUUID();
     const now = Date.now();
     dorks.set(id, {
       id,
       title: str(body.title) || message.slice(0, 48),
+      kind: body.kind === "coordinator" ? "coordinator" : "agent",
+      parentId: parent?.id ?? null,
+      ...(str(body.icon) ? { icon: str(body.icon) } : {}),
       repo,
       branch: `dorks/${id.slice(0, 8)}`,
       provider,
@@ -340,8 +378,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     });
     append(id, { type: "status", state: "creating" });
     broadcast({ t: "dorks" });
-    later(tick, () => startTurn(id, message));
-    return json(res, 200, { id });
+    return id;
   };
 
   /** A change to one session that the list and its page both show. */

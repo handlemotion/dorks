@@ -30,6 +30,7 @@ import { SIDEBAR_ROW, SIDEBAR_SECTION } from './sidebarChrome'
 import { UpdatePrompt } from './UpdatePrompt'
 import { UsageBar } from './UsageBar'
 import { useRowHover } from './useRowHover'
+import { DORK_ICONS, NewDorkDialog } from './NewDorkDialog'
 
 const PR_NUMBER = /\/pull\/(\d+)/
 
@@ -50,7 +51,16 @@ export function AppSidebar() {
   const disconnect = useDisconnect()
   const github = useGithubRepos()
   const archive = useArchiveDork()
-  const chats: Chat[] = (dorks ?? []).map((d) => ({ id: d.id, title: d.title, repo: d.repo, working: MOVING.has(d.state), pr: prOf(d.prUrl, d.prState) }))
+  const chats: Chat[] = (dorks ?? []).map((d) => ({
+    id: d.id,
+    title: d.title,
+    repo: d.repo,
+    working: MOVING.has(d.state),
+    pr: prOf(d.prUrl, d.prState),
+    kind: d.kind,
+    parentId: d.parentId,
+    icon: d.kind === 'coordinator' ? (d.icon ?? DORK_ICONS[0]) : undefined,
+  }))
   return (
     <AppSidebarView
       chats={chats}
@@ -183,13 +193,19 @@ export function AppSidebarView({
   const { isMobile } = useSidebar()
   const { pathname, search } = useLocation()
   const dork = (search as { dork?: unknown }).dork
-  const activeId = typeof dork === 'string' ? dork : undefined
+  const selected = typeof dork === 'string' ? dork : undefined
+  // A worker open full screen keeps its dork highlighted: workers have no rows of their own.
+  const activeId = chats.find((c) => c.id === selected)?.parentId ?? selected
+  // Dorks (coordinators) get their own group; their workers live inside them, not in the sidebar.
+  const crews = chats.filter((c) => c.kind === 'coordinator')
+  const sessions = chats.filter((c) => c.kind !== 'coordinator' && !c.parentId)
+  const [newDork, setNewDork] = useState(false)
   const owners = ownersOf(
-    chats.flatMap((c) => (c.repo ? [c.repo] : [])),
+    sessions.flatMap((c) => (c.repo ? [c.repo] : [])),
     accounts,
   )
   const [scope, setScope] = useOwnerScope(owners)
-  const inScope = scope ? chats.filter((c) => c.repo && ownerOf(c.repo) === scope) : chats
+  const inScope = scope ? sessions.filter((c) => c.repo && ownerOf(c.repo) === scope) : sessions
   const repos = new Map<string, Chat[]>()
   for (const chat of inScope) {
     const repo = chat.repo ?? ''
@@ -225,6 +241,7 @@ export function AppSidebarView({
                 </Link>
               ))}
             </nav>
+            <DorksGroup chats={crews} orderKey={`${orderKey}.dorks`} chatTo={chatTo} activeId={activeId} onArchive={onArchive} onNew={() => setNewDork(true)} />
             {groups.map(([repo, list]) => {
               const key = repo || 'other'
               const open = !collapsed.has(key)
@@ -254,6 +271,7 @@ export function AppSidebarView({
               )
             })}
           </div>
+          <NewDorkDialog open={newDork} onOpenChange={setNewDork} />
           <div className="flex shrink-0 flex-col gap-2 pt-1.5">
             {usage}
             <Link to="/settings" {...rowLink(pathname === '/settings')}>
@@ -264,5 +282,48 @@ export function AppSidebarView({
         </div>
       </div>
     </Sidebar>
+  )
+}
+
+/** The `+` beside a group's label: shown on hover (always on touch), like the repository groups'. */
+const GROUP_ADD =
+  'flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none group-hover/section:opacity-100 hover:bg-foreground/[0.05] hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring [@media(hover:none)]:opacity-100'
+
+/**
+ * The Dorks group, above the repositories: coordinator sessions (docs/crew.md), each with its emoji. Its `+` opens New dork; with no
+ * dorks yet the group holds one row that does the same, so the feature is findable.
+ */
+function DorksGroup({
+  chats,
+  orderKey,
+  chatTo,
+  activeId,
+  onArchive,
+  onNew,
+}: {
+  chats: Chat[]
+  orderKey: string
+  chatTo?: ChatRoute
+  activeId?: string
+  onArchive?: (id: string) => void
+  onNew: () => void
+}) {
+  return (
+    <nav aria-label="Dorks" className="flex shrink-0 flex-col gap-0.5">
+      <div className={`group/section ${SIDEBAR_SECTION} pr-1`}>
+        <span className="min-w-0 flex-1 truncate">Dorks</span>
+        <button type="button" aria-label="New dork" title="New dork" onClick={onNew} className={GROUP_ADD}>
+          <PlusIcon aria-hidden className="size-3.5" />
+        </button>
+      </div>
+      {chats.length ? (
+        <ChatList chats={chats} orderKey={orderKey} to={chatTo} activeId={activeId} onArchive={onArchive} />
+      ) : (
+        <button type="button" onClick={onNew} className={`${SIDEBAR_ROW} text-muted-foreground`}>
+          <PlusIcon />
+          New dork
+        </button>
+      )}
+    </nav>
   )
 }

@@ -31,7 +31,7 @@ const safeEqual = (a: string, b: string) => {
 
 // Request bodies. A field a service checks itself (with its own message) stays `Unknown` here.
 const Loose = Schema.optional(Schema.Unknown);
-const CreateDork = Schema.Struct({ repo: Loose, message: Loose, title: Loose, provider: Loose, model: Loose, effort: Loose, fast: Loose, buildId: Loose, setup: Loose, kind: Loose });
+const CreateDork = Schema.Struct({ repo: Loose, message: Loose, title: Loose, provider: Loose, model: Loose, effort: Loose, fast: Loose, buildId: Loose, setup: Loose, kind: Loose, icon: Loose });
 const Text = Schema.Struct({ text: Loose });
 const Title = Schema.Struct({ title: Loose });
 const Theme = Schema.Struct({ theme: Loose });
@@ -148,6 +148,7 @@ export function uiApp(app: App): Hono {
             buildId: b.buildId,
             setup: b.setup,
             kind: b.kind,
+            icon: b.icon,
           }),
         );
         return c.json({ id: dorkId }, 201);

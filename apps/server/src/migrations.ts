@@ -350,4 +350,8 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX crew_inbox_dork ON crew_inbox (dork_id, delivered);
   CREATE INDEX crew_inbox_sender ON crew_inbox (from_id, created_at);
   `,
+  `
+  -- A coordinator's icon (an emoji the owner picked when starting it, docs/crew.md), shown in the sidebar's Dorks group.
+  ALTER TABLE dorks ADD COLUMN icon TEXT;
+  `,
 ];

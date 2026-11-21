@@ -51,6 +51,8 @@ export interface DorkRow {
   kind: DorkKind;
   /** The coordinator that started this worker. */
   parentId?: string;
+  /** An emoji the owner picked for a coordinator. */
+  icon?: string;
   deleting: boolean;
   lastActivityAt: number;
   createdAt: number;
@@ -115,6 +117,7 @@ export const dorkOf = (r: Row): DorkRow => ({
   buildId: u(r.build_id as string | null),
   kind: ((r.kind as string | null) ?? "agent") as DorkKind,
   parentId: u(r.parent_id as string | null),
+  icon: u(r.icon as string | null),
   deleting: bool(r.deleting),
   lastActivityAt: r.last_activity_at as number,
   createdAt: r.created_at as number,
@@ -187,6 +190,7 @@ export const dorkView = (d: DorkRow, prState?: "open" | "merged" | "closed") => 
   buildId: d.buildId ?? null,
   kind: d.kind,
   parentId: d.parentId ?? null,
+  icon: d.icon,
   lastActivityAt: d.lastActivityAt,
   createdAt: d.createdAt,
 });

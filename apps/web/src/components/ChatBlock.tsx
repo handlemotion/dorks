@@ -1,5 +1,5 @@
 import { useId, useMemo, useState, type ReactNode } from 'react'
-import { BoxIcon, ChevronRightIcon, CircleAlertIcon, CircleCheckIcon, CircleStopIcon, PanelRightOpenIcon, ReplyIcon, TerminalIcon, WrenchIcon } from 'lucide-react'
+import { BoxIcon, ChevronRightIcon, MessageSquareIcon, UsersIcon, CircleAlertIcon, CircleCheckIcon, CircleStopIcon, PanelRightOpenIcon, ReplyIcon, TerminalIcon, WrenchIcon } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { Button } from '@dorks/ui/button'
 import type { Block } from '@dorks/shared'
@@ -315,6 +315,8 @@ function agentContent(blocks: AgentBlock[]): ReactNode[] {
     } else if (block.kind === 'local') {
       // The agent asked to use the owner's computer (docs/local-access.md): what would run, its reason and the owner's answer.
       content.push(<LocalRequestCard key={block.id} block={block} />)
+    } else if (block.kind === 'crew') {
+      content.push(<CrewCard key={block.id} block={block} />)
     } else if (block.kind === 'notice') {
       content.push(
         <Trace key={block.id} role={block.level === 'error' ? 'alert' : 'status'}>
@@ -553,4 +555,28 @@ export function ChatMessages({
 function resolveRef(ref: string, imageUrl?: (id: string) => string) {
   const id = /^dorks-image:([0-9a-f]{32})$/.exec(ref)?.[1]
   return id && imageUrl ? imageUrl(id) : ref
+}
+
+/**
+ * A crew report or note (docs/crew.md): one line that names the other session, the whole text folded under it. A worker's report is
+ * its final answer, so it can run long; the dork's own answer after it says what it means for the goal.
+ */
+function CrewCard({ block }: { block: Extract<Block, { kind: 'crew' }> }) {
+  const peer = block.peer.title
+  const title = block.note ? (block.direction === 'in' ? `Note from ${peer}` : `Note to ${peer}`) : block.direction === 'in' ? `Report from ${peer}` : `Reported to ${peer}`
+  return (
+    <Trace data-crew={block.note ? 'note' : 'report'}>
+      <TraceCollapsible>
+        <TraceCollapsibleTrigger>
+          <TraceLine>
+            <TraceIcon>{block.note ? <MessageSquareIcon /> : <UsersIcon />}</TraceIcon>
+            <TraceTitle>{title}</TraceTitle>
+          </TraceLine>
+        </TraceCollapsibleTrigger>
+        <TraceCollapsibleContent>
+          <p className="pl-6 text-sm whitespace-pre-wrap text-muted-foreground">{block.text}</p>
+        </TraceCollapsibleContent>
+      </TraceCollapsible>
+    </Trace>
+  )
 }

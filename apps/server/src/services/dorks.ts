@@ -100,18 +100,25 @@ function checkBuild(app: App, input: unknown, setup: boolean): string | null {
   return buildId;
 }
 
+/** A coordinator (docs/crew.md) is a top-level session, never a setup session or a worker; its icon is one emoji. */
+function checkKind(input: { kind?: unknown; icon?: unknown }, setup: boolean, parent?: DorkRow): { kind: DorkKind; icon: string | null } {
+  if (input.kind !== undefined && input.kind !== "agent" && input.kind !== "coordinator") fail("invalid", "kind must be agent or coordinator");
+  const kind: DorkKind = input.kind === "coordinator" ? "coordinator" : "agent";
+  if (kind === "coordinator" && (setup || parent)) fail("invalid", "A coordinator cannot be a setup session or a worker.");
+  if (input.icon !== undefined && input.icon !== null && (typeof input.icon !== "string" || input.icon.length > 16)) fail("invalid", "icon must be one emoji");
+  return { kind, icon: typeof input.icon === "string" && input.icon.trim() ? input.icon.trim() : null };
+}
+
 export function createDork(
   app: App,
-  input: { repo?: string; message: string; title?: string; provider?: Provider; model?: unknown; effort?: unknown; fast?: unknown; buildId?: unknown; setup?: unknown; kind?: unknown },
+  input: { repo?: string; message: string; title?: string; provider?: Provider; model?: unknown; effort?: unknown; fast?: unknown; buildId?: unknown; setup?: unknown; kind?: unknown; icon?: unknown },
   // Set only by the crew service (services/crew.ts), never from a request body: the coordinator starting this worker.
   parent?: DorkRow,
 ): string {
   const { message, title, provider = "claude" } = input;
   const setup = input.setup === true;
   if (provider !== "claude" && provider !== "codex") fail("invalid", "provider must be claude or codex");
-  if (input.kind !== undefined && input.kind !== "agent" && input.kind !== "coordinator") fail("invalid", "kind must be agent or coordinator");
-  const kind: DorkKind = input.kind === "coordinator" ? "coordinator" : "agent";
-  if (kind === "coordinator" && (setup || parent)) fail("invalid", "A coordinator cannot be a setup session or a worker.");
+  const { kind, icon } = checkKind(input, setup, parent);
   // A coordinator plans and delegates (docs/crew.md): it needs no repository of its own.
   const repo = checkRepo(input.repo, setup || kind === "coordinator");
   const buildId = checkBuild(app, input.buildId, setup);
@@ -142,6 +149,7 @@ export function createDork(
       buildId,
       kind,
       parentId: parent?.id ?? null,
+      icon,
       ...choice,
     });
     insert(app.db, "dork_runtime", { dorkId: id, bridgeSeq: 0, streamMsgId: "", sleepMinutes: readSettings(app).sleepMinutes, bridgeSeenAt: 0, bridgeLost: false, opGen: 0, pauseRetries: 0 });

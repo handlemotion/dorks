@@ -16,6 +16,8 @@ export type Block =
       /** When the call started (ms since epoch). */ at?: number;
     }
   | { kind: "notice"; id: string; level: "info" | "error"; text: string }
+  /** A crew report or note (docs/crew.md): a worker's final answer reaching its dork, or a note between them. */
+  | { kind: "crew"; id: string; direction: "in" | "out"; peer: { id: string; title: string }; note: boolean; text: string; at: number }
   /** The agent submitted a draft of its machine for approval (docs/builds.md). `approved` is null until the owner decides. */
   | { kind: "build"; id: string; draftId: string; buildId: string | null; buildName: string; note?: string; approved: boolean | null; reason?: string }
   /**
@@ -112,9 +114,7 @@ const HANDLERS: Handlers = {
     notice(v, e, "info", e.text);
   },
   crew(v, e) {
-    const what =
-      e.kind === "report" ? (e.direction === "in" ? `Report from ${e.peer.title}` : `Reported to ${e.peer.title}`) : e.direction === "in" ? `Note from ${e.peer.title}` : `Note to ${e.peer.title}`;
-    notice(v, e, "info", `${what}: ${e.text}`);
+    v.blocks.push({ kind: "crew", id: `c${e.seq}`, direction: e.direction, peer: e.peer, note: e.kind === "note", text: e.text, at: e.ts });
   },
   subscription(v, e) {
     notice(v, e, e.status === "stalled" ? "error" : "info", `${e.repo}#${e.number}: ${e.status}${e.reason ? ` (${e.reason})` : ""}`);

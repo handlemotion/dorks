@@ -49,6 +49,7 @@ export const CREW_TOOLS: CrewToolDef[] = [
         model: { type: "string", description: "A Claude model alias or id." },
         effort: { type: "string", enum: ["low", "medium", "high", "xhigh", "max"] },
         coordinator: { type: "boolean", description: "Owner only: start a coordinator, which plans and delegates to worker dorks instead of writing code." },
+        icon: { type: "string", description: "One emoji shown beside its name in the app." },
       },
       required: ["message"],
       additionalProperties: false,
