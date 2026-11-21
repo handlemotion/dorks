@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 import { BoxNotFoundError } from "../src/core/box";
-import { boatBox, BoatError, desktopUrl, type BoatCall } from "../src/lib/boat";
+import { boatBox, BoatError, desktopUrl, type BoatCall, type BoatOptions } from "../src/lib/boat";
 
 const KEY = "boat_secret_test";
 const NAME = "dork-123";
@@ -27,6 +27,7 @@ function fake() {
   const requests: { method: string; path: string; body?: any; headers: Record<string, string> }[] = [];
   const keys = new Map<string, string>();
   let next = 0;
+  let boxBridgeSha = "a".repeat(64);
   let fail: ((method: string, path: string) => Response | undefined) | undefined;
   const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
   type Req = { method: string; url: URL; body?: any; headers: Record<string, string> };
@@ -49,7 +50,9 @@ function fake() {
   };
   const actions: Record<string, (box: { id: string; state: string }, body: any) => Response> = {
     "GET ": get,
-    "POST /commands": (_box, body) => json(body.detached ? { ok: true, processId: "p1" } : { ok: true, exitCode: 0 }),
+    "POST /commands": (_box, body) =>
+      json(body.detached ? { ok: true, processId: "p1" } : { ok: true, exitCode: 0, stdout: body.command.includes('sha256sum "$(') ? `${boxBridgeSha}  /usr/local/bin/dorks-bridge\n` : "" }),
+    "PUT /files": () => json({ ok: true }),
     "POST /stop": (box) => json({ ok: true, status: "archiving", sandbox: Object.assign(box, { state: "archiving" }) }, 202),
     "POST /resume": (box) => json({ ok: true, sandbox: Object.assign(box, { state: "resuming" }) }, 202),
     "POST /host": (box, body) => json({ url: `https://dk${box.id.slice(3)}-${body.port}.on.boat.dev${body.public ? "" : "?_token=tok_secret"}`, access: body.public ? "public" : "protected" }),
@@ -72,13 +75,17 @@ function fake() {
     const action = box && actions[`${method} ${match[2] ?? ""}`];
     return action ? action(box, body) : notFound();
   }) as typeof fetch;
-  const provider = boatBox({ apiKey: KEY, scope: "wss://dorks.example/bridge", fetch: fetcher, sleep: async () => {} });
+  const provider = (bridge?: BoatOptions["bridge"]) => boatBox({ apiKey: KEY, scope: "wss://dorks.example/bridge", fetch: fetcher, sleep: async () => {}, bridge });
   return {
     boxes,
     requests,
-    provider,
+    provider: provider(),
+    withBridge: provider,
     fetcher,
     environments,
+    setBoxBridge: (sha: string) => {
+      boxBridgeSha = sha;
+    },
     setFail: (value: typeof fail) => {
       fail = value;
     },
@@ -86,6 +93,23 @@ function fake() {
 }
 
 describe("Boat sandbox provider", () => {
+  it("installs this server's bridge over a box's older one before starting it, and leaves a current one alone", async () => {
+    const f = fake();
+    const bridge = { base64: Buffer.from("new bridge").toString("base64"), sha256: "b".repeat(64) };
+    const provider = f.withBridge(async () => bridge);
+    const { id } = await provider.createFromSnapshot("dorks-base", CREATE);
+    const after = (i: number) => f.requests.slice(i).filter((r) => r.path.includes(id) && r.method !== "GET");
+    const steps = after(0).map((r) => (r.path.endsWith("/files") ? "upload" : r.body?.detached ? "start" : r.body?.command?.includes("sudo install") ? "install" : "other"));
+    expect(steps.slice(-3)).toEqual(["upload", "install", "start"]);
+    expect(f.requests.find((r) => r.path.endsWith("/files"))?.body).toMatchObject({ content: bridge.base64, encoding: "base64" });
+
+    f.setBoxBridge(bridge.sha256);
+    const mark = f.requests.length;
+    f.boxes.get(id)!.state = "archived";
+    await provider.resume(id);
+    expect(after(mark).some((r) => r.path.endsWith("/files"))).toBe(false);
+    expect(after(mark).some((r) => r.body?.detached)).toBe(true);
+  });
   it("creates from a saved snapshot without account secrets or an auto-stop, and starts the bridge without putting secrets in commands", async () => {
     const f = fake();
     const { id } = await f.provider.createFromSnapshot("dorks-base", CREATE);

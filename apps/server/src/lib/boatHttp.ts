@@ -27,7 +27,12 @@ export type BoatOptions = {
   org?: string;
   fetch?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
+  /** This server's bridge, installed over a box's own before it starts when the two differ (undefined: start what the box has). */
+  bridge?: () => Promise<BridgeAsset | undefined>;
 };
+
+/** The bridge bundle as uploaded to a box: base64 content and the sha256 (hex) it must match. */
+export type BridgeAsset = { base64: string; sha256: string };
 
 export type CallOptions = { body?: unknown; headers?: Record<string, string>; timeoutMs?: number };
 

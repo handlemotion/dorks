@@ -20,12 +20,15 @@ import {
   sandboxPath,
   type BoatCall,
   type BoatOptions,
+  type BridgeAsset,
   type Sandbox,
 } from "./boatHttp";
 
 export { BoatError, BOX_ID, DEFAULT_BASE_URL, READY, type BoatCall, type BoatOptions } from "./boatHttp";
 
 const WAIT_MS = 240_000;
+/** Where a replacement bridge is uploaded before it is installed over the box's own (tmpfs, outside the lazily restored home). */
+const BRIDGE_UPLOAD = "/tmp/dorks-bridge.upload.mjs";
 /** How long a `provisioning` desktop (the first noVNC start) is waited for before the caller is told to retry. */
 const DESKTOP_WAIT_MS = 30_000;
 const DESKTOP_POLL_MS = 1_000;
@@ -109,12 +112,29 @@ function boatOps(call: BoatCall, pause: Pause, opts: BoatOptions) {
       Effect.map((digest) => [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("")),
     );
 
+  /**
+   * Replaces the box's bridge with this server's. A box keeps the bridge of the image it was made from, so after the app updates, a
+   * box from before (or from an image not yet rebuilt on the new base) would run a bridge that cannot speak to this server.
+   */
+  const refreshBridge = (id: string, commands: string, bridge: BridgeAsset) =>
+    Effect.gen(function* () {
+      const files = yield* sandboxPath(id, "/files");
+      yield* call("upload bridge", "PUT", files, { body: { path: BRIDGE_UPLOAD, content: bridge.base64, encoding: "base64" }, timeoutMs: 120_000 });
+      const install = `echo "${bridge.sha256}  ${BRIDGE_UPLOAD}" | sha256sum -c - >/dev/null && sudo install -m 0755 ${BRIDGE_UPLOAD} "$(command -v dorks-bridge)"; s=$?; rm -f ${BRIDGE_UPLOAD}; exit $s`;
+      const done = yield* call("install bridge", "POST", commands, { body: { command: install, timeoutSeconds: 60 }, timeoutMs: 90_000 });
+      if (done?.exitCode !== 0) return yield* new BoatError("boat: could not update the bridge on the sandbox");
+    });
+
   /** Starts the bridge once; the `flock` keeps a second start (a resume racing a create) from running two. */
   const start = (id: string) =>
     Effect.gen(function* () {
       const commands = yield* sandboxPath(id, "/commands");
-      const check = yield* call("check", "POST", commands, { body: { command: "command -v flock >/dev/null && command -v dorks-bridge >/dev/null" } });
+      const check = yield* call("check", "POST", commands, {
+        body: { command: 'command -v flock >/dev/null && command -v dorks-bridge >/dev/null && sha256sum "$(command -v dorks-bridge)"' },
+      });
       if (check?.exitCode !== 0) return yield* new BoatError("boat: base snapshot is missing flock or dorks-bridge");
+      const bridge = opts.bridge ? yield* Effect.promise(() => opts.bridge!().catch(() => undefined)) : undefined;
+      if (bridge && !String(check?.stdout ?? "").startsWith(bridge.sha256)) yield* refreshBridge(id, commands, bridge);
       yield* call("start", "POST", commands, { body: { command: "flock -n /tmp/dorks-bridge.lock dorks-bridge", detached: true } });
     });
 
