@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { CheckIcon, PlusIcon, XIcon } from 'lucide-react'
 import type { McpServerInput, McpServerView } from '@dorks/client'
 import { useComposio, useDorksClient, useMcpServers } from '@dorks/client/react'
@@ -8,17 +8,24 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@dorks/ui/field'
 import { Input } from '@dorks/ui/input'
 import { NativeSelect, NativeSelectOption } from '@dorks/ui/native-select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@dorks/ui/tabs'
 import { Textarea } from '@dorks/ui/textarea'
 import { COMPOSIO, CONNECTORS, connectorById, KINDS, type ComposioApp, type Connector, type KeyConnector } from '../../../components/connectors'
 import { PageHeader } from '../../../components/PageHeader'
-import { SkillsSection } from '../../../components/SkillsSection'
+import { TAB_CLASS } from '../../../components/PullRequestPanel'
+import { AddSkillDialog, SkillsTab } from '../../../components/SkillsTab'
 import { SettingsGroup, SettingsRow, SettingsSection, SettingsSections } from '../../../components/settings/kit'
 import { usePending } from '../../../lib/pending'
 
 // Customize (docs/skills.md, docs/mcp.md): the owner's skills, the connector catalog and the owner's custom MCP servers. Every agent gets them, in every sandbox, next to the built-in `dorks` server.
 // Header and variable values are write-only: the list shows their names, and an edit keeps a saved value unless a new one is typed.
 
-export const Route = createFileRoute('/_conn/_app/customize')({ component: Customize })
+type Tab = 'skills' | 'connectors'
+
+export const Route = createFileRoute('/_conn/_app/customize')({
+  validateSearch: (s: Record<string, unknown>): { tab?: Tab } => (s.tab === 'connectors' || s.tab === 'skills' ? { tab: s.tab } : {}),
+  component: Customize,
+})
 
 /** What the custom connector dialog starts from: a blank one or a saved one. */
 type Draft = { editing: boolean; name: string; transport: 'http' | 'stdio'; url: string; command: string; args: string; headers: Pair[]; env: Pair[] }
@@ -43,6 +50,9 @@ function Customize() {
   const [draft, setDraft] = useState<Draft | null>(null)
   const [connecting, setConnecting] = useState<Connector | null>(null)
   const composio = useComposio()
+  const tab: Tab = Route.useSearch().tab ?? 'skills'
+  const navigate = useNavigate({ from: Route.fullPath })
+  const [addingSkill, setAddingSkill] = useState<{ source?: string } | null>(null)
   const custom = servers?.filter((s) => !isPreset(s) && !isComposio(s)) ?? []
   const isConnected = (c: Connector) => (c.toolkit ? !!composio?.toolkits.includes(c.toolkit) : !!servers?.some((s) => s.name === c.id && isPreset(s)))
   /** A card opens its dialog, or the editor when a custom server already holds its name (the card would replace it). */
@@ -52,41 +62,63 @@ function Customize() {
     else setConnecting(c)
   }
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <Tabs value={tab} onValueChange={(v) => void navigate({ search: { tab: v as Tab }, replace: true })} className="min-h-0 flex-1 gap-0">
       <PageHeader
         title="Customize"
+        titleActions={
+          <TabsList className="ms-2 h-7! gap-0.5 rounded-none bg-transparent p-0">
+            <TabsTrigger value="skills" className={TAB_CLASS}>
+              Skills
+            </TabsTrigger>
+            <TabsTrigger value="connectors" className={TAB_CLASS}>
+              Connectors
+            </TabsTrigger>
+          </TabsList>
+        }
         actions={
-          <Button size="sm" onClick={() => setDraft(BLANK)}>
-            <PlusIcon data-icon="inline-start" />
-            Add connector
-          </Button>
+          tab === 'skills' ? (
+            <Button size="sm" onClick={() => setAddingSkill({})}>
+              <PlusIcon data-icon="inline-start" />
+              Add skill
+            </Button>
+          ) : (
+            <Button size="sm" onClick={() => setDraft(BLANK)}>
+              <PlusIcon data-icon="inline-start" />
+              Add connector
+            </Button>
+          )
         }
       />
       <div className="app-main min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-4xl px-4 pt-8 pb-16 sm:px-6">
-          <SettingsSections>
-            <SkillsSection />
-            {KINDS.map((k) => (
-              <SettingsSection key={k.id} title={k.title}>
-                <ul aria-label={k.title} className="grid gap-2 md:grid-cols-2">
-                  {CONNECTORS.filter((c) => c.kind === k.id).map((c) => (
-                    <ConnectorCard key={c.id} connector={c} connected={isConnected(c)} loading={!servers || (!!c.toolkit && !composio)} onOpen={() => open(c)} />
-                  ))}
-                </ul>
-              </SettingsSection>
-            ))}
-            {custom.length > 0 && (
-              <SettingsSection title="Custom connectors">
-                <SettingsGroup label="custom connectors">
-                  {custom.map((s) => (
-                    <ServerRow key={s.name} server={s} onEdit={() => setDraft(draftOf(s))} />
-                  ))}
-                </SettingsGroup>
-              </SettingsSection>
-            )}
-          </SettingsSections>
+          <TabsContent value="skills">
+            <SkillsTab onAdd={(source) => setAddingSkill({ source })} />
+          </TabsContent>
+          <TabsContent value="connectors">
+            <SettingsSections>
+              {KINDS.map((k) => (
+                <SettingsSection key={k.id} title={k.title}>
+                  <ul aria-label={k.title} className="grid gap-2 md:grid-cols-2">
+                    {CONNECTORS.filter((c) => c.kind === k.id).map((c) => (
+                      <ConnectorCard key={c.id} connector={c} connected={isConnected(c)} loading={!servers || (!!c.toolkit && !composio)} onOpen={() => open(c)} />
+                    ))}
+                  </ul>
+                </SettingsSection>
+              ))}
+              {custom.length > 0 && (
+                <SettingsSection title="Custom connectors">
+                  <SettingsGroup label="custom connectors">
+                    {custom.map((s) => (
+                      <ServerRow key={s.name} server={s} onEdit={() => setDraft(draftOf(s))} />
+                    ))}
+                  </SettingsGroup>
+                </SettingsSection>
+              )}
+            </SettingsSections>
+          </TabsContent>
         </div>
       </div>
+      {addingSkill && <AddSkillDialog key={addingSkill.source ?? ''} initial={addingSkill.source} onClose={() => setAddingSkill(null)} />}
       {draft && <ServerDialog key={`${draft.name}:${draft.editing}`} initial={draft} onClose={() => setDraft(null)} />}
       {connecting &&
         (connecting.toolkit !== undefined ? (
@@ -94,7 +126,7 @@ function Customize() {
         ) : (
           <ConnectDialog key={connecting.id} connector={connecting} connected={isConnected(connecting)} onClose={() => setConnecting(null)} />
         ))}
-    </div>
+    </Tabs>
   )
 }
 
