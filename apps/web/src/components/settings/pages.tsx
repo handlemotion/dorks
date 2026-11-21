@@ -34,7 +34,7 @@ export const PERSONAL_PAGES: SettingsPageDef[] = [
   { id: 'appearance', title: 'Appearance', icon: <SunMoonIcon />, body: () => <AppearancePage /> },
   { id: 'agents', title: 'AI accounts', icon: <BotIcon />, body: (s) => <AgentsPage settings={s} /> },
   { id: 'github', title: 'GitHub', icon: <GithubMark />, body: (s) => <GithubPage settings={s} /> },
-  { id: 'computer', title: 'Your computer', icon: <LaptopIcon />, body: () => <ComputerPage /> },
+  { id: 'computer', title: 'Your computer', icon: <LaptopIcon />, body: (s) => <ComputerPage settings={s} /> },
 ]
 
 export function organizationPages(): SettingsPageDef[] {

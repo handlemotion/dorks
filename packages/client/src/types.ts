@@ -80,6 +80,8 @@ export interface Settings {
   commentPolicy: CommentPolicy;
   /** New Claude sessions start in Code Mode; absent on older servers. */
   claudeCodeMode?: boolean;
+  /** Every session may use this computer without asking (docs/local-access.md); absent on older servers. */
+  localAlwaysAllow?: boolean;
   /** `boat` or `sim`; absent on older servers. */
   boxProvider?: string;
   /** The models a Claude agent last reported (empty before any session started); what a new session can choose from. */
@@ -123,30 +125,25 @@ export interface SettingsPatch {
   commentPolicy?: CommentPolicy;
   /** New Claude sessions start in Code Mode; sessions already started keep what they had. */
   claudeCodeMode?: boolean;
+  /** Every session may use this computer without asking. Off: each session asks once again; sessions already allowed stay allowed. */
+  localAlwaysAllow?: boolean;
 }
 
 /** `POST /api/boat/check`: whether Boat accepts a key (and organization) before anything is saved. */
-/** Local access (docs/local-access.md): whether agents may ask to use this computer, and the permissions granted for a while. */
-export interface LocalGrant {
-  id: string;
+/** Local access (docs/local-access.md): whether agents may ask to use this computer, and the sessions the owner allowed. */
+export interface LocalSession {
   dorkId: string;
   dorkTitle: string;
-  kind: "run" | "read";
-  /** run: this exact command in `cwd`. */
-  command?: string;
-  cwd?: string;
-  /** read: any file under this folder. */
-  dir?: string;
-  expiresAt: number;
-  createdAt: number;
+  allowedAt: number;
 }
 
 export interface LocalAccess {
   enabled: boolean;
-  grants: LocalGrant[];
+  sessions: LocalSession[];
 }
 
-export type LocalDecision = { decision: "deny" | "once" } | { decision: "grant"; minutes: 15 | 60 };
+/** The owner's answer to a session's first request: `session` allows this session, `always` every session (`localAlwaysAllow`). */
+export type LocalDecision = { decision: "session" | "always" | "deny" };
 
 export interface BoatCheck {
   status: "ok" | "invalid" | "needs_org" | "credit_required" | "unreachable";

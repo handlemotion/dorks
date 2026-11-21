@@ -153,8 +153,7 @@ export function createApi(config: ApiConfig) {
     decideLocal: (id: string, requestId: string, d: LocalDecision) => request<object>("POST", `${dork(id)}/local/${enc(requestId)}`, d),
     localAccess: () => request<LocalAccess>("GET", "/api/local-access"),
     setLocalAccess: (enabled: boolean) => request<object>("PUT", "/api/local-access", { enabled }),
-    revokeLocalGrant: (grantId: string) => request<object>("DELETE", `/api/local-access/grants/${enc(grantId)}`),
-    revokeLocalGrants: (dorkId?: string) => request<object>("DELETE", dorkId ? `/api/local-access/grants?dork=${enc(dorkId)}` : "/api/local-access/grants"),
+    revokeLocalSessions: (dorkId?: string) => request<object>("DELETE", dorkId ? `/api/local-access/sessions?dork=${enc(dorkId)}` : "/api/local-access/sessions"),
     updateSettings: (patch: SettingsPatch) => request<object>("PUT", "/api/settings", patch),
     /** Checks the given key (or the saved one) against Boat without saving it. */
     checkBoat: (input: { boatKey?: string; boatOrg?: string }) => request<BoatCheck>("POST", "/api/boat/check", input),

@@ -123,7 +123,7 @@ IDs are UUID strings. Times are epoch milliseconds.
 | `DELETE /api/composio/toolkits/:toolkit` | | `{}`. Signs that app out |
 | `GET/POST /api/builds`, `GET/PATCH/DELETE /api/builds/:id`, `PUT /api/builds/:id/default`, `PUT/DELETE /api/builds/:id/vars/:name`, `GET/POST /api/builds/:id/runs`, `GET /api/builds/:id/runs/:runId/log`, `POST /api/builds/:id/runs/:runId/cancel`, `POST /api/builds/:id/drafts/:draftId/approve\|reject` | | Builds: named machine setups, see [builds](builds.md) ("UI and API") |
 | `GET/POST /api/automations`, `GET/PATCH/DELETE /api/automations/:id`, `GET/POST /api/automations/:id/runs` | | Automations: instructions an agent runs on a schedule or on repository events, each run a session; see [automations](automations.md) |
-| `POST /api/dorks/:id/local/:requestId`, `GET/PUT /api/local-access`, `DELETE /api/local-access/grants[/:grantId]` | | The owner's answers to an agent's requests to use this computer, the on/off switch and the time-limited permissions: [local access](local-access.md) |
+| `POST /api/dorks/:id/local/:requestId`, `GET/PUT /api/local-access`, `DELETE /api/local-access/sessions[?dork=]` | | The owner's answer to a session's request to use this computer, the on/off switch and the sessions allowed: [local access](local-access.md) |
 | `GET /api/health` | no auth | `{ok: true}` |
 | `POST /mcp` | JSON-RPC (MCP, Streamable HTTP, plain JSON answers) | The dorks MCP server for the owner's other agents: `dork_*`, `build_*`, `repo_list`. Owner bearer token; a browser `Origin` outside `DORKS_UI_ORIGINS` is 403; `GET`/`DELETE` are 405. See [crews](crew.md) |
 
@@ -177,7 +177,7 @@ The bridge closes a socket that has not finished the handshake within 10 s and t
 | `subscribe_pr` | `{repo, number, source: "auto"\|"agent"}` | `{}` (idempotent) |
 | `unsubscribe_pr` | `{repo, number}` | `{}` |
 | `build` | `{action: "get"\|"draft"\|"run"\|"logs"\|"submit", ...}` | The agent's `machine_*` MCP tools ([builds](builds.md), "Agent tooling"), scoped to this dork's build. Never returns a secret value |
-| `local` | `{action: "request"\|"wait", ...}` | The agent's `local_run`/`local_read`/`local_wait` tools: ask to run a command or read a file on the owner's computer, and wait for the answer and the result. Nothing runs without the owner's Allow: [local access](local-access.md) |
+| `local` | `{action: "request"\|"wait", ...}` | The agent's `local_run`/`local_read`/`local_wait` tools: ask to run a command or read a file on the owner's computer, and wait for the answer and the result. Nothing runs unless the owner allowed the session (or every session): [local access](local-access.md) |
 | `crew` | `{tool, args}` | A coordinator's or worker's crew tools ([crews](crew.md)), the same table as `POST /mcp`, scoped to the dork's crew: a coordinator reaches only its workers, a worker only its coordinator and siblings. A plain dork is `forbidden`. One `dork_wait` waits at most 8 s |
 | `mcp_token` | `{name, stale?}` | `{authorization, expiresAt}`: a current access token for an OAuth MCP server, refreshed when about to expire or when `stale` (the token the server just refused) is still the saved one. Errors `not_configured` (not signed in, or the grant is gone) |
 | `skill` | `{name}` | `{name, digest, files: {path, data (base64), exec?}[]}`: one of the owner's skills, fetched when `configure` lists a digest the box does not have ([skills](skills.md)) |

@@ -159,18 +159,19 @@ const TOOLS: Tool[] = [
       return content;
     },
   },
-  // ---- local_*: the owner's own computer (docs/local-access.md). Every call asks the owner, who sees the exact command or path in the
-  // chat and allows it (once, or the same thing for a while) or declines; the tool waits for that answer and returns the result.
+  // ---- local_*: the owner's own computer (docs/local-access.md). A session's first call asks the owner whether it may access their
+  // computer (for this session, or always) and waits for the answer; once allowed, calls run right away. Each returns the result.
   {
     name: "local_run",
     title: "Run a command on the user's computer",
     description:
       "Ask the user to run one shell command on their own computer (not this sandbox) and get its output. Use it only for what exists there " +
-      "and not here: a CLI signed in to their accounts, a local-only service, their simulators or devices, files outside this repo. The user " +
-      "sees `command`, `cwd` and `reason` in the chat and must allow it; this call waits for their answer (up to 5 minutes, then use local_wait). " +
+      "and not here: a CLI signed in to their accounts, a local-only service, their simulators or devices, files outside this repo. The first " +
+      "local_run or local_read of this session asks the user, with your `reason`, whether you may access their computer, and waits for their " +
+      "answer (up to 5 minutes, then use local_wait); once they allow it, later calls run without asking, but every command is in their chat. " +
       "One request at a time. Runs non-interactively in their login shell (stdin closed, no TTY), so pass flags that skip prompts. Prefer " +
       "read-only commands; never ask for secrets, keychains or credential files, and never to delete or change things unless the user asked " +
-      "for exactly that. If they decline, do not ask again for the same thing.",
+      "for exactly that. If they decline, do not ask again in this turn.",
     inputSchema: {
       type: "object",
       properties: {
@@ -194,7 +195,7 @@ const TOOLS: Tool[] = [
     title: "Read a file on the user's computer",
     description:
       "Ask the user to let you read one text file on their own computer (not this sandbox), e.g. a local config, a log, a file they mentioned " +
-      "that is not in the repo. The user sees `path` and `reason` in the chat and must allow it; this call waits for their answer. At most " +
+      "that is not in the repo. Like local_run, the session's first request asks the user for access to their computer and waits; at most " +
       "256 KB of text. Never ask for keys, tokens, keychains or other credentials.",
     inputSchema: {
       type: "object",
@@ -415,7 +416,7 @@ export function describeLocal(r: LocalResult): string {
     case "running":
       return `The user allowed it and it is still running ${id}. Call local_wait with this requestId for the result.`;
     case "denied":
-      return `The user declined ${id}. Do not ask again for the same thing: continue without it, or say in your final answer what they could run themselves.`;
+      return `The user declined access to their computer ${id}. Do not ask again in this turn: continue without it, or say in your final answer what they could run themselves.`;
     case "expired":
       return `The user did not answer in time ${id}. Continue without it, or ask in your final answer.`;
   }

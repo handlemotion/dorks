@@ -34,9 +34,7 @@ export type Block =
       path?: string;
       reason: string;
       status: "pending" | "allowed" | "denied" | "expired" | "done" | "failed";
-      via?: "once" | "grant" | "standing";
-      grantId?: string;
-      minutes?: number;
+      via?: "session" | "always" | "standing" | "once" | "grant";
       exitCode?: number | null;
       preview?: string;
       truncated?: boolean;
@@ -139,7 +137,7 @@ const HANDLERS: Handlers = {
     const i = findLocal(v, e.requestId);
     if (i < 0) return;
     const b = v.blocks[i] as Extract<Block, { kind: "local" }>;
-    v.blocks[i] = { ...b, status: e.decision, via: e.via, grantId: e.grantId, minutes: e.minutes };
+    v.blocks[i] = { ...b, status: e.decision, via: e.via };
   },
   local_result(v, e) {
     const i = findLocal(v, e.requestId);

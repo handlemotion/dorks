@@ -138,6 +138,9 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   // Composio: a sign-in "finishes" when its link is requested, so the UI's wait ends on the next read.
   const composioApps = new Set<string>();
   let localAccessEnabled = true;
+  /** Local access (docs/local-access.md): the sessions the owner allowed, and requests waiting for an answer (requestId -> its answer). */
+  const localAllowed = new Map<string, number>();
+  const localWaiting = new Map<string, { dorkId: string; answer: (allowed: "session" | "always" | null) => void }>();
   const live = new Set<ServerResponse>();
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const settings: Settings = {
@@ -150,6 +153,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     sleepMinutes: 10,
     commentPolicy: { mode: "all" },
     claudeCodeMode: true,
+    localAlwaysAllow: false,
     claudeModels: MOCK_MODELS,
   };
 
@@ -214,10 +218,46 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     broadcast({ t: "events", dorkId, seq });
   };
 
-  /** The fake agent: a turn of tool calls and a streamed answer, ending idle. */
-  const runTurn = (dorkId: string, prompt: string) => {
+  /**
+   * The fake agent's `local_run` (docs/local-access.md): asks the owner unless this session (or every session) is allowed, then
+   * "runs" and reports a canned output. `then` continues the turn once it settled.
+   */
+  const askLocal = (dorkId: string, command: string, reason: string, output: string, then: () => void) => {
+    const requestId = `local-${randomUUID().slice(0, 8)}`;
+    append(dorkId, { type: "local_request", requestId, kind: "run", command, cwd: "~/app", reason });
+    const run = (via: "session" | "always" | "standing") => {
+      append(dorkId, { type: "local_decision", requestId, decision: "allowed", via });
+      later(tick, () => {
+        append(dorkId, { type: "local_result", requestId, ok: true, exitCode: 0, preview: output });
+        then();
+      });
+    };
+    if (!localAccessEnabled) return then();
+    if (settings.localAlwaysAllow || localAllowed.has(dorkId)) return run("standing");
+    localWaiting.set(requestId, {
+      dorkId,
+      answer: (allowed) => {
+        localWaiting.delete(requestId);
+        if (allowed) return run(allowed);
+        append(dorkId, { type: "local_decision", requestId, decision: "denied" });
+        then();
+      },
+    });
+  };
+
+  /** The fake agent: a turn of tool calls and a streamed answer, ending idle. A prompt that mentions "computer" first asks to use it. */
+  const runTurn = (dorkId: string, prompt: string, localDone = false): void => {
     const d = dorks.get(dorkId);
     if (!d) return;
+    if (!localDone && /\bcomputer\b/i.test(prompt)) {
+      const reason = "To see which simulators are booted on your Mac before I run the UI tests there.";
+      later(tick, () =>
+        askLocal(dorkId, "xcrun simctl list devices booted", reason, "== Devices ==\n-- iOS 19.0 --\n    iPhone 17 Pro (5C1F…) (Booted)", () =>
+          askLocal(dorkId, "git -C ~/app status --short", "To check your local checkout has no changes I would miss.", " M src/App.tsx\n?? notes.md", () => runTurn(dorkId, prompt, true)),
+        ),
+      );
+      return;
+    }
     const alive = () => dorks.get(dorkId)?.state === "working";
     const tool = `tool-${randomUUID().slice(0, 8)}`;
     const msg = `msg-${randomUUID().slice(0, 8)}`;
@@ -577,9 +617,24 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     const d = dorks.get(decodeURIComponent(m[1]!));
     if (!d || d.deleting) return fail(c.res, "not_found", "No such session.");
     const sub = m[2] ?? "";
+    const local = /^local\/([^/]+)$/.exec(sub);
+    if (local && c.method === "POST") return decideLocal(c, d, decodeURIComponent(local[1]!));
     const handle = dorkRoutes.get(`${c.method} ${sub}`) ?? dorkRoutes.get(`* ${sub}`);
     if (!handle) return fail(c.res, "not_found", "Unknown route.");
     return handle(c, d);
+  };
+
+  /** `POST /api/dorks/:id/local/:requestId`: the owner's answer to a session's first request to use the computer. */
+  const decideLocal = ({ body, res }: Ctx, d: MockDork, requestId: string) => {
+    const waiting = localWaiting.get(requestId);
+    if (!waiting || waiting.dorkId !== d.id) return fail(res, "conflict", "This request was already answered.");
+    const decision = body.decision;
+    if (decision !== "session" && decision !== "always" && decision !== "deny") return fail(res, "invalid", "decision must be deny, session or always");
+    if (decision === "session") localAllowed.set(d.id, Date.now());
+    if (decision === "always") settings.localAlwaysAllow = true;
+    waiting.answer(decision === "deny" ? null : decision);
+    broadcast({ t: "settings" });
+    return json(res, 200, {});
   };
 
   /** Applies a settings PUT; returns an error message when the body is rejected. */
@@ -599,6 +654,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     }
     if (body.commentPolicy) settings.commentPolicy = body.commentPolicy as Settings["commentPolicy"];
     if (typeof body.claudeCodeMode === "boolean") settings.claudeCodeMode = body.claudeCodeMode;
+    if (typeof body.localAlwaysAllow === "boolean") settings.localAlwaysAllow = body.localAlwaysAllow;
     return null;
   };
 
@@ -713,13 +769,35 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         return json(res, 200, { installed: pick.map((s) => s.name) });
       },
     ],
-    // Local access (docs/local-access.md): the switch only; the mock's agents never ask to use the computer.
-    ["GET /api/local-access", ({ res }) => json(res, 200, { enabled: localAccessEnabled, grants: [] })],
+    // Local access (docs/local-access.md): the switch and the sessions allowed; the fake agent asks when a prompt mentions "computer".
+    [
+      "GET /api/local-access",
+      ({ res }) =>
+        json(res, 200, {
+          enabled: localAccessEnabled,
+          sessions: [...localAllowed].filter(([id]) => dorks.has(id)).map(([dorkId, allowedAt]) => ({ dorkId, dorkTitle: dorks.get(dorkId)!.title, allowedAt })),
+        }),
+    ],
+    [
+      "DELETE /api/local-access/sessions",
+      ({ url, res }) => {
+        const dork = url.searchParams.get("dork");
+        if (dork) localAllowed.delete(dork);
+        else localAllowed.clear();
+        broadcast({ t: "settings" });
+        return json(res, 200, {});
+      },
+    ],
     [
       "PUT /api/local-access",
       ({ body, res }) => {
         if (typeof body.enabled !== "boolean") return fail(res, "invalid", "enabled must be a boolean");
         localAccessEnabled = body.enabled;
+        if (!body.enabled) {
+          localAllowed.clear();
+          settings.localAlwaysAllow = false;
+          for (const w of localWaiting.values()) w.answer(null);
+        }
         broadcast({ t: "settings" });
         return json(res, 200, {});
       },
@@ -877,7 +955,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     if (handle) return handle(c);
     const automation = automations(method, path, body);
     if (automation) return "error" in automation ? fail(res, automation.error, automation.message) : json(res, automation.status, automation.body);
-    const m = /^\/api\/dorks\/([^/]+)(?:\/(messages|interrupt|desktop|archive|model|codex-model|events|pr(?:\/merge|\/update-branch)?|subscriptions(?:\/resume)?))?$/.exec(path);
+    const m = /^\/api\/dorks\/([^/]+)(?:\/(local\/[^/]+|messages|interrupt|desktop|archive|model|codex-model|events|pr(?:\/merge|\/update-branch)?|subscriptions(?:\/resume)?))?$/.exec(path);
     if (m) return routeDork(c, m);
     const sm = /^\/api\/secrets\/([^/]+)$/.exec(path);
     if (sm) return routeSecret(c, decodeURIComponent(sm[1]!));

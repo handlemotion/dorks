@@ -59,7 +59,7 @@ export const clientEvent = z.discriminatedUnion("type", [
   z.object({ ...base, type: z.literal("build_draft"), draftId: z.string(), buildId: z.string().nullable(), buildName: z.string(), note: z.string().optional() }),
   z.object({ ...base, type: z.literal("build_decision"), draftId: z.string(), buildId: z.string().nullable(), buildName: z.string(), approved: z.boolean(), reason: z.string().optional() }),
   // Local access (docs/local-access.md): the agent asked to run a command or read a file on the owner's own computer, the owner's
-  // answer (or a standing permission's), and what came back. The command, folder and path are shown to the owner verbatim.
+  // answer (asked once per session, or covered by an earlier answer), and what came back.
   z.object({
     ...base,
     type: z.literal("local_request"),
@@ -75,10 +75,9 @@ export const clientEvent = z.discriminatedUnion("type", [
     type: z.literal("local_decision"),
     requestId: z.string(),
     decision: z.enum(["allowed", "denied", "expired"]),
-    // `once`: the owner allowed this request; `grant`: the owner allowed it and similar ones for `minutes`; `standing`: an earlier grant covered it.
-    via: z.enum(["once", "grant", "standing"]).optional(),
-    grantId: z.string().optional(),
-    minutes: z.number().optional(),
+    // `session`: the owner allowed this session to use the computer; `always`: the owner allowed every session (the localAlwaysAllow
+    // setting); `standing`: an earlier answer covered it. `once` and `grant` are per-command answers in transcripts from before.
+    via: z.enum(["session", "always", "standing", "once", "grant"]).optional(),
   }),
   z.object({ ...base, type: z.literal("local_result"), requestId: z.string(), ok: z.boolean(), exitCode: z.number().nullable().optional(), preview: z.string(), truncated: z.boolean().optional() }),
   z.object({ ...base, type: z.literal("rate_limited"), resetsAt: z.number().optional() }),
