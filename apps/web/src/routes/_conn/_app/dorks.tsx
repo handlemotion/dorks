@@ -17,7 +17,7 @@ import { resolveSharedImages } from '../../../components/ChatBlock'
 import { CrewDetails } from '../../../components/CrewDetails'
 import { SessionChat } from '../../../components/SessionChat'
 import { ChatDetails } from '../../../components/ChatDetails'
-import { ChatSplit, ShowDetailsButton, useDetailsOpen, useWide } from '../../../components/chat-details/layout'
+import { ChatSplit, ShowDetailsButton, useDetailsOpen } from '../../../components/chat-details/layout'
 import type { ChatDetailsData } from '../../../components/chat-details/types'
 import type { PullRequestPanelData } from '../../../components/PullRequestPanel'
 import { latestTasks, progressStore, progressTurns } from '../../../lib/progress'
@@ -117,12 +117,12 @@ function Dorks() {
             )}
             <div className={`${showArchived ? 'hidden' : 'flex'} mx-auto w-full max-w-[790px] flex-col gap-6`}>
               <h2 className="sr-only">What should we work on?</h2>
+              <NewDork key={presetRepo} initialRepo={presetRepo} onCreated={setSelected} disabled={!ready} claudeReady={!!settings?.claudeToken} codexReady={!!settings?.boatEnvironment} />
               {settings && (
-                <div className="px-5 [&:has(>div:empty)]:hidden">
+                <div className="mt-6 px-5 empty:hidden">
                   <SetupStatus settings={settings} />
                 </div>
               )}
-              <NewDork key={presetRepo} initialRepo={presetRepo} onCreated={setSelected} disabled={!ready} claudeReady={!!settings?.claudeToken} codexReady={!!settings?.boatEnvironment} />
             </div>
           </div>
           <div className="shrink-0 self-center px-5 pb-3 text-sm text-muted-foreground">
@@ -334,7 +334,6 @@ function Thread({ dorkId }: { dorkId: string }) {
   // One draft for the composer and everything on the page that writes into it (Ask for…, picked elements).
   const draft = useDraft(dorkId)
   const setText = draft[1]
-  const wide = useWide()
   // Each chat's Progress starts on its newest step.
   useEffect(() => progressStore.reset(), [dorkId])
   const computerUsed = view.blocks.some((b) => b.kind === 'tool' && b.name.startsWith('mcp__computer__'))
@@ -389,19 +388,7 @@ function Thread({ dorkId }: { dorkId: string }) {
           }
         />
         <CodexModelForm dork={dork} />
-        <SessionChat
-          dork={dork}
-          error={archiveError}
-          draft={draft}
-          onOpenStep={
-            wide && !crew
-              ? (key) => {
-                  setDetailsOpen(true)
-                  progressStore.show(key)
-                }
-              : undefined
-          }
-        />
+        <SessionChat dork={dork} error={archiveError} draft={draft} />
       </section>
     </ChatSplit>
   )
