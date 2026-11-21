@@ -6,6 +6,7 @@ import { buildOp } from "../services/buildAgent";
 import { localOp } from "../services/local";
 import { crewOp } from "../services/crew";
 import { mcpAccessToken } from "../services/mcpOAuth";
+import { skillBundle } from "../services/skills";
 import * as bridge from "../services/bridge";
 import { attempt, attemptPromise, BridgeError } from "../services/bridge";
 
@@ -54,6 +55,7 @@ const OPS = new Map<string, Op>([
   ["local", (app, id, a) => attemptPromise(() => localOp(app, id, a))],
   ["crew", (app, id, a) => attemptPromise(() => crewOp(app, id, a))],
   ["mcp_token", (app, _id, a) => attemptPromise(() => mcpAccessToken(app, a.name, a.stale))],
+  ["skill", (app, id, a) => attempt(() => skillBundle(app, id, a.name))],
 ]);
 
 const failed = (e: unknown): AppError => {

@@ -1,4 +1,4 @@
-import { appError, type AppErrorCode, type CommandFrame, type FromBridge, type PrRef, type ToBridge } from "@dorks/shared";
+import { appError, skillBundle, type SkillBundle, type AppErrorCode, type CommandFrame, type FromBridge, type PrRef, type ToBridge } from "@dorks/shared";
 import { type GrantSource, TicketRefused } from "./grants";
 
 export interface CommandEntry {
@@ -38,6 +38,8 @@ export interface Transport {
    * refused, so the backend refreshes even before it expires.
    */
   mcpToken(name: string, stale?: string): Promise<{ authorization: string; expiresAt: number | null }>;
+  /** One of the owner's skills (docs/skills.md): its files, fetched when `configure` lists a digest this box does not have. */
+  skill(name: string): Promise<SkillBundle>;
   /** An image the owner attached to one of this dork's messages, as base64; null when it is not this dork's. */
   getImage(id: string): Promise<{ mime: string; data: string } | null>;
   /** This dork's non-ended PR subscriptions (SubscriptionView[], validated by the caller), pushed on every change. */
@@ -266,6 +268,8 @@ export class WsTransport implements Transport {
   showPreview = async (port: number, opts: { title?: string; localhost?: boolean }) => this.rpc<{ port: number; url: string; title?: string }>("show_preview", { port, ...opts });
 
   mcpToken = async (name: string, stale?: string) => this.rpc<{ authorization: string; expiresAt: number | null }>("mcp_token", { name, ...(stale ? { stale } : {}) });
+
+  skill = async (name: string) => skillBundle.parse(await this.rpc<unknown>("skill", { name }));
 
   getImage = async (id: string) => this.rpc<{ mime: string; data: string } | null>("get_image", { id });
 

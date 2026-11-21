@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useSyncExternalStore, type ReactNode } from "react";
-import { toAppError, type ComposioStatus, type McpServerView, type PullRequestView, type SubscriptionView } from "@dorks/shared";
+import { toAppError, type ComposioStatus, type McpServerView, type SkillView, type PullRequestView, type SubscriptionView } from "@dorks/shared";
 import type { DorksClient, ConnectionState } from "./client.ts";
 import type { EventsState } from "./events.ts";
 import type { QueryState, Store } from "./store.ts";
@@ -79,6 +79,11 @@ export function useLocalAccess(): LocalAccess | undefined {
 
 export function useMcpServers(): McpServerView[] | undefined {
   return useStore(useDorksClient().mcpServers()).data;
+}
+
+/** The skills from Customize; `undefined` while loading. */
+export function useSkills(): SkillView[] | undefined {
+  return useStore(useDorksClient().skills()).data;
 }
 
 export function useSecretNames(): string[] | undefined {

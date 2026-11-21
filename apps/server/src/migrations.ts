@@ -354,4 +354,22 @@ export const MIGRATIONS: string[] = [
   -- A coordinator's icon (an emoji the owner picked when starting it, docs/crew.md), shown in the sidebar's Dorks group.
   ALTER TABLE dorks ADD COLUMN icon TEXT;
   `,
+  `
+  -- Skills (services/skills.ts, docs/skills.md): Agent Skills the owner installed from GitHub, shared by every sandbox. \`files\` is the
+  -- skill folder as gzipped JSON ([{path, data (base64), exec}]), \`digest\` its sha256, which the bridge compares to what it has.
+  CREATE TABLE skills (
+    name TEXT PRIMARY KEY,
+    description TEXT NOT NULL,
+    repo TEXT NOT NULL,
+    ref TEXT,
+    path TEXT NOT NULL,
+    sha TEXT NOT NULL,
+    digest TEXT NOT NULL,
+    file_count INTEGER NOT NULL,
+    bytes INTEGER NOT NULL,
+    files BLOB NOT NULL,
+    installed_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  `,
 ];

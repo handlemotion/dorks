@@ -4,7 +4,7 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { ClientEvent, McpServerView, PullRequestView } from "@dorks/shared";
+import type { ClientEvent, McpServerView, PullRequestView, SkillCandidate, SkillView } from "@dorks/shared";
 import type { Dork, Settings, SnapshotStatus } from "./types.ts";
 
 const SNAPSHOT_STEPS = [
@@ -116,6 +116,24 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   };
   const secrets = new Map<string, string>();
   const mcpServers = new Map<string, McpServerView>();
+  const skills = new Map<string, SkillView>();
+  /** A loose stand-in for services/skills.ts: `owner/repo` from the pasted text, and a few made-up skills in it. */
+  const mockResolve = (source: string) => {
+    const m = /([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?(?:[/@#\s]|$)/.exec(source.replace(/https?:\/\/github\.com\//, ""));
+    if (!m) return null;
+    const repo = `${m[1]}/${m[2]}`;
+    const names = m[2] === "skills" || m[2]!.endsWith("-skills") ? ["frontend-design", "pdf", "webapp-testing", "skill-creator"] : [m[2]!.toLowerCase().replace(/[^a-z0-9]+/g, "-")];
+    const found: SkillCandidate[] = names.map((name) => ({
+      name,
+      description: `Mock skill ${name} from ${repo}.`,
+      path: names.length > 1 ? `skills/${name}` : "",
+      fileCount: 3,
+      bytes: 4096,
+      installed: skills.has(name),
+    }));
+    const requested = names.filter((n) => source.includes(n) && n !== m[2]);
+    return { repo, ref: null, sha: "0123456789abcdef0123456789abcdef01234567", skills: found, requested: requested.length || names.length > 1 ? requested : names };
+  };
   // Composio: a sign-in "finishes" when its link is requested, so the UI's wait ends on the next read.
   const composioApps = new Set<string>();
   let localAccessEnabled = true;
@@ -642,6 +660,46 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       },
     ],
     ["GET /api/secrets", ({ res }) => json(res, 200, [...secrets.keys()].sort())],
+    [
+      "GET /api/skills",
+      ({ res }) =>
+        json(
+          res,
+          200,
+          [...skills.values()].sort((a, b) => a.name.localeCompare(b.name)),
+        ),
+    ],
+    [
+      "POST /api/skills/resolve",
+      ({ body, res }) => {
+        const r = typeof body.source === "string" ? mockResolve(body.source) : null;
+        return r ? json(res, 200, r) : fail(res, "invalid", "Paste a GitHub repository, like owner/repo, or an npx skills add command.");
+      },
+    ],
+    [
+      "POST /api/skills",
+      ({ body, res }) => {
+        const r = typeof body.source === "string" ? mockResolve(body.source) : null;
+        if (!r) return fail(res, "invalid", "Paste a GitHub repository, like owner/repo, or an npx skills add command.");
+        const want = Array.isArray(body.skills) ? (body.skills as string[]) : [];
+        const pick = r.skills.filter((s) => want.includes(s.name) || (!want.length && r.skills.length === 1));
+        if (!pick.length) return fail(res, "invalid", "Choose the skills to install.");
+        for (const s of pick)
+          skills.set(s.name, {
+            name: s.name,
+            description: s.description,
+            source: { repo: r.repo, ref: null, path: s.path },
+            sha: r.sha,
+            url: `https://github.com/${r.repo}/tree/${r.sha}/${s.path}`,
+            fileCount: s.fileCount,
+            bytes: s.bytes,
+            installedAt: skills.get(s.name)?.installedAt ?? Date.now(),
+            updatedAt: Date.now(),
+          });
+        broadcast({ t: "settings" });
+        return json(res, 200, { installed: pick.map((s) => s.name) });
+      },
+    ],
     // Local access (docs/local-access.md): the switch only; the mock's agents never ask to use the computer.
     ["GET /api/local-access", ({ res }) => json(res, 200, { enabled: localAccessEnabled, grants: [] })],
     [
@@ -744,6 +802,26 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   };
 
   // Sign-in "finishes" as soon as its page is requested, like Composio's above.
+  /** Customize's per-name routes: MCP servers, their OAuth, and skills. */
+  const routeCustomize = (c: Ctx, path: string) => {
+    const mo = /^\/api\/mcp-servers\/([^/]+)\/oauth$/.exec(path);
+    if (mo) return routeMcpOAuth(c, decodeURIComponent(mo[1]!));
+    const sk = /^\/api\/skills\/([^/]+)(\/update)?$/.exec(path);
+    if (sk) return routeSkill(c, decodeURIComponent(sk[1]!), !!sk[2]);
+    const mm = /^\/api\/mcp-servers\/([^/]+)$/.exec(path);
+    if (mm) return routeMcp(c, decodeURIComponent(mm[1]!));
+    return fail(c.res, "not_found", "Unknown route.");
+  };
+
+  const routeSkill = ({ method, res }: Ctx, name: string, update: boolean) => {
+    if (!skills.has(name)) return fail(res, "not_found", "no such skill");
+    if (update && method === "POST") return json(res, 200, { updated: false });
+    if (update || method !== "DELETE") return fail(res, "not_found", "Unknown route.");
+    skills.delete(name);
+    broadcast({ t: "settings" });
+    return json(res, 200, {});
+  };
+
   const routeMcpOAuth = ({ method, res }: Ctx, name: string) => {
     const s = mcpServers.get(name);
     if (!s?.oauth) return fail(res, "invalid", `${name} does not ask for a sign-in.`);
@@ -790,11 +868,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     if (sm) return routeSecret(c, decodeURIComponent(sm[1]!));
     const cm = /^\/api\/composio\/toolkits\/([a-z0-9_]+)(\/link)?$/.exec(path);
     if (cm) return routeComposio(c, cm[1]!, !!cm[2]);
-    const mo = /^\/api\/mcp-servers\/([^/]+)\/oauth$/.exec(path);
-    if (mo) return routeMcpOAuth(c, decodeURIComponent(mo[1]!));
-    const mm = /^\/api\/mcp-servers\/([^/]+)$/.exec(path);
-    if (mm) return routeMcp(c, decodeURIComponent(mm[1]!));
-    return fail(res, "not_found", "Unknown route.");
+    return routeCustomize(c, path);
   };
 
   const server: Server = createServer((req, res) => {

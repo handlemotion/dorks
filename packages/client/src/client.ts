@@ -1,4 +1,4 @@
-import type { ComposioStatus, McpServerInput, McpServerView, MergeMethod, PullRequestView, SubscriptionView } from "@dorks/shared";
+import type { ComposioStatus, McpServerInput, McpServerView, MergeMethod, PullRequestView, SkillView, SubscriptionView } from "@dorks/shared";
 import { EventsFeed } from "./events.ts";
 import { createApi, ApiError, type ApiConfig, type DesktopOptions } from "./http.ts";
 import { connectLive, type LiveStatus } from "./live.ts";
@@ -128,6 +128,7 @@ export class DorksClient {
         this.invalidate("github-repos");
         this.invalidate("secrets");
         this.invalidate("mcp-servers");
+        this.invalidate("skills");
         this.invalidate("composio");
         this.invalidate("local-access");
         break;
@@ -211,6 +212,10 @@ export class DorksClient {
   }
   mcpServers() {
     return this.query<McpServerView[]>("mcp-servers", () => this.api.listMcpServers());
+  }
+  /** The skills from Customize (docs/skills.md), shared by every sandbox. */
+  skills() {
+    return this.query<SkillView[]>("skills", () => this.api.listSkills());
   }
 
   subscriptions(dorkId: string) {
@@ -402,6 +407,21 @@ export class DorksClient {
     deleteMcpServer: async (name: string) => {
       await this.api.deleteMcpServer(name);
       this.invalidate("mcp-servers");
+    },
+    resolveSkills: (source: string) => this.api.resolveSkills(source),
+    installSkills: async (source: string, skills: string[]) => {
+      const r = await this.api.installSkills(source, skills);
+      this.invalidate("skills");
+      return r;
+    },
+    updateSkill: async (name: string) => {
+      const r = await this.api.updateSkill(name);
+      this.invalidate("skills");
+      return r;
+    },
+    deleteSkill: async (name: string) => {
+      await this.api.deleteSkill(name);
+      this.invalidate("skills");
     },
     createBuild: async (input: BuildInput & { name: string }) => {
       const r = await this.api.createBuild(input);

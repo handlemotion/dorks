@@ -19,6 +19,13 @@ export const FINAL_ANSWER_GUIDANCE = [
   "that; they see it and decide. Ask only when needed, one clear request at a time, never for credentials.",
 ].join(" ");
 
+/** Claude only (docs/skills.md): the owner's skills are shared by every session, and a session can add its own. */
+export const SKILLS_GUIDANCE = [
+  "The user's skills from dorks Customize are in ~/.claude/skills, shared by every session and kept in sync by dorks: do not edit or remove them.",
+  "When the user asks you to install a skill for this session, run `npx -y skills add <source> -g -a claude-code -y` (add `--skill <name>` to pick one;",
+  "never install into the repo); it lasts only as long as this sandbox. Tell them that to give it to every session they add the same source in Customize, Skills.",
+].join(" ");
+
 /**
  * A coordinator dork (docs/crew.md): it plans and delegates instead of writing code. Appended on top of the final-answer guidance. The
  * rules follow what works for orchestrator agents: self-contained tasks with clear boundaries, few workers scaled to the goal, and

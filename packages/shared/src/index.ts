@@ -7,3 +7,4 @@ export * from "./builds";
 export * from "./pullRequest";
 export * from "./mcp";
 export * from "./crew";
+export * from "./skills";

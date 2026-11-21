@@ -1,4 +1,4 @@
-import { commandFrame, effortLevel, type EffortLevel, type CrewRole, type FromBridge, type McpServerConfig, type PrRef } from "@dorks/shared";
+import { commandFrame, effortLevel, type EffortLevel, type CrewRole, type FromBridge, type McpServerConfig, type PrRef, type SkillRef } from "@dorks/shared";
 import { createHash } from "node:crypto";
 import { appendFileSync, chmodSync, closeSync, fsyncSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
@@ -20,6 +20,7 @@ import { PrSubscriptions } from "./prs";
 import { errTag, type Log, type Redactor } from "./redact";
 import { RpcServer } from "./rpc";
 import { claudeOneShot, cleanTitle, titlePrompt } from "./title";
+import { syncSkills } from "./skills";
 import type { CommandEntry, Transport } from "./transport";
 
 const EFFORTS = effortLevel.options;
@@ -361,6 +362,9 @@ export class Bridge {
     this.github.set(cfg.ghToken);
 
     const provider = cfg.provider ?? "claude";
+    const env = childEnv(this.d.baseEnv ?? process.env, cfg.env, this.log, this.runAs);
+    // The owner's skills (docs/skills.md), before the agent starts so its first turn has them. Not in the key: the CLI reloads them.
+    await this.syncSkills(provider, env, cfg.skills);
     const key = createHash("sha256")
       .update(JSON.stringify([provider, cfg.codexModel, cfg.model ?? null, cfg.effort ?? null, cfg.fast ?? false, cfg.repo, Object.entries(cfg.env).sort(), cfg.mcpServers ?? [], cfg.role ?? null]))
       .digest("hex");
@@ -374,7 +378,6 @@ export class Bridge {
     const dir = await this.prepareDir(cid, cfg.repo);
     if (dir === null) return;
 
-    const env = childEnv(this.d.baseEnv ?? process.env, cfg.env, this.log, this.runAs);
     env.DORKS_SOCK = this.rpc.sockPath; // how `dorks`, the gh shim and hooks (children of the CLI) find this process
     // The owner's MCP servers (Customize): the config file names them with `${DORKS_MCP_…}` references the CLI expands from this env.
     Object.assign(env, userMcp.env);
@@ -393,6 +396,11 @@ export class Bridge {
       this.name();
     }
     this.process(); // messages that arrived before the agent was up, and interrupts deferred during configure
+  }
+
+  private async syncSkills(provider: string, env: NodeJS.ProcessEnv, skills: readonly SkillRef[] = []) {
+    if (provider !== "claude") return; // Codex sessions do not get skills yet
+    await syncSkills({ stateDir: this.cfg.stateDir, configDir: configDirOf(env), runAs: this.runAs, fetch: (n) => this.t.skill(n), log: this.log }, skills);
   }
 
   /** The OAuth servers go behind the proxy; their saved headers stay out of the agent's env, but not out of the redactor. */

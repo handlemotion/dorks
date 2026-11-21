@@ -11,10 +11,11 @@ import { NativeSelect, NativeSelectOption } from '@dorks/ui/native-select'
 import { Textarea } from '@dorks/ui/textarea'
 import { COMPOSIO, CONNECTORS, connectorById, KINDS, type ComposioApp, type Connector, type KeyConnector } from '../../../components/connectors'
 import { PageHeader } from '../../../components/PageHeader'
+import { SkillsSection } from '../../../components/SkillsSection'
 import { SettingsGroup, SettingsRow, SettingsSection, SettingsSections } from '../../../components/settings/kit'
 import { usePending } from '../../../lib/pending'
 
-// Customize (docs/mcp.md): the connector catalog and the owner's custom MCP servers. Every agent gets them, in every sandbox, next to the built-in `dorks` server.
+// Customize (docs/skills.md, docs/mcp.md): the owner's skills, the connector catalog and the owner's custom MCP servers. Every agent gets them, in every sandbox, next to the built-in `dorks` server.
 // Header and variable values are write-only: the list shows their names, and an edit keeps a saved value unless a new one is typed.
 
 export const Route = createFileRoute('/_conn/_app/customize')({ component: Customize })
@@ -64,6 +65,7 @@ function Customize() {
       <div className="app-main min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-4xl px-4 pt-8 pb-16 sm:px-6">
           <SettingsSections>
+            <SkillsSection />
             {KINDS.map((k) => (
               <SettingsSection key={k.id} title={k.title}>
                 <ul aria-label={k.title} className="grid gap-2 md:grid-cols-2">

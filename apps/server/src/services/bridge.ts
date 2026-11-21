@@ -20,6 +20,7 @@ import { opFailed } from "../lifecycle/lifecycle";
 import { rememberModelChoices } from "./models";
 import { claudeToken, cliSecrets, githubToken } from "./settings";
 import { mcpServerConfigs } from "./mcpServers";
+import { skillRefs } from "./skills";
 import { buildVarValues, getBuild } from "./builds";
 import { crewRole } from "./crew";
 import * as subs from "./subscriptions";
@@ -507,6 +508,12 @@ function modelFields(dork: DorkRow) {
   return { ...(dork.model ? { model: dork.model } : {}), ...(dork.effort ? { effort: dork.effort } : {}), ...(dork.fast ? { fast: true } : {}) };
 }
 
+/** The owner's skills (services/skills.ts), by name and digest; the bridge fetches the files it lacks with the `skill` rpc. */
+function skillsField(app: App) {
+  const skills = skillRefs(app);
+  return skills.length ? { skills } : {};
+}
+
 const configureFrame = (app: App, dork: DorkRow): Effect.Effect<ToBridge, OnboardingIncomplete> =>
   agentSecrets(app, dork).pipe(
     Effect.map(({ gh, env, mcpServers }) => ({
@@ -520,6 +527,7 @@ const configureFrame = (app: App, dork: DorkRow): Effect.Effect<ToBridge, Onboar
       resumeSessionId: (dork.provider === "codex" ? dork.codexThreadId : dork.claudeSessionId) ?? null,
       ...(dork.titleSource === "message" ? nameFrom(app, dork.id) : {}),
       ...(crewRole(app, dork) ? { role: crewRole(app, dork) } : {}),
+      ...skillsField(app),
     })),
   );
 
