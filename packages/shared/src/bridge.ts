@@ -57,6 +57,8 @@ export const toBridge = z.discriminatedUnion("t", [
     effort: z.string().optional(),
     // Claude: fast mode on (the `fastMode` setting); only sent for a model that offers it.
     fast: z.boolean().optional(),
+    // Claude: Code Mode on (CLAUDE_CODE_EXPERIMENTAL_CODE_MODE in the --settings env block); fixed when the dork is created.
+    codeMode: z.boolean().optional(),
     env: z.record(z.string(), z.string()), // CLAUDE_CODE_OAUTH_TOKEN + shared and build variables: passed to the agent child, never written to disk
     ghToken: z.string(),
     // null: a session with no starting repo (a machine-setup session, docs/builds.md): the agent starts in the work directory.

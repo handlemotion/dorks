@@ -18,8 +18,14 @@ import { scanWork, type Finding } from "./work-scan";
 // A handler that throws answers nothing (Claude Code carries on as if the hook did not exist); `dorks hook` does the same when this
 // process is unreachable.
 
-/** Where the bridge writes the settings it hands to `claude --settings`; `fast` is the same file with fast mode on. */
-export const settingsPath = (stateDir: string, fast = false) => join(stateDir, fast ? "claude-settings-fast.json" : "claude-settings.json");
+/** Per-dork switches that ride on the `--settings` file: fast mode (the CLI's `fastMode`) and Code Mode. */
+export interface SettingsFlags {
+  fast?: boolean;
+  codeMode?: boolean;
+}
+
+/** Where the bridge writes the settings it hands to `claude --settings`: one file per combination of flags, next to the hooks. */
+export const settingsPath = (stateDir: string, f: SettingsFlags = {}) => join(stateDir, `claude-settings${f.fast ? "-fast" : ""}${f.codeMode ? "-code" : ""}.json`);
 
 /**
  * The hooks as Claude Code settings. `--settings` is applied above the user's and the project's files, and hooks from every source
@@ -27,6 +33,8 @@ export const settingsPath = (stateDir: string, fast = false) => join(stateDir, f
  * through its absolute path so it does not depend on PATH inside the hook's shell.
  * `attribution` empty turns off the CLI's own Co-Authored-By / "Generated with Claude Code" lines on commits and PRs, on every machine:
  * flag settings sit above the user's and the repo's files, so neither can turn it back on.
+ * Code Mode (Claude writes code that makes several tool calls in one step) is on only for a dork created with it: claude -p turns it on
+ * only from the env block of --settings, and a session started in Code Mode can only be resumed with it on (and the reverse is fine).
  */
 function claudeSettings(self: [node: string, cli: string]) {
   const run = (event: HookEvent) => [{ type: "command", command: `${shellQuote(self[0])} ${shellQuote(self[1])} dorks hook ${event}`, timeout: HOOK_EVENTS[event].timeoutS }];
@@ -42,12 +50,14 @@ function claudeSettings(self: [node: string, cli: string]) {
 
 /** No secrets in it, but the Claude user must be able to read it (the state dir is only traversable for them under privilege separation). */
 export function writeClaudeSettings(stateDir: string, self: [string, string]) {
-  // Two files, so fast mode (the CLI's `fastMode` setting) rides on the one `--settings` flag next to the hooks.
-  for (const fast of [false, true]) {
-    const file = settingsPath(stateDir, fast);
-    writeFileSync(file, JSON.stringify({ ...claudeSettings(self), ...(fast ? { fastMode: true } : {}) }, null, 2) + "\n");
-    chmodSync(file, 0o644);
-  }
+  // One file per combination, so fast mode and Code Mode ride on the one `--settings` flag next to the hooks.
+  for (const fast of [false, true])
+    for (const codeMode of [false, true]) {
+      const file = settingsPath(stateDir, { fast, codeMode });
+      const settings = { ...claudeSettings(self), ...(fast ? { fastMode: true } : {}), ...(codeMode ? { env: { CLAUDE_CODE_EXPERIMENTAL_CODE_MODE: "1" } } : {}) };
+      writeFileSync(file, JSON.stringify(settings, null, 2) + "\n");
+      chmodSync(file, 0o644);
+    }
   return settingsPath(stateDir);
 }
 

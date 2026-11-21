@@ -195,6 +195,10 @@ the agent. A handler that throws on the bridge side does the same (one `hook …
 The same file sets `attribution` to empty, so Claude Code never adds its own `Co-Authored-By` trailer or "Generated with Claude Code" line to a commit
 or PR on any machine; flag settings outrank the user's and the repo's files, so neither can turn it back on (checked with the real CLI).
 
+When `configure` has `codeMode: true`, the file also has `"env": { "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE": "1" }`: [Code Mode](https://code.claude.com/docs/en/code-mode),
+which `claude -p` (2.1.330 or later) turns on only from the env block of `--settings`. The server fixes it per dork at creation, because a
+session started in Code Mode resumes only with it on; the bridge writes one file per fast mode × Code Mode combination.
+
 | Hook | What the bridge does |
 |---|---|
 | `Stop` | The "done" gate. Scans the git repositories under the workdir (`<workdir>/*/*`, up to three levels, not into repos, `node_modules` or dot dirs) with local git reads only: **unpushed** (a branch with commits its upstream, or `origin/<branch>` if pushed without `-u`, does not have), **unpublished** (a branch with no remote counterpart and commits beyond the default branch; a branch that merely tracks the default branch counts as having no upstream), and **no PR** (a pushed branch with commits beyond the default branch and no pull request: first the cached subscriptions by `headRef`, else `gh pr list --head` through the real `gh` with the bridge's token; "any state", so merged or closed branches are not nagged about; unknown when gh or the network fails, which never blocks). A branch whose remote branch is gone is skipped. If anything is **new** it answers `{"decision":"block","reason":…}`: validate locally (tests, typecheck, lint for what changed, using the repo's scripts), push, open a PR with `gh pr create`, or explain why it is intentionally not pushing. Otherwise it answers nothing, whether or not subscriptions are active. |

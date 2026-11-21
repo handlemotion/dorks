@@ -21,6 +21,8 @@ export interface Settings {
   githubConnected: boolean;
   githubLogin?: string;
   commentPolicy?: CommentPolicy;
+  /** New Claude sessions start in Code Mode. */
+  claudeCodeMode: boolean;
 }
 
 const n = <T>(v: T | null | undefined): T | undefined => (v === null || v === undefined ? undefined : v);
@@ -37,6 +39,7 @@ export function readSettings(app: App): Settings {
     githubConnected: !!r.github_connected,
     githubLogin: n(r.github_login as string | null),
     commentPolicy: json(r.comment_policy),
+    claudeCodeMode: !!r.claude_code_mode,
   };
 }
 
@@ -52,6 +55,7 @@ export function settingsView(app: App) {
     github: { configured: s.githubConnected, login: s.githubLogin ?? null },
     sleepMinutes: s.sleepMinutes,
     commentPolicy: s.commentPolicy ?? DEFAULT_COMMENT_POLICY,
+    claudeCodeMode: s.claudeCodeMode,
     publicUrlConfigured: !!app.cfg.publicUrl,
     boxProvider: app.cfg.boxProvider,
     claudeModels: knownModelChoices(app),
@@ -71,6 +75,8 @@ export interface SettingsPatch {
   baseSnapshotId?: string;
   sleepMinutes?: number;
   commentPolicy?: unknown;
+  /** New Claude sessions start in Code Mode; existing ones keep what they started with. */
+  claudeCodeMode?: unknown;
 }
 
 const text = (v: unknown, what: string, max: number) => {
@@ -150,6 +156,10 @@ export async function updateSettings(app: App, patch: SettingsPatch): Promise<vo
   if (patch.baseSnapshotId !== undefined) row.baseSnapshotId = text(patch.baseSnapshotId, "snapshot", 200) || null;
   if (patch.sleepMinutes !== undefined) row.sleepMinutes = sleepMinutesOf(patch.sleepMinutes);
   if (patch.commentPolicy !== undefined) row.commentPolicy = commentPolicyOf(patch.commentPolicy);
+  if (patch.claudeCodeMode !== undefined) {
+    if (typeof patch.claudeCodeMode !== "boolean") fail("invalid", "claudeCodeMode must be true or false");
+    row.claudeCodeMode = patch.claudeCodeMode;
+  }
   if (!Object.keys(row).length) return;
   app.db.tx(() => {
     update(app.db, "settings", { id: 1 }, row);

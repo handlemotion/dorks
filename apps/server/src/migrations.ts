@@ -416,4 +416,10 @@ export const MIGRATIONS: string[] = [
     updated_at INTEGER NOT NULL
   );
   `,
+  `
+  -- Code Mode for new Claude sessions (on by default), and whether each dork was created with it. A session started in Code Mode
+  -- resumes only with it on, so the dork keeps its own value; dorks from before this migration started without it.
+  ALTER TABLE settings ADD COLUMN claude_code_mode INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE dorks ADD COLUMN code_mode INTEGER NOT NULL DEFAULT 0;
+  `,
 ];

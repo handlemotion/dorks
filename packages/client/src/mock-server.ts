@@ -149,6 +149,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     baseSnapshotId: opts.configured ? "dorks-base-20260101" : null,
     sleepMinutes: 10,
     commentPolicy: { mode: "all" },
+    claudeCodeMode: true,
     publicUrlConfigured: true,
     claudeModels: MOCK_MODELS,
   };
@@ -598,6 +599,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       settings.sleepMinutes = body.sleepMinutes;
     }
     if (body.commentPolicy) settings.commentPolicy = body.commentPolicy as Settings["commentPolicy"];
+    if (typeof body.claudeCodeMode === "boolean") settings.claudeCodeMode = body.claudeCodeMode;
     return null;
   };
 

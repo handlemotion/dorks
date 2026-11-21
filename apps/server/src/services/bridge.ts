@@ -502,10 +502,15 @@ const agentSecrets = Effect.fnUntraced(function* (app: App, dork: DorkRow): Effe
   return { gh, env: { ...secrets, ...buildVars, ...(claude ? { CLAUDE_CODE_OAUTH_TOKEN: claude } : {}) }, mcpServers };
 });
 
-/** The agent's model and effort: Codex's chosen pair, or Claude's model, effort and fast mode when set. */
+/** The agent's model and effort: Codex's chosen pair, or Claude's model, effort, fast mode and Code Mode when set. */
 function modelFields(dork: DorkRow) {
   if (dork.provider === "codex") return { codexModel: dork.codexModel };
-  return { ...(dork.model ? { model: dork.model } : {}), ...(dork.effort ? { effort: dork.effort } : {}), ...(dork.fast ? { fast: true } : {}) };
+  return {
+    ...(dork.model ? { model: dork.model } : {}),
+    ...(dork.effort ? { effort: dork.effort } : {}),
+    ...(dork.fast ? { fast: true } : {}),
+    ...(dork.codeMode ? { codeMode: true } : {}),
+  };
 }
 
 /** The owner's skills (services/skills.ts), by name and digest; the bridge fetches the files it lacks with the `skill` rpc. */
