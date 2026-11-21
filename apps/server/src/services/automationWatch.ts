@@ -110,6 +110,8 @@ type Pull = (typeof GhPulls.Type)[number];
 const PER_PAGE = 50;
 /** How far back one pass reads a list. Past it (a long time closed, a flood) the oldest unseen items are let go. */
 const MAX_PAGES = 5;
+/** Open PRs whose head is remembered: every one the first read can see, and then some. */
+const MAX_HEADS = 500;
 
 /**
  * A list, newest first, read page by page until `seen` says an item was there on the last pass (or a page runs short): so a burst
@@ -146,28 +148,38 @@ function pullEvents(repo: string, pr: Pull, old: WatchState, merged: Set<number>
 
 /** The pull request list, newest activity first. Its first read only records heads and merges. */
 const readPulls = (get: Get, repo: string, old: WatchState, now: number) =>
-  pages(get, GhPulls, `/repos/${repo}/pulls?state=all&sort=updated&direction=desc&per_page=${PER_PAGE}`, (pr) => old.pullsUpdated === undefined || time(pr.updated_at) <= old.pullsUpdated).pipe(
-    Effect.map((list) => {
-      if (!list) return { events: [], state: {} };
-      const first = old.pulls === undefined;
-      const merged = new Set(old.merged ?? []);
-      // Open PRs past this page keep the head we saw, so one that comes back is compared with it.
-      const heads: Record<string, string> = { ...old.heads };
-      const events: RepoEvent[] = [];
-      // Oldest first, so a PR seen twice across pages (it moved while being read) ends on its newest state.
-      for (const pr of list.toReversed()) {
-        delete heads[pr.number];
-        if (pr.state === "open") heads[pr.number] = pr.head.sha;
-        if (first) {
-          if (pr.merged_at) merged.add(pr.number);
-        } else events.push(...pullEvents(repo, pr, old, merged));
-      }
-      const pulls = Math.max(old.pulls ?? 0, ...list.map((p) => time(p.created_at)));
-      const pullsUpdated = Math.max(old.pullsUpdated ?? 0, ...list.map((p) => time(p.updated_at)));
-      // Events go out newest first like the other lists; the caller reverses them.
-      return { events: events.toReversed(), state: { heads: Object.fromEntries(Object.entries(heads).slice(-200)), merged: [...merged].slice(-200), pulls, pullsUpdated, since: old.since ?? now } };
-    }),
-  );
+  Effect.gen(function* () {
+    const list = yield* pages(
+      get,
+      GhPulls,
+      `/repos/${repo}/pulls?state=all&sort=updated&direction=desc&per_page=${PER_PAGE}`,
+      (pr) => old.pullsUpdated === undefined || time(pr.updated_at) <= old.pullsUpdated,
+    );
+    if (!list) return { events: [], state: {} };
+    const first = old.pulls === undefined;
+    const merged = new Set(old.merged ?? []);
+    // Open PRs past this page keep the head we saw, so one that comes back is compared with it.
+    const heads: Record<string, string> = { ...old.heads };
+    // The first read also records every open PR's head (up to MAX_PAGES of them), not only the recently active ones: a push to an
+    // older open PR is otherwise the first time we see it, with no head to compare, and would be lost.
+    if (first) for (const pr of (yield* pages(get, GhPulls, `/repos/${repo}/pulls?state=open&sort=created&direction=desc&per_page=${PER_PAGE}`, () => false)) ?? []) heads[pr.number] = pr.head.sha;
+    const events: RepoEvent[] = [];
+    // Oldest first, so a PR seen twice across pages (it moved while being read) ends on its newest state.
+    for (const pr of list.toReversed()) {
+      delete heads[pr.number];
+      if (pr.state === "open") heads[pr.number] = pr.head.sha;
+      if (first) {
+        if (pr.merged_at) merged.add(pr.number);
+      } else events.push(...pullEvents(repo, pr, old, merged));
+    }
+    const pulls = Math.max(old.pulls ?? 0, ...list.map((p) => time(p.created_at)));
+    const pullsUpdated = Math.max(old.pullsUpdated ?? 0, ...list.map((p) => time(p.updated_at)));
+    // Events go out newest first like the other lists; the caller reverses them.
+    return {
+      events: events.toReversed(),
+      state: { heads: Object.fromEntries(Object.entries(heads).slice(-MAX_HEADS)), merged: [...merged].slice(-200), pulls, pullsUpdated, since: old.since ?? now },
+    };
+  });
 
 /** New issues (the list holds pull requests too; they are left out). */
 const readIssues = (get: Get, repo: string, old: WatchState) =>

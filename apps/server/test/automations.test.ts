@@ -61,7 +61,13 @@ function github() {
     const p = url.pathname;
     if (p === "/user") return Response.json({ login: "me" });
     if (p === "/repos/octo/app") return Response.json({ private: state.private });
-    if (p === "/repos/octo/app/pulls") return Response.json([...state.pulls].reverse());
+    if (p === "/repos/octo/app/pulls") {
+      const per = Number(url.searchParams.get("per_page") ?? 30);
+      const page = Number(url.searchParams.get("page") ?? 1);
+      const open = url.searchParams.get("state") === "open";
+      const byUpdated = [...state.pulls].filter((pr) => !open || pr.state === "open").sort((x, y) => (open ? y.number - x.number : y.updated_at.localeCompare(x.updated_at)));
+      return Response.json(byUpdated.slice((page - 1) * per, page * per));
+    }
     if (p === "/repos/octo/app/issues/comments") {
       const per = Number(url.searchParams.get("per_page") ?? 30);
       const page = Number(url.searchParams.get("page") ?? 1);
@@ -136,7 +142,12 @@ describe("automations", () => {
     s.gh.state.pulls[0].updated_at = s.at(0);
     await watchOnce(s.h.app);
     await watchOnce(s.h.app); // nothing new: nothing twice
-    expect(s.dorks().map((d) => d.title)).toEqual(["review: #1 PR 1 by @alice", "review: #2 PR 2 by @alice"]);
+    expect(
+      s
+        .dorks()
+        .map((d) => d.title)
+        .sort(),
+    ).toEqual(["review: #1 PR 1 by @alice", "review: #2 PR 2 by @alice"]); // both changed in the same second
 
     s.h.clock.t += 60_000;
     s.gh.state.pulls[1].head.sha = "c3"; // a push right after its run: most likely the agent's own
@@ -146,7 +157,11 @@ describe("automations", () => {
     s.gh.state.pulls[0].state = "closed";
     await watchOnce(s.h.app);
     expect(s.dorks()).toHaveLength(3);
-    expect(listRuns(s.h.app, s.h.app.db.get<{ id: string }>("SELECT id FROM automations")!.id).map((r) => r.source)).toEqual(["pr_merged", "pr_opened", "pr_pushed"]);
+    expect(
+      listRuns(s.h.app, s.h.app.db.get<{ id: string }>("SELECT id FROM automations")!.id)
+        .map((r) => r.source)
+        .sort(),
+    ).toEqual(["pr_merged", "pr_opened", "pr_pushed"]); // and not PR 2's second push
   });
 
   it("on a public repository only listed people start runs, and the login's own comments never do", async () => {
@@ -165,6 +180,18 @@ describe("automations", () => {
     comment(3, "friend");
     await watchOnce(s.h.app);
     expect(s.dorks().map((d) => d.title)).toEqual(["answer: Comment on #4 by @friend"]);
+  });
+
+  it("a push to an older open PR, past the first read's page, still starts a run", async () => {
+    const s = await setup();
+    s.pr(1, { created_at: s.at(-86_400_000), updated_at: s.at(-86_400_000) }); // old and quiet
+    for (let n = 2; n <= 60; n++) s.pr(n, { created_at: s.at(-1000), updated_at: s.at(-1000 + n) }); // 59 busier ones fill the first page
+    createAutomation(s.h.app, { ...reviewer, triggers: [{ kind: "github", event: "pr_pushed", repo: "octo/app" }] });
+    await watchOnce(s.h.app);
+    s.h.clock.t += 60_000;
+    Object.assign(s.gh.state.pulls[0], { head: { ref: "f1", sha: "new" }, updated_at: s.at(0) });
+    await watchOnce(s.h.app);
+    expect(s.dorks().map((d) => d.title)).toEqual(["review: #1 PR 1 by @alice"]);
   });
 
   it("a burst bigger than a page between passes is read whole", async () => {
