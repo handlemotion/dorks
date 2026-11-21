@@ -111,8 +111,6 @@ export function ChatDetails({
           hidePanel={(p) => p === 'changes' && prs.length > 0}
           panelLabel={(p) => PANEL_LABEL[p]}
           panelIcon={(p) => PANEL_ICON[p]}
-          computer={data.computer}
-          computerOpen={tabs.keys.includes('computer')}
           onOpen={(target) => tabs.replace(key, target)}
           onOpenPreview={(s) => {
             setPreview(s.url)
