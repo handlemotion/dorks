@@ -19,6 +19,16 @@ interface Account {
   toolkit?: { slug?: string };
 }
 
+/** Composio's own explanation of a refusal (`{error: {message}}`), so the owner sees why, not just that, it failed. Keys in it are already masked. */
+async function reason(res: Response): Promise<string | undefined> {
+  try {
+    const m = ((await res.json()) as { error?: { message?: unknown } })?.error?.message;
+    return typeof m === "string" && m.trim() ? m.trim().slice(0, 200) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function call<T>(app: App, key: string, method: string, path: string, body?: unknown): Promise<T> {
   let res: Response;
   try {
@@ -31,8 +41,14 @@ async function call<T>(app: App, key: string, method: string, path: string, body
   } catch {
     fail("failed", "Composio could not be reached");
   }
-  if (res.status === 401 || res.status === 403) fail("invalid", "Composio did not accept this API key");
-  if (!res.ok) fail("failed", `Composio answered ${res.status}`);
+  if (res.status === 401 || res.status === 403) {
+    const why = await reason(res);
+    fail("invalid", why ? `Composio did not accept this API key: ${why}` : "Composio did not accept this API key");
+  }
+  if (!res.ok) {
+    const why = await reason(res);
+    fail("failed", why ? `Composio answered ${res.status}: ${why}` : `Composio answered ${res.status}`);
+  }
   return (res.status === 204 ? undefined : await res.json()) as T;
 }
 

@@ -433,7 +433,7 @@ describe("settings", () => {
     const h = harness({
       fetch: (async (u: string | URL | Request, init?: RequestInit) => {
         const url = new URL(u instanceof Request ? u.url : u);
-        if (revoked || new Headers(init?.headers).get("x-api-key") !== "ck-1") return Response.json({ error: "bad key" }, { status: 401 });
+        if (revoked || new Headers(init?.headers).get("x-api-key") !== "ck-1") return Response.json({ error: { message: "Invalid API key: ck**-1", status: 401 } }, { status: 401 });
         const path = url.pathname.startsWith("/api/v3/connected_accounts/") ? "/api/v3/connected_accounts" : url.pathname;
         return routes[`${init?.method ?? "GET"} ${path}`]?.(url, init) ?? new Response("{}", { status: 404 });
       }) as typeof fetch,
@@ -454,7 +454,7 @@ describe("settings", () => {
     expect((await a.post("/api/composio/toolkits/..%2Fx/link")).json.error.code).toBe("invalid");
     accounts.push({ id: "ca_x", toolkit: { slug: "x" } });
     revoked = true; // a revoked key: the status still says a key is saved, so it can be replaced or removed
-    expect((await a.get("/api/composio")).json).toEqual({ connected: true, toolkits: [], error: "Composio did not accept this API key" });
+    expect((await a.get("/api/composio")).json).toEqual({ connected: true, toolkits: [], error: "Composio did not accept this API key: Invalid API key: ck**-1" });
     expect((await a.del("/api/composio")).status).toBe(200);
     expect((await a.get("/api/composio")).json.connected).toBe(false);
   });
