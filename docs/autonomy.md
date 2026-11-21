@@ -31,7 +31,7 @@ Hooks do the parts only something inside Claude Code can do:
 ## Architecture
 
 ```
-GitHub ◀── conditional GETs every 30 s ── poller ──▶ pr_subscriptions ──▶ inbox (debounce, coalesce) ──▶ commands(notify)
+GitHub ◀── conditional GETs every 10 s ── poller ──▶ pr_subscriptions ──▶ inbox (debounce, coalesce) ──▶ commands(notify)
                                               ▲                                                          │ wake if asleep
                                               │ subscribe_pr / unsubscribe_pr (bridge socket)            ▼
 sandbox: gh shim / dorks CLI / hooks ──unix socket──▶ dorks-bridge ──stdin──▶ claude -p (stream-json, --settings <hooks>)
@@ -56,7 +56,7 @@ Tables (`src/migrations.ts`):
 - `pr_subscriptions`: one row per dork, repo and PR number, with url, title, head and base refs, head SHA, `source`, `status`, `ci`, `review`, `mergeable`, `ciFixAttempts`, and the poller's bookkeeping (ETags, review and comment cursors). It maps to `subscriptionView`. `repo` is stored lowercase.
   - A new subscription is hydrated by the poller on its first read (title, refs, SHA, state, mergeable). A PR the token cannot see (404) ends the subscription, and so does one that is already closed or merged.
   - Only a human (`source: "user"`) resubscribing resets `ciFixAttempts`; an agent reviving an ended subscription keeps the budget.
-- `inbox`: the debounce buffer. `enqueueNotification` (`src/services/notify.ts`) inserts a row and arms the per-dork `notify` timer (45 s, from the first event, not sliding). When it fires, the pending rows are folded into one `notify` command and one `notify` transcript card (`src/lib/notifyRender.ts` renders the envelope). Delivered rows are swept after a day.
+- `inbox`: the debounce buffer. `enqueueNotification` (`src/services/notify.ts`) inserts a row and arms the per-dork `notify` timer (5 s, from the first event, not sliding). When it fires, the pending rows are folded into one `notify` command and one `notify` transcript card (`src/lib/notifyRender.ts` renders the envelope). Delivered rows are swept after a day.
 - `settings.comment_policy` and `settings.github_login` (looked up when the token is saved).
 - `commands.kind` includes `notify`.
 
@@ -89,7 +89,7 @@ UI operations: `GET/POST/DELETE /api/dorks/:id/subscriptions`, `POST .../subscri
 
 ### Poller (`src/services/poller.ts`)
 
-Every 30 s, while any subscription is active, for each subscribed PR it reads, with conditional requests (`If-None-Match`; a 304 is free against the rate limit):
+Every 10 s, while any subscription is active, for each subscribed PR it reads, with conditional requests (`If-None-Match`; a 304 is free against the rate limit):
 
 - the PR (head, base, state, mergeability);
 - reviews, and conversation and review comments since the last cursor;
@@ -127,7 +127,7 @@ Rendering is done by the server: one `<dorks-event>` envelope per notification, 
 
 | Hook | Behaviour |
 |---|---|
-| `Stop` | Scans the repos under the workdir with local git reads. If a branch has commits its remote counterpart doesn't, or has commits beyond the default branch and was never pushed, or was pushed and has no PR (cached subscriptions first, then `gh pr list --head`; any PR state counts; unknown never blocks), it blocks with a reason. The reason asks the agent to validate locally (tests, typecheck, lint for what changed, using the repo's scripts), push, and open a PR with `gh pr create`, or to explain why it is intentionally not pushing. Otherwise it allows the stop. It cannot loop: `stop_hook_active` always allows, a condition is raised once per session (persisted, forgotten when it clears), and a turn answering a `ready` notification is not gated. |
+| `Stop` | Scans the repos under the workdir with local git reads. If a working tree has uncommitted changes (ignored files aside), a branch has commits its remote counterpart doesn't, or has commits beyond the default branch and was never pushed, or was pushed and has no PR (cached subscriptions first, then `gh pr list --head`; any PR state counts; unknown never blocks), it blocks with a reason. The reason tells the agent it is authorized to ship without asking, then to validate locally (tests, typecheck, lint for what changed, using the repo's scripts), commit, push, and open a PR with `gh pr create`; it may skip only work the user said not to PR, or scratch output. Otherwise it allows the stop. It cannot loop: `stop_hook_active` always allows, a condition is raised once per session (persisted, forgotten when it clears), and a turn answering a `ready` notification is not gated. |
 | `PostToolUse` (Bash) | Detects `gh pr create` / `gh stack submit` URLs in the tool result (a backup for the shim; idempotent) and `gh pr merge` / `gh pr close` results, then subscribes (`auto`) or unsubscribes. Returns nothing. |
 | `SessionStart` (`startup`, `resume`, `compact`) | Adds `additionalContext` listing the subscribed PRs (`repo#n`, title, CI, review, mergeable, attempts n/2, stalled) and a reminder of how autonomy works. |
 
@@ -135,6 +135,6 @@ Rendering is done by the server: one `<dorks-event>` envelope per notification, 
 
 1. Pushes made with the token trigger Actions and appear as check suites on the PR head.
 2. `gh run view --log-failed` works with the Actions read permission.
-3. Time from a CI failure to the agent's first token with a real Boat sandbox that was asleep (target under 60 s, plus up to one 30 s poll and the 45 s debounce).
+3. Time from a CI failure to the agent's first token with a real Boat sandbox that was asleep (target under 60 s, plus up to one 10 s poll and the 5 s debounce).
 4. `gh stack` behaviour through the shim, and what a restack looks like to the poller.
 5. Check suites created by other apps (GitHub Actions) are returned by the head's check-suites read. CI that reports only through commit statuses is not covered yet.

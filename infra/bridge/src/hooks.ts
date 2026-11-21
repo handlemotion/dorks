@@ -12,7 +12,7 @@ import { scanWork, type Finding } from "./work-scan";
 
 // The bridge's side of the Claude Code hooks (docs/autonomy.md). Claude runs `dorks hook <event>` (hook-cli.ts), which forwards the hook's
 // JSON input to the `hook.*` methods below and prints what they return:
-//   Stop          the "done" gate: unpushed work, or a pushed branch without a PR, blocks the stop once
+//   Stop          the "done" gate: uncommitted or unpushed work, or a pushed branch without a PR, blocks the stop once
 //   PostToolUse   backs up the gh shim: subscribes to PRs `gh pr create` printed, unsubscribes from ones `gh pr merge|close` ended
 //   SessionStart  re-injects the subscribed PRs and how autonomy works after a start, resume or compaction
 // A handler that throws answers nothing (Claude Code carries on as if the hook did not exist); `dorks hook` does the same when this
@@ -253,14 +253,15 @@ export function stopReason(found: Finding[]): string {
   const lines = found.slice(0, MAX_LISTED).map((f) => `- ${f.repo ?? "repository"} at ${f.dir}, branch ${f.branch}: ${f.detail}`);
   if (found.length > MAX_LISTED) lines.push(`- and ${found.length - MAX_LISTED} more (see \`git branch -vv\` in your repositories)`);
   return [
-    "Before you stop: work in this box has not reached GitHub.",
+    "Do not stop yet: work in this box has not reached GitHub, and every change you make here ships as a pull request.",
     ...lines,
     "",
-    "For each of them:",
+    "The user has authorized you to commit, push and open pull requests for your work in this box: do not stop to ask whether to. For each of them, now:",
     "1. Validate locally first. Run the repo's tests, typecheck and lint for what you changed, using the scripts the repo defines (package.json scripts, Makefile, CI config), and fix what fails.",
-    "2. Push the branch (`git push -u origin <branch>`).",
-    "3. Open a pull request with `gh pr create` (`gh stack submit` for a stack). That subscribes you to it, so CI results, reviews and conflicts wake you up.",
-    "4. Or, if you are intentionally not pushing this work, say so in your reply and explain why. You will not be asked about it again.",
+    "2. Commit what is uncommitted, on a new branch if you are on the default branch (follow the repo's branching rules).",
+    "3. Push the branch (`git push -u origin <branch>`).",
+    "4. Open a pull request with `gh pr create` (`gh stack submit` for a stack), or push to the PR it belongs to. That subscribes you to it, so CI results, reviews and conflicts wake you up.",
+    "5. Skip a change only if the user told you not to open a PR for it, or it is scratch output that does not belong in the repo (then delete it or leave it and say so). Being unsure whether the user wants a PR is not a reason: open it.",
   ].join("\n");
 }
 
@@ -288,6 +289,7 @@ function sessionContext(subs: SubscriptionView[] | null): string {
     "- `gh pr create` subscribes you to the new PR. The `pr_subscribe`, `pr_unsubscribe` and `pr_list` tools of the dorks MCP server (or `dorks pr sub <pr>`, `dorks pr unsub <pr>`, `dorks pr list` in a shell) manage subscriptions (<pr> is a URL or owner/name#12).",
     "- When you start a web server the user should see (a dev server, a preview build), call the `preview_show` tool with its port: it opens in the user's Artifacts as a running preview.",
     "- When a PR is ready (CI green and approved), post a short standby note in its thread and stop. Never merge it yourself.",
-    "- If you stop with unpushed commits or a pushed branch without a PR, you will be asked once to push and open a PR, or to explain why you are not.",
+    "- Every change you make ships as a pull request: when the work is done, validate it, commit, push and open a PR (or push to the PR it belongs to) without asking the user first. The user has authorized commits, pushes and PRs in this box.",
+    "- Stopping with uncommitted changes, unpushed commits or a pushed branch without a PR is blocked: you will be told to finish shipping it.",
   ].join("\n");
 }

@@ -413,8 +413,9 @@ export function ChatMessages({
       return (
         // A user message gets 12px more air on each side than the transcript's 24px gap, so turns read apart from the agent's work.
         // `pt-10 -mt-7` is that 12px on top plus 28px of paint room for the hover toolbar above the bubble, which the item would
-        // otherwise clip.
-        <MessageScrollerItem key={entry.block.id} messageId={entry.block.id} scrollAnchor className="-mt-7 pt-10 pb-3">
+        // otherwise clip. Not a scroll anchor: an anchored message is pinned to the top of the view when sent, and the thread
+        // should stay at the bottom with the latest content instead.
+        <MessageScrollerItem key={entry.block.id} messageId={entry.block.id} className="-mt-7 pt-10 pb-3">
           <Message align="end">
             <MessageContent className="items-end">
               {quoted && <ReplyQuote reply={quoted.kind === 'image' && quoted.ref ? { ...quoted, src: resolveRef(quoted.ref, imageUrl) } : quoted} />}

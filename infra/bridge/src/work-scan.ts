@@ -8,6 +8,7 @@ import type { Identity } from "./runas";
 // (no fetch), so it is fast and offline-safe; the one network question, "does this pushed branch have a PR?", is the caller's `hasPr`.
 
 export type FindingKind =
+  | "uncommitted" // changed or new files in the working tree, not committed at all
   | "unpushed" // commits on a branch that its remote counterpart does not have
   | "unpublished" // a branch with commits beyond the default branch that was never pushed
   | "no_pr"; // a pushed branch with commits beyond the default branch and no pull request
@@ -101,6 +102,13 @@ async function scanRepo(dir: string, o: ScanOptions): Promise<{ done: Finding[];
   const done: Finding[] = [];
   const pushed: Finding[] = [];
   const found = (kind: FindingKind, branch: string, detail: string) => ({ kind, dir, repo, branch, detail });
+  // Edits that were never committed: the commonest way to stop "done" with nothing on GitHub. Ignored files do not count.
+  const status = await out("status", "--porcelain", "--untracked-files=normal");
+  if (status) {
+    const n = status.split("\n").length;
+    const branch = (await out("branch", "--show-current")) || "HEAD (detached)";
+    done.push(found("uncommitted", branch, `${n} ${n === 1 ? "file" : "files"} changed and not committed`));
+  }
   const heads = await out("for-each-ref", "--format=%(refname:short)%09%(upstream:short)%09%(upstream:track,nobracket)", "refs/heads");
   for (const line of heads ? heads.split("\n") : []) {
     const [branch = "", upstream = "", track = ""] = line.split("\t");
