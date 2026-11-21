@@ -264,7 +264,8 @@ function AgentText({ block }: { block: Extract<AgentBlock, { kind: 'assistant' }
     <HoverActions
       text={block.text}
       sentAt={block.at ? new Date(block.at) : undefined}
-      timeBelow
+      // Only a final answer keeps a line under it for the time: between tool calls that line read as a gap, so there it is in the gutter.
+      timeBelow={block.final}
       rate={block.final}
       onReply={onReply && (() => onReply({ kind: 'text', text: quoteText(block.text.replace(IMAGE, '')) }))}
     >
