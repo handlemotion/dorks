@@ -4,6 +4,7 @@ import type { ScheduleTrigger } from "@dorks/shared";
 // epoch milliseconds in, epoch milliseconds out.
 
 const MINUTE = 60_000;
+const DAY = 24 * 60 * MINUTE;
 const formats = new Map<string, Intl.DateTimeFormat>();
 
 function format(timeZone: string) {
@@ -37,11 +38,20 @@ function offset(ms: number, tz: string) {
   return Date.UTC(w.y, w.mo - 1, w.d, w.h, w.mi, w.s) - Math.floor(ms / 1000) * 1000;
 }
 
-/** The instant a wall-clock time in `tz` happens. A time skipped by a clock change lands just after the gap. */
+/**
+ * The instant a wall-clock time in `tz` happens. A zone has at most two offsets around one day, so try both. A time that happens twice
+ * (clocks go back) is the first one; a time skipped (clocks go forward) is read with the offset before the change, so it lands as far
+ * past the gap as it was into it (02:30 on a 02:00 → 03:00 night is 03:30).
+ */
 function instant(y: number, mo: number, d: number, h: number, mi: number, tz: string) {
   const guess = Date.UTC(y, mo - 1, d, h, mi);
-  const first = guess - offset(guess, tz);
-  return guess - offset(first, tz);
+  const before = offset(guess - DAY, tz);
+  const after = offset(guess + DAY, tz);
+  const hits = [guess - before, guess - after].filter((t) => {
+    const w = wall(t, tz);
+    return w.y === y && w.mo === mo && w.d === d && w.h === h && w.mi === mi;
+  });
+  return hits.length ? Math.min(...hits) : guess - before;
 }
 
 /** The first time the schedule fires strictly after `after`. */

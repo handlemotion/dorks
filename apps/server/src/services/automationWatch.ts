@@ -109,13 +109,13 @@ function pullEvents(repo: string, pr: Pull, old: WatchState, merged: Set<number>
   const ev = { repo, author: pr.user?.login ?? "ghost", bot: pr.user?.type === "Bot", number: pr.number, title: pr.title, url: pr.html_url, head: pr.head.ref, base: pr.base.ref };
   const out: RepoEvent[] = [];
   const opened = time(pr.created_at) > (old.pulls ?? 0);
-  if (opened && pr.state === "open") out.push({ ...ev, event: "pr_opened", key: `pr_opened:${pr.number}` });
+  if (opened && pr.state === "open") out.push({ ...ev, event: "pr_opened", key: `pr_opened:${repo}#${pr.number}` });
   const before = old.heads?.[pr.number];
-  if (!opened && pr.state === "open" && before && before !== pr.head.sha) out.push({ ...ev, event: "pr_pushed", key: `pr_pushed:${pr.number}@${pr.head.sha}` });
+  if (!opened && pr.state === "open" && before && before !== pr.head.sha) out.push({ ...ev, event: "pr_pushed", key: `pr_pushed:${repo}#${pr.number}@${pr.head.sha}` });
   // A merge from before the list was first read is history; one the last reads already reported is not news.
   if (pr.merged_at && !merged.has(pr.number) && time(pr.merged_at) > (old.since ?? 0) - 5 * 60_000) {
     merged.add(pr.number);
-    out.push({ ...ev, event: "pr_merged", key: `pr_merged:${pr.number}` });
+    out.push({ ...ev, event: "pr_merged", key: `pr_merged:${repo}#${pr.number}` });
   }
   return out;
 }
@@ -156,7 +156,7 @@ const readIssues = (get: Get, repo: string, old: WatchState) =>
         number: i.number,
         title: i.title,
         url: i.html_url,
-        key: `issue_opened:${i.number}`,
+        key: `issue_opened:${repo}#${i.number}`,
         body: i.body ?? "",
       }));
       return { events, state: { issues: Math.max(old.issues ?? 0, ...r.json.map((i) => time(i.created_at))) } };
@@ -177,7 +177,7 @@ const readComments = (get: Get, repo: string, old: WatchState) =>
         number: Number(c.issue_url.split("/").pop()),
         title: "",
         url: c.html_url,
-        key: `comment:${c.id}`,
+        key: `comment:${repo}:${c.id}`,
         body: c.body ?? "",
       }));
       return { events, state: { comments: Math.max(old.comments ?? 0, ...r.json.map((c) => time(c.created_at))) } };

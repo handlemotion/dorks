@@ -31,6 +31,7 @@ export const PUSH_COOLDOWN_MS = 10 * 60_000;
 const KEEP_RUNS = 100;
 const HISTORY_PAGE = 50;
 const WEEK_MS = 7 * 24 * 3_600_000;
+const CAP_WINDOW_MS = 3_600_000;
 
 export interface AutomationRow extends AutomationSpec {
   id: string;
@@ -196,7 +197,10 @@ export function rearmSchedule(app: App, id: string) {
 /** After a restart: a schedule job lost mid-flight is set again, and the watcher runs if anything needs it. */
 export function recoverAutomations(app: App) {
   app.db.tx(() => {
-    for (const a of allAutomations(app)) if (a.enabled && !hasTimer(app, "", `${SCHEDULE_JOB}${a.id}`)) arm(app, a);
+    const active = allAutomations(app).filter((a) => a.enabled);
+    for (const a of active) if (!hasTimer(app, "", `${SCHEDULE_JOB}${a.id}`)) arm(app, a);
+    // Checked on its own: a watcher job that was running when the process died was already claimed, so its timer is gone.
+    if (active.some((a) => githubTriggers(a).length) && !hasTimer(app, "", WATCH_JOB)) setTimer(app, "", WATCH_JOB, 1_000);
   });
 }
 
@@ -238,7 +242,14 @@ function recordRun(app: App, a: AutomationRow, r: RunRequest, status: Automation
     error,
     createdAt: app.now(),
   });
-  app.db.run("DELETE FROM automation_runs WHERE automation_id = ? AND id NOT IN (SELECT id FROM automation_runs WHERE automation_id = ? ORDER BY created_at DESC LIMIT ?)", a.id, a.id, KEEP_RUNS);
+  // The history keeps the newest runs, and always the last hour's: the hourly cap counts them.
+  app.db.run(
+    "DELETE FROM automation_runs WHERE automation_id = ? AND created_at <= ? AND id NOT IN (SELECT id FROM automation_runs WHERE automation_id = ? ORDER BY created_at DESC LIMIT ?)",
+    a.id,
+    app.now() - CAP_WINDOW_MS,
+    a.id,
+    KEEP_RUNS,
+  );
   touch(app, { t: "automations" });
   return id;
 }
@@ -250,7 +261,7 @@ function recordRun(app: App, a: AutomationRow, r: RunRequest, status: Automation
 export function startRun(app: App, a: AutomationRow, r: RunRequest): string | null {
   return app.db.tx(() => {
     if (r.key && app.db.get("SELECT 1 AS x FROM automation_runs WHERE automation_id = ? AND event_key = ?", a.id, r.key)) return null;
-    const lastHour = app.db.get<{ n: number }>("SELECT count(*) AS n FROM automation_runs WHERE automation_id = ? AND status = 'started' AND created_at > ?", a.id, app.now() - 3_600_000)?.n ?? 0;
+    const lastHour = app.db.get<{ n: number }>("SELECT count(*) AS n FROM automation_runs WHERE automation_id = ? AND status = 'started' AND created_at > ?", a.id, app.now() - CAP_WINDOW_MS)?.n ?? 0;
     if (r.source !== "manual" && lastHour >= MAX_RUNS_PER_HOUR) return recordRun(app, a, r, "skipped", `It already ran ${lastHour} times in the last hour.`, null);
     let dorkId: string;
     try {

@@ -17,6 +17,12 @@ describe("schedule", () => {
     expect(nextFire(t, utc("2026-03-28T08:00:00"))).toBe(utc("2026-03-29T07:00:00")); // CEST from the 29th, UTC+2
   });
 
+  it("a time the clocks skip lands after the gap, and a time they repeat is the first one", () => {
+    const t = { every: "day" as const, day: 1, time: "02:30", timezone: "America/New_York" };
+    expect(nextFire(t, utc("2026-03-08T05:00:00"))).toBe(utc("2026-03-08T07:30:00")); // 03:30 EDT, not 01:30 EST
+    expect(nextFire({ ...t, time: "01:30" }, utc("2026-11-01T04:00:00"))).toBe(utc("2026-11-01T05:30:00")); // 01:30 EDT
+  });
+
   it("skips weekends for weekdays, finds the day for weekly, and the minute for hourly", () => {
     const sat = utc("2026-11-21T12:00:00"); // a Saturday
     expect(nextFire({ every: "weekdays", day: 1, time: "15:00", timezone: "UTC" }, sat)).toBe(utc("2026-11-23T15:00:00"));
