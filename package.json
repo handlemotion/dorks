@@ -12,9 +12,13 @@
     "check": "vp check",
     "lint": "vp lint",
     "fmt": "vp fmt",
-    "e2e": "node scripts/e2e.mjs"
+    "e2e": "node scripts/e2e.mjs",
+    "changeset": "changeset",
+    "release:version": "changeset version && node apps/desktop/scripts/sync-version.mjs"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "1.0.1",
+    "@changesets/cli": "3.0.3",
     "vite-plus": "catalog:"
   },
   "packageManager": "pnpm@12.4.2"

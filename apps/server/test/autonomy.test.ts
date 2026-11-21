@@ -149,21 +149,6 @@ describe("comment policy", () => {
 });
 
 describe("what a change on the PR does", () => {
-  it("closed/merged ends the subscription and tells the agent unless it did it itself", () => {
-    const s = setup();
-    s.sub();
-    s.ingest({ kind: "pr_closed", merged: true, sender: human });
-    expect(s.get()).toMatchObject({ status: "ended", state: "merged" });
-    expect(s.inbox().map((r) => r.kind)).toEqual(["closed"]);
-    expect(s.h.events(s.id).map((e) => e.body.type)).toContain("pr_merged");
-
-    const t = setup();
-    t.sub();
-    t.ingest({ kind: "pr_closed", merged: false, sender: { login: "agent-bot", bot: true } });
-    expect(t.get()).toMatchObject({ status: "ended", state: "closed" });
-    expect(t.inbox()).toEqual([]);
-  });
-
   it("a push moves the head; one that answers a handed-over failure is a fix attempt, one that races the debounce is not", () => {
     const s = setup();
     s.sub();

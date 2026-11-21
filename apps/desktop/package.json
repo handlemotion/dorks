@@ -1,5 +1,6 @@
 {
   "name": "@dorks/desktop",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +11,6 @@
     "dev": "pnpm prepare:all && tauri dev",
     "build": "pnpm prepare:all && tauri build",
     "build:dev": "pnpm prepare:all && tauri build --debug --bundles app",
-    "release": "node scripts/release.mjs",
     "typecheck": "node scripts/cargo.mjs clippy -p dorks-shell-core --all-targets -- -D warnings",
     "test": "node scripts/cargo.mjs test -p dorks-shell-core",
     "check:app": "node scripts/cargo.mjs clippy --workspace --all-targets -- -D warnings && node scripts/cargo.mjs test --workspace",

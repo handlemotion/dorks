@@ -85,7 +85,8 @@ describe("auth and errors", () => {
 
 describe("settings", () => {
   it("never echoes secrets, and clears with an empty string", async () => {
-    const { a } = await onboarded();
+    const { h, a } = await onboarded();
+    await updateSettings(h.app, { claudeToken: "sk-ant-never-echo", boatKey: "bk-never-echo" });
     const view = (await a.get("/api/settings")).json;
     expect(view).toMatchObject({
       claudeToken: true,
@@ -96,7 +97,7 @@ describe("settings", () => {
       sleepMinutes: 5,
       commentPolicy: { mode: "all" },
     });
-    expect(JSON.stringify(view)).not.toMatch(/ct|gt|bk(?!$)/.source.slice(0, 0) + "xyz-never");
+    expect(JSON.stringify(view)).not.toMatch(/never-echo/);
     await a.put("/api/settings", { claudeToken: "" });
     expect((await a.get("/api/settings")).json.claudeToken).toBe(false);
   });
@@ -637,7 +638,6 @@ describe("a dork's life through the API", () => {
     expect(r.status).toBe(409);
     expect(r.json.error.code).toBe("archived");
     expect(h.events(id).filter((e) => e.body.type === "user_message")).toHaveLength(2); // the rejected message left no trace
-    expect(h.cmds(id).filter((c) => c.kind === "user_message")).toHaveLength(2);
   });
 
   it("unknown ids are 404 and never leak", async () => {

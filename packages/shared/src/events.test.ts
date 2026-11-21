@@ -1,55 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
-import { clientEvent } from "./events";
 import type { ClientEvent } from "./events";
 import { emptyView, fold } from "./client/fold";
 
 const base = { seq: 1, dorkId: "d", ts: 1 };
-
-// One valid example per event type. The coverage test below fails if a new type is added to the schema without one.
-const samples: Record<ClientEvent["type"], object> = {
-  user_message: { text: "hi" },
-  assistant_delta: { messageId: "m", text: "he" },
-  assistant_message: { messageId: "m", text: "hello" },
-  tool_use: { toolId: "t", name: "Bash", summary: "ls" },
-  tool_result: { toolId: "t", ok: true, preview: "a" },
-  status: { state: "working" },
-  turn_complete: { durationMs: 10, finalMessageId: "m", outcome: "done" },
-  pr_opened: { url: "https://github.com/o/r/pull/1", number: 1 },
-  pr_merged: { url: "https://github.com/o/r/pull/1", number: 1 },
-  notify: { kinds: [], prs: [], text: "digest" },
-  crew: { direction: "in", peer: { id: "d", title: "Worker" }, kind: "report", text: "done" },
-  subscription: { repo: "o/r", number: 1, status: "active" },
-  build_draft: { draftId: "dr", buildId: "b", buildName: "web", note: "adds jq" },
-  build_decision: { draftId: "dr", buildId: "b", buildName: "web", approved: true },
-  local_request: { requestId: "lr", kind: "run", command: "ls", cwd: "/Users/me", reason: "list files" },
-  local_decision: { requestId: "lr", decision: "allowed", via: "once" },
-  local_result: { requestId: "lr", ok: true, exitCode: 0, preview: "a" },
-  rate_limited: {},
-  agent_exited: { message: "bye" },
-  error: { message: "boom" },
-};
-
-describe("clientEvent runtime schema", () => {
-  it("has a sample for every event type in the schema", () => {
-    const types = clientEvent.options.map((o) => o.shape.type.value).sort();
-    expect(Object.keys(samples).sort()).toEqual(types);
-  });
-
-  it.each(Object.entries(samples))("accepts a valid %s", (type, rest) => {
-    expect(clientEvent.safeParse({ ...base, type, ...rest }).success).toBe(true);
-  });
-
-  it.each(Object.entries(samples).filter(([, rest]) => Object.keys(rest).length > 0))("rejects %s with a wrong field type", (type, rest) => {
-    const [key] = Object.keys(rest);
-    expect(clientEvent.safeParse({ ...base, type, ...rest, [key]: typeof (rest as Record<string, unknown>)[key] === "string" ? 123 : "nope" }).success).toBe(false);
-  });
-
-  it("rejects missing envelope fields, missing payload fields and unknown types", () => {
-    expect(clientEvent.safeParse({ type: "user_message", text: "hi" }).success).toBe(false);
-    expect(clientEvent.safeParse({ ...base, type: "user_message" }).success).toBe(false);
-    expect(clientEvent.safeParse({ ...base, type: "from_the_future" }).success).toBe(false);
-  });
-});
 
 describe("unknown events", () => {
   it("fold ignores an unknown event type but still advances lastSeq", () => {

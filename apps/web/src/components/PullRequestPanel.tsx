@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
+  CheckIcon,
   CircleAlertIcon,
   CircleCheckIcon,
   CircleXIcon,
@@ -8,9 +9,12 @@ import {
   ChevronsDownUpIcon,
   ChevronsUpDownIcon,
   ExternalLinkIcon,
+  GitCompareArrowsIcon,
+  GitMergeIcon,
   LoaderIcon,
   RefreshCwIcon,
   WrapTextIcon,
+  WrenchIcon,
   XIcon,
 } from 'lucide-react'
 import { PatchDiff } from '@pierre/diffs/react'
@@ -382,6 +386,7 @@ function nextStep({ view, data, onAsk, method, setMethod, confirming, setConfirm
     return (
       onAsk && (
         <Button size="xs" className={`${ACTION_BUTTON} ${BLOCKER_BUTTON}`} onClick={() => onAsk(`Merge ${baseRef} into this branch, resolve the conflicts, run the tests and push.`)}>
+          <GitCompareArrowsIcon />
           Resolve conflicts
         </Button>
       )
@@ -390,7 +395,7 @@ function nextStep({ view, data, onAsk, method, setMethod, confirming, setConfirm
     return (
       updateBranch && (
         <Button size="xs" variant="outline" className={ACTION_BUTTON} disabled={busy === 'update'} onClick={() => void run('update', () => updateBranch(view.headSha))}>
-          {busy === 'update' && <LoaderIcon className="animate-spin" />}
+          {busy === 'update' ? <LoaderIcon className="animate-spin" /> : <RefreshCwIcon />}
           Update branch
         </Button>
       )
@@ -404,6 +409,7 @@ function nextStep({ view, data, onAsk, method, setMethod, confirming, setConfirm
           className={`${ACTION_BUTTON} ${BLOCKER_BUTTON}`}
           onClick={() => onAsk(`The pull request's checks are failing (${checks.failing.join(', ')}). Find out why, fix it and push.`)}
         >
+          <WrenchIcon />
           Fix checks
         </Button>
       )}
@@ -501,10 +507,11 @@ function MergeButton({
     <div className="flex items-center">
       <Button size="xs" className={`${ACTION_BUTTON} grid rounded-r-none ${MERGE_BUTTON}`} disabled={busy !== undefined} onClick={onMerge}>
         <span className={cell(!confirming)} aria-hidden={confirming}>
+          <GitMergeIcon />
           {METHOD_BUTTON[method]}
         </span>
         <span className={cell(confirming)} aria-hidden={!confirming}>
-          {busy === 'merge' && <LoaderIcon className="animate-spin" />}
+          {busy === 'merge' ? <LoaderIcon className="animate-spin" /> : <CheckIcon />}
           Confirm merge
         </span>
       </Button>
