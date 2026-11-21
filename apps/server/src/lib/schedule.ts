@@ -58,9 +58,15 @@ function instant(y: number, mo: number, d: number, h: number, mi: number, tz: st
 export function nextFire(t: Pick<ScheduleTrigger, "every" | "day" | "time" | "timezone">, after: number): number {
   const [h, mi] = t.time.split(":").map(Number);
   if (t.every === "hour") {
+    // Hour by hour on the zone's wall clock, never by elapsed time: a change of offset that is not a whole hour (Lord Howe's 30
+    // minutes) keeps the minute, and an hour the clocks skip is passed over.
     const now = wall(after, t.timezone);
-    const base = Math.floor(after / MINUTE) * MINUTE - (now.mi - mi) * MINUTE;
-    return base > after ? base : base + 60 * MINUTE;
+    for (let i = 0; i < 4; i++) {
+      const at = new Date(Date.UTC(now.y, now.mo - 1, now.d, now.h + i, mi));
+      const fire = instant(at.getUTCFullYear(), at.getUTCMonth() + 1, at.getUTCDate(), at.getUTCHours(), mi, t.timezone);
+      if (fire > after) return fire;
+    }
+    throw new Error("no next time"); // unreachable: a clock change is at most two hours
   }
   const today = wall(after, t.timezone);
   for (let i = 0; i < 9; i++) {

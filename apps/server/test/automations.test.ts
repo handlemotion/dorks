@@ -17,6 +17,15 @@ describe("schedule", () => {
     expect(nextFire(t, utc("2026-03-28T08:00:00"))).toBe(utc("2026-03-29T07:00:00")); // CEST from the 29th, UTC+2
   });
 
+  it("hourly keeps its minute across a half-hour clock change", () => {
+    const t = { every: "hour" as const, day: 1, time: "00:30", timezone: "Australia/Lord_Howe" };
+    let at = utc("2026-10-03T14:00:00");
+    const fires = [];
+    for (let i = 0; i < 4; i++) fires.push((at = nextFire(t, at)));
+    // 01:30 (+10:30), 02:30 just after the 02:00 → 02:30 jump (+11), then 03:30 and 04:30: always :30 local, nothing skipped.
+    expect(fires).toEqual([utc("2026-10-03T15:00:00"), utc("2026-10-03T15:30:00"), utc("2026-10-03T16:30:00"), utc("2026-10-03T17:30:00")]);
+  });
+
   it("a time the clocks skip lands after the gap, and a time they repeat is the first one", () => {
     const t = { every: "day" as const, day: 1, time: "02:30", timezone: "America/New_York" };
     expect(nextFire(t, utc("2026-03-08T05:00:00"))).toBe(utc("2026-03-08T07:30:00")); // 03:30 EDT, not 01:30 EST
