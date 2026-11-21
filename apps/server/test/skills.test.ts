@@ -152,4 +152,20 @@ describe("skills from GitHub", () => {
     const { installSkills } = await import("../src/services/skills");
     await expect(installSkills(h.app, { source: "o/r" })).rejects.toThrow(/longer than 512/);
   });
+
+  it("updates from the stored ref as written, even with an @ in it", async () => {
+    const asked: string[] = [];
+    const repo = tarball({ "skills/pdf/SKILL.md": md("pdf", "p") });
+    const h = harness();
+    h.app.fetch = fakeFetch((url) => {
+      asked.push(url.pathname);
+      if (url.pathname === "/repos/o/r/commits/release%402") return new Response("f".repeat(40));
+      if (url.pathname.includes("/tarball/")) return new Response(repo);
+      return new Response("{}", { status: 404 });
+    });
+    const { installSkills, updateSkill } = await import("../src/services/skills");
+    await installSkills(h.app, { source: "https://github.com/o/r/tree/release@2/skills/pdf" });
+    expect(await updateSkill(h.app, "pdf")).toEqual({ updated: false });
+    expect(asked.filter((p) => p.includes("/commits/")).every((p) => p.endsWith("release%402"))).toBe(true);
+  });
 });

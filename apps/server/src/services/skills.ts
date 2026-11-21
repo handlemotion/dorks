@@ -145,6 +145,7 @@ interface Resolved {
   found: FoundSkill[];
 }
 
+/** What the owner pasted, parsed and resolved. */
 async function resolve(app: App, input: unknown): Promise<Resolved> {
   if (typeof input !== "string") fail("invalid", "source must be text");
   let parsed: ParsedSource;
@@ -154,6 +155,11 @@ async function resolve(app: App, input: unknown): Promise<Resolved> {
     if (e instanceof SourceError) fail("invalid", e.message);
     throw e;
   }
+  return resolveParsed(app, parsed);
+}
+
+/** A repository, ref and folder (no text parsing, so a stored ref with `@` or `#` in it stays literal). */
+async function resolveParsed(app: App, parsed: ParsedSource): Promise<Resolved> {
   const token = await githubToken(app);
   const repo = `${parsed.owner}/${parsed.repo}`;
   let { ref, path } = parsed;
@@ -233,10 +239,11 @@ export async function installSkills(app: App, input: { source?: unknown; skills?
 export async function updateSkill(app: App, name: string): Promise<{ updated: boolean }> {
   const row = app.db.get<Row>("SELECT * FROM skills WHERE name = ?", name);
   if (!row) fail("not_found", "no such skill");
-  const ref = row.ref ? `#${row.ref}` : "";
+  const [owner, repo] = row.repo.split("/") as [string, string];
+  const at = (path: string): ParsedSource => ({ owner, repo, ref: row.ref, path, refPath: null, skills: [] });
   // Its own folder first (a root SKILL.md would hide a nested skill from a whole-repo search), then the repo, for a moved skill.
-  const atPath = row.path ? await resolve(app, `${row.repo}/${row.path}${ref}`).catch((e: unknown) => (e instanceof AppFail && e.error.code === "not_found" ? null : Promise.reject(e))) : null;
-  const r = atPath?.found.some((f) => f.path === row.path) ? atPath : await resolve(app, `${row.repo}${ref}`);
+  const atPath = row.path ? await resolveParsed(app, at(row.path)).catch((e: unknown) => (e instanceof AppFail && e.error.code === "not_found" ? null : Promise.reject(e))) : null;
+  const r = atPath?.found.some((f) => f.path === row.path) ? atPath : await resolveParsed(app, at(""));
   const s = r.found.find((f) => f.path === row.path) ?? r.found.find((f) => f.name === row.name);
   if (!s) fail("not_found", `${row.repo} no longer has this skill.`);
   checkSize(s);
