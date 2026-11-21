@@ -26,7 +26,8 @@ import { endSubscription, getSub, pollable, savePollState, updateSubscription, t
 // what changed into the PR events services/githubIngest.ts applies. The reads are Effects failing with `GithubError`; the
 // writes are one transaction per subscription.
 
-export const POLL_MS = 30_000;
+// 10 s: a CI failure or a conflict reaches the agent within seconds. Unchanged reads are 304s, free against the rate limit.
+export const POLL_MS = 10_000;
 export const POLL_AUTH_FAILED_MS = 5 * 60_000;
 const NOT_VISIBLE = "PR not found or not accessible to your GitHub token";
 

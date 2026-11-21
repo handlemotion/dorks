@@ -108,6 +108,19 @@ describe("Stop gate", () => {
     expect((await service(w.work).stop()).reason).toContain("branch main: 1 commit not pushed to origin/main");
   });
 
+  it("blocks on uncommitted edits and new files, but not on ignored ones", async () => {
+    const w = checkout();
+    writeFileSync(join(w.dir, ".gitignore"), "out/\n");
+    w.git("add", ".gitignore");
+    w.git("commit", "-q", "-m", "ignore out");
+    w.git("push", "-q", "origin", "main");
+    mkdirSync(join(w.dir, "out"));
+    writeFileSync(join(w.dir, "out", "build.js"), "x\n");
+    expect(await service(w.work).stop()).toBeNull();
+    writeFileSync(join(w.dir, "new.txt"), "x\n");
+    expect((await service(w.work).stop()).reason).toContain("branch main: 1 file changed and not committed");
+  });
+
   it("counts a branch pushed without -u as pushed", async () => {
     const w = checkout();
     w.git("checkout", "-q", "-b", "dork/x");

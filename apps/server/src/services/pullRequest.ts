@@ -260,7 +260,7 @@ export async function mergePullRequest(app: App, dorkId: string, method: unknown
   const r = await call(app, token, "PUT", `/repos/${repo}/pulls/${number}/merge`, { merge_method: method, ...(sha ? { sha } : {}) });
   const message = ghMessage(r.json);
   if (r.status === 200) {
-    setTimer(app, "", "poll", 0); // the poller records the merge (and the transcript shows it) now, not in 30s
+    setTimer(app, "", "poll", 0); // the poller records the merge (and the transcript shows it) now, not at the next tick
     const merged = obj(r.json).sha;
     return { merged: true, sha: typeof merged === "string" ? merged : undefined };
   }

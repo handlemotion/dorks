@@ -640,8 +640,8 @@ export function Composer({
             ref={textRef}
             rows={1}
             // A 44px row: 12px above and below a 20px line of 15px text, 42px in from each side (past the 28px buttons, 8px from the
-            // edge, and 6px more). Stacked, the bottom inset makes room for the button row (16px gap, 28px button, 8px edge).
-            className={`max-h-[40vh] min-h-0 py-3 px-[42px] leading-5 md:text-[15px] ${stacked ? 'pb-13' : ''}`}
+            // edge, and 6px more). Stacked, the bottom inset makes room for the button row (8px gap, 28px button, 8px edge).
+            className={`max-h-[40vh] min-h-0 py-3 px-[42px] leading-5 md:text-[15px] ${stacked ? 'pb-11' : ''}`}
           />
           {/* Attach and the main button keep one spot, 8px from the bottom corners, whether the box is one row or stacked. */}
           <div className="absolute bottom-2 left-2">

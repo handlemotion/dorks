@@ -6,7 +6,7 @@ import { append, dispatch, hasTimer, setTimer, userMessagePending } from "../lif
 import { touch } from "../app";
 import { renderNotification, type PrSection } from "../lib/notifyRender";
 
-export const NOTIFY_DEBOUNCE_MS = 45_000; // events within one window of the first become a single notification
+export const NOTIFY_DEBOUNCE_MS = 5_000; // events within one window of the first become a single notification (one poll pass's worth)
 
 /**
  * Buffers one event for a dork and arms the `notify` timer if it is not running. The poller calls this once per event it wants

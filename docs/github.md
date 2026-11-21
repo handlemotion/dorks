@@ -45,7 +45,7 @@ Events authored by the token's own login are ignored, because they are the agent
 
 ## Rate limits and failures
 
-The poller runs every 30 s while any subscription is active and sends conditional requests (`If-None-Match`), so unchanged PRs cost nothing against the rate limit. On a rate limit it waits until GitHub's reset time. If GitHub rejects the token (401, 403) it backs off for 5 minutes and tries again, so signing `gh` in again takes effect without a restart. A PR the token cannot see ends its subscription.
+The poller runs every 10 s while any subscription is active and sends conditional requests (`If-None-Match`), so unchanged PRs cost nothing against the rate limit. On a rate limit it waits until GitHub's reset time. If GitHub rejects the token (401, 403) it backs off for 5 minutes and tries again, so signing `gh` in again takes effect without a restart. A PR the token cannot see ends its subscription.
 
 ## The owner token
 
