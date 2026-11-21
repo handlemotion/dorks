@@ -71,7 +71,10 @@ interface WatchState {
   since?: number;
 }
 
-/** Something new in a repository, before it is matched to automations. */
+/**
+ * Something new in a repository, before it is matched to automations. Cursors are inclusive (GitHub's timestamps are whole seconds, and
+ * two items can share one), so an item at the cursor is read again on the next pass; its `key` makes that a no-op.
+ */
 export interface RepoEvent {
   event: GithubEvent;
   repo: string;
@@ -134,7 +137,8 @@ const pages = <S extends typeof GhPulls | typeof GhIssues | typeof GhIssueCommen
 function pullEvents(repo: string, pr: Pull, old: WatchState, merged: Set<number>): RepoEvent[] {
   const ev = { repo, author: pr.user?.login ?? "ghost", bot: pr.user?.type === "Bot", number: pr.number, title: pr.title, url: pr.html_url, head: pr.head.ref, base: pr.base.ref };
   const out: RepoEvent[] = [];
-  const opened = time(pr.created_at) > (old.pulls ?? 0);
+  // New: created at or after the newest creation seen (a PR from the same second is not missed) and never seen with a head.
+  const opened = time(pr.created_at) >= (old.pulls ?? 0) && !old.heads?.[pr.number];
   if (opened && pr.state === "open") out.push({ ...ev, event: "pr_opened", key: `pr_opened:${repo}#${pr.number}` });
   const before = old.heads?.[pr.number];
   if (!opened && pr.state === "open" && before && before !== pr.head.sha) out.push({ ...ev, event: "pr_pushed", key: `pr_pushed:${repo}#${pr.number}@${pr.head.sha}` });
@@ -153,7 +157,7 @@ const readPulls = (get: Get, repo: string, old: WatchState, now: number) =>
       get,
       GhPulls,
       `/repos/${repo}/pulls?state=all&sort=updated&direction=desc&per_page=${PER_PAGE}`,
-      (pr) => old.pullsUpdated === undefined || time(pr.updated_at) <= old.pullsUpdated,
+      (pr) => old.pullsUpdated === undefined || time(pr.updated_at) < old.pullsUpdated,
     );
     if (!list) return { events: [], state: {} };
     const first = old.pulls === undefined;
@@ -162,7 +166,8 @@ const readPulls = (get: Get, repo: string, old: WatchState, now: number) =>
     const heads: Record<string, string> = { ...old.heads };
     // The first read also records every open PR's head (up to MAX_PAGES of them), not only the recently active ones: a push to an
     // older open PR is otherwise the first time we see it, with no head to compare, and would be lost.
-    if (first) for (const pr of (yield* pages(get, GhPulls, `/repos/${repo}/pulls?state=open&sort=created&direction=desc&per_page=${PER_PAGE}`, () => false)) ?? []) heads[pr.number] = pr.head.sha;
+    const baseline = first ? ((yield* pages(get, GhPulls, `/repos/${repo}/pulls?state=open&sort=created&direction=desc&per_page=${PER_PAGE}`, () => false)) ?? []) : [];
+    for (const pr of baseline) heads[pr.number] = pr.head.sha;
     const events: RepoEvent[] = [];
     // Oldest first, so a PR seen twice across pages (it moved while being read) ends on its newest state.
     for (const pr of list.toReversed()) {
@@ -172,7 +177,8 @@ const readPulls = (get: Get, repo: string, old: WatchState, now: number) =>
         if (pr.merged_at) merged.add(pr.number);
       } else events.push(...pullEvents(repo, pr, old, merged));
     }
-    const pulls = Math.max(old.pulls ?? 0, ...list.map((p) => time(p.created_at)));
+    // The baseline's open PRs count toward the creation cursor too, so a quiet one is never taken for a new one later.
+    const pulls = Math.max(old.pulls ?? 0, ...[...list, ...baseline].map((p) => time(p.created_at)));
     const pullsUpdated = Math.max(old.pullsUpdated ?? 0, ...list.map((p) => time(p.updated_at)));
     // Events go out newest first like the other lists; the caller reverses them.
     return {
@@ -183,10 +189,10 @@ const readPulls = (get: Get, repo: string, old: WatchState, now: number) =>
 
 /** New issues (the list holds pull requests too; they are left out). */
 const readIssues = (get: Get, repo: string, old: WatchState) =>
-  pages(get, GhIssues, `/repos/${repo}/issues?state=all&sort=created&direction=desc&per_page=${PER_PAGE}`, (i) => old.issues === undefined || time(i.created_at) <= old.issues).pipe(
+  pages(get, GhIssues, `/repos/${repo}/issues?state=all&sort=created&direction=desc&per_page=${PER_PAGE}`, (i) => old.issues === undefined || time(i.created_at) < old.issues).pipe(
     Effect.map((list) => {
       if (!list) return { events: [], state: {} };
-      const fresh = old.issues === undefined ? [] : list.filter((i) => !i.pull_request && time(i.created_at) > old.issues!);
+      const fresh = old.issues === undefined ? [] : list.filter((i) => !i.pull_request && time(i.created_at) >= old.issues!);
       const events = fresh.map((i): RepoEvent => ({
         event: "issue_opened",
         repo,
@@ -204,10 +210,10 @@ const readIssues = (get: Get, repo: string, old: WatchState) =>
 
 /** New conversation comments on the repository's issues and pull requests. */
 const readComments = (get: Get, repo: string, old: WatchState) =>
-  pages(get, GhIssueComments, `/repos/${repo}/issues/comments?sort=created&direction=desc&per_page=${PER_PAGE}`, (c) => old.comments === undefined || time(c.created_at) <= old.comments).pipe(
+  pages(get, GhIssueComments, `/repos/${repo}/issues/comments?sort=created&direction=desc&per_page=${PER_PAGE}`, (c) => old.comments === undefined || time(c.created_at) < old.comments).pipe(
     Effect.map((list) => {
       if (!list) return { events: [], state: {} };
-      const fresh = old.comments === undefined ? [] : list.filter((c) => time(c.created_at) > old.comments!);
+      const fresh = old.comments === undefined ? [] : list.filter((c) => time(c.created_at) >= old.comments!);
       const events = fresh.map((c): RepoEvent => ({
         event: "comment",
         repo,

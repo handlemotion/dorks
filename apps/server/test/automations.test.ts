@@ -194,6 +194,38 @@ describe("automations", () => {
     expect(s.dorks().map((d) => d.title)).toEqual(["review: #1 PR 1 by @alice"]);
   });
 
+  it("a comment from the same second as the last one read still starts a run, once", async () => {
+    const s = await setup();
+    createAutomation(s.h.app, { name: "answer", instructions: "Answer.", triggers: [{ kind: "github", event: "comment", repo: "octo/app", authors: ["friend"] }] });
+    await watchOnce(s.h.app);
+    const comment = (n: number) => s.gh.state.comments.push({ id: n, html_url: `c${n}`, issue_url: `x/issues/${n}`, user: { login: "friend" }, body: "hi", created_at: s.at(1000) });
+    comment(1);
+    await watchOnce(s.h.app);
+    comment(2); // same timestamp as comment 1
+    await watchOnce(s.h.app);
+    await watchOnce(s.h.app);
+    expect(s.dorks().map((d) => d.title)).toEqual(["answer: Comment on #1 by @friend", "answer: Comment on #2 by @friend"]);
+  });
+
+  it("a quiet open PR created after the busy ones is not taken for a new one when it gets a push", async () => {
+    const s = await setup();
+    for (let n = 1; n <= 55; n++) s.pr(n, { created_at: s.at(-5000), updated_at: s.at(-1000 + n) });
+    s.pr(56, { created_at: s.at(-2000), updated_at: s.at(-2000) }); // newest created, least recently active: off the first page
+    createAutomation(s.h.app, {
+      ...reviewer,
+      name: "both",
+      triggers: [
+        { kind: "github", event: "pr_opened", repo: "octo/app" },
+        { kind: "github", event: "pr_pushed", repo: "octo/app" },
+      ],
+    });
+    await watchOnce(s.h.app);
+    s.h.clock.t += 60_000;
+    Object.assign(s.gh.state.pulls[55], { head: { ref: "f56", sha: "new" }, updated_at: s.at(0) });
+    await watchOnce(s.h.app);
+    expect(listRuns(s.h.app, s.h.app.db.get<{ id: string }>("SELECT id FROM automations")!.id).map((r) => r.source)).toEqual(["pr_pushed"]);
+  });
+
   it("a burst bigger than a page between passes is read whole", async () => {
     const s = await setup();
     const id = createAutomation(s.h.app, { name: "answer", instructions: "Answer.", triggers: [{ kind: "github", event: "comment", repo: "octo/app", authors: ["friend"] }] });
