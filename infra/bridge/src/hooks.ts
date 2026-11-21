@@ -25,10 +25,13 @@ export const settingsPath = (stateDir: string, fast = false) => join(stateDir, f
  * The hooks as Claude Code settings. `--settings` is applied above the user's and the project's files, and hooks from every source
  * run, so the repo's own `.claude/settings.json` hooks still fire next to these. `dorks` is the bridge binary under its CLI role: run
  * through its absolute path so it does not depend on PATH inside the hook's shell.
+ * `attribution` empty turns off the CLI's own Co-Authored-By / "Generated with Claude Code" lines on commits and PRs, on every machine:
+ * flag settings sit above the user's and the repo's files, so neither can turn it back on.
  */
 export function claudeSettings(self: [node: string, cli: string]) {
   const run = (event: HookEvent) => [{ type: "command", command: `${shellQuote(self[0])} ${shellQuote(self[1])} dorks hook ${event}`, timeout: HOOK_EVENTS[event].timeoutS }];
   return {
+    attribution: { commit: "", pr: "" },
     hooks: {
       Stop: [{ hooks: run("stop") }],
       PostToolUse: [{ matcher: "Bash", hooks: run("post-tool-use") }],
