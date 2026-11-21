@@ -17,7 +17,7 @@ import { resolveSharedImages } from '../../../components/ChatBlock'
 import { CrewDetails } from '../../../components/CrewDetails'
 import { SessionChat } from '../../../components/SessionChat'
 import { ChatDetails } from '../../../components/ChatDetails'
-import { ChatSplit, ShowDetailsButton, useDetailsOpen, useWide } from '../../../components/chat-details/layout'
+import { ChatSplit, ShowDetailsButton, useDetailsOpen } from '../../../components/chat-details/layout'
 import type { ChatDetailsData } from '../../../components/chat-details/types'
 import type { PullRequestPanelData } from '../../../components/PullRequestPanel'
 import { latestTasks, progressStore, progressTurns } from '../../../lib/progress'
@@ -334,7 +334,6 @@ function Thread({ dorkId }: { dorkId: string }) {
   // One draft for the composer and everything on the page that writes into it (Ask for…, picked elements).
   const draft = useDraft(dorkId)
   const setText = draft[1]
-  const wide = useWide()
   // Each chat's Progress starts on its newest step.
   useEffect(() => progressStore.reset(), [dorkId])
   const computerUsed = view.blocks.some((b) => b.kind === 'tool' && b.name.startsWith('mcp__computer__'))
@@ -389,19 +388,7 @@ function Thread({ dorkId }: { dorkId: string }) {
           }
         />
         <CodexModelForm dork={dork} />
-        <SessionChat
-          dork={dork}
-          error={archiveError}
-          draft={draft}
-          onOpenStep={
-            wide && !crew
-              ? (key) => {
-                  setDetailsOpen(true)
-                  progressStore.show(key)
-                }
-              : undefined
-          }
-        />
+        <SessionChat dork={dork} error={archiveError} draft={draft} />
       </section>
     </ChatSplit>
   )

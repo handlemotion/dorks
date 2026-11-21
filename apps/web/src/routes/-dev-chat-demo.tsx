@@ -9,11 +9,11 @@ import { UsageBarView } from '../components/UsageBar'
 import { AgentStatus } from '../components/AgentStatus'
 import { ChatMessages } from '../components/ChatBlock'
 import { ChatDetails } from '../components/ChatDetails'
-import { ChatSplit, ShowDetailsButton, useDetailsOpen, useWide } from '../components/chat-details/layout'
+import { ChatSplit, ShowDetailsButton, useDetailsOpen } from '../components/chat-details/layout'
 import type { ChatDetailsData } from '../components/chat-details/types'
 import type { PullRequestPanelData } from '../components/PullRequestPanel'
 import type { PullRequestView } from '@dorks/client'
-import { latestTasks, progressStore, progressTurns } from '../lib/progress'
+import { latestTasks, progressTurns } from '../lib/progress'
 import { Composer, type AgentProvider } from '../components/ChatComposer'
 import { ChatMenu } from '../components/ChatMenu'
 import { ArchiveButton, PageHeader } from '../components/PageHeader'
@@ -347,7 +347,6 @@ export function Demo() {
   const [provider, setProvider] = useState<AgentProvider>('claude')
   const [detailsOpen, setDetailsOpen] = useDetailsOpen()
   const [reply, setReply] = useState<Reply>()
-  const wide = useWide()
   const [demoPr, setDemoPr] = useState(DEMO_PR)
   const demoPullRequest: PullRequestPanelData = {
     view: demoPr,
@@ -429,14 +428,6 @@ export function Demo() {
                       <ChatMessages
                         blocks={blocks}
                         agent="Claude"
-                        onOpenStep={
-                          wide
-                            ? (key) => {
-                                setDetailsOpen(true)
-                                progressStore.show(key)
-                              }
-                            : undefined
-                        }
                         onReply={(quoted, draft) => {
                           setReply(quoted)
                           if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft))
