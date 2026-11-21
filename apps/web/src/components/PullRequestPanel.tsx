@@ -187,23 +187,9 @@ function PullRequestView({
       <div className="border-t px-(--details-text) pt-5 pb-6">
         <div className="flex items-center gap-2">
           <PrState view={view} now={now} />
-          <span className="min-w-0 truncate text-muted-foreground tabular-nums">
+          <a href={view.url} target="_blank" rel="noreferrer" className="min-w-0 truncate text-muted-foreground tabular-nums hover:text-foreground hover:underline" title="Open on GitHub">
             {view.repo} #{view.number}
-          </span>
-          <span className="ml-auto flex items-center gap-0.5 -mr-[8px] -my-2">
-            {data?.refresh && (
-              <Tip label="Refresh">
-                <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="Refresh" onClick={data.refresh}>
-                  <RefreshCwIcon />
-                </Button>
-              </Tip>
-            )}
-            <Tip label="Open on GitHub">
-              <Button variant="ghost" size="icon-sm" className={BAR_BUTTON} aria-label="Open on GitHub" render={<a href={view.url} target="_blank" rel="noreferrer" />} nativeButton={false}>
-                <ExternalLinkIcon />
-              </Button>
-            </Tip>
-          </span>
+          </a>
         </div>
         <h2 className="mt-2 text-lg leading-snug text-pretty">{view.title}</h2>
         <PrMeta view={view} stack={stack} onOpenPr={onOpenPr} />
