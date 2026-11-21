@@ -722,10 +722,10 @@ function MachineMenu({ machine, disabled }: { machine: MachinePicker; disabled?:
   )
 }
 
-const REPO = /^[\w.-]+\/[\w.-]+$/
+export const REPO = /^[\w.-]+\/[\w.-]+$/
 
 /** One repository row: the owner's avatar, then `owner/name` with the owner muted. */
-function RepoRow({ repo }: { repo: string }) {
+export function RepoRow({ repo }: { repo: string }) {
   const owner = ownerOf(repo)
   return (
     <>
@@ -738,7 +738,7 @@ function RepoRow({ repo }: { repo: string }) {
   )
 }
 
-const REPO_ITEM = 'h-8 gap-2 rounded-[6px] px-2 py-0 font-normal data-selected:bg-foreground/[0.05] [&>svg:last-child]:size-3.5'
+export const REPO_ITEM = 'h-8 gap-2 rounded-[6px] px-2 py-0 font-normal data-selected:bg-foreground/[0.05] [&>svg:last-child]:size-3.5'
 
 /**
  * The repository for a new session: a searchable list of the GitHub CLI login's repositories (and the ones chats used), the chosen one

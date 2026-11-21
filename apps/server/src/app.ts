@@ -16,6 +16,7 @@ export type Change =
   | { t: "snapshot" }
   | { t: "builds" }
   | { t: "build"; buildId: string }
+  | { t: "automations" }
   | { t: "commands"; dorkId: string };
 
 export class Hub {

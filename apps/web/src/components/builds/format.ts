@@ -1,4 +1,10 @@
 import type { BuildView, MachineType, RunView } from '@dorks/client'
+import { ago } from '../../lib/time'
+import type { Tone } from '../settings/kit'
+
+// `ago`, the tones and their colours are shared with Automations: lib/time.ts and the settings kit.
+export { ago } from '../../lib/time'
+export { TONE_TEXT, type Tone } from '../settings/kit'
 
 // Pure helpers for the Builds pages: machine sizes, run steps, and how a build or a run reads.
 
@@ -22,14 +28,6 @@ export const STEP_NAMES: Record<string, string> = {
   finish: 'Finishing up',
 }
 
-export function ago(ms: number) {
-  const m = Math.max(0, Math.round((Date.now() - ms) / 60000))
-  if (m < 1) return 'just now'
-  if (m < 60) return `${m}m ago`
-  const h = Math.round(m / 60)
-  return h < 24 ? `${h}h ago` : `${Math.round(h / 24)}d ago`
-}
-
 export function duration(ms: number) {
   const s = Math.max(0, Math.round(ms / 1000))
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`
@@ -37,8 +35,6 @@ export function duration(ms: number) {
 
 /** An image run can start: nothing running, no build-time value missing, and not an agent's proposal the owner has not approved. */
 export const canBuild = (b: BuildView, missing: string[]) => !b.activeRun && missing.length === 0 && (b.approved || !!b.image)
-
-export type Tone = 'success' | 'running' | 'warning' | 'danger' | 'idle'
 
 /** One line on where a build stands, and its colour, for the list and the build's page. */
 export function status(b: BuildView): { text: string; tone: Tone } {
@@ -51,14 +47,6 @@ export function status(b: BuildView): { text: string; tone: Tone } {
   if (!b.image) return b.lastRun?.kind === 'image' && b.lastRun.status === 'failed' ? { text: 'Build failed', tone: 'danger' } : { text: 'Not built yet', tone: 'idle' }
   if (b.image.stale) return { text: 'Out of date', tone: 'warning' }
   return { text: `Built ${ago(b.image.at)}`, tone: 'success' }
-}
-
-export const TONE_TEXT: Record<Tone, string> = {
-  success: '',
-  running: '',
-  warning: 'text-amber-700 dark:text-amber-400',
-  danger: 'text-destructive',
-  idle: 'text-muted-foreground',
 }
 
 export const firstLine = (s: string) => s.trim().split('\n')[0]

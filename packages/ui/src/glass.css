@@ -197,6 +197,17 @@ html.dark [data-app-frame] {
 [data-slot="button"]:is(.h-9, .h-8).px-3:has(> [data-icon="inline-end"]) {
   padding-right: 0.5rem;
 }
+/* Outline buttons are solid: the raised --surface fill (white in light) under their hairline, never see-through on the off-white frame,
+   in either theme. Matched on the outline variant's own classes (only it pairs `border-border` with `bg-background`), including a Button
+   rendered as a menu, popover or dialog trigger. Unlayered, so it also replaces the variant's hover; hover and an open menu darken it by
+   the app's usual 4%. */
+:is([data-slot="button"], [data-slot="dropdown-menu-trigger"], [data-slot="popover-trigger"], [data-slot="dialog-close"]).border-border.bg-background {
+  background-color: var(--surface);
+}
+:is([data-slot="button"], [data-slot="dropdown-menu-trigger"], [data-slot="popover-trigger"], [data-slot="dialog-close"]).border-border.bg-background:is(:hover, [aria-expanded="true"]) {
+  background-color: color-mix(in oklch, var(--surface), var(--foreground) 4%);
+}
+
 /* An icon beside a label sits on the label's optical centre, not the line box's: Geist's 13px caps centre about half a pixel below the
    line box's middle and its lowercase lower still, so a centred 16px icon (the + in "Add connector") reads high. Icon-only buttons
    (size-6 to size-10) stay centred. */

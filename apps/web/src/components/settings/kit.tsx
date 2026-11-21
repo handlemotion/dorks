@@ -238,3 +238,51 @@ export function SettingsStatus({ saved, error }: { saved?: boolean; error?: stri
     )
   return null
 }
+
+/** Where something stands, for a status dot and its words. */
+export type Tone = 'success' | 'running' | 'warning' | 'danger' | 'idle'
+
+/** The words beside a status dot. Success and running read as plain text: the dot says it. */
+export const TONE_TEXT: Record<Tone, string> = {
+  success: '',
+  running: '',
+  warning: 'text-amber-700 dark:text-amber-400',
+  danger: 'text-destructive',
+  idle: 'text-muted-foreground',
+}
+
+/** A status dot: filled for a state, a ring for nothing yet. */
+export function StatusDot({ tone }: { tone: Tone }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        'size-2 shrink-0 rounded-full',
+        tone === 'success' && 'bg-emerald-600 dark:bg-emerald-400',
+        tone === 'running' && 'bg-brand',
+        tone === 'warning' && 'bg-amber-600 dark:bg-amber-400',
+        tone === 'danger' && 'bg-destructive',
+        tone === 'idle' && 'border-[1.5px] border-muted-foreground/60',
+      )}
+    />
+  )
+}
+
+/** A strip of facts across the top of a group: label over value, split by full hairlines. Four across, two on narrow windows. */
+export function SettingsFacts({ items }: { items: { label: string; value: ReactNode; testId?: string }[] }) {
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4">
+      {items.map((f) => (
+        <div
+          key={f.label}
+          className="flex min-w-0 flex-col gap-1.5 border-e border-b px-4 py-3.5 text-sm [&:nth-child(2n)]:border-e-0 md:border-b-0 md:[&:nth-child(2n)]:border-e md:[&:nth-child(4n)]:border-e-0"
+        >
+          <span className="text-xs text-muted-foreground">{f.label}</span>
+          <span data-testid={f.testId} className="flex min-w-0 items-center gap-2 truncate tabular-nums">
+            {f.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}

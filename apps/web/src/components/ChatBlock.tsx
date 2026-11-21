@@ -283,7 +283,8 @@ function agentContent(blocks: AgentBlock[]): ReactNode[] {
       const tools: ToolBlock[] = [block]
       while (blocks[i + 1]?.kind === 'tool') tools.push(blocks[++i] as ToolBlock)
       content.push(
-        <Trace key={tools[0].id} data-testid="tool-steps">
+        // `my-1.5`: 22px from the text around it, a step more than a paragraph break (19px), so the tool line reads as its own beat.
+        <Trace key={tools[0].id} data-testid="tool-steps" className="my-1.5">
           {tools.length === 1 ? <ToolRow block={tools[0]} /> : <ToolGroup tools={tools} />}
         </Trace>,
       )

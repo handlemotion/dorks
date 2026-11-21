@@ -255,8 +255,11 @@ export function applyObservation(app: App, subId: number, obs: Observation) {
   });
 }
 
-/** Learns whose token this is when settings could not at the time (GitHub was unreachable). A failure waits for the next tick. */
-const ensureLogin = (app: App, token: string) =>
+/**
+ * Learns whose token this is when settings could not at the time (GitHub was unreachable). A failure waits for the next tick. The
+ * automation watcher uses it too: the login's own comments are the agent's.
+ */
+export const ensureLogin = (app: App, token: string) =>
   readSettings(app).githubLogin
     ? Effect.void
     : getCached(clientOf(app, token), GhViewer, "/user").pipe(

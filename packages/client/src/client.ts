@@ -1,4 +1,4 @@
-import type { ComposioStatus, McpServerInput, McpServerView, MergeMethod, PullRequestView, SkillView, SubscriptionView } from "@dorks/shared";
+import type { AutomationInput, AutomationRunView, AutomationView, ComposioStatus, McpServerInput, McpServerView, MergeMethod, PullRequestView, SkillView, SubscriptionView } from "@dorks/shared";
 import { EventsFeed } from "./events.ts";
 import { createApi, ApiError, type ApiConfig, type DesktopOptions } from "./http.ts";
 import { connectLive, type LiveStatus } from "./live.ts";
@@ -111,6 +111,7 @@ export class DorksClient {
         break;
       case "dorks":
         this.invalidate("dorks");
+        this.invalidate("automation-runs"); // a run names its session, its title and state
         break;
       case "dork":
         this.invalidate(`dork:${m.dorkId}`);
@@ -141,6 +142,11 @@ export class DorksClient {
       case "build":
         this.invalidate(`build:${m.buildId}`);
         this.invalidate(`runs:${m.buildId}`);
+        break;
+      case "automations":
+        this.invalidate("automations");
+        this.invalidate("automation");
+        this.invalidate("automation-runs");
         break;
     }
   }
@@ -250,6 +256,27 @@ export class DorksClient {
 
   runs(buildId: string) {
     return this.query<RunView[]>(`runs:${buildId}`, () => this.api.listRuns(buildId));
+  }
+
+  /** Automations (docs/automations.md), refreshed by the live stream. */
+  automations() {
+    return this.query<AutomationView[]>("automations", () => this.api.listAutomations());
+  }
+
+  /** `null` when it does not exist. */
+  automation(id: string) {
+    return this.query<AutomationView | null>(`automation:${id}`, async () => {
+      try {
+        return await this.api.getAutomation(id);
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return null;
+        throw e;
+      }
+    });
+  }
+
+  automationRuns(id: string) {
+    return this.query<AutomationRunView[]>(`automation-runs:${id}`, () => this.api.listAutomationRuns(id));
   }
 
   /** A run's redacted log from a byte offset (not cached: the caller tails it while the run is live). */
@@ -468,7 +495,32 @@ export class DorksClient {
       await this.api.rejectDraft(id, draftId, reason);
       this.invalidateBuild(id);
     },
+    createAutomation: async (input: AutomationInput) => {
+      const r = await this.api.createAutomation(input);
+      this.invalidateAutomations();
+      return r;
+    },
+    updateAutomation: async (id: string, patch: Partial<AutomationInput>) => {
+      await this.api.updateAutomation(id, patch);
+      this.invalidateAutomations();
+    },
+    deleteAutomation: async (id: string) => {
+      await this.api.deleteAutomation(id);
+      this.invalidateAutomations();
+    },
+    runAutomation: async (id: string) => {
+      const r = await this.api.runAutomation(id);
+      this.invalidateAutomations();
+      this.invalidate("dorks");
+      return r;
+    },
   };
+
+  private invalidateAutomations() {
+    this.invalidate("automations");
+    this.invalidate("automation");
+    this.invalidate("automation-runs");
+  }
 
   private invalidateBuild(id: string) {
     this.invalidate("builds");

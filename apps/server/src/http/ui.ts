@@ -13,6 +13,7 @@ import { settingsRoutes } from "./ui/settings";
 import { customizeRoutes } from "./ui/customize";
 import { accountRoutes } from "./ui/accounts";
 import { buildRoutes } from "./ui/builds";
+import { automationRoutes } from "./ui/automations";
 import { liveRoutes, simFeedRoutes } from "./ui/live";
 
 /** The loopback API the UI talks to (docs/architecture.md, "UI API"). Owner-token bearer auth on everything except /api/health. */
@@ -49,7 +50,8 @@ export function uiApp(app: App): Hono {
   mountMcp(api, app);
 
   // Registration order is the original single-file order; the auth middleware above covers every /api route below.
-  for (const routes of [dorkRoutes, pullRoutes, localRoutes, subscriptionRoutes, settingsRoutes, customizeRoutes, accountRoutes, buildRoutes, liveRoutes, simFeedRoutes]) routes(api, app);
+  for (const routes of [dorkRoutes, pullRoutes, localRoutes, subscriptionRoutes, settingsRoutes, customizeRoutes, accountRoutes, buildRoutes, automationRoutes, liveRoutes, simFeedRoutes])
+    routes(api, app);
 
   return api;
 }
