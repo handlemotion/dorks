@@ -4,7 +4,7 @@ import { fail, OWNER, touch, type App } from "../app";
 import { aad, decrypt, encrypt } from "../core/crypto";
 import { json, update } from "../db";
 import type { GhLogin } from "../lib/ghCli";
-import { boatSignInView } from "./boatSignIn";
+import { boatSignInView, invalidateBoatSignIn } from "./boatSignIn";
 
 export const MAX_TOKEN_CHARS = 4 * 1024;
 export const MAX_SECRET_BYTES = 16 * 1024;
@@ -165,7 +165,14 @@ const commentPolicyOf = (v: unknown) => {
 };
 
 /** Applies any subset of settings. An empty string clears a token or name. Encryption and GitHub lookups happen before the write transaction. */
-export async function updateSettings(app: App, patch: SettingsPatch): Promise<void> {
+/** A Boat sign-in's result that the owner overrode while it was in flight (services/boatSignIn.ts): nothing was saved. */
+export class StaleSignIn extends Error {}
+
+/**
+ * `fromSignIn`: the key comes from the Boat sign-in, which must not invalidate itself; `unless`: checked right before the write,
+ * and true means nothing is written (StaleSignIn).
+ */
+export async function updateSettings(app: App, patch: SettingsPatch, opts: { fromSignIn?: boolean; unless?: () => boolean } = {}): Promise<void> {
   const row: Record<string, unknown> = {};
   /** The trimmed secret encrypted for the settings row, or null to clear it. */
   const sealed = async (t: string, a: string) => (t ? (await encrypt(app.ring, t, a)).value : null);
@@ -191,14 +198,23 @@ export async function updateSettings(app: App, patch: SettingsPatch): Promise<vo
     row.localAlwaysAllow = patch.localAlwaysAllow;
   }
   if (!Object.keys(row).length) return;
+  if (opts.unless?.()) throw new StaleSignIn("superseded");
   app.db.tx(() => {
     update(app.db, "settings", { id: 1 }, row);
     touch(app, { t: "settings" });
   });
   // Turning Always allow on also answers the requests already waiting (local.ts imports this module, hence the dynamic import).
   if (row.localAlwaysAllow === true) (await import("./local")).startWaitingLocal(app);
-  // The key Dorks made with the Boat CLI is replaced or cleared: revoke it, so no unused key is left on the account.
-  if (patch.boatKey !== undefined && before.boatKeyId) void app.boatCli.revokeKey(before.boatKeyId).catch(() => console.error("boat: could not revoke the previous key"));
+  if (patch.boatKey !== undefined) boatKeyChanged(app, before.boatKeyId, !!opts.fromSignIn);
+}
+
+/**
+ * The Boat key was saved or cleared. By the owner, it ends any sign-in in flight; either way the key Dorks made with the Boat CLI
+ * before is revoked, so no unused key is left on the account.
+ */
+function boatKeyChanged(app: App, previousKeyId: string | undefined, fromSignIn: boolean) {
+  if (!fromSignIn) invalidateBoatSignIn(app);
+  if (previousKeyId) void app.boatCli.revokeKey(previousKeyId).catch(() => console.error("boat: could not revoke the previous key"));
 }
 
 // ---------------------------------------------------------------- connecting GitHub by itself

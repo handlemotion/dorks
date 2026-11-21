@@ -2,7 +2,7 @@ import type { App } from "../app";
 import { update } from "../db";
 import type { BoatSignIn } from "../lib/boatCli";
 import { checkBoat } from "./boatCheck";
-import { readSettings, updateSettings } from "./settings";
+import { readSettings, StaleSignIn, updateSettings } from "./settings";
 import { buildIfMissing } from "./snapshot";
 import { forgetUsage } from "./usage";
 
@@ -42,9 +42,28 @@ function set(app: App, view: BoatSignInView) {
 
 const busy = (s: BoatSignInState) => s === "signing_in" || s === "connecting";
 
+// Every attempt remembers the generation it started in. Saving or clearing the Boat key from Settings starts a new one, so an
+// attempt still in flight (a browser sign-in, a key being made) cannot overwrite what the owner chose: its key is revoked instead.
+const generations = new WeakMap<App, number>();
+const generation = (app: App) => generations.get(app) ?? 0;
+
+/** The Boat key was saved or cleared by the owner (updateSettings): drop what is in flight. */
+export function invalidateBoatSignIn(app: App): void {
+  generations.set(app, generation(app) + 1);
+  status.delete(app);
+}
+
+/** Sets the state only for an attempt that is still current. */
+const setIf = (app: App, gen: number, view: BoatSignInView) => {
+  if (generation(app) === gen) set(app, view);
+};
+
 /** What the checklist shows for Boat. Null when a key is saved, or with simulated sandboxes (they take any key, from Settings). */
 export function boatSignInView(app: App): BoatSignInView | null {
-  if (app.cfg.boxProvider === "sim" || readSettings(app).boatKeyEnc) return null;
+  const s = readSettings(app);
+  if (app.cfg.boxProvider === "sim" || s.boatKeyEnc) return null;
+  // The owner cleared the key, so nothing connects by itself: offer Sign in (which turns it back on).
+  if (!s.boatAuto) return { state: app.boatCli.bin ? "signed_out" : "unavailable" };
   return current(app).view;
 }
 
@@ -60,11 +79,12 @@ export async function autoConnectBoat(app: App): Promise<void> {
   if (busy(now.view.state) || (now.checkedAt && app.now() - now.checkedAt < RECHECK_MS)) return;
   if (!app.boatCli.bin) return set(app, { state: "unavailable" });
   status.set(app, { view: now.view, checkedAt: app.now() }); // claim the check; no event for a recheck that changes nothing
+  const gen = generation(app);
   try {
-    if (await app.boatCli.signedIn()) await connect(app);
-    else set(app, { state: "signed_out" });
+    if (await app.boatCli.signedIn()) await connect(app, gen);
+    else setIf(app, gen, { state: "signed_out" });
   } catch (e) {
-    set(app, { state: "failed", error: messageOf(e) });
+    setIf(app, gen, { state: "failed", error: messageOf(e) });
   }
 }
 
@@ -75,6 +95,7 @@ export async function autoConnectBoat(app: App): Promise<void> {
 export async function startBoatSignIn(app: App): Promise<BoatSignInView | null> {
   if (app.cfg.boxProvider === "sim" || readSettings(app).boatKeyEnc) return null;
   update(app.db, "settings", { id: 1 }, { boatAuto: 1 }); // the owner asked: automatic connecting is on again
+  const gen = generation(app);
   const now = current(app).view;
   if (now.state === "connecting") return now;
   if (now.state === "signing_in" && now.expiresAt && Date.parse(now.expiresAt) > app.now()) return now;
@@ -84,21 +105,21 @@ export async function startBoatSignIn(app: App): Promise<BoatSignInView | null> 
   }
   try {
     if (await app.boatCli.signedIn()) {
-      await connect(app);
+      await connect(app, gen);
       return boatSignInView(app);
     }
     const { link, done } = await app.boatCli.login();
-    set(app, signingIn(link));
+    setIf(app, gen, signingIn(link));
     // A sign-in replaced by a newer one (pressed again after its link expired) fails; only the current one may report.
-    const stillCurrent = () => current(app).view.url === link.url;
+    const stillCurrent = () => generation(app) === gen && current(app).view.url === link.url;
     done.then(
-      () => connect(app),
+      () => (stillCurrent() ? connect(app, gen) : undefined),
       (e) => {
         if (stillCurrent()) set(app, { state: "failed", error: `The Boat sign-in did not finish: ${messageOf(e)}` });
       },
     );
   } catch (e) {
-    set(app, { state: "failed", error: messageOf(e) });
+    setIf(app, gen, { state: "failed", error: messageOf(e) });
   }
   return current(app).view;
 }
@@ -106,20 +127,22 @@ export async function startBoatSignIn(app: App): Promise<BoatSignInView | null> 
 const signingIn = (link: BoatSignIn): BoatSignInView => ({ state: "signing_in", url: link.url, userCode: link.userCode, expiresAt: link.expiresAt });
 
 /** Makes Dorks' key, checks Boat will run sandboxes with it, and saves it with the CLI's organization. Never throws. */
-async function connect(app: App): Promise<void> {
-  set(app, { state: "connecting" });
+async function connect(app: App, gen: number): Promise<void> {
+  setIf(app, gen, { state: "connecting" });
+  const stillCurrent = () => generation(app) === gen && !readSettings(app).boatKeyEnc;
   let made: { id: string; secret: string } | undefined;
   try {
     const org = await app.boatCli.org();
     made = await app.boatCli.createKey(KEY_NAME);
     const check = await checkBoat(app, { boatKey: made.secret, boatOrg: org ?? "" });
     if (check.status !== "ok" && check.status !== "unreachable") {
-      set(app, { state: "failed", error: check.message });
+      setIf(app, gen, { state: "failed", error: check.message });
       await app.boatCli.revokeKey(made.id).catch(() => {});
       return;
     }
-    // Saving a key revokes the one Dorks made before (updateSettings), so reconnecting leaves no key behind.
-    await updateSettings(app, { boatKey: made.secret, boatOrg: org ?? "" });
+    // Saving a key revokes the one Dorks made before (updateSettings), so reconnecting leaves no key behind. It is not saved if
+    // the owner saved or cleared a key meanwhile (updateSettings checks right before it writes).
+    await updateSettings(app, { boatKey: made.secret, boatOrg: org ?? "" }, { fromSignIn: true, unless: () => !stillCurrent() });
     update(app.db, "settings", { id: 1 }, { boatKeyId: made.id });
     forgetUsage(app);
     buildIfMissing(app, { retryFailed: true });
@@ -127,7 +150,7 @@ async function connect(app: App): Promise<void> {
     set(app, { state: "checking" }); // shown again only if the key is cleared
   } catch (e) {
     if (made) await app.boatCli.revokeKey(made.id).catch(() => {});
-    set(app, { state: "failed", error: messageOf(e) });
+    if (!(e instanceof StaleSignIn)) setIf(app, gen, { state: "failed", error: messageOf(e) });
   }
 }
 

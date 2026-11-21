@@ -59,12 +59,29 @@ function MarkdownTable({ node: _node, className, children, ...props }: React.Com
   )
 }
 
+// Links are blue, always (so they stand out in a message), underlined on hover, and open in a new tab: in the desktop app the shell
+// hands them to the default browser (boot.rs, `on_new_window`). With no confirmation dialog: Streamdown's link safety is off.
+function MarkdownLink({ node: _node, className, children, href, ...props }: React.ComponentProps<"a"> & ExtraProps) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className={cn("wrap-anywhere font-medium text-link underline decoration-link/30 underline-offset-2 transition-colors hover:decoration-link", className)}
+      {...props}
+    >
+      {children}
+    </a>
+  )
+}
+
 // Streamdown memoizes on components, so keep the default stable. Exported so an app can add its own (an `img` override, say) and
 // keep the code blocks and tables: spread it into a module-level object.
-const DEFAULT_COMPONENTS = { code: MarkdownCode, table: MarkdownTable }
+const DEFAULT_COMPONENTS = { code: MarkdownCode, table: MarkdownTable, a: MarkdownLink }
+const NO_LINK_SAFETY = { enabled: false }
 
-function Markdown({ className, components = DEFAULT_COMPONENTS, controls = false, ...props }: React.ComponentProps<typeof Streamdown>) {
-  return <Streamdown data-slot="markdown" components={components} controls={controls} className={cn("cn-markdown w-full min-w-0 overflow-hidden", className)} {...props} />
+function Markdown({ className, components = DEFAULT_COMPONENTS, controls = false, linkSafety = NO_LINK_SAFETY, ...props }: React.ComponentProps<typeof Streamdown>) {
+  return <Streamdown data-slot="markdown" components={components} controls={controls} linkSafety={linkSafety} className={cn("cn-markdown w-full min-w-0 overflow-hidden", className)} {...props} />
 }
 
 export { defaultRehypePlugins, defaultUrlTransform } from "streamdown"

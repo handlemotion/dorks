@@ -43,6 +43,7 @@ describe("Boat sign-in with the Boat CLI", () => {
     h.clock.t += 60_000;
     await autoConnectBoat(h.app);
     expect(h.boatCli.state.keys).toEqual(["key-1"]);
+    expect(settingsView(h.app).boatSignIn).toEqual({ state: "signed_out" }); // the row offers Sign in again
 
     // Connecting again (signed in: no browser) makes a new key; pasting a key over it revokes that one too.
     await startBoatSignIn(h.app);
@@ -51,6 +52,31 @@ describe("Boat sign-in with the Boat CLI", () => {
     await settle();
     expect(h.boatCli.state.revoked).toEqual(["key-1", "key-2"]);
     expect(readSettings(h.app).boatKeyId).toBeUndefined();
+  });
+
+  it("a key the owner saves or clears while a sign-in is open wins: the sign-in's key is revoked, not saved", async () => {
+    const h = boat();
+    await startBoatSignIn(h.app);
+    await updateSettings(h.app, { boatKey: "pasted", boatOrg: "team_mine" });
+    h.boatCli.state.login!.finish();
+    await settle();
+    expect(await boatKey(h.app)).toBe("pasted");
+    expect(readSettings(h.app).boatOrg).toBe("team_mine");
+    expect(h.boatCli.state.keys).toEqual([]); // the finished sign-in no longer makes a key
+
+    // Cleared while the key is being made: made, then revoked, and the key stays cleared.
+    const c = boat();
+    c.boatCli.state.signedIn = true;
+    const createKey = c.boatCli.createKey.bind(c.boatCli);
+    c.boatCli.createKey = async (name) => {
+      const made = await createKey(name);
+      await updateSettings(c.app, { boatKey: "" });
+      return made;
+    };
+    await autoConnectBoat(c.app);
+    expect(await boatKey(c.app)).toBeUndefined();
+    expect(c.boatCli.state.revoked).toEqual(["key-1"]);
+    expect(readSettings(c.app).boatAuto).toBe(false);
   });
 
   it("signed in: connects on start with no click; an account Boat will not run sandboxes for fails and keeps no key", async () => {

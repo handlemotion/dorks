@@ -262,7 +262,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     const alive = () => dorks.get(dorkId)?.state === "working";
     const tool = `tool-${randomUUID().slice(0, 8)}`;
     const msg = `msg-${randomUUID().slice(0, 8)}`;
-    const answer = `Done: ${prompt.slice(0, 60)}. I read the code, made the change and the tests pass.`;
+    const answer = `Done: ${prompt.slice(0, 60)}. I read the code, made the change and the tests pass: [the change](https://github.com/octocat/hello-world/pull/1).`;
     const progress = `progress-${randomUUID().slice(0, 8)}`;
     later(tick, () => {
       if (!alive()) return;

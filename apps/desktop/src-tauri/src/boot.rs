@@ -188,6 +188,7 @@ pub fn show_main(app: &AppHandle) {
     *state.chrome.lock().unwrap() = ChromeInfo::new(spec, wanted, theme);
     let script = state.window_config().init_script();
     let handle = app.clone();
+    let opener = app.clone();
     let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("Dorks")
         .inner_size(spec.size.0, spec.size.1)
@@ -197,7 +198,8 @@ pub fn show_main(app: &AppHandle) {
         .focused(!window::verification_mode())
         .theme(window::tauri_theme(theme))
         .initialization_script(script)
-        .on_navigation(move |url| allow_navigation(&handle, url));
+        .on_navigation(move |url| allow_navigation(&handle, url))
+        .on_new_window(move |url, _features| open_new_window(&opener, url));
     // A transparent webview is what lets the material show through the page; only ask for it when there is one behind it.
     #[cfg(target_os = "macos")]
     let builder = builder
@@ -222,6 +224,16 @@ fn allow_navigation(app: &AppHandle, url: &tauri::Url) -> bool {
         let _ = app.opener().open_url(url.as_str(), None::<&str>);
     }
     local
+}
+
+/// A link that asks for a new window (`target="_blank"`, `window.open`): WebKit drops these unless someone handles them, so a
+/// click did nothing. Web pages open in the default browser; the app never opens a second window.
+fn open_new_window(app: &AppHandle, url: tauri::Url) -> tauri::webview::NewWindowResponse<tauri::Wry> {
+    if matches!(url.scheme(), "http" | "https" | "mailto") {
+        use tauri_plugin_opener::OpenerExt;
+        let _ = app.opener().open_url(url.as_str(), None::<&str>);
+    }
+    tauri::webview::NewWindowResponse::Deny
 }
 
 /// Pushes a changed config to the open window (e.g. after the window chrome changed).
