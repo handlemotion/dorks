@@ -117,12 +117,12 @@ function Dorks() {
             )}
             <div className={`${showArchived ? 'hidden' : 'flex'} mx-auto w-full max-w-[790px] flex-col gap-6`}>
               <h2 className="sr-only">What should we work on?</h2>
+              <NewDork key={presetRepo} initialRepo={presetRepo} onCreated={setSelected} disabled={!ready} claudeReady={!!settings?.claudeToken} codexReady={!!settings?.boatEnvironment} />
               {settings && (
-                <div className="px-5 [&:has(>div:empty)]:hidden">
+                <div className="mt-6 px-5 empty:hidden">
                   <SetupStatus settings={settings} />
                 </div>
               )}
-              <NewDork key={presetRepo} initialRepo={presetRepo} onCreated={setSelected} disabled={!ready} claudeReady={!!settings?.claudeToken} codexReady={!!settings?.boatEnvironment} />
             </div>
           </div>
           <div className="shrink-0 self-center px-5 pb-3 text-sm text-muted-foreground">

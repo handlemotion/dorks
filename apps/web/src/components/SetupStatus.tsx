@@ -1,98 +1,155 @@
+import type { ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
+import { CheckIcon, LoaderCircleIcon } from 'lucide-react'
 import { useDorksClient, useSnapshot } from '@dorks/client/react'
-import type { Settings } from '@dorks/client'
+import type { Settings, SnapshotStatus } from '@dorks/client'
 import { Button } from '@dorks/ui/button'
-import { Progress } from '@dorks/ui/progress'
 import { isDesktop } from '../lib/desktop'
+import { stepDone } from '../lib/onboarding'
 import { usePending } from '../lib/pending'
+import { StepProgress } from './StepProgress'
+
+type StepState = 'done' | 'running' | 'todo' | 'failed'
+
+interface Step {
+  id: string
+  title: string
+  state: StepState
+  /** A short muted line under the title: what is happening, or what went wrong. */
+  detail?: string
+  /** On the right: a small button or a step count. */
+  trailing?: ReactNode
+}
 
 /**
- * What still stands between the owner and a first session, shown where sessions are created instead of as onboarding steps:
- * the base snapshot (built in the background once the Boat key is saved) and the public URL sandboxes use to reach this Mac.
- * Renders nothing once both are in place.
+ * "Set up Dorks", under the new-session composer: every step between the owner and a working session, checked off as it
+ * lands, with the Boat snapshot build shown in its row. It also appears, with everything else checked, while a newer app
+ * rebuilds an existing snapshot. Renders nothing once every step is done and no build is running.
  */
 export function SetupStatus({ settings }: { settings: Settings }) {
+  const snap = useSnapshot()
+  const steps = useSteps(settings, snap)
+  if (!steps) return null
+  const done = steps.filter((s) => s.state === 'done').length
+
   return (
-    <div className="flex flex-col gap-3 empty:hidden">
-      <SnapshotStatus settings={settings} />
-      {settings.boxProvider !== 'sim' && !settings.publicUrlConfigured && <TunnelPrompt />}
-    </div>
+    <section aria-label="Set up Dorks" data-testid="setup-checklist" className="flex flex-col gap-2 text-sm">
+      <header className="flex h-7 items-center gap-3 px-3">
+        <h3 className="flex-1">Set up Dorks</h3>
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {done} of {steps.length}
+        </span>
+        <div className="w-15">
+          <StepProgress step={done} of={steps.length} label="Setup progress" tone="brand" />
+        </div>
+      </header>
+      <ol className="flex flex-col rounded-(--control-radius) border border-border py-1">
+        {steps.map((step) => (
+          <li key={step.id} data-state={step.state} className="flex min-h-9 items-center gap-2.5 px-3 py-1.5">
+            <StepMark state={step.state} />
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className={step.state === 'done' ? 'text-muted-foreground' : undefined}>{step.title}</span>
+              {step.detail && <span className={`text-xs ${step.state === 'failed' ? 'text-destructive' : 'text-muted-foreground'}`}>{step.detail}</span>}
+            </div>
+            {step.trailing}
+          </li>
+        ))}
+      </ol>
+    </section>
   )
 }
 
-function SnapshotStatus({ settings }: { settings: Settings }) {
-  const { actions } = useDorksClient()
-  const snap = useSnapshot()
-  const { run, pending, error } = usePending()
-  if (!snap || (settings.baseSnapshotId && snap.state !== 'failed' && snap.state !== 'building')) return null
-  const build = () => void run(async () => void (await actions.buildSnapshot()))
+function StepMark({ state }: { state: StepState }) {
+  if (state === 'done')
+    return (
+      <span aria-label="Done" className="grid size-4 shrink-0 place-items-center rounded-full bg-brand text-brand-foreground">
+        <CheckIcon className="size-2.5" strokeWidth={3} />
+      </span>
+    )
+  if (state === 'running') return <LoaderCircleIcon aria-label="In progress" className="size-4 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
+  return <span aria-label={state === 'failed' ? 'Failed' : 'To do'} className={`size-4 shrink-0 rounded-full border ${state === 'failed' ? 'border-destructive' : 'border-input bg-muted'}`} />
+}
 
-  if (snap.state === 'building') {
-    return (
-      <div role="status" aria-label="snapshot build progress" data-testid="snapshot-progress" className="flex flex-col gap-2 text-sm">
-        <p className="text-muted-foreground">
-          Preparing Boat, step {snap.stepIndex + 1} of {snap.stepCount}: {snap.message}
-        </p>
-        <Progress value={((snap.stepIndex + 1) / snap.stepCount) * 100} aria-label="build progress" />
-      </div>
-    )
-  }
-  if (snap.state === 'failed') {
-    return (
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <p role="alert" data-testid="snapshot-error" className="text-destructive">
-          Preparing Boat failed: {snap.error}
-          {/[.!?]$/.test(snap.error ?? '') ? '' : '.'}
-          {settings.baseSnapshotId ? ` Sessions keep using ${settings.baseSnapshotId}.` : ''}
-        </p>
-        <Button size="sm" variant="outline" disabled={pending || !snap.canBuild} onClick={build}>
-          {pending ? 'Starting…' : 'Retry'}
-        </Button>
-        {error && (
-          <p role="alert" className="text-destructive">
-            {error}
-          </p>
-        )}
-      </div>
-    )
-  }
-  // No snapshot and nothing running: a key saved before builds started by themselves, or the build could not start.
-  return (
-    <div className="flex flex-wrap items-center gap-2 text-sm">
-      <p role="status" className="text-muted-foreground">
-        {snap.cannotBuildReason ?? 'Boat needs preparing before the first session (a few minutes).'}
-      </p>
-      <Button size="sm" variant="outline" disabled={pending || !snap.canBuild} onClick={build}>
-        {pending ? 'Starting…' : 'Prepare Boat'}
-      </Button>
-      {error && (
-        <p role="alert" className="text-destructive">
-          {error}
-        </p>
-      )}
-    </div>
+const SettingsLink = ({ page, children }: { page: string; children: ReactNode }) => (
+  <Button size="sm" variant="outline" render={<Link to="/settings/$page" params={{ page }} />} nativeButton={false}>
+    {children}
+  </Button>
+)
+
+/** The steps, or null when there is nothing to show. */
+function useSteps(settings: Settings, snap: SnapshotStatus | undefined): Step[] | null {
+  const { actions } = useDorksClient()
+  const build = usePending()
+  const d = stepDone(settings)
+  const tunnelNeeded = settings.boxProvider !== 'sim'
+  const tunnelDone = !tunnelNeeded || settings.publicUrlConfigured
+  const snapBusy = snap?.state === 'building' || snap?.state === 'failed'
+  if (d.boat && d.agents && d.github && d.snapshot && tunnelDone && !snapBusy) return null
+
+  const buildButton = (label: string) => (
+    <Button size="sm" variant="outline" disabled={build.pending || !snap?.canBuild} onClick={() => void build.run(async () => void (await actions.buildSnapshot()))}>
+      {build.pending ? 'Starting…' : label}
+    </Button>
   )
+  const snapshot = snapshotStep(snap, d.boat, d.snapshot, buildButton)
+  if (build.error) snapshot.detail = build.error
+
+  const steps: Step[] = [
+    accountStep('boat', 'Connect Boat', d.boat, 'boat', 'Connect'),
+    accountStep('agents', 'Sign in to an AI account', d.agents, 'agents', 'Sign in'),
+    accountStep('github', 'Connect GitHub', d.github, 'github', 'Connect'),
+    snapshot,
+  ]
+  if (tunnelNeeded) steps.push(tunnelStep(tunnelDone))
+  return steps
+}
+
+const accountStep = (id: string, title: string, done: boolean, page: string, action: string): Step => ({
+  id,
+  title,
+  state: done ? 'done' : 'todo',
+  trailing: done ? undefined : <SettingsLink page={page}>{action}</SettingsLink>,
+})
+
+/** Boat's base snapshot: built in the background once the key is saved, and again when a newer app needs a newer one. */
+function snapshotStep(snap: SnapshotStatus | undefined, boat: boolean, have: boolean, buildButton: (label: string) => ReactNode): Step {
+  if (snap?.state === 'building') {
+    return {
+      id: 'snapshot',
+      title: have ? 'Update Boat for this version' : 'Prepare Boat',
+      state: 'running',
+      detail: `${snap.message ?? 'Starting'}${have ? '. New sessions start meanwhile.' : ''}`,
+      trailing: (
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {snap.stepIndex + 1} of {snap.stepCount}
+        </span>
+      ),
+    }
+  }
+  if (snap?.state === 'failed') {
+    const error = snap.error ?? 'The build failed'
+    return {
+      id: 'snapshot',
+      title: have ? 'Update Boat for this version' : 'Prepare Boat',
+      state: 'failed',
+      detail: `${error}${/[.!?]$/.test(error) ? '' : '.'}${have ? ' Sessions keep using the previous one.' : ''}`,
+      trailing: buildButton('Retry'),
+    }
+  }
+  if (have) return { id: 'snapshot', title: 'Prepare Boat', state: 'done' }
+  if (!boat) return { id: 'snapshot', title: 'Prepare Boat', state: 'todo', detail: 'Starts once Boat is connected.' }
+  return { id: 'snapshot', title: 'Prepare Boat', state: 'todo', detail: snap?.cannotBuildReason ?? 'A few minutes, in the background.', trailing: buildButton('Prepare Boat') }
 }
 
 /** Sandboxes reach this Mac through a public address: the desktop app's own private tunnel, or an address in Settings. */
-function TunnelPrompt() {
-  const tunnel = window.__DORKS__?.tunnel
-  return (
-    <p role="status" data-testid="tunnel-missing" className="text-sm text-muted-foreground">
-      Sandboxes cannot reach this Mac yet{tunnel?.error ? ` (${tunnel.error})` : ''}, so sessions will not start.{' '}
-      {isDesktop() ? (
-        <>
-          Set a public URL in{' '}
-          <Link to="/settings" className="font-medium underline underline-offset-4">
-            Settings
-          </Link>
-          .
-        </>
-      ) : (
-        <>
-          Start the server with <code>DORKS_PUBLIC_URL</code> set to your tunnel’s address.
-        </>
-      )}
-    </p>
-  )
+function tunnelStep(done: boolean): Step {
+  const step: Step = { id: 'tunnel', title: 'Let sandboxes reach this Mac', state: done ? 'done' : 'todo' }
+  if (done) return step
+  if (!isDesktop()) return { ...step, detail: 'Start the server with DORKS_PUBLIC_URL set to your tunnel’s address.' }
+  const error = window.__DORKS__?.tunnel?.error
+  return {
+    ...step,
+    detail: error ? `The tunnel could not start: ${error}.` : 'Sessions start once sandboxes can reach this Mac.',
+    trailing: <SettingsLink page="network">Set address</SettingsLink>,
+  }
 }
