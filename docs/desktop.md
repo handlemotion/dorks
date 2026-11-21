@@ -177,25 +177,19 @@ Release builds update themselves from GitHub Releases with Tauri's updater (`src
 - **Install.** Update in the sidebar (`UpdatePrompt`, a solid brand-blue block above the usage meters) or in the menu bar downloads the bundle, checks its signature against the public key baked into the app, replaces `Dorks.app`, stops the server like Quit does, and relaunches. The menu bar item reads "Check for Updates…" otherwise, and says "Dorks Is Up to Date" for a few seconds after a check it started finds nothing.
 - **Trying the prompt without a release:** the web app's `UpdatePromptView` takes a status as a prop; in a browser, a stand-in `window.__TAURI__` whose `invoke('update_status')` returns one of the states above shows it.
 
-Ship an update (the signing secrets are already set up; see below):
-
-```sh
-pnpm --filter @dorks/desktop release 0.0.2 --push
-```
-
-That sets the version in `tauri.conf.json`, `Cargo.toml` and `Cargo.lock`, commits `Desktop 0.0.2`, tags `desktop-v0.0.2` and pushes both. The tag runs the release workflow, which drafts the release with the `.dmg`, the signed updater bundle and `latest.json`. Write the notes on the draft and **publish it** (not as a pre-release): only then does `releases/latest` point at it and installed apps see the update. Without `--push` the script stops after the tag and prints the push command. The version must be newer than the current one, or the updater would never offer it.
+Ship an update: merge the **Release Dorks** PR ([releasing.md](releasing.md)). The release workflow builds, signs and publishes it, and installed apps pick it up within 4 hours. The version must be newer than the installed one, or the updater never offers it; Changesets only ever bumps it up.
 
 ## Release
 
 One-time signing setup: `apps/desktop/scripts/release-setup.sh csr` makes a key and a certificate request to upload to Apple, and `release-setup.sh secrets` (after Apple issues the certificate) builds the `.p12` and sets the secrets and the updater public key below with your own `gh` login. Key material stays in `~/.dorks-release`, never in the repo.
 
-`.github/workflows/desktop-release.yml` builds a universal (Apple silicon + Intel) app, signs it with a Developer ID certificate, notarizes it, and attaches the `.dmg`, the updater bundle and `latest.json` to a **draft** GitHub release. Push a tag `desktop-v<version>` (matching `version` in `src-tauri/tauri.conf.json`), or run it by hand (`unsigned` makes a test build).
+`.github/workflows/desktop-release.yml` builds the app for Apple silicon (no Intel build for now), signs it with a Developer ID certificate, notarizes it, uploads the `.dmg`, the updater bundle and `latest.json` to the release `desktop-v<version>` and publishes it. `release.yml` calls it when a merged release PR puts a new version on `main` ([releasing.md](releasing.md)); run it by hand to retry, or with `unsigned` for a test build.
 
 One-time setup, in the repository settings. Nothing secret is in the repo.
 
 1. Apple: a Developer ID Application certificate exported as `.p12`. Secrets `APPLE_CERTIFICATE` (base64 of the `.p12`), `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, and for notarization `APPLE_ID`, `APPLE_PASSWORD` (an app-specific password), `APPLE_TEAM_ID`.
 2. Updater: `pnpm --filter @dorks/desktop tauri signer generate -w ~/.tauri/dorks.key`. Secrets `TAURI_SIGNING_PRIVATE_KEY` (and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`), variable `TAURI_UPDATER_PUBKEY` (the public key). The workflow writes the updater config at build time, so no key is committed, and local builds have no updater (the `updater` cargo feature is off).
-3. Nothing to configure for the server or the UI: the workflow installs Bun, compiles `apps/server` for both architectures and builds `apps/web` (`prepare-sidecar`, `prepare-ui`), and neither can fall back to a stub or a placeholder.
+3. Nothing to configure for the server or the UI: the workflow installs Bun, compiles `apps/server` and builds `apps/web` (`prepare-sidecar`, `prepare-ui`), and neither can fall back to a stub or a placeholder.
 
 The sidecar is signed with the app's identity and the hardened runtime. `src-tauri/Entitlements.plist` grants the JIT entitlements a Bun binary needs.
 
@@ -204,6 +198,7 @@ The sidecar is signed with the app's identity and the hardened runtime. `src-tau
 - Deploying the tunnel service and bundling the wurmhol client (see "Tunnel: wurmhol", "What is left"); until then you set `DORKS_PUBLIC_URL`.
 - The window was run with the real server and the real SPA (first-run setup renders and talks to the sidecar); the tunnel state is shown in Settings only as one line.
 - Real icons.
-- The update path from one signed release to the next has not been run end to end yet: 0.0.1 predates the update prompt (it has the updater but no check), so 0.0.1 users install 0.0.2 by hand once, and the first real in-app update is 0.0.2 to 0.0.3.
+- The update path from one signed release to the next has not been run end to end yet: 0.0.1 predates the update prompt (it has the updater but no check), so 0.0.1 users install 0.1.0 by hand once, and the first real in-app update is 0.1.0 to the next release.
+- No Intel build: releases are Apple silicon only. `prepare-sidecar --target universal-apple-darwin` still works locally.
 - Window chrome was verified on macOS 26 only (Liquid Glass). The classic vibrancy fallback (macOS 12 to 25) is code-complete but has not been seen on a real older Mac; neither has a second monitor or a changed screen layout for the remembered frame (the placement rules are unit-tested).
 - How the translucency looks over a real backdrop in the light and dark system appearances was looked at by hand once, before the no-screen rule, and measured as clearly light for the light theme and clearly dark for the dark one; it is not covered by an automated check (see "Checking the chrome without taking the screen").

@@ -1,9 +1,11 @@
 name: Desktop release
 
-# Builds the universal (Apple silicon + Intel) macOS app, signs it with a Developer ID certificate, notarizes it with Apple and
-# attaches the .dmg, the updater bundle and latest.json to a DRAFT GitHub release for you to publish.
+# Builds the macOS app for Apple silicon (aarch64; no Intel build for now), signs it with a Developer ID certificate,
+# notarizes it with Apple and publishes the GitHub release `desktop-v<version>` with the .dmg, the signed updater bundle and
+# latest.json. Installed apps read latest.json from the latest release (docs/desktop.md, "Updates").
 #
-# Trigger: push a tag `desktop-v<version>` (it must match `version` in src-tauri/tauri.conf.json), or run it by hand.
+# Normally called by release.yml when a merged release PR puts a new version on main (docs/releasing.md). Run it by hand
+# to retry the current version's release, or with `unsigned` for a test build in a draft pre-release.
 #
 # Nothing secret is in the repo. Configure these in the repository settings (Settings > Secrets and variables > Actions):
 #   secrets  APPLE_CERTIFICATE            base64 of the Developer ID Application .p12
@@ -15,8 +17,12 @@ name: Desktop release
 #   variable TAURI_UPDATER_PUBKEY         the matching PUBLIC key (not secret), baked into the app so it can verify updates
 # See docs/desktop.md.
 on:
-  push:
-    tags: ["desktop-v*"]
+  workflow_call:
+    inputs:
+      version:
+        description: "The version on the checked-out commit (apps/desktop/package.json)"
+        type: string
+        required: true
   workflow_dispatch:
     inputs:
       unsigned:
@@ -33,12 +39,13 @@ concurrency:
 
 jobs:
   release:
-    runs-on: macos-15
+    runs-on: macos-15 # Apple silicon
     timeout-minutes: 60
     permissions:
-      contents: write # create the draft release and upload assets
+      contents: write # create the release and upload assets
     env:
       UNSIGNED: ${{ github.event_name == 'workflow_dispatch' && inputs.unsigned }}
+      TARGET: aarch64-apple-darwin
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -52,7 +59,7 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.3.14 # compiles apps/server into the sidecar
-      - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - run: rustup target add "$TARGET"
 
       - name: Require signing configuration
         if: env.UNSIGNED != 'true'
@@ -72,20 +79,38 @@ jobs:
           done
           if [ -n "$missing" ]; then echo "::error::missing repository secrets/variables:$missing (see docs/desktop.md)"; exit 1; fi
 
-      - name: Check the tag matches the app version
-        if: github.ref_type == 'tag'
+      - name: Read the version and its release notes
+        id: release
+        if: env.UNSIGNED != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED: ${{ inputs.version }}
         run: |
-          version="$(node -p 'require("./apps/desktop/src-tauri/tauri.conf.json").version')"
-          [ "${GITHUB_REF_NAME}" = "desktop-v${version}" ] || { echo "::error::tag ${GITHUB_REF_NAME} does not match version ${version}"; exit 1; }
+          version="$(node -p 'require("./apps/desktop/package.json").version')"
+          tauri="$(node -p 'require("./apps/desktop/src-tauri/tauri.conf.json").version')"
+          [ "$version" = "$tauri" ] || { echo "::error::apps/desktop/package.json says $version, tauri.conf.json says $tauri (run pnpm release:version)"; exit 1; }
+          [ -z "$EXPECTED" ] || [ "$EXPECTED" = "$version" ] || { echo "::error::asked to release $EXPECTED, but the commit is $version"; exit 1; }
+          tag="desktop-v$version"
+          case "$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null || echo missing)" in
+            false) echo "::error::Dorks $version is already released"; exit 1 ;;
+            true) echo "Deleting the draft a failed run left"; gh release delete "$tag" --yes ;;
+          esac
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "notes<<DORKS_NOTES_EOF"
+            node apps/desktop/scripts/release-notes.mjs "$version"
+            echo "DORKS_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Build the dorks-server sidecar (Bun, both architectures) and the web UI
-        # prepare-sidecar compiles apps/server with `bun build --compile` per target (or runs the server's own build script
-        # when it has one); prepare-ui runs `pnpm --filter @dorks/web build`. Neither can fall back to a stub or a placeholder.
+      - name: Build the dorks-server sidecar (Bun) and the web UI
+        # prepare-sidecar compiles apps/server with `bun build --compile` (or runs the server's own build script when it has
+        # one); prepare-ui runs `pnpm --filter @dorks/web build`. Neither can fall back to a stub or a placeholder.
         working-directory: apps/desktop
         run: |
-          node scripts/prepare-sidecar.mjs --target universal-apple-darwin --release
+          node scripts/prepare-sidecar.mjs --target "$TARGET" --release
           node scripts/prepare-ui.mjs
 
       - name: Write the updater config overlay
@@ -102,30 +127,39 @@ jobs:
             require("fs").writeFileSync("tauri.release.conf.json", JSON.stringify(overlay, null, 2));
           '
 
-      - name: Build, sign, notarize and draft the release
+      - name: Build, sign, notarize and upload to a draft release
         if: env.UNSIGNED != 'true'
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Signing and notarization: tauri-action imports the certificate into a temporary keychain.
-          APPLE_CERTIFICATE: ${{ env.UNSIGNED != 'true' && secrets.APPLE_CERTIFICATE || '' }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ env.UNSIGNED != 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
-          APPLE_SIGNING_IDENTITY: ${{ env.UNSIGNED != 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
-          APPLE_ID: ${{ env.UNSIGNED != 'true' && secrets.APPLE_ID || '' }}
-          APPLE_PASSWORD: ${{ env.UNSIGNED != 'true' && secrets.APPLE_PASSWORD || '' }}
-          APPLE_TEAM_ID: ${{ env.UNSIGNED != 'true' && secrets.APPLE_TEAM_ID || '' }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           # Updater artifacts are signed with this key.
-          TAURI_SIGNING_PRIVATE_KEY: ${{ env.UNSIGNED != 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ env.UNSIGNED != 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: apps/desktop
           tauriScript: pnpm tauri
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || format('desktop-test-{0}', github.run_number) }}
-          releaseName: ${{ github.ref_type == 'tag' && format('Dorks {0}', github.ref_name) || format('Dorks test build {0}', github.run_number) }}
-          releaseDraft: true
-          prerelease: ${{ github.ref_type != 'tag' }}
-          uploadUpdaterJson: ${{ env.UNSIGNED != 'true' }}
-          args: ${{ env.UNSIGNED == 'true' && '--target universal-apple-darwin' || '--target universal-apple-darwin --config src-tauri/tauri.release.conf.json --features updater' }}
+          tagName: ${{ steps.release.outputs.tag }}
+          releaseName: Dorks ${{ steps.release.outputs.version }}
+          releaseBody: ${{ steps.release.outputs.notes }}
+          releaseCommitish: ${{ github.sha }}
+          releaseDraft: true # published below, once every asset is up
+          uploadUpdaterJson: true
+          args: --target aarch64-apple-darwin --config src-tauri/tauri.release.conf.json --features updater
+
+      - name: Publish the release
+        # Only now does releases/latest point at it, so installed apps never see a release without its latest.json.
+        if: env.UNSIGNED != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: gh release edit "$TAG" --draft=false --latest
 
       - name: Build an unsigned test app and draft a test release
         # No signing variables at all: Tauri takes an empty APPLE_CERTIFICATE as "sign with this" and fails to import it.
@@ -140,4 +174,4 @@ jobs:
           releaseName: ${{ format('Dorks test build {0}', github.run_number) }}
           releaseDraft: true
           prerelease: true
-          args: --target universal-apple-darwin
+          args: --target aarch64-apple-darwin

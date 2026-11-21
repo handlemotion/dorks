@@ -7,6 +7,10 @@ Start with [docs/development.md](docs/development.md) (layout, dev loop, tests) 
 - Branch from and target `main` by default.
 - Only continue on, or branch from, another feature branch when the work truly stacks on unmerged changes (it cannot work without them). If unsure, use `main`.
 
+## Releases
+
+A PR that changes what users get in the app adds a changeset (`pnpm changeset`, `@dorks/desktop`, `patch` or `minor`, one or two user-facing sentences). Merging the **Release Dorks** PR ships it; never edit version fields by hand. [docs/releasing.md](docs/releasing.md).
+
 ## Running things
 
 Test changes against running servers, not only unit tests.
