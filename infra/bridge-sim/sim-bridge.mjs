@@ -35,6 +35,7 @@ wss.on("connection", (sock) => {
   const mine = randomBytes(32).toString("hex");
   let theirs = null;
   let verified = false;
+  sock.on("error", () => sock.terminate()); // a bad frame drops this socket, not the process
   sock.on("message", (data) => {
     let msg;
     try {

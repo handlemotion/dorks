@@ -16,6 +16,9 @@ export function listenLoopback(port: number, onError: (e: Error) => void): Accep
     wss.on("connection", (ws) => {
       alive.add(ws);
       ws.on("pong", () => alive.add(ws));
+      // A bad frame or one over maxPayload is an `error` on this socket: drop only it, never the daemon (an unhandled EventEmitter
+      // error would end the process and the agent with it).
+      ws.on("error", () => ws.terminate());
       onSocket(ws as unknown as BridgeSocket);
     });
     const pings = setInterval(() => {
