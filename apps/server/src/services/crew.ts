@@ -1,7 +1,6 @@
 import {
   CREW_WAIT_SLICE_MS,
   MAX_ANSWER_CHARS,
-  MAX_LIVE_WORKERS,
   MAX_NOTES_PER_HOUR,
   MAX_WAIT_SECONDS,
   NOTIFY_TAG,
@@ -17,7 +16,7 @@ import { fail, touch, type App } from "../app";
 import { dorkOf, getDork, openCommands, prStateOf, type DorkRow } from "../data";
 import { insert, update } from "../db";
 import { append, dispatch, hasTimer, MAX_MESSAGE_CHARS, setTimer, userMessagePending } from "../lifecycle/dispatch";
-import { createDork, interrupt, listDorks, removeDork, sendMessage, setArchived } from "./dorks";
+import { checkWorkerRoom, createDork, interrupt, listDorks, removeDork, sendMessage, setArchived } from "./dorks";
 import { listBuilds } from "./builds";
 import { startRun } from "./buildRuns";
 import { githubRepos } from "./githubRepos";
@@ -154,10 +153,10 @@ function create(app: App, scope: Scope, a: Args): CrewResult {
   if (scope.who === "coordinator") {
     if (a.coordinator === true) fail("forbidden", "A coordinator starts workers only; it cannot start another coordinator.");
     if (!input.repo) fail("invalid", "`repo` is required: a worker works in a repository (owner/name).");
-    const live = app.db.get<{ n: number }>("SELECT count(*) AS n FROM dorks WHERE parent_id = ? AND archived = 0 AND deleting = 0", scope.self.id)?.n ?? 0;
-    if (live >= MAX_LIVE_WORKERS) fail("limit", `You have ${live} live workers, the most allowed. Archive finished ones (dork_archive) before starting more.`);
-    // A worker starts from the coordinator's build unless told otherwise: the owner picked that machine for this crew.
-    id = createDork(app, { ...input, buildId: a.buildId === undefined ? (scope.self.buildId ?? undefined) : a.buildId }, scope.self);
+    checkWorkerRoom(app, scope.self.id);
+    // A worker starts from the coordinator's build unless told otherwise: the owner picked that machine for this crew. `null` is the
+    // base machine (an omitted buildId would mean the default build).
+    id = createDork(app, { ...input, buildId: a.buildId === undefined ? (scope.self.buildId ?? null) : a.buildId }, scope.self);
   } else id = createDork(app, { ...input, kind: a.coordinator === true ? "coordinator" : undefined });
   return { tool: "dork_create", id, title: getDork(app.db, id)!.title };
 }

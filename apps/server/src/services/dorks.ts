@@ -1,4 +1,4 @@
-import type { ClientEvent } from "@dorks/shared";
+import { MAX_LIVE_WORKERS, type ClientEvent } from "@dorks/shared";
 import { fail, touch, type App } from "../app";
 import { dorkOf, dorkView, eventOf, getDork, prStateOf, type DorkKind, type DorkRow, type DorkView, type Provider } from "../data";
 import { insert } from "../db";
@@ -204,9 +204,16 @@ export function interrupt(app: App, dorkId: string) {
 export function setArchived(app: App, dorkId: string, archived: boolean) {
   app.db.tx(() => {
     const dork = owned(app, dorkId);
+    if (!archived && dork.archived && dork.parentId) checkWorkerRoom(app, dork.parentId); // the same cap as dork_create, from the UI or MCP
     dispatch(app, dorkId, { t: archived ? "archive" : "unarchive" });
     if (archived) archiveWorkers(app, dork);
   });
+}
+
+/** A coordinator has room for one more live worker (docs/crew.md), or `limit`. */
+export function checkWorkerRoom(app: App, coordinatorId: string) {
+  const live = app.db.get<{ n: number }>("SELECT count(*) AS n FROM dorks WHERE parent_id = ? AND archived = 0 AND deleting = 0", coordinatorId)?.n ?? 0;
+  if (live >= MAX_LIVE_WORKERS) fail("limit", `This coordinator has ${live} live workers, the most allowed. Archive finished ones (dork_archive) first.`);
 }
 
 /** Stopping a coordinator stops its crew (docs/crew.md): its live workers are archived with it. Unarchiving brings back only the coordinator. */

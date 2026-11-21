@@ -75,6 +75,10 @@ describe("crew scope", () => {
     const ws = [];
     for (let i = 0; i < 8; i++) ws.push(await c.worker(a, `task ${i}`));
     expect(await c.code(c.call({ dorkId: a }, "dork_create", { message: "one more", repo: "acme/app" }))).toBe("limit");
+    // Archiving one makes room for another, but bringing the archived one back is refused while the crew is full.
+    await c.call({ dorkId: a }, "dork_archive", { id: ws[0] });
+    await c.worker(a, "replacement");
+    expect(await c.code(c.call({ dorkId: a }, "dork_archive", { id: ws[0], archived: false }))).toBe("limit");
     await c.call(OWNER, "dork_archive", { id: a });
     expect(ws.every((w) => c.h.dork(w).archived)).toBe(true);
   });
