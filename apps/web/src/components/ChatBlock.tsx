@@ -1,10 +1,9 @@
 import { useMemo, type ReactNode } from 'react'
-import { BoxIcon, MessageSquareIcon, UsersIcon, CircleAlertIcon, CircleCheckIcon, CircleStopIcon, ReplyIcon, WrenchIcon } from 'lucide-react'
+import { BoxIcon, ChevronRightIcon, MessageSquareIcon, UsersIcon, CircleAlertIcon, CircleCheckIcon, CircleStopIcon, ReplyIcon } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { Button } from '@dorks/ui/button'
 import type { Block } from '@dorks/shared'
 import { Bubble, BubbleContent } from '@dorks/ui/bubble'
-import { CodeBlock, CodeBlockContent } from '@dorks/ui/code-block'
 import { defaultRehypePlugins, defaultUrlTransform, Markdown, markdownComponents } from '@dorks/ui/markdown'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@dorks/ui/context-menu'
 import { DropdownMenuItem } from '@dorks/ui/dropdown-menu'
@@ -12,10 +11,10 @@ import { HoverActions } from './message-actions/MessageActions'
 import { REPLY_SOURCE, ReplyContext, ReplyQuote, SelectionReply, useReply, type ReplyHandlers } from './Reply'
 import { parseReply, quoteText } from '../lib/reply'
 import { ImageLightbox, ImageTrigger, useLightboxImages, type LightboxImage } from './ImageLightbox'
+import { CodeBlock, CodeBlockContent } from '@dorks/ui/code-block'
 import { Message, MessageContent } from '@dorks/ui/message'
-import { MessageScrollerItem } from '@dorks/ui/message-scroller'
 import { toolStep } from '../lib/progress'
-import { TOOL_KIND_ICONS } from './toolIcons'
+import { MessageScrollerItem } from '@dorks/ui/message-scroller'
 import { LocalRequestCard } from './LocalRequest'
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from '@dorks/ui/trace'
 
@@ -150,34 +149,6 @@ function entries(blocks: Block[]): Entry[] {
   return result
 }
 
-function ToolRow({ block }: { block: ToolBlock }) {
-  const { kind, verb } = toolStep(block.name, block.status)
-  const Icon = TOOL_KIND_ICONS[kind]
-  // Known tools read as a verb and their target ("Ran pnpm test", "Read src/app.ts"); any other tool also names itself.
-  const title = kind === 'other' ? `${verb} ${toolAction(block.name).one}${block.summary ? `: ${block.summary}` : ''}` : `${verb} ${block.summary}`
-  const line = (
-    <TraceLine status={block.status === 'ok' ? undefined : block.status}>
-      <TraceIcon>
-        <Icon />
-      </TraceIcon>
-      <TraceTitle>{title}</TraceTitle>
-    </TraceLine>
-  )
-  if (!block.preview) return line
-  return (
-    <TraceCollapsible>
-      <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
-      <TraceCollapsibleContent>
-        <CodeBlock size="sm" variant={block.status === 'error' ? 'destructive' : 'default'}>
-          <CodeBlockContent wrap className="max-h-64">
-            {block.preview}
-          </CodeBlockContent>
-        </CodeBlock>
-      </TraceCollapsibleContent>
-    </TraceCollapsible>
-  )
-}
-
 /** What a tool did, as a verb and a countable noun: "ran" + "command", or a whole phrase when it has no count. */
 function toolAction(name: string): { verb: string; one: string; many: string } {
   const mcp = /^mcp__[^_]+(?:_[^_]+)*?__(.+)$/.exec(name)
@@ -226,28 +197,64 @@ export function toolGroupTitle(tools: { name: string }[]): string {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-/** Two or more tool calls in a row: one summary line that opens onto their rows (single calls stay plain rows). */
-function ToolGroup({ tools }: { tools: ToolBlock[] }) {
-  // Shimmers while a call in it runs; a failed call is red in its own row, not across the whole summary.
-  const status = tools.some((t) => t.status === 'running') ? 'running' : undefined
+/**
+ * A run of tool calls between the agent's messages: one plain line that counts them ("Ran 2 commands, read a file"), its failures
+ * after it. The calls themselves live in Progress: with `onOpen` the line is a button, a chevron after it, that opens Progress on
+ * them. Where there is no Progress (a narrow window, a worker in a dork's panel) the line unfolds in place to each call and its
+ * output instead. It shimmers while one of them runs.
+ */
+function ToolLine({ tools, onOpen }: { tools: ToolBlock[]; onOpen?: (keys: string[]) => void }) {
+  const running = tools.some((t) => t.status === 'running')
+  const failed = tools.filter((t) => t.status === 'error').length
+  const title = toolGroupTitle(tools)
+  const line = (
+    // Dim and at the messages' 14px: a pointer over it lifts it a little, never to the full black of the agent's words.
+    <TraceLine status={running ? 'running' : undefined} className="text-(length:--text-message) in-[button:hover]:text-foreground/65">
+      <TraceTitle>{title}</TraceTitle>
+      {failed > 0 && <span className="shrink-0 text-destructive">{failed === tools.length && failed === 1 ? 'failed' : `${failed} failed`}</span>}
+      {onOpen && <ChevronRightIcon aria-hidden className="-ml-1 size-3.5 shrink-0" />}
+    </TraceLine>
+  )
   return (
-    <TraceCollapsible data-testid="tool-group">
-      <TraceCollapsibleTrigger>
-        <TraceLine status={status}>
-          <TraceIcon>
-            <WrenchIcon />
-          </TraceIcon>
-          <TraceTitle>{toolGroupTitle(tools)}</TraceTitle>
-        </TraceLine>
-      </TraceCollapsibleTrigger>
-      <TraceCollapsibleContent>
-        <Trace>
-          {tools.map((tool) => (
-            <ToolRow key={tool.id} block={tool} />
-          ))}
-        </Trace>
-      </TraceCollapsibleContent>
-    </TraceCollapsible>
+    // `my-1.5`: 22px from the text around it, a step more than a paragraph break (19px), so the tool line reads as its own beat.
+    <Trace data-testid="tool-steps" className="my-1.5">
+      {onOpen ? (
+        <button type="button" aria-label={`${title}: show in Progress`} onClick={() => onOpen(tools.map((t) => t.id))}>
+          {line}
+        </button>
+      ) : (
+        <TraceCollapsible>
+          <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
+          <TraceCollapsibleContent>
+            <div className="flex flex-col gap-2 pt-2">
+              {tools.map((tool) => (
+                <ToolCall key={tool.id} block={tool} />
+              ))}
+            </div>
+          </TraceCollapsibleContent>
+        </TraceCollapsible>
+      )}
+    </Trace>
+  )
+}
+
+/** One call, unfolded under its line where Progress is not at hand: "Ran pnpm test" and its output. */
+function ToolCall({ block }: { block: ToolBlock }) {
+  const { kind, verb } = toolStep(block.name, block.status)
+  const title = kind === 'other' ? `${verb} ${toolAction(block.name).one}${block.summary ? `: ${block.summary}` : ''}` : `${verb} ${block.summary}`
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <span className={`truncate text-sm ${block.status === 'error' ? 'text-destructive' : 'text-muted-foreground'}`} title={title}>
+        {title}
+      </span>
+      {block.preview && (
+        <CodeBlock size="sm" variant={block.status === 'error' ? 'destructive' : 'default'}>
+          <CodeBlockContent wrap className="max-h-64">
+            {block.preview}
+          </CodeBlockContent>
+        </CodeBlock>
+      )}
+    </div>
   )
 }
 
@@ -257,7 +264,7 @@ function ToolGroup({ tools }: { tools: ToolBlock[] }) {
  */
 function AgentText({ block }: { block: Extract<AgentBlock, { kind: 'assistant' }> }) {
   const { onReply } = useReply()
-  // The agent's replies and the user's bubbles are the only text at 14px (`text-message`); the rest of the UI is 13px.
+  // The conversation reads at 14px (`text-message`): the agent's replies, the user's bubbles, the tool lines and the status line under them.
   const markdown = <AgentMarkdown className="text-message">{block.text}</AgentMarkdown>
   if (block.streaming) return <div className="min-w-0">{markdown}</div>
   return (
@@ -274,20 +281,15 @@ function AgentText({ block }: { block: Extract<AgentBlock, { kind: 'assistant' }
   )
 }
 
-function agentContent(blocks: AgentBlock[]): ReactNode[] {
+function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => void): ReactNode[] {
   const content: ReactNode[] = []
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
     if (block.kind === 'tool') {
-      // Tool calls in a row are one group: a lone call is a plain row, two or more fold under one summary line. Progress text splits groups.
+      // Tool calls in a row are one line; the agent's messages split them.
       const tools: ToolBlock[] = [block]
       while (blocks[i + 1]?.kind === 'tool') tools.push(blocks[++i] as ToolBlock)
-      content.push(
-        // `my-1.5`: 22px from the text around it, a step more than a paragraph break (19px), so the tool line reads as its own beat.
-        <Trace key={tools[0].id} data-testid="tool-steps" className="my-1.5">
-          {tools.length === 1 ? <ToolRow block={tools[0]} /> : <ToolGroup tools={tools} />}
-        </Trace>,
-      )
+      content.push(<ToolLine key={tools[0].id} tools={tools} onOpen={onOpenSteps} />)
     } else if (block.kind === 'assistant') {
       // Assistant text is unbubbled markdown, as in the AI Elements chat pattern. No streaming caret: the markdown is a block, so it
       // fell on a line of its own, and the status line below already says the agent is working.
@@ -356,13 +358,13 @@ export function workedFor(ms: number): string {
 }
 
 /**
- * One turn, in the order it happened: every message the agent wrote, the tool calls between them (a run of calls folds under one
- * summary line), notices and machine drafts. The agent's thinking never reaches the transcript.
+ * One turn, in the order it happened: every message the agent wrote, the tool calls between them (a run of calls is one line that
+ * opens them in Progress), notices and machine drafts. The agent's thinking never reaches the transcript.
  */
-function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock }) {
+function TurnContent({ blocks, end, onOpenSteps }: { blocks: AgentBlock[]; end?: TurnBlock; onOpenSteps?: (keys: string[]) => void }) {
   return (
     <>
-      {agentContent(blocks)}
+      {agentContent(blocks, onOpenSteps)}
       {end?.outcome === 'stopped' && (
         <Trace role="status" data-testid="turn-stopped">
           <TraceLine>
@@ -387,6 +389,7 @@ export function ChatMessages({
   onReply,
   onReplySend,
   agent,
+  onOpenSteps,
 }: {
   blocks: Block[]
   /** Resolves a shared screenshot's id to its URL. */
@@ -395,6 +398,8 @@ export function ChatMessages({
   onReplySend?: ReplyHandlers['onSend']
   /** The agent's name, for "Reply to Claude". */
   agent?: string
+  /** Opens Progress on these tool calls (a tool line was clicked). Without it the lines are plain text. */
+  onOpenSteps?: (keys: string[]) => void
 }) {
   const { blocks, refs } = resolveSharedImages(raw, imageUrl)
   const images = transcriptImages(blocks)
@@ -441,7 +446,7 @@ export function ChatMessages({
         <Message {...{ [REPLY_SOURCE]: '' }}>
           <MessageContent className="gap-3">
             {turns(entry.blocks).map((turn, i) => (
-              <TurnContent key={`${entry.id}:${i}`} blocks={turn.blocks} end={turn.end} />
+              <TurnContent key={`${entry.id}:${i}`} blocks={turn.blocks} end={turn.end} onOpenSteps={onOpenSteps} />
             ))}
           </MessageContent>
         </Message>

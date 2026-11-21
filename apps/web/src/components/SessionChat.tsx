@@ -10,6 +10,7 @@ import { LocalAccessProvider } from './LocalRequest'
 import { useDraft } from '../lib/draft'
 import { usePending } from '../lib/pending'
 import { withReply, type Reply } from '../lib/reply'
+import { currentStep, stepLabel } from '../lib/progress'
 
 export type DorkView = NonNullable<ReturnType<typeof useDork>>
 
@@ -36,6 +37,7 @@ export function SessionChat({
   compact,
   error: extraError,
   draft,
+  onOpenSteps,
 }: {
   dork: DorkView
   /**
@@ -46,6 +48,11 @@ export function SessionChat({
   compact?: boolean
   /** Another action's failure to show over the composer (archive, the page's own controls). */
   error?: string
+  /**
+   * Opens Progress on these steps (none: just Progress). The thread's tool lines and the status line call it; without it (a worker in
+   * a dork's panel, a narrow window) they are plain text.
+   */
+  onOpenSteps?: (keys: string[]) => void
 }) {
   const dorkId = dork.id
   const { actions } = useDorksClient()
@@ -60,6 +67,7 @@ export function SessionChat({
   const { live } = useConnection()
   const agent = dork.provider === 'codex' ? 'Codex' : 'Claude'
   const canReply = !dork.archived
+  const current = dork.state === 'working' ? currentStep(view.blocks) : {}
   return (
     <>
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
@@ -78,6 +86,7 @@ export function SessionChat({
                   blocks={view.blocks}
                   imageUrl={actions.imageUrl}
                   agent={agent}
+                  onOpenSteps={onOpenSteps}
                   onReply={
                     canReply
                       ? (quoted, draft) => {
@@ -95,7 +104,14 @@ export function SessionChat({
                 </p>
               )}
               <div>
-                <AgentStatus state={dork.state} live={live} outcome={view.lastOutcome} />
+                <AgentStatus
+                  state={dork.state}
+                  live={live}
+                  outcome={view.lastOutcome}
+                  step={current.tool && stepLabel(current.tool)}
+                  since={current.since}
+                  onOpen={onOpenSteps && view.blocks.some((b) => b.kind === 'tool') ? () => onOpenSteps(current.tool ? [current.tool.id] : []) : undefined}
+                />
               </div>
             </MessageScrollerContent>
           </MessageScrollerViewport>
