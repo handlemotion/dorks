@@ -18,6 +18,7 @@ import { PageHeader } from '../../../components/PageHeader'
 import {
   SettingsGroup,
   SettingsGroupBody,
+  SettingsFacts as Facts,
   SettingsGroupFooter,
   SettingsInputRow,
   SettingsRow,
@@ -25,8 +26,12 @@ import {
   SettingsSections,
   SettingsSelectRow,
   SettingsStatus,
+  StatusDot as Dot,
+  TONE_TEXT,
+  type Tone,
 } from '../../../components/settings/kit'
 import { usePending } from '../../../lib/pending'
+import { ago } from '../../../lib/time'
 
 // Builds (docs/builds.md): named machine setups a session can start from. Four pages on one route, laid out with the settings kit:
 // the list (`/builds`), a build (`?build=<id>`), one of its runs with the log (`&run=<id>`), and an agent's change to review (`&review=<draft id>`).
@@ -62,14 +67,6 @@ const STEP_NAMES: Record<string, string> = {
   finish: 'Finishing up',
 }
 
-function ago(ms: number) {
-  const m = Math.max(0, Math.round((Date.now() - ms) / 60000))
-  if (m < 1) return 'just now'
-  if (m < 60) return `${m}m ago`
-  const h = Math.round(m / 60)
-  return h < 24 ? `${h}h ago` : `${Math.round(h / 24)}d ago`
-}
-
 function duration(ms: number) {
   const s = Math.max(0, Math.round(ms / 1000))
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`
@@ -77,8 +74,6 @@ function duration(ms: number) {
 
 /** An image run can start: nothing running, no build-time value missing, and not an agent's proposal the owner has not approved. */
 const canBuild = (b: BuildView, missing: string[]) => !b.activeRun && missing.length === 0 && (b.approved || !!b.image)
-
-type Tone = 'success' | 'running' | 'warning' | 'danger' | 'idle'
 
 /** One line on where a build stands, and its colour, for the list and the build's page. */
 function status(b: BuildView): { text: string; tone: Tone } {
@@ -91,30 +86,6 @@ function status(b: BuildView): { text: string; tone: Tone } {
   if (!b.image) return b.lastRun?.kind === 'image' && b.lastRun.status === 'failed' ? { text: 'Build failed', tone: 'danger' } : { text: 'Not built yet', tone: 'idle' }
   if (b.image.stale) return { text: 'Out of date', tone: 'warning' }
   return { text: `Built ${ago(b.image.at)}`, tone: 'success' }
-}
-
-const TONE_TEXT: Record<Tone, string> = {
-  success: '',
-  running: '',
-  warning: 'text-amber-700 dark:text-amber-400',
-  danger: 'text-destructive',
-  idle: 'text-muted-foreground',
-}
-
-function Dot({ tone }: { tone: Tone }) {
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        'size-2 shrink-0 rounded-full',
-        tone === 'success' && 'bg-emerald-600 dark:bg-emerald-400',
-        tone === 'running' && 'bg-brand',
-        tone === 'warning' && 'bg-amber-600 dark:bg-amber-400',
-        tone === 'danger' && 'bg-destructive',
-        tone === 'idle' && 'border-[1.5px] border-muted-foreground/60',
-      )}
-    />
-  )
 }
 
 function Tag({ children, tone }: { children: ReactNode; tone?: 'added' | 'removed' }) {
@@ -309,25 +280,6 @@ const BuildCrumb = ({ build }: { build?: BuildView }) =>
       Builds
     </Link>
   )
-
-/** A strip of facts across the top of a page: label over value, split by full hairlines. */
-function Facts({ items }: { items: { label: string; value: ReactNode; testId?: string }[] }) {
-  return (
-    <div className="grid grid-cols-2 md:grid-cols-4">
-      {items.map((f) => (
-        <div
-          key={f.label}
-          className="flex min-w-0 flex-col gap-1.5 border-e border-b px-4 py-3.5 text-sm [&:nth-child(2n)]:border-e-0 md:border-b-0 md:[&:nth-child(2n)]:border-e md:[&:nth-child(4n)]:border-e-0"
-        >
-          <span className="text-xs text-muted-foreground">{f.label}</span>
-          <span data-testid={f.testId} className="flex min-w-0 items-center gap-2 truncate tabular-nums">
-            {f.value}
-          </span>
-        </div>
-      ))}
-    </div>
-  )
-}
 
 const runStatus = (r: RunView) =>
   r.status === 'running' ? (STEP_NAMES[r.step ?? ''] ?? 'Running') : r.status === 'queued' ? 'Waiting' : r.status === 'succeeded' ? 'Succeeded' : r.status === 'cancelled' ? 'Cancelled' : 'Failed'

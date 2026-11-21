@@ -6,6 +6,7 @@ import { createServer, type IncomingMessage, type ServerResponse, type Server } 
 import type { AddressInfo } from "node:net";
 import type { ClientEvent, McpServerView, PullRequestView, SkillCandidate, SkillView } from "@dorks/shared";
 import type { Dork, Settings, SnapshotStatus } from "./types.ts";
+import { mockAutomations } from "./mock-automations.ts";
 
 const SNAPSHOT_STEPS = [
   ["prepare", "Cleaning up earlier builds"],
@@ -364,6 +365,17 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     later(tick, () => startTurn(id, message));
     return json(res, 200, { id });
   };
+
+  const automations = mockAutomations({
+    broadcast: (m) => broadcast(m),
+    startSession: (repo, message, title) => {
+      const blocked = cannotCreate("claude");
+      if (blocked) return { error: blocked };
+      const id = addDork({ repo, message, title, provider: "claude" });
+      later(tick, () => startTurn(id, message));
+      return { id, title };
+    },
+  });
 
   /** A new session row (a worker when `parent` is set) and its first status. The caller starts its turn. */
   const addDork = (body: Record<string, unknown> & { repo: string; message: string; provider: Dork["provider"] }, parent?: MockDork): string => {
@@ -862,6 +874,8 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
 
     const handle = routes.get(`${method} ${path}`);
     if (handle) return handle(c);
+    const automation = automations(method, path, body);
+    if (automation) return "error" in automation ? fail(res, automation.error, automation.message) : json(res, automation.status, automation.body);
     const m = /^\/api\/dorks\/([^/]+)(?:\/(messages|interrupt|desktop|archive|model|codex-model|events|pr(?:\/merge|\/update-branch)?|subscriptions(?:\/resume)?))?$/.exec(path);
     if (m) return routeDork(c, m);
     const sm = /^\/api\/secrets\/([^/]+)$/.exec(path);

@@ -2,6 +2,9 @@ import {
   appError,
   type AppError,
   type AppErrorCode,
+  type AutomationInput,
+  type AutomationRunView,
+  type AutomationView,
   type ComposioStatus,
   type McpOAuthState,
   type McpServerInput,
@@ -197,6 +200,15 @@ export function createApi(config: ApiConfig) {
     approveDraft: (id: string, draftId: string, reviewed: number, run = true) =>
       request<{ run: RunView | null; missing: string[] }>("POST", `/api/builds/${enc(id)}/drafts/${enc(draftId)}/approve`, { reviewed, run }),
     rejectDraft: (id: string, draftId: string, reason?: string) => request<object>("POST", `/api/builds/${enc(id)}/drafts/${enc(draftId)}/reject`, { reason }),
+    // automations (docs/automations.md)
+    listAutomations: () => request<AutomationView[]>("GET", "/api/automations"),
+    getAutomation: (id: string) => request<AutomationView>("GET", `/api/automations/${enc(id)}`),
+    createAutomation: (input: AutomationInput) => request<{ id: string }>("POST", "/api/automations", input),
+    /** Merged over the saved definition: `{enabled}` alone pauses or resumes it. */
+    updateAutomation: (id: string, patch: Partial<AutomationInput>) => request<object>("PATCH", `/api/automations/${enc(id)}`, patch),
+    deleteAutomation: (id: string) => request<object>("DELETE", `/api/automations/${enc(id)}`),
+    listAutomationRuns: (id: string) => request<AutomationRunView[]>("GET", `/api/automations/${enc(id)}/runs`),
+    runAutomation: (id: string) => request<AutomationRunView>("POST", `/api/automations/${enc(id)}/runs`),
   };
 }
 

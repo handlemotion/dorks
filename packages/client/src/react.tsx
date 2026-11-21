@@ -3,7 +3,7 @@ import { toAppError, type ComposioStatus, type McpServerView, type SkillView, ty
 import type { DorksClient, ConnectionState } from "./client.ts";
 import type { EventsState } from "./events.ts";
 import type { QueryState, Store } from "./store.ts";
-import type { BuildView, Dork, RunView, Settings, SnapshotStatus, Usage, GithubRepos, LocalAccess } from "./types.ts";
+import type { AutomationRunView, AutomationView, BuildView, Dork, RunView, Settings, SnapshotStatus, Usage, GithubRepos, LocalAccess } from "./types.ts";
 
 const Ctx = createContext<DorksClient | null>(null);
 
@@ -102,6 +102,20 @@ export function useBuild(id: string): BuildView | null | undefined {
 
 export function useRuns(buildId: string): RunView[] | undefined {
   return useStore(useDorksClient().runs(buildId)).data;
+}
+
+/** Automations (docs/automations.md); `undefined` while loading. */
+export function useAutomations(): AutomationView[] | undefined {
+  return useStore(useDorksClient().automations()).data;
+}
+
+/** `undefined` while loading, `null` when it does not exist. */
+export function useAutomation(id: string): AutomationView | null | undefined {
+  return useStore(useDorksClient().automation(id)).data;
+}
+
+export function useAutomationRuns(id: string): AutomationRunView[] | undefined {
+  return useStore(useDorksClient().automationRuns(id)).data;
 }
 
 /** The session's pull request, live from GitHub: `data` null when it has none; `error` when GitHub could not be read. */

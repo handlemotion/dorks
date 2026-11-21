@@ -14,6 +14,7 @@ import { buildIfMissing, snapshotView, startBuild } from "../services/snapshot";
 import * as subs from "../services/subscriptions";
 import * as builds from "../services/builds";
 import * as runs from "../services/buildRuns";
+import * as automations from "../services/automations";
 import { forgetUsage, getUsage } from "../services/usage";
 import { composioLink, composioStatus, composioUnlink, connectComposio, disconnectComposio } from "../services/composio";
 import { deleteMcpServer, listMcpServers, putMcpServer } from "../services/mcpServers";
@@ -608,6 +609,46 @@ export function uiApp(app: App): Hono {
         ok(c),
       ),
     ),
+  );
+
+  // ---- automations (docs/automations.md)
+  api.get(
+    "/api/automations",
+    on((c) => service((a) => c.json(automations.listAutomations(a)))),
+  );
+  api.post(
+    "/api/automations",
+    on((c) =>
+      looseBody(c).pipe(
+        Effect.flatMap((b) => service((a) => automations.createAutomation(a, b))),
+        Effect.map((automationId) => c.json({ id: automationId }, 201)),
+      ),
+    ),
+  );
+  api.get(
+    "/api/automations/:id",
+    on((c) => service((a) => c.json(automations.getAutomationView(a, id(c))))),
+  );
+  api.patch(
+    "/api/automations/:id",
+    on((c) =>
+      looseBody(c).pipe(
+        Effect.flatMap((b) => service((a) => automations.updateAutomation(a, id(c), b))),
+        ok(c),
+      ),
+    ),
+  );
+  api.delete(
+    "/api/automations/:id",
+    on((c) => ok(c)(service((a) => automations.deleteAutomation(a, id(c))))),
+  );
+  api.get(
+    "/api/automations/:id/runs",
+    on((c) => service((a) => c.json(automations.listRuns(a, id(c))))),
+  );
+  api.post(
+    "/api/automations/:id/runs",
+    on((c) => service((a) => c.json(automations.runNow(a, id(c)), 201))),
   );
 
   // ---- live updates (Server-Sent Events): invalidations, not payloads

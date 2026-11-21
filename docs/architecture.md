@@ -125,6 +125,7 @@ IDs are UUID strings. Times are epoch milliseconds.
 | `POST /api/composio/toolkits/:toolkit/link` | | `{url}`: a Composio sign-in page for one app |
 | `DELETE /api/composio/toolkits/:toolkit` | | `{}`. Signs that app out |
 | `GET/POST /api/builds`, `GET/PATCH/DELETE /api/builds/:id`, `PUT /api/builds/:id/default`, `PUT/DELETE /api/builds/:id/vars/:name`, `GET/POST /api/builds/:id/runs`, `GET /api/builds/:id/runs/:runId/log`, `POST /api/builds/:id/runs/:runId/cancel`, `POST /api/builds/:id/drafts/:draftId/approve\|reject` | | Builds: named machine setups, see [builds](builds.md) ("UI and API") |
+| `GET/POST /api/automations`, `GET/PATCH/DELETE /api/automations/:id`, `GET/POST /api/automations/:id/runs` | | Automations: instructions an agent runs on a schedule or on repository events, each run a session; see [automations](automations.md) |
 | `POST /api/dorks/:id/local/:requestId`, `GET/PUT /api/local-access`, `DELETE /api/local-access/grants[/:grantId]` | | The owner's answers to an agent's requests to use this computer, the on/off switch and the time-limited permissions: [local access](local-access.md) |
 | `GET /api/health` | no auth | `{ok: true}` |
 | `POST /mcp` | JSON-RPC (MCP, Streamable HTTP, plain JSON answers) | The dorks MCP server for the owner's other agents: `dork_*`, `build_*`, `repo_list`. Owner bearer token; a browser `Origin` outside `DORKS_UI_ORIGINS` is 403; `GET`/`DELETE` are 405. See [crews](crew.md) |
@@ -146,6 +147,7 @@ One stream per client. Messages are `data: <json>\n\n`; a `: ping` comment every
 | `{"t":"snapshot"}` | the base-snapshot build changed (a step, a result); refetch `GET /api/snapshot` |
 | `{"t":"builds"}` | the build list changed; refetch `GET /api/builds` |
 | `{"t":"build","buildId"}` | one build, its runs, drafts or a run's log changed; refetch it, its runs and an open log |
+| `{"t":"automations"}` | an automation, its runs or a watched repository changed; refetch the automations and run histories you show |
 
 `packages/client` wraps this (`useDorks`, `useDork`, `useDorkEvents`, `useSettings`), replacing `@dorks/convex/client` and `convex/react`.
 
@@ -204,7 +206,7 @@ applies them. The full design: [builds](builds.md).
 
 ## Lifecycle
 
-`core/machine.ts` is unchanged apart from dropping the GitHub-token-refresh effects. Dispatch applies an input in one transaction: persist the new state, append a `status` event, then run effects (arm/cancel timers, enqueue box jobs, release held notifications, enqueue `interrupt`). Pausing keeps the same intent-with-generation model (`flushing` → `pausing` → `cancelled`). Timers: `sleep`, `watchdog`, `bridge_watch`, `flush`, `notify`, `pause_retry`. Global jobs (owner `''`): `poll`, `sweep`, `snapshot:build`, `orphan:<boxId>`, `build:run:<runId>`, `build:forget:<image>`.
+`core/machine.ts` is unchanged apart from dropping the GitHub-token-refresh effects. Dispatch applies an input in one transaction: persist the new state, append a `status` event, then run effects (arm/cancel timers, enqueue box jobs, release held notifications, enqueue `interrupt`). Pausing keeps the same intent-with-generation model (`flushing` → `pausing` → `cancelled`). Timers: `sleep`, `watchdog`, `bridge_watch`, `flush`, `notify`, `pause_retry`. Global jobs (owner `''`): `poll`, `sweep`, `snapshot:build`, `orphan:<boxId>`, `build:run:<runId>`, `build:forget:<image>`, `automation:<id>` (an automation's schedules) and `automation-watch` (the repository watcher, [automations](automations.md)).
 
 ## GitHub (autonomy)
 

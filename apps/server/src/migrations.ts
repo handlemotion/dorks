@@ -372,4 +372,48 @@ export const MIGRATIONS: string[] = [
     updated_at INTEGER NOT NULL
   );
   `,
+  `
+  -- Automations (services/automations.ts, docs/automations.md): instructions an agent runs on a schedule or when something happens in a
+  -- repository; every run starts a session. \`triggers\` is JSON (AutomationTrigger[]). \`sched_from\` is the time schedules were last
+  -- evaluated from: a schedule whose next time after it has passed fires once.
+  CREATE TABLE automations (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    enabled INTEGER NOT NULL,
+    triggers TEXT NOT NULL,
+    instructions TEXT NOT NULL,
+    model TEXT,
+    effort TEXT,
+    build_id TEXT REFERENCES builds (id) ON DELETE SET NULL,
+    sched_from INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  -- One row per run. \`event_key\` dedupes an event (\`pr_opened:owner/name#12\`) per automation; dork_id outlives the dork it names.
+  CREATE TABLE automation_runs (
+    id TEXT PRIMARY KEY,
+    automation_id TEXT NOT NULL REFERENCES automations (id) ON DELETE CASCADE,
+    source TEXT NOT NULL,
+    event_key TEXT,
+    summary TEXT NOT NULL,
+    url TEXT,
+    repo TEXT,
+    number INTEGER,
+    dork_id TEXT,
+    status TEXT NOT NULL CHECK (status IN ('started', 'failed', 'skipped')),
+    error TEXT,
+    created_at INTEGER NOT NULL
+  );
+  CREATE UNIQUE INDEX automation_runs_key ON automation_runs (automation_id, event_key) WHERE event_key IS NOT NULL;
+  CREATE INDEX automation_runs_recent ON automation_runs (automation_id, created_at);
+  -- What the repository watcher last saw of each watched repository: ETags, cursors and head commits (JSON), its visibility, and why it
+  -- could not read it.
+  CREATE TABLE automation_watch (
+    repo TEXT PRIMARY KEY,
+    state TEXT NOT NULL,
+    private INTEGER,
+    error TEXT,
+    updated_at INTEGER NOT NULL
+  );
+  `,
 ];

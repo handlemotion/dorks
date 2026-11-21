@@ -8,3 +8,4 @@ export * from "./pullRequest";
 export * from "./mcp";
 export * from "./crew";
 export * from "./skills";
+export * from "./automations";
