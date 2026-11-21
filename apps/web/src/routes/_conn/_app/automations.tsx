@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { ChevronDownIcon, ChevronRightIcon, ClockIcon, ExternalLinkIcon, HandIcon, PlayIcon, PlusIcon } from 'lucide-react'
+import { ChevronDownIcon, ChevronRightIcon, ClockIcon, EllipsisIcon, ExternalLinkIcon, HandIcon, PlayIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from 'cn'
 import { modelLabel } from '@dorks/shared'
@@ -8,50 +8,36 @@ import type { AutomationInput, AutomationRunView, AutomationTrigger, AutomationV
 import { useAutomation, useAutomationRuns, useAutomations, useBuilds, useDorksClient, useGithubRepos, useSettings } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@dorks/ui/dialog'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@dorks/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@dorks/ui/dropdown-menu'
 import { Switch } from '@dorks/ui/switch'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@dorks/ui/tabs'
 import { Textarea } from '@dorks/ui/textarea'
 import { EmptyState } from '../../../components/EmptyState'
 import { PageHeader } from '../../../components/PageHeader'
-import { TAB_CLASS } from '../../../components/PullRequestPanel'
+import { Tip } from '../../../components/Tip'
 import { DAYS, EVENTS, EVERY, GithubMark, TriggerList } from '../../../components/automations/TriggerEditor'
 import { TEMPLATES, type AutomationTemplate } from '../../../components/automations/templates'
-import {
-  SettingsFacts,
-  SettingsGroup,
-  SettingsGroupBody,
-  SettingsInputRow,
-  SettingsRow,
-  SettingsSection,
-  SettingsSections,
-  SettingsStatus,
-  StatusDot,
-  TONE_TEXT,
-  type Tone,
-} from '../../../components/settings/kit'
+import { SettingsFacts, SettingsGroup, SettingsGroupBody, SettingsInputRow, SettingsSection, SettingsSections, SettingsStatus, StatusDot, TONE_TEXT, type Tone } from '../../../components/settings/kit'
 import { usePending } from '../../../lib/pending'
 import { ago, upcoming } from '../../../lib/time'
 
 // Automations (docs/automations.md): instructions an agent runs on a schedule, or when something happens in a repository; each run
 // starts a session. Three pages on one route, laid out with the settings kit like Builds: the list with templates (`/automations`),
-// a new automation (`?automation=new`, from a `&template=`), and an automation's settings and run history (`?automation=<id>&tab=runs`).
+// a new automation (`?automation=new`, from a `&template=`), and an automation's settings with its run history (`?automation=<id>`).
 
-type Search = { automation?: string; template?: string; tab?: 'runs' }
+type Search = { automation?: string; template?: string }
 
 export const Route = createFileRoute('/_conn/_app/automations')({
   validateSearch: (s: Record<string, unknown>): Search => ({
     ...(typeof s.automation === 'string' ? { automation: s.automation } : {}),
     ...(typeof s.template === 'string' ? { template: s.template } : {}),
-    ...(s.tab === 'runs' ? { tab: 'runs' as const } : {}),
   }),
   component: Automations,
 })
 
 function Automations() {
-  const { automation, template, tab } = Route.useSearch()
+  const { automation, template } = Route.useSearch()
   if (automation === 'new') return <NewAutomation key={template ?? ''} template={TEMPLATES.find((t) => t.id === template)} />
-  if (automation) return <AutomationPage key={automation} id={automation} tab={tab ?? 'settings'} />
+  if (automation) return <AutomationPage key={automation} id={automation} />
   return <AutomationList />
 }
 
@@ -119,7 +105,7 @@ function AutomationList() {
           </EmptyState>
         )}
         {!!automations?.length && (
-          <SettingsSection title="Automations" description="Each run starts a session with the instructions and what triggered it.">
+          <SettingsSection title="Automations">
             <SettingsGroup label="automations">
               {automations.map((a) => {
                 const s = status(a)
@@ -144,7 +130,7 @@ function AutomationList() {
 
 function Templates() {
   return (
-    <SettingsSection title="Templates" description="A starting point: pick the repository, then adjust the instructions.">
+    <SettingsSection title="Templates">
       <SettingsGroup label="templates">
         {TEMPLATES.map((t) => (
           <div key={t.id} className={ROW}>
@@ -183,12 +169,12 @@ function AutomationForm({ draft, setDraft, overview, disabled }: { draft: Draft;
   return (
     <>
       {overview}
-      <SettingsSection title="Triggers" description="When it runs. Each run starts a session in the trigger’s repository.">
+      <SettingsSection title="Triggers">
         <SettingsGroup label="triggers">
           <TriggerList triggers={draft.triggers} onChange={(triggers) => set({ triggers })} repositories={repos?.repos ?? []} disabled={disabled} />
         </SettingsGroup>
       </SettingsSection>
-      <SettingsSection title="Instructions" description="What the agent does on every run. It is also told what started the run: the pull request, issue or comment.">
+      <SettingsSection title="Instructions" description="Each run also gets what started it: the pull request, issue or comment.">
         <SettingsGroup label="instructions">
           <Textarea
             aria-label="instructions"
@@ -199,7 +185,7 @@ function AutomationForm({ draft, setDraft, overview, disabled }: { draft: Draft;
             value={draft.instructions}
             onChange={(e) => set({ instructions: e.target.value })}
           />
-          <div className="flex flex-wrap items-center gap-1.5 bg-app/40 px-3 py-2">
+          <div className="flex flex-wrap items-center gap-1 bg-app/40 px-2 py-1.5">
             <ModelMenu model={draft.model} effort={draft.effort} onChange={(model, effort) => set({ model, effort })} disabled={disabled} />
             <MachineMenu buildId={draft.buildId} onChange={(buildId) => set({ buildId })} disabled={disabled} />
           </div>
@@ -313,6 +299,7 @@ function NewAutomation({ template }: { template?: AutomationTemplate }) {
       <PageHeader
         parent={<Crumb />}
         title={draft.name.trim() || 'New automation'}
+        titleActions={<ActiveSwitch checked={enabled} onChange={setEnabled} />}
         actions={
           <Button size="sm" disabled={pending} onClick={() => void create()}>
             Create automation
@@ -327,13 +314,7 @@ function NewAutomation({ template }: { template?: AutomationTemplate }) {
           overview={
             <div className="flex flex-col gap-2.5">
               <SettingsGroup label="overview">
-                <SettingsInputRow id="automation-name" label="Name" placeholder="Review pull requests" autoFocus value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-                <SettingsRow
-                  label="Active"
-                  htmlFor="automation-active"
-                  description="Runs whenever a trigger fires. Paused, it runs only when you click Run now."
-                  control={<Switch id="automation-active" checked={enabled} onCheckedChange={setEnabled} />}
-                />
+                <NameRow value={draft.name} onChange={(name) => setDraft({ ...draft, name })} autoFocus />
               </SettingsGroup>
               <SettingsStatus error={error} />
             </div>
@@ -346,7 +327,7 @@ function NewAutomation({ template }: { template?: AutomationTemplate }) {
 
 // ---------------------------------------------------------------- a saved automation
 
-function AutomationPage({ id, tab }: { id: string; tab: 'settings' | 'runs' }) {
+function AutomationPage({ id }: { id: string }) {
   const automation = useAutomation(id)
   if (automation === undefined) return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
   if (automation === null)
@@ -362,10 +343,10 @@ function AutomationPage({ id, tab }: { id: string; tab: 'settings' | 'runs' }) {
         </div>
       </div>
     )
-  return <AutomationDetails automation={automation} tab={tab} />
+  return <AutomationDetails automation={automation} />
 }
 
-function AutomationDetails({ automation: a, tab }: { automation: AutomationView; tab: 'settings' | 'runs' }) {
+function AutomationDetails({ automation: a }: { automation: AutomationView }) {
   const { actions } = useDorksClient()
   const navigate = useNavigate()
   const saved = useMemo(() => draftOf(a), [a])
@@ -380,6 +361,8 @@ function AutomationDetails({ automation: a, tab }: { automation: AutomationView;
   const dirty = !same(draft, saved)
   const save = usePending()
   const trying = usePending()
+  const toggling = usePending()
+  const [deleting, setDeleting] = useState(false)
   const runNow = () =>
     trying.run(async () => {
       const r = await actions.runAutomation(a.id)
@@ -388,126 +371,115 @@ function AutomationDetails({ automation: a, tab }: { automation: AutomationView;
   useEffect(() => {
     if (trying.error) toast.error(trying.error)
   }, [trying.error])
+  useEffect(() => {
+    if (toggling.error) toast.error(toggling.error)
+  }, [toggling.error])
   return (
-    <Tabs
-      value={tab}
-      onValueChange={(v) => void navigate({ to: '/automations', search: { automation: a.id, ...(v === 'runs' ? { tab: 'runs' as const } : {}) }, replace: true })}
-      className="h-full min-h-0 gap-0"
-    >
+    <div className="flex h-full min-h-0 flex-col">
       <PageHeader
         parent={<Crumb />}
         title={a.name}
-        titleActions={
-          <TabsList className="ms-2 h-7! gap-0.5 rounded-none bg-transparent p-0">
-            <TabsTrigger value="settings" className={TAB_CLASS}>
-              Settings
-            </TabsTrigger>
-            <TabsTrigger value="runs" className={TAB_CLASS}>
-              Run history
-            </TabsTrigger>
-          </TabsList>
-        }
+        titleActions={<ActiveSwitch checked={a.enabled} disabled={toggling.pending} onChange={(on) => void toggling.run(() => actions.updateAutomation(a.id, { enabled: on }))} />}
         actions={
           <>
-            <Button size="sm" variant="ghost" disabled={trying.pending} onClick={() => void runNow()}>
+            <Button size="sm" variant="outline" disabled={trying.pending} onClick={() => void runNow()}>
               <PlayIcon data-icon="inline-start" />
               Run now
             </Button>
-            {tab === 'settings' && (
-              <Button size="sm" disabled={!dirty || save.pending} onClick={() => void save.run(() => actions.updateAutomation(a.id, draft))}>
-                Save
-              </Button>
-            )}
+            <Button size="sm" className="ms-1.5" disabled={!dirty || save.pending} onClick={() => void save.run(() => actions.updateAutomation(a.id, draft))}>
+              Save
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger render={<Button size="icon-sm" variant="ghost" className="ms-0.5" aria-label="More" />}>
+                <EllipsisIcon />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-44">
+                <DropdownMenuItem variant="destructive" onClick={() => setDeleting(true)}>
+                  <Trash2Icon />
+                  Delete automation
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </>
         }
       />
-      <div className="app-main min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-3xl px-4 pt-8 pb-16 sm:px-6">
-          <TabsContent value="settings">
-            <SettingsSections>
-              <AutomationForm
-                draft={draft}
-                setDraft={setDraft}
-                disabled={save.pending}
-                overview={
-                  <div className="flex flex-col gap-2.5">
-                    <Overview automation={a} name={draft.name} setName={(name) => setDraft({ ...draft, name })} />
-                    <SettingsStatus error={save.error} />
-                  </div>
-                }
-              />
-              <DeleteSection automation={a} />
-            </SettingsSections>
-          </TabsContent>
-          <TabsContent value="runs">
-            <RunHistory automation={a} onRun={() => void runNow()} running={trying.pending} />
-          </TabsContent>
-        </div>
-      </div>
-    </Tabs>
+      <Page>
+        <AutomationForm
+          draft={draft}
+          setDraft={setDraft}
+          disabled={save.pending}
+          overview={
+            <div className="flex flex-col gap-2.5">
+              <SettingsGroup label="overview">
+                <Facts automation={a} />
+                <Notices automation={a} />
+                <NameRow value={draft.name} onChange={(name) => setDraft({ ...draft, name })} />
+              </SettingsGroup>
+              <SettingsStatus error={save.error} />
+            </div>
+          }
+        />
+        <RunHistory automation={a} />
+      </Page>
+      <DeleteDialog automation={a} open={deleting} onOpenChange={setDeleting} />
+    </div>
   )
 }
 
-function Overview({ automation: a, name, setName }: { automation: AutomationView; name: string; setName: (name: string) => void }) {
-  const { actions } = useDorksClient()
-  const { run, pending, error } = usePending()
-  // The facts beside it say when it runs next; here a healthy automation is simply Active.
-  const s = status(a).tone === 'success' ? { text: 'Active', tone: 'success' as const } : status(a)
+/** Active or paused, beside the title: on runs on its triggers; off runs only on Run now. */
+function ActiveSwitch({ checked, onChange, disabled }: { checked: boolean; onChange: (on: boolean) => void; disabled?: boolean }) {
   return (
-    <>
-      <SettingsGroup label="overview">
-        <SettingsFacts
-          items={[
-            {
-              label: 'Status',
-              testId: 'automation-status',
-              value: (
-                <>
-                  <StatusDot tone={s.tone} />
-                  <span className={cn('truncate', TONE_TEXT[s.tone])}>{s.text}</span>
-                </>
-              ),
-            },
-            {
-              label: 'Next run',
-              value: a.nextRunAt ? upcoming(a.nextRunAt) : <span className="text-muted-foreground">{a.enabled && a.triggers.some((t) => t.kind === 'github') ? 'On events' : 'None'}</span>,
-            },
-            {
-              label: 'Last run',
-              value: a.lastRun ? (
-                <Link
-                  to="/automations"
-                  search={{ automation: a.id, tab: 'runs' }}
-                  className={cn('truncate hover:underline hover:underline-offset-4', a.lastRun.status !== 'started' && TONE_TEXT[runTone(a.lastRun)])}
-                >
-                  {a.lastRun.status === 'started' ? ago(a.lastRun.createdAt) : `${a.lastRun.status === 'failed' ? 'Failed' : 'Skipped'} ${ago(a.lastRun.createdAt)}`}
-                </Link>
-              ) : (
-                <span className="text-muted-foreground">None yet</span>
-              ),
-            },
-            { label: 'Runs this week', value: a.recentRuns },
-          ]}
-        />
-        <Notices automation={a} />
-        <SettingsInputRow id="automation-name" label="Name" value={name} onChange={(e) => setName(e.target.value)} />
-        <SettingsRow
-          label="Active"
-          htmlFor="automation-active"
-          description="Runs whenever a trigger fires. Paused, it runs only when you click Run now."
-          control={<Switch id="automation-active" checked={a.enabled} disabled={pending} onCheckedChange={(on) => void run(() => actions.updateAutomation(a.id, { enabled: on }))} />}
-        />
-      </SettingsGroup>
-      <SettingsStatus error={error} />
-    </>
+    <Tip label={checked ? 'Active: runs on its triggers. Turn off to pause.' : 'Paused: runs only on Run now. Turn on to resume.'}>
+      <Switch size="sm" className="ms-2" aria-label="Active" checked={checked} disabled={disabled} onCheckedChange={onChange} />
+    </Tip>
+  )
+}
+
+/** The name, edited in place: a compact input, the same 28px as the trigger choices around it. */
+function NameRow({ value, onChange, autoFocus }: { value: string; onChange: (name: string) => void; autoFocus?: boolean }) {
+  return <SettingsInputRow id="automation-name" label="Name" placeholder="Review pull requests" autoFocus={autoFocus} inputClassName="h-7" value={value} onChange={(e) => onChange(e.target.value)} />
+}
+
+/** Where it stands, at a glance. A failed last run reads in Last run, not twice. */
+function Facts({ automation: a }: { automation: AutomationView }) {
+  const s = !a.enabled ? { text: 'Paused', tone: 'idle' as const } : a.problems.length ? status(a) : { text: 'Active', tone: 'success' as const }
+  return (
+    <SettingsFacts
+      items={[
+        {
+          label: 'Status',
+          testId: 'automation-status',
+          value: (
+            <>
+              <StatusDot tone={s.tone} />
+              <span className={cn('truncate', TONE_TEXT[s.tone])}>{s.text}</span>
+            </>
+          ),
+        },
+        {
+          label: 'Next run',
+          value: a.nextRunAt ? upcoming(a.nextRunAt) : <span className="text-muted-foreground">{a.enabled && a.triggers.some((t) => t.kind === 'github') ? 'On events' : 'None'}</span>,
+        },
+        {
+          label: 'Last run',
+          value: a.lastRun ? (
+            <span className={cn('truncate', a.lastRun.status !== 'started' && TONE_TEXT[runTone(a.lastRun)])}>
+              {a.lastRun.status === 'started' ? ago(a.lastRun.createdAt) : `${a.lastRun.status === 'failed' ? 'Failed' : 'Skipped'} ${ago(a.lastRun.createdAt)}`}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">None yet</span>
+          ),
+        },
+        { label: 'Runs this week', value: a.recentRuns },
+      ]}
+    />
   )
 }
 
 /** What keeps triggers from firing: a repository the GitHub login cannot read, or a public one open to anyone. */
 function Notices({ automation: a }: { automation: AutomationView }) {
   const open = a.publicRepos.filter((r) => a.triggers.some((t) => t.kind === 'github' && t.repo.toLowerCase() === r && !t.authors?.length))
-  const failed = a.lastRun?.status === 'failed' ? a.lastRun.error : null
-  if (!a.problems.length && !open.length && !failed) return null
+  if (!a.problems.length && !open.length) return null
   return (
     <SettingsGroupBody>
       {a.problems.map((p) => (
@@ -520,60 +492,45 @@ function Notices({ automation: a }: { automation: AutomationView }) {
           {open.join(', ')} {open.length === 1 ? 'is' : 'are'} public, so anyone can write there: only events by the people you list start runs. Add their GitHub logins to the trigger.
         </p>
       )}
-      {failed && (
-        <p role="alert" className="text-destructive">
-          The last run failed: {failed}
-        </p>
-      )}
     </SettingsGroupBody>
   )
 }
 
-function DeleteSection({ automation: a }: { automation: AutomationView }) {
+function DeleteDialog({ automation: a, open, onOpenChange }: { automation: AutomationView; open: boolean; onOpenChange: (open: boolean) => void }) {
   const { actions } = useDorksClient()
   const navigate = useNavigate()
-  const [confirming, setConfirming] = useState(false)
   const { run, pending, error } = usePending()
   return (
-    <SettingsSection title="Automation">
-      <SettingsGroup label="delete automation">
-        <SettingsRow
-          label="Delete automation"
-          description="Stops it and forgets its run history. Sessions it started stay."
-          control={
-            <Button type="button" size="sm" variant="outline" className="text-destructive" onClick={() => setConfirming(true)}>
-              Delete
-            </Button>
-          }
-        />
-      </SettingsGroup>
-      <SettingsStatus error={error} />
-      <Dialog open={confirming} onOpenChange={setConfirming}>
-        <DialogContent>
-          <DialogHeader className="gap-2">
-            <DialogTitle className="text-sm font-medium">Delete {a.name}?</DialogTitle>
-            <DialogDescription className="text-sm leading-5">It stops running and its history is gone. Sessions it started stay in the sidebar.</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <DialogClose render={<Button variant="outline" size="sm" />}>Cancel</DialogClose>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={pending}
-              onClick={() =>
-                void run(async () => {
-                  await actions.deleteAutomation(a.id)
-                  setConfirming(false)
-                  await navigate({ to: '/automations', search: {} })
-                })
-              }
-            >
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </SettingsSection>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader className="gap-2">
+          <DialogTitle className="text-sm font-medium">Delete {a.name}?</DialogTitle>
+          <DialogDescription className="text-sm leading-5">It stops running and its history is gone. Sessions it started stay in the sidebar.</DialogDescription>
+        </DialogHeader>
+        {error && (
+          <p role="alert" className="text-xs text-destructive">
+            {error}
+          </p>
+        )}
+        <DialogFooter>
+          <DialogClose render={<Button variant="outline" size="sm" />}>Cancel</DialogClose>
+          <Button
+            variant="destructive"
+            size="sm"
+            disabled={pending}
+            onClick={() =>
+              void run(async () => {
+                await actions.deleteAutomation(a.id)
+                onOpenChange(false)
+                await navigate({ to: '/automations', search: {} })
+              })
+            }
+          >
+            Delete
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -595,54 +552,45 @@ const SOURCE: Record<AutomationRunView['source'], string> = {
 const SourceIcon = ({ source }: { source: AutomationRunView['source'] }) =>
   source === 'schedule' ? <ClockIcon className="size-4 text-muted-foreground" /> : source === 'manual' ? <HandIcon className="size-4 text-muted-foreground" /> : <GithubMark />
 
-function RunHistory({ automation: a, onRun, running }: { automation: AutomationView; onRun: () => void; running: boolean }) {
+/** The last runs, under the settings. Left out until the first run: Last run already says None yet. */
+function RunHistory({ automation: a }: { automation: AutomationView }) {
   const runs = useAutomationRuns(a.id)
-  if (runs === undefined) return <p className="px-4 text-sm text-muted-foreground">Loading…</p>
-  if (runs.length === 0)
-    return (
-      <EmptyState figure="relay" title="No runs yet" description="Each run shows up here with the session it started.">
-        <Button size="sm" variant="outline" disabled={running} onClick={onRun}>
-          Run now
-        </Button>
-      </EmptyState>
-    )
+  if (!runs?.length) return null
   return (
-    <SettingsSections>
-      <SettingsSection title="Run history" description="The last 50 runs. Each one started a session, unless it says why not.">
-        <SettingsGroup label="runs">
-          {runs.map((r) => {
-            const tone = runTone(r)
-            return (
-              <div key={r.id} className={ROW}>
-                <StatusDot tone={tone} />
-                <span className="flex w-4 shrink-0 justify-center">
-                  <SourceIcon source={r.source} />
-                </span>
-                <RowText
-                  title={r.dork?.title ?? r.summary}
-                  description={r.error ?? `${SOURCE[r.source]}${r.source === 'manual' || r.source === 'schedule' ? '' : ` · ${r.summary}`}${r.repo ? ` · ${r.repo}` : ''}`}
-                  tone={r.error ? tone : undefined}
-                />
-                <span className="hidden w-20 shrink-0 text-end text-xs text-muted-foreground tabular-nums sm:block" title={new Date(r.createdAt).toLocaleString()}>
-                  {ago(r.createdAt)}
-                </span>
-                {r.url && (
-                  <Button size="icon-sm" variant="ghost" aria-label="Open on GitHub" nativeButton={false} render={<a href={r.url} target="_blank" rel="noreferrer" />}>
-                    <ExternalLinkIcon />
-                  </Button>
-                )}
-                {r.dork ? (
-                  <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/dorks" search={{ dork: r.dork.id }} />}>
-                    Open
-                  </Button>
-                ) : (
-                  <span className="w-[52px] shrink-0 text-center text-xs text-muted-foreground">{r.status === 'started' ? 'Deleted' : ''}</span>
-                )}
-              </div>
-            )
-          })}
-        </SettingsGroup>
-      </SettingsSection>
-    </SettingsSections>
+    <SettingsSection title="Run history">
+      <SettingsGroup label="runs">
+        {runs.map((r) => {
+          const tone = runTone(r)
+          return (
+            <div key={r.id} className={ROW}>
+              <StatusDot tone={tone} />
+              <span className="flex w-4 shrink-0 justify-center">
+                <SourceIcon source={r.source} />
+              </span>
+              <RowText
+                title={r.dork?.title ?? r.summary}
+                description={r.error ?? `${SOURCE[r.source]}${r.source === 'manual' || r.source === 'schedule' ? '' : ` · ${r.summary}`}${r.repo ? ` · ${r.repo}` : ''}`}
+                tone={r.error ? tone : undefined}
+              />
+              <span className="hidden w-20 shrink-0 text-end text-xs text-muted-foreground tabular-nums sm:block" title={new Date(r.createdAt).toLocaleString()}>
+                {ago(r.createdAt)}
+              </span>
+              {r.url && (
+                <Button size="icon-sm" variant="ghost" aria-label="Open on GitHub" nativeButton={false} render={<a href={r.url} target="_blank" rel="noreferrer" />}>
+                  <ExternalLinkIcon />
+                </Button>
+              )}
+              {r.dork ? (
+                <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/dorks" search={{ dork: r.dork.id }} />}>
+                  Open
+                </Button>
+              ) : (
+                <span className="w-[52px] shrink-0 text-center text-xs text-muted-foreground">{r.status === 'started' ? 'Deleted' : ''}</span>
+              )}
+            </div>
+          )
+        })}
+      </SettingsGroup>
+    </SettingsSection>
   )
 }

@@ -44,7 +44,7 @@ export const EVENTS: { value: GithubEvent; label: string }[] = [
 const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0'))
 
 const CHIP =
-  'inline-flex h-7 min-w-0 max-w-64 shrink-0 items-center gap-1 rounded-[6px] bg-foreground/[0.05] px-2 text-sm text-foreground outline-none transition-colors hover:bg-foreground/[0.08] focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60 [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-muted-foreground'
+  'inline-flex h-6 min-w-0 max-w-64 shrink-0 items-center gap-1 rounded-[6px] bg-foreground/[0.05] px-1.5 text-sm text-foreground outline-none transition-colors hover:bg-foreground/[0.08] focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60 [&_svg]:size-3 [&_svg]:shrink-0 [&_svg]:text-muted-foreground'
 const NEEDED = 'text-amber-700 dark:text-amber-400'
 
 /** The GitHub mark, for event triggers. */
@@ -101,7 +101,7 @@ export function RepoChip({ repo, onChange, repositories, disabled }: { repo: str
       }}
     >
       <PopoverTrigger disabled={disabled} aria-label={`Repository: ${repo || 'Choose repository'}`} className={cn(CHIP, !repo && NEEDED)}>
-        {repo ? <OwnerAvatar owner={ownerOf(repo)} size={16} className="size-3.5" /> : <FolderIcon className={NEEDED} />}
+        {repo ? <OwnerAvatar owner={ownerOf(repo)} size={16} className="size-3" /> : <FolderIcon className={NEEDED} />}
         <span className="truncate">{repo || 'Choose repository'}</span>
         <ChevronDownIcon />
       </PopoverTrigger>
@@ -181,9 +181,9 @@ function TriggerRow({
 }) {
   const repo = <RepoChip repo={trigger.repo} onChange={(r) => onChange({ ...trigger, repo: r })} repositories={repositories} disabled={disabled} />
   return (
-    <div data-slot="settings-row" className="flex min-h-13 items-start gap-3 py-2.5 ps-4 pe-3">
-      <span className="flex h-7 w-4 shrink-0 items-center justify-center text-muted-foreground">{trigger.kind === 'schedule' ? <ClockIcon className="size-4" /> : <GithubMark />}</span>
-      <div className="flex min-w-0 flex-1 flex-col gap-2 text-sm">
+    <div data-slot="settings-row" className="flex min-h-13 items-start gap-3 py-3.5 ps-4 pe-3">
+      <span className="flex h-6 w-4 shrink-0 items-center justify-center text-muted-foreground">{trigger.kind === 'schedule' ? <ClockIcon className="size-4" /> : <GithubMark />}</span>
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm">
         {trigger.kind === 'schedule' ? (
           <ScheduleSentence trigger={trigger} onChange={onChange} repo={repo} disabled={disabled} />
         ) : (
@@ -191,7 +191,7 @@ function TriggerRow({
         )}
       </div>
       {onRemove && (
-        <Button type="button" size="icon-sm" variant="ghost" aria-label="Remove trigger" disabled={disabled} onClick={onRemove}>
+        <Button type="button" size="icon-sm" variant="ghost" className="-my-1 text-muted-foreground" aria-label="Remove trigger" disabled={disabled} onClick={onRemove}>
           <Trash2Icon />
         </Button>
       )}
@@ -199,7 +199,7 @@ function TriggerRow({
   )
 }
 
-const Line = ({ children }: { children: ReactNode }) => <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-2">{children}</div>
+const Line = ({ children }: { children: ReactNode }) => <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1.5">{children}</div>
 const Word = ({ children }: { children: ReactNode }) => <span className="text-muted-foreground">{children}</span>
 
 function ScheduleSentence({ trigger: t, onChange, repo, disabled }: { trigger: ScheduleTrigger; onChange: (t: ScheduleTrigger) => void; repo: ReactNode; disabled?: boolean }) {
@@ -243,7 +243,7 @@ function ScheduleSentence({ trigger: t, onChange, repo, disabled }: { trigger: S
           spellCheck={false}
           value={t.branch ?? ''}
           onChange={(e) => onChange({ ...t, branch: e.target.value || undefined })}
-          className={cn(CHIP, 'w-36 font-mono text-xs placeholder:font-sans placeholder:text-sm placeholder:text-muted-foreground')}
+          className={cn(CHIP, 'w-32 font-mono text-xs placeholder:font-sans placeholder:text-sm placeholder:text-muted-foreground')}
         />
       </Line>
     </>
@@ -284,7 +284,7 @@ export function TriggerList({ triggers, onChange, repositories, disabled }: { tr
           onRemove={triggers.length > 1 ? () => onChange(triggers.filter((_, j) => j !== i)) : undefined}
         />
       ))}
-      <div className="flex items-center py-1.5 ps-2 pe-3">
+      <div className="flex items-center py-1.5 ps-2 pe-3 [&_button]:h-7">
         <DropdownMenu>
           <DropdownMenuTrigger render={<Button type="button" size="sm" variant="ghost" disabled={disabled || triggers.length >= 10} className="text-muted-foreground" />}>
             <PlusIcon data-icon="inline-start" />

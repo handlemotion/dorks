@@ -70,8 +70,9 @@ Limits: 50 automations, 10 triggers each, 20 logins per trigger, 20,000 characte
 ## UI and API
 
 `/automations` lists automations (status, triggers, last run) and templates; `?automation=new[&template=<id>]` creates one;
-`?automation=<id>` is its settings (status facts, name, Active, triggers as sentences with inline choices, instructions with the model
-and machine sessions use, Delete) and `&tab=runs` its run history, each run linking to its session and to the PR, issue or comment.
+`?automation=<id>` is one page: the Active switch beside its title, Run now, Save and Delete (in •••) in the header, then status facts,
+the name, triggers as sentences with inline choices, instructions with the model and machine sessions use, and the run history last,
+each run linking to its session and to the PR, issue or comment.
 
 | Method and path | Body | Result |
 |---|---|---|
