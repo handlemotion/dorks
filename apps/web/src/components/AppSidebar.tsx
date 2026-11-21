@@ -229,7 +229,8 @@ export function AppSidebarView({
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto overscroll-y-none">
             <nav aria-label="App" className="flex shrink-0 flex-col gap-0.5">
               <OwnerSwitcher owners={owners} scope={scope} setScope={setScope} onDisconnect={onDisconnect} />
-              <Link to="/dorks" search={{}} {...rowLink(pathname === '/dorks' && !activeId)}>
+              {/* A fresh state on every click, so clicking it again while there still counts as a new visit and puts the cursor in the box. */}
+              <Link to="/dorks" search={{}} state={(prev) => ({ ...prev, visit: Date.now() })} {...rowLink(pathname === '/dorks' && !activeId)}>
                 {/* The plus is a narrow glyph: drawn at 16px in the 14px column so it reads as wide as the page icons under it. */}
                 <PlusIcon className="-mx-px size-4!" />
                 New session
