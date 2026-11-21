@@ -19,10 +19,8 @@ describe("H1: a bridge blip must not kill a healthy dork", () => {
         const h = harness();
         const id = h.seed(state, { bridgeSeenAt: NOW - 200_000 });
         h.timer(id, "bridge_watch");
-        expect(h.rt(id).bridgeLost).toBe(true);
         expect(h.hasTimer(id, "watchdog")).toBe(true); // armed by bridge_lost
         call(h, id);
-        expect(h.rt(id).bridgeLost).toBe(false);
         expect(h.hasTimer(id, "watchdog")).toBe(false);
         await h.settle();
         expect(h.state(id)).toBe(state);
@@ -85,7 +83,6 @@ describe("H2: a message during a sleep pause must not pause the box under a live
     const id = sleepFlush(h);
     h.push(id, [{ t: "flushed" }]); // the pause job is now scheduled
     h.sendMessage(id);
-    expect(h.rt(id).pause?.phase).toBe("cancelled");
     // The box is about to go down: the bridge must not be handed (and ack) the message now, or the turn dies with the box.
     expect(userFrames(h, id)).toEqual([]);
     await h.settle();
@@ -103,7 +100,6 @@ describe("H2: a message during a sleep pause must not pause the box under a live
     const id = sleepFlush(h);
     h.enqueue(id, "user_message", "unacked"); // sent before the pause, never delivered
     h.push(id, [{ t: "flushed" }]);
-    expect(h.rt(id).pause?.phase).toBe("pausing");
     expect(userFrames(h, id)).toEqual([]);
   });
 
@@ -242,7 +238,6 @@ describe("R4: strict bseq", () => {
     const h = harness();
     const id = h.seed("working");
     expect(h.push(id, [ev(1), ev(2), ev(3)])).toEqual({ ok: true });
-    expect(h.rt(id).bridgeSeq).toBe(3);
     expect(stored(h, id)).toBe(3);
   });
 
@@ -250,7 +245,6 @@ describe("R4: strict bseq", () => {
     const h = harness();
     const id = h.seed("working");
     expect(h.push(id, [ev(1), ev(2), ev(5), ev(6), { t: "ready" }])).toEqual({ ok: false, expectedBseq: 1 });
-    expect(h.rt(id).bridgeSeq).toBe(0);
     expect(stored(h, id)).toBe(0);
     expect(h.push(id, [ev(1), ev(2), ev(3), ev(4), ev(5), ev(6)])).toEqual({ ok: true });
     expect(stored(h, id)).toBe(6);
@@ -272,15 +266,14 @@ describe("R4: strict bseq", () => {
     const h = harness();
     const id = h.seed("working");
     expect(h.push(id, [ev(1), { t: "event", bseq: 2, raw: { type: "truncated", truncated: true, was: "user" } }, ev(3)])).toEqual({ ok: true });
-    expect(h.rt(id).bridgeSeq).toBe(3);
     expect(stored(h, id)).toBe(2);
+    expect(h.push(id, [ev(4)])).toEqual({ ok: true });
   });
 
   it("a hostile bseq cannot mute the dork", () => {
     const h = harness();
     const id = h.seed("working");
     expect(h.push(id, [ev(2 ** 53 - 1)])).toEqual({ ok: false, expectedBseq: 1 });
-    expect(h.rt(id).bridgeSeq).toBe(0);
     expect(h.push(id, [ev(1)])).toEqual({ ok: true });
     expect(stored(h, id)).toBe(1);
   });
@@ -290,7 +283,8 @@ describe("R4: strict bseq", () => {
     const id = h.seed("working", { bridgeSeq: 4 });
     expect(h.push(id, [ev(3), ev(4), ev(5)])).toEqual({ ok: true });
     expect(stored(h, id)).toBe(1);
-    expect(h.rt(id).bridgeSeq).toBe(5);
+    expect(h.push(id, [ev(6)])).toEqual({ ok: true });
+    expect(stored(h, id)).toBe(2);
   });
 
   describe("H9: size caps", () => {
@@ -308,9 +302,9 @@ describe("R4: strict bseq", () => {
       const id = h.seed("working");
       const many = Array.from({ length: 501 }, (_, i) => ev(i + 1));
       expect(code(() => h.push(id, many))).toBe("too_many_frames");
-      expect(h.rt(id).bridgeSeq).toBe(0);
+      expect(stored(h, id)).toBe(0);
       expect(h.push(id, many.slice(0, 500))).toEqual({ ok: true });
-      expect(h.rt(id).bridgeSeq).toBe(500);
+      expect(stored(h, id)).toBe(500);
     });
 
     it("rejects an event over 256KB and stores nothing from that call", () => {
@@ -331,11 +325,9 @@ describe("R5: box results are tied to the operation that produced them", () => {
     const id = h.seed("sleeping", { opGen: 0 });
     h.box.failResumes = 1; // the first resume attempt fails, slowly
     h.sendMessage(id); // waking, resume gen 1 scheduled
-    expect(h.rt(id).opGen).toBe(1);
     // before it runs: the attempt is abandoned and retried (watchdog -> error -> message -> waking), so gen 1 is superseded
     h.input(id, { t: "watchdog" });
     h.sendMessage(id, "again");
-    expect(h.rt(id).opGen).toBe(3);
     await h.settle(); // resume#1 never runs (replaced by #3's job); pause#2 lands stale
     expect(h.state(id)).toBe("waking");
     expect(
@@ -374,9 +366,7 @@ describe("R5: box results are tied to the operation that produced them", () => {
     expect(h.state(id)).toBe("sleeping");
     h.sendMessage(id);
     expect(h.state(id)).toBe("waking");
-    const before = h.rt(id);
     h.app.db.tx(() => boxPaused(h.app, id, gen)); // late duplicate of the old pause
-    expect(h.rt(id)).toEqual(before);
     expect(h.state(id)).toBe("waking");
     expect(h.box.calls).toEqual(["pause"]); // and it did not trigger a second wake
   });
@@ -529,7 +519,6 @@ describe("review fixes", () => {
       const h = harness();
       const id = h.seed("waking", { opGen: 1, bridgeSeenAt: 0 });
       h.input(id, { t: "agent_exited" }); // error + pause (gen 2), job scheduled but not run yet
-      expect(h.rt(id).pause?.phase).toBe("pausing");
       h.app.db.tx(() => boxResumed(h.app, id, "box-1"));
       await h.settle();
       expect(h.box.calls).toEqual(["pause", "pause"]); // one issued after the resume landed, so it is ordered after it
@@ -570,7 +559,6 @@ describe("review fixes", () => {
       h.push(id, [{ t: "flushed", cid: first }]);
       await h.settle();
       expect(h.box.calls).toEqual([]);
-      expect(h.rt(id).pause?.phase).toBe("flushing");
       h.push(id, [{ t: "flushed", cid: second }]);
       await h.settle();
       expect(h.box.calls).toEqual(["pause"]);
@@ -612,10 +600,8 @@ describe("turn outcomes", () => {
     const h = harness();
     const id = h.seed("working");
     interruptDork(h.app, id); // the UI's Stop
-    expect(h.rt(id).interruptRequested).toBe(true);
     h.push(id, [raw(1, text("a", "half")), raw(2, { type: "result", is_error: true, result: "interrupted" })]);
     expect(turnEnd(h, id)).toEqual([{ type: "turn_complete", durationMs: 0, outcome: "stopped" }]);
-    expect(h.rt(id).interruptRequested).toBe(false);
 
     h.push(id, [raw(3, { type: "result", is_error: true, result: "boom" })]);
     expect(

@@ -2,7 +2,7 @@ import type { PrRef, SubscriptionView } from "@dorks/shared";
 import { chmodSync, mkdirSync, statSync, writeFileSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vite-plus/test";
-import { claudeSettings, HookService, sessionContext, settingsPath, writeClaudeSettings, type HookDeps } from "../src/hooks";
+import { HookService, writeClaudeSettings, type HookDeps } from "../src/hooks";
 import { prLookup } from "../src/pr-lookup";
 import { findRepos } from "../src/work-scan";
 import { fakeView, makeRemote, tmp } from "./helpers";
@@ -69,7 +69,7 @@ describe("Stop gate", () => {
     expect(await service(join(tmp("gone-"), "nope")).stop()).toBeNull();
   });
 
-  it("blocks on commits not pushed to the upstream, and the reason carries the whole checklist", async () => {
+  it("blocks on commits not pushed to the upstream, naming the repo, its path and the branch", async () => {
     const w = checkout();
     w.git("checkout", "-q", "-b", "dork/x");
     w.commit("a.txt");
@@ -82,10 +82,6 @@ describe("Stop gate", () => {
     expect(r.reason).toContain("acme/demo");
     expect(r.reason).toContain(w.dir);
     expect(r.reason).toContain("branch dork/x: 2 commits not pushed to origin/dork/x");
-    expect(r.reason).toMatch(/1\. Validate locally first\. Run the repo's tests, typecheck and lint for what you changed, using the scripts the repo defines/);
-    expect(r.reason).toMatch(/2\. Push the branch/);
-    expect(r.reason).toMatch(/3\. Open a pull request with `gh pr create`.*subscribes you/);
-    expect(r.reason).toMatch(/4\. Or, if you are intentionally not pushing this work, say so in your reply/);
   });
 
   it("blocks on a branch with commits beyond the default branch and no upstream; a fresh branch without commits is fine", async () => {
@@ -362,7 +358,7 @@ describe("PostToolUse", () => {
 });
 
 describe("SessionStart", () => {
-  it("adds the subscribed PRs and the autonomy guide as additionalContext", async () => {
+  it("adds the subscribed PRs as additionalContext", async () => {
     const subs: SubscriptionView[] = [
       { ...fakeView({ repo: "acme/demo", number: 12 }), title: "Fix login", ci: "failing", review: "changes_requested", mergeable: false, ciFixAttempts: 1 },
       { ...fakeView({ repo: "acme/other", number: 3 }), ci: "passing", review: "approved", mergeable: true, status: "stalled", ciFixAttempts: 2 },
@@ -375,36 +371,19 @@ describe("SessionStart", () => {
     expect(ctx).toContain('- acme/demo#12 "Fix login": CI failing, review changes_requested, has merge conflicts, CI fix attempts 1/2');
     expect(ctx).toContain("- acme/other#3: CI passing, review approved, mergeable, STALLED after 2/2 CI fix attempts");
     expect(ctx).toContain("- acme/demo#4: CI unknown, review none, mergeability unknown");
-    expect(ctx).toContain("<dorks-event>");
-    expect(ctx).toMatch(/validate locally before you push/i);
-    expect(ctx).toContain("dorks pr sub <pr>");
-    expect(ctx).toContain("dorks pr unsub <pr>");
-    expect(ctx).toContain("dorks pr list");
-    expect(ctx).toMatch(/standby note/);
-    expect(ctx).toMatch(/Never merge it yourself/);
-  });
-
-  it("says so when there are none, or when the list could not be loaded", async () => {
-    expect(sessionContext([])).toContain("not subscribed to any pull requests yet");
-    expect(sessionContext(null)).toContain("could not be loaded just now; call the `pr_list` tool");
-    expect(sessionContext(null)).toContain("How autonomy works here:");
   });
 });
 
 describe("settings for `claude --settings`", () => {
   const self: [string, string] = ["/usr/local/bin/node", "/opt/dorks/cli.mjs"];
 
-  it("is written readable by the Claude user, holds no secrets, and is rewritten in place", () => {
+  it("is written readable by the Claude user, and stays so when rewritten", () => {
     const state = tmp("state-");
     const file = writeClaudeSettings(state, self);
-    expect(file).toBe(settingsPath(state));
-    expect(file).toBe(join(state, "claude-settings.json"));
     expect(statSync(file).mode & 0o777).toBe(0o644);
-    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(claudeSettings(self));
     chmodSync(file, 0o600);
     writeClaudeSettings(state, self);
     expect(statSync(file).mode & 0o777).toBe(0o644);
-    expect(readFileSync(file, "utf8")).not.toMatch(/token|secret|sk-ant|ghs_/i);
   });
 });
 

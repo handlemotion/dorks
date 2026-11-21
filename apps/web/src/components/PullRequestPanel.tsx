@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
+  CheckIcon,
   CircleAlertIcon,
   CircleCheckIcon,
   CircleXIcon,
@@ -8,9 +9,13 @@ import {
   ChevronsDownUpIcon,
   ChevronsUpDownIcon,
   ExternalLinkIcon,
+  GitCompareArrowsIcon,
+  GitMergeIcon,
   LoaderIcon,
   RefreshCwIcon,
   WrapTextIcon,
+  WrenchIcon,
+  XIcon,
 } from 'lucide-react'
 import { PatchDiff } from '@pierre/diffs/react'
 import { useTheme } from 'next-themes'
@@ -169,10 +174,12 @@ function PullRequestView({
   const gone = (section: PullRequestSection) => (view.unavailable?.includes(section) ? <Unavailable section={section} onRetry={data?.refresh} /> : undefined)
   const [section, setSection] = useState<Section>('overview')
   const files: FileChange[] = view.files.map((f) => ({ path: f.path, additions: f.additions, deletions: f.deletions, patch: f.patch }))
-  const [open, setOpen] = useState<Set<string>>(() => new Set())
+  // Every diff starts open, files a later push adds too: what the owner folds is what is kept.
+  const [closed, setClosed] = useState<Set<string>>(() => new Set())
   const [wrap, setWrap] = useState(false)
   const withPatch = files.filter((c) => c.patch)
-  const anyOpen = withPatch.some((c) => open.has(c.path))
+  const open = new Set(withPatch.filter((c) => !closed.has(c.path)).map((c) => c.path))
+  const anyOpen = open.size > 0
   return (
     <div className="flex min-h-full flex-col text-sm">
       <div className="border-t px-(--details-text) pt-5 pb-4">
@@ -245,7 +252,7 @@ function PullRequestView({
                     size="icon-sm"
                     className={`${BAR_BUTTON} size-7!`}
                     aria-label={anyOpen ? 'Collapse all' : 'Expand all'}
-                    onClick={() => setOpen(anyOpen ? new Set() : new Set(withPatch.map((c) => c.path)))}
+                    onClick={() => setClosed(anyOpen ? new Set(withPatch.map((c) => c.path)) : new Set())}
                   >
                     {anyOpen ? <ChevronsDownUpIcon /> : <ChevronsUpDownIcon />}
                   </Button>
@@ -259,7 +266,7 @@ function PullRequestView({
             open={open}
             wrap={wrap}
             onToggle={(path) =>
-              setOpen((current) => {
+              setClosed((current) => {
                 const next = new Set(current)
                 if (!next.delete(path)) next.add(path)
                 return next
@@ -379,6 +386,7 @@ function nextStep({ view, data, onAsk, method, setMethod, confirming, setConfirm
     return (
       onAsk && (
         <Button size="xs" className={`${ACTION_BUTTON} ${BLOCKER_BUTTON}`} onClick={() => onAsk(`Merge ${baseRef} into this branch, resolve the conflicts, run the tests and push.`)}>
+          <GitCompareArrowsIcon />
           Resolve conflicts
         </Button>
       )
@@ -387,24 +395,12 @@ function nextStep({ view, data, onAsk, method, setMethod, confirming, setConfirm
     return (
       updateBranch && (
         <Button size="xs" variant="outline" className={ACTION_BUTTON} disabled={busy === 'update'} onClick={() => void run('update', () => updateBranch(view.headSha))}>
-          {busy === 'update' && <LoaderIcon className="animate-spin" />}
+          {busy === 'update' ? <LoaderIcon className="animate-spin" /> : <RefreshCwIcon />}
           Update branch
         </Button>
       )
     )
   if (!merge || view.mergeable === false) return null
-  if (confirming)
-    return (
-      <>
-        <Button size="xs" variant="ghost" className={ACTION_BUTTON} disabled={busy === 'merge'} onClick={() => setConfirming(false)}>
-          Cancel
-        </Button>
-        <Button size="xs" className={`${ACTION_BUTTON} ${MERGE_BUTTON}`} disabled={busy === 'merge'} onClick={() => void run('merge', () => merge(method, view.headSha))}>
-          {busy === 'merge' && <LoaderIcon className="animate-spin" />}
-          Confirm {METHOD_BUTTON[method].toLowerCase()}
-        </Button>
-      </>
-    )
   return (
     <>
       {checks.failed > 0 && onAsk && (
@@ -413,10 +409,19 @@ function nextStep({ view, data, onAsk, method, setMethod, confirming, setConfirm
           className={`${ACTION_BUTTON} ${BLOCKER_BUTTON}`}
           onClick={() => onAsk(`The pull request's checks are failing (${checks.failing.join(', ')}). Find out why, fix it and push.`)}
         >
+          <WrenchIcon />
           Fix checks
         </Button>
       )}
-      <MergeButton view={view} method={method} setMethod={setMethod} disabled={busy !== undefined} onMerge={() => setConfirming(true)} />
+      <MergeButton
+        view={view}
+        method={method}
+        setMethod={setMethod}
+        confirming={confirming}
+        busy={busy}
+        onMerge={() => (confirming ? void run('merge', () => merge(method, view.headSha)) : setConfirming(true))}
+        onCancel={() => setConfirming(false)}
+      />
     </>
   )
 }
@@ -476,30 +481,63 @@ function Checks({ view }: { view: PullRequestView }) {
   )
 }
 
-/** The merge button, its method behind the chevron (remembered per browser). */
-function MergeButton({ view, method, setMethod, disabled, onMerge }: { view: PullRequestView; method: MergeMethod; setMethod: (m: MergeMethod) => void; disabled: boolean; onMerge: () => void }) {
+/**
+ * The merge button, its method behind the chevron (remembered per browser). A click asks once more in place, in the same two
+ * buttons: the big one turns into the confirm, at the same width (both labels share one grid cell), and the chevron into a grey X that cancels.
+ */
+function MergeButton({
+  view,
+  method,
+  setMethod,
+  confirming,
+  busy,
+  onMerge,
+  onCancel,
+}: {
+  view: PullRequestView
+  method: MergeMethod
+  setMethod: (m: MergeMethod) => void
+  confirming: boolean
+  busy?: 'merge' | 'update'
+  onMerge: () => void
+  onCancel: () => void
+}) {
+  const cell = (shown: boolean) => `col-start-1 row-start-1 flex items-center justify-center gap-1.5 ${shown ? '' : 'invisible'}`
   return (
     <div className="flex items-center">
-      <Button size="xs" className={`${ACTION_BUTTON} rounded-r-none ${MERGE_BUTTON}`} disabled={disabled} onClick={onMerge}>
-        {METHOD_BUTTON[method]}
+      <Button size="xs" className={`${ACTION_BUTTON} grid rounded-r-none ${MERGE_BUTTON}`} disabled={busy !== undefined} onClick={onMerge}>
+        <span className={cell(!confirming)} aria-hidden={confirming}>
+          <GitMergeIcon />
+          {METHOD_BUTTON[method]}
+        </span>
+        <span className={cell(confirming)} aria-hidden={!confirming}>
+          {busy === 'merge' ? <LoaderIcon className="animate-spin" /> : <CheckIcon />}
+          Confirm merge
+        </span>
       </Button>
-      <DropdownMenu>
-        <DropdownMenuTrigger render={<Button size="xs" className={`h-7 rounded-l-none border-l border-l-white/25 px-2 ${MERGE_BUTTON}`} disabled={disabled} aria-label="Merge method" />}>
-          <ChevronDownIcon />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-max">
-          <DropdownMenuGroup>
-            <DropdownMenuLabel>Merge method</DropdownMenuLabel>
-            <DropdownMenuRadioGroup value={method} onValueChange={(v) => setMethod(v as MergeMethod)}>
-              {view.mergeMethods.map((m) => (
-                <DropdownMenuRadioItem key={m} value={m}>
-                  {METHOD_LABEL[m]}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {confirming ? (
+        <Button size="xs" variant="secondary" className="h-7 rounded-l-none px-2" disabled={busy === 'merge'} aria-label="Cancel merge" onClick={onCancel}>
+          <XIcon />
+        </Button>
+      ) : (
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button size="xs" className={`h-7 rounded-l-none border-l border-l-white/25 px-2 ${MERGE_BUTTON}`} disabled={busy !== undefined} aria-label="Merge method" />}>
+            <ChevronDownIcon />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-max">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Merge method</DropdownMenuLabel>
+              <DropdownMenuRadioGroup value={method} onValueChange={(v) => setMethod(v as MergeMethod)}>
+                {view.mergeMethods.map((m) => (
+                  <DropdownMenuRadioItem key={m} value={m}>
+                    {METHOD_LABEL[m]}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   )
 }
@@ -719,7 +757,6 @@ function FileList({ changes, open, wrap = false, onToggle, unavailable }: { chan
 
 /** One changed file: its path and stats, and with a patch, a toggle that opens the diff below it (Pierre diffs, unified, no header of its own). */
 function ChangeRow({ change: c, open, onToggle, wrap }: { change: FileChange; open: boolean; onToggle: () => void; wrap: boolean }) {
-  const { resolvedTheme } = useTheme()
   const slash = c.path.lastIndexOf('/')
   const row = (
     <>
@@ -742,14 +779,46 @@ function ChangeRow({ change: c, open, onToggle, wrap }: { change: FileChange; op
       ) : (
         <div className={box}>{row}</div>
       )}
-      {open && c.patch && (
-        <PatchDiff
-          patch={c.patch}
-          className="block border-t [--diffs-bg:var(--background)] [--diffs-font-size:12px] [--diffs-line-height:20px] [--diffs-font-family:var(--font-mono)] [--diffs-header-font-family:var(--font-sans)]"
-          options={{ diffStyle: 'unified', disableFileHeader: true, overflow: wrap ? 'wrap' : 'scroll', themeType: resolvedTheme === 'dark' ? 'dark' : 'light' }}
-        />
-      )}
+      {open && c.patch && <LazyPatch patch={c.patch} wrap={wrap} />}
     </li>
+  )
+}
+
+/** The nearest ancestor that scrolls vertically, or the viewport. */
+function scroller(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) if (/(auto|scroll)/.test(getComputedStyle(p).overflowY)) return p
+  return null
+}
+
+/** Diff lines are 20px; a collapsed run of unmodified lines takes about two. */
+const DIFF_LINE_PX = 20
+
+/**
+ * A file's diff, built only once it comes within a screen or so of the view (and kept after), so a PR with dozens of files paints
+ * the ones in sight at once instead of building every diff first. Until then a block of about its height holds its place.
+ */
+function LazyPatch({ patch, wrap }: { patch: string; wrap: boolean }) {
+  const { resolvedTheme } = useTheme()
+  const ref = useRef<HTMLDivElement>(null)
+  const [near, setNear] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (near || !el) return
+    // Measured against the panel's own scroller: against the window, its clipping would hide the margin and build only what is in sight.
+    const io = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && setNear(true), { root: scroller(el), rootMargin: '1200px 0px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [near])
+  if (!near) {
+    const lines = patch.split('\n').filter((l) => !l.startsWith('---') && !l.startsWith('+++')).length
+    return <div ref={ref} className="border-t" style={{ height: lines * DIFF_LINE_PX }} />
+  }
+  return (
+    <PatchDiff
+      patch={patch}
+      className="block border-t [--diffs-bg:var(--background)] [--diffs-font-size:12px] [--diffs-line-height:20px] [--diffs-font-family:var(--font-mono)] [--diffs-header-font-family:var(--font-sans)]"
+      options={{ diffStyle: 'unified', disableFileHeader: true, overflow: wrap ? 'wrap' : 'scroll', themeType: resolvedTheme === 'dark' ? 'dark' : 'light' }}
+    />
   )
 }
 

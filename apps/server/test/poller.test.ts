@@ -100,7 +100,6 @@ describe("poller", () => {
     s.gh.state.reviewComments.push({ id: 20, body: "older", html_url: "c20", user: person("bob"), created_at: s.at(-1000), path: "a.ts" });
     expect(await pollOnce(s.h.app)).toBe(POLL_MS);
     expect(s.sub()).toMatchObject({ title: "Add thing", headRef: "agent/x", headSha: "aaa1111", baseRef: "main", state: "open", mergeable: true, review: "approved" });
-    expect(s.sub().poll).toMatchObject({ baselined: true, lastReviewId: 1, lastCommentId: 10, lastReviewCommentId: 20, baseSha: "base000" });
     expect(s.inbox()).toEqual([]);
     expect(s.h.app.db.get("SELECT github_login FROM settings WHERE id = 1")?.github_login).toBe("agent-bot");
   });

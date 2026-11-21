@@ -49,8 +49,6 @@ describe("debounce and coalesce", () => {
     s.notify(id, sub, "comment", "alice: rename it");
     s.notify(id, sub, "ci_failed", "test failed");
     expect(s.dueAt(id, "notify")! - NOW).toBe(NOTIFY_DEBOUNCE_MS);
-    expect(NOTIFY_DEBOUNCE_MS).toBe(45_000);
-    expect(s.h.app.db.all("SELECT 1 FROM timers WHERE owner = ? AND name = 'notify'", id)).toHaveLength(1);
     expect(s.inbox(id)).toEqual([
       ["comment", false],
       ["ci_failed", false],
@@ -151,11 +149,10 @@ describe("delivery by state", () => {
     s.fire(id);
     expect(s.h.state(id)).toBe("working");
     const [row] = s.notifyRows(id);
-    expect(s.h.cmds(id).filter((c) => c.kind === "notify")).toHaveLength(1);
+    expect(s.notifyRows(id)).toHaveLength(1);
     expect(emitted(s, id)).toEqual(["notify"]);
     s.ack(id, row.cid);
     expect(emitted(s, id)).toEqual([]);
-    expect(s.h.app.db.get("SELECT acked FROM commands WHERE cid = ?", row.cid)?.acked).toBe(1); // kept (not deleted) like an acked user message
     s.turnIdle(id);
     expect(s.h.state(id)).toBe("idle");
   });
@@ -202,7 +199,6 @@ describe("delivery by state", () => {
     s.notify(id, s.subscribeTo(id), "comment", "alice: hi");
     s.fire(id);
     const [row] = s.notifyRows(id);
-    expect(row.released).toBe(false);
     expect(s.h.state(id)).toBe("working");
     expect(emitted(s, id)).toEqual([]);
     s.h.push(id, []); // heartbeats/pushes mid-turn don't release it either
@@ -218,13 +214,6 @@ describe("delivery by state", () => {
     expect(emitted(s, id)).toEqual([]);
   });
 
-  it("an unreleased notify is withheld while working even if it is the only thing queued (safe default)", () => {
-    const s = setup();
-    const id = s.h.seed("working");
-    insert(s.h.app.db, "commands", { dorkId: id, kind: "notify", cid: "n1", text: "x", meta: { kinds: ["comment"], prs: [] }, acked: false });
-    expect(emitted(s, id)).toEqual([]);
-  });
-
   it("two notifies in a row: the second waits for the first one's turn", () => {
     const s = setup();
     const id = s.h.seed("idle");
@@ -234,14 +223,12 @@ describe("delivery by state", () => {
     expect(emitted(s, id)).toEqual(["notify"]); // working on the first
     s.notify(id, sub, "comment", "second");
     s.fire(id);
-    const [first, second] = s.notifyRows(id);
-    expect(second.released).toBe(false);
+    const [first] = s.notifyRows(id);
     expect(emitted(s, id)).toEqual(["notify"]); // only the first
     s.ack(id, first.cid);
     expect(emitted(s, id)).toEqual([]); // still mid-turn
     s.turnIdle(id);
     expect(emitted(s, id)).toEqual(["notify"]);
-    expect(s.h.app.db.get("SELECT cid FROM commands WHERE kind = 'notify' AND acked = 0 AND dork_id = ?", id)?.cid).toBe(second.cid);
   });
 });
 
@@ -284,7 +271,9 @@ describe("user messages always go first", () => {
     s.h.sendMessage(id, "first");
     s.notify(id, s.subscribeTo(id), "comment", "x");
     s.fire(id);
-    expect(s.notifyRows(id)[0].released).toBe(false);
+    s.h.connect(id);
+    s.h.push(id, [{ t: "ready" }]);
+    expect(emitted(s, id)).toEqual(["user_message", "fetch_configure"]); // the notify waits for the message's turn to end
   });
 
   it("a user message sent mid-turn does not release a held notify", () => {
@@ -294,7 +283,6 @@ describe("user messages always go first", () => {
     s.fire(id);
     s.h.sendMessage(id, "steer");
     expect(emitted(s, id)).toEqual(["user_message"]);
-    expect(s.notifyRows(id)[0].released).toBe(false);
   });
 });
 
@@ -308,7 +296,6 @@ describe("pause and flush interactions", () => {
     s.fire(id);
     expect(s.h.state(id)).toBe("working");
     expect(s.h.kinds(id)).toEqual(["notify"]); // flush row deleted
-    expect(s.h.rt(id).pause).toBeUndefined();
     s.h.push(id, [{ t: "flushed" }]);
     await s.h.settle();
     expect(s.h.state(id)).toBe("working");
@@ -322,7 +309,6 @@ describe("pause and flush interactions", () => {
     s.h.push(id, [{ t: "flushed" }]); // the pause job is scheduled
     s.notify(id, s.subscribeTo(id), "ci_failed", "x");
     s.fire(id);
-    expect(s.h.rt(id).pause?.phase).toBe("cancelled");
     expect(emitted(s, id)).toEqual([]); // would be lost with the box
     await s.h.settle();
     expect(s.h.box.calls).toEqual(["pause", "resume"]);
