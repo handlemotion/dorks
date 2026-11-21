@@ -123,23 +123,30 @@ async function accounts(app: App, c: Cred, toolkit?: string): Promise<Account[]>
   return (await call<{ items?: Account[] }>(app, c.headers, "GET", `/v3/connected_accounts?${q}`)).items ?? [];
 }
 
+/** A personal key's connected apps, from the consumer route Composio documents for user keys (docs.composio.dev/docs/consumer-agents). */
+async function consumerToolkits(app: App, c: Cred): Promise<unknown[]> {
+  const q = new URLSearchParams({ user_id: c.userId });
+  const r = await call<{ toolkits?: unknown }>(app, { [USER_KEY_HEADER]: c.headers[USER_KEY_HEADER]!, [ORG_HEADER]: c.headers[ORG_HEADER]! }, "GET", `/v3.1/org/consumer/connected_toolkits?${q}`);
+  return Array.isArray(r?.toolkits) ? r.toolkits : [];
+}
+
 /** Whether a key is saved, and the apps signed in through it. */
 export async function composioStatus(app: App): Promise<ComposioStatus> {
   const r = app.db.get<{ name: string }>("SELECT name FROM mcp_servers WHERE name = ?", COMPOSIO_SERVER);
   if (!r) return { connected: false, toolkits: [] };
   let cred: Cred | undefined;
-  let list: Account[];
+  let slugs: unknown[];
   try {
     cred = await savedCred(app);
     if (!cred) return { connected: false, toolkits: [] };
-    list = await accounts(app, cred);
+    slugs = cred.headers[USER_KEY_HEADER] ? await consumerToolkits(app, cred) : (await accounts(app, cred)).map((a) => a.toolkit?.slug);
   } catch (e) {
     return { connected: true, toolkits: [], error: e instanceof AppFail ? e.error.message : "Composio could not be read" };
   }
-  const slugs = list.map((a) => a.toolkit?.slug).filter((s): s is string => !!s);
+  slugs = slugs.filter((s): s is string => typeof s === "string" && !!s);
   return {
     connected: true,
-    toolkits: [...new Set(slugs)].sort(),
+    toolkits: [...new Set(slugs as string[])].sort(),
     ...(cred.headers[USER_KEY_HEADER] ? { personal: true } : {}),
     ...(cred.instant === undefined ? {} : { instant: cred.instant }),
   };
@@ -160,7 +167,7 @@ export async function composioLink(app: App, toolkit: string): Promise<{ url: st
   return { url: link.redirect_url };
 }
 
-/** Signs one app out: deletes its connected accounts. */
+/** Signs one app out: deletes its connected accounts. A personal key does this with its org and project scope, as Composio's own CLI does (`composio connections remove`). */
 export async function composioUnlink(app: App, toolkit: string): Promise<void> {
   const cred = await requireCred(app);
   const slug = toolkitOf(toolkit);

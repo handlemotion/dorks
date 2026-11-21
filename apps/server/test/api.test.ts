@@ -474,9 +474,9 @@ describe("settings", () => {
         expect(JSON.parse(init?.body as string)).toEqual({ user_id: "cu_me" });
         return Response.json({ session_id: "trs_p", mcp: { type: "http", url: "https://backend.composio.dev/tool_router/trs_p/mcp" } });
       },
-      "GET /api/v3/connected_accounts": (url, h) => {
-        expect([h.get("x-project-id"), url.searchParams.get("user_ids")]).toEqual(["proj_c", "cu_me"]);
-        return Response.json({ items: [{ id: "ca_s", toolkit: { slug: "slack" } }] });
+      "GET /api/v3.1/org/consumer/connected_toolkits": (url, h) => {
+        expect([h.get("x-org-id"), url.searchParams.get("user_id")]).toEqual(["org_a", "cu_me"]);
+        return Response.json({ toolkits: ["slack"], project_nano_id: "proj_c", user_id: "cu_me" });
       },
     };
     const h = harness({
