@@ -367,18 +367,7 @@ export class Bridge {
     await this.syncSkills(provider, env, cfg.skills);
     const key = createHash("sha256")
       .update(
-        JSON.stringify([
-          provider,
-          cfg.codexModel,
-          cfg.model ?? null,
-          cfg.effort ?? null,
-          cfg.fast ?? false,
-          cfg.codeMode ?? false,
-          cfg.repo,
-          Object.entries(cfg.env).sort(),
-          cfg.mcpServers ?? [],
-          cfg.role ?? null,
-        ]),
+        JSON.stringify([provider, cfg.codexModel, cfg.model ?? null, cfg.effort ?? null, !!cfg.fast, !!cfg.codeMode, cfg.repo, Object.entries(cfg.env).sort(), cfg.mcpServers ?? [], cfg.role ?? null]),
       )
       .digest("hex");
     if (this.agent?.alive && key === this.agentKey) {
