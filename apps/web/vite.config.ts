@@ -10,5 +10,7 @@ export default defineConfig({
   base: './',
   build: { outDir: 'dist/client', emptyOutDir: true },
   resolve: { tsconfigPaths: true },
+  // ES module workers can split: the diff worker (components/DiffWorkers.tsx) then loads each Shiki grammar on demand instead of inlining all of them.
+  worker: { format: 'es' },
   plugins: lazyPlugins(() => [tanstackRouter({ target: 'react', autoCodeSplitting: true }), tailwindcss(), viteReact()]),
 })

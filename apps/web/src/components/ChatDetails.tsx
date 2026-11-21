@@ -3,6 +3,7 @@ import { ActivityIcon, GitPullRequestIcon, LayersIcon, MonitorIcon, PanelLeftIco
 import { Button } from '@dorks/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@dorks/ui/tabs'
 import { ComputerView } from './ComputerView'
+import { DiffWorkers } from './DiffWorkers'
 import { BAR_BUTTON, PreviewBrowser, useShownServers } from './PreviewBrowser'
 import { Tip } from './Tip'
 import { ProgressPanel } from './ProgressPanel'
@@ -167,40 +168,42 @@ export function ChatDetails({
   }
 
   return (
-    <aside aria-label="Chat details" className={['flex h-full min-h-0 min-w-0 flex-col border-l border-border [--details-edge:10px] [--details-text:18px]', className].filter(Boolean).join(' ')}>
-      <Tabs value={tabs.selected} onValueChange={(value) => tabs.select(value as TabKey)} className="min-h-0 min-w-0 flex-1 gap-0">
-        {/* 40px, 4px down from the top, so its labels sit on the chat title's 24px line. */}
-        <div data-tauri-drag-region className="mt-1 mb-2 flex h-10 min-w-0 shrink-0 items-center gap-0.5 px-(--details-edge)">
-          <TabsList className="h-7! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
-            {tabs.keys.map((key) => {
-              const { icon, text, title } = label(key)
-              return (
-                <OpenTab key={key} value={key} icon={icon} title={title} onClose={() => tabs.close(key)}>
-                  {text}
-                </OpenTab>
-              )
-            })}
-            <Tip label="New tab">
-              <Button variant="ghost" size="icon-sm" className={`shrink-0 ${ACTION} size-7!`} aria-label="New tab" onClick={tabs.add}>
-                <PlusIcon />
-              </Button>
-            </Tip>
-          </TabsList>
-          {onClose && (
-            <Tip label="Hide chat details">
-              <Button variant="ghost" size="icon-sm" className={`ml-auto shrink-0 ${ACTION} size-7!`} aria-label="Hide chat details" onClick={onClose}>
-                <PanelLeftIcon className="rotate-180" />
-              </Button>
-            </Tip>
-          )}
-        </div>
-        {tabs.keys.map((key) => (
-          <TabsContent key={key} value={key} className="flex min-h-0 flex-col">
-            {panel(key)}
-          </TabsContent>
-        ))}
-      </Tabs>
-    </aside>
+    <DiffWorkers>
+      <aside aria-label="Chat details" className={['flex h-full min-h-0 min-w-0 flex-col border-l border-border [--details-edge:10px] [--details-text:18px]', className].filter(Boolean).join(' ')}>
+        <Tabs value={tabs.selected} onValueChange={(value) => tabs.select(value as TabKey)} className="min-h-0 min-w-0 flex-1 gap-0">
+          {/* 40px, 4px down from the top, so its labels sit on the chat title's 24px line. */}
+          <div data-tauri-drag-region className="mt-1 mb-2 flex h-10 min-w-0 shrink-0 items-center gap-0.5 px-(--details-edge)">
+            <TabsList className="h-7! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
+              {tabs.keys.map((key) => {
+                const { icon, text, title } = label(key)
+                return (
+                  <OpenTab key={key} value={key} icon={icon} title={title} onClose={() => tabs.close(key)}>
+                    {text}
+                  </OpenTab>
+                )
+              })}
+              <Tip label="New tab">
+                <Button variant="ghost" size="icon-sm" className={`shrink-0 ${ACTION} size-7!`} aria-label="New tab" onClick={tabs.add}>
+                  <PlusIcon />
+                </Button>
+              </Tip>
+            </TabsList>
+            {onClose && (
+              <Tip label="Hide chat details">
+                <Button variant="ghost" size="icon-sm" className={`ml-auto shrink-0 ${ACTION} size-7!`} aria-label="Hide chat details" onClick={onClose}>
+                  <PanelLeftIcon className="rotate-180" />
+                </Button>
+              </Tip>
+            )}
+          </div>
+          {tabs.keys.map((key) => (
+            <TabsContent key={key} value={key} className="flex min-h-0 flex-col">
+              {panel(key)}
+            </TabsContent>
+          ))}
+        </Tabs>
+      </aside>
+    </DiffWorkers>
   )
 }
 
