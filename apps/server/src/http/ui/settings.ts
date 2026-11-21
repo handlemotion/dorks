@@ -1,7 +1,8 @@
 import { Effect, Schema } from "effect";
 import { assertBoatAccepts, assertCodexEnvironment } from "../../services/boatCheck";
 import { forgetGithubRepos } from "../../services/githubRepos";
-import { deleteSecret, secretNames, setSecret, settingsView, updateSettings } from "../../services/settings";
+import { autoConnectBoat } from "../../services/boatSignIn";
+import { autoConnectGithub, deleteSecret, secretNames, setSecret, settingsView, updateSettings } from "../../services/settings";
 import { buildIfMissing } from "../../services/snapshot";
 import { forgetUsage } from "../../services/usage";
 import { body, looseBody, ok, service, serviceAsync } from "../route";
@@ -14,7 +15,14 @@ export const settingsRoutes: Routes = (api, app) => {
   const on = handler(app);
   api.get(
     "/api/settings",
-    on((c) => service((a) => c.json(settingsView(a)))),
+    on((c) =>
+      service((a) => {
+        // Boat and GitHub connect by themselves when their CLIs are signed in (in the background: the answer never waits for them).
+        void autoConnectBoat(a);
+        void autoConnectGithub(a);
+        return c.json(settingsView(a));
+      }),
+    ),
   );
   api.put(
     "/api/settings",

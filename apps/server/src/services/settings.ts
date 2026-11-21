@@ -4,6 +4,7 @@ import { fail, OWNER, touch, type App } from "../app";
 import { aad, decrypt, encrypt } from "../core/crypto";
 import { json, update } from "../db";
 import type { GhLogin } from "../lib/ghCli";
+import { boatSignInView } from "./boatSignIn";
 
 export const MAX_TOKEN_CHARS = 4 * 1024;
 export const MAX_SECRET_BYTES = 16 * 1024;
@@ -14,11 +15,17 @@ export interface Settings {
   sleepMinutes: number;
   claudeTokenEnc?: string;
   boatKeyEnc?: string;
+  /** The id of the key Dorks made itself with the Boat CLI (services/boatSignIn.ts), so changing the key revokes it. */
+  boatKeyId?: string;
+  /** Make a Boat key with the Boat CLI when none is saved. Off once the owner clears the key, on again when they connect. */
+  boatAuto: boolean;
   boatOrg?: string;
   boatEnvironment?: string;
   baseSnapshotId?: string;
   /** The owner chose to let Dorks act as their GitHub CLI login (the token itself is never stored: see githubLogin below). */
   githubConnected: boolean;
+  /** Connect GitHub by itself when the GitHub CLI is signed in. Off once the owner disconnects, on again when they connect. */
+  githubAuto: boolean;
   githubLogin?: string;
   commentPolicy?: CommentPolicy;
   /** New Claude sessions start in Code Mode. */
@@ -35,16 +42,25 @@ export function readSettings(app: App): Settings {
     sleepMinutes: r.sleep_minutes as number,
     claudeTokenEnc: n(r.claude_token_enc as string | null),
     boatKeyEnc: n(r.boat_key_enc as string | null),
+    boatKeyId: n(r.boat_key_id as string | null),
+    boatAuto: !!r.boat_auto,
     boatOrg: n(r.boat_org as string | null),
     boatEnvironment: n(r.boat_environment as string | null),
     baseSnapshotId: n(r.base_snapshot_id as string | null),
     githubConnected: !!r.github_connected,
+    githubAuto: !!r.github_auto,
     githubLogin: n(r.github_login as string | null),
     commentPolicy: json(r.comment_policy),
     claudeCodeMode: !!r.claude_code_mode,
     localAlwaysAllow: !!r.local_always_allow,
   };
 }
+
+/** Why GitHub did not connect by itself, while it is not connected. */
+const githubProblemOf = (app: App, s: Settings) => {
+  const problem = s.githubConnected || !s.githubAuto ? undefined : githubProblem.get(app);
+  return problem ? { problem } : {};
+};
 
 /** Booleans and plain values only: ciphertext and tokens never leave the server. */
 export function settingsView(app: App) {
@@ -55,7 +71,8 @@ export function settingsView(app: App) {
     boatOrg: s.boatOrg ?? null,
     boatEnvironment: s.boatEnvironment ?? null,
     baseSnapshotId: s.baseSnapshotId ?? app.cfg.baseSnapshotId ?? null,
-    github: { configured: s.githubConnected, login: s.githubLogin ?? null },
+    github: { configured: s.githubConnected, login: s.githubLogin ?? null, ...githubProblemOf(app, s) },
+    boatSignIn: boatSignInView(app),
     sleepMinutes: s.sleepMinutes,
     commentPolicy: s.commentPolicy ?? DEFAULT_COMMENT_POLICY,
     claudeCodeMode: s.claudeCodeMode,
@@ -117,15 +134,15 @@ export const GH_PROBLEM: Record<"gh_missing" | "gh_logged_out", string> = {
 async function githubConnection(app: App, connect: unknown): Promise<Record<string, unknown>> {
   if (typeof connect !== "boolean") fail("invalid", "githubConnected must be true or false");
   forgetGhLogin(app);
-  if (!connect) return { githubConnected: 0, githubLogin: null };
+  if (!connect) return { githubConnected: 0, githubAuto: 0, githubLogin: null };
   const read = await app.ghLogin();
   if ("problem" in read) {
-    if (app.cfg.boxProvider === "sim") return { githubConnected: 1, githubLogin: null };
+    if (app.cfg.boxProvider === "sim") return { githubConnected: 1, githubAuto: 1, githubLogin: null };
     fail("invalid", GH_PROBLEM[read.problem]);
   }
   const githubLogin = await githubLoginOf(app, read.token, read.source);
   confirmed.set(app, read.token); // checked just now: its login is the one saved below
-  return { githubConnected: 1, githubLogin };
+  return { githubConnected: 1, githubAuto: 1, githubLogin };
 }
 
 const boatEnvironmentOf = (v: unknown) => {
@@ -153,7 +170,11 @@ export async function updateSettings(app: App, patch: SettingsPatch): Promise<vo
   /** The trimmed secret encrypted for the settings row, or null to clear it. */
   const sealed = async (t: string, a: string) => (t ? (await encrypt(app.ring, t, a)).value : null);
 
-  if (patch.boatKey !== undefined) row.boatKeyEnc = await sealed(text(patch.boatKey, "Boat API key", 512), aad.boatKey(OWNER));
+  const before = readSettings(app);
+  if (patch.boatKey !== undefined) {
+    const key = text(patch.boatKey, "Boat API key", 512);
+    Object.assign(row, { boatKeyEnc: await sealed(key, aad.boatKey(OWNER)), boatKeyId: null, boatAuto: key ? 1 : 0 });
+  }
   if (patch.boatOrg !== undefined) row.boatOrg = text(patch.boatOrg, "Boat organization", 128) || null;
   if (patch.claudeToken !== undefined) row.claudeTokenEnc = await sealed(text(patch.claudeToken, "token", MAX_TOKEN_CHARS), aad.claudeToken(OWNER));
   if (patch.githubConnected !== undefined) Object.assign(row, await githubConnection(app, patch.githubConnected));
@@ -176,6 +197,41 @@ export async function updateSettings(app: App, patch: SettingsPatch): Promise<vo
   });
   // Turning Always allow on also answers the requests already waiting (local.ts imports this module, hence the dynamic import).
   if (row.localAlwaysAllow === true) (await import("./local")).startWaitingLocal(app);
+  // The key Dorks made with the Boat CLI is replaced or cleared: revoke it, so no unused key is left on the account.
+  if (patch.boatKey !== undefined && before.boatKeyId) void app.boatCli.revokeKey(before.boatKeyId).catch(() => console.error("boat: could not revoke the previous key"));
+}
+
+// ---------------------------------------------------------------- connecting GitHub by itself
+const GITHUB_RECHECK_MS = 10_000;
+const githubTried = new WeakMap<App, number>();
+/** Why GitHub could not connect by itself (the GitHub CLI is missing or signed out), for the setup checklist. */
+const githubProblem = new WeakMap<App, string>();
+
+/**
+ * Connects GitHub when the GitHub CLI is signed in and the owner has not disconnected it, so setup needs no click for it. Called on
+ * start and when the settings are read (at most every 10 s, so a `gh auth login` in a terminal is picked up). Never throws.
+ */
+export async function autoConnectGithub(app: App): Promise<void> {
+  const s = readSettings(app);
+  if (s.githubConnected || !s.githubAuto) return;
+  const at = githubTried.get(app);
+  if (at !== undefined && app.now() - at < GITHUB_RECHECK_MS) return;
+  githubTried.set(app, app.now());
+  try {
+    const row = await githubConnection(app, true);
+    githubProblem.delete(app);
+    app.db.tx(() => {
+      update(app.db, "settings", { id: 1 }, row);
+      touch(app, { t: "settings" });
+    });
+    console.error("github: connected with the GitHub CLI's login");
+  } catch (e) {
+    const problem = e instanceof Error ? e.message : "GitHub could not be reached.";
+    if (githubProblem.get(app) !== problem) {
+      githubProblem.set(app, problem);
+      app.hub.emit({ t: "settings" });
+    }
+  }
 }
 
 export async function setSecret(app: App, name: string, value: string): Promise<void> {

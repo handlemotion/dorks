@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { Link } from '@tanstack/react-router'
 import { CircleCheckIcon, CircleIcon } from 'lucide-react'
 import type { Settings, SnapshotStatus } from '@dorks/client'
 import { useDorksClient, useSecretNames, useSnapshot } from '@dorks/client/react'
@@ -45,18 +44,6 @@ export function SetupPage({ settings }: { settings: Settings }) {
               tone={r.done ? 'success' : 'muted'}
             />
           ))}
-        </SettingsGroup>
-      </SettingsSection>
-      <SettingsSection title="Guided setup">
-        <SettingsGroup>
-          <SettingsRow
-            label="Run the guided setup"
-            control={
-              <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/onboarding" />}>
-                Open
-              </Button>
-            }
-          />
         </SettingsGroup>
       </SettingsSection>
     </SettingsSections>

@@ -1,4 +1,4 @@
-import { CatchBoundary, createFileRoute, Link, Navigate, useNavigate, useRouterState } from '@tanstack/react-router'
+import { CatchBoundary, createFileRoute, Link, useNavigate, useRouterState } from '@tanstack/react-router'
 import { useCallback, useEffect, useState } from 'react'
 import type { DesktopOptions } from '@dorks/client'
 import type { Block } from '@dorks/shared'
@@ -25,7 +25,7 @@ import { withImages, Composer, preferredModel, type AgentProvider } from '../../
 import { ChatMenu } from '../../../components/ChatMenu'
 import { ArchiveButton, PageHeader } from '../../../components/PageHeader'
 import { SetupStatus } from '../../../components/SetupStatus'
-import { canCreate, onboarded } from '../../../lib/onboarding'
+import { canCreate } from '../../../lib/onboarding'
 import { usePending } from '../../../lib/pending'
 import { useDraft } from '../../../lib/draft'
 import { useArchiveDork } from '../../../lib/archive'
@@ -57,14 +57,14 @@ function Dorks() {
   const [showArchived, setShowArchived] = useState(false)
   const dorks = useDorks(showArchived)
   const settings = useSettings()
-  // First run: the owner answers onboarding (Boat, an agent, GitHub) first. The snapshot may still be building: the page says so.
-  if (settings && !onboarded(settings)) return <Navigate to="/onboarding" replace />
+  // First run happens here: the setup checklist under the composer (SetupStatus). The full-page /onboarding flow is kept but no
+  // longer opened.
   const ready = !!settings && canCreate(settings)
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-onboarding={settings ? (ready ? 'complete' : 'preparing') : 'loading'}>
       {!selected && <PageHeader title="New session" />}
-      {settings && ready && !settings.claudeToken && (
+      {settings && ready && !settings.claudeToken && !!settings.boatEnvironment && (
         <Notice>
           Add a{' '}
           <Link to="/settings" className="font-medium underline underline-offset-4">
@@ -144,6 +144,9 @@ function useNewSessionRepos(buildRepos: string[], dorks: { repo: string }[] | un
   return [...new Set([...buildRepos, ...recent, ...(github?.repos ?? [])])].filter((r) => !scope || ownerOf(r) === scope)
 }
 
+/** With no agent at all the setup checklist asks for the token; this is for an owner who has Codex and picked Claude. */
+const claudeTokenMissing = (provider: AgentProvider, claudeReady: boolean, codexReady: boolean) => provider === 'claude' && !claudeReady && codexReady
+
 function NewDork({
   initialRepo,
   onCreated,
@@ -176,7 +179,7 @@ function NewDork({
   const [message, setMessage] = useDraft('new')
   const [provider, setProvider] = useState<AgentProvider>(claudeReady ? 'claude' : codexReady ? 'codex' : 'claude')
   const { run, pending, error } = usePending()
-  const needsClaudeToken = provider === 'claude' && !claudeReady
+  const needsClaudeToken = claudeTokenMissing(provider, claudeReady, codexReady)
   return (
     <div className="[&>div]:max-w-none">
       {needsClaudeToken && (

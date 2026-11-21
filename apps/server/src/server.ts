@@ -6,6 +6,7 @@ import { loadConfig } from "./config";
 import { Db } from "./db";
 import { AppEnv } from "./http/route";
 import { getBox, getSnapshotDriver } from "./lib/box";
+import { findBoat, makeBoatCli } from "./lib/boatCli";
 import { readGhLogin } from "./lib/ghCli";
 import { loadAssets, makeAssets, type SnapshotAssets } from "./snapshot/assets";
 
@@ -15,6 +16,7 @@ export interface Overrides {
   now?: () => number;
   fetch?: typeof fetch;
   ghLogin?: App["ghLogin"];
+  boatCli?: App["boatCli"];
   getBox?: App["getBox"];
   getSnapshotDriver?: App["getSnapshotDriver"];
   snapshotAssets?: App["snapshotAssets"];
@@ -33,6 +35,7 @@ export function createApp(cfg: Config, o: Overrides = {}): App {
     uuid: () => randomUUID(),
     fetch: o.fetch ?? fetch,
     ghLogin: o.ghLogin ?? (() => readGhLogin(cfg.githubEnvToken)),
+    boatCli: o.boatCli ?? makeBoatCli(findBoat(process.env.PATH, cfg.boatBin)),
     getBox: () => (o.getBox ?? (() => getBox(app)))(),
     getSnapshotDriver: () => (o.getSnapshotDriver ?? (() => getSnapshotDriver(app)))(),
     // Read once per process (about 1 MB). The simulator may run without the bridge bundle built, so it falls back to stand-ins.

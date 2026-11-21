@@ -1,3 +1,4 @@
+import type { BoatCli } from "./lib/boatCli";
 import type { GhLogin } from "./lib/ghCli";
 import type { AppError, AppErrorCode } from "@dorks/shared";
 import type { BoxProvider } from "./core/box";
@@ -51,6 +52,8 @@ export interface Config {
   baseSnapshotId?: string;
   /** `GH_TOKEN`, else `GITHUB_TOKEN`: overrides the GitHub CLI's login the way `gh` itself does (development and the e2e). */
   githubEnvToken?: string;
+  /** `DORKS_BOAT_BIN`: the Boat CLI bundled with the desktop app, used when there is no `boat` on PATH. */
+  boatBin?: string;
 }
 
 export interface SchedulerLike {
@@ -68,6 +71,8 @@ export interface App {
   fetch: typeof fetch;
   /** The GitHub CLI's login (lib/ghCli.ts), read fresh on every call: callers go through services/github.ts, which caches it. Tests replace it. */
   ghLogin(): Promise<GhLogin>;
+  /** The Boat CLI on this computer (lib/boatCli.ts): connecting Boat without a pasted key. Tests replace it. */
+  boatCli: BoatCli;
   /** The sandbox provider for the current settings. Tests replace it. */
   getBox(): Promise<BoxProvider>;
   /** The provider calls the base-snapshot build makes (services/snapshot.ts). Tests replace it. */

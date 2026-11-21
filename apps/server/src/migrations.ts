@@ -435,4 +435,11 @@ export const MIGRATIONS: string[] = [
   -- so each gets a loopback port of its own.
   ALTER TABLE sim_boxes ADD COLUMN bridge_port INTEGER;
   `,
+  `
+  -- Connecting Boat and GitHub by themselves (services/boatSignIn.ts, services/settings.ts): the id of the Boat key Dorks made with
+  -- the Boat CLI (revoked when the key changes), and whether each may connect without a click (off once the owner disconnects).
+  ALTER TABLE settings ADD COLUMN boat_key_id TEXT;
+  ALTER TABLE settings ADD COLUMN boat_auto INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE settings ADD COLUMN github_auto INTEGER NOT NULL DEFAULT 1;
+  `,
 ];

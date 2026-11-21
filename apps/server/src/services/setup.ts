@@ -10,7 +10,7 @@ import { readSettings } from "./settings";
 export function missingForSession(app: App, provider: Provider): string | null {
   const s = readSettings(app);
   const sim = app.cfg.boxProvider === "sim";
-  if (!sim && !s.boatKeyEnc) return "Connect Boat first: add your Boat API key.";
+  if (!sim && !s.boatKeyEnc) return "Connect Boat first: sign in to Boat in the setup list under the message box.";
   if (provider === "claude" && !s.claudeTokenEnc) return "Connect Claude Code first: add your Claude token.";
   if (provider === "codex" && !sim && !s.boatEnvironment) return "Codex is optional: connect ChatGPT once in Boat and select your Boat environment in Settings, or use Claude Code.";
   if (!s.githubConnected) return "Connect GitHub first: sign in with the GitHub CLI.";

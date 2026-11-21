@@ -6,6 +6,7 @@
 // $DORKS_SERVER_DIST (default apps/server/dist) as dorks-server-<triple>, and built first when missing or older than the
 // server sources: with `pnpm --filter @dorks/server run build` once that package has a build script, otherwise by compiling
 // src/main.ts directly with `bun build --compile` (the same thing, one target at a time). Needs Bun on PATH.
+// It also prepares the bundled Boat CLI (`boat-<triple>`, scripts/prepare-boat.mjs).
 // --stub swaps in the stand-in server from crates/shell-core instead, for working on the shell without Bun. It is never the
 // default, so a release or a plain `pnpm build` cannot ship the stub by accident.
 // `universal-apple-darwin` prepares both architectures and joins them with lipo.
@@ -107,3 +108,6 @@ if (target === "universal-apple-darwin") {
 }
 chmodSync(out(target), 0o755);
 console.log(`prepare-sidecar: ${out(target)}`);
+
+// The Boat CLI, bundled next to the server (scripts/prepare-boat.mjs).
+execFileSync(process.execPath, [join(here, "prepare-boat.mjs"), "--target", target, ...(release ? ["--release"] : [])], { stdio: "inherit" });

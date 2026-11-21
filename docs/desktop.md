@@ -6,6 +6,7 @@
 Dorks.app
  ├─ dorks-desktop        Tauri shell (Rust): supervision, tray, commands
  ├─ dorks-server         sidecar, supervised by the shell
+ ├─ boat                 the Boat CLI, for signing in to Boat without a pasted key
  └─ UI                   static SPA from apps/web, in a webview (tauri://localhost)
 ```
 
@@ -108,6 +109,7 @@ pnpm --filter @dorks/desktop prepare:stub # stand-in server + placeholder page, 
 - **Sidecar:** `prepare:sidecar` (run by `dev` and `build`) puts `dorks-server-<target triple>` in `src-tauri/binaries`. It takes the server from `apps/server/dist` (`DORKS_SERVER_DIST`) and rebuilds it first when it is missing or older than `apps/server/src`: with the server's `build` script once it has one, otherwise `bun build --compile --target=bun-darwin-arm64|x64`. About 60 MB per architecture. There is no silent fallback to the stub: `--stub` has to be asked for.
 - **UI:** `prepare:ui` builds `apps/web` (`pnpm --filter @dorks/web build`) and copies `apps/web/dist/client` (`DORKS_WEB_DIST`) into `dist`. `--no-build` reuses an existing build; `--placeholder` copies the status page in `ui/`.
 - At run time `DORKS_SERVER_BIN=/path/to/dorks-server` overrides the bundled sidecar.
+- **Boat CLI:** `prepare:sidecar` also runs `scripts/prepare-boat.mjs`, which puts `boat-<target triple>` (a second externalBin, about 8 MB per architecture) in `src-tauri/binaries`: downloaded from Boat's installer endpoint and checked against the SHA-256 list Boat publishes beside it, reused in development, fetched fresh with `--release`. The shell hands its path to the server as `DORKS_BOAT_BIN`; the server prefers a `boat` on `PATH` and uses this one only when there is none. It connects Boat with the owner's Boat login ([Boat](boat.md#sign-in-with-the-boat-cli)).
 - Use a throwaway data directory when trying things: `DORKS_APP_DIR=/tmp/dorks-test`.
 - The app icon's source is `src-tauri/icons/source.svg`: a `#f2f2f2` tile with a thin grey ring after onboarding's (`BrandCircle`): 1.1x the tile's width, its top 10% down, its sides and bottom cut off by the tile. Render it to `source.png` at 1024px, then run `pnpm tauri icon src-tauri/icons/source.png` and keep the files `tauri.conf.json` lists. The web favicon is `apps/web/public/favicon.svg`, the same drawing full-bleed. The menu-bar `tray.png` still comes from `scripts/make-icons.mjs`.
 

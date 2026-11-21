@@ -372,6 +372,14 @@ export class DorksClient {
       this.invalidate("pr");
     },
     checkBoat: (input: { boatKey?: string; boatOrg?: string }) => this.api.checkBoat(input),
+    /** Starts the Boat sign-in (services/boatSignIn.ts); resolves with its state, including the browser link to open. */
+    signInBoat: async () => {
+      try {
+        return (await this.api.signInBoat()).boatSignIn;
+      } finally {
+        this.invalidate("settings");
+      }
+    },
     /** Starts "Prepare Boat". Resolves with the status right after it started; follow progress with `snapshot()` / `useSnapshot()`. */
     buildSnapshot: async (force = false) => {
       try {

@@ -1,6 +1,7 @@
 import type { ClientEvent, DorkState } from "@dorks/shared";
 
 import type { App, Config } from "../src/app";
+import type { BoatCli } from "../src/lib/boatCli";
 import { BoxNotFoundError, type BoxProvider } from "../src/core/box";
 import { getDork, openCommands, runtimeOf, type CommandKind } from "../src/data";
 import { Db, insert } from "../src/db";
@@ -226,6 +227,37 @@ export function fakeFetch(handler: Handler) {
   return Object.assign(f, { calls });
 }
 
+/** A fake Boat CLI: signed out unless a test signs it in. Tests never run the real `boat` (it could make real keys). */
+export function fakeBoatCli(opts: { bin?: string | null } = {}) {
+  const state = { signedIn: false, org: null as string | null, keys: [] as string[], revoked: [] as string[], login: undefined as undefined | { finish: () => void; fail: (e: Error) => void } };
+  const cli: BoatCli & { state: typeof state } = {
+    state,
+    bin: opts.bin === undefined ? "/fake/boat" : opts.bin,
+    signedIn: async () => state.signedIn,
+    org: async () => state.org,
+    createKey: async () => {
+      const id = `key-${state.keys.length + 1}`;
+      state.keys.push(id);
+      return { id, secret: `boat_secret_${id}` };
+    },
+    revokeKey: async (id) => void state.revoked.push(id),
+    login: async () => {
+      let finish!: () => void;
+      let fail!: (e: Error) => void;
+      const done = new Promise<void>((ok, no) => {
+        finish = () => {
+          state.signedIn = true;
+          ok();
+        };
+        fail = no;
+      });
+      state.login = { finish, fail };
+      return { link: { url: "https://boat.dev/sign-in?state=test", userCode: "ABCD-EFGH", expiresAt: new Date(NOW + 10 * 60_000).toISOString() }, done };
+    },
+  };
+  return cli;
+}
+
 export function harness(opts: { fetch?: typeof fetch; config?: Partial<Config>; ghToken?: string } = {}) {
   const clock = { t: NOW };
   // The GitHub CLI's login: signed in with this token unless a test sets it to null (logged out).
@@ -234,12 +266,14 @@ export function harness(opts: { fetch?: typeof fetch; config?: Partial<Config>; 
   // Tests never reach the real network: by default GitHub knows one user, and anything else fails loudly.
   const offline = fakeFetch((url) => (url.pathname === "/user" ? Response.json({ login: "agent-bot" }) : new Response("{}", { status: 404 })));
   const snapshotDriver = fakeSnapshotDriver();
+  const boatCli = fakeBoatCli();
   const assets = { current: testAssets() };
   const app: App = createApp(testConfig(opts.config), {
     db: new Db(),
     now: () => clock.t,
     fetch: opts.fetch ?? offline,
     ghLogin: async () => (gh.token ? { token: gh.token, source: "gh" } : { problem: "gh_logged_out" }),
+    boatCli,
     getBox: async () => box,
     getSnapshotDriver: async () => snapshotDriver,
     snapshotAssets: async () => assets.current,
@@ -251,6 +285,7 @@ export function harness(opts: { fetch?: typeof fetch; config?: Partial<Config>; 
   const h = {
     app,
     gh,
+    boatCli,
     box,
     clock,
     scheduler,

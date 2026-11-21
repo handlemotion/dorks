@@ -8,7 +8,7 @@ import { INBOX_RETENTION_MS, SWEEP_EVERY_MS } from "../src/lifecycle/jobs";
 import { Scheduler } from "../src/lifecycle/scheduler";
 import { createApp } from "../src/server";
 import { subscribe } from "../src/services/subscriptions";
-import { harness, NOW, testConfig } from "./harness";
+import { fakeBoatCli, harness, NOW, testConfig } from "./harness";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -21,7 +21,7 @@ describe("durable timers", () => {
     dirs.push(dir);
     const path = join(dir, "dorks.db");
     let now = NOW;
-    const first = createApp(testConfig(), { db: new Db(path), now: () => now });
+    const first = createApp(testConfig(), { db: new Db(path), now: () => now, boatCli: fakeBoatCli() });
     const id = "d1";
     const seed = (app: typeof first) => {
       insert(app.db, "dorks", { id, title: "t", repo: "o/r", branch: "b", provider: "claude", state: "idle", archived: false, boxId: "box-1", deleting: false, lastActivityAt: 1, createdAt: 1 });
@@ -32,7 +32,7 @@ describe("durable timers", () => {
     first.db.close();
 
     now = NOW + 6 * 60_000; // the app was closed for six minutes
-    const second = createApp(testConfig(), { db: new Db(path), now: () => now });
+    const second = createApp(testConfig(), { db: new Db(path), now: () => now, boatCli: fakeBoatCli() });
     const scheduler = new Scheduler(second);
     expect(scheduler.runDue()).toBe(1); // the sleep timer fires on boot
     expect(second.db.get("SELECT COUNT(*) AS n FROM commands WHERE kind = 'flush'")?.n).toBe(1); // sleep_due -> flush the bridge first

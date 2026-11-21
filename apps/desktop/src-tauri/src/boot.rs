@@ -83,6 +83,9 @@ pub fn server_spec(paths: &Paths, program: PathBuf, ui_port: u16, owner_token: &
         (ENV_UI_PORT.to_string(), ui_port.to_string()),
         (ENV_PARENT_PID.to_string(), std::process::id().to_string()),
     ];
+    if let Some(boat) = resolve_bundled_bin(BOAT_BIN_NAME) {
+        env.push((ENV_BOAT_BIN.to_string(), boat.display().to_string()));
+    }
     SidecarSpec {
         program,
         args: vec![],
@@ -100,13 +103,18 @@ pub fn resolve_server_bin() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os(ENV_SERVER_BIN).map(PathBuf::from).filter(|p| p.is_file()) {
         return Some(path);
     }
+    resolve_bundled_bin(SERVER_BIN_NAME)
+}
+
+/// An externalBin: next to the app executable (where Tauri puts it in a bundle), else the development copy in `src-tauri/binaries`.
+fn resolve_bundled_bin(name: &str) -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    let sibling = exe.parent()?.join(SERVER_BIN_NAME);
+    let sibling = exe.parent()?.join(name);
     if sibling.is_file() {
         return Some(sibling);
     }
     let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries");
-    let prefix = format!("{SERVER_BIN_NAME}-");
+    let prefix = format!("{name}-");
     std::fs::read_dir(dev)
         .ok()?
         .flatten()
