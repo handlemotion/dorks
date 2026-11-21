@@ -65,6 +65,23 @@ export function ChatDetails({
     if (headline && headline !== seenHeadline.current) open(`pr:${headline}`)
     seenHeadline.current = headline
   }, [headline, open])
+  // Every other PR the agent opens or subscribes to gets its tab too (its own PRs are subscribed automatically). The PRs the session
+  // already had when its list first loaded are not reopened, and a switch to another session starts over.
+  const subscribed = data.subscriptions
+  const seenPrs = useRef<{ session?: string; urls: Set<string> } | null>(null)
+  useEffect(() => {
+    if (!subscribed) return
+    if (!seenPrs.current || seenPrs.current.session !== sessionId) {
+      seenPrs.current = { session: sessionId, urls: new Set(subscribed.map((s) => s.url)) }
+      return
+    }
+    const seen = seenPrs.current.urls
+    for (const s of subscribed)
+      if (!seen.has(s.url)) {
+        seen.add(s.url)
+        open(`pr:${s.url}`)
+      }
+  }, [subscribed, sessionId, open])
   // The local diff's tab becomes the PR once there is one (tabs remembered from before PRs had their own).
   const { keys, replace } = tabs
   useEffect(() => {
