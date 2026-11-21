@@ -25,7 +25,11 @@ export async function getBox(app: App): Promise<BoxProvider> {
   if (app.cfg.boxProvider === "sim") return simBox(app);
   const apiKey = await boatKey(app);
   if (!apiKey) return unconfiguredBox("Boat API key not set");
-  return boatBox({ apiKey, scope: instanceId(app), org: readSettings(app).boatOrg || undefined, fetch: app.fetch });
+  const bridge = async () => {
+    const a = await app.snapshotAssets();
+    return { base64: Buffer.from(a.bridge).toString("base64"), sha256: a.bridgeSha256 };
+  };
+  return boatBox({ apiKey, scope: instanceId(app), org: readSettings(app).boatOrg || undefined, fetch: app.fetch, bridge });
 }
 
 /** The base-snapshot build's provider calls: Boat, or an instant in-memory stand-in under BOX_PROVIDER=sim. */
