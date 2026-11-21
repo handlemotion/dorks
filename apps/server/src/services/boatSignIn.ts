@@ -80,11 +80,15 @@ export async function autoConnectBoat(app: App): Promise<void> {
   if (!app.boatCli.bin) return set(app, { state: "unavailable" });
   status.set(app, { view: now.view, checkedAt: app.now() }); // claim the check; no event for a recheck that changes nothing
   const gen = generation(app);
+  // A background check never reports over a sign-in the owner started meanwhile (that also starts a new generation).
+  const report = (view: BoatSignInView) => {
+    if (!busy(current(app).view.state)) setIf(app, gen, view);
+  };
   try {
     if (await app.boatCli.signedIn()) await connect(app, gen);
-    else setIf(app, gen, { state: "signed_out" });
+    else report({ state: "signed_out" });
   } catch (e) {
-    setIf(app, gen, { state: "failed", error: messageOf(e) });
+    report({ state: "failed", error: messageOf(e) });
   }
 }
 
@@ -95,7 +99,6 @@ export async function autoConnectBoat(app: App): Promise<void> {
 export async function startBoatSignIn(app: App): Promise<BoatSignInView | null> {
   if (app.cfg.boxProvider === "sim" || readSettings(app).boatKeyEnc) return null;
   update(app.db, "settings", { id: 1 }, { boatAuto: 1 }); // the owner asked: automatic connecting is on again
-  const gen = generation(app);
   const now = current(app).view;
   if (now.state === "connecting") return now;
   if (now.state === "signing_in" && now.expiresAt && Date.parse(now.expiresAt) > app.now()) return now;
@@ -103,6 +106,10 @@ export async function startBoatSignIn(app: App): Promise<BoatSignInView | null> 
     set(app, { state: "unavailable" });
     return current(app).view;
   }
+  // A new attempt: a background check still in flight is stale now, so it cannot replace this one's state or save its key.
+  generations.set(app, generation(app) + 1);
+  const gen = generation(app);
+  set(app, { state: "checking" });
   try {
     if (await app.boatCli.signedIn()) {
       await connect(app, gen);

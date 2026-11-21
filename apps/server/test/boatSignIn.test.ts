@@ -113,3 +113,21 @@ describe("GitHub with the GitHub CLI", () => {
     expect(readSettings(h.app)).toMatchObject({ githubConnected: false, githubAuto: false });
   });
 });
+
+describe("Boat sign-in races", () => {
+  it("a background check that answers after Sign in was pressed neither replaces its link nor stops its key", async () => {
+    const h = boat();
+    let answer!: (v: boolean) => void;
+    const signedIn = h.boatCli.signedIn;
+    h.boatCli.signedIn = () => new Promise<boolean>((r) => (answer = r)); // the background check hangs on `boat status`
+    const background = autoConnectBoat(h.app);
+    h.boatCli.signedIn = signedIn;
+    const link = await startBoatSignIn(h.app);
+    answer(false);
+    await background;
+    expect(settingsView(h.app).boatSignIn).toMatchObject({ state: "signing_in", url: link?.url });
+    h.boatCli.state.login!.finish();
+    await settle();
+    expect(await boatKey(h.app)).toBe("boat_secret_key-1");
+  });
+});
