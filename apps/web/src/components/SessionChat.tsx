@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type Dispatch, type SetStateAction } from 'react'
 import type { AgentModelChoice } from '@dorks/shared'
 import { useConnection, useDork, useDorkEvents, useDorksClient, useSettings } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
@@ -36,8 +36,14 @@ export function SessionChat({
   compact,
   error: extraError,
   onOpenStep,
+  draft,
 }: {
   dork: DorkView
+  /**
+   * The composer's text when the page also writes into it (Chat details' "Ask for…" actions, a picked element): one draft, owned by the
+   * page. Without it the chat keeps its own (a worker in a dork's panel).
+   */
+  draft?: [string, Dispatch<SetStateAction<string>>]
   compact?: boolean
   /** Another action's failure to show over the composer (archive, the page's own controls). */
   error?: string
@@ -47,7 +53,8 @@ export function SessionChat({
   const dorkId = dork.id
   const { actions } = useDorksClient()
   const { view, canLoadMore, loadMore, error: eventsError, send } = useDorkEvents(dorkId)
-  const [text, setText] = useDraft(dorkId)
+  const own = useDraft(dorkId)
+  const [text, setText] = draft ?? own
   const [reply, setReply] = useState<Reply>()
   const { run, pending, error } = usePending()
   const stop = usePending()

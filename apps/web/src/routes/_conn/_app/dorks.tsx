@@ -329,7 +329,9 @@ function Thread({ dorkId }: { dorkId: string }) {
   const { run: runArchive, pending: archiving, error: archiveError } = usePending()
   const archiveDork = useArchiveDork()
   const [detailsOpen, setDetailsOpen] = useDetailsOpen()
-  const [, setText] = useDraft(dorkId)
+  // One draft for the composer and everything on the page that writes into it (Ask for…, picked elements).
+  const draft = useDraft(dorkId)
+  const setText = draft[1]
   const wide = useWide()
   // Each chat's Progress starts on its newest step.
   useEffect(() => progressStore.reset(), [dorkId])
@@ -388,6 +390,7 @@ function Thread({ dorkId }: { dorkId: string }) {
         <SessionChat
           dork={dork}
           error={archiveError}
+          draft={draft}
           onOpenStep={
             wide && !crew
               ? (key) => {

@@ -575,6 +575,12 @@ function CrewCard({ block }: { block: Extract<Block, { kind: 'crew' }> }) {
         </TraceCollapsibleTrigger>
         <TraceCollapsibleContent>
           <p className="pl-6 text-sm whitespace-pre-wrap text-muted-foreground">{block.text}</p>
+          {/* The way to a worker on any width: below lg a dork's details (and their Sessions) are hidden. */}
+          <div className="pt-2 pl-6">
+            <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/dorks" search={{ dork: block.peer.id }} />}>
+              Open session
+            </Button>
+          </div>
         </TraceCollapsibleContent>
       </TraceCollapsible>
     </Trace>

@@ -93,7 +93,7 @@ In the app a coordinator is called a **dork**.
   chat, which the owner can talk in.
 - **Full screen** is the worker's own page with its own Chat details. The header starts with a crumb back to the dork, and the sidebar
   keeps the dork highlighted, so the top session is never lost.
-- Below `lg` details are hidden, as for every chat; a worker is then reached full screen from a link, not from the dork.
+- Below `lg` details are hidden, as for every chat; a report's **Open session** still reaches its worker full screen.
 
 ## Connect an external agent
 
