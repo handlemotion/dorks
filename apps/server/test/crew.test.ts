@@ -108,6 +108,8 @@ describe("external MCP endpoint", () => {
   it("speaks JSON-RPC over POST /mcp with the owner token", async () => {
     const c = await crew();
     const ui = uiApp(c.h.app);
+    type Reply = { result: { protocolVersion?: string; isError?: boolean; structuredContent?: { tool: string }; tools?: { name: string }[] } };
+    const json = async (r: Response) => (await r.json()) as Reply;
     const rpc = (body: unknown, headers: Record<string, string> = { Authorization: `Bearer ${TOKEN}` }) =>
       ui.request("/mcp", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...headers }, body: JSON.stringify(body) });
 
@@ -115,18 +117,18 @@ describe("external MCP endpoint", () => {
     expect((await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" }, { Authorization: `Bearer ${TOKEN}`, Origin: "https://evil.example" })).status).toBe(403);
     expect((await ui.request("/mcp", { method: "GET", headers: { Authorization: `Bearer ${TOKEN}` } })).status).toBe(405);
 
-    const init = await (await rpc({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {} } })).json();
+    const init = await json(await rpc({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {} } }));
     expect(init.result.protocolVersion).toBe("2025-06-18");
     expect((await rpc({ jsonrpc: "2.0", method: "notifications/initialized" })).status).toBe(202);
 
-    const tools = (await (await rpc({ jsonrpc: "2.0", id: 2, method: "tools/list" })).json()).result.tools.map((t: { name: string }) => t.name);
+    const tools = (await json(await rpc({ jsonrpc: "2.0", id: 2, method: "tools/list" }))).result.tools!.map((t) => t.name);
     expect(tools).toContain("dork_create");
     expect(tools).toContain("dork_delete");
 
-    const created = await (await rpc({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "dork_create", arguments: { message: "Fix the flaky test", repo: "acme/app" } } })).json();
+    const created = await json(await rpc({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "dork_create", arguments: { message: "Fix the flaky test", repo: "acme/app" } } }));
     expect(created.result.isError).toBe(false);
-    expect(created.result.structuredContent.tool).toBe("dork_create");
-    const bad = await (await rpc({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "dork_get", arguments: { id: "nope" } } })).json();
+    expect(created.result.structuredContent?.tool).toBe("dork_create");
+    const bad = await json(await rpc({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "dork_get", arguments: { id: "nope" } } }));
     expect(bad.result.isError).toBe(true);
   });
 });
