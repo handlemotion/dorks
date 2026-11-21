@@ -65,6 +65,9 @@ interface WatchState {
   pullsUpdated?: number;
   issues?: number;
   comments?: number;
+  /** The items already read at the `issues` / `comments` cursor second (issue numbers, comment ids): GitHub's times are whole seconds. */
+  issuesAt?: number[];
+  commentsAt?: number[];
   /** Merged pull requests already reported, newest last (a bounded list). */
   merged?: number[];
   /** When the pull request list was first read (this clock): a merge older than that is history, not news. */
@@ -72,8 +75,8 @@ interface WatchState {
 }
 
 /**
- * Something new in a repository, before it is matched to automations. Cursors are inclusive (GitHub's timestamps are whole seconds, and
- * two items can share one), so an item at the cursor is read again on the next pass; its `key` makes that a no-op.
+ * Something new in a repository, before it is matched to automations. Its `key` makes a repeat a no-op once it has started (or skipped)
+ * a run; the cursors (see `advance`) keep repeats from being read as new in the first place.
  */
 export interface RepoEvent {
   event: GithubEvent;
@@ -187,24 +190,45 @@ const readPulls = (get: Get, repo: string, old: WatchState, now: number) =>
     };
   });
 
+/**
+ * A created-at cursor that does not lose an item from the same second as the last one read, nor repeat one: what is new is anything
+ * after the cursor, or at it and not read before. Returns the new items, and the cursor and the ids at it to keep. The first read
+ * (no cursor) is a baseline: nothing is new, but what is there is remembered.
+ */
+function advance<T>(list: T[], at: (item: T) => number, id: (item: T) => number, cursor: number | undefined, seenAt: number[] = []) {
+  const seen = new Set(seenAt);
+  const fresh = cursor === undefined ? [] : list.filter((x) => at(x) > cursor || (at(x) === cursor && !seen.has(id(x))));
+  const next = Math.max(cursor ?? 0, ...list.map(at));
+  const ids = list.filter((x) => at(x) === next).map(id);
+  return { fresh, cursor: next, seenAt: next === cursor ? [...new Set([...seenAt, ...ids])] : ids };
+}
+
 /** New issues (the list holds pull requests too; they are left out). */
 const readIssues = (get: Get, repo: string, old: WatchState) =>
   pages(get, GhIssues, `/repos/${repo}/issues?state=all&sort=created&direction=desc&per_page=${PER_PAGE}`, (i) => old.issues === undefined || time(i.created_at) < old.issues).pipe(
     Effect.map((list) => {
       if (!list) return { events: [], state: {} };
-      const fresh = old.issues === undefined ? [] : list.filter((i) => !i.pull_request && time(i.created_at) >= old.issues!);
-      const events = fresh.map((i): RepoEvent => ({
-        event: "issue_opened",
-        repo,
-        author: i.user?.login ?? "ghost",
-        bot: i.user?.type === "Bot",
-        number: i.number,
-        title: i.title,
-        url: i.html_url,
-        key: `issue_opened:${repo}#${i.number}`,
-        body: i.body ?? "",
-      }));
-      return { events, state: { issues: Math.max(old.issues ?? 0, ...list.map((i) => time(i.created_at))) } };
+      const step = advance(
+        list,
+        (i) => time(i.created_at),
+        (i) => i.number,
+        old.issues,
+        old.issuesAt,
+      );
+      const events = step.fresh
+        .filter((i) => !i.pull_request)
+        .map((i): RepoEvent => ({
+          event: "issue_opened",
+          repo,
+          author: i.user?.login ?? "ghost",
+          bot: i.user?.type === "Bot",
+          number: i.number,
+          title: i.title,
+          url: i.html_url,
+          key: `issue_opened:${repo}#${i.number}`,
+          body: i.body ?? "",
+        }));
+      return { events, state: { issues: step.cursor, issuesAt: step.seenAt } };
     }),
   );
 
@@ -213,8 +237,14 @@ const readComments = (get: Get, repo: string, old: WatchState) =>
   pages(get, GhIssueComments, `/repos/${repo}/issues/comments?sort=created&direction=desc&per_page=${PER_PAGE}`, (c) => old.comments === undefined || time(c.created_at) < old.comments).pipe(
     Effect.map((list) => {
       if (!list) return { events: [], state: {} };
-      const fresh = old.comments === undefined ? [] : list.filter((c) => time(c.created_at) >= old.comments!);
-      const events = fresh.map((c): RepoEvent => ({
+      const step = advance(
+        list,
+        (c) => time(c.created_at),
+        (c) => c.id,
+        old.comments,
+        old.commentsAt,
+      );
+      const events = step.fresh.map((c): RepoEvent => ({
         event: "comment",
         repo,
         author: c.user?.login ?? "ghost",
@@ -225,7 +255,7 @@ const readComments = (get: Get, repo: string, old: WatchState) =>
         key: `comment:${repo}:${c.id}`,
         body: c.body ?? "",
       }));
-      return { events, state: { comments: Math.max(old.comments ?? 0, ...list.map((c) => time(c.created_at))) } };
+      return { events, state: { comments: step.cursor, commentsAt: step.seenAt } };
     }),
   );
 
@@ -248,8 +278,8 @@ export const observeRepo = (gh: GithubClient, repo: string, needs: Set<GithubEve
     // A list no trigger needs any more is forgotten, so needing it again starts from a fresh baseline.
     const kept: WatchState = {
       ...(PR_EVENTS.some((e) => needs.has(e)) ? { heads: old.heads, merged: old.merged, pulls: old.pulls, pullsUpdated: old.pullsUpdated, since: old.since } : {}),
-      ...(needs.has("issue_opened") ? { issues: old.issues } : {}),
-      ...(needs.has("comment") ? { comments: old.comments } : {}),
+      ...(needs.has("issue_opened") ? { issues: old.issues, issuesAt: old.issuesAt } : {}),
+      ...(needs.has("comment") ? { comments: old.comments, commentsAt: old.commentsAt } : {}),
     };
     const reads = [
       PR_EVENTS.some((e) => needs.has(e)) ? readPulls(get, repo, old, now) : NOTHING,

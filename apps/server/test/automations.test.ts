@@ -207,6 +207,17 @@ describe("automations", () => {
     expect(s.dorks().map((d) => d.title)).toEqual(["answer: Comment on #1 by @friend", "answer: Comment on #2 by @friend"]);
   });
 
+  it("the comment already there when an automation starts watching never starts a run", async () => {
+    const s = await setup();
+    const comment = (n: number, ms: number) => s.gh.state.comments.push({ id: n, html_url: `c${n}`, issue_url: `x/issues/${n}`, user: { login: "friend" }, body: "hi", created_at: s.at(ms) });
+    comment(1, -1000); // history
+    createAutomation(s.h.app, { name: "answer", instructions: "Answer.", triggers: [{ kind: "github", event: "comment", repo: "octo/app", authors: ["friend"] }] });
+    await watchOnce(s.h.app);
+    comment(2, 5000);
+    await watchOnce(s.h.app);
+    expect(s.dorks().map((d) => d.title)).toEqual(["answer: Comment on #2 by @friend"]);
+  });
+
   it("a quiet open PR created after the busy ones is not taken for a new one when it gets a push", async () => {
     const s = await setup();
     for (let n = 1; n <= 55; n++) s.pr(n, { created_at: s.at(-5000), updated_at: s.at(-1000 + n) });
