@@ -1,9 +1,9 @@
-import { commandFrame, effortLevel, type EffortLevel, type FromBridge, type McpServerConfig, type PrRef } from "@dorks/shared";
+import { commandFrame, effortLevel, type EffortLevel, type CrewRole, type FromBridge, type McpServerConfig, type PrRef } from "@dorks/shared";
 import { createHash } from "node:crypto";
 import { appendFileSync, chmodSync, closeSync, fsyncSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { dirname, join } from "node:path";
-import { Agent, childEnv, computerArgs, configDirOf, findTranscripts } from "./claude";
+import { Agent, childEnv, computerArgs, configDirOf, crewArgs, findTranscripts } from "./claude";
 import { CodexAgent } from "./codex";
 import type { Config } from "./config";
 import { GithubToken, helperCommand } from "./credentials";
@@ -72,6 +72,8 @@ export class Bridge {
   private agentCtx: { dir: string; env: NodeJS.ProcessEnv } | null = null;
   /** The first message to name the dork after, until a name is sent (or tried) by this process. */
   private nameFrom: string | null = null;
+  /** The dork's place in a crew (docs/crew.md), from the last configure: its guidance and the crew tools its MCP server lists. */
+  private role: CrewRole | null = null;
   private naming = false;
   private readonly cfg: Config;
   /** [node, cli.mjs]: how the git credential helper and the hooks invoke this binary. */
@@ -214,7 +216,7 @@ export class Bridge {
 
   /** The local RPC table (rpc.ts): what the git helper, the `dorks` CLI and the `gh` shim can ask of this process. */
   private rpcMethods() {
-    return { token: this.github.rpc, ...this.prs.methods, ...previewMethods(this.t, this.log), ...this.hooks.methods };
+    return { token: this.github.rpc, ...this.prs.methods, ...previewMethods(this.t, this.log, () => this.role), ...this.hooks.methods };
   }
 
   // ------------------------------------------------------------------ commands
@@ -360,7 +362,7 @@ export class Bridge {
 
     const provider = cfg.provider ?? "claude";
     const key = createHash("sha256")
-      .update(JSON.stringify([provider, cfg.codexModel, cfg.model ?? null, cfg.effort ?? null, cfg.fast ?? false, cfg.repo, Object.entries(cfg.env).sort(), cfg.mcpServers ?? []]))
+      .update(JSON.stringify([provider, cfg.codexModel, cfg.model ?? null, cfg.effort ?? null, cfg.fast ?? false, cfg.repo, Object.entries(cfg.env).sort(), cfg.mcpServers ?? [], cfg.role ?? null]))
       .digest("hex");
     if (this.agent?.alive && key === this.agentKey) {
       // Already running with this config (a reconnect re-sends configure): nothing to do but say so again.
@@ -380,6 +382,7 @@ export class Bridge {
     this.agentCtx = { dir, env };
     this.agentKey = key;
     this.provider = provider;
+    this.role = cfg.role ?? null;
     this.codexModel = cfg.codexModel;
     this.claudeModel = { model: cfg.model, effort: cfg.effort, fast: cfg.fast };
     this.startAgent(this.resumableSession(provider, env, cfg.resumeSessionId), []);
@@ -492,7 +495,7 @@ export class Bridge {
             loadImage: (id) => this.t.getImage(id),
             bin: this.cfg.claudeBin,
             permissionMode: this.cfg.permissionMode,
-            extraArgs: [...computerArgs(), ...this.cfg.claudeExtraArgs],
+            extraArgs: [...computerArgs(), ...crewArgs(this.role), ...this.cfg.claudeExtraArgs],
             model: this.claudeModel.model,
             effort: this.claudeModel.effort,
             onModels: (models) => {

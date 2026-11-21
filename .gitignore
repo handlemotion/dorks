@@ -11,3 +11,6 @@ dist
 .vitest/
 # Cloudflare `cf` build output and generated Worker types
 .cloudflare/
+
+# Wrangler local cache (created by the tunnels tests)
+.wrangler/

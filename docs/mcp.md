@@ -1,5 +1,8 @@
 # MCP servers (Customize)
 
+This page is about MCP servers the owner gives to agents. The other direction, the dorks server as an MCP server for the owner's
+other agents (and the crew tools of coordinator dorks), is in [crews](crew.md).
+
 The owner adds MCP servers in **Customize**; every Claude agent gets their tools, in every sandbox, next to the built-in `dorks` server
 (`infra/bridge/src/mcp.ts`). A server's tools show up as `mcp__<name>__<tool>`.
 

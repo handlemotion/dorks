@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { modelLabel, type AgentModelChoice } from "@dorks/shared";
 import { CHILD_ENV_DENY } from "./config";
-import { FINAL_ANSWER_GUIDANCE } from "./guidance";
+import { COORDINATOR_GUIDANCE, FINAL_ANSWER_GUIDANCE, WORKER_GUIDANCE } from "./guidance";
+import type { CrewRole } from "@dorks/shared";
 import { asIdentity, type Identity } from "./runas";
 import type { Log } from "./redact";
 import { errTag, type Redactor } from "./redact";
@@ -105,6 +106,11 @@ export const COMPUTER_PROMPT = [
   "tasks that need a GUI or a real browser; prefer the shell for everything else. To show the user a screenshot in the chat, use",
   "`mcp__dorks__screenshot_share` (the computer tools' screenshots reach only you).",
 ].join(" ");
+
+/** A coordinator's or worker's standing instructions (docs/crew.md), on top of the final-answer guidance. */
+export function crewArgs(role: CrewRole | null): string[] {
+  return role ? ["--append-system-prompt", role === "coordinator" ? COORDINATOR_GUIDANCE : WORKER_GUIDANCE] : [];
+}
 
 export function computerArgs(driverPresent = existsSync(BOAT_COMPUTER_DRIVER)): string[] {
   return driverPresent ? ["--append-system-prompt", COMPUTER_PROMPT] : [];

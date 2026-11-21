@@ -21,6 +21,7 @@ import { rememberModelChoices } from "./models";
 import { claudeToken, cliSecrets, githubToken } from "./settings";
 import { mcpServerConfigs } from "./mcpServers";
 import { buildVarValues, getBuild } from "./builds";
+import { crewRole } from "./crew";
 import * as subs from "./subscriptions";
 import { randomBytes } from "node:crypto";
 
@@ -518,6 +519,7 @@ const configureFrame = (app: App, dork: DorkRow): Effect.Effect<ToBridge, Onboar
       repo: dork.repo ? { fullName: dork.repo, branch: dork.branch } : null,
       resumeSessionId: (dork.provider === "codex" ? dork.codexThreadId : dork.claudeSessionId) ?? null,
       ...(dork.titleSource === "message" ? nameFrom(app, dork.id) : {}),
+      ...(crewRole(app, dork) ? { role: crewRole(app, dork) } : {}),
     })),
   );
 

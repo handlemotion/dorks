@@ -17,6 +17,7 @@ const samples: Record<ClientEvent["type"], object> = {
   pr_opened: { url: "https://github.com/o/r/pull/1", number: 1 },
   pr_merged: { url: "https://github.com/o/r/pull/1", number: 1 },
   notify: { kinds: [], prs: [], text: "digest" },
+  crew: { direction: "in", peer: { id: "d", title: "Worker" }, kind: "report", text: "done" },
   subscription: { repo: "o/r", number: 1, status: "active" },
   build_draft: { draftId: "dr", buildId: "b", buildName: "web", note: "adds jq" },
   build_decision: { draftId: "dr", buildId: "b", buildName: "web", approved: true },

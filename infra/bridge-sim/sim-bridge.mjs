@@ -243,7 +243,7 @@ async function runTurn(text) {
 async function configure(cid) {
   const cfg = await client.action("configure");
   if (!cfg) return log("configure refused (the backend recorded why)");
-  log("configure: repo", cfg.repo.fullName, "branch", cfg.repo.branch, "resume", cfg.resumeSessionId, "env keys", Object.keys(cfg.env).join(","), "gh token", cfg.ghToken ? "yes" : "no");
+  log("configure: repo", cfg.repo?.fullName ?? "(none)", "branch", cfg.repo?.branch, "resume", cfg.resumeSessionId, "env keys", Object.keys(cfg.env).join(","), "gh token", cfg.ghToken ? "yes" : "no");
   sessionId = cfg.resumeSessionId ?? `sim-session-${Date.now()}`; // a real bridge: `claude --resume <id>` when set
   const model = SIM_MODELS.find((m) => m.model === (cfg.model ?? "default"))?.resolved ?? cfg.model;
   ev({ type: "system", subtype: "init", session_id: sessionId, ...(cfg.provider !== "codex" ? { model } : {}) });

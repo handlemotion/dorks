@@ -20,6 +20,7 @@ import { deleteMcpServer, listMcpServers, putMcpServer } from "../services/mcpSe
 import { CALLBACK_PATH, callbackPage, finishMcpSignIn, signOutMcp, startMcpSignIn } from "../services/mcpOAuth";
 import { forgetGithubRepos, githubRepos } from "../services/githubRepos";
 import { getPullRequest, mergePullRequest, updatePullRequestBranch } from "../services/pullRequest";
+import { mountMcp } from "./mcp";
 import { decideLocal, localAccessView, revokeGrant, revokeGrants, setLocalAccess } from "../services/local";
 
 const safeEqual = (a: string, b: string) => {
@@ -30,7 +31,7 @@ const safeEqual = (a: string, b: string) => {
 
 // Request bodies. A field a service checks itself (with its own message) stays `Unknown` here.
 const Loose = Schema.optional(Schema.Unknown);
-const CreateDork = Schema.Struct({ repo: Loose, message: Loose, title: Loose, provider: Loose, model: Loose, effort: Loose, fast: Loose, buildId: Loose, setup: Loose });
+const CreateDork = Schema.Struct({ repo: Loose, message: Loose, title: Loose, provider: Loose, model: Loose, effort: Loose, fast: Loose, buildId: Loose, setup: Loose, kind: Loose });
 const Text = Schema.Struct({ text: Loose });
 const Title = Schema.Struct({ title: Loose });
 const Theme = Schema.Struct({ theme: Loose });
@@ -107,6 +108,9 @@ export function uiApp(app: App): Hono {
     return c.json(errBody({ code: "failed", message: "Something went wrong" }), 500);
   });
 
+  // The owner's other agents reach dorks over MCP (http/mcp.ts, docs/crew.md); it checks the owner token itself.
+  mountMcp(api, app);
+
   const id = (c: Context) => c.req.param("id") as string;
   const name = (c: Context) => c.req.param("name") as string;
 
@@ -143,6 +147,7 @@ export function uiApp(app: App): Hono {
             fast: b.fast,
             buildId: b.buildId,
             setup: b.setup,
+            kind: b.kind,
           }),
         );
         return c.json({ id: dorkId }, 201);

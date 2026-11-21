@@ -1,3 +1,4 @@
+import type { CrewRole } from "@dorks/shared";
 import { callBackend } from "./prs";
 import type { Log } from "./redact";
 import { RpcError, type RpcMethods } from "./rpc";
@@ -8,8 +9,16 @@ import type { Transport } from "./transport";
 
 export type ShownPreview = { port: number; url: string; title?: string };
 
-export function previewMethods(t: Transport, log: Log): RpcMethods {
+export function previewMethods(t: Transport, log: Log, role: () => CrewRole | null = () => null): RpcMethods {
   return {
+    // `crew.role`: which crew tools the in-box MCP server lists (docs/crew.md). Answered here from the last configure.
+    "crew.role": () => ({ role: role() }),
+    // `crew`: a crew tool call. The server checks the tool against this dork's role and scopes every id to its crew; this only forwards.
+    crew: async (params) => {
+      const p = (params ?? {}) as Record<string, unknown>;
+      if (typeof p.tool !== "string") throw new RpcError("invalid", "tool is required");
+      return callBackend(t, log, () => t.crew({ tool: p.tool, args: p.args ?? {} }), true);
+    },
     "preview.show": async (params) => {
       const p = (params ?? {}) as { port?: unknown; title?: unknown; localhost?: unknown };
       if (typeof p.port !== "number" || !Number.isInteger(p.port) || p.port < 1 || p.port > 65535) throw new RpcError("invalid", "port must be an integer from 1 to 65535");

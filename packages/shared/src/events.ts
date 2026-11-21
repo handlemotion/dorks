@@ -14,7 +14,8 @@ export type TurnOutcome = z.infer<typeof turnOutcome>;
 const base = { seq: z.number().int(), dorkId: z.string(), ts: z.number() };
 
 export const clientEvent = z.discriminatedUnion("type", [
-  z.object({ ...base, type: z.literal("user_message"), text: z.string() }),
+  // `from`: a message a coordinator dork sent its worker (docs/crew.md); absent for the owner's own messages.
+  z.object({ ...base, type: z.literal("user_message"), text: z.string(), from: z.object({ id: z.string(), title: z.string() }).optional() }),
   z.object({ ...base, type: z.literal("assistant_delta"), messageId: z.string(), text: z.string() }),
   z.object({ ...base, type: z.literal("assistant_message"), messageId: z.string(), text: z.string() }),
   z.object({
@@ -42,6 +43,15 @@ export const clientEvent = z.discriminatedUnion("type", [
   z.object({ ...base, type: z.literal("pr_opened"), url: z.string(), number: z.number() }),
   z.object({ ...base, type: z.literal("pr_merged"), url: z.string(), number: z.number() }),
   // An autonomy notification was handed to the agent (the transcript's event card). `text` is the human-readable digest, without the envelope.
+  // A crew report or note (docs/crew.md): `in` received from `peer`, `out` sent to it. A report is a worker's final answer.
+  z.object({
+    ...base,
+    type: z.literal("crew"),
+    direction: z.enum(["in", "out"]),
+    peer: z.object({ id: z.string(), title: z.string() }),
+    kind: z.enum(["report", "note"]),
+    text: z.string(),
+  }),
   z.object({ ...base, type: z.literal("notify"), kinds: z.array(notifyKind), prs: z.array(prRef), text: z.string() }),
   // A PR subscription changed (subscribed, ended, or stalled after CI_FIX_MAX_ATTEMPTS).
   z.object({ ...base, type: z.literal("subscription"), repo: z.string(), number: z.number(), status: z.enum(["active", "stalled", "ended"]), reason: z.string().optional() }),

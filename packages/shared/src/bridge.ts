@@ -66,6 +66,8 @@ export const toBridge = z.discriminatedUnion("t", [
     nameFrom: z.string().optional(),
     // The owner's MCP servers (Customize, see mcp.ts), added to the agent's next to `dorks`. Absent from an older server: none.
     mcpServers: z.array(mcpServerConfig).max(50).optional(),
+    // The dork's place in a crew (docs/crew.md): its guidance and which crew tools the in-box MCP server lists. Absent: a plain dork.
+    role: z.enum(["coordinator", "worker"]).optional(),
   }),
   z.object({ t: z.literal("user_message"), id: z.string(), text: z.string() }), // bridge dedupes by id
   notifyFrame(),

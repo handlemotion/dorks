@@ -1,4 +1,4 @@
-import type { PrRef, SubscriptionView } from "@dorks/shared";
+import { CREW_WAIT_SLICE_MS, crewToolsFor, MAX_WAIT_SECONDS, renderCrew, type CrewResult, type CrewRole, type PrRef, type SubscriptionView } from "@dorks/shared";
 import { execFile } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -636,6 +636,24 @@ async function captureDesktop(): Promise<Buffer> {
 
 const byName = new Map(TOOLS.map((t) => [t.name, t]));
 
+// ---------------------------------------------------------------- crew tools (docs/crew.md)
+// Listed only for a coordinator or worker dork (the bridge answers `crew.role` from its configure). The table and the result text are
+// shared with the server's external MCP endpoint (packages/shared/src/crew.ts); the server scopes every call to this dork's crew.
+
+const crewTools = (role: CrewRole | null) => (role ? crewToolsFor(role).map(({ audience: _a, ...t }) => t) : []);
+
+async function runCrew(sock: string, name: string, args: Record<string, unknown>): Promise<string> {
+  const call = (a: Record<string, unknown>) => rpcCall<CrewResult>(sock, "crew", { tool: name, args: a });
+  if (name !== "dork_wait") return renderCrew(await call(args));
+  // One server call waits at most CREW_WAIT_SLICE_MS; repeat until something settles or the agent's own timeout is up.
+  const secs = typeof args.timeoutSeconds === "number" && args.timeoutSeconds > 0 ? Math.min(args.timeoutSeconds, MAX_WAIT_SECONDS) : 120;
+  const deadline = Date.now() + secs * 1000;
+  for (;;) {
+    const r = await call({ ...args, timeoutSeconds: Math.max(1, Math.min(CREW_WAIT_SLICE_MS, deadline - Date.now()) / 1000) });
+    if (r.tool !== "dork_wait" || !r.timedOut || Date.now() >= deadline - 500) return renderCrew(r);
+  }
+}
+
 type Id = string | number | null;
 interface Request {
   jsonrpc?: unknown;
@@ -648,7 +666,20 @@ const ok = (id: Id, result: unknown) => ({ jsonrpc: "2.0", id, result });
 const err = (id: Id, code: number, message: string) => ({ jsonrpc: "2.0", id, error: { code, message } });
 
 export class McpServer {
+  private role: Promise<CrewRole | null> | null = null;
   constructor(private env: NodeJS.ProcessEnv) {}
+
+  /** The dork's crew role, asked of the bridge once per MCP session (none outside a box or on an older bridge). */
+  private crewRole(): Promise<CrewRole | null> {
+    const sock = socketOf(this.env);
+    this.role ??= sock
+      ? rpcCall<{ role: CrewRole | null }>(sock, "crew.role").then(
+          (r) => r?.role ?? null,
+          () => null,
+        )
+      : Promise.resolve(null);
+    return this.role;
+  }
 
   /** One incoming message. Returns the reply, or null for notifications (which are never answered). */
   async handle(line: string): Promise<object | null> {
@@ -673,7 +704,8 @@ export class McpServer {
           instructions:
             "Tools for the pull requests you work on in this box, and for showing the user your work. `gh pr create` subscribes you automatically; subscribed PRs wake you with <dorks-event> turns when CI, reviews, comments or conflicts need you. " +
             "When you start a web server the user should see, call preview_show with its port. When you change anything visual, verify it with screenshot_share and put the image it returns in your final answer. " +
-            "To install tools, set variables or pre-clone repos for future sessions, search for the machine_ tools.",
+            "To install tools, set variables or pre-clone repos for future sessions, search for the machine_ tools. " +
+            "In a crew (a coordinator and its worker dorks), the dork_ tools start, message and follow the other dorks.",
         });
         break;
       }
@@ -681,7 +713,7 @@ export class McpServer {
         reply = ok(id, {});
         break;
       case "tools/list":
-        reply = ok(id, { tools: TOOLS.map(({ run: _run, ...t }) => t) });
+        reply = ok(id, { tools: [...TOOLS.map(({ run: _run, ...t }) => t), ...crewTools(await this.crewRole())] });
         break;
       case "tools/call":
         reply = ok(id, await this.call(params.name, params.arguments));
@@ -693,13 +725,15 @@ export class McpServer {
   }
 
   private async call(name: unknown, args: unknown) {
+    const crew = typeof name === "string" && crewTools(await this.crewRole()).some((t) => t.name === name);
     const tool = typeof name === "string" ? byName.get(name) : undefined;
     const result = (out: string | Content[], isError = false) => ({ content: typeof out === "string" ? [{ type: "text", text: out }] : out, isError });
-    if (!tool) return result(`Unknown tool "${String(name)}".`, true);
+    if (!tool && !crew) return result(`Unknown tool "${String(name)}".`, true);
     const sock = socketOf(this.env);
     if (!sock) return result("This only works inside a dork box (DORKS_SOCK is not set).", true);
+    const a = args && typeof args === "object" && !Array.isArray(args) ? (args as Record<string, unknown>) : {};
     try {
-      return result(await tool.run(args && typeof args === "object" && !Array.isArray(args) ? (args as Record<string, unknown>) : {}, sock));
+      return result(crew ? await runCrew(sock, name as string, a) : await tool!.run(a, sock));
     } catch (e) {
       return result(e instanceof ToolError ? e.message : describeRpcError(e), true);
     }
