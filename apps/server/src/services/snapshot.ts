@@ -6,6 +6,8 @@ import { update } from "../db";
 import { boatBuildFailureMessage } from "../lib/boatSnapshots";
 import { instanceId } from "../lib/box";
 import { hasTimer, setTimer } from "../lifecycle/dispatch";
+import { startRun } from "./buildRuns";
+import { getBuild } from "./builds";
 import { boatKey, readSettings } from "./settings";
 
 // "Prepare Boat": builds this install's base snapshot in the user's Boat account, one click, instead of the manual `boat` CLI steps.
@@ -172,12 +174,33 @@ export function buildIfMissing(app: App, opts: { retryFailed?: boolean } = {}): 
 }
 
 /**
+ * On start: the snapshot this app built is in use but carries an older bridge than the app now has (the app was updated). Rebuild it,
+ * or every new sandbox runs the old bridge and misses what changed (new MCP tools, protocol fixes). A failed build is not retried.
+ */
+export async function rebuildIfStale(app: App): Promise<void> {
+  try {
+    const s = readSettings(app);
+    if (!s.boatKeyEnc) return;
+    const view = await snapshotView(app);
+    if (!view.stale || view.state !== "ready" || !view.currentBundleId) return;
+    console.error(`base snapshot is stale (built from ${view.builtBundleId}, app has ${view.currentBundleId}): rebuilding`);
+    queueBuild(app, { bundleId: view.currentBundleId });
+  } catch (e) {
+    console.error("stale snapshot check failed", e instanceof Error ? e.message.slice(0, 200) : "unknown");
+  }
+}
+
+/**
  * After a restart: a build that was running when the process died is queued again, as a new attempt. A Boat key saved with no
  * snapshot and no build yet (the process stopped between saving the key and queueing the build) starts one now.
  */
 export function recoverSnapshotBuild(app: App) {
   const row = readBuild(app);
-  if (row.status === "idle") return buildIfMissing(app);
+  if (row.status === "idle") {
+    buildIfMissing(app);
+    void rebuildIfStale(app);
+    return;
+  }
   if (row.status !== "running" || hasTimer(app, "", SNAPSHOT_JOB)) return;
   const attempt = row.attempt + 1;
   update(app.db, "snapshot_build", { id: 1 }, { attempt });
@@ -257,7 +280,26 @@ const buildSteps = Effect.fnUntraced(function* (app: App, attempt: number, first
   yield* progress(app, attempt, "finish");
   yield* finishBuild(app, attempt, name, assets.bundleId);
   console.error(`snapshot build ready: ${name}`);
+  rebuildImages(app);
 });
+
+/**
+ * Build images are layered on the base snapshot, so they carry its bridge too. After a new base, rebuild every build with an image
+ * from its approved spec, or dorks on those builds would keep the old bridge. A build already running is left to finish.
+ */
+function rebuildImages(app: App) {
+  const ids = app.db.all<{ id: string }>("SELECT id FROM builds WHERE image IS NOT NULL").map((r) => r.id);
+  for (const id of ids) {
+    const b = getBuild(app, id);
+    if (!b?.image || b.approvedHash !== b.specHash) continue;
+    try {
+      startRun(app, id, { kind: "image", by: "owner" });
+      console.error(`build image queued after the base snapshot changed: ${id}`);
+    } catch (e) {
+      console.error("build image not rebuilt", id, e instanceof Error ? e.message.slice(0, 200) : "unknown");
+    }
+  }
+}
 
 /** The build sandbox, deleted when the attempt's scope closes. Its id is recorded first, so a crash cannot lose track of it. */
 const buildSandbox = (app: App, driver: SnapshotOps, label: string, attempt: number) =>
