@@ -65,8 +65,12 @@ const only = (scope: Scope, ...who: Scope["who"][]) => {
 
 // ---------------------------------------------------------------- views
 
-/** Done with its turn: idle, asleep or failed, and nothing waiting to be delivered to it. */
+/**
+ * Done with its turn: idle or asleep with nothing waiting to be delivered, or failed. A failed dork keeps its undelivered message for a
+ * retry, but nothing moves until someone sends another one, so it counts as settled.
+ */
 export function isSettled(app: App, d: DorkRow): boolean {
+  if (d.state === "error") return true;
   return SETTLED.has(d.state) && !openCommands(app.db, d.id).some((c) => c.kind === "user_message" || c.kind === "notify");
 }
 
@@ -151,6 +155,8 @@ function create(app: App, scope: Scope, a: Args): CrewResult {
   const input = { message: a.message as string, repo: str(a.repo), title: str(a.title), buildId: a.buildId, model: a.model, effort: a.effort };
   let id: string;
   if (scope.who === "coordinator") {
+    // A tool call that lands after the owner archived the coordinator must not start a worker the archive did not stop.
+    if (scope.self.archived) fail("archived", "You are archived: you cannot start workers.");
     if (a.coordinator === true) fail("forbidden", "A coordinator starts workers only; it cannot start another coordinator.");
     if (!input.repo) fail("invalid", "`repo` is required: a worker works in a repository (owner/name).");
     checkWorkerRoom(app, scope.self.id);

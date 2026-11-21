@@ -81,6 +81,8 @@ describe("crew scope", () => {
     expect(await c.code(c.call({ dorkId: a }, "dork_archive", { id: ws[0], archived: false }))).toBe("limit");
     await c.call(OWNER, "dork_archive", { id: a });
     expect(ws.every((w) => c.h.dork(w).archived)).toBe(true);
+    // A late tool call from the archived coordinator cannot bring a crew back.
+    expect(await c.code(c.call({ dorkId: a }, "dork_create", { message: "late", repo: "acme/app" }))).toBe("archived");
   });
 });
 
