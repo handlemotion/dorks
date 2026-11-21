@@ -47,11 +47,11 @@ function MarkdownCode({ node, className, children, ...props }: React.ComponentPr
 }
 
 // Streamdown's own table sits in a bordered, padded card (room for its copy/download controls, which we turn off) around a second
-// bordered box: a table in a card. Just the table: it scrolls sideways when wide, its header fill and row rules come from
+// bordered box: a table in a card. Just the table in one 6px border: it scrolls sideways when wide, its header fill and row rules come from
 // Streamdown's thead/tr/td.
 function MarkdownTable({ node: _node, className, children, ...props }: React.ComponentProps<"table"> & ExtraProps) {
   return (
-    <div data-streamdown="table-wrapper" className="my-4 overflow-x-auto rounded-md">
+    <div data-streamdown="table-wrapper" className="my-4 overflow-x-auto rounded-md border border-border">
       <table data-streamdown="table" className={cn("w-full divide-y divide-border", className)} {...props}>
         {children}
       </table>
