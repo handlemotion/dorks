@@ -146,7 +146,8 @@ export function makeBoatCli(bin: string | null, env: NodeJS.ProcessEnv = process
     login: () =>
       new Promise((resolve, reject) => {
         if (!bin) return reject(new BoatCliError("The Boat CLI isn’t installed."));
-        const child = spawn(bin, ["login", "--wait", "--json"], { env: cliEnv(env), stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
+        // `--new`: with a link left pending (a sign-in that was abandoned), plain `--wait` prints nothing and waits on that one.
+        const child = spawn(bin, ["login", "--wait", "--new", "--json"], { env: cliEnv(env), stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
         let linked = false;
         let finished = false;
         let failure: string | undefined;

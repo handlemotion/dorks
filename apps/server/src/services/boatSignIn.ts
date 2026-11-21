@@ -89,9 +89,13 @@ export async function startBoatSignIn(app: App): Promise<BoatSignInView | null> 
     }
     const { link, done } = await app.boatCli.login();
     set(app, signingIn(link));
+    // A sign-in replaced by a newer one (pressed again after its link expired) fails; only the current one may report.
+    const stillCurrent = () => current(app).view.url === link.url;
     done.then(
       () => connect(app),
-      (e) => set(app, { state: "failed", error: `The Boat sign-in did not finish: ${messageOf(e)}` }),
+      (e) => {
+        if (stillCurrent()) set(app, { state: "failed", error: `The Boat sign-in did not finish: ${messageOf(e)}` });
+      },
     );
   } catch (e) {
     set(app, { state: "failed", error: messageOf(e) });
