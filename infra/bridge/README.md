@@ -177,7 +177,8 @@ the Claude child's environment (they are children of it).
 `<state>/claude-settings.json`, and the agent is started with `claude --settings <that file>`:
 
 ```json
-{ "hooks": {
+{ "attribution": { "commit": "", "pr": "" },
+  "hooks": {
   "Stop":         [{ "hooks": [{ "type": "command", "command": "'<node>' '<cli.mjs>' dorks hook stop", "timeout": 30 }] }],
   "PostToolUse":  [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "… dorks hook post-tool-use", "timeout": 15 }] }],
   "SessionStart": [{ "matcher": "startup|resume|compact", "hooks": [{ "type": "command", "command": "… dorks hook session-start", "timeout": 10 }] }]
@@ -190,6 +191,9 @@ as the git credential helper) in its `dorks` role, so it does not depend on `PAT
 JSON on stdin, calls `hook.stop` / `hook.postToolUse` / `hook.sessionStart` on `DORKS_SOCK` and prints the answer. **It fails open:** no socket, an unreachable or
 slow bridge, an error answer, unreadable input or any exception ends in exit 0 with no output, which Claude Code reads as "no opinion", so a broken hook never wedges
 the agent. A handler that throws on the bridge side does the same (one `hook … failed: <error name>` log line).
+
+The same file sets `attribution` to empty, so Claude Code never adds its own `Co-Authored-By` trailer or "Generated with Claude Code" line to a commit
+or PR on any machine; flag settings outrank the user's and the repo's files, so neither can turn it back on (checked with the real CLI).
 
 | Hook | What the bridge does |
 |---|---|

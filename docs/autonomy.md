@@ -123,7 +123,7 @@ Rendering is done by the server: one `<dorks-event>` envelope per notification, 
   - After a successful `gh pr create`, it parses the PR URL from stdout and calls `pr.sub` with `source: "auto"`.
   - It never blocks or alters output.
 - **Multi-repo**: `configure` names the starting repo. Any other `github.com` repo the agent clones uses the same credential helper, configured globally for the Claude user (`credential.https://github.com.helper`).
-- **Hooks** are written to `<state>/claude-settings.json` and passed with `claude --settings <file>`. `--settings` sits above the user's and the project's settings and hooks from every source run, so a repo's own `.claude/settings.json` hooks still fire. All of them are command hooks running `dorks hook <stop|post-tool-use|session-start>` (through the bundle's absolute path, so they do not depend on `PATH`). The command reads the hook JSON on stdin, calls the matching method on `DORKS_SOCK` and prints the answer; **it fails open** (any error: exit 0, no output).
+- **Hooks** are written to `<state>/claude-settings.json` and passed with `claude --settings <file>`. `--settings` sits above the user's and the project's settings and hooks from every source run, so a repo's own `.claude/settings.json` hooks still fire. All of them are command hooks running `dorks hook <stop|post-tool-use|session-start>` (through the bundle's absolute path, so they do not depend on `PATH`). The command reads the hook JSON on stdin, calls the matching method on `DORKS_SOCK` and prints the answer; **it fails open** (any error: exit 0, no output). The same file sets `attribution` to empty: Claude Code never attributes commits or PRs itself.
 
 | Hook | Behaviour |
 |---|---|

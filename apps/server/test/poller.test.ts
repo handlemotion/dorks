@@ -230,7 +230,10 @@ describe("poller", () => {
   });
 
   it("a plain close names who closed it, and the agent's own close does not wake it", async () => {
-    for (const [closer, inbox] of [["alice", ["Closed by alice."]], ["agent-bot", []]] as const) {
+    for (const [closer, inbox] of [
+      ["alice", ["Closed by alice."]],
+      ["agent-bot", []],
+    ] as const) {
       const s = await setup();
       await pollOnce(s.h.app);
       s.gh.state.pr.state = "closed";
