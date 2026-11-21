@@ -84,7 +84,7 @@ The pattern to copy for any toolbar:
 - A pull request always shows its state, from `prStatus` / `PrIcon` (`apps/web/src/components/PrStatus.tsx`), wherever it appears (PR
   header, its tab, the New tab index, the sidebar's `#N`, the files bar): open green, draft grey, merged violet, closed red. A state the
   server has not read yet is grey, never a guessed green.
-- Padding is balanced: a block or list row split by hairlines (PR properties, description, checks, files, comments) has the same padding top and bottom as
+- Padding is balanced: a block or list row split by hairlines (PR description, checks, files, comments) has the same padding top and bottom as
   left and right (`p-(--details-text)`, 18px in Chat details), not a fixed short height under wide side padding. Dense lists
   without lines (Progress steps, tasks, menus) keep their compact rows.
 

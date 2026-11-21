@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
+  ArrowLeftIcon,
   CheckIcon,
   CircleAlertIcon,
   CircleCheckIcon,
@@ -8,6 +9,7 @@ import {
   ChevronRightIcon,
   ChevronsDownUpIcon,
   ChevronsUpDownIcon,
+  CopyIcon,
   ExternalLinkIcon,
   GitCompareArrowsIcon,
   GitMergeIcon,
@@ -29,8 +31,8 @@ import { BAR_BUTTON } from './PreviewBrowser'
 import { Tip } from './Tip'
 import { PrIcon, prStatus, type PrStatusState } from './PrStatus'
 
-// The Changes tab of Chat details, pull request first: its state, title and merge button on top, then in-panel tabs for its
-// overview (who, where, checks, the description in collapsible sections), its files (the diff) and its comments. Before a pull
+// The Changes tab of Chat details, pull request first: its state, repository, title and one line of who, where and how big on
+// top, then in-panel tabs for its overview (the description in collapsible sections), its files (the diff) and its comments. Before a pull
 // request exists it is the plain list of files the agent changed.
 
 export type FileChange = { path: string; additions: number; deletions: number; /** The file's unified diff (`git diff` output), when loaded: the row opens it. */ patch?: string }
@@ -200,9 +202,11 @@ function PullRequestView({
             </Tip>
           </span>
         </div>
-        <h2 className="mt-1.5 text-lg leading-snug text-pretty">
-          {view.title} <span className="text-muted-foreground tabular-nums">#{view.number}</span>
-        </h2>
+        <div className="mt-3 truncate text-xs text-muted-foreground tabular-nums">
+          {view.repo} #{view.number}
+        </div>
+        <h2 className="mt-1 text-lg leading-snug text-pretty">{view.title}</h2>
+        <PrMeta view={view} stack={stack} onOpenPr={onOpenPr} />
       </div>
       <Tabs value={section} onValueChange={(v) => setSection(v as Section)} className="min-h-0 flex-1 gap-0">
         <div className="flex shrink-0 items-center gap-0.5 border-b px-(--details-edge) pb-3">
@@ -225,7 +229,7 @@ function PullRequestView({
           <PrActions view={view} data={data} onAsk={onAsk} />
         </div>
         <TabsContent value="overview">
-          <Overview view={view} stack={stack} onOpenPr={onOpenPr} />
+          <Overview view={view} />
         </TabsContent>
         <TabsContent value="files">
           {withPatch.length > 0 && (
@@ -542,47 +546,67 @@ function MergeButton({
   )
 }
 
-/** Who opened it, from which branch into which, when, its checks and size; then the description, its sections collapsible. */
-function Overview({ view, stack, onOpenPr }: { view: PullRequestView; stack?: PrStackEntry[]; onOpenPr?: (url: string) => void }) {
-  const sections = useMemo(() => descriptionSections(view.body), [view.body])
+/**
+ * One line of who and where under the title, in place of a properties block: the author, base ← head (the head copyable), the
+ * stack when there is one, then the size. It wraps at narrow widths; the branch chips truncate.
+ */
+function PrMeta({ view, stack, onOpenPr }: { view: PullRequestView; stack?: PrStackEntry[]; onOpenPr?: (url: string) => void }) {
   const opened = new Date(view.createdAt)
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const t = window.setTimeout(() => setCopied(false), 1500)
+    return () => window.clearTimeout(t)
+  }, [copied])
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-muted-foreground">
+      <span className="flex min-w-0 items-center" title={`Opened ${opened.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`}>
+        <Person login={view.author.login} avatarUrl={view.author.avatarUrl} />
+      </span>
+      <span className="flex min-w-0 items-center gap-1">
+        <Branch name={view.baseRef} />
+        <ArrowLeftIcon className="size-3 shrink-0" aria-label="from" />
+        <Branch name={view.headRef} />
+        <Tip label={copied ? 'Copied' : 'Copy branch name'}>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
+            aria-label="Copy branch name"
+            onClick={() => void navigator.clipboard.writeText(view.headRef).then(() => setCopied(true))}
+          >
+            {copied ? <CheckIcon /> : <CopyIcon />}
+          </Button>
+        </Tip>
+      </span>
+      {stack && (
+        <span className="flex min-w-0 items-center gap-1.5">
+          Stack <StackPath stack={stack} onOpenPr={onOpenPr} />
+        </span>
+      )}
+      <span className="flex items-center gap-2 tabular-nums">
+        {view.changedFiles} {view.changedFiles === 1 ? 'file' : 'files'}
+        <Stat additions={view.additions} deletions={view.deletions} />
+      </span>
+    </div>
+  )
+}
+
+/** A branch name in mono on a faint fill, truncated when the line runs out of room. */
+function Branch({ name }: { name: string }) {
+  return (
+    <span className="min-w-0 truncate rounded-(--control-radius) bg-foreground/[0.05] px-1.5 py-0.5 font-mono text-xs text-foreground/80" title={name}>
+      {name}
+    </span>
+  )
+}
+
+/** The description, its sections collapsible. */
+function Overview({ view }: { view: PullRequestView }) {
+  const sections = useMemo(() => descriptionSections(view.body), [view.body])
   return (
     <div>
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2.5 p-(--details-text)">
-        <Meta label="Author">
-          <Person login={view.author.login} avatarUrl={view.author.avatarUrl} />
-        </Meta>
-        <Meta label="Repository">
-          <span className="truncate">
-            <span className="text-muted-foreground">{view.repo.split('/')[0]}/</span>
-            {view.repo.split('/')[1]}
-          </span>
-        </Meta>
-        <Meta label="Branch">
-          <span className="truncate font-mono text-[13px]" title={`${view.headRef} → ${view.baseRef}`}>
-            {view.headRef} <span className="text-muted-foreground">→ {view.baseRef}</span>
-          </span>
-        </Meta>
-        {stack && (
-          <Meta label="Stack">
-            <StackPath stack={stack} onOpenPr={onOpenPr} />
-          </Meta>
-        )}
-        <Meta label="Opened">
-          <span className="tabular-nums">
-            {opened.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} {opened.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
-          </span>
-        </Meta>
-        <Meta label="Changes">
-          <span className="flex items-baseline gap-2">
-            <Stat additions={view.additions} deletions={view.deletions} />
-            <span className="text-muted-foreground">
-              in {view.changedFiles} {view.changedFiles === 1 ? 'file' : 'files'}
-            </span>
-          </span>
-        </Meta>
-      </dl>
-      <div className="border-t p-(--details-text) [&>:first-child]:mt-0 [&>:last-child]:mb-0 [&>:last-child>:last-child]:mb-0">
+      <div className="p-(--details-text) [&>:first-child]:mt-0 [&>:last-child]:mb-0 [&>:last-child>:last-child]:mb-0">
         {sections.length === 0 ? (
           <p className="text-muted-foreground">No description.</p>
         ) : (
@@ -596,7 +620,7 @@ function Overview({ view, stack, onOpenPr }: { view: PullRequestView; stack?: Pr
 /** A stack, root first: each PR's number in its state's colour, the one shown in full weight; the others open their tab. */
 function StackPath({ stack, onOpenPr }: { stack: PrStackEntry[]; onOpenPr?: (url: string) => void }) {
   return (
-    <span className="flex min-w-0 flex-wrap items-center justify-end gap-x-1 tabular-nums">
+    <span className="flex min-w-0 flex-wrap items-center gap-x-1 tabular-nums">
       {stack.map((p, i) => {
         const { className } = prStatus(p.state, p.draft)
         const label = p.number ? `#${p.number}` : 'PR'
@@ -616,15 +640,6 @@ function StackPath({ stack, onOpenPr }: { stack: PrStackEntry[]; onOpenPr?: (url
         )
       })}
     </span>
-  )
-}
-
-function Meta({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <>
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="flex min-w-0 items-center justify-end text-right">{children}</dd>
-    </>
   )
 }
 
