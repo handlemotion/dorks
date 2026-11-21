@@ -25,16 +25,15 @@ const cstr = (b: Uint8Array, start: number, len: number) => {
 };
 const octal = (b: Uint8Array, start: number, len: number) => parseInt(cstr(b, start, len).trim() || "0", 8);
 
-/** `key=value` records of a pax header (`<len> key=value\n`). */
+/** `key=value` records of a pax header (`<len> key=value\n`). `len` counts bytes, so records are cut from the bytes, then decoded. */
 function pax(b: Uint8Array): Record<string, string> {
   const out: Record<string, string> = {};
-  const s = text(b);
   let i = 0;
-  while (i < s.length) {
-    const sp = s.indexOf(" ", i);
-    const len = Number(s.slice(i, sp));
-    if (!(len > 0) || sp < 0) break;
-    const rec = s.slice(sp + 1, i + len - 1);
+  while (i < b.length) {
+    const sp = b.indexOf(0x20, i);
+    const len = sp > i ? Number(text(b.subarray(i, sp))) : NaN;
+    if (!(len > 0) || i + len > b.length) break;
+    const rec = text(b.subarray(sp + 1, i + len - 1)); // without the trailing newline
     const eq = rec.indexOf("=");
     if (eq > 0) out[rec.slice(0, eq)] = rec.slice(eq + 1);
     i += len;

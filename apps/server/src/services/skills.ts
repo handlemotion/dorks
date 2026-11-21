@@ -231,7 +231,10 @@ export async function installSkills(app: App, input: { source?: unknown; skills?
 export async function updateSkill(app: App, name: string): Promise<{ updated: boolean }> {
   const row = app.db.get<Row>("SELECT * FROM skills WHERE name = ?", name);
   if (!row) fail("not_found", "no such skill");
-  const r = await resolve(app, `${row.repo}${row.ref ? `#${row.ref}` : ""}`);
+  const ref = row.ref ? `#${row.ref}` : "";
+  // Its own folder first (a root SKILL.md would hide a nested skill from a whole-repo search), then the repo, for a moved skill.
+  const atPath = row.path ? await resolve(app, `${row.repo}/${row.path}${ref}`).catch((e: unknown) => (e instanceof AppFail && e.error.code === "not_found" ? null : Promise.reject(e))) : null;
+  const r = atPath?.found.some((f) => f.path === row.path) ? atPath : await resolve(app, `${row.repo}${ref}`);
   const s = r.found.find((f) => f.path === row.path) ?? r.found.find((f) => f.name === row.name);
   if (!s) fail("not_found", `${row.repo} no longer has this skill.`);
   checkSize(s);

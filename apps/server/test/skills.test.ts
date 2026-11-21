@@ -48,10 +48,10 @@ function tarball(files: Record<string, string | { data: string; exec: true }>): 
     blocks.push(header(name, data.length, type, mode), data, Buffer.alloc((512 - (data.length % 512)) % 512));
   };
   const paxRec = (k: string, v: string) => {
-    const body = ` ${k}=${v}\n`;
-    let len = body.length + 2;
-    if (String(len).length + body.length !== len) len = String(len + 1).length + body.length;
-    return `${len}${body}`;
+    const body = Buffer.byteLength(` ${k}=${v}\n`);
+    let len = body + 2;
+    if (String(len).length + body !== len) len = String(len + 1).length + body;
+    return `${len} ${k}=${v}\n`;
   };
   add("pax_global_header", Buffer.from(paxRec("comment", "abc123")), "g");
   for (const [path, f] of Object.entries(files)) {
@@ -65,7 +65,7 @@ function tarball(files: Record<string, string | { data: string; exec: true }>): 
 }
 
 const md = (name: string, description: string) => `---\nname: ${name}\ndescription: >\n  ${description}\n---\n# ${name}\n`;
-const LONG = `skills/pdf/references/${"deep/".repeat(20)}notes.md`;
+const LONG = `skills/pdf/references/${"tiefé/".repeat(20)}notes.md`; // a pax path whose byte length differs from its string length
 const REPO = tarball({
   "README.md": "# repo",
   "skills/pdf/SKILL.md": md("pdf", "Read and fill PDFs."),
@@ -120,5 +120,20 @@ describe("skills from GitHub", () => {
     expect((await call("POST", "/api/skills/pdf/update")).json).toEqual({ updated: true });
     expect((await call("GET", "/api/skills")).json[0]).toMatchObject({ sha: head, description: "Read, fill and merge PDFs.", fileCount: 1 });
     expect(skillBundle(h.app, id, "pdf").digest).not.toBe(bundle.digest);
+  });
+
+  it("updates a nested skill in a repo whose root is a skill too", async () => {
+    let head = "c".repeat(40);
+    const repo = tarball({ "SKILL.md": md("root", "The root."), "skills/inner/SKILL.md": md("inner", "Nested.") });
+    const h = harness();
+    h.app.fetch = fakeFetch((url) => {
+      if (url.pathname === "/repos/o/r/commits/HEAD") return new Response(head);
+      if (url.pathname.startsWith("/repos/o/r/tarball/")) return new Response(repo);
+      return new Response("{}", { status: 404 });
+    });
+    const { installSkills, updateSkill } = await import("../src/services/skills");
+    expect(await installSkills(h.app, { source: "o/r/skills/inner" })).toEqual({ installed: ["inner"] });
+    head = "d".repeat(40);
+    expect(await updateSkill(h.app, "inner")).toEqual({ updated: false }); // a new commit, same files: found, not "gone"
   });
 });
