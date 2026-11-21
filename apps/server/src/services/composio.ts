@@ -6,12 +6,29 @@ import { deleteMcpServer, putMcpServer } from "./mcpServers";
 // Composio (docs/mcp.md): the apps that only sign in with OAuth (Figma, Slack, Gmail…) reach agents through one Composio MCP server.
 // The owner saves a Composio API key once; it becomes the `composio` MCP server (a tool router session's URL plus the key as a header,
 // sealed like any server's headers), and each app is a connected account of one Composio user that the owner signs in to in a browser.
+//
+// Two kinds of key work. A project key (`ak_…`, `x-api-key`) acts in one developer project as the user `dorks-owner`. A personal
+// user key (`uak_…`, `x-user-api-key`, Composio's "For You") acts in the owner's consumer project as the owner's own Composio user,
+// so the apps already connected in For You, its Instant setting and the account's credits all carry over. Composio scopes such a key
+// with `x-org-id` + `x-project-id`, which the session's MCP server needs too (docs.composio.dev/docs/consumer-agents).
 
 export const COMPOSIO_SERVER = "composio";
 const API = "https://backend.composio.dev/api";
 const USER_ID = "dorks-owner";
 const TOOLKIT = /^[a-z0-9_]{1,64}$/;
 const KEY_HEADER = "x-api-key";
+const USER_KEY_HEADER = "x-user-api-key";
+const ORG_HEADER = "x-org-id";
+const PROJECT_HEADER = "x-project-id";
+const NANO_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** How to act on Composio: the headers every request (and the MCP server) carries, and the Composio user the apps belong to. */
+interface Cred {
+  headers: Record<string, string>;
+  userId: string;
+  /** A personal key's consumer project: whether Instant (tools billed to the account's credits, such as web search) is on. */
+  instant?: boolean;
+}
 
 interface Account {
   id: string;
@@ -29,12 +46,12 @@ async function reason(res: Response): Promise<string | undefined> {
   }
 }
 
-async function call<T>(app: App, key: string, method: string, path: string, body?: unknown): Promise<T> {
+async function call<T>(app: App, auth: Record<string, string>, method: string, path: string, body?: unknown): Promise<T> {
   let res: Response;
   try {
     res = await app.fetch(`${API}${path}`, {
       method,
-      headers: { [KEY_HEADER]: key, ...(body === undefined ? {} : { "content-type": "application/json" }) },
+      headers: { ...auth, ...(body === undefined ? {} : { "content-type": "application/json" }) },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(15_000),
     });
@@ -52,65 +69,100 @@ async function call<T>(app: App, key: string, method: string, path: string, body
   return (res.status === 204 ? undefined : await res.json()) as T;
 }
 
-/** The saved key, from the `composio` server's sealed headers. */
-async function savedKey(app: App): Promise<string | undefined> {
-  const r = app.db.get<{ secrets_enc: string }>("SELECT secrets_enc FROM mcp_servers WHERE name = ?", COMPOSIO_SERVER);
-  if (!r) return undefined;
-  const sealed = JSON.parse(await decrypt(app.ring, r.secrets_enc, aad.mcpServer(OWNER, COMPOSIO_SERVER))) as { headers: Record<string, string> };
-  return sealed.headers[KEY_HEADER];
+/** A personal key's consumer project, resolved (and provisioned when absent) in the key's own organization. */
+async function personal(app: App, key: string, orgId?: string): Promise<Cred> {
+  const auth = { [USER_KEY_HEADER]: key };
+  if (!orgId) {
+    const info = await call<{ project?: { org?: { id?: unknown } } }>(app, auth, "GET", "/v3.1/auth/session/info");
+    if (typeof info?.project?.org?.id !== "string") fail("failed", "Composio returned no organization for this key");
+    orgId = info.project.org.id;
+  }
+  const p = await call<{ org_id?: unknown; project_nano_id?: unknown; consumer_user_id?: unknown; config?: { enable_instant?: unknown } }>(
+    app,
+    { ...auth, [ORG_HEADER]: orgId },
+    "POST",
+    "/v3.1/org/consumer/project/resolve",
+  );
+  const org = typeof p?.org_id === "string" ? p.org_id : orgId;
+  if (!NANO_ID.test(org) || typeof p?.project_nano_id !== "string" || !NANO_ID.test(p.project_nano_id) || typeof p.consumer_user_id !== "string" || !p.consumer_user_id)
+    fail("failed", "Composio returned no personal project for this key");
+  return {
+    headers: { ...auth, [ORG_HEADER]: org, [PROJECT_HEADER]: p.project_nano_id },
+    userId: p.consumer_user_id,
+    instant: typeof p.config?.enable_instant === "boolean" ? p.config.enable_instant : undefined,
+  };
 }
 
-const newSession = (app: App, key: string) => call<{ session_id: string; mcp: { url: string } }>(app, key, "POST", "/v3.1/tool_router/session", { user_id: USER_ID });
+const credOf = (app: App, key: string): Promise<Cred> | Cred => (key.startsWith("uak_") ? personal(app, key) : { headers: { [KEY_HEADER]: key }, userId: USER_ID });
+
+/** The saved credential, from the `composio` server's sealed headers. */
+async function savedCred(app: App): Promise<Cred | undefined> {
+  const r = app.db.get<{ secrets_enc: string }>("SELECT secrets_enc FROM mcp_servers WHERE name = ?", COMPOSIO_SERVER);
+  if (!r) return undefined;
+  const { headers } = JSON.parse(await decrypt(app.ring, r.secrets_enc, aad.mcpServer(OWNER, COMPOSIO_SERVER))) as { headers: Record<string, string> };
+  if (headers[USER_KEY_HEADER]) return personal(app, headers[USER_KEY_HEADER], headers[ORG_HEADER]);
+  return headers[KEY_HEADER] ? { headers: { [KEY_HEADER]: headers[KEY_HEADER] }, userId: USER_ID } : undefined;
+}
+
+const newSession = (app: App, c: Cred) => call<{ session_id: string; mcp: { url: string } }>(app, c.headers, "POST", "/v3.1/tool_router/session", { user_id: c.userId });
 
 /** Checks the key by opening a session, then saves the session's MCP server for every agent. */
 export async function connectComposio(app: App, apiKey: unknown): Promise<void> {
   if (typeof apiKey !== "string" || !apiKey.trim() || apiKey.length > 512) fail("invalid", "enter a Composio API key");
-  const key = apiKey.trim();
-  const s = await newSession(app, key);
+  const cred = await credOf(app, apiKey.trim());
+  const s = await newSession(app, cred);
   if (typeof s?.mcp?.url !== "string") fail("failed", "Composio returned no MCP URL");
-  await putMcpServer(app, COMPOSIO_SERVER, { transport: "http", url: s.mcp.url, headers: { [KEY_HEADER]: key } });
+  await putMcpServer(app, COMPOSIO_SERVER, { transport: "http", url: s.mcp.url, headers: cred.headers });
 }
 
 export const disconnectComposio = (app: App) => deleteMcpServer(app, COMPOSIO_SERVER);
 
-async function accounts(app: App, key: string, toolkit?: string): Promise<Account[]> {
-  const q = new URLSearchParams({ user_ids: USER_ID, statuses: "ACTIVE", limit: "200" });
+async function accounts(app: App, c: Cred, toolkit?: string): Promise<Account[]> {
+  const q = new URLSearchParams({ user_ids: c.userId, statuses: "ACTIVE", limit: "200" });
   if (toolkit) q.set("toolkit_slugs", toolkit);
-  return (await call<{ items?: Account[] }>(app, key, "GET", `/v3/connected_accounts?${q}`)).items ?? [];
+  return (await call<{ items?: Account[] }>(app, c.headers, "GET", `/v3/connected_accounts?${q}`)).items ?? [];
 }
 
 /** Whether a key is saved, and the apps signed in through it. */
 export async function composioStatus(app: App): Promise<ComposioStatus> {
-  const key = await savedKey(app);
-  if (!key) return { connected: false, toolkits: [] };
+  const r = app.db.get<{ name: string }>("SELECT name FROM mcp_servers WHERE name = ?", COMPOSIO_SERVER);
+  if (!r) return { connected: false, toolkits: [] };
+  let cred: Cred | undefined;
   let list: Account[];
   try {
-    list = await accounts(app, key);
+    cred = await savedCred(app);
+    if (!cred) return { connected: false, toolkits: [] };
+    list = await accounts(app, cred);
   } catch (e) {
     return { connected: true, toolkits: [], error: e instanceof AppFail ? e.error.message : "Composio could not be read" };
   }
   const slugs = list.map((a) => a.toolkit?.slug).filter((s): s is string => !!s);
-  return { connected: true, toolkits: [...new Set(slugs)].sort() };
+  return {
+    connected: true,
+    toolkits: [...new Set(slugs)].sort(),
+    ...(cred.headers[USER_KEY_HEADER] ? { personal: true } : {}),
+    ...(cred.instant === undefined ? {} : { instant: cred.instant }),
+  };
 }
 
 const toolkitOf = (v: string) => (TOOLKIT.test(v) ? v : fail("invalid", "unknown app"));
 
-async function requireKey(app: App) {
-  return (await savedKey(app)) ?? fail("not_configured", "Add your Composio API key first.");
+async function requireCred(app: App) {
+  return (await savedCred(app)) ?? fail("not_configured", "Add your Composio API key first.");
 }
 
 /** A Composio sign-in page for one app; the owner finishes it in a browser and the account shows up in `composioStatus`. */
 export async function composioLink(app: App, toolkit: string): Promise<{ url: string }> {
-  const key = await requireKey(app);
-  const s = await newSession(app, key);
-  const link = await call<{ redirect_url?: string }>(app, key, "POST", `/v3.1/tool_router/session/${encodeURIComponent(s.session_id)}/link`, { toolkit: toolkitOf(toolkit) });
+  const cred = await requireCred(app);
+  const s = await newSession(app, cred);
+  const link = await call<{ redirect_url?: string }>(app, cred.headers, "POST", `/v3.1/tool_router/session/${encodeURIComponent(s.session_id)}/link`, { toolkit: toolkitOf(toolkit) });
   if (!link.redirect_url?.startsWith("https://")) fail("failed", "Composio returned no sign-in link");
   return { url: link.redirect_url };
 }
 
 /** Signs one app out: deletes its connected accounts. */
 export async function composioUnlink(app: App, toolkit: string): Promise<void> {
-  const key = await requireKey(app);
+  const cred = await requireCred(app);
   const slug = toolkitOf(toolkit);
-  for (const a of (await accounts(app, key, slug)).filter((x) => x.toolkit?.slug === slug)) await call(app, key, "DELETE", `/v3/connected_accounts/${encodeURIComponent(a.id)}`);
+  for (const a of (await accounts(app, cred, slug)).filter((x) => x.toolkit?.slug === slug)) await call(app, cred.headers, "DELETE", `/v3/connected_accounts/${encodeURIComponent(a.id)}`);
 }

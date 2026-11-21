@@ -60,6 +60,10 @@ export interface McpServerInput {
 export interface ComposioStatus {
   connected: boolean;
   toolkits: string[];
+  /** The saved key is a personal user key (`uak_…`, Composio's For You), acting in the owner's own consumer project. */
+  personal?: boolean;
+  /** For a personal key: whether Composio Instant is on, so agents can use tools such as web search billed to the account's credits. */
+  instant?: boolean;
   /** Why the apps could not be read (a revoked key, Composio down); the key can still be replaced or removed. */
   error?: string;
 }

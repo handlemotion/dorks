@@ -458,6 +458,46 @@ describe("settings", () => {
     expect((await a.del("/api/composio")).status).toBe(200);
     expect((await a.get("/api/composio")).json.connected).toBe(false);
   });
+
+  it("connects a personal Composio key in the owner's own consumer project, scoped on every call and in the MCP server", async () => {
+    // docs.composio.dev/reference/authenticating-to-composio#user-api-key and /docs/consumer-agents.
+    const scope = { "x-user-api-key": "uak_1", "x-org-id": "org_a", "x-project-id": "proj_c" };
+    const seen: string[] = [];
+    const routes: Record<string, (url: URL, h: Headers, init?: RequestInit) => Response> = {
+      "GET /api/v3.1/auth/session/info": () => Response.json({ project: { org: { id: "org_a" } } }),
+      "POST /api/v3.1/org/consumer/project/resolve": (_u, h) => {
+        expect(h.get("x-org-id")).toBe("org_a");
+        return Response.json({ org_id: "org_a", project_nano_id: "proj_c", consumer_user_id: "cu_me", config: { enable_instant: true } });
+      },
+      "POST /api/v3.1/tool_router/session": (_u, h, init) => {
+        for (const [k, v] of Object.entries(scope)) expect(h.get(k)).toBe(v);
+        expect(JSON.parse(init?.body as string)).toEqual({ user_id: "cu_me" });
+        return Response.json({ session_id: "trs_p", mcp: { type: "http", url: "https://backend.composio.dev/tool_router/trs_p/mcp" } });
+      },
+      "GET /api/v3/connected_accounts": (url, h) => {
+        expect([h.get("x-project-id"), url.searchParams.get("user_ids")]).toEqual(["proj_c", "cu_me"]);
+        return Response.json({ items: [{ id: "ca_s", toolkit: { slug: "slack" } }] });
+      },
+    };
+    const h = harness({
+      fetch: (async (u: string | URL | Request, init?: RequestInit) => {
+        const url = new URL(u instanceof Request ? u.url : u);
+        const hd = new Headers(init?.headers);
+        seen.push(url.pathname);
+        if (hd.get("x-api-key")) return Response.json({ error: { message: "Invalid API key", status: 401 } }, { status: 401 }); // a user key never goes as x-api-key
+        if (hd.get("x-user-api-key") !== "uak_1") return Response.json({ error: { message: "Invalid or revoked user API key", status: 401 } }, { status: 401 });
+        return routes[`${init?.method ?? "GET"} ${url.pathname}`]?.(url, hd, init) ?? new Response("{}", { status: 404 });
+      }) as typeof fetch,
+    });
+    const a = api(h);
+    expect((await a.put("/api/composio", { apiKey: "uak_2" })).json.error.message).toBe("Composio did not accept this API key: Invalid or revoked user API key");
+    expect((await a.put("/api/composio", { apiKey: "uak_1" })).status).toBe(200);
+    const { mcpServerConfigs } = await import("../src/services/mcpServers");
+    expect(await mcpServerConfigs(h.app)).toEqual([{ name: "composio", transport: "http", url: "https://backend.composio.dev/tool_router/trs_p/mcp", headers: scope }]);
+    seen.length = 0;
+    expect((await a.get("/api/composio")).json).toEqual({ connected: true, toolkits: ["slack"], personal: true, instant: true });
+    expect(seen).not.toContain("/api/v3.1/auth/session/info"); // the saved org is reused
+  });
 });
 
 describe("creating a dork", () => {

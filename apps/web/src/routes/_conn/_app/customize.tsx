@@ -88,7 +88,15 @@ function Customize() {
       {draft && <ServerDialog key={`${draft.name}:${draft.editing}`} initial={draft} onClose={() => setDraft(null)} />}
       {connecting &&
         (connecting.toolkit !== undefined ? (
-          <AppDialog key={connecting.id} app={connecting} keySaved={!!composio?.connected} statusError={composio?.error} connected={isConnected(connecting)} onClose={() => setConnecting(null)} />
+          <AppDialog
+            key={connecting.id}
+            app={connecting}
+            keySaved={!!composio?.connected}
+            instant={composio?.personal ? composio.instant : undefined}
+            statusError={composio?.error}
+            connected={isConnected(connecting)}
+            onClose={() => setConnecting(null)}
+          />
         ) : (
           <ConnectDialog key={connecting.id} connector={connecting} connected={isConnected(connecting)} onClose={() => setConnecting(null)} />
         ))}
@@ -97,7 +105,7 @@ function Customize() {
 }
 
 /** The server a Composio key saves (services/composio.ts), not a custom server that only shares the name. */
-const isComposio = (s: McpServerView) => s.name === COMPOSIO.id && s.transport === 'http' && s.headerNames.includes('x-api-key')
+const isComposio = (s: McpServerView) => s.name === COMPOSIO.id && s.transport === 'http' && (s.headerNames.includes('x-api-key') || s.headerNames.includes('x-user-api-key'))
 
 /** Whether a saved server is a key connector's own preset, not a custom server that only shares its name. */
 function isPreset(s: McpServerView) {
@@ -232,7 +240,21 @@ function ConnectDialog({ connector: c, connected, onClose }: { connector: KeyCon
  * An app that signs in through Composio. Without a Composio key the dialog asks for it first; then the sign-in opens in a browser
  * and the dialog waits, reading Composio every few seconds, until the app shows up as connected.
  */
-function AppDialog({ app: c, keySaved, statusError, connected, onClose }: { app: ComposioApp; keySaved: boolean; statusError?: string; connected: boolean; onClose: () => void }) {
+function AppDialog({
+  app: c,
+  keySaved,
+  instant,
+  statusError,
+  connected,
+  onClose,
+}: {
+  app: ComposioApp
+  keySaved: boolean
+  instant?: boolean
+  statusError?: string
+  connected: boolean
+  onClose: () => void
+}) {
   const client = useDorksClient()
   const { actions } = client
   const { run, pending, error } = usePending()
@@ -287,7 +309,9 @@ function AppDialog({ app: c, keySaved, statusError, connected, onClose }: { app:
                     <a href={COMPOSIO.keyUrl} target="_blank" rel="noreferrer">
                       Get your Composio API key
                     </a>
-                    . Stored encrypted and never shown again.
+                    . A project key or your personal key (<code>uak_</code>, from <code>composio login</code>) works. Stored encrypted and never shown again.
+                    {instant !== undefined &&
+                      (instant ? ' Instant is on: agents can search the web on your Composio credits.' : ' Turn on Instant in Composio to let agents search the web on your credits.')}
                   </FieldDescription>
                 </Field>
               )}
