@@ -48,7 +48,8 @@ by accident, and `pnpm test` enforces the first one.
    in light) for the few raised things on it. Nothing is translucent or blurred, including dialog overlays, and the desktop app's native material
    never shows through (the page paints `--app` over it). The `glass*` utilities still exist as names but are solid `--surface` fills. White on
    `#f2f2f2` is 1.12:1, under 1.15, so a raised surface carries the `--surface-line` hairline (`#e2e2e2`) in light; dark separates on fill.
-   When you add a surface, give it a light and a dark value.
+   When you add a surface, give it a light and a dark value. Outline buttons are solid: `--surface` under their hairline (white in light), darkened 4% on hover, set by `data-slot` in
+   `src/glass.css` like the radius, so the button file stays as published.
 4. **User message bubbles** (`--user-bubble`) take the composer's light grey fill in light (the main app is white) and are white in dark. Assistant messages are unbubbled text.
 5. **Everything is 6px.** Controls, menus, dialogs, message bubbles, sidebar rows, cards and Chat details all use `--control-radius` (6px,
    `src/glass.css`): the whole `rounded-sm` to `rounded-4xl` scale maps to it (`src/styles.css`), and controls also get it by `data-slot`, so

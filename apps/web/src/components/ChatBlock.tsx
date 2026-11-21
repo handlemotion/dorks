@@ -408,7 +408,9 @@ function TurnCard({ work, end, onOpen }: { work: WorkBlock[]; end?: TurnBlock; o
         aria-label={inline ? undefined : `${title}, ${detail}. Show progress`}
         title={tools.length > 0 ? toolGroupTitle(tools) : undefined}
         onClick={() => (onOpen ? onOpen() : setOpen(!open))}
-        className="group/turn -mx-1 flex h-7 w-fit max-w-full min-w-0 items-center gap-2 rounded-(--control-radius) px-1 text-left text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        // `mb-2`: the answer under it starts 27px below its label, a step more than a paragraph break (19px), so the row reads as its own
+        // line rather than the answer's first.
+        className="group/turn -mx-1 mb-2 flex h-7 w-fit max-w-full min-w-0 items-center gap-2 rounded-(--control-radius) px-1 text-left text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
         {/* A chevron only where the row unfolds in place; where it opens Progress, a panel icon says so on hover instead. */}
         {inline && <ChevronRightIcon aria-hidden className={`size-3.5 shrink-0 ${open ? 'rotate-90' : ''}`} />}
