@@ -28,7 +28,7 @@ export const settingsPath = (stateDir: string, fast = false) => join(stateDir, f
  * `attribution` empty turns off the CLI's own Co-Authored-By / "Generated with Claude Code" lines on commits and PRs, on every machine:
  * flag settings sit above the user's and the repo's files, so neither can turn it back on.
  */
-export function claudeSettings(self: [node: string, cli: string]) {
+function claudeSettings(self: [node: string, cli: string]) {
   const run = (event: HookEvent) => [{ type: "command", command: `${shellQuote(self[0])} ${shellQuote(self[1])} dorks hook ${event}`, timeout: HOOK_EVENTS[event].timeoutS }];
   return {
     attribution: { commit: "", pr: "" },
@@ -264,7 +264,7 @@ function describe(s: SubscriptionView) {
 }
 
 /** `subs` is null when the backend has not answered yet. */
-export function sessionContext(subs: SubscriptionView[] | null): string {
+function sessionContext(subs: SubscriptionView[] | null): string {
   return [
     subs === null
       ? "Pull requests you are subscribed to: could not be loaded just now; call the `pr_list` tool (or run `dorks pr list`)."

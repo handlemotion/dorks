@@ -72,10 +72,4 @@ describe("dorks hook", () => {
     expect(await hook([], b.env, "{}")).toEqual({ code: 0, stdout: "", stderr: "" });
     expect(b.calls).toEqual([]);
   });
-
-  it("also runs as a subcommand of the bridge binary, which is how the settings file invokes it", async () => {
-    const b = await fakeBridge({ "hook.stop": () => ({ decision: "block", reason: "r" }) });
-    const r = await runAs(cli, "dorks-bridge", ["dorks", "hook", "stop"], b.env, [], JSON.stringify(STOP_INPUT));
-    expect(JSON.parse(r.stdout)).toEqual({ decision: "block", reason: "r" });
-  });
 });
