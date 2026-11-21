@@ -1,10 +1,12 @@
 import { commandFrame, effortLevel, type EffortLevel, type CrewRole, type FromBridge, type McpServerConfig, type PrRef, type SkillRef } from "@dorks/shared";
 import { createHash } from "node:crypto";
-import { appendFileSync, chmodSync, closeSync, fsyncSync, mkdirSync, openSync, readFileSync } from "node:fs";
+import { appendFileSync, chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { dirname, join } from "node:path";
-import { Agent, childEnv, computerArgs, configDirOf, crewArgs, findTranscripts } from "./claude";
+import { Agent, BOAT_COMPUTER_DRIVER, childEnv, COMPUTER_PROMPT, computerArgs, configDirOf, crewArgs, findTranscripts } from "./claude";
 import { CodexAgent } from "./codex";
+import { COORDINATOR_GUIDANCE, FINAL_ANSWER_GUIDANCE, SKILLS_GUIDANCE, WORKER_GUIDANCE } from "./guidance";
+import { OpenCodeAgent } from "./opencode";
 import type { Config } from "./config";
 import { GithubToken, helperCommand } from "./credentials";
 import { McpOAuthProxy, type ProxyRoute } from "./mcp-proxy";
@@ -24,6 +26,15 @@ import { syncSkills } from "./skills";
 import type { CommandEntry, Transport } from "./transport";
 
 const EFFORTS = effortLevel.options;
+const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+/** Codex and OpenCode start their session after the process: messages wait for it. Claude Code takes them at once. */
+const isReady = (agent: Agent | CodexAgent | OpenCodeAgent) => !(agent instanceof CodexAgent || agent instanceof OpenCodeAgent) || agent.ready;
+/** What Claude Code gets as appended system prompts (claude.ts), as one OpenCode system prompt. */
+function openCodeSystem(role: CrewRole | null, driverPresent = existsSync(BOAT_COMPUTER_DRIVER)) {
+  return [`${FINAL_ANSWER_GUIDANCE} ${SKILLS_GUIDANCE}`, role === "coordinator" ? COORDINATOR_GUIDANCE : role === "worker" ? WORKER_GUIDANCE : "", driverPresent ? COMPUTER_PROMPT : ""]
+    .filter(Boolean)
+    .join("\n\n");
+}
 
 export interface BridgeDeps {
   cfg: Config;
@@ -53,8 +64,10 @@ export class Bridge {
   /** The owner's OAuth MCP servers, behind a loopback proxy that adds a current token (mcp-proxy.ts). */
   private mcpProxy: McpOAuthProxy;
   private runAs: Identity | null;
-  private agent: Agent | CodexAgent | null = null;
-  private provider: "claude" | "codex" = "claude";
+  private agent: Agent | CodexAgent | OpenCodeAgent | null = null;
+  private provider: "claude" | "codex" | "opencode" = "claude";
+  /** The owner's MCP servers as Claude Code config entries, from the last configure (OpenCode translates them into its own config). */
+  private userMcp: Record<string, unknown> = {};
   private codexModel: { model: string; effort: string } | undefined;
   private claudeModel: { model?: string; effort?: string; fast?: boolean; codeMode?: boolean } = {};
   private agentKey = "";
@@ -260,7 +273,7 @@ export class Bridge {
   private async deliver(id: string, text: string, notify?: { kinds: string[]; prs: PrRef[] }) {
     if (this.acked.has(id)) return;
     if (!this.written.has(id)) {
-      if (!this.agent?.alive || (this.agent instanceof CodexAgent && !this.agent.ready)) return; // agent not up yet (or dead): reprocessed after configure; left unacked so the backend keeps it
+      if (!this.agent?.alive || !isReady(this.agent)) return; // agent not up yet (or dead): reprocessed after configure; left unacked so the backend keeps it
       try {
         await this.agent.sendUserMessage(text);
       } catch {
@@ -373,7 +386,7 @@ export class Bridge {
     if (this.agent?.alive && key === this.agentKey) {
       // Already running with this config (a reconnect re-sends configure): nothing to do but say so again.
       this.pipeline.control({ t: "ack", id: cid });
-      if (!(this.agent instanceof CodexAgent) || this.agent.ready) this.pipeline.control({ t: "ready" }, true);
+      if (isReady(this.agent)) this.pipeline.control({ t: "ready" }, true);
       return;
     }
     await this.stopForRestart();
@@ -384,6 +397,7 @@ export class Bridge {
     // The owner's MCP servers (Customize): the config file names them with `${DORKS_MCP_…}` references the CLI expands from this env.
     Object.assign(env, userMcp.env);
     writeClaudeMcpConfig(this.cfg.stateDir, this.self, this.rpc.sockPath, userMcp.config);
+    this.userMcp = userMcp.config;
     this.agentCtx = { dir, env };
     this.agentKey = key;
     this.provider = provider;
@@ -401,7 +415,7 @@ export class Bridge {
   }
 
   private async syncSkills(provider: string, env: NodeJS.ProcessEnv, skills: readonly SkillRef[] = []) {
-    if (provider !== "claude") return; // Codex sessions do not get skills yet
+    if (provider === "codex") return; // Codex sessions do not get skills yet; OpenCode reads the same skills directory as Claude Code
     await syncSkills({ stateDir: this.cfg.stateDir, configDir: configDirOf(env), runAs: this.runAs, fetch: (n) => this.t.skill(n), log: this.log }, skills);
   }
 
@@ -481,40 +495,69 @@ export class Bridge {
         this.pipeline.control({ t: "agent_exited", code, stderrTail }, true);
       },
     };
+    const stopReason = async (sessionId: string) => {
+      const result = await this.hooks.methods["hook.stop"]({ session_id: sessionId });
+      return result && typeof result === "object" && "reason" in result && typeof result.reason === "string" ? result.reason : null;
+    };
+    const onReady = () => {
+      this.pipeline.control({ t: "ready" }, true);
+      this.process();
+      this.name();
+    };
     const agent =
-      this.provider === "codex"
-        ? new CodexAgent({
+      this.provider === "opencode"
+        ? new OpenCodeAgent({
             ...shared,
-            model: this.codexModel,
+            model: this.claudeModel.model,
             mcpCommand: this.self,
             sock: this.rpc.sockPath,
-            onModels: (models) => this.pipeline.control({ t: "codex_models", models }, true),
-            onIssue: (message) => this.pipeline.control({ t: "codex_issue", message }, true),
-            onReady: () => {
-              this.pipeline.control({ t: "ready" }, true);
-              this.process();
-              this.name();
-            },
-            onTurnFinished: async (sessionId) => {
-              const result = await this.hooks.methods["hook.stop"]({ session_id: sessionId });
-              return result && typeof result === "object" && "reason" in result && typeof result.reason === "string" ? result.reason : null;
+            userMcp: this.userMcp,
+            skillsDir: join(configDirOf(env), "skills"),
+            stateDir: this.cfg.stateDir,
+            system: openCodeSystem(this.role),
+            onModels: (models) =>
+              this.pipeline.control(
+                { t: "agent_models", models: models.slice(0, 100).map((model) => ({ model, name: model.slice(model.indexOf("/") + 1).slice(0, 80), efforts: [] })), effort: null },
+                true,
+              ),
+            onIssue: (message) => this.pipeline.control({ t: "codex_issue", message: message.slice(0, 1000) }, true),
+            onReady,
+            onTurnFinished: stopReason,
+            // Claude Code runs these as hooks; OpenCode's finished tool calls arrive on its event stream, so the bridge calls them itself.
+            // Hooks fail open and log their own errors.
+            onShell: (command, output) => void this.hooks.methods["hook.postToolUse"]({ tool_name: "Bash", tool_input: { command }, tool_response: { stdout: output } }),
+            sessionContext: async () => {
+              const out = obj(await this.hooks.methods["hook.sessionStart"]({}));
+              const context = obj(out.hookSpecificOutput).additionalContext;
+              return typeof context === "string" && context ? context : null;
             },
           })
-        : new Agent({
-            ...shared,
-            loadImage: (id) => this.t.getImage(id),
-            bin: this.cfg.claudeBin,
-            permissionMode: this.cfg.permissionMode,
-            extraArgs: [...computerArgs(), ...crewArgs(this.role), ...this.cfg.claudeExtraArgs],
-            model: this.claudeModel.model,
-            effort: this.claudeModel.effort,
-            onModels: (models) => {
-              const effort = this.claudeModel.effort;
-              this.pipeline.control({ t: "agent_models", models, effort: effort && (EFFORTS as readonly string[]).includes(effort) ? (effort as EffortLevel) : null }, true);
-            },
-            settingsFile: settingsPath(this.cfg.stateDir, this.claudeModel),
-            mcpConfigFile: mcpConfigPath(this.cfg.stateDir),
-          });
+        : this.provider === "codex"
+          ? new CodexAgent({
+              ...shared,
+              model: this.codexModel,
+              mcpCommand: this.self,
+              sock: this.rpc.sockPath,
+              onModels: (models) => this.pipeline.control({ t: "codex_models", models }, true),
+              onIssue: (message) => this.pipeline.control({ t: "codex_issue", message }, true),
+              onReady,
+              onTurnFinished: stopReason,
+            })
+          : new Agent({
+              ...shared,
+              loadImage: (id) => this.t.getImage(id),
+              bin: this.cfg.claudeBin,
+              permissionMode: this.cfg.permissionMode,
+              extraArgs: [...computerArgs(), ...crewArgs(this.role), ...this.cfg.claudeExtraArgs],
+              model: this.claudeModel.model,
+              effort: this.claudeModel.effort,
+              onModels: (models) => {
+                const effort = this.claudeModel.effort;
+                this.pipeline.control({ t: "agent_models", models, effort: effort && (EFFORTS as readonly string[]).includes(effort) ? (effort as EffortLevel) : null }, true);
+              },
+              settingsFile: settingsPath(this.cfg.stateDir, this.claudeModel),
+              mcpConfigFile: mcpConfigPath(this.cfg.stateDir),
+            });
     this.agent = agent;
     this.log("agent started", resume ? "(resuming a session)" : "(new session)");
     for (const text of resend) void agent.sendUserMessage(text).catch(() => this.log("could not resend a message to the new session"));
@@ -531,7 +574,9 @@ export class Bridge {
     const prompt = titlePrompt(message);
     const { env } = this.agentCtx;
     const reply =
-      agent instanceof CodexAgent ? agent.oneShot(prompt) : claudeOneShot({ bin: this.cfg.claudeBin, env, cwd: this.runAs?.home ?? env.HOME ?? this.cfg.stateDir, runAs: this.runAs, prompt });
+      agent instanceof CodexAgent || agent instanceof OpenCodeAgent
+        ? agent.oneShot(prompt)
+        : claudeOneShot({ bin: this.cfg.claudeBin, env, cwd: this.runAs?.home ?? env.HOME ?? this.cfg.stateDir, runAs: this.runAs, prompt });
     void reply
       .then((raw) => {
         const text = cleanTitle(raw ?? "");

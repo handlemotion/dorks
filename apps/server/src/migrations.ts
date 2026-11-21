@@ -442,4 +442,12 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE settings ADD COLUMN boat_auto INTEGER NOT NULL DEFAULT 1;
   ALTER TABLE settings ADD COLUMN github_auto INTEGER NOT NULL DEFAULT 1;
   `,
+  `
+  -- OpenCode as a third agent (infra/bridge/src/opencode.ts). SQLite cannot change a CHECK in place and rebuilding dorks would cascade
+  -- into every table that references it, so the column is swapped for one with the wider CHECK (it moves to the end of the row).
+  ALTER TABLE dorks ADD COLUMN provider_next TEXT NOT NULL DEFAULT 'claude' CHECK (provider_next IN ('claude', 'codex', 'opencode'));
+  UPDATE dorks SET provider_next = provider;
+  ALTER TABLE dorks DROP COLUMN provider;
+  ALTER TABLE dorks RENAME COLUMN provider_next TO provider;
+  `,
 ];

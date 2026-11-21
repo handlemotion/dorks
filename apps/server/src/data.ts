@@ -4,7 +4,7 @@ import { bool, json } from "./db";
 
 // Typed readers over the schema (migrations.ts). Columns are snake_case in SQL and camelCase here; NULL becomes undefined.
 
-export type Provider = "claude" | "codex";
+export type Provider = "claude" | "codex" | "opencode";
 export type DorkKind = "agent" | "coordinator";
 export type TitleSource = "message" | "auto" | "user";
 

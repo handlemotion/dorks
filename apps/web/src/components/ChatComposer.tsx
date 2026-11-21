@@ -1,4 +1,4 @@
-import { ArrowUpIcon, BoxIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon, ZapIcon } from 'lucide-react'
+import { ArrowUpIcon, BoxIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, SquareTerminalIcon, XIcon, ZapIcon } from 'lucide-react'
 import { modelLabel, type AgentModelChoice } from '@dorks/shared'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import {
@@ -27,11 +27,12 @@ import { Tip } from './Tip'
 import { ReplyBanner } from './Reply'
 import type { Reply } from '../lib/reply'
 
-export type AgentProvider = 'codex' | 'claude'
+export type AgentProvider = 'codex' | 'claude' | 'opencode'
 
-const AGENT_NAMES: Record<AgentProvider, string> = { claude: 'Claude Code', codex: 'Codex' }
+const AGENT_NAMES: Record<AgentProvider, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode' }
 
 function ProviderIcon({ provider }: { provider: AgentProvider }) {
+  if (provider === 'opencode') return <SquareTerminalIcon className="size-3.5" />
   // svgl pads the OpenAI mark inside its viewBox, so it is scaled to sit at Claude's size.
   return provider === 'claude' ? <Logo light={claudeLogo} className="size-3.5" /> : <Logo light={openaiLight} dark={openaiDark} className="size-3.5 scale-[1.3]" />
 }
@@ -220,9 +221,9 @@ function RepositoryControl({ repo, setRepo, repositories, disabled, hidden }: { 
 
 const effortName = (effort: string) => EFFORT_NAMES[effort] ?? effort
 
-/** What the model menu shows: the Claude picker (only for Claude), the trigger's label, and the efforts the chosen model has. */
+/** What the model menu shows: the model picker (Claude and OpenCode), the trigger's label, and the efforts the chosen model has. */
 function modelMenuState(provider: AgentProvider, picker: ModelPicker | undefined, agentLabel: string | undefined) {
-  const models = provider === 'claude' ? picker : undefined
+  const models = provider !== 'codex' ? picker : undefined
   const choices = models?.choices ?? []
   // The trigger names the model the agent confirmed when it has, else the one chosen (or what the default resolves to).
   const active = models?.active?.model ? models.active : undefined
@@ -292,6 +293,64 @@ function ClaudeModels({
       <DropdownMenuRadioItem value="claude" closeOnClick disabled={provider !== 'claude' && !setProvider}>
         <ProviderIcon provider="claude" />
         {provider === 'claude' ? label : AGENT_NAMES.claude}
+      </DropdownMenuRadioItem>
+    </DropdownMenuRadioGroup>
+  )
+}
+
+/**
+ * OpenCode's group: every `provider/model` its configured providers offered the running session, by provider, or OpenCode as a
+ * single choice (a new session starts on OpenCode's default model; the list arrives once its sandbox is up).
+ */
+function OpenCodeModels({
+  models,
+  provider,
+  setProvider,
+  enabled,
+  label,
+}: {
+  models?: ModelPicker
+  provider: AgentProvider
+  setProvider?: (provider: AgentProvider) => void
+  enabled?: boolean
+  label: string
+}) {
+  const choices = provider === 'opencode' ? (models?.choices ?? []) : []
+  if (models && choices.length > 0) {
+    const groups = new Map<string, AgentModelChoice[]>()
+    for (const c of choices) {
+      const group = c.model.slice(0, c.model.indexOf('/'))
+      groups.set(group, [...(groups.get(group) ?? []), c])
+    }
+    return (
+      <DropdownMenuRadioGroup value={models.model ?? DEFAULT} onValueChange={(value) => models.onChange(value === DEFAULT ? undefined : value, undefined, false)}>
+        <DropdownMenuRadioItem value={DEFAULT} closeOnClick>
+          <ProviderIcon provider="opencode" />
+          Default
+        </DropdownMenuRadioItem>
+        {[...groups].map(([group, items]) => (
+          <DropdownMenuSub key={group}>
+            <DropdownMenuSubTrigger>
+              <ProviderIcon provider="opencode" />
+              <span className="flex-1 truncate">{group}</span>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="max-h-80 w-56 overflow-y-auto">
+              {items.map((c) => (
+                <DropdownMenuRadioItem key={c.model} value={c.model} closeOnClick title={c.model}>
+                  <span className="min-w-0 truncate">{c.name}</span>
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        ))}
+      </DropdownMenuRadioGroup>
+    )
+  }
+  return (
+    <DropdownMenuRadioGroup value={provider} onValueChange={() => setProvider?.('opencode')}>
+      <DropdownMenuRadioItem value="opencode" closeOnClick disabled={provider !== 'opencode' && (!setProvider || !enabled)}>
+        <ProviderIcon provider="opencode" />
+        {provider === 'opencode' ? label : AGENT_NAMES.opencode}
       </DropdownMenuRadioItem>
     </DropdownMenuRadioGroup>
   )
@@ -397,6 +456,7 @@ function ModelMenu({
   provider,
   setProvider,
   codexEnabled,
+  openCodeEnabled,
   picker,
   agentLabel,
   isNewSession,
@@ -405,6 +465,7 @@ function ModelMenu({
   provider: AgentProvider
   setProvider?: (provider: AgentProvider) => void
   codexEnabled?: boolean
+  openCodeEnabled?: boolean
   picker?: ModelPicker
   agentLabel?: string
   isNewSession: boolean
@@ -447,6 +508,10 @@ function ModelMenu({
             </DropdownMenuRadioItem>
           </DropdownMenuRadioGroup>
         </DropdownMenuGroup>
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>{AGENT_NAMES.opencode}</DropdownMenuLabel>
+          <OpenCodeModels models={models} provider={provider} setProvider={setProvider} enabled={openCodeEnabled !== false} label={label} />
+        </DropdownMenuGroup>
         {models && <ModelOptions models={models} efforts={efforts} fastOffered={fastOffered} fast={fast} />}
         {models && !isNewSession && <ModelConfirmation active={active} />}
       </DropdownMenuContent>
@@ -475,6 +540,7 @@ export function Composer({
   provider = 'claude',
   setProvider,
   codexEnabled,
+  openCodeEnabled,
   onStop,
   status,
   picker,
@@ -504,6 +570,8 @@ export function Composer({
   setProvider?: (provider: AgentProvider) => void
   /** Codex only shows up as a choice when a Boat ChatGPT environment is configured. Claude Code is the default. */
   codexEnabled?: boolean
+  /** OpenCode needs no sign-in of its own: its provider keys (`OPENCODE_API_KEY`, `DEEPSEEK_API_KEY`...) are shared secrets. */
+  openCodeEnabled?: boolean
   /** Set while the agent is working: the main button becomes Stop. */
   onStop?: () => void
   /** A line above the box, e.g. the sandbox status. */
@@ -667,7 +735,16 @@ export function Composer({
         <div className="flex items-center gap-2 px-[9px] pt-2 text-[13px] [--control-radius:6px]">
           <RepositoryControl repo={repo} setRepo={setRepo} repositories={repositories} disabled={locked} hidden={showRepo === false} />
           {machine && machine.builds.length > 0 && <MachineMenu machine={machine} disabled={locked} />}
-          <ModelMenu provider={provider} setProvider={setProvider} codexEnabled={codexEnabled} picker={picker} agentLabel={agentLabel} isNewSession={isNewSession} disabled={locked} />
+          <ModelMenu
+            provider={provider}
+            setProvider={setProvider}
+            codexEnabled={codexEnabled}
+            openCodeEnabled={openCodeEnabled}
+            picker={picker}
+            agentLabel={agentLabel}
+            isNewSession={isNewSession}
+            disabled={locked}
+          />
         </div>
       </form>
       {shownError && (

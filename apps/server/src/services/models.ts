@@ -1,4 +1,4 @@
-import { agentModelChoice, type AgentModelChoice } from "@dorks/shared";
+import { agentModelChoice, modelValue, type AgentModelChoice } from "@dorks/shared";
 import { z } from "zod";
 import { fail, touch, type App } from "../app";
 import type { DorkRow } from "../data";
@@ -65,6 +65,18 @@ export function validModelChoice(choices: AgentModelChoice[], model: unknown, ef
   return { model: m, effort: e, fast: f };
 }
 
+/**
+ * An OpenCode model: `provider/model`, one its configured providers offered when the dork has reported them (`choices`), any
+ * well-formed one before that (a first session names it before its sandbox exists; the bridge reports one OpenCode lacks as an issue).
+ * Empty means OpenCode's own default. OpenCode has no efforts or fast mode here.
+ */
+export function validOpenCodeModel(choices: AgentModelChoice[] | undefined, model: unknown): { model?: string; fast: false } {
+  if (model === undefined || model === null || model === "") return { fast: false };
+  if (typeof model !== "string" || !modelValue.safeParse(model).success || !model.includes("/")) fail("invalid", "an OpenCode model is provider/model");
+  if (choices?.length && !choices.some((c) => c.model === model)) fail("invalid", `${model} is not offered by OpenCode`);
+  return { model, fast: false };
+}
+
 const choicesFor = (app: App, dork: DorkRow) => (dork.modelChoices?.length ? dork.modelChoices : knownModelChoices(app));
 
 /**
@@ -76,8 +88,9 @@ export function chooseModel(app: App, dorkId: string, model: unknown, effort: un
   app.db.tx(() => {
     const dork = owned(app, dorkId);
     if (dork.archived) fail("archived", "dork is archived");
-    if (dork.provider !== "claude") fail("invalid", "choose a Codex model from the thread");
-    const next = validModelChoice(choicesFor(app, dork), model, effort, fast);
+    if (dork.provider === "codex") fail("invalid", "choose a Codex model from the thread");
+    const next: { model?: string; effort?: string; fast: boolean } =
+      dork.provider === "opencode" ? validOpenCodeModel(dork.modelChoices, model) : validModelChoice(choicesFor(app, dork), model, effort, fast);
     if (next.model === dork.model && next.effort === dork.effort && next.fast === dork.fast) return;
     patchDork(app, dorkId, { model: next.model, effort: next.effort, fast: next.fast, agentModel: undefined, agentEffort: undefined });
     if (isAwake(dork.state)) {
