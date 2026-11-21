@@ -17,6 +17,11 @@ The owner adds MCP servers in **Customize**; every Claude agent gets their tools
   for a sign-in link (`POST /api/composio/toolkits/:toolkit/link`), opens it in the browser, and polls `GET /api/composio` until the
   app is a connected account of the one Composio user `dorks-owner`. `DELETE /api/composio/toolkits/:toolkit` signs one app out;
   `DELETE /api/composio` removes the key and the server (`apps/server/src/services/composio.ts`).
+  Either kind of key works. A project key (`ak_…`, sent as `x-api-key`) acts in one developer project as the user `dorks-owner`. A
+  personal user key (`uak_…`, from `composio login`; Composio's For You) is sent as `x-user-api-key` with `x-org-id` and
+  `x-project-id` for the owner's consumer project (resolved through `POST /api/v3.1/org/consumer/project/resolve`), and acts as the
+  owner's own Composio user: apps already connected in For You, its Instant setting (tools such as web search billed to the
+  account's credits) and the credits carry over. `GET /api/composio` then adds `personal: true` and `instant`.
 - **Custom remote (HTTP):** a URL plus optional headers, for any other hosted server (Streamable HTTP). One that asks for an OAuth
   sign-in gets a **Sign in** button (see "OAuth" below); saving it opens the sign-in straight away.
 - **Local command (stdio):** a command, arguments and environment variables. The command runs inside the sandbox, so it must exist
