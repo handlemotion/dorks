@@ -99,7 +99,7 @@ describe("GitHub with the GitHub CLI", () => {
     const h = harness();
     let release!: () => void;
     const slow = new Promise<void>((r) => (release = r));
-    const ghLogin = h.app.ghLogin;
+    const ghLogin = h.app.ghLogin.bind(h.app);
     h.app.ghLogin = async () => {
       await slow;
       return ghLogin();
@@ -118,7 +118,7 @@ describe("Boat sign-in races", () => {
   it("a background check that answers after Sign in was pressed neither replaces its link nor stops its key", async () => {
     const h = boat();
     let answer!: (v: boolean) => void;
-    const signedIn = h.boatCli.signedIn;
+    const signedIn = h.boatCli.signedIn.bind(h.boatCli);
     h.boatCli.signedIn = () => new Promise<boolean>((r) => (answer = r)); // the background check hangs on `boat status`
     const background = autoConnectBoat(h.app);
     h.boatCli.signedIn = signedIn;
