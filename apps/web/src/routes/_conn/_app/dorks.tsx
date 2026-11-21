@@ -1,4 +1,4 @@
-import { CatchBoundary, createFileRoute, Link, Navigate, useNavigate } from '@tanstack/react-router'
+import { CatchBoundary, createFileRoute, Link, Navigate, useNavigate, useRouterState } from '@tanstack/react-router'
 import { useCallback, useEffect, useState } from 'react'
 import type { DesktopOptions } from '@dorks/client'
 import type { Block } from '@dorks/shared'
@@ -157,6 +157,8 @@ function NewDork({
   claudeReady: boolean
   codexReady: boolean
 }) {
+  // Each visit to the page (New session in the sidebar, even when already here) puts the cursor in the box.
+  const visit = useRouterState({ select: (s) => s.location.state.__TSR_key ?? s.location.href })
   const { actions } = useDorksClient()
   const settings = useSettings()
   // Sent with the first message (the server checks it against the models the agent reported), then kept by the session.
@@ -206,6 +208,7 @@ function NewDork({
         }}
         upload={actions.uploadImage}
         machine={{ builds: built, buildId, onChange: setPicked }}
+        focusKey={visit}
         onSubmit={(images) =>
           run(async () => {
             onCreated((await actions.createDork({ repo: repo.trim(), message: withImages(message, images), provider, buildId, ...(provider === 'claude' ? choice : {}) })).id)

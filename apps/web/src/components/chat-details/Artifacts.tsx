@@ -39,7 +39,8 @@ export function Artifacts({
   const images: LightboxImage[] = artifacts.filter((a) => a.src).map((a) => ({ id: a.id, src: a.src!, alt: a.name, caption: a.name, width: a.width, height: a.height }))
   return (
     <ImageLightbox images={images} label="Artifacts">
-      <div className="@container overflow-hidden border-t">
+      {/* shrink-0: clipping would otherwise let it shrink to the panel's height and cut the grid off instead of scrolling it. */}
+      <div className="@container shrink-0 overflow-hidden border-t">
         <ul className="-mr-px grid grid-cols-2 @lg:grid-cols-3 @3xl:grid-cols-4">
           {changes.length > 0 && (
             <Tile onClick={onOpenChanges} thumb={() => <DiffThumb />} label={<Stat additions={sum(changes, 'additions')} deletions={sum(changes, 'deletions')} />} meta={`${changes.length} files`}>

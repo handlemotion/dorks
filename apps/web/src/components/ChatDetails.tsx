@@ -141,7 +141,8 @@ export function ChatDetails({
         return openPreview ? (
           <PreviewBrowser server={openPreview} onBack={() => setPreview(undefined)} onGrab={onGrab} />
         ) : (
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          // -mt-1: the grid's top hairline sits 10px under the tabs, like the space on their other sides.
+          <div className="-mt-1 flex min-h-0 flex-1 flex-col overflow-y-auto">
             <Artifacts
               artifacts={data.artifacts ?? []}
               changes={changes}

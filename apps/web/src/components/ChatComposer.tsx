@@ -483,6 +483,7 @@ export function Composer({
   reply,
   onClearReply,
   machine,
+  focusKey,
 }: {
   text: string
   setText: (text: string) => void
@@ -518,6 +519,8 @@ export function Composer({
   onClearReply?: () => void
   /** The build a new session starts on (docs/builds.md); shown once there is a built one. */
   machine?: MachinePicker
+  /** Puts the cursor in the box on mount and whenever this changes (a new visit to the page), once it is enabled. Not on touch screens, where it would pop the keyboard. */
+  focusKey?: string
 }) {
   const formRef = useRef<HTMLFormElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -533,6 +536,10 @@ export function Composer({
   const stacked = wraps || files.length > 0
   const isNewSession = setRepo !== undefined
   const locked = !!(pending || disabled)
+  useEffect(() => {
+    if (focusKey === undefined || locked || !matchMedia('(hover: hover)').matches) return
+    textRef.current?.focus()
+  }, [focusKey, locked])
   const hasContent = text.trim().length > 0 || ready.length > 0
   const canSend = hasContent && !uploading && !locked && (!isNewSession || !!repo?.trim())
   const submit = async () => {
