@@ -26,6 +26,11 @@ export type Chat = {
   /** Something is moving in this chat. The sidebar shows only this; richer states (sleeping, error) live in the chat itself. */
   working: boolean
   pr?: { number: number; state?: PrState }
+  /** A dork (coordinator) shows its emoji instead of the working dot (docs/crew.md). */
+  icon?: string
+  kind?: 'agent' | 'coordinator'
+  /** A worker's coordinator: workers live inside their dork, not in the sidebar. */
+  parentId?: string | null
 }
 
 type RoutesByPath = RegisteredRouter['routesByPath']
@@ -129,7 +134,13 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
         title={chat.title}
         className={`${SIDEBAR_ROW} ${chat.pr ? 'pr-12' : ''} ${onArchive ? 'group-hover/row:pr-8' : ''}`}
       >
-        <Orb size={14} working={chat.working} label={chat.working ? 'Working…' : 'Idle'} className="text-muted-foreground" />
+        {chat.icon ? (
+          <span aria-hidden className="flex size-3.5 shrink-0 items-center justify-center text-[13px] leading-none">
+            {chat.icon}
+          </span>
+        ) : (
+          <Orb size={14} working={chat.working} label={chat.working ? 'Working…' : 'Idle'} className="text-muted-foreground" />
+        )}
         <span className="min-w-0 flex-1 truncate">{chat.title}</span>
       </Link>
       {chat.pr && (

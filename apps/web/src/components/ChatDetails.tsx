@@ -675,7 +675,7 @@ function IndexSection({ title, children }: { title: string; children: ReactNode 
  * A grid of tiles split by full hairlines (each tile draws its right and bottom edge; the grid hides only the outer right one, so the last row keeps its bottom line). The first tile
  * is the code changes, when there are any.
  */
-function Artifacts({
+export function Artifacts({
   artifacts,
   changes,
   previews,

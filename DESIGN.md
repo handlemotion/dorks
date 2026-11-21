@@ -52,6 +52,10 @@ Rules that tooling enforces live in `AGENTS.md` and `packages/ui/README.md`; thi
   under its title, that open in the New tab's place (a PR on one row: state icon, title, `#N`, diff stats when known; a PR stacked on
   another PR's branch is indented under it, and its overview gets a `Stack` row, `#7 → #8`, each number opening its tab; image
   thumbnails get a 15% hairline; Changes is left out once PRs have their rows); empty sections are left out, and a search with no results says `No matches`.
+- **Dorks** (coordinators, `docs/crew.md`) are a sidebar group with their emoji; their workers have no rows. A dork's details are
+  `CrewDetails`: the same 40px bar and 28px tabs, fixed to Sessions, Artifacts and one tab per worker PR. A worker opens inside
+  Sessions under a full-width 40px bar (state, title, then full screen, stop, archive, close) with its chat below; full screen is its
+  own page, the dork kept as the header's crumb and the sidebar's active row.
 - **Edges:** the page title and the composer start 20px from the column's edge (the composer 20px from the bottom too); the transcript
   is indented to 30px, a step in from both, so messages read as the content between them. The transcript keeps `max-w-3xl`.
 - **Headers** are 48px, one line, the title in regular 13px. No subtitles, no badges. A header divider exists only when it can span

@@ -76,14 +76,14 @@ Auth: `Authorization: Bearer <owner token>` (SSE also accepts `?access_token=`, 
 IDs are UUID strings. Times are epoch milliseconds.
 
 **Dork** (the client-visible row; box ids, session ids and secrets are never returned):
-`{ id, title, repo, branch, provider: "claude"|"codex", state, archived, preview?, previews: {port, url, title?}[], prUrl?, codexModel?, codexModelChoices?, model?, effort?, agentModel?, agentEffort?, modelChoices?, buildId, kind, parentId, lastActivityAt, createdAt }`
+`{ id, title, repo, branch, provider: "claude"|"codex", state, archived, preview?, previews: {port, url, title?}[], prUrl?, codexModel?, codexModelChoices?, model?, effort?, agentModel?, agentEffort?, modelChoices?, buildId, kind, parentId, icon?, lastActivityAt, createdAt }`
 `state` is one of `creating | working | idle | sleeping | waking | error`. For Claude, `model`/`effort` are the session's choice (absent: the CLI's default), `agentModel`/`agentEffort` what the agent confirmed it runs (the model from its `system/init` event, the effort the bridge started it with; cleared on a change until confirmed again), and `modelChoices` the `AgentModelChoice[]` the CLI offered this account (its `initialize` answer). `previews` are the dev servers the agent showed (`show_preview` below), oldest first, at most 20; Chat details' Artifacts shows them as running previews and opens one as it appears. The URLs are public hosted ports (no token), cleared when the box is replaced. `kind` is `agent` or `coordinator` (a session that plans and runs worker dorks), `parentId` the coordinator that started a worker, else null: [crews](crew.md).
 
 | Method and path | Body / query | Result |
 |---|---|---|
 | `GET /api/dorks` | `?archived=true` | `Dork[]`, newest activity first, at most 200 |
 | `GET /api/dorks/:id` | | `Dork` or 404 |
-| `POST /api/dorks` | `{repo, message, title?, provider?, model?, effort?, buildId?, setup?, kind?}` (`kind: "coordinator"` needs no `repo`, [crews](crew.md); `provider` defaults to `claude`; Codex needs a configured Boat environment; Claude's `model`/`effort` must be in `settings.claudeModels`; `buildId` defaults to `settings.defaultBuildId`, and needs a built image unless `setup: true`, a machine-setup session that also needs no `repo`: [builds](builds.md)) | `{id}` |
+| `POST /api/dorks` | `{repo, message, title?, provider?, model?, effort?, buildId?, setup?, kind?, icon?}` (`kind: "coordinator"` needs no `repo`, [crews](crew.md); `provider` defaults to `claude`; Codex needs a configured Boat environment; Claude's `model`/`effort` must be in `settings.claudeModels`; `buildId` defaults to `settings.defaultBuildId`, and needs a built image unless `setup: true`, a machine-setup session that also needs no `repo`: [builds](builds.md)) | `{id}` |
 | `PATCH /api/dorks/:id` | `{title}` | `{}` |
 | `DELETE /api/dorks/:id` | | `{}` (box is destroyed in the background, then rows are purged) |
 | `POST /api/dorks/:id/messages` | `{text}` | `{}` |

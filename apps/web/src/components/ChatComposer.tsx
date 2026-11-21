@@ -203,7 +203,11 @@ function MainButton({ onStop, isNewSession, pending, canSend }: { onStop?: () =>
 }
 
 /** The repository: a picker for a new session, else its name. */
-function RepositoryControl({ repo, setRepo, repositories, disabled }: { repo?: string; setRepo?: (repo: string) => void; repositories: string[]; disabled: boolean }) {
+/** The box's hint: what the session's agent is asked for. */
+const hintOf = (placeholder?: string) => placeholder ?? 'Ask the agent to change your code...'
+
+function RepositoryControl({ repo, setRepo, repositories, disabled, hidden }: { repo?: string; setRepo?: (repo: string) => void; repositories: string[]; disabled: boolean; hidden?: boolean }) {
+  if (hidden) return null
   if (repo === undefined) return null
   if (setRepo) return <RepositoryPicker repo={repo} setRepo={setRepo} repositories={repositories} disabled={disabled} />
   return (
@@ -466,6 +470,8 @@ export function Composer({
   repo,
   setRepo,
   repositories = [],
+  placeholder,
+  showRepo,
   provider = 'claude',
   setProvider,
   codexEnabled,
@@ -488,6 +494,10 @@ export function Composer({
   repo?: string
   setRepo?: (repo: string) => void
   repositories?: string[]
+  /** The box's hint (default: asks for a code change). */
+  placeholder?: string
+  /** False for a session with no repository of its own to show (a dork). */
+  showRepo?: boolean
   provider?: AgentProvider
   /** Without it the agent is fixed (a running session): the menu shows it but only the effort can change. */
   setProvider?: (provider: AgentProvider) => void
@@ -599,7 +609,7 @@ export function Composer({
             data-1p-ignore
             data-lpignore="true"
             data-form-type="other"
-            placeholder="Ask the agent to change your code..."
+            placeholder={hintOf(placeholder)}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onPaste={(e) => {
@@ -648,7 +658,7 @@ export function Composer({
         {/* Compact, shared baseline for the repository and model controls. 9px in (8px plus the box's 1px border), like attach and send, so the repository
             button lines up under attach and the model button under send. */}
         <div className="flex items-center gap-2 px-[9px] pt-2 text-[13px] [--control-radius:6px]">
-          <RepositoryControl repo={repo} setRepo={setRepo} repositories={repositories} disabled={locked} />
+          <RepositoryControl repo={repo} setRepo={setRepo} repositories={repositories} disabled={locked} hidden={showRepo === false} />
           {machine && machine.builds.length > 0 && <MachineMenu machine={machine} disabled={locked} />}
           <ModelMenu provider={provider} setProvider={setProvider} codexEnabled={codexEnabled} picker={picker} agentLabel={agentLabel} isNewSession={isNewSession} disabled={locked} />
         </div>

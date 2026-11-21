@@ -40,6 +40,8 @@ export interface Dork {
   kind?: "agent" | "coordinator";
   /** The coordinator that started this worker; null otherwise. Absent on older servers. */
   parentId?: string | null;
+  /** A coordinator's emoji. */
+  icon?: string;
   lastActivityAt: number;
   createdAt: number;
 }
@@ -53,6 +55,8 @@ export interface CreateDorkInput {
   setup?: boolean;
   /** `coordinator`: a session that plans and delegates to worker dorks; needs no repo (docs/crew.md). */
   kind?: "agent" | "coordinator";
+  /** One emoji for a coordinator, shown in the sidebar. */
+  icon?: string;
   message: string;
   title?: string;
   provider?: Provider;

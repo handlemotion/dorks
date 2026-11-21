@@ -77,6 +77,24 @@ one `dork_get` reports as `settled: true`. `lastAnswer` is the final answer of i
   forwards to the server op. `dork_wait` repeats 8 s waits until its timeout.
 - `guidance.ts`: `COORDINATOR_GUIDANCE` and `WORKER_GUIDANCE`.
 
+## Web
+
+In the app a coordinator is called a **dork**.
+
+- **Sidebar:** a **Dorks** group above the repositories (`AppSidebar`), each dork with the emoji picked for it. Its `+` (or the
+  `New dork` row while there are none) opens **New dork** (`NewDorkDialog`): an emoji, an optional name and the goal; it creates a
+  coordinator (`POST /api/dorks {kind: "coordinator", icon, message}`) and opens it. Workers have no rows: they live inside their dork.
+- **The dork's chat** is a normal chat (`SessionChat`) whose box asks what the dork should do next and shows no repository. Crew reports and
+  notes are folded lines in the transcript ("Report from …") that open on the whole text.
+- **Dork details** (`CrewDetails`) replace Chat details: **Sessions** (its workers: state, title, repository, PR), **Artifacts** (the
+  screenshots and previews of the dork and every worker) and one tab per worker pull request, the PR view alone (a dork has no local
+  changes).
+- **A worker opens in place**, inside Sessions: a full-width bar (its state and title; open full screen, stop, archive, close) over its
+  chat, which the owner can talk in.
+- **Full screen** is the worker's own page with its own Chat details. The header starts with a crumb back to the dork, and the sidebar
+  keeps the dork highlighted, so the top session is never lost.
+- Below `lg` details are hidden, as for every chat; a report's **Open session** still reaches its worker full screen.
+
 ## Connect an external agent
 
 ```sh
@@ -92,5 +110,4 @@ The token is the owner token (`<data dir>/secrets.json`, or `dev-owner-token` un
 - Structured output schemas on `dork_create`.
 - The MCP Tasks extension for `dork_wait`.
 - Codex: a Codex coordinator or worker gets the crew tools but not the role guidance (Claude only, like the rest of the live testing).
-- Web: a coordinator option in the composer and a crew view in the sidebar. The API takes `kind: "coordinator"` on `POST /api/dorks`;
   the transcript shows crew reports and notes.

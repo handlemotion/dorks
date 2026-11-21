@@ -1,32 +1,30 @@
 import { CatchBoundary, createFileRoute, Link, Navigate, useNavigate } from '@tanstack/react-router'
 import { useCallback, useEffect, useState } from 'react'
 import type { DesktopOptions } from '@dorks/client'
-import type { AgentModelChoice, Block } from '@dorks/shared'
+import type { Block } from '@dorks/shared'
 import { ChevronDownIcon, ChevronRightIcon, InfoIcon, MessageSquareIcon } from 'lucide-react'
-import { useBuilds, useConnection, useDork, useDorkEvents, useDorks, useDorksClient, useGithubRepos, usePullRequest, useSettings, useSubscriptions } from '@dorks/client/react'
+import { useBuilds, useDork, useDorkEvents, useDorks, useDorksClient, useGithubRepos, usePullRequest, useSettings, useSubscriptions } from '@dorks/client/react'
 import { ownersOf, useOwnerScope } from '../../../components/ownerScope'
 import { ownerOf } from '../../../components/RepoAvatar'
 import { List } from '../../../components/onboarding/List'
 import { EmptyState } from '../../../components/EmptyState'
-import { AgentStatus } from '../../../components/AgentStatus'
 import { BrandCircle } from '../../../components/BrandCircle'
 import { Alert, AlertDescription } from '@dorks/ui/alert'
 import { Button } from '@dorks/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@dorks/ui/dropdown-menu'
 import { InputGroup, InputGroupButton } from '@dorks/ui/input-group'
-import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport } from '@dorks/ui/message-scroller'
-import { ChatMessages, resolveSharedImages } from '../../../components/ChatBlock'
-import { LocalAccessProvider } from '../../../components/LocalRequest'
+import { resolveSharedImages } from '../../../components/ChatBlock'
+import { CrewDetails } from '../../../components/CrewDetails'
+import { SessionChat } from '../../../components/SessionChat'
 import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, useWide, type ChatDetailsData } from '../../../components/ChatDetails'
 import type { PullRequestPanelData } from '../../../components/PullRequestPanel'
 import { latestTasks, progressStore, progressTurns } from '../../../lib/progress'
-import { withImages, Composer, preferredModel, type AgentProvider, type ModelPicker } from '../../../components/ChatComposer'
+import { withImages, Composer, preferredModel, type AgentProvider } from '../../../components/ChatComposer'
 import { ChatMenu } from '../../../components/ChatMenu'
 import { ArchiveButton, PageHeader } from '../../../components/PageHeader'
 import { SetupStatus } from '../../../components/SetupStatus'
 import { canCreate, onboarded } from '../../../lib/onboarding'
 import { usePending } from '../../../lib/pending'
-import { withReply, type Reply } from '../../../lib/reply'
 import { useDraft } from '../../../lib/draft'
 import { useArchiveDork } from '../../../lib/archive'
 
@@ -267,19 +265,6 @@ function useSessionPullRequest(dorkId: string, url: string): PullRequestPanelDat
   }
 }
 
-/** Claude's model menu for a running session; Codex has none. */
-function claudePicker(dork: DorkView, fallback: AgentModelChoice[] | undefined, onChange: ModelPicker['onChange']): ModelPicker | undefined {
-  if (dork.provider !== 'claude') return undefined
-  return {
-    choices: dork.modelChoices ?? fallback ?? [],
-    model: dork.model,
-    effort: dork.effort,
-    fast: dork.fast,
-    active: { model: dork.agentModel, effort: dork.agentEffort },
-    onChange,
-  }
-}
-
 /** A failed Codex session's ChatGPT models, to restart it on another one. */
 function CodexModelForm({ dork }: { dork: DorkView }) {
   const { actions } = useDorksClient()
@@ -340,23 +325,19 @@ function Thread({ dorkId }: { dorkId: string }) {
   const { actions } = useDorksClient()
   const navigate = useNavigate()
   const dork = useDork(dorkId)
-  const { view, canLoadMore, loadMore, loading, error: eventsError, send } = useDorkEvents(dorkId)
-  const [text, setText] = useDraft(dorkId)
-  const [reply, setReply] = useState<Reply>()
-  const { run, pending, error } = usePending()
-  const { run: runStop, pending: stopping, error: stopError } = usePending()
+  const { view, loading } = useDorkEvents(dorkId)
   const { run: runArchive, pending: archiving, error: archiveError } = usePending()
   const archiveDork = useArchiveDork()
-  const modelSwitch = usePending()
-  const settings = useSettings()
   const [detailsOpen, setDetailsOpen] = useDetailsOpen()
+  // One draft for the composer and everything on the page that writes into it (Ask for…, picked elements).
+  const draft = useDraft(dorkId)
+  const setText = draft[1]
   const wide = useWide()
   // Each chat's Progress starts on its newest step.
   useEffect(() => progressStore.reset(), [dorkId])
   const computerUsed = view.blocks.some((b) => b.kind === 'tool' && b.name.startsWith('mcp__computer__'))
   const fetchDesktopUrl = useCallback((opts: DesktopOptions) => actions.desktopUrl(dorkId, opts), [actions, dorkId])
   const interruptAgent = useCallback(() => actions.interrupt(dorkId), [actions, dorkId])
-  const { live } = useConnection()
   const pullRequest = usePullRequestPanel(dorkId, dork)
   const subscriptions = useSubscriptions(dorkId)
   const usePr = useCallback((url: string) => useSessionPullRequest(dorkId, url), [dorkId])
@@ -372,25 +353,24 @@ function Thread({ dorkId }: { dorkId: string }) {
         That session could not be found.
       </p>
     )
-  const working = dork.state === 'working'
-  const canReply = !dork.archived
+  const crew = dork.kind === 'coordinator'
+  const details = !detailsOpen ? undefined : crew ? (
+    <CrewDetails dork={dork} onClose={() => setDetailsOpen(false)} onAsk={setText} />
+  ) : (
+    <ChatDetails
+      sessionId={dorkId}
+      data={{ ...detailsData(dork, view.blocks, actions, { used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent }), pullRequest, subscriptions, usePullRequest: usePr }}
+      onClose={() => setDetailsOpen(false)}
+      onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}
+      onAsk={setText}
+    />
+  )
   return (
-    <ChatSplit
-      details={
-        detailsOpen ? (
-          <ChatDetails
-            sessionId={dorkId}
-            data={{ ...detailsData(dork, view.blocks, actions, { used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent }), pullRequest, subscriptions, usePullRequest: usePr }}
-            onClose={() => setDetailsOpen(false)}
-            onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}
-            onAsk={setText}
-          />
-        ) : undefined
-      }
-    >
-      <section className="flex min-w-0 flex-1 flex-col" aria-label="thread" data-state={dork.state}>
+    <ChatSplit details={details}>
+      <section className="flex min-w-0 flex-1 flex-col" aria-label="thread" data-state={dork.state} data-kind={dork.kind ?? 'agent'}>
         <PageHeader
-          title={dork.title}
+          parent={dork.parentId ? <ParentCrumb id={dork.parentId} /> : undefined}
+          title={crew && dork.icon ? `${dork.icon} ${dork.title}` : dork.title}
           titleActions={<ArchiveButton archived={dork.archived} disabled={archiving} onClick={() => void runArchive(() => archiveDork(dorkId, !dork.archived))} />}
           actions={
             <>
@@ -407,87 +387,32 @@ function Thread({ dorkId }: { dorkId: string }) {
           }
         />
         <CodexModelForm dork={dork} />
-        <MessageScrollerProvider autoScroll defaultScrollPosition="end">
-          <MessageScroller>
-            <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
-              <MessageScrollerContent className="mx-auto w-full max-w-4xl gap-6 px-10 pt-6 pb-12" data-testid="transcript">
-                {canLoadMore && (
-                  <div className="text-center">
-                    <Button variant="outline" size="sm" onClick={loadMore}>
-                      Load older
-                    </Button>
-                  </div>
-                )}
-                <LocalAccessProvider dorkId={dork.id} agent={dork.provider === 'codex' ? 'Codex' : 'Claude'}>
-                  <ChatMessages
-                    blocks={view.blocks}
-                    imageUrl={actions.imageUrl}
-                    agent={dork.provider === 'codex' ? 'Codex' : 'Claude'}
-                    onOpenStep={
-                      wide
-                        ? (key) => {
-                            setDetailsOpen(true)
-                            progressStore.show(key)
-                          }
-                        : undefined
-                    }
-                    onReply={
-                      canReply
-                        ? (quoted, draft) => {
-                            setReply(quoted)
-                            if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft))
-                          }
-                        : undefined
-                    }
-                    onReplySend={canReply ? (quoted, answer) => run(() => send(withReply(quoted, answer))) : undefined}
-                  />
-                </LocalAccessProvider>
-                {eventsError && (
-                  <p role="alert" className="text-sm text-destructive">
-                    Could not load messages: {eventsError.message}. Retrying…
-                  </p>
-                )}
-                <div>
-                  <AgentStatus state={dork.state} live={live} outcome={view.lastOutcome} />
-                </div>
-              </MessageScrollerContent>
-            </MessageScrollerViewport>
-            <MessageScrollerButton />
-          </MessageScroller>
-        </MessageScrollerProvider>
-        <Composer
-          text={text}
-          setText={setText}
-          repo={dork.repo}
-          provider={dork.provider ?? 'claude'}
-          pending={pending}
-          disabled={dork.archived}
-          error={[error, stopError, archiveError, modelSwitch.error].find(Boolean) ?? ''}
-          agentLabel={dork.codexModel?.model}
-          picker={claudePicker(dork, settings?.claudeModels, (model, effort, fast) => void modelSwitch.run(() => actions.chooseModel(dorkId, model ?? null, effort ?? null, fast)))}
-          upload={actions.uploadImage}
-          reply={reply}
-          onClearReply={() => setReply(undefined)}
-          onSubmit={(images) =>
-            run(async () => {
-              const sent = text
-              const quoted = reply
-              // The optimistic row shows it at once; put the text and the reply back if the server refuses.
-              setText('')
-              setReply(undefined)
-              try {
-                await send(withReply(quoted, withImages(sent, images)))
-              } catch (e) {
-                setText(sent)
-                setReply(quoted)
-                throw e
-              }
-            })
+        <SessionChat
+          dork={dork}
+          error={archiveError}
+          draft={draft}
+          onOpenStep={
+            wide && !crew
+              ? (key) => {
+                  setDetailsOpen(true)
+                  progressStore.show(key)
+                }
+              : undefined
           }
-          onStop={working && !stopping && canReply ? () => void runStop(() => actions.interrupt(dorkId)) : undefined}
         />
       </section>
     </ChatSplit>
+  )
+}
+
+/** A worker open full screen: its dork, one click away in the header (docs/crew.md). */
+function ParentCrumb({ id }: { id: string }) {
+  const parent = useDork(id)
+  return (
+    <Link to="/dorks" search={{ dork: id }} className="flex min-w-0 items-center gap-1.5 hover:text-foreground" aria-label={`Back to ${parent?.title ?? 'the dork'}`}>
+      {parent?.icon && <span aria-hidden>{parent.icon}</span>}
+      <span className="max-w-48 truncate">{parent?.title ?? 'Dork'}</span>
+    </Link>
   )
 }
 
