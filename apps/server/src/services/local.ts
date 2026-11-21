@@ -244,13 +244,22 @@ export function decideLocal(app: App, dorkId: string, requestId: string, decisio
     touch(app, { t: "settings" });
     allow(app, r, decision);
     if (decision === "session") return [r.id];
-    // Always allow covers the sessions that are waiting right now, too.
-    const others = app.db.all<RequestRow>("SELECT * FROM local_requests WHERE status = 'pending' AND id != ? AND expires_at > ?", r.id, app.now());
-    for (const o of others) allow(app, o, "standing");
-    return [r.id, ...others.map((o) => o.id)];
+    return [r.id, ...allowWaiting(app)]; // Always allow covers the sessions that are waiting right now, too
   });
   if (started === "expired") fail("conflict", "This request expired.");
   for (const id of started) void execute(app, id);
+}
+
+/** In a transaction: every request still waiting for an answer is allowed (Always allow was just turned on). Returns their ids. */
+function allowWaiting(app: App): string[] {
+  const waiting = app.db.all<RequestRow>("SELECT * FROM local_requests WHERE status = 'pending' AND expires_at > ?", app.now());
+  for (const r of waiting) allow(app, r, "standing");
+  return waiting.map((r) => r.id);
+}
+
+/** Always allow was turned on in Settings: run what is waiting, as answering "Always allow" in the chat does. */
+export function startWaitingLocal(app: App) {
+  for (const id of app.db.tx(() => allowWaiting(app))) void execute(app, id);
 }
 
 /** `session` / `always`: the owner just answered this request so; `standing`: an earlier answer (or Always allow) covered it. */

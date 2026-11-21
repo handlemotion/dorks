@@ -98,15 +98,22 @@ describe("running a command on the owner's computer", () => {
     h.clock.t += REQUEST_TTL_MS;
     await h.settle();
     expect(await waitLocal(h.app, elsewhere, r5.requestId, 0)).toMatchObject({ status: "expired" });
-    const r8 = requestLocal(h.app, elsewhere, { kind: "run", command: "true", cwd: dir, reason: "waiting when turned off" });
+    const r8 = requestLocal(h.app, elsewhere, { kind: "run", command: "true", cwd: dir, reason: "waiting" });
 
-    // Turned off: what is waiting is refused, every permission ends, and the agent cannot ask at all.
+    // Always allow turned on in Settings answers what is waiting, as the prompt's Always allow does.
     await updateSettings(h.app, { localAlwaysAllow: true });
+    expect(await settled(h, elsewhere, r8.requestId)).toMatchObject({ status: "done" });
+
+    // Turned off: Always allow and every permission end, and the agent cannot ask at all.
     setLocalAccess(h.app, false);
-    expect(status(h, r8.requestId)).toBe("denied");
     expect(readSettings(h.app).localAlwaysAllow).toBe(false);
     expect(localAccessView(h.app).sessions).toEqual([]);
     expect(code(() => requestLocal(h.app, dork, { kind: "run", command: "ls", reason: "x" }))).toBe("forbidden");
+    // ...and what is waiting when it is turned off is refused.
+    setLocalAccess(h.app, true);
+    const r9 = requestLocal(h.app, elsewhere, { kind: "run", command: "true", cwd: dir, reason: "waiting when turned off" });
+    setLocalAccess(h.app, false);
+    expect(status(h, r9.requestId)).toBe("denied");
     delete process.env.DORKS_OWNER_TOKEN;
   });
 

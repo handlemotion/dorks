@@ -175,6 +175,8 @@ export async function updateSettings(app: App, patch: SettingsPatch): Promise<vo
     update(app.db, "settings", { id: 1 }, row);
     touch(app, { t: "settings" });
   });
+  // Turning Always allow on also answers the requests already waiting (local.ts imports this module, hence the dynamic import).
+  if (row.localAlwaysAllow === true) (await import("./local")).startWaitingLocal(app);
 }
 
 export async function setSecret(app: App, name: string, value: string): Promise<void> {
