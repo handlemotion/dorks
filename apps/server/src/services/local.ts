@@ -1,23 +1,24 @@
 import { spawn } from "node:child_process";
 import { closeSync, existsSync, openSync, readSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { delimiter, isAbsolute, join, resolve, sep } from "node:path";
 import type { LocalKind } from "@dorks/shared";
 import { fail, touch, type App } from "../app";
 import { getDork } from "../data";
 import { insert, update } from "../db";
 import { append, cancelTimer, setTimer } from "../lifecycle/dispatch";
+import { readSettings } from "./settings";
 
 // Local access (docs/local-access.md): a dork's agent runs in a cloud sandbox, but this server runs on the owner's own computer. When
 // the agent needs something that only exists there (a CLI that is signed in, a file, a local service), it asks through its bridge
-// ("can I run `xcrun simctl list` in ~/app?"); the owner sees the exact command in the chat and answers. Nothing runs or is read
-// without the owner's Allow, or a permission the owner granted for one exact command (or one folder, for reads) for at most an hour.
+// ("can I run `xcrun simctl list` in ~/app?"). The owner answers once per session: the first request shows "Claude wants to access
+// your computer", and Allow for this session lets that dork's later requests run without asking; Always allow (the
+// `localAlwaysAllow` setting) lets every session in. Nothing runs or is read without one of the two.
 //
 // The request is a row; the owner's answer and the result are events in the transcript, so the chat is the audit log. The agent's tool
 // call waits on the row (`waitLocal`, a short poll the bridge repeats) and gets the output back in the same turn.
 
 export const REQUEST_TTL_MS = 10 * 60_000; // an unanswered request expires (the agent's tool call stops waiting before this)
-export const GRANT_MINUTES = [15, 60] as const;
 export const DEFAULT_TIMEOUT_S = 120;
 export const MAX_TIMEOUT_S = 600;
 export const MAX_COMMAND_CHARS = 4_000;
@@ -26,7 +27,7 @@ export const MAX_PATH_CHARS = 1_024;
 export const MAX_READ_BYTES = 256 * 1024;
 export const OUTPUT_HEAD = 16 * 1024; // what the agent gets back from a command: the start and the end of its output
 export const OUTPUT_TAIL = 48 * 1024;
-export const PREVIEW_CHARS = 2_000; // what the transcript card shows
+export const PREVIEW_CHARS = 2_000; // what the transcript row shows
 export const MAX_WAIT_MS = 8_000; // one wait; the bridge gives the backend 10 s per call
 const KILL_GRACE_MS = 3_000;
 const SETTING = "local_access";
@@ -49,24 +50,11 @@ interface RequestRow {
   reason: string;
   timeout_ms: number;
   status: Status;
-  grant_id: string | null;
   exit_code: number | null;
   output: string | null;
   truncated: number;
   error: string | null;
   expires_at: number;
-  created_at: number;
-}
-
-interface GrantRow {
-  id: string;
-  dork_id: string;
-  kind: LocalKind;
-  command: string | null;
-  cwd: string | null;
-  dir: string | null;
-  expires_at: number;
-  revoked: number;
   created_at: number;
 }
 
@@ -81,16 +69,11 @@ export interface LocalResultView {
   error?: string;
 }
 
-export interface LocalGrantView {
-  id: string;
+/** A session the owner allowed to use this computer (Allow for this session). */
+export interface LocalSessionView {
   dorkId: string;
   dorkTitle: string;
-  kind: LocalKind;
-  command?: string;
-  cwd?: string;
-  dir?: string;
-  expiresAt: number;
-  createdAt: number;
+  allowedAt: number;
 }
 
 // ---------------------------------------------------------------- the owner's switch and permissions
@@ -98,51 +81,41 @@ export interface LocalGrantView {
 /** On unless the owner turned it off: a request only asks, so being able to ask is harmless. */
 export const localAccessEnabled = (app: App) => app.db.get<{ value: string }>("SELECT value FROM meta WHERE key = ?", SETTING)?.value !== "off";
 
-const activeGrants = (app: App, dorkId?: string) =>
-  dorkId
-    ? app.db.all<GrantRow>("SELECT * FROM local_grants WHERE dork_id = ? AND revoked = 0 AND expires_at > ? ORDER BY created_at DESC", dorkId, app.now())
-    : app.db.all<GrantRow>("SELECT * FROM local_grants WHERE revoked = 0 AND expires_at > ? ORDER BY created_at DESC", app.now());
-
-export function localAccessView(app: App): { enabled: boolean; grants: LocalGrantView[] } {
-  const grants = activeGrants(app).map((g) => ({
-    id: g.id,
-    dorkId: g.dork_id,
-    dorkTitle: getDork(app.db, g.dork_id)?.title ?? "",
-    kind: g.kind,
-    ...(g.command !== null ? { command: g.command } : {}),
-    ...(g.cwd !== null ? { cwd: g.cwd } : {}),
-    ...(g.dir !== null ? { dir: g.dir } : {}),
-    expiresAt: g.expires_at,
-    createdAt: g.created_at,
-  }));
-  return { enabled: localAccessEnabled(app), grants };
+/** Whether this dork may use the computer without asking: the owner allowed every session, or this one. */
+function allowedVia(app: App, dorkId: string): "always" | "session" | null {
+  if (readSettings(app).localAlwaysAllow) return "always";
+  const row = app.db.get<{ local_allowed_at: number | null }>("SELECT local_allowed_at FROM dorks WHERE id = ?", dorkId);
+  return row?.local_allowed_at != null ? "session" : null;
 }
 
-/** Turning it off also ends every permission and refuses whatever is still waiting. */
+export function localAccessView(app: App): { enabled: boolean; sessions: LocalSessionView[] } {
+  const sessions = app.db
+    .all<{ id: string; title: string | null; local_allowed_at: number }>(
+      "SELECT id, title, local_allowed_at FROM dorks WHERE local_allowed_at IS NOT NULL AND deleting = 0 ORDER BY local_allowed_at DESC",
+    )
+    .map((d) => ({ dorkId: d.id, dorkTitle: d.title ?? "", allowedAt: d.local_allowed_at }));
+  return { enabled: localAccessEnabled(app), sessions };
+}
+
+/** Turning it off also ends every permission (each session's and Always allow) and refuses whatever is still waiting. */
 export function setLocalAccess(app: App, enabled: unknown) {
   if (typeof enabled !== "boolean") fail("invalid", "enabled must be a boolean");
   app.db.tx(() => {
     app.db.run("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", SETTING, enabled ? "ask" : "off");
     if (!enabled) {
-      app.db.run("UPDATE local_grants SET revoked = 1 WHERE revoked = 0");
+      app.db.run("UPDATE dorks SET local_allowed_at = NULL WHERE local_allowed_at IS NOT NULL");
+      update(app.db, "settings", { id: 1 }, { localAlwaysAllow: false });
       for (const r of app.db.all<RequestRow>("SELECT * FROM local_requests WHERE status = 'pending'")) settle(app, r, "denied");
     }
     touch(app, { t: "settings" });
   });
 }
 
-export function revokeGrant(app: App, grantId: string) {
+/** Ends one session's permission, or every session's: their next request asks again (unless Always allow is on). */
+export function revokeSessions(app: App, dorkId?: string) {
   app.db.tx(() => {
-    app.db.run("UPDATE local_grants SET revoked = 1 WHERE id = ?", grantId);
-    touch(app, { t: "settings" });
-  });
-}
-
-/** One dork's permissions, or every one. */
-export function revokeGrants(app: App, dorkId?: string) {
-  app.db.tx(() => {
-    if (dorkId) app.db.run("UPDATE local_grants SET revoked = 1 WHERE dork_id = ? AND revoked = 0", dorkId);
-    else app.db.run("UPDATE local_grants SET revoked = 1 WHERE revoked = 0");
+    if (dorkId) app.db.run("UPDATE dorks SET local_allowed_at = NULL WHERE id = ?", dorkId);
+    else app.db.run("UPDATE dorks SET local_allowed_at = NULL WHERE local_allowed_at IS NOT NULL");
     touch(app, { t: "settings" });
   });
 }
@@ -167,14 +140,6 @@ const realOrNull = (p: string) => {
 
 const within = (file: string, dir: string) => file === dir || file.startsWith(dir.endsWith(sep) ? dir : dir + sep);
 
-/** Does a standing permission cover this request? Runs: the same command in the same folder. Reads: a file under the folder. */
-export function grantFor(app: App, dorkId: string, kind: LocalKind, target: { command?: string; cwd?: string; path?: string }): GrantRow | undefined {
-  const grants = activeGrants(app, dorkId).filter((g) => g.kind === kind);
-  if (kind === "run") return grants.find((g) => g.command === target.command && g.cwd === target.cwd);
-  const real = target.path ? realOrNull(target.path) : null;
-  return real ? grants.find((g) => g.dir && within(real, g.dir)) : undefined;
-}
-
 // ---------------------------------------------------------------- the agent's side (bridge op `local`)
 
 const str = (v: unknown, what: string, max: number, required = true): string | undefined => {
@@ -190,7 +155,8 @@ const str = (v: unknown, what: string, max: number, required = true): string | u
 
 /**
  * The agent asks. Refused at once when the owner turned local access off or another request of this dork is still waiting (one at a
- * time, so the owner is never asked twice at once). A standing permission allows it right away; otherwise it waits for the owner.
+ * time, so the owner is never asked twice at once). A session the owner already allowed (or Always allow) runs it right away;
+ * otherwise it waits for the owner's answer.
  */
 export function requestLocal(app: App, dorkId: string, args: Record<string, unknown>): LocalResultView {
   const kind = args.kind;
@@ -216,9 +182,8 @@ export function requestLocal(app: App, dorkId: string, args: Record<string, unkn
     const now = app.now();
     insert(app.db, "local_requests", { id, dorkId, kind, command, cwd, path, reason, timeoutMs: timeoutS * 1000, status: "pending", expiresAt: now + REQUEST_TTL_MS, createdAt: now });
     append(app, dorkId, { type: "local_request", requestId: id, kind, ...(command ? { command } : {}), ...(cwd ? { cwd } : {}), ...(path ? { path } : {}), reason });
-    const grant = grantFor(app, dorkId, kind, { command, cwd, path });
-    if (grant) {
-      allow(app, requestRow(app, id)!, "standing", grant.id);
+    if (allowedVia(app, dorkId)) {
+      allow(app, requestRow(app, id)!, "standing");
       return { id, run: true };
     }
     setTimer(app, dorkId, TIMER + id, REQUEST_TTL_MS);
@@ -256,11 +221,13 @@ export async function waitLocal(app: App, dorkId: string, requestId: unknown, wa
 
 // ---------------------------------------------------------------- the owner's side
 
-/** The owner answers: `deny`, `once`, or `grant` (this request and the same command / folder for `minutes`). */
-export function decideLocal(app: App, dorkId: string, requestId: string, decision: unknown, minutes: unknown) {
-  if (decision !== "deny" && decision !== "once" && decision !== "grant") fail("invalid", "decision must be deny, once or grant");
-  if (decision === "grant" && !GRANT_MINUTES.includes(minutes as 15 | 60)) fail("invalid", `minutes must be one of ${GRANT_MINUTES.join(", ")}`);
-  const run = app.db.tx(() => {
+/**
+ * The owner answers the access prompt: `deny` this request, `session` (it and every later request of this dork run without asking),
+ * or `always` (turns on the `localAlwaysAllow` setting: no session asks again, and whatever other session is waiting runs too).
+ */
+export function decideLocal(app: App, dorkId: string, requestId: string, decision: unknown) {
+  if (decision !== "deny" && decision !== "session" && decision !== "always") fail("invalid", "decision must be deny, session or always");
+  const started = app.db.tx(() => {
     const r = requestRow(app, requestId);
     if (!r || r.dork_id !== dorkId) return fail("not_found", "This request no longer exists.");
     if (r.status !== "pending") return fail("conflict", "This request was already answered.");
@@ -270,27 +237,27 @@ export function decideLocal(app: App, dorkId: string, requestId: string, decisio
     }
     if (decision === "deny") {
       settle(app, r, "denied");
-      return false;
+      return [];
     }
-    let grantId: string | undefined;
-    if (decision === "grant") {
-      grantId = app.uuid();
-      // A read grant covers the file's folder as it really is on disk (symlinks followed), so `..` or a link cannot widen it later.
-      const dir = r.kind === "read" ? (realOrNull(dirname(r.path!)) ?? dirname(r.path!)) : null;
-      insert(app.db, "local_grants", { id: grantId, dorkId, kind: r.kind, command: r.command, cwd: r.cwd, dir, expiresAt: app.now() + (minutes as number) * 60_000, createdAt: app.now() });
-      touch(app, { t: "settings" });
-    }
-    allow(app, r, decision, grantId, decision === "grant" ? (minutes as number) : undefined);
-    return true;
+    if (decision === "session") app.db.run("UPDATE dorks SET local_allowed_at = ? WHERE id = ?", app.now(), dorkId);
+    else update(app.db, "settings", { id: 1 }, { localAlwaysAllow: true });
+    touch(app, { t: "settings" });
+    allow(app, r, decision);
+    if (decision === "session") return [r.id];
+    // Always allow covers the sessions that are waiting right now, too.
+    const others = app.db.all<RequestRow>("SELECT * FROM local_requests WHERE status = 'pending' AND id != ? AND expires_at > ?", r.id, app.now());
+    for (const o of others) allow(app, o, "standing");
+    return [r.id, ...others.map((o) => o.id)];
   });
-  if (run === "expired") fail("conflict", "This request expired.");
-  if (run) void execute(app, requestId);
+  if (started === "expired") fail("conflict", "This request expired.");
+  for (const id of started) void execute(app, id);
 }
 
-function allow(app: App, r: RequestRow, via: "once" | "grant" | "standing", grantId?: string, minutes?: number) {
-  update(app.db, "local_requests", { id: r.id }, { status: "running", grantId: grantId ?? null, decidedAt: app.now() });
+/** `session` / `always`: the owner just answered this request so; `standing`: an earlier answer (or Always allow) covered it. */
+function allow(app: App, r: RequestRow, via: "session" | "always" | "standing") {
+  update(app.db, "local_requests", { id: r.id }, { status: "running", decidedAt: app.now() });
   cancelTimer(app, r.dork_id, TIMER + r.id);
-  append(app, r.dork_id, { type: "local_decision", requestId: r.id, decision: "allowed", via, ...(grantId ? { grantId } : {}), ...(minutes ? { minutes } : {}) });
+  append(app, r.dork_id, { type: "local_decision", requestId: r.id, decision: "allowed", via });
 }
 
 function settle(app: App, r: RequestRow, decision: "denied" | "expired") {
@@ -404,8 +371,8 @@ export class HeadTail {
 }
 
 /**
- * Process groups of approved commands still running. Their time limits are timers in this process, so when the server exits (quit,
- * restart, crash) it ends them too: a command must never outlive the approval's limit.
+ * Process groups of allowed commands still running. Their time limits are timers in this process, so when the server exits (quit,
+ * restart, crash) it ends them too: a command must never outlive its time limit.
  */
 const runningGroups = new Set<number>();
 let exitHookInstalled = false;
@@ -489,7 +456,7 @@ export function readText(app: App, path: string): Outcome {
   }
 }
 
-/** The bridge op: `request` asks (and may start right away under a standing permission), `wait` waits for the answer and the result. */
+/** The bridge op: `request` asks (and starts right away in a session the owner allowed), `wait` waits for the answer and the result. */
 export async function localOp(app: App, dorkId: string, args: Record<string, unknown>): Promise<unknown> {
   if (args.action === "request") return requestLocal(app, dorkId, args);
   if (args.action === "wait") return waitLocal(app, dorkId, args.requestId, args.waitMs);

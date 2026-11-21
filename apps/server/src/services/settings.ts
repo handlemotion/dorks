@@ -23,6 +23,8 @@ export interface Settings {
   commentPolicy?: CommentPolicy;
   /** New Claude sessions start in Code Mode. */
   claudeCodeMode: boolean;
+  /** Every session may use the owner's computer without asking (docs/local-access.md). */
+  localAlwaysAllow: boolean;
 }
 
 const n = <T>(v: T | null | undefined): T | undefined => (v === null || v === undefined ? undefined : v);
@@ -40,6 +42,7 @@ export function readSettings(app: App): Settings {
     githubLogin: n(r.github_login as string | null),
     commentPolicy: json(r.comment_policy),
     claudeCodeMode: !!r.claude_code_mode,
+    localAlwaysAllow: !!r.local_always_allow,
   };
 }
 
@@ -56,6 +59,7 @@ export function settingsView(app: App) {
     sleepMinutes: s.sleepMinutes,
     commentPolicy: s.commentPolicy ?? DEFAULT_COMMENT_POLICY,
     claudeCodeMode: s.claudeCodeMode,
+    localAlwaysAllow: s.localAlwaysAllow,
     publicUrlConfigured: !!app.cfg.publicUrl,
     boxProvider: app.cfg.boxProvider,
     claudeModels: knownModelChoices(app),
@@ -77,6 +81,8 @@ export interface SettingsPatch {
   commentPolicy?: unknown;
   /** New Claude sessions start in Code Mode; existing ones keep what they started with. */
   claudeCodeMode?: unknown;
+  /** Sessions use the owner's computer without asking; off, each session asks once again (those already allowed stay allowed). */
+  localAlwaysAllow?: unknown;
 }
 
 const text = (v: unknown, what: string, max: number) => {
@@ -159,6 +165,10 @@ export async function updateSettings(app: App, patch: SettingsPatch): Promise<vo
   if (patch.claudeCodeMode !== undefined) {
     if (typeof patch.claudeCodeMode !== "boolean") fail("invalid", "claudeCodeMode must be true or false");
     row.claudeCodeMode = patch.claudeCodeMode;
+  }
+  if (patch.localAlwaysAllow !== undefined) {
+    if (typeof patch.localAlwaysAllow !== "boolean") fail("invalid", "localAlwaysAllow must be true or false");
+    row.localAlwaysAllow = patch.localAlwaysAllow;
   }
   if (!Object.keys(row).length) return;
   app.db.tx(() => {

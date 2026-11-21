@@ -422,4 +422,12 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE settings ADD COLUMN claude_code_mode INTEGER NOT NULL DEFAULT 1;
   ALTER TABLE dorks ADD COLUMN code_mode INTEGER NOT NULL DEFAULT 0;
   `,
+  `
+  -- Local access asks once per session, not per command (services/local.ts, docs/local-access.md): a dork the owner allowed has
+  -- local_allowed_at set, and local_always_allow lets every session in without asking. The per-command, time-limited grants are gone.
+  ALTER TABLE settings ADD COLUMN local_always_allow INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE dorks ADD COLUMN local_allowed_at INTEGER;
+  ALTER TABLE local_requests DROP COLUMN grant_id;
+  DROP TABLE local_grants;
+  `,
 ];
