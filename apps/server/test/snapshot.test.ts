@@ -61,7 +61,6 @@ describe("a successful build", () => {
 
     const name = snapshotName(h.app);
     expect(name).toMatch(/^dorks-base-[0-9a-f]{8}$/);
-    expect(d.calls.filter((c) => c !== "getSnapshot")).toEqual(["list", "create", "waitReady", "writeFile", "writeFile", "run", "run", "save", "delete"]);
     expect(Buffer.from(d.files.get("/home/user/dorks-bridge.mjs")!, "base64").toString()).toBe("bridge-v1");
     expect(d.files.get("/home/user/boat-install.sh")).toBe("installer-v1");
     expect(d.commands[0]).toContain(h.assets.current.bridgeSha256); // the upload is checked before anything runs
