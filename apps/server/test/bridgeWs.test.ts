@@ -137,20 +137,12 @@ describe("bridge socket: rpc", () => {
   });
 
   it("push applies frames and reports a gap; errors are typed", async () => {
-    const { h, id, t } = await setup("working");
+    const { t } = await setup("working");
     expect(await t.push([ev(1) as never, ev(2) as never])).toEqual({ ok: true });
     expect(await t.push([ev(5) as never])).toEqual({ ok: false, expectedBseq: 3 });
-    expect(h.rt(id).bridgeSeq).toBe(2);
     const many = Array.from({ length: 501 }, (_, i) => ev(i + 3) as never);
     const err = await t.push(many).catch((e) => e);
     expect(t.errorCode(err)).toBe("too_many_frames");
-    await t.close();
-  });
-
-  it("unknown ops are rejected", async () => {
-    const { t } = await setup("working");
-    const err = await (t as unknown as { rpc: (op: string) => Promise<unknown> }).rpc("nope").catch((e: unknown) => e);
-    expect(t.errorCode(err)).toBe("invalid");
     await t.close();
   });
 

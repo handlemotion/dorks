@@ -169,7 +169,7 @@ describe("Boat sandbox provider", () => {
     expect(f.requests.some((r) => r.method === "POST" && r.path === "/api/v1/sandboxes")).toBe(false);
   });
 
-  it("checks an organization environment in the same wallet used to create the box", async () => {
+  it("sends every request, the environment check included, to the pinned organization wallet", async () => {
     const f = fake();
     f.environments.push({
       name: "dorks-codex",
@@ -182,9 +182,10 @@ describe("Boat sandbox provider", () => {
       credentialProfileId: "codex-only",
     });
     const provider = boatBox({ apiKey: KEY, scope: "wss://dorks.example/bridge", org: "my team", fetch: f.fetcher, sleep: async () => {} });
-    await provider.createFromSnapshot("dorks-base", { ...CREATE, boatEnvironment: "dorks-codex" });
+    const { id } = await provider.createFromSnapshot("dorks-base", { ...CREATE, boatEnvironment: "dorks-codex" });
+    await provider.pause(id);
     expect(f.requests.some((r) => r.path === "/api/v1/environments?org=my%20team")).toBe(true);
-    expect(f.requests.find((r) => r.method === "POST" && r.path === "/api/v1/sandboxes")?.headers["X-Boat-Org"]).toBe("my team");
+    expect(f.requests.every((r) => r.headers["X-Boat-Org"] === "my team")).toBe(true);
   });
 
   it("adopts a box after a lost create response rather than billing another one", async () => {
@@ -264,14 +265,6 @@ describe("Boat sandbox provider", () => {
     await expect(f.provider.createFromSnapshot("dorks-base", CREATE)).rejects.toThrow(/missing flock or dorks-bridge/);
     expect(f.boxes.size).toBe(0);
     expect(f.requests.find((r) => r.method === "DELETE")?.headers["X-Ascii-Confirm-Delete"]).toMatch(/^bx_/);
-  });
-
-  it("sends every request to the pinned organization wallet", async () => {
-    const f = fake();
-    const provider = boatBox({ apiKey: KEY, scope: "wss://dorks.example/bridge", org: "team_123", fetch: f.fetcher, sleep: async () => {} });
-    const { id } = await provider.createFromSnapshot("dorks-base", CREATE);
-    await provider.pause(id);
-    expect(f.requests.every((r) => r.headers["X-Boat-Org"] === "team_123")).toBe(true);
   });
 
   it("treats expired snapshot data as a missing box, but not arbitrary conflicts", async () => {
