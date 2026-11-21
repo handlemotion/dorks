@@ -184,9 +184,12 @@ function PullRequestView({
   const anyOpen = open.size > 0
   return (
     <div className="flex min-h-full flex-col text-sm">
-      <div className="border-t px-(--details-text) pt-5 pb-4">
+      <div className="border-t px-(--details-text) pt-5 pb-6">
         <div className="flex items-center gap-2">
           <PrState view={view} now={now} />
+          <span className="min-w-0 truncate text-muted-foreground tabular-nums">
+            {view.repo} #{view.number}
+          </span>
           <span className="ml-auto flex items-center gap-0.5 -mr-[8px] -my-2">
             {data?.refresh && (
               <Tip label="Refresh">
@@ -202,10 +205,7 @@ function PullRequestView({
             </Tip>
           </span>
         </div>
-        <div className="mt-3 truncate text-xs text-muted-foreground tabular-nums">
-          {view.repo} #{view.number}
-        </div>
-        <h2 className="mt-1 text-lg leading-snug text-pretty">{view.title}</h2>
+        <h2 className="mt-2 text-lg leading-snug text-pretty">{view.title}</h2>
         <PrMeta view={view} stack={stack} onOpenPr={onOpenPr} />
       </div>
       <Tabs value={section} onValueChange={(v) => setSection(v as Section)} className="min-h-0 flex-1 gap-0">
@@ -289,7 +289,7 @@ function PullRequestView({
 function PrState({ view, now }: { view: PullRequestView; now: number }) {
   const { Icon, label, className } = prStatus(view.state, view.draft)
   return (
-    <span className={`flex items-center gap-1.5 ${className}`}>
+    <span className={`flex items-center shrink-0 gap-1.5 ${className}`}>
       <Icon className="size-3.5" />
       {label}
       {view.state === 'merged' && view.mergedAt ? ` ${ago(view.mergedAt, now)}` : ''}
