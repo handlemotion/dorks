@@ -1,4 +1,4 @@
-import { chmodSync, chownSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, chownSync, lstatSync, mkdirSync, rmSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { dirname } from "node:path";
 
@@ -13,7 +13,10 @@ import { dirname } from "node:path";
 export type RpcErrorCode = "invalid" | "unknown_method" | "unavailable" | "denied" | "failed" | "unreachable" | "protocol";
 
 export class RpcError extends Error {
-  constructor(readonly code: RpcErrorCode, message: string) {
+  constructor(
+    readonly code: RpcErrorCode,
+    message: string,
+  ) {
     super(message);
   }
 }
@@ -27,10 +30,19 @@ export class RpcServer {
   private server: Server | null = null;
 
   /** `owner`: the unprivileged user that runs git/claude (CLAUDE_RUN_AS); the socket and its dir belong to them so only they can call. */
-  constructor(readonly sockPath: string, private methods: RpcMethods, private owner?: { uid: number; gid: number } | null, private maxLine = MAX_LINE) {}
+  constructor(
+    readonly sockPath: string,
+    private methods: RpcMethods,
+    private owner?: { uid: number; gid: number } | null,
+    private maxLine = MAX_LINE,
+  ) {}
 
   async start() {
     mkdirSync(dirname(this.sockPath), { recursive: true, mode: 0o700 });
+    // The dir may be in a shared place (/tmp): refuse one somebody else made or a symlink, rather than serve tokens through it.
+    const st = lstatSync(dirname(this.sockPath));
+    const me = process.getuid?.();
+    if (!st.isDirectory() || (me !== undefined && st.uid !== me && st.uid !== this.owner?.uid)) throw new Error(`refusing socket dir ${dirname(this.sockPath)}: not a directory owned by this user`);
     chmodSync(dirname(this.sockPath), 0o700);
     if (this.owner) chownSync(dirname(this.sockPath), this.owner.uid, this.owner.gid);
     rmSync(this.sockPath, { force: true }); // stale socket from a killed bridge

@@ -6,3 +6,11 @@ dist
 .dev-data
 .env*
 !.env.example
+
+# Vitest cache written by `vp test`
+.vitest/
+# Cloudflare `cf` build output and generated Worker types
+.cloudflare/
+
+# Wrangler local cache (created by the tunnels tests)
+.wrangler/

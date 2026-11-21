@@ -16,8 +16,17 @@ import { makeAssets, type SnapshotAssets } from "../src/snapshot/assets";
 export const NOW = 1_700_000_000_000;
 
 export const testConfig = (over: Partial<Config> = {}): Config => ({
-  dataDir: "/nonexistent", uiPort: 0, bridgePort: 0, publicUrl: "https://dorks.example", ownerToken: "owner-token-for-tests", bridgeSecretKey: "test-bridge-key",
-  encryptionKey: Buffer.alloc(32, 7).toString("base64"), boxProvider: "boat", uiOrigins: ["http://localhost:3000"], baseSnapshotId: "snap-1", ...over,
+  dataDir: "/nonexistent",
+  uiPort: 0,
+  bridgePort: 0,
+  publicUrl: "https://dorks.example",
+  ownerToken: "owner-token-for-tests",
+  bridgeSecretKey: "test-bridge-key",
+  encryptionKey: Buffer.alloc(32, 7).toString("base64"),
+  boxProvider: "boat",
+  uiOrigins: ["http://localhost:3000"],
+  baseSnapshotId: "snap-1",
+  ...over,
 });
 
 export interface FakeBox extends BoxProvider {
@@ -25,13 +34,20 @@ export interface FakeBox extends BoxProvider {
   failResumes: number;
   failPauses: number;
   failCreates: number;
+  failDeletes: number;
   missing: Set<string>;
   created: { name: string; env: Record<string, string>; boatEnvironment?: string }[];
 }
 
 export function fakeBox(): FakeBox {
   const box: FakeBox = {
-    calls: [], failResumes: 0, failPauses: 0, failCreates: 0, missing: new Set(), created: [],
+    calls: [],
+    failResumes: 0,
+    failPauses: 0,
+    failCreates: 0,
+    failDeletes: 0,
+    missing: new Set(),
+    created: [],
     async createFromSnapshot(_s, o) {
       box.calls.push("create");
       if (box.failCreates-- > 0) throw new Error("create down");
@@ -49,6 +65,7 @@ export function fakeBox(): FakeBox {
     },
     async delete(id) {
       box.calls.push("delete");
+      if (box.failDeletes-- > 0) throw new Error("delete down");
       box.missing.add(id);
     },
   };
@@ -76,14 +93,39 @@ export interface FakeSnapshotDriver extends SnapshotDriver {
   /** What a settled save reports. */
   saveResult: "ready" | "failed";
   deleteFails: boolean;
+  /** Build runs: the detached setup's exit code and output, what the secret scan finds, and how sandboxes were created. */
+  setupExit: number;
+  setupOutput: string;
+  /** When set, the setup's output arrives over several attach calls (one array each); all but the last end in a reconnect. */
+  setupStreams?: string[][];
+  scanHits: string;
+  created: { from?: string; type?: string; labelKey?: string }[];
+  killed: number[];
+  deletedSnapshots: string[];
   maybeFail(op: string): void;
 }
 
 export function fakeSnapshotDriver(): FakeSnapshotDriver {
   let n = 0;
   const d: FakeSnapshotDriver = {
-    calls: [], boxes: new Map(), files: new Map(), commands: [], saved: new Map(), installExit: 0, installStderr: "", installTimedOut: false,
-    failNext: new Map(), savingPolls: 0, saveResult: "ready", deleteFails: false,
+    calls: [],
+    boxes: new Map(),
+    files: new Map(),
+    commands: [],
+    saved: new Map(),
+    installExit: 0,
+    installStderr: "",
+    installTimedOut: false,
+    failNext: new Map(),
+    savingPolls: 0,
+    saveResult: "ready",
+    deleteFails: false,
+    setupExit: 0,
+    setupOutput: "",
+    scanHits: "",
+    created: [],
+    killed: [],
+    deletedSnapshots: [],
     maybeFail(op) {
       const e = d.failNext.get(op);
       if (e) {
@@ -91,12 +133,13 @@ export function fakeSnapshotDriver(): FakeSnapshotDriver {
         throw e;
       }
     },
-    async listBuildSandboxes(label) {
+    async listBuildSandboxes(label, _labelKey) {
       d.calls.push("list");
       return [...d.boxes].filter(([, b]) => b.label === label).map(([id]) => ({ id }));
     },
-    async createBuildSandbox({ label }) {
+    async createBuildSandbox({ label, from, type, labelKey }) {
       d.calls.push("create");
+      d.created.push({ from, type, labelKey });
       d.maybeFail("create");
       const id = `bx_build${++n}`;
       d.boxes.set(id, { label });
@@ -136,6 +179,35 @@ export function fakeSnapshotDriver(): FakeSnapshotDriver {
       if (d.deleteFails) throw new Error("delete down");
       d.boxes.delete(id);
     },
+    async runDetached(_id, command) {
+      d.calls.push("runDetached");
+      d.commands.push(command);
+      return { processId: d.commands.length, commandId: `cmd_${d.commands.length}` };
+    },
+    // The setup (`bash /tmp/dorks-build/run`) reports setupExit/setupOutput, the secret scan reports scanHits, anything else succeeds.
+    async attach(_id, pid, offsets, onOutput) {
+      d.calls.push("attach");
+      const command = d.commands[pid - 1] ?? "";
+      if (command.includes("/tmp/dorks-scan")) {
+        if (d.scanHits) onOutput("stdout", d.scanHits);
+        return { t: "exit", exitCode: 0, offsets };
+      }
+      if (!command.includes("dorks-build/run")) return { t: "exit", exitCode: 0, offsets };
+      if (d.setupStreams?.length) {
+        for (const chunk of d.setupStreams.shift()!) onOutput("stdout", chunk);
+        if (d.setupStreams.length) return { t: "reconnect", offsets };
+        return { t: "exit", exitCode: d.setupExit, offsets };
+      }
+      if (d.setupOutput) onOutput("stdout", d.setupOutput);
+      return { t: "exit", exitCode: d.setupExit, offsets };
+    },
+    async killCommand(_id, pid) {
+      d.killed.push(pid);
+    },
+    async deleteSnapshot(name) {
+      d.deletedSnapshots.push(name);
+      d.saved.delete(name);
+    },
   };
   return d;
 }
@@ -153,32 +225,64 @@ export function fakeFetch(handler: Handler) {
   return Object.assign(f, { calls });
 }
 
-export function harness(opts: { fetch?: typeof fetch; config?: Partial<Config> } = {}) {
+export function harness(opts: { fetch?: typeof fetch; config?: Partial<Config>; ghToken?: string } = {}) {
   const clock = { t: NOW };
+  // The GitHub CLI's login: signed in with this token unless a test sets it to null (logged out).
+  const gh = { token: (opts.ghToken ?? "gh-token") as string | null };
   const box = fakeBox();
   // Tests never reach the real network: by default GitHub knows one user, and anything else fails loudly.
   const offline = fakeFetch((url) => (url.pathname === "/user" ? Response.json({ login: "agent-bot" }) : new Response("{}", { status: 404 })));
   const snapshotDriver = fakeSnapshotDriver();
   const assets = { current: testAssets() };
   const app: App = createApp(testConfig(opts.config), {
-    db: new Db(), now: () => clock.t, fetch: opts.fetch ?? offline, getBox: async () => box,
-    getSnapshotDriver: async () => snapshotDriver, snapshotAssets: async () => assets.current, sleep: async () => {},
+    db: new Db(),
+    now: () => clock.t,
+    fetch: opts.fetch ?? offline,
+    ghLogin: async () => (gh.token ? { token: gh.token, source: "gh" } : { problem: "gh_logged_out" }),
+    getBox: async () => box,
+    getSnapshotDriver: async () => snapshotDriver,
+    snapshotAssets: async () => assets.current,
+    sleep: async () => {},
   });
   const scheduler = new Scheduler(app);
   const db = app.db;
 
   const h = {
-    app, box, clock, scheduler, snapshotDriver, assets,
+    app,
+    gh,
+    box,
+    clock,
+    scheduler,
+    snapshotDriver,
+    assets,
     /** A dork row plus its runtime, directly. */
-    seed(state: DorkState, o: { boxId?: string | null; archived?: boolean; bridgeSeenAt?: number; bridgeLost?: boolean; bridgeSeq?: number; opGen?: number; provider?: "claude" | "codex"; repo?: string } = {}) {
+    seed(
+      state: DorkState,
+      o: { boxId?: string | null; archived?: boolean; bridgeSeenAt?: number; bridgeLost?: boolean; bridgeSeq?: number; opGen?: number; provider?: "claude" | "codex"; repo?: string } = {},
+    ) {
       const id = app.uuid();
       insert(db, "dorks", {
-        id, title: "t", repo: o.repo ?? "o/r", branch: "agent/x", provider: o.provider ?? "claude", state, archived: o.archived ?? false,
-        boxId: o.boxId === undefined ? "box-1" : (o.boxId ?? undefined), deleting: false, lastActivityAt: 1, createdAt: 1,
+        id,
+        title: "t",
+        repo: o.repo ?? "o/r",
+        branch: "agent/x",
+        provider: o.provider ?? "claude",
+        state,
+        archived: o.archived ?? false,
+        boxId: o.boxId === undefined ? "box-1" : (o.boxId ?? undefined),
+        deleting: false,
+        lastActivityAt: 1,
+        createdAt: 1,
       });
       insert(db, "dork_runtime", {
-        dorkId: id, bridgeSeq: o.bridgeSeq ?? 0, streamMsgId: "", sleepMinutes: 5, bridgeSeenAt: o.bridgeSeenAt ?? clock.t, bridgeLost: o.bridgeLost ?? false,
-        opGen: o.opGen ?? 0, pauseRetries: 0,
+        dorkId: id,
+        bridgeSeq: o.bridgeSeq ?? 0,
+        streamMsgId: "",
+        sleepMinutes: 5,
+        bridgeSeenAt: o.bridgeSeenAt ?? clock.t,
+        bridgeLost: o.bridgeLost ?? false,
+        opGen: o.opGen ?? 0,
+        pauseRetries: 0,
       });
       return id;
     },
@@ -186,7 +290,10 @@ export function harness(opts: { fetch?: typeof fetch; config?: Partial<Config> }
     state: (id: string) => getDork(db, id)!.state,
     rt: (id: string) => runtimeOf(db, id),
     cmds: (id: string) => openCommands(db, id),
-    kinds: (id: string) => openCommands(db, id).map((c) => c.kind).sort(),
+    kinds: (id: string) =>
+      openCommands(db, id)
+        .map((c) => c.kind)
+        .sort(),
     events: (id: string) => db.all("SELECT seq, body FROM events WHERE dork_id = ? ORDER BY seq", id).map((r) => ({ seq: r.seq as number, body: JSON.parse(r.body as string) as ClientEvent })),
     hasTimer: (id: string, name: string) => hasTimer(app, id, name),
     input: (id: string, i: Parameters<typeof dispatch>[2]) => db.tx(() => dispatch(app, id, i)),
@@ -228,4 +335,3 @@ export function harness(opts: { fetch?: typeof fetch; config?: Partial<Config> }
 export type Harness = ReturnType<typeof harness>;
 
 export const ev = (bseq: number) => ({ t: "event", bseq, raw: { type: "assistant", message: { id: `m${bseq}`, content: [{ type: "text", text: `t${bseq}` }] } } });
-

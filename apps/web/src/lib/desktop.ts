@@ -10,8 +10,8 @@ export interface RuntimeConfig {
   ownerToken?: string
   dataDir?: string
   version?: string
-  /** `state` is `ready`, `approval` (open `approvalUrl` once, the shell continues by itself), `error` or `lost`. */
-  tunnel?: { kind: string; state: string; error?: string | null; approvalUrl?: string | null; tokenSet?: boolean }
+  /** `kind` is `wurmhol` (this install's private tunnel) or `user-url`; `state` is `ready`, `error` or `lost` (restarting). */
+  tunnel?: { kind: string; state: string; error?: string | null }
   /** The window is natively translucent (macOS vibrancy): the page must leave its backdrop transparent. */
   vibrancy?: boolean
   /** Present instead of the rest when the shell could not set the server up. */
@@ -20,7 +20,7 @@ export interface RuntimeConfig {
 
 interface TauriGlobal {
   core?: { invoke: <T>(cmd: string, args?: Record<string, unknown>) => Promise<T> }
-  event?: { listen: (event: string, handler: () => void) => Promise<() => void> }
+  event?: { listen: <T>(event: string, handler: (event: { payload: T }) => void) => Promise<() => void> }
 }
 
 declare global {
@@ -37,18 +37,6 @@ const invoke = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
 
 export const isDesktop = () => !!window.__TAURI__?.core
 
-export type GhTokenResult = { ok: true; token: string } | { ok: false; reason: 'missing' | 'declined' | 'failed' }
-
-/** Asks the user in a native dialog, then returns `gh auth token`. The caller stores it with `PUT /api/settings`. */
-export async function readGhToken(): Promise<GhTokenResult> {
-  try {
-    const token = await invoke<string | null>('read_gh_token')
-    return token ? { ok: true, token } : { ok: false, reason: 'missing' }
-  } catch (e) {
-    return { ok: false, reason: String(e) === 'consent_denied' ? 'declined' : 'failed' }
-  }
-}
-
 /** Tells the shell whether dorks are working, so it can hold the Mac awake (a no-op outside the app). */
 export function setKeepAwake(active: boolean) {
   if (isDesktop()) void invoke('set_keep_awake', { active }).catch(() => {})
@@ -60,15 +48,6 @@ export async function setPublicUrl(url: string | null): Promise<void> {
     await invoke('set_public_url', { url })
   } catch (e) {
     throw new Error(typeof e === 'string' ? e : 'Could not save the public URL.')
-  }
-}
-
-/** Opens the pending wurmhol approval link in the browser (the shell opens only the link it holds). */
-export async function openTunnelApproval(): Promise<void> {
-  try {
-    await invoke('open_tunnel_approval')
-  } catch (e) {
-    throw new Error(typeof e === 'string' ? e : 'Could not open the approval page.')
   }
 }
 
@@ -100,5 +79,46 @@ export function onRuntimeConfig(handler: () => void): () => void {
   return () => {
     closed = true
     off?.()
+  }
+}
+
+/**
+ * Where the shell's in-app update stands (`updater.rs` in the desktop app). `unsupported` in a plain browser and in builds that
+ * cannot update themselves (local and unsigned ones).
+ */
+export type UpdateStatus =
+  | { state: 'unsupported' }
+  | { state: 'idle'; checking: boolean }
+  | { state: 'available'; version: string; notes?: string | null }
+  | { state: 'downloading'; version: string; downloaded: number; total?: number | null }
+  | { state: 'installing'; version: string }
+  | { state: 'failed'; version: string; message: string }
+
+const UNSUPPORTED: UpdateStatus = { state: 'unsupported' }
+
+/** The current update status; `unsupported` outside the app and from a shell that predates updates. */
+export function updateStatus(): Promise<UpdateStatus> {
+  return isDesktop() ? invoke<UpdateStatus>('update_status').catch(() => UNSUPPORTED) : Promise.resolve(UNSUPPORTED)
+}
+
+/** Calls `handler` with every change of the update status. Returns an unsubscribe. */
+export function onUpdateStatus(handler: (status: UpdateStatus) => void): () => void {
+  const listen = window.__TAURI__?.event?.listen
+  if (!listen) return () => {}
+  let off: (() => void) | undefined
+  let closed = false
+  void listen<UpdateStatus>('dorks://update', (e) => handler(e.payload)).then((u) => (closed ? u() : (off = u)))
+  return () => {
+    closed = true
+    off?.()
+  }
+}
+
+/** Downloads and installs the offered update, then the app relaunches. Progress arrives through `onUpdateStatus`. */
+export async function installUpdate(): Promise<void> {
+  try {
+    await invoke('install_update')
+  } catch (e) {
+    throw new Error(typeof e === 'string' ? e : 'Could not install the update.')
   }
 }

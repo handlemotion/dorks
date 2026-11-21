@@ -190,4 +190,186 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX images_dork ON images (dork_id);
   ALTER TABLE dorks ADD COLUMN images TEXT;
   `,
+  `
+  -- Builds (docs/builds.md): named machine setups, each a Boat saved snapshot layered on the base snapshot. spec_hash covers what
+  -- changes the image (size, setup script, repos, names of build-time variables); approved_hash is the spec the owner last approved.
+  -- image_vars is a keyed hash (HMAC, never a plain hash) of the build-time variable values the image was built with, for staleness.
+  CREATE TABLE builds (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    machine_type TEXT NOT NULL DEFAULT 'default',
+    setup_script TEXT NOT NULL DEFAULT '',
+    repos TEXT NOT NULL DEFAULT '[]',
+    rev INTEGER NOT NULL DEFAULT 1,
+    spec_hash TEXT NOT NULL,
+    approved_hash TEXT,
+    image TEXT,
+    image_rev INTEGER,
+    image_hash TEXT,
+    image_base TEXT,
+    image_vars TEXT,
+    image_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  -- Values are AES-GCM envelopes bound to (build, name). value_enc NULL: an agent asked for it and the owner has not filled it in.
+  CREATE TABLE build_vars (
+    build_id TEXT NOT NULL REFERENCES builds (id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    value_enc TEXT,
+    secret INTEGER NOT NULL,
+    build_time INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (build_id, name)
+  ) WITHOUT ROWID;
+
+  -- One execution of a spec. 'image' runs save the build's snapshot; 'trial' runs only check that the setup works.
+  CREATE TABLE build_runs (
+    id TEXT PRIMARY KEY,
+    build_id TEXT NOT NULL REFERENCES builds (id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('image', 'trial')),
+    spec TEXT NOT NULL,
+    spec_hash TEXT NOT NULL,
+    started_by TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')),
+    step TEXT,
+    error TEXT,
+    attempt INTEGER NOT NULL DEFAULT 1,
+    sandbox_id TEXT,
+    process_id INTEGER,
+    command_id TEXT,
+    exit_code INTEGER,
+    log TEXT NOT NULL DEFAULT '',
+    log_bytes INTEGER NOT NULL DEFAULT 0,
+    started_at INTEGER,
+    finished_at INTEGER,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX build_runs_build ON build_runs (build_id, created_at DESC);
+
+  -- An agent's proposed change to its dork's build, one per (build, dork).
+  CREATE TABLE build_drafts (
+    id TEXT PRIMARY KEY,
+    build_id TEXT NOT NULL REFERENCES builds (id) ON DELETE CASCADE,
+    dork_id TEXT NOT NULL REFERENCES dorks (id) ON DELETE CASCADE,
+    base_rev INTEGER NOT NULL,
+    spec TEXT NOT NULL,
+    vars TEXT NOT NULL DEFAULT '[]',       -- DraftVar[]: proposed variable changes (a secret's value never appears here)
+    note TEXT,
+    status TEXT NOT NULL CHECK (status IN ('editing', 'submitted', 'approved', 'rejected')),
+    updated_at INTEGER NOT NULL,
+    UNIQUE (build_id, dork_id)
+  );
+
+  ALTER TABLE dorks ADD COLUMN build_id TEXT REFERENCES builds (id) ON DELETE SET NULL;
+  ALTER TABLE settings ADD COLUMN default_build_id TEXT;
+  `,
+  `
+  -- Claude: fast mode chosen in the UI (only for a model that offers it).
+  ALTER TABLE dorks ADD COLUMN fast INTEGER NOT NULL DEFAULT 0;
+  `,
+  `
+  -- GitHub is the GitHub CLI's login, read live (lib/ghCli.ts): settings keep only the owner's consent. A stored token (pasted, or
+  -- copied from gh once) is dropped; an install that had one stays connected and now reads gh. The login is learned again.
+  ALTER TABLE settings ADD COLUMN github_connected INTEGER NOT NULL DEFAULT 0;
+  UPDATE settings SET github_connected = (github_token_enc IS NOT NULL), github_token_enc = NULL, github_login = NULL;
+  `,
+  `
+  -- MCP servers from Customize (services/mcpServers.ts). Header and env values may be secrets: they live in secrets_enc, one AES-GCM
+  -- envelope of a JSON object {headers, env}; the names alone are copied to secret_names for display.
+  CREATE TABLE mcp_servers (
+    name TEXT PRIMARY KEY,
+    transport TEXT NOT NULL CHECK (transport IN ('http', 'stdio')),
+    url TEXT,
+    command TEXT,
+    args TEXT NOT NULL DEFAULT '[]',
+    secret_names TEXT NOT NULL DEFAULT '{"headers":[],"env":[]}',
+    secrets_enc TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  `,
+  `
+  -- Local access (services/local.ts, docs/local-access.md): an agent's requests to run a command or read a file on the owner's own
+  -- computer, and the time-limited permissions the owner granted. Nothing runs without a row the owner allowed.
+  CREATE TABLE local_requests (
+    id TEXT PRIMARY KEY,
+    dork_id TEXT NOT NULL REFERENCES dorks (id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('run', 'read')),
+    command TEXT,
+    cwd TEXT,
+    path TEXT,
+    reason TEXT NOT NULL,
+    timeout_ms INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'denied', 'expired', 'done', 'failed')),
+    grant_id TEXT,
+    exit_code INTEGER,
+    output TEXT,
+    truncated INTEGER NOT NULL DEFAULT 0,
+    error TEXT,
+    expires_at INTEGER NOT NULL,
+    decided_at INTEGER,
+    finished_at INTEGER,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX local_requests_dork ON local_requests (dork_id, status);
+
+  CREATE TABLE local_grants (
+    id TEXT PRIMARY KEY,
+    dork_id TEXT NOT NULL REFERENCES dorks (id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('run', 'read')),
+    command TEXT,           -- run: this exact command ...
+    cwd TEXT,               -- ... in this exact folder
+    dir TEXT,               -- read: any file under this folder (resolved, symlinks followed)
+    expires_at INTEGER NOT NULL,
+    revoked INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX local_grants_dork ON local_grants (dork_id, revoked, expires_at);
+  `,
+  `
+  -- MCP OAuth (services/mcpOAuth.ts, docs/mcp.md): whether a remote server asked for a sign-in and holds tokens. The client
+  -- registration and the tokens themselves are in the server's sealed envelope.
+  ALTER TABLE mcp_servers ADD COLUMN oauth TEXT CHECK (oauth IN ('signed_in', 'signed_out'));
+  `,
+  `
+  -- Crews (services/crew.ts, docs/crew.md): a coordinator dork plans and delegates to worker dorks, its children. crew_inbox holds the
+  -- reports (a worker's final answer) and notes (a worker's message) waiting for a dork; the crew_notify timer folds them into a notify.
+  ALTER TABLE dorks ADD COLUMN kind TEXT NOT NULL DEFAULT 'agent' CHECK (kind IN ('agent', 'coordinator'));
+  ALTER TABLE dorks ADD COLUMN parent_id TEXT;
+  CREATE INDEX dorks_parent ON dorks (parent_id);
+  CREATE TABLE crew_inbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dork_id TEXT NOT NULL REFERENCES dorks (id) ON DELETE CASCADE,
+    from_id TEXT NOT NULL,
+    from_title TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('report', 'note')),
+    text TEXT NOT NULL,
+    delivered INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX crew_inbox_dork ON crew_inbox (dork_id, delivered);
+  CREATE INDEX crew_inbox_sender ON crew_inbox (from_id, created_at);
+  `,
+  `
+  -- A coordinator's icon (an emoji the owner picked when starting it, docs/crew.md), shown in the sidebar's Dorks group.
+  ALTER TABLE dorks ADD COLUMN icon TEXT;
+  `,
+  `
+  -- Skills (services/skills.ts, docs/skills.md): Agent Skills the owner installed from GitHub, shared by every sandbox. \`files\` is the
+  -- skill folder as gzipped JSON ([{path, data (base64), exec}]), \`digest\` its sha256, which the bridge compares to what it has.
+  CREATE TABLE skills (
+    name TEXT PRIMARY KEY,
+    description TEXT NOT NULL,
+    repo TEXT NOT NULL,
+    ref TEXT,
+    path TEXT NOT NULL,
+    sha TEXT NOT NULL,
+    digest TEXT NOT NULL,
+    file_count INTEGER NOT NULL,
+    bytes INTEGER NOT NULL,
+    files BLOB NOT NULL,
+    installed_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  `,
 ];

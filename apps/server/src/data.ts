@@ -5,6 +5,7 @@ import { bool, json } from "./db";
 // Typed readers over the schema (migrations.ts). Columns are snake_case in SQL and camelCase here; NULL becomes undefined.
 
 export type Provider = "claude" | "codex";
+export type DorkKind = "agent" | "coordinator";
 export type TitleSource = "message" | "auto" | "user";
 
 export interface Pause {
@@ -31,6 +32,8 @@ export interface DorkRow {
   /** Claude: chosen in the UI (undefined: the CLI's default). */
   model?: string;
   effort?: string;
+  /** Claude: fast mode on (only for a model that offers it). */
+  fast: boolean;
   /** What the agent confirmed: the model from its init event, the effort the bridge started it with. */
   agentModel?: string;
   agentEffort?: string;
@@ -42,6 +45,14 @@ export interface DorkRow {
   /** Screenshots the agent shared (screenshot_share), oldest first. */
   images?: SharedImage[];
   prUrl?: string;
+  /** The build the dork's machine starts from (docs/builds.md); undefined: the base snapshot. */
+  buildId?: string;
+  /** `coordinator`: plans and delegates to worker dorks (docs/crew.md). */
+  kind: DorkKind;
+  /** The coordinator that started this worker. */
+  parentId?: string;
+  /** An emoji the owner picked for a coordinator. */
+  icon?: string;
   deleting: boolean;
   lastActivityAt: number;
   createdAt: number;
@@ -80,14 +91,36 @@ export interface CommandRow {
 const u = <T>(v: T | null): T | undefined => (v === null ? undefined : v);
 
 export const dorkOf = (r: Row): DorkRow => ({
-  id: r.id as string, title: r.title as string, titleSource: r.title_source as TitleSource, repo: r.repo as string, branch: r.branch as string,
-  provider: r.provider as Provider, state: r.state as DorkState, archived: bool(r.archived),
-  boxId: u(r.box_id as string | null), claudeSessionId: u(r.claude_session_id as string | null), codexThreadId: u(r.codex_thread_id as string | null),
-  codexModel: json(r.codex_model), codexModelChoices: json(r.codex_model_choices),
-  model: u(r.model as string | null), effort: u(r.effort as string | null), agentModel: u(r.agent_model as string | null),
-  agentEffort: u(r.agent_effort as string | null), modelChoices: json(r.model_choices),
-  preview: u(r.preview as string | null), previews: json(r.previews), images: json(r.images), prUrl: u(r.pr_url as string | null), deleting: bool(r.deleting),
-  lastActivityAt: r.last_activity_at as number, createdAt: r.created_at as number,
+  id: r.id as string,
+  title: r.title as string,
+  titleSource: r.title_source as TitleSource,
+  repo: r.repo as string,
+  branch: r.branch as string,
+  provider: r.provider as Provider,
+  state: r.state as DorkState,
+  archived: bool(r.archived),
+  boxId: u(r.box_id as string | null),
+  claudeSessionId: u(r.claude_session_id as string | null),
+  codexThreadId: u(r.codex_thread_id as string | null),
+  codexModel: json(r.codex_model),
+  codexModelChoices: json(r.codex_model_choices),
+  model: u(r.model as string | null),
+  effort: u(r.effort as string | null),
+  fast: bool(r.fast),
+  agentModel: u(r.agent_model as string | null),
+  agentEffort: u(r.agent_effort as string | null),
+  modelChoices: json(r.model_choices),
+  preview: u(r.preview as string | null),
+  previews: json(r.previews),
+  images: json(r.images),
+  prUrl: u(r.pr_url as string | null),
+  buildId: u(r.build_id as string | null),
+  kind: ((r.kind as string | null) ?? "agent") as DorkKind,
+  parentId: u(r.parent_id as string | null),
+  icon: u(r.icon as string | null),
+  deleting: bool(r.deleting),
+  lastActivityAt: r.last_activity_at as number,
+  createdAt: r.created_at as number,
 });
 
 export const getDork = (db: Db, id: string): DorkRow | undefined => {
@@ -99,29 +132,68 @@ export const runtimeOf = (db: Db, dorkId: string): Runtime => {
   const r = db.get("SELECT * FROM dork_runtime WHERE dork_id = ?", dorkId);
   if (!r) throw new Error("dork runtime missing");
   return {
-    dorkId, bridgeSeq: r.bridge_seq as number, streamMsgId: r.stream_msg_id as string, sleepMinutes: r.sleep_minutes as number,
-    bridgeSeenAt: r.bridge_seen_at as number, bridgeLost: bool(r.bridge_lost), opGen: r.op_gen as number,
-    pause: json(r.pause), pauseRetries: r.pause_retries as number,
-    finalMsgId: (r.final_msg_id as string | null) ?? "", interruptRequested: bool(r.interrupt_requested),
+    dorkId,
+    bridgeSeq: r.bridge_seq as number,
+    streamMsgId: r.stream_msg_id as string,
+    sleepMinutes: r.sleep_minutes as number,
+    bridgeSeenAt: r.bridge_seen_at as number,
+    bridgeLost: bool(r.bridge_lost),
+    opGen: r.op_gen as number,
+    pause: json(r.pause),
+    pauseRetries: r.pause_retries as number,
+    finalMsgId: (r.final_msg_id as string | null) ?? "",
+    interruptRequested: bool(r.interrupt_requested),
   };
 };
 
 export const commandOf = (r: Row): CommandRow => ({
-  id: r.id as number, dorkId: r.dork_id as string, kind: r.kind as CommandKind, cid: r.cid as string, text: u(r.text as string | null),
-  meta: json(r.meta), released: bool(r.released), acked: bool(r.acked),
+  id: r.id as number,
+  dorkId: r.dork_id as string,
+  kind: r.kind as CommandKind,
+  cid: r.cid as string,
+  text: u(r.text as string | null),
+  meta: json(r.meta),
+  released: bool(r.released),
+  acked: bool(r.acked),
 });
 
-export const openCommands = (db: Db, dorkId: string): CommandRow[] =>
-  db.all("SELECT * FROM commands WHERE dork_id = ? AND acked = 0 ORDER BY id", dorkId).map(commandOf);
+export const openCommands = (db: Db, dorkId: string): CommandRow[] => db.all("SELECT * FROM commands WHERE dork_id = ? AND acked = 0 ORDER BY id", dorkId).map(commandOf);
+
+/** The state of the session's own pull request, as its subscription last saw it (absent until the poller has looked). */
+export const prStateOf = (db: Db, d: DorkRow): "open" | "merged" | "closed" | undefined =>
+  d.prUrl
+    ? (db.get<{ state: string }>("SELECT state FROM pr_subscriptions WHERE dork_id = ? AND url = ? ORDER BY id DESC LIMIT 1", d.id, d.prUrl)?.state as "open" | "merged" | "closed" | undefined)
+    : undefined;
 
 /** The wire shape of a dork for the UI: no box id, session ids or other internals. */
-export const dorkView = (d: DorkRow) => ({
-  id: d.id, title: d.title, repo: d.repo, branch: d.branch, provider: d.provider, state: d.state, archived: d.archived,
-  preview: d.preview, previews: d.previews ?? [], images: d.images ?? [], prUrl: d.prUrl, codexModel: d.codexModel, codexModelChoices: d.codexModelChoices,
-  model: d.model, effort: d.effort, agentModel: d.agentModel, agentEffort: d.agentEffort, modelChoices: d.modelChoices,
-  lastActivityAt: d.lastActivityAt, createdAt: d.createdAt,
+export const dorkView = (d: DorkRow, prState?: "open" | "merged" | "closed") => ({
+  id: d.id,
+  title: d.title,
+  repo: d.repo,
+  branch: d.branch,
+  provider: d.provider,
+  state: d.state,
+  archived: d.archived,
+  preview: d.preview,
+  previews: d.previews ?? [],
+  images: d.images ?? [],
+  prUrl: d.prUrl,
+  prState,
+  codexModel: d.codexModel,
+  codexModelChoices: d.codexModelChoices,
+  model: d.model,
+  effort: d.effort,
+  fast: d.fast,
+  agentModel: d.agentModel,
+  agentEffort: d.agentEffort,
+  modelChoices: d.modelChoices,
+  buildId: d.buildId ?? null,
+  kind: d.kind,
+  parentId: d.parentId ?? null,
+  icon: d.icon,
+  lastActivityAt: d.lastActivityAt,
+  createdAt: d.createdAt,
 });
 export type DorkView = ReturnType<typeof dorkView>;
 
-export const eventOf = (r: Row): ClientEvent =>
-  ({ ...(JSON.parse(r.body as string) as object), seq: r.seq as number, dorkId: r.dork_id as string, ts: r.ts as number }) as ClientEvent;
+export const eventOf = (r: Row): ClientEvent => ({ ...(JSON.parse(r.body as string) as object), seq: r.seq as number, dorkId: r.dork_id as string, ts: r.ts as number }) as ClientEvent;

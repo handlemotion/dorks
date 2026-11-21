@@ -33,12 +33,12 @@ Studied on Mobbin (web, desktop-class onboarding): Linear, Twenty, Air, Sana.
 | 1 | Intro: heading, a card of what Dorks is, Let's go | any setting exists, or the owner pressed Get started |
 | 2 | Boat API key. Checked against Boat's `GET /limits` before it is saved (by `POST /api/boat/check`, and again by the server on save), so a wrong or expired key, a free trial, a blocked wallet or a wrong organization is reported here; the organization field appears only when Boat refuses one. Saving it queues the base-snapshot build on the server | `boatKey` |
 | 3 | AI: rows for Claude (pasted token), Codex (Boat environment name, checked against Boat's environment list on save) and Grok (Soon, not supported yet). One of them is enough | `claudeToken` or `boatEnvironment` |
-| 4 | GitHub: rows for the GitHub CLI login (desktop, native consent) and a fine-grained token, with the required permissions listed | `github.configured` |
+| 4 | GitHub: one row, the GitHub CLI login; its dialog says what connecting shares and the `gh auth login` command | `github.configured` |
 
 Then the app opens on the new-session screen (`components/SetupStatus.tsx`), which shows what still stands between the owner and a session:
 
 - **Base snapshot**: "Preparing Boat, step n of 7" with progress while it builds, the reason and Retry when it failed, or a Prepare Boat button when nothing was started (a key saved before builds started themselves). Create stays disabled until a snapshot is set.
-- **Public URL**: in the desktop app with the wurmhol tunnel waiting, an "Approve this Mac" button (it opens the approval page; the shell continues by itself). Otherwise a line saying sessions will not start, pointing at Settings (desktop) or `DORKS_PUBLIC_URL` (server by hand).
+- **Public URL**: the desktop app opens its own private tunnel with nothing to approve, so this shows only when it could not (with the reason): a line saying sessions will not start, pointing at Settings (desktop) or `DORKS_PUBLIC_URL` (server by hand).
 
 Using a hand-built snapshot, billing a team wallet and setting your own public URL live in Settings only.
 

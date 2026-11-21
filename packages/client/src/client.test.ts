@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 import { toAppError } from "@dorks/shared";
 import { createApi } from "./http.ts";
 import { createClient, type DorksClient } from "./client.ts";
@@ -64,17 +64,18 @@ describe("live stream", () => {
 });
 
 describe("events feed", () => {
-  const settled = (c: DorksClient, id: string) => waitFor(() => {
-    const s = c.events(id).getSnapshot();
-    return !s.loading && s.view.state === "idle" && s.view;
-  }, "transcript settled");
+  const settled = (c: DorksClient, id: string) =>
+    waitFor(() => {
+      const s = c.events(id).getSnapshot();
+      return !s.loading && s.view.state === "idle" && s.view;
+    }, "transcript settled");
 
   it("tails a whole turn into the folded transcript, including a message that grows in place", async () => {
     const c = connect();
     const { id } = await c.actions.createDork({ repo: "acme/demo", message: "fix the bug", provider: "codex" });
     watch(c.events(id));
     const view = await settled(c, id);
-    expect(view.blocks.map((b) => b.kind)).toEqual(["user", "assistant", "tool", "assistant", "turn"]);
+    expect(view.blocks.map((b) => b.kind)).toEqual(["user", "assistant", "tool", "tool", "assistant", "turn"]);
     const a = view.blocks.at(-2);
     expect(a).toMatchObject({ kind: "assistant", streaming: false, final: true }); // named by the turn's finalMessageId
     expect((a as { text: string }).text).toContain("Done: fix the bug");
@@ -89,10 +90,29 @@ describe("events feed", () => {
     watch(c.events(dork));
     await waitFor(() => !c.events(dork).getSnapshot().loading, "first page");
     const seq = server.append(dork, { type: "assistant_delta", messageId: "m-x", text: "abc" }).seq;
-    await waitFor(() => c.events(dork).getSnapshot().view.blocks.some((b) => b.kind === "assistant" && b.text === "abc"), "partial shown");
+    await waitFor(
+      () =>
+        c
+          .events(dork)
+          .getSnapshot()
+          .view.blocks.some((b) => b.kind === "assistant" && b.text === "abc"),
+      "partial shown",
+    );
     server.rewrite(dork, seq, { text: "abcdef" });
-    await waitFor(() => c.events(dork).getSnapshot().view.blocks.some((b) => b.kind === "assistant" && b.text === "abcdef"), "grown in place");
-    expect(c.events(dork).getSnapshot().view.blocks.filter((b) => b.kind === "assistant" && b.id === "m-x")).toHaveLength(1);
+    await waitFor(
+      () =>
+        c
+          .events(dork)
+          .getSnapshot()
+          .view.blocks.some((b) => b.kind === "assistant" && b.text === "abcdef"),
+      "grown in place",
+    );
+    expect(
+      c
+        .events(dork)
+        .getSnapshot()
+        .view.blocks.filter((b) => b.kind === "assistant" && b.id === "m-x"),
+    ).toHaveLength(1);
   });
 
   it("pages older history in on demand", async () => {
@@ -110,7 +130,10 @@ describe("events feed", () => {
       await waitFor(() => !feed.getSnapshot().loadingMore && feed.getSnapshot().view.blocks.length > before, "older page");
     }
     expect(feed.getSnapshot().canLoadMore).toBe(false);
-    const users = feed.getSnapshot().view.blocks.filter((b) => b.kind === "user").map((b) => (b as { text: string }).text);
+    const users = feed
+      .getSnapshot()
+      .view.blocks.filter((b) => b.kind === "user")
+      .map((b) => (b as { text: string }).text);
     expect(users.filter((t) => /^m\d+$/.test(t))).toHaveLength(120);
     expect(new Set(feed.getSnapshot().view.blocks.map((b) => b.id)).size).toBe(feed.getSnapshot().view.blocks.length); // no duplicates
   });

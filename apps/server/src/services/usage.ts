@@ -1,5 +1,6 @@
+import { Effect, Schema } from "effect";
 import type { App } from "../app";
-import { BoatError, createBoatCall } from "../lib/boat";
+import { decodeOr, makeBoatCall } from "../lib/boatHttp";
 import { boatKey, claudeToken, readSettings } from "./settings";
 
 /** A rolling limit: `used` is 0..1, `resetsAt` epoch ms. */
@@ -11,7 +12,7 @@ export interface UsageWindow {
 /** `GET /api/usage`: what the sidebar's usage bar shows. A part is missing when its credential is not set or its source failed. */
 export interface Usage {
   /** The Claude subscription behind `claudeToken`: the 5-hour session and the weekly limit. */
-  claude?: { session: UsageWindow; weekly: UsageWindow };
+  claude?: { session?: UsageWindow; weekly: UsageWindow };
   /** Boat machine time included in the plan this period, in hours. */
   cloud?: { usedHours: number; includedHours: number; periodEnd?: number };
 }
@@ -75,29 +76,44 @@ async function claudeUsage(app: App): Promise<Usage["claude"]> {
   };
   const session = window("5h");
   const weekly = window("7d");
-  if (!session || !weekly) {
+  // The 5-hour headers are absent while no session window is open (nothing used in the last five hours); the weekly ones always come.
+  if (!weekly) {
     console.error("usage: claude", res.status); // status only, never the body
     return undefined;
   }
-  return { session, weekly };
+  return session ? { session, weekly } : { weekly };
+}
+
+/** `GET /limits`, the part this reads. Numbers may come as strings, so they are read with `Number`. */
+const Limits = Schema.Struct({
+  planIncluded: Schema.optional(
+    Schema.NullOr(Schema.Struct({ vmHours: Schema.optional(Schema.Unknown), vmHoursRemaining: Schema.optional(Schema.Unknown), periodEnd: Schema.optional(Schema.Unknown) })),
+  ),
+});
+
+function planUsage({ planIncluded: p }: typeof Limits.Type): Usage["cloud"] {
+  const included = Number(p?.vmHours);
+  const remaining = Number(p?.vmHoursRemaining);
+  if (!Number.isFinite(included) || included <= 0 || !Number.isFinite(remaining)) return undefined;
+  const end = typeof p?.periodEnd === "string" ? Date.parse(p.periodEnd) : NaN;
+  return { usedHours: Math.max(included - remaining, 0), includedHours: included, ...(Number.isFinite(end) ? { periodEnd: end } : {}) };
 }
 
 async function cloudUsage(app: App): Promise<Usage["cloud"]> {
   if (app.cfg.boxProvider === "sim") return undefined;
   const apiKey = await boatKey(app);
   if (!apiKey) return undefined;
-  const call = createBoatCall({ apiKey, org: readSettings(app).boatOrg, fetch: app.fetch });
-  let limits: { planIncluded?: { vmHours?: unknown; vmHoursRemaining?: unknown; periodEnd?: unknown } };
-  try {
-    limits = await call("usage", "GET", "/limits", undefined, {}, TIMEOUT_MS);
-  } catch (e) {
-    if (e instanceof BoatError) console.error("usage: boat", e.status ?? "network");
-    return undefined;
-  }
-  const p = limits?.planIncluded;
-  const included = Number(p?.vmHours);
-  const remaining = Number(p?.vmHoursRemaining);
-  if (!Number.isFinite(included) || included <= 0 || !Number.isFinite(remaining)) return undefined;
-  const end = typeof p?.periodEnd === "string" ? Date.parse(p.periodEnd) : NaN;
-  return { usedHours: Math.max(included - remaining, 0), includedHours: included, ...(Number.isFinite(end) ? { periodEnd: end } : {}) };
+  const call = makeBoatCall({ apiKey, org: readSettings(app).boatOrg, fetch: app.fetch });
+  return Effect.runPromise(
+    call("usage", "GET", "/limits", { timeoutMs: TIMEOUT_MS }).pipe(
+      Effect.flatMap(decodeOr(Limits, "boat usage: invalid response")),
+      Effect.map(planUsage),
+      Effect.catch((e) =>
+        Effect.sync(() => {
+          console.error("usage: boat", e.status ?? "network");
+          return undefined;
+        }),
+      ),
+    ),
+  );
 }

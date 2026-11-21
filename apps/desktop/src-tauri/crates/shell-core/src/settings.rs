@@ -29,11 +29,13 @@ pub struct Settings {
     pub ui_port: Option<u16>,
     pub bridge_port: Option<u16>,
     pub keep_awake: KeepAwake,
-    /// A self-hosted wurmhol install (`WURMHOL_URL`); unset means the hosted one.
+    /// A self-hosted wurmhol install (`WURMHOL_URL`); unset means the hosted one. It must be the one the tunnel service uses.
     pub wurmhol_server: Option<String>,
-    /// Extra arguments for the wurmhol client, after `<port> --json` (for flags the relay learns later, such as a reserved
-    /// name). The token never goes here; it has its own 0600 file.
+    /// Extra arguments for the wurmhol client, after `<port> --json`. A connector refuses `--name` and `--only`. The connector
+    /// never goes here; it has its own 0600 file.
     pub wurmhol_args: Vec<String>,
+    /// Another Dorks tunnel service than the hosted one (`DEFAULT_TUNNEL_SERVICE`), e.g. a staging deploy.
+    pub tunnel_service: Option<String>,
     /// The chrome the window had last (the web app sets it with `set_window_mode`). The next launch opens in it, so there is
     /// no flash of the wrong chrome. A fresh install has none and starts in onboarding.
     pub window_mode: WindowMode,
@@ -103,7 +105,8 @@ mod tests {
             bridge_port: Some(2),
             keep_awake: KeepAwake::Always,
             wurmhol_server: Some("https://wh.example".into()),
-            wurmhol_args: vec!["--name".into(), "mine".into()],
+            wurmhol_args: vec!["--verbose".into()],
+            tunnel_service: Some("https://tunnels.example".into()),
             window_mode: WindowMode::App,
             window_theme: WindowTheme::Dark,
             window_frame: Some(WindowFrame { x: -5, y: 7, width: 1000, height: 700 }),

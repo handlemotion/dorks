@@ -67,7 +67,14 @@ export function prepare(raw: unknown): Json | null {
       return capSize({ ...rest, message: { ...msg, content } });
     }
     case "result":
-      return { type: "result", subtype: m.subtype, is_error: m.is_error, duration_ms: m.duration_ms, result: typeof m.result === "string" ? clipTo(m.result, CLIP) : undefined, session_id: m.session_id };
+      return {
+        type: "result",
+        subtype: m.subtype,
+        is_error: m.is_error,
+        duration_ms: m.duration_ms,
+        result: typeof m.result === "string" ? clipTo(m.result, CLIP) : undefined,
+        session_id: m.session_id,
+      };
     case "rate_limit_event":
       return capSize(m);
     default:
@@ -84,7 +91,10 @@ export class EventPipeline {
   private delta: { raw: Json; text: string; key: string } | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private outbox: Outbox, private deltaBatchMs: number) {}
+  constructor(
+    private outbox: Outbox,
+    private deltaBatchMs: number,
+  ) {}
 
   /** Last assigned bseq. */
   get lastSeq() {

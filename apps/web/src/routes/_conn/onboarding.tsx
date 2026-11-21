@@ -40,7 +40,9 @@ function Onboarding() {
     return (
       <main className="app-backdrop relative isolate flex min-h-svh items-center justify-center overflow-clip">
         <BrandCircle />
-        <p role="status" className="text-sm text-muted-foreground">Loading…</p>
+        <p role="status" className="text-sm text-muted-foreground">
+          Loading…
+        </p>
       </main>
     )
   }

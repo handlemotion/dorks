@@ -18,14 +18,15 @@ if (spawnSync("bun", ["--version"], { stdio: "ignore" }).status !== 0) {
 }
 
 // Pick the web port before starting the API so its CORS allowlist and the printed link agree with Vite.
-const availablePort = (port) => new Promise((resolve, reject) => {
-  const probe = createServer();
-  probe.once("error", reject);
-  probe.listen(port, "localhost", () => {
-    const chosen = probe.address().port;
-    probe.close(() => resolve(chosen));
+const availablePort = (port) =>
+  new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once("error", reject);
+    probe.listen(port, "localhost", () => {
+      const chosen = probe.address().port;
+      probe.close(() => resolve(chosen));
+    });
   });
-});
 const webPort = onlyServer ? null : await availablePort(3000).catch(() => availablePort(0));
 const token = process.env.DORKS_OWNER_TOKEN || "dev-owner-token";
 const simKey = process.env.SIM_HOST_KEY || "dev-sim-host-key";
@@ -35,10 +36,7 @@ const env = {
   DORKS_OWNER_TOKEN: token,
   BOX_PROVIDER: "sim",
   SIM_HOST_KEY: simKey,
-  ...(!onlyServer ? { DORKS_UI_ORIGINS: [
-    process.env.DORKS_UI_ORIGINS || "http://localhost:3000,http://127.0.0.1:3000",
-    `http://localhost:${webPort}`, `http://127.0.0.1:${webPort}`,
-  ].join(",") } : {}),
+  ...(!onlyServer ? { DORKS_UI_ORIGINS: [process.env.DORKS_UI_ORIGINS || "http://localhost:3000,http://127.0.0.1:3000", `http://localhost:${webPort}`, `http://127.0.0.1:${webPort}`].join(",") } : {}),
 };
 delete env.DORKS_PUBLIC_URL;
 
@@ -74,7 +72,7 @@ const ready = await new Promise((resolve) => {
 });
 console.log(`[dev] server: UI ${ready.ui}, bridge ${ready.bridge}`);
 
-// The simulator never calls Boat, GitHub or an AI provider. Seed only missing settings so the real UI can create a
+// The simulator never calls Boat or an AI provider. Seed only missing settings so the real UI can create a
 // session immediately, without asking the developer to paste live credentials into a simulated sandbox.
 const api = async (path, method = "GET", body) => {
   const res = await fetch(`${ready.ui}/api/${path}`, {
@@ -90,7 +88,8 @@ try {
   await api("settings", "PUT", {
     ...(!settings.boatKey ? { boatKey: "dev-simulated-boat" } : {}),
     ...(!settings.claudeToken ? { claudeToken: "dev-simulated-claude" } : {}),
-    ...(!settings.github.configured ? { githubToken: "dev-simulated-github" } : {}),
+    // GitHub is your gh login when it has one (the owner switcher then shows your real organizations); the simulator connects without.
+    ...(!settings.github.configured ? { githubConnected: true } : {}),
   });
   if (!settings.baseSnapshotId) await api("snapshot/build", "POST", {});
 } catch (error) {

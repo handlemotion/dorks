@@ -60,7 +60,12 @@ export function ImageLightbox({ images, label, children }: { images: LightboxIma
               <Lightbox.ThumbnailStrip className="pointer-events-auto relative w-full min-w-0 self-stretch py-[5px] [--thumb:3.5rem] [mask-image:linear-gradient(to_right,transparent,#000_48px,#000_calc(100%-48px),transparent)]">
                 <Lightbox.ThumbnailStripTrack aria-label={`${label} thumbnails`} className="flex w-max items-center gap-2">
                   {images.map((image, index) => (
-                    <Lightbox.Thumbnail key={image.id} index={index} aria-label={image.alt} className="relative block size-(--thumb) shrink-0 cursor-pointer overflow-hidden rounded-(--control-radius) bg-app outline-none focus-visible:outline-2 focus-visible:outline-ring">
+                    <Lightbox.Thumbnail
+                      key={image.id}
+                      index={index}
+                      aria-label={image.alt}
+                      className="relative block size-(--thumb) shrink-0 cursor-pointer overflow-hidden rounded-(--control-radius) bg-app outline-none focus-visible:outline-2 focus-visible:outline-ring"
+                    >
                       <img src={image.src} alt="" draggable={false} className="block size-full object-cover" />
                     </Lightbox.Thumbnail>
                   ))}

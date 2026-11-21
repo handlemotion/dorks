@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { Effect } from "effect";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import { BoxNotFoundError } from "../src/core/box";
 import { boatBox, BoatError, desktopUrl, type BoatCall } from "../src/lib/boat";
 
@@ -13,12 +14,48 @@ const CREATE = {
 
 function fake() {
   const boxes = new Map<string, { id: string; state: string; labels: Record<string, string>; dataExpiredAt?: string }>();
-  const environments: { name: string; safeForThirdParties: boolean; proxyAiCredentials: boolean; passAgentsCredentials: boolean; passGithub: boolean; passSecrets: boolean; passSandboxCredentials: boolean; credentialProfileId: string | null }[] = [];
+  const environments: {
+    name: string;
+    safeForThirdParties: boolean;
+    proxyAiCredentials: boolean;
+    passAgentsCredentials: boolean;
+    passGithub: boolean;
+    passSecrets: boolean;
+    passSandboxCredentials: boolean;
+    credentialProfileId: string | null;
+  }[] = [];
   const requests: { method: string; path: string; body?: any; headers: Record<string, string> }[] = [];
   const keys = new Map<string, string>();
   let next = 0;
   let fail: ((method: string, path: string) => Response | undefined) | undefined;
   const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
+  type Req = { method: string; url: URL; body?: any; headers: Record<string, string> };
+  const collection = ({ method, url, body, headers }: Req) => {
+    if (method === "GET") {
+      const label = url.searchParams.get("label");
+      const matches = [...boxes.values()].filter((b) => !label || `dorks=${b.labels.dorks}` === label);
+      return json({ ok: true, sandboxes: matches, pageInfo: { nextCursor: null } });
+    }
+    const key = headers["Idempotency-Key"];
+    const id = keys.get(key) ?? `bx_2345678${"abcdefghjkmnpqrstuvwxyz"[next++]}`;
+    keys.set(key, id);
+    if (!boxes.has(id)) boxes.set(id, { id, state: "provisioning", labels: body.labels });
+    return json({ ok: true, sandbox: boxes.get(id) }, 202);
+  };
+  const get = (box: { state: string }) => {
+    if (box.state === "provisioning" || box.state === "resuming") box.state = "idle";
+    if (box.state === "archiving") box.state = "archived";
+    return json({ ok: true, sandbox: box });
+  };
+  const actions: Record<string, (box: { id: string; state: string }, body: any) => Response> = {
+    "GET ": get,
+    "POST /commands": (_box, body) => json(body.detached ? { ok: true, processId: "p1" } : { ok: true, exitCode: 0 }),
+    "POST /stop": (box) => json({ ok: true, status: "archiving", sandbox: Object.assign(box, { state: "archiving" }) }, 202),
+    "POST /resume": (box) => json({ ok: true, sandbox: Object.assign(box, { state: "resuming" }) }, 202),
+    "POST /host": (box, body) => json({ url: `https://dk${box.id.slice(3)}-${body.port}.on.boat.dev${body.public ? "" : "?_token=tok_secret"}`, access: body.public ? "public" : "protected" }),
+    "DELETE ": (box) => (boxes.delete(box.id), json({ ok: true }, 202)),
+  };
+  const notFound = () => json({ ok: false, code: "not_found" }, 404);
   const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
@@ -29,36 +66,23 @@ function fake() {
     const forced = fail?.(method, path);
     if (forced) return forced;
     if (url.pathname === "/api/v1/environments" && method === "GET") return json({ ok: true, environments });
-    if (url.pathname === "/api/v1/sandboxes" && method === "GET") {
-      const label = url.searchParams.get("label");
-      const matches = [...boxes.values()].filter((b) => !label || `dorks=${b.labels.dorks}` === label);
-      return json({ ok: true, sandboxes: matches, pageInfo: { nextCursor: null } });
-    }
-    if (url.pathname === "/api/v1/sandboxes" && method === "POST") {
-      const key = headers["Idempotency-Key"];
-      const id = keys.get(key) ?? `bx_2345678${"abcdefghjkmnpqrstuvwxyz"[next++]}`;
-      keys.set(key, id);
-      if (!boxes.has(id)) boxes.set(id, { id, state: "provisioning", labels: body.labels });
-      return json({ ok: true, sandbox: boxes.get(id) }, 202);
-    }
+    if (url.pathname === "/api/v1/sandboxes") return collection({ method, url, body, headers });
     const match = /^\/api\/v1\/sandboxes\/([^/]+)(\/.*)?$/.exec(url.pathname);
-    if (!match) return json({ ok: false, code: "not_found" }, 404);
-    const box = boxes.get(match[1]);
-    if (!box) return json({ ok: false, code: "not_found" }, 404);
-    if (method === "GET" && !match[2]) {
-      if (box.state === "provisioning" || box.state === "resuming") box.state = "idle";
-      if (box.state === "archiving") box.state = "archived";
-      return json({ ok: true, sandbox: box });
-    }
-    if (method === "POST" && match[2] === "/commands") return json(body.detached ? { ok: true, processId: "p1" } : { ok: true, exitCode: 0 });
-    if (method === "POST" && match[2] === "/stop") return json({ ok: true, status: "archiving", sandbox: Object.assign(box, { state: "archiving" }) }, 202);
-    if (method === "POST" && match[2] === "/resume") return json({ ok: true, sandbox: Object.assign(box, { state: "resuming" }) }, 202);
-    if (method === "POST" && match[2] === "/host") return json({ url: `https://dk${box.id.slice(3)}-${body.port}.on.boat.dev${body.public ? "" : "?_token=tok_secret"}`, access: body.public ? "public" : "protected" });
-    if (method === "DELETE" && !match[2]) return boxes.delete(box.id), json({ ok: true }, 202);
-    return json({ ok: false, code: "not_found" }, 404);
+    const box = match && boxes.get(match[1]);
+    const action = box && actions[`${method} ${match[2] ?? ""}`];
+    return action ? action(box, body) : notFound();
   }) as typeof fetch;
   const provider = boatBox({ apiKey: KEY, scope: "wss://dorks.example/bridge", fetch: fetcher, sleep: async () => {} });
-  return { boxes, requests, provider, fetcher, environments, setFail: (value: typeof fail) => { fail = value; } };
+  return {
+    boxes,
+    requests,
+    provider,
+    fetcher,
+    environments,
+    setFail: (value: typeof fail) => {
+      fail = value;
+    },
+  };
 }
 
 describe("Boat sandbox provider", () => {
@@ -67,40 +91,79 @@ describe("Boat sandbox provider", () => {
     const { id } = await f.provider.createFromSnapshot("dorks-base", CREATE);
     const post = f.requests.find((r) => r.method === "POST" && r.path === "/api/v1/sandboxes")!;
     expect(post.body).toEqual({
-      from: "dorks-base", name: NAME, labels: { dorks: expect.stringMatching(/^[a-f0-9]{64}$/) },
-      env: CREATE.env, noEnv: true, ttlSeconds: null,
+      from: "dorks-base",
+      name: NAME,
+      labels: { dorks: expect.stringMatching(/^[a-f0-9]{64}$/) },
+      env: CREATE.env,
+      noEnv: true,
+      ttlSeconds: null,
     });
     expect(post.headers.Authorization).toBe(`Bearer ${KEY}`);
     expect(post.headers["Idempotency-Key"]).toBeTruthy();
-    expect(f.requests.find((r) => r.method === "POST" && r.path.endsWith("/commands") && r.body.detached)?.body.command)
-      .toBe("flock -n /tmp/dorks-bridge.lock dorks-bridge");
-    expect(f.requests.filter((r) => r.path.endsWith("/commands")).map((r) => r.body.command).join(" ")).not.toContain(CREATE.env.BRIDGE_SECRET);
+    expect(f.requests.find((r) => r.method === "POST" && r.path.endsWith("/commands") && r.body.detached)?.body.command).toBe("flock -n /tmp/dorks-bridge.lock dorks-bridge");
+    expect(
+      f.requests
+        .filter((r) => r.path.endsWith("/commands"))
+        .map((r) => r.body.command)
+        .join(" "),
+    ).not.toContain(CREATE.env.BRIDGE_SECRET);
     expect(f.boxes.has(id)).toBe(true);
   });
 
   it("uses a per-account Boat environment that passes only its dedicated ChatGPT profile", async () => {
     const f = fake();
-    f.environments.push({ name: "dorks-codex", safeForThirdParties: false, proxyAiCredentials: false,
-      passAgentsCredentials: true, passGithub: false, passSecrets: false, passSandboxCredentials: false, credentialProfileId: "codex-only" });
+    f.environments.push({
+      name: "dorks-codex",
+      safeForThirdParties: false,
+      proxyAiCredentials: false,
+      passAgentsCredentials: true,
+      passGithub: false,
+      passSecrets: false,
+      passSandboxCredentials: false,
+      credentialProfileId: "codex-only",
+    });
     await f.provider.createFromSnapshot("dorks-base", { ...CREATE, boatEnvironment: "dorks-codex" });
-    expect(f.requests.find((r) => r.method === "POST" && r.path === "/api/v1/sandboxes")?.body)
-      .toMatchObject({ environment: "dorks-codex", noEnv: false, env: CREATE.env });
+    expect(f.requests.find((r) => r.method === "POST" && r.path === "/api/v1/sandboxes")?.body).toMatchObject({ environment: "dorks-codex", noEnv: false, env: CREATE.env });
   });
 
   it("refuses a Boat environment that could expose other account credentials", async () => {
     const f = fake();
-    f.environments.push({ name: "unsafe", safeForThirdParties: false, proxyAiCredentials: false,
-      passAgentsCredentials: true, passGithub: true, passSecrets: false, passSandboxCredentials: false, credentialProfileId: "codex-only" });
+    f.environments.push({
+      name: "unsafe",
+      safeForThirdParties: false,
+      proxyAiCredentials: false,
+      passAgentsCredentials: true,
+      passGithub: true,
+      passSecrets: false,
+      passSandboxCredentials: false,
+      credentialProfileId: "codex-only",
+    });
     await expect(f.provider.createFromSnapshot("dorks-base", { ...CREATE, boatEnvironment: "unsafe" })).rejects.toThrow("disable other credentials");
     expect(f.requests.some((r) => r.method === "POST" && r.path === "/api/v1/sandboxes")).toBe(false);
   });
 
   it("does not mistake a proxy-only or default-profile environment for direct account access", async () => {
     const f = fake();
-    f.environments.push({ name: "proxy-only", safeForThirdParties: true, proxyAiCredentials: true,
-      passAgentsCredentials: true, passGithub: false, passSecrets: false, passSandboxCredentials: false, credentialProfileId: "codex-only" });
-    f.environments.push({ name: "default-profile", safeForThirdParties: false, proxyAiCredentials: false,
-      passAgentsCredentials: true, passGithub: false, passSecrets: false, passSandboxCredentials: false, credentialProfileId: null });
+    f.environments.push({
+      name: "proxy-only",
+      safeForThirdParties: true,
+      proxyAiCredentials: true,
+      passAgentsCredentials: true,
+      passGithub: false,
+      passSecrets: false,
+      passSandboxCredentials: false,
+      credentialProfileId: "codex-only",
+    });
+    f.environments.push({
+      name: "default-profile",
+      safeForThirdParties: false,
+      proxyAiCredentials: false,
+      passAgentsCredentials: true,
+      passGithub: false,
+      passSecrets: false,
+      passSandboxCredentials: false,
+      credentialProfileId: null,
+    });
     for (const boatEnvironment of ["proxy-only", "default-profile"])
       await expect(f.provider.createFromSnapshot("dorks-base", { ...CREATE, boatEnvironment })).rejects.toThrow("named AI credential profile");
     expect(f.requests.some((r) => r.method === "POST" && r.path === "/api/v1/sandboxes")).toBe(false);
@@ -108,8 +171,16 @@ describe("Boat sandbox provider", () => {
 
   it("checks an organization environment in the same wallet used to create the box", async () => {
     const f = fake();
-    f.environments.push({ name: "dorks-codex", safeForThirdParties: false, proxyAiCredentials: false,
-      passAgentsCredentials: true, passGithub: false, passSecrets: false, passSandboxCredentials: false, credentialProfileId: "codex-only" });
+    f.environments.push({
+      name: "dorks-codex",
+      safeForThirdParties: false,
+      proxyAiCredentials: false,
+      passAgentsCredentials: true,
+      passGithub: false,
+      passSecrets: false,
+      passSandboxCredentials: false,
+      credentialProfileId: "codex-only",
+    });
     const provider = boatBox({ apiKey: KEY, scope: "wss://dorks.example/bridge", org: "my team", fetch: f.fetcher, sleep: async () => {} });
     await provider.createFromSnapshot("dorks-base", { ...CREATE, boatEnvironment: "dorks-codex" });
     expect(f.requests.some((r) => r.path === "/api/v1/environments?org=my%20team")).toBe(true);
@@ -144,8 +215,10 @@ describe("Boat sandbox provider", () => {
     const f = fake();
     const first = await f.provider.createFromSnapshot("dorks-base", CREATE);
     const other = boatBox({
-      apiKey: KEY, scope: "instance-b",
-      fetch: f.fetcher, sleep: async () => {},
+      apiKey: KEY,
+      scope: "instance-b",
+      fetch: f.fetcher,
+      sleep: async () => {},
     });
     const second = await other.createFromSnapshot("dorks-base", CREATE);
     expect(second.id).not.toBe(first.id);
@@ -187,9 +260,7 @@ describe("Boat sandbox provider", () => {
 
   it("deletes a new sandbox when its bridge cannot start, so it cannot bill indefinitely", async () => {
     const f = fake();
-    f.setFail((method, path) => method === "POST" && path.endsWith("/commands")
-      ? new Response(JSON.stringify({ ok: true, exitCode: 127 }))
-      : undefined);
+    f.setFail((method, path) => (method === "POST" && path.endsWith("/commands") ? new Response(JSON.stringify({ ok: true, exitCode: 127 })) : undefined));
     await expect(f.provider.createFromSnapshot("dorks-base", CREATE)).rejects.toThrow(/missing flock or dorks-bridge/);
     expect(f.boxes.size).toBe(0);
     expect(f.requests.find((r) => r.method === "DELETE")?.headers["X-Ascii-Confirm-Delete"]).toMatch(/^bx_/);
@@ -207,13 +278,9 @@ describe("Boat sandbox provider", () => {
     const f = fake();
     const { id } = await f.provider.createFromSnapshot("dorks-base", CREATE);
     f.boxes.get(id)!.state = "archived";
-    f.setFail((method, path) => method === "POST" && path.endsWith("/resume")
-      ? new Response(JSON.stringify({ code: "snapshot_data_expired" }), { status: 409 })
-      : undefined);
+    f.setFail((method, path) => (method === "POST" && path.endsWith("/resume") ? new Response(JSON.stringify({ code: "snapshot_data_expired" }), { status: 409 }) : undefined));
     await expect(f.provider.resume(id)).rejects.toBeInstanceOf(BoxNotFoundError);
-    f.setFail((method, path) => method === "POST" && path.endsWith("/resume")
-      ? new Response(JSON.stringify({ code: "sandbox_stopping" }), { status: 409 })
-      : undefined);
+    f.setFail((method, path) => (method === "POST" && path.endsWith("/resume") ? new Response(JSON.stringify({ code: "sandbox_stopping" }), { status: 409 }) : undefined));
     await expect(f.provider.resume(id)).rejects.toBeInstanceOf(BoatError);
   });
 
@@ -227,7 +294,12 @@ describe("Boat sandbox provider", () => {
   it("does not turn auth failures or a 500 into a missing box", async () => {
     const f = fake();
     f.setFail(() => new Response(JSON.stringify({ code: "unauthorized", message: KEY }), { status: 401 }));
-    const error = await f.provider.resume("bx_23456789").then(() => { throw new Error("expected auth failure"); }, (e: BoatError) => e);
+    const error = await f.provider.resume("bx_23456789").then(
+      () => {
+        throw new Error("expected auth failure");
+      },
+      (e: BoatError) => e,
+    );
     expect(error.message).not.toContain(KEY);
     f.setFail(() => new Response(JSON.stringify({ code: "not_found", message: CREATE.env.BRIDGE_SECRET }), { status: 500 }));
     await expect(f.provider.resume("bx_23456789")).rejects.toBeInstanceOf(BoatError);
@@ -252,21 +324,25 @@ describe("Boat sandbox provider", () => {
 });
 
 describe("desktop stream URL", () => {
-  const noSleep = async () => {};
+  const noSleep = () => Effect.void;
+  const run = (e: Parameters<typeof Effect.runPromise>[0]) => Effect.runPromise(e);
   it("waits out provisioning and hides the viewer chrome without touching the token fragment", async () => {
-    const answers = [{ ok: true, provisioning: true }, { ok: true, desktopUrl: "https://box-desktop.on.boat.dev/stream.html?theme=light#token=t0k" }];
+    const answers = [
+      { ok: true, provisioning: true },
+      { ok: true, desktopUrl: "https://box-desktop.on.boat.dev/stream.html?theme=light#token=t0k" },
+    ];
     const paths: string[] = [];
-    const call: BoatCall = async (_op, _method, path) => (paths.push(path), answers.shift());
-    const url = await desktopUrl(call, "/sandboxes/bx_23456789/desktop", { theme: "light" }, noSleep);
+    const call: BoatCall = (_op, _method, path) => Effect.sync(() => (paths.push(path), answers.shift()));
+    const url = await run(desktopUrl(call, "/sandboxes/bx_23456789/desktop", { theme: "light" }, noSleep));
     expect(url).toBe("https://box-desktop.on.boat.dev/stream.html?theme=light&overlay=0#token=t0k");
     expect(paths).toEqual(["/sandboxes/bx_23456789/desktop?theme=light", "/sandboxes/bx_23456789/desktop?theme=light"]);
   });
   it("gives up on a stream that never starts with a retryable code", async () => {
-    const call: BoatCall = async () => ({ ok: true, provisioning: true });
-    await expect(desktopUrl(call, "/sandboxes/bx_23456789/desktop", { theme: "dark" }, noSleep, 0)).rejects.toMatchObject({ code: "provisioning" });
+    const call: BoatCall = () => Effect.succeed({ ok: true, provisioning: true });
+    await expect(run(desktopUrl(call, "/sandboxes/bx_23456789/desktop", { theme: "dark" }, noSleep, 0))).rejects.toMatchObject({ code: "provisioning" });
   });
   it("refuses a non-https URL", async () => {
-    const bad: BoatCall = async () => ({ ok: true, desktopUrl: "javascript:alert(1)" });
-    await expect(desktopUrl(bad, "/sandboxes/bx_23456789/desktop", { theme: "dark" }, noSleep)).rejects.toBeInstanceOf(BoatError);
+    const bad: BoatCall = () => Effect.succeed({ ok: true, desktopUrl: "javascript:alert(1)" });
+    await expect(run(desktopUrl(bad, "/sandboxes/bx_23456789/desktop", { theme: "dark" }, noSleep))).rejects.toBeInstanceOf(BoatError);
   });
 });

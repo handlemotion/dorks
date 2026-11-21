@@ -36,7 +36,11 @@ async function probe() {
 
 const show = (id, value) => ($(id).textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2));
 const guard = (id, fn) => async () => {
-  try { show(id, await fn()); } catch (e) { show(id, `error: ${e}`); }
+  try {
+    show(id, await fn());
+  } catch (e) {
+    show(id, `error: ${e}`);
+  }
 };
 
 $("restart").onclick = () => invoke("restart_server");
@@ -63,7 +67,13 @@ $("awake-off").onclick = guard("awake-out", async () => `power assertion held: $
 
 renderConfig();
 invoke("server_status").then(renderStatus);
-listen("dorks://server-status", (e) => { renderStatus(e.payload); probe(); });
-listen("dorks://runtime-config", (e) => { cfg = e.payload; renderConfig(); });
+listen("dorks://server-status", (e) => {
+  renderStatus(e.payload);
+  probe();
+});
+listen("dorks://runtime-config", (e) => {
+  cfg = e.payload;
+  renderConfig();
+});
 probe();
 setInterval(probe, 5000);

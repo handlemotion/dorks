@@ -1,40 +1,32 @@
 import { CatchBoundary, createFileRoute, Link, Navigate, useNavigate } from '@tanstack/react-router'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { DesktopOptions } from '@dorks/client'
+import type { Block } from '@dorks/shared'
 import { ChevronDownIcon, ChevronRightIcon, InfoIcon, MessageSquareIcon } from 'lucide-react'
-import { useConnection, useDork, useDorkEvents, useDorks, useDorksClient, useSettings } from '@dorks/client/react'
+import { useBuilds, useDork, useDorkEvents, useDorks, useDorksClient, useGithubRepos, usePullRequest, useSettings, useSubscriptions } from '@dorks/client/react'
+import { ownersOf, useOwnerScope } from '../../../components/ownerScope'
+import { ownerOf } from '../../../components/RepoAvatar'
 import { List } from '../../../components/onboarding/List'
 import { EmptyState } from '../../../components/EmptyState'
-import { AgentStatus } from '../../../components/AgentStatus'
 import { BrandCircle } from '../../../components/BrandCircle'
 import { Alert, AlertDescription } from '@dorks/ui/alert'
 import { Button } from '@dorks/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from '@dorks/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@dorks/ui/dropdown-menu'
 import { InputGroup, InputGroupButton } from '@dorks/ui/input-group'
-import {
-  MessageScroller,
-  MessageScrollerButton,
-  MessageScrollerContent,
-  MessageScrollerProvider,
-  MessageScrollerViewport,
-} from '@dorks/ui/message-scroller'
-import { ChatMessages } from '../../../components/ChatBlock'
-import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen } from '../../../components/ChatDetails'
-import { withImages, Composer, type AgentProvider } from '../../../components/ChatComposer'
+import { resolveSharedImages } from '../../../components/ChatBlock'
+import { CrewDetails } from '../../../components/CrewDetails'
+import { SessionChat } from '../../../components/SessionChat'
+import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, useWide, type ChatDetailsData } from '../../../components/ChatDetails'
+import type { PullRequestPanelData } from '../../../components/PullRequestPanel'
+import { latestTasks, progressStore, progressTurns } from '../../../lib/progress'
+import { withImages, Composer, preferredModel, type AgentProvider } from '../../../components/ChatComposer'
 import { ChatMenu } from '../../../components/ChatMenu'
 import { ArchiveButton, PageHeader } from '../../../components/PageHeader'
 import { SetupStatus } from '../../../components/SetupStatus'
 import { canCreate, onboarded } from '../../../lib/onboarding'
 import { usePending } from '../../../lib/pending'
-import { withReply, type Reply } from '../../../lib/reply'
+import { useDraft } from '../../../lib/draft'
+import { useArchiveDork } from '../../../lib/archive'
 
 // The selected dork lives in the `dork` search param (not local state) so the sidebar can highlight it and the URL is shareable.
 export const Route = createFileRoute('/_conn/_app/dorks')({
@@ -48,7 +40,7 @@ export const Route = createFileRoute('/_conn/_app/dorks')({
 
 function Notice({ children }: { children: React.ReactNode }) {
   return (
-    <Alert className="mx-auto mt-3 w-full max-w-3xl" role="status">
+    <Alert className="mx-auto mt-3 w-full max-w-4xl" role="status">
       <InfoIcon />
       <AlertDescription>{children}</AlertDescription>
     </Alert>
@@ -69,12 +61,25 @@ function Dorks() {
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-onboarding={settings ? (ready ? 'complete' : 'preparing') : 'loading'}>
-      {!selected && <PageHeader title="New session" divider={false} />}
+      {!selected && <PageHeader title="New session" />}
       {settings && ready && !settings.claudeToken && (
-        <Notice>Add a <Link to="/settings" className="font-medium underline underline-offset-4">Claude token</Link> to start sessions with Claude Code.</Notice>
+        <Notice>
+          Add a{' '}
+          <Link to="/settings" className="font-medium underline underline-offset-4">
+            Claude token
+          </Link>{' '}
+          to start sessions with Claude Code.
+        </Notice>
       )}
       {selected ? (
-        <CatchBoundary getResetKey={() => selected} errorComponent={() => <p className="mx-auto mt-6 text-sm text-destructive" role="alert">That session could not be opened.</p>}>
+        <CatchBoundary
+          getResetKey={() => selected}
+          errorComponent={() => (
+            <p className="mx-auto mt-6 text-sm text-destructive" role="alert">
+              That session could not be opened.
+            </p>
+          )}
+        >
           <Thread key={selected} dorkId={selected} />
         </CatchBoundary>
       ) : (
@@ -84,7 +89,11 @@ function Dorks() {
             {showArchived && (
               <section aria-label="Archived sessions" className="mx-auto flex min-h-0 w-full max-w-[790px] flex-col gap-6 px-5">
                 <h2 className="text-center text-lg font-medium">Archived sessions</h2>
-                {dorks === undefined ? <p role="status" className="text-center text-sm text-muted-foreground">Loading sessions…</p> : dorks.length === 0 ? (
+                {dorks === undefined ? (
+                  <p role="status" className="text-center text-sm text-muted-foreground">
+                    Loading sessions…
+                  </p>
+                ) : dorks.length === 0 ? (
                   <EmptyState figure="drawer" title="No archived sessions" description="Sessions you archive will show up here." />
                 ) : (
                   <div className="overflow-y-auto">
@@ -104,11 +113,15 @@ function Dorks() {
                 )}
               </section>
             )}
-              <div className={`${showArchived ? 'hidden' : 'flex'} mx-auto w-full max-w-[790px] flex-col gap-6`}>
-                <h2 className="sr-only">What should we work on?</h2>
-                {settings && <div className="px-5 [&:has(>div:empty)]:hidden"><SetupStatus settings={settings} /></div>}
-                <NewDork key={presetRepo} initialRepo={presetRepo} onCreated={setSelected} disabled={!ready} claudeReady={!!settings?.claudeToken} codexReady={!!settings?.boatEnvironment} />
-              </div>
+            <div className={`${showArchived ? 'hidden' : 'flex'} mx-auto w-full max-w-[790px] flex-col gap-6`}>
+              <h2 className="sr-only">What should we work on?</h2>
+              {settings && (
+                <div className="px-5 [&:has(>div:empty)]:hidden">
+                  <SetupStatus settings={settings} />
+                </div>
+              )}
+              <NewDork key={presetRepo} initialRepo={presetRepo} onCreated={setSelected} disabled={!ready} claudeReady={!!settings?.claudeToken} codexReady={!!settings?.boatEnvironment} />
+            </div>
           </div>
           <div className="shrink-0 self-center px-5 pb-3 text-sm text-muted-foreground">
             <Button variant="ghost" size="sm" aria-pressed={showArchived} onClick={() => setShowArchived(!showArchived)}>
@@ -121,32 +134,190 @@ function Dorks() {
   )
 }
 
-function NewDork({ initialRepo, onCreated, disabled, claudeReady, codexReady }: { initialRepo?: string; onCreated: (id: string) => void; disabled: boolean; claudeReady: boolean; codexReady: boolean }) {
+/** The build's repositories, then the ones chats used, then everything the GitHub CLI login can see; only the owner in scope's. */
+function useNewSessionRepos(buildRepos: string[], dorks: { repo: string }[] | undefined): string[] {
+  const github = useGithubRepos()
+  const recent = [...new Set(dorks?.map((d) => d.repo).filter(Boolean) ?? [])].sort()
+  const [scope] = useOwnerScope(ownersOf(recent, github))
+  return [...new Set([...buildRepos, ...recent, ...(github?.repos ?? [])])].filter((r) => !scope || ownerOf(r) === scope)
+}
+
+function NewDork({
+  initialRepo,
+  onCreated,
+  disabled,
+  claudeReady,
+  codexReady,
+}: {
+  initialRepo?: string
+  onCreated: (id: string) => void
+  disabled: boolean
+  claudeReady: boolean
+  codexReady: boolean
+}) {
   const { actions } = useDorksClient()
   const settings = useSettings()
   // Sent with the first message (the server checks it against the models the agent reported), then kept by the session.
-  const [choice, setChoice] = useState<{ model?: string; effort?: string }>({})
+  const [choice, setChoice] = useState<{ model?: string; effort?: string; fast?: boolean }>({})
   const dorks = useDorks()
-  const repositories = [...new Set(dorks?.map((d) => d.repo) ?? [])].sort()
-  const [repo, setRepo] = useState(initialRepo ?? 'acme/demo')
-  const [message, setMessage] = useState('')
+  const builds = useBuilds()
+  const built = (builds ?? []).filter((b) => b.image).map((b) => ({ id: b.id, name: b.name, repos: b.repos.map((r) => r.repo) }))
+  const [picked, setPicked] = useState<string | null | undefined>(undefined)
+  // Until the owner picks one: the default build when it is built, else the base machine.
+  const buildId = picked !== undefined ? picked : built.some((b) => b.id === settings?.defaultBuildId) ? (settings?.defaultBuildId ?? null) : null
+  const buildRepos = built.find((b) => b.id === buildId)?.repos ?? []
+  const repositories = useNewSessionRepos(buildRepos, dorks)
+  const [chosen, setRepo] = useState(initialRepo)
+  const repo = chosen ?? repositories[0] ?? ''
+  const [message, setMessage] = useDraft('new')
   const [provider, setProvider] = useState<AgentProvider>(claudeReady ? 'claude' : codexReady ? 'codex' : 'claude')
   const { run, pending, error } = usePending()
   const needsClaudeToken = provider === 'claude' && !claudeReady
   return (
     <div className="[&>div]:max-w-none">
-      {needsClaudeToken && <p className="mx-5 mb-2 text-sm text-destructive" role="status">Add a <Link to="/settings" className="font-medium underline underline-offset-4">Claude token in settings</Link> to use Claude Code.</p>}
+      {needsClaudeToken && (
+        <p className="mx-5 mb-2 text-sm text-destructive" role="status">
+          Add a{' '}
+          <Link to="/settings" className="font-medium underline underline-offset-4">
+            Claude token in settings
+          </Link>{' '}
+          to use Claude Code.
+        </p>
+      )}
       <Composer
-        text={message} setText={setMessage} repo={repo} setRepo={setRepo} repositories={repositories} provider={provider} setProvider={setProvider} codexEnabled={codexReady}
-        pending={pending} disabled={disabled || needsClaudeToken} error={error}
-        picker={{ choices: settings?.claudeModels ?? [], ...choice, onChange: (model, effort) => setChoice({ model, effort }) }}
+        text={message}
+        setText={setMessage}
+        repo={repo}
+        setRepo={setRepo}
+        repositories={repositories}
+        provider={provider}
+        setProvider={setProvider}
+        codexEnabled={codexReady}
+        pending={pending}
+        disabled={disabled || needsClaudeToken}
+        error={error}
+        picker={{
+          choices: settings?.claudeModels ?? [],
+          ...choice,
+          model: choice.model ?? preferredModel(settings?.claudeModels ?? []),
+          onChange: (model, effort, fast) => setChoice({ model, effort, fast }),
+        }}
         upload={actions.uploadImage}
-        onSubmit={(images) => run(async () => {
-          onCreated((await actions.createDork({ repo: repo.trim(), message: withImages(message, images), provider, ...(provider === 'claude' ? choice : {}) })).id)
-          setMessage('')
-        })}
+        machine={{ builds: built, buildId, onChange: setPicked }}
+        onSubmit={(images) =>
+          run(async () => {
+            onCreated((await actions.createDork({ repo: repo.trim(), message: withImages(message, images), provider, buildId, ...(provider === 'claude' ? choice : {}) })).id)
+            setMessage('')
+          })
+        }
       />
     </div>
+  )
+}
+
+type DorkView = NonNullable<ReturnType<typeof useDork>>
+type DorksActions = ReturnType<typeof useDorksClient>['actions']
+
+/** Chat details for a session: the agent's work, its pull request, screenshots (newest first), previews and computer. */
+function detailsData(dork: DorkView, blocks: Block[], actions: DorksActions, computer: Pick<NonNullable<ChatDetailsData['computer']>, 'used' | 'fetchUrl' | 'interrupt'>): ChatDetailsData {
+  return {
+    // Shared screenshots resolve to their URLs here as they do in the thread, so a progress message still shows its images.
+    progress: progressTurns(resolveSharedImages(blocks, actions.imageUrl).blocks),
+    tasks: latestTasks(blocks),
+    pr: prOf(dork.prUrl, dork.prState),
+    artifacts: dork.images?.map((i, n) => ({ id: i.id, name: i.caption ?? `Screenshot ${n + 1}`, type: 'Screenshot', src: actions.imageUrl(i.id), width: i.width, height: i.height })).reverse(),
+    previews: dork.previews?.map((p) => ({ name: p.title ?? `Port ${p.port}`, url: p.url, port: p.port })),
+    computer: { awake: dork.state === 'working' || dork.state === 'idle', working: dork.state === 'working', ...computer },
+  }
+}
+
+/** The session's pull request, read live from GitHub, and the merge and branch update Chat details offers on it. */
+function usePullRequestPanel(dorkId: string, dork: { prUrl?: string } | null | undefined): PullRequestPanelData | undefined {
+  const { actions } = useDorksClient()
+  const prUrl = dork?.prUrl
+  const pr = usePullRequest(dorkId)
+  // The agent just opened (or moved to) a pull request: read it now rather than at the next poller change.
+  useEffect(() => {
+    if (prUrl) actions.refreshPullRequest(dorkId)
+  }, [actions, dorkId, prUrl])
+  const refresh = useCallback(() => actions.refreshPullRequest(dorkId), [actions, dorkId])
+  if (!prUrl) return undefined
+  return {
+    view: pr.data,
+    error: pr.error?.message,
+    refresh,
+    merge: async (method, sha) => void (await actions.mergePullRequest(dorkId, method, sha)),
+    updateBranch: (sha) => actions.updatePullRequestBranch(dorkId, sha),
+  }
+}
+
+/** Another of the session's pull requests (by url), read live from GitHub, with its own merge and branch update. */
+function useSessionPullRequest(dorkId: string, url: string): PullRequestPanelData {
+  const { actions } = useDorksClient()
+  const pr = usePullRequest(dorkId, url)
+  const refresh = useCallback(() => actions.refreshPullRequest(dorkId), [actions, dorkId])
+  return {
+    view: pr.data,
+    error: pr.error?.message,
+    refresh,
+    merge: async (method, sha) => void (await actions.mergePullRequest(dorkId, method, sha, url)),
+    updateBranch: (sha) => actions.updatePullRequestBranch(dorkId, sha, url),
+  }
+}
+
+/** A failed Codex session's ChatGPT models, to restart it on another one. */
+function CodexModelForm({ dork }: { dork: DorkView }) {
+  const { actions } = useDorksClient()
+  const [selectedModel, setSelectedModel] = useState('')
+  const modelChoice = usePending()
+  const models =
+    dork.codexModelChoices?.flatMap((option) =>
+      option.efforts.map((effort) => ({
+        key: `${option.model}:${effort}`,
+        model: option.model,
+        effort,
+      })),
+    ) ?? []
+  const choice = models.find((option) => option.key === selectedModel) ?? models[0]
+  if (models.length === 0) return null
+  return (
+    <form
+      className="mx-auto mt-4 flex w-full max-w-4xl shrink-0 flex-wrap items-center gap-2 px-4 text-sm"
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (choice) void modelChoice.run(() => actions.chooseCodexModel(dork.id, choice.model, choice.effort))
+      }}
+    >
+      <span className="w-full text-muted-foreground">Available ChatGPT models</span>
+      <InputGroup className="max-w-56">
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<InputGroupButton size="sm" variant="ghost" className="w-full justify-between" aria-label="Codex model" />}>
+            <span className="truncate">{choice ? `${choice.model} · ${choice.effort}` : 'Choose model'}</span>
+            <ChevronDownIcon className="shrink-0" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-56">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Model and effort</DropdownMenuLabel>
+              <DropdownMenuRadioGroup value={choice?.key ?? ''} onValueChange={setSelectedModel}>
+                {models.map((option) => (
+                  <DropdownMenuRadioItem key={option.key} value={option.key}>
+                    {option.model} · {option.effort}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </InputGroup>
+      <Button type="submit" size="sm" disabled={dork.state !== 'error' || modelChoice.pending || !choice}>
+        {modelChoice.pending ? 'Starting…' : 'Use this model'}
+      </Button>
+      {modelChoice.error && (
+        <p className="text-sm text-destructive" role="alert">
+          {modelChoice.error}
+        </p>
+      )}
+    </form>
   )
 }
 
@@ -154,122 +325,100 @@ function Thread({ dorkId }: { dorkId: string }) {
   const { actions } = useDorksClient()
   const navigate = useNavigate()
   const dork = useDork(dorkId)
-  const { view, canLoadMore, loadMore, loading, error: eventsError, send } = useDorkEvents(dorkId)
-  const [text, setText] = useState('')
-  const [reply, setReply] = useState<Reply>()
-  const [selectedModel, setSelectedModel] = useState('')
-  const { run, pending, error } = usePending()
-  const { run: runStop, pending: stopping, error: stopError } = usePending()
+  const { view, loading } = useDorkEvents(dorkId)
   const { run: runArchive, pending: archiving, error: archiveError } = usePending()
-  const modelChoice = usePending()
-  const modelSwitch = usePending()
-  const settings = useSettings()
-  const models = dork?.codexModelChoices?.flatMap((option) => option.efforts.map((effort) => ({
-    key: `${option.model}:${effort}`, model: option.model, effort,
-  }))) ?? []
-  const choice = models.find((option) => option.key === selectedModel) ?? models[0]
-  const working = dork?.state === 'working'
+  const archiveDork = useArchiveDork()
   const [detailsOpen, setDetailsOpen] = useDetailsOpen()
+  // One draft for the composer and everything on the page that writes into it (Ask for…, picked elements).
+  const draft = useDraft(dorkId)
+  const setText = draft[1]
+  const wide = useWide()
+  // Each chat's Progress starts on its newest step.
+  useEffect(() => progressStore.reset(), [dorkId])
   const computerUsed = view.blocks.some((b) => b.kind === 'tool' && b.name.startsWith('mcp__computer__'))
   const fetchDesktopUrl = useCallback((opts: DesktopOptions) => actions.desktopUrl(dorkId, opts), [actions, dorkId])
   const interruptAgent = useCallback(() => actions.interrupt(dorkId), [actions, dorkId])
-  const { live } = useConnection()
-  if (dork === undefined || loading) return <p className="mt-4 px-6 text-sm text-muted-foreground" role="status">Loading session…</p>
-  if (dork === null) return <p className="mt-4 px-6 text-sm text-destructive" role="alert">That session could not be found.</p>
+  const pullRequest = usePullRequestPanel(dorkId, dork)
+  const subscriptions = useSubscriptions(dorkId)
+  const usePr = useCallback((url: string) => useSessionPullRequest(dorkId, url), [dorkId])
+  if (dork === undefined || loading)
+    return (
+      <p className="mt-4 px-6 text-sm text-muted-foreground" role="status">
+        Loading session…
+      </p>
+    )
+  if (dork === null)
+    return (
+      <p className="mt-4 px-6 text-sm text-destructive" role="alert">
+        That session could not be found.
+      </p>
+    )
+  const crew = dork.kind === 'coordinator'
+  const details = !detailsOpen ? undefined : crew ? (
+    <CrewDetails dork={dork} onClose={() => setDetailsOpen(false)} onAsk={setText} />
+  ) : (
+    <ChatDetails
+      sessionId={dorkId}
+      data={{ ...detailsData(dork, view.blocks, actions, { used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent }), pullRequest, subscriptions, usePullRequest: usePr }}
+      onClose={() => setDetailsOpen(false)}
+      onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}
+      onAsk={setText}
+    />
+  )
   return (
-    <ChatSplit details={detailsOpen ? <ChatDetails data={{ pr: prOf(dork.prUrl), artifacts: dork.images?.map((i, n) => ({ id: i.id, name: i.caption ?? `Screenshot ${n + 1}`, type: 'Screenshot', src: actions.imageUrl(i.id), width: i.width, height: i.height })).reverse(), previews: dork.previews?.map((p) => ({ name: p.title ?? `Port ${p.port}`, url: p.url, port: p.port })), computer: { awake: dork.state === 'working' || dork.state === 'idle', working, used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent } }} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} onAsk={setText} /> : undefined}>
-    <section className="flex min-w-0 flex-1 flex-col" aria-label="thread" data-state={dork.state}>
-      <PageHeader divider={false}
-        title={dork.title}
-        titleActions={<ArchiveButton archived={dork.archived} disabled={archiving} onClick={() => void runArchive(() => actions.archiveDork(dorkId, !dork.archived))} />}
-        actions={<>
-          <ChatMenu prUrl={dork.prUrl} detailsOpen={detailsOpen} onDelete={async () => { await actions.deleteDork(dorkId); await navigate({ to: '/dorks', search: {} }) }} />
-          {!detailsOpen && <ShowDetailsButton onClick={() => setDetailsOpen(true)} />}
-        </>}
-      />
-      {models.length > 0 && (
-        <form className="mx-auto mt-4 flex w-full max-w-3xl shrink-0 flex-wrap items-center gap-2 px-4 text-sm" onSubmit={(event) => {
-          event.preventDefault()
-          if (choice) void modelChoice.run(() => actions.chooseCodexModel(dorkId, choice.model, choice.effort))
-        }}>
-          <span className="w-full text-muted-foreground">Available ChatGPT models</span>
-          <InputGroup className="max-w-56">
-            <DropdownMenu>
-              <DropdownMenuTrigger render={<InputGroupButton size="sm" variant="ghost" className="w-full justify-between" aria-label="Codex model" />}>
-                <span className="truncate">{choice ? `${choice.model} · ${choice.effort}` : 'Choose model'}</span>
-                <ChevronDownIcon className="shrink-0" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-56">
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel>Model and effort</DropdownMenuLabel>
-                  <DropdownMenuRadioGroup value={choice?.key ?? ''} onValueChange={setSelectedModel}>
-                    {models.map((option) => (
-                      <DropdownMenuRadioItem key={option.key} value={option.key}>
-                        {option.model} · {option.effort}
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </InputGroup>
-          <Button type="submit" size="sm" disabled={dork.state !== 'error' || modelChoice.pending || !choice}>
-            {modelChoice.pending ? 'Starting…' : 'Use this model'}
-          </Button>
-          {modelChoice.error && <p className="text-sm text-destructive" role="alert">{modelChoice.error}</p>}
-        </form>
-      )}
-      <MessageScrollerProvider autoScroll defaultScrollPosition="end">
-        <MessageScroller>
-          <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
-            <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-[30px] pt-6 pb-12" data-testid="transcript">
-              {canLoadMore && <div className="text-center"><Button variant="outline" size="sm" onClick={loadMore}>Load older</Button></div>}
-              <ChatMessages
-                blocks={view.blocks}
-                imageUrl={actions.imageUrl}
-                agent={dork.provider === 'codex' ? 'Codex' : 'Claude'}
-                onReply={dork.archived ? undefined : (quoted, draft) => { setReply(quoted); if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft)) }}
-                onReplySend={dork.archived ? undefined : (quoted, answer) => run(() => send(withReply(quoted, answer)))}
+    <ChatSplit details={details}>
+      <section className="flex min-w-0 flex-1 flex-col" aria-label="thread" data-state={dork.state} data-kind={dork.kind ?? 'agent'}>
+        <PageHeader
+          parent={dork.parentId ? <ParentCrumb id={dork.parentId} /> : undefined}
+          title={crew && dork.icon ? `${dork.icon} ${dork.title}` : dork.title}
+          titleActions={<ArchiveButton archived={dork.archived} disabled={archiving} onClick={() => void runArchive(() => archiveDork(dorkId, !dork.archived))} />}
+          actions={
+            <>
+              <ChatMenu
+                prUrl={dork.prUrl}
+                detailsOpen={detailsOpen}
+                onDelete={async () => {
+                  await actions.deleteDork(dorkId)
+                  await navigate({ to: '/dorks', search: {} })
+                }}
               />
-              {eventsError && <p role="alert" className="text-sm text-destructive">Could not load messages: {eventsError.message}. Retrying…</p>}
-              <div><AgentStatus state={dork.state} live={live} outcome={view.lastOutcome} /></div>
-            </MessageScrollerContent>
-          </MessageScrollerViewport>
-          <MessageScrollerButton />
-        </MessageScroller>
-      </MessageScrollerProvider>
-      <Composer
-        text={text} setText={setText} repo={dork.repo} provider={dork.provider ?? 'claude'} pending={pending} disabled={dork.archived}
-        error={error || stopError || archiveError || modelSwitch.error}
-        agentLabel={dork.codexModel?.model}
-        picker={dork.provider === 'claude' ? {
-          choices: dork.modelChoices ?? settings?.claudeModels ?? [],
-          model: dork.model,
-          effort: dork.effort,
-          active: { model: dork.agentModel, effort: dork.agentEffort },
-          onChange: (model, effort) => void modelSwitch.run(() => actions.chooseModel(dorkId, model ?? null, effort ?? null)),
-        } : undefined}
-        upload={actions.uploadImage}
-        reply={reply}
-        onClearReply={() => setReply(undefined)}
-        onSubmit={(images) => run(async () => {
-          const sent = text
-          const quoted = reply
-          // The optimistic row shows it at once; put the text and the reply back if the server refuses.
-          setText('')
-          setReply(undefined)
-          try { await send(withReply(quoted, withImages(sent, images))) } catch (e) { setText(sent); setReply(quoted); throw e }
-        })}
-        onStop={working && !stopping && !dork.archived ? () => void runStop(() => actions.interrupt(dorkId)) : undefined}
-      />
-    </section>
+              {!detailsOpen && <ShowDetailsButton onClick={() => setDetailsOpen(true)} />}
+            </>
+          }
+        />
+        <CodexModelForm dork={dork} />
+        <SessionChat
+          dork={dork}
+          error={archiveError}
+          draft={draft}
+          onOpenStep={
+            wide && !crew
+              ? (key) => {
+                  setDetailsOpen(true)
+                  progressStore.show(key)
+                }
+              : undefined
+          }
+        />
+      </section>
     </ChatSplit>
   )
 }
 
-/** The pull request from the stored url; the number is read from it, since the backend does not keep it separately. */
-function prOf(url: string | undefined) {
+/** A worker open full screen: its dork, one click away in the header (docs/crew.md). */
+function ParentCrumb({ id }: { id: string }) {
+  const parent = useDork(id)
+  return (
+    <Link to="/dorks" search={{ dork: id }} className="flex min-w-0 items-center gap-1.5 hover:text-foreground" aria-label={`Back to ${parent?.title ?? 'the dork'}`}>
+      {parent?.icon && <span aria-hidden>{parent.icon}</span>}
+      <span className="max-w-48 truncate">{parent?.title ?? 'Dork'}</span>
+    </Link>
+  )
+}
+
+/** The pull request from the stored url (the number is read from it, since the backend does not keep it separately) and its state. */
+function prOf(url: string | undefined, state: DorkView['prState']) {
   if (!url) return undefined
   const n = /\/pull\/(\d+)/.exec(url)?.[1]
-  return { url, number: n ? Number(n) : undefined }
+  return { url, number: n ? Number(n) : undefined, state }
 }

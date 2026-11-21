@@ -60,20 +60,21 @@ impl Paths {
         self.root.join("owner-token")
     }
 
-    /// The user's wurmhol token (0600). Never in `settings.json`.
-    pub fn wurmhol_token_file(&self) -> PathBuf {
-        self.root.join("wurmhol-token")
+    /// This install's key for the Dorks tunnel service (0600), made once. Its wurmhol tenant, and so its tunnel and URL, follow
+    /// from it.
+    pub fn tunnel_install_key_file(&self) -> PathBuf {
+        self.root.join("tunnel-install-key")
     }
 
-    /// The wurmhol pipe's access key (0600), made once. Sandboxes send it so the relay lets their bridge through; the per-dork
-    /// HMAC remains the real authentication (docs/architecture.md).
-    pub fn wurmhol_access_key_file(&self) -> PathBuf {
-        self.root.join("wurmhol-access-key")
+    /// The tunnel's connector from the tunnel service (0600, JSON): what the wurmhol client opens this install's tunnel with.
+    pub fn wurmhol_connector_file(&self) -> PathBuf {
+        self.root.join("wurmhol-connector")
     }
 
-    /// This install's stable pipe name (`dorks-<10 hex>`), made once so the public URL survives restarts.
-    pub fn wurmhol_name_file(&self) -> PathBuf {
-        self.root.join("wurmhol-name")
+    /// Files of the access-key pipe that embedded tunnels replaced (a personal token, the pipe's access key and name). The shell
+    /// deletes them at start.
+    pub fn legacy_wurmhol_files(&self) -> [PathBuf; 3] {
+        ["wurmhol-token", "wurmhol-access-key", "wurmhol-name"].map(|f| self.root.join(f))
     }
 
     pub fn wurmhol_log(&self) -> PathBuf {

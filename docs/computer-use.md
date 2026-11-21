@@ -121,7 +121,7 @@ the message is sent, and handed to Claude as image blocks (the bridge loads them
   - Check the WebRTC stream plays inside the desktop app.
   - Ask a dork to "open the dev server in Chrome and screenshot it" and confirm the tab follows.
   - Use `--type small` sandboxes for checks that build nothing.
-- **Previews through Boat's hosted ports**: done. The agent's `preview_show` tool hosts a port and the Previews tab shows it; see [Boat](boat.md#hosted-ports).
+- **Previews through Boat's hosted ports**: done. The agent's `preview_show` tool hosts a port and Artifacts shows it as a running preview; see [Boat](boat.md#hosted-ports).
 - **Recordings as artifacts**: the driver's `start_recording` and `stop_recording`, or `ascii-record-desktop`, saved per turn into Artifacts.
 - **Codex**: give the Codex CLI the same MCP server. Deprioritized, per AGENTS.md.
 

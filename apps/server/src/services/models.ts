@@ -20,32 +20,49 @@ export function rememberModelChoices(app: App, models: AgentModelChoice[]) {
   touch(app, { t: "settings" });
 }
 
-/** The last model list a Claude agent reported, or `[]` before any did. */
+/**
+ * Before any agent has reported its list, the CLI's own stable aliases, so the first session can already pick a model. The
+ * efforts are left out (the default only) until the real list arrives and replaces this one.
+ */
+const FALLBACK_CHOICES: AgentModelChoice[] = [
+  { model: "default", name: "Default", efforts: [] },
+  { model: "opus", name: "Opus", efforts: [] },
+  { model: "sonnet", name: "Sonnet", efforts: [] },
+  { model: "haiku", name: "Haiku", efforts: [] },
+];
+
+/** The last model list a Claude agent reported, or the CLI's aliases before any did. */
 export function knownModelChoices(app: App): AgentModelChoice[] {
   const raw = app.db.get<{ value: string }>("SELECT value FROM meta WHERE key = ?", CACHE_KEY)?.value;
-  if (!raw) return [];
+  if (!raw) return FALLBACK_CHOICES;
   try {
     const parsed = z.array(agentModelChoice).safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : [];
+    return parsed.success && parsed.data.length ? parsed.data : FALLBACK_CHOICES;
   } catch {
-    return [];
+    return FALLBACK_CHOICES;
   }
 }
 
 /**
- * Checks a model/effort pair against the choices the agent offered. `model` null or "" means the CLI's default; effort null means
- * the model's default effort. Returns the values to store.
+ * Checks a model/effort/fast choice against the choices the agent offered. `model` null or "" means the CLI's default; effort null
+ * means the model's default effort; `fast` absent or false is off. Returns the values to store.
  */
-export function validModelChoice(choices: AgentModelChoice[], model: unknown, effort: unknown): { model?: string; effort?: string } {
-  if (model !== undefined && model !== null && typeof model !== "string") fail("invalid", "model must be a string");
-  if (effort !== undefined && effort !== null && typeof effort !== "string") fail("invalid", "effort must be a string");
-  const m = model || undefined;
-  const e = effort || undefined;
-  if (!m && !e) return {};
+export function validModelChoice(choices: AgentModelChoice[], model: unknown, effort: unknown, fast?: unknown): { model?: string; effort?: string; fast: boolean } {
+  for (const [name, v, type] of [
+    ["model", model, "string"],
+    ["effort", effort, "string"],
+    ["fast", fast, "boolean"],
+  ] as const)
+    if (v !== undefined && v !== null && typeof v !== type) fail("invalid", `${name} must be a ${type}`);
+  const m = (model as string | null | undefined) || undefined;
+  const e = (effort as string | null | undefined) || undefined;
+  const f = fast === true;
+  if (!m && !e && !f) return { fast: false };
   const choice = choices.find((c) => c.model === (m ?? "default"));
   if (!choice) fail("invalid", m ? `${m} is not offered by the agent` : "the agent has not reported its models yet");
   if (e && !choice.efforts.includes(e as never)) fail("invalid", `${choice.name} does not support ${e} effort`);
-  return { model: m, effort: e };
+  if (f && !choice.fast) fail("invalid", `${choice.name} does not offer fast mode`);
+  return { model: m, effort: e, fast: f };
 }
 
 const choicesFor = (app: App, dork: DorkRow) => (dork.modelChoices?.length ? dork.modelChoices : knownModelChoices(app));
@@ -55,14 +72,14 @@ const choicesFor = (app: App, dork: DorkRow) => (dork.modelChoices?.length ? dor
  * new flags once the current turn is over. Asleep, the choice is used on the next wake. `agentModel` is cleared until the agent
  * confirms the new one in its next init event.
  */
-export function chooseModel(app: App, dorkId: string, model: unknown, effort: unknown) {
+export function chooseModel(app: App, dorkId: string, model: unknown, effort: unknown, fast?: unknown) {
   app.db.tx(() => {
     const dork = owned(app, dorkId);
     if (dork.archived) fail("archived", "dork is archived");
     if (dork.provider !== "claude") fail("invalid", "choose a Codex model from the thread");
-    const next = validModelChoice(choicesFor(app, dork), model, effort);
-    if (next.model === dork.model && next.effort === dork.effort) return;
-    patchDork(app, dorkId, { model: next.model, effort: next.effort, agentModel: undefined, agentEffort: undefined });
+    const next = validModelChoice(choicesFor(app, dork), model, effort, fast);
+    if (next.model === dork.model && next.effort === dork.effort && next.fast === dork.fast) return;
+    patchDork(app, dorkId, { model: next.model, effort: next.effort, fast: next.fast, agentModel: undefined, agentEffort: undefined });
     if (isAwake(dork.state)) {
       // A pending configure may already have been fetched with the previous choice: replace it, so the bridge (which dedupes by
       // command id) fetches the configuration again. An ack for the dropped row is ignored.

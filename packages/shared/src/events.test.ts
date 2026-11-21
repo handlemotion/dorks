@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { clientEvent } from "./events";
 import type { ClientEvent } from "./events";
 import { emptyView, fold } from "./client/fold";
@@ -17,7 +17,13 @@ const samples: Record<ClientEvent["type"], object> = {
   pr_opened: { url: "https://github.com/o/r/pull/1", number: 1 },
   pr_merged: { url: "https://github.com/o/r/pull/1", number: 1 },
   notify: { kinds: [], prs: [], text: "digest" },
+  crew: { direction: "in", peer: { id: "d", title: "Worker" }, kind: "report", text: "done" },
   subscription: { repo: "o/r", number: 1, status: "active" },
+  build_draft: { draftId: "dr", buildId: "b", buildName: "web", note: "adds jq" },
+  build_decision: { draftId: "dr", buildId: "b", buildName: "web", approved: true },
+  local_request: { requestId: "lr", kind: "run", command: "ls", cwd: "/Users/me", reason: "list files" },
+  local_decision: { requestId: "lr", decision: "allowed", via: "once" },
+  local_result: { requestId: "lr", ok: true, exitCode: 0, preview: "a" },
   rate_limited: {},
   agent_exited: { message: "bye" },
   error: { message: "boom" },

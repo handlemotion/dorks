@@ -17,14 +17,9 @@ use tauri::async_runtime::JoinHandle;
 pub struct TunnelInfo {
     /// `"user-url"`, `"wurmhol"`.
     pub kind: String,
-    /// `"ready"`, `"approval"` (a person must approve this computer at `approvalUrl`; the shell restarts the tunnel when they
-    /// have), `"error"` (could not start) or `"lost"` (it was up and went away; the shell is restarting it).
+    /// `"ready"`, `"error"` (could not start) or `"lost"` (it was up and went away; the shell is restarting it).
     pub state: String,
     pub error: Option<String>,
-    /// Where to approve this computer, while `state` is `"approval"`.
-    pub approval_url: Option<String>,
-    /// Whether a wurmhol token is saved (the token itself never leaves the shell).
-    pub token_set: bool,
 }
 
 /// What the UI needs to talk to the server. Contains the owner token, so it only ever goes to the app's own window.

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { toAppError, UNKNOWN_ERROR_MESSAGE } from "./errors";
 import { clientEvent, errorEvent } from "./events";
 import { emptyView, fold } from "./client/fold";

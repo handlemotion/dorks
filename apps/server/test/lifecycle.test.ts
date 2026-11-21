@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { update } from "../src/db";
 import { boxCreated, boxPaused, boxResumed, opFailed } from "../src/lifecycle/lifecycle";
 import { interrupt as interruptDork } from "../src/services/dorks";
@@ -338,7 +338,12 @@ describe("R5: box results are tied to the operation that produced them", () => {
     expect(h.rt(id).opGen).toBe(3);
     await h.settle(); // resume#1 never runs (replaced by #3's job); pause#2 lands stale
     expect(h.state(id)).toBe("waking");
-    expect(h.events(id).filter((e) => e.body.type === "error").map((e) => (e.body as { message: string }).message)).not.toContain("resume_box failed");
+    expect(
+      h
+        .events(id)
+        .filter((e) => e.body.type === "error")
+        .map((e) => (e.body as { message: string }).message),
+    ).not.toContain("resume_box failed");
   });
 
   it("the current attempt's failure still moves the dork to error", async () => {
@@ -388,21 +393,55 @@ describe("R5: box results are tied to the operation that produced them", () => {
 describe("review fixes", () => {
   const errors = (h: ReturnType<typeof harness>, id: string) => h.events(id).filter((e) => e.body.type === "error");
 
-  describe("error with a queued message does not loop resume/pause", () => {
-    it("a wake that never produces a bridge ends in sleeping, once", async () => {
+  describe("a wake that never produces a bridge starts over on a fresh box, once", () => {
+    it("replaces the box with the message still queued, and a fresh box that also fails ends in sleeping", async () => {
       const h = harness();
-      const id = h.seed("sleeping");
+      const id = h.seed("sleeping", { boxId: "box-old" });
+      update(h.app.db, "dorks", { id }, { claudeSessionId: "sess-1" });
       h.sendMessage(id); // waking, the message stays queued (the bridge never comes up)
       await h.settle();
-      h.timer(id, "watchdog"); // -> error -> flush (nobody answers) -> pause -> sleeping, message still queued
+      h.timer(id, "watchdog"); // the resume never came back: delete the old box, create a fresh one
+      await h.settle();
+      expect(h.state(id)).toBe("creating");
+      expect(h.box.calls).toEqual(["resume", "delete", "create"]);
+      expect(h.box.missing.has("box-old")).toBe(true);
+      expect(h.dork(id).boxId).toBe(`box-${id}`);
+      expect(h.dork(id).claudeSessionId).toBeUndefined(); // the session lived on the old box's disk
+      expect(h.kinds(id)).toEqual(["user_message"]); // delivered once the fresh bridge is ready
+      expect(h.hasTimer(id, "watchdog")).toBe(true);
+      h.timer(id, "watchdog"); // the fresh box never connects either: a plain failure, no second replace
       await h.advance(11_000);
       expect(h.state(id)).toBe("sleeping");
       await h.advance(600_000);
-      expect(h.box.calls).toEqual(["resume", "pause"]); // not resume, pause, resume, pause, ...
-      expect(errors(h, id)).toHaveLength(1);
+      expect(h.box.calls).toEqual(["resume", "delete", "create", "pause"]); // no resume/pause loop
+      expect(errors(h, id)).toHaveLength(2);
       expect(h.kinds(id)).toEqual(["user_message"]); // still there for the next wake
       h.sendMessage(id, "again");
-      expect(h.state(id)).toBe("waking"); // the next message wakes it
+      expect(h.state(id)).toBe("waking"); // the next message wakes the fresh box
+    });
+
+    it("a failed delete keeps the box: no create, and the next message resumes it", async () => {
+      const h = harness();
+      const id = h.seed("waking", { bridgeSeenAt: 0 });
+      h.box.failDeletes = 1;
+      h.timer(id, "watchdog");
+      await h.settle(); // the delete fails: error, and a flush of the old box's bridge
+      await h.advance(11_000); // nobody answers the flush -> pause
+      expect(h.box.calls).toEqual(["delete", "pause"]); // never created over a box the provider would adopt
+      expect(h.dork(id).boxId).toBe("box-1");
+      expect(h.state(id)).toBe("sleeping");
+      h.sendMessage(id);
+      await h.settle();
+      expect(h.box.calls).toEqual(["delete", "pause", "resume"]);
+    });
+
+    it("an archived dork is not replaced", async () => {
+      const h = harness();
+      const id = h.seed("waking", { archived: true, bridgeSeenAt: 0 });
+      h.timer(id, "watchdog");
+      await h.settle();
+      expect(h.box.calls).toEqual(["pause"]);
+      expect(h.dork(id).boxId).toBe("box-1");
     });
   });
 
@@ -477,10 +516,10 @@ describe("review fixes", () => {
     it("a resume that finishes after the dork went to error, even after its pause already landed", async () => {
       const h = harness();
       const id = h.seed("waking", { opGen: 1, bridgeSeenAt: 0 });
-      h.timer(id, "watchdog"); // error + pause (gen 2)
+      h.input(id, { t: "agent_exited" }); // error + pause (gen 2)
       await h.settle();
       expect(h.state(id)).toBe("sleeping"); // the pause beat the slow resume
-      h.app.db.tx(() => boxResumed(h.app, id)); // now the resume lands: the box is running again
+      h.app.db.tx(() => boxResumed(h.app, id, "box-1")); // now the resume lands: the box is running again
       await h.settle();
       expect(h.box.calls).toEqual(["pause", "pause"]);
       expect(h.state(id)).toBe("sleeping");
@@ -489,12 +528,23 @@ describe("review fixes", () => {
     it("a resume that lands while the dork's own pause is still in flight pauses again (the old one may finish first)", async () => {
       const h = harness();
       const id = h.seed("waking", { opGen: 1, bridgeSeenAt: 0 });
-      h.timer(id, "watchdog"); // error + pause (gen 2), job scheduled but not run yet
+      h.input(id, { t: "agent_exited" }); // error + pause (gen 2), job scheduled but not run yet
       expect(h.rt(id).pause?.phase).toBe("pausing");
-      h.app.db.tx(() => boxResumed(h.app, id));
+      h.app.db.tx(() => boxResumed(h.app, id, "box-1"));
       await h.settle();
       expect(h.box.calls).toEqual(["pause", "pause"]); // one issued after the resume landed, so it is ordered after it
       expect(h.state(id)).toBe("sleeping");
+    });
+
+    it("a resume of a box the dork already replaced is ignored", async () => {
+      const h = harness();
+      const id = h.seed("waking", { opGen: 1, bridgeSeenAt: 0 });
+      h.timer(id, "watchdog"); // replace: box-1 is forgotten and deleted
+      await h.settle();
+      h.app.db.tx(() => boxResumed(h.app, id, "box-1")); // the slow resume of box-1 lands late
+      await h.settle();
+      expect(h.box.calls).toEqual(["delete", "create"]);
+      expect(h.kinds(id)).toEqual([]); // no configure for the dead box
     });
 
     it("a resume the dork is still waiting for just queues configure", async () => {
@@ -541,7 +591,11 @@ describe("turn outcomes", () => {
   const raw = (bseq: number, r: object) => ({ t: "event", bseq, raw: r });
   const text = (id: string, t: string) => ({ type: "assistant", message: { id, content: [{ type: "text", text: t }] } });
   const tool = (id: string) => ({ type: "assistant", message: { id, content: [{ type: "tool_use", id: `tu-${id}`, name: "Bash", input: { command: "ls" } }] } });
-  const turnEnd = (h: ReturnType<typeof harness>, id: string) => h.events(id).map((e) => e.body).filter((b) => b.type === "turn_complete" || b.type === "error");
+  const turnEnd = (h: ReturnType<typeof harness>, id: string) =>
+    h
+      .events(id)
+      .map((e) => e.body)
+      .filter((b) => b.type === "turn_complete" || b.type === "error");
 
   it("names the last message with no tool call after it as the final answer", () => {
     const h = harness();
@@ -564,12 +618,25 @@ describe("turn outcomes", () => {
     expect(h.rt(id).interruptRequested).toBe(false);
 
     h.push(id, [raw(3, { type: "result", is_error: true, result: "boom" })]);
-    expect(turnEnd(h, id).slice(1).map((b) => (b.type === "turn_complete" ? b.outcome : b.type))).toEqual(["failed", "error"]);
+    expect(
+      turnEnd(h, id)
+        .slice(1)
+        .map((b) => (b.type === "turn_complete" ? b.outcome : b.type)),
+    ).toEqual(["failed", "error"]);
   });
 });
 
 describe("model choice", () => {
-  const models = [{ t: "agent_models", models: [{ model: "default", name: "Default", efforts: ["low", "high"] }, { model: "haiku", name: "Haiku", efforts: ["low"] }], effort: null }];
+  const models = [
+    {
+      t: "agent_models",
+      models: [
+        { model: "default", name: "Default", efforts: ["low", "high"] },
+        { model: "haiku", name: "Haiku", efforts: ["low"] },
+      ],
+      effort: null,
+    },
+  ];
 
   it("only accepts what the agent offered, and every change asks the bridge to reconfigure again", () => {
     const h = harness();
@@ -578,9 +645,15 @@ describe("model choice", () => {
     expect(() => chooseModel(h.app, id, "gpt-9", null)).toThrow();
     expect(() => chooseModel(h.app, id, "haiku", "high")).toThrow(); // Haiku has no high effort
     chooseModel(h.app, id, "haiku", null);
-    const first = h.cmds(id).filter((c) => c.kind === "configure").map((c) => c.cid);
+    const first = h
+      .cmds(id)
+      .filter((c) => c.kind === "configure")
+      .map((c) => c.cid);
     chooseModel(h.app, id, "haiku", "low"); // while the first reconfigure may already be in flight
-    const second = h.cmds(id).filter((c) => c.kind === "configure").map((c) => c.cid);
+    const second = h
+      .cmds(id)
+      .filter((c) => c.kind === "configure")
+      .map((c) => c.cid);
     expect(first).toHaveLength(1);
     expect(second).toHaveLength(1);
     expect(second[0]).not.toBe(first[0]);

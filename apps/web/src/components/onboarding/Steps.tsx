@@ -12,7 +12,6 @@ import grokLight from '../../assets/providers/grok-light.svg'
 import openaiDark from '../../assets/providers/openai-dark.svg'
 import openaiLight from '../../assets/providers/openai-light.svg'
 import { BoatCheckError, saveBoat } from '../../lib/boat'
-import { isDesktop, readGhToken } from '../../lib/desktop'
 import { WELCOMED_KEY } from '../../lib/onboarding'
 import { usePending } from '../../lib/pending'
 import { A, Actions, Body, Card, Heading, notify, SecretInput, StepForm, useNotifyError } from './Frame'
@@ -103,7 +102,15 @@ export function BoatKey({ settings, onNext }: StepProps) {
         </Heading>
         {/* One field needs no card or label: the heading says what it is. */}
         <div className="flex flex-col gap-3">
-          <SecretInput aria-label="boat api key" className={FIELD} autoComplete="off" autoFocus placeholder={settings.boatKey ? 'A key is saved' : 'Paste your Boat API key'} value={key} onChange={(e) => setKey(e.target.value)} />
+          <SecretInput
+            aria-label="boat api key"
+            className={FIELD}
+            autoComplete="off"
+            autoFocus
+            placeholder={settings.boatKey ? 'A key is saved' : 'Paste your Boat API key'}
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+          />
           {askOrg && <Input aria-label="boat organization" className={FIELD} autoComplete="off" placeholder="Organization id" value={org} onChange={(e) => setOrg(e.target.value)} />}
         </div>
       </Body>
@@ -134,9 +141,7 @@ export function AgentSignIn({ settings, onNext }: StepProps) {
           <Row icon={<Logo light={grokLight} dark={grokDark} />} name="Grok" soon />
         </List>
       </Body>
-      <Actions onClick={() => (configured ? onNext() : notify('Connect Claude or Codex first.'))}>
-        Continue
-      </Actions>
+      <Actions onClick={() => (configured ? onNext() : notify('Connect Claude or Codex first.'))}>Continue</Actions>
 
       <ConnectDialog
         {...dialog('claude')}
@@ -170,7 +175,23 @@ type SettingsPatch = Parameters<ReturnType<typeof useDorksClient>['actions']['up
  * A dialog's field, then Cancel and Save on the dialog's footer band. The form is `contents` so its body and footer lay out as the
  * dialog's own sections. The live stream sends the saved setting back, which marks the row Connected.
  */
-function SaveForm({ label, placeholder, secret, initial = '', extra, save, onSaved }: { label: string; placeholder: string; secret?: boolean; initial?: string; extra?: ReactNode; save: (value: string) => SettingsPatch; onSaved: () => void }) {
+function SaveForm({
+  label,
+  placeholder,
+  secret,
+  initial = '',
+  extra,
+  save,
+  onSaved,
+}: {
+  label: string
+  placeholder: string
+  secret?: boolean
+  initial?: string
+  extra?: ReactNode
+  save: (value: string) => SettingsPatch
+  onSaved: () => void
+}) {
   const { actions } = useDorksClient()
   const [value, setValue] = useState(initial)
   const { run, pending, error } = usePending()
@@ -209,99 +230,48 @@ function SaveForm({ label, placeholder, secret, initial = '', extra, save, onSav
 
 // ---- 4. GitHub -------------------------------------------------------------------------------------------------------------
 
-const PERMISSIONS: [string, string][] = [
-  ['Contents', 'Read and write'],
-  ['Pull requests', 'Read and write'],
-  ['Issues', 'Read and write'],
-  ['Workflows', 'Read and write'],
-  ['Checks', 'Read'],
-  ['Commit statuses', 'Read'],
-  ['Metadata', 'Read'],
-]
-
-type GitHubWay = 'cli' | 'token'
+/** Signs the GitHub CLI in with every scope Dorks uses (`read:org` lists organizations, `workflow` pushes CI files). */
+const GH_FIX = 'gh auth login --scopes read:org,workflow'
 
 export function GitHub({ settings, onNext }: StepProps) {
   const { actions } = useDorksClient()
-  const desktop = isDesktop()
-  const [open, setOpen] = useState<GitHubWay | null>(null)
-  const cli = usePending()
-  useNotifyError(cli.error)
-  const dialog = (way: GitHubWay) => ({ open: open === way, onOpenChange: (o: boolean) => setOpen(o ? way : null) })
-  const useCli = () => {
-    void cli.run(async () => {
-      const r = await readGhToken()
-      if (!r.ok) {
-        notify(r.reason === 'declined' ? 'Cancelled, no token was read.' : r.reason === 'missing' ? 'The GitHub CLI isn’t signed in. Run `gh auth login` in a terminal first.' : 'Couldn’t read the GitHub CLI token.')
-        return
-      }
-      await actions.updateSettings({ githubToken: r.token })
-      setOpen(null)
+  const [open, setOpen] = useState(false)
+  const { run, pending, error } = usePending()
+  useNotifyError(error)
+  const connect = () =>
+    void run(async () => {
+      await actions.updateSettings({ githubConnected: true })
+      setOpen(false)
     })
-  }
   const login = settings.github.login
   const mark = <Logo light={githubLight} dark={githubDark} />
   return (
     <>
       <Body>
-        <Heading title="Connect GitHub">Agents clone, push and open PRs with this token, and Dorks follows those PRs for you.</Heading>
+        <Heading title="Connect GitHub">Agents clone, push and open PRs as your GitHub CLI login, and Dorks follows those PRs for you.</Heading>
         <List>
-          {desktop && <Row icon={mark} name="GitHub CLI" onOpen={() => setOpen('cli')} />}
-          <Row icon={mark} name={login ? `Token for ${login}` : 'Access token'} connected={settings.github.configured} onOpen={() => setOpen('token')} />
+          <Row icon={mark} name={login ? `GitHub CLI · ${login}` : 'GitHub CLI'} connected={settings.github.configured} onOpen={() => setOpen(true)} />
         </List>
       </Body>
-      <Actions onClick={() => (settings.github.configured ? onNext() : notify('Add a GitHub token first.'))}>
-        Continue
-      </Actions>
+      <Actions onClick={() => (settings.github.configured ? onNext() : notify('Connect the GitHub CLI first.'))}>Continue</Actions>
 
-      {desktop && (
-        <ConnectDialog
-          {...dialog('cli')}
-          title="Use your GitHub CLI login"
-          description={
-            <>
-              Reads your <code>gh</code> login after a native prompt. It usually reaches every repo, so a scoped token is safer.
-            </>
-          }
-        >
-          <DialogFooter>
-            <DialogClose render={<Button type="button" variant="outline" />}>Cancel</DialogClose>
-            <Button disabled={cli.pending} onClick={useCli}>
-              {cli.pending ? 'Reading…' : 'Use my gh login'}
-            </Button>
-          </DialogFooter>
-        </ConnectDialog>
-      )}
       <ConnectDialog
-        {...dialog('token')}
-        title="Add an access token"
+        open={open}
+        onOpenChange={setOpen}
+        title="Use your GitHub CLI login"
         description={
           <>
-            A fine-grained token for the repos the agent should touch, with these permissions. <A href="https://github.com/settings/personal-access-tokens/new">Create one</A>
+            Dorks acts as whoever <code>gh</code> is signed in as, with every organization and repository it can reach. Its token is read when needed and sent to your sandboxes so agents can push. Not
+            signed in yet? Run <code>{GH_FIX}</code> in a terminal.
           </>
         }
       >
-        <SaveForm
-          label="github token"
-          secret
-          placeholder={settings.github.configured ? 'A token is saved' : 'github_pat_…'}
-          save={(value) => ({ githubToken: value })}
-          onSaved={() => setOpen(null)}
-          extra={
-            // What the token needs, as an island like the step's own lists: name and access, one row each.
-            <Card>
-              <ul className="flex flex-col gap-2.5 p-4">
-                {PERMISSIONS.map(([name, access]) => (
-                  <li key={name} className="flex h-[18px] items-center gap-3">
-                    <span aria-hidden className="size-2 shrink-0 rounded-full bg-foreground/15" />
-                    <span className="flex-1">{name}</span>
-                    <span className="text-muted-foreground">{access}</span>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          }
-        />
+        <DialogFooter>
+          <DialogClose render={<Button type="button" variant="outline" />}>Cancel</DialogClose>
+          <Button disabled={pending} onClick={connect}>
+            {pending ? 'Connecting…' : 'Connect'}
+          </Button>
+        </DialogFooter>
       </ConnectDialog>
     </>
   )

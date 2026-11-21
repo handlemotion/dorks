@@ -53,6 +53,11 @@ The same binary has other entry points (below): `dorks-bridge credential --sock 
 
 Required (provided by the box): `DORK_ID`, `BRIDGE_URL`, and `BRIDGE_SECRET_FILE` (or `BRIDGE_SECRET`).
 
+Behind the desktop app's embedded wurmhol tunnel the box also gets `DORKS_TUNNEL_SERVICE` and `DORKS_TUNNEL_TICKET`: the bridge
+trades the ticket at the tunnel service for a wurmhol grant (`src/grants.ts`), sends it as `x-wurmhol-grant` on every WebSocket
+handshake, renews it before it runs out and after the relay closes with `4401`, and stops for good when the ticket is refused or
+the relay closes with `4403` (docs/desktop.md, "Tunnel: wurmhol").
+
 | Var | Default | Meaning |
 |---|---|---|
 | `CLAUDE_BIN` | `claude` | The CLI binary. Tests point it at `test/fixtures/fake-claude.mjs`. |
@@ -60,13 +65,15 @@ Required (provided by the box): `DORK_ID`, `BRIDGE_URL`, and `BRIDGE_SECRET_FILE
 | `DORKS_PERMISSION_MODE` | `bypassPermissions` | Passed to `--permission-mode`. See "Permission mode". |
 | `DORKS_CLAUDE_ARGS` | _(none)_ | Extra argv for the CLI, whitespace-separated (e.g. `--model sonnet`). |
 | `DORKS_WORKDIR` | `~/work` | Repos are cloned to `<workdir>/<owner>/<repo>`. |
-| `DORKS_STATE_DIR` | `~/.dorks-bridge` | `cred.sock` (the local RPC socket, 0600, dir 0700), `messages.log` (ids of user messages and notifications already written, for dedupe across a bridge restart), `claude-settings.json` (the hooks handed to `claude --settings`) and `claude-mcp.json` (the MCP server handed to `claude --mcp-config`), both 0644 so the Claude user can read them and `stop-gate.json` (which Stop-gate conditions were already raised in the session). No secrets. Must survive a pause (it is on the box disk). |
+| `DORKS_SOCK_DIR` | `$XDG_RUNTIME_DIR/dorks-bridge-<DORK_ID>` (`/run/dorks-bridge-<DORK_ID>` as root, else `/tmp/dorks-bridge-<DORK_ID>-<uid>`) | `cred.sock`, the local RPC socket (0600, dir 0700). Never under the home directory: a Boat sandbox restored from a snapshot swaps `/home/user` for the hydrated copy about a minute after boot, and a socket bound before that becomes unreachable |
+| `DORKS_STATE_DIR` | `~/.dorks-bridge` | `messages.log` (ids of user messages and notifications already written, for dedupe across a bridge restart), `claude-settings.json` (the hooks handed to `claude --settings`) and `claude-mcp.json` (the MCP server handed to `claude --mcp-config`), both 0644 so the Claude user can read them and `stop-gate.json` (which Stop-gate conditions were already raised in the session). No secrets. Must survive a pause (it is on the box disk). |
 | `DORKS_GIT_BASE_URL` | `https://github.com` | Clone base: `<base>/<owner>/<repo>.git`. Local/e2e use `file://…`. |
 | `HEARTBEAT_MS` | `30000` | `heartbeat` rpc interval. |
 | `DELTA_BATCH_MS` | `150` | Text deltas are coalesced into one event per window. |
 | `DORKS_BATCH_MS` | `50` | Debounce for sending a batch of other frames. |
 | `DORKS_FLUSH_IDLE_WAIT_MS` | `20000` | How long `flush` waits for the current turn to finish; then it interrupts the turn. |
 | `DORKS_FLUSH_INTERRUPT_WAIT_MS` | `5000` | How long `flush` waits for the interrupted turn to wind down before persisting. |
+| `DORKS_FLUSH_SYNC_WAIT_MS` | `5000` | How long `flush` waits for the whole-filesystem `sync` (after fsyncing the transcript) before it reports `flushed` anyway. |
 
 The bridge never writes configure's secrets into its own `process.env`. `DORKS_*`, `BRIDGE_*`, `DORK_ID`, `SIM_HOST_KEY`
 and `CLAUDE_BIN` are stripped from the environment of the Claude child and everything under it (git included). Two `DORKS_` names are
@@ -113,11 +120,13 @@ bridge sets on the child; without it the backend would never see a turn end.
 **Git.** The remote URL is always `https://github.com/<owner>/<repo>.git`, with no credentials. The credential helper is configured once, in
 the Claude user's **global** git config, scoped to the host (`credential.https://github.com.helper`, plus the host of `DORKS_GIT_BASE_URL` when
 that is another http(s) URL), so every repo the agent clones under the workdir can push, not just the starting repo (the token is
-installation-wide). It is `dorks-bridge credential --sock <state>/cred.sock`, which asks the running bridge for the token (the `token` RPC method)
+installation-wide). It is `dorks-bridge credential --sock <sock dir>/cred.sock`, which asks the running bridge for the token (the `token` RPC method)
 and answers only for `github.com` (and the host of `DORKS_GIT_BASE_URL`); it never stores. The token lives in the bridge's memory and nowhere on
 disk, so the agent's own `git push` works and gets the refreshed token after each `fetch_gh_token`. `user.name` / `user.email` are set globally
-too, unless already configured. Starting repo: reuse the local branch, else track `origin/<branch>`, else create it from the default branch.
-Local work is never reset.
+too, unless already configured. Starting repo: reuse the local branch, else track `origin/<branch>`, else create it from the freshly
+fetched upstream of the checked-out branch (a clone baked into a build image can be weeks old). Local work is never reset. With no
+starting repo (`configure.repo` null, a machine-setup session), the agent starts in the work directory and the credential helper is still
+set up, so it can clone and push.
 
 **Local RPC, `dorks` and the `gh` shim.** The credential socket (`src/rpc.ts`) is a small JSON-lines RPC: one request per line,
 `{"method":"pr.sub","params":{…}}`, answered in order with `{"ok":true,"result":…}` or `{"ok":false,"error":{"code","message"}}` (codes: `invalid`,
@@ -151,7 +160,9 @@ the Claude child's environment (they are children of it).
   uses), hand-rolled newline-delimited JSON-RPC so the bundle gains no dependency. At `start()` the bridge writes `<state>/claude-mcp.json` (0644) and starts
   the agent with `--mcp-config <that file>`; Claude Code runs `<node> <cli.mjs> dorks mcp` itself, with `DORKS_SOCK` in the server's own `env`. It adds to the
   repo's own MCP servers (no `--strict-mcp-config`). Tools, shown to the agent as `mcp__dorks__<name>`:
-  `pr_subscribe { pr }`, `pr_unsubscribe { pr }` and `pr_list { pr? }`, each forwarding to `pr.sub` (`source: "agent"`), `pr.unsub` and `pr.list`.
+  `pr_subscribe { pr }`, `pr_unsubscribe { pr }` and `pr_list { pr? }`, each forwarding to `pr.sub` (`source: "agent"`), `pr.unsub` and `pr.list`;
+  `preview_show`, `screenshot_share`; and `machine_get`, `machine_draft`, `machine_run`, `machine_logs`, `machine_submit`, which forward to the
+  `build` method and the `build` rpc: the agent's way to change the build its machine starts from ([docs/builds.md](../../docs/builds.md)).
   A bad argument or a bridge/backend problem is a tool result with `isError` and the same message the CLI prints; protocol errors are JSON-RPC errors.
   Claude Code defers MCP tool schemas, so the model usually runs `ToolSearch` before the first call; the SessionStart context names the tools.
 - **`gh` shim.** Ahead of the real gh on `PATH` (`/usr/local/bin/gh` over `/usr/bin/gh`). It asks the socket for the token, runs the real gh
@@ -222,7 +233,7 @@ child running as the same uid as the bridge can read `/proc/<bridge pid>/environ
 afterwards) and, without Yama, the bridge's memory. So the supported layout is:
 
 - the bridge runs as root and starts Claude with `CLAUDE_RUN_AS=<user>`: Claude and the git commands that prepare its working tree run through
-  `setpriv --reuid --regid --init-groups`, and the repo, the credential socket (`<state>/cred/cred.sock`, 0600) and the child's `HOME` belong to that user;
+  `setpriv --reuid --regid --init-groups`, and the repo, the credential socket (`<sock dir>/cred/cred.sock`, 0600) and the child's `HOME` belong to that user;
   the state dir stays root-only (it holds `messages.log`);
 - the secret arrives via `BRIDGE_SECRET_FILE` (0400, unlinked after reading), so it is not in the environment either;
 - `kernel.yama.ptrace_scope ≥ 1` as defence in depth.
@@ -232,7 +243,7 @@ With this, an agent under `bypassPermissions` cannot read the bridge's environ, 
 then only `ptrace_scope ≥ 2` or a separate uid fully closes it; treat the secret as readable by the agent in that layout. The agent already holds the
 Claude and GitHub tokens either way, so what is at stake is mainly event forgery and lifecycle control (the credential socket hands the GitHub token to any
 process of the Claude user by design; the token's scope is what limits it). `test/privsep.test.ts` checks the uid separation when run as root:
-`sudo -E env "PATH=$PATH" npx vitest run test/privsep.test.ts` (skipped otherwise).
+`sudo -E env "PATH=$PATH" pnpm exec vp test run test/privsep.test.ts` (skipped otherwise).
 
 **Exit.** When the CLI exits on its own the bridge sends `agent_exited { code, stderrTail }` (`code: null` if killed by a signal) and keeps
 running; a later `configure` starts it again.

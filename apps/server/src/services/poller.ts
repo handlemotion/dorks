@@ -1,29 +1,37 @@
+import { Effect } from "effect";
 import type { App } from "../app";
-import { GithubHttpError, getCached, suiteOutcome } from "../lib/github";
+import {
+  getCached,
+  GhComments,
+  GhIssue,
+  GhIssueEvents,
+  GhPr,
+  GhReviews,
+  GhSuites,
+  GhViewer,
+  GithubError,
+  suiteOutcome,
+  type Cached,
+  type GhComment,
+  type GhReview,
+  type GhUser,
+  type GithubClient,
+} from "../lib/github";
 import { githubToken, readSettings } from "./settings";
 import { update } from "../db";
 import { ingestEnv, ingestEvent, type Actor, type PrEvent } from "./githubIngest";
 import { endSubscription, getSub, pollable, savePollState, updateSubscription, type PollState, type Subscription } from "./subscriptions";
 
 // PR autonomy without webhooks: read each subscribed PR with conditional requests (a 304 is free against the rate limit), turn
-// what changed into the PR events services/githubIngest.ts applies. Everything async happens here; the writes are one
-// transaction per subscription.
+// what changed into the PR events services/githubIngest.ts applies. The reads are Effects failing with `GithubError`; the
+// writes are one transaction per subscription.
 
 export const POLL_MS = 30_000;
 export const POLL_AUTH_FAILED_MS = 5 * 60_000;
 const NOT_VISIBLE = "PR not found or not accessible to your GitHub token";
 
-interface GhUser { login: string; type?: string }
-interface GhPr {
-  title: string; state: "open" | "closed"; merged?: boolean; mergeable: boolean | null; merged_by?: GhUser | null;
-  head: { ref: string; sha: string }; base: { ref: string; sha: string; repo?: { full_name: string } };
-}
-interface GhIssue { closed_by?: GhUser | null }
-interface GhReview { id: number; state: string; body: string | null; html_url: string; user: GhUser | null }
-interface GhComment { id: number; body: string; html_url: string; path?: string; user: GhUser | null; created_at: string }
-interface GhSuites { check_suites: { id: number; status: string; conclusion: string | null; latest_check_runs_count: number }[] }
-
 const actor = (u: GhUser | null | undefined): Actor => ({ login: u?.login ?? "ghost", bot: u?.type === "Bot" });
+const time = (iso: string | null | undefined) => (iso && !Number.isNaN(Date.parse(iso)) ? Date.parse(iso) : undefined);
 
 export interface Observation {
   events: PrEvent[];
@@ -34,130 +42,204 @@ export interface Observation {
   poll: PollState;
 }
 
-/** Reads GitHub for one subscription. Throws GithubHttpError for failures other than a missing PR. */
-export async function observe(app: App, token: string, sub: Subscription): Promise<Observation> {
-  const old = sub.poll ?? {};
-  const etags: Record<string, string> = {};
-  const poll: PollState = { ...old, etags };
-  const events: PrEvent[] = [];
-  const baseline: NonNullable<Observation["baseline"]> = {};
+/** One `observe` call: what was there before, and what this read has found so far. */
+interface Look {
+  app: App;
+  gh: GithubClient;
+  sub: Subscription;
+  old: PollState;
+  poll: PollState;
+  etags: Record<string, string>;
+  events: PrEvent[];
+  baseline: NonNullable<Observation["baseline"]>;
+  /** `/repos/:owner/:name` */
+  base: string;
+  /** Conditional GET: keeps a path's ETag for the next tick when it is still good. */
+  get: <S extends Parameters<typeof getCached>[1]>(schema: S, path: string) => Effect.Effect<Cached<S["Type"]>, GithubError>;
+}
 
-  const get = async <T>(path: string) => {
-    const r = await getCached<T>(app.fetch, token, path, old.etags?.[path], app.now());
-    if (r.status === 200 && r.etag) etags[path] = r.etag;
-    else if (r.status === 304 && old.etags?.[path]) etags[path] = old.etags[path];
-    return r;
-  };
-  const base = `/repos/${sub.repo}`;
-  const prPath = `${base}/pulls/${sub.number}`;
+const clientOf = (app: App, token: string): GithubClient => ({ fetch: app.fetch, token, now: () => app.now() });
 
-  // ---- the PR itself
-  let head = sub.headSha;
-  try {
-    const r = await get<GhPr>(prPath);
-    if (r.status === 200) {
-      const pr = r.json;
-      const state = pr.merged ? "merged" : pr.state;
-      head = pr.head.sha;
-      if (!sub.title) {
-        // First look: fill the subscription in. Not an event.
-        Object.assign(baseline, { title: pr.title, headRef: pr.head.ref, headSha: pr.head.sha, baseRef: pr.base.ref, state, mergeable: pr.mergeable });
-        poll.baseSha = pr.base.sha;
-        if (state !== "open") return { events, baseline, end: state, poll };
-      } else if (state !== "open") {
-        // merged_by is null for a plain close; only the issue endpoint says who closed it (one extra read, once per PR).
-        const by = state === "merged" ? pr.merged_by : await get<GhIssue>(`${base}/issues/${sub.number}`).then((i) => (i.status === 200 ? i.json.closed_by : null));
-        events.push({ kind: "pr_closed", merged: state === "merged", sender: actor(by) });
-        return { events, baseline, poll };
-      } else {
-        if (pr.head.sha !== sub.headSha) events.push({ kind: "pr_synchronize", headSha: pr.head.sha, headRef: pr.head.ref });
-        if (pr.base.ref !== sub.baseRef) events.push({ kind: "pr_base_changed", baseRef: pr.base.ref, from: sub.baseRef ?? "", sender: { login: "someone", bot: false } });
-        if (pr.mergeable !== null && (pr.mergeable !== sub.mergeable || pr.base.sha !== old.baseSha)) events.push({ kind: "mergeable", baseSha: pr.base.sha, mergeable: pr.mergeable });
-        if (pr.mergeable !== null) poll.baseSha = pr.base.sha;
-      }
-      if (pr.mergeable === null) delete etags[prPath]; // GitHub computes it lazily: ask again next tick
-    }
-  } catch (e) {
-    if (e instanceof GithubHttpError && e.status === 404) return { events: [], end: NOT_VISIBLE, poll: old };
-    throw e;
-  }
+/** Reads GitHub for one subscription. Fails with `GithubError` for failures other than a missing PR. */
+export const observe = (app: App, token: string, sub: Subscription): Effect.Effect<Observation, GithubError> =>
+  Effect.gen(function* () {
+    const gh = clientOf(app, token);
+    const old = sub.poll ?? {};
+    const etags: Record<string, string> = {};
+    const get: Look["get"] = (schema, path) =>
+      getCached(gh, schema, path, old.etags?.[path]).pipe(
+        Effect.tap((r) =>
+          Effect.sync(() => {
+            if (r.status === 200 && r.etag) etags[path] = r.etag;
+            else if (r.status === 304 && old.etags?.[path]) etags[path] = old.etags[path];
+          }),
+        ),
+      );
+    const look: Look = { app, gh, sub, old, poll: { ...old, etags }, etags, events: [], baseline: {}, base: `/repos/${sub.repo}`, get };
 
-  // ---- reviews and comments (a baseline the first time: history is not replayed to the agent)
-  const first = !old.baselined;
-  const reviews = await get<GhReview[]>(`${base}/pulls/${sub.number}/reviews?per_page=100`);
-  if (reviews.status === 200) {
-    const list = reviews.json;
-    if (first) {
-      let review: Subscription["review"] = "none";
-      for (const x of list) {
-        const st = x.state.toLowerCase();
-        if (st === "approved" || st === "changes_requested") review = st;
-        else if (st === "commented" && review === "none") review = "commented";
-      }
-      baseline.review = review;
-      poll.lastReviewId = Math.max(0, ...list.map((x) => x.id));
+    const pr = yield* observePr(look).pipe(
+      Effect.catchIf(
+        (e) => e.reason === "not_visible",
+        () => Effect.succeed({ done: { events: [], end: NOT_VISIBLE, poll: old } satisfies Observation }),
+      ),
+    );
+    if (pr.done) return pr.done;
+
+    yield* observeReviewsAndComments(look);
+    if (pr.head) yield* observeChecks(look, pr.head);
+    const { events, baseline, poll } = look;
+    return { events, baseline: Object.keys(baseline).length ? baseline : undefined, poll };
+  });
+
+// ---- the PR itself
+type PrLook = { head: string | undefined; done?: undefined } | { done: Observation };
+
+/** The PR's head to read CI for, or the whole observation when the PR is closed. */
+const observePr = (look: Look): Effect.Effect<PrLook, GithubError> =>
+  Effect.gen(function* () {
+    const { sub, events, baseline, poll } = look;
+    const prPath = `${look.base}/pulls/${sub.number}`;
+    const r = yield* look.get(GhPr, prPath);
+    if (r.status !== 200) return { head: sub.headSha };
+    const pr = r.json;
+    const state = pr.merged ? "merged" : pr.state;
+    if (!sub.title) {
+      // First look: fill the subscription in. Not an event.
+      Object.assign(baseline, { title: pr.title, headRef: pr.head.ref, headSha: pr.head.sha, baseRef: pr.base.ref, state, mergeable: pr.mergeable });
+      poll.baseSha = pr.base.sha;
+      if (state !== "open") return { done: { events, baseline, end: state, poll } };
+      // A PR that already conflicts when subscribed (a branch cut from an old base) is news, unlike history: say so now.
+      if (pr.mergeable === false) events.push({ kind: "mergeable", baseSha: pr.base.sha, mergeable: false });
+    } else if (state !== "open") {
+      // merged_by is null for a plain close; only the issue endpoint says who closed it (one extra read, once per PR). A failed read names nobody.
+      const by =
+        state === "merged"
+          ? pr.merged_by
+          : yield* getCached(look.gh, GhIssue, `${look.base}/issues/${sub.number}`).pipe(
+              Effect.map((i) => (i.status === 200 ? i.json.closed_by : null)),
+              Effect.orElseSucceed(() => null),
+            );
+      events.push({ kind: "pr_closed", merged: state === "merged", sender: actor(by) });
+      return { done: { events, baseline, poll } };
     } else {
-      for (const x of list) {
-        if (x.id <= (old.lastReviewId ?? 0)) continue;
-        const st = x.state.toLowerCase();
-        if (st === "approved" || st === "changes_requested" || st === "commented") events.push({ kind: "review", state: st, body: x.body ?? "", url: x.html_url, sender: actor(x.user) });
-      }
-      poll.lastReviewId = Math.max(old.lastReviewId ?? 0, ...list.map((x) => x.id));
+      yield* observePrChanges(look, pr);
     }
-  }
+    if (pr.mergeable === null) delete look.etags[prPath]; // GitHub computes it lazily: ask again next tick
+    return { head: pr.head.sha };
+  });
 
-  const since = first ? undefined : old.since;
-  const q = `per_page=100${since ? `&since=${encodeURIComponent(since)}` : ""}`;
-  const issueComments = await get<GhComment[]>(`${base}/issues/${sub.number}/comments?${q}`);
-  const reviewComments = await get<GhComment[]>(`${base}/pulls/${sub.number}/comments?${q}`);
-  let newest = old.since;
-  for (const [res, key, inline] of [[issueComments, "lastCommentId", false], [reviewComments, "lastReviewCommentId", true]] as const) {
-    if (res.status !== 200) continue; // 304: nothing new in this list
-    const last = old[key] ?? 0;
-    if (!first) {
-      for (const c of res.json) {
-        if (c.id <= last) continue;
-        events.push({ kind: "comment", body: c.body, url: c.html_url, ...(inline && c.path ? { path: c.path } : {}), sender: actor(c.user) });
-        if (!newest || c.created_at > newest) newest = c.created_at;
-      }
+/** An open PR seen before: new commits, a new base, a mergeability answer. */
+const observePrChanges = (look: Look, pr: GhPr) =>
+  Effect.gen(function* () {
+    const { sub, old, events, poll } = look;
+    if (pr.head.sha !== sub.headSha) events.push({ kind: "pr_synchronize", headSha: pr.head.sha, headRef: pr.head.ref });
+    if (pr.base.ref !== sub.baseRef) events.push(yield* baseChanged(look, pr.base.ref));
+    if (pr.mergeable !== null && (pr.mergeable !== sub.mergeable || pr.base.sha !== old.baseSha)) events.push({ kind: "mergeable", baseSha: pr.base.sha, mergeable: pr.mergeable });
+    if (pr.mergeable !== null) poll.baseSha = pr.base.sha;
+  });
+
+/**
+ * Only the issue's events say who retargeted it, and when: one read, only when the base moved. Newest last. A full page may not
+ * reach the newest event, so then nobody is named rather than whoever retargeted it long ago. A failed read names nobody.
+ */
+const baseChanged = ({ gh, sub, base }: Look, baseRef: string): Effect.Effect<PrEvent> =>
+  getCached(gh, GhIssueEvents, `${base}/issues/${sub.number}/events?per_page=100`).pipe(
+    Effect.orElseSucceed(() => null),
+    Effect.map((changed) => {
+      const page = changed?.status === 200 && changed.json.length < 100 ? changed.json : [];
+      const ev = page.filter((e) => e.event === "base_ref_changed").at(-1);
+      return { kind: "pr_base_changed", baseRef, from: sub.baseRef ?? "", ...(ev?.actor ? { sender: actor(ev.actor), at: time(ev.created_at) } : {}) };
+    }),
+  );
+
+// ---- reviews and comments (a baseline the first time: history is not replayed to the agent)
+const observeReviewsAndComments = (look: Look) =>
+  Effect.gen(function* () {
+    const { app, sub, old, poll, base } = look;
+    const first = !old.baselined;
+    const reviews = yield* look.get(GhReviews, `${base}/pulls/${sub.number}/reviews?per_page=100`);
+    if (reviews.status === 200) {
+      if (first) baselineReviews(look, reviews.json);
+      else newReviews(look, reviews.json);
     }
-    poll[key] = Math.max(last, ...res.json.map((c) => c.id));
-  }
-  if (first) {
+
+    const since = first ? undefined : old.since;
+    const q = `per_page=100${since ? `&since=${encodeURIComponent(since)}` : ""}`;
+    const issueComments = yield* look.get(GhComments, `${base}/issues/${sub.number}/comments?${q}`);
+    const reviewComments = yield* look.get(GhComments, `${base}/pulls/${sub.number}/comments?${q}`);
+    let newest = old.since;
+    for (const [res, key, inline] of [
+      [issueComments, "lastCommentId", false],
+      [reviewComments, "lastReviewCommentId", true],
+    ] as const) {
+      if (res.status !== 200) continue; // 304: nothing new in this list
+      const last = old[key] ?? 0;
+      if (!first) newest = newComments(look, res.json, last, inline, newest);
+      poll[key] = Math.max(last, ...res.json.map((c) => c.id));
+    }
+    if (!first) poll.since = newest;
     // Baselined only when the whole first read worked; otherwise the next tick starts it again.
-    if (reviews.status === 200 && issueComments.status === 200 && reviewComments.status === 200) {
+    else if (reviews.status === 200 && issueComments.status === 200 && reviewComments.status === 200) {
       poll.baselined = true;
       poll.since = new Date(app.now()).toISOString();
     }
-  } else poll.since = newest;
+  });
 
-  // ---- CI: every check suite of the current head
-  if (head) {
-    const suites = await get<GhSuites>(`${base}/commits/${head}/check-suites?per_page=100`);
-    if (suites.status === 200) {
-      const seen: Record<string, "pass" | "fail"> = old.checksSha === head ? { ...old.seen } : {};
-      const real = suites.json.check_suites.filter((s) => s.latest_check_runs_count > 0); // a suite without runs has nothing to wait for
-      for (const s of real) {
-        if (s.status !== "completed") continue;
-        const outcome = suiteOutcome(s.conclusion);
-        if (outcome && seen[s.id] !== outcome) {
-          events.push({ kind: "check_suite", suiteId: s.id, headSha: head, outcome });
-          seen[s.id] = outcome;
-        }
-      }
-      if (real.length && real.every((s) => s.status === "completed" && suiteOutcome(s.conclusion) !== "fail")) events.push({ kind: "ci_green", headSha: head });
-      poll.checksSha = head;
-      poll.seen = seen;
-    } else if (old.checksSha !== head) {
-      poll.checksSha = head;
-      poll.seen = {};
-    } else {
-      poll.checksSha = old.checksSha;
-      poll.seen = old.seen;
-    }
+function baselineReviews({ baseline, poll }: Look, list: readonly GhReview[]) {
+  let review: Subscription["review"] = "none";
+  for (const x of list) {
+    const st = x.state.toLowerCase();
+    if (st === "approved" || st === "changes_requested") review = st;
+    else if (st === "commented" && review === "none") review = "commented";
   }
-  return { events, baseline: Object.keys(baseline).length ? baseline : undefined, poll };
+  baseline.review = review;
+  poll.lastReviewId = Math.max(0, ...list.map((x) => x.id));
 }
+
+function newReviews({ old, poll, events }: Look, list: readonly GhReview[]) {
+  for (const x of list) {
+    if (x.id <= (old.lastReviewId ?? 0)) continue;
+    const st = x.state.toLowerCase();
+    if (st === "approved" || st === "changes_requested" || st === "commented")
+      events.push({ kind: "review", state: st, body: x.body ?? "", url: x.html_url, sender: actor(x.user), at: time(x.submitted_at) });
+  }
+  poll.lastReviewId = Math.max(old.lastReviewId ?? 0, ...list.map((x) => x.id));
+}
+
+/** Emits the comments newer than `last`; returns the newest comment time seen so far. */
+function newComments({ events }: Look, list: readonly GhComment[], last: number, inline: boolean, newest: string | undefined): string | undefined {
+  for (const c of list) {
+    if (c.id <= last) continue;
+    events.push({ kind: "comment", body: c.body ?? "", url: c.html_url, ...(inline && c.path ? { path: c.path } : {}), sender: actor(c.user), at: time(c.created_at) });
+    if (!newest || c.created_at > newest) newest = c.created_at;
+  }
+  return newest;
+}
+
+// ---- CI: every check suite of the current head
+const observeChecks = ({ old, poll, events, base, get }: Look, head: string) =>
+  Effect.gen(function* () {
+    const suites = yield* get(GhSuites, `${base}/commits/${head}/check-suites?per_page=100`);
+    if (suites.status !== 200) {
+      const same = old.checksSha === head;
+      poll.checksSha = head;
+      poll.seen = same ? old.seen : {};
+      return;
+    }
+    const seen: Record<string, "pass" | "fail"> = old.checksSha === head ? { ...old.seen } : {};
+    const real = suites.json.check_suites.filter((s) => s.latest_check_runs_count > 0); // a suite without runs has nothing to wait for
+    for (const s of real) {
+      if (s.status !== "completed") continue;
+      const outcome = suiteOutcome(s.conclusion);
+      if (outcome && seen[s.id] !== outcome) {
+        events.push({ kind: "check_suite", suiteId: s.id, headSha: head, outcome });
+        seen[s.id] = outcome;
+      }
+    }
+    if (real.length && real.every((s) => s.status === "completed" && suiteOutcome(s.conclusion) !== "fail")) events.push({ kind: "ci_green", headSha: head });
+    poll.checksSha = head;
+    poll.seen = seen;
+  });
 
 /** Applies what `observe` found in one transaction: baseline, end, events, poll state. */
 export function applyObservation(app: App, subId: number, obs: Observation) {
@@ -173,36 +255,53 @@ export function applyObservation(app: App, subId: number, obs: Observation) {
   });
 }
 
-/** Learns whose token this is when settings could not at the time (GitHub was unreachable). */
-async function ensureLogin(app: App, token: string) {
-  if (readSettings(app).githubLogin) return;
-  try {
-    const r = await getCached<{ login?: string }>(app.fetch, token, "/user", undefined, app.now());
-    if (r.status === 200 && typeof r.json.login === "string") update(app.db, "settings", { id: 1 }, { githubLogin: r.json.login });
-  } catch {
-    /* the next tick tries again */
-  }
+/** Learns whose token this is when settings could not at the time (GitHub was unreachable). A failure waits for the next tick. */
+const ensureLogin = (app: App, token: string) =>
+  readSettings(app).githubLogin
+    ? Effect.void
+    : getCached(clientOf(app, token), GhViewer, "/user").pipe(
+        Effect.tap((r) => Effect.sync(() => r.status === 200 && update(app.db, "settings", { id: 1 }, { githubLogin: r.json.login }))),
+        Effect.ignore,
+      );
+
+/** When a failed read means stopping the whole pass: rate limited until it lifts, or a bad token. `undefined`: go on. */
+function stopFor(app: App, sub: Subscription, e: GithubError): number | undefined {
+  if (e.retryAt !== undefined) return Math.max(e.retryAt - app.now(), 1_000); // rate limited: stop until it lifts
+  if (e.status === 401) return POLL_AUTH_FAILED_MS; // the token is bad: nothing else will work either
+  console.error("poll failed", sub.repo, sub.number, e.status ?? e.reason);
+  return undefined;
 }
 
-/** One pass over every subscription that needs watching. Returns when to look again, or null when nothing needs polling. */
-export async function pollOnce(app: App): Promise<number | null> {
-  const subs = pollable(app);
-  if (!subs.length) return null;
-  const token = await githubToken(app);
-  if (!token) return POLL_MS * 2; // subscriptions wait for a token to be set
-  await ensureLogin(app, token);
-  for (const s of subs) {
-    const sub = getSub(app, s.id);
-    if (!sub || sub.status === "ended") continue;
-    try {
-      applyObservation(app, sub.id, await observe(app, token, sub));
-    } catch (e) {
-      if (e instanceof GithubHttpError) {
-        if (e.retryAt !== undefined) return Math.max(e.retryAt - app.now(), 1_000); // rate limited: stop until it lifts
-        if (e.status === 401) return POLL_AUTH_FAILED_MS; // the token is bad: nothing else will work either
-      }
-      console.error("poll failed", sub.repo, sub.number, e instanceof GithubHttpError ? e.status : "unexpected");
+/** Observes and applies one subscription. A bug in either is logged and the pass goes on to the next one. */
+const pollSub = (app: App, token: string, sub: Subscription): Effect.Effect<number | undefined> =>
+  observe(app, token, sub).pipe(
+    Effect.flatMap((obs) => Effect.sync(() => applyObservation(app, sub.id, obs))),
+    Effect.as(undefined),
+    Effect.catch((e) => Effect.sync(() => stopFor(app, sub, e))),
+    Effect.catchDefect(() =>
+      Effect.sync(() => {
+        console.error("poll failed", sub.repo, sub.number, "unexpected");
+        return undefined;
+      }),
+    ),
+  );
+
+/** One pass over every subscription that needs watching. Answers when to look again, or null when nothing needs polling. */
+export const pollOnceEffect = (app: App): Effect.Effect<number | null> =>
+  Effect.gen(function* () {
+    const subs = pollable(app);
+    if (!subs.length) return null;
+    const token = yield* Effect.promise(() => githubToken(app));
+    if (!token) return POLL_MS * 2; // subscriptions wait for a token to be set
+    yield* ensureLogin(app, token);
+    for (const s of subs) {
+      const sub = getSub(app, s.id);
+      if (!sub || sub.status === "ended") continue;
+      const stop = yield* pollSub(app, token, sub);
+      if (stop !== undefined) return stop;
     }
-  }
-  return POLL_MS;
-}
+    return POLL_MS;
+  });
+
+/** The Promise form, for the poll job (lifecycle/jobs.ts). */
+export const pollOnce = (app: App): Promise<number | null> => Effect.runPromise(pollOnceEffect(app));

@@ -1,6 +1,6 @@
 # Configuration
 
-There is no `.env` file and no hosted config. The server reads a few environment variables, and everything else is a **setting** you change in the UI (Boat key, Claude token, GitHub token, CLI secrets). Settings are stored encrypted in SQLite. The desktop app sets the variables below for you when it starts the server.
+There is no `.env` file and no hosted config. The server reads a few environment variables, and everything else is a **setting** you change in the UI (Boat key, Claude token, connecting GitHub, CLI secrets). Settings are stored encrypted in SQLite. The desktop app sets the variables below for you when it starts the server.
 
 ## Server (`apps/server`)
 
@@ -12,11 +12,14 @@ All optional.
 | `DORKS_UI_PORT` | `4747` (`0` picks a free port) | UI listener, bound to `127.0.0.1`. |
 | `DORKS_BRIDGE_PORT` | `4748` (`0` picks a free port) | Bridge listener, bound to `127.0.0.1`. The tunnel forwards to this port and only this one. |
 | `DORKS_PUBLIC_URL` | none | `https://` URL of your tunnel. Sandboxes are created with `BRIDGE_URL` set to this (as `wss://`, path `/bridge`). Creating a Boat dork fails with `onboarding_incomplete` until it is set. It must stay stable, because existing sandboxes keep the URL they were created with. |
+| `DORKS_TUNNEL_SERVICE` | none | The Dorks tunnel service (`https://`), set by the desktop shell with `DORKS_TUNNEL_INSTALL_KEY` when the public URL is the install's embedded wurmhol tunnel. Each new sandbox is registered there for a ticket its bridge trades for wurmhol grants. In the shell's own environment it overrides the hosted service (default `https://tunnels.dorks.build`). |
+| `DORKS_TUNNEL_INSTALL_KEY` | none | This install's key for the tunnel service (`dti_` + 64 hex). Secret; the shell keeps it in `tunnel-install-key` (0600). |
 | `DORKS_OWNER_TOKEN` | generated | Bearer token for the UI API. When unset, one is generated into `secrets.json` on first run. |
 | `DORKS_UI_ORIGINS` | `tauri://localhost`, `http://tauri.localhost`, `http://localhost:3000`, `http://127.0.0.1:3000` | Comma-separated browser origins allowed by CORS. |
 | `BASE_SNAPSHOT_ID` | none | Default Boat base snapshot. The `baseSnapshotId` setting wins when set. |
 | `BOX_PROVIDER` | `boat` | `boat`, or `sim` for the local simulator and tests. |
 | `SIM_HOST_KEY` | none | Required when `BOX_PROVIDER=sim`; guards the `/sim/*` routes. |
+| `GH_TOKEN`, then `GITHUB_TOKEN` | none (the GitHub CLI's login) | Secret. Overrides the GitHub CLI's login, the way `gh` itself resolves them, for development and the e2e. GitHub must still be connected (`githubConnected`). The desktop app never passes them. See [GitHub](github.md). |
 
 `secrets.json` holds three keys, generated on first run: `bridgeSecretKey` (the per-dork bridge secret is `HMAC-SHA256(bridgeSecretKey, "bridge|" + dorkId)`), `encryptionKey` (AES-GCM, 32 bytes, base64) and `ownerToken`. Back it up together with `dorks.db`: without `encryptionKey` the stored tokens cannot be decrypted.
 
@@ -30,7 +33,7 @@ On start the server prints one JSON line, for example `{"ready":true,"ui":"http:
 | `baseSnapshotId` | The Boat snapshot new sandboxes start from. |
 | `boatEnvironment` | Name of the Boat environment that signs Codex in with your ChatGPT account. |
 | `claudeToken` | A `claude setup-token` value. Sent to a sandbox only over its authenticated bridge socket. |
-| `githubToken` | See [GitHub](github.md). |
+| `githubConnected` | Act as the GitHub CLI's login. See [GitHub](github.md). |
 | `sleepMinutes` | Idle minutes before a sandbox is paused (default 5). |
 | `commentPolicy` | Whose PR comments wake a dork: `all`, or an allowlist of logins. |
 | Secrets (`PUT /api/secrets/:name`) | Environment variables exported inside every sandbox (for example a deploy token). Names match `^[A-Z][A-Z0-9_]{0,63}$`, values are at most 16 KB, and they are never shown again. |
@@ -47,7 +50,7 @@ Token settings are write-only: reads return booleans, and an empty string clears
 
 ## Web (`apps/web`)
 
-No build-time variables. In `vite dev` only, `?server=<url>&token=<token>` skips the connect screen. The mock server reads `MOCK_PORT`, `MOCK_TOKEN`, `MOCK_CONFIGURED` and `MOCK_TICK`.
+No build-time variables. In `vp dev` only, `?server=<url>&token=<token>` skips the connect screen. The mock server reads `MOCK_PORT`, `MOCK_TOKEN`, `MOCK_CONFIGURED` and `MOCK_TICK`.
 
 ## In-sandbox bridge (`infra/bridge`)
 

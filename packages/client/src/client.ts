@@ -1,9 +1,25 @@
-import type { SubscriptionView } from "@dorks/shared";
+import type { ComposioStatus, McpServerInput, McpServerView, MergeMethod, PullRequestView, SkillView, SubscriptionView } from "@dorks/shared";
 import { EventsFeed } from "./events.ts";
 import { createApi, ApiError, type ApiConfig, type DesktopOptions } from "./http.ts";
 import { connectLive, type LiveStatus } from "./live.ts";
 import { Query, type QueryOptions, type Store } from "./store.ts";
-import type { CreateDorkInput, Dork, LiveMessage, PrRefInput, Settings, SettingsPatch, SnapshotStatus, Usage } from "./types.ts";
+import type {
+  BuildInput,
+  BuildVarInput,
+  BuildView,
+  CreateDorkInput,
+  Dork,
+  LiveMessage,
+  PrRefInput,
+  RunView,
+  Settings,
+  SettingsPatch,
+  SnapshotStatus,
+  Usage,
+  GithubRepos,
+  LocalAccess,
+  LocalDecision,
+} from "./types.ts";
 
 export interface ClientConfig extends ApiConfig {
   /** Events fetched per page. */
@@ -104,13 +120,27 @@ export class DorksClient {
         break;
       case "subscriptions":
         this.invalidate(`subs:${m.dorkId}`);
+        this.invalidate(`pr:${m.dorkId}`);
         break;
       case "settings":
         this.invalidate("settings");
+        this.invalidate("pr"); // a new GitHub login may see a PR the old one could not
+        this.invalidate("github-repos");
         this.invalidate("secrets");
+        this.invalidate("mcp-servers");
+        this.invalidate("skills");
+        this.invalidate("composio");
+        this.invalidate("local-access");
         break;
       case "snapshot":
         this.invalidate("snapshot");
+        break;
+      case "builds":
+        this.invalidate("builds");
+        break;
+      case "build":
+        this.invalidate(`build:${m.buildId}`);
+        this.invalidate(`runs:${m.buildId}`);
         break;
     }
   }
@@ -147,8 +177,45 @@ export class DorksClient {
     return this.query<Usage>("usage", () => this.api.getUsage());
   }
 
+  /** What the GitHub CLI's login can see (the server caches it briefly). Refetched when settings change. */
+  githubRepos() {
+    return this.query<GithubRepos>("github-repos", () => this.api.getGithubRepos());
+  }
+
   secretNames() {
     return this.query<string[]>("secrets", () => this.api.listSecrets());
+  }
+
+  /** One of the session's pull requests (`url`; default its latest), live from GitHub; `null` when it has none. Refetched when the poller sees a PR change. */
+  pullRequest(dorkId: string, url?: string) {
+    return this.query<PullRequestView | null>(url ? `pr:${dorkId}:${url}` : `pr:${dorkId}`, async () => {
+      try {
+        return await this.api.getPullRequest(dorkId, url);
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404 && e.code === "not_found") return null;
+        throw e;
+      }
+    });
+  }
+
+  /** The MCP servers from Customize: names of headers and variables, never their values. */
+  composio() {
+    return this.query<ComposioStatus>("composio", () => this.api.composio());
+  }
+  /** Reads Composio again: a sign-in finishes in the browser, with no event here. */
+  refreshComposio() {
+    this.invalidate("composio");
+  }
+  /** Local access: the switch and the permissions granted for a while (docs/local-access.md). */
+  localAccess() {
+    return this.query<LocalAccess>("local-access", () => this.api.localAccess());
+  }
+  mcpServers() {
+    return this.query<McpServerView[]>("mcp-servers", () => this.api.listMcpServers());
+  }
+  /** The skills from Customize (docs/skills.md), shared by every sandbox. */
+  skills() {
+    return this.query<SkillView[]>("skills", () => this.api.listSkills());
   }
 
   subscriptions(dorkId: string) {
@@ -162,6 +229,32 @@ export class DorksClient {
       this.feeds.set(dorkId, f);
     }
     return f;
+  }
+
+  /** Builds (docs/builds.md), refreshed by the live stream. */
+  builds() {
+    return this.query<BuildView[]>("builds", () => this.api.listBuilds());
+  }
+
+  /** `null` when it does not exist. */
+  build(id: string) {
+    return this.query<BuildView | null>(`build:${id}`, async () => {
+      try {
+        return await this.api.getBuild(id);
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return null;
+        throw e;
+      }
+    });
+  }
+
+  runs(buildId: string) {
+    return this.query<RunView[]>(`runs:${buildId}`, () => this.api.listRuns(buildId));
+  }
+
+  /** A run's redacted log from a byte offset (not cached: the caller tails it while the run is live). */
+  runLog(buildId: string, runId: string, after = 0) {
+    return this.api.runLog(buildId, runId, after);
   }
 
   // ---- writes: the API call, then an immediate refetch of what it changed (the live stream would do it too, a beat later) ----
@@ -191,8 +284,8 @@ export class DorksClient {
       await this.api.interrupt(id);
       this.invalidate(`dork:${id}`);
     },
-    chooseModel: async (id: string, model: string | null, effort: string | null) => {
-      await this.api.chooseModel(id, model, effort);
+    chooseModel: async (id: string, model: string | null, effort: string | null, fast = false) => {
+      await this.api.chooseModel(id, model, effort, fast);
       this.invalidate(`dork:${id}`);
     },
     /** A fresh live-view URL of the dork's computer, absolute (the simulator answers with a path on the server). Minted per view. */
@@ -222,9 +315,34 @@ export class DorksClient {
       await this.api.resumeSubscription(id, pr);
       this.invalidate(`subs:${id}`);
     },
+    /** Reads the pull request from GitHub again. */
+    refreshPullRequest: (id: string) => this.invalidate(`pr:${id}`),
+    mergePullRequest: async (id: string, method: MergeMethod, sha?: string, url?: string) => {
+      try {
+        return await this.api.mergePullRequest(id, method, sha, url);
+      } finally {
+        this.invalidate(`pr:${id}`);
+        this.invalidate(`dork:${id}`);
+      }
+    },
+    updatePullRequestBranch: async (id: string, sha?: string, url?: string) => {
+      try {
+        await this.api.updatePullRequestBranch(id, sha, url);
+      } finally {
+        this.invalidate(`pr:${id}`);
+      }
+    },
     updateSettings: async (patch: SettingsPatch) => {
       await this.api.updateSettings(patch);
       this.invalidate("settings");
+      if ("githubConnected" in patch) this.invalidate("github-repos");
+    },
+    /** Reads the GitHub CLI and GitHub again (after `gh auth refresh`, or granting it an organization) and refreshes `githubRepos()`. */
+    refreshGithub: async () => {
+      await this.api.getGithubRepos(true);
+      this.invalidate("github-repos");
+      this.invalidate("settings");
+      this.invalidate("pr");
     },
     checkBoat: (input: { boatKey?: string; boatOrg?: string }) => this.api.checkBoat(input),
     /** Starts "Prepare Boat". Resolves with the status right after it started; follow progress with `snapshot()` / `useSnapshot()`. */
@@ -244,7 +362,119 @@ export class DorksClient {
       await this.api.deleteSecret(name);
       this.invalidate("secrets");
     },
+    putMcpServer: async (name: string, input: McpServerInput) => {
+      const r = await this.api.putMcpServer(name, input);
+      this.invalidate("mcp-servers");
+      return r;
+    },
+    connectComposio: async (apiKey: string) => {
+      await this.api.connectComposio(apiKey);
+      this.invalidate("mcp-servers");
+      this.invalidate("composio");
+    },
+    disconnectComposio: async () => {
+      await this.api.disconnectComposio();
+      this.invalidate("mcp-servers");
+      this.invalidate("composio");
+    },
+    composioLink: (toolkit: string) => this.api.composioLink(toolkit),
+    mcpSignIn: (name: string) => this.api.mcpSignIn(name),
+    mcpSignOut: async (name: string) => {
+      await this.api.mcpSignOut(name);
+      this.invalidate("mcp-servers");
+    },
+    composioUnlink: async (toolkit: string) => {
+      await this.api.composioUnlink(toolkit);
+      this.invalidate("composio");
+    },
+    /** The owner's answer to an agent's request to use this computer. The transcript shows the outcome. */
+    decideLocal: async (dorkId: string, requestId: string, d: LocalDecision) => {
+      await this.api.decideLocal(dorkId, requestId, d);
+      this.invalidate("local-access");
+    },
+    setLocalAccess: async (enabled: boolean) => {
+      await this.api.setLocalAccess(enabled);
+      this.invalidate("local-access");
+    },
+    revokeLocalGrant: async (grantId: string) => {
+      await this.api.revokeLocalGrant(grantId);
+      this.invalidate("local-access");
+    },
+    revokeLocalGrants: async (dorkId?: string) => {
+      await this.api.revokeLocalGrants(dorkId);
+      this.invalidate("local-access");
+    },
+    deleteMcpServer: async (name: string) => {
+      await this.api.deleteMcpServer(name);
+      this.invalidate("mcp-servers");
+    },
+    resolveSkills: (source: string) => this.api.resolveSkills(source),
+    installSkills: async (source: string, skills: string[]) => {
+      const r = await this.api.installSkills(source, skills);
+      this.invalidate("skills");
+      return r;
+    },
+    updateSkill: async (name: string) => {
+      const r = await this.api.updateSkill(name);
+      this.invalidate("skills");
+      return r;
+    },
+    deleteSkill: async (name: string) => {
+      await this.api.deleteSkill(name);
+      this.invalidate("skills");
+    },
+    createBuild: async (input: BuildInput & { name: string }) => {
+      const r = await this.api.createBuild(input);
+      this.invalidate("builds");
+      return r;
+    },
+    updateBuild: async (id: string, patch: BuildInput) => {
+      await this.api.updateBuild(id, patch);
+      this.invalidateBuild(id);
+    },
+    deleteBuild: async (id: string) => {
+      await this.api.deleteBuild(id);
+      this.invalidateBuild(id);
+      this.invalidate("settings");
+    },
+    setDefaultBuild: async (id: string, isDefault: boolean) => {
+      await this.api.setDefaultBuild(id, isDefault);
+      this.invalidateBuild(id);
+      this.invalidate("settings");
+    },
+    setBuildVar: async (id: string, name: string, input: BuildVarInput) => {
+      await this.api.setBuildVar(id, name, input);
+      this.invalidateBuild(id);
+    },
+    deleteBuildVar: async (id: string, name: string) => {
+      await this.api.deleteBuildVar(id, name);
+      this.invalidateBuild(id);
+    },
+    startRun: async (id: string, kind: "image" | "trial") => {
+      const r = await this.api.startRun(id, kind);
+      this.invalidateBuild(id);
+      return r;
+    },
+    cancelRun: async (id: string, runId: string) => {
+      await this.api.cancelRun(id, runId);
+      this.invalidateBuild(id);
+    },
+    approveDraft: async (id: string, draftId: string, reviewed: number, run = true) => {
+      const r = await this.api.approveDraft(id, draftId, reviewed, run);
+      this.invalidateBuild(id);
+      return r;
+    },
+    rejectDraft: async (id: string, draftId: string, reason?: string) => {
+      await this.api.rejectDraft(id, draftId, reason);
+      this.invalidateBuild(id);
+    },
   };
+
+  private invalidateBuild(id: string) {
+    this.invalidate("builds");
+    this.invalidate(`build:${id}`);
+    this.invalidate(`runs:${id}`);
+  }
 }
 
 export function createClient(config: ClientConfig): DorksClient {

@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useSyncExternalStore, type ReactNode } from "react";
-import { toAppError, type SubscriptionView } from "@dorks/shared";
+import { toAppError, type ComposioStatus, type McpServerView, type SkillView, type PullRequestView, type SubscriptionView } from "@dorks/shared";
 import type { DorksClient, ConnectionState } from "./client.ts";
 import type { EventsState } from "./events.ts";
 import type { QueryState, Store } from "./store.ts";
-import type { Dork, Settings, SnapshotStatus, Usage } from "./types.ts";
+import type { BuildView, Dork, RunView, Settings, SnapshotStatus, Usage, GithubRepos, LocalAccess } from "./types.ts";
 
 const Ctx = createContext<DorksClient | null>(null);
 
@@ -62,8 +62,51 @@ export function useUsage(): Usage | undefined {
   return useStore(useDorksClient().usage()).data;
 }
 
+/** What the GitHub CLI login can see: its user, organizations and repositories; `undefined` while loading. */
+export function useGithubRepos(): GithubRepos | undefined {
+  return useStore(useDorksClient().githubRepos()).data;
+}
+
+/** The MCP servers from Customize; `undefined` while loading. */
+export function useComposio(): ComposioStatus | undefined {
+  return useStore(useDorksClient().composio()).data;
+}
+
+/** Local access: the switch and the active permissions; `undefined` while loading. */
+export function useLocalAccess(): LocalAccess | undefined {
+  return useStore(useDorksClient().localAccess()).data;
+}
+
+export function useMcpServers(): McpServerView[] | undefined {
+  return useStore(useDorksClient().mcpServers()).data;
+}
+
+/** The skills from Customize; `undefined` while loading. */
+export function useSkills(): SkillView[] | undefined {
+  return useStore(useDorksClient().skills()).data;
+}
+
 export function useSecretNames(): string[] | undefined {
   return useStore(useDorksClient().secretNames()).data;
+}
+
+/** Builds (docs/builds.md); `undefined` while loading. */
+export function useBuilds(): BuildView[] | undefined {
+  return useStore(useDorksClient().builds()).data;
+}
+
+/** `undefined` while loading, `null` when it does not exist. */
+export function useBuild(id: string): BuildView | null | undefined {
+  return useStore(useDorksClient().build(id)).data;
+}
+
+export function useRuns(buildId: string): RunView[] | undefined {
+  return useStore(useDorksClient().runs(buildId)).data;
+}
+
+/** The session's pull request, live from GitHub: `data` null when it has none; `error` when GitHub could not be read. */
+export function usePullRequest(dorkId: string, url?: string): QueryState<PullRequestView | null> {
+  return useStore(useDorksClient().pullRequest(dorkId, url));
 }
 
 export function useSubscriptions(dorkId: string): SubscriptionView[] | undefined {

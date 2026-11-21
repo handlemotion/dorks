@@ -46,6 +46,7 @@ Outside `pnpm dev` the server's owner token is generated into `<data dir>/secret
 ## Tests
 
 ```sh
+pnpm check                                       # vp check: format check + Oxlint (`complexity` is an error); config in the root vite.config.ts
 pnpm typecheck                                   # every package
 pnpm test                                        # every package that has tests
 pnpm --filter @dorks/server test                 # the server (lifecycle, machine, bridge socket), in-memory SQLite
@@ -54,9 +55,47 @@ pnpm --filter @dorks/bridge test                 # the bridge
 pnpm e2e                                         # builds the compiled server, runs its e2e twice (sim bridge, real bridge) incl. a secret scan; needs Bun
 ```
 
+The JS toolchain is [Vite+](https://viteplus.dev) (`vite-plus`, the `vp` CLI): `vp dev` / `vp build` for the web app, `vp test` (Vitest) for every package's tests, `vp lint` / `vp check` for linting. Import test helpers from `vite-plus/test` and config helpers from `vite-plus`, not `vitest` or `vite` (a lint rule enforces it). `vp fmt` formats code in the house style (Markdown and the vendored shadcn / AI Elements files excepted) and `pnpm check` fails on unformatted files; run `pnpm fmt` before you commit. Its version is pinned once in the `catalog` in `pnpm-workspace.yaml`.
+
 Prefer tests that run the real code path over mocks: the server tests use the real lifecycle driver on an in-memory database.
 
-CI (`.github/workflows/ci.yml`) runs typecheck and tests and the server e2e against the compiled binary; `desktop.yml` builds the macOS app. It needs no repository secrets, so it runs on forks. If you add an environment variable the e2e needs, set a throwaway value in the workflow.
+CI (`.github/workflows/ci.yml`) runs lint, typecheck and tests and the server e2e against the compiled binary; `desktop.yml` builds the macOS app. It needs no repository secrets, so it runs on forks. If you add an environment variable the e2e needs, set a throwaway value in the workflow.
+
+## Server code: Effect on Hono
+
+The server is moving to [Effect](https://effect.website) (v4). New server code is written in Effect, and code you rework moves over:
+
+- **HTTP**: Hono stays the HTTP layer (routing, CORS, owner-token auth, SSE). Each UI API route is an Effect program
+  (`apps/server/src/http/route.ts`): it decodes its body with `Schema`, calls services through `AppEnv`, and fails with a typed
+  `ApiError` that becomes the `{ error: { code, message } }` answer. A service's `AppFail` maps to `ApiError`; anything else is a
+  defect, logged and answered with a generic 500.
+- **Boat driver** (`lib/boatHttp.ts`, `lib/boat.ts`, `lib/boatSnapshots.ts`): one `BoatError`, schema-decoded responses, and shared
+  `pollUntil` / `retryWhile` loops. The drivers keep their Promise interfaces (`core/box.ts`, `core/snapshot.ts`) by running the
+  effects at that edge.
+- **GitHub client and PR poller** (`lib/github.ts`, `services/poller.ts`): one `GithubError` with a `reason` (`rate_limited`,
+  `not_visible`, `auth`, `http`, `network`, `timeout`, `invalid_response`) and schema-decoded responses. `pollOnce` and
+  `createIssueComment` keep Promise forms for the jobs that call them.
+- **Scheduler** (`lifecycle/scheduler.ts`): the timer loop is one fiber woken by a `Latch`; jobs run as fibers in a `FiberSet`.
+- **Build jobs** (`services/snapshot.ts`, `services/buildRuns.ts`): each attempt is one Effect. What it holds is scoped to it: the
+  build sandbox (`Effect.acquireRelease`), a detached command (`acquireUseRelease`, killed unless it exited) and a saved image whose
+  build was deleted meanwhile (a finalizer), so cleanup runs however the attempt ends. A cancelled run's fiber is interrupted. The
+  jobs call the driver's Effect form (`snapshotOps` in `core/snapshot.ts`: Boat's own, else the Promise calls wrapped); interrupting
+  a Boat call aborts its request.
+- **Jobs** (`lifecycle/jobs.ts`): each job is an `Effect<void, JobStepError>` that the scheduler forks straight into its `FiberSet`.
+  A failed step (a provider call, the database) is a `JobStepError`; box jobs turn it into `op_failed`, and one that escapes is
+  logged. Services not yet on Effect are called through the `promise` step helper. `Scheduler.shutdown` stops the loop, drains
+  jobs for up to 5 s, then interrupts the rest.
+- **App wiring** (`server.ts`, `listeners.ts`, `main.ts`): the process is a stack of Layers (config, database and hub, app, the UI
+  and bridge listeners under `Bun.serve`, the scheduler). SIGTERM, SIGINT and the parent watch close it in reverse: scheduler and
+  jobs, listeners, database. `createApp` stays the plain constructor tests use.
+- **Bridge socket** (`http/bridgeWs.ts`, `services/bridge.ts`): a `BridgeSession` is a `Scope` of fibers closed with the socket (auth
+  timer, a reader over an inbox `Queue`, a writer draining the outbox `Queue`, a snapshot publisher woken by a `Latch`); each rpc is
+  its own fiber, started in arrival order. A refused rpc is a typed `BridgeError` (its `AppError` is the `res` error), a frame that
+  ends the socket is a `Hangup` with its close code. Frame shapes stay the zod types of `packages/shared`; `decodePush` applies the
+  per-call limits and parses with them. `listeners.ts` drives it from Bun's callbacks (`open` / `onMessage` / `close`).
+
+`Effect.runPromise` rejects with the original error, so `instanceof` checks on `BoatError`, `BoxNotFoundError` and `GithubError` keep working
+across the edge.
 
 ## Rules
 
@@ -64,6 +103,7 @@ CI (`.github/workflows/ci.yml`) runs typecheck and tests and the server e2e agai
 - Keep `docs/architecture.md` in step with API changes, and make them additive where you can: the web client, the bridge and the desktop shell all read it.
 - Never put a secret behind a `VITE_` prefix.
 - Branch from `main`. Small commits, with a message that says why.
+- Keep functions under Oxlint's `complexity` limit (20, `pnpm lint`): split branchy code into named helpers or handler maps rather than disabling the rule.
 
 ## Real Claude, no Boat or tunnel
 
@@ -94,7 +134,7 @@ the owner token from `.context/live-data/secrets.json` (read it privately; never
 
 - Boat API key (and organization id if needed), with snapshot/sandbox permissions; see [Boat](boat.md). Saving it builds the base snapshot.
 - Claude token from `claude setup-token`, or a configured Boat ChatGPT environment for Codex.
-- GitHub token with access to the test repository; see [GitHub](github.md).
+- A GitHub CLI login with access to the test repository (or `GH_TOKEN` in the server's environment); see [GitHub](github.md).
 
 Wait for Prepare Boat to finish, choose a real `owner/repo`, and send a small task. Check that text streams, a follow-up gets a
 reply, Stop interrupts, reload preserves the transcript, and a message after idle sleep wakes the sandbox. Tokens from a Doppler

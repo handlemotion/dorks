@@ -18,7 +18,7 @@ export function ChatMenu({ prUrl, onDelete, detailsOpen }: { prUrl?: string; onD
     <>
       <DropdownMenu>
         <Tip label="Chat actions">
-          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className={`${BAR_BUTTON} ${detailsOpen ? 'lg:-mr-[11px]' : ''}`} aria-label="Chat actions" />}>
+          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className={`${BAR_BUTTON} ${detailsOpen ? 'lg:-mr-[2px]' : ''}`} aria-label="Chat actions" />}>
             <MoreHorizontalIcon />
           </DropdownMenuTrigger>
         </Tip>
@@ -55,10 +55,22 @@ export function ChatMenu({ prUrl, onDelete, detailsOpen }: { prUrl?: string; onD
             </DialogHeader>
             <DialogFooter>
               <DialogClose render={<Button variant="outline" size="sm" />}>Cancel</DialogClose>
-              <Button variant="destructive" size="sm" disabled={deleting} onClick={async () => {
-                setDeleting(true)
-                try { await onDelete(); setConfirming(false) } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not delete the chat') } finally { setDeleting(false) }
-              }}>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={deleting}
+                onClick={async () => {
+                  setDeleting(true)
+                  try {
+                    await onDelete()
+                    setConfirming(false)
+                  } catch (e) {
+                    toast.error(e instanceof Error ? e.message : 'Could not delete the chat')
+                  } finally {
+                    setDeleting(false)
+                  }
+                }}
+              >
                 {deleting ? 'Deleting…' : 'Delete'}
               </Button>
             </DialogFooter>

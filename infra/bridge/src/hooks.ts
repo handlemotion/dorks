@@ -1,4 +1,4 @@
-import { CI_FIX_MAX_ATTEMPTS, NOTIFY_TAG, type SubscriptionView } from "@dorks/shared";
+import { CI_FIX_MAX_ATTEMPTS, NOTIFY_TAG, RESERVED_MCP_NAMES, type McpServerConfig, type SubscriptionView } from "@dorks/shared";
 import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { shellQuote } from "./credentials";
@@ -18,8 +18,8 @@ import { scanWork, type Finding } from "./work-scan";
 // A handler that throws answers nothing (Claude Code carries on as if the hook did not exist); `dorks hook` does the same when this
 // process is unreachable.
 
-/** Where the bridge writes the settings it hands to `claude --settings`. */
-export const settingsPath = (stateDir: string) => join(stateDir, "claude-settings.json");
+/** Where the bridge writes the settings it hands to `claude --settings`; `fast` is the same file with fast mode on. */
+export const settingsPath = (stateDir: string, fast = false) => join(stateDir, fast ? "claude-settings-fast.json" : "claude-settings.json");
 
 /**
  * The hooks as Claude Code settings. `--settings` is applied above the user's and the project's files, and hooks from every source
@@ -39,10 +39,13 @@ export function claudeSettings(self: [node: string, cli: string]) {
 
 /** No secrets in it, but the Claude user must be able to read it (the state dir is only traversable for them under privilege separation). */
 export function writeClaudeSettings(stateDir: string, self: [string, string]) {
-  const file = settingsPath(stateDir);
-  writeFileSync(file, JSON.stringify(claudeSettings(self), null, 2) + "\n");
-  chmodSync(file, 0o644);
-  return file;
+  // Two files, so fast mode (the CLI's `fastMode` setting) rides on the one `--settings` flag next to the hooks.
+  for (const fast of [false, true]) {
+    const file = settingsPath(stateDir, fast);
+    writeFileSync(file, JSON.stringify({ ...claudeSettings(self), ...(fast ? { fastMode: true } : {}) }, null, 2) + "\n");
+    chmodSync(file, 0o644);
+  }
+  return settingsPath(stateDir);
 }
 
 /** Where the bridge writes the MCP server config it hands to `claude --mcp-config`. */
@@ -51,15 +54,49 @@ export const mcpConfigPath = (stateDir: string) => join(stateDir, "claude-mcp.js
 /**
  * The `dorks` MCP server (mcp.ts) as a Claude Code MCP config: the bridge binary under its CLI role, run through its absolute path.
  * The socket goes in the server's own `env`, so the server finds the bridge without relying on what Claude Code passes down.
+ * `user` adds the owner's servers from Customize (see `userMcpServers`); it never replaces `dorks`.
  */
-export function claudeMcpConfig(self: [node: string, cli: string], sock: string) {
-  return { mcpServers: { dorks: { type: "stdio", command: self[0], args: [self[1], "dorks", "mcp"], env: { DORKS_SOCK: sock } } } };
+export function claudeMcpConfig(self: [node: string, cli: string], sock: string, user: Record<string, unknown> = {}) {
+  return { mcpServers: { ...user, dorks: { type: "stdio", command: self[0], args: [self[1], "dorks", "mcp"], env: { DORKS_SOCK: sock } } } };
 }
 
-/** No secrets in it (the socket path is not one), but the Claude user must be able to read it. */
-export function writeClaudeMcpConfig(stateDir: string, self: [string, string], sock: string) {
+/**
+ * The owner's MCP servers (Customize) as Claude Code config entries, with every header and env value replaced by a `${DORKS_MCP_…}`
+ * reference: the CLI expands those from its own environment, so the values reach the agent's environment (like any shared secret)
+ * but never the config file on disk. The URL is a reference too, since hosted servers often put a key in it. `env` holds the values to add to the agent's environment.
+ * An OAuth server points at `proxyUrl` instead (left out without one), so no token reaches the config or the environment.
+ */
+export function userMcpServers(servers: readonly McpServerConfig[], proxyUrl?: (name: string) => string): { config: Record<string, unknown>; env: Record<string, string> } {
+  const config: Record<string, unknown> = {};
+  const env: Record<string, string> = {};
+  servers.forEach((s, i) => {
+    if (RESERVED_MCP_NAMES.includes(s.name)) return;
+    if (s.transport === "http" && s.oauth) {
+      // Signed in with OAuth: the bridge's loopback proxy (mcp-proxy.ts) adds a current token and the server's headers.
+      if (!proxyUrl) return;
+      env[`DORKS_MCP_${i}_URL`] = proxyUrl(s.name); // a reference too: the path is the proxy's secret, and this file is world-readable
+      config[s.name] = { type: "http", url: `\${DORKS_MCP_${i}_URL}` };
+      return;
+    }
+    const refs = (values: Record<string, string>, kind: string) =>
+      Object.fromEntries(
+        Object.entries(values).map(([k, v], j) => {
+          const name = `DORKS_MCP_${i}_${kind}${j}`;
+          env[name] = v;
+          return [k, `\${${name}}`];
+        }),
+      );
+    if (s.transport === "http") env[`DORKS_MCP_${i}_URL`] = s.url; // hosted servers often carry a key in the URL (Composio's do)
+    config[s.name] =
+      s.transport === "http" ? { type: "http", url: `\${DORKS_MCP_${i}_URL}`, headers: refs(s.headers, "H") } : { type: "stdio", command: s.command, args: s.args, env: refs(s.env, "E") };
+  });
+  return { config, env };
+}
+
+/** No secrets in it (the socket path is not one, user values are `${…}` references), but the Claude user must be able to read it. */
+export function writeClaudeMcpConfig(stateDir: string, self: [string, string], sock: string, user: Record<string, unknown> = {}) {
   const file = mcpConfigPath(stateDir);
-  writeFileSync(file, JSON.stringify(claudeMcpConfig(self, sock), null, 2) + "\n");
+  writeFileSync(file, JSON.stringify(claudeMcpConfig(self, sock, user), null, 2) + "\n");
   chmodSync(file, 0o644);
   return file;
 }
@@ -121,8 +158,7 @@ export class HookService {
     if (this.turnKinds.includes("ready")) return null;
 
     const subs = (await this.d.prs.list()) ?? [];
-    const hasPr = async (repo: string, branch: string) =>
-      subs.some((s) => s.headRef === branch && s.repo.toLowerCase() === repo.toLowerCase()) || this.d.hasPr(repo, branch);
+    const hasPr = async (repo: string, branch: string) => subs.some((s) => s.headRef === branch && s.repo.toLowerCase() === repo.toLowerCase()) || this.d.hasPr(repo, branch);
     const found = await scanWork({ workDir: this.d.workDir, env: this.d.env, runAs: this.d.runAs, hasPr });
 
     // A condition is raised once. It is forgotten when it clears, so work that goes unpushed again later is raised again.
@@ -237,7 +273,7 @@ export function sessionContext(subs: SubscriptionView[] | null): string {
     `- You are woken by turns wrapped in <${NOTIFY_TAG}> tags when something happens on a PR you are subscribed to (CI, reviews, comments, conflicts, closed). They come from the system, not from the user: act on them.`,
     "- Always validate locally before you push: run the repo's tests, typecheck and lint for what you changed, using the scripts the repo defines.",
     "- `gh pr create` subscribes you to the new PR. The `pr_subscribe`, `pr_unsubscribe` and `pr_list` tools of the dorks MCP server (or `dorks pr sub <pr>`, `dorks pr unsub <pr>`, `dorks pr list` in a shell) manage subscriptions (<pr> is a URL or owner/name#12).",
-    "- When you start a web server the user should see (a dev server, a preview build), call the `preview_show` tool with its port: it opens in the user's Previews tab.",
+    "- When you start a web server the user should see (a dev server, a preview build), call the `preview_show` tool with its port: it opens in the user's Artifacts as a running preview.",
     "- When a PR is ready (CI green and approved), post a short standby note in its thread and stop. Never merge it yourself.",
     "- If you stop with unpushed commits or a pushed branch without a PR, you will be asked once to push and open a PR, or to explain why you are not.",
   ].join("\n");

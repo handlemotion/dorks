@@ -2,7 +2,8 @@
 //! port needs a public URL. Something provides it by implementing [`Tunnel`]:
 //!
 //! - [`UserUrlTunnel`]: the user already exposes the port (own domain, reverse proxy, another tunnel) and gives the URL.
-//! - [`WurmholTunnel`] (module `wurmhol`): runs the wurmhol client against the bridge port and reports the URL it prints.
+//! - [`WurmholTunnel`] (module `wurmhol`): runs the wurmhol client against the bridge port with this install's embedded-tunnel
+//!   connector, and reports the URL it prints.
 //!
 //! Only the bridge port is ever exposed; the UI port stays on loopback.
 
@@ -32,9 +33,6 @@ pub struct TunnelEndpoint {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TunnelError {
-    /// The relay needs a person to approve this computer (device login). The link is for the browser; the tunnel keeps waiting
-    /// and reports [`TunnelHealth::Approved`] when it is done.
-    ApprovalNeeded(String),
     NotImplemented(&'static str),
     Invalid(String),
     Failed(String),
@@ -43,7 +41,6 @@ pub enum TunnelError {
 impl std::fmt::Display for TunnelError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TunnelError::ApprovalNeeded(link) => write!(f, "approve this computer at {link}"),
             TunnelError::NotImplemented(what) => write!(f, "{what} is not implemented yet"),
             TunnelError::Invalid(msg) | TunnelError::Failed(msg) => f.write_str(msg),
         }
@@ -56,8 +53,6 @@ impl std::error::Error for TunnelError {}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TunnelHealth {
     Up,
-    /// A pending approval was granted; start the tunnel again to get its URL.
-    Approved,
     /// The tunnel is gone; the reason is for the UI. Reported once, after which the owner decides what to do.
     Lost(String),
 }

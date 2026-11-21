@@ -3,9 +3,10 @@ import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import type { AgentModelChoice } from "@dorks/shared";
+import { modelLabel, type AgentModelChoice } from "@dorks/shared";
 import { CHILD_ENV_DENY } from "./config";
-import { FINAL_ANSWER_GUIDANCE } from "./guidance";
+import { COORDINATOR_GUIDANCE, FINAL_ANSWER_GUIDANCE, SKILLS_GUIDANCE, WORKER_GUIDANCE } from "./guidance";
+import type { CrewRole } from "@dorks/shared";
 import { asIdentity, type Identity } from "./runas";
 import type { Log } from "./redact";
 import { errTag, type Redactor } from "./redact";
@@ -81,7 +82,9 @@ export function findTranscripts(configDir: string, sessionId: string): string[] 
   const root = join(configDir, "projects");
   if (!existsSync(root)) return [];
   try {
-    return readdirSync(root).map((d) => join(root, d, `${sessionId}.jsonl`)).filter((f) => existsSync(f));
+    return readdirSync(root)
+      .map((d) => join(root, d, `${sessionId}.jsonl`))
+      .filter((f) => existsSync(f));
   } catch {
     return [];
   }
@@ -104,6 +107,11 @@ export const COMPUTER_PROMPT = [
   "`mcp__dorks__screenshot_share` (the computer tools' screenshots reach only you).",
 ].join(" ");
 
+/** A coordinator's or worker's standing instructions (docs/crew.md), on top of the final-answer guidance. */
+export function crewArgs(role: CrewRole | null): string[] {
+  return role ? ["--append-system-prompt", role === "coordinator" ? COORDINATOR_GUIDANCE : WORKER_GUIDANCE] : [];
+}
+
 export function computerArgs(driverPresent = existsSync(BOAT_COMPUTER_DRIVER)): string[] {
   return driverPresent ? ["--append-system-prompt", COMPUTER_PROMPT] : [];
 }
@@ -124,17 +132,29 @@ export function computerArgs(driverPresent = existsSync(BOAT_COMPUTER_DRIVER)): 
  * Not used on purpose: --bare (it never reads OAuth, and we authenticate with CLAUDE_CODE_OAUTH_TOKEN), --no-session-persistence
  * (the transcript on disk is what makes resume work).
  */
-export function claudeArgs(o: { permissionMode: string; resumeSessionId: string | null; extraArgs?: string[]; settingsFile?: string; mcpConfigFile?: string; model?: string; effort?: string }): string[] {
+export function claudeArgs(o: {
+  permissionMode: string;
+  resumeSessionId: string | null;
+  extraArgs?: string[];
+  settingsFile?: string;
+  mcpConfigFile?: string;
+  model?: string;
+  effort?: string;
+}): string[] {
   return [
     "-p",
-    "--input-format", "stream-json",
-    "--output-format", "stream-json",
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
     "--verbose",
     "--include-partial-messages",
-    "--permission-mode", o.permissionMode,
+    "--permission-mode",
+    o.permissionMode,
     ...(o.model ? ["--model", o.model] : []),
     ...(o.effort ? ["--effort", o.effort] : []),
-    "--append-system-prompt", FINAL_ANSWER_GUIDANCE,
+    "--append-system-prompt",
+    `${FINAL_ANSWER_GUIDANCE} ${SKILLS_GUIDANCE}`,
     ...(o.settingsFile ? ["--settings", o.settingsFile] : []),
     ...(o.mcpConfigFile ? ["--mcp-config", o.mcpConfigFile] : []),
     ...(o.resumeSessionId ? ["--resume", o.resumeSessionId] : []),
@@ -327,21 +347,24 @@ export class Agent {
 const MODEL_VALUE = /^[a-zA-Z0-9._:[\]-]{1,64}$/;
 const EFFORTS = ["none", "low", "medium", "high", "xhigh", "max"] as const;
 
-/** The CLI's `initialize` model list (`{value, displayName, description, resolvedModel, supportedEffortLevels}`) in the wire shape. */
+/** The CLI's `initialize` model list (`{value, displayName, description, resolvedModel, supportedEffortLevels, supportsFastMode}`) in the wire shape. */
 export function modelChoices(raw: unknown): AgentModelChoice[] {
   if (!Array.isArray(raw)) return [];
   const out: AgentModelChoice[] = [];
   for (const m of raw.slice(0, 100)) {
     const o = (m && typeof m === "object" ? m : {}) as Record<string, unknown>;
     if (typeof o.value !== "string" || !MODEL_VALUE.test(o.value)) continue;
-    const name = typeof o.displayName === "string" && o.displayName ? o.displayName.slice(0, 80) : o.value;
+    const resolved = typeof o.resolvedModel === "string" && MODEL_VALUE.test(o.resolvedModel) ? o.resolvedModel : undefined;
+    const shown = typeof o.displayName === "string" && o.displayName ? o.displayName.slice(0, 80) : o.value;
+    const name = modelLabel({ model: o.value, name: shown, resolved });
     const efforts = Array.isArray(o.supportedEffortLevels) ? o.supportedEffortLevels.filter((e): e is AgentModelChoice["efforts"][number] => EFFORTS.includes(e)) : [];
     out.push({
       model: o.value,
       name,
       ...(typeof o.description === "string" && o.description ? { description: o.description.slice(0, 200) } : {}),
-      ...(typeof o.resolvedModel === "string" && MODEL_VALUE.test(o.resolvedModel) ? { resolved: o.resolvedModel } : {}),
+      ...(resolved ? { resolved } : {}),
       efforts,
+      ...(o.supportsFastMode === true ? { fast: true } : {}),
     });
   }
   return out;

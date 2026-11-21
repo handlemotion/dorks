@@ -25,17 +25,14 @@ const tone = (left: number) => (left < 0.1 ? 'bg-destructive' : left < 0.2 ? 'bg
 export function UsageBarView({ usage }: { usage: Usage }) {
   const { claude, cloud } = usage
   if (!claude && !cloud) return null
-  const footer = claude?.session.resetsAt
-    ? `Session resets ${time.format(claude.session.resetsAt)}`
-    : cloud?.periodEnd
-      ? `Cloud renews ${day.format(cloud.periodEnd)}`
-      : undefined
+  const footer = claude?.session?.resetsAt ? `Session resets ${time.format(claude.session.resetsAt)}` : cloud?.periodEnd ? `Cloud renews ${day.format(cloud.periodEnd)}` : undefined
   return (
     <section aria-label="Usage" className="rounded-[6px] bg-foreground/[0.04]">
       <div className="flex flex-col gap-3 rounded-[6px] border border-border bg-surface px-[10px] pt-[6.5px] pb-[10px]">
         {claude && (
           <>
-            <Meter label="Claude session" used={claude.session.used} title={claude.session.resetsAt ? `Resets ${time.format(claude.session.resetsAt)}` : undefined} />
+            {/* No 5-hour window reported (plans without session limits, such as Ultra): no session meter. */}
+            {claude.session && <Meter label="Claude session" used={claude.session.used} title={claude.session.resetsAt ? `Resets ${time.format(claude.session.resetsAt)}` : undefined} />}
             <Meter label="Claude weekly" used={claude.weekly.used} title={claude.weekly.resetsAt ? `Resets ${day.format(claude.weekly.resetsAt)}` : undefined} />
           </>
         )}

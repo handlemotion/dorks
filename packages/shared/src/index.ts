@@ -3,3 +3,8 @@ export * from "./client/fold";
 export * from "./bridge";
 export * from "./autonomy";
 export * from "./errors";
+export * from "./builds";
+export * from "./pullRequest";
+export * from "./mcp";
+export * from "./crew";
+export * from "./skills";

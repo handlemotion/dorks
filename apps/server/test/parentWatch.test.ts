@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { parentPid, pidAlive, watchParent } from "../src/parentWatch";
 
 describe("parent watch", () => {
@@ -9,8 +9,16 @@ describe("parent watch", () => {
 
   it("knows a live pid from a dead one", () => {
     expect(pidAlive(process.pid)).toBe(true);
-    expect(pidAlive(1, () => { throw Object.assign(new Error("x"), { code: "EPERM" }); })).toBe(true);
-    expect(pidAlive(999_999, () => { throw Object.assign(new Error("x"), { code: "ESRCH" }); })).toBe(false);
+    expect(
+      pidAlive(1, () => {
+        throw Object.assign(new Error("x"), { code: "EPERM" });
+      }),
+    ).toBe(true);
+    expect(
+      pidAlive(999_999, () => {
+        throw Object.assign(new Error("x"), { code: "ESRCH" });
+      }),
+    ).toBe(false);
   });
 
   it("fires once when the parent disappears, and not before", () => {

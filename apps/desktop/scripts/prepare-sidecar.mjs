@@ -54,11 +54,10 @@ function buildServer(triple) {
     return;
   }
   mkdirSync(serverDist, { recursive: true });
-  execFileSync(
-    "bun",
-    ["build", join(serverDir, "src", "main.ts"), "--compile", `--target=${BUN_TARGETS[triple]}`, "--outfile", join(serverDist, `dorks-server-${triple}`)],
-    { cwd: serverDir, stdio: "inherit" },
-  );
+  execFileSync("bun", ["build", join(serverDir, "src", "main.ts"), "--compile", `--target=${BUN_TARGETS[triple]}`, "--outfile", join(serverDist, `dorks-server-${triple}`)], {
+    cwd: serverDir,
+    stdio: "inherit",
+  });
 }
 
 function obtain(triple) {

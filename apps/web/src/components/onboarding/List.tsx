@@ -57,7 +57,19 @@ export function Row({ icon, name, connected, soon, onOpen }: RowProps) {
 }
 
 /** The dialog a row opens: what to do in one or two sentences, then a `dialog-body` with the field and a footer with the actions. */
-export function ConnectDialog({ open, onOpenChange, title, description, children }: { open: boolean; onOpenChange: (open: boolean) => void; title: string; description: ReactNode; children: ReactNode }) {
+export function ConnectDialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  children,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  title: string
+  description: ReactNode
+  children: ReactNode
+}) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* Sizing, the white sheet, the footer band and the close button are the app's dialog style (glass.css). */}

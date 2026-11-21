@@ -19,9 +19,16 @@ export function titlePrompt(message: string): string {
 
 /** The model's reply as a title: first non-empty line, no wrapping quotes or trailing period. Empty when unusable. */
 export function cleanTitle(raw: string): string {
-  const line = raw.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+  const line =
+    raw
+      .split("\n")
+      .map((l) => l.trim())
+      .find(Boolean) ?? "";
   let t = line.replace(/\s+/g, " ").replace(/^(title|name)\s*:\s*/i, "");
-  t = t.replace(/^["'`*“‘#\s]+|["'`*”’\s]+$/g, "").replace(/[.!。]+$/, "").trim();
+  t = t
+    .replace(/^["'`*“‘#\s]+|["'`*”’\s]+$/g, "")
+    .replace(/[.!。]+$/, "")
+    .trim();
   const words = t.split(" ").filter(Boolean);
   if (!words.length || words.length > 10 || t.length > 80) return "";
   return t.charAt(0).toUpperCase() + t.slice(1);
@@ -39,9 +46,14 @@ export function claudeOneShot(o: { bin: string; env: NodeJS.ProcessEnv; cwd: str
     let out = "";
     const timer = setTimeout(() => child.kill("SIGKILL"), TIMEOUT_MS);
     child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (d: string) => { out = (out + d).slice(0, 4096); });
+    child.stdout.on("data", (d: string) => {
+      out = (out + d).slice(0, 4096);
+    });
     child.stdin.on("error", () => {});
-    child.on("error", (e) => { clearTimeout(timer); reject(e); });
+    child.on("error", (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
     child.on("close", (code) => {
       clearTimeout(timer);
       if (code === 0) resolve(out);

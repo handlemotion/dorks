@@ -2,7 +2,10 @@
 // stay in their own files under apps/server/src/lib.
 export interface BoxProvider {
   /** Must be idempotent on `name`: a retry after a crash returns the box it already made instead of leaking a second. */
-  createFromSnapshot(snapshotId: string, opts: { name: string; initCommand: string; env: Record<string, string>; generation?: number; boatEnvironment?: string }): Promise<{ id: string }>;
+  createFromSnapshot(
+    snapshotId: string,
+    opts: { name: string; initCommand: string; env: Record<string, string>; generation?: number; boatEnvironment?: string; machineType?: string },
+  ): Promise<{ id: string }>;
   /** Idempotent: resuming a running box is not an error. Throws BoxNotFoundError if the box no longer exists. */
   resume(boxId: string): Promise<void>;
   /** Idempotent: pausing a paused box is not an error. */
@@ -15,7 +18,7 @@ export interface BoxProvider {
    */
   desktopUrl?(boxId: string, opts: DesktopOptions): Promise<string>;
   /**
-   * Exposes a port of the box at an https URL the owner's Previews tab can frame (docs/boat.md, "Hosted ports"). Idempotent: asking
+   * Exposes a port of the box at an https URL the owner's running previews (in Artifacts) can frame (docs/boat.md, "Hosted ports"). Idempotent: asking
    * again for a hosted port answers the same URL. The URL is public (no token), so it may be stored. Absent when the provider
    * cannot host ports.
    */
@@ -42,6 +45,8 @@ export function isBoxNotFound(e: unknown): boolean {
 
 /** Used until the selected provider is configured: every call fails with a clear, non-secret message. */
 export function unconfiguredBox(message: string): BoxProvider {
-  const fail = async () => { throw new Error(message); };
+  const fail = async () => {
+    throw new Error(message);
+  };
   return { createFromSnapshot: fail, resume: fail, pause: fail, delete: fail };
 }

@@ -13,13 +13,15 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ConnRouteImport } from './routes/_conn'
 import { Route as ConnAppRouteImport } from './routes/_conn/_app'
 import { Route as ConnOnboardingRouteImport } from './routes/_conn/onboarding'
+import { Route as ConnSettingsRouteImport } from './routes/_conn/settings'
 import { Route as DevAiElementsRouteImport } from './routes/dev.ai-elements'
 import { Route as DevChatRouteImport } from './routes/dev.chat'
 import { Route as ConnAppAutomationsRouteImport } from './routes/_conn/_app/automations'
 import { Route as ConnAppBuildsRouteImport } from './routes/_conn/_app/builds'
 import { Route as ConnAppCustomizeRouteImport } from './routes/_conn/_app/customize'
 import { Route as ConnAppDorksRouteImport } from './routes/_conn/_app/dorks'
-import { Route as ConnAppSettingsRouteImport } from './routes/_conn/_app/settings'
+import { Route as ConnSettingsIndexRouteImport } from './routes/_conn/settings/index'
+import { Route as ConnSettingsPageRouteImport } from './routes/_conn/settings/$page'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -37,6 +39,11 @@ const ConnAppRoute = ConnAppRouteImport.update({
 const ConnOnboardingRoute = ConnOnboardingRouteImport.update({
   id: '/onboarding',
   path: '/onboarding',
+  getParentRoute: () => ConnRoute,
+} as any)
+const ConnSettingsRoute = ConnSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => ConnRoute,
 } as any)
 const DevAiElementsRoute = DevAiElementsRouteImport.update({
@@ -69,22 +76,29 @@ const ConnAppDorksRoute = ConnAppDorksRouteImport.update({
   path: '/dorks',
   getParentRoute: () => ConnAppRoute,
 } as any)
-const ConnAppSettingsRoute = ConnAppSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => ConnAppRoute,
+const ConnSettingsIndexRoute = ConnSettingsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ConnSettingsRoute,
+} as any)
+const ConnSettingsPageRoute = ConnSettingsPageRouteImport.update({
+  id: '/$page',
+  path: '/$page',
+  getParentRoute: () => ConnSettingsRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/onboarding': typeof ConnOnboardingRoute
+  '/settings': typeof ConnSettingsRouteWithChildren
   '/dev/ai-elements': typeof DevAiElementsRoute
   '/dev/chat': typeof DevChatRoute
   '/automations': typeof ConnAppAutomationsRoute
   '/builds': typeof ConnAppBuildsRoute
   '/customize': typeof ConnAppCustomizeRoute
   '/dorks': typeof ConnAppDorksRoute
-  '/settings': typeof ConnAppSettingsRoute
+  '/settings/$page': typeof ConnSettingsPageRoute
+  '/settings/': typeof ConnSettingsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -95,7 +109,8 @@ export interface FileRoutesByTo {
   '/builds': typeof ConnAppBuildsRoute
   '/customize': typeof ConnAppCustomizeRoute
   '/dorks': typeof ConnAppDorksRoute
-  '/settings': typeof ConnAppSettingsRoute
+  '/settings/$page': typeof ConnSettingsPageRoute
+  '/settings': typeof ConnSettingsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -103,26 +118,30 @@ export interface FileRoutesById {
   '/_conn': typeof ConnRouteWithChildren
   '/_conn/_app': typeof ConnAppRouteWithChildren
   '/_conn/onboarding': typeof ConnOnboardingRoute
+  '/_conn/settings': typeof ConnSettingsRouteWithChildren
   '/dev/ai-elements': typeof DevAiElementsRoute
   '/dev/chat': typeof DevChatRoute
   '/_conn/_app/automations': typeof ConnAppAutomationsRoute
   '/_conn/_app/builds': typeof ConnAppBuildsRoute
   '/_conn/_app/customize': typeof ConnAppCustomizeRoute
   '/_conn/_app/dorks': typeof ConnAppDorksRoute
-  '/_conn/_app/settings': typeof ConnAppSettingsRoute
+  '/_conn/settings/$page': typeof ConnSettingsPageRoute
+  '/_conn/settings/': typeof ConnSettingsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/onboarding'
+    | '/settings'
     | '/dev/ai-elements'
     | '/dev/chat'
     | '/automations'
     | '/builds'
     | '/customize'
     | '/dorks'
-    | '/settings'
+    | '/settings/$page'
+    | '/settings/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -133,6 +152,7 @@ export interface FileRouteTypes {
     | '/builds'
     | '/customize'
     | '/dorks'
+    | '/settings/$page'
     | '/settings'
   id:
     | '__root__'
@@ -140,13 +160,15 @@ export interface FileRouteTypes {
     | '/_conn'
     | '/_conn/_app'
     | '/_conn/onboarding'
+    | '/_conn/settings'
     | '/dev/ai-elements'
     | '/dev/chat'
     | '/_conn/_app/automations'
     | '/_conn/_app/builds'
     | '/_conn/_app/customize'
     | '/_conn/_app/dorks'
-    | '/_conn/_app/settings'
+    | '/_conn/settings/$page'
+    | '/_conn/settings/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -184,6 +206,13 @@ declare module '@tanstack/react-router' {
       path: '/onboarding'
       fullPath: '/onboarding'
       preLoaderRoute: typeof ConnOnboardingRouteImport
+      parentRoute: typeof ConnRoute
+    }
+    '/_conn/settings': {
+      id: '/_conn/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof ConnSettingsRouteImport
       parentRoute: typeof ConnRoute
     }
     '/dev/ai-elements': {
@@ -228,12 +257,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConnAppDorksRouteImport
       parentRoute: typeof ConnAppRoute
     }
-    '/_conn/_app/settings': {
-      id: '/_conn/_app/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof ConnAppSettingsRouteImport
-      parentRoute: typeof ConnAppRoute
+    '/_conn/settings/': {
+      id: '/_conn/settings/'
+      path: '/'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof ConnSettingsIndexRouteImport
+      parentRoute: typeof ConnSettingsRoute
+    }
+    '/_conn/settings/$page': {
+      id: '/_conn/settings/$page'
+      path: '/$page'
+      fullPath: '/settings/$page'
+      preLoaderRoute: typeof ConnSettingsPageRouteImport
+      parentRoute: typeof ConnSettingsRoute
     }
   }
 }
@@ -243,7 +279,6 @@ interface ConnAppRouteChildren {
   ConnAppBuildsRoute: typeof ConnAppBuildsRoute
   ConnAppCustomizeRoute: typeof ConnAppCustomizeRoute
   ConnAppDorksRoute: typeof ConnAppDorksRoute
-  ConnAppSettingsRoute: typeof ConnAppSettingsRoute
 }
 
 const ConnAppRouteChildren: ConnAppRouteChildren = {
@@ -251,20 +286,35 @@ const ConnAppRouteChildren: ConnAppRouteChildren = {
   ConnAppBuildsRoute: ConnAppBuildsRoute,
   ConnAppCustomizeRoute: ConnAppCustomizeRoute,
   ConnAppDorksRoute: ConnAppDorksRoute,
-  ConnAppSettingsRoute: ConnAppSettingsRoute,
 }
 
 const ConnAppRouteWithChildren =
   ConnAppRoute._addFileChildren(ConnAppRouteChildren)
 
+interface ConnSettingsRouteChildren {
+  ConnSettingsPageRoute: typeof ConnSettingsPageRoute
+  ConnSettingsIndexRoute: typeof ConnSettingsIndexRoute
+}
+
+const ConnSettingsRouteChildren: ConnSettingsRouteChildren = {
+  ConnSettingsPageRoute: ConnSettingsPageRoute,
+  ConnSettingsIndexRoute: ConnSettingsIndexRoute,
+}
+
+const ConnSettingsRouteWithChildren = ConnSettingsRoute._addFileChildren(
+  ConnSettingsRouteChildren,
+)
+
 interface ConnRouteChildren {
   ConnAppRoute: typeof ConnAppRouteWithChildren
   ConnOnboardingRoute: typeof ConnOnboardingRoute
+  ConnSettingsRoute: typeof ConnSettingsRouteWithChildren
 }
 
 const ConnRouteChildren: ConnRouteChildren = {
   ConnAppRoute: ConnAppRouteWithChildren,
   ConnOnboardingRoute: ConnOnboardingRoute,
+  ConnSettingsRoute: ConnSettingsRouteWithChildren,
 }
 
 const ConnRouteWithChildren = ConnRoute._addFileChildren(ConnRouteChildren)

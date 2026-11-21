@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import { Db, insert } from "../src/db";
 import { setTimer } from "../src/lifecycle/dispatch";
 import { INBOX_RETENTION_MS, SWEEP_EVERY_MS } from "../src/lifecycle/jobs";
@@ -77,7 +77,8 @@ describe("retention sweep", () => {
     const id = h.seed("idle");
     h.app.db.tx(() => subscribe(h.app, h.dork(id), "o/r", 1, "agent"));
     const subId = h.app.db.get<{ id: number }>("SELECT id FROM pr_subscriptions")!.id;
-    const row = (createdAt: number, delivered: number) => h.app.db.run("INSERT INTO inbox (dork_id, subscription_id, kind, summary, created_at, delivered) VALUES (?, ?, 'comment', 's', ?, ?)", id, subId, createdAt, delivered);
+    const row = (createdAt: number, delivered: number) =>
+      h.app.db.run("INSERT INTO inbox (dork_id, subscription_id, kind, summary, created_at, delivered) VALUES (?, ?, 'comment', 's', ?, ?)", id, subId, createdAt, delivered);
     row(NOW - 2 * INBOX_RETENTION_MS, 1); // old and delivered: pruned
     row(NOW - 2 * INBOX_RETENTION_MS, 0); // old but still waiting for the agent: kept
     row(NOW - 1000, 1); // recent: kept

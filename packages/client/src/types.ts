@@ -1,4 +1,7 @@
-import type { AgentModelChoice, ClientEvent, CommentPolicy, DorkState } from "@dorks/shared";
+import type { AgentModelChoice, BuildRepo, ClientEvent, CommentPolicy, DorkState, MachineType, RunView } from "@dorks/shared";
+
+export type { MergeMethod, MergeableState, PullRequestSection, PullRequestView, PullRequestFile, PullRequestComment, PullRequestChecks, PullRequestCheck, PullRequestPerson } from "@dorks/shared";
+export type { BuildView, BuildVarView, DraftView, RunView, BuildRepo, MachineType, McpServerView, McpServerInput, ComposioStatus, SkillView, SkillCandidate, SkillResolution } from "@dorks/shared";
 
 export type Provider = "claude" | "codex";
 
@@ -17,28 +20,51 @@ export interface Dork {
   /** Screenshots the agent shared (its `screenshot_share` tool), oldest first; load one with `client.imageUrl(id)`. */
   images?: { id: string; caption?: string; width?: number; height?: number; createdAt: number }[];
   prUrl?: string;
+  /** The PR's state as the server's poller last saw it; absent before its first look and on older servers. */
+  prState?: "open" | "merged" | "closed";
   codexModel?: { model: string; effort: string };
   codexModelChoices?: { model: string; efforts: string[] }[];
   /** Claude: the model and effort chosen for this session (absent: the agent's default). */
   model?: string;
   effort?: string;
+  /** Claude: fast mode on (only for a model that offers it). Absent on older servers. */
+  fast?: boolean;
   /** What the agent confirmed it runs: the model from its init event (a full id), the effort it was started with. */
   agentModel?: string;
   agentEffort?: string;
   /** The models the agent offers this account, as it last reported them. */
   modelChoices?: AgentModelChoice[];
+  /** The build its machine starts from (docs/builds.md); null: the base snapshot. Absent on older servers. */
+  buildId?: string | null;
+  /** `coordinator`: plans and runs worker dorks instead of coding (docs/crew.md). Absent on older servers. */
+  kind?: "agent" | "coordinator";
+  /** The coordinator that started this worker; null otherwise. Absent on older servers. */
+  parentId?: string | null;
+  /** A coordinator's emoji. */
+  icon?: string;
   lastActivityAt: number;
   createdAt: number;
 }
 
 export interface CreateDorkInput {
-  repo: string;
+  /** owner/name; optional only for a setup session. */
+  repo?: string;
+  /** The build to start from; null: the base machine; omitted: the default build, else the base machine. */
+  buildId?: string | null;
+  /** A machine-setup session for `buildId`: no repo needed, and the build needs no image yet. */
+  setup?: boolean;
+  /** `coordinator`: a session that plans and delegates to worker dorks; needs no repo (docs/crew.md). */
+  kind?: "agent" | "coordinator";
+  /** One emoji for a coordinator, shown in the sidebar. */
+  icon?: string;
   message: string;
   title?: string;
   provider?: Provider;
   /** Claude: one of `Settings.claudeModels` (omit for the default), and one of its efforts. */
   model?: string;
   effort?: string;
+  /** Claude: fast mode, for a model that offers it. */
+  fast?: boolean;
 }
 
 /** Plain values and booleans only: the server never returns a secret. */
@@ -56,6 +82,30 @@ export interface Settings {
   boxProvider?: string;
   /** The models a Claude agent last reported (empty before any session started); what a new session can choose from. */
   claudeModels?: AgentModelChoice[];
+  /** The build new sessions start on; null: the base snapshot. */
+  defaultBuildId?: string | null;
+}
+
+export interface BuildInput {
+  name?: string;
+  machineType?: MachineType;
+  setupScript?: string;
+  repos?: BuildRepo[];
+}
+
+export interface BuildVarInput {
+  /** Omit to keep the stored value (to change a flag only). */
+  value?: string;
+  secret?: boolean;
+  buildTime?: boolean;
+}
+
+export interface RunLog {
+  text: string;
+  /** Byte offset to ask from next. */
+  next: number;
+  done: boolean;
+  run: RunView;
 }
 
 /** Any subset. Token fields are write-only; an empty string clears one. */
@@ -63,7 +113,8 @@ export interface SettingsPatch {
   boatKey?: string;
   boatOrg?: string;
   claudeToken?: string;
-  githubToken?: string;
+  /** true: act as the GitHub CLI's login (the server checks it with GitHub first); false: disconnect. */
+  githubConnected?: boolean;
   boatEnvironment?: string;
   baseSnapshotId?: string;
   sleepMinutes?: number;
@@ -71,6 +122,28 @@ export interface SettingsPatch {
 }
 
 /** `POST /api/boat/check`: whether Boat accepts a key (and organization) before anything is saved. */
+/** Local access (docs/local-access.md): whether agents may ask to use this computer, and the permissions granted for a while. */
+export interface LocalGrant {
+  id: string;
+  dorkId: string;
+  dorkTitle: string;
+  kind: "run" | "read";
+  /** run: this exact command in `cwd`. */
+  command?: string;
+  cwd?: string;
+  /** read: any file under this folder. */
+  dir?: string;
+  expiresAt: number;
+  createdAt: number;
+}
+
+export interface LocalAccess {
+  enabled: boolean;
+  grants: LocalGrant[];
+}
+
+export type LocalDecision = { decision: "deny" | "once" } | { decision: "grant"; minutes: 15 | 60 };
+
 export interface BoatCheck {
   status: "ok" | "invalid" | "needs_org" | "credit_required" | "unreachable";
   /** Plain words for the user. */
@@ -115,11 +188,33 @@ export type LiveMessage =
   | { t: "events"; dorkId: string; seq: number }
   | { t: "subscriptions"; dorkId: string }
   | { t: "settings" }
-  | { t: "snapshot" };
+  | { t: "snapshot" }
+  | { t: "builds" }
+  | { t: "build"; buildId: string };
 
 export interface PrRefInput {
   repo: string;
   number: number;
+}
+
+/**
+ * How the GitHub connection stands: `ok`; `not_connected`; `gh_missing` / `gh_logged_out` (the GitHub CLI is not installed, or
+ * not signed in); `rejected` (GitHub refused its token); `unreachable`.
+ */
+export type GithubAuthState = "ok" | "not_connected" | "gh_missing" | "gh_logged_out" | "rejected" | "unreachable";
+
+/** `GET /api/github/repos`: the GitHub CLI login's user (null without one), its organizations, and its repositories (`owner/name`). */
+export interface GithubRepos {
+  login: string | null;
+  orgs: string[];
+  repos: string[];
+  auth: {
+    state: GithubAuthState;
+    /** `gh`: the GitHub CLI's login; `env`: `GH_TOKEN` in the server's environment (development). */
+    source: "gh" | "env" | null;
+    /** OAuth scopes Dorks needs that the login lacks: `read:org` (lists organizations), `workflow` (pushes CI files). */
+    missingScopes: string[];
+  };
 }
 
 /** `GET /api/usage`: a part is missing when its credential is not set or its source failed. `used` is 0..1, times are epoch ms. */
@@ -128,6 +223,6 @@ export interface UsageWindow {
   resetsAt?: number;
 }
 export interface Usage {
-  claude?: { session: UsageWindow; weekly: UsageWindow };
+  claude?: { session?: UsageWindow; weekly: UsageWindow };
   cloud?: { usedHours: number; includedHours: number; periodEnd?: number };
 }

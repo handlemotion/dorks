@@ -1,7 +1,7 @@
 import { connect } from "node:net";
 import { statSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import { RpcError, RpcServer, rpcCall, type RpcMethods } from "../src/rpc";
 import { sleep, tmp } from "./helpers";
 

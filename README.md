@@ -2,7 +2,7 @@
 
 Run coding agents (Claude Code first, Codex optional) in your own [Boat](https://boat.dev) sandboxes and drive them from one desktop app: a chat per task, and PRs the agent keeps working on until they merge. Your sandboxes, your Boat account, your Claude or ChatGPT sign-in. Nothing is hosted for you. Site: [dorks.build](https://dorks.build).
 
-> **Status: early.** The server, web UI and desktop shell are in the repo and tested separately. Not yet shipped: a signed `.dmg`, the wurmhol tunnel client (use your own tunnel URL for now), a bundled server binary, and a finished first-run flow. [docs/desktop.md](docs/desktop.md) lists what is missing.
+> **Status: early.** The server, web UI and desktop shell are in the repo and tested separately. Not yet shipped: a signed `.dmg`, the hosted tunnel service and a bundled wurmhol client (use your own tunnel URL for now), a bundled server binary, and a finished first-run flow. [docs/desktop.md](docs/desktop.md) lists what is missing.
 
 ## How it works
 
@@ -36,7 +36,7 @@ pnpm install
 pnpm dev     # real server with simulated sandboxes + the web UI; prints the URL to open
 ```
 
-Open the printed URL (it carries the dev owner token), then follow setup: Boat key, base snapshot ([docs/boat.md](docs/boat.md)), agent sign-in, GitHub token. With `pnpm dev` sandboxes are simulated, so you can create and drive sessions without a Boat account.
+Open the printed URL (it carries the dev owner token), then follow setup: Boat key, base snapshot ([docs/boat.md](docs/boat.md)), agent sign-in, GitHub (your `gh` login). With `pnpm dev` sandboxes are simulated, so you can create and drive sessions without a Boat account.
 
 To try the UI with no server at all: `pnpm dev:mock` serves an in-memory mock server on :4747 with a scripted fake agent.
 

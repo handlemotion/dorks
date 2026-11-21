@@ -1,5 +1,17 @@
-import { errorEvent, fromBridge, type ClientEventBody, type CommandFrame, type SubscriptionView, type ToBridge } from "@dorks/shared";
-import { fail, touch, type App } from "../app";
+import {
+  errorEvent,
+  fromBridge,
+  type AppError,
+  type AppErrorCode,
+  type ClientEventBody,
+  type CommandFrame,
+  type FromBridge,
+  type McpServerConfig,
+  type SubscriptionView,
+  type ToBridge,
+} from "@dorks/shared";
+import { Cause, Data, Effect, Exit } from "effect";
+import { AppFail, fail, touch, type App } from "../app";
 import { createNormalizer } from "../core/normalize";
 import { getDork, openCommands, runtimeOf, type DorkRow, type Preview, type SharedImage } from "../data";
 import { update } from "../db";
@@ -7,6 +19,10 @@ import { append, bridgeSeen, dispatch, enqueueConfigure, finishPause, patchDork 
 import { opFailed } from "../lifecycle/lifecycle";
 import { rememberModelChoices } from "./models";
 import { claudeToken, cliSecrets, githubToken } from "./settings";
+import { mcpServerConfigs } from "./mcpServers";
+import { skillRefs } from "./skills";
+import { buildVarValues, getBuild } from "./builds";
+import { crewRole } from "./crew";
 import * as subs from "./subscriptions";
 import { randomBytes } from "node:crypto";
 
@@ -17,6 +33,37 @@ import { randomBytes } from "node:crypto";
 export const MAX_FRAMES_PER_PUSH = 500;
 export const MAX_EVENT_BYTES = 256 * 1024;
 const encoder = new TextEncoder();
+
+/** A refused bridge rpc: `error` is the AppError of its `res` frame. */
+export class BridgeError extends Data.TaggedError("BridgeError")<{ readonly error: AppError }> {
+  static of(code: AppErrorCode, message: string) {
+    return new BridgeError({ error: { code, message } as AppError });
+  }
+}
+
+/** A service's `AppFail` becomes `BridgeError`; anything else stays a defect. */
+const classify = (e: unknown): Effect.Effect<never, BridgeError> => (e instanceof AppFail ? Effect.fail(new BridgeError({ error: e.error })) : Effect.die(e));
+
+/** Runs a synchronous service call that refuses with `fail` (the transactional bodies below). */
+export const attempt = <A>(f: () => A): Effect.Effect<A, BridgeError> =>
+  Effect.suspend(() => {
+    try {
+      return Effect.succeed(f());
+    } catch (e) {
+      return classify(e);
+    }
+  });
+
+/** Like `attempt`, for a call that returns a Promise. */
+export const attemptPromise = <A>(f: () => Promise<A>): Effect.Effect<A, BridgeError> => Effect.tryPromise({ try: f, catch: (e) => e }).pipe(Effect.catch(classify));
+
+/** Runs a bridge effect for a synchronous caller (the test harness): a refusal throws its `AppFail`, as `fail` does. */
+const runSync = <A>(effect: Effect.Effect<A, BridgeError>): A => {
+  const exit = Effect.runSyncExit(effect);
+  if (Exit.isSuccess(exit)) return exit.value;
+  const e = Cause.squash(exit.cause);
+  throw e instanceof BridgeError ? new AppFail(e.error) : e;
+};
 
 /** The dork a bridge socket speaks for, or `forbidden` if it is gone. */
 export function bridgeDork(app: App, dorkId: string): DorkRow {
@@ -69,133 +116,190 @@ export function commandsFor(app: App, dorkId: string): CommandEntry[] {
 
 export const subscriptionsFor = (app: App, dorkId: string): SubscriptionView[] => subs.liveSubscriptionViews(app, dorkId);
 
+/** The JSON size of an event frame's `raw` line (0 for frames that carry none). */
+const eventBytes = (frame: unknown) => {
+  const payload = (frame as { raw?: unknown } | null)?.raw;
+  return payload === undefined ? 0 : encoder.encode(JSON.stringify(payload)).length;
+};
+
+/**
+ * Decodes the `frames` of a `push`: the per-call limits first (too many frames or an oversized event refuse the whole call), then
+ * each frame with the shared `fromBridge` schema. A frame that does not parse is dropped, as an unknown frame from a newer bridge.
+ */
+export const decodePush = (frames: unknown): Effect.Effect<FromBridge[], BridgeError> => {
+  if (!Array.isArray(frames)) return Effect.fail(BridgeError.of("invalid", "frames must be an array"));
+  if (frames.length > MAX_FRAMES_PER_PUSH) return Effect.fail(BridgeError.of("too_many_frames", `at most ${MAX_FRAMES_PER_PUSH} frames per push`));
+  if (frames.some((f) => eventBytes(f) > MAX_EVENT_BYTES)) return Effect.fail(BridgeError.of("event_too_large", `an event exceeds ${MAX_EVENT_BYTES} bytes`));
+  return Effect.succeed(
+    frames.flatMap((raw) => {
+      const parsed = fromBridge.safeParse(raw);
+      return parsed.success ? [parsed.data] : [];
+    }),
+  );
+};
+
+export type PushResult = { ok: true } | { ok: false; expectedBseq: number };
+
 /**
  * Bridge -> server frames, batched. Events must arrive numbered exactly `bridgeSeq + 1`, `+ 2`, ... (anything `<= bridgeSeq` is a
  * replay and is skipped). If the call contains a gap, NOTHING in it is applied and the result is `{ ok: false, expectedBseq }`
  * (`bridgeSeq + 1`): the bridge must resend everything from its event `expectedBseq` on. Otherwise the result is `{ ok: true }`.
  * Too many frames or an oversized event reject the whole call (`too_many_frames` / `event_too_large`).
  */
-export function push(app: App, dorkId: string, frames: unknown[]): { ok: true } | { ok: false; expectedBseq: number } {
-  if (!Array.isArray(frames)) fail("invalid", "frames must be an array");
-  if (frames.length > MAX_FRAMES_PER_PUSH) fail("too_many_frames", `at most ${MAX_FRAMES_PER_PUSH} frames per push`);
-  for (const raw of frames) {
-    const payload = (raw as { raw?: unknown } | null)?.raw;
-    if (payload !== undefined && encoder.encode(JSON.stringify(payload)).length > MAX_EVENT_BYTES) fail("event_too_large", `an event exceeds ${MAX_EVENT_BYTES} bytes`);
-  }
+export const pushFrames = (app: App, dorkId: string, frames: unknown): Effect.Effect<PushResult, BridgeError> =>
+  decodePush(frames).pipe(Effect.flatMap((decoded) => attempt(() => applyPush(app, dorkId, decoded))));
+
+/** `pushFrames` for synchronous callers: a refusal throws `AppFail`. */
+export const push = (app: App, dorkId: string, frames: unknown): PushResult => runSync(pushFrames(app, dorkId, frames));
+
+/** Applies one decoded batch in one transaction. */
+function applyPush(app: App, dorkId: string, frames: FromBridge[]): PushResult {
   return app.db.tx(() => {
     const dork = bridgeDork(app, dorkId);
     bridgeSeen(app, dork); // liveness counts even when the batch is refused below
     const rt = runtimeOf(app.db, dorkId);
-    let { bridgeSeq, streamMsgId, finalMsgId, interruptRequested } = rt;
 
     // Validate the whole batch before applying any of it: events must continue the stored numbering exactly (frames already
     // stored are skipped as replays). A gap refuses the call atomically, so the bridge can resend everything after its last
     // confirmed event without any frame (an `agent_exited`, say) being applied twice.
-    const parsedFrames = frames.flatMap((raw) => {
-      const parsed = fromBridge.safeParse(raw);
-      return parsed.success ? [parsed.data] : [];
-    });
-    let next = bridgeSeq + 1;
-    for (const f of parsedFrames) {
-      if (f.t !== "event" || f.bseq < next) continue;
-      if (f.bseq !== next) return { ok: false as const, expectedBseq: bridgeSeq + 1 };
-      next++;
-    }
+    if (hasGap(frames, rt.bridgeSeq)) return { ok: false as const, expectedBseq: rt.bridgeSeq + 1 };
+
     // The normalizer is stateful (in-flight message id) but a transaction is not: seed it from the last batch.
     const normalize = createNormalizer();
-    if (streamMsgId) normalize({ type: "stream_event", event: { type: "message_start", message: { id: streamMsgId } } });
-
+    if (rt.streamMsgId) normalize({ type: "stream_event", event: { type: "message_start", message: { id: rt.streamMsgId } } });
     const pending: ClientEventBody[] = [];
-    const flush = () => {
-      if (pending.length) append(app, dorkId, ...pending.splice(0));
+    const batch: Batch = {
+      app,
+      dorkId,
+      dork,
+      normalize,
+      pending,
+      touched: false,
+      bridgeSeq: rt.bridgeSeq,
+      streamMsgId: rt.streamMsgId,
+      finalMsgId: rt.finalMsgId,
+      interruptRequested: rt.interruptRequested,
+      flush: () => {
+        if (pending.length) append(app, dorkId, ...pending.splice(0));
+      },
     };
-    let preview: string | undefined;
-    let touched = false;
 
-    for (const f of parsedFrames) {
-      switch (f.t) {
-        case "codex_models":
-          if (dork.provider === "codex") patchDork(app, dorkId, { codexModelChoices: f.models });
-          break;
-        case "title": {
-          // Only replaces the first-message placeholder: a name the user typed (or one already generated) always wins.
-          const fresh = getDork(app.db, dorkId)!;
-          const title = cleanTitle(f.text);
-          if (fresh.titleSource === "message" && title) patchDork(app, dorkId, { title, titleSource: "auto" });
-          break;
-        }
-        case "agent_models":
-          if (dork.provider === "claude") {
-            patchDork(app, dorkId, { modelChoices: f.models, agentEffort: f.effort ?? undefined });
-            rememberModelChoices(app, f.models);
-          }
-          break;
-        case "codex_issue":
-          if (dork.provider === "codex") append(app, dorkId, errorEvent({ code: "failed", message: f.message }));
-          break;
-        case "event": {
-          if (f.bseq <= bridgeSeq) break; // replay overlap after a reconnect
-          bridgeSeq = f.bseq;
-          const r = f.raw as { type?: string; event?: { type?: string; message?: { id?: string } } };
-          if (r?.type === "stream_event" && r.event?.type === "message_start") streamMsgId = r.event.message?.id ?? "";
-          let stopped = false;
-          for (const n of normalize(f.raw)) {
-            if (n.kind === "event") {
-              let body = n.body;
-              // The final answer is the turn's last assistant message with no tool call after it. The server names it on the
-              // turn's turn_complete, so clients never infer it from where a message sits.
-              if (body.type === "assistant_message") finalMsgId = body.messageId;
-              if (body.type === "tool_use") finalMsgId = "";
-              if (body.type === "turn_complete") {
-                // A turn the user stopped ends as an error result: it is `stopped`, not a failure, and gets no error event.
-                stopped = interruptRequested && body.outcome === "failed";
-                const outcome = stopped ? "stopped" : body.outcome;
-                body = { ...body, outcome, ...(outcome === "done" && finalMsgId ? { finalMessageId: finalMsgId } : {}) };
-                finalMsgId = "";
-                interruptRequested = false;
-                touched = true;
-              }
-              if (stopped && body.type === "error" && body.error?.code === "turn_failed") continue;
-              pending.push(body);
-              if (body.type === "assistant_message") preview = body.text.slice(0, 140);
-            } else if (n.kind === "session") {
-              patchDork(app, dorkId, dork.provider === "codex" ? { codexThreadId: n.sessionId } : { claudeSessionId: n.sessionId, ...(n.model ? { agentModel: n.model } : {}) });
-            } else {
-              flush();
-              dispatch(app, dorkId, { t: "turn_idle" });
-            }
-          }
-          break;
-        }
-        case "ready":
-          flush();
-          if (dork.provider === "codex") patchDork(app, dorkId, { codexModelChoices: undefined });
-          dispatch(app, dorkId, { t: "agent_ready" });
-          break;
-        case "ack": {
-          const c = openCommands(app.db, dorkId).find((x) => x.cid === f.id);
-          if (!c) break;
-          if (c.kind === "user_message" || c.kind === "notify") update(app.db, "commands", { id: c.id }, { acked: true });
-          else app.db.run("DELETE FROM commands WHERE id = ?", c.id);
-          touch(app, { t: "commands", dorkId });
-          break;
-        }
-        case "agent_exited":
-          flush();
-          append(app, dorkId, { type: "agent_exited", message: `agent exited (code ${f.code ?? "?"})` });
-          console.error("agent exited", dorkId, f.code); // stderr tail is never logged: it can echo env
-          dispatch(app, dorkId, { t: "agent_exited" });
-          break;
-        case "flushed":
-          finishPause(app, dorkId, f.cid);
-          break;
-      }
-    }
-    flush();
+    for (const f of frames) (FRAME_HANDLERS[f.t] as (b: Batch, f: FromBridge) => void)(batch, f);
+    batch.flush();
+    const { bridgeSeq, streamMsgId, finalMsgId, interruptRequested, preview, touched } = batch;
     update(app.db, "dork_runtime", { dorkId }, { bridgeSeq, streamMsgId, finalMsgId, interruptRequested });
     if (preview !== undefined || touched) patchDork(app, dorkId, { ...(preview !== undefined ? { preview } : {}), lastActivityAt: app.now() });
     return { ok: true as const };
   });
+}
+
+/** Whether the batch's new events skip a number after `bridgeSeq` (replays, `<= bridgeSeq`, are fine). */
+function hasGap(frames: FromBridge[], bridgeSeq: number): boolean {
+  let next = bridgeSeq + 1;
+  for (const f of frames) {
+    if (f.t !== "event" || f.bseq < next) continue;
+    if (f.bseq !== next) return true;
+    next++;
+  }
+  return false;
+}
+
+/** One `push` call being applied: the runtime cursor it advances and what it has collected so far. */
+interface Batch {
+  app: App;
+  dorkId: string;
+  dork: DorkRow;
+  normalize: ReturnType<typeof createNormalizer>;
+  /** Client events not yet appended; `flush` appends them, so events stay ordered around dispatches. */
+  pending: ClientEventBody[];
+  flush: () => void;
+  bridgeSeq: number;
+  streamMsgId: string;
+  finalMsgId: string;
+  interruptRequested: boolean;
+  preview?: string;
+  /** A turn completed: the dork's last activity moves. */
+  touched: boolean;
+}
+type FrameOf<T extends FromBridge["t"]> = Extract<FromBridge, { t: T }>;
+
+const FRAME_HANDLERS: { [T in FromBridge["t"]]: (b: Batch, f: FrameOf<T>) => void } = {
+  codex_models: ({ app, dorkId, dork }, f) => {
+    if (dork.provider === "codex") patchDork(app, dorkId, { codexModelChoices: f.models });
+  },
+  title: ({ app, dorkId }, f) => {
+    // Only replaces the first-message placeholder: a name the user typed (or one already generated) always wins.
+    const fresh = getDork(app.db, dorkId)!;
+    const title = cleanTitle(f.text);
+    if (fresh.titleSource === "message" && title) patchDork(app, dorkId, { title, titleSource: "auto" });
+  },
+  agent_models: ({ app, dorkId, dork }, f) => {
+    if (dork.provider !== "claude") return;
+    patchDork(app, dorkId, { modelChoices: f.models, agentEffort: f.effort ?? undefined });
+    rememberModelChoices(app, f.models);
+  },
+  codex_issue: ({ app, dorkId, dork }, f) => {
+    if (dork.provider === "codex") append(app, dorkId, errorEvent({ code: "failed", message: f.message }));
+  },
+  event: applyEvent,
+  ready: ({ app, dorkId, dork, flush }) => {
+    flush();
+    if (dork.provider === "codex") patchDork(app, dorkId, { codexModelChoices: undefined });
+    dispatch(app, dorkId, { t: "agent_ready" });
+  },
+  ack: ({ app, dorkId }, f) => {
+    const c = openCommands(app.db, dorkId).find((x) => x.cid === f.id);
+    if (!c) return;
+    if (c.kind === "user_message" || c.kind === "notify") update(app.db, "commands", { id: c.id }, { acked: true });
+    else app.db.run("DELETE FROM commands WHERE id = ?", c.id);
+    touch(app, { t: "commands", dorkId });
+  },
+  agent_exited: ({ app, dorkId, flush }, f) => {
+    flush();
+    append(app, dorkId, { type: "agent_exited", message: `agent exited (code ${f.code ?? "?"})` });
+    console.error("agent exited", dorkId, f.code); // stderr tail is never logged: it can echo env
+    dispatch(app, dorkId, { t: "agent_exited" });
+  },
+  flushed: ({ app, dorkId }, f) => finishPause(app, dorkId, f.cid),
+};
+
+/** One raw agent stream line: normalized into client events, the session id, or a turn boundary. */
+function applyEvent(b: Batch, f: FrameOf<"event">) {
+  if (f.bseq <= b.bridgeSeq) return; // replay overlap after a reconnect
+  b.bridgeSeq = f.bseq;
+  const r = f.raw as { type?: string; event?: { type?: string; message?: { id?: string } } };
+  if (r?.type === "stream_event" && r.event?.type === "message_start") b.streamMsgId = r.event.message?.id ?? "";
+  let stopped = false;
+  for (const n of b.normalize(f.raw)) {
+    if (n.kind === "event") stopped = applyClientEvent(b, n.body, stopped);
+    else if (n.kind === "session") {
+      patchDork(b.app, b.dorkId, b.dork.provider === "codex" ? { codexThreadId: n.sessionId } : { claudeSessionId: n.sessionId, ...(n.model ? { agentModel: n.model } : {}) });
+    } else {
+      b.flush();
+      dispatch(b.app, b.dorkId, { t: "turn_idle" });
+    }
+  }
+}
+
+/** Queues one client event, stamping a `turn_complete`. Returns whether the line's turn was stopped by the user. */
+function applyClientEvent(b: Batch, body: ClientEventBody, stopped: boolean): boolean {
+  // The final answer is the turn's last assistant message with no tool call after it. The server names it on the
+  // turn's turn_complete, so clients never infer it from where a message sits.
+  if (body.type === "assistant_message") b.finalMsgId = body.messageId;
+  if (body.type === "tool_use") b.finalMsgId = "";
+  if (body.type === "turn_complete") {
+    // A turn the user stopped ends as an error result: it is `stopped`, not a failure, and gets no error event.
+    stopped = b.interruptRequested && body.outcome === "failed";
+    const outcome = stopped ? "stopped" : body.outcome;
+    body = { ...body, outcome, ...(outcome === "done" && b.finalMsgId ? { finalMessageId: b.finalMsgId } : {}) };
+    b.finalMsgId = "";
+    b.interruptRequested = false;
+    b.touched = true;
+  }
+  if (stopped && body.type === "error" && body.error?.code === "turn_failed") return stopped;
+  b.pending.push(body);
+  if (body.type === "assistant_message") b.preview = body.text.slice(0, 140);
+  return stopped;
 }
 
 // ---------------------------------------------------------------- PR subscriptions (docs/autonomy.md)
@@ -215,7 +319,7 @@ export function unsubscribePr(app: App, dorkId: string, repo: string, number: nu
 
 // ---------------------------------------------------------------- previews
 // `preview_show` (the bridge's MCP tool): the agent says its dev server is up; the box provider hosts the port and the URL is kept on
-// the dork, where the Previews tab lists it.
+// the dork, where Chat details' Artifacts shows it as a running preview.
 
 /** Ports Boat itself uses in every sandbox (https://docs.boat.dev/hosting): SSH, the desktop stream, its agents. */
 const RESERVED_PORTS = new Set([22, 6080, 8090, 8911]);
@@ -346,7 +450,8 @@ const cleanTitle = (raw: string) => raw.replace(/\s+/g, " ").trim();
 const TOKEN_STATES = ["creating", "waking", "working", "idle"];
 export const mayMintSecrets = (dork: Pick<DorkRow, "state" | "archived">) => !dork.archived && TOKEN_STATES.includes(dork.state);
 
-class OnboardingError extends Error {}
+/** A token the dork needs is not set: the user has onboarding to finish. */
+class OnboardingIncomplete extends Data.TaggedError("OnboardingIncomplete")<{ readonly message: string }> {}
 
 /** `configure` was refused. If the dork was archived while still booting, finish the boot handshake so the box is paused, not left running. */
 function settleRefused(app: App, dorkId: string) {
@@ -356,43 +461,77 @@ function settleRefused(app: App, dorkId: string) {
   });
 }
 
-/** Returns the `configure` frame (Claude token + CLI secrets + GitHub token) straight to the authenticated bridge: never stored. */
-export async function configure(app: App, dorkId: string): Promise<ToBridge | null> {
+/** `configure` could not build the frame: the dork's operation fails with `message` and the bridge gets `null`. */
+const configureFailed = (app: App, dorkId: string, message: string, logged: string) =>
+  Effect.sync(() => {
+    console.error("configure failed", dorkId, logged);
+    app.db.tx(() => opFailed(app, dorkId, message));
+    return null;
+  });
+
+/**
+ * Returns the `configure` frame (Claude token + CLI secrets + GitHub token) straight to the authenticated bridge: never stored.
+ * `null` when the dork may not mint secrets now, or when they cannot be read (that fails the dork's operation).
+ */
+export const configure = Effect.fnUntraced(function* (app: App, dorkId: string): Effect.fn.Return<ToBridge | null, BridgeError> {
   const dork = getDork(app.db, dorkId);
-  if (!dork || dork.deleting) fail("forbidden", "forbidden");
+  if (!dork || dork.deleting) return yield* BridgeError.of("forbidden", "forbidden");
   if (!mayMintSecrets(dork)) {
     console.error("configure refused", dorkId);
     settleRefused(app, dorkId);
     return null;
   }
-  try {
-    const sim = app.cfg.boxProvider === "sim";
-    const claude = dork.provider === "claude" ? await claudeToken(app) : undefined;
-    if (dork.provider === "claude" && !claude) throw new OnboardingError("Claude token not set");
-    const gh = (await githubToken(app)) ?? (sim ? "sim-github-token" : undefined);
-    if (!gh) throw new OnboardingError("GitHub token not set");
-    const secrets = await cliSecrets(app);
-    return {
-      t: "configure",
-      provider: dork.provider,
-      ...(dork.provider === "codex" ? { codexModel: dork.codexModel } : {}),
-      ...(dork.provider === "claude" && dork.model ? { model: dork.model } : {}),
-      ...(dork.provider === "claude" && dork.effort ? { effort: dork.effort } : {}),
-      env: { ...secrets, ...(claude ? { CLAUDE_CODE_OAUTH_TOKEN: claude } : {}) },
-      ghToken: gh,
-      repo: { fullName: dork.repo, branch: dork.branch },
-      resumeSessionId: (dork.provider === "codex" ? dork.codexThreadId : dork.claudeSessionId) ?? null,
-      ...(dork.titleSource === "message" ? nameFrom(app, dorkId) : {}),
-    };
-  } catch (e) {
-    const message = e instanceof OnboardingError ? e.message : "could not configure the sandbox";
-    console.error("configure failed", dorkId, e instanceof OnboardingError ? e.message : "unexpected");
-    app.db.tx(() => opFailed(app, dorkId, message));
-    return null;
-  }
+  return yield* configureFrame(app, dork).pipe(
+    Effect.catchTag("OnboardingIncomplete", (e) => configureFailed(app, dorkId, e.message, e.message)),
+    Effect.catchDefect(() => configureFailed(app, dorkId, "could not configure the sandbox", "unexpected")),
+  );
+});
+
+/** The tokens and variables the agent runs with. Decryption runs here, never inside a transaction; a failure is a defect. */
+const agentSecrets = Effect.fnUntraced(function* (app: App, dork: DorkRow): Effect.fn.Return<{ gh: string; env: Record<string, string>; mcpServers: McpServerConfig[] }, OnboardingIncomplete> {
+  const sim = app.cfg.boxProvider === "sim";
+  const claude = dork.provider === "claude" ? yield* Effect.promise(() => claudeToken(app)) : undefined;
+  if (dork.provider === "claude" && !claude) return yield* new OnboardingIncomplete({ message: "Claude token not set" });
+  const gh = (yield* Effect.promise(() => githubToken(app))) ?? (sim ? "sim-github-token" : undefined);
+  if (!gh) return yield* new OnboardingIncomplete({ message: "GitHub is not connected, or the GitHub CLI is signed out" });
+  const secrets = yield* Effect.promise(() => cliSecrets(app));
+  // Build variables (docs/builds.md) over the shared ones; decrypted only here, for an authenticated bridge allowed to mint secrets.
+  const buildId = dork.buildId && getBuild(app, dork.buildId) ? dork.buildId : undefined;
+  const buildVars = buildId ? yield* Effect.promise(() => buildVarValues(app, buildId)) : {};
+  const mcpServers = yield* Effect.promise(() => mcpServerConfigs(app));
+  return { gh, env: { ...secrets, ...buildVars, ...(claude ? { CLAUDE_CODE_OAUTH_TOKEN: claude } : {}) }, mcpServers };
+});
+
+/** The agent's model and effort: Codex's chosen pair, or Claude's model, effort and fast mode when set. */
+function modelFields(dork: DorkRow) {
+  if (dork.provider === "codex") return { codexModel: dork.codexModel };
+  return { ...(dork.model ? { model: dork.model } : {}), ...(dork.effort ? { effort: dork.effort } : {}), ...(dork.fast ? { fast: true } : {}) };
 }
 
-/** The stored GitHub token, for the bridge's refresh path. Same gating as `configure`. */
+/** The owner's skills (services/skills.ts), by name and digest; the bridge fetches the files it lacks with the `skill` rpc. */
+function skillsField(app: App) {
+  const skills = skillRefs(app);
+  return skills.length ? { skills } : {};
+}
+
+const configureFrame = (app: App, dork: DorkRow): Effect.Effect<ToBridge, OnboardingIncomplete> =>
+  agentSecrets(app, dork).pipe(
+    Effect.map(({ gh, env, mcpServers }) => ({
+      t: "configure" as const,
+      provider: dork.provider,
+      ...modelFields(dork),
+      env,
+      ghToken: gh,
+      ...(mcpServers.length ? { mcpServers } : {}),
+      repo: dork.repo ? { fullName: dork.repo, branch: dork.branch } : null,
+      resumeSessionId: (dork.provider === "codex" ? dork.codexThreadId : dork.claudeSessionId) ?? null,
+      ...(dork.titleSource === "message" ? nameFrom(app, dork.id) : {}),
+      ...(crewRole(app, dork) ? { role: crewRole(app, dork) } : {}),
+      ...skillsField(app),
+    })),
+  );
+
+/** The GitHub CLI's current token, for the bridge's refresh path. Same gating as `configure`. */
 export async function ghToken(app: App, dorkId: string): Promise<{ token: string } | null> {
   const dork = getDork(app.db, dorkId);
   if (!dork || dork.deleting) fail("forbidden", "forbidden");

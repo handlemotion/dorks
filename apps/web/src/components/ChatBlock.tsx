@@ -1,27 +1,24 @@
 import { useId, useMemo, useState, type ReactNode } from 'react'
-import { CircleAlertIcon, CircleCheckIcon, CircleStopIcon, ReplyIcon, TerminalIcon } from 'lucide-react'
+import { BoxIcon, ChevronRightIcon, MessageSquareIcon, UsersIcon, CircleAlertIcon, CircleCheckIcon, CircleStopIcon, PanelRightOpenIcon, ReplyIcon, TerminalIcon, WrenchIcon } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { Button } from '@dorks/ui/button'
 import type { Block } from '@dorks/shared'
 import { Bubble, BubbleContent } from '@dorks/ui/bubble'
-import { Marker, MarkerContent } from '@dorks/ui/marker'
 import { CodeBlock, CodeBlockContent } from '@dorks/ui/code-block'
 import { defaultRehypePlugins, defaultUrlTransform, Markdown, markdownComponents } from '@dorks/ui/markdown'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@dorks/ui/context-menu'
 import { DropdownMenuItem } from '@dorks/ui/dropdown-menu'
-import { MessageActions } from './message-actions/MessageActions'
+import { HoverActions } from './message-actions/MessageActions'
 import { REPLY_SOURCE, ReplyContext, ReplyQuote, SelectionReply, useReply, type ReplyHandlers } from './Reply'
 import { parseReply, quoteText } from '../lib/reply'
 import { ImageLightbox, ImageTrigger, useLightboxImages, type LightboxImage } from './ImageLightbox'
 import { Message, MessageContent } from '@dorks/ui/message'
 import { MessageScrollerItem } from '@dorks/ui/message-scroller'
-import {
-  Trace,
-  TraceCollapsible,
-  TraceCollapsibleContent,
-  TraceCollapsibleTrigger,
-  TraceIcon,
-  TraceLine,
-  TraceTitle,
-} from '@dorks/ui/trace'
+import { splitTurn, toolStep, type WorkBlock } from '../lib/progress'
+import { TOOL_KIND_ICONS } from './toolIcons'
+import { WordShimmer } from './WordShimmer'
+import { LocalRequestCard } from './LocalRequest'
+import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from '@dorks/ui/trace'
 
 type ToolBlock = Extract<Block, { kind: 'tool' }>
 type TurnBlock = Extract<Block, { kind: 'turn' }>
@@ -48,7 +45,7 @@ function transcriptImages(blocks: Block[]): LightboxImage[] {
  * server, so the id becomes that server's image URL before the markdown renders.
  */
 const SHARED_IMAGE = /\(\s*dorks-image:([0-9a-f]{32})/g
-function resolveSharedImages(blocks: Block[], imageUrl?: (id: string) => string): { blocks: Block[]; refs: Map<string, string> } {
+export function resolveSharedImages(blocks: Block[], imageUrl?: (id: string) => string): { blocks: Block[]; refs: Map<string, string> } {
   // Each resolved URL remembers its id, so a reply to that image can name it to the agent again.
   const refs = new Map<string, string>()
   if (!imageUrl) return { blocks, refs }
@@ -91,8 +88,22 @@ function ChatImageView({ src, alt, large }: { src?: string | Blob; alt?: string;
   const index = typeof src === 'string' ? images.findIndex((i) => i.src === src) : -1
   if (index < 0) return typeof src === 'string' ? <img src={src} alt={alt ?? ''} className={`block ${size} rounded-(--control-radius)`} /> : null
   return (
-    <ImageTrigger index={index} className="my-1 inline-block max-w-full cursor-zoom-in rounded-(--control-radius) align-top outline-none focus-visible:outline-2 focus-visible:outline-ring" aria-label={`Open ${alt || 'image'}`}>
-      {({ imageRef, morphRef }) => <img ref={(node) => { imageRef(node); morphRef(node) }} src={src as string} alt={alt ?? ''} className={`block ${size} rounded-(--control-radius) bg-surface object-cover`} />}
+    <ImageTrigger
+      index={index}
+      className="my-1 inline-block max-w-full cursor-zoom-in rounded-(--control-radius) align-top outline-none focus-visible:outline-2 focus-visible:outline-ring"
+      aria-label={`Open ${alt || 'image'}`}
+    >
+      {({ imageRef, morphRef }) => (
+        <img
+          ref={(node) => {
+            imageRef(node)
+            morphRef(node)
+          }}
+          src={src as string}
+          alt={alt ?? ''}
+          className={`block ${size} rounded-(--control-radius) bg-surface object-cover`}
+        />
+      )}
     </ImageTrigger>
   )
 }
@@ -113,9 +124,18 @@ const [sanitize, schema] = defaultRehypePlugins.sanitize as [unknown, { protocol
 const REHYPE = Object.values({
   ...defaultRehypePlugins,
   sanitize: [sanitize, { ...schema, protocols: { ...schema.protocols, src: [...(schema.protocols?.src ?? []), 'data'] } }],
-}) as typeof defaultRehypePlugins[string][]
+}) as (typeof defaultRehypePlugins)[string][]
 
 const allowDataImages: typeof defaultUrlTransform = (url, key, node) => (key === 'src' && url.startsWith('data:image/') ? url : defaultUrlTransform(url, key, node))
+
+/** An agent message's markdown: its images large and openable, inline `data:image/…` screenshots kept. Progress shows messages with it too. */
+export function AgentMarkdown({ children, className }: { children: string; className?: string }) {
+  return (
+    <Markdown components={MARKDOWN} urlTransform={allowDataImages} rehypePlugins={REHYPE} className={className}>
+      {children}
+    </Markdown>
+  )
+}
 
 function entries(blocks: Block[]): Entry[] {
   const result: Entry[] = []
@@ -133,12 +153,12 @@ function entries(blocks: Block[]): Entry[] {
 
 function ToolRow({ block }: { block: ToolBlock }) {
   const command = block.summary
-  const title = block.name === 'Bash'
-    ? `${block.status === 'running' ? 'Running' : block.status === 'error' ? 'Failed to run' : 'Ran'} ${command}`
-    : `${block.name}: ${command}`
+  const title = block.name === 'Bash' ? `${block.status === 'running' ? 'Running' : block.status === 'error' ? 'Failed to run' : 'Ran'} ${command}` : `${block.name}: ${command}`
   const line = (
     <TraceLine status={block.status === 'ok' ? undefined : block.status}>
-      <TraceIcon><TerminalIcon /></TraceIcon>
+      <TraceIcon>
+        <TerminalIcon />
+      </TraceIcon>
       <TraceTitle>{title}</TraceTitle>
     </TraceLine>
   )
@@ -148,10 +168,107 @@ function ToolRow({ block }: { block: ToolBlock }) {
       <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
       <TraceCollapsibleContent>
         <CodeBlock size="sm" variant={block.status === 'error' ? 'destructive' : 'default'}>
-          <CodeBlockContent wrap className="max-h-64">{block.preview}</CodeBlockContent>
+          <CodeBlockContent wrap className="max-h-64">
+            {block.preview}
+          </CodeBlockContent>
         </CodeBlock>
       </TraceCollapsibleContent>
     </TraceCollapsible>
+  )
+}
+
+/** What a tool did, as a verb and a countable noun: "ran" + "command", or a whole phrase when it has no count. */
+function toolAction(name: string): { verb: string; one: string; many: string } {
+  const mcp = /^mcp__[^_]+(?:_[^_]+)*?__(.+)$/.exec(name)
+  switch (name) {
+    case 'Bash':
+      return { verb: 'ran', one: 'a command', many: 'commands' }
+    case 'Read':
+      return { verb: 'read', one: 'a file', many: 'files' }
+    case 'Write':
+      return { verb: 'wrote', one: 'a file', many: 'files' }
+    case 'Edit':
+    case 'MultiEdit':
+    case 'NotebookEdit':
+      return { verb: 'edited', one: 'a file', many: 'files' }
+    case 'Grep':
+    case 'Glob':
+      return { verb: 'searched', one: 'the code', many: 'the code' }
+    case 'WebSearch':
+      return { verb: 'searched', one: 'the web', many: 'the web' }
+    case 'WebFetch':
+      return { verb: 'fetched', one: 'a page', many: 'pages' }
+    case 'Task':
+    case 'Agent':
+      return { verb: 'ran', one: 'an agent', many: 'agents' }
+    case 'TodoWrite':
+      return { verb: 'updated', one: 'the plan', many: 'the plan' }
+    default: {
+      const tool = (mcp?.[1] ?? name).replace(/[_-]+/g, ' ')
+      return { verb: 'used', one: tool, many: tool }
+    }
+  }
+}
+
+/** "Ran 3 commands, read 2 files, edited a file": a run of tool calls in the order each kind first appeared. */
+export function toolGroupTitle(tools: { name: string }[]): string {
+  const counts = new Map<string, { verb: string; one: string; many: string; n: number }>()
+  for (const { name } of tools) {
+    const a = toolAction(name)
+    const key = `${a.verb} ${a.many}`
+    const seen = counts.get(key)
+    if (seen) seen.n++
+    else counts.set(key, { ...a, n: 1 })
+  }
+  const phrases = [...counts.values()].map(({ verb, one, many, n }) => `${verb} ${n === 1 ? one : one === many ? many : `${n} ${many}`}`)
+  const text = phrases.join(', ')
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+/** Two or more tool calls in a row: one summary line that opens onto their rows (single calls stay plain rows). */
+function ToolGroup({ tools }: { tools: ToolBlock[] }) {
+  // Shimmers while a call in it runs; a failed call is red in its own row, not across the whole summary.
+  const status = tools.some((t) => t.status === 'running') ? 'running' : undefined
+  return (
+    <TraceCollapsible data-testid="tool-group">
+      <TraceCollapsibleTrigger>
+        <TraceLine status={status}>
+          <TraceIcon>
+            <WrenchIcon />
+          </TraceIcon>
+          <TraceTitle>{toolGroupTitle(tools)}</TraceTitle>
+        </TraceLine>
+      </TraceCollapsibleTrigger>
+      <TraceCollapsibleContent>
+        <Trace>
+          {tools.map((tool) => (
+            <ToolRow key={tool.id} block={tool} />
+          ))}
+        </Trace>
+      </TraceCollapsibleContent>
+    </TraceCollapsible>
+  )
+}
+
+/**
+ * One of the agent's messages: unbubbled markdown with its hover toolbar once it has finished streaming. Every message can be copied
+ * and replied to; only a final answer is rated.
+ */
+function AgentText({ block }: { block: Extract<AgentBlock, { kind: 'assistant' }> }) {
+  const { onReply } = useReply()
+  // The agent's replies and the user's bubbles are the only text at 14px (`text-message`); the rest of the UI is 13px.
+  const markdown = <AgentMarkdown className="text-message">{block.text}</AgentMarkdown>
+  if (block.streaming) return <div className="min-w-0">{markdown}</div>
+  return (
+    <HoverActions
+      text={block.text}
+      sentAt={block.at ? new Date(block.at) : undefined}
+      timeBelow
+      rate={block.final}
+      onReply={onReply && (() => onReply({ kind: 'text', text: quoteText(block.text.replace(IMAGE, '')) }))}
+    >
+      {markdown}
+    </HoverActions>
   )
 }
 
@@ -160,22 +277,46 @@ function agentContent(blocks: AgentBlock[]): ReactNode[] {
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
     if (block.kind === 'tool') {
-      // Tool calls in a row are one group (one AI Elements Trace); progress text between them is what splits groups.
+      // Tool calls in a row are one group: a lone call is a plain row, two or more fold under one summary line. Progress text splits groups.
       const tools: ToolBlock[] = [block]
       while (blocks[i + 1]?.kind === 'tool') tools.push(blocks[++i] as ToolBlock)
       content.push(
         <Trace key={tools[0].id} data-testid="tool-steps">
-          {tools.map((tool) => <ToolRow key={tool.id} block={tool} />)}
+          {tools.length === 1 ? <ToolRow block={tools[0]} /> : <ToolGroup tools={tools} />}
         </Trace>,
       )
     } else if (block.kind === 'assistant') {
       // Assistant text is unbubbled markdown, as in the AI Elements chat pattern. No streaming caret: the markdown is a block, so it
       // fell on a line of its own, and the status line below already says the agent is working.
+      content.push(<AgentText key={block.id} block={block} />)
+    } else if (block.kind === 'build') {
+      // The agent asked the owner to approve a change to its machine (docs/builds.md). The diff and the decision live on the build's page.
+      const state = block.approved === null ? 'Waiting for you' : block.approved ? 'Approved' : `Rejected${block.reason ? `: ${block.reason}` : ''}`
       content.push(
-        <div key={block.id} className="min-w-0" data-final={block.final ? '' : undefined}>
-          <Markdown components={MARKDOWN} urlTransform={allowDataImages} rehypePlugins={REHYPE}>{block.text}</Markdown>
-        </div>,
+        <Trace key={block.id} role="status" data-testid="build-draft">
+          <TraceLine>
+            <TraceIcon>
+              <BoxIcon />
+            </TraceIcon>
+            <TraceTitle>
+              Proposed a change to the machine {block.buildName}. {state}.
+            </TraceTitle>
+          </TraceLine>
+          {block.note && <p className="pl-6 text-sm text-muted-foreground">{block.note}</p>}
+          {block.buildId && block.approved === null && (
+            <div className="pt-2 pl-6">
+              <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/builds" search={{ build: block.buildId }} />}>
+                Review the change
+              </Button>
+            </div>
+          )}
+        </Trace>,
       )
+    } else if (block.kind === 'local') {
+      // The agent asked to use the owner's computer (docs/local-access.md): what would run, its reason and the owner's answer.
+      content.push(<LocalRequestCard key={block.id} block={block} />)
+    } else if (block.kind === 'crew') {
+      content.push(<CrewCard key={block.id} block={block} />)
     } else if (block.kind === 'notice') {
       content.push(
         <Trace key={block.id} role={block.level === 'error' ? 'alert' : 'status'}>
@@ -202,9 +343,6 @@ function turns(blocks: AgentBlock[]): { blocks: AgentBlock[]; end?: TurnBlock }[
   return out.filter((t) => t.blocks.length > 0 || t.end?.outcome === 'stopped')
 }
 
-/** Progress messages and tool calls are work; the final answer (named by the server) and notices stay in view. */
-const isWork = (b: AgentBlock) => b.kind === 'tool' || (b.kind === 'assistant' && !b.final)
-
 /** "12s", "2m 14s", "1h 3m": how long a turn worked. */
 export function workedFor(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000))
@@ -215,80 +353,107 @@ export function workedFor(ms: number): string {
 }
 
 /**
- * A turn's work as one flat sequence: progress text, then the tool calls that followed it as one group, and so on, plus notices.
- * Nothing nests inside a parent step, and nothing divides the steps: spacing does. The turn's checkpoint above is its only line.
+ * A turn's work as one flat sequence, dimmed: progress text, then the tool calls that followed it as one group, and so on. Only where
+ * Chat details cannot sit beside the chat (narrow windows); there the turn's card opens it in place.
  */
-function WorkHistory({ blocks, dimmed, id }: { blocks: AgentBlock[]; dimmed?: boolean; id?: string }) {
+function WorkHistory({ blocks, id }: { blocks: AgentBlock[]; id?: string }) {
   return (
-    <div id={id} data-testid="work-history" data-dimmed={dimmed ? '' : undefined} className={`flex flex-col gap-3 ${dimmed ? 'text-muted-foreground' : ''}`}>
+    <div id={id} data-testid="work-history" className="flex flex-col gap-3 text-muted-foreground">
       {agentContent(blocks)}
     </div>
   )
 }
 
+/** The newest step of a running turn, as the card's second line: "Running pnpm test". */
+function latestStep(work: WorkBlock[]): string {
+  const last = work.at(-1)
+  if (!last) return 'Starting'
+  if (last.kind === 'assistant')
+    return (
+      last.text
+        .replace(IMAGE, '')
+        .split('\n')
+        .find((line) => line.trim()) ?? 'Thinking'
+    )
+  return `${toolStep(last.name, last.status).verb} ${last.summary}`
+}
+
 /**
- * The AI Elements Checkpoint's separator marker (`@dorks/ui/marker`): a line with a label in it, and the turn's only divider. The bar
- * itself is the toggle once the turn has ended (a real button, so it takes focus and Enter/Space); while the turn runs it only marks
- * where the work starts and cannot be collapsed.
+ * A turn's overview, as one row: the kinds of tools it used, how long it worked and its step count ("Worked for 2m 14s · 8
+ * steps"); while it runs, "Working" and its newest step. The work itself lives in Chat details' Progress; the row opens it there on
+ * this turn (`onOpen`), or, without Chat details beside the chat, unfolds it below.
  */
-function TurnCheckpoint({ label, open, onToggle, controls }: { label: string; open: boolean; onToggle?: () => void; controls: string }) {
-  if (!onToggle) return (
-    <Marker variant="separator" data-testid="turn-checkpoint">
-      <MarkerContent>{label}</MarkerContent>
-    </Marker>
-  )
+function TurnCard({ work, end, onOpen }: { work: WorkBlock[]; end?: TurnBlock; onOpen?: () => void }) {
+  const [open, setOpen] = useState(false)
+  const historyId = useId()
+  const tools = work.filter((b): b is ToolBlock => b.kind === 'tool')
+  const kinds = [...new Set(tools.map((t) => toolStep(t.name, t.status).kind))].slice(0, 4)
+  const running = !end
+  const title = running
+    ? 'Working'
+    : end.outcome === 'stopped'
+      ? `Stopped after ${workedFor(end.durationMs)}`
+      : end.outcome === 'failed'
+        ? `Failed after ${workedFor(end.durationMs)}`
+        : `Worked for ${workedFor(end.durationMs)}`
+  const detail = running ? latestStep(work) : `${work.length} ${work.length === 1 ? 'step' : 'steps'}`
+  const inline = !onOpen
   return (
-    <Marker
-      variant="separator"
-      data-testid="turn-checkpoint"
-      render={<button type="button" />}
-      aria-expanded={open}
-      aria-controls={controls}
-      onClick={onToggle}
-      className="cursor-pointer select-none rounded-[var(--control-radius)] outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <MarkerContent>{label}</MarkerContent>
-    </Marker>
+    <>
+      <button
+        type="button"
+        data-testid="turn-card"
+        aria-expanded={inline ? open : undefined}
+        aria-controls={inline ? historyId : undefined}
+        aria-label={inline ? undefined : `${title}, ${detail}. Show progress`}
+        title={tools.length > 0 ? toolGroupTitle(tools) : undefined}
+        onClick={() => (onOpen ? onOpen() : setOpen(!open))}
+        className="group/turn -mx-1 flex h-7 w-fit max-w-full min-w-0 items-center gap-2 rounded-(--control-radius) px-1 text-left text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {/* A chevron only where the row unfolds in place; where it opens Progress, a panel icon says so on hover instead. */}
+        {inline && <ChevronRightIcon aria-hidden className={`size-3.5 shrink-0 ${open ? 'rotate-90' : ''}`} />}
+        {kinds.length > 0 && (
+          <span aria-hidden className="flex shrink-0 -space-x-1">
+            {kinds.map((kind) => {
+              const Icon = TOOL_KIND_ICONS[kind]
+              return (
+                <span key={kind} className="grid size-5 place-items-center rounded-full bg-app ring-2 ring-background">
+                  <Icon className="size-3" />
+                </span>
+              )
+            })}
+          </span>
+        )}
+        <span className="shrink-0">{running ? <WordShimmer>{title}</WordShimmer> : title}</span>
+        <span aria-hidden>·</span>
+        <span className="min-w-0 truncate tabular-nums">{detail}</span>
+        {!inline && <PanelRightOpenIcon aria-hidden className="size-3.5 shrink-0 opacity-0 transition-opacity group-hover/turn:opacity-100 group-focus-visible/turn:opacity-100" />}
+      </button>
+      {inline && open && <WorkHistory id={historyId} blocks={work} />}
+    </>
   )
 }
 
 /**
- * One turn. While it runs: a "Working" checkpoint, then its work live as it happens, always open. Once it ends with a final answer
- * the work folds behind the same checkpoint, now "Worked for 2m 14s" (click the bar to open it, shown dimmed), then the final answer
- * and any notices. A turn that was stopped or failed, or ended without a final answer, opens its history so what happened is in
- * view. The user's toggle wins.
+ * One turn, kept light: what the agent said first, the card that sums up its work, then its answer and anything else it posted (notices, a machine draft). The
+ * tool calls, edits and progress text are in Progress.
  */
-function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock }) {
-  const [userOpen, setUserOpen] = useState<boolean>()
-  const { onReply } = useReply()
-  const historyId = useId()
-  // Turns stored before the server named final answers render as they always did.
-  if (end && end.outcome === null) return <>{agentContent(blocks)}</>
-  if (!end) return (
-    <>
-      <TurnCheckpoint label="Working" open controls={historyId} />
-      <WorkHistory id={historyId} blocks={blocks} />
-    </>
-  )
-  const work = blocks.filter(isWork)
-  const open = userOpen ?? (end.outcome !== 'done' || !end.finalId)
-  const final = blocks.find((b): b is Extract<AgentBlock, { kind: 'assistant' }> => b.kind === 'assistant' && b.id === end.finalId)
+function TurnContent({ blocks, end, running, onOpenStep }: { blocks: AgentBlock[]; end?: TurnBlock; running?: boolean; onOpenStep?: (key: string) => void }) {
+  const { work, answer, opening } = splitTurn(blocks, !!end, running)
+  const rest = blocks.filter((b) => b.kind !== 'tool' && b.kind !== 'assistant')
+  const first = work[0]
   return (
     <>
-      {work.length > 0 && (
-        <>
-          <TurnCheckpoint label={`Worked for ${workedFor(end.durationMs)}`} open={open} onToggle={() => setUserOpen(!open)} controls={historyId} />
-          {open && <WorkHistory id={historyId} blocks={work} dimmed />}
-        </>
-      )}
-      {agentContent(blocks.filter((b) => !isWork(b)))}
-      {/* The final answer's actions: rate, copy, react, reply, 16px under the text (the transcript's 12px gap plus `mt-1`). The buttons' edge sits on the
-          text's edge: the message item paints with `content-visibility: auto`, which clips anything pulled outside it. */}
-      {final && <div className="mt-1"><MessageActions text={final.text} sentAt={new Date(end.at)} onReply={onReply && (() => onReply({ kind: 'text', text: quoteText(final.text.replace(IMAGE, '')) }))} /></div>}
-      {end.outcome === 'stopped' && (
+      {opening && <AgentText block={opening} />}
+      {first && <TurnCard work={work} end={end} onOpen={onOpenStep && (() => onOpenStep(first.id))} />}
+      {answer && <AgentText block={answer} />}
+      {agentContent(rest)}
+      {end?.outcome === 'stopped' && (
         <Trace role="status" data-testid="turn-stopped">
           <TraceLine>
-            <TraceIcon><CircleStopIcon /></TraceIcon>
+            <TraceIcon>
+              <CircleStopIcon />
+            </TraceIcon>
             <TraceTitle>Stopped</TraceTitle>
           </TraceLine>
         </Trace>
@@ -301,7 +466,14 @@ function TurnContent({ blocks, end }: { blocks: AgentBlock[]; end?: TurnBlock })
  * The transcript. With `onReply` the agent's words can be replied to: select a passage (a small box on it starts the answer), right
  * click an image or use a final answer's Reply. Each becomes a banner in the composer (a selection's box can also send with ⌘ Enter). A sent reply shows its quote above the bubble.
  */
-export function ChatMessages({ blocks: raw, imageUrl, onReply, onReplySend, agent }: {
+export function ChatMessages({
+  blocks: raw,
+  imageUrl,
+  onReply,
+  onReplySend,
+  agent,
+  onOpenStep,
+}: {
   blocks: Block[]
   /** Resolves a shared screenshot's id to its URL. */
   imageUrl?: (id: string) => string
@@ -309,31 +481,41 @@ export function ChatMessages({ blocks: raw, imageUrl, onReply, onReplySend, agen
   onReplySend?: ReplyHandlers['onSend']
   /** The agent's name, for "Reply to Claude". */
   agent?: string
+  /** Opens a turn's work in Chat details' Progress, at its first step. Without it a turn's card unfolds its work in place. */
+  onOpenStep?: (key: string) => void
 }) {
   const { blocks, refs } = resolveSharedImages(raw, imageUrl)
   const images = transcriptImages(blocks)
   const reply = useMemo<ReplyHandlers>(() => ({ onReply, onSend: onReplySend, agent, refOf: (src) => refs.get(src) }), [onReply, onReplySend, agent, refs])
-  const messages = entries(blocks).map((entry) => {
+  const all = entries(blocks)
+  const messages = all.map((entry, n) => {
     if (entry.kind === 'user') {
       const { reply: quoted, body } = parseReply(entry.block.text)
       const text = body.replace(IMAGE, '').trim()
       const own = images.filter((i) => i.id.startsWith(`${entry.block.id}:`))
       return (
         // A user message gets 12px more air on each side than the transcript's 24px gap, so turns read apart from the agent's work.
-        <MessageScrollerItem key={entry.block.id} messageId={entry.block.id} scrollAnchor className="py-3">
+        // `pt-10 -mt-7` is that 12px on top plus 28px of paint room for the hover toolbar above the bubble, which the item would
+        // otherwise clip.
+        <MessageScrollerItem key={entry.block.id} messageId={entry.block.id} scrollAnchor className="-mt-7 pt-10 pb-3">
           <Message align="end">
             <MessageContent className="items-end">
               {quoted && <ReplyQuote reply={quoted.kind === 'image' && quoted.ref ? { ...quoted, src: resolveRef(quoted.ref, imageUrl) } : quoted} />}
               {own.length > 0 && (
                 <div className="flex flex-wrap justify-end gap-2">
-                  {own.map((image) => <ChatImage key={image.id} src={image.src} alt={image.alt} />)}
+                  {own.map((image) => (
+                    <ChatImage key={image.id} src={image.src} alt={image.alt} />
+                  ))}
                 </div>
               )}
               {text && (
-                <Bubble align="end">
-                  {/* The composer's grey in light, white in dark (see packages/ui/README.md). `!` beats the bubble variant background. */}
-                  <BubbleContent className="rounded-[10px]! px-3! py-2! bg-user-bubble! text-user-bubble-foreground!">{text}</BubbleContent>
-                </Bubble>
+                <HoverActions className="flex w-fit max-w-[80%] flex-col items-end self-end" timeClassName="top-2" text={text} sentAt={entry.block.at ? new Date(entry.block.at) : undefined}>
+                  {/* The wrapper takes the bubble's 80% cap, so it hugs the bubble and the time sits just left of it. */}
+                  <Bubble align="end" className="max-w-full">
+                    {/* The composer's grey in light, white in dark (see packages/ui/README.md). `!` beats the bubble variant background. */}
+                    <BubbleContent className="rounded-[10px]! px-3! py-2! bg-user-bubble! text-(length:--text-message)! text-user-bubble-foreground!">{text}</BubbleContent>
+                  </Bubble>
+                </HoverActions>
               )}
             </MessageContent>
           </Message>
@@ -341,10 +523,15 @@ export function ChatMessages({ blocks: raw, imageUrl, onReply, onReplySend, agen
       )
     }
     return (
-      <MessageScrollerItem key={entry.id} messageId={entry.id}>
+      // `-mt-7 pt-7 -ml-10 pl-10`: paint room for a first message's hover toolbar and for the times in the left gutter, without
+      // moving the layout.
+      <MessageScrollerItem key={entry.id} messageId={entry.id} className="-mt-7 -ml-10 pt-7 pl-10">
         <Message {...{ [REPLY_SOURCE]: '' }}>
           <MessageContent className="gap-3">
-            {turns(entry.blocks).map((turn, i) => <TurnContent key={`${entry.id}:${i}`} blocks={turn.blocks} end={turn.end} />)}
+            {turns(entry.blocks).map((turn, i, list) => (
+              // Only the chat's last turn can still be running.
+              <TurnContent key={`${entry.id}:${i}`} blocks={turn.blocks} end={turn.end} running={n === all.length - 1 && i === list.length - 1} onOpenStep={onOpenStep} />
+            ))}
           </MessageContent>
         </Message>
       </MessageScrollerItem>
@@ -352,7 +539,13 @@ export function ChatMessages({ blocks: raw, imageUrl, onReply, onReplySend, agen
   })
   return (
     <ReplyContext.Provider value={reply}>
-      {images.length > 0 ? <ImageLightbox images={images} label="Images in this chat">{messages}</ImageLightbox> : messages}
+      {images.length > 0 ? (
+        <ImageLightbox images={images} label="Images in this chat">
+          {messages}
+        </ImageLightbox>
+      ) : (
+        messages
+      )}
       <SelectionReply />
     </ReplyContext.Provider>
   )
@@ -362,4 +555,34 @@ export function ChatMessages({ blocks: raw, imageUrl, onReply, onReplySend, agen
 function resolveRef(ref: string, imageUrl?: (id: string) => string) {
   const id = /^dorks-image:([0-9a-f]{32})$/.exec(ref)?.[1]
   return id && imageUrl ? imageUrl(id) : ref
+}
+
+/**
+ * A crew report or note (docs/crew.md): one line that names the other session, the whole text folded under it. A worker's report is
+ * its final answer, so it can run long; the dork's own answer after it says what it means for the goal.
+ */
+function CrewCard({ block }: { block: Extract<Block, { kind: 'crew' }> }) {
+  const peer = block.peer.title
+  const title = block.note ? (block.direction === 'in' ? `Note from ${peer}` : `Note to ${peer}`) : block.direction === 'in' ? `Report from ${peer}` : `Reported to ${peer}`
+  return (
+    <Trace data-crew={block.note ? 'note' : 'report'}>
+      <TraceCollapsible>
+        <TraceCollapsibleTrigger>
+          <TraceLine>
+            <TraceIcon>{block.note ? <MessageSquareIcon /> : <UsersIcon />}</TraceIcon>
+            <TraceTitle>{title}</TraceTitle>
+          </TraceLine>
+        </TraceCollapsibleTrigger>
+        <TraceCollapsibleContent>
+          <p className="pl-6 text-sm whitespace-pre-wrap text-muted-foreground">{block.text}</p>
+          {/* The way to a worker on any width: below lg a dork's details (and their Sessions) are hidden. */}
+          <div className="pt-2 pl-6">
+            <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/dorks" search={{ dork: block.peer.id }} />}>
+              Open session
+            </Button>
+          </div>
+        </TraceCollapsibleContent>
+      </TraceCollapsible>
+    </Trace>
+  )
 }

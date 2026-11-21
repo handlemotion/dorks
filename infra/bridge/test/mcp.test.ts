@@ -1,9 +1,12 @@
 import { spawn } from "node:child_process";
 import { symlinkSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { join } from "node:path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { claudeMcpConfig } from "../src/hooks";
+import { afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
+import { claudeMcpConfig, userMcpServers } from "../src/hooks";
 import { McpServer } from "../src/mcp";
+import { McpOAuthProxy } from "../src/mcp-proxy";
 import { RpcError } from "../src/rpc";
 import { builtCli, closeBridges, fakeBridge, fakeView, tmp } from "./helpers";
 
@@ -37,9 +40,23 @@ describe("MCP protocol", () => {
     expect(((await server().handle(JSON.stringify({ id: 1 }))) as any).error.code).toBe(-32600);
   });
 
-  it("lists the PR and preview tools with object schemas and hints, without leaking the handlers", async () => {
+  it("lists the PR, preview and machine tools with object schemas and hints, without leaking the handlers", async () => {
     const { tools } = (await rpc(server(), "tools/list")).result;
-    expect(tools.map((t: any) => t.name)).toEqual(["pr_subscribe", "pr_unsubscribe", "pr_list", "preview_show", "screenshot_share"]);
+    expect(tools.map((t: any) => t.name)).toEqual([
+      "pr_subscribe",
+      "pr_unsubscribe",
+      "pr_list",
+      "preview_show",
+      "screenshot_share",
+      "local_run",
+      "local_read",
+      "local_wait",
+      "machine_get",
+      "machine_draft",
+      "machine_run",
+      "machine_logs",
+      "machine_submit",
+    ]);
     for (const t of tools) {
       expect(t.inputSchema.type).toBe("object");
       expect(t.inputSchema.additionalProperties).toBe(false);
@@ -94,7 +111,14 @@ describe("MCP tools", () => {
   it("bad arguments are tool errors the agent can read, and never reach the bridge", async () => {
     const b = await fakeBridge();
     const s = new McpServer(b.env);
-    for (const [tool, args] of [["pr_subscribe", {}], ["pr_subscribe", { pr: 12 }], ["pr_subscribe", { pr: "acme/demo" }], ["pr_unsubscribe", { pr: "https://example.com/a/b/pull/1" }], ["pr_list", { pr: "nope" }], ["pr_subscribe", null]] as const) {
+    for (const [tool, args] of [
+      ["pr_subscribe", {}],
+      ["pr_subscribe", { pr: 12 }],
+      ["pr_subscribe", { pr: "acme/demo" }],
+      ["pr_unsubscribe", { pr: "https://example.com/a/b/pull/1" }],
+      ["pr_list", { pr: "nope" }],
+      ["pr_subscribe", null],
+    ] as const) {
       const r = await call(s, tool, args);
       expect(r.result.isError, `${tool} ${JSON.stringify(args)}`).toBe(true);
       expect(text(r)).toMatch(/`pr` must be/);
@@ -106,13 +130,41 @@ describe("MCP tools", () => {
   });
 
   it("backend and bridge problems come back as tool errors with the bridge's own message", async () => {
-    const b = await fakeBridge({ "pr.sub": () => { throw new RpcError("unavailable", "the backend did not answer in time"); } });
+    const b = await fakeBridge({
+      "pr.sub": () => {
+        throw new RpcError("unavailable", "the backend did not answer in time");
+      },
+    });
     const r = await call(new McpServer(b.env), "pr_subscribe", { pr: "acme/demo#1" });
     expect(r.result.isError).toBe(true);
     expect(text(r)).toBe("the backend did not answer in time");
     const gone = await call(new McpServer({ DORKS_SOCK: join(tmp("gone-"), "cred.sock") }), "pr_list", {});
     expect(text(gone)).toBe("cannot reach the dorks bridge in this box");
     expect(text(await call(new McpServer({}), "pr_list", {}))).toContain("DORKS_SOCK is not set");
+  });
+});
+
+describe("machine tools", () => {
+  it("forward to the bridge's build method as one action each, and a refusal comes back as a tool error", async () => {
+    const run = { id: "r1", kind: "trial", status: "succeeded", step: null, error: null, exitCode: 0, startedBy: "dork:d", createdAt: 1, finishedAt: 2 };
+    const actions: string[] = [];
+    const b = await fakeBridge({
+      build: (p: any) => {
+        actions.push(p.action);
+        if (p.action === "run") return run;
+        if (p.action === "logs") return { run, log: "== done" };
+        if (p.action === "submit") throw new RpcError("failed", "There is no draft to submit. Write one with machine_draft first.");
+        return { build: null, draft: null };
+      },
+    });
+    const s = new McpServer(b.env);
+    expect(text(await call(s, "machine_run", {}))).toContain("Started a trial run (r1)");
+    expect(text(await call(s, "machine_logs", { tail: 5 }))).toContain("trial run r1: succeeded\n\n== done");
+    expect(text(await call(s, "machine_get", {}))).toContain("base machine");
+    const refused = await call(s, "machine_submit", { note: "adds jq" });
+    expect(refused.result.isError).toBe(true);
+    expect(text(refused)).toContain("no draft to submit");
+    expect(actions).toEqual(["run", "logs", "get", "submit"]);
   });
 });
 
@@ -141,12 +193,85 @@ describe("the built `dorks mcp` over stdio", () => {
     child.stdin.end();
 
     expect(await exited).toBe(0);
-    const replies = out.trim().split("\n").map((l) => JSON.parse(l));
+    const replies = out
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
     expect(replies.map((r) => r.id)).toEqual([1, 2, 3, 4]); // the notification got no reply, the rest are in order
     expect(replies[0].result.protocolVersion).toBe("2025-06-18");
-    expect(replies[1].result.tools).toHaveLength(5);
+    expect(replies[1].result.tools).toHaveLength(13);
     expect(replies[2].result.content[0].text).toContain("Subscribed to acme/demo#4");
     expect(replies[3].result.content[0].text).toContain("acme/demo#4");
     expect(b.calls[0]).toEqual({ method: "pr.sub", params: { repo: "acme/demo", number: 4, source: "agent" } });
+  });
+});
+
+describe("the owner's MCP servers", () => {
+  it("go in the config as ${…} references only: every value, the URL too, stays in the agent's environment, and `dorks` cannot be replaced", () => {
+    const { config, env } = userMcpServers([
+      { name: "composio", transport: "http", url: "https://mcp.composio.dev/s/key-in-url", headers: { "x-api-key": "ck-1" } },
+      { name: "fs", transport: "stdio", command: "npx", args: ["-y", "fs-mcp"], env: { TOKEN: "t-2" } },
+      { name: "dorks", transport: "stdio", command: "evil", args: [], env: {} },
+    ]);
+    const file = JSON.stringify(claudeMcpConfig(["/node", "/cli"], "/sock", config));
+    for (const secret of ["key-in-url", "ck-1", "t-2"]) expect(file).not.toContain(secret);
+    expect(config.composio).toEqual({ type: "http", url: "${DORKS_MCP_0_URL}", headers: { "x-api-key": "${DORKS_MCP_0_H0}" } });
+    expect(config.fs).toEqual({ type: "stdio", command: "npx", args: ["-y", "fs-mcp"], env: { TOKEN: "${DORKS_MCP_1_E0}" } });
+    expect(env).toEqual({ DORKS_MCP_0_URL: "https://mcp.composio.dev/s/key-in-url", DORKS_MCP_0_H0: "ck-1", DORKS_MCP_1_E0: "t-2" });
+    expect(JSON.parse(file).mcpServers.dorks.command).toBe("/node");
+  });
+});
+
+describe("OAuth MCP proxy", () => {
+  it("adds a current token, retries a 401 once with a refreshed one, streams the answer, and serves only its secret path", async () => {
+    const seen: { auth?: string; session?: string; key?: string }[] = [];
+    const upstream = createServer((req, res) => {
+      seen.push({ auth: req.headers.authorization, session: req.headers["mcp-session-id"] as string, key: req.headers["x-key"] as string });
+      if (req.headers.authorization !== "Bearer new") return void res.writeHead(401).end();
+      res.writeHead(200, { "content-type": "text/event-stream", "mcp-session-id": "s-1" });
+      res.write('data: {"jsonrpc":"2.0","id":1,"result":{}}\n\n');
+      setTimeout(() => res.end(), 20);
+    });
+    await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", r));
+    const port = (upstream.address() as AddressInfo).port;
+    const asked: (string | undefined)[] = [];
+    const redacted: string[] = [];
+    const proxy = new McpOAuthProxy(
+      async (_name, stale) => {
+        asked.push(stale);
+        return { authorization: stale ? "Bearer new" : "Bearer old", expiresAt: null };
+      },
+      () => {},
+      (v) => redacted.push(v),
+    );
+    await proxy.start();
+    try {
+      proxy.set(new Map([["omni", { url: `http://127.0.0.1:${port}/mcp`, headers: { "x-key": "k" } }]]));
+      const res = await fetch(proxy.urlFor("omni"), { method: "POST", headers: { "mcp-session-id": "s-1", authorization: "Bearer agent-made-up" }, body: "{}" });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("mcp-session-id")).toBe("s-1");
+      expect(await res.text()).toContain('"result":{}');
+      expect(seen).toEqual([
+        { auth: "Bearer old", session: "s-1", key: "k" },
+        { auth: "Bearer new", session: "s-1", key: "k" },
+      ]);
+      expect(asked).toEqual([undefined, "old"]);
+      expect(redacted).toEqual(["old", "new"]);
+      await fetch(proxy.urlFor("omni"), { method: "POST", body: "{}" }).then((r) => r.text());
+      expect(asked).toHaveLength(2); // cached until it is refused or expires
+      expect((await fetch(proxy.urlFor("omni").replace(/\/[0-9a-f]{32}\//, "/guess/"), { method: "POST", body: "{}" })).status).toBe(404);
+      expect((await fetch(proxy.urlFor("omni").replace(/\/[0-9a-f]{32}\/omni/, "/x/%ZZ"), { method: "POST", body: "{}" })).status).toBe(404); // no crash
+      proxy.set(new Map());
+      expect((await fetch(proxy.urlFor("omni"), { method: "POST", body: "{}" })).status).toBe(404);
+    } finally {
+      proxy.close();
+      upstream.close();
+    }
+  });
+
+  it("an OAuth server reaches the agent's config only as a reference to the proxy", () => {
+    const { config, env } = userMcpServers([{ name: "omni", transport: "http", url: "https://omni.example/mcp", headers: { "x-key": "k" }, oauth: true }], () => "http://127.0.0.1:1/secret/omni");
+    expect(config.omni).toEqual({ type: "http", url: "${DORKS_MCP_0_URL}" });
+    expect(env).toEqual({ DORKS_MCP_0_URL: "http://127.0.0.1:1/secret/omni" });
   });
 });

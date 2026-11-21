@@ -12,7 +12,7 @@ Boat's `default` machine is 4 vCPU and 8 GB RAM at $0.036/hour, billed per secon
 2. **Public URL.** Sandboxes reach your server through a tunnel to the bridge port. Set the tunnel's `https://` URL in Settings or as `DORKS_PUBLIC_URL`. See [architecture](architecture.md). A dork cannot be created before this is set, and the URL must stay stable, because a sandbox keeps the one it was created with.
 3. **Base snapshot**: built for you in the background as soon as the Boat key is saved (below).
 4. **Agent sign-in**: a Claude token (the default and the recommended agent); a ChatGPT (Codex) environment is optional (below).
-5. **GitHub token** ([GitHub](github.md)).
+5. **GitHub**: your GitHub CLI login ([GitHub](github.md)).
 
 ## Build the base snapshot ("Prepare Boat")
 
@@ -45,6 +45,14 @@ Wait until the snapshot reports `ready`, and check that the build sandbox holds 
 
 **Share codes.** Boat can [share a saved snapshot](https://docs.boat.dev/snapshots/templates#share-a-saved-snapshot-with-another-account) with another account through a `bsh_` code, and `baseSnapshotId` accepts one. Dorks does not ship one: your agent tokens and every sandbox you create would run inside an image someone else built, so build your own.
 
+## Builds
+
+A [build](builds.md) is a named machine setup on top of the base snapshot: its own saved snapshot (`dorks-b-<install>-<build>`), made by
+running the build's setup script in a sandbox created `from` the base, at the build's size (`small`, `default`, `large`, `xlarge`). Each
+build adds one saved snapshot to the account (the same pricing as the base snapshot above) plus the minutes its runs take. Dorks on a
+build start from its image at its size. Building needs no new key action: runs use `sandbox.create`, `exec`, `file.write`, `snapshot.write`
+and `sandbox.delete`, like the base snapshot.
+
 ## Signing in an agent
 
 **Claude.** Run `claude setup-token`, paste the value in Settings (`claudeToken`). The server stores it encrypted and returns it only to a dork's authenticated bridge socket, which hands it to the Claude process as `CLAUDE_CODE_OAUTH_TOKEN` without writing it to disk. Claude sandboxes are created with `noEnv: true`, so Boat injects nothing.
@@ -68,17 +76,17 @@ Every Boat sandbox, ours included, has a Linux desktop with Chrome, Boat's `comp
 
 ## Lifecycle
 
-- **Create** uses the snapshot with `from`, a per-installation label (a hash of this install's id and the dork id, so two Dorks installs on one Boat account never adopt each other's sandboxes), the bridge variables and `ttlSeconds: null`. A generation-scoped idempotency key protects retries, and an existing labeled sandbox is reused before another is made. The driver checks the sandbox has `flock` and `dorks-bridge`, then starts the bridge detached under `flock -n /tmp/dorks-bridge.lock`.
-- **Pause** is Boat `stop`; the driver waits for `archived` so the disk is saved before the dork is marked asleep. **Resume** waits for `ready`, then starts the bridge again.
+- **Create** uses the snapshot with `from` (the dork's build image, else the base snapshot; and the build's `type`), a per-installation label (a hash of this install's id and the dork id, so two Dorks installs on one Boat account never adopt each other's sandboxes), the bridge variables and `ttlSeconds: null`. A generation-scoped idempotency key protects retries, and an existing labeled sandbox is reused before another is made. The driver checks the sandbox has `flock` and `dorks-bridge`, then starts the bridge detached under `flock -n /tmp/dorks-bridge.lock`.
+- **Pause** is Boat `stop`; the driver waits for `archived` so the disk is saved before the dork is marked asleep. **Resume** waits for `ready`, then starts the bridge again. A resume whose bridge has not dialed in when the watchdog fires (the box is stuck, or was made for an older public URL, tunnel ticket or bridge) is not tried again: the dork deletes that box and starts a fresh one from the snapshot, once, and the waiting message goes there. Unpushed work and the agent's session on the old box are lost; a fresh box that also times out ends in `error` as usual.
 - **Delete** sends `X-Ascii-Confirm-Delete` with the exact sandbox id. A sandbox that no longer exists (deleted in Boat, or its stopped disk expired) is reported as not found, and the dork recreates it on your next message. Unpushed work and on-disk Claude session state are lost.
 - **Hosted ports**: see below.
 - Boat API errors are logged by operation and HTTP status only, never by response body.
 
 ## Hosted ports
 
-When its dev server is up, the agent calls the `preview_show` MCP tool with the port (`infra/bridge/src/mcp.ts`). The bridge forwards it as `show_preview`, and the driver calls `POST /sandboxes/{id}/host` with `{port, public: true, title?, localhost?}`. Boat answers `https://<sandbox subdomain>-<port>.on.boat.dev`, the same URL on every call. The server stores it on the dork, and the Previews tab in Chat details shows the page. See [hosting](https://docs.boat.dev/hosting).
+When its dev server is up, the agent calls the `preview_show` MCP tool with the port (`infra/bridge/src/mcp.ts`). The bridge forwards it as `show_preview`, and the driver calls `POST /sandboxes/{id}/host` with `{port, public: true, title?, localhost?}`. Boat answers `https://<sandbox subdomain>-<port>.on.boat.dev`, the same URL on every call. The server stores it on the dork, and Chat details' Artifacts shows the page as a running preview. See [hosting](https://docs.boat.dev/hosting).
 
-- **Why public.** A protected URL carries a `_token` and then sets a `_port_auth` cookie. Inside the Previews tab's iframe that cookie is third-party, and the desktop shell's WebKit blocks it, so the frame would stay blank. A proxy through the server is not used either: it would have to rewrite every root-relative asset and HMR socket of an unknown dev server. So while the port is hosted, anyone who knows the sandbox's subdomain and the port can open the page. The tool's description tells the agent not to show servers that expose secrets. The driver drops any query or fragment from Boat's answer, so a token is never stored.
+- **Why public.** A protected URL carries a `_token` and then sets a `_port_auth` cookie. Inside a running preview's iframe that cookie is third-party, and the desktop shell's WebKit blocks it, so the frame would stay blank. A proxy through the server is not used either: it would have to rewrite every root-relative asset and HMR socket of an unknown dev server. So while the port is hosted, anyone who knows the sandbox's subdomain and the port can open the page. The tool's description tells the agent not to show servers that expose secrets. The driver drops any query or fragment from Boat's answer, so a token is never stored.
 - `localhost: true` makes Boat relay a server that listens only on `127.0.0.1` or `::1`. Do not use it for a server on `0.0.0.0`, because the relay then holds the port. Vite also needs `server.allowedHosts` to accept `.on.boat.dev`.
 - Boat uses ports 22, 6080, 8090, 8911 and 47984 to 48010 itself. The server refuses them.
 - The URL survives a pause and resume, but the dev server does not: the agent starts it again and can call the tool again. A recreated box gets a new subdomain, so the stored previews are cleared with the old box id.

@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { mcpServerConfig } from "./mcp";
+import { skillRef } from "./skills";
 import { notifyKind, prRef } from "./autonomy";
 
 /**
@@ -6,8 +8,7 @@ import { notifyKind, prRef } from "./autonomy";
  * only releases it at a turn boundary (never mid-turn) and never ahead of a pending user message. `text` is already wrapped in the
  * `<dorks-event>` envelope; the bridge writes it to stdin verbatim. `kinds`/`prs` are metadata for the bridge's hooks and logs.
  */
-const notifyFrame = () =>
-  z.object({ t: z.literal("notify"), id: z.string(), text: z.string(), kinds: z.array(notifyKind), prs: z.array(prRef) });
+const notifyFrame = () => z.object({ t: z.literal("notify"), id: z.string(), text: z.string(), kinds: z.array(notifyKind), prs: z.array(prRef) });
 
 export const effortLevel = z.enum(["none", "low", "medium", "high", "xhigh", "max"]);
 export type EffortLevel = z.infer<typeof effortLevel>;
@@ -20,8 +21,26 @@ export const agentModelChoice = z.object({
   /** The full id the alias resolves to today, when the CLI says. */
   resolved: modelValue.optional(),
   efforts: z.array(effortLevel),
+  /** The model offers fast mode (the CLI's `supportsFastMode`). */
+  fast: z.boolean().optional(),
 });
 export type AgentModelChoice = z.infer<typeof agentModelChoice>;
+
+/** `claude-opus-5-5` -> `Opus 5.5`, `claude-haiku-4-5-20251001` -> `Haiku 4.5`, `claude-opus-5` -> `Opus 5`; anything else: undefined. */
+export function versionedName(id: string | undefined): string | undefined {
+  const m = id && /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(id);
+  if (!m) return undefined;
+  return `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}${m[3] ? `.${m[3]}` : ""}`;
+}
+
+/**
+ * A model's name with its version: older CLIs (and lists stored from them) name an alias by its family alone ("Opus"), so it is named
+ * by the model it resolves to ("Opus 5.5") instead. The `default` alias keeps its own name.
+ */
+export function modelLabel(choice: Pick<AgentModelChoice, "model" | "name" | "resolved">): string {
+  if (choice.model === "default" || /\d/.test(choice.name)) return choice.name;
+  return versionedName(choice.resolved) ?? versionedName(choice.model) ?? choice.name;
+}
 
 /** DO -> bridge (inside the box). */
 export const toBridge = z.discriminatedUnion("t", [
@@ -36,13 +55,23 @@ export const toBridge = z.discriminatedUnion("t", [
     // Claude: the model (a CLI alias such as `opus`, or a full id) and effort chosen in the UI; absent means the CLI's default.
     model: z.string().optional(),
     effort: z.string().optional(),
-    env: z.record(z.string(), z.string()), // CLAUDE_CODE_OAUTH_TOKEN + CLI secrets: passed to the claude child, never written to disk
+    // Claude: fast mode on (the `fastMode` setting); only sent for a model that offers it.
+    fast: z.boolean().optional(),
+    env: z.record(z.string(), z.string()), // CLAUDE_CODE_OAUTH_TOKEN + shared and build variables: passed to the agent child, never written to disk
     ghToken: z.string(),
-    repo: z.object({ fullName: z.string(), branch: z.string() }),
+    // null: a session with no starting repo (a machine-setup session, docs/builds.md): the agent starts in the work directory.
+    repo: z.object({ fullName: z.string(), branch: z.string() }).nullable(),
     resumeSessionId: z.string().nullable(),
     // Set while the dork still carries its first message as a title: the bridge asks a small model for a short name for this
     // text (once per bridge process) and sends it back as a `title` frame. Absent once the title was generated or typed.
     nameFrom: z.string().optional(),
+    // The owner's MCP servers (Customize, see mcp.ts), added to the agent's next to `dorks`. Absent from an older server: none.
+    mcpServers: z.array(mcpServerConfig).max(50).optional(),
+    // The dork's place in a crew (docs/crew.md): its guidance and which crew tools the in-box MCP server lists. Absent: a plain dork.
+    role: z.enum(["coordinator", "worker"]).optional(),
+    // The owner's skills (Customize, see skills.ts): the bridge keeps ~/.claude/skills in step, fetching changed ones with the `skill`
+    // rpc. Absent from an older server: none. Not part of the agent's restart key: Claude Code reloads skills by itself.
+    skills: z.array(skillRef).max(200).optional(),
   }),
   z.object({ t: z.literal("user_message"), id: z.string(), text: z.string() }), // bridge dedupes by id
   notifyFrame(),

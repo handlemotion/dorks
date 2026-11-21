@@ -2,19 +2,16 @@ import { useState } from 'react'
 import type { Block } from '@dorks/shared'
 import type { Usage } from '@dorks/client'
 import { Button } from '@dorks/ui/button'
-import {
-  MessageScroller,
-  MessageScrollerButton,
-  MessageScrollerContent,
-  MessageScrollerProvider,
-  MessageScrollerViewport,
-} from '@dorks/ui/message-scroller'
+import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport } from '@dorks/ui/message-scroller'
 import { FrameLayout } from '../components/AppFrame'
 import { AppSidebarView } from '../components/AppSidebar'
 import { UsageBarView } from '../components/UsageBar'
 import { AgentStatus } from '../components/AgentStatus'
 import { ChatMessages } from '../components/ChatBlock'
-import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, type ChatDetailsData } from '../components/ChatDetails'
+import { ChatDetails, ChatSplit, ShowDetailsButton, useDetailsOpen, useWide, type ChatDetailsData } from '../components/ChatDetails'
+import type { PullRequestPanelData } from '../components/PullRequestPanel'
+import type { PullRequestView } from '@dorks/client'
+import { latestTasks, progressStore, progressTurns } from '../lib/progress'
 import { Composer, type AgentProvider } from '../components/ChatComposer'
 import { ChatMenu } from '../components/ChatMenu'
 import { ArchiveButton, PageHeader } from '../components/PageHeader'
@@ -22,7 +19,7 @@ import { withReply, type Reply } from '../lib/reply'
 
 /** A mock screenshot as an SVG data URL (parentheses escaped so it can sit inside markdown image syntax). */
 const mockShot = (tint: string, line: string) =>
-  `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000"><rect width="1600" height="1000" fill="${tint}"/><rect x="400" y="300" width="800" height="440" rx="40" fill="#fff"/><rect x="480" y="380" width="400" height="40" rx="20" fill="${line}"/><rect x="480" y="480" width="640" height="40" rx="20" fill="#e4e4e7"/></svg>`).replace(/\(/g, '%28').replace(/\)/g, '%29')}`
+  `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000"><rect width="1600" height="1000" fill="${tint}"/><rect x="400" y="300" width="800" height="440" rx="40" fill="#fff"/><rect x="480" y="380" width="400" height="40" rx="20" fill="${line}"/><rect x="480" y="480" width="640" height="40" rx="20" fill="#e4e4e7"/></svg>`).replace(/\(/g, '%28').replace(/\)/g, '%29')}`
 
 /** Static usage for the sidebar, so the demo needs no live client. */
 const demoUsage: Usage = {
@@ -30,19 +27,86 @@ const demoUsage: Usage = {
   cloud: { usedHours: 12.5, includedHours: 50, periodEnd: Date.now() + 19 * 86_400_000 },
 }
 
-const initialBlocks: Block[] = [
-  { kind: 'user', id: 'u1', text: `Fix the flaky bridge reconnect after the box wakes. Check the current tests too.\n\n![Reconnect error in the app](${mockShot('#fde2e2', '#f2a1a1')})` },
-  { kind: 'assistant', id: 'a0', text: 'Looking for where the bridge resumes after a wake.', streaming: false },
-  { kind: 'tool', id: 't1', name: 'Bash', summary: "rg -n 'wake|reconnect' infra/bridge/src", status: 'ok', preview: 'infra/bridge/src/claude.ts:223: resume box\ninfra/bridge/src/claude.ts:228: reconnect bridge' },
+const demoBlocks: Block[] = [
+  {
+    kind: 'user',
+    id: 'u1',
+    text: `Fix the flaky bridge reconnect after the box wakes. Check the current tests too.\n\n![Reconnect error in the app](${mockShot('#fde2e2', '#f2a1a1')})`,
+    at: Date.now() - 36 * 60_000,
+  },
+  { kind: 'assistant', id: 'a0', text: 'Looking for where the bridge resumes after a wake.', streaming: false, at: Date.now() - 32 * 60_000 },
+  {
+    kind: 'tool',
+    id: 't1',
+    name: 'Bash',
+    summary: "rg -n 'wake|reconnect' infra/bridge/src",
+    input: { command: "rg -n 'wake|reconnect' infra/bridge/src" },
+    status: 'ok',
+    preview: 'infra/bridge/src/claude.ts:223: resume box\ninfra/bridge/src/claude.ts:228: reconnect bridge',
+  },
   { kind: 'tool', id: 't2', name: 'Bash', summary: 'pnpm --filter @dorks/bridge test', status: 'error', preview: 'FAIL reconnect restores queued messages\nError: timed out waiting for bridge' },
-  { kind: 'assistant', id: 'a0b', text: 'The reconnect test times out. The queue flushes before the handshake, so I’ll wait for it.', streaming: false },
-  { kind: 'tool', id: 't2b', name: 'Edit', summary: 'infra/bridge/src/reconnect.ts', status: 'ok' },
+  {
+    kind: 'assistant',
+    id: 'a0b',
+    text: `The reconnect test times out. The queue flushes before the handshake, so I’ll wait for it.\n\n![The timeout](${mockShot('#fdf0d5', '#e8c27a')})`,
+    streaming: false,
+    at: Date.now() - 28 * 60_000,
+  },
+  {
+    kind: 'tool',
+    id: 't2p',
+    name: 'TodoWrite',
+    summary: 'Plan the reconnect fix',
+    status: 'ok',
+    input: {
+      todos: [
+        { content: 'Find where the bridge resumes after a wake', status: 'completed' },
+        { content: 'Reproduce the reconnect test timeout', status: 'completed' },
+        { content: 'Wait for the handshake before flushing the queue', status: 'completed' },
+        { content: 'Add a regression test for messages sent while waking', status: 'in_progress' },
+        { content: 'Check the dispatch order after reconnect', status: 'pending' },
+      ],
+    },
+  },
+  { kind: 'tool', id: 't2a', name: 'Read', summary: 'infra/bridge/src/reconnect.ts', status: 'ok' },
+  {
+    kind: 'tool',
+    id: 't2b',
+    name: 'Edit',
+    summary: 'infra/bridge/src/reconnect.ts',
+    status: 'ok',
+    input: {
+      file_path: 'infra/bridge/src/reconnect.ts',
+      old_string: 'export async function reconnect(bridge: Bridge) {\n  await box.resume()\n  queue.flush()\n}\n',
+      new_string:
+        'export async function reconnect(bridge: Bridge) {\n  await box.resume()\n  // Queued messages wait for the handshake, or they land in the gap.\n  await bridge.ready()\n  queue.flush()\n}\n',
+    },
+    preview: 'The file infra/bridge/src/reconnect.ts has been updated.',
+  },
   { kind: 'tool', id: 't2c', name: 'Bash', summary: 'pnpm --filter @dorks/bridge test', status: 'ok', preview: 'PASS reconnect restores queued messages' },
-  { kind: 'assistant', id: 'a1', final: true, text: 'The box resumed before the bridge was ready, so queued messages could arrive during that gap. The reconnect now waits for the bridge handshake before it flushes the queue, and the bridge tests pass.\n\n![Before the fix](' + mockShot('#e3e9f3', '#a7b4c8') + ') ![After the fix](' + mockShot('#e4f3e8', '#9fcbab') + ')\n\n- Wait for the bridge handshake before flushing\n- Back off between attempts, up to 30s\n\n```ts\nawait bridge.ready()\n```', streaming: false },
+  {
+    kind: 'assistant',
+    id: 'a1',
+    final: true,
+    text:
+      'The box resumed before the bridge was ready, so queued messages could arrive during that gap. The reconnect now waits for the bridge handshake before it flushes the queue, and the bridge tests pass.\n\n![Before the fix](' +
+      mockShot('#e3e9f3', '#a7b4c8') +
+      ') ![After the fix](' +
+      mockShot('#e4f3e8', '#9fcbab') +
+      ')\n\n- Wait for the bridge handshake before flushing\n- Back off between attempts, up to 30s\n\n```ts\nawait bridge.ready()\n```',
+    streaming: false,
+    at: Date.now() - 24 * 60_000,
+  },
   { kind: 'turn', id: 'tn1', outcome: 'done', finalId: 'a1', durationMs: 134_000, at: Date.now() - 3 * 60_000 },
-  { kind: 'user', id: 'u2', text: 'Please cover the reconnect race with a test before changing the handler.' },
+  { kind: 'user', id: 'u2', text: 'Please cover the reconnect race with a test before changing the handler.', at: Date.now() - 20 * 60_000 },
   { kind: 'tool', id: 't3', name: 'Bash', summary: 'pnpm --filter @dorks/bridge test', status: 'running' },
-  { kind: 'assistant', id: 'a2', text: 'I added a regression test for a message arriving while the box is waking. I’m checking the dispatch order now.', streaming: true },
+  {
+    kind: 'assistant',
+    id: 'a2',
+    text: 'I added a regression test for a message arriving while the box is waking. I’m checking the dispatch order now.',
+    streaming: true,
+    at: Date.now() - 16 * 60_000,
+  },
 ]
 
 const chats = [
@@ -106,18 +170,61 @@ const DEMO_SCREEN = `<!doctype html><meta charset="utf-8"><body style="margin:0;
 
 const details: ChatDetailsData = {
   computer: {
-    awake: true, working: true, used: true,
+    awake: true,
+    working: true,
+    used: true,
     fetchUrl: async () => `data:text/html;charset=utf-8,${encodeURIComponent(DEMO_SCREEN)}`,
     interrupt: async () => {},
   },
   pr: { url: 'https://github.com/acme/demo/pull/142', number: 142 },
+  subscriptions: [
+    {
+      repo: 'acme/demo',
+      number: 142,
+      url: 'https://github.com/acme/demo/pull/142',
+      title: 'Fix flaky bridge reconnect after wake',
+      source: 'auto',
+      status: 'active',
+      ci: 'passing',
+      review: 'approved',
+      mergeable: true,
+      ciFixAttempts: 0,
+      state: 'open',
+    },
+    {
+      repo: 'acme/bridge',
+      number: 57,
+      url: 'https://github.com/acme/bridge/pull/57',
+      title: 'Expose the handshake state to clients',
+      source: 'agent',
+      status: 'ended',
+      ci: 'passing',
+      review: 'approved',
+      mergeable: null,
+      ciFixAttempts: 0,
+      state: 'merged',
+    },
+  ],
   previews: [
-    { name: 'Web app', url: 'http://localhost:5173', favicon: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#111"/><text x="8" y="11.5" font-family="system-ui" font-size="10" font-weight="500" fill="white" text-anchor="middle">A</text></svg>')}`, html: `<!doctype html><html><body style="margin:0;font:14px system-ui;color:#111">
+    {
+      name: 'Web app',
+      url: 'http://localhost:5173',
+      favicon: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#111"/><text x="8" y="11.5" font-family="system-ui" font-size="10" font-weight="500" fill="white" text-anchor="middle">A</text></svg>')}`,
+      html: `<!doctype html><html><body style="margin:0;font:14px system-ui;color:#111">
 <header style="display:flex;gap:16px;align-items:center;padding:16px 24px;border-bottom:1px solid #eee"><strong style="font-weight:500">Acme</strong><a href="#" style="color:#666">Docs</a><a href="#" style="color:#666">Pricing</a><button style="margin-left:auto;padding:6px 12px;border:0;border-radius:6px;background:#111;color:#fff">Sign in</button></header>
 <main style="padding:40px 24px;max-width:520px"><h1 style="font-size:24px;font-weight:500;margin:0 0 8px">Bridge status</h1><p style="color:#666;margin:0 0 24px">Reconnects after wake: 3 today, all recovered.</p>
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div style="padding:16px;border-radius:6px;background:#f4f4f5">Queued<br><span style="font-size:20px">0</span></div><div style="padding:16px;border-radius:6px;background:#f4f4f5">Latency<br><span style="font-size:20px">42 ms</span></div></div></main></body></html>` },
-    { name: 'Docs', url: 'http://localhost:4321', favicon: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#3b6be8"/><text x="8" y="11.5" font-family="system-ui" font-size="10" font-weight="500" fill="white" text-anchor="middle">D</text></svg>')}` },
-    { name: 'Storybook', url: 'http://localhost:6006', favicon: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#ff4785"/><text x="8" y="11.5" font-family="system-ui" font-size="10" font-weight="500" fill="white" text-anchor="middle">S</text></svg>')}` },
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div style="padding:16px;border-radius:6px;background:#f4f4f5">Queued<br><span style="font-size:20px">0</span></div><div style="padding:16px;border-radius:6px;background:#f4f4f5">Latency<br><span style="font-size:20px">42 ms</span></div></div></main></body></html>`,
+    },
+    {
+      name: 'Docs',
+      url: 'http://localhost:4321',
+      favicon: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#3b6be8"/><text x="8" y="11.5" font-family="system-ui" font-size="10" font-weight="500" fill="white" text-anchor="middle">D</text></svg>')}`,
+    },
+    {
+      name: 'Storybook',
+      url: 'http://localhost:6006',
+      favicon: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#ff4785"/><text x="8" y="11.5" font-family="system-ui" font-size="10" font-weight="500" fill="white" text-anchor="middle">S</text></svg>')}`,
+    },
   ],
   changes: [
     { path: 'infra/bridge/src/claude.ts', additions: 48, deletions: 12 },
@@ -136,7 +243,98 @@ const details: ChatDetailsData = {
   })),
 }
 
+/** The demo's pull request: `?pr=dirty|behind|blocked|draft|merged` shows the other merge states. */
+const DEMO_PR_STATE = new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('pr')
+const DEMO_PR: PullRequestView = {
+  repo: 'acme/demo',
+  number: 142,
+  url: 'https://github.com/acme/demo/pull/142',
+  title: 'Fix flaky bridge reconnect after wake',
+  body: `<!-- claude-projects-attribution -->
+## Problem
+
+After the laptop wakes, the bridge sometimes reconnects twice and the second socket drops queued frames. The agent then waits for a reply that never comes.
+
+## Approach
+
+Reconnects go through one \`ReconnectGate\`: a wake starts at most one attempt, backs off with jitter, and flushes the queue only once the new socket is open.
+
+## Testing
+
+- \`pnpm test\` covers the double-wake case
+- Slept and woke the desktop app five times; every turn finished`,
+  state: DEMO_PR_STATE === 'merged' ? 'merged' : 'open',
+  draft: DEMO_PR_STATE === 'draft',
+  author: { login: 'handlemotion', avatarUrl: 'https://avatars.githubusercontent.com/handlemotion' },
+  headRef: 'dorks/bridge-reconnect',
+  baseRef: 'main',
+  headSha: 'a'.repeat(40),
+  createdAt: Date.now() - 3 * 3600_000,
+  mergedAt: DEMO_PR_STATE === 'merged' ? Date.now() - 5 * 60_000 : undefined,
+  mergedBy: DEMO_PR_STATE === 'merged' ? { login: 'handlemotion' } : undefined,
+  mergeable: DEMO_PR_STATE !== 'dirty',
+  mergeableState: (DEMO_PR_STATE === 'dirty' || DEMO_PR_STATE === 'behind' || DEMO_PR_STATE === 'blocked'
+    ? DEMO_PR_STATE
+    : DEMO_PR_STATE === 'draft'
+      ? 'draft'
+      : 'clean') as PullRequestView['mergeableState'],
+  additions: 259,
+  deletions: 80,
+  changedFiles: 5,
+  checks:
+    DEMO_PR_STATE === 'blocked'
+      ? {
+          total: 4,
+          passed: 3,
+          failed: 1,
+          pending: 0,
+          failing: ['e2e'],
+          runs: [{ name: 'e2e', outcome: 'fail', summary: '2 tests failed', url: '#' }, ...['check', 'test', 'build'].map((name) => ({ name, outcome: 'pass' as const, url: '#' }))],
+        }
+      : {
+          total: 4,
+          passed: 4,
+          failed: 0,
+          pending: 0,
+          failing: [],
+          runs: ['build', 'check', 'e2e', 'test'].map((name) => ({ name, outcome: 'pass' as const, summary: name === 'e2e' ? '42 tests passed' : undefined, url: '#' })),
+        },
+  mergeMethods: ['squash', 'merge', 'rebase'],
+  files: [
+    { path: 'infra/bridge/src/claude.ts', status: 'modified', additions: 48, deletions: 12 },
+    { path: 'infra/bridge/src/reconnect.ts', status: 'modified', additions: 112, deletions: 64, patch: RECONNECT_PATCH },
+    { path: 'infra/bridge/test/reconnect.test.ts', status: 'added', additions: 86, deletions: 0 },
+    { path: 'apps/server/src/services/dorks.ts', status: 'modified', additions: 9, deletions: 3 },
+    { path: 'docs/architecture.md', status: 'modified', additions: 4, deletions: 1, patch: DOCS_PATCH },
+  ],
+  comments: [
+    { id: 'c1', kind: 'comment', author: { login: 'octocat' }, body: 'Does this also cover the case where the wake happens mid-turn?', url: '#', createdAt: Date.now() - 90 * 60_000 },
+    {
+      id: 'l1',
+      kind: 'review_comment',
+      author: { login: 'octocat' },
+      body: 'Jitter of 0–250ms seems small for a fleet; maybe up to 1s?',
+      path: 'infra/bridge/src/reconnect.ts',
+      line: 42,
+      url: '#',
+      createdAt: Date.now() - 80 * 60_000,
+    },
+    {
+      id: 'c2',
+      kind: 'comment',
+      author: { login: 'handlemotion' },
+      body: 'Yes: a wake mid-turn queues the frames and the gate flushes them once. Bumped the jitter to 1s.',
+      url: '#',
+      createdAt: Date.now() - 40 * 60_000,
+    },
+    { id: 'r1', kind: 'review', author: { login: 'octocat' }, body: '', reviewState: 'APPROVED', url: '#', createdAt: Date.now() - 20 * 60_000 },
+  ],
+}
+
 /** The app frame with a scripted conversation and no server: for looking at the design (dev builds only). */
+/** The demo's tool calls carry no times of their own: space them a few minutes apart, oldest first, so Progress shows its "ago" column. */
+const initialBlocks: Block[] = demoBlocks.map((b, i) => (b.kind === 'tool' && b.at === undefined ? { ...b, at: Date.now() - (demoBlocks.length - i) * 3 * 60_000 } : b))
+
 export function Demo() {
   const [blocks, setBlocks] = useState(initialBlocks)
   const [text, setText] = useState('')
@@ -147,12 +345,24 @@ export function Demo() {
   const [provider, setProvider] = useState<AgentProvider>('claude')
   const [detailsOpen, setDetailsOpen] = useDetailsOpen()
   const [reply, setReply] = useState<Reply>()
+  const wide = useWide()
+  const [demoPr, setDemoPr] = useState(DEMO_PR)
+  const demoPullRequest: PullRequestPanelData = {
+    view: demoPr,
+    refresh: () => {},
+    merge: async (method) => {
+      await new Promise((r) => setTimeout(r, 600))
+      setDemoPr((p) => ({ ...p, state: 'merged', mergedAt: Date.now(), mergedBy: p.author }))
+      console.info('demo merge', method)
+    },
+    updateBranch: async () => setDemoPr((p) => ({ ...p, mergeableState: 'clean' })),
+  }
   const send = (message = withReply(reply, text)) => {
     const id = crypto.randomUUID()
     setReply(undefined)
     setBlocks((current) => [
       ...current,
-      { kind: 'user', id, text: message },
+      { kind: 'user', id, text: message, at: Date.now() - 12 * 60_000 },
       { kind: 'notice', id: `${id}-notice`, level: 'info', text: 'Preview only. No agent is connected.' },
     ])
     setText('')
@@ -164,44 +374,96 @@ export function Demo() {
   }
 
   return (
-    <FrameLayout sidebar={<AppSidebarView chats={chats.map((c) => (c.id === 'preview' ? { ...c, working: !stopped } : c))} chatTo="/dev/chat" orderKey="dorks.demo.chat-preview" usage={<UsageBarView usage={demoUsage} />} />}>
-      <ChatSplit details={detailsOpen && !showNew ? <ChatDetails data={details} onClose={() => setDetailsOpen(false)} onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)} onAsk={setText} /> : undefined}>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <PageHeader divider={showNew}
-          title={showNew ? 'New session' : 'Fix flaky bridge reconnect after wake'}
-          titleActions={!showNew && <ArchiveButton archived={archived} onClick={() => setArchived((a) => !a)} />}
-          actions={<>
-            {!showNew && <ChatMenu prUrl="https://github.com/acme/demo/pull/142" detailsOpen={detailsOpen} onDelete={() => setShowNew(true)} />}
-            {!detailsOpen && !showNew && <ShowDetailsButton onClick={() => setDetailsOpen(true)} />}
-          </>}
+    <FrameLayout
+      sidebar={
+        <AppSidebarView
+          chats={chats.map((c) => (c.id === 'preview' ? { ...c, working: !stopped } : c))}
+          chatTo="/dev/chat"
+          orderKey="dorks.demo.chat-preview"
+          usage={<UsageBarView usage={demoUsage} />}
         />
-        {showNew ? (
-          <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col justify-center gap-8 px-4 py-8">
-            <div className="space-y-2">
-              <h2 className="text-lg font-medium">What should we work on?</h2>
-              <p className="text-sm text-muted-foreground">Choose a repository and agent, then describe the change you want.</p>
+      }
+    >
+      <ChatSplit
+        details={
+          detailsOpen && !showNew ? (
+            <ChatDetails
+              sessionId="preview"
+              data={{ ...details, progress: progressTurns(blocks), tasks: latestTasks(blocks), pullRequest: demoPullRequest }}
+              onClose={() => setDetailsOpen(false)}
+              onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}
+              onAsk={setText}
+            />
+          ) : undefined
+        }
+      >
+        <div className="flex min-w-0 flex-1 flex-col">
+          <PageHeader
+            title={showNew ? 'New session' : 'Fix flaky bridge reconnect after wake'}
+            titleActions={!showNew && <ArchiveButton archived={archived} onClick={() => setArchived((a) => !a)} />}
+            actions={
+              <>
+                {!showNew && <ChatMenu prUrl="https://github.com/acme/demo/pull/142" detailsOpen={detailsOpen} onDelete={() => setShowNew(true)} />}
+                {!detailsOpen && !showNew && <ShowDetailsButton onClick={() => setDetailsOpen(true)} />}
+              </>
+            }
+          />
+          {showNew ? (
+            <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col justify-center gap-8 px-4 py-8">
+              <div className="space-y-2">
+                <h2 className="text-lg font-medium">What should we work on?</h2>
+                <p className="text-sm text-muted-foreground">Choose a repository and agent, then describe the change you want.</p>
+              </div>
+              <div className="-mx-4">
+                <Composer text={text} setText={setText} repo={repo} setRepo={setRepo} provider={provider} setProvider={setProvider} onSubmit={() => send()} pending={false} error="" />
+              </div>
             </div>
-            <div className="-mx-4">
-              <Composer text={text} setText={setText} repo={repo} setRepo={setRepo} provider={provider} setProvider={setProvider} onSubmit={() => send()} pending={false} error="" />
-            </div>
-          </div>
-        ) : (
-          <section className="flex min-h-0 flex-1 flex-col" aria-label="thread">
-            <MessageScrollerProvider autoScroll defaultScrollPosition="end">
-              <MessageScroller>
-                <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
-                  <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-6 px-[30px] pt-6 pb-12" data-testid="transcript">
-                    <ChatMessages blocks={blocks} agent="Claude" onReply={(quoted, draft) => { setReply(quoted); if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft)) }} onReplySend={(quoted, answer) => send(withReply(quoted, answer))} />
-                    <div><AgentStatus state={stopped ? 'idle' : 'working'} live="live" /></div>
-                  </MessageScrollerContent>
-                </MessageScrollerViewport>
-                <MessageScrollerButton />
-              </MessageScroller>
-            </MessageScrollerProvider>
-            <Composer text={text} setText={setText} repo={repo} provider="claude" onSubmit={() => send()} reply={reply} onClearReply={() => setReply(undefined)} pending={false} error="" onStop={stopped ? undefined : stop} />
-          </section>
-        )}
-      </div>
+          ) : (
+            <section className="flex min-h-0 flex-1 flex-col" aria-label="thread">
+              <MessageScrollerProvider autoScroll defaultScrollPosition="end">
+                <MessageScroller>
+                  <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
+                    <MessageScrollerContent className="mx-auto w-full max-w-4xl gap-6 px-10 pt-6 pb-12" data-testid="transcript">
+                      <ChatMessages
+                        blocks={blocks}
+                        agent="Claude"
+                        onOpenStep={
+                          wide
+                            ? (key) => {
+                                setDetailsOpen(true)
+                                progressStore.show(key)
+                              }
+                            : undefined
+                        }
+                        onReply={(quoted, draft) => {
+                          setReply(quoted)
+                          if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft))
+                        }}
+                        onReplySend={(quoted, answer) => send(withReply(quoted, answer))}
+                      />
+                      <div>
+                        <AgentStatus state={stopped ? 'idle' : 'working'} live="live" />
+                      </div>
+                    </MessageScrollerContent>
+                  </MessageScrollerViewport>
+                  <MessageScrollerButton />
+                </MessageScroller>
+              </MessageScrollerProvider>
+              <Composer
+                text={text}
+                setText={setText}
+                repo={repo}
+                provider="claude"
+                onSubmit={() => send()}
+                reply={reply}
+                onClearReply={() => setReply(undefined)}
+                pending={false}
+                error=""
+                onStop={stopped ? undefined : stop}
+              />
+            </section>
+          )}
+        </div>
       </ChatSplit>
     </FrameLayout>
   )

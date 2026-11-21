@@ -1,45 +1,51 @@
 # GitHub and the owner token
 
-Dorks uses **one GitHub token**. There is no GitHub App, no webhook and no OAuth flow. The token is stored encrypted in the server's settings and does two jobs:
+Dorks acts on GitHub as **your GitHub CLI login**. There is no GitHub App, no webhook, no OAuth flow of its own and no token to paste: `gh` is the one source of truth. The token it yields does two jobs:
 
 1. It goes to each sandbox (over the authenticated bridge socket, in `configure`), so the agent can clone, push and run `gh`.
-2. The server's poller uses it to watch the PRs a dork is subscribed to ([autonomy](autonomy.md)).
+2. The server uses it to list your organizations and repositories (the owner switcher and the repository picker) and to watch the PRs a dork is subscribed to ([autonomy](autonomy.md)).
 
-The dork acts as whoever owns the token. Commits, PRs and comments carry that account's name.
+The dork acts as whoever `gh` is signed in as. Commits, PRs and comments carry that account's name.
 
-## Getting a token
+## Why the GitHub CLI, not a GitHub App
 
-**Option 1: your `gh` CLI (desktop app).** In the app, choose "Use my gh CLI" during setup. A native dialog asks for consent, then the app runs `gh auth token` and stores the result with `PUT /api/settings {"githubToken": ...}`. Zero typing, but that token is whatever `gh` holds, usually an OAuth token with broad `repo` and `workflow` scopes, and it will live inside cloud sandboxes. Read [what a sandbox can read](../SECURITY.md#what-a-sandbox-can-read) first.
+Dorks runs on your Mac with no hosted backend and no accounts. A GitHub App would need a service holding its private key (or client secret) to mint and refresh tokens, and an admin to install it on every organization. Your `gh` login already reaches every organization you belong to, is the identity the sandboxes push as, and needs nothing hosted. So it is the only path; the pasted personal access token is gone (a fine-grained token belongs to a single owner, which hid every organization but one).
 
-**Option 2: a fine-grained personal access token (recommended).** Create one at github.com/settings/personal-access-tokens, limited to the repositories you want dorks to touch, and paste it into Settings. Repository permissions:
+## Connecting
 
-| Permission | Access | Why |
-|---|---|---|
-| Contents | Read and write | clone and push |
-| Pull requests | Read and write | open PRs, read reviews and mergeability |
-| Issues | Read and write | PR conversation comments |
-| Workflows | Read and write | the agent may fix CI configuration (see autonomy decision 6) |
-| Checks | Read | CI results |
-| Actions | Read | `gh run view --log-failed` |
-| Commit statuses | Read | the agent's own `gh pr checks` (the poller reads check suites only) |
-| Metadata | Read | required by GitHub |
+1. Sign in once in a terminal, with the scopes Dorks uses:
 
-A classic token with the `repo` and `workflow` scopes also works.
+   ```sh
+   gh auth login --scopes read:org,workflow
+   ```
 
-The server checks the token with `GET /user` when you save it, rejects it if GitHub answers 401 or 403, and stores the login it belongs to (shown in Settings).
+   `repo` (on by default) clones and pushes, `read:org` lists your organizations, `workflow` lets the agent push changes to `.github/workflows` (autonomy decision 6). Already signed in without them: `gh auth refresh --hostname github.com --scopes read:org,workflow`.
+2. In Dorks, onboarding's GitHub step (or Settings, GitHub) has **Connect**. That click is the consent: the server stores only `github_connected`, never the token.
+
+The server reads the token the way `gh` itself resolves it (`apps/server/src/lib/ghCli.ts`): `GH_TOKEN`, then `GITHUB_TOKEN`, then `gh auth token --hostname github.com` (the keychain or gh's config). It finds `gh` on `PATH` and in `/opt/homebrew/bin`, `/usr/local/bin` (a Finder-launched app has a minimal `PATH`). The token is cached in memory for a minute, so `gh auth login`, `gh auth refresh` and `gh auth switch` take effect without restarting anything; **Check again** in Settings reads it at once. Connecting checks it with `GET /user` and refuses with a plain reason when `gh` is missing, signed out, or rejected.
+
+`GH_TOKEN` in the server's environment is for development and the e2e only (the desktop app never passes it).
+
+## Organizations and repositories
+
+`GET /api/github/repos` lists `/user/orgs`, your 300 most recently pushed repositories (`/user/repos`), and one page of each organization's (`/orgs/{org}/repos`), and reports `auth`: the connection state and any of `repo`, `read:org`, `workflow` the token lacks (from `X-OAuth-Scopes`). The owner switcher shows your user, every organization, and the owners of those repositories.
+
+An organization can restrict OAuth apps. Until it approves the GitHub CLI, its private repositories are invisible to your `gh` token, in Dorks as in `gh` itself. **Grant access** in Settings, GitHub opens [the GitHub CLI's page in your GitHub settings](https://github.com/settings/connections/applications/178c6fc778ccc68e1d6a), where you grant or request access per organization; then choose **Check again**.
+
+The token reaches everything your `gh` login can, and it lives inside cloud sandboxes while they run. Read [what a sandbox can read](../SECURITY.md#what-a-sandbox-can-read). To narrow it, sign `gh` in as a dedicated account that only has the repositories dorks should touch.
 
 ## Identity
 
 Events authored by the token's own login are ignored, because they are the agent's own pushes and comments. Consequences:
 
-- If you use your personal token, your own comments on a PR will not wake the dork. Talk to it in the chat instead.
-- If you want PR comments from you to wake it, give the dork a dedicated bot account and use that account's token.
+- Signed in as yourself, your own comments on a PR will not wake the dork. Talk to it in the chat instead.
+- If you want PR comments from you to wake it, sign `gh` in as a dedicated bot account.
 
 `commentPolicy` (Settings) filters other people's comments: `all` (default) or an allowlist of logins (bots by login, for example `coderabbitai[bot]`).
 
 ## Rate limits and failures
 
-The poller runs every 30 s while any subscription is active and sends conditional requests (`If-None-Match`), so unchanged PRs cost nothing against the rate limit. On a rate limit it waits until GitHub's reset time. If GitHub rejects the token (401, 403) it backs off for 5 minutes and tries again, so replacing a bad token takes effect without a restart. A PR the token cannot see ends its subscription.
+The poller runs every 30 s while any subscription is active and sends conditional requests (`If-None-Match`), so unchanged PRs cost nothing against the rate limit. On a rate limit it waits until GitHub's reset time. If GitHub rejects the token (401, 403) it backs off for 5 minutes and tries again, so signing `gh` in again takes effect without a restart. A PR the token cannot see ends its subscription.
 
 ## The owner token
 

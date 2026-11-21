@@ -39,8 +39,14 @@ export function foldInbox(app: App, dorkId: string) {
       const sub = app.db.get("SELECT * FROM pr_subscriptions WHERE id = ?", row.subscription_id);
       if (!sub) continue; // purged
       section = {
-        repo: sub.repo as string, number: sub.number as number, url: sub.url as string, title: (sub.title as string | null) ?? undefined,
-        headRef: (sub.head_ref as string | null) ?? undefined, baseRef: (sub.base_ref as string | null) ?? undefined, ciFixAttempts: sub.ci_fix_attempts as number, items: [],
+        repo: sub.repo as string,
+        number: sub.number as number,
+        url: sub.url as string,
+        title: (sub.title as string | null) ?? undefined,
+        headRef: (sub.head_ref as string | null) ?? undefined,
+        baseRef: (sub.base_ref as string | null) ?? undefined,
+        ciFixAttempts: sub.ci_fix_attempts as number,
+        items: [],
       };
       sections.set(row.subscription_id, section);
     }

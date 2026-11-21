@@ -1,3 +1,4 @@
+import type { GhLogin } from "./lib/ghCli";
 import type { AppError, AppErrorCode } from "@dorks/shared";
 import type { BoxProvider } from "./core/box";
 import type { SnapshotDriver } from "./core/snapshot";
@@ -13,6 +14,8 @@ export type Change =
   | { t: "subscriptions"; dorkId: string }
   | { t: "settings" }
   | { t: "snapshot" }
+  | { t: "builds" }
+  | { t: "build"; buildId: string }
   | { t: "commands"; dorkId: string };
 
 export class Hub {
@@ -38,8 +41,11 @@ export interface Config {
   bridgePort: number;
   /** `https://` URL of the tunnel that forwards to the bridge listener. */
   publicUrl?: string;
-  /** Access key of the wurmhol pipe, handed to each sandbox so its bridge can pass the relay. Not an authenticator. */
-  tunnelKey?: string;
+  /**
+   * The Dorks tunnel service (infra/tunnels) and this install's key for it, when the public URL is this install's embedded
+   * Wurmhol tunnel. Each new sandbox is registered there and gets a ticket its bridge trades for short-lived Wurmhol grants.
+   */
+  tunnelService?: { url: string; installKey: string };
   ownerToken: string;
   /** HMAC key for per-dork bridge secrets. */
   bridgeSecretKey: string;
@@ -50,6 +56,8 @@ export interface Config {
   uiOrigins: string[];
   /** Base snapshot used when settings do not name one (dev and tests). */
   baseSnapshotId?: string;
+  /** `GH_TOKEN`, else `GITHUB_TOKEN`: overrides the GitHub CLI's login the way `gh` itself does (development and the e2e). */
+  githubEnvToken?: string;
 }
 
 export interface SchedulerLike {
@@ -65,6 +73,8 @@ export interface App {
   now(): number;
   uuid(): string;
   fetch: typeof fetch;
+  /** The GitHub CLI's login (lib/ghCli.ts), read fresh on every call: callers go through services/github.ts, which caches it. Tests replace it. */
+  ghLogin(): Promise<GhLogin>;
   /** The sandbox provider for the current settings. Tests replace it. */
   getBox(): Promise<BoxProvider>;
   /** Where a freshly created sandbox's bridge connects. */

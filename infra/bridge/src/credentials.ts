@@ -39,7 +39,12 @@ export async function runCredentialHelper(sock: string, op: string, stdin: NodeJ
   if (op !== "get") return; // never store or erase: there is nothing on disk
   let input = "";
   for await (const c of stdin) input += c;
-  const kv = Object.fromEntries(input.split("\n").filter(Boolean).map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
+  const kv = Object.fromEntries(
+    input
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]),
+  );
   // Any failure (bridge gone, host not ours) is an empty answer: git then tries its next helper or fails, as with no helper at all.
   const reply = await rpcCall<{ token: string }>(sock, "token", { host: kv.host ?? "" }).catch(() => null);
   if (reply?.token) stdout.write(`username=x-access-token\npassword=${reply.token}\n`);

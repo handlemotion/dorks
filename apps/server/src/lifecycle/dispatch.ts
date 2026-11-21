@@ -3,6 +3,7 @@ import { fail, touch, type App } from "../app";
 import { commandOf, getDork, openCommands, runtimeOf, type CommandKind, type CommandRow, type DorkRow } from "../data";
 import { update, insert } from "../db";
 import { reduce, type Effect, type Input, type Result } from "../core/machine";
+import { crewObserve } from "../services/crew";
 
 // The lifecycle driver. Every function here is synchronous and meant to run inside one SQLite transaction (app.db.tx): a state
 // change, its event, and its effects (timers, box jobs, outbox rows) commit together or not at all.
@@ -40,6 +41,7 @@ export function append(app: App, dorkId: string, ...bodies: ClientEventBody[]): 
     tail = { seq, body };
   }
   if (bodies.length) touch(app, { t: "events", dorkId, seq });
+  for (const body of bodies) crewObserve(app, dorkId, body); // a worker's turn end becomes a report to its coordinator (docs/crew.md)
   return seq;
 }
 
@@ -61,7 +63,10 @@ const unackedMessages = (app: App, dorkId: string): CommandRow[] => openCommands
 export function machineCtx(app: App, dork: DorkRow) {
   const open = unackedMessages(app, dork.id);
   return {
-    state: dork.state, archived: dork.archived, hasBox: !!dork.boxId, queued: open.length > 0,
+    state: dork.state,
+    archived: dork.archived,
+    hasBox: !!dork.boxId,
+    queued: open.length > 0,
     notifyHeld: !open.some((c) => c.kind === "user_message") && open.some((c) => c.kind === "notify" && !c.released),
   };
 }
@@ -126,18 +131,9 @@ export function dispatch(app: App, dorkId: string, input: Input): Result | null 
 function runEffect(app: App, dorkId: string, effect: Effect) {
   switch (effect) {
     case "create_box":
-    case "resume_box": {
-      // A new box operation supersedes any pause, and control rows left by the previous run must not replay into this one.
-      dropPause(app, dorkId);
-      cancelTimer(app, dorkId, "pause_retry");
-      clearControlRows(app, dorkId);
-      const rt = runtimeOf(app.db, dorkId);
-      const gen = rt.opGen + 1;
-      patchRuntime(app, dorkId, { opGen: gen, pauseRetries: 0, bridgeSeenAt: app.now(), bridgeLost: false }); // grace period for the new bridge to dial in
-      setTimer(app, dorkId, "bridge_watch", HEARTBEAT_MS);
-      setTimer(app, dorkId, `${effect === "create_box" ? "box:create" : "box:resume"}:${gen}`, 0, { gen }); // one row per operation: a superseded one still runs, and its result is ignored
-      return;
-    }
+    case "replace_box":
+    case "resume_box":
+      return startBoxOp(app, dorkId, effect);
     case "pause_box":
       return beginPause(app, dorkId);
     case "cancel_pause":
@@ -160,6 +156,22 @@ function runEffect(app: App, dorkId: string, effect: Effect) {
     case "cancel_watchdog":
       return cancelTimer(app, dorkId, "watchdog");
   }
+}
+
+/** Launches a box job. A new box operation supersedes any pause, and control rows left by the previous run must not replay into this one. */
+function startBoxOp(app: App, dorkId: string, effect: "create_box" | "replace_box" | "resume_box") {
+  dropPause(app, dorkId);
+  cancelTimer(app, dorkId, "pause_retry");
+  clearControlRows(app, dorkId);
+  // Replacing: the create job deletes the current box first, or the provider would hand the same box back for this dork's name.
+  // The dork keeps pointing at it until that delete succeeds, so a failed delete leaves a box the next message can resume or replace.
+  const replace = effect === "replace_box" ? getDork(app.db, dorkId)?.boxId : undefined;
+  const rt = runtimeOf(app.db, dorkId);
+  const gen = rt.opGen + 1;
+  patchRuntime(app, dorkId, { opGen: gen, pauseRetries: 0, bridgeSeenAt: app.now(), bridgeLost: false }); // grace period for the new bridge to dial in
+  setTimer(app, dorkId, "bridge_watch", HEARTBEAT_MS);
+  // One row per operation: a superseded one still runs, and its result is ignored.
+  setTimer(app, dorkId, `${effect === "resume_box" ? "box:resume" : "box:create"}:${gen}`, 0, replace ? { gen, replace } : { gen });
 }
 
 /**

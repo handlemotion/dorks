@@ -2,26 +2,57 @@ import { errorEvent } from "@dorks/shared";
 import type { App } from "../app";
 import { getDork, runtimeOf } from "../data";
 import { foldInbox } from "../services/notify";
+import { foldCrew } from "../services/crew";
+import { expireLocal } from "../services/local";
 import {
-  append, beginPause, BRIDGE_STALE_MS, cancelTimer, dispatch, enqueueConfigure, finishPause, HEARTBEAT_MS, isAwake, patchDork, patchRuntime, queued, schedulePauseRetry, setTimer,
+  append,
+  beginPause,
+  BRIDGE_STALE_MS,
+  cancelTimer,
+  dispatch,
+  enqueueConfigure,
+  finishPause,
+  HEARTBEAT_MS,
+  isAwake,
+  patchDork,
+  patchRuntime,
+  queued,
+  schedulePauseRetry,
+  setTimer,
 } from "./dispatch";
-
 
 /** A user-visible timer fired (the scheduler already claimed its row). Runs in one transaction. */
 export function fireTimer(app: App, dorkId: string, name: string) {
   const dork = getDork(app.db, dorkId);
   if (!dork || dork.deleting) return;
+  if (expireLocal(app, dorkId, name)) return; // `local:<request id>`: an unanswered request to use the owner's computer
   const rt = runtimeOf(app.db, dorkId);
   switch (name) {
     case "sleep":
       dispatch(app, dorkId, { t: "sleep_due" });
       break;
     case "watchdog":
+      if (dork.state === "waking" && dork.boxId && !dork.archived) {
+        console.error(`${new Date(app.now()).toISOString()} watchdog: ${dorkId} did not wake; replacing its box`);
+        append(
+          app,
+          dorkId,
+          errorEvent({
+            code: "timeout",
+            message: "The sandbox did not wake up, so Dork is starting a fresh one. Unpushed changes in the old sandbox are lost, and the agent starts without its earlier context.",
+          }),
+        );
+        dispatch(app, dorkId, { t: "wake_failed" });
+        break;
+      }
       if (isAwake(dork.state)) append(app, dorkId, errorEvent({ code: "timeout", message: "timed out waiting for the sandbox" }));
       dispatch(app, dorkId, { t: "watchdog" });
       break;
     case "notify":
       foldInbox(app, dorkId); // the debounce window closed: everything buffered becomes one notification
+      break;
+    case "crew_notify":
+      foldCrew(app, dorkId); // reports and notes from the dork's crew (docs/crew.md)
       break;
     case "flush":
       finishPause(app, dorkId); // flush timeout (a no-op if the pause was cancelled meanwhile)
@@ -76,6 +107,13 @@ export function boxGone(app: App, dorkId: string, boxId: string, message: string
   dispatch(app, dorkId, { t: "op_failed" });
 }
 
+/** The box a dork gave up on is deleted: forget it and the session and previews that lived on it. No-op if the dork moved on. */
+export function boxReplaced(app: App, dorkId: string, boxId: string) {
+  const dork = getDork(app.db, dorkId);
+  if (!dork || dork.boxId !== boxId) return;
+  patchDork(app, dorkId, { boxId: undefined, claudeSessionId: undefined, codexThreadId: undefined, previews: undefined });
+}
+
 /**
  * Records the freshly created box. Returns "orphaned" if the dork was deleted (or already purged) while `createFromSnapshot`
  * was in flight, or if a newer create attempt already recorded a different box: nothing tracks this one, so the caller must delete it.
@@ -98,9 +136,11 @@ export function boxCreated(app: App, dorkId: string, boxId: string, sleepMinutes
  * If the dork gave up on this resume meanwhile the box is running unwanted, and any pause issued before this point may have
  * finished before the resume did: pause again, ordered after it.
  */
-export function boxResumed(app: App, dorkId: string) {
+export function boxResumed(app: App, dorkId: string, boxId?: string) {
   const dork = getDork(app.db, dorkId);
   if (!dork || dork.deleting) return;
+  // The dork gave up on this box: it is being replaced (and deleted), or already was.
+  if (dork.state === "creating" || (boxId !== undefined && dork.boxId !== boxId)) return;
   if (dork.state === "error" || dork.state === "sleeping") return beginPause(app, dorkId, true);
   enqueueConfigure(app, dorkId); // idempotent on the bridge side
 }

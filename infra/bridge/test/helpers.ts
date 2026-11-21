@@ -57,8 +57,16 @@ export const closeBridges = () => bridges.splice(0).forEach((b) => b.close());
 /** A stand-in for the running bridge: the same socket protocol, recording each call. `extra` overrides or adds methods. */
 export async function fakeBridge(extra: RpcMethods = {}) {
   const calls: { method: string; params: unknown }[] = [];
-  const rec = (method: string, result: unknown = null): RpcMethods[string] => (params) => (calls.push({ method, params }), result);
-  const server = new RpcServer(join(tmp("fake-bridge-"), "cred.sock"), { token: rec("token", { token: "ghs_fakeInstallationToken" }), "pr.sub": rec("pr.sub"), "pr.unsub": rec("pr.unsub"), "pr.list": rec("pr.list", []), ...extra });
+  const rec =
+    (method: string, result: unknown = null): RpcMethods[string] =>
+    (params) => (calls.push({ method, params }), result);
+  const server = new RpcServer(join(tmp("fake-bridge-"), "cred.sock"), {
+    token: rec("token", { token: "ghs_fakeInstallationToken" }),
+    "pr.sub": rec("pr.sub"),
+    "pr.unsub": rec("pr.unsub"),
+    "pr.list": rec("pr.list", []),
+    ...extra,
+  });
   bridges.push(server);
   await server.start();
   return { calls, sock: server.sockPath, env: { DORKS_SOCK: server.sockPath } as NodeJS.ProcessEnv };
@@ -71,7 +79,8 @@ export function makeRemote(fullName = "acme/demo") {
   const base = tmp("remote-");
   const bare = join(base, `${fullName}.git`);
   mkdirSync(bare, { recursive: true });
-  const sh = (cwd: string, ...a: string[]) => execFileSync("git", a, { cwd, stdio: "pipe", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
+  const sh = (cwd: string, ...a: string[]) =>
+    execFileSync("git", a, { cwd, stdio: "pipe", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
   sh(bare, "init", "--bare", "--initial-branch=main");
   const seed = tmp("seed-");
   sh(seed, "init", "--initial-branch=main");
@@ -85,6 +94,12 @@ export function makeRemote(fullName = "acme/demo") {
 type ConfigureFrame = Extract<ToBridge, { t: "configure" }>;
 
 export class FakeTransport implements Transport {
+  buildCalls: Record<string, unknown>[] = [];
+  buildResult: unknown = {};
+  build = async (args: Record<string, unknown>) => {
+    this.buildCalls.push(args);
+    return this.buildResult;
+  };
   pushes: FromBridge[][] = [];
   afterBridgeSeq = 0;
   connectCalls = 0;
@@ -151,9 +166,14 @@ export class FakeTransport implements Transport {
     const repo = ref.repo.toLowerCase(); // the backend stores repos lowercase
     if (!this.subscriptions.some((s) => s.repo === repo && s.number === ref.number)) this.setSubscriptions([...this.subscriptions, fakeView({ ...ref, repo }, source)]);
   };
+  mcpToken = async (name: string) => ({ authorization: `Bearer token-for-${name}`, expiresAt: null });
+  skill = async (name: string) => ({ name, digest: "0".repeat(64), files: [{ path: "SKILL.md", data: Buffer.from(`---\nname: ${name}\ndescription: test\n---\n`).toString("base64") }] });
   showPreview = async (port: number, opts: { title?: string }) => ({ port, url: `https://sim-${port}.example/`, ...(opts.title ? { title: opts.title } : {}) });
   shareImage = async (_data: string) => ({ id: "0".repeat(32) });
   getImage = async (_id: string) => null;
+  local = async (_args: Record<string, unknown>) => ({ requestId: "r1", status: "pending" });
+  crewCalls: Record<string, unknown>[] = [];
+  crew = async (args: Record<string, unknown>) => (this.crewCalls.push(args), { tool: "dork_send", id: "d1", delivery: "message" });
   unsubscribePr = async (ref: PrRef) => {
     this.prCalls.push({ op: "unsub", ref });
     if (this.prError) throw this.prError;

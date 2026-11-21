@@ -1,5 +1,36 @@
-import { appError, type AppError, type AppErrorCode, type SubscriptionView } from "@dorks/shared";
-import type { BoatCheck, CreateDorkInput, Dork, EventsPage, PrRefInput, Settings, SettingsPatch, SnapshotStatus, Usage } from "./types.ts";
+import {
+  appError,
+  type AppError,
+  type AppErrorCode,
+  type ComposioStatus,
+  type McpOAuthState,
+  type McpServerInput,
+  type McpServerView,
+  type MergeMethod,
+  type PullRequestView,
+  type SkillResolution,
+  type SkillView,
+  type SubscriptionView,
+} from "@dorks/shared";
+import type {
+  BoatCheck,
+  BuildInput,
+  BuildVarInput,
+  BuildView,
+  CreateDorkInput,
+  Dork,
+  EventsPage,
+  PrRefInput,
+  RunLog,
+  RunView,
+  Settings,
+  LocalAccess,
+  LocalDecision,
+  SettingsPatch,
+  SnapshotStatus,
+  Usage,
+  GithubRepos,
+} from "./types.ts";
 
 /**
  * Thrown for every failed call. `data` is the typed AppError, so `toAppError(e)` from @dorks/shared reads it unchanged
@@ -99,8 +130,8 @@ export function createApi(config: ApiConfig) {
     uploadImage: (image: Blob) => request<{ id: string }>("POST", "/api/images", image),
     desktopUrl: (id: string, opts: DesktopOptions) => request<{ url: string }>("POST", `${dork(id)}/desktop`, opts),
     setArchived: (id: string, archived: boolean) => request<object>("POST", `${dork(id)}/archive`, { archived }),
-    /** Claude: `model` null for the agent's default, `effort` null for the model's default. */
-    chooseModel: (id: string, model: string | null, effort: string | null) => request<object>("POST", `${dork(id)}/model`, { model, effort }),
+    /** Claude: `model` null for the agent's default, `effort` null for the model's default, `fast` for fast mode. */
+    chooseModel: (id: string, model: string | null, effort: string | null, fast = false) => request<object>("POST", `${dork(id)}/model`, { model, effort, fast }),
     chooseCodexModel: (id: string, model: string, effort: string) => request<object>("POST", `${dork(id)}/codex-model`, { model, effort }),
     /** Newest first with `before` (or neither); ascending with `after` (everything with seq > after). */
     events: (id: string, q: { before?: number; after?: number; limit?: number } = {}) => request<EventsPage>("GET", `${dork(id)}/events`, undefined, q),
@@ -108,7 +139,19 @@ export function createApi(config: ApiConfig) {
     subscribe: (id: string, pr: PrRefInput) => request<object>("POST", `${dork(id)}/subscriptions`, pr),
     unsubscribe: (id: string, pr: PrRefInput) => request<object>("DELETE", `${dork(id)}/subscriptions`, pr),
     resumeSubscription: (id: string, pr: PrRefInput) => request<object>("POST", `${dork(id)}/subscriptions/resume`, pr),
+    /** The session's pull request, read live from GitHub (404 `not_found` when the session has none). */
+    /** One of the session's pull requests by `url` (a PR it opened or follows), else its latest. */
+    getPullRequest: (id: string, url?: string) => request<PullRequestView>("GET", `${dork(id)}/pr${url ? `?url=${enc(url)}` : ""}`),
+    /** Merges it; `sha` pins the head that was reviewed (a newer push answers 409 `conflict`). */
+    mergePullRequest: (id: string, method: MergeMethod, sha?: string, url?: string) => request<{ merged: true; sha?: string }>("POST", `${dork(id)}/pr/merge`, { method, sha, url }),
+    /** Merges the base branch into the PR's branch (GitHub's "Update branch"). */
+    updatePullRequestBranch: (id: string, sha?: string, url?: string) => request<object>("POST", `${dork(id)}/pr/update-branch`, { sha, url }),
     getSettings: () => request<Settings>("GET", "/api/settings"),
+    decideLocal: (id: string, requestId: string, d: LocalDecision) => request<object>("POST", `${dork(id)}/local/${enc(requestId)}`, d),
+    localAccess: () => request<LocalAccess>("GET", "/api/local-access"),
+    setLocalAccess: (enabled: boolean) => request<object>("PUT", "/api/local-access", { enabled }),
+    revokeLocalGrant: (grantId: string) => request<object>("DELETE", `/api/local-access/grants/${enc(grantId)}`),
+    revokeLocalGrants: (dorkId?: string) => request<object>("DELETE", dorkId ? `/api/local-access/grants?dork=${enc(dorkId)}` : "/api/local-access/grants"),
     updateSettings: (patch: SettingsPatch) => request<object>("PUT", "/api/settings", patch),
     /** Checks the given key (or the saved one) against Boat without saving it. */
     checkBoat: (input: { boatKey?: string; boatOrg?: string }) => request<BoatCheck>("POST", "/api/boat/check", input),
@@ -116,9 +159,44 @@ export function createApi(config: ApiConfig) {
     /** Starts the build (idempotent: returns the current status if one is running or the snapshot is current). */
     buildSnapshot: (force = false) => request<SnapshotStatus>("POST", "/api/snapshot/build", force ? { force: true } : {}),
     getUsage: () => request<Usage>("GET", "/api/usage"),
+    /** `fresh`: read the GitHub CLI and GitHub again instead of the server's short cache. */
+    getGithubRepos: (fresh = false) => request<GithubRepos>("GET", fresh ? "/api/github/repos?fresh=1" : "/api/github/repos"),
     listSecrets: () => request<string[]>("GET", "/api/secrets"),
     setSecret: (name: string, value: string) => request<object>("PUT", `/api/secrets/${enc(name)}`, { value }),
     deleteSecret: (name: string) => request<object>("DELETE", `/api/secrets/${enc(name)}`),
+    listMcpServers: () => request<McpServerView[]>("GET", "/api/mcp-servers"),
+    putMcpServer: (name: string, input: McpServerInput) => request<{ oauth?: McpOAuthState | null }>("PUT", `/api/mcp-servers/${enc(name)}`, input),
+    deleteMcpServer: (name: string) => request<object>("DELETE", `/api/mcp-servers/${enc(name)}`),
+    listSkills: () => request<SkillView[]>("GET", "/api/skills"),
+    resolveSkills: (source: string) => request<SkillResolution>("POST", "/api/skills/resolve", { source }),
+    installSkills: (source: string, skills: string[]) => request<{ installed: string[] }>("POST", "/api/skills", { source, skills }),
+    updateSkill: (name: string) => request<{ updated: boolean }>("POST", `/api/skills/${enc(name)}/update`),
+    deleteSkill: (name: string) => request<object>("DELETE", `/api/skills/${enc(name)}`),
+    /** A sign-in page for an OAuth server; the browser comes back to this server, so it sends the URL it reaches it at. */
+    mcpSignIn: (name: string) => request<{ url: string }>("POST", `/api/mcp-servers/${enc(name)}/oauth`, { base: new URL(base || "/", globalThis.location?.href).origin }),
+    mcpSignOut: (name: string) => request<object>("DELETE", `/api/mcp-servers/${enc(name)}/oauth`),
+    composio: () => request<ComposioStatus>("GET", "/api/composio"),
+    connectComposio: (apiKey: string) => request<object>("PUT", "/api/composio", { apiKey }),
+    disconnectComposio: () => request<object>("DELETE", "/api/composio"),
+    composioLink: (toolkit: string) => request<{ url: string }>("POST", `/api/composio/toolkits/${enc(toolkit)}/link`),
+    composioUnlink: (toolkit: string) => request<object>("DELETE", `/api/composio/toolkits/${enc(toolkit)}`),
+    // builds (docs/builds.md)
+    listBuilds: () => request<BuildView[]>("GET", "/api/builds"),
+    getBuild: (id: string) => request<BuildView>("GET", `/api/builds/${enc(id)}`),
+    createBuild: (input: BuildInput & { name: string }) => request<{ id: string }>("POST", "/api/builds", input),
+    updateBuild: (id: string, patch: BuildInput) => request<object>("PATCH", `/api/builds/${enc(id)}`, patch),
+    deleteBuild: (id: string) => request<object>("DELETE", `/api/builds/${enc(id)}`),
+    setDefaultBuild: (id: string, isDefault: boolean) => request<object>("PUT", `/api/builds/${enc(id)}/default`, { default: isDefault }),
+    setBuildVar: (id: string, name: string, input: BuildVarInput) => request<object>("PUT", `/api/builds/${enc(id)}/vars/${enc(name)}`, input),
+    deleteBuildVar: (id: string, name: string) => request<object>("DELETE", `/api/builds/${enc(id)}/vars/${enc(name)}`),
+    listRuns: (id: string) => request<RunView[]>("GET", `/api/builds/${enc(id)}/runs`),
+    startRun: (id: string, kind: "image" | "trial") => request<RunView>("POST", `/api/builds/${enc(id)}/runs`, { kind }),
+    runLog: (id: string, runId: string, after = 0) => request<RunLog>("GET", `/api/builds/${enc(id)}/runs/${enc(runId)}/log`, undefined, { after }),
+    cancelRun: (id: string, runId: string) => request<object>("POST", `/api/builds/${enc(id)}/runs/${enc(runId)}/cancel`),
+    /** `reviewed`: the `updatedAt` of the draft the owner saw; a draft changed since is refused with `conflict`. */
+    approveDraft: (id: string, draftId: string, reviewed: number, run = true) =>
+      request<{ run: RunView | null; missing: string[] }>("POST", `/api/builds/${enc(id)}/drafts/${enc(draftId)}/approve`, { reviewed, run }),
+    rejectDraft: (id: string, draftId: string, reason?: string) => request<object>("POST", `/api/builds/${enc(id)}/drafts/${enc(draftId)}/reject`, { reason }),
   };
 }
 

@@ -44,7 +44,8 @@ pub struct SidecarSpec {
 }
 
 /// Variables copied from the shell's environment to the child.
-pub const INHERITED_ENV: &[&str] = &["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "USER", "LOGNAME"];
+/// `GH_CONFIG_DIR` and `XDG_CONFIG_HOME` tell the server's `gh auth token` where the GitHub CLI keeps its login.
+pub const INHERITED_ENV: &[&str] = &["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "USER", "LOGNAME", "GH_CONFIG_DIR", "XDG_CONFIG_HOME"];
 
 #[derive(Debug, Clone)]
 pub struct Policy {

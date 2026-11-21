@@ -48,37 +48,40 @@ export async function runDorks(argv: string[], env: NodeJS.ProcessEnv, io: Dorks
     return 2;
   }
 
-  let ref: PrRef | null = null;
-  const json = rest.includes("--json");
-  if (verb === "list") {
-    if (rest.some((a) => a !== "--json")) {
-      io.err(`dorks: unexpected argument\n${USAGE}\n`);
-      return 2;
-    }
-  } else {
-    ref = rest.length === 1 ? parsePrRef(rest[0]!) : null;
-    if (!ref) {
-      io.err(`dorks: expected one PR reference: https://github.com/owner/name/pull/12 or owner/name#12\n`);
-      return 2;
-    }
-  }
-
+  const ref = prArg(verb!, rest, io);
+  if (ref === undefined) return 2;
   const sock = socketOf(env);
   if (!sock) {
     io.err("dorks: DORKS_SOCK is not set; this only works inside a dork box\n");
     return 1;
   }
   try {
-    if (verb === "list") {
-      const subs = await rpcCall<SubscriptionView[]>(sock, "pr.list");
-      io.out(json ? JSON.stringify(subs, null, 2) + "\n" : subs.length ? subs.map(listLine).join("\n") + "\n" : "No PR subscriptions.\n");
-    } else {
-      await rpcCall(sock, verb === "sub" ? "pr.sub" : "pr.unsub", verb === "sub" ? { ...ref, source: "agent" } : ref);
-      io.out(`${verb === "sub" ? "Subscribed to" : "Unsubscribed from"} ${prLabel(ref!)}\n`);
-    }
+    await runPr(sock, verb!, ref, rest.includes("--json"), io);
     return 0;
   } catch (e) {
     io.err(`dorks: ${describeRpcError(e)}\n`);
     return 1;
   }
+}
+
+/** The PR a `dorks pr` verb names (null for `list`), or undefined after printing why the arguments are wrong. */
+function prArg(verb: string, rest: string[], io: Io): PrRef | null | undefined {
+  if (verb === "list") {
+    if (!rest.some((a) => a !== "--json")) return null;
+    io.err(`dorks: unexpected argument\n${USAGE}\n`);
+    return undefined;
+  }
+  const ref = rest.length === 1 ? parsePrRef(rest[0]!) : null;
+  if (!ref) io.err(`dorks: expected one PR reference: https://github.com/owner/name/pull/12 or owner/name#12\n`);
+  return ref ?? undefined;
+}
+
+async function runPr(sock: string, verb: string, ref: PrRef | null, json: boolean, io: Io) {
+  if (verb === "list") {
+    const subs = await rpcCall<SubscriptionView[]>(sock, "pr.list");
+    io.out(json ? JSON.stringify(subs, null, 2) + "\n" : subs.length ? subs.map(listLine).join("\n") + "\n" : "No PR subscriptions.\n");
+    return;
+  }
+  await rpcCall(sock, verb === "sub" ? "pr.sub" : "pr.unsub", verb === "sub" ? { ...ref, source: "agent" } : ref);
+  io.out(`${verb === "sub" ? "Subscribed to" : "Unsubscribed from"} ${prLabel(ref!)}\n`);
 }

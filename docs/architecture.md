@@ -35,7 +35,7 @@ The per-dork `events` table is append-only with a dense `seq`. That is the repli
                                       └─ GitHub poller      ETag polling with a stored token
 ```
 
-Runtime: Bun (`bun:sqlite`, `Bun.serve`), compiled with `bun build --compile` into one sidecar binary per target. The code under `apps/server/src` is runtime-neutral except `main.ts`: the SQLite adapter picks `bun:sqlite` under Bun and `node:sqlite` under Node 24, so the unit tests run under vitest on Node against the real code and an in-memory database.
+Runtime: Bun (`bun:sqlite`, `Bun.serve`), compiled with `bun build --compile` into one sidecar binary per target. The code under `apps/server/src` is runtime-neutral except `main.ts`: the SQLite adapter picks `bun:sqlite` under Bun and `node:sqlite` under Node 24, so the unit tests run under Vitest (`vp test`) on Node against the real code and an in-memory database.
 
 ### Process model and atomicity
 
@@ -54,7 +54,7 @@ Environment (all optional except where noted); a desktop shell sets these when i
 | `DORKS_UI_PORT` | `4747` (`0` = random) | UI listener, bound to `127.0.0.1` |
 | `DORKS_BRIDGE_PORT` | `4748` (`0` = random) | Bridge listener, bound to `127.0.0.1`; the tunnel forwards to this |
 | `DORKS_PUBLIC_URL` | none | Public `https://` URL of the tunnel. The sandbox is created with `BRIDGE_URL` = this (as `wss://`). Required before a Boat dork can be created |
-| `DORKS_TUNNEL_KEY` | none | Access key of the wurmhol pipe that forwards to the bridge port (32 to 128 of `A-Za-z0-9_-`). Set by the desktop shell for a wurmhol tunnel. Each sandbox gets it as `DORKS_TUNNEL_KEY` in its creation environment, and the bridge sends it as the `x-wurmhol-key` header when it opens its WebSocket, so the relay lets a non-browser client through. It is not authentication: the per-dork HMAC is |
+| `DORKS_TUNNEL_SERVICE`, `DORKS_TUNNEL_INSTALL_KEY` | none | Set together by the desktop shell when the public URL is this install's embedded wurmhol tunnel: the Dorks tunnel service (`https://`) and the install's key for it (`dti_` + 64 hex). Before creating a box the server registers the dork there and puts the ticket it gets in the box's creation environment (`DORKS_TUNNEL_SERVICE`, `DORKS_TUNNEL_TICKET`); the bridge trades it for wurmhol grants and sends them as `x-wurmhol-grant`. Deleting the dork removes it there. Not authentication: the per-dork HMAC is (docs/desktop.md, "Tunnel: wurmhol") |
 | `DORKS_OWNER_TOKEN` | generated | Bearer token for the UI API. Generated once into `secrets.json` if unset |
 | `DORKS_UI_ORIGINS` | tauri + localhost:3000 | Comma-separated browser origins allowed by CORS |
 | `BOX_PROVIDER` | `boat` | `boat`, or `sim` for the local simulator and tests |
@@ -65,7 +65,7 @@ Environment (all optional except where noted); a desktop shell sets these when i
 | `DORKS_BRIDGE_BUNDLE` | none | Development: path of a bridge bundle to build snapshots from instead of the embedded one (see "Base snapshot") |
 | `DORKS_DEBUG_BRIDGE` | none | Logs bridge frame names and sizes to stderr; never `configure` results or secrets |
 
-`secrets.json` (mode 600) holds `bridgeSecretKey` (HMAC key for per-dork bridge secrets), `encryptionKey` (AES-GCM, base64 32 bytes) and `ownerToken`, generated on first run. The Boat API key, Claude token, GitHub token and CLI secrets are **settings** stored encrypted in SQLite, so the UI can change them without touching the environment.
+`secrets.json` (mode 600) holds `bridgeSecretKey` (HMAC key for per-dork bridge secrets), `encryptionKey` (AES-GCM, base64 32 bytes) and `ownerToken`, generated on first run. The Boat API key, Claude token and CLI secrets are **settings** stored encrypted in SQLite (GitHub is the GitHub CLI's login, read live and never stored: [GitHub](github.md)), so the UI can change them without touching the environment.
 
 On startup the server prints one JSON line to stdout for a supervisor: `{"ready":true,"ui":"http://127.0.0.1:4747","bridge":"ws://127.0.0.1:4748/bridge"}`. `GET /api/health` answers `{"ok":true}` without auth.
 
@@ -76,14 +76,14 @@ Auth: `Authorization: Bearer <owner token>` (SSE also accepts `?access_token=`, 
 IDs are UUID strings. Times are epoch milliseconds.
 
 **Dork** (the client-visible row; box ids, session ids and secrets are never returned):
-`{ id, title, repo, branch, provider: "claude"|"codex", state, archived, preview?, previews: {port, url, title?}[], prUrl?, codexModel?, codexModelChoices?, model?, effort?, agentModel?, agentEffort?, modelChoices?, lastActivityAt, createdAt }`
-`state` is one of `creating | working | idle | sleeping | waking | error`. For Claude, `model`/`effort` are the session's choice (absent: the CLI's default), `agentModel`/`agentEffort` what the agent confirmed it runs (the model from its `system/init` event, the effort the bridge started it with; cleared on a change until confirmed again), and `modelChoices` the `AgentModelChoice[]` the CLI offered this account (its `initialize` answer). `previews` are the dev servers the agent showed (`show_preview` below), oldest first, at most 20; the Previews tab in Chat details lists them and opens one as it appears. The URLs are public hosted ports (no token), cleared when the box is replaced.
+`{ id, title, repo, branch, provider: "claude"|"codex", state, archived, preview?, previews: {port, url, title?}[], prUrl?, codexModel?, codexModelChoices?, model?, effort?, agentModel?, agentEffort?, modelChoices?, buildId, kind, parentId, icon?, lastActivityAt, createdAt }`
+`state` is one of `creating | working | idle | sleeping | waking | error`. For Claude, `model`/`effort` are the session's choice (absent: the CLI's default), `agentModel`/`agentEffort` what the agent confirmed it runs (the model from its `system/init` event, the effort the bridge started it with; cleared on a change until confirmed again), and `modelChoices` the `AgentModelChoice[]` the CLI offered this account (its `initialize` answer). `previews` are the dev servers the agent showed (`show_preview` below), oldest first, at most 20; Chat details' Artifacts shows them as running previews and opens one as it appears. The URLs are public hosted ports (no token), cleared when the box is replaced. `kind` is `agent` or `coordinator` (a session that plans and runs worker dorks), `parentId` the coordinator that started a worker, else null: [crews](crew.md).
 
 | Method and path | Body / query | Result |
 |---|---|---|
 | `GET /api/dorks` | `?archived=true` | `Dork[]`, newest activity first, at most 200 |
 | `GET /api/dorks/:id` | | `Dork` or 404 |
-| `POST /api/dorks` | `{repo, message, title?, provider?, model?, effort?}` (`provider` defaults to `claude`; Codex needs a configured Boat environment; Claude's `model`/`effort` must be in `settings.claudeModels`) | `{id}` |
+| `POST /api/dorks` | `{repo, message, title?, provider?, model?, effort?, buildId?, setup?, kind?, icon?}` (`kind: "coordinator"` needs no `repo`, [crews](crew.md); `provider` defaults to `claude`; Codex needs a configured Boat environment; Claude's `model`/`effort` must be in `settings.claudeModels`; `buildId` defaults to `settings.defaultBuildId`, and needs a built image unless `setup: true`, a machine-setup session that also needs no `repo`: [builds](builds.md)) | `{id}` |
 | `PATCH /api/dorks/:id` | `{title}` | `{}` |
 | `DELETE /api/dorks/:id` | | `{}` (box is destroyed in the background, then rows are purged) |
 | `POST /api/dorks/:id/messages` | `{text}` | `{}` |
@@ -93,19 +93,41 @@ IDs are UUID strings. Times are epoch milliseconds.
 | `POST /api/dorks/:id/model` | `{model: string\|null, effort: string\|null}` | `{}`. Claude only: a model and effort from `modelChoices` (null: the default). While the sandbox is up the bridge restarts the CLI on the same session with `--model`/`--effort` once the current turn ends; asleep, the next wake uses it |
 | `POST /api/dorks/:id/codex-model` | `{model, effort}` | `{}` |
 | `GET /api/dorks/:id/events` | `?before=<seq>&limit=<1..200, default 50>` or `?after=<seq>` | `{events: ClientEvent[], hasMore}`. `before` (or neither) returns newest first; `after` returns ascending, inclusive of `seq > after` |
-| `GET /api/dorks/:id/subscriptions` | | `SubscriptionView[]` (non-ended) |
+| `GET /api/dorks/:id/pr?url=` | | `PullRequestView`: one of the session's PRs read live from GitHub as the gh login (state, mergeability, checks, files with patches, comments). `url` picks it (its headline PR or any PR it has a subscription to, ended ones included); without it, the headline (the latest it opened). 404 for any other PR or without one |
+| `POST /api/dorks/:id/pr/merge` | `{method: "squash"\|"merge"\|"rebase", sha?, url?}` | `{merged, sha}`; `sha` pins the reviewed head (409 `conflict` if it moved, or GitHub refuses: conflicts, required checks or reviews) |
+| `POST /api/dorks/:id/pr/update-branch` | `{sha?, url?}` | `{}` (merges the base branch into the PR's branch) |
+| `GET /api/dorks/:id/subscriptions` | | `SubscriptionView[]`: live ones, plus ended ones the session opened itself or that were merged or closed (the session's PR history); the bridge gets live ones only |
 | `POST /api/dorks/:id/subscriptions` | `{repo, number}` | `{}` (user subscribe; un-stalls and resets the CI budget) |
 | `DELETE /api/dorks/:id/subscriptions` | `{repo, number}` | `{}` |
 | `POST /api/dorks/:id/subscriptions/resume` | `{repo, number}` | `{}` |
-| `GET /api/settings` | | `{claudeToken, boatKey, github: {configured, login?}, boatOrg, boatEnvironment, baseSnapshotId, sleepMinutes, commentPolicy, publicUrlConfigured, boxProvider, claudeModels}`: booleans and plain values only, never secrets. `claudeModels` is the model list a Claude agent last reported (empty before the first session), what a new session can choose from |
-| `PUT /api/settings` | any subset of `{boatKey, boatOrg, claudeToken, githubToken, boatEnvironment, baseSnapshotId, sleepMinutes, commentPolicy}` | `{}`. Token fields are write-only; an empty string clears one. Provider values are checked before anything is saved: `boatKey`/`boatOrg` with the same check as `POST /api/boat/check`, `boatEnvironment` against Boat's environment list, `githubToken` with GitHub `GET /user`; a refusal is `invalid` (400) with Boat's or GitHub's reason in plain words, and an unreachable provider does not block the save. Saving a non-empty `boatKey` with no base snapshot (in Settings or `BASE_SNAPSHOT_ID`) queues the base-snapshot build; so does the next start, if the process stopped in between. A failed build is never retried by itself |
+| `GET /api/settings` | | `{claudeToken, boatKey, github: {configured, login?}, boatOrg, boatEnvironment, baseSnapshotId, sleepMinutes, commentPolicy, publicUrlConfigured, boxProvider, claudeModels, defaultBuildId}`: booleans and plain values only, never secrets. `claudeModels` is the model list a Claude agent last reported (empty before the first session), what a new session can choose from |
+| `PUT /api/settings` | any subset of `{boatKey, boatOrg, claudeToken, githubConnected, boatEnvironment, baseSnapshotId, sleepMinutes, commentPolicy}` | `{}`. Token fields are write-only; an empty string clears one. Provider values are checked before anything is saved: `boatKey`/`boatOrg` with the same check as `POST /api/boat/check`, `boatEnvironment` against Boat's environment list, `githubConnected: true` reads the GitHub CLI's login and checks it with GitHub `GET /user` (a missing or signed-out `gh` is refused too); a refusal is `invalid` (400) with Boat's or GitHub's reason in plain words, and an unreachable provider does not block the save. Saving a non-empty `boatKey` with no base snapshot (in Settings or `BASE_SNAPSHOT_ID`) queues the base-snapshot build; so does the next start, if the process stopped in between. A failed build is never retried by itself |
+| `GET /api/github/repos` | `?fresh=1` reads `gh` and GitHub again | `{login, orgs, repos, auth: {state, source, missingScopes}}`: the GitHub CLI login's user (null when not connected), its organizations' logins, and the non-archived `owner/name` repositories it can see (300 most recently pushed, then a page of each organization's). `auth.state` is `ok`, `not_connected`, `gh_missing`, `gh_logged_out`, `rejected` or `unreachable`; `missingScopes` names any of `repo`, `read:org`, `workflow` the token lacks. Cached for two minutes, dropped on connect and disconnect; a problem answers empty lists. Feeds the repository picker and the sidebar's owner switcher |
 | `POST /api/boat/check` | `{boatKey?, boatOrg?}` (the saved ones when omitted) | `{status: "ok"\|"invalid"\|"needs_org"\|"credit_required"\|"unreachable", message}`: asks Boat's `GET /limits` with that key (a free trial or `canStart: false` is `credit_required`), or `GET /sandboxes?limit=1` when the key lacks `account.read`; nothing is saved. Error `not_configured` (412) with no key at all |
 | `GET /api/snapshot` | | the base-snapshot build status, see "Base snapshot" |
 | `POST /api/snapshot/build` | `{force?: boolean}` | `202` and the same status. Starts "Prepare Boat" unless a build is running, or the snapshot is already built from this app's bridge and in use (and `force` is not set). Error `not_configured` (412) without a Boat key |
 | `GET /api/secrets` | | sorted names `string[]` |
 | `PUT /api/secrets/:name` | `{value}` | `{}` (`^[A-Z][A-Z0-9_]{0,63}$`, 16 KB max) |
 | `DELETE /api/secrets/:name` | | `{}` |
+| `GET /api/mcp-servers` | | `McpServerView[]` sorted by name: `{name, transport, url, command, args, headerNames, envNames, oauth, createdAt}`, never header or env values |
+| `PUT /api/mcp-servers/:name` | `{transport: "http", url, headers?}` or `{transport: "stdio", command, args?, env?}` | `{oauth}`: `signed_out` when the server asks for a sign-in. Adds or replaces; a `null` header/env value keeps the saved one. Restarts awake Claude agents once their turn ends. See [MCP servers](mcp.md) |
+| `DELETE /api/mcp-servers/:name` | | `{}` |
+| `POST /api/mcp-servers/:name/oauth` | `{base}` | `{url}`: the sign-in page of a server that asks for OAuth; the browser comes back to `GET /oauth/mcp/callback` (no token). See [MCP servers](mcp.md#oauth) |
+| `DELETE /api/mcp-servers/:name/oauth` | | `{}`. Signs out: forgets the tokens |
+| `GET /api/skills` | | `SkillView[]` sorted by name: `{name, description, source: {repo, ref, path}, sha, url, fileCount, bytes, installedAt, updatedAt}`. See [skills](skills.md) |
+| `POST /api/skills/resolve` | `{source}` | `SkillResolution`: `{repo, ref, sha, skills: {name, description, path, fileCount, bytes, installed}[], requested}`. `source` is what the owner pasted: `owner/repo`, a github.com URL or an `npx skills add` command. Reads GitHub as the gh login; nothing is saved |
+| `POST /api/skills` | `{source, skills: string[]}` | `{installed}`. Downloads the source again and saves the named skills (all of them when it holds one); a skill of the same name is replaced. Awake Claude agents sync without a restart |
+| `POST /api/skills/:name/update` | | `{updated}`: downloads the skill again from its repository and ref |
+| `DELETE /api/skills/:name` | | `{}` |
+| `GET /api/composio` | | `{connected, toolkits}`: whether a Composio key is saved, and the apps signed in through it. See [MCP servers](mcp.md) |
+| `PUT /api/composio` | `{apiKey}` | `{}`. Checks the key with a Composio session and saves it as the `composio` server |
+| `DELETE /api/composio` | | `{}`. Removes the key and the `composio` server |
+| `POST /api/composio/toolkits/:toolkit/link` | | `{url}`: a Composio sign-in page for one app |
+| `DELETE /api/composio/toolkits/:toolkit` | | `{}`. Signs that app out |
+| `GET/POST /api/builds`, `GET/PATCH/DELETE /api/builds/:id`, `PUT /api/builds/:id/default`, `PUT/DELETE /api/builds/:id/vars/:name`, `GET/POST /api/builds/:id/runs`, `GET /api/builds/:id/runs/:runId/log`, `POST /api/builds/:id/runs/:runId/cancel`, `POST /api/builds/:id/drafts/:draftId/approve\|reject` | | Builds: named machine setups, see [builds](builds.md) ("UI and API") |
+| `POST /api/dorks/:id/local/:requestId`, `GET/PUT /api/local-access`, `DELETE /api/local-access/grants[/:grantId]` | | The owner's answers to an agent's requests to use this computer, the on/off switch and the time-limited permissions: [local access](local-access.md) |
 | `GET /api/health` | no auth | `{ok: true}` |
+| `POST /mcp` | JSON-RPC (MCP, Streamable HTTP, plain JSON answers) | The dorks MCP server for the owner's other agents: `dork_*`, `build_*`, `repo_list`. Owner bearer token; a browser `Origin` outside `DORKS_UI_ORIGINS` is 403; `GET`/`DELETE` are 405. See [crews](crew.md) |
 
 `ClientEvent` and `SubscriptionView` are the zod types in `packages/shared`. A `turn_complete` carries `outcome` (`done`, `stopped` after the user's Stop, `failed`) and, for a `done` turn, `finalMessageId`: the turn's final answer, the last assistant message with no tool call after it, named by the server from the agent's stream. Clients show the final answer and fold the rest of the turn behind a checkpoint, "Worked for 2m 14s" (`durationMs`), that opens the turn's whole history; they never infer the final answer from position. Turns stored before these fields existed have neither. Every agent session is told this (`infra/bridge/src/guidance.ts`, as Claude's `--append-system-prompt` and Codex's `developerInstructions`), so it writes a self-contained final answer. The event log is append-only; a growing assistant message keeps **one** row whose text grows in place (same `seq`), so a client that tails must re-read from its last known `seq` inclusive.
 
@@ -122,6 +144,8 @@ One stream per client. Messages are `data: <json>\n\n`; a `: ping` comment every
 | `{"t":"subscriptions","dorkId"}` | PR subscriptions changed |
 | `{"t":"settings"}` | settings or secret names changed |
 | `{"t":"snapshot"}` | the base-snapshot build changed (a step, a result); refetch `GET /api/snapshot` |
+| `{"t":"builds"}` | the build list changed; refetch `GET /api/builds` |
+| `{"t":"build","buildId"}` | one build, its runs, drafts or a run's log changed; refetch it, its runs and an open log |
 
 `packages/client` wraps this (`useDorks`, `useDork`, `useDorkEvents`, `useSettings`), replacing `@dorks/convex/client` and `convex/react`.
 
@@ -138,15 +162,20 @@ One stream per client. Messages are `data: <json>\n\n`; a `: ping` comment every
 | `connect` | | `{afterBridgeSeq}`. Error `sleeping` if the dork is asleep (a bridge must not wake anything). Marks the bridge seen and queues a `configure` command |
 | `heartbeat` | | `{}`. Bridge liveness; back after a blip while `working`/`idle` re-arms the machine |
 | `push` | `{frames: FromBridge[]}` (at most 500 frames, 256 KB per event) | `{ok:true}` or `{ok:false,expectedBseq}` when the batch has a gap. A gap applies nothing: the bridge resends from `expectedBseq`. Events numbered `<=` the stored `bridge_seq` are replays and skipped. Errors `too_many_frames`, `event_too_large` |
-| `configure` | | the `configure` `ToBridge` frame (Claude token, CLI secrets, GitHub token, repo, resume session) or `null` if refused. **The only place secrets are decrypted**; they exist only in this response, never stored in a command row |
-| `gh_token` | | `{token}` or `null` (the stored GitHub token; kept so the bridge's refresh path keeps working, the server no longer queues `gh_token` commands) |
+| `configure` | | the `configure` `ToBridge` frame (Claude token, shared and build variables, GitHub token, repo or `null` for a setup session, resume session) or `null` if refused. **The only place secrets are decrypted**; they exist only in this response, never stored in a command row |
+| `gh_token` | | `{token}` or `null` (the GitHub CLI's current token; kept so the bridge's refresh path keeps working, the server no longer queues `gh_token` commands) |
 | `subscribe_pr` | `{repo, number, source: "auto"\|"agent"}` | `{}` (idempotent) |
 | `unsubscribe_pr` | `{repo, number}` | `{}` |
+| `build` | `{action: "get"\|"draft"\|"run"\|"logs"\|"submit", ...}` | The agent's `machine_*` MCP tools ([builds](builds.md), "Agent tooling"), scoped to this dork's build. Never returns a secret value |
+| `local` | `{action: "request"\|"wait", ...}` | The agent's `local_run`/`local_read`/`local_wait` tools: ask to run a command or read a file on the owner's computer, and wait for the answer and the result. Nothing runs without the owner's Allow: [local access](local-access.md) |
+| `crew` | `{tool, args}` | A coordinator's or worker's crew tools ([crews](crew.md)), the same table as `POST /mcp`, scoped to the dork's crew: a coordinator reaches only its workers, a worker only its coordinator and siblings. A plain dork is `forbidden`. One `dork_wait` waits at most 8 s |
+| `mcp_token` | `{name, stale?}` | `{authorization, expiresAt}`: a current access token for an OAuth MCP server, refreshed when about to expire or when `stale` (the token the server just refused) is still the saved one. Errors `not_configured` (not signed in, or the grant is gone) |
+| `skill` | `{name}` | `{name, digest, files: {path, data (base64), exec?}[]}`: one of the owner's skills, fetched when `configure` lists a digest the box does not have ([skills](skills.md)) |
 | `show_preview` | `{port, title?, localhost?}` | `{port, url, title?}`. The agent's `preview_show` MCP tool (bridge RPC `preview.show`). The box provider hosts the port (Boat `POST /host`, public; see [Boat](boat.md#hosted-ports)) and the URL is stored in the dork's `previews` (one per port, the newest replaces). Errors `invalid` (bad or reserved port), `sleeping` (no box), `not_configured`, `failed` |
 
 **Pushes** (server to bridge): `{"t":"commands","cmds":[{cid, frame: CommandFrame}]}` is the **snapshot of unacknowledged commands** and is re-sent whenever it changes (and once right after `auth_ok`). Delivery is idempotent: the bridge dedupes by `cid`/message id and acknowledges with a `push` `ack` frame, which removes the command. This gives resume-after-reconnect for free: after a drop the bridge re-auths, calls `connect` (learning `afterBridgeSeq`, the event cursor, so it replays events above it) and receives the current snapshot. `{"t":"subscriptions","views":SubscriptionView[]}` is sent likewise for the bridge's PR cache.
 
-`push` frames, `ToBridge`, `FromBridge` and `CommandFrame` are the zod types in `packages/shared/src/bridge.ts`. The server does not queue `gh_token` commands. For Claude, `configure` carries `model`/`effort` when chosen; the bridge sends the CLI an `initialize` control request and relays its model list as an `agent_models` frame (`{models: AgentModelChoice[], effort}`), and passes the `model` of `system/init` through. A `configure` whose model or effort changed restarts the CLI on the same session after the current turn. Codex authenticates only through a Boat environment (there is no per-box sign-in); `codex_issue` becomes an error event and `codex_models` fills the model choices. While a dork's title is still its first message (`title_source = 'message'`), `configure` carries that message as `nameFrom`: the bridge asks a light model beside the agent (Haiku through `claude -p`, or a `luna`/mini Codex model on a side thread) for a 5–7 word name and sends a `title` frame; the server applies it only over the placeholder, never over a name the user typed.
+`push` frames, `ToBridge`, `FromBridge` and `CommandFrame` are the zod types in `packages/shared/src/bridge.ts`. The server does not queue `gh_token` commands. For Claude, `configure` carries `model`/`effort` when chosen; the bridge sends the CLI an `initialize` control request and relays its model list as an `agent_models` frame (`{models: AgentModelChoice[], effort}`), and passes the `model` of `system/init` through. `configure` lists the owner's skills as `skills: {name, digest}[]`; the bridge writes changed ones into `~/.claude/skills` before it starts the agent, and a change to them alone never restarts it ([skills](skills.md)). A `configure` whose model or effort changed restarts the CLI on the same session after the current turn. Codex authenticates only through a Boat environment (there is no per-box sign-in); `codex_issue` becomes an error event and `codex_models` fills the model choices. While a dork's title is still its first message (`title_source = 'message'`), `configure` carries that message as `nameFrom`: the bridge asks a light model beside the agent (Haiku through `claude -p`, or a `luna`/mini Codex model on a side thread) for a 5–7 word name and sends a `title` frame; the server applies it only over the placeholder, never over a name the user typed.
 
 The `Transport` interface in `infra/bridge/src/transport.ts` is unchanged; `WsTransport` implements it over this protocol with reconnect and resume.
 
@@ -166,13 +195,20 @@ Every sandbox is created from a saved snapshot in the user's own Boat account (s
 
 Boat API used (https://docs.boat.dev): `POST|GET /sandboxes`, `GET|DELETE /sandboxes/{id}`, `PUT /sandboxes/{id}/files`, `POST /sandboxes/{id}/commands`, `POST /saved-snapshots`, `GET /saved-snapshots/{name}`.
 
+## Builds
+
+Optional, named machine setups layered on the base snapshot: a build's image is a Boat saved snapshot made by a run job
+(`services/buildRuns.ts`, timers `build:run:<id>` and `build:forget:<image>`), a dork on a build starts from that image at the build's
+size, and the build's variables reach it through `configure`. Agents propose changes through the `build` bridge op; only the owner
+applies them. The full design: [builds](builds.md).
+
 ## Lifecycle
 
-`core/machine.ts` is unchanged apart from dropping the GitHub-token-refresh effects. Dispatch applies an input in one transaction: persist the new state, append a `status` event, then run effects (arm/cancel timers, enqueue box jobs, release held notifications, enqueue `interrupt`). Pausing keeps the same intent-with-generation model (`flushing` → `pausing` → `cancelled`). Timers: `sleep`, `watchdog`, `bridge_watch`, `flush`, `notify`, `pause_retry`. Global jobs (owner `''`): `poll`, `sweep`, `snapshot:build`, `orphan:<boxId>`.
+`core/machine.ts` is unchanged apart from dropping the GitHub-token-refresh effects. Dispatch applies an input in one transaction: persist the new state, append a `status` event, then run effects (arm/cancel timers, enqueue box jobs, release held notifications, enqueue `interrupt`). Pausing keeps the same intent-with-generation model (`flushing` → `pausing` → `cancelled`). Timers: `sleep`, `watchdog`, `bridge_watch`, `flush`, `notify`, `pause_retry`. Global jobs (owner `''`): `poll`, `sweep`, `snapshot:build`, `orphan:<boxId>`, `build:run:<runId>`, `build:forget:<image>`.
 
 ## GitHub (autonomy)
 
-No GitHub App and no webhooks. One **token** (a fine-grained PAT, or the one `gh auth token` yields) is stored encrypted in settings; it is handed to the sandbox in `configure` and used by the server's poller. Every 30 s (when any subscription is active) the poller reads each subscribed PR with conditional requests (`If-None-Match`; a 304 is free against the rate limit): the PR (head, base, state, mergeability), its reviews, its conversation and review comments since the last cursor, and the check suites of the head. It turns differences into the same normalized events the webhook path produced (`pr_closed`, `pr_synchronize`, `pr_base_changed`, `review`, `comment`, `check_suite`, mergeability) and feeds them through the same routing, CI-attempt budget, debounce inbox and `notify` rendering as before. Polling catches up after the machine sleeps, which webhooks cannot.
+No GitHub App and no webhooks. One **token**, the GitHub CLI's (`gh auth token`, read live and never stored, [GitHub](github.md)), is handed to the sandbox in `configure` and used by the server's poller. Every 30 s (when any subscription is active) the poller reads each subscribed PR with conditional requests (`If-None-Match`; a 304 is free against the rate limit): the PR (head, base, state, mergeability), its reviews, its conversation and review comments since the last cursor, and the check suites of the head. It turns differences into the same normalized events the webhook path produced (`pr_closed`, `pr_synchronize`, `pr_base_changed`, `review`, `comment`, `check_suite`, mergeability) and feeds them through the same routing, CI-attempt budget, debounce inbox and `notify` rendering as before. Polling catches up after the machine sleeps, which webhooks cannot.
 
 Identity: the dork acts as whoever owns the token. Events authored by the token's own login are ignored (they are the agent's own), so use a dedicated bot account's token if you also want your comments on the PR to wake the dork; otherwise talk to it in the chat.
 
@@ -180,13 +216,13 @@ Identity: the dork acts as whoever owns the token. Events authored by the token'
 
 - UI listener: loopback only, bearer owner token, CORS limited to configured origins.
 - Bridge listener: loopback only; the tunnel forwards to it. Only `/bridge` upgrades; authentication is the per-dork HMAC; secrets are returned only over an authenticated socket and never persisted in command rows.
-- At rest: Boat key, Claude token, GitHub token and CLI secrets are AES-GCM encrypted (`core/crypto.ts`, additional data binds each to its purpose); `secrets.json` is mode 600.
-- The sandbox's `BRIDGE_URL` is fixed at creation, so `DORKS_PUBLIC_URL` must be stable (a stable tunnel hostname). The same goes for `DORKS_TUNNEL_KEY`: the shell makes it once and reuses it, so existing sandboxes keep working through a reopened pipe.
+- At rest: Boat key, Claude token and CLI secrets are AES-GCM encrypted (the GitHub token is not stored: it stays in `gh`) (`core/crypto.ts`, additional data binds each to its purpose); `secrets.json` is mode 600.
+- The sandbox's `BRIDGE_URL` is fixed at creation, so `DORKS_PUBLIC_URL` must be stable (a stable tunnel hostname). The embedded tunnel keeps its URL across reopens, and a sandbox's ticket buys fresh grants for as long as its dork exists.
 
 ## Build and test
 
 ```sh
-pnpm --filter @dorks/server test         # vitest on Node 24 (node:sqlite), in-memory database, fake clock and sandbox provider
+pnpm --filter @dorks/server test         # vp test (Vitest) on Node 24 (node:sqlite), in-memory database, fake clock and sandbox provider
 pnpm --filter @dorks/server typecheck
 pnpm --filter @dorks/server build        # bun build --compile -> apps/server/dist/dorks-server-<target triple> (+ dorks-server for the host); `--all` for both macOS targets
 node apps/server/scripts/e2e.mjs         # a real server process (SERVER_BIN=<binary> for the compiled one) with the simulated sandbox host

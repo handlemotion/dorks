@@ -4,6 +4,7 @@ mod boot;
 mod commands;
 mod state;
 mod tray;
+mod updater;
 mod window;
 
 use std::sync::atomic::Ordering;
@@ -31,30 +32,28 @@ pub fn quit(app: &AppHandle) {
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| boot::show_main(app)))
-        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init());
     #[cfg(feature = "updater")]
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
 
     let app = builder
         .manage(AppState::new(Paths::from_env()))
+        .manage(updater::Updater::new())
         .invoke_handler(tauri::generate_handler![
             commands::runtime_config,
             commands::server_status,
             commands::restart_server,
             commands::set_public_url,
-            commands::set_wurmhol_token,
             commands::tunnel_status,
-            commands::open_tunnel_approval,
             commands::open_data_dir,
-            commands::gh_status,
-            commands::read_gh_token,
             commands::set_keep_awake,
             commands::keep_awake_mode,
             commands::set_keep_awake_mode,
             commands::window_chrome,
             commands::set_window_mode,
             commands::set_window_theme,
+            commands::update_status,
+            commands::check_for_update,
             commands::install_update,
         ])
         .setup(|app| {
@@ -64,6 +63,7 @@ pub fn run() {
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
             tray::build(app.handle())?;
+            updater::start_background_checks(app.handle());
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 // The window is created once the server answers (or has failed), so the UI starts with a usable config.

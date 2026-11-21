@@ -14,7 +14,7 @@ Test changes against running servers, not only unit tests.
 - Whole stack: `pnpm dev` runs the real server with simulated sandboxes plus the web app (data in `.dev-data`, delete it for a clean start). It prints the URL to open, with the dev owner token in it. `pnpm dev:server` runs only the server and the sandbox simulator.
 - Web against an in-memory mock server: `pnpm dev:mock`. Desktop shell: `pnpm dev:desktop`.
 - For a throwaway instance that cannot collide with another one, set `DORKS_DATA_DIR=<temp dir>`, `DORKS_UI_PORT=0` and `DORKS_BRIDGE_PORT=0`; the server prints one JSON `ready` line with the ports.
-- `pnpm test` runs every package; `pnpm e2e` builds the compiled server and runs the server e2e (sim and real bridge, with a secret scan).
+- `pnpm check` checks formatting and lints the workspace (Vite+, `vp check`; `pnpm fmt` fixes formatting); `pnpm test` runs every package; `pnpm e2e` builds the compiled server and runs the server e2e (sim and real bridge, with a secret scan).
 
 ## Credentials and cloud sessions
 
@@ -35,16 +35,18 @@ BRIDGE_IMPL=real CLAUDE_BIN="$(command -v claude)" CLAUDE_RUN_AS=dorkrun DORKS_E
 
 Save the token as above, then drive it with `POST /api/dorks` and `GET /api/dorks/:id/events` ([docs/architecture.md](docs/architecture.md)).
 
-Real Boat sandboxes from a cloud session (verified): a Boat box dials back to the bridge, so give the bridge port a public URL with a [Wurmhol](https://wurmhol.com/docs) pipe, the same way the desktop shell does ([docs/desktop.md](docs/desktop.md), "Tunnel: wurmhol"). The environment has `WURMHOL_TOKEN`; the pipe needs only an outbound WebSocket through the proxy.
+Real Boat sandboxes from a cloud session: a Boat box dials back to the bridge, so give the bridge port a public URL with an embedded [Wurmhol](https://wurmhol.com/docs) tunnel from the Dorks tunnel service, the same way the desktop shell does ([docs/desktop.md](docs/desktop.md), "Tunnel: wurmhol"). It needs the service deployed (`infra/tunnels`) and only an outbound WebSocket through the proxy. Not yet run end to end: the access-key pipe this replaced was.
 
 ```sh
-KEY=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')   # pipe access key; keep it out of the transcript
-WURMHOL_ACCESS_KEY=$KEY npx -y wurmhol 4748 --json --name dorks-cloud-<random>   # prints {"url": ...} and returns
-DORKS_PUBLIC_URL=<that url> DORKS_TUNNEL_KEY=$KEY DORKS_BRIDGE_PORT=4748 DORKS_UI_PORT=0 \
-  DORKS_OWNER_TOKEN=dev-owner-token DORKS_DATA_DIR=<temp dir> bun run apps/server/src/main.ts
+SVC=https://tunnels.dorks.build
+KEY=dti_$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')   # this session's install key; keep it out of the transcript
+curl -s -X POST $SVC/v1/tunnel -H "authorization: Bearer $KEY" > /tmp/tunnel.json   # {tunnel: {url}, connector: {connector}}
+WURMHOL_TOKEN=$(jq -r .connector.connector /tmp/tunnel.json) npx -y wurmhol@0.8 4748 --json   # prints {"url": ...} and returns
+DORKS_PUBLIC_URL=$(jq -r .tunnel.url /tmp/tunnel.json) DORKS_TUNNEL_SERVICE=$SVC DORKS_TUNNEL_INSTALL_KEY=$KEY \
+  DORKS_BRIDGE_PORT=4748 DORKS_UI_PORT=0 DORKS_OWNER_TOKEN=dev-owner-token DORKS_DATA_DIR=<temp dir> bun run apps/server/src/main.ts
 ```
 
-Then `PUT /api/settings` with `boatKey`, `boatOrg`, `claudeToken` and `githubToken` from Doppler (one piped JSON body, as above). Saving the Boat key builds the base snapshot on Boat (about a minute); poll `GET /api/snapshot` until `ready`, then create a dork on a real repo. This spends Boat credit: `DELETE /api/dorks/:id` when done (it destroys the box), and `npx wurmhol stop 4748`.
+Start the server with `GH_TOKEN` set to Doppler's `GITHUB_TOKEN` (GitHub is the GitHub CLI's login, and the server resolves it like `gh` does: `GH_TOKEN` first), then `PUT /api/settings` with `boatKey`, `boatOrg` and `claudeToken` from Doppler (one piped JSON body, as above) plus `githubConnected: true`. Saving the Boat key builds the base snapshot on Boat (about a minute); poll `GET /api/snapshot` until `ready`, then create a dork on a real repo. This spends Boat credit: `DELETE /api/dorks/:id` when done (it destroys the box), and `npx wurmhol stop 4748`.
 
 ## Testing
 

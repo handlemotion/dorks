@@ -40,28 +40,50 @@ const port = (v: string | undefined, d: number) => {
   return n;
 };
 
-export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
-  const dataDir = defaultDataDir(env);
-  const secrets = loadSecrets(dataDir);
+function parseBoxProvider(env: Record<string, string | undefined>): Config["boxProvider"] {
   const boxProvider = (env.BOX_PROVIDER || "boat") as Config["boxProvider"];
   if (boxProvider !== "boat" && boxProvider !== "sim") throw new Error(`unknown BOX_PROVIDER: ${boxProvider}`);
   if (boxProvider === "sim" && !env.SIM_HOST_KEY) throw new Error("SIM_HOST_KEY is required when BOX_PROVIDER=sim");
+  return boxProvider;
+}
+
+function parsePublicUrl(env: Record<string, string | undefined>): string | undefined {
   const publicUrl = env.DORKS_PUBLIC_URL?.replace(/\/+$/, "");
   if (publicUrl && !/^https:\/\//.test(publicUrl)) throw new Error("DORKS_PUBLIC_URL must be an https:// URL");
-  const tunnelKey = env.DORKS_TUNNEL_KEY || undefined;
-  if (tunnelKey && !/^[A-Za-z0-9_-]{32,128}$/.test(tunnelKey)) throw new Error("DORKS_TUNNEL_KEY must be 32 to 128 letters, digits, - or _");
+  return publicUrl;
+}
+
+function parseTunnelService(env: Record<string, string | undefined>): Config["tunnelService"] {
+  const serviceUrl = env.DORKS_TUNNEL_SERVICE?.replace(/\/+$/, "");
+  const installKey = env.DORKS_TUNNEL_INSTALL_KEY;
+  if (!!serviceUrl !== !!installKey) throw new Error("DORKS_TUNNEL_SERVICE and DORKS_TUNNEL_INSTALL_KEY go together");
+  if (serviceUrl && !/^https:\/\//.test(serviceUrl)) throw new Error("DORKS_TUNNEL_SERVICE must be an https:// URL");
+  if (installKey && !/^dti_[0-9a-f]{64}$/.test(installKey)) throw new Error("DORKS_TUNNEL_INSTALL_KEY must be dti_ and 64 hex characters");
+  return serviceUrl && installKey ? { url: serviceUrl, installKey } : undefined;
+}
+
+export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
+  const dataDir = defaultDataDir(env);
+  const secrets = loadSecrets(dataDir);
+  const boxProvider = parseBoxProvider(env);
+  const publicUrl = parsePublicUrl(env);
+  const tunnelService = parseTunnelService(env);
   return {
     dataDir,
     uiPort: port(env.DORKS_UI_PORT, 4747),
     bridgePort: port(env.DORKS_BRIDGE_PORT, 4748),
     publicUrl,
-    tunnelKey,
+    tunnelService,
     ownerToken: env.DORKS_OWNER_TOKEN || secrets.ownerToken,
     bridgeSecretKey: secrets.bridgeSecretKey,
     encryptionKey: secrets.encryptionKey,
     boxProvider,
     simHostKey: env.SIM_HOST_KEY,
-    uiOrigins: (env.DORKS_UI_ORIGINS ?? "tauri://localhost,http://tauri.localhost,http://localhost:3000,http://127.0.0.1:3000").split(",").map((s) => s.trim()).filter(Boolean),
+    uiOrigins: (env.DORKS_UI_ORIGINS ?? "tauri://localhost,http://tauri.localhost,http://localhost:3000,http://127.0.0.1:3000")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
     baseSnapshotId: env.BASE_SNAPSHOT_ID || undefined,
+    githubEnvToken: env.GH_TOKEN?.trim() || env.GITHUB_TOKEN?.trim() || undefined,
   };
 }

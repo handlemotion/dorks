@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
+import { append } from "../src/lifecycle/dispatch";
+import { AGENT_COMMENT_GRACE_MS } from "../src/services/githubIngest";
 import { pollOnce, POLL_MS } from "../src/services/poller";
 import { updateSettings } from "../src/services/settings";
 import * as subs from "../src/services/subscriptions";
@@ -6,13 +8,28 @@ import { fakeFetch, harness, NOW } from "./harness";
 
 // The PR poller against a miniature GitHub: conditional requests, a baseline that does not replay history, and the events a change produces.
 
-interface Comment { id: number; body: string; html_url: string; user: { login: string; type: string }; created_at: string; path?: string }
+interface Comment {
+  id: number;
+  body: string;
+  html_url: string;
+  user: { login: string; type: string };
+  created_at: string;
+  path?: string;
+}
 const person = (login: string, type = "User") => ({ login, type });
 
 function github() {
   const state = {
     token: "ghp_test",
-    pr: { title: "Add thing", state: "open" as "open" | "closed", merged: false, mergeable: true as boolean | null, merged_by: null as null | { login: string; type: string }, head: { ref: "agent/x", sha: "aaa1111" }, base: { ref: "main", sha: "base000" } },
+    pr: {
+      title: "Add thing",
+      state: "open" as "open" | "closed",
+      merged: false,
+      mergeable: true as boolean | null,
+      merged_by: null as null | { login: string; type: string },
+      head: { ref: "agent/x", sha: "aaa1111" },
+      base: { ref: "main", sha: "base000" },
+    },
     reviews: [] as { id: number; state: string; body: string; html_url: string; user: { login: string; type: string } }[],
     issueComments: [] as Comment[],
     reviewComments: [] as Comment[],
@@ -53,9 +70,9 @@ function github() {
 
 async function setup() {
   const gh = github();
-  const h = harness({ fetch: gh.fetch });
+  const h = harness({ fetch: gh.fetch, ghToken: gh.state.token });
   const id = h.seed("idle");
-  await updateSettings(h.app, { githubToken: gh.state.token });
+  await updateSettings(h.app, { githubConnected: true });
   h.app.db.tx(() => subs.subscribe(h.app, h.dork(id), "octo/hello", 7, "agent"));
   const sub = () => subs.subscriptionsOfDork(h.app, id)[0];
   const inbox = () => h.app.db.all<{ kind: string; summary: string }>("SELECT kind, summary FROM inbox WHERE dork_id = ? ORDER BY id", id);
@@ -103,15 +120,25 @@ describe("poller", () => {
   it("a new comment from someone else reaches the agent; the agent's own does not", async () => {
     const s = await setup();
     await pollOnce(s.h.app);
+    // The agent runs a turn from +5.5 s to +6.5 s. The token's login is both the agent's and its owner's: what it wrote during the
+    // turn (or within the grace after) is the agent's; what it wrote while the dork was idle is the owner's.
+    const status = (t: number, state: "working" | "idle") => {
+      s.h.clock.t = NOW + t;
+      s.h.app.db.tx(() => append(s.h.app, s.id, { type: "status", state }));
+    };
+    status(5_500, "working");
+    status(6_500, "idle");
+    s.h.clock.t = NOW;
     s.gh.state.issueComments.push({ id: 11, body: "please rename", html_url: "c11", user: person("alice"), created_at: s.at(5_000) });
     s.gh.state.issueComments.push({ id: 12, body: "done!", html_url: "c12", user: person("agent-bot"), created_at: s.at(6_000) });
+    s.gh.state.issueComments.push({ id: 13, body: "replied", html_url: "c13", user: person("agent-bot"), created_at: s.at(6_500 + AGENT_COMMENT_GRACE_MS) });
     s.gh.state.reviewComments.push({ id: 21, body: "nit", html_url: "c21", user: person("alice"), created_at: s.at(7_000), path: "src/a.ts" });
+    s.gh.state.reviewComments.push({ id: 22, body: "also this", html_url: "c22", user: person("agent-bot"), created_at: s.at(60_000), path: "src/b.ts" });
     await s.tick();
-    expect(s.inbox().map((r) => r.kind)).toEqual(["comment", "comment"]);
-    expect(s.inbox()[0].summary).toContain("alice commented: please rename");
-    expect(s.inbox()[1].summary).toContain("on src/a.ts");
+    expect(s.inbox().map((r) => r.summary.split(":")[0])).toEqual(["alice commented", "alice commented on src/a.ts", "agent-bot commented on src/b.ts"]);
+    expect(s.inbox()[0].summary).toContain("please rename");
     await s.tick(); // not delivered twice
-    expect(s.inbox()).toHaveLength(2);
+    expect(s.inbox()).toHaveLength(3);
   });
 
   it("a new review updates the state and speaks when it has something to say", async () => {
@@ -128,7 +155,10 @@ describe("poller", () => {
     const s = await setup();
     await pollOnce(s.h.app);
     s.gh.state.pr.head.sha = "bbb2222";
-    s.gh.state.suites["bbb2222"] = [{ id: 31, status: "completed", conclusion: "failure", latest_check_runs_count: 2 }, { id: 32, status: "in_progress", conclusion: null, latest_check_runs_count: 1 }];
+    s.gh.state.suites["bbb2222"] = [
+      { id: 31, status: "completed", conclusion: "failure", latest_check_runs_count: 2 },
+      { id: 32, status: "in_progress", conclusion: null, latest_check_runs_count: 1 },
+    ];
     await s.tick();
     expect(s.sub()).toMatchObject({ headSha: "bbb2222", ci: "failing", ciFailing: [31], ciNotified: true });
     expect(s.inbox().map((r) => r.kind)).toEqual(["ci_failed"]);
@@ -159,6 +189,15 @@ describe("poller", () => {
     s.gh.state.pr.base.sha = "base111";
     s.gh.state.pr.mergeable = false;
     await s.tick();
+    await s.tick();
+    expect(s.sub().mergeable).toBe(false);
+    expect(s.inbox().filter((r) => r.kind === "conflict")).toHaveLength(1);
+  });
+
+  it("a PR that already conflicts on the first look is a conflict, once", async () => {
+    const s = await setup();
+    s.gh.state.pr.mergeable = false;
+    await pollOnce(s.h.app);
     await s.tick();
     expect(s.sub().mergeable).toBe(false);
     expect(s.inbox().filter((r) => r.kind === "conflict")).toHaveLength(1);
@@ -245,4 +284,3 @@ describe("poller", () => {
     expect(s.h.hasTimer("", "poll")).toBe(false);
   });
 });
-
