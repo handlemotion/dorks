@@ -167,7 +167,8 @@ export function fireSchedules(app: App, id: string) {
         repo: t.repo,
         summary: `${scheduleText(t)}${t.branch ? ` on ${t.branch}` : ""}`,
         context: `It runs ${scheduleText(t).toLowerCase()} (${t.timezone}).${t.branch ? ` Start from the \`${t.branch}\` branch.` : ""}`,
-        key: `schedule:${t.repo}:${due}`,
+        // The whole trigger, so two schedules due at once (another branch, another repository) are two runs.
+        key: `schedule:${t.repo}@${t.branch ?? ""}:${t.every}:${t.day}:${t.time}:${t.timezone}:${due}`,
       });
     }
     update(app.db, "automations", { id }, { schedFrom: now });

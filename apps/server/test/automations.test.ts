@@ -41,6 +41,7 @@ function github() {
       state: string;
       user: { login: string };
       created_at: string;
+      updated_at: string;
       merged_at: string | null;
       head: { ref: string; sha: string };
       base: { ref: string };
@@ -52,7 +53,11 @@ function github() {
     if (p === "/user") return Response.json({ login: "me" });
     if (p === "/repos/octo/app") return Response.json({ private: state.private });
     if (p === "/repos/octo/app/pulls") return Response.json([...state.pulls].reverse());
-    if (p === "/repos/octo/app/issues/comments") return Response.json([...state.comments].reverse());
+    if (p === "/repos/octo/app/issues/comments") {
+      const per = Number(url.searchParams.get("per_page") ?? 30);
+      const page = Number(url.searchParams.get("page") ?? 1);
+      return Response.json([...state.comments].reverse().slice((page - 1) * per, page * per));
+    }
     return new Response("{}", { status: 404 });
   });
   return { state, fetch };
@@ -71,6 +76,7 @@ async function setup() {
       state: "open",
       user: { login: "alice" },
       created_at: at(0),
+      updated_at: at(0),
       merged_at: null,
       head: { ref: `f${number}`, sha: "a1" },
       base: { ref: "main" },
@@ -118,13 +124,16 @@ describe("automations", () => {
     s.h.clock.t += 60_000;
     s.pr(2);
     s.gh.state.pulls[0].head.sha = "b2"; // PR 1 got a push
+    s.gh.state.pulls[0].updated_at = s.at(0);
     await watchOnce(s.h.app);
     await watchOnce(s.h.app); // nothing new: nothing twice
     expect(s.dorks().map((d) => d.title)).toEqual(["review: #1 PR 1 by @alice", "review: #2 PR 2 by @alice"]);
 
     s.h.clock.t += 60_000;
     s.gh.state.pulls[1].head.sha = "c3"; // a push right after its run: most likely the agent's own
+    s.gh.state.pulls[1].updated_at = s.at(0);
     s.gh.state.pulls[0].merged_at = s.at(0);
+    s.gh.state.pulls[0].updated_at = s.at(0);
     s.gh.state.pulls[0].state = "closed";
     await watchOnce(s.h.app);
     expect(s.dorks()).toHaveLength(3);
@@ -147,6 +156,27 @@ describe("automations", () => {
     comment(3, "friend");
     await watchOnce(s.h.app);
     expect(s.dorks().map((d) => d.title)).toEqual(["answer: Comment on #4 by @friend"]);
+  });
+
+  it("a burst bigger than a page between passes is read whole", async () => {
+    const s = await setup();
+    const id = createAutomation(s.h.app, { name: "answer", instructions: "Answer.", triggers: [{ kind: "github", event: "comment", repo: "octo/app", authors: ["friend"] }] });
+    await watchOnce(s.h.app);
+    for (let n = 1; n <= 70; n++) s.gh.state.comments.push({ id: n, html_url: `c${n}`, issue_url: "x/issues/4", user: { login: "friend" }, body: "hi", created_at: s.at(n * 1000) });
+    await watchOnce(s.h.app);
+    const runs = s.h.app.db.all<{ status: string }>("SELECT status FROM automation_runs WHERE automation_id = ?", id);
+    expect(runs).toHaveLength(70); // 20 started, then the hourly cap: every one is accounted for
+    expect(runs.filter((r) => r.status === "started")).toHaveLength(MAX_RUNS_PER_HOUR);
+  });
+
+  it("two schedules due at once are two runs", async () => {
+    const s = await setup();
+    s.h.clock.t = utc("2026-11-23T08:00:00");
+    const daily = (branch: string) => ({ kind: "schedule", every: "day", time: "09:00", timezone: "UTC", repo: "octo/app", branch });
+    const id = createAutomation(s.h.app, { name: "both", instructions: "Go.", triggers: [daily("main"), daily("release")] });
+    s.h.clock.t = utc("2026-11-23T09:00:00");
+    fireSchedules(s.h.app, id);
+    expect(s.dorks().map((d) => d.title)).toEqual(["both: Every day at 09:00 on main", "both: Every day at 09:00 on release"]);
   });
 
   it("stops at the hourly cap and records why; Run now shows a refusal instead", async () => {
