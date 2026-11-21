@@ -120,7 +120,7 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
   const detail = usePanelRef()
   const atEnd = useRef(true)
   const now = useNow()
-  const { selectedKey, reveal } = useProgress()
+  const { selectedKey, highlighted, reveal } = useProgress()
   const shown = turns.map((turn) => ({ ...turn, steps: query.trim() ? turn.steps.filter((s) => matchesFilter(s.block, query)) : turn.steps })).filter((t) => t.steps.length > 0)
   const visible = shown.flatMap((t) => t.steps)
   const count = turns.reduce((n, t) => n + t.steps.length, 0)
@@ -132,10 +132,11 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
     const el = scroller.current
     if (el && atEnd.current) el.scrollTop = el.scrollHeight
   }, [count])
-  // A turn's card in the thread brings its steps into view.
+  // A tool line or the status line in the thread brings its steps into view, centred so the pinned prompt never covers them.
   useEffect(() => {
     if (!selectedKey) return
-    scroller.current?.querySelector<HTMLElement>(`[data-turn-key="${CSS.escape(selectedKey)}"]`)?.scrollIntoView({ block: 'start' })
+    atEnd.current = false
+    scroller.current?.querySelector<HTMLElement>(`[data-step-key="${CSS.escape(selectedKey)}"]`)?.scrollIntoView({ block: 'center' })
   }, [reveal]) // eslint-disable-line react-hooks/exhaustive-deps -- only when the thread asks, not on every pick
   // The selected row stays in view as the arrows move it (a clicked row is already in view: the list stays where it is).
   const clicked = useRef(false)
@@ -272,6 +273,7 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
                         step={step}
                         now={now}
                         selected={step.key === selectedKey}
+                        highlighted={highlighted.includes(step.key)}
                         onSelect={() => {
                           clicked.current = step.key !== selectedKey
                           // Opening the detail lays the list out again, which drops its scroll: put it back once that settles.
@@ -337,9 +339,10 @@ function stepTitle(step: ProgressStep) {
 
 /**
  * One step: icon, its line, a status dot (brand when it ran, red when it failed, pulsing while it runs) and how long ago it ran.
- * Selected, it takes a fill and a brand mark on the hairline it hangs from.
+ * Selected, it takes a fill and a brand mark on the hairline it hangs from; highlighted (one of the steps the thread pointed at), the
+ * mark and the hover's lighter fill.
  */
-function StepRow({ step, now, selected, onSelect }: { step: ProgressStep; now: number; selected: boolean; onSelect: () => void }) {
+function StepRow({ step, now, selected, highlighted, onSelect }: { step: ProgressStep; now: number; selected: boolean; highlighted: boolean; onSelect: () => void }) {
   const kind = stepKind(step.block)
   const Icon = kind === 'message' ? MessageSquareTextIcon : TOOL_KIND_ICONS[kind]
   const status = stepStatus(step.block)
@@ -351,9 +354,10 @@ function StepRow({ step, now, selected, onSelect }: { step: ProgressStep; now: n
       aria-selected={selected}
       data-step-key={step.key}
       onClick={onSelect}
-      className={`relative flex h-6 w-full min-w-0 cursor-default items-center gap-2 pr-(--details-text) pl-3 text-left ${selected ? 'bg-foreground/[0.07] text-foreground' : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground'}`}
+      data-highlighted={highlighted || undefined}
+      className={`relative flex h-6 w-full min-w-0 cursor-default items-center gap-2 pr-(--details-text) pl-3 text-left ${selected ? 'bg-foreground/[0.07] text-foreground' : highlighted ? 'bg-foreground/[0.04] text-foreground' : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground'}`}
     >
-      {selected && <span aria-hidden className="absolute top-0 -left-px h-full w-0.5 bg-brand" />}
+      {(selected || highlighted) && <span aria-hidden className="absolute top-0 -left-px h-full w-0.5 bg-brand" />}
       <Icon aria-hidden className="size-3.5 shrink-0" />
       <span className={`min-w-0 flex-1 truncate ${mono ? 'font-mono text-xs' : 'text-sm'} ${status === 'failed' ? 'text-destructive' : ''}`} title={text}>
         {text}

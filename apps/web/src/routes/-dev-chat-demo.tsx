@@ -13,7 +13,7 @@ import { ChatSplit, ShowDetailsButton, useDetailsOpen } from '../components/chat
 import type { ChatDetailsData } from '../components/chat-details/types'
 import type { PullRequestPanelData } from '../components/PullRequestPanel'
 import type { PullRequestView } from '@dorks/client'
-import { latestTasks, progressTurns } from '../lib/progress'
+import { currentStep, latestTasks, progressStore, progressTurns, stepLabel } from '../lib/progress'
 import { Composer, type AgentProvider } from '../components/ChatComposer'
 import { ChatMenu } from '../components/ChatMenu'
 import { ArchiveButton, PageHeader } from '../components/PageHeader'
@@ -101,7 +101,14 @@ const demoBlocks: Block[] = [
   },
   { kind: 'turn', id: 'tn1', outcome: 'done', finalId: 'a1', durationMs: 134_000, at: Date.now() - 3 * 60_000 },
   { kind: 'user', id: 'u2', text: 'Please cover the reconnect race with a test before changing the handler.', at: Date.now() - 20 * 60_000 },
-  { kind: 'tool', id: 't3', name: 'Bash', summary: 'pnpm --filter @dorks/bridge test', status: 'running' },
+  {
+    kind: 'tool',
+    id: 't3',
+    name: 'Bash',
+    summary: 'pnpm --filter @dorks/bridge test',
+    status: 'running',
+    input: { command: 'pnpm --filter @dorks/bridge test', description: 'Running the bridge tests' },
+  },
   {
     kind: 'assistant',
     id: 'a2',
@@ -358,6 +365,11 @@ export function Demo() {
     },
     updateBranch: async () => setDemoPr((p) => ({ ...p, mergeableState: 'clean' })),
   }
+  const demoCurrent = stopped ? {} : currentStep(blocks)
+  const openSteps = (keys: string[]) => {
+    progressStore.show(keys)
+    setDetailsOpen(true)
+  }
   const send = (message = withReply(reply, text)) => {
     const id = crypto.randomUUID()
     setReply(undefined)
@@ -428,6 +440,7 @@ export function Demo() {
                       <ChatMessages
                         blocks={blocks}
                         agent="Claude"
+                        onOpenSteps={openSteps}
                         onReply={(quoted, draft) => {
                           setReply(quoted)
                           if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft))
@@ -435,7 +448,13 @@ export function Demo() {
                         onReplySend={(quoted, answer) => send(withReply(quoted, answer))}
                       />
                       <div>
-                        <AgentStatus state={stopped ? 'idle' : 'working'} live="live" />
+                        <AgentStatus
+                          state={stopped ? 'idle' : 'working'}
+                          live="live"
+                          step={demoCurrent.tool && stepLabel(demoCurrent.tool)}
+                          since={demoCurrent.since}
+                          onOpen={() => openSteps(demoCurrent.tool ? [demoCurrent.tool.id] : [])}
+                        />
                       </div>
                     </MessageScrollerContent>
                   </MessageScrollerViewport>

@@ -17,7 +17,7 @@ import { resolveSharedImages } from '../../../components/ChatBlock'
 import { CrewDetails } from '../../../components/CrewDetails'
 import { SessionChat } from '../../../components/SessionChat'
 import { ChatDetails } from '../../../components/ChatDetails'
-import { ChatSplit, ShowDetailsButton, useDetailsOpen } from '../../../components/chat-details/layout'
+import { ChatSplit, ShowDetailsButton, useDetailsOpen, useWide } from '../../../components/chat-details/layout'
 import type { ChatDetailsData } from '../../../components/chat-details/types'
 import type { PullRequestPanelData } from '../../../components/PullRequestPanel'
 import { latestTasks, progressStore, progressTurns } from '../../../lib/progress'
@@ -334,6 +334,7 @@ function Thread({ dorkId }: { dorkId: string }) {
   const { run: runArchive, pending: archiving, error: archiveError } = usePending()
   const archiveDork = useArchiveDork()
   const [detailsOpen, setDetailsOpen] = useDetailsOpen()
+  const wide = useWide()
   // One draft for the composer and everything on the page that writes into it (Ask for…, picked elements).
   const draft = useDraft(dorkId)
   const setText = draft[1]
@@ -391,7 +392,20 @@ function Thread({ dorkId }: { dorkId: string }) {
           }
         />
         <CodexModelForm dork={dork} />
-        <SessionChat dork={dork} error={archiveError} draft={draft} />
+        <SessionChat
+          dork={dork}
+          error={archiveError}
+          draft={draft}
+          // Progress lives in Chat details, which narrow windows and dorks (their details are Sessions) do not show.
+          onOpenSteps={
+            wide && !crew
+              ? (keys) => {
+                  progressStore.show(keys)
+                  setDetailsOpen(true)
+                }
+              : undefined
+          }
+        />
       </section>
     </ChatSplit>
   )

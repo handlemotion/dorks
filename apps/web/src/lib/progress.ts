@@ -75,7 +75,9 @@ export const progressSteps = (turns: readonly ProgressTurn[]) => turns.flatMap((
 type ProgressState = {
   /** The step selected in Progress, whose detail shows at its foot; a turn's card in the thread selects its first step. */
   readonly selectedKey: string | null
-  /** Bumped when the thread asks for Progress to come up (a turn's card was clicked); Chat details switches to its tab. */
+  /** The steps the thread pointed at (a run of tool calls, the current step): marked in Progress until a step outside them is picked. */
+  readonly highlighted: readonly string[]
+  /** Bumped when the thread asks for Progress to come up (a tool line or the status line was clicked); Chat details switches to its tab. */
   readonly reveal: number
 }
 
@@ -84,7 +86,7 @@ type ProgressState = {
  * streaming turn re-renders only what reads it.
  */
 function createProgressStore() {
-  let state: ProgressState = { selectedKey: null, reveal: 0 }
+  let state: ProgressState = { selectedKey: null, highlighted: [], reveal: 0 }
   const listeners = new Set<() => void>()
   const set = (next: ProgressState) => {
     state = next
@@ -97,11 +99,11 @@ function createProgressStore() {
       return () => listeners.delete(listener)
     },
     /** Selects a step (its detail opens at the foot of Progress), or nothing (`null`: the foot shows the tasks). */
-    select: (selectedKey: string | null) => set({ ...state, selectedKey }),
-    /** Opens Progress on a step. */
-    show: (selectedKey: string | null) => set({ selectedKey, reveal: state.reveal + 1 }),
+    select: (selectedKey: string | null) => set({ ...state, selectedKey, highlighted: selectedKey && state.highlighted.includes(selectedKey) ? state.highlighted : [] }),
+    /** Opens Progress on these steps: the first selected, all of them marked. With none it only brings Progress up. */
+    show: (keys: readonly string[]) => set(keys.length > 0 ? { selectedKey: keys[0], highlighted: keys, reveal: state.reveal + 1 } : { ...state, reveal: state.reveal + 1 }),
     /** A new chat has nothing selected. */
-    reset: () => set({ selectedKey: null, reveal: state.reveal }),
+    reset: () => set({ selectedKey: null, highlighted: [], reveal: state.reveal }),
   }
 }
 
@@ -109,6 +111,29 @@ export const progressStore = createProgressStore()
 
 export function useProgress() {
   return useSyncExternalStore(progressStore.subscribe, progressStore.get, progressStore.get)
+}
+
+/**
+ * The step the agent is on, for the status line under the transcript: the newest tool call of the latest turn that is still running,
+ * with when it started. A turn with no call running (the agent is writing) has none; `since` is then when the turn began.
+ */
+export function currentStep(blocks: readonly Block[]): { tool?: ProgressToolBlock; since?: number } {
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const block = blocks[i]
+    if (block.kind === 'tool' && block.status === 'running') return { tool: block, since: block.at }
+    if (block.kind === 'user') return { since: block.at }
+    if (block.kind === 'turn') return {}
+  }
+  return {}
+}
+
+/** A running call as the status line says it: a command by its description ("Building the snapshot"), anything else as "Running pnpm test". */
+export function stepLabel(block: ProgressToolBlock): string {
+  const description = typeof block.input?.description === 'string' ? block.input.description.trim() : ''
+  if (description) return description
+  const { kind, verb } = toolStep(block.name, block.status)
+  if (kind === 'plan' || !block.summary) return verb
+  return `${verb} ${block.summary}`
 }
 
 /** What a tool does, for a step's title: the verb while it runs and once it ran, and its icon's kind. */
