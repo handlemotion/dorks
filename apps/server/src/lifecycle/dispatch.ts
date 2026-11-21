@@ -3,6 +3,7 @@ import { fail, touch, type App } from "../app";
 import { commandOf, getDork, openCommands, runtimeOf, type CommandKind, type CommandRow, type DorkRow } from "../data";
 import { update, insert } from "../db";
 import { reduce, type Effect, type Input, type Result } from "../core/machine";
+import { crewObserve } from "../services/crew";
 
 // The lifecycle driver. Every function here is synchronous and meant to run inside one SQLite transaction (app.db.tx): a state
 // change, its event, and its effects (timers, box jobs, outbox rows) commit together or not at all.
@@ -40,6 +41,7 @@ export function append(app: App, dorkId: string, ...bodies: ClientEventBody[]): 
     tail = { seq, body };
   }
   if (bodies.length) touch(app, { t: "events", dorkId, seq });
+  for (const body of bodies) crewObserve(app, dorkId, body); // a worker's turn end becomes a report to its coordinator (docs/crew.md)
   return seq;
 }
 

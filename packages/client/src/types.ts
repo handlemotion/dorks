@@ -36,6 +36,10 @@ export interface Dork {
   modelChoices?: AgentModelChoice[];
   /** The build its machine starts from (docs/builds.md); null: the base snapshot. Absent on older servers. */
   buildId?: string | null;
+  /** `coordinator`: plans and runs worker dorks instead of coding (docs/crew.md). Absent on older servers. */
+  kind?: "agent" | "coordinator";
+  /** The coordinator that started this worker; null otherwise. Absent on older servers. */
+  parentId?: string | null;
   lastActivityAt: number;
   createdAt: number;
 }
@@ -47,6 +51,8 @@ export interface CreateDorkInput {
   buildId?: string | null;
   /** A machine-setup session for `buildId`: no repo needed, and the build needs no image yet. */
   setup?: boolean;
+  /** `coordinator`: a session that plans and delegates to worker dorks; needs no repo (docs/crew.md). */
+  kind?: "agent" | "coordinator";
   message: string;
   title?: string;
   provider?: Provider;

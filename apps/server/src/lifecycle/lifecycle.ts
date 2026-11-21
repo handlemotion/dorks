@@ -2,6 +2,7 @@ import { errorEvent } from "@dorks/shared";
 import type { App } from "../app";
 import { getDork, runtimeOf } from "../data";
 import { foldInbox } from "../services/notify";
+import { foldCrew } from "../services/crew";
 import { expireLocal } from "../services/local";
 import {
   append,
@@ -49,6 +50,9 @@ export function fireTimer(app: App, dorkId: string, name: string) {
       break;
     case "notify":
       foldInbox(app, dorkId); // the debounce window closed: everything buffered becomes one notification
+      break;
+    case "crew_notify":
+      foldCrew(app, dorkId); // reports and notes from the dork's crew (docs/crew.md)
       break;
     case "flush":
       finishPause(app, dorkId); // flush timeout (a no-op if the pause was cancelled meanwhile)

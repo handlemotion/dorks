@@ -331,4 +331,23 @@ export const MIGRATIONS: string[] = [
   -- registration and the tokens themselves are in the server's sealed envelope.
   ALTER TABLE mcp_servers ADD COLUMN oauth TEXT CHECK (oauth IN ('signed_in', 'signed_out'));
   `,
+  `
+  -- Crews (services/crew.ts, docs/crew.md): a coordinator dork plans and delegates to worker dorks, its children. crew_inbox holds the
+  -- reports (a worker's final answer) and notes (a worker's message) waiting for a dork; the crew_notify timer folds them into a notify.
+  ALTER TABLE dorks ADD COLUMN kind TEXT NOT NULL DEFAULT 'agent' CHECK (kind IN ('agent', 'coordinator'));
+  ALTER TABLE dorks ADD COLUMN parent_id TEXT;
+  CREATE INDEX dorks_parent ON dorks (parent_id);
+  CREATE TABLE crew_inbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dork_id TEXT NOT NULL REFERENCES dorks (id) ON DELETE CASCADE,
+    from_id TEXT NOT NULL,
+    from_title TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('report', 'note')),
+    text TEXT NOT NULL,
+    delivered INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX crew_inbox_dork ON crew_inbox (dork_id, delivered);
+  CREATE INDEX crew_inbox_sender ON crew_inbox (from_id, created_at);
+  `,
 ];

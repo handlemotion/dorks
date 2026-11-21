@@ -5,6 +5,7 @@ import { bool, json } from "./db";
 // Typed readers over the schema (migrations.ts). Columns are snake_case in SQL and camelCase here; NULL becomes undefined.
 
 export type Provider = "claude" | "codex";
+export type DorkKind = "agent" | "coordinator";
 export type TitleSource = "message" | "auto" | "user";
 
 export interface Pause {
@@ -46,6 +47,10 @@ export interface DorkRow {
   prUrl?: string;
   /** The build the dork's machine starts from (docs/builds.md); undefined: the base snapshot. */
   buildId?: string;
+  /** `coordinator`: plans and delegates to worker dorks (docs/crew.md). */
+  kind: DorkKind;
+  /** The coordinator that started this worker. */
+  parentId?: string;
   deleting: boolean;
   lastActivityAt: number;
   createdAt: number;
@@ -108,6 +113,8 @@ export const dorkOf = (r: Row): DorkRow => ({
   images: json(r.images),
   prUrl: u(r.pr_url as string | null),
   buildId: u(r.build_id as string | null),
+  kind: ((r.kind as string | null) ?? "agent") as DorkKind,
+  parentId: u(r.parent_id as string | null),
   deleting: bool(r.deleting),
   lastActivityAt: r.last_activity_at as number,
   createdAt: r.created_at as number,
@@ -178,6 +185,8 @@ export const dorkView = (d: DorkRow, prState?: "open" | "merged" | "closed") => 
   agentEffort: d.agentEffort,
   modelChoices: d.modelChoices,
   buildId: d.buildId ?? null,
+  kind: d.kind,
+  parentId: d.parentId ?? null,
   lastActivityAt: d.lastActivityAt,
   createdAt: d.createdAt,
 });
