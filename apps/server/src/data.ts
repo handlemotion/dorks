@@ -34,6 +34,8 @@ export interface DorkRow {
   effort?: string;
   /** Claude: fast mode on (only for a model that offers it). */
   fast: boolean;
+  /** Claude: started with Code Mode on (the setting when the dork was created); fixed for its life, since resume needs the same value. */
+  codeMode: boolean;
   /** What the agent confirmed: the model from its init event, the effort the bridge started it with. */
   agentModel?: string;
   agentEffort?: string;
@@ -107,6 +109,7 @@ export const dorkOf = (r: Row): DorkRow => ({
   model: u(r.model as string | null),
   effort: u(r.effort as string | null),
   fast: bool(r.fast),
+  codeMode: bool(r.code_mode),
   agentModel: u(r.agent_model as string | null),
   agentEffort: u(r.agent_effort as string | null),
   modelChoices: json(r.model_choices),

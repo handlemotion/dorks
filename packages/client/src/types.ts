@@ -78,6 +78,8 @@ export interface Settings {
   baseSnapshotId: string | null;
   sleepMinutes: number;
   commentPolicy: CommentPolicy;
+  /** New Claude sessions start in Code Mode; absent on older servers. */
+  claudeCodeMode?: boolean;
   publicUrlConfigured: boolean;
   /** `boat` or `sim`; absent on older servers. */
   boxProvider?: string;
@@ -120,6 +122,8 @@ export interface SettingsPatch {
   baseSnapshotId?: string;
   sleepMinutes?: number;
   commentPolicy?: CommentPolicy;
+  /** New Claude sessions start in Code Mode; sessions already started keep what they had. */
+  claudeCodeMode?: boolean;
 }
 
 /** `POST /api/boat/check`: whether Boat accepts a key (and organization) before anything is saved. */

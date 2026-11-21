@@ -5,6 +5,7 @@ import type { Settings, SnapshotStatus } from '@dorks/client'
 import { useDorksClient, useSecretNames, useSnapshot } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
 import { Input } from '@dorks/ui/input'
+import { Switch } from '@dorks/ui/switch'
 import { Textarea } from '@dorks/ui/textarea'
 import { EmptyState } from '../EmptyState'
 import { saveBoat } from '../../lib/boat'
@@ -304,6 +305,7 @@ export function SessionsPage({ settings }: { settings: Settings }) {
   return (
     <SettingsSections>
       <SleepSection current={settings.sleepMinutes} />
+      <CodeModeSection on={settings.claudeCodeMode ?? true} />
       <CommentPolicySection settings={settings} />
     </SettingsSections>
   )
@@ -344,6 +346,24 @@ function SleepSection({ current }: { current: number }) {
         />
       </SettingsGroup>
       <SettingsStatus saved={saved} error={error} />
+    </SettingsSection>
+  )
+}
+
+function CodeModeSection({ on }: { on: boolean }) {
+  const { actions } = useDorksClient()
+  const { run, pending, error } = usePending()
+  return (
+    <SettingsSection title="Claude">
+      <SettingsGroup>
+        <SettingsRow
+          label="Code Mode"
+          htmlFor="code-mode"
+          description="Claude writes code that makes several tool calls in one step. Applies to new sessions; started ones keep theirs."
+          control={<Switch id="code-mode" checked={on} disabled={pending} onCheckedChange={(v) => void run(() => actions.updateSettings({ claudeCodeMode: v }))} />}
+        />
+      </SettingsGroup>
+      <SettingsStatus saved={false} error={error} />
     </SettingsSection>
   )
 }

@@ -151,6 +151,7 @@ export function createDork(
       parentId: parent?.id ?? null,
       icon,
       ...choice,
+      codeMode: provider === "claude" && readSettings(app).claudeCodeMode,
     });
     insert(app.db, "dork_runtime", { dorkId: id, bridgeSeq: 0, streamMsgId: "", sleepMinutes: readSettings(app).sleepMinutes, bridgeSeenAt: 0, bridgeLost: false, opGen: 0, pauseRetries: 0 });
     persistMessage(app, getDork(app.db, id)!, text, parent ? { id: parent.id, title: parent.title } : undefined);
