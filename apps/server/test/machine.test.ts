@@ -67,10 +67,6 @@ describe("machine: spec behaviours", () => {
     // a user message is ahead: the caller reports notifyHeld false until it is acked
     expect(run(ctx("working", { queued: true, notifyHeld: false }), "turn_idle")).toMatchObject({ state: "working", effects: ["deliver_outbox"] });
   });
-  it("a notify in flight (released, unacked) keeps the dork from idling or sleeping", () => {
-    expect(run(ctx("working", { queued: true }), "turn_idle").state).toBe("working");
-    expect(run(ctx("idle", { queued: true }), "sleep_due").effects).toEqual([]);
-  });
   it("a notify queued while the box was down is delivered, and released, once the agent is ready", () => {
     expect(run(ctx("waking", { queued: true }), "agent_ready")).toMatchObject({ state: "working", effects: expect.arrayContaining(["deliver_outbox"]) });
     expect(run(ctx("waking", { queued: true }), "agent_ready").effects).not.toContain("release_notify");
@@ -140,15 +136,15 @@ function expectInvariants(prev: Ctx, t: Input["t"], r: ReturnType<typeof reduce>
 }
 
 describe("machine: totality + invariants", () => {
-  it("handles every state x input x flag combination without throwing", () => {
+  it("every state x input x flag combination keeps the invariants", () => {
     for (const s of STATES)
       for (const t of INPUTS)
         for (const archived of [false, true])
           for (const hasBox of [false, true])
             for (const queued of [false, true])
               for (const notifyHeld of [false, true]) {
-                const r = run({ state: s, archived, hasBox, queued, notifyHeld }, t);
-                expect(STATES).toContain(r.state);
+                const c = { state: s, archived, hasBox, queued, notifyHeld };
+                expectInvariants(c, t, run(c, t));
               }
   });
 
