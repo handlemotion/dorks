@@ -1,5 +1,28 @@
 # @dorks/desktop
 
+## 0.3.0
+
+### Minor Changes
+
+- [#126](https://github.com/handlemotion/dorks/pull/126) [`5d77a6f`](https://github.com/handlemotion/dorks/commit/5d77a6f2766246113059188fa073a59aa097aa8f) Thanks [@handlemotion](https://github.com/handlemotion)! - Setup happens in the checklist under the message box: Boat connects by itself with your Boat login (one browser sign-in if you are signed out, no API key to paste), and GitHub connects by itself with the GitHub CLI's login.
+  Links in messages are blue and open in your default browser with one click, with no confirmation dialog.
+
+- [#128](https://github.com/handlemotion/dorks/pull/128) [`1a0e0cc`](https://github.com/handlemotion/dorks/commit/1a0e0cce0715f2e4008800d9b32e02a2f3425dda) Thanks [@handlemotion](https://github.com/handlemotion)! - Sandboxes no longer need a tunnel or public URL to reach your Mac: the app now connects out to each sandbox through Boat's own URL for it, so the "Let sandboxes reach this Mac" setup step is gone.
+
+- [#127](https://github.com/handlemotion/dorks/pull/127) [`46aa841`](https://github.com/handlemotion/dorks/commit/46aa8413a2e1a299952a21912cf37f4bcc652f70) Thanks [@handlemotion](https://github.com/handlemotion)! - Agents ask once per session to access your computer (Allow for this session, Always allow or Deny) instead of for every command, and each command shows as one line with its output. Turn Always allow off again in Settings › Your computer.
+
+- [#121](https://github.com/handlemotion/dorks/pull/121) [`09bb26a`](https://github.com/handlemotion/dorks/commit/09bb26a2fb2ff54ab3598852d9b8d303451e0151) Thanks [@handlemotion](https://github.com/handlemotion)! - Tool calls in a chat are one plain line, "Ran 2 commands ›", that opens Progress with those steps selected, and the status line under the chat names the step the agent is on and opens it in Progress. Chat details now open on a New tab instead of Progress.
+
+### Patch Changes
+
+- [#129](https://github.com/handlemotion/dorks/pull/129) [`dc68c36`](https://github.com/handlemotion/dorks/commit/dc68c36d266047b76bd1260ca5c7845f9a375700) Thanks [@handlemotion](https://github.com/handlemotion)! - A malformed or oversized message on a sandbox connection now closes only that connection instead of stopping the agent.
+
+- [#122](https://github.com/handlemotion/dorks/pull/122) [`26239d7`](https://github.com/handlemotion/dorks/commit/26239d76eb996b79c0cdf656186fff365f14d355) Thanks [@handlemotion](https://github.com/handlemotion)! - New Claude sessions run in Claude Code's Code Mode, which batches several tool calls into one step; turn it off for new sessions in Settings › Sessions.
+
+- [#125](https://github.com/handlemotion/dorks/pull/125) [`52deac5`](https://github.com/handlemotion/dorks/commit/52deac513c237fd70a19580b6af8e211245a492a) Thanks [@handlemotion](https://github.com/handlemotion)! - The thread no longer fades out above the composer, stays at the latest message when you send one, a multi-line message sits closer to the composer's buttons, and every pull request a dork opens or subscribes to opens in its own tab in Chat details. Dorks hear about CI failures, reviews and conflicts within about 15 seconds instead of over a minute, and finish their changes as pull requests instead of stopping with uncommitted work.
+
+- [#123](https://github.com/handlemotion/dorks/pull/123) [`75ccb33`](https://github.com/handlemotion/dorks/commit/75ccb33316d39d365a7323cd4f37bb7bdb004396) Thanks [@handlemotion](https://github.com/handlemotion)! - The Computer tab and running previews show again in the desktop app: they were stuck on Connecting because the app blocked their frames.
+
 ## 0.2.0
 
 ### Minor Changes
