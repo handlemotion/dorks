@@ -45,8 +45,8 @@ export function CrewDetails({ dork, onClose, onAsk }: { dork: DorkView; onClose?
   return (
     <aside aria-label="Dork details" data-details-panel className="flex h-full min-h-0 min-w-0 flex-col border-l border-border [--details-edge:10px] [--details-text:18px]">
       <Tabs value={selected} onValueChange={(v) => setTab(v as TabKey)} className="min-h-0 min-w-0 flex-1 gap-0">
-        {/* 40px, 4px down from the top, so its labels sit on the chat title's 24px line (as in Chat details). */}
-        <div data-tauri-drag-region className="mt-1 mb-2 flex h-10 min-w-0 shrink-0 items-center gap-0.5 px-(--details-edge)">
+        {/* 48px, matching PageHeader and ChatDetails: labels sit on the chat title's 24px line and the bottom hairline meets the chat header's. */}
+        <div data-tauri-drag-region className="flex h-12 min-w-0 shrink-0 items-center gap-0.5 border-b border-border px-(--details-edge)">
           <TabsList className="h-7! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
             <TabsTrigger value="sessions" className={TAB_CLASS}>
               <UsersIcon />
@@ -111,7 +111,7 @@ function Sessions({ workers, loading, onOpen, onAsk }: { workers: Worker[]; load
       </EmptyState>
     )
   return (
-    <ul aria-label="Sessions" className="min-h-0 flex-1 overflow-y-auto border-t">
+    <ul aria-label="Sessions" className="min-h-0 flex-1 overflow-y-auto">
       {workers.map((w) => (
         <li key={w.id} className="border-b">
           <button
@@ -158,7 +158,7 @@ function WorkerPanel({ id, dork, onClose }: { id: string; dork: DorkView; onClos
   const act = (what: string, f: () => Promise<unknown>) => () => void f().catch((e: unknown) => toast.error(e instanceof Error ? e.message : `Could not ${what}`))
   return (
     <section aria-label={`Session ${worker.title}`} className="flex min-h-0 flex-1 flex-col" data-state={worker.state}>
-      <div className="flex h-10 min-w-0 shrink-0 items-center gap-0.5 border-y pr-(--details-edge) pl-(--details-text)">
+      <div className="flex h-10 min-w-0 shrink-0 items-center gap-0.5 border-b pr-(--details-edge) pl-(--details-text)">
         <DorkIcon
           size={14}
           state={dorkIconState(worker.state, { attention: worker.needsAttention })}

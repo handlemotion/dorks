@@ -19,15 +19,15 @@ export function ArchiveButton({ archived, disabled, onClick }: { archived?: bool
 }
 
 /**
- * The toolbar of a page in the app frame, one line: the title (after its `parent` crumb on a nested page), then the page's actions. No divider: the page's content sits
- * straight under it. The sidebar toggle shows here only while the sidebar is hidden; otherwise it lives in the sidebar's own header.
- * `titleActions` sit right after the title.
+ * The toolbar of a page in the app frame, one line (48px): the title (after its `parent` crumb on a nested page), then the page's actions,
+ * with a bottom hairline aligned with the Chat details / Crew details tab bar. The sidebar toggle shows here only while the sidebar is hidden;
+ * otherwise it lives in the sidebar's own header. `titleActions` sit right after the title.
  */
 export function PageHeader({ title, parent, titleActions, actions }: { title: ReactNode; parent?: ReactNode; titleActions?: ReactNode; actions?: ReactNode }) {
   const { open, isMobile } = useSidebar()
   return (
     // While the sidebar is hidden, the floating title bar controls (AppFrame) sit over the header's start, so the title begins after them.
-    <header data-tauri-drag-region className="flex h-12 shrink-0 items-center gap-0.5 pr-3 pl-5" style={!open || isMobile ? { paddingLeft: TITLEBAR_CONTROLS_END } : undefined}>
+    <header data-tauri-drag-region className="flex h-12 shrink-0 items-center gap-0.5 border-b border-border pr-3 pl-5" style={!open || isMobile ? { paddingLeft: TITLEBAR_CONTROLS_END } : undefined}>
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <div className="flex min-w-0 items-center gap-1.5 text-sm">
           {parent && (

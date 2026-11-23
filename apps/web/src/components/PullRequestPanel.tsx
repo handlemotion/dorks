@@ -126,7 +126,7 @@ function FilesBar({
   changes: FileChange[]
 }) {
   return (
-    <div className="flex h-10 shrink-0 items-center gap-2 border-y px-(--details-text)">
+    <div className="flex h-10 shrink-0 items-center gap-2 border-b px-(--details-text)">
       <PrIcon state={pr?.state} className="size-3.5 shrink-0" />
       {pr ? (
         <a href={pr.url} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 hover:underline">
@@ -184,7 +184,7 @@ function PullRequestView({
   const anyOpen = open.size > 0
   return (
     <div className="flex min-h-full flex-col text-sm">
-      <div className="border-t px-(--details-text) pt-5 pb-6">
+      <div className="px-(--details-text) pt-5 pb-6">
         <div className="flex items-center gap-2">
           <PrState view={view} now={now} />
           <a href={view.url} target="_blank" rel="noreferrer" className="min-w-0 truncate text-muted-foreground tabular-nums hover:text-foreground hover:underline" title="Open on GitHub">

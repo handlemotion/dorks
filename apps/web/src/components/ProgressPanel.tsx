@@ -200,7 +200,7 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
         }
       }}
     >
-      <div className="shrink-0 px-(--details-edge) pb-2.5">
+      <div className="shrink-0 px-(--details-edge) py-2.5">
         {/* Icons in line with the tab icons above: the search box at the tabs' edge, the last button centred under the hide button. */}
         {/* Outlined with no fill, like the composer. */}
         <InputGroup className="h-[30px] rounded-(--control-radius) border-border bg-transparent dark:bg-transparent">

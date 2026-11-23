@@ -156,8 +156,7 @@ export function ChatDetails({
         return openPreview ? (
           <PreviewBrowser server={openPreview} onBack={() => setPreview(undefined)} onGrab={onGrab} />
         ) : (
-          // -mt-1: the grid's top hairline sits 10px under the tabs, like the space on their other sides.
-          <div className="-mt-1 flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
             <Artifacts
               artifacts={data.artifacts ?? []}
               changes={changes}
@@ -176,7 +175,7 @@ export function ChatDetails({
         )
       case 'computer':
         return (
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <ComputerView source={data.computer} />
           </div>
         )
@@ -191,8 +190,8 @@ export function ChatDetails({
         className={['flex h-full min-h-0 min-w-0 flex-col border-l border-border [--details-edge:10px] [--details-text:18px]', className].filter(Boolean).join(' ')}
       >
         <Tabs value={tabs.selected} onValueChange={(value) => tabs.select(value as TabKey)} className="min-h-0 min-w-0 flex-1 gap-0">
-          {/* 40px, 4px down from the top, so its labels sit on the chat title's 24px line. */}
-          <div data-tauri-drag-region className="mt-1 mb-2 flex h-10 min-w-0 shrink-0 items-center gap-0.5 px-(--details-edge)">
+          {/* 48px, matching PageHeader: labels sit on the chat title's 24px line and the bottom hairline meets the chat header's. */}
+          <div data-tauri-drag-region className="flex h-12 min-w-0 shrink-0 items-center gap-0.5 border-b border-border px-(--details-edge)">
             <TabsList className="h-7! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
               {tabs.keys.map((key) => {
                 const { icon, text, title } = label(key)
