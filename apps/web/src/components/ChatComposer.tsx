@@ -770,9 +770,8 @@ export function Composer({
   useEffect(() => {
     if (reply) textRef.current?.focus()
   }, [reply])
-  // The text stays beside attach and the main button as it wraps, its last line level with them; only attached images
-  // stack the box, putting the buttons on a row of their own under the text.
-  const stacked = files.length > 0
+  // The text stays beside attach and the main button as it wraps, its last line level with them, with or without attached images
+  // above it.
   const isNewSession = setRepo !== undefined
   const locked = !!(pending || disabled)
   const dragging = useFileDrop(attach, !!upload && !locked)
@@ -880,10 +879,10 @@ export function Composer({
             ref={textRef}
             rows={1}
             // A 44px row: 12px above and below a 20px line of 15px text, 42px in from each side (past the 28px buttons, 8px from the
-            // edge, and 6px more). Stacked, the bottom inset makes room for the button row (8px gap, 28px button, 8px edge).
-            className={`max-h-[40vh] min-h-0 py-3 px-[42px] leading-5 md:text-[15px] ${stacked ? 'pb-11' : ''}`}
+            // edge, and 6px more).
+            className="max-h-[40vh] min-h-0 py-3 px-[42px] leading-5 md:text-[15px]"
           />
-          {/* Attach and the main button keep one spot, 8px from the bottom corners, whether the box is one row or stacked. */}
+          {/* Attach and the main button keep one spot, 8px from the bottom corners, level with the text's last line. */}
           <div className="absolute bottom-2 left-2">
             <Tip label="Attach images">
               <InputGroupButton

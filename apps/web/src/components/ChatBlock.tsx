@@ -275,8 +275,9 @@ function ToolLine({ tools, onOpen }: { tools: ToolBlock[]; onOpen?: (keys: strin
   const failed = tools.filter((t) => t.status === 'error').length
   const title = toolGroupTitle(tools)
   const line = (
-    // Dim and at the messages' 14px: a pointer over it lifts it a little, never to the full black of the agent's words.
-    <TraceLine status={running ? 'running' : undefined} className="text-(length:--text-message) in-[button:hover]:text-foreground/65">
+    // Dim and at the messages' 14px: a pointer over it lifts it a little, never to the full black of the agent's words. Not
+    // selectable: copying across the thread picks up only what the agent said.
+    <TraceLine status={running ? 'running' : undefined} className="text-(length:--text-message) select-none in-[button:hover]:text-foreground/65">
       <TraceTitle>{title}</TraceTitle>
       {failed > 0 && <span className="shrink-0 text-destructive">{failed === tools.length && failed === 1 ? 'failed' : `${failed} failed`}</span>}
       {onOpen && <ChevronRightIcon aria-hidden className="-ml-1 size-3.5 shrink-0" />}
