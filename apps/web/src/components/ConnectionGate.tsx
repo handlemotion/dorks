@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { createClient } from '@dorks/client'
-import { DorksProvider, useConnection, useDorks, useSettingsState } from '@dorks/client/react'
+import { DorksProvider, useAutomations, useConnection, useDorks, useSettingsState } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
 import { Input } from '@dorks/ui/input'
 import { clearConnection, currentConnection, DEFAULT_SERVER, normalizeServerUrl, saveConnection, type Connection } from '../lib/connection'
@@ -153,10 +153,16 @@ function ConnectForm({ initialUrl, error, onConnect }: { initialUrl?: string; er
   )
 }
 
-/** Holds the Mac awake (desktop app only) while any session is starting or working, so a closed lid does not stall the agent. */
+/**
+ * Holds the Mac awake (desktop app only) while any session is starting or working, so idle sleep does not stall the agent, and while
+ * an active automation has a schedule: the server runs on this Mac, so a scheduled run can only start on time if the Mac is awake.
+ */
 function KeepAwake() {
   const dorks = useDorks(false)
-  const active = !!dorks?.some((d) => d.state === 'creating' || d.state === 'working' || d.state === 'waking')
+  const automations = useAutomations()
+  const working = !!dorks?.some((d) => d.state === 'creating' || d.state === 'working' || d.state === 'waking')
+  const scheduled = !!automations?.some((a) => a.nextRunAt !== null)
+  const active = working || scheduled
   useEffect(() => {
     setKeepAwake(active)
   }, [active])
