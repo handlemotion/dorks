@@ -29,6 +29,13 @@ export function claudePicker(dork: DorkView, fallback: AgentModelChoice[] | unde
   }
 }
 
+/** The error that put the Dork in error is said once, in red on the status line, not as its own row above it. */
+function splitProblem<B extends { kind: string }>(all: B[], state: string | undefined): { blocks: B[]; problem?: string } {
+  const last = all.at(-1) as (B & { level?: string; text?: string }) | undefined
+  if (state !== 'error' || last?.kind !== 'notice' || last.level !== 'error') return { blocks: all }
+  return { blocks: all.slice(0, -1), problem: last.text }
+}
+
 /**
  * A session's conversation: its transcript (the thread, light as everywhere: bubbles, then each turn's messages with its tool calls between them) and
  * the composer under it, with Stop, replies and the model menu. The page's chat and a dork's worker panel (CrewDetails) both use it;
@@ -71,6 +78,7 @@ export function SessionChat({
   const canReply = !dork.archived
   const current = dork.state === 'working' ? currentStep(view.blocks) : {}
   const needsAttention = Boolean(dork.needsAttention) || view.blocks.some((b) => (b.kind === 'local' && b.status === 'pending') || (b.kind === 'build' && b.approved === null))
+  const { blocks, problem } = splitProblem(view.blocks, dork.state)
   return (
     <>
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
@@ -87,7 +95,7 @@ export function SessionChat({
               )}
               <LocalAccessProvider dorkId={dorkId} agent={agent}>
                 <ChatMessages
-                  blocks={view.blocks}
+                  blocks={blocks}
                   imageUrl={actions.imageUrl}
                   agent={agent}
                   onOpenSteps={onOpenSteps}
@@ -115,6 +123,7 @@ export function SessionChat({
                   attention={needsAttention}
                   step={current.tool && stepLabel(current.tool)}
                   since={current.since}
+                  problem={problem}
                   onOpen={onOpenSteps && view.blocks.some((b) => b.kind === 'tool') ? () => onOpenSteps(current.tool ? [current.tool.id] : []) : undefined}
                 />
               </div>

@@ -21,6 +21,23 @@ export const isBoatStatus = (e: unknown, ...statuses: number[]): boolean => e in
 /** Worth asking again with the same idempotency key: Boat is still working on it, had a server error, or the network failed. */
 export const isTransient = (e: BoatError) => e.code === "idempotency_in_progress" || isBoatStatus(e, 500, 502, 503) || e.message.includes("network error");
 
+/** The request never got an answer: offline, DNS, a dropped connection or a timeout. */
+export const isNetworkError = (e: unknown) => e instanceof BoatError && e.status === undefined && e.message.includes("network error");
+
+/** How long a read or delete keeps retrying through a dropped connection (a laptop on a flaky cellular link) before it fails. */
+export const NETWORK_WAIT_MS = 60_000;
+
+/**
+ * `call` with reads and deletes retried while the network is down. Both are safe to repeat; a POST is not, so it is left to the
+ * caller (sandbox create retries with its idempotency key).
+ */
+export const withNetworkRetry =
+  (call: BoatCall, pause: (ms: number) => Effect.Effect<void>): BoatCall =>
+  (op, method, path, o) => {
+    const once = call(op, method, path, o);
+    return method === "GET" || method === "DELETE" ? retryWhile(once, { retryable: isNetworkError, everyMs: POLL_MS, withinMs: NETWORK_WAIT_MS, pause }) : once;
+  };
+
 export type BoatOptions = {
   apiKey: string;
   scope: string;
