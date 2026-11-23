@@ -23,6 +23,7 @@ import type { PullRequestPanelData } from '../../../components/PullRequestPanel'
 import { latestTasks, progressStore, progressTurns } from '../../../lib/progress'
 import { withImages, Composer, preferredModel, type AgentProvider, type ModelPicker } from '../../../components/ChatComposer'
 import { ChatMenu } from '../../../components/ChatMenu'
+import { UsageMenu } from '../../../components/UsageMenu'
 import { ArchiveButton, PageHeader } from '../../../components/PageHeader'
 import { SetupStatus } from '../../../components/SetupStatus'
 import { canCreate } from '../../../lib/onboarding'
@@ -263,6 +264,7 @@ function NewDork({
         picker={newSessionPicker(provider, settings, choice, setChoice)}
         upload={actions.uploadImage}
         draftKey="new"
+        usage={<UsageMenu provider={provider} />}
         machine={{ builds: built, buildId, onChange: setPicked }}
         focusKey={visit}
         onSubmit={(images) =>

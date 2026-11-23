@@ -42,7 +42,7 @@ function describe(status: Shown) {
 }
 
 /**
- * The sidebar's update prompt, above the usage meters: a solid brand-blue block, shown only while a newer version is published, being
+ * The sidebar's update prompt, above Settings: a solid brand-blue block, shown only while a newer version is published, being
  * downloaded or installed, or failed to install. Choosing Update downloads it (with a progress bar), installs it and relaunches the app.
  * Nothing shows while no update is known, in a browser, or in a build that cannot update.
  */

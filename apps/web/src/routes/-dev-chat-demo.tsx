@@ -5,7 +5,7 @@ import { Button } from '@dorks/ui/button'
 import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport } from '@dorks/ui/message-scroller'
 import { FrameLayout } from '../components/AppFrame'
 import { AppSidebarView } from '../components/AppSidebar'
-import { UsageBarView } from '../components/UsageBar'
+import { UsageMenuView } from '../components/UsageMenu'
 import { AgentStatus } from '../components/AgentStatus'
 import { ChatMessages } from '../components/ChatBlock'
 import { ChatDetails } from '../components/ChatDetails'
@@ -20,10 +20,19 @@ import { ArchiveButton, PageHeader } from '../components/PageHeader'
 import { withReply, type Reply } from '../lib/reply'
 import demoChatShot from '../assets/demo-chat.png'
 
-/** Static usage for the sidebar, so the demo needs no live client. */
+/** Static usage for the composer's usage menu, so the demo needs no live client. */
 const demoUsage: Usage = {
   claude: { session: { used: 0.42, resetsAt: Date.now() + 2 * 3_600_000 }, weekly: { used: 0.18, resetsAt: Date.now() + 4 * 86_400_000 } },
-  cloud: { usedHours: 12.5, includedHours: 50, periodEnd: Date.now() + 19 * 86_400_000 },
+  cloud: {
+    usedHours: 46.7,
+    includedHours: 555.56,
+    periodEnd: Date.now() + 17 * 86_400_000,
+    plan: '$20/mo',
+    sandboxes: { used: 4, limit: 100 },
+    startsHour: { used: 9, limit: 60 },
+    startsDay: { used: 27, limit: 200 },
+    walletDollars: 14.79,
+  },
 }
 
 const demoBlocks: Block[] = [
@@ -386,12 +395,7 @@ export function Demo() {
   return (
     <FrameLayout
       sidebar={
-        <AppSidebarView
-          chats={chats.map((c) => (c.id === 'preview' ? { ...c, working: !stopped, state: stopped ? 'idle' : 'working' } : c))}
-          chatTo="/dev/chat"
-          orderKey="dorks.demo.chat-preview"
-          usage={<UsageBarView usage={demoUsage} />}
-        />
+        <AppSidebarView chats={chats.map((c) => (c.id === 'preview' ? { ...c, working: !stopped, state: stopped ? 'idle' : 'working' } : c))} chatTo="/dev/chat" orderKey="dorks.demo.chat-preview" />
       }
     >
       <ChatSplit
@@ -468,6 +472,7 @@ export function Demo() {
                 onClearReply={() => setReply(undefined)}
                 pending={false}
                 error=""
+                usage={<UsageMenuView usage={demoUsage} provider="claude" />}
                 onStop={stopped ? undefined : stop}
               />
             </section>

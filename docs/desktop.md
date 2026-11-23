@@ -129,7 +129,7 @@ Release builds update themselves from GitHub Releases with Tauri's updater (`src
   | `installing` | `version` | "Installing update, Dorks will restart" |
   | `failed` | `version`, `message` | "Update failed" with Try again (the message is the prompt's tooltip) |
 
-- **Install.** Update in the sidebar (`UpdatePrompt`, a solid brand-blue block above the usage meters) or in the menu bar downloads the bundle, checks its signature against the public key baked into the app, replaces `Dorks.app`, stops the server like Quit does, and relaunches. The menu bar item reads "Check for Updates…" otherwise, and says "Dorks Is Up to Date" for a few seconds after a check it started finds nothing.
+- **Install.** Update in the sidebar (`UpdatePrompt`, a solid brand-blue block above Settings) or in the menu bar downloads the bundle, checks its signature against the public key baked into the app, replaces `Dorks.app`, stops the server like Quit does, and relaunches. The menu bar item reads "Check for Updates…" otherwise, and says "Dorks Is Up to Date" for a few seconds after a check it started finds nothing.
 - **Trying the prompt without a release:** the web app's `UpdatePromptView` takes a status as a prop; in a browser, a stand-in `window.__TAURI__` whose `invoke('update_status')` returns one of the states above shows it.
 
 Ship an update: merge the **Release Dorks** PR ([releasing.md](releasing.md)). The release workflow builds, signs and publishes it, and installed apps pick it up within 15 minutes. The version must be newer than the installed one, or the updater never offers it; Changesets only ever bumps it up.

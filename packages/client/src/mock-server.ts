@@ -805,7 +805,20 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         return json(res, 200, {
           ...(settings.claudeToken ? { claude: { session: { used: 0.07, resetsAt: now + 3 * 3600_000 }, weekly: { used: 0.26, resetsAt: now + 4 * 86400_000 } } } : {}),
           ...(settings.antigravityToken ? { google: { session: { used: 0.02, resetsAt: now + 4 * 3600_000 }, weekly: { used: 0.01, resetsAt: now + 7 * 86400_000 } } } : {}),
-          ...(settings.boatKey ? { cloud: { usedHours: 38.4, includedHours: 555.56, periodEnd: now + 29 * 86400_000 } } : {}),
+          ...(settings.boatKey
+            ? {
+                cloud: {
+                  usedHours: 38.4,
+                  includedHours: 555.56,
+                  periodEnd: now + 29 * 86400_000,
+                  plan: "$20/mo",
+                  sandboxes: { used: 3, limit: 100 },
+                  startsHour: { used: 4, limit: 60 },
+                  startsDay: { used: 21, limit: 200 },
+                  walletDollars: 14.79,
+                },
+              }
+            : {}),
         });
       },
     ],

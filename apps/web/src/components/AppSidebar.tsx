@@ -28,7 +28,6 @@ import { OwnerAvatar, ownerOf } from './RepoAvatar'
 import { ownersOf, useOwnerScope } from './ownerScope'
 import { SIDEBAR_ROW, SIDEBAR_SECTION } from './sidebarChrome'
 import { UpdatePrompt } from './UpdatePrompt'
-import { UsageBar } from './UsageBar'
 import { useRowHover } from './useRowHover'
 import { DORK_ICONS, NewDorkDialog } from './NewDorkDialog'
 
@@ -71,7 +70,6 @@ export function AppSidebar() {
       usage={
         <>
           <UpdatePrompt />
-          <UsageBar />
         </>
       }
       onArchive={(id) => void archive(id).catch((e: unknown) => toast.error(e instanceof Error ? e.message : 'Could not archive the chat'))}
