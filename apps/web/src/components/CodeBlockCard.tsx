@@ -55,12 +55,12 @@ export function MarkdownCodeBlock({ code, language }: { code: string; language: 
   )
 
   return (
-    <div className="my-4 overflow-hidden rounded-[10px] border border-border bg-muted p-1 pt-0 dark:bg-card">
-      <div className="flex h-8 items-center justify-between pr-1 pl-2.5 text-xs text-muted-foreground">
+    <div className="my-4 overflow-hidden rounded-[10px] border border-border bg-muted dark:bg-card">
+      <div className="flex h-8 items-center justify-between pr-1.5 pl-3 text-xs text-muted-foreground">
         <span className="min-w-0 truncate font-medium">{language || 'text'}</span>
         <CodeBlockCopyButton value={trimmed} disabled={incomplete} className="size-6 rounded-[6px] text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground" />
       </div>
-      <div className="overflow-hidden rounded-[6px] border border-border bg-surface dark:bg-background">
+      <div className="-mx-px -mb-px overflow-hidden rounded-[10px] border border-border bg-surface dark:bg-background">
         <File
           file={file}
           options={options}
