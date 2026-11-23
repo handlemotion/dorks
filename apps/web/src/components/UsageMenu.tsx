@@ -67,7 +67,7 @@ export function UsageMenuView({ usage, provider }: { usage: Usage; provider: Age
             variant="ghost"
             aria-label={label}
             title={label}
-            className="size-7 shrink-0 text-muted-foreground hover:text-foreground data-popup-open:bg-foreground/[0.07]"
+            className="-ml-2 size-7 shrink-0 text-muted-foreground hover:text-foreground data-popup-open:bg-foreground/[0.07]"
           />
         }
       >
