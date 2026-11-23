@@ -1,5 +1,11 @@
 # @dorks/desktop
 
+## 0.5.2
+
+### Patch Changes
+
+- [#166](https://github.com/handlemotion/dorks/pull/166) [`406d0e5`](https://github.com/handlemotion/dorks/commit/406d0e585d07f7796916fb465d7f730d3168a37d) Thanks [@handlemotion](https://github.com/handlemotion)! - Fix the desktop app failing to open with "Something went wrong" after the last update.
+
 ## 0.5.1
 
 ### Patch Changes
