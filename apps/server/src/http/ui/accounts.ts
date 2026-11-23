@@ -1,5 +1,6 @@
 import { Effect, Schema } from "effect";
 import { checkBoat } from "../../services/boatCheck";
+import { finishAntigravitySignIn, startAntigravitySignIn } from "../../services/antigravitySignIn";
 import { startBoatSignIn } from "../../services/boatSignIn";
 import { githubRepos } from "../../services/githubRepos";
 import { snapshotView, startBuild } from "../../services/snapshot";
@@ -8,6 +9,7 @@ import { body, looseBody, serviceAsync } from "../route";
 import { handler, type Routes } from "./shared";
 
 const Force = Schema.Struct({ force: Schema.optional(Schema.Boolean) });
+const Finish = Schema.Struct({ url: Schema.String });
 
 // What the connected accounts report: Claude and Boat usage, the GitHub CLI's repositories, the Boat key and its base snapshot.
 export const accountRoutes: Routes = (api, app) => {
@@ -42,6 +44,22 @@ export const accountRoutes: Routes = (api, app) => {
   api.post(
     "/api/boat/sign-in",
     on((c) => serviceAsync(startBoatSignIn).pipe(Effect.map((v) => c.json({ boatSignIn: v })))),
+  );
+
+  // ---- Antigravity's Google sign-in, run by the agy CLI on this computer (services/antigravitySignIn.ts): returns Google's link;
+  // the token is saved when the browser sign-in finishes. `finish` takes the address a browser on another computer ended on.
+  api.post(
+    "/api/antigravity/sign-in",
+    on((c) => serviceAsync(startAntigravitySignIn).pipe(Effect.map((v) => c.json({ antigravitySignIn: v })))),
+  );
+  api.post(
+    "/api/antigravity/sign-in/finish",
+    on((c) =>
+      body(c, Finish, "url must be a string").pipe(
+        Effect.flatMap((b) => serviceAsync((a) => finishAntigravitySignIn(a, b.url))),
+        Effect.map((v) => c.json({ antigravitySignIn: v })),
+      ),
+    ),
   );
 
   // ---- base snapshot ("Prepare Boat")

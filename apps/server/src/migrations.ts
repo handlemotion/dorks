@@ -457,4 +457,8 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE dorks DROP COLUMN provider;
   ALTER TABLE dorks RENAME COLUMN provider_next TO provider;
   `,
+  `
+  -- Antigravity's sign-in (agy's token file, services/antigravitySignIn.ts), encrypted like the Claude token.
+  ALTER TABLE settings ADD COLUMN antigravity_token_enc TEXT;
+  `,
 ];

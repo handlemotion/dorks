@@ -15,6 +15,7 @@ All optional.
 | `BASE_SNAPSHOT_ID` | none | Default Boat base snapshot. The `baseSnapshotId` setting wins when set. |
 | `BOX_PROVIDER` | `boat` | `boat`, or `sim` for the local simulator and tests. |
 | `SIM_HOST_KEY` | none | Required when `BOX_PROVIDER=sim`; guards the `/sim/*` routes. |
+| `DORKS_AGY_BIN` | none | The Antigravity CLI for the Google sign-in when there is no `agy` on `PATH` (or in `~/.local/bin`); without one, Dorks downloads Google's current build into the data dir, checksum-verified. See [Boat](boat.md). |
 | `DORKS_BOAT_BIN` | none | The Boat CLI to use when there is no `boat` on `PATH` (or in `~/.ascii/bin`). The desktop app sets it to the copy it bundles. See [Boat](boat.md#sign-in-with-the-boat-cli). |
 | `GH_TOKEN`, then `GITHUB_TOKEN` | none (the GitHub CLI's login) | Secret. Overrides the GitHub CLI's login, the way `gh` itself resolves them, for development and the e2e. GitHub must still be connected (`githubConnected`). The desktop app never passes them. See [GitHub](github.md). |
 
