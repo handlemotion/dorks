@@ -2,8 +2,7 @@ import { useMemo } from 'react'
 import { File, PatchDiff } from './diffs'
 import { markdownPatch } from '../lib/markdownPatch'
 import { useTheme } from 'next-themes'
-import { useIsCodeFenceIncomplete, type ExtraProps } from 'streamdown'
-import { cn } from 'cn'
+import type { MarkdownCodeBlockProps } from '@dorks/ui/markdown'
 import { CodeBlockCopyButton } from '@dorks/ui/code-block'
 
 const LANG_EXT: Record<string, string> = {
@@ -39,8 +38,7 @@ const CODE_CSS = '[data-code] { padding-block: 10px; padding-inline: 4px; }'
  * Fenced code block for markdown: a card-on-card layout (muted outer frame with header + copy button,
  * concentric 6px inner surface card) highlighted with Pierre (`@pierre/diffs/react`).
  */
-export function MarkdownCodeBlock({ code, language }: { code: string; language: string }) {
-  const incomplete = useIsCodeFenceIncomplete()
+export function MarkdownCodeBlock({ code, language, incomplete }: MarkdownCodeBlockProps) {
   const { resolvedTheme } = useTheme()
   const trimmed = code.replace(/\n$/, '')
   const file = useMemo(() => ({ name: fileNameFor(language), contents: trimmed }), [language, trimmed])
@@ -82,15 +80,4 @@ export function MarkdownCodeBlock({ code, language }: { code: string; language: 
       </div>
     </div>
   )
-}
-
-export function AgentCode({ node: _node, className, children, ...props }: React.ComponentProps<'code'> & ExtraProps) {
-  if (!('data-block' in props)) {
-    return (
-      <code className={cn('rounded-sm bg-muted px-1 py-0.5 font-mono text-[0.9em]', className)} {...props}>
-        {children}
-      </code>
-    )
-  }
-  return <MarkdownCodeBlock code={typeof children === 'string' ? children : ''} language={/language-(\S+)/.exec(className ?? '')?.[1] ?? ''} />
 }
