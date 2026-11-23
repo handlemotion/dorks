@@ -15,7 +15,7 @@ const tone = (left: number) => (left < 0.1 ? 'bg-destructive' : left < 0.2 ? 'bg
 
 /**
  * The sidebar's usage, above Settings: a raised block with one meter per limit, each as the share left (Claude's 5-hour session and
- * weekly limit, Boat's monthly included machine time), and a strip under it with the next reset. Shows nothing when neither
+ * weekly limit, Antigravity's Gemini 5-hour and weekly limits, Boat's monthly included machine time), and a strip under it with the next reset. Shows nothing when neither
  * account is set up. Codex has no meter: Dorks never holds its sign-in.
  *
  * Insets are 11px to the letters on every side, measured from the outer edge (balance-out, Geist 12/16: 3.5px above the capitals,
@@ -23,19 +23,16 @@ const tone = (left: number) => (left < 0.1 ? 'bg-destructive' : left < 0.2 ? 'bg
  * In a meter a label's baseline sits 10px over its bar; a bar sits 15.5px over the next label's capitals.
  */
 export function UsageBarView({ usage }: { usage: Usage }) {
-  const { claude, cloud } = usage
-  if (!claude && !cloud) return null
-  const footer = claude?.session?.resetsAt ? `Session resets ${time.format(claude.session.resetsAt)}` : cloud?.periodEnd ? `Cloud renews ${day.format(cloud.periodEnd)}` : undefined
+  const { claude, google, cloud } = usage
+  if (!claude && !google && !cloud) return null
+  const session = claude?.session?.resetsAt ?? google?.session?.resetsAt
+  const footer = session ? `Session resets ${time.format(session)}` : cloud?.periodEnd ? `Cloud renews ${day.format(cloud.periodEnd)}` : undefined
   return (
     <section aria-label="Usage" className="rounded-[6px] bg-foreground/[0.04]">
       <div className="flex flex-col gap-3 rounded-[6px] border border-border bg-surface px-[10px] pt-[6.5px] pb-[10px]">
-        {claude && (
-          <>
-            {/* No 5-hour window reported (plans without session limits, such as Ultra): no session meter. */}
-            {claude.session && <Meter label="Claude session" used={claude.session.used} title={claude.session.resetsAt ? `Resets ${time.format(claude.session.resetsAt)}` : undefined} />}
-            <Meter label="Claude weekly" used={claude.weekly.used} title={claude.weekly.resetsAt ? `Resets ${day.format(claude.weekly.resetsAt)}` : undefined} />
-          </>
-        )}
+        {/* No 5-hour window reported (plans without session limits, such as Claude's Ultra): no session meter. */}
+        {claude && <Limits name="Claude" limits={claude} />}
+        {google && <Limits name="Gemini" limits={google} />}
         {cloud && (
           <Meter
             label="Cloud monthly"
@@ -46,6 +43,17 @@ export function UsageBarView({ usage }: { usage: Usage }) {
       </div>
       {footer && <div className="truncate px-[11px] pt-[7.5px] pb-[7px] text-xs leading-4 text-muted-foreground tabular-nums">{footer}</div>}
     </section>
+  )
+}
+
+/** A plan's 5-hour session (when it reports one) and weekly limit. */
+function Limits({ name, limits }: { name: string; limits: NonNullable<Usage['claude']> }) {
+  const { session, weekly } = limits
+  return (
+    <>
+      {session && <Meter label={`${name} session`} used={session.used} title={session.resetsAt ? `Resets ${time.format(session.resetsAt)}` : undefined} />}
+      <Meter label={`${name} weekly`} used={weekly.used} title={weekly.resetsAt ? `Resets ${day.format(weekly.resetsAt)}` : undefined} />
+    </>
   )
 }
 

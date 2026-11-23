@@ -108,10 +108,10 @@ impl FromStr for WindowTheme {
     }
 }
 
-/// Where AppKit puts the buttons (Tauri's inset: x is the close button's left edge, the button's top lands 9pt above y) and
-/// how much room they take. x lines the close button up with the sidebar's row icons (14pt); y centres the 14pt buttons on
-/// the header controls, whose centre is 24pt down (AppFrame's 48px strip).
-pub const TRAFFIC_LIGHTS_POSITION: (f64, f64) = (14.0, 26.0);
+/// Where AppKit puts the buttons (Tauri's inset: x is the close button's left edge) and how much room they take. x lines the
+/// close button up with the sidebar's row icons (14pt); y centres the buttons on the header controls, whose centre is 24pt down
+/// (AppFrame's 48px strip). Measured on macOS 26: the buttons' centre lands about 2pt below y (26 put them 4pt under the icons).
+pub const TRAFFIC_LIGHTS_POSITION: (f64, f64) = (14.0, 22.0);
 pub const TRAFFIC_LIGHTS_INSET_LEFT: f64 = 78.0;
 /// Height of the draggable header strip the web app should reserve at the top in app mode.
 pub const TITLEBAR_HEIGHT: f64 = 52.0;
