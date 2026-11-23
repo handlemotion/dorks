@@ -1,4 +1,14 @@
 import type { DorkState, ClientEvent, LocalKind, TurnOutcome } from "../events";
+import type { NotifyKind, PrRef } from "../autonomy";
+
+/**
+ * What an autonomy notice came from (docs/autonomy.md), kept so clients can label it by what happened and give it its own icon: a PR
+ * event digest handed to the agent, the agent's PR opened or merged, or a PR subscription that changed.
+ */
+export type NoticeHook =
+  | { type: "notify"; kinds: NotifyKind[]; prs: PrRef[]; text: string }
+  | { type: "pr_opened" | "pr_merged"; url: string; number: number }
+  | { type: "subscription"; repo: string; number: number; status: "active" | "stalled" | "ended"; reason?: string };
 
 export type Block =
   /** `at`: when it was sent (ms since epoch). */
@@ -15,7 +25,8 @@ export type Block =
       input?: Record<string, unknown>;
       /** When the call started (ms since epoch). */ at?: number;
     }
-  | { kind: "notice"; id: string; level: "info" | "error"; text: string }
+  /** `hook`: the autonomy event it came from, when it did. `at`: when it happened. */
+  | { kind: "notice"; id: string; level: "info" | "error"; text: string; hook?: NoticeHook; at?: number }
   /** A crew report or note (docs/crew.md): a worker's final answer reaching its dork, or a note between them. */
   | { kind: "crew"; id: string; direction: "in" | "out"; peer: { id: string; title: string }; note: boolean; text: string; at: number }
   /** The agent submitted a draft of its machine for approval (docs/builds.md). `approved` is null until the owner decides. */
@@ -62,7 +73,8 @@ type EventOf<T extends ClientEvent["type"]> = Extract<ClientEvent, { type: T }>;
 /** Applies one event to `v`, a fresh copy of the view (its `blocks` array is already copied, so handlers may push and assign). */
 type Handlers = { [T in ClientEvent["type"]]?: (v: DorkView, e: EventOf<T>) => void };
 
-const notice = (v: DorkView, e: ClientEvent, level: "info" | "error", text: string) => v.blocks.push({ kind: "notice", id: `n${e.seq}`, level, text });
+const notice = (v: DorkView, e: ClientEvent, level: "info" | "error", text: string, hook?: NoticeHook) =>
+  v.blocks.push({ kind: "notice", id: `n${e.seq}`, level, text, ...(hook ? { hook, at: e.ts } : {}) });
 const findLocal = (v: DorkView, requestId: string) => v.blocks.findIndex((b) => b.kind === "local" && b.requestId === requestId);
 const findAssistant = (v: DorkView, id: string) => v.blocks.findIndex((b) => b.kind === "assistant" && b.id === id);
 
@@ -102,20 +114,26 @@ const HANDLERS: Handlers = {
   },
   pr_opened(v, e) {
     v.prUrl = e.url;
-    notice(v, e, "info", `PR opened: ${e.url}`);
+    notice(v, e, "info", `PR opened: ${e.url}`, { type: "pr_opened", url: e.url, number: e.number });
   },
   pr_merged(v, e) {
     v.prUrl = e.url;
-    notice(v, e, "info", `PR merged: ${e.url}`);
+    notice(v, e, "info", `PR merged: ${e.url}`, { type: "pr_merged", url: e.url, number: e.number });
   },
   notify(v, e) {
-    notice(v, e, "info", e.text);
+    notice(v, e, "info", e.text, { type: "notify", kinds: e.kinds, prs: e.prs, text: e.text });
   },
   crew(v, e) {
     v.blocks.push({ kind: "crew", id: `c${e.seq}`, direction: e.direction, peer: e.peer, note: e.kind === "note", text: e.text, at: e.ts });
   },
   subscription(v, e) {
-    notice(v, e, e.status === "stalled" ? "error" : "info", `${e.repo}#${e.number}: ${e.status}${e.reason ? ` (${e.reason})` : ""}`);
+    notice(v, e, e.status === "stalled" ? "error" : "info", `${e.repo}#${e.number}: ${e.status}${e.reason ? ` (${e.reason})` : ""}`, {
+      type: "subscription",
+      repo: e.repo,
+      number: e.number,
+      status: e.status,
+      ...(e.reason ? { reason: e.reason } : {}),
+    });
   },
   build_draft(v, e) {
     v.blocks.push({ kind: "build", id: `b${e.seq}`, draftId: e.draftId, buildId: e.buildId, buildName: e.buildName, note: e.note, approved: null });
