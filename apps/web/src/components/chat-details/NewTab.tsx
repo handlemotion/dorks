@@ -49,7 +49,7 @@ export function NewTab({
   const nothing = shownPrs.length + shownPreviews.length + shownArtifacts.length + shownPanels.length === 0
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className={`mx-auto flex w-full max-w-[420px] flex-col gap-6 px-5 pb-10 ${totalRows > 6 ? 'pt-6' : 'pt-[18vh]'}`}>
+      <div className={`mx-auto flex w-full max-w-[420px] flex-col gap-6 px-5 pb-10 ${totalRows > 6 ? 'pt-14' : 'pt-[18vh]'}`}>
         <InputGroup className="h-[30px] rounded-(--control-radius) border-border bg-transparent dark:bg-transparent">
           <InputGroupAddon className="pl-2">
             <SearchIcon className="size-3.5" />
