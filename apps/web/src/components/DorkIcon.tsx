@@ -76,9 +76,10 @@ export function DorkIcon({
           </linearGradient>
           {state === 'working' && (
             <mask id={maskId} width="200" height="220" x="0" y="-10" maskUnits="userSpaceOnUse" style={{ maskType: 'alpha' }}>
-              <ellipse cx="100" cy="40" rx="80" ry="40" fill="#fff" className="dork-lobe dork-lobe-1" />
-              <ellipse cx="100" cy="100" rx="80" ry="40" fill="#fff" className="dork-lobe dork-lobe-2" />
-              <ellipse cx="100" cy="160" rx="80" ry="40" fill="#fff" className="dork-lobe dork-lobe-3" />
+              <ellipse cx="100" cy="100" rx="80" ry="40" fill="#fff" className="dork-flap dork-flap-1" />
+              <ellipse cx="100" cy="100" rx="80" ry="40" fill="#fff" className="dork-flap dork-flap-2" />
+              <ellipse cx="100" cy="100" rx="80" ry="40" fill="#fff" className="dork-flap dork-flap-3" />
+              <ellipse cx="100" cy="100" rx="80" ry="40" fill="#fff" className="dork-flap dork-flap-4" />
             </mask>
           )}
         </defs>

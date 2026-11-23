@@ -112,33 +112,67 @@
   }
 }
 
-/* DorkIcon (components/DorkIcon.tsx): while working, the three lobes breathe in a gentle vertical wave and the cyan-blue-violet
-   gradient drifts smoothly inside the silhouette. */
-.dork-lobe {
-  transform-box: fill-box;
-  transform-origin: center;
+/* DorkIcon (components/DorkIcon.tsx): while working, four flaps cycle smoothly upward — the top flap scales down and disappears
+   while a new flap scales in underneath, and the cyan-blue-violet gradient drifts gently inside the silhouette. */
+.dork-flap {
+  transform-origin: 100px 100px;
 }
 
-@keyframes dork-lobe-wave {
-  0%,
-  100% {
-    transform: translateY(0) scaleX(1) scaleY(1);
+/* Reduced-motion fallback positions so the 3-flap stack still reads cleanly when animation is disabled. */
+.dork-flap-1 {
+  transform: translateY(-60px);
+}
+.dork-flap-2 {
+  transform: translateY(0px);
+}
+.dork-flap-3 {
+  transform: translateY(60px);
+}
+.dork-flap-4 {
+  opacity: 0;
+  transform: translateY(92px) scale(0);
+}
+
+@keyframes dork-flap-cycle {
+  0% {
+    opacity: 0;
+    transform: translateY(92px) scale(0);
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   }
-  45% {
-    transform: translateY(-4px) scaleX(0.92) scaleY(1.06);
+  8% {
+    opacity: 1;
+  }
+  25% {
+    opacity: 1;
+    transform: translateY(60px) scale(1);
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(0px) scale(1);
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   }
   75% {
-    transform: translateY(3px) scaleX(1.05) scaleY(0.95);
+    opacity: 1;
+    transform: translateY(-60px) scale(1);
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  92% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-92px) scale(0);
   }
 }
 
 @keyframes dork-gradient-drift {
   0%,
   100% {
-    transform: translateY(-18px);
+    transform: translateY(-20px);
   }
   50% {
-    transform: translateY(18px);
+    transform: translateY(20px);
   }
 }
 
@@ -146,17 +180,20 @@
   .word-shimmer {
     animation: word-shimmer 2s step-end infinite;
   }
-  .dork-lobe-1 {
-    animation: dork-lobe-wave 1.8s cubic-bezier(0.4, 0, 0.2, 1) 0s infinite;
+  .dork-flap-1 {
+    animation: dork-flap-cycle 4.4s linear 0s infinite;
   }
-  .dork-lobe-2 {
-    animation: dork-lobe-wave 1.8s cubic-bezier(0.4, 0, 0.2, 1) 0.22s infinite;
+  .dork-flap-2 {
+    animation: dork-flap-cycle 4.4s linear -1.1s infinite;
   }
-  .dork-lobe-3 {
-    animation: dork-lobe-wave 1.8s cubic-bezier(0.4, 0, 0.2, 1) 0.44s infinite;
+  .dork-flap-3 {
+    animation: dork-flap-cycle 4.4s linear -2.2s infinite;
+  }
+  .dork-flap-4 {
+    animation: dork-flap-cycle 4.4s linear -3.3s infinite;
   }
   .dork-gradient-drift {
-    animation: dork-gradient-drift 2.4s ease-in-out infinite;
+    animation: dork-gradient-drift 2.8s ease-in-out infinite;
   }
 }
 
