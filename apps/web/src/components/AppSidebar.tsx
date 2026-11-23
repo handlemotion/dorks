@@ -223,7 +223,7 @@ export function AppSidebarView({
     <Sidebar collapsible={isMobile ? 'offcanvas' : 'none'} className={isMobile ? undefined : 'h-full w-full'}>
       <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden text-foreground">
         {/* The title bar: the traffic lights and the floating controls (AppFrame) sit over it. Nothing else lives up here. */}
-        <div data-tauri-drag-region className="h-11 shrink-0" />
+        <div data-tauri-drag-region className="h-12 shrink-0" />
         <div ref={hover.containerRef} className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-1.5 pb-1.5">
           <FluidHoverHighlight className="z-0 rounded-[6px] bg-foreground/[0.05]" rect={hover.rect} session={hover.session} />
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto overscroll-y-none">
