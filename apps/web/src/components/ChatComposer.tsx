@@ -1,6 +1,6 @@
 import { ArrowUpIcon, BoxIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SparkleIcon, SquareIcon, SquareTerminalIcon, XIcon, ZapIcon } from 'lucide-react'
 import { modelLabel, type AgentModelChoice } from '@dorks/shared'
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -129,25 +129,6 @@ function useAttachments(upload: ((file: File) => Promise<string>) | undefined) {
   const ready = files.filter((f) => f.state === 'done' && f.imageId)
   const uploading = files.some((f) => f.state === 'uploading')
   return { files, attachError, attach, remove, clearSent, ready, uploading }
-}
-
-/** Whether the text runs past one line; re-measured as it changes and as the box resizes. */
-function useWraps(textRef: RefObject<HTMLTextAreaElement | null>, text: string) {
-  const [wraps, setWraps] = useState(false)
-  useLayoutEffect(() => {
-    const el = textRef.current
-    if (!el) return
-    const measure = () => {
-      const style = getComputedStyle(el)
-      const content = el.scrollHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
-      setWraps(content > parseFloat(style.lineHeight) * 1.5)
-    }
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [textRef, text])
-  return wraps
 }
 
 /** One attached image: a 112px tile with the image filling it, its upload state, and a remove button. */
@@ -669,14 +650,13 @@ export function Composer({
   const fileRef = useRef<HTMLInputElement>(null)
   const textRef = useRef<HTMLTextAreaElement>(null)
   const { files, attachError, attach, remove, clearSent, ready, uploading } = useAttachments(upload)
-  // One row until the text wraps (or a file is attached); then the text takes the box and the buttons sit on a row under it.
-  // The text has the same side insets in both forms, so it wraps the same way in each and the box never flips back and forth.
-  const wraps = useWraps(textRef, text)
   // A new reply puts the cursor in the box, ready to answer it.
   useEffect(() => {
     if (reply) textRef.current?.focus()
   }, [reply])
-  const stacked = wraps || files.length > 0
+  // The text stays beside attach and the main button as it wraps, its last line level with them; only attached images
+  // stack the box, putting the buttons on a row of their own under the text.
+  const stacked = files.length > 0
   const isNewSession = setRepo !== undefined
   const locked = !!(pending || disabled)
   useEffect(() => {
