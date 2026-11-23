@@ -5,6 +5,7 @@ import { update, insert } from "../db";
 import { reduce, type Effect, type Input, type Result } from "../core/machine";
 import { crewObserve } from "../services/crew";
 import { messagePreview } from "../lib/messageText";
+import { resetCiAttempts, subscriptionsOfDork } from "../services/subscriptions";
 
 // The lifecycle driver. Every function here is synchronous and meant to run inside one SQLite transaction (app.db.tx): a state
 // change, its event, and its effects (timers, box jobs, outbox rows) commit together or not at all.
@@ -136,6 +137,8 @@ function releaseQueued(app: App, dorkId: string) {
   if (!next) return;
   app.db.run("DELETE FROM queued_messages WHERE id = ?", next.id);
   persistUserMessage(app, dorkId, next.text);
+  // The owner is back, as with a message sent straight away (services/dorks.ts): CI gets a fresh budget.
+  for (const sub of subscriptionsOfDork(app, dorkId)) if (sub.status !== "ended") resetCiAttempts(app, sub, "resumed by your message");
 }
 
 // ---------------------------------------------------------------- machine driver

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { interrupt, queueMessage, takeQueued } from "../src/services/dorks";
+import { insert } from "../src/db";
 import { harness } from "./harness";
 
 // Queued messages (the composer's ⌘ Enter): held while a turn runs, released one per turn boundary, held by a Stop.
@@ -79,6 +80,33 @@ describe("queued messages", () => {
     s.ackAll(id);
     s.turnIdle(id);
     expect(s.sent(id)).toEqual(["after stop"]);
+  });
+
+  it("a released message gives a stalled PR subscription a fresh CI budget, like a message sent now", () => {
+    const s = setup();
+    const id = s.h.seed("working");
+    insert(s.h.app.db, "pr_subscriptions", {
+      dorkId: id,
+      repo: "octo/hello",
+      number: 12,
+      url: "https://github.com/octo/hello/pull/12",
+      title: "x",
+      headRef: "agent/x",
+      baseRef: "main",
+      source: "agent",
+      status: "stalled",
+      ci: "failing",
+      review: "none",
+      mergeable: null,
+      ciFixAttempts: 3,
+      state: "open",
+      lastEventAt: 1,
+    });
+    s.queue(id, "try another way");
+    const sub = () => s.h.app.db.get<{ status: string; ci_fix_attempts: number }>("SELECT status, ci_fix_attempts FROM pr_subscriptions WHERE dork_id = ?", id)!;
+    expect(sub()).toMatchObject({ status: "stalled", ci_fix_attempts: 3 });
+    s.turnIdle(id);
+    expect(sub()).toMatchObject({ status: "active", ci_fix_attempts: 0 });
   });
 
   it("can be sent now or removed", () => {
