@@ -17,7 +17,7 @@ function MarkdownCodeBlock({ code, language }: { code: string; language: string 
   // only spaces top-level blocks, so a fence inside a list item sat flush against the text around it (the margins collapse with
   // space-y-4 at the top level, and the container's first/last-child rules still zero them at its edges).
   return (
-    <CodeBlock className="my-4 ring-inset">
+    <CodeBlock className="my-4 bg-background ring-inset">
       <CodeBlockHeader>
         <CodeBlockTitle>{language || "text"}</CodeBlockTitle>
         <CodeBlockActions>

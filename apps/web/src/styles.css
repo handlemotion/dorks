@@ -35,44 +35,6 @@
   }
 }
 
-/* Orb (components/Orb.tsx), ported from @aicss/react variant M2. Keyframes and easings are aicss's, unchanged except that every
-   position is scaled by --orb-spread so the ring can collapse to a dot. */
-@theme {
-  --animate-orb-morph: orb-morph 4.8s cubic-bezier(0.4, 0, 0.2, 1) infinite both;
-  --animate-orb-twist: orb-morph-twist 9.6s linear infinite;
-
-  @keyframes orb-morph {
-    0%,
-    5% {
-      transform: translate(calc(var(--m-1x) * var(--orb-spread)), calc(var(--m-1y) * var(--orb-spread)));
-    }
-    25%,
-    30% {
-      transform: translate(calc(var(--m-2x) * var(--orb-spread)), calc(var(--m-2y) * var(--orb-spread)));
-    }
-    50%,
-    55% {
-      transform: translate(calc(var(--m-3x) * var(--orb-spread)), calc(var(--m-3y) * var(--orb-spread)));
-    }
-    75%,
-    80% {
-      transform: translate(calc(var(--m-4x) * var(--orb-spread)), calc(var(--m-4y) * var(--orb-spread)));
-    }
-    100% {
-      transform: translate(calc(var(--m-1x) * var(--orb-spread)), calc(var(--m-1y) * var(--orb-spread)));
-    }
-  }
-
-  @keyframes orb-morph-twist {
-    from {
-      transform: scale(var(--orb-k, 1)) rotate(0deg);
-    }
-    to {
-      transform: scale(var(--orb-k, 1)) rotate(360deg);
-    }
-  }
-}
-
 /* MessageActions (components/message-actions), ported from aicss's Message Actions. Keyframes, durations and easings are aicss's, unchanged. */
 @theme {
   --animate-ma-thumb-up: ma-thumb-up 520ms cubic-bezier(0.22, 1.15, 0.36, 1);
@@ -131,13 +93,6 @@
   }
 }
 
-/* 1 = the full ring choreography, 0 = every dot on the centre; registered so it can transition. */
-@property --orb-spread {
-  syntax: '<number>';
-  inherits: true;
-  initial-value: 1;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .animate-pulse,
   [data-slot='trace'] .animate-spin {
@@ -145,49 +100,105 @@
   }
 }
 
-/* WordShimmer (components/WordShimmer.tsx): a word is blue for the first 15% of a 2s cycle, then its normal colour. `step-end` makes each
-   change a snap instead of a fade; the per-word delay is what makes the blue walk across the line. */
-@keyframes word-shimmer {
+/* AgentStatus (components/AgentStatus.tsx): smooth left-to-right grey shimmer across dimmed status text while an action is moving. */
+@keyframes status-shimmer {
   0% {
-    color: var(--brand);
+    background-position: 100% 0;
   }
-  15%,
   100% {
-    color: var(--shimmer-base, var(--foreground));
+    background-position: -100% 0;
   }
 }
 
-/* The status dot while something moves: circle, square, diamond, one shape per 2s shimmer pass. Each change is a quick 200ms morph
-   (radius and a quarter turn, the diamond an extra 45deg and scaled to the circle's optical size) that lands as the shimmer starts
-   its pass, then the shape holds. It turns about its own centre, so it never shifts the words. */
-@keyframes status-shape {
-  0%,
-  30% {
-    border-radius: 50%;
-    transform: rotate(0deg);
+/* DorkIcon (components/DorkIcon.tsx): while working, four flaps cycle smoothly upward — the top flap scales down and disappears
+   while a new flap scales in underneath, and the cyan-blue-violet gradient drifts gently inside the silhouette. */
+.dork-flap {
+  transform-origin: 100px 100px;
+}
+
+/* Reduced-motion fallback positions so the 3-flap stack still reads cleanly when animation is disabled. */
+.dork-flap-1 {
+  transform: translateY(-60px);
+}
+.dork-flap-2 {
+  transform: translateY(0px);
+}
+.dork-flap-3 {
+  transform: translateY(60px);
+}
+.dork-flap-4 {
+  opacity: 0;
+  transform: translateY(92px) scale(0);
+}
+
+@keyframes dork-flap-cycle {
+  0% {
+    opacity: 0;
+    transform: translateY(92px) scale(0);
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   }
-  33.333%,
-  63.333% {
-    border-radius: 1.5px;
-    transform: rotate(90deg);
+  8% {
+    opacity: 1;
   }
-  66.666%,
-  96.666% {
-    border-radius: 1.5px;
-    transform: rotate(225deg) scale(0.85);
+  25% {
+    opacity: 1;
+    transform: translateY(60px) scale(1);
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(0px) scale(1);
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  75% {
+    opacity: 1;
+    transform: translateY(-60px) scale(1);
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  92% {
+    opacity: 1;
   }
   100% {
-    border-radius: 50%;
-    transform: rotate(360deg);
+    opacity: 0;
+    transform: translateY(-92px) scale(0);
+  }
+}
+
+@keyframes dork-gradient-drift {
+  0%,
+  100% {
+    transform: translateY(-20px);
+  }
+  50% {
+    transform: translateY(20px);
   }
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .word-shimmer {
-    animation: word-shimmer 2s step-end infinite;
+  .status-shimmer {
+    --shimmer-base: var(--muted-foreground);
+    --shimmer-peak: color-mix(in oklab, var(--foreground) 65%, var(--muted-foreground));
+    color: transparent;
+    background-image: linear-gradient(90deg, var(--shimmer-base) 0%, var(--shimmer-base) 38%, var(--shimmer-peak) 50%, var(--shimmer-base) 62%, var(--shimmer-base) 100%);
+    background-size: 220% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    animation: status-shimmer 2.4s linear infinite;
   }
-  .status-shape {
-    animation: status-shape 6s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+  .dork-flap-1 {
+    animation: dork-flap-cycle 6.4s linear 0s infinite;
+  }
+  .dork-flap-2 {
+    animation: dork-flap-cycle 6.4s linear -1.6s infinite;
+  }
+  .dork-flap-3 {
+    animation: dork-flap-cycle 6.4s linear -3.2s infinite;
+  }
+  .dork-flap-4 {
+    animation: dork-flap-cycle 6.4s linear -4.8s infinite;
+  }
+  .dork-gradient-drift {
+    animation: dork-gradient-drift 4s ease-in-out infinite;
   }
 }
 

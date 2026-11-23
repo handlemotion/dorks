@@ -23,6 +23,8 @@ export interface Dork {
   prUrl?: string;
   /** The PR's state as the server's poller last saw it; absent before its first look and on older servers. */
   prState?: "open" | "merged" | "closed";
+  /** True when the dork is waiting on the owner (a computer-access prompt, build approval, or other request). Absent on older servers. */
+  needsAttention?: boolean;
   codexModel?: { model: string; effort: string };
   codexModelChoices?: { model: string; efforts: string[] }[];
   /** Claude: the model and effort chosen for this session (absent: the agent's default). */
