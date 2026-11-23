@@ -4,6 +4,7 @@ import { fail, OWNER, touch, type App } from "../app";
 import { aad, decrypt, encrypt } from "../core/crypto";
 import { json, update } from "../db";
 import type { GhLogin } from "../lib/ghCli";
+import { antigravitySignInView, cancelAntigravitySignIn } from "./antigravitySignIn";
 import { boatSignInView, invalidateBoatSignIn } from "./boatSignIn";
 
 export const MAX_TOKEN_CHARS = 4 * 1024;
@@ -14,6 +15,8 @@ export const DEFAULT_SLEEP_MINUTES = 5;
 export interface Settings {
   sleepMinutes: number;
   claudeTokenEnc?: string;
+  /** agy's token file (JSON), from the Antigravity sign-in (services/antigravitySignIn.ts). */
+  antigravityTokenEnc?: string;
   boatKeyEnc?: string;
   /** The id of the key Dorks made itself with the Boat CLI (services/boatSignIn.ts), so changing the key revokes it. */
   boatKeyId?: string;
@@ -41,6 +44,7 @@ export function readSettings(app: App): Settings {
   return {
     sleepMinutes: r.sleep_minutes as number,
     claudeTokenEnc: n(r.claude_token_enc as string | null),
+    antigravityTokenEnc: n(r.antigravity_token_enc as string | null),
     boatKeyEnc: n(r.boat_key_enc as string | null),
     boatKeyId: n(r.boat_key_id as string | null),
     boatAuto: !!r.boat_auto,
@@ -67,6 +71,10 @@ export function settingsView(app: App) {
   const s = readSettings(app);
   return {
     claudeToken: !!s.claudeTokenEnc,
+    antigravityToken: !!s.antigravityTokenEnc,
+    // Antigravity can start: the Google sign-in, or a shared secret for it (agy's token file, or a Gemini API key).
+    antigravityReady: !!s.antigravityTokenEnc || secretNames(app).some((n) => ANTIGRAVITY_SECRETS.includes(n)),
+    antigravitySignIn: antigravitySignInView(app),
     boatKey: !!s.boatKeyEnc,
     boatOrg: s.boatOrg ?? null,
     boatEnvironment: s.boatEnvironment ?? null,
@@ -83,12 +91,17 @@ export function settingsView(app: App) {
   };
 }
 
+/** Shared secrets that sign Antigravity in without the Google sign-in (infra/bridge/src/antigravity.ts). */
+export const ANTIGRAVITY_SECRETS = ["ANTIGRAVITY_OAUTH_TOKEN", "GEMINI_API_KEY"];
+
 export const secretNames = (app: App): string[] => app.db.all<{ name: string }>("SELECT name FROM secrets ORDER BY name").map((r) => r.name);
 
 export interface SettingsPatch {
   boatKey?: string;
   boatOrg?: string;
   claudeToken?: string;
+  /** agy's token file as the Antigravity sign-in saved it; "" signs Antigravity out. */
+  antigravityToken?: string;
   /** true: act as the GitHub CLI's login (checked with GitHub first); false: disconnect. */
   githubConnected?: boolean;
   boatEnvironment?: string;
@@ -189,6 +202,7 @@ export async function updateSettings(app: App, patch: SettingsPatch, opts: { fro
   }
   if (patch.boatOrg !== undefined) row.boatOrg = text(patch.boatOrg, "Boat organization", 128) || null;
   if (patch.claudeToken !== undefined) row.claudeTokenEnc = await sealed(text(patch.claudeToken, "token", MAX_TOKEN_CHARS), aad.claudeToken(OWNER));
+  if (patch.antigravityToken !== undefined) row.antigravityTokenEnc = await sealed(text(patch.antigravityToken, "Antigravity sign-in", MAX_TOKEN_CHARS), aad.antigravityToken(OWNER));
   if (patch.githubConnected !== undefined) Object.assign(row, await githubConnection(app, patch.githubConnected));
   if (patch.boatEnvironment !== undefined) row.boatEnvironment = boatEnvironmentOf(patch.boatEnvironment);
   if (patch.baseSnapshotId !== undefined) row.baseSnapshotId = text(patch.baseSnapshotId, "snapshot", 200) || null;
@@ -208,6 +222,7 @@ export async function updateSettings(app: App, patch: SettingsPatch, opts: { fro
 /** What a saved change sets off: the Boat sign-in and GitHub's automatic connect learn the owner decided, waiting requests run. */
 async function afterSave(app: App, patch: SettingsPatch, row: Record<string, unknown>, previousBoatKeyId: string | undefined, fromSignIn: boolean) {
   if (patch.boatKey !== undefined) boatKeyChanged(app, previousBoatKeyId, fromSignIn);
+  if (patch.antigravityToken !== undefined && !patch.antigravityToken) cancelAntigravitySignIn(app);
   if (patch.githubConnected !== undefined) githubGeneration.set(app, (githubGeneration.get(app) ?? 0) + 1);
   // Turning Always allow on also answers the requests already waiting (local.ts imports this module, hence the dynamic import).
   if (row.localAlwaysAllow === true) (await import("./local")).startWaitingLocal(app);
@@ -323,6 +338,10 @@ export async function githubToken(app: App): Promise<string | undefined> {
 export async function claudeToken(app: App): Promise<string | undefined> {
   const s = readSettings(app);
   return s.claudeTokenEnc ? decrypt(app.ring, s.claudeTokenEnc, aad.claudeToken(OWNER)) : undefined;
+}
+export async function antigravityToken(app: App): Promise<string | undefined> {
+  const s = readSettings(app);
+  return s.antigravityTokenEnc ? decrypt(app.ring, s.antigravityTokenEnc, aad.antigravityToken(OWNER)) : undefined;
 }
 export async function cliSecrets(app: App): Promise<Record<string, string>> {
   const out: Record<string, string> = {};

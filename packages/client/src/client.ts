@@ -372,6 +372,22 @@ export class DorksClient {
       this.invalidate("pr");
     },
     checkBoat: (input: { boatKey?: string; boatOrg?: string }) => this.api.checkBoat(input),
+    /** Starts Antigravity's Google sign-in (services/antigravitySignIn.ts); resolves with its state, including Google's link. */
+    signInAntigravity: async () => {
+      try {
+        return (await this.api.signInAntigravity()).antigravitySignIn;
+      } finally {
+        this.invalidate("settings");
+      }
+    },
+    /** For a browser on another computer: the address the Google sign-in ended on, finished on the server's computer. */
+    finishAntigravitySignIn: async (url: string) => {
+      try {
+        return (await this.api.finishAntigravitySignIn(url)).antigravitySignIn;
+      } finally {
+        this.invalidate("settings");
+      }
+    },
     /** Starts the Boat sign-in (services/boatSignIn.ts); resolves with its state, including the browser link to open. */
     signInBoat: async () => {
       try {

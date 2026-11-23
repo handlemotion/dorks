@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { SparkleIcon } from 'lucide-react'
 import { useDorksClient } from '@dorks/client/react'
 import type { Settings } from '@dorks/client'
 import { Button } from '@dorks/ui/button'
@@ -16,6 +17,7 @@ import { WELCOMED_KEY } from '../../lib/onboarding'
 import { usePending } from '../../lib/pending'
 import { A, Actions, Body, Card, Heading, notify, SecretInput, StepForm, useNotifyError } from './Frame'
 import { ConnectDialog, List, Logo, Row } from './List'
+import { AntigravitySignIn } from '../AntigravitySignIn'
 
 export interface StepProps {
   settings: Settings
@@ -123,13 +125,17 @@ export function BoatKey({ settings, onNext }: StepProps) {
 
 // ---- 3. AI -----------------------------------------------------------------------------------------------------------------
 
-type Agent = 'claude' | 'codex'
+type Agent = 'claude' | 'codex' | 'antigravity'
 
 export function AgentSignIn({ settings, onNext }: StepProps) {
   const [open, setOpen] = useState<Agent | null>(null)
-  const configured = settings.claudeToken || !!settings.boatEnvironment
+  const configured = settings.claudeToken || !!settings.boatEnvironment || !!settings.antigravityReady
   const dialog = (agent: Agent) => ({ open: open === agent, onOpenChange: (o: boolean) => setOpen(o ? agent : null) })
   const close = () => setOpen(null)
+  // The Google sign-in finishes in the browser: the dialog closes once the saved sign-in comes back on the live stream.
+  useEffect(() => {
+    if (settings.antigravityToken) setOpen((o) => (o === 'antigravity' ? null : o))
+  }, [settings.antigravityToken])
   return (
     <>
       <Body>
@@ -138,10 +144,11 @@ export function AgentSignIn({ settings, onNext }: StepProps) {
           <Row icon={<Logo light={claudeLogo} />} name="Claude" connected={settings.claudeToken} onOpen={() => setOpen('claude')} />
           {/* svgl pads the OpenAI mark inside its viewBox, so it is scaled to sit at the others' size. */}
           <Row icon={<Logo light={openaiLight} dark={openaiDark} className="scale-[1.3]" />} name="Codex" connected={!!settings.boatEnvironment} onOpen={() => setOpen('codex')} />
+          <Row icon={<SparkleIcon className="size-4" />} name="Antigravity" connected={!!settings.antigravityToken} onOpen={() => setOpen('antigravity')} />
           <Row icon={<Logo light={grokLight} dark={grokDark} />} name="Grok" soon />
         </List>
       </Body>
-      <Actions onClick={() => (configured ? onNext() : notify('Connect Claude or Codex first.'))}>Continue</Actions>
+      <Actions onClick={() => (configured ? onNext() : notify('Connect Claude, Codex or Antigravity first.'))}>Continue</Actions>
 
       <ConnectDialog
         {...dialog('claude')}
@@ -153,6 +160,11 @@ export function AgentSignIn({ settings, onNext }: StepProps) {
         }
       >
         <SaveForm label="claude token" secret placeholder={settings.claudeToken ? 'A token is saved' : 'sk-ant-oat01-…'} save={(value) => ({ claudeToken: value })} onSaved={close} />
+      </ConnectDialog>
+      <ConnectDialog {...dialog('antigravity')} title="Connect Antigravity" description="Sign in with the Google account that has your Google AI plan. Dorks keeps the sign-in encrypted.">
+        <div className="pb-2">
+          <AntigravitySignIn settings={settings} />
+        </div>
       </ConnectDialog>
       <ConnectDialog
         {...dialog('codex')}

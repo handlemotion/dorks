@@ -71,6 +71,12 @@ export interface CreateDorkInput {
 /** Plain values and booleans only: the server never returns a secret. */
 export interface Settings {
   claudeToken: boolean;
+  /** Antigravity is signed in with Google (agy's token, stored encrypted). */
+  antigravityToken?: boolean;
+  /** Antigravity can start: signed in with Google, or a shared secret for it. */
+  antigravityReady?: boolean;
+  /** Antigravity's Google sign-in while not signed in; null once it is. */
+  antigravitySignIn?: AntigravitySignIn | null;
   boatKey: boolean;
   /** `problem`: why GitHub did not connect by itself (the GitHub CLI is missing or signed out). */
   github: { configured: boolean; login?: string | null; problem?: string };
@@ -120,6 +126,8 @@ export interface SettingsPatch {
   boatKey?: string;
   boatOrg?: string;
   claudeToken?: string;
+  /** "" signs Antigravity out. */
+  antigravityToken?: string;
   /** true: act as the GitHub CLI's login (the server checks it with GitHub first); false: disconnect. */
   githubConnected?: boolean;
   boatEnvironment?: string;
@@ -141,6 +149,16 @@ export interface BoatSignIn {
   url?: string;
   userCode?: string;
   expiresAt?: string;
+  error?: string;
+}
+
+/**
+ * Antigravity's Google sign-in, run by the agy CLI on the server's computer: `signed_out` (one Sign in press), `installing` (Dorks
+ * is downloading agy), `signing_in` (approve in the browser at `url`), `failed`.
+ */
+export interface AntigravitySignIn {
+  state: "signed_out" | "installing" | "signing_in" | "failed";
+  url?: string;
   error?: string;
 }
 

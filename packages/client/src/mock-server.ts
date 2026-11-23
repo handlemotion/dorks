@@ -145,6 +145,9 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const settings: Settings = {
     claudeToken: !!opts.configured,
+    antigravityToken: false,
+    antigravityReady: false,
+    antigravitySignIn: { state: "signed_out" },
     boatKey: !!opts.configured,
     github: opts.configured ? { configured: true, login: "octocat" } : { configured: false },
     boatSignIn: opts.configured ? null : { state: "signed_out" },
@@ -389,6 +392,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   const cannotCreate = (provider: Dork["provider"]): string | null => {
     if (!settings.boatKey || !settings.baseSnapshotId || !settings.github.configured) return "Finish setup (Boat, base snapshot, GitHub) before creating a session.";
     if (provider === "claude" && !settings.claudeToken) return "Add a Claude token first.";
+    if (provider === "antigravity" && !settings.antigravityReady) return "Connect Antigravity first: sign in with Google in Settings.";
     if (provider === "codex" && !settings.boatEnvironment) return "Save a Boat environment for Codex first.";
     return null;
   };
@@ -642,6 +646,10 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   const saveSettings = (body: Record<string, unknown>): string | null => {
     // Like apps/server, which checks a Boat key with Boat before saving it.
     if (typeof body.boatKey === "string" && body.boatKey.startsWith("bad")) return "Boat rejected that key. Check it and its access (create, use, save and delete sandboxes).";
+    if (typeof body.antigravityToken === "string") {
+      settings.antigravityToken = settings.antigravityReady = body.antigravityToken !== "";
+      settings.antigravitySignIn = settings.antigravityToken ? null : { state: "signed_out" };
+    }
     const set = (k: "boatKey" | "claudeToken") => {
       if (typeof body[k] === "string") settings[k] = body[k] !== "";
     };
@@ -681,6 +689,22 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         // Like apps/server: a new Boat key starts the base-snapshot build when there is no snapshot yet.
         if (typeof body.boatKey === "string" && body.boatKey && !settings.baseSnapshotId && snap.state !== "building") startBuild();
         return json(res, 200, {});
+      },
+    ],
+    [
+      // Like apps/server's Antigravity sign-in: Google's page "approves" a few seconds after its link is handed out.
+      "POST /api/antigravity/sign-in",
+      ({ res }) => {
+        if (settings.antigravityToken) return json(res, 200, { antigravitySignIn: null });
+        settings.antigravitySignIn = { state: "signing_in", url: "https://accounts.google.com/o/oauth2/auth?mock=1" };
+        broadcast({ t: "settings" });
+        const t = setTimeout(() => {
+          timers.delete(t);
+          Object.assign(settings, { antigravityToken: true, antigravityReady: true, antigravitySignIn: null });
+          broadcast({ t: "settings" });
+        }, 3000);
+        timers.add(t);
+        return json(res, 200, { antigravitySignIn: settings.antigravitySignIn });
       },
     ],
     [
