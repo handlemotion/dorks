@@ -10,13 +10,7 @@ type Live = 'connecting' | 'live' | 'offline' | 'unauthorized'
  * What the Dork is doing, said about the Dork (not its sandbox). Moving states shimmer and animate the dork icon.
  * `outcome` is how the latest turn ended: a turn the user stopped reads as Stopped, never as an error.
  */
-function describeDork(
-  name: string,
-  state: DorkState | undefined,
-  live: Live | undefined,
-  outcome?: TurnOutcome | null,
-  problem?: string,
-): { label: string; moving?: boolean; failed?: boolean } {
+function describeDork(name: string, state: DorkState | undefined, live: Live | undefined, outcome?: TurnOutcome | null, problem?: string): { label: string; moving?: boolean; failed?: boolean } {
   if (live === 'offline' || live === 'connecting') return { label: 'Reconnecting to the server…', moving: true }
   switch (state) {
     case 'creating':

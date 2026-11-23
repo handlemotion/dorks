@@ -29,6 +29,13 @@ export function claudePicker(dork: DorkView, fallback: AgentModelChoice[] | unde
   }
 }
 
+/** The error that put the Dork in error is said once, in red on the status line, not as its own row above it. */
+function splitProblem<B extends { kind: string }>(all: B[], state: string | undefined): { blocks: B[]; problem?: string } {
+  const last = all.at(-1) as (B & { level?: string; text?: string }) | undefined
+  if (state !== 'error' || last?.kind !== 'notice' || last.level !== 'error') return { blocks: all }
+  return { blocks: all.slice(0, -1), problem: last.text }
+}
+
 /**
  * A session's conversation: its transcript (the thread, light as everywhere: bubbles, then each turn's messages with its tool calls between them) and
  * the composer under it, with Stop, replies and the model menu. The page's chat and a dork's worker panel (CrewDetails) both use it;
@@ -71,10 +78,7 @@ export function SessionChat({
   const canReply = !dork.archived
   const current = dork.state === 'working' ? currentStep(view.blocks) : {}
   const needsAttention = Boolean(dork.needsAttention) || view.blocks.some((b) => (b.kind === 'local' && b.status === 'pending') || (b.kind === 'build' && b.approved === null))
-  // The error that put the Dork in error is said once, in red on the status line, not as its own row above it.
-  const last = view.blocks.at(-1)
-  const problem = dork.state === 'error' && last?.kind === 'notice' && last.level === 'error' ? last.text : undefined
-  const blocks = problem ? view.blocks.slice(0, -1) : view.blocks
+  const { blocks, problem } = splitProblem(view.blocks, dork.state)
   return (
     <>
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
