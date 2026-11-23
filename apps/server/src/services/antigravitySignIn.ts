@@ -1,5 +1,6 @@
 import { fail, type App } from "../app";
 import type { AgySignIn } from "../lib/agyCli";
+import { refreshAntigravityModels } from "./models";
 import { readSettings, updateSettings } from "./settings";
 
 // Connecting Antigravity (Google's agy CLI, docs/boat.md): one button in setup, onboarding or Settings. The server runs agy's own
@@ -63,6 +64,7 @@ async function begin(app: App, attempt: Attempt): Promise<void> {
         await updateSettings(app, { antigravityToken: token });
         attempts.delete(app);
         console.error("antigravity: signed in with Google");
+        void refreshAntigravityModels(app, true);
         app.hub.emit({ t: "settings" });
       },
       (e) => {

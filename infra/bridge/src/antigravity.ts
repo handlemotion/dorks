@@ -1,7 +1,8 @@
-import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { chmodSync, chownSync, existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { execFile, execFileSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { createHash } from "node:crypto";
+import { accessSync, chmodSync, chownSync, constants, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { delimiter, dirname, join } from "node:path";
 import { asIdentity, type Identity } from "./runas";
 import { errTag, type Log, type Redactor } from "./redact";
 
@@ -106,7 +107,7 @@ function toolSummary(params: Json): string {
  * conversations on disk (`~/.gemini/antigravity-cli`), so a restart resumes with `--conversation`.
  */
 export class AntigravityAgent {
-  private child!: ChildProcessWithoutNullStreams;
+  private child: ChildProcessWithoutNullStreams | undefined;
   private buf = "";
   private stderr = "";
   private stopped = false;
@@ -128,6 +129,8 @@ export class AntigravityAgent {
   sessionId: string | null;
   idle = true;
   ready = false;
+  /** The agy binary in use: `bin`, or `agy` from PATH, or the one installed into this box (ensureAgy). */
+  private bin = "agy";
 
   constructor(private o: AntigravityOptions) {
     this.sessionId = o.resumeSessionId;
@@ -138,6 +141,21 @@ export class AntigravityAgent {
     } catch (e) {
       o.log("antigravity: could not prepare its config:", errTag(e));
     }
+    void this.start();
+  }
+
+  /** agy, installed first when the image lacks it (a build made before Antigravity), then the session and the model list. */
+  private async start() {
+    try {
+      this.bin = await ensureAgy(this.o.bin, this.o.env, this.o.log);
+    } catch (e) {
+      this.o.log("antigravity: could not install the Antigravity CLI:", errTag(e));
+      this.o.onIssue("This sandbox has no Antigravity CLI and it could not be installed. Rebuild this machine's build (Builds), or start the session on the base machine.");
+      this.stderr = `agy is not installed (${errTag(e)})`;
+      this.exited = true;
+      return this.o.onExit({ code: null, stderrTail: this.stderr, resumeMissing: false, pending: [...this.queue] });
+    }
+    if (this.stopped) return;
     this.spawn();
     void this.listModels();
   }
@@ -206,7 +224,7 @@ export class AntigravityAgent {
   }
 
   private spawn() {
-    const [bin, args] = asIdentity(this.o.runAs, this.o.bin ?? "agy", antigravityArgs({ model: this.o.model, resumeSessionId: this.sessionId }));
+    const [bin, args] = asIdentity(this.o.runAs, this.bin, antigravityArgs({ model: this.o.model, resumeSessionId: this.sessionId }));
     const child = spawn(bin, args, { cwd: this.o.cwd, env: this.childEnv(), stdio: ["pipe", "pipe", "pipe"] });
     this.child = child;
     this.buf = "";
@@ -247,7 +265,7 @@ export class AntigravityAgent {
 
   /** A separate agy command as the agent user (models, the title turn). Resolves to its stdout. */
   private run(args: string[], timeoutMs: number): Promise<string> {
-    const [bin, argv] = asIdentity(this.o.runAs, this.o.bin ?? "agy", args);
+    const [bin, argv] = asIdentity(this.o.runAs, this.bin, args);
     return new Promise((resolve, reject) =>
       execFile(bin, argv, { cwd: this.o.cwd, env: this.childEnv(), timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => (err ? reject(err) : resolve(stdout))),
     );
@@ -381,8 +399,9 @@ export class AntigravityAgent {
 
   private write(value: Json) {
     return new Promise<void>((resolve, reject) => {
-      if (!this.alive || !this.child.stdin.writable) return reject(new Error("Antigravity is not running"));
-      this.child.stdin.write(`${JSON.stringify(value)}\n`, (e) => (e ? reject(e) : resolve()));
+      const child = this.child;
+      if (!this.alive || !child?.stdin.writable) return reject(new Error("Antigravity is not running"));
+      child.stdin.write(`${JSON.stringify(value)}\n`, (e) => (e ? reject(e) : resolve()));
     });
   }
 
@@ -414,12 +433,13 @@ export class AntigravityAgent {
    * does it, with SIGINT. If the CLI exits on it, it is started again on the same conversation with the queue intact.
    */
   async interrupt() {
-    if (this.current === null || !this.alive) return;
+    if (this.current === null || !this.alive || !this.child) return;
     this.respawning = true;
-    this.child.kill("SIGINT");
+    const child = this.child;
+    child.kill("SIGINT");
     setTimeout(() => {
       // Still running and the turn ended: SIGINT only cancelled the turn.
-      if (this.respawning && this.child.exitCode === null && this.current === null) {
+      if (this.respawning && child.exitCode === null && this.current === null) {
         this.respawning = false;
         void this.pump();
       }
@@ -468,6 +488,7 @@ export class AntigravityAgent {
     if (this.exited) return;
     this.stopped = true;
     const child = this.child;
+    if (!child) return void (this.exited = true); // still installing agy: start() sees `stopped` and never spawns
     const done = new Promise<void>((resolve) => (child.exitCode !== null ? resolve() : child.once("close", () => resolve())));
     child.stdin.end();
     const t1 = setTimeout(() => child.kill("SIGTERM"), graceMs);
@@ -511,4 +532,53 @@ export function decodeToken(value: string): Buffer {
     if (raw.length && raw.toString("base64") === compact) return raw;
   }
   return Buffer.from(value);
+}
+
+const MANIFESTS = "https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests";
+
+const executable = (p: string) => {
+  try {
+    accessSync(p, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * The agy to run. A box whose image predates Antigravity (a build made on an older base snapshot) has none: the bridge, which runs
+ * as root in a sandbox, installs Google's current build into /usr/local/bin, checksum-verified against Google's manifest, the
+ * same file infra/snapshot/boat-install.sh installs. Once per box; it takes about a minute.
+ */
+export async function ensureAgy(configured: string | undefined, env: NodeJS.ProcessEnv, log: Log, fetchFn: typeof fetch = fetch): Promise<string> {
+  if (configured) return configured;
+  for (const d of [...(env.PATH ?? "").split(delimiter).filter(Boolean), "/usr/local/bin"]) if (executable(join(d, "agy"))) return join(d, "agy");
+  if (process.platform !== "linux" || typeof process.getuid !== "function" || process.getuid() !== 0) throw new Error("agy not found");
+  const arch = process.arch === "arm64" ? "arm64" : process.arch === "x64" ? "amd64" : null;
+  if (!arch) throw new Error(`no agy for ${process.arch}`);
+  log("antigravity: agy is not in this image, installing it");
+  const manifest = await (await fetchFn(`${MANIFESTS}/linux_${arch}.json`)).text();
+  const field = (k: string) => new RegExp(`"${k}"\\s*:\\s*"([^"]*)"`).exec(manifest)?.[1];
+  const url = field("url");
+  const sha512 = field("sha512");
+  if (!url?.startsWith("https://") || !sha512) throw new Error("bad agy manifest");
+  const res = await fetchFn(url);
+  if (!res.ok) throw new Error(`agy download ${res.status}`);
+  const body = Buffer.from(await res.arrayBuffer());
+  if (createHash("sha512").update(body).digest("hex") !== sha512) throw new Error("agy checksum mismatch");
+  const work = mkdtempSync(join(tmpdir(), "agy-install-"));
+  try {
+    if (url.includes(".tar.gz")) {
+      writeFileSync(join(work, "pkg.tar.gz"), body);
+      await new Promise<void>((resolve, reject) => execFile("tar", ["-xzf", join(work, "pkg.tar.gz"), "-C", work, "antigravity"], (e) => (e ? reject(e) : resolve())));
+      renameSync(join(work, "antigravity"), join(work, "agy"));
+    } else writeFileSync(join(work, "agy"), body);
+    chmodSync(join(work, "agy"), 0o755);
+    // `install` (coreutils), so the binary lands whole even across file systems.
+    execFileSync("install", ["-m", "0755", join(work, "agy"), "/usr/local/bin/agy"], { stdio: "ignore" });
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+  log("antigravity: installed agy");
+  return "/usr/local/bin/agy";
 }

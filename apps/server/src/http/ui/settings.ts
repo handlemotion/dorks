@@ -2,6 +2,7 @@ import { Effect, Schema } from "effect";
 import { assertBoatAccepts, assertCodexEnvironment } from "../../services/boatCheck";
 import { forgetGithubRepos } from "../../services/githubRepos";
 import { autoConnectBoat } from "../../services/boatSignIn";
+import { refreshAntigravityModels } from "../../services/models";
 import { autoConnectGithub, deleteSecret, secretNames, setSecret, settingsView, updateSettings } from "../../services/settings";
 import { buildIfMissing } from "../../services/snapshot";
 import { forgetUsage } from "../../services/usage";
@@ -20,6 +21,7 @@ export const settingsRoutes: Routes = (api, app) => {
         // Boat and GitHub connect by themselves when their CLIs are signed in (in the background: the answer never waits for them).
         void autoConnectBoat(a);
         void autoConnectGithub(a);
+        void refreshAntigravityModels(a); // Antigravity's models for a new session's menu, with the saved sign-in
         return c.json(settingsView(a));
       }),
     ),

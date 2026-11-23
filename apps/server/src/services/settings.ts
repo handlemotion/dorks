@@ -1,5 +1,5 @@
 import { commentPolicy as commentPolicySchema, DEFAULT_COMMENT_POLICY, type CommentPolicy } from "@dorks/shared";
-import { knownModelChoices } from "./models";
+import { knownAntigravityModels, knownModelChoices } from "./models";
 import { fail, OWNER, touch, type App } from "../app";
 import { aad, decrypt, encrypt } from "../core/crypto";
 import { json, update } from "../db";
@@ -75,6 +75,7 @@ export function settingsView(app: App) {
     // Antigravity can start: the Google sign-in, or a shared secret for it (agy's token file, or a Gemini API key).
     antigravityReady: !!s.antigravityTokenEnc || secretNames(app).some((n) => ANTIGRAVITY_SECRETS.includes(n)),
     antigravitySignIn: antigravitySignInView(app),
+    antigravityModels: knownAntigravityModels(app),
     boatKey: !!s.boatKeyEnc,
     boatOrg: s.boatOrg ?? null,
     boatEnvironment: s.boatEnvironment ?? null,

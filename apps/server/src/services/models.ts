@@ -10,14 +10,58 @@ import { owned } from "./dorks";
 // session can offer it before its sandbox exists.
 
 const CACHE_KEY = "claude_model_choices";
+/** Antigravity's list: `agy models` for the saved sign-in (refreshAntigravityModels), or what a running Antigravity dork reported. */
+const ANTIGRAVITY_KEY = "antigravity_model_choices";
 
-export function rememberModelChoices(app: App, models: AgentModelChoice[]) {
+export function rememberModelChoices(app: App, models: AgentModelChoice[], key = CACHE_KEY) {
   if (!models.length) return;
   const value = JSON.stringify(models);
-  const before = app.db.get<{ value: string }>("SELECT value FROM meta WHERE key = ?", CACHE_KEY)?.value;
+  const before = app.db.get<{ value: string }>("SELECT value FROM meta WHERE key = ?", key)?.value;
   if (before === value) return;
-  app.db.run("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", CACHE_KEY, value);
+  app.db.run("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", key, value);
   touch(app, { t: "settings" });
+}
+
+export const rememberAntigravityModels = (app: App, models: AgentModelChoice[]) => rememberModelChoices(app, models, ANTIGRAVITY_KEY);
+
+/** The models Antigravity offers the signed-in plan, for a new session's menu; empty until agy has listed them once. */
+export function knownAntigravityModels(app: App): AgentModelChoice[] {
+  const raw = app.db.get<{ value: string }>("SELECT value FROM meta WHERE key = ?", ANTIGRAVITY_KEY)?.value;
+  try {
+    const parsed = z.array(agentModelChoice).safeParse(raw ? JSON.parse(raw) : []);
+    return parsed.success ? parsed.data : [];
+  } catch {
+    return [];
+  }
+}
+
+const MODELS_TTL_MS = 6 * 3600_000;
+const refreshed = new WeakMap<App, { at: number; running?: Promise<void> }>();
+
+/**
+ * Lists Antigravity's models with the saved sign-in (`agy models` on this computer), at most every six hours or when `force`d (a
+ * new sign-in). In the background; never throws. Without a sign-in or an agy here, the list stays what it was.
+ */
+export function refreshAntigravityModels(app: App, force = false): Promise<void> {
+  const last = refreshed.get(app);
+  if (last?.running) return last.running;
+  if (!force && last && app.now() - last.at < MODELS_TTL_MS) return Promise.resolve();
+  const running = (async () => {
+    const { antigravityToken, updateSettings } = await import("./settings");
+    const token = await antigravityToken(app);
+    if (!token) return;
+    const read = await app.agyCli.models(token);
+    if (!read) return;
+    if (read.token) await updateSettings(app, { antigravityToken: read.token });
+    rememberAntigravityModels(
+      app,
+      read.models.map((m) => ({ ...m, efforts: [] })),
+    );
+  })()
+    .catch((e) => console.error("antigravity: could not list models:", e instanceof Error ? e.message : "unknown"))
+    .finally(() => refreshed.set(app, { at: app.now() }));
+  refreshed.set(app, { at: last?.at ?? 0, running });
+  return running;
 }
 
 /**

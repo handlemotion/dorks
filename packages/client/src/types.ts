@@ -77,6 +77,8 @@ export interface Settings {
   antigravityReady?: boolean;
   /** Antigravity's Google sign-in while not signed in; null once it is. */
   antigravitySignIn?: AntigravitySignIn | null;
+  /** The models Antigravity offers the signed-in plan (`agy models`), for a new session's menu. */
+  antigravityModels?: AgentModelChoice[];
   boatKey: boolean;
   /** `problem`: why GitHub did not connect by itself (the GitHub CLI is missing or signed out). */
   github: { configured: boolean; login?: string | null; problem?: string };

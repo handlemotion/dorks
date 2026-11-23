@@ -18,7 +18,7 @@ import { getDork, openCommands, runtimeOf, type DorkRow, type Preview, type Shar
 import { update } from "../db";
 import { append, bridgeSeen, dispatch, enqueueConfigure, finishPause, patchDork } from "../lifecycle/dispatch";
 import { opFailed } from "../lifecycle/lifecycle";
-import { rememberModelChoices } from "./models";
+import { rememberAntigravityModels, rememberModelChoices } from "./models";
 import { antigravityToken, claudeToken, cliSecrets, githubToken } from "./settings";
 import { mcpServerConfigs } from "./mcpServers";
 import { skillRefs } from "./skills";
@@ -237,7 +237,9 @@ const FRAME_HANDLERS: { [T in FromBridge["t"]]: (b: Batch, f: FrameOf<T>) => voi
   agent_models: ({ app, dorkId, dork }, f) => {
     if (dork.provider === "codex") return;
     patchDork(app, dorkId, { modelChoices: f.models, agentEffort: f.effort ?? undefined });
-    if (dork.provider === "claude") rememberModelChoices(app, f.models); // the global cache offers Claude's models to new sessions
+    // The global caches offer the models to new sessions.
+    if (dork.provider === "claude") rememberModelChoices(app, f.models);
+    if (dork.provider === "antigravity") rememberAntigravityModels(app, f.models);
   },
   codex_issue: ({ app, dorkId, dork }, f) => {
     if (dork.provider !== "claude") append(app, dorkId, errorEvent({ code: "failed", message: f.message }));
@@ -257,7 +259,10 @@ const FRAME_HANDLERS: { [T in FromBridge["t"]]: (b: Batch, f: FrameOf<T>) => voi
   },
   agent_exited: ({ app, dorkId, flush }, f) => {
     flush();
-    append(app, dorkId, { type: "agent_exited", message: `agent exited (code ${f.code ?? "?"})` });
+    // The last line the agent printed says why (agy not installed, not signed in...): the owner's own thread only, never the log.
+    // The bridge has already scrubbed the secrets it knows from it.
+    const why = f.stderrTail.trim().split("\n").pop()?.trim().slice(0, 200);
+    append(app, dorkId, { type: "agent_exited", message: `agent exited (code ${f.code ?? "?"})${why ? `: ${why}` : ""}` });
     console.error("agent exited", dorkId, f.code); // stderr tail is never logged: it can echo env
     dispatch(app, dorkId, { t: "agent_exited" });
   },

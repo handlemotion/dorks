@@ -42,6 +42,8 @@ export interface AgyCli {
    * here (it never downloads one for this). `token` is agy's token file afterwards when agy refreshed it, for the caller to keep.
    */
   usage(token: string): Promise<{ data: unknown; token?: string } | null>;
+  /** `agy models` with a saved sign-in: the slugs and names the plan offers. Null without an agy here. */
+  models(token: string): Promise<{ models: { model: string; name: string }[]; token?: string } | null>;
 }
 
 const executable = (p: string) => {
@@ -114,6 +116,12 @@ export function makeAgyCli(o: { configured?: string; dataDir: string; env?: Node
     async usage(token: string) {
       const agy = bin();
       return agy ? readUsage(agy, env, token) : null;
+    },
+    async models(token: string) {
+      const agy = bin();
+      if (!agy) return null;
+      const run = await runWithToken(agy, env, token, ["models"]);
+      return { models: parseAgyModels(run.stdout), ...(run.token ? { token: run.token } : {}) };
     },
   };
 }
@@ -220,9 +228,13 @@ export function withoutKeychain(bin: string, args: string[], sandboxExec = "/usr
   return [sandboxExec, ["-p", '(version 1)(allow default)(deny process-exec (literal "/usr/bin/security"))', bin, ...args]];
 }
 
-const USAGE_TIMEOUT_MS = 20_000;
+const RUN_TIMEOUT_MS = 20_000;
 
-async function readUsage(agy: string, env: NodeJS.ProcessEnv, token: string): Promise<{ data: unknown; token?: string }> {
+/**
+ * One agy command with a saved sign-in, in a throwaway home (keychain out of reach, as for the sign-in). Resolves to its stdout and,
+ * when agy refreshed the sign-in meanwhile, the new token file.
+ */
+async function runWithToken(agy: string, env: NodeJS.ProcessEnv, token: string, argv: string[]): Promise<{ stdout: string; token?: string }> {
   const root = mkdtempSync(join(tmpdir(), "dorks-agy-"));
   try {
     chmodSync(root, 0o700);
@@ -230,19 +242,39 @@ async function readUsage(agy: string, env: NodeJS.ProcessEnv, token: string): Pr
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "antigravity-oauth-token");
     writeFileSync(file, token, { mode: 0o600 });
-    const [cmd, args] = withoutKeychain(agy, ["-p", "/usage", "--output-format", "json"]);
-    const out = await new Promise<string>((resolve, reject) =>
-      execFile(cmd, args, { cwd: root, env: { ...env, HOME: root, DBUS_SESSION_BUS_ADDRESS: "unix:path=/nonexistent/dorks-no-keyring" }, timeout: USAGE_TIMEOUT_MS, windowsHide: true }, (e, stdout) =>
-        e ? reject(new AgyCliError("agy /usage failed")) : resolve(stdout),
+    const [cmd, args] = withoutKeychain(agy, argv);
+    const stdout = await new Promise<string>((resolve, reject) =>
+      execFile(
+        cmd,
+        args,
+        { cwd: root, env: { ...env, HOME: root, DBUS_SESSION_BUS_ADDRESS: "unix:path=/nonexistent/dorks-no-keyring" }, timeout: RUN_TIMEOUT_MS, windowsHide: true, maxBuffer: 1 << 20 },
+        (e, out) => (e ? reject(new AgyCliError(`agy ${argv[0]} failed`)) : resolve(out)),
       ),
     );
-    const result = JSON.parse(out.trim().split("\n").pop() ?? "{}") as { status?: string; command?: { data?: unknown } };
-    if (result.status !== "SUCCESS") throw new AgyCliError("agy /usage did not succeed");
     const after = existsSync(file) ? readFileSync(file, "utf8").trim() : "";
-    return { data: result.command?.data, ...(after && after !== token.trim() ? { token: after } : {}) };
+    return { stdout, ...(after && after !== token.trim() ? { token: after } : {}) };
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+}
+
+async function readUsage(agy: string, env: NodeJS.ProcessEnv, token: string): Promise<{ data: unknown; token?: string }> {
+  const run = await runWithToken(agy, env, token, ["-p", "/usage", "--output-format", "json"]);
+  const result = JSON.parse(run.stdout.trim().split("\n").pop() ?? "{}") as { status?: string; command?: { data?: unknown } };
+  if (result.status !== "SUCCESS") throw new AgyCliError("agy /usage did not succeed");
+  return { data: result.command?.data, ...(run.token ? { token: run.token } : {}) };
+}
+
+const SLUG = /^[a-zA-Z0-9._:-]{1,64}$/;
+
+/** `agy models`: `<slug>\t<label>` per line when piped, `<slug>   <label>` in a terminal. */
+export function parseAgyModels(out: string): { model: string; name: string }[] {
+  const models: { model: string; name: string }[] = [];
+  for (const line of out.split("\n")) {
+    const m = /^\s*(\S+)(?:\t+|\s{2,})(\S.*?)\s*$/.exec(line);
+    if (m && SLUG.test(m[1]!) && !models.some((x) => x.model === m[1])) models.push({ model: m[1]!, name: m[2]!.slice(0, 80) });
+  }
+  return models.slice(0, 100);
 }
 
 /** agy may try a keyring before it falls back to its file (a few seconds on macOS): wait for the file. */
