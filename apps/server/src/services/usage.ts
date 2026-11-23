@@ -19,12 +19,14 @@ export interface Usage {
   cloud?: { usedHours: number; includedHours: number; periodEnd?: number };
 }
 
-const TTL_MS = 5 * 60_000;
+const TTL_MS = 60_000;
 const TIMEOUT_MS = 10_000;
 const cache = new WeakMap<App, { at: number; value: Usage }>();
+/** The read in progress, shared by every caller that arrives while it runs (several windows polling at once read once). */
+const pending = new WeakMap<App, Promise<Usage>>();
 
 /**
- * Usage of the accounts Dorks runs on, cached for five minutes.
+ * Usage of the accounts Dorks runs on, cached for a minute (the web app polls it every 30 s while visible).
  *
  * - **Claude.** A `claude setup-token` token only has the `user:inference` scope, so `GET /api/oauth/usage` (the endpoint behind
  *   Claude Code's `/usage`) answers 403 `oauth_scope_insufficient`. Every Messages response carries the subscription's unified
@@ -41,6 +43,14 @@ const cache = new WeakMap<App, { at: number; value: Usage }>();
 export async function getUsage(app: App, force = false): Promise<Usage> {
   const cached = cache.get(app);
   if (!force && cached && app.now() - cached.at < TTL_MS) return cached.value;
+  const running = pending.get(app);
+  if (running) return running;
+  const read = readUsage(app).finally(() => pending.delete(app));
+  pending.set(app, read);
+  return read;
+}
+
+async function readUsage(app: App): Promise<Usage> {
   const [claude, google, cloud] = await Promise.all([claudeUsage(app).catch(() => undefined), googleUsage(app).catch(() => undefined), cloudUsage(app).catch(() => undefined)]);
   const value: Usage = { ...(claude ? { claude } : {}), ...(google ? { google } : {}), ...(cloud ? { cloud } : {}) };
   cache.set(app, { at: app.now(), value });

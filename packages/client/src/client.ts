@@ -178,9 +178,14 @@ export class DorksClient {
     return this.query<SnapshotStatus>("snapshot", () => this.api.getSnapshot());
   }
 
-  /** Claude subscription and Boat plan usage (the server caches it for five minutes). */
+  /** Claude subscription and Boat plan usage (the server caches it for a minute). `useUsage` refreshes it while the page is visible. */
   usage() {
     return this.query<Usage>("usage", () => this.api.getUsage());
+  }
+
+  /** Refetch usage now, if anything shows it. */
+  refreshUsage() {
+    this.invalidate("usage");
   }
 
   /** What the GitHub CLI's login can see (the server caches it briefly). Refetched when settings change. */
