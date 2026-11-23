@@ -3,7 +3,6 @@ import { ChevronRightIcon } from 'lucide-react'
 import type { DorkState, TurnOutcome } from '@dorks/shared'
 import { workedFor } from './ChatBlock'
 import { DorkIcon, dorkIconState } from './DorkIcon'
-import { WordShimmer } from './WordShimmer'
 
 type Live = 'connecting' | 'live' | 'offline' | 'unauthorized'
 
@@ -74,29 +73,30 @@ export function AgentStatus({
   const label = working && step ? step : described.label
   const { moving } = described
   const iconState = dorkIconState(state, { working: moving, live, attention })
+  const canOpen = Boolean(onOpen && working)
   const now = useSeconds(working && since !== undefined)
   const time = working && since !== undefined ? workedFor(now - since) : undefined
   const words = (
     <>
       <DorkIcon state={iconState} size={15} />
-      <span className="min-w-0 truncate">{moving ? <WordShimmer key={label}>{label}</WordShimmer> : label}</span>
+      <span className={`min-w-0 truncate ${moving ? 'status-shimmer' : ''}`}>{label}</span>
       {/* Hidden from screen readers: a clock ticking every second would be read out each time. */}
       {time && (
-        <span aria-hidden className="shrink-0 text-muted-foreground tabular-nums">
+        <span aria-hidden className="shrink-0 text-muted-foreground/75 tabular-nums">
           {time}
         </span>
       )}
-      {onOpen && <ChevronRightIcon aria-hidden className="-ml-1 size-3.5 shrink-0 text-muted-foreground" />}
+      {canOpen && <ChevronRightIcon aria-hidden className="-ml-1 size-3.5 shrink-0 text-muted-foreground/75" />}
     </>
   )
   return (
-    <div role="status" aria-live="polite" className="flex min-w-0 text-(length:--text-message) text-foreground" data-testid="agent-status">
-      {onOpen ? (
+    <div role="status" aria-live="polite" className="flex min-w-0 text-(length:--text-message) text-muted-foreground" data-testid="agent-status">
+      {canOpen ? (
         <button
           type="button"
           onClick={onOpen}
           title="Show in Progress"
-          className="flex max-w-full min-w-0 items-center gap-2 rounded-(--control-radius) text-left outline-none hover:[&>svg]:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30"
+          className="flex max-w-full min-w-0 items-center gap-2 rounded-(--control-radius) text-left outline-none hover:text-foreground hover:[&>svg]:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30"
         >
           {words}
         </button>

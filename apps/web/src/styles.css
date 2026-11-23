@@ -100,15 +100,13 @@
   }
 }
 
-/* WordShimmer (components/WordShimmer.tsx): a word is blue for the first 15% of a 2s cycle, then its normal colour. `step-end` makes each
-   change a snap instead of a fade; the per-word delay is what makes the blue walk across the line. */
-@keyframes word-shimmer {
+/* AgentStatus (components/AgentStatus.tsx): smooth left-to-right grey shimmer across dimmed status text while an action is moving. */
+@keyframes status-shimmer {
   0% {
-    color: var(--brand);
+    background-position: 100% 0;
   }
-  15%,
   100% {
-    color: var(--shimmer-base, var(--foreground));
+    background-position: -100% 0;
   }
 }
 
@@ -177,8 +175,15 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .word-shimmer {
-    animation: word-shimmer 2s step-end infinite;
+  .status-shimmer {
+    --shimmer-base: var(--muted-foreground);
+    --shimmer-peak: color-mix(in oklab, var(--foreground) 65%, var(--muted-foreground));
+    color: transparent;
+    background-image: linear-gradient(90deg, var(--shimmer-base) 0%, var(--shimmer-base) 38%, var(--shimmer-peak) 50%, var(--shimmer-base) 62%, var(--shimmer-base) 100%);
+    background-size: 220% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    animation: status-shimmer 2.4s linear infinite;
   }
   .dork-flap-1 {
     animation: dork-flap-cycle 6.4s linear 0s infinite;
