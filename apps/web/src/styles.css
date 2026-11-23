@@ -206,3 +206,13 @@
 ::highlight(dorks-reply) {
   background-color: color-mix(in oklab, var(--brand) 22%, transparent);
 }
+
+/* The right sidebar (ChatDetails / CrewDetails) hides scrollbars across every tab and nested scroller. */
+[data-details-panel],
+[data-details-panel] * {
+  scrollbar-width: none;
+}
+[data-details-panel]::-webkit-scrollbar,
+[data-details-panel] *::-webkit-scrollbar {
+  display: none;
+}

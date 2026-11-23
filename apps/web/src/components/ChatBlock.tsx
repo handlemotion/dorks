@@ -17,6 +17,7 @@ import { toolStep } from '../lib/progress'
 import { hookLine } from '../lib/hooks'
 import { MessageScrollerItem } from '@dorks/ui/message-scroller'
 import { LocalRequestCard } from './LocalRequest'
+import { AgentCode } from './CodeBlockCard'
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from '@dorks/ui/trace'
 
 type ToolBlock = Extract<Block, { kind: 'tool' }>
@@ -127,8 +128,8 @@ function AgentImage(props: { src?: string | Blob; alt?: string }) {
   return <ChatImage {...props} large />
 }
 
-// Module-level so Streamdown's memo holds; keeps the package's code blocks.
-const MARKDOWN = { ...markdownComponents, img: AgentImage, span: MarkdownSpan }
+// Module-level so Streamdown's memo holds; overrides images, unavailable-image spans, and fenced code blocks (Pierre card-on-card).
+const MARKDOWN = { ...markdownComponents, img: AgentImage, code: AgentCode, span: MarkdownSpan }
 
 /** A span from the markdown; the ones `markUnavailableImages` left for an image that cannot load become its placeholder. */
 function MarkdownSpan({ node: _node, ...props }: ComponentProps<'span'> & { node?: unknown; 'data-image-unavailable'?: string }) {

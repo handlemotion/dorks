@@ -10,7 +10,7 @@ import { PanelResizeHandle } from '@dorks/ui/panel-resize-handle'
 const SIDEBAR_WIDTH = 275
 
 /**
- * The app frame is flat and off white (`bg-background`, #fafafa): the sidebar and the page share it, split by a full-height divider that is also
+ * The app frame is flat and white (`bg-background`, #ffffff): the sidebar and the page share it, split by a full-height divider that is also
  * the resize handle (react-resizable-panels, through shadcn's Resizable). The sidebar's width is remembered; collapsing it (its
  * toggle, ⌘B, or dragging it shut) collapses the panel. On phones the sidebar is shadcn's sheet instead. Onboarding keeps the grey
  * app fill and is outside this frame.

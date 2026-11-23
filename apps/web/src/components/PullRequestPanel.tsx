@@ -506,7 +506,14 @@ function MergeButton({
         </span>
       </Button>
       {confirming ? (
-        <Button size="xs" variant="secondary" className="h-7 rounded-l-none px-2" disabled={busy === 'merge'} aria-label="Cancel merge" onClick={onCancel}>
+        <Button
+          size="xs"
+          variant="secondary"
+          className="h-7 rounded-l-none bg-foreground/10 px-2 text-foreground hover:bg-foreground/15 dark:bg-foreground/15 dark:hover:bg-foreground/20"
+          disabled={busy === 'merge'}
+          aria-label="Cancel merge"
+          onClick={onCancel}
+        >
           <XIcon />
         </Button>
       ) : (

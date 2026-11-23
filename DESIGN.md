@@ -2,7 +2,7 @@
 name: Dorks
 description: A flat, quiet workspace for cloud coding agents. Off white, one radius, one weight, no shadows.
 colors:
-  background: "#fafafa"               # the main app frame, a slight off white (dark: oklch(0.145 0 0))
+  background: "#ffffff"               # the main app frame, white (dark: oklch(0.145 0 0))
   app: "#f2f2f2"                      # onboarding's fill, thumbnails, the user bubble's family (dark: oklch(0.165 0 0))
   border: "oklch(0 0 0 / 6%)"         # full dividers, including the one between the chat and Chat details (dark: oklch(1 0 0 / 7%))
   input: "oklch(0.922 0 0)"           # form control borders; the composer fill at 50% in dark

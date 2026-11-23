@@ -91,8 +91,8 @@ h6 {
 /* Default border colour: present for a11y tooling, nearly invisible to the eye. Form controls use --input, which stays visible. The
    preset's own :root block is imported after this file's rules, so these need the extra specificity of `html`. */
 html:root {
-  /* The main app frame: a slightly off white, so white (the composer) can sit on it. #f2f2f2 (--app) stays for surfaces. */
-  --background: #fafafa;
+  /* The main app frame: white in light mode. #f2f2f2 (--app) stays for onboarding and surfaces. */
+  --background: #ffffff;
   --border: oklch(0 0 0 / 6%);
   /* Focus is the brand blue. */
   --ring: var(--brand);

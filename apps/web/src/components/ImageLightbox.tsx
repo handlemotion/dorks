@@ -27,7 +27,11 @@ export function ImageLightbox({ images, label, children }: { images: LightboxIma
               <Lightbox.Slide key={image.id} className={`h-full min-w-full flex-[0_0_100%] px-16 pt-14 ${images.length > 1 ? 'pb-[134px]' : 'pb-16'}`}>
                 <Lightbox.Item index={index} caption={image.caption ?? image.alt} aria-roledescription="slide" aria-label={`${index + 1} of ${images.length}`} className="size-full">
                   <Lightbox.Zoom>
-                    <Lightbox.Media width={image.width} height={image.height} className="overflow-hidden rounded-(--control-radius)">
+                    <Lightbox.Media
+                      width={image.width}
+                      height={image.height}
+                      className="overflow-hidden rounded-(--control-radius) outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
+                    >
                       <img src={image.src} alt={image.alt} className="size-full object-contain select-none" draggable={false} />
                     </Lightbox.Media>
                   </Lightbox.Zoom>
@@ -66,7 +70,12 @@ export function ImageLightbox({ images, label, children }: { images: LightboxIma
                       aria-label={image.alt}
                       className="relative block size-(--thumb) shrink-0 cursor-pointer overflow-hidden rounded-(--control-radius) bg-app outline-none focus-visible:outline-2 focus-visible:outline-ring"
                     >
-                      <img src={image.src} alt="" draggable={false} className="block size-full object-cover" />
+                      <img
+                        src={image.src}
+                        alt=""
+                        draggable={false}
+                        className="block size-full rounded-(--control-radius) object-cover outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
+                      />
                     </Lightbox.Thumbnail>
                   ))}
                 </Lightbox.ThumbnailStripTrack>
