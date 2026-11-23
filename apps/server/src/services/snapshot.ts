@@ -81,7 +81,7 @@ export interface SnapshotView {
   /** The saved snapshot this app built, or null. Sandboxes start from `settings.baseSnapshotId`; `managed` says whether that is it. */
   snapshot: string | null;
   managed: boolean;
-  /** Built from an older bridge or installer than this app now carries: rebuild to update. */
+  /** Built from an older installer than this app now carries: rebuild to update. A newer bridge alone is installed when a box starts. */
   stale: boolean;
   step: StepId | null;
   stepIndex: number;
@@ -129,7 +129,7 @@ export async function snapshotView(app: App): Promise<SnapshotView> {
 }
 
 /**
- * Starts a build unless one is running, or the snapshot is already built from the current bridge and in use (and `force` is off).
+ * Starts a build unless one is running, or the snapshot is already built from the current installer and in use (and `force` is off).
  * Idempotent: calling it while a build runs just returns the status.
  */
 export async function startBuild(app: App, opts: { force?: boolean } = {}): Promise<SnapshotView> {
@@ -174,8 +174,9 @@ export function buildIfMissing(app: App, opts: { retryFailed?: boolean } = {}): 
 }
 
 /**
- * On start: the snapshot this app built is in use but carries an older bridge than the app now has (the app was updated). Rebuild it,
- * or every new sandbox runs the old bridge and misses what changed (new MCP tools, protocol fixes). A failed build is not retried.
+ * On start: the snapshot this app built is in use but was made by an older installer than the app now has (the app was updated with
+ * other CLIs or versions). Rebuild it, or new sandboxes miss those tools. A bridge-only update needs no rebuild: each box installs
+ * this server's bridge when it starts. A failed build is not retried.
  */
 export async function rebuildIfStale(app: App): Promise<void> {
   try {
@@ -183,7 +184,7 @@ export async function rebuildIfStale(app: App): Promise<void> {
     if (!s.boatKeyEnc) return;
     const view = await snapshotView(app);
     if (!view.stale || view.state !== "ready" || !view.currentBundleId) return;
-    console.error(`base snapshot is stale (built from ${view.builtBundleId}, app has ${view.currentBundleId}): rebuilding`);
+    console.error(`base snapshot is stale (installer ${view.builtBundleId}, app has ${view.currentBundleId}): rebuilding`);
     queueBuild(app, { bundleId: view.currentBundleId });
   } catch (e) {
     console.error("stale snapshot check failed", e instanceof Error ? e.message.slice(0, 200) : "unknown");

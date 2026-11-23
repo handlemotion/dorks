@@ -147,15 +147,13 @@ describe("failure messages", () => {
 });
 
 describe("snapshot assets", () => {
-  it("identify the bridge and installer pair, and change when either changes", () => {
+  it("identify the installer, and do not change with the bridge alone", () => {
     const a = makeAssets(new TextEncoder().encode("bridge"), "installer");
     expect(a.bundleId).toMatch(/^[0-9a-f]{12}$/);
     expect(a.bridgeSha256).toBe(createHash("sha256").update("bridge").digest("hex"));
     expect(makeAssets(new TextEncoder().encode("bridge"), "installer").bundleId).toBe(a.bundleId);
-    expect(makeAssets(new TextEncoder().encode("bridge2"), "installer").bundleId).not.toBe(a.bundleId);
+    expect(makeAssets(new TextEncoder().encode("bridge2"), "installer").bundleId).toBe(a.bundleId);
     expect(makeAssets(new TextEncoder().encode("bridge"), "installer2").bundleId).not.toBe(a.bundleId);
-    // "ab" + "c" and "a" + "bc" must not collide: the parts are separated.
-    expect(makeAssets(new TextEncoder().encode("ab"), "c").bundleId).not.toBe(makeAssets(new TextEncoder().encode("a"), "bc").bundleId);
   });
 
   it("load from an explicit bundle path, with the repository installer", async () => {
