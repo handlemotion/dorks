@@ -8,7 +8,12 @@ import { crewObserve } from "../services/crew";
 // The lifecycle driver. Every function here is synchronous and meant to run inside one SQLite transaction (app.db.tx): a state
 // change, its event, and its effects (timers, box jobs, outbox rows) commit together or not at all.
 
-export const WATCHDOG_MS = 3 * 60_000; // creating/waking must reach `ready` (or a lost bridge must return) within this
+export const WATCHDOG_MS = 3 * 60_000; // waking must reach `ready` (or a lost bridge must return) within this
+/**
+ * A new box gets longer: the Boat driver itself waits up to 4 minutes for the create call and 4 more for the box to run (lib/boat.ts),
+ * so a slow but healthy start must not be failed under it. The create job reports its own failures; this is only the backstop.
+ */
+export const CREATE_WATCHDOG_MS = 10 * 60_000;
 export const FLUSH_TIMEOUT_MS = 10_000;
 export const HEARTBEAT_MS = 30_000;
 export const BRIDGE_STALE_MS = 90_000;
@@ -152,7 +157,7 @@ function runEffect(app: App, dorkId: string, effect: Effect) {
     case "cancel_sleep":
       return cancelTimer(app, dorkId, "sleep");
     case "arm_watchdog":
-      return setTimer(app, dorkId, "watchdog", WATCHDOG_MS);
+      return setTimer(app, dorkId, "watchdog", getDork(app.db, dorkId)?.state === "creating" ? CREATE_WATCHDOG_MS : WATCHDOG_MS);
     case "cancel_watchdog":
       return cancelTimer(app, dorkId, "watchdog");
   }

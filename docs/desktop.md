@@ -17,7 +17,7 @@ Dorks.app
 - **Menu bar:** server status, Open Dorks, Open Data Folder, Open Server Log, Restart Server, Quit. Closing the window leaves the app running in the menu bar.
 - **Sandboxes:** the shell starts only the server, which listens on the UI port on loopback and nothing else. Sandboxes are reached by the server dialing out to each box's bridge ([architecture.md](architecture.md#bridge-protocol-websocket-dialed-by-the-server)), so the Mac opens no inbound port and needs no public URL. On start the shell deletes files left by the removed tunnel: `tunnel-install-key`, `wurmhol-connector`, `wurmhol-token`, `wurmhol-access-key`, `wurmhol-name` and `logs/wurmhol.log`.
 - **Updates:** checks GitHub Releases shortly after launch and every 15 minutes, offers a newer version in the sidebar and the menu bar, and installs it in place (see [Updates](#updates)).
-- **Keep awake:** a power assertion (`caffeinate -i -w <pid>`, released automatically if the app dies) while the UI reports active dorks. Setting: `whileActive` (default), `always`, `never`.
+- **Keep awake:** a power assertion (`caffeinate -i -w <pid>`, released automatically if the app dies) while the UI reports active dorks: a session starting or working, or an active automation with a schedule (the server runs on the Mac, so a scheduled run starts on time only if the Mac is awake; the assertion stops idle sleep, not a closed lid on battery). Setting: `whileActive` (default), `always`, `never`.
 
 ## Contract with the server
 
