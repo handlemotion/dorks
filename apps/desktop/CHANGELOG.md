@@ -1,5 +1,27 @@
 # @dorks/desktop
 
+## 0.5.0
+
+### Minor Changes
+
+- [#157](https://github.com/handlemotion/dorks/pull/157) [`07214ca`](https://github.com/handlemotion/dorks/commit/07214ca71e591aa01268574bf1875ca0e8fa33ee) Thanks [@handlemotion](https://github.com/handlemotion)! - While the agent works, Enter steers its current turn and ⌘ Enter (Ctrl Enter) queues the message for when the turn ends. Queued messages show above the message box, where you can send one now or remove it.
+
+- [#160](https://github.com/handlemotion/dorks/pull/160) [`ce80564`](https://github.com/handlemotion/dorks/commit/ce80564a39b1a4e8223835850ac8c732f9452343) Thanks [@handlemotion](https://github.com/handlemotion)! - Usage moves from the sidebar to a ring beside the model picker: click it for the chat's own model limits and your Boat plan's machine time, starts, running sandboxes and wallet. A running chat's repository shows its owner's avatar.
+
+### Patch Changes
+
+- [#158](https://github.com/handlemotion/dorks/pull/158) [`33e3087`](https://github.com/handlemotion/dorks/commit/33e3087cb3fcf4dd423b62550c10a3c8392b1eea) Thanks [@handlemotion](https://github.com/handlemotion)! - Add a bottom divider to the page header and align the Chat details and Dork details tab bars to the same 48px height so both top dividers meet seamlessly.
+
+- [#152](https://github.com/handlemotion/dorks/pull/152) [`cee4fb2`](https://github.com/handlemotion/dorks/commit/cee4fb24ee98bcb14f7b9a2ca07c2c7389aafc7b) Thanks [@handlemotion](https://github.com/handlemotion)! - Starting a sandbox now rides out a short network drop instead of failing, and when it does fail the session says why in one red line (for example, that Boat couldn't be reached) instead of "create_box failed".
+
+- [#154](https://github.com/handlemotion/dorks/pull/154) [`fa811ea`](https://github.com/handlemotion/dorks/commit/fa811ea0be78b5294c7f5ccd44a9331b52abc5b5) Thanks [@handlemotion](https://github.com/handlemotion)! - Drag images from Finder anywhere into a chat to attach them, click an attached image to open it full size, and attached images now stay in a chat's draft when you switch to another chat and back.
+
+- [#156](https://github.com/handlemotion/dorks/pull/156) [`f399b37`](https://github.com/handlemotion/dorks/commit/f399b371721a2fe70f973b1c0f59d4614b5579aa) Thanks [@handlemotion](https://github.com/handlemotion)! - An image in a chat that cannot be shown (an unknown or deleted screenshot, a local file path) now shows its caption as "image not available" instead of the raw "[Image blocked: …]" text.
+
+- [#153](https://github.com/handlemotion/dorks/pull/153) [`8a3079c`](https://github.com/handlemotion/dorks/commit/8a3079c4e91b53b81120dcf044444542ecb12e7b) Thanks [@handlemotion](https://github.com/handlemotion)! - Use a white background for the main app frame in light mode, tighten the gap between the top window controls and the organization switcher in the sidebar, redesign markdown code blocks with a card-on-card Pierre layout, add a subtle border around images in the lightbox viewer, hide scrollbars across all tabs in the right details sidebar, and darken the cancel button fill beside Confirm merge.
+
+- [#159](https://github.com/handlemotion/dorks/pull/159) [`9cd8b31`](https://github.com/handlemotion/dorks/commit/9cd8b319049d7a7cda8479535d7c8b0397454dc0) Thanks [@handlemotion](https://github.com/handlemotion)! - The sidebar opens wider by default, and Chat details beside a chat starts narrower.
+
 ## 0.4.3
 
 ### Patch Changes
