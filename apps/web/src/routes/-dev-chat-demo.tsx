@@ -18,10 +18,7 @@ import { Composer, type AgentProvider } from '../components/ChatComposer'
 import { ChatMenu } from '../components/ChatMenu'
 import { ArchiveButton, PageHeader } from '../components/PageHeader'
 import { withReply, type Reply } from '../lib/reply'
-
-/** A mock screenshot as an SVG data URL (parentheses escaped so it can sit inside markdown image syntax). */
-const mockShot = (tint: string, line: string) =>
-  `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000"><rect width="1600" height="1000" fill="${tint}"/><rect x="400" y="300" width="800" height="440" rx="40" fill="#fff"/><rect x="480" y="380" width="400" height="40" rx="20" fill="${line}"/><rect x="480" y="480" width="640" height="40" rx="20" fill="#e4e4e7"/></svg>`).replace(/\(/g, '%28').replace(/\)/g, '%29')}`
+import demoChatShot from '../assets/demo-chat.png'
 
 /** Static usage for the sidebar, so the demo needs no live client. */
 const demoUsage: Usage = {
@@ -33,7 +30,7 @@ const demoBlocks: Block[] = [
   {
     kind: 'user',
     id: 'u1',
-    text: `Fix the flaky bridge reconnect after the box wakes. Check the current tests too.\n\n![Reconnect error in the app](${mockShot('#fde2e2', '#f2a1a1')})`,
+    text: `Fix the flaky bridge reconnect after the box wakes. Check the current tests too.\n\n![Reconnect error in the app](${demoChatShot})`,
     at: Date.now() - 36 * 60_000,
   },
   { kind: 'assistant', id: 'a0', text: 'Looking for where the bridge resumes after a wake.', streaming: false, at: Date.now() - 32 * 60_000 },
@@ -50,7 +47,7 @@ const demoBlocks: Block[] = [
   {
     kind: 'assistant',
     id: 'a0b',
-    text: `The reconnect test times out. The queue flushes before the handshake, so I’ll wait for it.\n\n![The timeout](${mockShot('#fdf0d5', '#e8c27a')})`,
+    text: `The reconnect test times out. The queue flushes before the handshake, so I’ll wait for it.\n\n![The timeout](${demoChatShot})`,
     streaming: false,
     at: Date.now() - 28 * 60_000,
   },
@@ -92,9 +89,9 @@ const demoBlocks: Block[] = [
     final: true,
     text:
       'The box resumed before the bridge was ready, so queued messages could arrive during that gap. The reconnect now waits for the bridge handshake before it flushes the queue, and the bridge tests pass.\n\n![Before the fix](' +
-      mockShot('#e3e9f3', '#a7b4c8') +
+      demoChatShot +
       ') ![After the fix](' +
-      mockShot('#e4f3e8', '#9fcbab') +
+      demoChatShot +
       ')\n\n- Wait for the bridge handshake before flushing\n- Back off between attempts, up to 30s\n\n```ts\nawait bridge.ready()\n```',
     streaming: false,
     at: Date.now() - 24 * 60_000,
@@ -242,13 +239,13 @@ const details: ChatDetailsData = {
     { path: 'apps/server/src/services/dorks.ts', additions: 9, deletions: 3 },
     { path: 'docs/architecture.md', additions: 4, deletions: 1, patch: DOCS_PATCH },
   ],
-  artifacts: ['wake-before.png', 'wake-after.png', 'reconnect-timeline.png', 'bridge-states.png', 'queue-flush.png'].map((name, i) => ({
+  artifacts: ['wake-before.png', 'wake-after.png', 'reconnect-timeline.png', 'bridge-states.png', 'queue-flush.png'].map((name) => ({
     id: name,
     name,
     type: 'PNG',
-    width: 1600,
-    height: 1000,
-    src: `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 100"><rect width="160" height="100" fill="hsl(${210 + i * 24} 40% 92%)"/><rect x="40" y="30" width="80" height="44" rx="4" fill="white"/><rect x="48" y="38" width="40" height="4" rx="2" fill="hsl(${210 + i * 24} 20% 70%)"/><rect x="48" y="48" width="64" height="4" rx="2" fill="hsl(${210 + i * 24} 10% 85%)"/></svg>`)}`,
+    width: 756,
+    height: 576,
+    src: demoChatShot,
   })),
 }
 
