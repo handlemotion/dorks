@@ -4,6 +4,7 @@ import { commandOf, getDork, openCommands, runtimeOf, type CommandKind, type Com
 import { update, insert } from "../db";
 import { reduce, type Effect, type Input, type Result } from "../core/machine";
 import { crewObserve } from "../services/crew";
+import { messagePreview } from "../lib/messageText";
 
 // The lifecycle driver. Every function here is synchronous and meant to run inside one SQLite transaction (app.db.tx): a state
 // change, its event, and its effects (timers, box jobs, outbox rows) commit together or not at all.
@@ -73,6 +74,7 @@ export function machineCtx(app: App, dork: DorkRow) {
     hasBox: !!dork.boxId,
     queued: open.length > 0,
     notifyHeld: !open.some((c) => c.kind === "user_message") && open.some((c) => c.kind === "notify" && !c.released),
+    waiting: !runtimeOf(app.db, dork.id).queueHold && !!app.db.get("SELECT 1 AS x FROM queued_messages WHERE dork_id = ? LIMIT 1", dork.id),
   };
 }
 
@@ -118,6 +120,24 @@ export const patchDork = (app: App, dorkId: string, patch: Record<string, unknow
   touch(app, { t: "dorks" });
 };
 
+/**
+ * The owner's message: a durable outbox row, the event clients see, and the dork's preview. Images are claimed by the caller.
+ * A thrown error rolls all of it back (e.g. an archived dork).
+ */
+export function persistUserMessage(app: App, dorkId: string, text: string, from?: { id: string; title: string }) {
+  enqueue(app, dorkId, "user_message", text);
+  append(app, dorkId, { type: "user_message", text, ...(from ? { from } : {}) });
+  patchDork(app, dorkId, { preview: messagePreview(text), lastActivityAt: app.now() });
+}
+
+/** The oldest queued message goes out: it becomes the next turn's user message. */
+function releaseQueued(app: App, dorkId: string) {
+  const next = app.db.get<{ id: string; text: string }>("SELECT id, text FROM queued_messages WHERE dork_id = ? ORDER BY created_at, rowid LIMIT 1", dorkId);
+  if (!next) return;
+  app.db.run("DELETE FROM queued_messages WHERE id = ?", next.id);
+  persistUserMessage(app, dorkId, next.text);
+}
+
 // ---------------------------------------------------------------- machine driver
 /** Apply an input: persist the new state, then run effects. All of it in the caller's transaction. */
 export function dispatch(app: App, dorkId: string, input: Input): Result | null {
@@ -130,6 +150,8 @@ export function dispatch(app: App, dorkId: string, input: Input): Result | null 
   if (r.state !== before.state) append(app, dorkId, { type: "status", state: r.state });
   if (input.t === "paused" && r.state === "sleeping") clearControlRows(app, dorkId); // nothing may replay into the next wake
   for (const effect of r.effects) runEffect(app, dorkId, effect);
+  // A Stop holds the queue for the turn it stopped only.
+  if (input.t === "turn_idle" && before.state === "working" && runtimeOf(app.db, dorkId).queueHold) patchRuntime(app, dorkId, { queueHold: false });
   return r;
 }
 
@@ -149,6 +171,8 @@ function runEffect(app: App, dorkId: string, effect: Effect) {
       for (const c of unackedMessages(app, dorkId)) if (c.kind === "notify" && !c.released) update(app.db, "commands", { id: c.id }, { released: true });
       touch(app, { t: "commands", dorkId });
       return;
+    case "release_queue":
+      return releaseQueued(app, dorkId);
     case "interrupt_agent":
       enqueue(app, dorkId, "interrupt");
       return;

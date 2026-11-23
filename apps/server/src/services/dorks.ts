@@ -1,8 +1,9 @@
 import { MAX_LIVE_WORKERS, type ClientEvent } from "@dorks/shared";
 import { fail, touch, type App } from "../app";
-import { dorkOf, dorkView, eventOf, getDork, needsAttentionOf, prStateOf, type DorkKind, type DorkRow, type DorkView, type Provider } from "../data";
+import { dorkOf, dorkView, eventOf, getDork, needsAttentionOf, prStateOf, queuedMessagesOf, type DorkKind, type DorkRow, type DorkView, type Provider } from "../data";
 import { insert } from "../db";
-import { append, dispatch, enqueue, MAX_MESSAGE_CHARS, patchDork, patchRuntime, setTimer } from "../lifecycle/dispatch";
+import { dispatch, MAX_MESSAGE_CHARS, patchDork, patchRuntime, persistUserMessage, setTimer } from "../lifecycle/dispatch";
+import { withoutImages } from "../lib/messageText";
 import { knownModelChoices, validAntigravityModel, validModelChoice, validOpenCodeModel } from "./models";
 import { validRepo } from "../lib/repo";
 import { isBoxNotFound, type DesktopOptions } from "../core/box";
@@ -31,20 +32,13 @@ function checkText(text: unknown) {
   return t;
 }
 
-/** Durable outbox row + the event clients see. A thrown error rolls both back (e.g. archived dork). */
-/** A message without its attached images (`![name](dorks-image:<id>)`), for titles and previews. */
-const withoutImages = (text: string) => text.replace(/!\[[^\]]*\]\(\s*dorks-image:[0-9a-f]{32}\s*\)/g, "").trim();
-/** A reply's quote (`> Replying to …` lines the web puts first, see apps/web/src/lib/reply.ts) is not what the owner wrote. */
-const withoutReply = (text: string) => (/^> Replying to (this part of your message|this image):\n/.test(text) ? text.replace(/^(>.*(\n|$))+/, "") : text);
-
 /** Who sent a message, when it was not the owner: the coordinator dork that started this worker (docs/crew.md). */
 export type MessageFrom = { id: string; title: string };
 
+/** Durable outbox row + the event clients see. A thrown error rolls both back (e.g. archived dork). */
 function persistMessage(app: App, dork: DorkRow, text: string, from?: MessageFrom) {
   claimImages(app, dork.id, text);
-  enqueue(app, dork.id, "user_message", text);
-  append(app, dork.id, { type: "user_message", text, ...(from ? { from } : {}) });
-  patchDork(app, dork.id, { preview: (withoutImages(withoutReply(text)) || "Image").slice(0, 140), lastActivityAt: app.now() });
+  persistUserMessage(app, dork.id, text, from);
 }
 
 export function listDorks(app: App, archived = false): DorkView[] {
@@ -56,7 +50,7 @@ export function listDorks(app: App, archived = false): DorkView[] {
 
 export function getDorkView(app: App, dorkId: string): DorkView | null {
   const d = getDork(app.db, dorkId);
-  return d && !d.deleting ? dorkView(d, prStateOf(app.db, d), needsAttentionOf(app.db, d.id)) : null;
+  return d && !d.deleting ? dorkView(d, prStateOf(app.db, d), needsAttentionOf(app.db, d.id), queuedMessagesOf(app.db, d.id)) : null;
 }
 
 /**
@@ -168,13 +162,57 @@ export function createDork(
   });
 }
 
+/**
+ * A message for the agent now. While it works the message steers the running turn (Claude reads it at its next tool call);
+ * otherwise it starts a turn, waking the dork if it sleeps.
+ */
 export function sendMessage(app: App, dorkId: string, text: string, from?: MessageFrom) {
+  app.db.tx(() => deliverNow(app, owned(app, dorkId), checkText(text), from));
+}
+
+function deliverNow(app: App, dork: DorkRow, text: string, from?: MessageFrom) {
+  persistMessage(app, dork, text, from);
+  const r = dispatch(app, dork.id, { t: "user_message" });
+  if (r?.rejected) fail("archived", "dork is archived"); // rolls back the persisted message
+  for (const sub of subscriptionsOfDork(app, dork.id)) if (sub.status !== "ended") resetCiAttempts(app, sub, "resumed by your message"); // a human is back: CI gets a fresh budget
+}
+
+export const MAX_QUEUED_MESSAGES = 20;
+/** States with a turn running or about to run: a queued message waits for its end. */
+const BUSY = new Set(["creating", "waking", "working"]);
+
+/**
+ * A message for when the agent's current turn ends (the composer's ⌘ Enter). Each queued message goes out as its own turn, oldest
+ * first; the machine releases one at every turn boundary (`release_queue`). With no turn running it is sent now. Resolves whether it
+ * was queued.
+ */
+export function queueMessage(app: App, dorkId: string, text: string): { queued: boolean } {
+  return app.db.tx(() => {
+    const dork = owned(app, dorkId);
+    const t = checkText(text);
+    if (dork.archived) fail("archived", "dork is archived");
+    if (!BUSY.has(dork.state)) {
+      deliverNow(app, dork, t);
+      return { queued: false };
+    }
+    const n = app.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM queued_messages WHERE dork_id = ?", dorkId)?.n ?? 0;
+    if (n >= MAX_QUEUED_MESSAGES) fail("limit", `at most ${MAX_QUEUED_MESSAGES} messages can wait in the queue`);
+    claimImages(app, dorkId, t);
+    app.db.run("INSERT INTO queued_messages (id, dork_id, text, created_at) VALUES (?, ?, ?, ?)", app.uuid(), dorkId, t, app.now());
+    touch(app, { t: "dork", dorkId });
+    return { queued: true };
+  });
+}
+
+/** Takes a message out of the queue; `send` delivers it now instead (steering a running turn). */
+export function takeQueued(app: App, dorkId: string, queuedId: string, send: boolean) {
   app.db.tx(() => {
     const dork = owned(app, dorkId);
-    persistMessage(app, dork, checkText(text), from);
-    const r = dispatch(app, dorkId, { t: "user_message" });
-    if (r?.rejected) fail("archived", "dork is archived"); // rolls back the persisted message
-    for (const sub of subscriptionsOfDork(app, dorkId)) if (sub.status !== "ended") resetCiAttempts(app, sub, "resumed by your message"); // a human is back: CI gets a fresh budget
+    const row = app.db.get<{ text: string }>("SELECT text FROM queued_messages WHERE id = ? AND dork_id = ?", queuedId, dorkId);
+    if (!row) fail("not_found", "that message is no longer queued");
+    app.db.run("DELETE FROM queued_messages WHERE id = ?", queuedId);
+    touch(app, { t: "dork", dorkId });
+    if (send) deliverNow(app, dork, row.text);
   });
 }
 
@@ -213,7 +251,9 @@ export function interrupt(app: App, dorkId: string) {
   app.db.tx(() => {
     owned(app, dorkId);
     // Remembered for the turn's end: the error result a stopped turn ends with is then shown as Stopped, not as a failure.
-    if (dispatch(app, dorkId, { t: "interrupt" })?.effects.includes("interrupt_agent")) patchRuntime(app, dorkId, { interruptRequested: true });
+    // The queue waits too: a stopped agent does not go on with the next queued message by itself.
+    if (dispatch(app, dorkId, { t: "interrupt" })?.effects.includes("interrupt_agent"))
+      patchRuntime(app, dorkId, { interruptRequested: true, queueHold: !!app.db.get("SELECT 1 AS x FROM queued_messages WHERE dork_id = ? LIMIT 1", dorkId) });
   });
 }
 
