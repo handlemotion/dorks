@@ -1031,7 +1031,7 @@ function RepositoryPicker({ repo, setRepo, repositories, disabled }: { repo: str
         <ChevronDownIcon />
       </PopoverTrigger>
       {/* Styled as the app's dropdown menus (hairline, soft shadow, 32px rows), since that is what it is. */}
-      <PopoverContent align="start" className={`${MENU_POPUP_CLASS} w-80 gap-0 p-0`}>
+      <PopoverContent align="start" className={`${MENU_POPUP_CLASS} w-80 gap-0 p-0 ring-0`}>
         <Command shouldFilter={false} loop className="rounded-none bg-transparent p-0">
           <CommandMenuInput aria-label="Search repositories" autoFocus value={query} onValueChange={setQuery} placeholder="Search repositories…" />
           <CommandList className="max-h-72 p-1">
