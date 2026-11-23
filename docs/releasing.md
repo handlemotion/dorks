@@ -1,6 +1,6 @@
 # Releasing Dorks
 
-Dorks ships as a signed, notarized macOS app for Apple silicon, published as a GitHub release. Installed apps check for a newer release shortly after launch and every 4 hours and offer it in the sidebar's blue update bar ([desktop.md](desktop.md#updates)). There is no Intel build for now.
+Dorks ships as a signed, notarized macOS app for Apple silicon, published as a GitHub release. Installed apps check for a newer release shortly after launch and every 15 minutes and offer it in the sidebar's blue update bar ([desktop.md](desktop.md#updates)). There is no Intel build for now.
 
 Versions are kept with [Changesets](https://github.com/changesets/changesets). The version that ships is `apps/desktop/package.json`'s; the release step copies it to `tauri.conf.json`, `Cargo.toml` and `Cargo.lock`.
 
@@ -8,8 +8,8 @@ Versions are kept with [Changesets](https://github.com/changesets/changesets). T
 
 1. **A PR that changes what users get adds a changeset.** Run `pnpm changeset`, pick `@dorks/desktop`, choose the bump (`patch` for fixes, `minor` for features; no `major` before 1.0) and write one or two sentences for the release notes, in the user's words. This adds a file under `.changeset/`; commit it with the PR. Internal changes (CI, docs, refactors) need none.
 2. **Merge PRs as usual.** On every push to `main`, `.github/workflows/release.yml` keeps one PR open, **Release Dorks**, that applies the pending changesets: the new version in every file above and the notes in `apps/desktop/CHANGELOG.md`. It updates itself as more PRs land. Edit the notes in that PR if you like.
-3. **Merge the release PR when you want to ship.** `main` now has a version with no GitHub release, so the workflow calls `desktop-release.yml`: it builds the app, signs and notarizes it, uploads the `.dmg`, the signed updater bundle and `latest.json` to a draft release `desktop-v<version>` with the changelog section as its notes, and then publishes it as the latest release. That takes about 20 minutes.
-4. **Users update.** Within 4 hours (or on the next launch, or Check for Updates… in the menu bar) installed apps see `latest.json` and show the blue bar; Update installs it and relaunches.
+3. **Merge the release PR when you want to ship.** `main` now has a version with no GitHub release, so the workflow calls `desktop-release.yml`: it builds the app, signs and notarizes it, uploads the `.dmg`, the signed updater bundle and `latest.json` to a draft release `desktop-v<version>` with the changelog section as its notes, and then publishes it as the latest release. That takes about 7 minutes (0.4.0: 6 min 40 s from merge to published), less once the Rust build cache is warm.
+4. **Users update.** Within 15 minutes (or on the next launch, or Check for Updates… in the menu bar) installed apps see `latest.json` and show the blue bar; Update installs it and relaunches.
 
 ## When something goes wrong
 

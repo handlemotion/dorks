@@ -1,6 +1,6 @@
 //! In-app updates from GitHub Releases (docs/desktop.md, "Updates").
 //!
-//! The shell checks `latest.json` on the latest published release shortly after launch and every few hours, and keeps one
+//! The shell checks `latest.json` on the latest published release shortly after launch and every 15 minutes, and keeps one
 //! [`UpdateStatus`] that the UI reads (`update_status`) and follows (`dorks://update`). Installing downloads the signed bundle,
 //! replaces the app, stops the server and relaunches. Only builds with the `updater` feature (the release workflow) can update;
 //! every other build reports `unsupported` and the UI shows nothing.
@@ -17,7 +17,8 @@ pub const EVENT_UPDATE: &str = "dorks://update";
 #[cfg(feature = "updater")]
 const FIRST_CHECK: Duration = Duration::from_secs(10);
 #[cfg(feature = "updater")]
-const CHECK_EVERY: Duration = Duration::from_secs(4 * 60 * 60);
+/// A check is one small `latest.json` from GitHub's CDN, so a release reaches open apps within minutes, not hours.
+const CHECK_EVERY: Duration = Duration::from_secs(15 * 60);
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[cfg_attr(not(feature = "updater"), allow(dead_code))] // only release builds reach the later states
@@ -83,7 +84,7 @@ fn set(app: &AppHandle, status: UpdateStatus) {
     }
 }
 
-/// Checks now and every few hours after a short delay (release builds only).
+/// Checks now and every 15 minutes after a short delay (release builds only).
 pub fn start_background_checks(app: &AppHandle) {
     #[cfg(feature = "updater")]
     {

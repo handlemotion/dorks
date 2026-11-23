@@ -35,6 +35,11 @@ jobs:
         with:
           bun-version: 1.3.14 # compiles apps/server into the sidecar
       - run: rustup target add aarch64-apple-darwin
+      - name: Cache the Rust build
+        # Most of the build is compiling the Tauri shell's dependencies, which rarely change between releases.
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: apps/desktop/src-tauri -> target
       - run: pnpm install --frozen-lockfile
       - name: Build the real server sidecar and the web UI
         working-directory: apps/desktop
