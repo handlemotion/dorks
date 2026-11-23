@@ -1,5 +1,5 @@
-import { useMemo, type ReactNode } from 'react'
-import { BoxIcon, ChevronRightIcon, MessageSquareIcon, UsersIcon, CircleAlertIcon, CircleCheckIcon, CircleStopIcon, ReplyIcon } from 'lucide-react'
+import { useMemo, useState, type ComponentProps, type ReactNode } from 'react'
+import { BoxIcon, ChevronRightIcon, ImageOffIcon, MessageSquareIcon, UsersIcon, CircleAlertIcon, CircleCheckIcon, CircleStopIcon, ReplyIcon } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { Button } from '@dorks/ui/button'
 import type { Block } from '@dorks/shared'
@@ -82,10 +82,13 @@ function ChatImage(props: { src?: string | Blob; alt?: string; large?: boolean }
 
 function ChatImageView({ src, alt, large }: { src?: string | Blob; alt?: string; large?: boolean }) {
   const images = useLightboxImages()
+  // A screenshot that no longer loads (deleted, or on a server that is gone) says so instead of showing a broken image.
+  const [failed, setFailed] = useState(false)
   // A hairline drawn inside the edge, so a white screenshot never melts into the page; the layout does not move.
   const size = `${large ? 'max-h-90 max-w-full h-auto w-auto' : 'h-36 w-auto'} outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10`
   const index = typeof src === 'string' ? images.findIndex((i) => i.src === src) : -1
-  if (index < 0) return typeof src === 'string' ? <img src={src} alt={alt ?? ''} className={`block ${size} rounded-(--control-radius)`} /> : null
+  if (failed) return <ImageUnavailable alt={alt} />
+  if (index < 0) return typeof src === 'string' ? <img src={src} alt={alt ?? ''} onError={() => setFailed(true)} className={`block ${size} rounded-(--control-radius)`} /> : null
   return (
     <ImageTrigger
       index={index}
@@ -100,10 +103,25 @@ function ChatImageView({ src, alt, large }: { src?: string | Blob; alt?: string;
           }}
           src={src as string}
           alt={alt ?? ''}
+          onError={() => setFailed(true)}
           className={`block ${size} rounded-(--control-radius) bg-surface object-cover`}
         />
       )}
     </ImageTrigger>
+  )
+}
+
+/** Where an image should be but cannot be shown: its caption, marked as missing, in place of a broken image or a blank space. */
+function ImageUnavailable({ alt }: { alt?: string }) {
+  return (
+    <span
+      data-testid="image-unavailable"
+      title="This image could not be loaded"
+      className="my-1 inline-flex max-w-full items-center gap-2 rounded-(--control-radius) bg-muted px-3 py-2 align-top text-sm text-muted-foreground"
+    >
+      <ImageOffIcon className="size-4 shrink-0" aria-hidden />
+      <span className="min-w-0 truncate">{alt ? `${alt} (image not available)` : 'Image not available'}</span>
+    </span>
   )
 }
 
@@ -112,7 +130,13 @@ function AgentImage(props: { src?: string | Blob; alt?: string }) {
 }
 
 // Module-level so Streamdown's memo holds; keeps the package's code blocks.
-const MARKDOWN = { ...markdownComponents, img: AgentImage }
+const MARKDOWN = { ...markdownComponents, img: AgentImage, span: MarkdownSpan }
+
+/** A span from the markdown; the ones `markUnavailableImages` left for an image that cannot load become its placeholder. */
+function MarkdownSpan({ node: _node, ...props }: ComponentProps<'span'> & { node?: unknown; 'data-image-unavailable'?: string }) {
+  if (props['data-image-unavailable'] !== undefined) return <ImageUnavailable alt={props['data-image-unavailable']} />
+  return <span {...props} />
+}
 
 /**
  * Agents paste screenshots as `data:image/…` URLs. Streamdown drops those twice (its URL transform and its sanitize schema, which
@@ -120,10 +144,36 @@ const MARKDOWN = { ...markdownComponents, img: AgentImage }
  * the harden step still only lets `data:image/` through.
  */
 const [sanitize, schema] = defaultRehypePlugins.sanitize as [unknown, { protocols?: Record<string, string[]> }]
+const { harden, ...beforeHarden } = defaultRehypePlugins
 const REHYPE = Object.values({
-  ...defaultRehypePlugins,
+  ...beforeHarden,
   sanitize: [sanitize, { ...schema, protocols: { ...schema.protocols, src: [...(schema.protocols?.src ?? []), 'data'] } }],
+  unavailable: markUnavailableImages,
+  harden,
 }) as (typeof defaultRehypePlugins)[string][]
+
+type HastNode = { type: string; tagName?: string; properties?: Record<string, unknown>; children?: HastNode[] }
+
+/** The image sources the harden step lets through (`rehype-harden` with Streamdown's wildcard options): web URLs, same-origin paths, `data:image/`, `blob:`. */
+const LOADABLE = /^(?:https?:|blob:|data:image\/|\.{0,2}\/)/i
+
+/**
+ * An image the harden step would block (an id the web could not resolve, a bare file name, `file://`) would show as the raw text
+ * "[Image blocked: …]". Runs just before it and turns such an image into a span that `MarkdownSpan` shows as a placeholder.
+ */
+function markUnavailableImages() {
+  const walk = (node: HastNode) => {
+    for (const [i, child] of (node.children ?? []).entries()) {
+      if (child.type === 'element' && child.tagName === 'img') {
+        const src = child.properties?.src
+        if (typeof src === 'string' && LOADABLE.test(src)) continue
+        const alt = typeof child.properties?.alt === 'string' ? child.properties.alt : ''
+        node.children![i] = { type: 'element', tagName: 'span', properties: { dataImageUnavailable: alt }, children: [] }
+      } else walk(child)
+    }
+  }
+  return walk
+}
 
 const allowDataImages: typeof defaultUrlTransform = (url, key, node) => (key === 'src' && url.startsWith('data:image/') ? url : defaultUrlTransform(url, key, node))
 
