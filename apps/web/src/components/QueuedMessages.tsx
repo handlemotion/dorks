@@ -16,16 +16,17 @@ function queuedLabel(text: string) {
 }
 
 /**
- * Messages queued with ⌘ Enter, oldest first, as rows at the top of the composer (styled like the reply banner): each waits for the
+ * Messages queued with ⌘ Enter, oldest first, as plain rows in the frame above the composer's white box (the reply banner's card is
+ * for replies only): each waits for the
  * agent's current turn to end and then goes out as a turn of its own. The arrow sends one now instead, steering the running turn.
  */
 export function QueuedMessages({ queue, onSend, onRemove, disabled }: { queue: QueuedMessage[]; onSend: (id: string) => void; onRemove: (id: string) => void; disabled?: boolean }) {
   return (
-    <ol aria-label="Queued messages" data-testid="composer-queue" className="flex w-full min-w-0 flex-col gap-1">
+    <ol aria-label="Queued messages" data-testid="composer-queue" className="flex w-full min-w-0 flex-col py-1">
       {queue.map((q) => (
-        <li key={q.id} className="flex h-8 w-full min-w-0 items-center gap-1 rounded-[7px] bg-foreground/[0.04] pr-1 pl-2.5 text-[13px] text-muted-foreground">
+        <li key={q.id} className="flex h-8 w-full min-w-0 items-center gap-1 pr-2 pl-4 text-[13px] text-muted-foreground">
           <ClockIcon aria-hidden className="size-3.5 shrink-0" />
-          <span title={q.text} className="min-w-0 flex-1 truncate pl-1 text-left text-foreground/80">
+          <span title={q.text} className="min-w-0 flex-1 truncate pl-2 text-left text-foreground/80">
             {queuedLabel(q.text)}
           </span>
           <Tip label="Send now (steers the current turn)">

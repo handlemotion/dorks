@@ -1,5 +1,4 @@
 import { ArrowUpRightIcon } from 'lucide-react'
-import { Link } from '@tanstack/react-router'
 import { useUsage } from '@dorks/client/react'
 import type { Usage, UsageWindow } from '@dorks/client'
 import { MENU_POPUP_CLASS } from '@dorks/ui/dropdown-menu'
@@ -18,7 +17,13 @@ const clamp = (n: number) => Math.min(Math.max(n, 0), 1)
 const resets = (at: number | undefined) => (at === undefined ? undefined : `Resets ${(at - Date.now() < 86_400_000 ? time : dayTime).format(at)}`)
 
 /** The model plan behind each agent: Claude's subscription, Antigravity's Google AI plan. Codex and OpenCode report none to Dorks. */
-const PLANS: Partial<Record<AgentProvider, { key: 'claude' | 'google'; name: string }>> = { claude: { key: 'claude', name: 'Claude' }, antigravity: { key: 'google', name: 'Gemini' } }
+// `usage`: the provider's own usage page on the web, where there is one (Google has none for the AI plan's Antigravity limits).
+const PLANS: Partial<Record<AgentProvider, { key: 'claude' | 'google'; name: string; usage?: string }>> = {
+  claude: { key: 'claude', name: 'Claude', usage: 'https://claude.ai/settings/usage' },
+  antigravity: { key: 'google', name: 'Gemini' },
+}
+/** Boat's dashboard: the plan, machine time and wallet. */
+const BOAT_USAGE = 'https://boat.dev/dashboard'
 
 /** One limit as shown: a label, when it resets, and the share used. */
 type Limit = { label: string; used: number; note?: string; title?: string }
@@ -74,17 +79,18 @@ export function UsageMenuView({ usage, provider }: { usage: Usage; provider: Age
       >
         <Ring used={ring} />
       </PopoverTrigger>
-      {/* Styled as the app's dropdown menus (hairline, soft shadow), like the repository picker. */}
-      <PopoverContent align="end" className={`${MENU_POPUP_CLASS} w-80 gap-0 p-0 text-[13px]`}>
+      {/* Styled as the app's dropdown menus (hairline, soft shadow), like the repository picker; `ring-0` drops the popover's own ring,
+          which doubled the hairline. */}
+      <PopoverContent align="end" className={`${MENU_POPUP_CLASS} w-80 gap-0 p-0 text-[13px] ring-0`}>
         {modelLimits.length > 0 && plan && (
-          <Section title={plan.name} page="agents" link="AI accounts">
+          <Section title={plan.name} href={plan.usage}>
             {modelLimits.map((l) => (
               <Bar key={l.label} limit={l} />
             ))}
           </Section>
         )}
         {cloud && (
-          <Section title="Boat" page="boat" link="Boat" divided={modelLimits.length > 0}>
+          <Section title="Boat" href={BOAT_USAGE} divided={modelLimits.length > 0}>
             {cloud.blocked && (
               <p role="alert" className="text-destructive">
                 {cloud.blocked}
@@ -108,21 +114,24 @@ export function UsageMenuView({ usage, provider }: { usage: Usage; provider: Age
   )
 }
 
-/** A titled group with a link to its settings page; a full-width hairline above every group but the first. */
-function Section({ title, page, link, divided, children }: { title: string; page: string; link: string; divided?: boolean; children: React.ReactNode }) {
+/** A titled group with a link to the provider's usage page on the web (opened in the browser); a full-width hairline above every group but the first. */
+function Section({ title, href, divided, children }: { title: string; href?: string; divided?: boolean; children: React.ReactNode }) {
   return (
     <section aria-label={title} className={`flex flex-col gap-3 px-3.5 pt-3 pb-3.5 ${divided ? 'border-t border-border' : ''}`}>
       <div className="flex items-center justify-between gap-2">
         <span className="truncate text-muted-foreground">{title}</span>
-        <Link
-          to="/settings/$page"
-          params={{ page }}
-          aria-label={`Open ${link} settings`}
-          title={`${link} settings`}
-          className="-my-1 -mr-1 flex size-6 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground outline-none hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <ArrowUpRightIcon className="size-3.5" />
-        </Link>
+        {href && (
+          <a
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`Open ${title} usage`}
+            title={`${title} usage`}
+            className="-my-1 -mr-1 flex size-6 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground outline-none hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <ArrowUpRightIcon className="size-3.5" />
+          </a>
+        )}
       </div>
       {children}
     </section>
