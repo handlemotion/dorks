@@ -259,7 +259,10 @@ const FRAME_HANDLERS: { [T in FromBridge["t"]]: (b: Batch, f: FrameOf<T>) => voi
   },
   agent_exited: ({ app, dorkId, flush }, f) => {
     flush();
-    append(app, dorkId, { type: "agent_exited", message: `agent exited (code ${f.code ?? "?"})` });
+    // The last line the agent printed says why (agy not installed, not signed in...): the owner's own thread only, never the log.
+    // The bridge has already scrubbed the secrets it knows from it.
+    const why = f.stderrTail.trim().split("\n").pop()?.trim().slice(0, 200);
+    append(app, dorkId, { type: "agent_exited", message: `agent exited (code ${f.code ?? "?"})${why ? `: ${why}` : ""}` });
     console.error("agent exited", dorkId, f.code); // stderr tail is never logged: it can echo env
     dispatch(app, dorkId, { t: "agent_exited" });
   },
