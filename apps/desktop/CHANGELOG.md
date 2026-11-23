@@ -1,5 +1,13 @@
 # @dorks/desktop
 
+## 0.4.3
+
+### Patch Changes
+
+- [#151](https://github.com/handlemotion/dorks/pull/151) [`ce4b87f`](https://github.com/handlemotion/dorks/commit/ce4b87f09bacfd272cac03cb8c84474f3831d281) Thanks [@handlemotion](https://github.com/handlemotion)! - Update the app icon, menu-bar tray icon, and web favicon to the new Dork mark (white on solid electric blue for the app icon and favicon, monochrome template mark for the menu bar).
+
+- [#149](https://github.com/handlemotion/dorks/pull/149) [`913a200`](https://github.com/handlemotion/dorks/commit/913a200447439eb7bba2d391356842045a6d0cab) Thanks [@handlemotion](https://github.com/handlemotion)! - The sidebar's usage meters now stay current: they refresh every 30 seconds while the app is open and whenever you switch back to it, instead of only on a full reload.
+
 ## 0.4.2
 
 ### Patch Changes
