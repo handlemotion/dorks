@@ -14,9 +14,9 @@ export function preloadDiffs() {
   idle(() => void load())
 }
 
-export function PatchDiff(props: ComponentProps<typeof PierrePatchDiff>) {
+export function PatchDiff({ fallback, ...props }: ComponentProps<typeof PierrePatchDiff> & { fallback?: ReactNode; pool?: boolean }) {
   return (
-    <Suspense>
+    <Suspense fallback={fallback}>
       <LazyPatchDiff {...props} />
     </Suspense>
   )
