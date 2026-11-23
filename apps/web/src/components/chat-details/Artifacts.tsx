@@ -40,7 +40,7 @@ export function Artifacts({
   return (
     <ImageLightbox images={images} label="Artifacts">
       {/* shrink-0: clipping would otherwise let it shrink to the panel's height and cut the grid off instead of scrolling it. */}
-      <div className="@container shrink-0 overflow-hidden border-t">
+      <div className="@container shrink-0 overflow-hidden">
         <ul className="-mr-px grid grid-cols-2 @lg:grid-cols-3 @3xl:grid-cols-4">
           {changes.length > 0 && (
             <Tile onClick={onOpenChanges} thumb={() => <DiffThumb />} label={<Stat additions={sum(changes, 'additions')} deletions={sum(changes, 'deletions')} />} meta={`${changes.length} files`}>
