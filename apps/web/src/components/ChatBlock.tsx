@@ -83,12 +83,13 @@ function ChatImage(props: { src?: string | Blob; alt?: string; large?: boolean }
 function ChatImageView({ src, alt, large }: { src?: string | Blob; alt?: string; large?: boolean }) {
   const images = useLightboxImages()
   // A screenshot that no longer loads (deleted, or on a server that is gone) says so instead of showing a broken image.
-  const [failed, setFailed] = useState(false)
+  // Keyed by source, so a reused view that gets another image tries to load it.
+  const [failedSrc, setFailedSrc] = useState<string | Blob>()
   // A hairline drawn inside the edge, so a white screenshot never melts into the page; the layout does not move.
   const size = `${large ? 'max-h-90 max-w-full h-auto w-auto' : 'h-36 w-auto'} outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10`
   const index = typeof src === 'string' ? images.findIndex((i) => i.src === src) : -1
-  if (failed) return <ImageUnavailable alt={alt} />
-  if (index < 0) return typeof src === 'string' ? <img src={src} alt={alt ?? ''} onError={() => setFailed(true)} className={`block ${size} rounded-(--control-radius)`} /> : null
+  if (src !== undefined && failedSrc === src) return <ImageUnavailable alt={alt} />
+  if (index < 0) return typeof src === 'string' ? <img src={src} alt={alt ?? ''} onError={() => setFailedSrc(src)} className={`block ${size} rounded-(--control-radius)`} /> : null
   return (
     <ImageTrigger
       index={index}
@@ -103,7 +104,7 @@ function ChatImageView({ src, alt, large }: { src?: string | Blob; alt?: string;
           }}
           src={src as string}
           alt={alt ?? ''}
-          onError={() => setFailed(true)}
+          onError={() => setFailedSrc(src)}
           className={`block ${size} rounded-(--control-radius) bg-surface object-cover`}
         />
       )}
