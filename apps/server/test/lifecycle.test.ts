@@ -335,7 +335,7 @@ describe("R5: box results are tied to the operation that produced them", () => {
         .events(id)
         .filter((e) => e.body.type === "error")
         .map((e) => (e.body as { message: string }).message),
-    ).not.toContain("resume_box failed");
+    ).not.toContain("Couldn’t wake the sandbox. Send your message again to retry.");
   });
 
   it("the current attempt's failure still moves the dork to error", async () => {

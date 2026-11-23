@@ -18,6 +18,7 @@ import {
   READY,
   retryWhile,
   sandboxPath,
+  withNetworkRetry,
   type BoatCall,
   type BoatOptions,
   type BridgeAsset,
@@ -72,8 +73,8 @@ export const checkCodexEnvironment = (call: BoatCall, org: string | undefined, n
 /** The Boat sandbox provider (core/box.ts). Each method is an Effect run at the Promise edge the lifecycle expects. */
 export function boatBox(opts: BoatOptions): BoxProvider {
   if (!opts.scope) throw new BoatError("boat: a scope is required");
-  const call = makeBoatCall(opts);
   const pause = pauseWith(opts.sleep);
+  const call = withNetworkRetry(makeBoatCall(opts), pause);
   const ops = boatOps(call, pause, opts);
   const run = <A>(e: Effect.Effect<A, BoatError | BoxNotFoundError>) => Effect.runPromise(e);
   return {

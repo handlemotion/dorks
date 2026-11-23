@@ -3,6 +3,7 @@ import type { App } from "../app";
 import { BRIDGE_PORT, isBoxNotFound, type BoxProvider } from "../core/box";
 import { getDork } from "../data";
 import { BoatError } from "../lib/boat";
+import { isBoatStatus, isNetworkError } from "../lib/boatHttp";
 import { bridgeSecret } from "../lib/bridgeAuth";
 import { createIssueComment, GithubError, isTransientGithubError } from "../lib/github";
 import { pollOnce } from "../services/poller";
@@ -25,9 +26,20 @@ import { patchDork, setTimer } from "./dispatch";
 const MAX_ORPHAN_ATTEMPTS = 6;
 const STALL_RETRY_MS = [60_000, 5 * 60_000];
 
+/** What the user reads when a box job fails, by job; the raw cause stays in the server log. */
+const FAILED: Record<string, string> = {
+  create_box: "Couldn’t start the sandbox. Send your message again to retry.",
+  resume_box: "Couldn’t wake the sandbox. Send your message again to retry.",
+  pause_box: "Couldn’t put the sandbox to sleep.",
+};
+const OFFLINE = "Couldn’t reach Boat. Check your internet connection, then send your message again.";
+
 const safe = (e: unknown, what: string) => {
   console.error(`${what} failed`, e instanceof Error ? e.message.slice(0, 200) : "unknown");
-  return e instanceof BoatError && e.message.startsWith("boat: selected environment") ? e.message : `${what} failed`;
+  if (isNetworkError(e)) return OFFLINE;
+  if (isBoatStatus(e, 401, 403)) return "Boat refused Dorks’ key. Reconnect Boat in Settings.";
+  if (e instanceof BoatError && e.message.startsWith("boat: selected environment")) return e.message;
+  return FAILED[what] ?? `${what} failed`;
 };
 
 export interface BoxInfo {

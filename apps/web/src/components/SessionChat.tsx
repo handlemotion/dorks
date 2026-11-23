@@ -70,6 +70,10 @@ export function SessionChat({
   const agent = AGENT_NAMES[dork.provider]
   const canReply = !dork.archived
   const current = dork.state === 'working' ? currentStep(view.blocks) : {}
+  // The error that put the Dork in error is said once, in red on the status line, not as its own row above it.
+  const last = view.blocks.at(-1)
+  const problem = dork.state === 'error' && last?.kind === 'notice' && last.level === 'error' ? last.text : undefined
+  const blocks = problem ? view.blocks.slice(0, -1) : view.blocks
   return (
     <>
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
@@ -86,7 +90,7 @@ export function SessionChat({
               )}
               <LocalAccessProvider dorkId={dorkId} agent={agent}>
                 <ChatMessages
-                  blocks={view.blocks}
+                  blocks={blocks}
                   imageUrl={actions.imageUrl}
                   agent={agent}
                   onOpenSteps={onOpenSteps}
@@ -113,6 +117,7 @@ export function SessionChat({
                   outcome={view.lastOutcome}
                   step={current.tool && stepLabel(current.tool)}
                   since={current.since}
+                  problem={problem}
                   onOpen={onOpenSteps && view.blocks.some((b) => b.kind === 'tool') ? () => onOpenSteps(current.tool ? [current.tool.id] : []) : undefined}
                 />
               </div>

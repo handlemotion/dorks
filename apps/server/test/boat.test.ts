@@ -236,6 +236,16 @@ describe("Boat sandbox provider", () => {
     expect(attempts[0].body).toEqual(attempts[1].body);
   });
 
+  it("rides out a dropped connection on reads instead of failing the create", async () => {
+    const f = fake();
+    let drops = 2;
+    f.setFail((method, path) => {
+      if (method === "GET" && path.startsWith("/api/v1/sandboxes?") && drops-- > 0) throw new TypeError("fetch failed");
+    });
+    await f.provider.createFromSnapshot("dorks-base", CREATE);
+    expect(f.requests.filter((r) => r.method === "GET" && r.path.startsWith("/api/v1/sandboxes?"))).toHaveLength(3);
+  });
+
   it("keeps boxes from another Dorks installation separate", async () => {
     const f = fake();
     const first = await f.provider.createFromSnapshot("dorks-base", CREATE);

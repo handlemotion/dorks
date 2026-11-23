@@ -12,6 +12,7 @@ import {
   isBoatStatus,
   isGone,
   isTransient,
+  withNetworkRetry,
   listSandboxes,
   makeBoatCall,
   optionalOn404,
@@ -65,8 +66,8 @@ export function boatSnapshotDriver(opts: BoatSnapshotOptions): SnapshotDriver {
 }
 
 function boatSnapshotOps(opts: BoatSnapshotOptions): SnapshotOps {
-  const call = makeBoatCall(opts);
   const pause = pauseWith(opts.sleep);
+  const call = withNetworkRetry(makeBoatCall(opts), pause);
   const commands = (id: string, suffix = "") => sandboxPath(id, `/commands${suffix}`);
 
   const waitReady = (id: string) =>

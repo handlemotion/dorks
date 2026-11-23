@@ -10,7 +10,13 @@ type Live = 'connecting' | 'live' | 'offline' | 'unauthorized'
  * What the Dork is doing, said about the Dork (not its sandbox), and the dot colour that goes with it. Moving states shimmer and the
  * dot changes shape. `outcome` is how the latest turn ended: a turn the user stopped reads as Stopped, never as an error.
  */
-function describeDork(name: string, state: DorkState | undefined, live: Live | undefined, outcome?: TurnOutcome | null): { label: string; tone: string; moving?: boolean } {
+function describeDork(
+  name: string,
+  state: DorkState | undefined,
+  live: Live | undefined,
+  outcome?: TurnOutcome | null,
+  problem?: string,
+): { label: string; tone: string; moving?: boolean; failed?: boolean } {
   if (live === 'offline' || live === 'connecting') return { label: 'Reconnecting to the server…', tone: 'bg-amber-500', moving: true }
   switch (state) {
     case 'creating':
@@ -24,7 +30,7 @@ function describeDork(name: string, state: DorkState | undefined, live: Live | u
     case 'sleeping':
       return { label: `${name} is sleeping`, tone: 'bg-muted-foreground/50' }
     case 'error':
-      return { label: `${name} ran into a problem`, tone: 'bg-destructive' }
+      return { label: problem || `${name} ran into a problem`, tone: 'bg-destructive', failed: true }
     default:
       return { label: 'Connecting…', tone: 'bg-muted-foreground/50', moving: true }
   }
@@ -56,6 +62,7 @@ export function AgentStatus({
   step,
   since,
   onOpen,
+  problem,
 }: {
   state?: DorkState
   live?: Live
@@ -64,8 +71,10 @@ export function AgentStatus({
   step?: string
   since?: number
   onOpen?: () => void
+  /** Why the Dork is in error (the server's message), said on this line in red instead of a separate error row. */
+  problem?: string
 }) {
-  const described = describeDork(name, state, live, outcome)
+  const described = describeDork(name, state, live, outcome, problem)
   const working = state === 'working' && !!described.moving && live !== 'offline' && live !== 'connecting'
   const label = working && step ? step : described.label
   const { tone, moving } = described
@@ -74,7 +83,7 @@ export function AgentStatus({
   const words = (
     <>
       <span aria-hidden className={`size-2 shrink-0 rounded-full ${tone} ${moving ? 'status-shape' : ''}`} />
-      <span className="min-w-0 truncate">{moving ? <WordShimmer key={label}>{label}</WordShimmer> : label}</span>
+      <span className={`min-w-0 ${described.failed ? 'text-destructive' : 'truncate'}`}>{moving ? <WordShimmer key={label}>{label}</WordShimmer> : label}</span>
       {/* Hidden from screen readers: a clock ticking every second would be read out each time. */}
       {time && (
         <span aria-hidden className="shrink-0 text-muted-foreground tabular-nums">

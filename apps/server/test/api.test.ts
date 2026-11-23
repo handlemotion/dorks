@@ -562,7 +562,7 @@ describe("creating a dork", () => {
         .events(id)
         .filter((e) => e.body.type === "error")
         .map((e) => (e.body as { message: string }).message),
-    ).toEqual(["create_box failed"]);
+    ).toEqual(["Couldn’t start the sandbox. Send your message again to retry."]);
   });
 
   it("without a base snapshot a session is refused until one is set", async () => {
