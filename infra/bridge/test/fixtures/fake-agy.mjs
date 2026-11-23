@@ -38,14 +38,21 @@ const conversation = at >= 0 ? args[at + 1] : "conv_fake";
 send({ event: "init", conversation_id: conversation, init: { cwd: process.cwd(), tools: ["run_command"], permission_mode: "always-proceed" } });
 let step = 0;
 let turns = 0;
-process.on("SIGINT", () => process.exit(130));
+let waiting = false;
+// FAKE_AGY_SLOW_INTERRUPT: SIGINT only cancels the turn, and the cancelled turn's result comes later than the bridge's first check.
+process.on("SIGINT", () => {
+  if (!process.env.FAKE_AGY_SLOW_INTERRUPT) process.exit(130);
+  if (!waiting) return;
+  waiting = false;
+  setTimeout(() => send({ event: "result", result: { conversation_id: conversation, status: "INTERRUPTED", num_turns: turns } }), Number(process.env.FAKE_AGY_SLOW_INTERRUPT));
+});
 const step_update = (s) => send({ event: "step_update", step_update: { conversation_id: conversation, step_index: step++, ...s } });
 createInterface({ input: process.stdin }).on("line", (line) => {
   const m = JSON.parse(line);
   const prompt = typeof m.message.content === "string" ? m.message.content : m.message.content.map((b) => b.text).join("");
   if (report) appendFileSync(report, JSON.stringify({ prompt }) + "\n");
   step_update({ state: "DONE", step_type: "user_input" });
-  if (process.env.FAKE_AGY_WAIT && !prompt.includes("again")) return; // a long turn, until SIGINT
+  if (process.env.FAKE_AGY_WAIT && !prompt.includes("again")) return void (waiting = true); // a long turn, until SIGINT
   // A call is announced before the model has written its parameters, then runs, then ends: one step index throughout.
   const call = step++;
   const tool = (s) => send({ event: "step_update", step_update: { conversation_id: conversation, step_index: call, step_type: "tool", tool_name: "run_command", ...s } });
