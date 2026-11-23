@@ -1,10 +1,10 @@
-import { memo, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
+import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { BoxIcon, ChevronRightIcon, ImageOffIcon, MessageSquareIcon, UsersIcon, CircleAlertIcon, CircleCheckIcon, CircleStopIcon, ReplyIcon } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { Button } from '@dorks/ui/button'
 import type { Block } from '@dorks/shared'
 import { Bubble, BubbleContent } from '@dorks/ui/bubble'
-import { defaultRehypePlugins, defaultUrlTransform, Markdown, markdownComponents } from '@dorks/ui/markdown'
+import { Markdown, type MarkdownImageProps } from '@dorks/ui/markdown'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@dorks/ui/context-menu'
 import { DropdownMenuItem } from '@dorks/ui/dropdown-menu'
 import { HoverActions } from './message-actions/MessageActions'
@@ -18,7 +18,7 @@ import { toolStep } from '../lib/progress'
 import { hookLine } from '../lib/hooks'
 import { MessageScrollerItem } from '@dorks/ui/message-scroller'
 import { LocalRequestCard } from './LocalRequest'
-import { AgentCode } from './CodeBlockCard'
+import { MarkdownCodeBlock } from './CodeBlockCard'
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from '@dorks/ui/trace'
 
 type ToolBlock = Extract<Block, { kind: 'tool' }>
@@ -141,62 +141,22 @@ function ImageUnavailable({ alt }: { alt?: string }) {
   )
 }
 
-function AgentImage(props: { src?: string | Blob; alt?: string }) {
-  return <ChatImage {...props} large />
+/** An agent's image, large; a source the browser cannot load (an id the web could not resolve, a bare file name, `file://`) shows as missing. */
+function AgentImage({ src, alt }: MarkdownImageProps) {
+  if (!LOADABLE.test(src)) return <ImageUnavailable alt={alt} />
+  return <ChatImage src={src} alt={alt} large />
 }
 
-// Module-level so Streamdown's memo holds; overrides images, unavailable-image spans, and fenced code blocks (Pierre card-on-card).
-const MARKDOWN = { ...markdownComponents, img: AgentImage, code: AgentCode, span: MarkdownSpan }
-
-/** A span from the markdown; the ones `markUnavailableImages` left for an image that cannot load become its placeholder. */
-function MarkdownSpan({ node: _node, ...props }: ComponentProps<'span'> & { node?: unknown; 'data-image-unavailable'?: string }) {
-  if (props['data-image-unavailable'] !== undefined) return <ImageUnavailable alt={props['data-image-unavailable']} />
-  return <span {...props} />
-}
-
-/**
- * Agents paste screenshots as `data:image/…` URLs. Streamdown drops those twice (its URL transform and its sanitize schema, which
- * allows only http(s) image sources); both are widened for image sources alone. Links and everything else keep the defaults, and
- * the harden step still only lets `data:image/` through.
- */
-const [sanitize, schema] = defaultRehypePlugins.sanitize as [unknown, { protocols?: Record<string, string[]> }]
-const { harden, ...beforeHarden } = defaultRehypePlugins
-const REHYPE = Object.values({
-  ...beforeHarden,
-  sanitize: [sanitize, { ...schema, protocols: { ...schema.protocols, src: [...(schema.protocols?.src ?? []), 'data'] } }],
-  unavailable: markUnavailableImages,
-  harden,
-}) as (typeof defaultRehypePlugins)[string][]
-
-type HastNode = { type: string; tagName?: string; properties?: Record<string, unknown>; children?: HastNode[] }
-
-/** The image sources the harden step lets through (`rehype-harden` with Streamdown's wildcard options): web URLs, same-origin paths, `data:image/`, `blob:`. */
+/** The image sources a message can show: web URLs, same-origin paths, `data:image/`, `blob:`. */
 const LOADABLE = /^(?:https?:|blob:|data:image\/|\.{0,2}\/)/i
 
 /**
- * An image the harden step would block (an id the web could not resolve, a bare file name, `file://`) would show as the raw text
- * "[Image blocked: …]". Runs just before it and turns such an image into a span that `MarkdownSpan` shows as a placeholder.
+ * An agent message's markdown: its images large and openable (inline `data:image/…` screenshots too) and its code fences Pierre-drawn
+ * (card-on-card). Progress and the PR panel show messages with it too. `streaming` while the text is still arriving.
  */
-function markUnavailableImages() {
-  const walk = (node: HastNode) => {
-    for (const [i, child] of (node.children ?? []).entries()) {
-      if (child.type === 'element' && child.tagName === 'img') {
-        const src = child.properties?.src
-        if (typeof src === 'string' && LOADABLE.test(src)) continue
-        const alt = typeof child.properties?.alt === 'string' ? child.properties.alt : ''
-        node.children![i] = { type: 'element', tagName: 'span', properties: { dataImageUnavailable: alt }, children: [] }
-      } else walk(child)
-    }
-  }
-  return walk
-}
-
-const allowDataImages: typeof defaultUrlTransform = (url, key, node) => (key === 'src' && url.startsWith('data:image/') ? url : defaultUrlTransform(url, key, node))
-
-/** An agent message's markdown: its images large and openable, inline `data:image/…` screenshots kept. Progress shows messages with it too. */
-export function AgentMarkdown({ children, className }: { children: string; className?: string }) {
+export function AgentMarkdown({ children, className, streaming }: { children: string; className?: string; streaming?: boolean }) {
   return (
-    <Markdown components={MARKDOWN} urlTransform={allowDataImages} rehypePlugins={REHYPE} className={className}>
+    <Markdown codeBlock={MarkdownCodeBlock} image={AgentImage} isAnimating={streaming} className={className}>
       {children}
     </Markdown>
   )
@@ -333,7 +293,11 @@ function ToolCall({ block }: { block: ToolBlock }) {
 function AgentText({ block }: { block: Extract<AgentBlock, { kind: 'assistant' }> }) {
   const { onReply } = useReply()
   // The conversation reads at 14px (`text-message`): the agent's replies, the user's bubbles, the tool lines and the status line under them.
-  const markdown = <AgentMarkdown className="text-message">{block.text}</AgentMarkdown>
+  const markdown = (
+    <AgentMarkdown className="text-message" streaming={block.streaming}>
+      {block.text}
+    </AgentMarkdown>
+  )
   if (block.streaming) return <div className="min-w-0">{markdown}</div>
   return (
     <HoverActions
