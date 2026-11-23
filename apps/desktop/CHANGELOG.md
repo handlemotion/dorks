@@ -1,5 +1,17 @@
 # @dorks/desktop
 
+## 0.5.1
+
+### Patch Changes
+
+- [#163](https://github.com/handlemotion/dorks/pull/163) [`c95f3bd`](https://github.com/handlemotion/dorks/commit/c95f3bdd462f1eced6aff71a7408d2445b009e43) Thanks [@handlemotion](https://github.com/handlemotion)! - With an image attached, the composer's text stays level with the attach button. Queued messages now sit as rows in a frame joined to the top of the composer, like a code block, instead of reply-style cards. Tool summary lines and the agent status line can no longer be selected, so copying from a chat picks up only the messages. The usage menu has a single hairline border, and its links open Claude's and Boat's usage pages on the web. The sidebar's first row sits a little lower, at the same height in the app and in Settings.
+
+- [#165](https://github.com/handlemotion/dorks/pull/165) [`22d22bd`](https://github.com/handlemotion/dorks/commit/22d22bdb9067650bad8f59359bf5c70e1159f6c9) Thanks [@handlemotion](https://github.com/handlemotion)! - Diffs in the agent's messages (`diff` code blocks) are drawn like the diffs in a pull request, with added and removed lines filled in instead of coloured text. In Progress, click a message to fold away the steps under it.
+
+- [#161](https://github.com/handlemotion/dorks/pull/161) [`3249ec1`](https://github.com/handlemotion/dorks/commit/3249ec12f343a45bdd406a2d8d95666c3f9aa48a) Thanks [@handlemotion](https://github.com/handlemotion)! - Long chats stay smooth while the agent streams, and scrolling up loads older messages on its own, in bigger pages. Screenshots in Artifacts, the image viewer and the chat load as small thumbnails, so the grid scrolls and the viewer opens and swipes without stutter.
+
+- [#165](https://github.com/handlemotion/dorks/pull/165) [`22d22bd`](https://github.com/handlemotion/dorks/commit/22d22bdb9067650bad8f59359bf5c70e1159f6c9) Thanks [@handlemotion](https://github.com/handlemotion)! - Agent messages now stream through Words, Pierre's faster markdown renderer. They look the same as before, and code blocks keep their state while a message streams in.
+
 ## 0.5.0
 
 ### Minor Changes
