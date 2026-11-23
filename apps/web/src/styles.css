@@ -181,19 +181,19 @@
     animation: word-shimmer 2s step-end infinite;
   }
   .dork-flap-1 {
-    animation: dork-flap-cycle 4.4s linear 0s infinite;
+    animation: dork-flap-cycle 6.4s linear 0s infinite;
   }
   .dork-flap-2 {
-    animation: dork-flap-cycle 4.4s linear -1.1s infinite;
+    animation: dork-flap-cycle 6.4s linear -1.6s infinite;
   }
   .dork-flap-3 {
-    animation: dork-flap-cycle 4.4s linear -2.2s infinite;
+    animation: dork-flap-cycle 6.4s linear -3.2s infinite;
   }
   .dork-flap-4 {
-    animation: dork-flap-cycle 4.4s linear -3.3s infinite;
+    animation: dork-flap-cycle 6.4s linear -4.8s infinite;
   }
   .dork-gradient-drift {
-    animation: dork-gradient-drift 2.8s ease-in-out infinite;
+    animation: dork-gradient-drift 4s ease-in-out infinite;
   }
 }
 
