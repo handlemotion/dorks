@@ -95,11 +95,11 @@ describe("Antigravity (agy) through its streaming headless mode", () => {
 
     const normalize = createNormalizer();
     const raws = s.transport.events().map((e) => e.raw);
-    const types = raws
-      .flatMap((raw) => normalize(raw))
-      .filter((n) => n.kind === "event")
-      .map((n) => n.body.type);
+    const bodies = raws.flatMap((raw) => normalize(raw)).flatMap((n) => (n.kind === "event" ? [n.body] : []));
+    const types = bodies.map((b) => b.type);
     expect(types).toEqual(expect.arrayContaining(["assistant_delta", "assistant_message", "tool_use", "tool_result", "turn_complete"]));
+    // A call agy announced before its parameters shows once, with them (an early empty one used to stick as a blank "Used" row).
+    expect(bodies.filter((b) => b.type === "tool_use").map((b) => (b as { summary: string }).summary)).toEqual(["echo hi"]);
     expect(JSON.stringify(raws)).toContain("Done: fix tests");
     expect(s.logs.join(" ")).not.toContain("agy-subscription-secret");
   });

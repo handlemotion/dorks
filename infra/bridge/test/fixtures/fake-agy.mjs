@@ -46,7 +46,12 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   if (report) appendFileSync(report, JSON.stringify({ prompt }) + "\n");
   step_update({ state: "DONE", step_type: "user_input" });
   if (process.env.FAKE_AGY_WAIT && !prompt.includes("again")) return; // a long turn, until SIGINT
-  step_update({ state: "DONE", step_type: "tool", tool_name: "run_command", tool_info: { name: "run_command", parameters: { CommandLine: "echo hi" }, output: "hi\n" } });
+  // A call is announced before the model has written its parameters, then runs, then ends: one step index throughout.
+  const call = step++;
+  const tool = (s) => send({ event: "step_update", step_update: { conversation_id: conversation, step_index: call, step_type: "tool", tool_name: "run_command", ...s } });
+  tool({ state: "PENDING", tool_info: { name: "run_command", parameters: {} } });
+  tool({ state: "ACTIVE", tool_info: { name: "run_command", parameters: { CommandLine: "echo hi" } } });
+  tool({ state: "DONE", tool_info: { name: "run_command", parameters: { CommandLine: "echo hi" }, output: "hi\n" } });
   const id = step++;
   send({ event: "step_update", step_update: { conversation_id: conversation, step_index: id, state: "ACTIVE", step_type: "agent_response", text_delta: "Done: " } });
   send({ event: "step_update", step_update: { conversation_id: conversation, step_index: id, state: "DONE", step_type: "agent_response", text_delta: prompt.split("\n").pop() } });
