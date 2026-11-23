@@ -115,13 +115,10 @@ function ChatImageView({ src, alt, large }: { src?: string | Blob; alt?: string;
 /** Where an image should be but cannot be shown: its caption, marked as missing, in place of a broken image or a blank space. */
 function ImageUnavailable({ alt }: { alt?: string }) {
   return (
-    <span
-      data-testid="image-unavailable"
-      title="This image could not be loaded"
-      className="my-1 inline-flex max-w-full items-center gap-2 rounded-(--control-radius) bg-muted px-3 py-2 align-top text-sm text-muted-foreground"
-    >
-      <ImageOffIcon className="size-4 shrink-0" aria-hidden />
-      <span className="min-w-0 truncate">{alt ? `${alt} (image not available)` : 'Image not available'}</span>
+    // Plain muted text in the flow of the message, not a box: it reads the same mid-sentence or on a line of its own.
+    <span data-testid="image-unavailable" title="This image could not be loaded" className="text-muted-foreground">
+      <ImageOffIcon className="mr-1 inline size-[1em] align-[-0.125em]" aria-hidden />
+      {alt ? `${alt} (image not available)` : 'Image not available'}
     </span>
   )
 }
