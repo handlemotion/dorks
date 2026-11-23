@@ -5,6 +5,8 @@
  */
 export function markdownPatch(code: string): { patch: string; numbered: boolean } | null {
   const lines = code.replace(/\n+$/, '').split('\n')
+  // Pierre draws one file's patch (a second file throws), so a multi-file patch stays plain code.
+  if (lines.filter((l) => l.startsWith('+++ ')).length > 1 || lines.filter((l) => l.startsWith('diff --git ')).length > 1) return null
   if (lines.some((l) => /^@@ -\d/.test(l))) {
     const headed = lines.some((l) => l.startsWith('--- ')) && lines.some((l) => l.startsWith('+++ '))
     return { patch: `${headed ? '' : '--- a/file\n+++ b/file\n'}${lines.join('\n')}\n`, numbered: true }
