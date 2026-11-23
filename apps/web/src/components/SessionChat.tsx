@@ -135,6 +135,7 @@ export function SessionChat({
         agentLabel={dork.codexModel?.model}
         picker={claudePicker(dork, settings?.claudeModels, (model, effort, fast) => void modelSwitch.run(() => actions.chooseModel(dorkId, model ?? null, effort ?? null, fast)))}
         upload={actions.uploadImage}
+        draftKey={dorkId}
         reply={reply}
         onClearReply={() => setReply(undefined)}
         onSubmit={(images) =>

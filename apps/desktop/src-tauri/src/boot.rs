@@ -198,6 +198,9 @@ pub fn show_main(app: &AppHandle) {
         .focused(!window::verification_mode())
         .theme(window::tauri_theme(theme))
         .initialization_script(script)
+        // Tauri's own drag-and-drop handler takes files dragged in from Finder before the page sees them; without it they arrive
+        // as HTML5 drop events, which the chat composer attaches.
+        .disable_drag_drop_handler()
         .on_navigation(move |url| allow_navigation(&handle, url))
         .on_new_window(move |url, _features| open_new_window(&opener, url));
     // A transparent webview is what lets the material show through the page; only ask for it when there is one behind it.
