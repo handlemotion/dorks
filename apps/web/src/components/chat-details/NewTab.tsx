@@ -44,7 +44,7 @@ export function NewTab({
   const shownPreviews = previews.filter((s) => match(s.name))
   const shownArtifacts = artifacts.filter((a) => (a.src || a.href) && match(a.name, a.type))
   const shownPanels = PANELS.filter((p) => !hidePanel(p) && match(PANEL_LABEL[p], panelLabel(p)))
-  const images: LightboxImage[] = artifacts.filter((a) => a.src).map((a) => ({ id: a.id, src: a.src!, alt: a.name, caption: a.name, width: a.width, height: a.height }))
+  const images: LightboxImage[] = artifacts.filter((a) => a.src).map((a) => ({ id: a.id, src: a.src!, thumb: a.thumb, alt: a.name, caption: a.name, width: a.width, height: a.height }))
   const totalRows = prs.length + previews.length + artifacts.filter((a) => a.src || a.href).length + PANELS.filter((p) => !hidePanel(p)).length
   const nothing = shownPrs.length + shownPreviews.length + shownArtifacts.length + shownPanels.length === 0
   return (
@@ -114,8 +114,10 @@ export function NewTab({
                                 imageRef(node)
                                 morphRef(node)
                               }}
-                              src={a.src}
+                              src={a.thumb ?? a.src}
                               alt=""
+                              loading="lazy"
+                              decoding="async"
                               className="size-3.5 shrink-0 rounded-[2px] object-cover outline-1 -outline-offset-1 outline-foreground/15"
                             />
                             <span className="min-w-0 flex-1 truncate">{a.name}</span>

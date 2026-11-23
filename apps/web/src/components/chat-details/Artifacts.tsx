@@ -36,7 +36,7 @@ export function Artifacts({
       </EmptyState>
     )
   // The images among the artifacts share one lightbox, so opening one pages through the others.
-  const images: LightboxImage[] = artifacts.filter((a) => a.src).map((a) => ({ id: a.id, src: a.src!, alt: a.name, caption: a.name, width: a.width, height: a.height }))
+  const images: LightboxImage[] = artifacts.filter((a) => a.src).map((a) => ({ id: a.id, src: a.src!, thumb: a.thumb, alt: a.name, caption: a.name, width: a.width, height: a.height }))
   return (
     <ImageLightbox images={images} label="Artifacts">
       {/* shrink-0: clipping would otherwise let it shrink to the panel's height and cut the grid off instead of scrolling it. */}
@@ -70,7 +70,7 @@ export function Artifacts({
                 key={a.id}
                 image={index >= 0 ? index : undefined}
                 href={a.href}
-                thumb={(imageRef) => (a.src ? <img ref={imageRef} src={a.src} alt="" className="size-full object-cover" /> : null)}
+                thumb={(imageRef) => (a.src ? <img ref={imageRef} src={a.thumb ?? a.src} alt="" loading="lazy" decoding="async" className="size-full object-cover" /> : null)}
                 label={a.type}
               >
                 {a.name}

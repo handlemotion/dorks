@@ -3,7 +3,7 @@ import { ActivityIcon, GitPullRequestIcon, LayersIcon, MonitorIcon, PanelLeftIco
 import { Button } from '@dorks/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@dorks/ui/tabs'
 import { ComputerView } from './ComputerView'
-import { DiffWorkers } from './DiffWorkers'
+import { preloadDiffs } from './diffs'
 import { BAR_BUTTON, PreviewBrowser, useShownServers } from './PreviewBrowser'
 import { Tip } from './Tip'
 import { ProgressPanel } from './ProgressPanel'
@@ -48,6 +48,8 @@ export function ChatDetails({
 }) {
   const tabs = useOpenTabs(sessionId)
   const { open } = tabs
+  // The diff code is not part of the app's start; fetch it once the page is idle, before a PR or an edit is opened.
+  useEffect(preloadDiffs, [])
   // A turn's card in the thread asks for its work: bring Progress up (also when the card opened this panel).
   const { reveal } = useProgress()
   useEffect(() => {
@@ -183,7 +185,7 @@ export function ChatDetails({
   }
 
   return (
-    <DiffWorkers>
+    <>
       <aside
         aria-label="Chat details"
         data-details-panel
@@ -222,7 +224,7 @@ export function ChatDetails({
           ))}
         </Tabs>
       </aside>
-    </DiffWorkers>
+    </>
   )
 }
 

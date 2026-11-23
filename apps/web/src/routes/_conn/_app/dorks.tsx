@@ -30,6 +30,7 @@ import { canCreate } from '../../../lib/onboarding'
 import { usePending } from '../../../lib/pending'
 import { useDraft } from '../../../lib/draft'
 import { useArchiveDork } from '../../../lib/archive'
+import { THUMB_WIDTH } from '../../../lib/images'
 
 // The selected dork lives in the `dork` search param (not local state) so the sidebar can highlight it and the URL is shareable.
 export const Route = createFileRoute('/_conn/_app/dorks')({
@@ -298,7 +299,17 @@ function detailsData(dork: DorkView, blocks: Block[], actions: DorksActions, com
     progress: progressTurns(resolveSharedImages(blocks, actions.imageUrl).blocks),
     tasks: latestTasks(blocks),
     pr: prOf(dork.prUrl, dork.prState),
-    artifacts: dork.images?.map((i, n) => ({ id: i.id, name: i.caption ?? `Screenshot ${n + 1}`, type: 'Screenshot', src: actions.imageUrl(i.id), width: i.width, height: i.height })).reverse(),
+    artifacts: dork.images
+      ?.map((i, n) => ({
+        id: i.id,
+        name: i.caption ?? `Screenshot ${n + 1}`,
+        type: 'Screenshot',
+        src: actions.imageUrl(i.id),
+        thumb: actions.imageUrl(i.id, THUMB_WIDTH),
+        width: i.width,
+        height: i.height,
+      }))
+      .reverse(),
     previews: dork.previews?.map((p) => ({ name: p.title ?? `Port ${p.port}`, url: p.url, port: p.port })),
     computer: { awake: dork.state === 'working' || dork.state === 'idle', working: dork.state === 'working', ...computer },
   }

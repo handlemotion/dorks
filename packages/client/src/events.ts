@@ -14,6 +14,33 @@ export interface EventsState {
   error: ApiError | undefined;
 }
 
+/** Two reads of the same row: equal when nothing in it changed (rows are small, flat JSON). */
+const sameEvent = (a: ClientEvent, b: ClientEvent) => a === b || JSON.stringify(a) === JSON.stringify(b);
+
+/** Same keys holding the same values; `depth` more levels are compared the same way (a block's `input`, `hook`, `peer`). */
+function sameValue(a: unknown, b: unknown, depth: number): boolean {
+  if (a === b) return true;
+  if (depth < 0 || typeof a !== "object" || typeof b !== "object" || !a || !b) return false;
+  const x = a as Record<string, unknown>;
+  const y = b as Record<string, unknown>;
+  const keys = Object.keys(x);
+  return keys.length === Object.keys(y).length && keys.every((k) => sameValue(x[k], y[k], depth - 1));
+}
+
+/**
+ * A refold builds every block anew; keep the old object for each block that did not change, so the UI (which memoizes rendered
+ * messages by block) only redraws what an older page or a rewritten row actually changed.
+ */
+function keepUnchanged(prev: DorkView, next: DorkView): DorkView {
+  if (!prev.blocks.length) return next;
+  const byId = new Map(prev.blocks.map((b) => [b.id, b]));
+  const blocks = next.blocks.map((b) => {
+    const old = byId.get(b.id);
+    return old && sameValue(old, b, 2) ? old : b;
+  });
+  return { ...next, blocks };
+}
+
 const EMPTY: EventsState = { view: emptyView(), loading: true, canLoadMore: false, loadingMore: false, error: undefined };
 
 /**
@@ -28,6 +55,8 @@ export class EventsFeed implements Store<EventsState> {
   private readonly listeners = new Set<() => void>();
   private readonly bySeq = new Map<number, ClientEvent>();
   private folded: DorkView = emptyView();
+  /** The view before its newest event was folded in: a row that grows in place (same seq) is re-applied to it, not refolded from scratch. */
+  private beforeLast: DorkView = emptyView();
   private pending: { id: string; text: string }[] = [];
   private pendingCounter = 0;
   private oldest = Number.POSITIVE_INFINITY;
@@ -43,13 +72,16 @@ export class EventsFeed implements Store<EventsState> {
   private readonly api: Api;
   private readonly dorkId: string;
   private readonly pageSize: number;
+  /** Older pages are bigger than the first: the thread asks for them ahead of the reader, and each is one round trip and one refold. */
+  private readonly olderPageSize: number;
   private readonly onUnauthorized: () => void;
   private readonly retryDelay: (n: number) => number;
 
-  constructor(api: Api, dorkId: string, pageSize: number, onUnauthorized: () => void, retryDelay: (n: number) => number) {
+  constructor(api: Api, dorkId: string, pageSize: number, onUnauthorized: () => void, retryDelay: (n: number) => number, olderPageSize = pageSize) {
     this.api = api;
     this.dorkId = dorkId;
     this.pageSize = pageSize;
+    this.olderPageSize = olderPageSize;
     this.onUnauthorized = onUnauthorized;
     this.retryDelay = retryDelay;
   }
@@ -78,7 +110,7 @@ export class EventsFeed implements Store<EventsState> {
     this.publish();
     this.enqueue(async () => {
       try {
-        const page = await this.api.events(this.dorkId, { before: this.oldest, limit: this.pageSize });
+        const page = await this.api.events(this.dorkId, { before: this.oldest, limit: this.olderPageSize });
         this.upsert(page.events);
         this.hasMore = page.hasMore;
         this.error = undefined;
@@ -154,20 +186,29 @@ export class EventsFeed implements Store<EventsState> {
     const ordered = [...events].sort((a, b) => a.seq - b.seq);
     let refold = false;
     for (const e of ordered) {
-      const known = this.bySeq.has(e.seq);
+      const known = this.bySeq.get(e.seq);
+      // The tail re-reads the newest row every time: unchanged, it changes nothing.
+      if (known && sameEvent(known, e)) continue;
       this.bySeq.set(e.seq, e);
       this.oldest = Math.min(this.oldest, e.seq);
       if (e.type === "user_message" && !known) {
         const i = this.pending.findIndex((p) => p.text === e.text);
         if (i >= 0) this.pending.splice(i, 1); // the server has it now: the confirmed row replaces the optimistic one
       }
-      if (e.seq > this.folded.lastSeq) this.folded = fold(this.folded, e);
-      else refold = true; // older page, or a row rewritten in place
+      if (e.seq > this.folded.lastSeq) {
+        this.beforeLast = this.folded;
+        this.folded = fold(this.folded, e);
+      } else if (!refold && e.seq === this.folded.lastSeq && this.beforeLast.lastSeq < e.seq) {
+        this.folded = fold(this.beforeLast, e); // the newest row grew in place: re-apply just it
+      } else refold = true; // an older page, or an older row rewritten
     }
     if (refold) {
+      const all = [...this.bySeq.values()].sort((a, b) => a.seq - b.seq);
       let v = emptyView();
-      for (const e of [...this.bySeq.values()].sort((a, b) => a.seq - b.seq)) v = fold(v, e);
-      this.folded = v;
+      for (const e of all.slice(0, -1)) v = fold(v, e);
+      this.beforeLast = v;
+      const last = all.at(-1);
+      this.folded = keepUnchanged(this.folded, last ? fold(v, last) : v);
     }
   }
 

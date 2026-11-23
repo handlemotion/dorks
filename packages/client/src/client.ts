@@ -22,8 +22,10 @@ import type {
 } from "./types.ts";
 
 export interface ClientConfig extends ApiConfig {
-  /** Events fetched per page. */
+  /** Events fetched for a transcript's first (newest) page. */
   pageSize?: number;
+  /** Events fetched per older page (`loadMore`); the server caps a page at 200. Default: 150, or `pageSize` when that is larger. */
+  olderPageSize?: number;
   /** Delay before retry n of a failed read and before reconnect attempt n of the live stream. */
   retryDelay?: (n: number) => number;
 }
@@ -236,7 +238,8 @@ export class DorksClient {
   events(dorkId: string): EventsFeed {
     let f = this.feeds.get(dorkId);
     if (!f) {
-      f = new EventsFeed(this.api, dorkId, this.cfg.pageSize ?? 40, this.qopts.onUnauthorized, this.qopts.retryDelay);
+      const pageSize = this.cfg.pageSize ?? 40;
+      f = new EventsFeed(this.api, dorkId, pageSize, this.qopts.onUnauthorized, this.qopts.retryDelay, this.cfg.olderPageSize ?? Math.max(pageSize, 150));
       this.feeds.set(dorkId, f);
     }
     return f;
@@ -328,7 +331,8 @@ export class DorksClient {
     /** Uploads an image for the message being written; resolves with its id. */
     uploadImage: async (image: Blob) => (await this.api.uploadImage(image)).id,
     /** Where a shared screenshot (`dorks-image:<id>` in a message) loads from. The id is the capability: no token in the URL. */
-    imageUrl: (imageId: string) => `${this.cfg.baseUrl.replace(/\/+$/, "")}/images/${encodeURIComponent(imageId)}`,
+    /** `width`: a smaller copy for showing it small (the server snaps it to a size it keeps; an older server sends the original). */
+    imageUrl: (imageId: string, width?: number) => `${this.cfg.baseUrl.replace(/\/+$/, "")}/images/${encodeURIComponent(imageId)}${width ? `?w=${width}` : ""}`,
     chooseCodexModel: async (id: string, model: string, effort: string) => {
       await this.api.chooseCodexModel(id, model, effort);
       this.invalidate(`dork:${id}`);

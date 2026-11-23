@@ -4,6 +4,7 @@ import { Popover, PopoverContent } from '@dorks/ui/popover'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@dorks/ui/input-group'
 import { quoteText, replyLabel, type Reply } from '../lib/reply'
 import { Tip } from './Tip'
+import { sizedImage, THUMB_WIDTH } from '../lib/images'
 
 /** How the transcript starts a reply: attached to the composer (`onReply`, the default), or sent from a selection's box (`onSend`). */
 export interface ReplyHandlers {
@@ -216,7 +217,12 @@ function ReplyLine({ reply, className = '' }: { reply: Reply; className?: string
     <span className={`flex min-w-0 items-center gap-2 ${className}`}>
       <ReplyIcon aria-hidden className="size-3.5 shrink-0" />
       {reply.kind === 'image' && reply.src && (
-        <img src={reply.src} alt="" className="size-5 shrink-0 rounded-[4px] object-cover outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10" />
+        <img
+          src={sizedImage(reply.src, THUMB_WIDTH)}
+          alt=""
+          decoding="async"
+          className="size-5 shrink-0 rounded-[4px] object-cover outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
+        />
       )}
       <span className="min-w-0 truncate">{reply.kind === 'text' ? `“${replyLabel(reply)}”` : replyLabel(reply)}</span>
     </span>

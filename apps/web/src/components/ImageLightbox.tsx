@@ -3,7 +3,7 @@ import { ChevronLeftIcon, ChevronRightIcon, XIcon } from 'lucide-react'
 import * as Lightbox from '@ramka/react/lightbox'
 
 /** One image a lightbox can show. Give the real pixel size when it is known: the viewer fits and morphs from it. */
-export type LightboxImage = { id: string; src: string; alt: string; caption?: string; width?: number; height?: number }
+export type LightboxImage = { id: string; src: string; alt: string; caption?: string; width?: number; height?: number; /** A smaller copy for the thumbnail strip. */ thumb?: string }
 
 const control =
   'inline-flex size-8 items-center justify-center rounded-(--control-radius) text-muted-foreground outline-none hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-30 [&_svg]:size-4'
@@ -22,7 +22,7 @@ export function ImageLightbox({ images, label, children }: { images: LightboxIma
       <Lightbox.Portal>
         <Lightbox.Backdrop className="fixed inset-0 z-50 bg-background opacity-0 transition-opacity duration-(--lightbox-vt-duration,300ms) data-open:opacity-[calc(1_-_var(--lightbox-pull-progress,0)*0.6)] data-open:starting:opacity-0 data-pulling:transition-none" />
         <Lightbox.Content aria-label={label} className="group/lb fixed inset-0 z-50 flex flex-col outline-none">
-          <Lightbox.Slides aria-roledescription="carousel" aria-label={label} className="flex-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <Lightbox.Slides preload={2} aria-roledescription="carousel" aria-label={label} className="flex-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {images.map((image, index) => (
               <Lightbox.Slide key={image.id} className={`h-full min-w-full flex-[0_0_100%] px-16 pt-14 ${images.length > 1 ? 'pb-[134px]' : 'pb-16'}`}>
                 <Lightbox.Item index={index} caption={image.caption ?? image.alt} aria-roledescription="slide" aria-label={`${index + 1} of ${images.length}`} className="size-full">
@@ -71,8 +71,9 @@ export function ImageLightbox({ images, label, children }: { images: LightboxIma
                       className="relative block size-(--thumb) shrink-0 cursor-pointer overflow-hidden rounded-(--control-radius) bg-app outline-none focus-visible:outline-2 focus-visible:outline-ring"
                     >
                       <img
-                        src={image.src}
+                        src={image.thumb ?? image.src}
                         alt=""
+                        decoding="async"
                         draggable={false}
                         className="block size-full rounded-(--control-radius) object-cover outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
                       />

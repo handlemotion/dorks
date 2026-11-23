@@ -20,20 +20,17 @@ const cn = (...names: (string | false | null | undefined)[]) => names.filter(Boo
 
 type Vote = 'up' | 'down' | null
 
+// Built once: a formatter is costly to make, and every message in a long transcript formats its time.
+const ABSOLUTE = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+const CLOCK = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
+
 function formatAbsolute(date: Date) {
-  return date.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
+  return ABSOLUTE.format(date)
 }
 
 /** "4:17": the clock time alone, short enough for the transcript's 30px gutter. The tooltip carries the date. */
 function formatClock(date: Date) {
-  return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
-    .formatToParts(date)
+  return CLOCK.formatToParts(date)
     .filter((p) => p.type !== 'dayPeriod')
     .map((p) => p.value)
     .join('')

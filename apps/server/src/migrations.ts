@@ -473,4 +473,14 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX queued_messages_dork ON queued_messages (dork_id, created_at);
   ALTER TABLE dork_runtime ADD COLUMN queue_hold INTEGER NOT NULL DEFAULT 0;
   `,
+  `
+  -- Smaller copies of shared images (services/imageThumbs.ts, GET /images/:id?w=): made on first request, deleted with their image.
+  CREATE TABLE image_thumbs (
+    id TEXT NOT NULL REFERENCES images (id) ON DELETE CASCADE,
+    width INTEGER NOT NULL,
+    mime TEXT NOT NULL,
+    bytes BLOB NOT NULL,
+    PRIMARY KEY (id, width)
+  );
+  `,
 ];
