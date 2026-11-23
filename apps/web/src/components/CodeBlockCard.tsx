@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { File } from '@pierre/diffs/react'
+import { File } from './diffs'
 import { useTheme } from 'next-themes'
 import { useIsCodeFenceIncomplete, type ExtraProps } from 'streamdown'
 import { cn } from 'cn'
@@ -64,6 +64,8 @@ export function MarkdownCodeBlock({ code, language }: { code: string; language: 
         <File
           file={file}
           options={options}
+          // Plain text in the same box until the highlighter has loaded (only the first code block after the app starts waits for it).
+          fallback={<pre className="overflow-x-auto px-4 py-2.5 font-mono text-xs leading-5">{trimmed}</pre>}
           className="block [--diffs-bg:var(--surface)] [--diffs-font-family:var(--font-mono)] [--diffs-font-size:12px] [--diffs-line-height:20px] dark:[--diffs-bg:var(--background)]"
         />
       </div>
