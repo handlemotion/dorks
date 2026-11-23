@@ -1,5 +1,13 @@
 # @dorks/desktop
 
+## 0.4.0
+
+### Minor Changes
+
+- [#134](https://github.com/handlemotion/dorks/pull/134) [`3ca7f8f`](https://github.com/handlemotion/dorks/commit/3ca7f8f767e40164f8060339bb48a72c8f18e36e) Thanks [@handlemotion](https://github.com/handlemotion)! - Antigravity (Google's `agy` CLI, with the Gemini models your Google AI plan includes) is now an agent next to Claude Code, Codex and OpenCode, with the same PR hooks, done gate, autonomy, MCP tools, skills and model choice. Connect it with one "Sign in with Google" button in setup, onboarding or Settings; a Gemini API key (`GEMINI_API_KEY` shared secret) also works.
+
+- [#132](https://github.com/handlemotion/dorks/pull/132) [`441a919`](https://github.com/handlemotion/dorks/commit/441a919a5fd2f1e2330650b45e2b61997fdd31f8) Thanks [@handlemotion](https://github.com/handlemotion)! - OpenCode is now a third agent next to Claude Code and Codex: pick any of its providers' models (OpenCode Zen, DeepSeek and the rest) and it gets the same PR hooks, done gate and autonomy. Save the provider's key (such as `OPENCODE_API_KEY` or `DEEPSEEK_API_KEY`) as a shared secret.
+
 ## 0.3.1
 
 ### Patch Changes
