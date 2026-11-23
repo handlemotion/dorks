@@ -67,12 +67,28 @@ function appIcon(x, y, s) {
 }
 
 function trayIcon(x, y, s) {
-  const c = s / 2,
-    d = Math.hypot(x - c, y - c);
-  let px = [0, 0, 0, 0];
-  px = over(px, [0, 0, 0], cover(Math.abs(d - s * 0.34) - s * 0.075));
-  px = over(px, [0, 0, 0], cover(d - s * 0.13));
-  return px;
+  // Three stacked lobes from DorkIcon (200x200 space: ellipses at cy=40, 100, 160 with rx=80, ry=40),
+  // scaled to ~82% of the 44px canvas (~18pt optical height at 2x) with 4x4 supersampling.
+  const scale = (s * 0.82) / 200;
+  const half = s / 2;
+  let hits = 0;
+  for (let sy = 0; sy < 4; sy++) {
+    for (let sx = 0; sx < 4; sx++) {
+      const px = (x - 0.5 + (sx + 0.5) / 4 - half) / scale + 100;
+      const py = (y - 0.5 + (sy + 0.5) / 4 - half) / scale + 100;
+      const dx = (px - 100) / 80;
+      const dx2 = dx * dx;
+      if (dx2 > 1) continue;
+      for (const cy of [40, 100, 160]) {
+        const dy = (py - cy) / 40;
+        if (dx2 + dy * dy <= 1) {
+          hits++;
+          break;
+        }
+      }
+    }
+  }
+  return [0, 0, 0, (hits / 16) * 255];
 }
 
 mkdirSync(new URL("../src-tauri/icons/", import.meta.url), { recursive: true });
