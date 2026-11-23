@@ -215,15 +215,20 @@ pub fn show_main(app: &AppHandle) {
     }
 }
 
-/// The window only ever shows the bundled UI. Other http(s) links open in the browser instead.
+/// The window shows the bundled UI and its embedded frames (Boat desktop/previews, local previews).
+/// Other http(s) links open in the browser instead.
+///
+/// WKWebView invokes `on_navigation` for `<iframe>` loads as well as top-level navigations without
+/// saying which frame triggered it, so origins permitted by `tauri.conf.json`'s `frame-src` must be
+/// allowed here too. Explicit "Open in a window/tab" links use `target="_blank"` / `window.open`,
+/// which hit `open_new_window` and still open in the default browser.
 fn allow_navigation(app: &AppHandle, url: &tauri::Url) -> bool {
-    let local = matches!(url.scheme(), "tauri" | "about" | "data" | "blob")
-        || (matches!(url.scheme(), "http" | "https") && matches!(url.host_str(), Some("tauri.localhost" | "localhost")));
-    if !local && matches!(url.scheme(), "http" | "https") {
+    let allowed = dorks_shell_core::navigation::allow_in_webview(url.scheme(), url.host_str());
+    if !allowed && matches!(url.scheme(), "http" | "https") {
         use tauri_plugin_opener::OpenerExt;
         let _ = app.opener().open_url(url.as_str(), None::<&str>);
     }
-    local
+    allowed
 }
 
 /// A link that asks for a new window (`target="_blank"`, `window.open`): WebKit drops these unless someone handles them, so a
