@@ -77,6 +77,17 @@ export function validOpenCodeModel(choices: AgentModelChoice[] | undefined, mode
   return { model, fast: false };
 }
 
+/**
+ * An Antigravity model: a slug `agy models` lists (`gemini-4-neon-high`; the effort is part of the slug), one the dork reported when it
+ * has (`choices`), any well-formed one before that. Empty means agy's own default.
+ */
+export function validAntigravityModel(choices: AgentModelChoice[] | undefined, model: unknown): { model?: string; fast: false } {
+  if (model === undefined || model === null || model === "") return { fast: false };
+  if (typeof model !== "string" || !modelValue.safeParse(model).success || model.includes("/")) fail("invalid", "an Antigravity model is a slug from agy models");
+  if (choices?.length && !choices.some((c) => c.model === model)) fail("invalid", `${model} is not offered by Antigravity`);
+  return { model, fast: false };
+}
+
 const choicesFor = (app: App, dork: DorkRow) => (dork.modelChoices?.length ? dork.modelChoices : knownModelChoices(app));
 
 /**
@@ -90,7 +101,11 @@ export function chooseModel(app: App, dorkId: string, model: unknown, effort: un
     if (dork.archived) fail("archived", "dork is archived");
     if (dork.provider === "codex") fail("invalid", "choose a Codex model from the thread");
     const next: { model?: string; effort?: string; fast: boolean } =
-      dork.provider === "opencode" ? validOpenCodeModel(dork.modelChoices, model) : validModelChoice(choicesFor(app, dork), model, effort, fast);
+      dork.provider === "opencode"
+        ? validOpenCodeModel(dork.modelChoices, model)
+        : dork.provider === "antigravity"
+          ? validAntigravityModel(dork.modelChoices, model)
+          : validModelChoice(choicesFor(app, dork), model, effort, fast);
     if (next.model === dork.model && next.effort === dork.effort && next.fast === dork.fast) return;
     patchDork(app, dorkId, { model: next.model, effort: next.effort, fast: next.fast, agentModel: undefined, agentEffort: undefined });
     if (isAwake(dork.state)) {

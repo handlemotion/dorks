@@ -15,6 +15,10 @@ sudo npm install -g @openai/codex@0.166.0
 sudo npm install -g @anthropic-ai/claude-code@2.1.330
 # OpenCode, the third agent (infra/bridge/src/opencode.ts): pinned for its server API (`opencode serve`, /session, /event).
 sudo npm install -g opencode-ai@1.19.5
+# Antigravity CLI (agy), the fourth agent (infra/bridge/src/antigravity.ts). Google's installer (checksum-verified, latest only: it has no
+# version pin) puts it in ~/.local/bin; it goes beside the others so the sandbox's agent user finds it. Verified live with 1.5.14.
+curl -fsSL https://antigravity.google/cli/install.sh | bash
+sudo install -m 0755 "$HOME/.local/bin/agy" /usr/local/bin/agy
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -39,6 +43,7 @@ claude --version
 test "$(claude --version | cut -d" " -f1)" = 2.1.330
 codex --version
 test "$(opencode --version)" = 1.19.5
+agy --version
 test "$(command -v gh)" = /usr/local/bin/gh
 /usr/bin/gh --version
 gh stack --help >/dev/null

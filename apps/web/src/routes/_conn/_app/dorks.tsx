@@ -149,7 +149,7 @@ function useNewSessionRepos(buildRepos: string[], dorks: { repo: string }[] | un
  * above the box: with no agent at all the setup checklist asks for the token, so only an owner who has Codex and picked Claude.
  */
 const agentGate = (provider: AgentProvider, claudeReady: boolean, codexReady: boolean) => {
-  // OpenCode has no sign-in of its own: its provider keys are shared secrets, and a missing one shows up in the thread.
+  // OpenCode and Antigravity sign in with shared secrets (provider keys, ANTIGRAVITY_OAUTH_TOKEN): a missing one shows up in the thread.
   const missing = provider === 'claude' ? !claudeReady : provider === 'codex' ? !codexReady : false
   return { missing, notice: missing && provider === 'claude' && codexReady }
 }
@@ -211,7 +211,7 @@ function NewDork({
         disabled={disabled || agent.missing}
         error={error}
         picker={
-          // OpenCode's models are known once its sandbox is up: a new session starts on its default and changes it from the thread.
+          // OpenCode's and Antigravity's models are known once the sandbox is up: a new session starts on its default and changes it from the thread.
           provider === 'claude'
             ? {
                 choices: settings?.claudeModels ?? [],

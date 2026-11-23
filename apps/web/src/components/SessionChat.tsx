@@ -14,9 +14,9 @@ import { currentStep, stepLabel } from '../lib/progress'
 
 export type DorkView = NonNullable<ReturnType<typeof useDork>>
 
-const AGENT_NAMES: Record<DorkView['provider'], string> = { claude: 'Claude', codex: 'Codex', opencode: 'OpenCode' }
+const AGENT_NAMES: Record<DorkView['provider'], string> = { claude: 'Claude', codex: 'Codex', opencode: 'OpenCode', antigravity: 'Antigravity' }
 
-/** The model menu for a running session: Claude's models, or the ones OpenCode's providers offer; Codex has none. */
+/** The model menu for a running session: Claude's models, the ones OpenCode's providers offer, or Antigravity's; Codex has none. */
 export function claudePicker(dork: DorkView, fallback: AgentModelChoice[] | undefined, onChange: ModelPicker['onChange']): ModelPicker | undefined {
   if (dork.provider === 'codex') return undefined
   return {

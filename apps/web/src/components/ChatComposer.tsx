@@ -1,4 +1,4 @@
-import { ArrowUpIcon, BoxIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, SquareTerminalIcon, XIcon, ZapIcon } from 'lucide-react'
+import { ArrowUpIcon, BoxIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SparkleIcon, SquareIcon, SquareTerminalIcon, XIcon, ZapIcon } from 'lucide-react'
 import { modelLabel, type AgentModelChoice } from '@dorks/shared'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import {
@@ -27,12 +27,13 @@ import { Tip } from './Tip'
 import { ReplyBanner } from './Reply'
 import type { Reply } from '../lib/reply'
 
-export type AgentProvider = 'codex' | 'claude' | 'opencode'
+export type AgentProvider = 'codex' | 'claude' | 'opencode' | 'antigravity'
 
-const AGENT_NAMES: Record<AgentProvider, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode' }
+const AGENT_NAMES: Record<AgentProvider, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode', antigravity: 'Antigravity' }
 
 function ProviderIcon({ provider }: { provider: AgentProvider }) {
   if (provider === 'opencode') return <SquareTerminalIcon className="size-3.5" />
+  if (provider === 'antigravity') return <SparkleIcon className="size-3.5" />
   // svgl pads the OpenAI mark inside its viewBox, so it is scaled to sit at Claude's size.
   return provider === 'claude' ? <Logo light={claudeLogo} className="size-3.5" /> : <Logo light={openaiLight} dark={openaiDark} className="size-3.5 scale-[1.3]" />
 }
@@ -221,7 +222,7 @@ function RepositoryControl({ repo, setRepo, repositories, disabled, hidden }: { 
 
 const effortName = (effort: string) => EFFORT_NAMES[effort] ?? effort
 
-/** What the model menu shows: the model picker (Claude and OpenCode), the trigger's label, and the efforts the chosen model has. */
+/** What the model menu shows: the model picker (Claude, OpenCode and Antigravity), the trigger's label, and the efforts the chosen model has. */
 function modelMenuState(provider: AgentProvider, picker: ModelPicker | undefined, agentLabel: string | undefined) {
   const models = provider !== 'codex' ? picker : undefined
   const choices = models?.choices ?? []
@@ -356,6 +357,71 @@ function OpenCodeModels({
   )
 }
 
+/**
+ * Antigravity's group: the models `agy models` listed for the running session, by family ("Gemini 4 Neon", its efforts inside), or
+ * Antigravity as a single choice (a new session starts on agy's default model; the list arrives once its sandbox is up).
+ */
+function AntigravityModels({
+  models,
+  provider,
+  setProvider,
+  enabled,
+  label,
+}: {
+  models?: ModelPicker
+  provider: AgentProvider
+  setProvider?: (provider: AgentProvider) => void
+  enabled?: boolean
+  label: string
+}) {
+  const choices = provider === 'antigravity' ? (models?.choices ?? []) : []
+  if (models && choices.length > 0) {
+    const groups = new Map<string, AgentModelChoice[]>()
+    for (const c of choices) {
+      const family = c.name.replace(/\s*\([^)]*\)\s*$/, '') || c.model
+      groups.set(family, [...(groups.get(family) ?? []), c])
+    }
+    return (
+      <DropdownMenuRadioGroup value={models.model ?? DEFAULT} onValueChange={(value) => models.onChange(value === DEFAULT ? undefined : value, undefined, false)}>
+        <DropdownMenuRadioItem value={DEFAULT} closeOnClick>
+          <ProviderIcon provider="antigravity" />
+          Default
+        </DropdownMenuRadioItem>
+        {[...groups].map(([family, items]) =>
+          items.length === 1 ? (
+            <DropdownMenuRadioItem key={family} value={items[0]!.model} closeOnClick title={items[0]!.model}>
+              <ProviderIcon provider="antigravity" />
+              <span className="min-w-0 truncate">{items[0]!.name}</span>
+            </DropdownMenuRadioItem>
+          ) : (
+            <DropdownMenuSub key={family}>
+              <DropdownMenuSubTrigger>
+                <ProviderIcon provider="antigravity" />
+                <span className="flex-1 truncate">{family}</span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="max-h-80 w-56 overflow-y-auto">
+                {items.map((c) => (
+                  <DropdownMenuRadioItem key={c.model} value={c.model} closeOnClick title={c.model}>
+                    <span className="min-w-0 truncate">{c.name}</span>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          ),
+        )}
+      </DropdownMenuRadioGroup>
+    )
+  }
+  return (
+    <DropdownMenuRadioGroup value={provider} onValueChange={() => setProvider?.('antigravity')}>
+      <DropdownMenuRadioItem value="antigravity" closeOnClick disabled={provider !== 'antigravity' && (!setProvider || !enabled)}>
+        <ProviderIcon provider="antigravity" />
+        {provider === 'antigravity' ? label : AGENT_NAMES.antigravity}
+      </DropdownMenuRadioItem>
+    </DropdownMenuRadioGroup>
+  )
+}
+
 /** One Claude model. The default names the model it stands for in grey ("Default  Opus 5.5"), so it never truncates. */
 function ModelItem({ choice: c, choices }: { choice: AgentModelChoice; choices: AgentModelChoice[] }) {
   const stands = c.model === DEFAULT ? modelName(choices, c.model) : undefined
@@ -457,6 +523,7 @@ function ModelMenu({
   setProvider,
   codexEnabled,
   openCodeEnabled,
+  antigravityEnabled,
   picker,
   agentLabel,
   isNewSession,
@@ -466,6 +533,7 @@ function ModelMenu({
   setProvider?: (provider: AgentProvider) => void
   codexEnabled?: boolean
   openCodeEnabled?: boolean
+  antigravityEnabled?: boolean
   picker?: ModelPicker
   agentLabel?: string
   isNewSession: boolean
@@ -512,6 +580,10 @@ function ModelMenu({
           <DropdownMenuLabel>{AGENT_NAMES.opencode}</DropdownMenuLabel>
           <OpenCodeModels models={models} provider={provider} setProvider={setProvider} enabled={openCodeEnabled !== false} label={label} />
         </DropdownMenuGroup>
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>{AGENT_NAMES.antigravity}</DropdownMenuLabel>
+          <AntigravityModels models={models} provider={provider} setProvider={setProvider} enabled={antigravityEnabled !== false} label={label} />
+        </DropdownMenuGroup>
         {models && <ModelOptions models={models} efforts={efforts} fastOffered={fastOffered} fast={fast} />}
         {models && !isNewSession && <ModelConfirmation active={active} />}
       </DropdownMenuContent>
@@ -541,6 +613,7 @@ export function Composer({
   setProvider,
   codexEnabled,
   openCodeEnabled,
+  antigravityEnabled,
   onStop,
   status,
   picker,
@@ -572,6 +645,8 @@ export function Composer({
   codexEnabled?: boolean
   /** OpenCode needs no sign-in of its own: its provider keys (`OPENCODE_API_KEY`, `DEEPSEEK_API_KEY`...) are shared secrets. */
   openCodeEnabled?: boolean
+  /** Antigravity signs in with the shared secret `ANTIGRAVITY_OAUTH_TOKEN` (or `GEMINI_API_KEY`); a missing one shows up in the thread. */
+  antigravityEnabled?: boolean
   /** Set while the agent is working: the main button becomes Stop. */
   onStop?: () => void
   /** A line above the box, e.g. the sandbox status. */
@@ -740,6 +815,7 @@ export function Composer({
             setProvider={setProvider}
             codexEnabled={codexEnabled}
             openCodeEnabled={openCodeEnabled}
+            antigravityEnabled={antigravityEnabled}
             picker={picker}
             agentLabel={agentLabel}
             isNewSession={isNewSession}
