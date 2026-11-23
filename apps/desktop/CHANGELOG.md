@@ -1,5 +1,16 @@
 # @dorks/desktop
 
+## 0.4.1
+
+### Patch Changes
+
+- [#138](https://github.com/handlemotion/dorks/pull/138) [`01bf9c5`](https://github.com/handlemotion/dorks/commit/01bf9c5f15ab014387610a3f620cdf1848a20d2e) Thanks [@handlemotion](https://github.com/handlemotion)! - New Antigravity sessions can pick their model (Gemini 4 Neon, Argon, Hydrogen, Gemini 3.8 Flash and the rest your Google AI plan offers) before they start.
+  Antigravity sessions on a build made before Antigravity existed now install the Antigravity CLI in their sandbox instead of failing with "agent exited", and an agent that exits says why in the thread.
+
+- [#136](https://github.com/handlemotion/dorks/pull/136) [`7cc1933`](https://github.com/handlemotion/dorks/commit/7cc19335690990e5907bdcbe85be4f4eabfc3cbd) Thanks [@handlemotion](https://github.com/handlemotion)! - The usage panel shows your Google AI plan's Gemini session and weekly limits when Antigravity is signed in, and the window's traffic lights line up with the sidebar's header icons.
+
+- [#139](https://github.com/handlemotion/dorks/pull/139) [`d775214`](https://github.com/handlemotion/dorks/commit/d77521476de7434e36d97a1a385b19ca706c2cd4) Thanks [@handlemotion](https://github.com/handlemotion)! - Updating the app no longer rebuilds your Boat base snapshot unless the tools it installs changed; sandboxes pick up the new bridge when they start.
+
 ## 0.4.0
 
 ### Minor Changes
