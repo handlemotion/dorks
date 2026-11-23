@@ -120,7 +120,7 @@ function Sessions({ workers, loading, onOpen, onAsk }: { workers: Worker[]; load
             className="flex w-full min-w-0 flex-col gap-1 p-(--details-text) text-left outline-none hover:bg-foreground/[0.03] focus-visible:bg-foreground/[0.04]"
           >
             <span className="flex w-full min-w-0 items-center gap-2 text-sm">
-              <DorkIcon size={14} state={dorkIconState(w.state)} label={STATE_LABEL[w.state] ?? w.state} />
+              <DorkIcon size={14} state={dorkIconState(w.state, { attention: w.needsAttention })} label={w.needsAttention ? 'Needs attention' : (STATE_LABEL[w.state] ?? w.state)} />
               <span className="min-w-0 flex-1 truncate">{w.title}</span>
               {w.prUrl && (
                 <span data-pr={w.prState} className={`shrink-0 text-xs tabular-nums ${prStatus(w.prState).className}`}>
@@ -159,7 +159,12 @@ function WorkerPanel({ id, dork, onClose }: { id: string; dork: DorkView; onClos
   return (
     <section aria-label={`Session ${worker.title}`} className="flex min-h-0 flex-1 flex-col" data-state={worker.state}>
       <div className="flex h-10 min-w-0 shrink-0 items-center gap-0.5 border-y pr-(--details-edge) pl-(--details-text)">
-        <DorkIcon size={14} state={dorkIconState(worker.state)} label={STATE_LABEL[worker.state] ?? worker.state} className="mr-2" />
+        <DorkIcon
+          size={14}
+          state={dorkIconState(worker.state, { attention: worker.needsAttention })}
+          label={worker.needsAttention ? 'Needs attention' : (STATE_LABEL[worker.state] ?? worker.state)}
+          className="mr-2"
+        />
         <span className="min-w-0 flex-1 truncate text-sm" title={worker.title}>
           {worker.title}
         </span>

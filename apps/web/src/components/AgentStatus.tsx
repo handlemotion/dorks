@@ -53,6 +53,7 @@ export function AgentStatus({
   state,
   live,
   outcome,
+  attention,
   name = 'Dork',
   step,
   since,
@@ -61,6 +62,8 @@ export function AgentStatus({
   state?: DorkState
   live?: Live
   outcome?: TurnOutcome | null
+  /** True when the dork is waiting on the owner (computer access, build approval, etc.). */
+  attention?: boolean
   name?: string
   step?: string
   since?: number
@@ -70,7 +73,7 @@ export function AgentStatus({
   const working = state === 'working' && !!described.moving && live !== 'offline' && live !== 'connecting'
   const label = working && step ? step : described.label
   const { moving } = described
-  const iconState = dorkIconState(state, { working: moving, live })
+  const iconState = dorkIconState(state, { working: moving, live, attention })
   const now = useSeconds(working && since !== undefined)
   const time = working && since !== undefined ? workedFor(now - since) : undefined
   const words = (

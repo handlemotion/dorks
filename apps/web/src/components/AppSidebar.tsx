@@ -57,6 +57,7 @@ export function AppSidebar() {
     repo: d.repo,
     working: MOVING.has(d.state),
     state: d.state,
+    attention: d.needsAttention,
     pr: prOf(d.prUrl, d.prState),
     kind: d.kind,
     parentId: d.parentId,

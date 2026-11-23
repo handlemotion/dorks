@@ -501,6 +501,8 @@ export function submitDraft(app: App, dorkId: string, note: unknown): DraftView 
     append(app, dorkId, { type: "build_draft", draftId: d.id, buildId: b.id, buildName: b.name, ...(text ? { note: text } : {}) });
     touch(app, { t: "build", buildId: b.id });
     touch(app, { t: "builds" });
+    touch(app, { t: "dorks" });
+    touch(app, { t: "dork", dorkId });
     return draftViewOf(app, draftOfDork(app, b.id, dorkId)!);
   });
 }
@@ -518,6 +520,8 @@ function decide(app: App, d: DraftRow, buildName: string, approved: boolean, rea
   const dork = getDork(app.db, d.dork_id);
   if (!dork || dork.deleting) return;
   append(app, d.dork_id, { type: "build_decision", draftId: d.id, buildId: d.build_id, buildName, approved, ...(reason ? { reason } : {}) });
+  touch(app, { t: "dorks" });
+  touch(app, { t: "dork", dorkId: d.dork_id });
   const text = approved
     ? `<dorks-event>The owner approved your machine draft for the build "${buildName}"; it is now the build${reason ? ` (${reason})` : ""}. An image build may be running: check it with machine_logs and fix it if it fails.</dorks-event>`
     : `<dorks-event>The owner rejected your machine draft for the build "${buildName}"${reason ? `: ${reason}` : "."}${dropped ? " That proposed build was deleted and this session is back on the base machine." : ""} Do not resubmit it unchanged.</dorks-event>`;

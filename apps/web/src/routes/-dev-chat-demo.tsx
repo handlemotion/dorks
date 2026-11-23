@@ -122,7 +122,7 @@ const chats = [
   { id: 'preview', title: 'Fix flaky bridge reconnect after wake', repo: 'acme/demo', working: true, state: 'working' as const, pr: { number: 142 } },
   { id: 'two', title: 'Add dark mode toggle', repo: 'acme/web', working: false, state: 'idle' as const, pr: { number: 138 } },
   { id: 'three', title: 'Upgrade to Node 24', repo: 'vercel/next.js', working: false, state: 'sleeping' as const },
-  { id: 'four', title: 'Document the bridge protocol', repo: 'acme/demo', working: true, state: 'working' as const },
+  { id: 'four', title: 'Document the bridge protocol', repo: 'acme/demo', working: true, state: 'working' as const, attention: true },
 ]
 
 /** Sample `git diff` output for the Changes tab. */

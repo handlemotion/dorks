@@ -27,6 +27,8 @@ export type Chat = {
   working: boolean
   /** Lifecycle state of the dork, used to distinguish working (animated), awake (coloured) and asleep (grey). */
   state?: DorkState
+  /** True when the dork is waiting on the owner (computer access, build approval, etc.). */
+  attention?: boolean
   pr?: { number: number; state?: PrState }
   /** A dork (coordinator) shows its emoji instead of the working icon (docs/crew.md). */
   icon?: string
@@ -121,8 +123,8 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
   // `data` feeds announcements; the link is the handle so interactive-element filtering allows row drags.
   const { ref, handleRef, isDragging } = useSortable({ id: chat.id, index, data: chat })
   const router = useRouter()
-  const iconState = dorkIconState(chat.state, { working: chat.working })
-  const iconLabel = iconState === 'working' ? 'Working…' : iconState === 'awake' ? 'Awake' : iconState === 'error' ? 'Error' : 'Asleep'
+  const iconState = dorkIconState(chat.state, { working: chat.working, attention: chat.attention })
+  const iconLabel = iconState === 'attention' ? 'Needs attention' : iconState === 'working' ? 'Working…' : iconState === 'awake' ? 'Awake' : iconState === 'error' ? 'Error' : 'Asleep'
   const row = (
     <div ref={ref} data-chat-id={chat.id} data-dragging={isDragging || undefined} className="group/row relative flex min-w-0 data-[dragging]:z-30 data-[dragging]:opacity-60">
       <Link

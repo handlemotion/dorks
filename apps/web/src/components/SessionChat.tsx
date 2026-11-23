@@ -70,6 +70,7 @@ export function SessionChat({
   const agent = AGENT_NAMES[dork.provider]
   const canReply = !dork.archived
   const current = dork.state === 'working' ? currentStep(view.blocks) : {}
+  const needsAttention = Boolean(dork.needsAttention) || view.blocks.some((b) => (b.kind === 'local' && b.status === 'pending') || (b.kind === 'build' && b.approved === null))
   return (
     <>
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
@@ -111,6 +112,7 @@ export function SessionChat({
                   state={dork.state}
                   live={live}
                   outcome={view.lastOutcome}
+                  attention={needsAttention}
                   step={current.tool && stepLabel(current.tool)}
                   since={current.since}
                   onOpen={onOpenSteps && view.blocks.some((b) => b.kind === 'tool') ? () => onOpenSteps(current.tool ? [current.tool.id] : []) : undefined}
