@@ -43,7 +43,7 @@ export function CrewDetails({ dork, onClose, onAsk }: { dork: DorkView; onClose?
   // A PR tab whose worker went away (archived) falls back to Sessions.
   const selected: TabKey = tab.startsWith('pr:') && !prs.some((p) => `pr:${p.worker.id}` === tab) ? 'sessions' : tab
   return (
-    <aside aria-label="Dork details" className="flex h-full min-h-0 min-w-0 flex-col border-l border-border [--details-edge:10px] [--details-text:18px]">
+    <aside aria-label="Dork details" data-details-panel className="flex h-full min-h-0 min-w-0 flex-col border-l border-border [--details-edge:10px] [--details-text:18px]">
       <Tabs value={selected} onValueChange={(v) => setTab(v as TabKey)} className="min-h-0 min-w-0 flex-1 gap-0">
         {/* 40px, 4px down from the top, so its labels sit on the chat title's 24px line (as in Chat details). */}
         <div data-tauri-drag-region className="mt-1 mb-2 flex h-10 min-w-0 shrink-0 items-center gap-0.5 px-(--details-edge)">
