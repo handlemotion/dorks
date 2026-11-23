@@ -56,6 +56,7 @@ export function AppSidebar() {
     title: d.title,
     repo: d.repo,
     working: MOVING.has(d.state),
+    state: d.state,
     pr: prOf(d.prUrl, d.prState),
     kind: d.kind,
     parentId: d.parentId,
@@ -272,7 +273,7 @@ export function AppSidebarView({
               )
             })}
           </div>
-          <NewDorkDialog open={newDork} onOpenChange={setNewDork} />
+          {newDork && <NewDorkDialog open onOpenChange={setNewDork} />}
           <div className="flex shrink-0 flex-col gap-2 pt-1.5">
             {usage}
             <Link to="/settings" {...rowLink(pathname === '/settings')}>

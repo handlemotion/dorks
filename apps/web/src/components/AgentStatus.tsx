@@ -2,31 +2,32 @@ import { useEffect, useState } from 'react'
 import { ChevronRightIcon } from 'lucide-react'
 import type { DorkState, TurnOutcome } from '@dorks/shared'
 import { workedFor } from './ChatBlock'
+import { DorkIcon, dorkIconState } from './DorkIcon'
 import { WordShimmer } from './WordShimmer'
 
 type Live = 'connecting' | 'live' | 'offline' | 'unauthorized'
 
 /**
- * What the Dork is doing, said about the Dork (not its sandbox), and the dot colour that goes with it. Moving states shimmer and the
- * dot changes shape. `outcome` is how the latest turn ended: a turn the user stopped reads as Stopped, never as an error.
+ * What the Dork is doing, said about the Dork (not its sandbox). Moving states shimmer and animate the dork icon.
+ * `outcome` is how the latest turn ended: a turn the user stopped reads as Stopped, never as an error.
  */
-function describeDork(name: string, state: DorkState | undefined, live: Live | undefined, outcome?: TurnOutcome | null): { label: string; tone: string; moving?: boolean } {
-  if (live === 'offline' || live === 'connecting') return { label: 'Reconnecting to the server…', tone: 'bg-amber-500', moving: true }
+function describeDork(name: string, state: DorkState | undefined, live: Live | undefined, outcome?: TurnOutcome | null): { label: string; moving?: boolean } {
+  if (live === 'offline' || live === 'connecting') return { label: 'Reconnecting to the server…', moving: true }
   switch (state) {
     case 'creating':
-      return { label: `${name} is starting up`, tone: 'bg-amber-500', moving: true }
+      return { label: `${name} is starting up`, moving: true }
     case 'waking':
-      return { label: `${name} is waking up`, tone: 'bg-amber-500', moving: true }
+      return { label: `${name} is waking up`, moving: true }
     case 'working':
-      return { label: `${name} is working`, tone: 'bg-brand', moving: true }
+      return { label: `${name} is working`, moving: true }
     case 'idle':
-      return outcome === 'stopped' ? { label: `${name} stopped`, tone: 'bg-muted-foreground/50' } : { label: `${name} is waiting for your next message`, tone: 'bg-emerald-500' }
+      return outcome === 'stopped' ? { label: `${name} stopped` } : { label: `${name} is waiting for your next message` }
     case 'sleeping':
-      return { label: `${name} is sleeping`, tone: 'bg-muted-foreground/50' }
+      return { label: `${name} is sleeping` }
     case 'error':
-      return { label: `${name} ran into a problem`, tone: 'bg-destructive' }
+      return { label: `${name} ran into a problem` }
     default:
-      return { label: 'Connecting…', tone: 'bg-muted-foreground/50', moving: true }
+      return { label: 'Connecting…', moving: true }
   }
 }
 
@@ -68,12 +69,13 @@ export function AgentStatus({
   const described = describeDork(name, state, live, outcome)
   const working = state === 'working' && !!described.moving && live !== 'offline' && live !== 'connecting'
   const label = working && step ? step : described.label
-  const { tone, moving } = described
+  const { moving } = described
+  const iconState = dorkIconState(state, { working: moving, live })
   const now = useSeconds(working && since !== undefined)
   const time = working && since !== undefined ? workedFor(now - since) : undefined
   const words = (
     <>
-      <span aria-hidden className={`size-2 shrink-0 rounded-full ${tone} ${moving ? 'status-shape' : ''}`} />
+      <DorkIcon state={iconState} size={15} />
       <span className="min-w-0 truncate">{moving ? <WordShimmer key={label}>{label}</WordShimmer> : label}</span>
       {/* Hidden from screen readers: a clock ticking every second would be read out each time. */}
       {time && (

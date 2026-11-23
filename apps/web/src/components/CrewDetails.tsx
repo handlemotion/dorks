@@ -8,7 +8,7 @@ import { toast } from 'sonner'
 import { Artifacts } from './chat-details/Artifacts'
 import type { Artifact } from './chat-details/types'
 import { EmptyState } from './EmptyState'
-import { Orb } from './Orb'
+import { DorkIcon, dorkIconState } from './DorkIcon'
 import { BAR_BUTTON, PreviewBrowser, type PreviewServer } from './PreviewBrowser'
 import { PrIcon, prStatus } from './PrStatus'
 import { PullRequestPanel, TAB_CLASS, type PullRequestPanelData } from './PullRequestPanel'
@@ -18,7 +18,6 @@ import { Tip } from './Tip'
 type Worker = NonNullable<ReturnType<typeof useDorks>>[number]
 type TabKey = 'sessions' | 'artifacts' | `pr:${string}`
 
-const MOVING = new Set(['creating', 'working', 'waking'])
 const STATE_LABEL: Record<string, string> = { creating: 'Starting', working: 'Working', waking: 'Waking', idle: 'Done', sleeping: 'Asleep', error: 'Failed' }
 const prNumber = (url: string) => Number(/\/pull\/(\d+)/.exec(url)?.[1]) || undefined
 
@@ -121,7 +120,7 @@ function Sessions({ workers, loading, onOpen, onAsk }: { workers: Worker[]; load
             className="flex w-full min-w-0 flex-col gap-1 p-(--details-text) text-left outline-none hover:bg-foreground/[0.03] focus-visible:bg-foreground/[0.04]"
           >
             <span className="flex w-full min-w-0 items-center gap-2 text-sm">
-              <Orb size={14} working={MOVING.has(w.state)} label={STATE_LABEL[w.state] ?? w.state} className="text-muted-foreground" />
+              <DorkIcon size={14} state={dorkIconState(w.state)} label={STATE_LABEL[w.state] ?? w.state} />
               <span className="min-w-0 flex-1 truncate">{w.title}</span>
               {w.prUrl && (
                 <span data-pr={w.prState} className={`shrink-0 text-xs tabular-nums ${prStatus(w.prState).className}`}>
@@ -160,7 +159,7 @@ function WorkerPanel({ id, dork, onClose }: { id: string; dork: DorkView; onClos
   return (
     <section aria-label={`Session ${worker.title}`} className="flex min-h-0 flex-1 flex-col" data-state={worker.state}>
       <div className="flex h-10 min-w-0 shrink-0 items-center gap-0.5 border-y pr-(--details-edge) pl-(--details-text)">
-        <Orb size={14} working={MOVING.has(worker.state)} label={STATE_LABEL[worker.state] ?? worker.state} className="mr-2 shrink-0 text-muted-foreground" />
+        <DorkIcon size={14} state={dorkIconState(worker.state)} label={STATE_LABEL[worker.state] ?? worker.state} className="mr-2" />
         <span className="min-w-0 flex-1 truncate text-sm" title={worker.title}>
           {worker.title}
         </span>
