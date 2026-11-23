@@ -14,6 +14,8 @@ export interface Ctx {
    * Absent = false.
    */
   notifyHeld?: boolean;
+  /** A message the owner queued waits for the current turn to end, and no Stop holds it. Absent = false. */
+  waiting?: boolean;
 }
 
 export type Input =
@@ -42,6 +44,7 @@ export type Effect =
   | "cancel_pause" // drop a pending/in-flight pause: someone needs the box awake
   | "deliver_outbox"
   | "release_notify" // held notifies may now be emitted: a turn boundary, or a fresh agent
+  | "release_queue" // the oldest queued message becomes a user message: a turn boundary with nothing else in flight
   | "interrupt_agent"
   | "arm_sleep"
   | "cancel_sleep"
@@ -90,6 +93,7 @@ const onMessage: Handler = ({ archived, state, hasBox }, { stay, go }, i) => {
 const onAgentReady: Handler = (c, { stay, go }) => {
   if (c.state === "creating" || c.state === "waking") {
     if (c.archived) return go("idle", ["cancel_watchdog", "pause_box"]);
+    if (nextFromQueue(c)) return go("working", ["cancel_watchdog", "release_queue", "deliver_outbox"]);
     // A fresh agent is between turns, so a notify that was held for the previous one can go out now.
     return c.queued ? go("working", ["cancel_watchdog", ...(c.notifyHeld ? ["release_notify" as const] : []), "deliver_outbox"]) : go("idle", ["cancel_watchdog", "arm_sleep"]);
   }
@@ -98,8 +102,12 @@ const onAgentReady: Handler = (c, { stay, go }) => {
   return stay();
 };
 
+/** A queued message may start the next turn: nothing is in flight but held notifies (the owner's messages go before those). */
+const nextFromQueue = (c: Ctx) => !!c.waiting && (!c.queued || !!c.notifyHeld);
+
 const onTurnIdle: Handler = (c, { stay, go }) => {
   if (c.state !== "working") return stay();
+  if (!c.archived && nextFromQueue(c)) return stay(["release_queue", "deliver_outbox"]); // the owner's queued message starts the next turn
   if (c.notifyHeld) return stay(["release_notify", "deliver_outbox"]); // the turn boundary a held notify waited for
   if (c.queued) return stay(["deliver_outbox"]); // a message is in flight; the next turn is about to start
   return go("idle", c.archived ? ["pause_box"] : ["arm_sleep"]);

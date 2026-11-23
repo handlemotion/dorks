@@ -1,6 +1,20 @@
 import { Effect, Schema } from "effect";
 import { MAX_IMAGE_BYTES, uploadImage } from "../../services/bridge";
-import { chooseCodexModel, createDork, desktopUrl, getDorkView, interrupt, listDorks, listEvents, removeDork, renameDork, sendMessage, setArchived } from "../../services/dorks";
+import {
+  chooseCodexModel,
+  createDork,
+  desktopUrl,
+  getDorkView,
+  interrupt,
+  listDorks,
+  listEvents,
+  queueMessage,
+  removeDork,
+  renameDork,
+  sendMessage,
+  setArchived,
+  takeQueued,
+} from "../../services/dorks";
 import { chooseModel } from "../../services/models";
 import { ApiError, body, intQuery, ok, service, serviceAsync } from "../route";
 import { handler, id, Loose, str, type Routes } from "./shared";
@@ -81,6 +95,23 @@ export const dorkRoutes: Routes = (api, app) => {
         ok(c),
       ),
     ),
+  );
+  api.post(
+    "/api/dorks/:id/queue",
+    on((c) =>
+      body(c, Text).pipe(
+        Effect.flatMap((b) => service((a) => queueMessage(a, id(c), str(b.text)))),
+        Effect.map((r) => c.json(r)),
+      ),
+    ),
+  );
+  api.delete(
+    "/api/dorks/:id/queue/:qid",
+    on((c) => ok(c)(service((a) => takeQueued(a, id(c), c.req.param("qid") ?? "", false)))),
+  );
+  api.post(
+    "/api/dorks/:id/queue/:qid/send",
+    on((c) => ok(c)(service((a) => takeQueued(a, id(c), c.req.param("qid") ?? "", true)))),
   );
   api.post(
     "/api/dorks/:id/interrupt",

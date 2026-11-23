@@ -1,6 +1,6 @@
 import { ArrowUpIcon, BoxIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SparkleIcon, SquareIcon, SquareTerminalIcon, XIcon, ZapIcon } from 'lucide-react'
 import { modelLabel, type AgentModelChoice } from '@dorks/shared'
-import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,7 +25,7 @@ import { OwnerAvatar, ownerOf } from './RepoAvatar'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@dorks/ui/input-group'
 import { Tip } from './Tip'
 import { ImageLightbox, ImageTrigger } from './ImageLightbox'
-import { ReplyBanner } from './Reply'
+import { ReplyBanner, SEND_KEY } from './Reply'
 import type { Reply } from '../lib/reply'
 
 export type AgentProvider = 'codex' | 'claude' | 'opencode' | 'antigravity'
@@ -249,8 +249,27 @@ function AttachmentTile({ file, index, onRemove }: { file: Pending; index: numbe
 }
 
 /** The main button: Stop while the agent works, else send (or create the session). */
-function MainButton({ onStop, isNewSession, pending, canSend }: { onStop?: () => void; isNewSession: boolean; pending: boolean; canSend: boolean }) {
-  if (onStop) {
+/** Enter sends (steering a running turn); ⌘ Enter (Ctrl Enter) queues for after the turn when `queue` is given; Shift Enter is a new line. */
+function onEnter(e: KeyboardEvent<HTMLTextAreaElement>, send: () => void, onQueue: unknown, queue: () => void) {
+  if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
+  e.preventDefault()
+  if ((e.metaKey || e.ctrlKey) && onQueue) queue()
+  else send()
+}
+
+/** A row at the top of the box, 8px in like the reply banner; nothing when empty. */
+function TopAddon({ children }: { children?: ReactNode }) {
+  if (!children) return null
+  return (
+    <InputGroupAddon align="block-start" className="px-2 pt-2 pb-0">
+      {children}
+    </InputGroupAddon>
+  )
+}
+
+function MainButton({ onStop, isNewSession, pending, canSend, canQueue }: { onStop?: () => void; isNewSession: boolean; pending: boolean; canSend: boolean; canQueue: boolean }) {
+  // While the agent works the button is Stop, until there is something to send: then it sends now, steering the turn.
+  if (onStop && !canSend) {
     return (
       <Tip label="Stop agent">
         <InputGroupButton size="icon-sm" variant="default" className={MAIN} aria-label="Stop agent" onClick={onStop}>
@@ -259,7 +278,7 @@ function MainButton({ onStop, isNewSession, pending, canSend }: { onStop?: () =>
       </Tip>
     )
   }
-  const label = isNewSession ? 'Create session' : 'Send message'
+  const label = isNewSession ? 'Create session' : onStop ? (canQueue ? `Steer now (${SEND_KEY} Enter queues it instead)` : 'Steer now') : 'Send message'
   return (
     <Tip label={label}>
       <InputGroupButton type="submit" size="icon-sm" variant="default" className={MAIN} aria-label={label} disabled={!canSend}>
@@ -681,6 +700,8 @@ export function Composer({
   openCodeEnabled,
   antigravityEnabled,
   onStop,
+  onQueue,
+  queued,
   status,
   picker,
   agentLabel,
@@ -714,8 +735,12 @@ export function Composer({
   openCodeEnabled?: boolean
   /** Antigravity signs in with the shared secret `ANTIGRAVITY_OAUTH_TOKEN` (or `GEMINI_API_KEY`); a missing one shows up in the thread. */
   antigravityEnabled?: boolean
-  /** Set while the agent is working: the main button becomes Stop. */
+  /** Set while the agent is working: the main button becomes Stop (or Steer now, with something to send). */
   onStop?: () => void
+  /** ⌘ Enter (Ctrl Enter): queue the message for when the agent's turn ends, like `onSubmit` otherwise. Without it ⌘ Enter sends. */
+  onQueue?: (images: AttachedImage[]) => void | Promise<unknown>
+  /** The queued messages, shown as rows at the top of the box. */
+  queued?: ReactNode
   /** A line above the box, e.g. the sandbox status. */
   status?: ReactNode
   /** Claude's model and effort. */
@@ -754,10 +779,10 @@ export function Composer({
   }, [focusKey, locked])
   const hasContent = text.trim().length > 0 || ready.length > 0
   const canSend = hasContent && !uploading && !locked && (!isNewSession || !!repo?.trim())
-  const submit = async () => {
+  const submit = async (handler = onSubmit) => {
     const sent = files
     try {
-      if ((await onSubmit(ready.map((f) => ({ id: f.imageId!, name: f.name })))) === false) return
+      if ((await handler(ready.map((f) => ({ id: f.imageId!, name: f.name })))) === false) return
     } catch {
       return
     }
@@ -794,6 +819,7 @@ export function Composer({
           data-dragging={dragging}
           className="data-[dragging=true]:border-ring data-[dragging=true]:ring-[3px] data-[dragging=true]:ring-ring/50 rounded-[15px] border-border bg-white has-[textarea]:rounded-[15px] has-[>[data-align=block-start]]:rounded-[15px] dark:border-transparent dark:bg-input/50"
         >
+          <TopAddon>{queued}</TopAddon>
           {reply && (
             // The reply banner sits 8px inside the box (the buttons' inset), concentric with its 15px corners.
             <InputGroupAddon align="block-start" className="px-2 pt-2 pb-0">
@@ -840,10 +866,12 @@ export function Composer({
                 onClearReply()
                 return
               }
-              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault()
-                formRef.current?.requestSubmit()
-              }
+              onEnter(
+                e,
+                () => formRef.current?.requestSubmit(),
+                onQueue,
+                () => canSend && void submit(onQueue),
+              )
             }}
             disabled={locked}
             ref={textRef}
@@ -868,7 +896,7 @@ export function Composer({
             </Tip>
           </div>
           <div className="absolute right-2 bottom-2">
-            <MainButton onStop={onStop} isNewSession={isNewSession} pending={pending} canSend={canSend} />
+            <MainButton onStop={onStop} isNewSession={isNewSession} pending={pending} canSend={canSend} canQueue={!!onQueue} />
           </div>
         </InputGroup>
         {/* Compact, shared baseline for the repository and model controls. 9px in (8px plus the box's 1px border), like attach and send, so the repository

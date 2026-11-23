@@ -461,4 +461,16 @@ export const MIGRATIONS: string[] = [
   -- Antigravity's sign-in (agy's token file, services/antigravitySignIn.ts), encrypted like the Claude token.
   ALTER TABLE settings ADD COLUMN antigravity_token_enc TEXT;
   `,
+  `
+  -- Messages the owner queued while the agent was busy (services/dorks.ts, queueMessage). The oldest goes out as its own turn when the
+  -- current turn ends. A Stop holds the queue (dork_runtime.queue_hold) until the next turn ends, so a stopped agent does not go on by itself.
+  CREATE TABLE queued_messages (
+    id TEXT PRIMARY KEY,
+    dork_id TEXT NOT NULL REFERENCES dorks (id) ON DELETE CASCADE,
+    text TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX queued_messages_dork ON queued_messages (dork_id, created_at);
+  ALTER TABLE dork_runtime ADD COLUMN queue_hold INTEGER NOT NULL DEFAULT 0;
+  `,
 ];

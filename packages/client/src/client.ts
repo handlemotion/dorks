@@ -333,8 +333,21 @@ export class DorksClient {
       await this.api.chooseCodexModel(id, model, effort);
       this.invalidate(`dork:${id}`);
     },
-    /** Sends with an optimistic row; see EventsFeed.send. */
+    /** Sends with an optimistic row; see EventsFeed.send. While the agent works the message steers its current turn. */
     sendMessage: (id: string, text: string) => this.events(id).send(text),
+    /** Queues a message for when the agent's current turn ends (sent at once when none is running). Resolves whether it was queued. */
+    queueMessage: async (id: string, text: string) => {
+      const r = await this.api.queueMessage(id, text);
+      this.invalidate(`dork:${id}`);
+      if (!r.queued) this.events(id).requestTail();
+      return r.queued;
+    },
+    /** Takes a message out of the queue; `send` sends it now instead, steering the running turn. */
+    takeQueued: async (id: string, queuedId: string, send: boolean) => {
+      await (send ? this.api.sendQueued(id, queuedId) : this.api.removeQueued(id, queuedId));
+      this.invalidate(`dork:${id}`);
+      if (send) this.events(id).requestTail();
+    },
     subscribe: async (id: string, pr: PrRefInput) => {
       await this.api.subscribe(id, pr);
       this.invalidate(`subs:${id}`);

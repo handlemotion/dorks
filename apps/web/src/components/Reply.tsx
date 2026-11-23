@@ -30,7 +30,7 @@ type Target = { range: Range; text: string }
 const within = (node: Node) => !!(node instanceof Element ? node : node.parentElement)?.closest(`[${REPLY_SOURCE}]`)
 
 /** ⌘ on Apple platforms, Ctrl elsewhere: the key that turns Enter into send. */
-const SEND_KEY = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl'
+export const SEND_KEY = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl'
 
 /**
  * Selecting text in the agent's messages offers a small Reply button on the selection; nothing takes focus, so the selection stays

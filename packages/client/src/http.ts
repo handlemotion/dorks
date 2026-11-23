@@ -129,6 +129,10 @@ export function createApi(config: ApiConfig) {
     renameDork: (id: string, title: string) => request<object>("PATCH", dork(id), { title }),
     deleteDork: (id: string) => request<object>("DELETE", dork(id)),
     sendMessage: (id: string, text: string) => request<object>("POST", `${dork(id)}/messages`, { text }),
+    /** Queues a message for when the current turn ends; sent at once (`queued: false`) when no turn is running. */
+    queueMessage: (id: string, text: string) => request<{ queued: boolean }>("POST", `${dork(id)}/queue`, { text }),
+    removeQueued: (id: string, queuedId: string) => request<object>("DELETE", `${dork(id)}/queue/${enc(queuedId)}`),
+    sendQueued: (id: string, queuedId: string) => request<object>("POST", `${dork(id)}/queue/${enc(queuedId)}/send`),
     interrupt: (id: string) => request<object>("POST", `${dork(id)}/interrupt`),
     /** A fresh live-view URL of the dork's computer; a bearer credential, so never cache or log it. */
     /** Uploads an image to attach to a message; the message names it as `![name](dorks-image:<id>)`. */

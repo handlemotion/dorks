@@ -67,6 +67,12 @@ describe("machine: spec behaviours", () => {
     // a user message is ahead: the caller reports notifyHeld false until it is acked
     expect(run(ctx("working", { queued: true, notifyHeld: false }), "turn_idle")).toMatchObject({ state: "working", effects: ["deliver_outbox"] });
   });
+  it("turn_idle releases a queued message unless something is in flight; the owner's message goes before a held notify", () => {
+    expect(run(ctx("working", { waiting: true }), "turn_idle")).toMatchObject({ state: "working", effects: ["release_queue", "deliver_outbox"] });
+    expect(run(ctx("working", { waiting: true, queued: true }), "turn_idle")).toMatchObject({ state: "working", effects: ["deliver_outbox"] });
+    expect(run(ctx("working", { waiting: true, queued: true, notifyHeld: true }), "turn_idle")).toMatchObject({ state: "working", effects: ["release_queue", "deliver_outbox"] });
+    expect(run(ctx("working", { waiting: true, archived: true }), "turn_idle")).toMatchObject({ state: "idle", effects: ["pause_box"] });
+  });
   it("a notify queued while the box was down is delivered, and released, once the agent is ready", () => {
     expect(run(ctx("waking", { queued: true }), "agent_ready")).toMatchObject({ state: "working", effects: expect.arrayContaining(["deliver_outbox"]) });
     expect(run(ctx("waking", { queued: true }), "agent_ready").effects).not.toContain("release_notify");

@@ -75,6 +75,8 @@ export interface Runtime {
   pauseRetries: number;
   finalMsgId: string;
   interruptRequested: boolean;
+  /** The owner stopped a turn while messages were queued: they wait until a turn ends again (cleared at the next turn_idle). */
+  queueHold: boolean;
 }
 
 export type CommandKind = "user_message" | "notify" | "configure" | "interrupt" | "flush";
@@ -146,6 +148,7 @@ export const runtimeOf = (db: Db, dorkId: string): Runtime => {
     pauseRetries: r.pause_retries as number,
     finalMsgId: (r.final_msg_id as string | null) ?? "",
     interruptRequested: bool(r.interrupt_requested),
+    queueHold: bool(r.queue_hold),
   };
 };
 
@@ -176,7 +179,15 @@ export const needsAttentionOf = (db: Db, dorkId: string): boolean =>
   );
 
 /** The wire shape of a dork for the UI: no box id, session ids or other internals. */
-export const dorkView = (d: DorkRow, prState?: "open" | "merged" | "closed", needsAttention?: boolean) => ({
+/** A message the owner queued for when the agent's current turn ends, oldest first. */
+export type QueuedMessage = { id: string; text: string; createdAt: number };
+
+export const queuedMessagesOf = (db: Db, dorkId: string): QueuedMessage[] =>
+  db
+    .all("SELECT id, text, created_at FROM queued_messages WHERE dork_id = ? ORDER BY created_at, rowid", dorkId)
+    .map((r) => ({ id: r.id as string, text: r.text as string, createdAt: r.created_at as number }));
+
+export const dorkView = (d: DorkRow, prState?: "open" | "merged" | "closed", needsAttention?: boolean, queue?: QueuedMessage[]) => ({
   id: d.id,
   title: d.title,
   repo: d.repo,
@@ -190,6 +201,7 @@ export const dorkView = (d: DorkRow, prState?: "open" | "merged" | "closed", nee
   prUrl: d.prUrl,
   prState,
   ...(needsAttention ? { needsAttention: true } : {}),
+  ...(queue ? { queue } : {}),
   codexModel: d.codexModel,
   codexModelChoices: d.codexModelChoices,
   model: d.model,

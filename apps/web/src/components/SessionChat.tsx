@@ -5,14 +5,43 @@ import { Button } from '@dorks/ui/button'
 import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport } from '@dorks/ui/message-scroller'
 import { AgentStatus } from './AgentStatus'
 import { ChatMessages } from './ChatBlock'
-import { Composer, withImages, type ModelPicker } from './ChatComposer'
+import { Composer, withImages, type AttachedImage, type ModelPicker } from './ChatComposer'
 import { LocalAccessProvider } from './LocalRequest'
+import { QueuedMessages } from './QueuedMessages'
+import { SEND_KEY } from './Reply'
 import { useDraft } from '../lib/draft'
 import { usePending } from '../lib/pending'
 import { withReply, type Reply } from '../lib/reply'
 import { currentStep, stepLabel } from '../lib/progress'
 
 export type DorkView = NonNullable<ReturnType<typeof useDork>>
+
+type SendWith = (deliver: (message: string) => Promise<unknown>) => (images: AttachedImage[]) => Promise<boolean>
+
+/**
+ * Steering and the queue. While a turn is running (or about to), Enter sends now and steers it; ⌘ Enter (Ctrl Enter) queues the
+ * message for when the turn ends. Queued messages show at the top of the composer, each with Send now and Remove.
+ */
+function useQueueControls(dork: DorkView, canReply: boolean, sendWith: SendWith) {
+  const { actions } = useDorksClient()
+  const action = usePending()
+  const busy = canReply && (dork.state === 'working' || dork.state === 'creating' || dork.state === 'waking')
+  const queue = dork.queue ?? []
+  return {
+    error: action.error,
+    placeholder: busy ? `Enter to steer, ${SEND_KEY} Enter to queue` : dork.kind === 'coordinator' ? 'Tell the dork what to do next...' : undefined,
+    onQueue: busy ? sendWith((message) => actions.queueMessage(dork.id, message)) : undefined,
+    queued:
+      queue.length > 0 ? (
+        <QueuedMessages
+          queue={queue}
+          disabled={action.pending || !canReply}
+          onSend={(id) => void action.run(() => actions.takeQueued(dork.id, id, true))}
+          onRemove={(id) => void action.run(() => actions.takeQueued(dork.id, id, false))}
+        />
+      ) : undefined,
+  }
+}
 
 const AGENT_NAMES: Record<DorkView['provider'], string> = { claude: 'Claude', codex: 'Codex', opencode: 'OpenCode', antigravity: 'Antigravity' }
 
@@ -76,6 +105,22 @@ export function SessionChat({
   const { live } = useConnection()
   const agent = AGENT_NAMES[dork.provider]
   const canReply = !dork.archived
+  /** Sends the composer's text (and reply) one way or the other; puts both back if the server refuses. */
+  const sendWith: SendWith = (deliver: (message: string) => Promise<unknown>) => (images: Parameters<typeof withImages>[1]) =>
+    run(async () => {
+      const sent = text
+      const quoted = reply
+      setText('')
+      setReply(undefined)
+      try {
+        await deliver(withReply(quoted, withImages(sent, images)))
+      } catch (e) {
+        setText(sent)
+        setReply(quoted)
+        throw e
+      }
+    })
+  const queueing = useQueueControls(dork, canReply, sendWith)
   const current = dork.state === 'working' ? currentStep(view.blocks) : {}
   const needsAttention = Boolean(dork.needsAttention) || view.blocks.some((b) => (b.kind === 'local' && b.status === 'pending') || (b.kind === 'build' && b.approved === null))
   const { blocks, problem } = splitProblem(view.blocks, dork.state)
@@ -136,33 +181,22 @@ export function SessionChat({
         text={text}
         setText={setText}
         repo={dork.repo}
-        {...(dork.kind === 'coordinator' ? { placeholder: 'Tell the dork what to do next...', showRepo: false } : {})}
+        {...(dork.kind === 'coordinator' ? { showRepo: false } : {})}
+        placeholder={queueing.placeholder}
         provider={dork.provider ?? 'claude'}
         pending={pending}
         disabled={dork.archived}
-        error={[error, stop.error, extraError, modelSwitch.error].find(Boolean) ?? ''}
+        error={[error, stop.error, queueing.error, extraError, modelSwitch.error].find(Boolean) ?? ''}
         agentLabel={dork.codexModel?.model}
         picker={claudePicker(dork, settings?.claudeModels, (model, effort, fast) => void modelSwitch.run(() => actions.chooseModel(dorkId, model ?? null, effort ?? null, fast)))}
         upload={actions.uploadImage}
         draftKey={dorkId}
         reply={reply}
         onClearReply={() => setReply(undefined)}
-        onSubmit={(images) =>
-          run(async () => {
-            const sent = text
-            const quoted = reply
-            // The optimistic row shows it at once; put the text and the reply back if the server refuses.
-            setText('')
-            setReply(undefined)
-            try {
-              await send(withReply(quoted, withImages(sent, images)))
-            } catch (e) {
-              setText(sent)
-              setReply(quoted)
-              throw e
-            }
-          })
-        }
+        // The optimistic row shows a sent message at once; a queued one shows up in the queue above the text.
+        onSubmit={sendWith(send)}
+        onQueue={queueing.onQueue}
+        queued={queueing.queued}
         onStop={dork.state === 'working' && !stop.pending && canReply ? () => void stop.run(() => actions.interrupt(dorkId)) : undefined}
       />
     </>

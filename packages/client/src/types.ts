@@ -6,6 +6,13 @@ export type { BuildView, BuildVarView, DraftView, RunView, BuildRepo, MachineTyp
 
 export type Provider = "claude" | "codex" | "opencode" | "antigravity";
 
+/** A message waiting for the agent's current turn to end (`POST /api/dorks/:id/queue`). */
+export interface QueuedMessage {
+  id: string;
+  text: string;
+  createdAt: number;
+}
+
 /** The client-visible dork row. Box ids, session ids and secrets are never returned by the server. */
 export interface Dork {
   id: string;
@@ -25,6 +32,8 @@ export interface Dork {
   prState?: "open" | "merged" | "closed";
   /** True when the dork is waiting on the owner (a computer-access prompt, build approval, or other request). Absent on older servers. */
   needsAttention?: boolean;
+  /** Messages the owner queued for when the current turn ends, oldest first. Only on a single dork's read; absent on older servers. */
+  queue?: QueuedMessage[];
   codexModel?: { model: string; effort: string };
   codexModelChoices?: { model: string; efforts: string[] }[];
   /** Claude: the model and effort chosen for this session (absent: the agent's default). */

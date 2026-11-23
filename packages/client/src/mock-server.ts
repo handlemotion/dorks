@@ -313,8 +313,14 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         broadcast({ t: "subscriptions", dorkId });
       }
       append(dorkId, { type: "turn_complete", durationMs: tick * 5, outcome: "done", finalMessageId: msg });
-      append(dorkId, { type: "status", state: "idle" });
       crewTurnEnded(d, answer);
+      // Like apps/server: the oldest queued message starts the next turn, with no idle in between.
+      const next = d.queue?.shift();
+      if (next) {
+        broadcast({ t: "dork", dorkId });
+        append(dorkId, { type: "user_message", text: next.text });
+        runTurn(dorkId, next.text);
+      } else append(dorkId, { type: "status", state: "idle" });
     });
   };
 
@@ -530,6 +536,21 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       },
     ],
     [
+      "POST queue",
+      ({ body, res }, d) => {
+        const text = str(body.text)?.trim();
+        if (!text) return fail(res, "invalid", "text is required");
+        if (d.archived) return fail(res, "archived", "This session is archived.");
+        if (!["creating", "waking", "working"].includes(d.state)) {
+          startTurn(d.id, text);
+          return json(res, 200, { queued: false });
+        }
+        d.queue = [...(d.queue ?? []), { id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, text, createdAt: Date.now() }];
+        broadcast({ t: "dork", dorkId: d.id });
+        return json(res, 200, { queued: true });
+      },
+    ],
+    [
       "POST interrupt",
       ({ res }, d) => {
         if (d.state === "working") {
@@ -636,9 +657,25 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     const sub = m[2] ?? "";
     const local = /^local\/([^/]+)$/.exec(sub);
     if (local && c.method === "POST") return decideLocal(c, d, decodeURIComponent(local[1]!));
+    const queued = /^queue\/([^/]+)(\/send)?$/.exec(sub);
+    if (queued) return takeQueued(c, d, decodeURIComponent(queued[1]!), !!queued[2]);
     const handle = dorkRoutes.get(`${c.method} ${sub}`) ?? dorkRoutes.get(`* ${sub}`);
     if (!handle) return fail(c.res, "not_found", "Unknown route.");
     return handle(c, d);
+  };
+
+  /** `DELETE /api/dorks/:id/queue/:qid` removes a queued message; `POST …/send` sends it now. */
+  const takeQueued = ({ method, res }: Ctx, d: MockDork, qid: string, send: boolean) => {
+    if (method !== (send ? "POST" : "DELETE")) return fail(res, "not_found", "Unknown route.");
+    const item = d.queue?.find((q) => q.id === qid);
+    if (!item) return fail(res, "not_found", "That message is no longer queued.");
+    d.queue = d.queue!.filter((q) => q !== item);
+    broadcast({ t: "dork", dorkId: d.id });
+    if (send) {
+      if (d.state === "working") append(d.id, { type: "user_message", text: item.text });
+      else startTurn(d.id, item.text);
+    }
+    return json(res, 200, {});
   };
 
   /** `POST /api/dorks/:id/local/:requestId`: the owner's answer to a session's first request to use the computer. */
@@ -1011,7 +1048,10 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     if (handle) return handle(c);
     const automation = automations(method, path, body);
     if (automation) return "error" in automation ? fail(res, automation.error, automation.message) : json(res, automation.status, automation.body);
-    const m = /^\/api\/dorks\/([^/]+)(?:\/(local\/[^/]+|messages|interrupt|desktop|archive|model|codex-model|events|pr(?:\/merge|\/update-branch)?|subscriptions(?:\/resume)?))?$/.exec(path);
+    const m =
+      /^\/api\/dorks\/([^/]+)(?:\/(local\/[^/]+|messages|queue(?:\/[^/]+(?:\/send)?)?|interrupt|desktop|archive|model|codex-model|events|pr(?:\/merge|\/update-branch)?|subscriptions(?:\/resume)?))?$/.exec(
+        path,
+      );
     if (m) return routeDork(c, m);
     const sm = /^\/api\/secrets\/([^/]+)$/.exec(path);
     if (sm) return routeSecret(c, decodeURIComponent(sm[1]!));
