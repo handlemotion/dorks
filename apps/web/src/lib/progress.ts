@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
-import type { Block } from '@dorks/shared'
+import type { Block, NoticeHook } from '@dorks/shared'
+import { hookLine } from './hooks'
 import { parseReply } from './reply'
 
 export type AgentBlock = Exclude<Block, { kind: 'user' | 'turn' }>
@@ -12,8 +13,10 @@ export type ProgressStep = { readonly key: string; readonly block: ProgressToolB
 /** The work the agent did to answer one of the owner's messages. */
 export type ProgressTurn = {
   readonly key: string
-  /** The message the work answers; `null` for work with no message before it. */
+  /** The message the work answers, or the line for the PR event that started it; `null` for work with no message before it. */
   readonly prompt: string | null
+  /** The PR event (docs/autonomy.md) the work answers, when it was not a message. */
+  readonly hook?: NoticeHook
   readonly steps: readonly ProgressStep[]
   /** How long it worked, once the turn has ended. */
   readonly durationMs?: number
@@ -47,24 +50,43 @@ export function splitTurn(blocks: readonly Block[], ended: boolean, running = fa
 const IMAGE = /!\[[^\]]*\]\([^)]*\)/g
 
 /**
- * The chat's work grouped by turn, in chat order: a user message starts one, a `turn` marker ends it. A turn with no work has no
- * entry: there is nothing of it to show. Each turn's key is its first step's, so the thread can point at it.
+ * The chat's work grouped by turn, in chat order: a user message or a PR event handed to the agent starts one, a `turn` marker ends
+ * it. A PR event that lands mid-turn waits for that turn to end (the agent hears it only then). A turn with no work has no entry:
+ * there is nothing of it to show. Each turn's key is its first step's, so the thread can point at it.
  */
 export function progressTurns(blocks: readonly Block[]): ProgressTurn[] {
   const turns: ProgressTurn[] = []
   let prompt: string | null = null
+  let hook: NoticeHook | undefined
+  let waiting: NoticeHook | undefined
   let pending: AgentBlock[] = []
   const close = (ended: boolean, durationMs?: number, running = false) => {
     const steps = splitTurn(pending, ended, running).work.map((block) => ({ key: block.id, block }))
-    if (steps.length > 0) turns.push({ key: steps[0].key, prompt, steps, durationMs })
+    if (steps.length > 0) turns.push({ key: steps[0].key, prompt, steps, durationMs, ...(hook ? { hook } : {}) })
     pending = []
+  }
+  const startHook = (h: NoticeHook) => {
+    hook = h
+    prompt = hookLine(h).title
   }
   for (const block of blocks) {
     if (block.kind === 'user') {
       close(false)
+      waiting = undefined
+      hook = undefined
       prompt = parseReply(block.text).body.replace(IMAGE, '').trim() || null
-    } else if (block.kind === 'turn') close(true, block.durationMs)
-    else pending.push(block)
+    } else if (block.kind === 'turn') {
+      close(true, block.durationMs)
+      if (waiting) startHook(waiting)
+      waiting = undefined
+    } else if (block.kind === 'notice' && block.hook?.type === 'notify') {
+      const working = pending.some((b) => b.kind === 'tool' || b.kind === 'assistant')
+      if (working) waiting = block.hook
+      else {
+        close(false)
+        startHook(block.hook)
+      }
+    } else pending.push(block)
   }
   close(false, undefined, true)
   return turns

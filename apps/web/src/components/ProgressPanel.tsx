@@ -42,6 +42,7 @@ import {
   type StepEdit,
 } from '../lib/progress'
 import { AgentMarkdown } from './ChatBlock'
+import { hookLine } from '../lib/hooks'
 import { EmptyState } from './EmptyState'
 import { BAR_BUTTON } from './PreviewBrowser'
 import { TOOL_KIND_ICONS } from './toolIcons'
@@ -273,7 +274,7 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
                 <div key={turn.key} role="group" data-turn-key={turn.key} aria-label={turn.prompt ?? 'Steps'}>
                   {/* Pinned while its steps scroll under it, so the message they answer stays in view. */}
                   <div className="sticky top-0 z-10 box-content flex h-7 items-center gap-2 bg-background px-(--details-text) pb-1 text-sm text-foreground">
-                    <MessageSquareIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+                    <TurnIcon turn={turn} />
                     <span className="min-w-0 flex-1 truncate" title={turn.prompt ?? undefined}>
                       {turn.prompt ?? 'Without a message'}
                     </span>
@@ -321,6 +322,12 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
       {!selected && tasks.length > 0 && <Tasks tasks={tasks} />}
     </div>
   )
+}
+
+/** A turn's header icon: a message, or the icon of the PR event the agent answered. */
+function TurnIcon({ turn }: { turn: ProgressTurn }) {
+  const Icon = turn.hook ? hookLine(turn.hook).icon : MessageSquareIcon
+  return <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
 }
 
 /** A step's one line: what it ran, read, edited or said. */

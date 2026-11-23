@@ -14,6 +14,7 @@ import { ImageLightbox, ImageTrigger, useLightboxImages, type LightboxImage } fr
 import { CodeBlock, CodeBlockContent } from '@dorks/ui/code-block'
 import { Message, MessageContent } from '@dorks/ui/message'
 import { toolStep } from '../lib/progress'
+import { hookLine } from '../lib/hooks'
 import { MessageScrollerItem } from '@dorks/ui/message-scroller'
 import { LocalRequestCard } from './LocalRequest'
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from '@dorks/ui/trace'
@@ -323,17 +324,27 @@ function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => vo
     } else if (block.kind === 'crew') {
       content.push(<CrewCard key={block.id} block={block} />)
     } else if (block.kind === 'notice') {
-      content.push(
-        <Trace key={block.id} role={block.level === 'error' ? 'alert' : 'status'}>
-          <TraceLine status={block.level === 'error' ? 'error' : undefined}>
-            <TraceIcon>{block.level === 'error' ? <CircleAlertIcon /> : <CircleCheckIcon />}</TraceIcon>
-            <TraceTitle>{block.text}</TraceTitle>
-          </TraceLine>
-        </Trace>,
-      )
+      content.push(<Notice key={block.id} block={block} />)
     }
   }
   return content
+}
+
+/** A notice; an autonomy event (a PR comment, CI, the agent's PR opened) says what happened in a few words, with the digest on hover. */
+function Notice({ block }: { block: Extract<Block, { kind: 'notice' }> }) {
+  const line = block.hook ? hookLine(block.hook) : undefined
+  const error = block.level === 'error'
+  const Icon = line?.icon ?? (error ? CircleAlertIcon : CircleCheckIcon)
+  return (
+    <Trace role={error ? 'alert' : 'status'} data-testid={line ? 'hook' : undefined}>
+      <TraceLine status={error ? 'error' : undefined} title={line ? block.text : undefined}>
+        <TraceIcon>
+          <Icon />
+        </TraceIcon>
+        <TraceTitle>{line?.title ?? block.text}</TraceTitle>
+      </TraceLine>
+    </Trace>
+  )
 }
 
 /** A turn's blocks, in order, with the `turn` marker that ended it (none while it is still running). */
