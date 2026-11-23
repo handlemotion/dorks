@@ -91,12 +91,33 @@ export function parseModels(out: string): { model: string; name: string }[] {
   return models.slice(0, 100);
 }
 
-/** A short line for a tool call in the transcript, from agy's tool parameters. */
+/** agy's parameters that say what a call is about, most telling first (a command, a file, a search). */
+const SUMMARY_KEYS = [
+  "CommandLine",
+  "TargetFile",
+  "AbsolutePath",
+  "Path",
+  "File",
+  "DirectoryPath",
+  "SearchPath",
+  "SearchDirectory",
+  "Query",
+  "query",
+  "Pattern",
+  "Url",
+  "Uri",
+  "Prompt",
+  "Description",
+  "Message",
+];
+
+/** A short line for a tool call in the transcript, from agy's tool parameters: a known field, else its first short one-line string. */
 function toolSummary(params: Json): string {
-  for (const k of ["CommandLine", "TargetFile", "AbsolutePath", "DirectoryPath", "SearchPath", "Query", "query", "Pattern", "Url", "Prompt", "Description", "Message"]) {
+  for (const k of SUMMARY_KEYS) {
     const v = params[k];
-    if (typeof v === "string" && v) return v;
+    if (typeof v === "string" && v.trim()) return v;
   }
+  for (const v of Object.values(params)) if (typeof v === "string" && v.trim() && v.length <= 300 && !v.includes("\n")) return v;
   return "";
 }
 
@@ -336,6 +357,9 @@ export class AntigravityAgent {
     const info = obj(s.tool_info);
     const name = text(info.name) || text(s.tool_name) || (s.subagent_info ? "invoke_subagent" : "tool");
     const params = obj(info.parameters);
+    // agy announces a call before its parameters are in (the model is still writing it): the call waits until they say what it does,
+    // or until the step ends, so it is never shown (and kept) with an empty input.
+    if (!this.shown.has(id) && !done && !toolSummary(params)) return;
     if (!this.shown.has(id)) {
       this.shown.add(id);
       this.o.onRaw({ type: "assistant", message: { id: `${id}:use`, content: [{ type: "tool_use", id, name, input: { description: clip(this.o.redactor.scrub(toolSummary(params))) } }] } });
