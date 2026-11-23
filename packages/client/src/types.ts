@@ -274,5 +274,19 @@ export interface Usage {
   claude?: { session?: UsageWindow; weekly: UsageWindow };
   /** Antigravity's Google AI plan: its Gemini models' 5-hour and weekly limits. */
   google?: { session?: UsageWindow; weekly: UsageWindow };
-  cloud?: { usedHours: number; includedHours: number; periodEnd?: number };
+  /** Boat: included machine time this period (hours), running sandboxes and starts against their limits, the wallet (dollars), why starts are refused. */
+  cloud?: {
+    usedHours?: number;
+    includedHours?: number;
+    periodEnd?: number;
+    sandboxes?: UsageCount;
+    startsHour?: UsageCount;
+    startsDay?: UsageCount;
+    walletDollars?: number;
+    blocked?: string;
+  };
+}
+export interface UsageCount {
+  used: number;
+  limit: number;
 }

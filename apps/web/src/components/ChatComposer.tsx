@@ -298,7 +298,7 @@ function RepositoryControl({ repo, setRepo, repositories, disabled, hidden }: { 
   if (setRepo) return <RepositoryPicker repo={repo} setRepo={setRepo} repositories={repositories} disabled={disabled} />
   return (
     <span title={repo} data-testid="chat-repository" className="flex h-7 min-w-0 items-center gap-1.5 px-2 text-[13px] text-muted-foreground">
-      <FolderIcon className="size-3.5 shrink-0" />
+      {repo ? <OwnerAvatar owner={ownerOf(repo)} size={16} className="size-3.5 shrink-0" /> : <FolderIcon className="size-3.5 shrink-0" />}
       <span className="max-w-48 truncate">{repo || 'No repository'}</span>
     </span>
   )
@@ -711,6 +711,7 @@ export function Composer({
   machine,
   focusKey,
   draftKey,
+  usage,
 }: {
   text: string
   setText: (text: string) => void
@@ -758,6 +759,8 @@ export function Composer({
   focusKey?: string
   /** Keeps the attached images under this key (the text draft's) while the owner visits other chats. */
   draftKey?: string
+  /** The usage ring after the model menu (`<UsageMenu />`). */
+  usage?: ReactNode
 }) {
   const formRef = useRef<HTMLFormElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -915,6 +918,7 @@ export function Composer({
             isNewSession={isNewSession}
             disabled={locked}
           />
+          {usage}
         </div>
       </form>
       {shownError && (

@@ -5,6 +5,7 @@ import { Button } from '@dorks/ui/button'
 import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport } from '@dorks/ui/message-scroller'
 import { AgentStatus } from './AgentStatus'
 import { ChatMessages } from './ChatBlock'
+import { UsageMenu } from './UsageMenu'
 import { Composer, withImages, type AttachedImage, type ModelPicker } from './ChatComposer'
 import { LocalAccessProvider } from './LocalRequest'
 import { QueuedMessages } from './QueuedMessages'
@@ -191,6 +192,7 @@ export function SessionChat({
         picker={claudePicker(dork, settings?.claudeModels, (model, effort, fast) => void modelSwitch.run(() => actions.chooseModel(dorkId, model ?? null, effort ?? null, fast)))}
         upload={actions.uploadImage}
         draftKey={dorkId}
+        usage={<UsageMenu provider={dork.provider} />}
         reply={reply}
         onClearReply={() => setReply(undefined)}
         // The optimistic row shows a sent message at once; a queued one shows up in the queue above the text.
