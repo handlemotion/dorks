@@ -164,7 +164,8 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
     revealed.current = false
     atEnd.current = false
     row.scrollIntoView({ block: 'center' })
-  }, [reveal, query]) // eslint-disable-line react-hooks/exhaustive-deps -- only when the thread asks, not on every pick
+    // `collapsed`: a step in a folded turn has no row until the turn opens (the reveal above opens it); try again then.
+  }, [reveal, query, collapsed]) // eslint-disable-line react-hooks/exhaustive-deps -- only when the thread asks, not on every pick
   // The selected row stays in view as the arrows move it (a clicked row is already in view: the list stays where it is).
   const clicked = useRef(false)
   useEffect(() => {
