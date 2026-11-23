@@ -811,7 +811,6 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
                   usedHours: 38.4,
                   includedHours: 555.56,
                   periodEnd: now + 29 * 86400_000,
-                  plan: "$20/mo",
                   sandboxes: { used: 3, limit: 100 },
                   startsHour: { used: 4, limit: 60 },
                   startsDay: { used: 21, limit: 200 },

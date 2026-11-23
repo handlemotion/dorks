@@ -27,7 +27,6 @@ const demoUsage: Usage = {
     usedHours: 46.7,
     includedHours: 555.56,
     periodEnd: Date.now() + 17 * 86_400_000,
-    plan: '$20/mo',
     sandboxes: { used: 4, limit: 100 },
     startsHour: { used: 9, limit: 60 },
     startsDay: { used: 27, limit: 200 },

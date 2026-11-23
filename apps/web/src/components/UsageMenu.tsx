@@ -1,4 +1,4 @@
-import { ArrowRightIcon } from 'lucide-react'
+import { ArrowUpRightIcon } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { useUsage } from '@dorks/client/react'
 import type { Usage, UsageWindow } from '@dorks/client'
@@ -21,7 +21,7 @@ const resets = (at: number | undefined) => (at === undefined ? undefined : `Rese
 const PLANS: Partial<Record<AgentProvider, { key: 'claude' | 'google'; name: string }>> = { claude: { key: 'claude', name: 'Claude' }, antigravity: { key: 'google', name: 'Gemini' } }
 
 /** One limit as shown: a label, when it resets, and the share used. */
-type Limit = { label: string; used: number; note?: string }
+type Limit = { label: string; used: number; note?: string; title?: string }
 
 /** The provider's model limits, then Boat's included machine time: the first sets the ring, the fullest of them really. */
 function limitsOf(usage: Usage, provider: AgentProvider) {
@@ -34,7 +34,8 @@ function limitsOf(usage: Usage, provider: AgentProvider) {
       ? {
           label: 'Machine time',
           used: cloud.usedHours / cloud.includedHours,
-          note: `${hours(cloud.usedHours)} of ${hours(cloud.includedHours)} h${cloud.periodEnd ? ` · renews ${date.format(cloud.periodEnd)}` : ''}`,
+          note: cloud.periodEnd ? `Renews ${date.format(cloud.periodEnd)}` : undefined,
+          title: `${hours(cloud.usedHours)} of ${hours(cloud.includedHours)} hours used`,
         }
       : undefined
   return { plan, modelLimits, cloud, machine }
@@ -76,14 +77,14 @@ export function UsageMenuView({ usage, provider }: { usage: Usage; provider: Age
       {/* Styled as the app's dropdown menus (hairline, soft shadow), like the repository picker. */}
       <PopoverContent align="end" className={`${MENU_POPUP_CLASS} w-80 gap-0 p-0 text-[13px]`}>
         {modelLimits.length > 0 && plan && (
-          <Section title={`Plan usage limits · ${plan.name}`} page="agents" link="Accounts">
+          <Section title={plan.name} page="agents" link="AI accounts">
             {modelLimits.map((l) => (
               <Bar key={l.label} limit={l} />
             ))}
           </Section>
         )}
         {cloud && (
-          <Section title={`Cloud · Boat${cloud.plan ? ` ${cloud.plan}` : ''}`} page="boat" link="Boat" divided={modelLimits.length > 0}>
+          <Section title="Boat" page="boat" link="Boat" divided={modelLimits.length > 0}>
             {cloud.blocked && (
               <p role="alert" className="text-destructive">
                 {cloud.blocked}
@@ -116,10 +117,11 @@ function Section({ title, page, link, divided, children }: { title: string; page
         <Link
           to="/settings/$page"
           params={{ page }}
-          className="flex shrink-0 items-center gap-1 rounded-[6px] text-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={`Open ${link} settings`}
+          title={`${link} settings`}
+          className="-my-1 -mr-1 flex size-6 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground outline-none hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {link}
-          <ArrowRightIcon className="size-3.5" />
+          <ArrowUpRightIcon className="size-3.5" />
         </Link>
       </div>
       {children}
@@ -131,7 +133,7 @@ function Section({ title, page, link, divided, children }: { title: string; page
 function Bar({ limit }: { limit: Limit }) {
   const used = clamp(limit.used)
   return (
-    <div className="flex flex-col gap-1.5">
+    <div title={limit.title} className="flex flex-col gap-1.5">
       <div className="flex items-baseline justify-between gap-3">
         <span className="truncate">{limit.label}</span>
         <span className="shrink-0 text-muted-foreground tabular-nums">

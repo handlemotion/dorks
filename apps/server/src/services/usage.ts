@@ -20,8 +20,6 @@ export interface Usage {
     usedHours?: number;
     includedHours?: number;
     periodEnd?: number;
-    /** The plan's price as Boat shows it, `$20/mo`. */
-    plan?: string;
     /** Sandboxes running now, of the most that may run at once. */
     sandboxes?: UsageCount;
     /** Sandbox starts in the last hour and day, of the plan's limits (more cost extra from the wallet). */
@@ -162,8 +160,6 @@ const Limits = Schema.Struct({
   maxActiveSandboxes: Schema.optional(Schema.Unknown),
   starts: Schema.optional(Schema.NullOr(Schema.Struct({ unlimited: Schema.optional(Schema.Unknown), hour: Window, day: Window }))),
   wallet: Schema.optional(Schema.NullOr(Schema.Struct({ balanceDollars: Schema.optional(Schema.Unknown) }))),
-  sandboxPlanKey: Schema.optional(Schema.Unknown),
-  sandboxPlanTiers: Schema.optional(Schema.Array(Schema.Struct({ key: Schema.optional(Schema.Unknown), displayPrice: Schema.optional(Schema.Unknown) }))),
 });
 
 /** A count against its limit, when Boat reports both as numbers (a missing or null limit is unlimited: left out). */
@@ -202,10 +198,8 @@ function blockedReason(l: BoatLimits) {
 export function planUsage(l: BoatLimits): Usage["cloud"] {
   const sandboxes = count(l.activeSandboxes, l.maxActiveSandboxes);
   const wallet = Number(l.wallet?.balanceDollars);
-  const tier = l.sandboxPlanTiers?.find((t) => t.key === l.sandboxPlanKey)?.displayPrice;
   const cloud: NonNullable<Usage["cloud"]> = {
     ...includedHours(l.planIncluded),
-    ...(typeof tier === "string" && tier ? { plan: tier } : {}),
     ...(sandboxes ? { sandboxes } : {}),
     ...startCounts(l.starts),
     ...(l.wallet && Number.isFinite(wallet) ? { walletDollars: wallet } : {}),
