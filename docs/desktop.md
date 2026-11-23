@@ -16,7 +16,7 @@ Dorks.app
 - **Supervises the server:** spawns it with the environment below, polls `GET /api/health`, restarts it when it exits or stops answering (exponential backoff, gives up after 5 failures in 2 minutes and shows "failed" until you choose Restart Server), stops it with SIGTERM and then SIGKILL after 5 s on quit. Its output goes to `logs/server.log`. A server orphaned by a killed shell is stopped on the next start (`server.pid`).
 - **Menu bar:** server status, Open Dorks, Open Data Folder, Open Server Log, Restart Server, Quit. Closing the window leaves the app running in the menu bar.
 - **Sandboxes:** the shell starts only the server, which listens on the UI port on loopback and nothing else. Sandboxes are reached by the server dialing out to each box's bridge ([architecture.md](architecture.md#bridge-protocol-websocket-dialed-by-the-server)), so the Mac opens no inbound port and needs no public URL. On start the shell deletes files left by the removed tunnel: `tunnel-install-key`, `wurmhol-connector`, `wurmhol-token`, `wurmhol-access-key`, `wurmhol-name` and `logs/wurmhol.log`.
-- **Updates:** checks GitHub Releases shortly after launch and every 4 hours, offers a newer version in the sidebar and the menu bar, and installs it in place (see [Updates](#updates)).
+- **Updates:** checks GitHub Releases shortly after launch and every 15 minutes, offers a newer version in the sidebar and the menu bar, and installs it in place (see [Updates](#updates)).
 - **Keep awake:** a power assertion (`caffeinate -i -w <pid>`, released automatically if the app dies) while the UI reports active dorks. Setting: `whileActive` (default), `always`, `never`.
 
 ## Contract with the server
@@ -117,7 +117,7 @@ pnpm --filter @dorks/desktop prepare:stub # stand-in server + placeholder page, 
 
 Release builds update themselves from GitHub Releases with Tauri's updater (`src/updater.rs`). Local and unsigned builds do not have the `updater` cargo feature: their status is `unsupported` and nothing about updates shows.
 
-- **Check.** 10 seconds after launch, then every 4 hours, the shell fetches `https://github.com/handlemotion/dorks/releases/latest/download/latest.json` (the endpoint the release workflow bakes in) and compares its version with the app's (`version` in `tauri.conf.json`). A failed check (offline, GitHub down) is logged and shows nothing.
+- **Check.** 10 seconds after launch, then every 15 minutes, the shell fetches `https://github.com/handlemotion/dorks/releases/latest/download/latest.json` (the endpoint the release workflow bakes in) and compares its version with the app's (`version` in `tauri.conf.json`). A failed check (offline, GitHub down) is logged and shows nothing.
 - **Status**, from `update_status()` and every `dorks://update` event, tagged by `state`:
 
   | `state` | Fields | Shown |
@@ -132,7 +132,7 @@ Release builds update themselves from GitHub Releases with Tauri's updater (`src
 - **Install.** Update in the sidebar (`UpdatePrompt`, a solid brand-blue block above the usage meters) or in the menu bar downloads the bundle, checks its signature against the public key baked into the app, replaces `Dorks.app`, stops the server like Quit does, and relaunches. The menu bar item reads "Check for Updates…" otherwise, and says "Dorks Is Up to Date" for a few seconds after a check it started finds nothing.
 - **Trying the prompt without a release:** the web app's `UpdatePromptView` takes a status as a prop; in a browser, a stand-in `window.__TAURI__` whose `invoke('update_status')` returns one of the states above shows it.
 
-Ship an update: merge the **Release Dorks** PR ([releasing.md](releasing.md)). The release workflow builds, signs and publishes it, and installed apps pick it up within 4 hours. The version must be newer than the installed one, or the updater never offers it; Changesets only ever bumps it up.
+Ship an update: merge the **Release Dorks** PR ([releasing.md](releasing.md)). The release workflow builds, signs and publishes it, and installed apps pick it up within 15 minutes. The version must be newer than the installed one, or the updater never offers it; Changesets only ever bumps it up.
 
 ## Release
 
