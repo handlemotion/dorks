@@ -257,13 +257,17 @@ function onEnter(e: KeyboardEvent<HTMLTextAreaElement>, send: () => void, onQueu
   else send()
 }
 
-/** A row at the top of the box, 8px in like the reply banner; nothing when empty. */
-function TopAddon({ children }: { children?: ReactNode }) {
-  if (!children) return null
+/**
+ * Queued messages head a muted frame the white box sits in, card on card like a fenced code block (the box overlaps the frame's
+ * hairline on three sides): rows joined to the composer, not the reply banner's cards. Without a queue, just the box.
+ */
+function QueueFrame({ queued, children }: { queued?: ReactNode; children: ReactNode }) {
+  if (!queued) return children
   return (
-    <InputGroupAddon align="block-start" className="px-2 pt-2 pb-0">
+    <div data-queue className="flex flex-col rounded-[16px] border border-border bg-muted dark:bg-card">
+      {queued}
       {children}
-    </InputGroupAddon>
+    </div>
   )
 }
 
@@ -740,7 +744,7 @@ export function Composer({
   onStop?: () => void
   /** ⌘ Enter (Ctrl Enter): queue the message for when the agent's turn ends, like `onSubmit` otherwise. Without it ⌘ Enter sends. */
   onQueue?: (images: AttachedImage[]) => void | Promise<unknown>
-  /** The queued messages, shown as rows at the top of the box. */
+  /** The queued messages, shown as rows in a frame joined to the top of the box. */
   queued?: ReactNode
   /** A line above the box, e.g. the sandbox status. */
   status?: ReactNode
@@ -817,90 +821,91 @@ export function Composer({
           }}
         />
         {/* White on the off-white app (light), with the panel's 6% hairline since that pair is under 1.15:1; dark keeps the published fill. */}
-        <InputGroup
-          data-dragging={dragging}
-          className="data-[dragging=true]:border-ring data-[dragging=true]:ring-[3px] data-[dragging=true]:ring-ring/50 rounded-[15px] border-border bg-white has-[textarea]:rounded-[15px] has-[>[data-align=block-start]]:rounded-[15px] dark:border-transparent dark:bg-input/50"
-        >
-          <TopAddon>{queued}</TopAddon>
-          {reply && (
-            // The reply banner sits 8px inside the box (the buttons' inset), concentric with its 15px corners.
-            <InputGroupAddon align="block-start" className="px-2 pt-2 pb-0">
-              <ReplyBanner
-                reply={reply}
-                onClear={() => {
-                  onClearReply?.()
-                  textRef.current?.focus()
-                }}
-              />
-            </InputGroupAddon>
-          )}
-          {files.length > 0 ? (
-            // Attached images as plain thumbnails, the text's left edge, no file names: a 112px tile with the image filling it, a hairline
-            // drawn inside its edge so a white screenshot keeps its shape, and a remove button in its corner on hover or focus.
-            <InputGroupAddon align="block-start" className="flex-wrap justify-start gap-2 px-[42px] pt-3 pb-0">
-              <ImageLightbox images={files.map((f) => ({ id: f.key, src: f.preview, alt: f.name }))} label="Attached images">
-                {files.map((file, index) => (
-                  <AttachmentTile key={file.key} file={file} index={index} onRemove={() => remove(file.key)} />
-                ))}
-              </ImageLightbox>
-            </InputGroupAddon>
-          ) : null}
-          <InputGroupTextarea
-            aria-label={isNewSession ? 'first message' : 'message'}
-            // Not a credential field: keep Safari's and password managers' autofill off it.
-            name="prompt"
-            autoComplete="off"
-            data-1p-ignore
-            data-lpignore="true"
-            data-form-type="other"
-            placeholder={hintOf(placeholder)}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onPaste={(e) => {
-              const images = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith('image/'))
-              if (!upload || !images.length) return
-              e.preventDefault()
-              attach(images)
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape' && reply && onClearReply) {
+        <QueueFrame queued={queued}>
+          <InputGroup
+            data-dragging={dragging}
+            className="in-data-queue:-mx-px in-data-queue:-mb-px in-data-queue:w-auto data-[dragging=true]:border-ring data-[dragging=true]:ring-[3px] data-[dragging=true]:ring-ring/50 rounded-[15px] border-border bg-white has-[textarea]:rounded-[15px] has-[>[data-align=block-start]]:rounded-[15px] dark:border-transparent dark:bg-input/50"
+          >
+            {reply && (
+              // The reply banner sits 8px inside the box (the buttons' inset), concentric with its 15px corners.
+              <InputGroupAddon align="block-start" className="px-2 pt-2 pb-0">
+                <ReplyBanner
+                  reply={reply}
+                  onClear={() => {
+                    onClearReply?.()
+                    textRef.current?.focus()
+                  }}
+                />
+              </InputGroupAddon>
+            )}
+            {files.length > 0 ? (
+              // Attached images as plain thumbnails, the text's left edge, no file names: a 112px tile with the image filling it, a hairline
+              // drawn inside its edge so a white screenshot keeps its shape, and a remove button in its corner on hover or focus.
+              <InputGroupAddon align="block-start" className="flex-wrap justify-start gap-2 px-[42px] pt-3 pb-0">
+                <ImageLightbox images={files.map((f) => ({ id: f.key, src: f.preview, alt: f.name }))} label="Attached images">
+                  {files.map((file, index) => (
+                    <AttachmentTile key={file.key} file={file} index={index} onRemove={() => remove(file.key)} />
+                  ))}
+                </ImageLightbox>
+              </InputGroupAddon>
+            ) : null}
+            <InputGroupTextarea
+              aria-label={isNewSession ? 'first message' : 'message'}
+              // Not a credential field: keep Safari's and password managers' autofill off it.
+              name="prompt"
+              autoComplete="off"
+              data-1p-ignore
+              data-lpignore="true"
+              data-form-type="other"
+              placeholder={hintOf(placeholder)}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onPaste={(e) => {
+                const images = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith('image/'))
+                if (!upload || !images.length) return
                 e.preventDefault()
-                onClearReply()
-                return
-              }
-              onEnter(
-                e,
-                () => formRef.current?.requestSubmit(),
-                onQueue,
-                () => canSend && void submit(onQueue),
-              )
-            }}
-            disabled={locked}
-            ref={textRef}
-            rows={1}
-            // A 44px row: 12px above and below a 20px line of 15px text, 42px in from each side (past the 28px buttons, 8px from the
-            // edge, and 6px more).
-            className="max-h-[40vh] min-h-0 py-3 px-[42px] leading-5 md:text-[15px]"
-          />
-          {/* Attach and the main button keep one spot, 8px from the bottom corners, level with the text's last line. */}
-          <div className="absolute bottom-2 left-2">
-            <Tip label="Attach images">
-              <InputGroupButton
-                size="icon-sm"
-                variant="ghost"
-                className="size-7 text-muted-foreground hover:text-foreground [--control-radius:6px]"
-                aria-label="Attach images"
-                disabled={!upload || locked}
-                onClick={() => fileRef.current?.click()}
-              >
-                <PlusIcon className="size-4" />
-              </InputGroupButton>
-            </Tip>
-          </div>
-          <div className="absolute right-2 bottom-2">
-            <MainButton onStop={onStop} isNewSession={isNewSession} pending={pending} canSend={canSend} canQueue={!!onQueue} />
-          </div>
-        </InputGroup>
+                attach(images)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape' && reply && onClearReply) {
+                  e.preventDefault()
+                  onClearReply()
+                  return
+                }
+                onEnter(
+                  e,
+                  () => formRef.current?.requestSubmit(),
+                  onQueue,
+                  () => canSend && void submit(onQueue),
+                )
+              }}
+              disabled={locked}
+              ref={textRef}
+              rows={1}
+              // A 44px row: 12px above and below a 20px line of 15px text, 42px in from each side (past the 28px buttons, 8px from the
+              // edge, and 6px more).
+              className="max-h-[40vh] min-h-0 py-3 px-[42px] leading-5 md:text-[15px]"
+            />
+            {/* Attach and the main button keep one spot, 8px from the bottom corners, level with the text's last line. */}
+            <div className="absolute bottom-2 left-2">
+              <Tip label="Attach images">
+                <InputGroupButton
+                  size="icon-sm"
+                  variant="ghost"
+                  className="size-7 text-muted-foreground hover:text-foreground [--control-radius:6px]"
+                  aria-label="Attach images"
+                  disabled={!upload || locked}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  <PlusIcon className="size-4" />
+                </InputGroupButton>
+              </Tip>
+            </div>
+            <div className="absolute right-2 bottom-2">
+              <MainButton onStop={onStop} isNewSession={isNewSession} pending={pending} canSend={canSend} canQueue={!!onQueue} />
+            </div>
+          </InputGroup>
+        </QueueFrame>
         {/* Compact, shared baseline for the repository and model controls. 9px in (8px plus the box's 1px border), like attach and send, so the repository
             button lines up under attach and the model button under send. */}
         <div className="flex items-center gap-2 px-[9px] pt-2 text-[13px] [--control-radius:6px]">
