@@ -1,4 +1,5 @@
 import { imageBytes } from "../../services/bridge";
+import { imageThumb, thumbWidth } from "../../services/imageThumbs";
 import { CALLBACK_PATH, callbackPage, finishMcpSignIn } from "../../services/mcpOAuth";
 import { errBody } from "../route";
 import type { Routes } from "./shared";
@@ -12,8 +13,11 @@ export const publicRoutes: Routes = (api, app) => {
 
   // A screenshot the agent shared (screenshot_share). Outside /api so a plain <img> can load it: the 128-bit random id is the
   // capability, handed out only inside the owner's transcript. Immutable, never sniffed, never run as a document.
-  api.get("/images/:id", (c) => {
-    const img = imageBytes(app, c.req.param("id"));
+  // `?w=640`: a smaller WebP copy for thumbnails (services/imageThumbs.ts), the original when none can be made.
+  api.get("/images/:id", async (c) => {
+    const id = c.req.param("id");
+    const width = thumbWidth(c.req.query("w"));
+    const img = width && /^[0-9a-f]{32}$/.test(id) ? await imageThumb(app, id, width) : imageBytes(app, id);
     if (!img) return c.json(errBody({ code: "not_found", message: "not found" }), 404);
     return new Response(img.bytes, {
       headers: {

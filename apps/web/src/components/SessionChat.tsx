@@ -1,4 +1,4 @@
-import { useState, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import type { AgentModelChoice } from '@dorks/shared'
 import { useConnection, useDork, useDorkEvents, useDorksClient, useSettings } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
@@ -42,6 +42,50 @@ function useQueueControls(dork: DorkView, canReply: boolean, sendWith: SendWith)
         />
       ) : undefined,
   }
+}
+
+/**
+ * The top of a transcript with older messages: they load on their own once the reader scrolls within a couple of screens of it, so
+ * scrolling up rarely meets the end (the scroller keeps the view in place as they come in). The button stays for the keyboard.
+ */
+function LoadOlder({ loading, onLoad }: { loading: boolean; onLoad: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const load = useRef(onLoad)
+  useEffect(() => {
+    load.current = onLoad
+  })
+  // Armed once the reader heads up (or when there is nothing to scroll): opening a chat renders only its newest page.
+  const [armed, setArmed] = useState(false)
+  useEffect(() => {
+    const viewport = ref.current?.closest<HTMLElement>('[data-slot="message-scroller-viewport"]')
+    if (armed || !viewport) return
+    if (viewport.scrollHeight <= viewport.clientHeight) return setArmed(true)
+    let last = viewport.scrollTop
+    const onScroll = () => {
+      if (viewport.scrollTop < last) setArmed(true)
+      last = viewport.scrollTop
+    }
+    viewport.addEventListener('scroll', onScroll, { passive: true })
+    return () => viewport.removeEventListener('scroll', onScroll)
+  }, [armed])
+  // Observed afresh after each page: a sentinel still in range after one page comes in loads the next, without another scroll.
+  useEffect(() => {
+    const node = ref.current
+    if (!armed || loading || !node) return
+    const observer = new IntersectionObserver((seen) => seen.some((e) => e.isIntersecting) && load.current(), {
+      root: node.closest('[data-slot="message-scroller-viewport"]'),
+      rootMargin: '1600px 0px 0px 0px',
+    })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [armed, loading])
+  return (
+    <div ref={ref} className="text-center">
+      <Button variant="outline" size="sm" onClick={onLoad} disabled={loading}>
+        {loading ? 'Loading older…' : 'Load older'}
+      </Button>
+    </div>
+  )
 }
 
 const AGENT_NAMES: Record<DorkView['provider'], string> = { claude: 'Claude', codex: 'Codex', opencode: 'OpenCode', antigravity: 'Antigravity' }
@@ -95,7 +139,7 @@ export function SessionChat({
 }) {
   const dorkId = dork.id
   const { actions } = useDorksClient()
-  const { view, canLoadMore, loadMore, error: eventsError, send } = useDorkEvents(dorkId)
+  const { view, canLoadMore, loadingMore, loadMore, error: eventsError, send } = useDorkEvents(dorkId)
   const own = useDraft(dorkId)
   const [text, setText] = draft ?? own
   const [reply, setReply] = useState<Reply>()
@@ -132,13 +176,7 @@ export function SessionChat({
           {/* No fade at the bottom edge: the published viewport masks it with scroll-fade-b; the last line stays fully drawn above the composer. */}
           <MessageScrollerViewport aria-label="Session transcript" className="mask-none! [scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
             <MessageScrollerContent className={`mx-auto w-full max-w-4xl gap-6 pt-6 pb-12 ${compact ? 'px-6' : 'px-10'}`} data-testid="transcript">
-              {canLoadMore && (
-                <div className="text-center">
-                  <Button variant="outline" size="sm" onClick={loadMore}>
-                    Load older
-                  </Button>
-                </div>
-              )}
+              {canLoadMore && <LoadOlder loading={loadingMore} onLoad={loadMore} />}
               <LocalAccessProvider dorkId={dorkId} agent={agent}>
                 <ChatMessages
                   blocks={blocks}

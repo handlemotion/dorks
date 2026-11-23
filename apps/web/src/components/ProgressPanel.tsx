@@ -17,7 +17,7 @@ import {
   SearchIcon,
   XIcon,
 } from 'lucide-react'
-import { MultiFileDiff } from '@pierre/diffs/react'
+import { MultiFileDiff } from './diffs'
 import { useTheme } from 'next-themes'
 import { Button } from '@dorks/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@dorks/ui/dropdown-menu'

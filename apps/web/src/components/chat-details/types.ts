@@ -11,6 +11,8 @@ export type Artifact = {
   name: string
   /** Short type label, e.g. "PNG". */ type: string
   src?: string
+  /** A smaller copy of `src` for tiles and lists. */
+  thumb?: string
   href?: string
   /** Pixel size of an image, when known. */ width?: number
   height?: number

@@ -14,6 +14,7 @@ import { PrIcon, prStatus } from './PrStatus'
 import { PullRequestPanel, TAB_CLASS, type PullRequestPanelData } from './PullRequestPanel'
 import { SessionChat, type DorkView } from './SessionChat'
 import { Tip } from './Tip'
+import { THUMB_WIDTH } from '../lib/images'
 
 type Worker = NonNullable<ReturnType<typeof useDorks>>[number]
 type TabKey = 'sessions' | 'artifacts' | `pr:${string}`
@@ -212,7 +213,15 @@ function CrewArtifacts({ dork, workers }: { dork: DorkView; workers: Worker[] })
   const [preview, setPreview] = useState<string>()
   const sessions = [dork, ...workers]
   const artifacts: Artifact[] = sessions.flatMap((s) =>
-    (s.images ?? []).map((i, n) => ({ id: i.id, name: `${s.title} · ${i.caption ?? `Screenshot ${n + 1}`}`, type: 'Screenshot', src: actions.imageUrl(i.id), width: i.width, height: i.height })),
+    (s.images ?? []).map((i, n) => ({
+      id: i.id,
+      name: `${s.title} · ${i.caption ?? `Screenshot ${n + 1}`}`,
+      type: 'Screenshot',
+      src: actions.imageUrl(i.id),
+      thumb: actions.imageUrl(i.id, THUMB_WIDTH),
+      width: i.width,
+      height: i.height,
+    })),
   )
   const previews: PreviewServer[] = sessions.flatMap((s) => (s.previews ?? []).map((p) => ({ name: `${s.title} · ${p.title ?? `Port ${p.port}`}`, url: p.url, port: p.port })))
   const open = previews.find((p) => p.url === preview)

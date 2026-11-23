@@ -1,4 +1,4 @@
-import { useMemo, useState, type ComponentProps, type ReactNode } from 'react'
+import { memo, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import { BoxIcon, ChevronRightIcon, ImageOffIcon, MessageSquareIcon, UsersIcon, CircleAlertIcon, CircleCheckIcon, CircleStopIcon, ReplyIcon } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { Button } from '@dorks/ui/button'
@@ -12,6 +12,7 @@ import { REPLY_SOURCE, ReplyContext, ReplyQuote, SelectionReply, useReply, type 
 import { parseReply, quoteText } from '../lib/reply'
 import { ImageLightbox, ImageTrigger, useLightboxImages, type LightboxImage } from './ImageLightbox'
 import { CodeBlock, CodeBlockContent } from '@dorks/ui/code-block'
+import { INLINE_WIDTH, sizedImage, THUMB_WIDTH } from '../lib/images'
 import { Message, MessageContent } from '@dorks/ui/message'
 import { toolStep } from '../lib/progress'
 import { hookLine } from '../lib/hooks'
@@ -35,7 +36,7 @@ function transcriptImages(blocks: Block[]): LightboxImage[] {
     if (block.kind !== 'user' && block.kind !== 'assistant') continue
     let n = 0
     const text = block.kind === 'user' ? parseReply(block.text).body : block.text
-    for (const m of text.matchAll(IMAGE)) images.push({ id: `${block.id}:${n++}`, src: m[2], alt: m[1] || 'Image', caption: m[1] || undefined })
+    for (const m of text.matchAll(IMAGE)) images.push({ id: `${block.id}:${n++}`, src: m[2], thumb: sizedImage(m[2], THUMB_WIDTH), alt: m[1] || 'Image', caption: m[1] || undefined })
   }
   return images
 }
@@ -45,16 +46,29 @@ function transcriptImages(blocks: Block[]): LightboxImage[] {
  * server, so the id becomes that server's image URL before the markdown renders.
  */
 const SHARED_IMAGE = /\(\s*dorks-image:([0-9a-f]{32})/g
+/**
+ * Per `imageUrl` (one per server): each resolved URL remembers its id, so a reply to that image can name it to the agent again, and
+ * each block resolved once keeps its resolved copy, so a memoized message sees the same block on every render.
+ */
+const resolved = new WeakMap<(id: string) => string, { refs: Map<string, string>; blocks: WeakMap<Block, Block> }>()
+const NO_REFS = new Map<string, string>()
 export function resolveSharedImages(blocks: Block[], imageUrl?: (id: string) => string): { blocks: Block[]; refs: Map<string, string> } {
-  // Each resolved URL remembers its id, so a reply to that image can name it to the agent again.
-  const refs = new Map<string, string>()
-  if (!imageUrl) return { blocks, refs }
+  if (!imageUrl) return { blocks, refs: NO_REFS }
+  let cache = resolved.get(imageUrl)
+  if (!cache) resolved.set(imageUrl, (cache = { refs: new Map(), blocks: new WeakMap() }))
+  const { refs, blocks: done } = cache
   const resolve = (_: string, id: string) => {
     const url = imageUrl(id)
     refs.set(url, `dorks-image:${id}`)
     return `(${url}`
   }
-  return { blocks: blocks.map((b) => ((b.kind === 'assistant' || b.kind === 'user') && b.text.includes('dorks-image:') ? { ...b, text: b.text.replace(SHARED_IMAGE, resolve) } : b)), refs }
+  const one = (b: Block): Block => {
+    if ((b.kind !== 'assistant' && b.kind !== 'user') || !b.text.includes('dorks-image:')) return b
+    let r = done.get(b)
+    if (!r) done.set(b, (r = { ...b, text: b.text.replace(SHARED_IMAGE, resolve) }))
+    return r
+  }
+  return { blocks: blocks.map(one), refs }
 }
 
 /**
@@ -90,7 +104,9 @@ function ChatImageView({ src, alt, large }: { src?: string | Blob; alt?: string;
   const size = `${large ? 'max-h-90 max-w-full h-auto w-auto' : 'h-36 w-auto'} outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10`
   const index = typeof src === 'string' ? images.findIndex((i) => i.src === src) : -1
   if (src !== undefined && failedSrc === src) return <ImageUnavailable alt={alt} />
-  if (index < 0) return typeof src === 'string' ? <img src={src} alt={alt ?? ''} onError={() => setFailedSrc(src)} className={`block ${size} rounded-(--control-radius)`} /> : null
+  // Shown from the server's smaller copy: the viewer opens the full image.
+  const shown = typeof src === 'string' ? sizedImage(src, large ? INLINE_WIDTH : THUMB_WIDTH) : undefined
+  if (index < 0) return shown ? <img src={shown} alt={alt ?? ''} decoding="async" onError={() => setFailedSrc(src)} className={`block ${size} rounded-(--control-radius)`} /> : null
   return (
     <ImageTrigger
       index={index}
@@ -103,8 +119,9 @@ function ChatImageView({ src, alt, large }: { src?: string | Blob; alt?: string;
             imageRef(node)
             morphRef(node)
           }}
-          src={src as string}
+          src={shown}
           alt={alt ?? ''}
+          decoding="async"
           onError={() => setFailedSrc(src)}
           className={`block ${size} rounded-(--control-radius) bg-surface object-cover`}
         />
@@ -439,6 +456,90 @@ function TurnContent({ blocks, end, onOpenSteps }: { blocks: AgentBlock[]; end?:
   )
 }
 
+/** The same handler on every render (so memoized messages keep theirs), calling the latest one given; `undefined` stays `undefined`. */
+function useStableHandler<A extends unknown[], R>(handler: ((...args: A) => R) | undefined): ((...args: A) => R) | undefined {
+  const latest = useRef(handler)
+  useLayoutEffect(() => {
+    latest.current = handler
+  })
+  const present = handler !== undefined
+  return useMemo(() => (present ? (...args: A) => latest.current!(...args) : undefined), [present])
+}
+
+/** The previous list while every image in it is the same, so the lightbox context (and every thumbnail reading it) holds still. */
+function useStableImages(images: LightboxImage[]): LightboxImage[] {
+  const prev = useRef(images)
+  const same =
+    prev.current.length === images.length &&
+    images.every((i, n) => {
+      const p = prev.current[n]
+      return p.id === i.id && p.src === i.src && p.alt === i.alt && p.caption === i.caption
+    })
+  useLayoutEffect(() => {
+    if (!same) prev.current = images
+  })
+  return same ? prev.current : images
+}
+
+/** One user message: its bubble, the images it carries and the reply it quotes. Redrawn only when its block changes. */
+const UserEntry = memo(function UserEntry({ block, imageUrl }: { block: Extract<Block, { kind: 'user' }>; imageUrl?: (id: string) => string }) {
+  const { reply: quoted, body } = parseReply(block.text)
+  const text = body.replace(IMAGE, '').trim()
+  const own = transcriptImages([block])
+  return (
+    // A user message gets 12px more air on each side than the transcript's 24px gap, so turns read apart from the agent's work.
+    // `pt-10 -mt-7` is that 12px on top plus 28px of paint room for the hover toolbar above the bubble, which the item would
+    // otherwise clip. Not a scroll anchor: an anchored message is pinned to the top of the view when sent, and the thread
+    // should stay at the bottom with the latest content instead.
+    <MessageScrollerItem messageId={block.id} className="-mt-7 pt-10 pb-3">
+      <Message align="end">
+        <MessageContent className="items-end">
+          {quoted && <ReplyQuote reply={quoted.kind === 'image' && quoted.ref ? { ...quoted, src: resolveRef(quoted.ref, imageUrl) } : quoted} />}
+          {own.length > 0 && (
+            <div className="flex flex-wrap justify-end gap-2">
+              {own.map((image) => (
+                <ChatImage key={image.id} src={image.src} alt={image.alt} />
+              ))}
+            </div>
+          )}
+          {text && (
+            <HoverActions className="flex w-fit max-w-[80%] flex-col items-end self-end" timeClassName="top-2" text={text} sentAt={block.at ? new Date(block.at) : undefined}>
+              {/* The wrapper takes the bubble's 80% cap, so it hugs the bubble and the time sits just left of it. */}
+              <Bubble align="end" className="max-w-full">
+                {/* The composer's grey in light, white in dark (see packages/ui/README.md). `!` beats the bubble variant background. */}
+                <BubbleContent className="rounded-[10px]! px-3! py-2! bg-user-bubble! text-(length:--text-message)! text-user-bubble-foreground!">{text}</BubbleContent>
+              </Bubble>
+            </HoverActions>
+          )}
+        </MessageContent>
+      </Message>
+    </MessageScrollerItem>
+  )
+})
+
+/**
+ * The agent's work between two user messages. Redrawn only when one of its blocks changes: while the agent streams, only the newest
+ * entry does, however long the transcript.
+ */
+const AgentEntry = memo(
+  function AgentEntry({ id, blocks, onOpenSteps }: { id: string; blocks: AgentBlock[]; onOpenSteps?: (keys: string[]) => void }) {
+    return (
+      // `-mt-7 pt-7 -ml-10 pl-10`: paint room for a first message's hover toolbar and for the times in the left gutter, without
+      // moving the layout.
+      <MessageScrollerItem messageId={id} className="-mt-7 -ml-10 pt-7 pl-10">
+        <Message {...{ [REPLY_SOURCE]: '' }}>
+          <MessageContent className="gap-3">
+            {turns(blocks).map((turn, i) => (
+              <TurnContent key={`${id}:${i}`} blocks={turn.blocks} end={turn.end} onOpenSteps={onOpenSteps} />
+            ))}
+          </MessageContent>
+        </Message>
+      </MessageScrollerItem>
+    )
+  },
+  (a, b) => a.id === b.id && a.onOpenSteps === b.onOpenSteps && a.blocks.length === b.blocks.length && a.blocks.every((block, i) => block === b.blocks[i]),
+)
+
 /**
  * The transcript. With `onReply` the agent's words can be replied to: select a passage (a small box on it starts the answer), right
  * click an image or use a final answer's Reply. Each becomes a banner in the composer (a selection's box can also send with ⌘ Enter). A sent reply shows its quote above the bubble.
@@ -446,10 +547,10 @@ function TurnContent({ blocks, end, onOpenSteps }: { blocks: AgentBlock[]; end?:
 export function ChatMessages({
   blocks: raw,
   imageUrl,
-  onReply,
-  onReplySend,
+  onReply: replyHandler,
+  onReplySend: sendHandler,
   agent,
-  onOpenSteps,
+  onOpenSteps: openSteps,
 }: {
   blocks: Block[]
   /** Resolves a shared screenshot's id to its URL. */
@@ -461,59 +562,16 @@ export function ChatMessages({
   /** Opens Progress on these tool calls (a tool line was clicked). Without it the lines are plain text. */
   onOpenSteps?: (keys: string[]) => void
 }) {
+  // Callers pass fresh closures on every render; the messages get stable ones, so only the ones that changed redraw.
+  const onReply = useStableHandler(replyHandler)
+  const onReplySend = useStableHandler(sendHandler)
+  const onOpenSteps = useStableHandler(openSteps)
   const { blocks, refs } = resolveSharedImages(raw, imageUrl)
-  const images = transcriptImages(blocks)
+  const images = useStableImages(transcriptImages(blocks))
   const reply = useMemo<ReplyHandlers>(() => ({ onReply, onSend: onReplySend, agent, refOf: (src) => refs.get(src) }), [onReply, onReplySend, agent, refs])
-  const all = entries(blocks)
-  const messages = all.map((entry) => {
-    if (entry.kind === 'user') {
-      const { reply: quoted, body } = parseReply(entry.block.text)
-      const text = body.replace(IMAGE, '').trim()
-      const own = images.filter((i) => i.id.startsWith(`${entry.block.id}:`))
-      return (
-        // A user message gets 12px more air on each side than the transcript's 24px gap, so turns read apart from the agent's work.
-        // `pt-10 -mt-7` is that 12px on top plus 28px of paint room for the hover toolbar above the bubble, which the item would
-        // otherwise clip. Not a scroll anchor: an anchored message is pinned to the top of the view when sent, and the thread
-        // should stay at the bottom with the latest content instead.
-        <MessageScrollerItem key={entry.block.id} messageId={entry.block.id} className="-mt-7 pt-10 pb-3">
-          <Message align="end">
-            <MessageContent className="items-end">
-              {quoted && <ReplyQuote reply={quoted.kind === 'image' && quoted.ref ? { ...quoted, src: resolveRef(quoted.ref, imageUrl) } : quoted} />}
-              {own.length > 0 && (
-                <div className="flex flex-wrap justify-end gap-2">
-                  {own.map((image) => (
-                    <ChatImage key={image.id} src={image.src} alt={image.alt} />
-                  ))}
-                </div>
-              )}
-              {text && (
-                <HoverActions className="flex w-fit max-w-[80%] flex-col items-end self-end" timeClassName="top-2" text={text} sentAt={entry.block.at ? new Date(entry.block.at) : undefined}>
-                  {/* The wrapper takes the bubble's 80% cap, so it hugs the bubble and the time sits just left of it. */}
-                  <Bubble align="end" className="max-w-full">
-                    {/* The composer's grey in light, white in dark (see packages/ui/README.md). `!` beats the bubble variant background. */}
-                    <BubbleContent className="rounded-[10px]! px-3! py-2! bg-user-bubble! text-(length:--text-message)! text-user-bubble-foreground!">{text}</BubbleContent>
-                  </Bubble>
-                </HoverActions>
-              )}
-            </MessageContent>
-          </Message>
-        </MessageScrollerItem>
-      )
-    }
-    return (
-      // `-mt-7 pt-7 -ml-10 pl-10`: paint room for a first message's hover toolbar and for the times in the left gutter, without
-      // moving the layout.
-      <MessageScrollerItem key={entry.id} messageId={entry.id} className="-mt-7 -ml-10 pt-7 pl-10">
-        <Message {...{ [REPLY_SOURCE]: '' }}>
-          <MessageContent className="gap-3">
-            {turns(entry.blocks).map((turn, i) => (
-              <TurnContent key={`${entry.id}:${i}`} blocks={turn.blocks} end={turn.end} onOpenSteps={onOpenSteps} />
-            ))}
-          </MessageContent>
-        </Message>
-      </MessageScrollerItem>
-    )
-  })
+  const messages = entries(blocks).map((entry) =>
+    entry.kind === 'user' ? <UserEntry key={entry.block.id} block={entry.block} imageUrl={imageUrl} /> : <AgentEntry key={entry.id} id={entry.id} blocks={entry.blocks} onOpenSteps={onOpenSteps} />,
+  )
   return (
     <ReplyContext.Provider value={reply}>
       {images.length > 0 ? (

@@ -98,6 +98,7 @@ describe("events feed", () => {
           .view.blocks.some((b) => b.kind === "assistant" && b.text === "abc"),
       "partial shown",
     );
+    const earlier = c.events(dork).getSnapshot().view.blocks.slice(0, -1);
     server.rewrite(dork, seq, { text: "abcdef" });
     await waitFor(
       () =>
@@ -113,6 +114,8 @@ describe("events feed", () => {
         .getSnapshot()
         .view.blocks.filter((b) => b.kind === "assistant" && b.id === "m-x"),
     ).toHaveLength(1);
+    // Only the grown row is new: the blocks before it are the same objects.
+    expect(earlier.every((b, n) => c.events(dork).getSnapshot().view.blocks[n] === b)).toBe(true);
   });
 
   it("pages older history in on demand", async () => {
@@ -125,9 +128,17 @@ describe("events feed", () => {
     const first = feed.getSnapshot().view.blocks.length;
     expect(first).toBeLessThanOrEqual(40);
     for (let i = 0; i < 6 && feed.getSnapshot().canLoadMore; i++) {
-      const before = feed.getSnapshot().view.blocks.length;
+      const shown = feed.getSnapshot().view.blocks;
       feed.loadMore();
-      await waitFor(() => !feed.getSnapshot().loadingMore && feed.getSnapshot().view.blocks.length > before, "older page");
+      await waitFor(() => !feed.getSnapshot().loadingMore && feed.getSnapshot().view.blocks.length > shown.length, "older page");
+      // An older page keeps every block already shown as the same object, so the thread redraws only what the page added.
+      expect(feed.getSnapshot().view.blocks.slice(-shown.length)).toEqual(shown);
+      expect(
+        feed
+          .getSnapshot()
+          .view.blocks.slice(-shown.length)
+          .every((b, n) => b === shown[n]),
+      ).toBe(true);
     }
     expect(feed.getSnapshot().canLoadMore).toBe(false);
     const users = feed

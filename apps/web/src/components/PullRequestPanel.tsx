@@ -19,7 +19,7 @@ import {
   WrenchIcon,
   XIcon,
 } from 'lucide-react'
-import { PatchDiff } from '@pierre/diffs/react'
+import { PatchDiff } from './diffs'
 import { useTheme } from 'next-themes'
 import type { MergeMethod, PullRequestComment, PullRequestSection, PullRequestView } from '@dorks/client'
 import { Button } from '@dorks/ui/button'
