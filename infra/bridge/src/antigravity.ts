@@ -461,13 +461,15 @@ export class AntigravityAgent {
     this.respawning = true;
     const child = this.child;
     child.kill("SIGINT");
-    setTimeout(() => {
-      // Still running and the turn ended: SIGINT only cancelled the turn.
-      if (this.respawning && child.exitCode === null && this.current === null) {
-        this.respawning = false;
-        void this.pump();
-      }
-    }, 3000).unref();
+    // Still running and the turn ended: SIGINT only cancelled the turn. agy may take a while to end it (a tool still finishing), so
+    // keep checking until it does or the process exits (then `closed` restarts it); otherwise the queue would wait forever.
+    const check = () => {
+      if (!this.respawning || this.child !== child || child.exitCode !== null || this.stopped) return;
+      if (this.current !== null) return void setTimeout(check, 1000).unref();
+      this.respawning = false;
+      void this.pump();
+    };
+    setTimeout(check, 3000).unref();
   }
 
   waitIdle(ms: number): Promise<boolean> {

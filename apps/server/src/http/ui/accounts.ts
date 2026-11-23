@@ -15,7 +15,7 @@ const Finish = Schema.Struct({ url: Schema.String });
 export const accountRoutes: Routes = (api, app) => {
   const on = handler(app);
 
-  // ---- usage of the Claude subscription and Boat plan (services/usage.ts), cached for five minutes
+  // ---- usage of the Claude subscription and Boat plan (services/usage.ts), cached for a minute
   api.get(
     "/api/usage",
     on((c) => serviceAsync(getUsage).pipe(Effect.map((u) => c.json(u)))),

@@ -187,6 +187,8 @@ export function requestLocal(app: App, dorkId: string, args: Record<string, unkn
       return { id, run: true };
     }
     setTimer(app, dorkId, TIMER + id, REQUEST_TTL_MS);
+    touch(app, { t: "dorks" });
+    touch(app, { t: "dork", dorkId });
     return { id, run: false };
   });
   if (out.run) void execute(app, out.id);
@@ -267,12 +269,16 @@ function allow(app: App, r: RequestRow, via: "session" | "always" | "standing") 
   update(app.db, "local_requests", { id: r.id }, { status: "running", decidedAt: app.now() });
   cancelTimer(app, r.dork_id, TIMER + r.id);
   append(app, r.dork_id, { type: "local_decision", requestId: r.id, decision: "allowed", via });
+  touch(app, { t: "dorks" });
+  touch(app, { t: "dork", dorkId: r.dork_id });
 }
 
 function settle(app: App, r: RequestRow, decision: "denied" | "expired") {
   update(app.db, "local_requests", { id: r.id }, { status: decision, decidedAt: app.now(), error: decision === "denied" ? "The owner declined." : "The owner did not answer in time." });
   cancelTimer(app, r.dork_id, TIMER + r.id);
   if (getDork(app.db, r.dork_id)) append(app, r.dork_id, { type: "local_decision", requestId: r.id, decision });
+  touch(app, { t: "dorks" });
+  touch(app, { t: "dork", dorkId: r.dork_id });
 }
 
 /** The request's expiry timer fired (lifecycle/lifecycle.ts). */

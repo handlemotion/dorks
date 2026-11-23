@@ -1,4 +1,4 @@
-import type { SubscriptionView } from '@dorks/shared'
+import type { DorkState, SubscriptionView } from '@dorks/shared'
 import { Link, useRouter, type RegisteredRouter } from '@tanstack/react-router'
 import { move } from '@dnd-kit/helpers'
 import { Accessibility, defaultPreset, KeyboardSensor, PointerActivationConstraints, PointerSensor } from '@dnd-kit/dom'
@@ -10,7 +10,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@dorks/ui/c
 import { DropdownMenuItem } from '@dorks/ui/dropdown-menu'
 import { useStoredOrder } from '../lib/storedOrder'
 import { Tip } from './Tip'
-import { Orb } from './Orb'
+import { DorkIcon, dorkIconState } from './DorkIcon'
 import { SIDEBAR_ROW } from './sidebarChrome'
 import { prStatus } from './PrStatus'
 
@@ -23,10 +23,14 @@ export type Chat = {
   title: string
   /** `owner/name`; the sidebar's owner switcher filters by its owner. */
   repo?: string
-  /** Something is moving in this chat. The sidebar shows only this; richer states (sleeping, error) live in the chat itself. */
+  /** Something is moving in this chat. */
   working: boolean
+  /** Lifecycle state of the dork, used to distinguish working (animated), awake (coloured) and asleep (grey). */
+  state?: DorkState
+  /** True when the dork is waiting on the owner (computer access, build approval, etc.). */
+  attention?: boolean
   pr?: { number: number; state?: PrState }
-  /** A dork (coordinator) shows its emoji instead of the working dot (docs/crew.md). */
+  /** A dork (coordinator) shows its emoji instead of the working icon (docs/crew.md). */
   icon?: string
   kind?: 'agent' | 'coordinator'
   /** A worker's coordinator: workers live inside their dork, not in the sidebar. */
@@ -110,15 +114,17 @@ export function ChatList({
 }
 
 /**
- * A chat row. The leading Orb animates while the chat is working and settles into a small dot when it is not; the right edge
- * shows the pull request number, colored by PR state, when the chat has opened one. The row is active (`data-active`,
- * `aria-current`) while its chat is the one in the URL. With `onArchive`, hovering the row swaps the PR number for an archive
- * button, and a right click opens the row's menu.
+ * A chat row. The leading DorkIcon animates with colour while the chat is working, rests coloured when awake, and turns grey when
+ * asleep; the right edge shows the pull request number, colored by PR state, when the chat has opened one. The row is active
+ * (`data-active`, `aria-current`) while its chat is the one in the URL. With `onArchive`, hovering the row swaps the PR number
+ * for an archive button, and a right click opens the row's menu.
  */
 function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: number; to: ChatRoute; active: boolean; onArchive?: (id: string) => void }) {
   // `data` feeds announcements; the link is the handle so interactive-element filtering allows row drags.
   const { ref, handleRef, isDragging } = useSortable({ id: chat.id, index, data: chat })
   const router = useRouter()
+  const iconState = dorkIconState(chat.state, { working: chat.working, attention: chat.attention })
+  const iconLabel = iconState === 'attention' ? 'Needs attention' : iconState === 'working' ? 'Working…' : iconState === 'awake' ? 'Awake' : iconState === 'error' ? 'Error' : 'Asleep'
   const row = (
     <div ref={ref} data-chat-id={chat.id} data-dragging={isDragging || undefined} className="group/row relative flex min-w-0 data-[dragging]:z-30 data-[dragging]:opacity-60">
       <Link
@@ -139,7 +145,7 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
             {chat.icon}
           </span>
         ) : (
-          <Orb size={14} working={chat.working} label={chat.working ? 'Working…' : 'Idle'} className="text-muted-foreground" />
+          <DorkIcon size={14} state={iconState} label={iconLabel} />
         )}
         <span className="min-w-0 flex-1 truncate">{chat.title}</span>
       </Link>

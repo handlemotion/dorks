@@ -1,5 +1,33 @@
 # @dorks/desktop
 
+## 0.4.3
+
+### Patch Changes
+
+- [#151](https://github.com/handlemotion/dorks/pull/151) [`ce4b87f`](https://github.com/handlemotion/dorks/commit/ce4b87f09bacfd272cac03cb8c84474f3831d281) Thanks [@handlemotion](https://github.com/handlemotion)! - Update the app icon, menu-bar tray icon, and web favicon to the new Dork mark (white on solid electric blue for the app icon and favicon, monochrome template mark for the menu bar).
+
+- [#149](https://github.com/handlemotion/dorks/pull/149) [`913a200`](https://github.com/handlemotion/dorks/commit/913a200447439eb7bba2d391356842045a6d0cab) Thanks [@handlemotion](https://github.com/handlemotion)! - The sidebar's usage meters now stay current: they refresh every 30 seconds while the app is open and whenever you switch back to it, instead of only on a full reload.
+
+## 0.4.2
+
+### Patch Changes
+
+- [#146](https://github.com/handlemotion/dorks/pull/146) [`37e9ae1`](https://github.com/handlemotion/dorks/commit/37e9ae14d86775e96d45b6aeab9efff9b825359f) Thanks [@handlemotion](https://github.com/handlemotion)! - Antigravity sessions keep taking messages after you stop a turn that takes a few seconds to wind down.
+
+- [#144](https://github.com/handlemotion/dorks/pull/144) [`aa21b28`](https://github.com/handlemotion/dorks/commit/aa21b284897dd23af66fddea71cde13a08d07376) Thanks [@handlemotion](https://github.com/handlemotion)! - Scheduled automations now start on time: the app keeps your Mac from idle-sleeping while an automation has a schedule. A new session's sandbox also gets up to 10 minutes to start instead of failing at 3.
+
+- [#147](https://github.com/handlemotion/dorks/pull/147) [`ad6fdb0`](https://github.com/handlemotion/dorks/commit/ad6fdb0259e554b0f350c8af82b6a36373992e78) Thanks [@handlemotion](https://github.com/handlemotion)! - Long messages in the composer now wrap beside the + and send buttons instead of jumping above them.
+
+- [#142](https://github.com/handlemotion/dorks/pull/142) [`4b336b5`](https://github.com/handlemotion/dorks/commit/4b336b546f5c0e380fe61b170e10e7d491b142e5) Thanks [@handlemotion](https://github.com/handlemotion)! - The Computer tab and running previews now load inside the desktop app instead of opening in your external browser.
+
+- [#148](https://github.com/handlemotion/dorks/pull/148) [`b78680b`](https://github.com/handlemotion/dorks/commit/b78680b358f68625c849931bd59d359af7396721) Thanks [@handlemotion](https://github.com/handlemotion)! - Replace the status dot and sidebar orb with the new dork icon: animated cyan-to-violet while working, animated yellow-to-amber when waiting on you (such as computer-access prompts or build approvals), still and coloured when awake, and muted grey when asleep.
+
+- [#140](https://github.com/handlemotion/dorks/pull/140) [`f221e61`](https://github.com/handlemotion/dorks/commit/f221e6184befe042e1709a003afb6424bbd8001c) Thanks [@handlemotion](https://github.com/handlemotion)! - The app checks for updates every 15 minutes instead of every 4 hours, so a new release shows up in the sidebar soon after it is published.
+
+- [#143](https://github.com/handlemotion/dorks/pull/143) [`a70a44d`](https://github.com/handlemotion/dorks/commit/a70a44d2b99764c3f2089f9f97f7e4db1416bb96) Thanks [@handlemotion](https://github.com/handlemotion)! - Gemini (Antigravity) tool calls no longer show up as blank "Used" rows: each step now shows the command, file or search it ran.
+
+- [#145](https://github.com/handlemotion/dorks/pull/145) [`5c47dc6`](https://github.com/handlemotion/dorks/commit/5c47dc65454a77274471a4cf258742ed3290e1b2) Thanks [@handlemotion](https://github.com/handlemotion)! - PR events in a chat now read as short lines with their own icons ("Got a comment from octocat on [#12](https://github.com/handlemotion/dorks/issues/12)", "Opened PR [#12](https://github.com/handlemotion/dorks/issues/12)"), and Progress groups the agent's work under the PR event it answered instead of under your last message.
+
 ## 0.4.1
 
 ### Patch Changes

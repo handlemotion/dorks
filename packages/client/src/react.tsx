@@ -57,9 +57,26 @@ export function useSnapshot(): SnapshotStatus | undefined {
   return useSnapshotState().data;
 }
 
-/** Usage of the Claude subscription and the Boat plan; `undefined` while loading. */
+/** How often a visible page refetches usage. The server caches it for a minute, so most of these are cheap cached reads. */
+const USAGE_POLL_MS = 30_000;
+
+/** Usage of the Claude subscription and the Boat plan; `undefined` while loading. Refetched every 30 s while the page is visible, and when it comes back into view. */
 export function useUsage(): Usage | undefined {
-  return useStore(useDorksClient().usage()).data;
+  const client = useDorksClient();
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible") client.refreshUsage();
+    };
+    const timer = setInterval(refresh, USAGE_POLL_MS);
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [client]);
+  return useStore(client.usage()).data;
 }
 
 /** What the GitHub CLI login can see: its user, organizations and repositories; `undefined` while loading. */

@@ -70,6 +70,7 @@ export function SessionChat({
   const agent = AGENT_NAMES[dork.provider]
   const canReply = !dork.archived
   const current = dork.state === 'working' ? currentStep(view.blocks) : {}
+  const needsAttention = Boolean(dork.needsAttention) || view.blocks.some((b) => (b.kind === 'local' && b.status === 'pending') || (b.kind === 'build' && b.approved === null))
   // The error that put the Dork in error is said once, in red on the status line, not as its own row above it.
   const last = view.blocks.at(-1)
   const problem = dork.state === 'error' && last?.kind === 'notice' && last.level === 'error' ? last.text : undefined
@@ -115,6 +116,7 @@ export function SessionChat({
                   state={dork.state}
                   live={live}
                   outcome={view.lastOutcome}
+                  attention={needsAttention}
                   step={current.tool && stepLabel(current.tool)}
                   since={current.since}
                   problem={problem}
