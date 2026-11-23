@@ -7,7 +7,7 @@ import { AppSidebar } from './AppSidebar'
 import { TITLEBAR_START, WindowControls } from './WindowControls'
 import { PanelResizeHandle } from '@dorks/ui/panel-resize-handle'
 
-const SIDEBAR_WIDTH = 275
+const SIDEBAR_WIDTH = 300
 
 /**
  * The app frame is flat and white (`bg-background`, #ffffff): the sidebar and the page share it, split by a full-height divider that is also
@@ -31,7 +31,7 @@ export function FrameLayout({ sidebar, children }: { sidebar: ReactNode; childre
 function Panels({ sidebar, children }: { sidebar: ReactNode; children: ReactNode }) {
   const { isMobile, open, setOpen } = useSidebar()
   const panel = usePanelRef()
-  const layout = useDefaultLayout({ id: 'dorks.frame.v2', storage: localStorage })
+  const layout = useDefaultLayout({ id: 'dorks.frame.v3', storage: localStorage })
   // The sidebar's open state drives the panel; the panel reports back when it is dragged shut or open.
   useEffect(() => {
     const p = panel.current
@@ -55,7 +55,7 @@ function Panels({ sidebar, children }: { sidebar: ReactNode; children: ReactNode
         id="sidebar"
         className="overflow-hidden"
         panelRef={panel}
-        // 275px by default, and it keeps its width when the window resizes: the page takes the difference.
+        // 300px by default, and it keeps its width when the window resizes: the page takes the difference.
         defaultSize={SIDEBAR_WIDTH}
         groupResizeBehavior="preserve-pixel-size"
         minSize={200}

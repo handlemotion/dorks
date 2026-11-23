@@ -36,9 +36,9 @@ Rules that tooling enforces live in `AGENTS.md` and `packages/ui/README.md`; thi
 
 ## Layout
 
-- **Frame:** `AppFrame` is a resizable split (shadcn `resizable`, react-resizable-panels v4): sidebar (275px by default, 200–420px, keeps its width on window resize, a click on the divider snaps it back, collapsible,
+- **Frame:** `AppFrame` is a resizable split (shadcn `resizable`, react-resizable-panels v4): sidebar (300px by default, 200–420px, keeps its width on window resize, a click on the divider snaps it back, collapsible,
   remembered) | page. The divider is the resize handle. Phones get shadcn's sheet instead.
-- **Chat:** `ChatSplit` puts the chat and Chat details side by side (chat 600px by default, details everything else, both at least 360px; on window resize the sidebar and the chat keep their widths and details absorbs the change; a click on the handle snaps the chat back to 600px). Details
+- **Chat:** `ChatSplit` puts the chat and Chat details side by side (chat 720px by default, details everything else, both at least 360px; on window resize the sidebar and the chat keep their widths and details absorbs the change; a click on the handle snaps the chat back to 720px). Details
   run the full height, flush to the window's right edge, with no card or outer border: one full-height hairline (`border-l`) separates
   them from the chat, and the resize handle sits on it. Details hide below `lg`.
 - **Chat details tabs** work like a browser's: an open-tabs strip (Progress, Artifacts, Changes (the local diff, before any PR),
