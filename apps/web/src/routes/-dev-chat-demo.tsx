@@ -92,7 +92,7 @@ const demoBlocks: Block[] = [
       demoChatShot +
       ') ![After the fix](' +
       demoChatShot +
-      ')\n\n- Wait for the bridge handshake before flushing\n- Back off between attempts, up to 30s\n\n```ts\nawait bridge.ready()\n```',
+      ')\n\n- Wait for the bridge handshake before flushing\n- Back off between attempts, up to 30s\n\n```ts\nexport async function reconnect(bridge: Bridge) {\n  await box.resume()\n  await bridge.ready()\n  await queue.flush()\n}\n```',
     streaming: false,
     at: Date.now() - 24 * 60_000,
   },
