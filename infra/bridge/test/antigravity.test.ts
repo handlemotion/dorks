@@ -117,4 +117,16 @@ describe("Antigravity (agy) through its streaming headless mode", () => {
     await waitFor(() => results(s.transport).some((e) => !(e.raw as { is_error?: boolean }).is_error), "turn after the interrupt");
     expect(s.transport.of("agent_exited")).toHaveLength(0);
   });
+
+  it("goes on after an interrupt that ends the turn late without exiting", async () => {
+    const s = await setup({ FAKE_AGY_WAIT: "1", FAKE_AGY_SLOW_INTERRUPT: "4000" });
+    await waitFor(() => s.transport.of("ready")[0], "ready");
+    s.transport.emit([{ cid: "m1", frame: { t: "user_message", id: "m1", text: "long task" } }]);
+    await waitFor(() => s.reports().some((r) => r.prompt), "turn started");
+    s.transport.emit([{ cid: "i1", frame: { t: "interrupt" } }]);
+    await waitFor(() => results(s.transport).length > 0, "interrupted turn", 8000);
+    s.transport.emit([{ cid: "m2", frame: { t: "user_message", id: "m2", text: "again" } }]);
+    await waitFor(() => results(s.transport).some((e) => !(e.raw as { is_error?: boolean }).is_error), "turn after the interrupt", 8000);
+    expect(s.sessions()).toHaveLength(1); // the same agy process: SIGINT only cancelled the turn
+  }, 20_000);
 });
