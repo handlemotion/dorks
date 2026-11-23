@@ -1,5 +1,5 @@
 import type { ComponentProps } from 'react'
-import { MultiFileDiff as PierreMultiFileDiff, PatchDiff as PierrePatchDiff, WorkerPoolContextProvider } from '@pierre/diffs/react'
+import { File as PierreFile, MultiFileDiff as PierreMultiFileDiff, PatchDiff as PierrePatchDiff, WorkerPoolContextProvider } from '@pierre/diffs/react'
 import DiffsWorker from '@pierre/diffs/worker/worker.js?worker'
 
 // Pierre's highlighting off the main thread: a diff paints as plain text at once and its colours follow from a worker, so a PR with
@@ -8,10 +8,20 @@ import DiffsWorker from '@pierre/diffs/worker/worker.js?worker'
 const POOL = { workerFactory: () => new DiffsWorker(), poolSize: 2, mainThreadMaxCharacters: 4000 }
 const HIGHLIGHTER = {}
 
-export function PatchDiff(props: ComponentProps<typeof PierrePatchDiff>) {
+/** `pool: false` draws it on the main thread with its own options (the pool's worker fixes some, such as `lineDiffType`, for every diff). */
+export function PatchDiff({ pool = true, ...props }: ComponentProps<typeof PierrePatchDiff> & { pool?: boolean }) {
+  if (!pool) return <PierrePatchDiff {...props} />
   return (
     <WorkerPoolContextProvider poolOptions={POOL} highlighterOptions={HIGHLIGHTER}>
       <PierrePatchDiff {...props} />
+    </WorkerPoolContextProvider>
+  )
+}
+
+export function File(props: ComponentProps<typeof PierreFile>) {
+  return (
+    <WorkerPoolContextProvider poolOptions={POOL} highlighterOptions={HIGHLIGHTER}>
+      <PierreFile {...props} />
     </WorkerPoolContextProvider>
   )
 }
