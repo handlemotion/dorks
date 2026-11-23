@@ -122,8 +122,19 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
   const atEnd = useRef(true)
   const now = useNow()
   const { selectedKey, highlighted, reveal } = useProgress()
+  // Turns the owner folded: their message stays, the steps under it hide (and the arrows skip them).
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
+  const setFolded = (key: string, fold: boolean) =>
+    setCollapsed((prev) => {
+      if (prev.has(key) === fold) return prev
+      const next = new Set(prev)
+      if (fold) next.add(key)
+      else next.delete(key)
+      return next
+    })
+  const turnOf = (stepKey: string | null | undefined) => (stepKey ? turns.find((t) => t.steps.some((s) => s.key === stepKey))?.key : undefined)
   const shown = turns.map((turn) => ({ ...turn, steps: query.trim() ? turn.steps.filter((s) => matchesFilter(s.block, query)) : turn.steps })).filter((t) => t.steps.length > 0)
-  const visible = shown.flatMap((t) => t.steps)
+  const visible = shown.flatMap((t) => (collapsed.has(t.key) ? [] : t.steps))
   const count = turns.reduce((n, t) => n + t.steps.length, 0)
   const selectedIndex = visible.findIndex((s) => s.key === selectedKey)
   const selected = visible[selectedIndex]
@@ -143,6 +154,8 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
     setLive(false)
     const step = turns.flatMap((t) => t.steps).find((s) => s.key === selectedKey)
     if (step && query.trim() && !matchesFilter(step.block, query)) setQuery('')
+    const turn = turnOf(selectedKey)
+    if (turn) setFolded(turn, false)
   }, [reveal]) // eslint-disable-line react-hooks/exhaustive-deps -- only when the thread asks, not on every pick
   useEffect(() => {
     if (!revealed.current || !selectedKey) return
@@ -151,7 +164,8 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
     revealed.current = false
     atEnd.current = false
     row.scrollIntoView({ block: 'center' })
-  }, [reveal, query]) // eslint-disable-line react-hooks/exhaustive-deps -- only when the thread asks, not on every pick
+    // `collapsed`: a step in a folded turn has no row until the turn opens (the reveal above opens it); try again then.
+  }, [reveal, query, collapsed]) // eslint-disable-line react-hooks/exhaustive-deps -- only when the thread asks, not on every pick
   // The selected row stays in view as the arrows move it (a clicked row is already in view: the list stays where it is).
   const clicked = useRef(false)
   useEffect(() => {
@@ -162,6 +176,8 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
   const latestKey = turns.at(-1)?.steps.at(-1)?.key
   useEffect(() => {
     if (!live || !latestKey) return
+    const turn = turns.at(-1)?.key
+    if (turn) setFolded(turn, false)
     progressStore.select(latestKey)
     atEnd.current = true
     const el = scroller.current
@@ -270,37 +286,51 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
             {shown.length === 0 ? (
               <p className="px-(--details-text) py-3 text-sm text-muted-foreground">No steps match.</p>
             ) : (
-              shown.map((turn) => (
-                <div key={turn.key} role="group" data-turn-key={turn.key} aria-label={turn.prompt ?? 'Steps'}>
-                  {/* Pinned while its steps scroll under it, so the message they answer stays in view. */}
-                  <div className="sticky top-0 z-10 box-content flex h-7 items-center gap-2 bg-background px-(--details-text) pb-1 text-sm text-foreground">
-                    <TurnIcon turn={turn} />
-                    <span className="min-w-0 flex-1 truncate" title={turn.prompt ?? undefined}>
-                      {turn.prompt ?? 'Without a message'}
-                    </span>
-                  </div>
-                  {/* The steps hang off a hairline under the prompt's icon. */}
-                  <div className="ml-[calc(var(--details-text)+6.5px)] border-l">
-                    {turn.steps.map((step) => (
-                      <StepRow
-                        key={step.key}
-                        step={step}
-                        now={now}
-                        selected={step.key === selectedKey}
-                        highlighted={highlighted.includes(step.key)}
-                        onSelect={() => {
-                          clicked.current = step.key !== selectedKey
-                          // Opening the detail lays the list out again, which drops its scroll: put it back once that settles.
-                          const el = scroller.current
-                          const top = el?.scrollTop ?? 0
-                          select(step.key)
-                          if (el && !selected) requestAnimationFrame(() => requestAnimationFrame(() => (el.scrollTop = top)))
-                        }}
+              shown.map((turn) => {
+                const folded = collapsed.has(turn.key)
+                return (
+                  <div key={turn.key} role="group" data-turn-key={turn.key} aria-label={turn.prompt ?? 'Steps'}>
+                    {/* Pinned while its steps scroll under it, so the message they answer stays in view. A click folds its steps away. */}
+                    <button
+                      type="button"
+                      aria-expanded={!folded}
+                      title={turn.prompt ?? undefined}
+                      onClick={() => setFolded(turn.key, !folded)}
+                      className="group/turn sticky top-0 z-10 flex h-8 w-full items-center gap-2 bg-background px-(--details-text) pb-1 text-left text-sm text-foreground outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+                    >
+                      <TurnIcon turn={turn} />
+                      <span className="min-w-0 flex-1 truncate">{turn.prompt ?? 'Without a message'}</span>
+                      {folded && <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{turn.steps.length === 1 ? '1 step' : `${turn.steps.length} steps`}</span>}
+                      <ChevronDownIcon
+                        aria-hidden
+                        className={`size-3.5 shrink-0 text-muted-foreground transition-[rotate,opacity] duration-150 motion-reduce:transition-none ${folded ? '-rotate-90' : 'opacity-0 group-hover/turn:opacity-100 group-focus-visible/turn:opacity-100'}`}
                       />
-                    ))}
+                    </button>
+                    {/* The steps hang off a hairline under the prompt's icon. */}
+                    {!folded && (
+                      <div className="ml-[calc(var(--details-text)+6.5px)] border-l">
+                        {turn.steps.map((step) => (
+                          <StepRow
+                            key={step.key}
+                            step={step}
+                            now={now}
+                            selected={step.key === selectedKey}
+                            highlighted={highlighted.includes(step.key)}
+                            onSelect={() => {
+                              clicked.current = step.key !== selectedKey
+                              // Opening the detail lays the list out again, which drops its scroll: put it back once that settles.
+                              const el = scroller.current
+                              const top = el?.scrollTop ?? 0
+                              select(step.key)
+                              if (el && !selected) requestAnimationFrame(() => requestAnimationFrame(() => (el.scrollTop = top)))
+                            }}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))
+                )
+              })
             )}
           </div>
         </ResizablePanel>
