@@ -34,7 +34,7 @@ export const settingsRoutes: Routes = (api, app) => {
         yield* serviceAsync((a) => assertCodexEnvironment(a, patch));
         yield* serviceAsync((a) => updateSettings(a, patch));
         yield* service((a) => {
-          if ("claudeToken" in patch || "boatKey" in patch || "boatOrg" in patch) forgetUsage(a);
+          if ("claudeToken" in patch || "antigravityToken" in patch || "boatKey" in patch || "boatOrg" in patch) forgetUsage(a);
           if ("githubConnected" in patch) forgetGithubRepos(a);
           console.error(`settings saved: ${Object.keys(patch).sort().join(", ")}`); // names only, never values
           // A new Boat key starts the base-snapshot build in the background (onboarding has no "Prepare Boat" step), or retries a failed one.

@@ -259,5 +259,7 @@ export interface UsageWindow {
 }
 export interface Usage {
   claude?: { session?: UsageWindow; weekly: UsageWindow };
+  /** Antigravity's Google AI plan: its Gemini models' 5-hour and weekly limits. */
+  google?: { session?: UsageWindow; weekly: UsageWindow };
   cloud?: { usedHours: number; includedHours: number; periodEnd?: number };
 }

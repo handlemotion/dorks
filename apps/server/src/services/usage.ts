@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
 import type { App } from "../app";
 import { decodeOr, makeBoatCall } from "../lib/boatHttp";
-import { boatKey, claudeToken, readSettings } from "./settings";
+import { antigravityToken, boatKey, claudeToken, readSettings, updateSettings } from "./settings";
 
 /** A rolling limit: `used` is 0..1, `resetsAt` epoch ms. */
 export interface UsageWindow {
@@ -13,6 +13,8 @@ export interface UsageWindow {
 export interface Usage {
   /** The Claude subscription behind `claudeToken`: the 5-hour session and the weekly limit. */
   claude?: { session?: UsageWindow; weekly: UsageWindow };
+  /** The Google AI plan behind Antigravity's sign-in: its Gemini models' 5-hour and weekly limits. */
+  google?: { session?: UsageWindow; weekly: UsageWindow };
   /** Boat machine time included in the plan this period, in hours. */
   cloud?: { usedHours: number; includedHours: number; periodEnd?: number };
 }
@@ -30,14 +32,17 @@ const cache = new WeakMap<App, { at: number; value: Usage }>();
  *   1-token Haiku request reads them. `count_tokens` does not return them.
  * - **Cloud.** Boat's `GET /limits` (the `account.read` action, already used by the Boat step) reports the plan's included VM time
  *   and what is left of it.
+ * - **Google.** agy's own `/usage` (`agy -p /usage --output-format json`, lib/agyCli.ts) with Antigravity's saved sign-in: quota
+ *   groups of buckets, each a `remaining_fraction` and a `reset_time`. The first group is the Gemini models (the one Antigravity
+ *   sessions mostly use); the Claude and GPT group and Argon's separate one are left out to keep the bar short.
  * - **Codex** is not here: Dorks never holds the ChatGPT sign-in (Boat installs it inside each sandbox), so only a running Codex
  *   sandbox could read its limits.
  */
 export async function getUsage(app: App, force = false): Promise<Usage> {
   const cached = cache.get(app);
   if (!force && cached && app.now() - cached.at < TTL_MS) return cached.value;
-  const [claude, cloud] = await Promise.all([claudeUsage(app).catch(() => undefined), cloudUsage(app).catch(() => undefined)]);
-  const value: Usage = { ...(claude ? { claude } : {}), ...(cloud ? { cloud } : {}) };
+  const [claude, google, cloud] = await Promise.all([claudeUsage(app).catch(() => undefined), googleUsage(app).catch(() => undefined), cloudUsage(app).catch(() => undefined)]);
+  const value: Usage = { ...(claude ? { claude } : {}), ...(google ? { google } : {}), ...(cloud ? { cloud } : {}) };
   cache.set(app, { at: app.now(), value });
   return value;
 }
@@ -81,6 +86,35 @@ async function claudeUsage(app: App): Promise<Usage["claude"]> {
     console.error("usage: claude", res.status); // status only, never the body
     return undefined;
   }
+  return session ? { session, weekly } : { weekly };
+}
+
+type Bucket = { window?: unknown; remaining_fraction?: unknown; reset_time?: unknown };
+
+async function googleUsage(app: App): Promise<Usage["google"]> {
+  const token = await antigravityToken(app);
+  if (!token) return undefined;
+  const read = await app.agyCli.usage(token);
+  if (!read) return undefined;
+  // agy refreshed its sign-in while reading: keep the new one, so sandboxes and the next read start from it.
+  if (read.token) await updateSettings(app, { antigravityToken: read.token }).catch(() => {});
+  return googleWindows(read.data);
+}
+
+/** The first quota group's 5-hour and weekly buckets, as used shares. */
+export function googleWindows(data: unknown): Usage["google"] {
+  const groups = (data as { groups?: { buckets?: Bucket[] }[] } | undefined)?.groups;
+  const buckets = Array.isArray(groups) && Array.isArray(groups[0]?.buckets) ? groups[0].buckets : [];
+  const window = (name: string): UsageWindow | undefined => {
+    const b = buckets.find((x) => x.window === name);
+    const left = Number(b?.remaining_fraction);
+    if (!b || !Number.isFinite(left)) return undefined;
+    const reset = typeof b.reset_time === "string" ? Date.parse(b.reset_time) : NaN;
+    return { used: Math.min(Math.max(1 - left, 0), 1), ...(Number.isFinite(reset) ? { resetsAt: reset } : {}) };
+  };
+  const weekly = window("weekly");
+  if (!weekly) return undefined;
+  const session = window("5h");
   return session ? { session, weekly } : { weekly };
 }
 
