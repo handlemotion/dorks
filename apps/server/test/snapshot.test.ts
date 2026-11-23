@@ -76,7 +76,7 @@ describe("a successful build", () => {
     expect(seen.filter((c) => c.t === "snapshot").length).toBeGreaterThan(5); // progress is published per step
   });
 
-  it("is a no-op when the snapshot is in use and current, rebuilds with force, and calls an older bridge stale", async () => {
+  it("is a no-op when the snapshot is in use and current, rebuilds with force, and calls an older installer stale", async () => {
     const h = await ready();
     await startBuild(h.app);
     await h.settle();
@@ -85,7 +85,9 @@ describe("a successful build", () => {
     expect((await startBuild(h.app)).state).toBe("ready"); // nothing queued
     expect(buildRow(h).attempt).toBe(attempt);
 
-    h.assets.current = testAssets("bridge-v2", "installer-v1"); // this app now carries a newer bridge
+    h.assets.current = testAssets("bridge-v2", "installer-v1"); // a newer bridge alone: boxes install it when they start
+    expect(await snapshotView(h.app)).toMatchObject({ stale: false, state: "ready" });
+    h.assets.current = testAssets("bridge-v2", "installer-v2"); // a newer installer
     expect(await snapshotView(h.app)).toMatchObject({ stale: true, state: "ready" });
     await startBuild(h.app); // stale: rebuilds without force
     expect(buildRow(h).attempt).toBe(attempt + 1);
@@ -233,7 +235,7 @@ describe("restarts", () => {
     expect((await snapshotView(preset.app)).state).toBe("none");
   });
 
-  it("after an app update with a newer bridge, the next start rebuilds the snapshot in use", async () => {
+  it("after an app update with a newer installer, the next start rebuilds the snapshot in use; a newer bridge alone does not", async () => {
     const h = await ready();
     await startBuild(h.app);
     await h.settle();
@@ -242,6 +244,10 @@ describe("restarts", () => {
     expect(buildRow(h).attempt).toBe(attempt);
 
     h.assets.current = testAssets("bridge-v2", "installer-v1");
+    await rebuildIfStale(h.app); // bridge only: boxes install it when they start
+    expect(buildRow(h).attempt).toBe(attempt);
+
+    h.assets.current = testAssets("bridge-v2", "installer-v2");
     await rebuildIfStale(h.app);
     expect(buildRow(h).attempt).toBe(attempt + 1);
     await h.settle();

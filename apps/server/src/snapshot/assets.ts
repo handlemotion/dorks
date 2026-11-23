@@ -3,19 +3,20 @@ import { readFileSync } from "node:fs";
 
 // What goes into the base snapshot: the bridge bundle (infra/bridge) and the installer script (infra/snapshot/boat-install.sh).
 // The compiled sidecar embeds both (./embedded.bun.ts, resolved when `bun build --compile` runs); from source they are read from
-// the repository. `bundleId` identifies the pair, so a snapshot built from older assets can be recognised as stale.
+// the repository. `bundleId` identifies the installer only: a box replaces an outdated bridge with this server's when it starts
+// (lib/boat.ts, `refreshBridge`), so a new bridge alone does not make the snapshot stale; a new installer (other CLIs or versions) does.
 
 export interface SnapshotAssets {
   bridge: Uint8Array;
   installer: string;
-  /** First 12 hex characters of sha256(bridge, 0x00, installer). */
+  /** First 12 hex characters of sha256(installer). */
   bundleId: string;
   bridgeSha256: string;
 }
 
 export function makeAssets(bridge: Uint8Array, installer: string): SnapshotAssets {
   const bridgeSha256 = createHash("sha256").update(bridge).digest("hex");
-  const bundleId = createHash("sha256").update(bridge).update("\0").update(installer).digest("hex").slice(0, 12);
+  const bundleId = createHash("sha256").update(installer).digest("hex").slice(0, 12);
   return { bridge, installer, bundleId, bridgeSha256 };
 }
 
