@@ -262,6 +262,7 @@ function NewDork({
         error={error}
         picker={newSessionPicker(provider, settings, choice, setChoice)}
         upload={actions.uploadImage}
+        draftKey="new"
         machine={{ builds: built, buildId, onChange: setPicked }}
         focusKey={visit}
         onSubmit={(images) =>

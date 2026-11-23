@@ -1,6 +1,6 @@
 import { ArrowUpIcon, BoxIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SparkleIcon, SquareIcon, SquareTerminalIcon, XIcon, ZapIcon } from 'lucide-react'
 import { modelLabel, type AgentModelChoice } from '@dorks/shared'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,6 +24,7 @@ import { Logo } from './onboarding/List'
 import { OwnerAvatar, ownerOf } from './RepoAvatar'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@dorks/ui/input-group'
 import { Tip } from './Tip'
+import { ImageLightbox, ImageTrigger } from './ImageLightbox'
 import { ReplyBanner } from './Reply'
 import type { Reply } from '../lib/reply'
 
@@ -92,13 +93,34 @@ export const withImages = (text: string, images: AttachedImage[]) => [text.trim(
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
 const MAX_IMAGE = 8 * 1024 * 1024
 
-/** Images attached to the next message: added, uploaded at once, removed, and cleared once sent. */
-function useAttachments(upload: ((file: File) => Promise<string>) | undefined) {
-  const [files, setFiles] = useState<Pending[]>([])
+/**
+ * The images attached to each composer's next message, by draft key (a chat's id, `new` for the new session form): kept outside the
+ * component like the text draft, so they are still attached after visiting another chat, and an upload that ends meanwhile still lands
+ * in its own draft. In memory only: a reload drops them (their previews are local object URLs).
+ */
+const attachmentDrafts = new Map<string, Pending[]>()
+const draftListeners = new Set<() => void>()
+const NO_FILES: Pending[] = []
+const subscribeDrafts = (listener: () => void) => {
+  draftListeners.add(listener)
+  return () => void draftListeners.delete(listener)
+}
+function updateDraft(key: string, next: (current: Pending[]) => Pending[]) {
+  const files = next(attachmentDrafts.get(key) ?? NO_FILES)
+  if (files.length) attachmentDrafts.set(key, files)
+  else attachmentDrafts.delete(key)
+  draftListeners.forEach((listener) => listener())
+}
+
+/** Images attached to the next message: added, uploaded at once, removed, and cleared once sent. Kept per `draftKey` across visits. */
+function useAttachments(upload: ((file: File) => Promise<string>) | undefined, draftKey: string | undefined) {
+  const ownKey = useId()
+  const key = draftKey ?? ownKey
+  const files = useSyncExternalStore(subscribeDrafts, () => attachmentDrafts.get(key) ?? NO_FILES)
+  const setFiles = (next: (current: Pending[]) => Pending[]) => updateDraft(key, next)
   const [attachError, setAttachError] = useState('')
-  const filesRef = useRef(files)
-  filesRef.current = files
-  useEffect(() => () => filesRef.current.forEach((f) => URL.revokeObjectURL(f.preview)), [])
+  // Without a draft key nothing outlives the composer.
+  useEffect(() => (draftKey === undefined ? () => setFiles(() => []) : undefined), [key])
   const attach = (list: File[]) => {
     if (!upload) return
     const images = list.filter((f) => IMAGE_TYPES.includes(f.type))
@@ -131,8 +153,58 @@ function useAttachments(upload: ((file: File) => Promise<string>) | undefined) {
   return { files, attachError, attach, remove, clearSent, ready, uploading }
 }
 
-/** One attached image: a 112px tile with the image filling it, its upload state, and a remove button. */
-function AttachmentTile({ file, onRemove }: { file: Pending; onRemove: () => void }) {
+/**
+ * Files dragged into the window (from Finder or another app) go to `attach` wherever they are dropped, so the whole chat is the drop
+ * target; returns whether files are being dragged over the window, to highlight the box. While not `enabled` nothing is taken, and a
+ * dropped file is still kept from replacing the page.
+ */
+function useFileDrop(attach: (files: File[]) => void, enabled: boolean) {
+  const [dragging, setDragging] = useState(false)
+  const attachRef = useRef(enabled ? attach : undefined)
+  attachRef.current = enabled ? attach : undefined
+  useEffect(() => {
+    const hasFiles = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files')
+    // dragenter/dragleave fire for every child crossed; the count is back at 0 only once the drag has left the window.
+    let depth = 0
+    const enter = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      depth++
+      if (attachRef.current) setDragging(true)
+    }
+    const leave = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      depth = Math.max(0, depth - 1)
+      if (!depth) setDragging(false)
+    }
+    const over = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      if (e.dataTransfer) e.dataTransfer.dropEffect = attachRef.current ? 'copy' : 'none'
+    }
+    const drop = (e: DragEvent) => {
+      depth = 0
+      setDragging(false)
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      const files = Array.from(e.dataTransfer?.files ?? [])
+      if (files.length) attachRef.current?.(files)
+    }
+    window.addEventListener('dragenter', enter)
+    window.addEventListener('dragleave', leave)
+    window.addEventListener('dragover', over)
+    window.addEventListener('drop', drop)
+    return () => {
+      window.removeEventListener('dragenter', enter)
+      window.removeEventListener('dragleave', leave)
+      window.removeEventListener('dragover', over)
+      window.removeEventListener('drop', drop)
+    }
+  }, [])
+  return dragging && enabled
+}
+
+/** One attached image: a 112px tile with the image filling it (a click opens it in the composer's lightbox), its upload state, and a remove button. */
+function AttachmentTile({ file, index, onRemove }: { file: Pending; index: number; onRemove: () => void }) {
   const failed = file.state === 'error'
   return (
     <div
@@ -141,7 +213,19 @@ function AttachmentTile({ file, onRemove }: { file: Pending; onRemove: () => voi
       title={failed ? `${file.name}: upload failed` : file.name}
       className="group/tile relative size-28 shrink-0 overflow-hidden rounded-[10px] bg-muted"
     >
-      <img src={file.preview} alt={file.name} className={`size-full object-cover object-top ${file.state === 'done' ? '' : 'opacity-50'}`} />
+      <ImageTrigger index={index} aria-label={`Open ${file.name}`} className="block size-full cursor-zoom-in outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
+        {({ imageRef, morphRef }) => (
+          <img
+            ref={(node) => {
+              imageRef(node)
+              morphRef(node)
+            }}
+            src={file.preview}
+            alt={file.name}
+            className={`size-full object-cover object-top ${file.state === 'done' ? '' : 'opacity-50'}`}
+          />
+        )}
+      </ImageTrigger>
       <span
         aria-hidden
         className={`pointer-events-none absolute inset-0 rounded-[10px] outline outline-1 -outline-offset-1 ${failed ? 'outline-destructive' : 'outline-black/10 dark:outline-white/10'}`}
@@ -576,7 +660,8 @@ function ModelMenu({
  * The message box: the AI Elements prompt input, copied from the published component (ui.shadcn.com/docs/ai-elements/base/prompt-input,
  * `PromptInputDemo` in @dorks/ui): the box holds the text, attachments and main button; the compact bar below holds the repository
  * and one menu for the model (by agent) and the effort. The main button sends, or stops the agent while it is working. With `setRepo` it is the "new session" form (the first
- * message also names the repository). Claude's models and efforts are the ones the agent reported; images are attached with the + button, by pasting or by dropping them on the box.
+ * message also names the repository). Claude's models and efforts are the ones the agent reported; images are attached with the + button, by pasting or by dropping them
+ * anywhere in the window (from Finder too: the desktop shell leaves file drops to the page).
  */
 export function Composer({
   text,
@@ -604,6 +689,7 @@ export function Composer({
   onClearReply,
   machine,
   focusKey,
+  draftKey,
 }: {
   text: string
   setText: (text: string) => void
@@ -645,11 +731,13 @@ export function Composer({
   machine?: MachinePicker
   /** Puts the cursor in the box on mount and whenever this changes (a new visit to the page), once it is enabled. Not on touch screens, where it would pop the keyboard. */
   focusKey?: string
+  /** Keeps the attached images under this key (the text draft's) while the owner visits other chats. */
+  draftKey?: string
 }) {
   const formRef = useRef<HTMLFormElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const textRef = useRef<HTMLTextAreaElement>(null)
-  const { files, attachError, attach, remove, clearSent, ready, uploading } = useAttachments(upload)
+  const { files, attachError, attach, remove, clearSent, ready, uploading } = useAttachments(upload, draftKey)
   // A new reply puts the cursor in the box, ready to answer it.
   useEffect(() => {
     if (reply) textRef.current?.focus()
@@ -659,6 +747,7 @@ export function Composer({
   const stacked = files.length > 0
   const isNewSession = setRepo !== undefined
   const locked = !!(pending || disabled)
+  const dragging = useFileDrop(attach, !!upload && !locked)
   useEffect(() => {
     if (focusKey === undefined || locked || !matchMedia('(hover: hover)').matches) return
     textRef.current?.focus()
@@ -686,14 +775,6 @@ export function Composer({
           e.preventDefault()
           if (canSend) void submit()
         }}
-        onDragOver={(e) => {
-          if (upload && e.dataTransfer.types.includes('Files')) e.preventDefault()
-        }}
-        onDrop={(e) => {
-          if (!upload || !e.dataTransfer.files.length) return
-          e.preventDefault()
-          attach(Array.from(e.dataTransfer.files))
-        }}
       >
         <input
           ref={fileRef}
@@ -709,7 +790,10 @@ export function Composer({
           }}
         />
         {/* White on the off-white app (light), with the panel's 6% hairline since that pair is under 1.15:1; dark keeps the published fill. */}
-        <InputGroup className="rounded-[15px] border-border bg-white has-[textarea]:rounded-[15px] has-[>[data-align=block-start]]:rounded-[15px] dark:border-transparent dark:bg-input/50">
+        <InputGroup
+          data-dragging={dragging}
+          className="data-[dragging=true]:border-ring data-[dragging=true]:ring-[3px] data-[dragging=true]:ring-ring/50 rounded-[15px] border-border bg-white has-[textarea]:rounded-[15px] has-[>[data-align=block-start]]:rounded-[15px] dark:border-transparent dark:bg-input/50"
+        >
           {reply && (
             // The reply banner sits 8px inside the box (the buttons' inset), concentric with its 15px corners.
             <InputGroupAddon align="block-start" className="px-2 pt-2 pb-0">
@@ -726,9 +810,11 @@ export function Composer({
             // Attached images as plain thumbnails, the text's left edge, no file names: a 112px tile with the image filling it, a hairline
             // drawn inside its edge so a white screenshot keeps its shape, and a remove button in its corner on hover or focus.
             <InputGroupAddon align="block-start" className="flex-wrap justify-start gap-2 px-[42px] pt-3 pb-0">
-              {files.map((file) => (
-                <AttachmentTile key={file.key} file={file} onRemove={() => remove(file.key)} />
-              ))}
+              <ImageLightbox images={files.map((f) => ({ id: f.key, src: f.preview, alt: f.name }))} label="Attached images">
+                {files.map((file, index) => (
+                  <AttachmentTile key={file.key} file={file} index={index} onRemove={() => remove(file.key)} />
+                ))}
+              </ImageLightbox>
             </InputGroupAddon>
           ) : null}
           <InputGroupTextarea
