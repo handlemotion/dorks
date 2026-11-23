@@ -294,7 +294,16 @@ export function harness(opts: { fetch?: typeof fetch; config?: Partial<Config>; 
     /** A dork row plus its runtime, directly. */
     seed(
       state: DorkState,
-      o: { boxId?: string | null; archived?: boolean; bridgeSeenAt?: number; bridgeLost?: boolean; bridgeSeq?: number; opGen?: number; provider?: "claude" | "codex" | "opencode"; repo?: string } = {},
+      o: {
+        boxId?: string | null;
+        archived?: boolean;
+        bridgeSeenAt?: number;
+        bridgeLost?: boolean;
+        bridgeSeq?: number;
+        opGen?: number;
+        provider?: "claude" | "codex" | "opencode" | "antigravity";
+        repo?: string;
+      } = {},
     ) {
       const id = app.uuid();
       insert(db, "dorks", {

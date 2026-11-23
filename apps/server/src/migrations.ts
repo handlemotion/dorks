@@ -450,4 +450,11 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE dorks DROP COLUMN provider;
   ALTER TABLE dorks RENAME COLUMN provider_next TO provider;
   `,
+  `
+  -- Antigravity (Google's agy CLI) as a fourth agent (infra/bridge/src/antigravity.ts): the same column swap for the wider CHECK.
+  ALTER TABLE dorks ADD COLUMN provider_next TEXT NOT NULL DEFAULT 'claude' CHECK (provider_next IN ('claude', 'codex', 'opencode', 'antigravity'));
+  UPDATE dorks SET provider_next = provider;
+  ALTER TABLE dorks DROP COLUMN provider;
+  ALTER TABLE dorks RENAME COLUMN provider_next TO provider;
+  `,
 ];

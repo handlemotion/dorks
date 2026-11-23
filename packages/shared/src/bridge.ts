@@ -50,10 +50,11 @@ export const toBridge = z.discriminatedUnion("t", [
   // Sent on every bridge connect. Must be idempotent: if claude is already running with this config, only re-send `ready`.
   z.object({
     t: z.literal("configure"),
-    provider: z.enum(["claude", "codex", "opencode"]).optional(),
+    provider: z.enum(["claude", "codex", "opencode", "antigravity"]).optional(),
     codexModel: z.object({ model: z.string(), effort: z.string() }).optional(),
     // Claude: the model (a CLI alias such as `opus`, or a full id) and effort chosen in the UI; absent means the CLI's default.
     // OpenCode: `provider/model` (`opencode/deepseek-v4.1-flash`); absent means OpenCode's own default.
+    // Antigravity: a slug from `agy models` (`gemini-4-neon-high`); absent means agy's own default.
     model: z.string().optional(),
     effort: z.string().optional(),
     // Claude: fast mode on (the `fastMode` setting); only sent for a model that offers it.
@@ -88,11 +89,11 @@ export type ToBridge = z.infer<typeof toBridge>;
 export const fromBridge = z.discriminatedUnion("t", [
   z.object({ t: z.literal("event"), bseq: z.number().int(), raw: z.unknown() }), // raw claude stream-json line
   z.object({ t: z.literal("codex_models"), models: z.array(z.object({ model: z.string().regex(/^[a-zA-Z0-9._-]{1,64}$/), efforts: z.array(effortLevel) })).max(100) }),
-  // Codex or OpenCode could not run a turn (sign-in, a provider key, a used-up plan): shown in the thread as an error.
+  // Codex, OpenCode or Antigravity could not run a turn (sign-in, a provider key, a used-up plan): shown in the thread as an error.
   z.object({ t: z.literal("codex_issue"), message: z.string().max(1000) }),
   z.object({ t: z.literal("title"), text: z.string().min(1).max(120) }), // a generated name for the dork (see `nameFrom`)
   // Claude: the models the CLI offers this account (its `initialize` answer) and the effort the bridge started it with.
-  // OpenCode: every `provider/model` its configured providers offer, with no efforts.
+  // OpenCode: every `provider/model` its configured providers offer, with no efforts. Antigravity: `agy models`, with no efforts.
   z.object({ t: z.literal("agent_models"), models: z.array(agentModelChoice).max(100), effort: effortLevel.nullable() }),
   z.object({ t: z.literal("ready") }), // repo cloned + claude running
   z.object({ t: z.literal("ack"), id: z.string() }), // user_message id received

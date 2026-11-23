@@ -506,7 +506,7 @@ const agentSecrets = Effect.fnUntraced(function* (app: App, dork: DorkRow): Effe
 /** The agent's model and effort: Codex's chosen pair, or Claude's model, effort, fast mode and Code Mode when set. */
 function modelFields(dork: DorkRow) {
   if (dork.provider === "codex") return { codexModel: dork.codexModel };
-  if (dork.provider === "opencode") return dork.model ? { model: dork.model } : {};
+  if (dork.provider === "opencode" || dork.provider === "antigravity") return dork.model ? { model: dork.model } : {};
   return {
     ...(dork.model ? { model: dork.model } : {}),
     ...(dork.effort ? { effort: dork.effort } : {}),

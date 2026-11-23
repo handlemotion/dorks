@@ -4,7 +4,7 @@ export type { MergeMethod, MergeableState, PullRequestSection, PullRequestView, 
 export type { AutomationInput, AutomationRunView, AutomationTrigger, AutomationView, GithubEvent, GithubTrigger, ScheduleEvery, ScheduleTrigger } from "@dorks/shared";
 export type { BuildView, BuildVarView, DraftView, RunView, BuildRepo, MachineType, McpServerView, McpServerInput, ComposioStatus, SkillView, SkillCandidate, SkillResolution } from "@dorks/shared";
 
-export type Provider = "claude" | "codex" | "opencode";
+export type Provider = "claude" | "codex" | "opencode" | "antigravity";
 
 /** The client-visible dork row. Box ids, session ids and secrets are never returned by the server. */
 export interface Dork {
