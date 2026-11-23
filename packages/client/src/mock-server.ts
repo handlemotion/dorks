@@ -147,6 +147,8 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     claudeToken: !!opts.configured,
     antigravityToken: false,
     antigravityReady: false,
+    // What `agy models` lists for a Google AI plan (apps/server's refreshAntigravityModels), shown once signed in.
+    antigravityModels: [],
     antigravitySignIn: { state: "signed_out" },
     boatKey: !!opts.configured,
     github: opts.configured ? { configured: true, login: "octocat" } : { configured: false },
@@ -388,6 +390,14 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     });
   };
 
+  const MOCK_AGY_MODELS = [
+    ["gemini-4-neon-high", "Gemini 4 Neon (High)"],
+    ["gemini-4-neon-medium", "Gemini 4 Neon (Medium)"],
+    ["gemini-4-argon-high", "Gemini 4 Argon (High)"],
+    ["gemini-3.8-flash-medium", "Gemini 3.8 Flash (Medium)"],
+    ["claude-opus-5-5-high", "Claude Opus 5.5 (High)"],
+  ].map(([model, name]) => ({ model: model!, name: name!, efforts: [] }));
+
   /** Why a new session cannot start yet, or null when it can. */
   const cannotCreate = (provider: Dork["provider"]): string | null => {
     if (!settings.boatKey || !settings.baseSnapshotId || !settings.github.configured) return "Finish setup (Boat, base snapshot, GitHub) before creating a session.";
@@ -449,7 +459,9 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
             agentModel: MOCK_MODELS.find((c) => c.model === (str(body.model) ?? "default"))?.resolved,
             modelChoices: MOCK_MODELS,
           }
-        : {}),
+        : provider === "antigravity"
+          ? { model: str(body.model), modelChoices: MOCK_AGY_MODELS }
+          : {}),
     });
     append(id, { type: "status", state: "creating" });
     broadcast({ t: "dorks" });
@@ -700,7 +712,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         broadcast({ t: "settings" });
         const t = setTimeout(() => {
           timers.delete(t);
-          Object.assign(settings, { antigravityToken: true, antigravityReady: true, antigravitySignIn: null });
+          Object.assign(settings, { antigravityToken: true, antigravityReady: true, antigravitySignIn: null, antigravityModels: MOCK_AGY_MODELS });
           broadcast({ t: "settings" });
         }, 3000);
         timers.add(t);

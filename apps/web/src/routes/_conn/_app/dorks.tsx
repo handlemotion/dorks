@@ -21,7 +21,7 @@ import { ChatSplit, ShowDetailsButton, useDetailsOpen, useWide } from '../../../
 import type { ChatDetailsData } from '../../../components/chat-details/types'
 import type { PullRequestPanelData } from '../../../components/PullRequestPanel'
 import { latestTasks, progressStore, progressTurns } from '../../../lib/progress'
-import { withImages, Composer, preferredModel, type AgentProvider } from '../../../components/ChatComposer'
+import { withImages, Composer, preferredModel, type AgentProvider, type ModelPicker } from '../../../components/ChatComposer'
 import { ChatMenu } from '../../../components/ChatMenu'
 import { ArchiveButton, PageHeader } from '../../../components/PageHeader'
 import { SetupStatus } from '../../../components/SetupStatus'
@@ -163,6 +163,21 @@ const agentGate = (provider: AgentProvider, claudeReady: boolean, codexReady: bo
   return { missing, notice: missing && ((provider === 'claude' && (codexReady || antigravityReady)) || provider === 'antigravity') }
 }
 
+type Choice = { model?: string; effort?: string; fast?: boolean }
+
+/**
+ * The new session's model menu: Claude's models (what its agent last reported), or Antigravity's (what `agy models` listed for the
+ * signed-in plan, on the server). OpenCode's are known once its sandbox is up: it starts on its default and changes from the thread.
+ */
+function newSessionPicker(provider: AgentProvider, settings: ReturnType<typeof useSettings>, choice: Choice, setChoice: (c: Choice) => void): ModelPicker | undefined {
+  if (provider === 'claude') {
+    const choices = settings?.claudeModels ?? []
+    return { choices, ...choice, model: choice.model ?? preferredModel(choices), onChange: (model, effort, fast) => setChoice({ model, effort, fast }) }
+  }
+  if (provider === 'antigravity' && settings?.antigravityModels?.length) return { choices: settings.antigravityModels, model: choice.model, onChange: (model) => setChoice({ model }) }
+  return undefined
+}
+
 /** The agent a new session starts on: Claude when it is connected, else the one that is. */
 const firstReady = (claude: boolean, codex: boolean, antigravity: boolean): AgentProvider => (claude ? 'claude' : codex ? 'codex' : antigravity ? 'antigravity' : 'claude')
 
@@ -222,7 +237,12 @@ function NewDork({
   const [chosen, setRepo] = useState(initialRepo)
   const repo = chosen ?? repositories[0] ?? ''
   const [message, setMessage] = useDraft('new')
-  const [provider, setProvider] = useState<AgentProvider>(() => firstReady(claudeReady, codexReady, antigravityReady))
+  const [provider, pickProvider] = useState<AgentProvider>(() => firstReady(claudeReady, codexReady, antigravityReady))
+  // A model belongs to its agent: switching agents starts the new one on its default.
+  const setProvider = (p: AgentProvider) => {
+    if (p !== provider) setChoice({})
+    pickProvider(p)
+  }
   const { run, pending, error } = usePending()
   const agent = agentGate(provider, claudeReady, codexReady, antigravityReady)
   return (
@@ -240,23 +260,23 @@ function NewDork({
         pending={pending}
         disabled={disabled || agent.missing}
         error={error}
-        picker={
-          // OpenCode's and Antigravity's models are known once the sandbox is up: a new session starts on its default and changes it from the thread.
-          provider === 'claude'
-            ? {
-                choices: settings?.claudeModels ?? [],
-                ...choice,
-                model: choice.model ?? preferredModel(settings?.claudeModels ?? []),
-                onChange: (model, effort, fast) => setChoice({ model, effort, fast }),
-              }
-            : undefined
-        }
+        picker={newSessionPicker(provider, settings, choice, setChoice)}
         upload={actions.uploadImage}
         machine={{ builds: built, buildId, onChange: setPicked }}
         focusKey={visit}
         onSubmit={(images) =>
           run(async () => {
-            onCreated((await actions.createDork({ repo: repo.trim(), message: withImages(message, images), provider, buildId, ...(provider === 'claude' ? choice : {}) })).id)
+            onCreated(
+              (
+                await actions.createDork({
+                  repo: repo.trim(),
+                  message: withImages(message, images),
+                  provider,
+                  buildId,
+                  ...(provider === 'claude' ? choice : provider === 'antigravity' && choice.model ? { model: choice.model } : {}),
+                })
+              ).id,
+            )
             setMessage('')
           })
         }
