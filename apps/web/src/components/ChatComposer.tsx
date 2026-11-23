@@ -1,6 +1,6 @@
 import { ArrowUpIcon, BoxIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SparkleIcon, SquareIcon, SquareTerminalIcon, XIcon, ZapIcon } from 'lucide-react'
 import { modelLabel, type AgentModelChoice } from '@dorks/shared'
-import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -249,6 +249,24 @@ function AttachmentTile({ file, index, onRemove }: { file: Pending; index: numbe
 }
 
 /** The main button: Stop while the agent works, else send (or create the session). */
+/** Enter sends (steering a running turn); ⌘ Enter (Ctrl Enter) queues for after the turn when `queue` is given; Shift Enter is a new line. */
+function onEnter(e: KeyboardEvent<HTMLTextAreaElement>, send: () => void, onQueue: unknown, queue: () => void) {
+  if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
+  e.preventDefault()
+  if ((e.metaKey || e.ctrlKey) && onQueue) queue()
+  else send()
+}
+
+/** A row at the top of the box, 8px in like the reply banner; nothing when empty. */
+function TopAddon({ children }: { children?: ReactNode }) {
+  if (!children) return null
+  return (
+    <InputGroupAddon align="block-start" className="px-2 pt-2 pb-0">
+      {children}
+    </InputGroupAddon>
+  )
+}
+
 function MainButton({ onStop, isNewSession, pending, canSend, canQueue }: { onStop?: () => void; isNewSession: boolean; pending: boolean; canSend: boolean; canQueue: boolean }) {
   // While the agent works the button is Stop, until there is something to send: then it sends now, steering the turn.
   if (onStop && !canSend) {
@@ -801,11 +819,7 @@ export function Composer({
           data-dragging={dragging}
           className="data-[dragging=true]:border-ring data-[dragging=true]:ring-[3px] data-[dragging=true]:ring-ring/50 rounded-[15px] border-border bg-white has-[textarea]:rounded-[15px] has-[>[data-align=block-start]]:rounded-[15px] dark:border-transparent dark:bg-input/50"
         >
-          {queued && (
-            <InputGroupAddon align="block-start" className="px-2 pt-2 pb-0">
-              {queued}
-            </InputGroupAddon>
-          )}
+          <TopAddon>{queued}</TopAddon>
           {reply && (
             // The reply banner sits 8px inside the box (the buttons' inset), concentric with its 15px corners.
             <InputGroupAddon align="block-start" className="px-2 pt-2 pb-0">
@@ -852,13 +866,12 @@ export function Composer({
                 onClearReply()
                 return
               }
-              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault()
-                // ⌘ Enter queues for after the agent's turn; Enter sends now (steering a running turn).
-                if ((e.metaKey || e.ctrlKey) && onQueue) {
-                  if (canSend) void submit(onQueue)
-                } else formRef.current?.requestSubmit()
-              }
+              onEnter(
+                e,
+                () => formRef.current?.requestSubmit(),
+                onQueue,
+                () => canSend && void submit(onQueue),
+              )
             }}
             disabled={locked}
             ref={textRef}
