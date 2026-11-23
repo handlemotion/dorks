@@ -5,6 +5,7 @@ import { useDorksClient, useGithubRepos } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
 import { GH_LOGIN_COMMAND, GH_ORG_ACCESS_URL, githubProblem, missingScopesText, scopeFixCommand } from '../../lib/github'
 import { usePending } from '../../lib/pending'
+import { AntigravitySignIn } from '../AntigravitySignIn'
 import { OwnerAvatar } from '../RepoAvatar'
 import { SettingsButtonRow, SettingsGroup, SettingsGroupBody, SettingsInputRow, SettingsRow, SettingsSection, SettingsSections, SettingsSelectRow, SettingsStatus, SettingsValueRow } from './kit'
 
@@ -35,6 +36,7 @@ export function AgentsPage({ settings }: { settings: Settings }) {
   return (
     <SettingsSections>
       <ClaudeSection settings={settings} />
+      <AntigravitySection settings={settings} />
       <CodexSection settings={settings} />
     </SettingsSections>
   )
@@ -81,6 +83,22 @@ function ClaudeSection({ settings }: { settings: Settings }) {
         </SettingsGroupBody>
       </SettingsGroup>
       <SettingsStatus saved={saved} error={error} />
+    </SettingsSection>
+  )
+}
+
+/** Antigravity (Google's agy CLI): one Google sign-in, kept encrypted on the server (services/antigravitySignIn.ts). */
+function AntigravitySection({ settings }: { settings: Settings }) {
+  return (
+    <SettingsSection title="Antigravity" description="Gemini and the other models your Google AI plan includes.">
+      <SettingsGroup label="antigravity sign-in">
+        <SettingsGroupBody>
+          <div className="flex items-center justify-between gap-3">
+            <p>{settings.antigravityToken ? 'Signed in with Google' : 'Not signed in'}</p>
+            <AntigravitySignIn settings={settings} signOut />
+          </div>
+        </SettingsGroupBody>
+      </SettingsGroup>
     </SettingsSection>
   )
 }

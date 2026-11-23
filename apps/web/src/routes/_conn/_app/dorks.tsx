@@ -117,7 +117,15 @@ function Dorks() {
             )}
             <div className={`${showArchived ? 'hidden' : 'flex'} mx-auto w-full max-w-[790px] flex-col gap-6`}>
               <h2 className="sr-only">What should we work on?</h2>
-              <NewDork key={presetRepo} initialRepo={presetRepo} onCreated={setSelected} disabled={!ready} claudeReady={!!settings?.claudeToken} codexReady={!!settings?.boatEnvironment} />
+              <NewDork
+                key={presetRepo}
+                initialRepo={presetRepo}
+                onCreated={setSelected}
+                disabled={!ready}
+                claudeReady={!!settings?.claudeToken}
+                codexReady={!!settings?.boatEnvironment}
+                antigravityReady={!!settings?.antigravityReady}
+              />
               {settings && (
                 <div className="mt-6 px-5 empty:hidden">
                   <SetupStatus settings={settings} />
@@ -148,10 +156,38 @@ function useNewSessionRepos(buildRepos: string[], dorks: { repo: string }[] | un
  * Whether the chosen agent can start (sending stays off until it can, like the server's `missingForSession`), and whether to say so
  * above the box: with no agent at all the setup checklist asks for the token, so only an owner who has Codex and picked Claude.
  */
-const agentGate = (provider: AgentProvider, claudeReady: boolean, codexReady: boolean) => {
-  // OpenCode and Antigravity sign in with shared secrets (provider keys, ANTIGRAVITY_OAUTH_TOKEN): a missing one shows up in the thread.
-  const missing = provider === 'claude' ? !claudeReady : provider === 'codex' ? !codexReady : false
-  return { missing, notice: missing && provider === 'claude' && codexReady }
+const agentGate = (provider: AgentProvider, claudeReady: boolean, codexReady: boolean, antigravityReady: boolean) => {
+  // OpenCode signs in with shared secrets (its provider keys): a missing one shows up in the thread.
+  const missing = provider === 'claude' ? !claudeReady : provider === 'codex' ? !codexReady : provider === 'antigravity' ? !antigravityReady : false
+  // Antigravity is never in the setup checklist on its own, so a missing sign-in is always said here.
+  return { missing, notice: missing && ((provider === 'claude' && (codexReady || antigravityReady)) || provider === 'antigravity') }
+}
+
+/** The agent a new session starts on: Claude when it is connected, else the one that is. */
+const firstReady = (claude: boolean, codex: boolean, antigravity: boolean): AgentProvider => (claude ? 'claude' : codex ? 'codex' : antigravity ? 'antigravity' : 'claude')
+
+/** Above the box: how to connect the agent picked, when another one is connected (with none, the setup checklist asks). */
+function AgentNotice({ provider }: { provider: AgentProvider }) {
+  return (
+    <p className="mx-5 mb-2 text-sm text-destructive" role="status">
+      {provider === 'antigravity' ? (
+        <>
+          <Link to="/settings/$page" params={{ page: 'agents' }} className="font-medium underline underline-offset-4">
+            Sign in with Google in settings
+          </Link>{' '}
+          to use Antigravity.
+        </>
+      ) : (
+        <>
+          Add a{' '}
+          <Link to="/settings" className="font-medium underline underline-offset-4">
+            Claude token in settings
+          </Link>{' '}
+          to use Claude Code.
+        </>
+      )}
+    </p>
+  )
 }
 
 function NewDork({
@@ -160,12 +196,14 @@ function NewDork({
   disabled,
   claudeReady,
   codexReady,
+  antigravityReady,
 }: {
   initialRepo?: string
   onCreated: (id: string) => void
   disabled: boolean
   claudeReady: boolean
   codexReady: boolean
+  antigravityReady: boolean
 }) {
   // Each visit to the page (New session in the sidebar, even when already here) puts the cursor in the box.
   const visit = useRouterState({ select: (s) => s.location.state.__TSR_key ?? s.location.href })
@@ -184,20 +222,12 @@ function NewDork({
   const [chosen, setRepo] = useState(initialRepo)
   const repo = chosen ?? repositories[0] ?? ''
   const [message, setMessage] = useDraft('new')
-  const [provider, setProvider] = useState<AgentProvider>(claudeReady ? 'claude' : codexReady ? 'codex' : 'claude')
+  const [provider, setProvider] = useState<AgentProvider>(() => firstReady(claudeReady, codexReady, antigravityReady))
   const { run, pending, error } = usePending()
-  const agent = agentGate(provider, claudeReady, codexReady)
+  const agent = agentGate(provider, claudeReady, codexReady, antigravityReady)
   return (
     <div className="[&>div]:max-w-none">
-      {agent.notice && (
-        <p className="mx-5 mb-2 text-sm text-destructive" role="status">
-          Add a{' '}
-          <Link to="/settings" className="font-medium underline underline-offset-4">
-            Claude token in settings
-          </Link>{' '}
-          to use Claude Code.
-        </p>
-      )}
+      {agent.notice && <AgentNotice provider={provider} />}
       <Composer
         text={message}
         setText={setMessage}

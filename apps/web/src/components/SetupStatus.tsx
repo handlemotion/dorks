@@ -9,6 +9,7 @@ import { stepDone } from '../lib/onboarding'
 import { usePending } from '../lib/pending'
 import { SecretInput } from './onboarding/Frame'
 import { StepProgress } from './StepProgress'
+import { AntigravitySignIn } from './AntigravitySignIn'
 
 type StepState = 'done' | 'running' | 'todo' | 'failed'
 
@@ -111,7 +112,7 @@ function useSteps(settings: Settings, snap: SnapshotStatus | undefined): Step[] 
 
   const steps: Step[] = [
     d.boat ? { id: 'boat', title: 'Connect Boat', state: 'done' } : boatStep(settings.boatSignIn),
-    d.agents ? { id: 'agents', title: 'Connect Claude', state: 'done' } : { id: 'agents', title: 'Connect Claude', state: 'todo', body: <ClaudeTokenForm /> },
+    d.agents ? { id: 'agents', title: 'Connect an agent', state: 'done' } : { id: 'agents', title: 'Connect an agent', state: 'todo', body: <AgentForms settings={settings} /> },
     d.github ? { id: 'github', title: 'Connect GitHub', state: 'done' } : githubStep(settings),
     snapshot,
   ]
@@ -194,6 +195,19 @@ function GithubCheckButton() {
       <Button size="sm" variant="outline" disabled={pending} onClick={() => void run(() => actions.updateSettings({ githubConnected: true }))}>
         {pending ? 'Checking…' : 'Connect'}
       </Button>
+    </div>
+  )
+}
+
+/** Claude's token, or Antigravity's one-button Google sign-in: either one is enough to start. */
+function AgentForms({ settings }: { settings: Settings }) {
+  return (
+    <div className="flex flex-col gap-3">
+      <ClaudeTokenForm />
+      <div className="flex flex-col gap-1.5">
+        <span className="text-xs text-muted-foreground">Or use your Google AI plan with Antigravity.</span>
+        <AntigravitySignIn settings={settings} />
+      </div>
     </div>
   )
 }

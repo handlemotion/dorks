@@ -1,3 +1,4 @@
+import type { AgyCli } from "./lib/agyCli";
 import type { BoatCli } from "./lib/boatCli";
 import type { GhLogin } from "./lib/ghCli";
 import type { AppError, AppErrorCode } from "@dorks/shared";
@@ -54,6 +55,8 @@ export interface Config {
   githubEnvToken?: string;
   /** `DORKS_BOAT_BIN`: the Boat CLI bundled with the desktop app, used when there is no `boat` on PATH. */
   boatBin?: string;
+  /** `DORKS_AGY_BIN`: the Antigravity CLI for the Google sign-in; else `agy` on PATH, else one Dorks downloads. */
+  agyBin?: string;
 }
 
 export interface SchedulerLike {
@@ -73,6 +76,8 @@ export interface App {
   ghLogin(): Promise<GhLogin>;
   /** The Boat CLI on this computer (lib/boatCli.ts): connecting Boat without a pasted key. Tests replace it. */
   boatCli: BoatCli;
+  /** The Antigravity CLI on this computer (lib/agyCli.ts): the Google sign-in for Antigravity sessions. Tests replace it. */
+  agyCli: AgyCli;
   /** The sandbox provider for the current settings. Tests replace it. */
   getBox(): Promise<BoxProvider>;
   /** The provider calls the base-snapshot build makes (services/snapshot.ts). Tests replace it. */

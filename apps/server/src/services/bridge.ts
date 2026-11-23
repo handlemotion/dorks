@@ -19,7 +19,7 @@ import { update } from "../db";
 import { append, bridgeSeen, dispatch, enqueueConfigure, finishPause, patchDork } from "../lifecycle/dispatch";
 import { opFailed } from "../lifecycle/lifecycle";
 import { rememberModelChoices } from "./models";
-import { claudeToken, cliSecrets, githubToken } from "./settings";
+import { antigravityToken, claudeToken, cliSecrets, githubToken } from "./settings";
 import { mcpServerConfigs } from "./mcpServers";
 import { skillRefs } from "./skills";
 import { buildVarValues, getBuild } from "./builds";
@@ -500,7 +500,9 @@ const agentSecrets = Effect.fnUntraced(function* (app: App, dork: DorkRow): Effe
   const buildId = dork.buildId && getBuild(app, dork.buildId) ? dork.buildId : undefined;
   const buildVars = buildId ? yield* Effect.promise(() => buildVarValues(app, buildId)) : {};
   const mcpServers = yield* Effect.promise(() => mcpServerConfigs(app));
-  return { gh, env: { ...secrets, ...buildVars, ...(claude ? { CLAUDE_CODE_OAUTH_TOKEN: claude } : {}) }, mcpServers };
+  // Antigravity's Google sign-in (services/antigravitySignIn.ts); a shared secret of the same name still works and wins.
+  const agy = dork.provider === "antigravity" && !secrets.ANTIGRAVITY_OAUTH_TOKEN ? yield* Effect.promise(() => antigravityToken(app)) : undefined;
+  return { gh, env: { ...secrets, ...buildVars, ...(claude ? { CLAUDE_CODE_OAUTH_TOKEN: claude } : {}), ...(agy ? { ANTIGRAVITY_OAUTH_TOKEN: agy } : {}) }, mcpServers };
 });
 
 /** The agent's model and effort: Codex's chosen pair, or Claude's model, effort, fast mode and Code Mode when set. */
