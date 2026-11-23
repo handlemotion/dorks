@@ -48,7 +48,15 @@ function useQueueControls(dork: DorkView, canReply: boolean, sendWith: SendWith)
  * The top of a transcript with older messages: they load on their own once the reader scrolls within a couple of screens of it, so
  * scrolling up rarely meets the end (the scroller keeps the view in place as they come in). The button stays for the keyboard.
  */
-function LoadOlder({ loading, onLoad }: { loading: boolean; onLoad: () => void }) {
+function LoadOlder({
+  loading,
+  paused,
+  onLoad,
+}: {
+  loading: boolean
+  /** A read failed: no automatic loads until the feed's own retry succeeds (the button still works). */ paused: boolean
+  onLoad: () => void
+}) {
   const ref = useRef<HTMLDivElement>(null)
   const load = useRef(onLoad)
   useEffect(() => {
@@ -71,14 +79,14 @@ function LoadOlder({ loading, onLoad }: { loading: boolean; onLoad: () => void }
   // Observed afresh after each page: a sentinel still in range after one page comes in loads the next, without another scroll.
   useEffect(() => {
     const node = ref.current
-    if (!armed || loading || !node) return
+    if (!armed || loading || paused || !node) return
     const observer = new IntersectionObserver((seen) => seen.some((e) => e.isIntersecting) && load.current(), {
       root: node.closest('[data-slot="message-scroller-viewport"]'),
       rootMargin: '1600px 0px 0px 0px',
     })
     observer.observe(node)
     return () => observer.disconnect()
-  }, [armed, loading])
+  }, [armed, loading, paused])
   return (
     <div ref={ref} className="text-center">
       <Button variant="outline" size="sm" onClick={onLoad} disabled={loading}>
@@ -176,7 +184,7 @@ export function SessionChat({
           {/* No fade at the bottom edge: the published viewport masks it with scroll-fade-b; the last line stays fully drawn above the composer. */}
           <MessageScrollerViewport aria-label="Session transcript" className="mask-none! [scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
             <MessageScrollerContent className={`mx-auto w-full max-w-4xl gap-6 pt-6 pb-12 ${compact ? 'px-6' : 'px-10'}`} data-testid="transcript">
-              {canLoadMore && <LoadOlder loading={loadingMore} onLoad={loadMore} />}
+              {canLoadMore && <LoadOlder loading={loadingMore} paused={!!eventsError} onLoad={loadMore} />}
               <LocalAccessProvider dorkId={dorkId} agent={agent}>
                 <ChatMessages
                   blocks={blocks}
