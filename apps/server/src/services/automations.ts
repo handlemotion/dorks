@@ -32,6 +32,13 @@ const KEEP_RUNS = 100;
 const HISTORY_PAGE = 50;
 const WEEK_MS = 7 * 24 * 3_600_000;
 const CAP_WINDOW_MS = 3_600_000;
+/**
+ * The scheduler looks at least once a minute, so a schedule run starting later than this after its time means Dorks was not running
+ * (the Mac was off or asleep, or the app was closed): the run says so instead of looking like it started on time.
+ */
+export const LATE_MS = 5 * 60_000;
+/** A schedule pass that threw: the run it owed is recorded as failed, never dropped. */
+const PASS_FAILED = "The run could not start because of an error in Dorks. It runs again at the next time.";
 
 export interface AutomationRow extends AutomationSpec {
   id: string;
@@ -152,23 +159,21 @@ function arm(app: App, a: AutomationRow) {
 
 /**
  * The schedule job: every schedule whose time came since the last look starts one run (a time missed while the app was closed runs
- * once, when it is back), then the job is set for the next time.
+ * once, when it is back, and says it started late), then the job is set for the next time.
  */
 export function fireSchedules(app: App, id: string) {
   app.db.tx(() => {
     const a = getAutomation(app, id);
     if (!a || !a.enabled) return;
     const now = app.now();
-    for (const t of schedules(a)) {
-      const due = nextFire(t, a.schedFrom);
-      if (due > now) continue;
+    for (const { t, due } of dueSchedules(a, now)) {
+      const late = now - due > LATE_MS ? { due: clock(due, t.timezone), at: clock(now, t.timezone) } : null;
       startRun(app, a, {
-        source: "schedule",
-        repo: t.repo,
-        summary: `${scheduleText(t)}${t.branch ? ` on ${t.branch}` : ""}`,
-        context: `It runs ${scheduleText(t).toLowerCase()} (${t.timezone}).${t.branch ? ` Start from the \`${t.branch}\` branch.` : ""}`,
-        // The whole trigger, so two schedules due at once (another branch, another repository) are two runs.
-        key: `schedule:${t.repo}@${t.branch ?? ""}:${t.every}:${t.day}:${t.time}:${t.timezone}:${due}`,
+        ...scheduleRun(t, due),
+        ...(late ? { note: `started at ${late.at}: Dorks was not running at ${late.due}` } : {}),
+        context: `It runs ${scheduleText(t).toLowerCase()} (${t.timezone}).${t.branch ? ` Start from the \`${t.branch}\` branch.` : ""}${
+          late ? ` It was due at ${late.due} but Dorks was not running then, so it started at ${late.at}.` : ""
+        }`,
       });
     }
     update(app.db, "automations", { id }, { schedFrom: now });
@@ -176,6 +181,24 @@ export function fireSchedules(app: App, id: string) {
     touch(app, { t: "automations" });
   });
 }
+
+/** The schedules whose next time after the last look has come, with that time. */
+const dueSchedules = (a: AutomationRow, now: number) =>
+  schedules(a)
+    .map((t) => ({ t, due: nextFire(t, a.schedFrom) }))
+    .filter(({ due }) => due <= now);
+
+/** What a schedule's run is called in the history, and the key that makes it one run per due time. */
+const scheduleRun = (t: ScheduleTrigger, due: number) => ({
+  source: "schedule" as const,
+  repo: t.repo,
+  summary: `${scheduleText(t)}${t.branch ? ` on ${t.branch}` : ""}`,
+  // The whole trigger, so two schedules due at once (another branch, another repository) are two runs.
+  key: `schedule:${t.repo}@${t.branch ?? ""}:${t.every}:${t.day}:${t.time}:${t.timezone}:${due}`,
+});
+
+/** `08:25` on the wall clock in `tz`. */
+const clock = (ms: number, tz: string) => new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(ms);
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 export function scheduleText(t: ScheduleTrigger): string {
@@ -185,12 +208,22 @@ export function scheduleText(t: ScheduleTrigger): string {
   return `Every ${DAYS[t.day]} at ${t.time}`;
 }
 
-/** Sets the schedule job again from now (after a pass that failed). */
+/**
+ * After a pass that failed (it rolled back): each run it owed is recorded as failed, so the history shows the missed time, then the
+ * schedule job is set again from now.
+ */
 export function rearmSchedule(app: App, id: string) {
   app.db.tx(() => {
     const a = getAutomation(app, id);
     if (!a) return;
-    update(app.db, "automations", { id }, { schedFrom: app.now() });
+    const now = app.now();
+    if (a.enabled) {
+      for (const { t, due } of dueSchedules(a, now)) {
+        const run = scheduleRun(t, due);
+        if (!app.db.get("SELECT 1 AS x FROM automation_runs WHERE automation_id = ? AND event_key = ?", a.id, run.key)) recordRun(app, a, { ...run, context: "" }, "failed", PASS_FAILED, null);
+      }
+    }
+    update(app.db, "automations", { id }, { schedFrom: now });
     arm(app, getAutomation(app, id)!);
   });
 }
@@ -216,6 +249,8 @@ export interface RunRequest {
   context: string;
   /** Dedupes an event per automation. */
   key?: string;
+  /** Added to the history line, not the session's title: why it started late. */
+  note?: string;
   url?: string;
   number?: number;
 }
@@ -234,7 +269,7 @@ function recordRun(app: App, a: AutomationRow, r: RunRequest, status: Automation
     automationId: a.id,
     source: r.source,
     eventKey: r.key ?? null,
-    summary: r.summary.slice(0, 300),
+    summary: (r.note ? `${r.summary}, ${r.note}` : r.summary).slice(0, 300),
     url: r.url ?? null,
     repo: r.repo,
     number: r.number ?? null,
