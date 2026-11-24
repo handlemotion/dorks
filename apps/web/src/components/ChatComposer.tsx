@@ -1,6 +1,6 @@
 import { ArrowUpIcon, BoxIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SparkleIcon, SquareIcon, SquareTerminalIcon, XIcon, ZapIcon } from 'lucide-react'
 import { modelLabel, type AgentModelChoice } from '@dorks/shared'
-import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type RefObject, type ReactNode } from 'react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,6 +26,7 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } fro
 import { Tip } from './Tip'
 import { ImageLightbox, ImageTrigger } from './ImageLightbox'
 import { ReplyBanner, SEND_KEY } from './Reply'
+import { addDropZone, dropZoneFor } from '../lib/fileDrop'
 import type { Reply } from '../lib/reply'
 
 export type AgentProvider = 'codex' | 'claude' | 'opencode' | 'antigravity'
@@ -155,21 +156,24 @@ function useAttachments(upload: ((file: File) => Promise<string>) | undefined, d
 
 /**
  * Files dragged into the window (from Finder or another app) go to `attach` wherever they are dropped, so the whole chat is the drop
- * target; returns whether files are being dragged over the window, to highlight the box. While not `enabled` nothing is taken, and a
- * dropped file is still kept from replacing the page.
+ * target; returns whether files are being dragged toward this box, to highlight it. With several composers on screen (a crew's worker
+ * panel beside its chat) a drop goes to the nearest one only (lib/fileDrop.ts). While not `enabled` nothing is taken, and a dropped
+ * file is still kept from replacing the page.
  */
-function useFileDrop(attach: (files: File[]) => void, enabled: boolean) {
+function useFileDrop(attach: (files: File[]) => void, enabled: boolean, formRef: RefObject<HTMLFormElement | null>) {
   const [dragging, setDragging] = useState(false)
   const attachRef = useRef(enabled ? attach : undefined)
   attachRef.current = enabled ? attach : undefined
   useEffect(() => {
     const hasFiles = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files')
+    const mine = (e: DragEvent) => !!attachRef.current && !!formRef.current && dropZoneFor(e.target) === formRef.current
+    const unregister = addDropZone({ form: () => formRef.current, enabled: () => !!attachRef.current })
     // dragenter/dragleave fire for every child crossed; the count is back at 0 only once the drag has left the window.
     let depth = 0
     const enter = (e: DragEvent) => {
       if (!hasFiles(e)) return
       depth++
-      if (attachRef.current) setDragging(true)
+      setDragging(mine(e))
     }
     const leave = (e: DragEvent) => {
       if (!hasFiles(e)) return
@@ -179,7 +183,10 @@ function useFileDrop(attach: (files: File[]) => void, enabled: boolean) {
     const over = (e: DragEvent) => {
       if (!hasFiles(e)) return
       e.preventDefault()
-      if (e.dataTransfer) e.dataTransfer.dropEffect = attachRef.current ? 'copy' : 'none'
+      const own = mine(e)
+      setDragging(own)
+      // Each composer sees the event; only the one that would take the file says what happens to it.
+      if (e.dataTransfer && (own || !dropZoneFor(e.target))) e.dataTransfer.dropEffect = own ? 'copy' : 'none'
     }
     const drop = (e: DragEvent) => {
       depth = 0
@@ -187,19 +194,20 @@ function useFileDrop(attach: (files: File[]) => void, enabled: boolean) {
       if (!hasFiles(e)) return
       e.preventDefault()
       const files = Array.from(e.dataTransfer?.files ?? [])
-      if (files.length) attachRef.current?.(files)
+      if (files.length && mine(e)) attachRef.current?.(files)
     }
     window.addEventListener('dragenter', enter)
     window.addEventListener('dragleave', leave)
     window.addEventListener('dragover', over)
     window.addEventListener('drop', drop)
     return () => {
+      unregister()
       window.removeEventListener('dragenter', enter)
       window.removeEventListener('dragleave', leave)
       window.removeEventListener('dragover', over)
       window.removeEventListener('drop', drop)
     }
-  }, [])
+  }, [formRef])
   return dragging && enabled
 }
 
@@ -778,7 +786,7 @@ export function Composer({
   // above it.
   const isNewSession = setRepo !== undefined
   const locked = !!(pending || disabled)
-  const dragging = useFileDrop(attach, !!upload && !locked)
+  const dragging = useFileDrop(attach, !!upload && !locked, formRef)
   useEffect(() => {
     if (focusKey === undefined || locked || !matchMedia('(hover: hover)').matches) return
     textRef.current?.focus()
