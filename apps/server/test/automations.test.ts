@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { nextFire } from "../src/lib/schedule";
-import { createAutomation, fireSchedules, listRuns, MAX_RUNS_PER_HOUR, runNow, updateAutomation } from "../src/services/automations";
+import { createAutomation, fireSchedules, listRuns, MAX_RUNS_PER_HOUR, rearmSchedule, runNow, updateAutomation } from "../src/services/automations";
 import { watchOnce } from "../src/services/automationWatch";
 import { updateSettings } from "../src/services/settings";
 import { fakeFetch, harness } from "./harness";
@@ -246,6 +246,40 @@ describe("automations", () => {
     const runs = s.h.app.db.all<{ status: string }>("SELECT status FROM automation_runs WHERE automation_id = ?", id);
     expect(runs).toHaveLength(70); // 20 started, then the hourly cap: every one is accounted for
     expect(runs.filter((r) => r.status === "started")).toHaveLength(MAX_RUNS_PER_HOUR);
+  });
+
+  it("a run that starts late because Dorks was not running says when it was due, in the schedule's zone", async () => {
+    const s = await setup();
+    s.h.clock.t = utc("2026-11-23T20:00:00");
+    const sched = { kind: "schedule", every: "weekdays", time: "08:00", timezone: "America/Mexico_City", repo: "octo/app" };
+    const id = createAutomation(s.h.app, { name: "sweep", instructions: "Look for bugs.", triggers: [sched] });
+    s.h.clock.t = utc("2026-11-24T14:25:49"); // due 08:00 CST (14:00Z); the app opened at 08:25
+    fireSchedules(s.h.app, id);
+    expect(s.dorks().map((d) => d.title)).toEqual(["sweep: Every weekday at 08:00"]);
+    expect(listRuns(s.h.app, id)[0]).toMatchObject({ status: "started", summary: "Every weekday at 08:00, started at 08:25: Dorks was not running at 08:00" });
+    const first = s.h.app.db.get<{ body: string }>("SELECT body FROM events ORDER BY seq LIMIT 1")!;
+    expect(JSON.parse(first.body).text).toContain("It was due at 08:00 but Dorks was not running then, so it started at 08:25.");
+  });
+
+  it("a run on time does not claim it was late", async () => {
+    const s = await setup();
+    s.h.clock.t = utc("2026-11-23T08:00:00");
+    const id = createAutomation(s.h.app, { name: "daily", instructions: "Go.", triggers: [{ kind: "schedule", every: "day", time: "09:00", timezone: "UTC", repo: "octo/app" }] });
+    s.h.clock.t = utc("2026-11-23T09:00:40"); // the scheduler wakes at least once a minute
+    fireSchedules(s.h.app, id);
+    expect(listRuns(s.h.app, id)[0]).toMatchObject({ status: "started", summary: "Every day at 09:00" });
+  });
+
+  it("a schedule pass that fails records the due run as failed instead of dropping it", async () => {
+    const s = await setup();
+    s.h.clock.t = utc("2026-11-23T08:00:00");
+    const id = createAutomation(s.h.app, { name: "daily", instructions: "Go.", triggers: [{ kind: "schedule", every: "day", time: "09:00", timezone: "UTC", repo: "octo/app" }] });
+    s.h.clock.t = utc("2026-11-23T09:00:10");
+    rearmSchedule(s.h.app, id); // what the job does when `fireSchedules` throws
+    expect(listRuns(s.h.app, id)).toMatchObject([{ status: "failed", summary: "Every day at 09:00", error: "The run could not start because of an error in Dorks. It runs again at the next time." }]);
+    expect(s.dorks()).toEqual([]);
+    const due = s.h.app.db.get<{ due_at: number }>("SELECT due_at FROM timers WHERE name = ?", `automation:${id}`);
+    expect(due?.due_at).toBe(utc("2026-11-24T09:00:00"));
   });
 
   it("two schedules due at once are two runs", async () => {
