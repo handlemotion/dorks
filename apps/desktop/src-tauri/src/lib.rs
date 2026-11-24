@@ -2,6 +2,7 @@
 
 mod boot;
 mod commands;
+mod login;
 mod state;
 mod tray;
 mod updater;
