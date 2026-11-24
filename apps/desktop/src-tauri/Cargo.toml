@@ -41,6 +41,10 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"
 [target.'cfg(target_os = "macos")'.dependencies]
 window-vibrancy = "0.8"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSAppearance", "NSApplication", "NSButton", "NSControl", "NSResponder", "NSView", "NSWindow"] }
+# Open at login (SMAppService, macOS 13+) and the App Nap opt-out (NSProcessInfo activity) while automations are scheduled.
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSError", "NSObject", "NSProcessInfo", "NSString"] }
+objc2-service-management = { version = "0.3", default-features = false, features = ["std", "objc2", "objc2-foundation", "SMAppService"] }
 
 [profile.release]
 opt-level = "s"

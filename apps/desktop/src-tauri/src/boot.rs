@@ -152,6 +152,7 @@ pub fn apply_keep_awake(app: &AppHandle) {
             KeepAwake::WhileActive => active,
         };
     state.keep_awake.lock().unwrap().set(want);
+    crate::login::set_no_nap(want);
 }
 
 /// Stops the server (gracefully). Safe to call twice.
@@ -163,6 +164,7 @@ pub async fn stop_runtime(app: &AppHandle) {
         runtime.watcher.abort();
     }
     state.keep_awake.lock().unwrap().set(false);
+    crate::login::set_no_nap(false);
     *state.status.lock().unwrap() = Status::Stopped;
 }
 

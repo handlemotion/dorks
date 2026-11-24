@@ -20,6 +20,16 @@ pub enum KeepAwake {
     Never,
 }
 
+/// Whether the app opens at login so scheduled automations fire on time (the server runs only while the app does).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum OpenAtLogin {
+    /// While an active automation has a schedule (the UI reports it with `set_keep_awake`).
+    #[default]
+    WhileScheduled,
+    Never,
+}
+
 /// Unknown keys are ignored, so files from older versions (with `publicUrl`, `bridgePort`, `tunnelService`, `wurmhol*`) load.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
@@ -27,6 +37,10 @@ pub struct Settings {
     /// Last UI port used, tried first on the next start so the URL stays stable.
     pub ui_port: Option<u16>,
     pub keep_awake: KeepAwake,
+    pub open_at_login: OpenAtLogin,
+    /// The app registered itself as a login item. Only what the app added is removed again, and a login item the owner turned off
+    /// in System Settings is not added back while this stays set.
+    pub login_item_registered: bool,
     /// The chrome the window had last (the web app sets it with `set_window_mode`). The next launch opens in it, so there is
     /// no flash of the wrong chrome. A fresh install has none and starts in onboarding.
     pub window_mode: WindowMode,
@@ -66,6 +80,8 @@ mod tests {
         let s = Settings {
             ui_port: Some(1),
             keep_awake: KeepAwake::Always,
+            open_at_login: OpenAtLogin::Never,
+            login_item_registered: true,
             window_mode: WindowMode::App,
             window_theme: WindowTheme::Dark,
             window_frame: Some(WindowFrame { x: -5, y: 7, width: 1000, height: 700 }),

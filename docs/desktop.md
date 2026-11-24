@@ -17,7 +17,8 @@ Dorks.app
 - **Menu bar:** server status, Open Dorks, Open Data Folder, Open Server Log, Restart Server, Quit. Closing the window leaves the app running in the menu bar.
 - **Sandboxes:** the shell starts only the server, which listens on the UI port on loopback and nothing else. Sandboxes are reached by the server dialing out to each box's bridge ([architecture.md](architecture.md#bridge-protocol-websocket-dialed-by-the-server)), so the Mac opens no inbound port and needs no public URL. On start the shell deletes files left by the removed tunnel: `tunnel-install-key`, `wurmhol-connector`, `wurmhol-token`, `wurmhol-access-key`, `wurmhol-name` and `logs/wurmhol.log`.
 - **Updates:** checks GitHub Releases shortly after launch and every 15 minutes, offers a newer version in the sidebar and the menu bar, and installs it in place (see [Updates](#updates)).
-- **Keep awake:** a power assertion (`caffeinate -i -w <pid>`, released automatically if the app dies) while the UI reports active dorks: a session starting or working, or an active automation with a schedule (the server runs on the Mac, so a scheduled run starts on time only if the Mac is awake; the assertion stops idle sleep, not a closed lid on battery). Setting: `whileActive` (default), `always`, `never`.
+- **Keep awake:** a power assertion (`caffeinate -i -w <pid>`, released automatically if the app dies) while the UI reports active dorks: a session starting or working, or an active automation with a schedule (the server runs on the Mac, so a scheduled run starts on time only if the Mac is awake; the assertion stops idle sleep, not a closed lid on battery). Setting: `whileActive` (default), `always`, `never`. While the assertion is held the app also holds an `NSProcessInfo` activity (user-initiated, idle sleep allowed), so App Nap does not throttle the shell behind a hidden window.
+- **Open at login:** the server runs only while the app does, so while an active automation has a schedule (`set_keep_awake`'s `scheduled`) the app registers itself as a login item (`SMAppService.mainApp`, macOS 13+), and removes the login item it added once no schedule is left. It adds it once per stretch of schedules (`loginItemRegistered` in the settings), so turning it off in System Settings → Login Items sticks. Setting `openAtLogin`: `whileScheduled` (default), `never` (removes one it added). A quit app, a closed lid or a shut-down Mac still miss the time; the run then starts late and says so ([automations](automations.md)).
 
 ## Contract with the server
 
@@ -41,7 +42,7 @@ Commands (`invoke` from `@tauri-apps/api/core`, or `window.__TAURI__.core.invoke
 | `runtime_config()` / `server_status()` | current config / status |
 | `restart_server()` | restart now, reset the failure history |
 | `open_data_dir()` | reveal the app directory in Finder |
-| `set_keep_awake(active)` | tell the shell dorks are (not) working; returns whether the assertion is held |
+| `set_keep_awake(active, scheduled?)` | tell the shell dorks are (not) working, and whether an active automation has a schedule (omitted until known); returns whether the assertion is held |
 | `keep_awake_mode()` / `set_keep_awake_mode(mode)` | the setting |
 | `set_window_mode("onboarding" \| "app")` | switch the window chrome (see "Window chrome" below); remembered for the next launch. Returns the new `chrome` |
 | `set_window_theme("light" \| "dark" \| "system")` | the window appearance, hence the material behind the page; remembered. Returns the new `chrome` |

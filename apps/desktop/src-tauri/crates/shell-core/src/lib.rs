@@ -4,6 +4,7 @@
 
 pub mod contract;
 pub mod health;
+pub mod login;
 pub mod navigation;
 pub mod paths;
 pub mod power;

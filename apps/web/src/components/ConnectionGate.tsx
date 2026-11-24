@@ -155,17 +155,19 @@ function ConnectForm({ initialUrl, error, onConnect }: { initialUrl?: string; er
 
 /**
  * Holds the Mac awake (desktop app only) while any session is starting or working, so idle sleep does not stall the agent, and while
- * an active automation has a schedule: the server runs on this Mac, so a scheduled run can only start on time if the Mac is awake.
+ * an active automation has a schedule: the server runs on this Mac, so a scheduled run can only start on time if the Mac is awake and
+ * the app is open (the shell also opens the app at login while a schedule exists).
  */
 function KeepAwake() {
   const dorks = useDorks(false)
   const automations = useAutomations()
   const working = !!dorks?.some((d) => d.state === 'creating' || d.state === 'working' || d.state === 'waking')
-  const scheduled = !!automations?.some((a) => a.nextRunAt !== null)
-  const active = working || scheduled
+  const scheduled = automations ? automations.some((a) => a.nextRunAt !== null) : undefined
+  const active = working || !!scheduled
   useEffect(() => {
-    setKeepAwake(active)
-  }, [active])
+    // `scheduled` also makes the app open at login: the server runs only while the app does.
+    setKeepAwake(active, scheduled)
+  }, [active, scheduled])
   return null
 }
 

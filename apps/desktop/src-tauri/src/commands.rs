@@ -39,11 +39,13 @@ pub fn open_data_dir(app: AppHandle, state: State<'_, AppState>) -> Result<(), S
     app.opener().open_path(state.paths.root().display().to_string(), None::<&str>).map_err(|e| e.to_string())
 }
 
-/// The UI reports whether dorks are working. With the default setting the Mac is kept awake only then.
+/// The UI reports whether dorks are working, and whether an active automation has a schedule (`scheduled`, absent from older UIs).
+/// With the default settings the Mac is kept awake only while either holds, and the app opens at login while a schedule exists.
 #[tauri::command]
-pub fn set_keep_awake(app: AppHandle, state: State<'_, AppState>, active: bool) -> bool {
+pub fn set_keep_awake(app: AppHandle, state: State<'_, AppState>, active: bool, scheduled: Option<bool>) -> bool {
     state.ui_active.store(active, Ordering::SeqCst);
     boot::apply_keep_awake(&app);
+    crate::login::set_scheduled(&app, scheduled);
     state.keep_awake.lock().unwrap().is_active()
 }
 

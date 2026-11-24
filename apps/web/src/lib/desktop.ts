@@ -39,8 +39,9 @@ export function openExternal(url: string) {
 }
 
 /** Tells the shell whether dorks are working, so it can hold the Mac awake (a no-op outside the app). */
-export function setKeepAwake(active: boolean) {
-  if (isDesktop()) void invoke('set_keep_awake', { active }).catch(() => {})
+/** `scheduled` is left out until the automations are known, so a slow load never removes the login item. */
+export function setKeepAwake(active: boolean, scheduled?: boolean) {
+  if (isDesktop()) void invoke('set_keep_awake', { active, scheduled }).catch(() => {})
 }
 
 export type WindowMode = 'onboarding' | 'app'
