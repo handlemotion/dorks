@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { symlinkSync } from "node:fs";
+import { symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
@@ -115,6 +115,42 @@ describe("MCP tools", () => {
     const gone = await call(new McpServer({ DORKS_SOCK: join(tmp("gone-"), "cred.sock") }), "pr_list", {});
     expect(text(gone)).toBe("cannot reach the dorks bridge in this box");
     expect(text(await call(new McpServer({}), "pr_list", {}))).toContain("DORKS_SOCK is not set");
+  });
+
+  it("screenshot_share requires url or path, flags JPEG or small 1x captures, and stays quiet on crisp 2x PNGs", async () => {
+    const dir = tmp("shots-");
+    const png = join(dir, "shot.png");
+    const jpg = join(dir, "shot.jpg");
+    writeFileSync(png, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]));
+    writeFileSync(jpg, Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0]));
+
+    let dims = { width: 1440, height: 1800 };
+    const b = await fakeBridge({ "image.share": () => ({ id: "a".repeat(32), ...dims }) });
+    const s = new McpServer(b.env);
+
+    // Neither url nor path: rejected instead of silently grabbing 1x desktop.
+    const missing = await call(s, "screenshot_share", { caption: "No source" });
+    expect(missing.result.isError).toBe(true);
+    expect(text(missing)).toContain("Give `url`");
+
+    // Crisp 2x PNG: shared with no quality warning.
+    const crisp = await call(s, "screenshot_share", { caption: "Sharp UI", path: png });
+    expect(crisp.result.isError).toBe(false);
+    expect(text(crisp)).not.toContain("Quality note:");
+
+    // Small 1x PNG: shared with a quality note reminding to use deviceScaleFactor: 2.
+    dims = { width: 500, height: 320 };
+    const small = await call(s, "screenshot_share", { caption: "Small shot", path: png });
+    expect(small.result.isError).toBe(false);
+    expect(text(small)).toContain("Quality note:");
+    expect(text(small)).toContain("deviceScaleFactor: 2");
+
+    // JPEG: shared with a quality note recommending lossless PNG.
+    dims = { width: 1600, height: 900 };
+    const jpeg = await call(s, "screenshot_share", { caption: "JPEG shot", path: jpg });
+    expect(jpeg.result.isError).toBe(false);
+    expect(text(jpeg)).toContain("Quality note:");
+    expect(text(jpeg)).toContain("lossless PNG");
   });
 });
 

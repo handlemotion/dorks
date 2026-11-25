@@ -122,21 +122,21 @@ const TOOLS: Tool[] = [
     title: "Show the user a screenshot",
     description:
       "Take a screenshot and show it to the user in the chat. Use it to prove visual work: after you build or change anything the user " +
-      "can see (a page, a component, a layout, a style), screenshot the result and share it. Give exactly one source: " +
-      "`url` renders a page in headless Chrome (best for your dev server: crisp, at `scale` 2 by default, sized by `width`/`height`); " +
-      "`path` shares a PNG/JPEG/WebP you already made (e.g. a Playwright `page.screenshot` cropped to the element, or a before/after); " +
+      "can see (a page, component, layout, style), screenshot the result and share it. Give exactly one source: " +
+      "`url` renders a page in headless Chrome (best for your dev server: crisp PNG, at `scale` 2 by default, sized by `width`/`height`); " +
+      "`path` shares a PNG/JPEG/WebP you already made (e.g. a Playwright `page.screenshot` cropped to the element, or a before/after — always capture at `deviceScaleFactor: 2` and save as PNG, since Playwright defaults to 1x); " +
       "neither captures the whole desktop the user watches in the Computer tab. You get the image back to check it: if it is blank, " +
-      "half-loaded, cropped wrong or shows an error, fix that and share again. The result contains a markdown line; put it in your final " +
+      "half-loaded, blurry, cropped wrong or shows an error, fix that and share again. The result contains a markdown line; put it in your final " +
       "answer so the user sees the image there.",
     inputSchema: {
       type: "object",
       properties: {
         caption: { type: "string", description: 'What the image shows, in a few words, e.g. "Settings page, dark theme".' },
         url: { type: "string", description: "A page to render, e.g. http://localhost:3000/settings." },
-        path: { type: "string", description: "An image file to share instead (PNG, JPEG, WebP or GIF, at most 8 MB)." },
+        path: { type: "string", description: "An image file to share instead (lossless PNG at deviceScaleFactor: 2 preferred; PNG, JPEG, WebP or GIF, at most 8 MB)." },
         width: { type: "integer", minimum: 320, maximum: 3840, description: "With `url`: viewport width in CSS pixels. Default 1440; 390 for a phone." },
         height: { type: "integer", minimum: 240, maximum: 4000, description: "With `url`: viewport height in CSS pixels. Default 900." },
-        scale: { type: "number", minimum: 1, maximum: 3, description: "With `url`: device pixel ratio. Default 2 (sharp text)." },
+        scale: { type: "number", minimum: 1, maximum: 3, description: "With `url`: device pixel ratio. Default 2 (sharp text; keep at 2 unless hitting the 8 MB limit)." },
         dark: { type: "boolean", description: "With `url`: render with prefers-color-scheme: dark." },
       },
       required: ["caption"],
@@ -147,16 +147,28 @@ const TOOLS: Tool[] = [
       const caption = typeof args.caption === "string" ? args.caption.trim() : "";
       if (!caption) throw new ToolError("`caption` must say what the image shows.");
       if (args.url !== undefined && args.path !== undefined) throw new ToolError("Give `url` or `path`, not both.");
-      const bytes = typeof args.path === "string" ? readImage(args.path) : typeof args.url === "string" ? await renderPage(args.url, args) : await captureDesktop();
-      if (!sniff(bytes)) throw new ToolError("That is not a PNG, JPEG, WebP or GIF image.");
+      if (typeof args.path !== "string" && typeof args.url !== "string") {
+        throw new ToolError("Give `url` (renders at 2x PNG) or `path` (an image file captured at deviceScaleFactor: 2).");
+      }
+      const bytes = typeof args.path === "string" ? readImage(args.path) : await renderPage(args.url as string, args);
+      const mime = sniff(bytes);
+      if (!mime) throw new ToolError("That is not a PNG, JPEG, WebP or GIF image.");
       if (bytes.length > MAX_IMAGE_BYTES) throw new ToolError(`The image is ${(bytes.length / 1048576).toFixed(1)} MB; the limit is 8 MB. Crop it or use a smaller scale.`);
       const data = bytes.toString("base64");
       const shared = await rpcCall<{ id: string; width?: number; height?: number }>(sock, "image.share", { data, caption });
       const alt = caption.replace(/[\[\]\n]/g, " ");
       const size = shared.width && shared.height ? ` (${shared.width}x${shared.height})` : "";
-      const content: Content[] = [{ type: "text", text: `Shared${size}. The user sees it once you put this line in your final answer:\n\n![${alt}](dorks-image:${shared.id})` }];
+      const notes: string[] = [];
+      if (typeof args.path === "string") {
+        if (mime === "image/jpeg") notes.push("JPEG compresses UI text; prefer lossless PNG for screenshots.");
+        if (shared.width && shared.height && shared.width < 800 && shared.height < 600) {
+          notes.push(`This image is small (${shared.width}x${shared.height}); if it was captured at 1x, re-capture at deviceScaleFactor: 2 for sharp text.`);
+        }
+      }
+      const note = notes.length ? `\n\nQuality note: ${notes.join(" ")}` : "";
+      const content: Content[] = [{ type: "text", text: `Shared${size}. The user sees it once you put this line in your final answer:\n\n![${alt}](dorks-image:${shared.id})${note}` }];
       // Hand the image back so the agent can judge it; above this size it would cost too much context.
-      if (bytes.length <= 3.5 * 1048576) content.push({ type: "image", data, mimeType: sniff(bytes)! });
+      if (bytes.length <= 3.5 * 1048576) content.push({ type: "image", data, mimeType: mime });
       return content;
     },
   },
@@ -613,24 +625,6 @@ async function renderPage(url: string, args: Record<string, unknown>): Promise<B
         .trim()
         .slice(-400)}`,
     );
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-/** The whole Boat desktop (Xorg :0), the screen the owner watches in the Computer tab. */
-async function captureDesktop(): Promise<Buffer> {
-  const dir = mkdtempSync(join(tmpdir(), "dorks-shot-"));
-  const out = join(dir, "desktop.png");
-  const env = { ...process.env, DISPLAY: process.env.DISPLAY || ":0" };
-  try {
-    await run("ffmpeg", ["-loglevel", "error", "-y", "-f", "x11grab", "-i", env.DISPLAY, "-frames:v", "1", out], { timeout: CAPTURE_TIMEOUT_MS, env }).catch(() =>
-      run("import", ["-window", "root", out], { timeout: CAPTURE_TIMEOUT_MS, env }),
-    );
-    if (!existsSync(out)) throw new Error("no file");
-    return readFileSync(out);
-  } catch {
-    throw new ToolError("Could not capture the desktop here (no X display). Pass `url` for a page or `path` for an image file.");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

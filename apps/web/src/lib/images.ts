@@ -5,5 +5,5 @@ export function sizedImage(src: string, width: number): string {
 
 /** Tiles, the viewer's thumbnail strip, small previews: 2x a ~300 px tile. */
 export const THUMB_WIDTH = 640
-/** A screenshot in the thread (up to 360 px tall), at 2x. */
-export const INLINE_WIDTH = 1280
+/** A screenshot in the thread (up to 360 px tall, wide desktop shots stay crisp at 2x). */
+export const INLINE_WIDTH = 1920
