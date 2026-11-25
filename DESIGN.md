@@ -40,7 +40,7 @@ Rules that tooling enforces live in `AGENTS.md` and `packages/ui/README.md`; thi
   remembered) | page. While it is collapsed, hovering its toggle peeks it: the sidebar slides 16px and fades in above the page (a
   hairline on its right edge, nothing under it moves) so a page can be picked without opening it, and slides away when the pointer
   leaves, a row is picked or Escape is pressed. The divider is the resize handle. Phones get shadcn's sheet instead.
-- **Chat:** `ChatSplit` puts the chat and Chat details side by side (chat 720px by default, details everything else, both at least 360px; on window resize the sidebar and the chat keep their widths and details absorbs the change; a click on the handle snaps the chat back to 720px). Details
+- **Chat:** `ChatSplit` puts the chat and Chat details side by side (chat 600px by default, details everything else, both at least 360px; on window resize the sidebar and the chat keep their widths and details absorbs the change; a click on the handle snaps the chat back to 600px). Details
   run the full height, flush to the window's right edge, with no card or outer border: one full-height hairline (`border-l`) separates
   them from the chat, and the resize handle sits on it. Details hide below `lg`.
 - **Chat details tabs** work like a browser's: an open-tabs strip (Progress, Artifacts, Changes (the local diff, before any PR),
