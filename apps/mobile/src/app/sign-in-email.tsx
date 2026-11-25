@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { StyleSheet, Text } from "react-native";
 import { Button } from "@/components/Button";
 import { SignInPage } from "@/components/SignInPage";
@@ -11,9 +11,15 @@ import { fonts, useColors } from "@/lib/theme";
 export default function SignInEmail() {
   const c = useColors();
   const [email, setEmail] = useState("");
-  const send = useAction((address: string) => sendEmailOtp(address), {
-    onSuccess: () => router.push({ pathname: "/sign-in-code", params: { email: email.trim() } }),
-  });
+  // The address the code went to: the field may change while the request is in flight, the code page must not.
+  const sentTo = useRef("");
+  const send = useAction(
+    (address: string) => {
+      sentTo.current = address;
+      return sendEmailOtp(address);
+    },
+    { onSuccess: () => router.push({ pathname: "/sign-in-code", params: { email: sentTo.current } }) },
+  );
   const valid = /^\S+@\S+\.\S+$/.test(email.trim());
   const submit = () => {
     if (valid && !send.isPending) send.run(email.trim());
@@ -34,6 +40,7 @@ export default function SignInEmail() {
         textContentType="emailAddress"
         returnKeyType="go"
         autoFocus
+        editable={!send.isPending}
         value={email}
         onChangeText={setEmail}
         onSubmitEditing={submit}

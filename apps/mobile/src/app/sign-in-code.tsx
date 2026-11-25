@@ -17,12 +17,18 @@ export default function SignInCode() {
   const [code, setCode] = useState("");
   const [wait, setWait] = useState(RESEND_AFTER_S);
   const verify = useAction((otp: string) => verifyEmailOtp(email, otp));
-  const resend = useAction(() => sendEmailOtp(email), {
-    onSuccess: () => {
-      setCode("");
-      setWait(RESEND_AFTER_S);
+  const resend = useAction(
+    () => {
+      verify.reset();
+      return sendEmailOtp(email);
     },
-  });
+    {
+      onSuccess: () => {
+        setCode("");
+        setWait(RESEND_AFTER_S);
+      },
+    },
+  );
 
   useEffect(() => {
     if (wait <= 0) return;
@@ -34,7 +40,8 @@ export default function SignInCode() {
   const submit = (value = code) => {
     if (value.length === 6 && !finishing) verify.run(value);
   };
-  const error = verify.error?.message ?? resend.error?.message;
+  // Only one of them can be set: a resend clears the last verify error, and typing clears both.
+  const error = resend.error?.message ?? verify.error?.message;
 
   return (
     <SignInPage
@@ -53,6 +60,7 @@ export default function SignInCode() {
         onChange={(digits) => {
           setCode(digits);
           if (verify.error) verify.reset();
+          if (resend.error) resend.reset();
           if (digits.length === 6) submit(digits);
         }}
         onSubmit={() => submit()}
