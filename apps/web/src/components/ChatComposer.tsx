@@ -1,4 +1,4 @@
-import { ArrowUpIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon, ZapIcon } from 'lucide-react'
+import { ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon, ZapIcon } from 'lucide-react'
 import { modelLabel, type AgentModelChoice } from '@dorks/shared'
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type RefObject, type ReactNode } from 'react'
 import {
@@ -276,10 +276,19 @@ function onEnter(e: KeyboardEvent<HTMLTextAreaElement>, send: () => void, onQueu
 function QueueFrame({ queued, children }: { queued?: ReactNode; children: ReactNode }) {
   if (!queued) return children
   return (
-    <div data-queue className="flex flex-col rounded-[16px] border border-border bg-muted dark:bg-card">
+    <div data-queue className="flex flex-col rounded-[11px] border border-border bg-muted dark:bg-card">
       {queued}
       {children}
     </div>
+  )
+}
+
+/** The send arrow: lucide's ArrowUp is drawn short and sits high at 14px; this one is 16px with the shaft spanning the box, centered on its middle. */
+function SendArrow() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="size-4!">
+      <path d="M8 13.25V2.75M3.5 7.25 8 2.75l4.5 4.5" />
+    </svg>
   )
 }
 
@@ -298,7 +307,7 @@ function MainButton({ onStop, isNewSession, pending, canSend, canQueue }: { onSt
   return (
     <Tip label={label}>
       <InputGroupButton type="submit" size="icon-sm" variant="default" className={MAIN} aria-label={label} disabled={!canSend}>
-        {pending ? <LoaderCircleIcon className="animate-spin" /> : <ArrowUpIcon />}
+        {pending ? <LoaderCircleIcon className="animate-spin" /> : <SendArrow />}
       </InputGroupButton>
     </Tip>
   )
@@ -847,7 +856,7 @@ export function Composer({
         <QueueFrame queued={queued}>
           <InputGroup
             data-dragging={dragging}
-            className="in-data-queue:-mx-px in-data-queue:-mb-px in-data-queue:w-auto data-[dragging=true]:border-ring data-[dragging=true]:ring-[3px] data-[dragging=true]:ring-ring/50 rounded-[15px] border-border bg-white has-[textarea]:rounded-[15px] has-[>[data-align=block-start]]:rounded-[15px] dark:border-transparent dark:bg-input/50"
+            className="in-data-queue:-mx-px in-data-queue:-mb-px in-data-queue:w-auto data-[dragging=true]:border-ring data-[dragging=true]:ring-[3px] data-[dragging=true]:ring-ring/50 rounded-[10px] border-border bg-white has-[textarea]:rounded-[10px] has-[>[data-align=block-start]]:rounded-[10px] dark:border-transparent dark:bg-input/50"
           >
             {reply && (
               // The reply banner sits 8px inside the box (the buttons' inset), concentric with its 15px corners.

@@ -13,6 +13,7 @@ import { Switch } from '@dorks/ui/switch'
 import { Textarea } from '@dorks/ui/textarea'
 import { EmptyState } from '../../../components/EmptyState'
 import { PageHeader } from '../../../components/PageHeader'
+import { PageRail, RailPage } from '../../../components/PageRail'
 import { Tip } from '../../../components/Tip'
 import { DAYS, EVENTS, EVERY, GithubMark, SENTRY_EVENTS, SentryMark, TriggerList, TriggerMark } from '../../../components/automations/TriggerEditor'
 import { TEMPLATES, type AutomationTemplate } from '../../../components/automations/templates'
@@ -97,23 +98,34 @@ function NewButton({ variant = 'outline' }: { variant?: 'outline' | 'default' })
 
 function AutomationList() {
   const automations = useAutomations()
+  const [query, setQuery] = useState('')
+  const q = query.trim().toLowerCase()
+  const shown = automations?.filter((a) => !q || a.name.toLowerCase().includes(q) || a.triggers.some((t) => triggerText(t).toLowerCase().includes(q)))
+  const templates = TEMPLATES.filter((t) => !q || t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q))
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PageHeader title="Automations" actions={automations?.length ? <NewButton /> : undefined} />
-      <Page>
-        {automations?.length === 0 && (
-          <EmptyState
-            figure="relay"
-            title="No automations yet"
-            description="An agent that runs on a schedule, or when something happens in a repository or in Sentry. Start from a template, or from scratch."
-          >
-            <NewButton />
-          </EmptyState>
-        )}
-        {!!automations?.length && (
-          <SettingsSection title="Automations">
+      <RailPage title="Automations">
+        {!!automations?.length && <PageRail query={query} onQueryChange={setQuery} placeholder="Search automations…" actions={<NewButton variant="default" />} />}
+        <SettingsSections>
+          {automations?.length === 0 && (
+            <EmptyState
+              figure="relay"
+              title="No automations yet"
+              description="An agent that runs on a schedule, or when something happens in a repository or in Sentry. Start from a template, or from scratch."
+            >
+              <NewButton />
+            </EmptyState>
+          )}
+          {q && !shown?.length && !templates.length && (
+            <EmptyState figure="relay" title="No matching automations" description="Try another name, repository or event.">
+              <Button variant="outline" size="sm" onClick={() => setQuery('')}>
+                Clear search
+              </Button>
+            </EmptyState>
+          )}
+          {!!shown?.length && (
             <SettingsGroup label="automations">
-              {automations.map((a) => {
+              {shown.map((a) => {
                 const s = status(a)
                 return (
                   <Link key={a.id} to="/automations" search={{ automation: a.id }} className={LINK_ROW}>
@@ -126,19 +138,19 @@ function AutomationList() {
                 )
               })}
             </SettingsGroup>
-          </SettingsSection>
-        )}
-        {automations && <Templates />}
-      </Page>
+          )}
+          {automations && templates.length > 0 && <Templates templates={templates} />}
+        </SettingsSections>
+      </RailPage>
     </div>
   )
 }
 
-function Templates() {
+function Templates({ templates }: { templates: AutomationTemplate[] }) {
   return (
     <SettingsSection title="Templates">
       <SettingsGroup label="templates">
-        {TEMPLATES.map((t) => (
+        {templates.map((t) => (
           <div key={t.id} className={ROW}>
             <span className="flex w-4 shrink-0 justify-center text-muted-foreground">
               <TriggerMark kind={t.input.triggers[0].kind} />
