@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { mcpServerConfig } from "./mcp";
 import { skillRef } from "./skills";
+import { agentCommand, filePath, MAX_AGENT_COMMANDS, MAX_FILE_PATHS } from "./mentions";
 import { notifyKind, prRef } from "./autonomy";
 
 /**
@@ -95,6 +96,11 @@ export const fromBridge = z.discriminatedUnion("t", [
   // Claude: the models the CLI offers this account (its `initialize` answer) and the effort the bridge started it with.
   // OpenCode: every `provider/model` its configured providers offer, with no efforts. Antigravity: `agy models`, with no efforts.
   z.object({ t: z.literal("agent_models"), models: z.array(agentModelChoice).max(100), effort: effortLevel.nullable() }),
+  // Claude: the slash commands and skills the CLI offers this session (its `initialize` answer), for the composer's `/` menu.
+  z.object({ t: z.literal("agent_commands"), commands: z.array(agentCommand).max(MAX_AGENT_COMMANDS) }),
+  // The repository's files (`git ls-files`, tracked and untracked but not ignored), for the composer's `@` menu. Sent when the
+  // listing changes; `truncated` when there were more than fit.
+  z.object({ t: z.literal("files"), paths: z.array(filePath).max(MAX_FILE_PATHS), truncated: z.boolean() }),
   z.object({ t: z.literal("ready") }), // repo cloned + claude running
   z.object({ t: z.literal("ack"), id: z.string() }), // user_message id received
   z.object({ t: z.literal("agent_exited"), code: z.number().nullable(), stderrTail: z.string() }),

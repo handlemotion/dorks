@@ -25,6 +25,7 @@ import { errTag, type Log, type Redactor } from "./redact";
 import { RpcServer } from "./rpc";
 import { claudeOneShot, cleanTitle, titlePrompt } from "./title";
 import { syncSkills } from "./skills";
+import { FileWatcher } from "./files";
 import type { CommandEntry, Transport } from "./transport";
 
 const EFFORTS = effortLevel.options;
@@ -87,6 +88,9 @@ export class Bridge {
   private configuring = 0; // configure jobs in flight (an interrupt arriving meanwhile is deferred, not dropped)
   private configAttempts = new Map<string, number>();
   private agentCtx: { dir: string; env: NodeJS.ProcessEnv } | null = null;
+  /** Lists the working tree for the composer's `@` menu (files.ts). */
+  private files: FileWatcher | null = null;
+  private filesDir = "";
   /** The first message to name the dork after, until a name is sent (or tried) by this process. */
   private nameFrom: string | null = null;
   /** The dork's place in a crew (docs/crew.md), from the last configure: its guidance and the crew tools its MCP server lists. */
@@ -229,6 +233,7 @@ export class Bridge {
     await Promise.race([this.outbox.drained(), new Promise((r) => setTimeout(r, drainMs))]);
     this.outbox.stop();
     this.prs.stop();
+    this.files?.stop();
     this.rpc.close();
     this.mcpProxy.close();
     this.previews.close();
@@ -577,6 +582,7 @@ export class Bridge {
                 extraArgs: [...computerArgs(), ...crewArgs(this.role), ...this.cfg.claudeExtraArgs],
                 model: this.claudeModel.model,
                 effort: this.claudeModel.effort,
+                onCommands: (commands) => this.pipeline.control({ t: "agent_commands", commands }, true),
                 onModels: (models) => {
                   const effort = this.claudeModel.effort;
                   this.pipeline.control({ t: "agent_models", models, effort: effort && (EFFORTS as readonly string[]).includes(effort) ? (effort as EffortLevel) : null }, true);
@@ -585,8 +591,18 @@ export class Bridge {
                 mcpConfigFile: mcpConfigPath(this.cfg.stateDir),
               });
     this.agent = agent;
+    this.watchFiles(dir);
     this.log("agent started", resume ? "(resuming a session)" : "(new session)");
     for (const text of resend) void agent.sendUserMessage(text).catch(() => this.log("could not resend a message to the new session"));
+  }
+
+  /** The repository's files for the composer's `@` menu: one watcher per working directory, kept across agent restarts. */
+  private watchFiles(dir: string) {
+    if (this.files && this.filesDir === dir) return;
+    this.files?.stop();
+    this.filesDir = dir;
+    this.files = new FileWatcher({ dir, baseEnv: this.d.baseEnv ?? process.env, runAs: this.runAs, send: (l) => this.pipeline.control({ t: "files", ...l }, true) });
+    this.files.start();
   }
 
   // ------------------------------------------------------------------ title

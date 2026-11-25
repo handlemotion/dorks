@@ -92,6 +92,35 @@ const view = (d: MockDork): Dork => {
   return row;
 };
 
+/** What the composer's `/` menu offers: the CLI's `initialize` commands, skills marked by where they come from. */
+const MOCK_COMMANDS = [
+  { name: "code-review", description: "Review the changes since a fixed point along two axes: Standards and Spec. (user)" },
+  { name: "frontend-design", description: "Create distinctive, production-grade frontend interfaces with high design quality. (user)" },
+  { name: "pdf", description: "Read, fill and merge PDF files. (user)" },
+  { name: "tdd", description: "Test-driven development: red, green, refactor. (user)" },
+  { name: "release-notes", description: "Draft release notes from the pull requests merged since a tag. (project)", argumentHint: "[since tag]" },
+  { name: "compact", description: "Free up context by summarizing the conversation so far", argumentHint: "<optional custom summarization instructions>" },
+  { name: "context", description: "Show current context usage" },
+  { name: "init", description: "Initialize a new CLAUDE.md file with codebase documentation" },
+  { name: "security-review", description: "Complete a security review of the pending changes on the current branch" },
+];
+/** What the composer's `@` menu searches: the repository's files as the bridge would list them. */
+const MOCK_FILES = [
+  "AGENTS.md",
+  "README.md",
+  "package.json",
+  "apps/web/src/main.tsx",
+  "apps/web/src/components/ChatComposer.tsx",
+  "apps/web/src/components/SessionChat.tsx",
+  "apps/web/src/components/EmptyState.tsx",
+  "apps/web/src/lib/draft.ts",
+  "apps/server/src/main.ts",
+  "apps/server/src/services/files.ts",
+  "packages/shared/src/mentions.ts",
+  "packages/ui/src/components/ui/command.tsx",
+  "docs/architecture.md",
+  "docs/development.md",
+];
 const MOCK_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 /** What a Claude agent reports from the CLI's `initialize` answer. */
 const MOCK_MODELS = [
@@ -464,6 +493,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
             fast: body.fast === true,
             agentModel: MOCK_MODELS.find((c) => c.model === (str(body.model) ?? "default"))?.resolved,
             modelChoices: MOCK_MODELS,
+            commands: MOCK_COMMANDS,
           }
         : provider === "antigravity"
           ? { model: str(body.model), modelChoices: MOCK_AGY_MODELS }
@@ -587,6 +617,14 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       },
     ],
     ["GET events", listEvents],
+    [
+      "GET files",
+      ({ url, res }) => {
+        const q = (url.searchParams.get("q") ?? "").toLowerCase();
+        const files = MOCK_FILES.filter((p) => p.toLowerCase().includes(q)).sort((a, b) => a.length - b.length);
+        json(res, 200, { files, listed: true, truncated: false });
+      },
+    ],
     [
       "GET pr",
       ({ url, res }, d) => {
@@ -1159,7 +1197,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     const automation = automations(method, path, body);
     if (automation) return "error" in automation ? fail(res, automation.error, automation.message) : json(res, automation.status, automation.body);
     const m =
-      /^\/api\/dorks\/([^/]+)(?:\/(local\/[^/]+|messages|queue(?:\/[^/]+(?:\/send)?)?|interrupt|desktop|archive|model|codex-model|events|pr(?:\/merge|\/update-branch)?|subscriptions(?:\/resume)?|comments(?:\/[^/]+(?:\/replies)?)?))?$/.exec(
+      /^\/api\/dorks\/([^/]+)(?:\/(local\/[^/]+|messages|queue(?:\/[^/]+(?:\/send)?)?|interrupt|desktop|archive|model|codex-model|events|files|pr(?:\/merge|\/update-branch)?|subscriptions(?:\/resume)?|comments(?:\/[^/]+(?:\/replies)?)?))?$/.exec(
         path,
       );
     if (m) return routeDork(c, m);

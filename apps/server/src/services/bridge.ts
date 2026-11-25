@@ -22,6 +22,7 @@ import { rememberAntigravityModels, rememberModelChoices } from "./models";
 import { antigravityToken, claudeToken, cliSecrets, githubToken } from "./settings";
 import { mcpServerConfigs } from "./mcpServers";
 import { skillRefs } from "./skills";
+import { storeFiles } from "./files";
 import { buildVarValues, getBuild } from "./builds";
 import { crewRole } from "./crew";
 import * as subs from "./subscriptions";
@@ -241,6 +242,8 @@ const FRAME_HANDLERS: { [T in FromBridge["t"]]: (b: Batch, f: FrameOf<T>) => voi
     if (dork.provider === "claude") rememberModelChoices(app, f.models);
     if (dork.provider === "antigravity") rememberAntigravityModels(app, f.models);
   },
+  agent_commands: ({ app, dorkId }, f) => patchDork(app, dorkId, { agentCommands: f.commands }),
+  files: ({ app, dorkId }, f) => storeFiles(app, dorkId, f.paths, f.truncated),
   codex_issue: ({ app, dorkId, dork }, f) => {
     if (dork.provider !== "claude") append(app, dorkId, errorEvent({ code: "failed", message: f.message }));
   },

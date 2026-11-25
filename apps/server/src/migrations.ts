@@ -503,4 +503,16 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX preview_comments_dork ON preview_comments (dork_id, created_at);
   CREATE INDEX preview_comments_pending ON preview_comments (dork_id, notified);
   `,
+  `
+  -- The composer's menus (docs/architecture.md, "Mentions"): the slash commands and skills the agent last offered (JSON
+  -- AgentCommand[]), and the repository's files as the bridge last listed them (a JSON array of paths, kept apart so lists of dorks
+  -- never read it).
+  ALTER TABLE dorks ADD COLUMN agent_commands TEXT;
+  CREATE TABLE dork_files (
+    dork_id TEXT PRIMARY KEY REFERENCES dorks (id) ON DELETE CASCADE,
+    paths TEXT NOT NULL,
+    truncated INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL
+  );
+  `,
 ];

@@ -27,6 +27,7 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } fro
 import { Tip } from './Tip'
 import { ImageLightbox, ImageTrigger } from './ImageLightbox'
 import { ReplyBanner, SEND_KEY } from './Reply'
+import { useComposerMenu, type Mentions } from './ComposerMenu'
 import { addDropZone, dropZoneFor } from '../lib/fileDrop'
 import type { Reply } from '../lib/reply'
 
@@ -725,6 +726,7 @@ export function Composer({
   focusKey,
   draftKey,
   usage,
+  mentions,
 }: {
   text: string
   setText: (text: string) => void
@@ -772,11 +774,14 @@ export function Composer({
   draftKey?: string
   /** The usage ring after the model menu (`<UsageMenu />`). */
   usage?: ReactNode
+  /** What `/` (skills and commands) and `@` (the repository's files) offer in a menu above the box. */
+  mentions?: Mentions
 }) {
   const formRef = useRef<HTMLFormElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const textRef = useRef<HTMLTextAreaElement>(null)
   const { files, attachError, attach, remove, clearSent, ready, uploading } = useAttachments(upload, draftKey)
+  const menu = useComposerMenu({ text, setText, textRef, mentions })
   // A new reply puts the cursor in the box, ready to answer it.
   useEffect(() => {
     if (reply) textRef.current?.focus()
@@ -808,6 +813,7 @@ export function Composer({
       {status}
       <form
         ref={formRef}
+        className="relative"
         autoComplete="off"
         onSubmit={(e) => {
           e.preventDefault()
@@ -827,6 +833,7 @@ export function Composer({
             e.target.value = ''
           }}
         />
+        {menu.menu}
         {/* White on the off-white app (light), with the panel's 6% hairline since that pair is under 1.15:1; dark keeps the published fill. */}
         <QueueFrame queued={queued}>
           <InputGroup
@@ -866,7 +873,13 @@ export function Composer({
               data-form-type="other"
               placeholder={hintOf(placeholder)}
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              {...menu.inputProps}
+              onChange={(e) => {
+                setText(e.target.value)
+                menu.track()
+              }}
+              onSelect={menu.track}
+              onBlur={menu.blur}
               onPaste={(e) => {
                 const images = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith('image/'))
                 if (!upload || !images.length) return
@@ -874,6 +887,7 @@ export function Composer({
                 attach(images)
               }}
               onKeyDown={(e) => {
+                if (menu.onKeyDown(e)) return
                 if (e.key === 'Escape' && reply && onClearReply) {
                   e.preventDefault()
                   onClearReply()

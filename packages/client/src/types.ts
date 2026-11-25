@@ -1,4 +1,4 @@
-import type { AgentModelChoice, BuildRepo, ClientEvent, CommentPolicy, DorkState, MachineType, RunView } from "@dorks/shared";
+import type { AgentCommand, AgentModelChoice, BuildRepo, ClientEvent, CommentPolicy, DorkState, MachineType, RunView } from "@dorks/shared";
 
 export type { MergeMethod, MergeableState, PullRequestSection, PullRequestView, PullRequestFile, PullRequestComment, PullRequestChecks, PullRequestCheck, PullRequestPerson } from "@dorks/shared";
 export type { AutomationInput, AutomationRunView, AutomationTrigger, AutomationView, GithubEvent, GithubTrigger, ScheduleEvery, ScheduleTrigger } from "@dorks/shared";
@@ -34,6 +34,8 @@ export interface Dork {
   needsAttention?: boolean;
   /** Messages the owner queued for when the current turn ends, oldest first. Only on a single dork's read; absent on older servers. */
   queue?: QueuedMessage[];
+  /** The slash commands and skills the agent last offered, for the composer's `/` menu. Only on a single dork's read; absent on older servers. */
+  commands?: AgentCommand[];
   codexModel?: { model: string; effort: string };
   codexModelChoices?: { model: string; efforts: string[] }[];
   /** Claude: the model and effort chosen for this session (absent: the agent's default). */

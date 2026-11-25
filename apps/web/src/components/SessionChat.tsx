@@ -7,6 +7,7 @@ import { AgentStatus } from './AgentStatus'
 import { ChatMessages } from './ChatBlock'
 import { ChatToc } from './ChatToc'
 import { UsageMenu } from './UsageMenu'
+import { useMentions } from './ComposerMenu'
 import { Composer, withImages, type AttachedImage, type ModelPicker } from './ChatComposer'
 import { LocalAccessProvider } from './LocalRequest'
 import { QueuedMessages } from './QueuedMessages'
@@ -158,6 +159,7 @@ export function SessionChat({
   const settings = useSettings()
   const { live } = useConnection()
   const agent = AGENT_NAMES[dork.provider]
+  const mentions = useMentions(dork.provider, dorkId, dork.commands)
   const canReply = !dork.archived
   /** Sends the composer's text (and reply) one way or the other; puts both back if the server refuses. */
   const sendWith: SendWith = (deliver: (message: string) => Promise<unknown>) => (images: Parameters<typeof withImages>[1]) =>
@@ -241,6 +243,7 @@ export function SessionChat({
         upload={actions.uploadImage}
         draftKey={dorkId}
         usage={<UsageMenu provider={dork.provider} />}
+        mentions={mentions}
         reply={reply}
         onClearReply={() => setReply(undefined)}
         // The optimistic row shows a sent message at once; a queued one shows up in the queue above the text.
