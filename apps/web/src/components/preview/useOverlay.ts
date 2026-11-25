@@ -9,6 +9,8 @@ export type Rect = { x: number; y: number; width: number; height: number }
 export type HoverBox = Rect & { radius: string; label: string }
 export type Mark = { id: string; kind: 'element' | 'text'; path: string; selector: string; quote?: string; prefix?: string; suffix?: string }
 export type PickMode = 'element' | 'text'
+/** Where the pointer is over the page (the rulers), and the element under it, in the page's pixels. */
+export type Pointer = { x: number; y: number; box: Rect | null; label: string | null }
 /** A picked element or passage: its anchor, where it is in the frame, and (for an element) React Grab's snippet. */
 export type Picked = { anchor: CommentAnchor; box: Rect; snippet?: string }
 
@@ -21,6 +23,9 @@ type FromOverlay = {
   anchor?: CommentAnchor
   on?: unknown
   marks?: { id: string; rects: Rect[] | null }[]
+  x?: unknown
+  y?: unknown
+  label?: unknown
   id?: unknown
   data?: unknown
   error?: unknown
@@ -44,6 +49,7 @@ export function useOverlay(frame: RefObject<HTMLIFrameElement | null>, url: stri
   const [hover, setHover] = useState<HoverBox | null>(null)
   const [picking, setPicking] = useState<PickMode | null>(null)
   const [rects, setRects] = useState<Map<string, Rect[] | null>>(new Map())
+  const [pointer, setPointer] = useState<Pointer | null>(null)
   const captures = useRef(new Map<string, { resolve: (data: string) => void; reject: (e: Error) => void }>())
   const picked = useRef(onPicked)
   picked.current = onPicked
@@ -82,6 +88,8 @@ export function useOverlay(frame: RefObject<HTMLIFrameElement | null>, url: stri
       selection: onPick,
       marks: (d) => Array.isArray(d.marks) && setRects(new Map(d.marks.map((m) => [m.id, m.rects]))),
       captured: settle,
+      pointer: (d) =>
+        setPointer(typeof d.x === 'number' && typeof d.y === 'number' ? { x: d.x, y: d.y, box: (d.box as Rect | null) ?? null, label: typeof d.label === 'string' ? d.label : null } : null),
     }
     const onMessage = (e: MessageEvent) => {
       const d = e.data as FromOverlay | null
@@ -104,6 +112,14 @@ export function useOverlay(frame: RefObject<HTMLIFrameElement | null>, url: stri
     if (!picking) setHover(null)
   }, [ready, picking, post])
 
+  const track = useCallback(
+    (on: boolean) => {
+      post({ type: 'track', on })
+      if (!on) setPointer(null)
+    },
+    [post],
+  )
+
   return {
     ready,
     path,
@@ -115,6 +131,9 @@ export function useOverlay(frame: RefObject<HTMLIFrameElement | null>, url: stri
     pick: (mode: PickMode | null) => setPicking(mode),
     setMarks: (marks: Mark[]) => post({ type: 'marks', marks }),
     reveal: (id: string) => post({ type: 'reveal', id }),
+    pointer,
+    /** Follow the pointer for the rulers (`pointer`), or stop. */
+    track,
     /** The area `rect` of the frame's viewport as a PNG data URL. */
     capture: (rect: Rect) =>
       new Promise<string>((resolve, reject) => {

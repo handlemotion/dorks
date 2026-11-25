@@ -13,8 +13,9 @@
 //                   {type: "picking", on: false}          picking ended here (a pick, or Escape)
 //                   {type: "marks", marks: [{id, rects}]} where the comment anchors are now (rects: null when not on this page)
 //                   {type: "captured", id, data | error}  an area as a PNG data URL
+//                   {type: "pointer", x, y, box, label}   while tracking (the rulers): where the pointer is, and the element under it
 //   host → overlay  {type: "hello"} | {type: "pick", on, mode?: "element" | "text"} | {type: "marks", marks: MarkInput[]}
-//                   {type: "capture", id, rect} | {type: "reveal", id}
+//                   {type: "capture", id, rect} | {type: "reveal", id} | {type: "track", on}
 // Replies go to the parent with targetOrigin "*": they hold the page's own markup and text, which anyone with the (public) URL can
 // read anyway.
 import { domToPng } from "modern-screenshot";
@@ -244,6 +245,39 @@ if (w.parent !== w && !w.__dorksOverlay) {
     clear();
   }
 
+  // ---- the rulers: the pointer and the element under it, while the app asks; the page keeps every event
+  let tracking = false;
+  let trackFrame = 0;
+  let at: { x: number; y: number } | null = null;
+  const sendPointer = () => {
+    trackFrame = 0;
+    if (!at) return post({ type: "pointer", x: null });
+    const el = document.elementFromPoint(at.x, at.y);
+    const b = el && el !== document.documentElement && el !== document.body ? rectOf(el.getBoundingClientRect()) : null;
+    post({ type: "pointer", x: at.x, y: at.y, box: b, label: el ? el.tagName.toLowerCase() : null });
+  };
+  const onTrackMove = (e: MouseEvent) => {
+    at = { x: e.clientX, y: e.clientY };
+    trackFrame ||= requestAnimationFrame(sendPointer);
+  };
+  const onTrackLeave = () => {
+    at = null;
+    trackFrame ||= requestAnimationFrame(sendPointer);
+  };
+  const track = (on: boolean) => {
+    if (on === tracking) return;
+    tracking = on;
+    if (on) {
+      w.addEventListener("mousemove", onTrackMove, true);
+      w.addEventListener("scroll", onTrackLeave, true);
+      document.documentElement.addEventListener("mouseleave", onTrackLeave);
+    } else {
+      w.removeEventListener("mousemove", onTrackMove, true);
+      w.removeEventListener("scroll", onTrackLeave, true);
+      document.documentElement.removeEventListener("mouseleave", onTrackLeave);
+    }
+  };
+
   // ---- an area as an image: the page rendered from its DOM, cut to the viewport rectangle the owner drew
   const capture = async (id: unknown, r: Rect) => {
     try {
@@ -278,6 +312,7 @@ if (w.parent !== w && !w.__dorksOverlay) {
       marks = d.marks as MarkInput[];
       sendMarks();
     } else if (d.type === "capture" && d.rect && typeof d.rect === "object") void capture(d.id, d.rect as Rect);
+    else if (d.type === "track") track(d.on === true);
     else if (d.type === "reveal" && typeof d.id === "string") {
       const m = marks.find((x) => x.id === d.id);
       const target = m && (m.kind === "text" ? findText(m)?.startContainer.parentElement : safeQuery(m.selector));

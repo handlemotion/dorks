@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { SquareMousePointerIcon } from 'lucide-react'
 import type { CommentThread } from '@dorks/shared'
-import { CommentRow, Initial, NewComment, authorName, type Names, type ThreadActions } from './CommentThread'
+import { Button } from '@dorks/ui/button'
+import { CommentRow, Face, NewComment, authorName, type Names, type ThreadActions } from './CommentThread'
 import type { Picked, Rect } from './useOverlay'
 
 // Comments drawn over the preview, after omni's pins: a bubble at the top-right corner of each commented element (an avatar with a
@@ -68,6 +70,8 @@ export function PreviewMarks(props: {
   draft: Picked | null
   onDraftSend: (body: string) => Promise<unknown>
   onDraftClose: () => void
+  /** For a picked element: send it to a message instead of commenting. */
+  onDraftAttach?: () => void
   /** Drawn under the bubbles: the picker's hover box, the area being drawn. */
   children?: ReactNode
 }) {
@@ -164,8 +168,16 @@ export function PreviewMarks(props: {
           ) : (
             <div aria-hidden className="absolute rounded-[4px] border border-brand bg-brand/10" style={place(props.draft.box)} />
           )}
-          <div ref={draftPanel} className="pointer-events-auto absolute z-20 rounded-[8px] border bg-background p-1" style={beside(props.draft.box, PANEL, 60, room)}>
+          <div ref={draftPanel} className="pointer-events-auto absolute z-20 rounded-[8px] border bg-background p-1" style={beside(props.draft.box, PANEL, props.onDraftAttach ? 96 : 60, room)}>
             <NewComment onSend={props.onDraftSend} onClose={props.onDraftClose} />
+            {props.onDraftAttach && (
+              <div className="flex justify-end px-1 pt-1">
+                <Button variant="ghost" size="xs" className="rounded-[6px] text-muted-foreground hover:text-foreground [&_svg]:size-3.5" onClick={props.onDraftAttach}>
+                  <SquareMousePointerIcon />
+                  Add to the message instead
+                </Button>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -190,7 +202,7 @@ function Bubble(props: { thread: CommentThread; names: Names; at: { x: number; y
       style={{ left: props.at.x, top: props.at.y }}
       className={`pointer-events-auto absolute flex h-7 items-center gap-1 rounded-full rounded-bl-[3px] border bg-background p-0.5 pe-1 text-xs tabular-nums transition-none ${props.selected ? 'border-brand' : 'border-foreground/15 hover:border-foreground/30'}`}
     >
-      <Initial name={name} className="size-[22px] rounded-full after:rounded-full *:rounded-full" />
+      <Face author={thread.root.author} names={props.names} round />
       {count > 0 ? <span className="pe-0.5 text-muted-foreground">{count + 1}</span> : null}
     </button>
   )

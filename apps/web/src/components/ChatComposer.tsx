@@ -33,7 +33,7 @@ export type AgentProvider = 'codex' | 'claude' | 'opencode' | 'antigravity'
 
 const AGENT_NAMES: Record<AgentProvider, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode', antigravity: 'Antigravity' }
 
-function ProviderIcon({ provider }: { provider: AgentProvider }) {
+export function ProviderIcon({ provider }: { provider: AgentProvider }) {
   if (provider === 'opencode') return <SquareTerminalIcon className="size-3.5" />
   if (provider === 'antigravity') return <SparkleIcon className="size-3.5" />
   // svgl pads the OpenAI mark inside its viewBox, so it is scaled to sit at Claude's size.
@@ -167,7 +167,7 @@ function useFileDrop(attach: (files: File[]) => void, enabled: boolean, formRef:
   useEffect(() => {
     const hasFiles = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files')
     const mine = (e: DragEvent) => !!attachRef.current && !!formRef.current && dropZoneFor(e.target) === formRef.current
-    const unregister = addDropZone({ form: () => formRef.current, enabled: () => !!attachRef.current })
+    const unregister = addDropZone({ form: () => formRef.current, enabled: () => !!attachRef.current, attach: (files) => attachRef.current?.(files) })
     // dragenter/dragleave fire for every child crossed; the count is back at 0 only once the drag has left the window.
     let depth = 0
     const enter = (e: DragEvent) => {

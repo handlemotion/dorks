@@ -5,22 +5,24 @@ import {
   MonitorIcon,
   SmartphoneIcon,
   TabletIcon,
-  MessageCircleIcon,
   MessageSquarePlusIcon,
   MessagesSquareIcon,
   RotateCwIcon,
+  RulerIcon,
   ScanIcon,
   SquareMousePointerIcon,
   TextCursorIcon,
 } from 'lucide-react'
-import { anchorLine, commentThreads, type CommentView } from '@dorks/shared'
+import { commentThreads, type CommentView } from '@dorks/shared'
 import type { DorksClient, QueryState, Store } from '@dorks/client'
 import { useOptionalDorksClient } from '@dorks/client/react'
 import { Button, buttonVariants } from '@dorks/ui/button'
-import { CommandIsland, type Chip } from './preview/CommandIsland'
-import type { ThreadActions } from './preview/CommentThread'
+import type { Names, ThreadActions } from './preview/CommentThread'
+import { ProviderIcon, type AgentProvider } from './ChatComposer'
 import { PreviewMarks, useSize } from './preview/PreviewMarks'
+import { Rulers } from './preview/Rulers'
 import { useOverlay, type Overlay, type Picked, type PickMode, type Rect } from './preview/useOverlay'
+import { attachFiles } from '../lib/fileDrop'
 import { Tip } from './Tip'
 
 /** A dev server running in the sandbox. `html` renders an inline (same-origin) page instead of the URL; the dev demo uses it. */
@@ -70,8 +72,8 @@ export function port(url: string) {
   }
 }
 
-/** The session a preview belongs to: comments and the command island need it (the dev demo has none). */
-export type PreviewSession = { id: string; agent: string }
+/** The session a preview belongs to: comments need it (the dev demo has none). */
+export type PreviewSession = { id: string; agent: string; provider: AgentProvider }
 
 const NONE = { data: undefined }
 const noSubscribe = () => () => {}
@@ -81,29 +83,6 @@ const none = () => NONE
 function useMaybe<T>(store: Store<QueryState<T>> | null): T | undefined {
   const get: () => { data?: T } = store?.getSnapshot ?? none
   return useSyncExternalStore(store?.subscribe ?? noSubscribe, get, get).data
-}
-
-/** What the command island sends: the text, then what each chip stands for, as the agent should read it, then where it came from. */
-async function islandMessage(text: string, chips: Chip[], server: PreviewServer, path: string, upload: (blob: Blob) => Promise<string>) {
-  const parts = [text]
-  for (const c of chips) parts.push(await chipText(c, upload))
-  parts.push(`(From the preview of ${server.name}${server.port ? ` on port ${server.port}` : ''}, page ${path}.)`)
-  return parts.filter(Boolean).join('\n\n')
-}
-
-async function chipText(c: Chip, upload: (blob: Blob) => Promise<string>) {
-  switch (c.kind) {
-    case 'element':
-      return `Element on ${c.path}:\n\`\`\`\n${c.snippet}\n\`\`\``
-    case 'image':
-      return `![${c.label.replace(/[[\]\n]/g, ' ')}](dorks-image:${await upload(await (await fetch(c.dataUrl)).blob())})`
-    case 'comment': {
-      const r = c.thread.root
-      return `About comment ${r.id}${r.anchor ? ` (${anchorLine(r.anchor)})` : ''}: "${r.body}"`
-    }
-    case 'preview':
-      return `The preview ${c.label}${c.port ? ` (port ${c.port})` : ''}: ${c.url}`
-  }
 }
 
 /** The fill around the page: a step lighter than the app's grey, so the white tool hover still reads. */
@@ -154,6 +133,16 @@ const scaleRect = (r: Rect, s: number): Rect => ({ x: r.x * s, y: r.y * s, width
 const onScreen = (p: Picked | null, s: number) => p && { ...p, box: scaleRect(p.box, s) }
 /** The overlay's hover box is in the page's pixels; the same-origin picker's is already on screen. */
 const hoverOnScreen = (hover: Box | null, sameOrigin: Box | null, s: number) => (hover ? { ...hover, ...scaleRect(hover, s) } : sameOrigin)
+
+/** How the threads show their authors: the GitHub login and avatar when there is one, the agent's name and mark. */
+function namesOf(login: string | null | undefined, session: PreviewSession | undefined): Names {
+  return {
+    owner: login ?? 'You',
+    ...(login ? { ownerImage: `https://github.com/${encodeURIComponent(login)}.png?size=64` } : {}),
+    agent: session?.agent ?? 'Agent',
+    agentIcon: session ? <ProviderIcon provider={session.provider} /> : null,
+  }
+}
 
 /** A drawn rectangle from two corners. */
 const between = (a: { x: number; y: number }, b: { x: number; y: number }): Rect => ({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(a.x - b.x), height: Math.abs(a.y - b.y) })
@@ -382,7 +371,7 @@ function PreviewBar({
   )
 }
 
-/** The bar under the page: the tools, then Show comments and the command island. Only a page with the overlay has them all. */
+/** The bar under the page: the tools, then Show comments. Only a page with the overlay has them all. */
 function PreviewToolbar(props: {
   /** `overlay`: every tool; `same-origin`: only the picker (the dev demo); `loading`: the page has not answered yet. */
   mode: 'overlay' | 'same-origin' | 'loading' | 'none'
@@ -391,10 +380,9 @@ function PreviewToolbar(props: {
   onTool: (tool: Tool) => void
   showComments: boolean
   onShowComments: () => void
+  rulers: boolean
+  onRulers: () => void
   openCount: number
-  island: boolean
-  onIsland: () => void
-  chipCount: number
 }) {
   const session = props.mode === 'overlay' ? props.session : undefined
   if (props.mode === 'loading') return <span className="text-xs text-muted-foreground">Comments and tools appear once the page loads.</span>
@@ -404,8 +392,8 @@ function PreviewToolbar(props: {
     <>
       <ToolButton label="Comment on an element" icon={<MessageSquarePlusIcon />} pressed={props.active === 'comment'} onClick={() => props.onTool('comment')} />
       <ToolButton label="Comment on text" icon={<TextCursorIcon />} pressed={props.active === 'text'} onClick={() => props.onTool('text')} />
-      <ToolButton label="Add an element to a message" icon={<SquareMousePointerIcon />} pressed={props.active === 'attach'} onClick={() => props.onTool('attach')} />
       <ToolButton label="Capture an area" icon={<ScanIcon />} pressed={props.active === 'capture'} onClick={() => props.onTool('capture')} />
+      <ToolButton label={props.rulers ? 'Hide rulers' : 'Rulers'} icon={<RulerIcon />} pressed={props.rulers} onClick={props.onRulers} />
       <span aria-hidden className="mx-1.5 h-4 w-px bg-border" />
       <ToolButton
         label={props.showComments ? 'Hide comments' : 'Show comments'}
@@ -414,7 +402,6 @@ function PreviewToolbar(props: {
         onClick={props.onShowComments}
         count={props.openCount}
       />
-      <ToolButton label={`Message ${session.agent}`} icon={<MessageCircleIcon />} pressed={props.island} onClick={props.onIsland} count={props.chipCount} />
     </>
   )
 }
@@ -426,27 +413,14 @@ function PreviewToolbar(props: {
  *
  * - **Comment** on an element or on a passage of text. Comments are threads Dorks keeps (services/comments.ts): a bubble over the
  *   element, the text highlighted, the thread beside it. The agent hears about them as a notification and answers in the thread.
- * - **Add an element** or **capture an area** for a message: they become chips in the command island.
- * - **Show comments**, and the **command island**: a small message box for the agent with those chips and @ mentions.
+ * - **Capture an area**: it goes to the chat's composer as an image. A picked element can go to the composer too, instead of a comment.
+ * - **Show comments** or hide them.
  *
  * All of it works through the overlay the bridge's preview proxy adds to the page (infra/bridge/overlay/overlay.ts), over
  * postMessage, since the page is on another origin. A same-origin page (the dev demo) has no overlay: there only the element picker
  * works, with React Grab's primitives reaching into the frame, and the pick goes to `onGrab`.
  */
-export function PreviewBrowser({
-  server,
-  onBack,
-  onGrab,
-  session,
-  previews = [],
-}: {
-  server: PreviewServer
-  onBack: () => void
-  onGrab?: (snippet: string) => void
-  session?: PreviewSession
-  /** Every running preview, for @ mentions. */
-  previews?: PreviewServer[]
-}) {
+export function PreviewBrowser({ server, onBack, onGrab, session }: { server: PreviewServer; onBack: () => void; onGrab?: (snippet: string) => void; session?: PreviewSession }) {
   const maybeClient = useOptionalDorksClient()
   // Only a preview with a session talks to the server; the dev demo renders this without a client.
   const client = session ? maybeClient : null
@@ -462,24 +436,19 @@ export function PreviewBrowser({
   const [device, setDevice] = useDevice()
   const view = viewport(useSize(area), DEVICES[device])
 
-  // What an element pick is for, the island and its chips, the comment being written, the area being drawn.
-  const [intent, setIntent] = useState<'comment' | 'attach'>('comment')
-  const [island, setIsland] = useState(false)
-  const [chips, setChips] = useState<Chip[]>([])
+  // The comment being written, the area being drawn.
+  const intent = session ? 'comment' : 'attach'
   const [draft, setDraft] = useState<Picked | null>(null)
   const [drawing, setDrawing] = useState(false)
   const [capturing, setCapturing] = useState(false)
   const [active, setActive] = useState<string | null>(null)
   const [showComments, setShowComments] = useState(true)
+  const [rulers, setRulers] = useState(false)
   const [problem, setProblem] = useState('')
 
-  const addChip = useCallback((chip: Chip) => setChips((cs) => (cs.some((c) => c.key === chip.key) ? cs : [...cs, chip])), [])
   const overlay = useOverlay(frame, current, reloads, (p) => {
-    if (intent === 'attach' && p.snippet && session) {
-      const a = p.anchor
-      addChip({ kind: 'element', key: `element:${a.path}:${a.selector}`, label: a.component ? `<${a.label}> ${a.component}` : `<${a.label}>`, snippet: p.snippet, path: a.path })
-      setIsland(true)
-    } else if (session) {
+    // One element tool: the pick opens a comment on it, which can go to the chat's composer instead (attachDraft).
+    if (session) {
       setActive(null)
       setDraft(p)
     } else if (p.snippet) onGrab?.(p.snippet)
@@ -496,6 +465,10 @@ export function PreviewBrowser({
     setActive(null)
     setDrawing(false)
   }, [current, reloads])
+  const { track } = overlay
+  useEffect(() => {
+    if (tools) track(rulers)
+  }, [tools, rulers, track])
   useEffect(() => {
     if (!drawing) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setDrawing(false)
@@ -509,18 +482,19 @@ export function PreviewBrowser({
     setProblem('')
     try {
       const dataUrl = await overlay.capture(rect)
-      addChip({ kind: 'image', key: `image:${Date.now()}`, label: `Area of ${overlay.path}`, dataUrl, path: overlay.path })
-      setIsland(true)
+      const blob = await (await fetch(dataUrl)).blob()
+      const name = `${server.name} ${overlay.path}`.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '')
+      if (!attachFiles([new File([blob], `${name || 'preview'}.png`, { type: 'image/png' })], stage.current)) throw new Error('No message box to add it to.')
     } catch (e) {
       setProblem(e instanceof Error ? e.message : 'The area could not be captured.')
     } finally {
       setCapturing(false)
     }
   }
-  const sendIsland = async (text: string) => {
-    if (!session || !client) return
-    await client.actions.sendMessage(session.id, await islandMessage(text, chips, server, overlay.path, (blob) => client.actions.uploadImage(blob)))
-    setChips([])
+  /** The picked element goes to the chat's composer as context instead of a comment. */
+  const attachDraft = () => {
+    if (draft?.snippet) onGrab?.(`Element on ${draft.anchor.path}:\n\`\`\`\n${draft.snippet}\n\`\`\``)
+    setDraft(null)
   }
   const activeTool = activeToolOf({ drawing: drawing || capturing, picking: overlay.picking, intent, sameOriginPicking })
   const onTool = (tool: Tool) => {
@@ -532,12 +506,11 @@ export function PreviewBrowser({
     }
     setDrawing(false)
     if (activeTool === tool) return overlay.pick(null)
-    setIntent(tool === 'attach' ? 'attach' : 'comment')
     overlay.pick(tool === 'text' ? 'text' : 'element')
   }
   // The overlay reports positions in the page's own pixels; the page is drawn scaled to fit.
   const shownOnScreen = useMemo(() => comments.shown.map((t) => ({ ...t, rects: t.rects.map((r) => scaleRect(r, view.scale)) })), [comments.shown, view.scale])
-  const names = { owner: settings?.github.login ?? 'You', agent: session?.agent ?? 'Agent' }
+  const names = namesOf(settings?.github.login, session)
 
   return (
     <>
@@ -576,28 +549,14 @@ export function PreviewBrowser({
               draft={onScreen(draft, view.scale)}
               onDraftSend={(body) => client!.actions.addComment(session!.id, { body, anchor: draft!.anchor, port: server.port ?? 0 })}
               onDraftClose={() => setDraft(null)}
+              onDraftAttach={draft?.snippet ? attachDraft : undefined}
             >
               <HoverOutline box={hoverOnScreen(overlay.hover, sameOriginBox, view.scale)} />
             </PreviewMarks>
+            <Rulers on={rulers && tools} width={view.width} height={view.height} scale={view.scale} pointer={overlay.pointer} />
             {drawing && <DrawLayer onDrawn={(rect) => void capture(scaleRect(rect, 1 / view.scale))} />}
           </div>
         </div>
-        {island && session && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-12 flex justify-center px-6">
-            <div className="pointer-events-auto w-full max-w-[460px]">
-              <CommandIsland
-                agent={session.agent}
-                chips={chips}
-                onAddChip={addChip}
-                onRemoveChip={(key) => setChips((cs) => cs.filter((c) => c.key !== key))}
-                threads={comments.threads}
-                previews={previews.filter((p) => p.url !== server.url)}
-                onSend={sendIsland}
-                onClose={() => setIsland(false)}
-              />
-            </div>
-          </div>
-        )}
         <div className="flex h-12 shrink-0 items-center justify-center gap-0.5 px-2.5">
           <PreviewToolbar
             mode={tools ? 'overlay' : sameOrigin ? 'same-origin' : html ? 'none' : 'loading'}
@@ -606,10 +565,9 @@ export function PreviewBrowser({
             onTool={onTool}
             showComments={showComments}
             onShowComments={() => setShowComments((s) => !s)}
+            rulers={rulers}
+            onRulers={() => setRulers((r) => !r)}
             openCount={comments.open.length}
-            island={island}
-            onIsland={() => setIsland((o) => !o)}
-            chipCount={chips.length}
           />
         </div>
         {problem && (

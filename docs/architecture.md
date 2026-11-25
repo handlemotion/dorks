@@ -219,7 +219,7 @@ The owner comments on a running preview in Chat details (`PreviewBrowser`): on a
 - **Answers**: the MCP tools `comment_list`, `comment_reply` and `comment_resolve` (bridge op `comment`, `{action: "list" | "reply" | "resolve", id?, body?, all?}`). The agent's replies wake nothing. The owner can reopen a thread or write in it again, which reaches the agent as a reply.
 - **Live**: every change publishes `{t: "comments", dorkId}` on `/api/live`.
 
-Under the preview a toolbar also adds a picked element or a captured area (the overlay renders the page from its DOM with `modern-screenshot` and cuts the rectangle the owner drew) to the **command island**, a small message box for the agent where `@` mentions comments and other previews. What it sends is an ordinary message.
+The same toolbar captures an area (the overlay renders the page from its DOM with `modern-screenshot` and cuts the rectangle the owner drew) as an image attached to the chat's composer (`attachFiles`, `lib/fileDrop.ts`), and shows rulers: the overlay follows the pointer (`track`) and reports the element under it.
 
 ## Base snapshot ("Prepare Boat")
 

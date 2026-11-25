@@ -446,7 +446,7 @@ function Thread({ dorkId }: { dorkId: string }) {
       data={{ ...detailsData(dork, view.blocks, actions, { used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent }), pullRequest, subscriptions, usePullRequest: usePr }}
       onClose={() => setDetailsOpen(false)}
       onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}
-      previewSession={{ id: dorkId, agent: AGENT_NAMES[dork.provider] }}
+      previewSession={{ id: dorkId, agent: AGENT_NAMES[dork.provider], provider: dork.provider }}
       onAsk={setText}
     />
   )

@@ -148,7 +148,7 @@ export function ChatDetails({
         return <ProgressPanel turns={data.progress ?? []} tasks={data.tasks} />
       case 'artifacts':
         return openPreview ? (
-          <PreviewBrowser server={openPreview} onBack={() => setPreview(undefined)} onGrab={onGrab} session={previewSession} previews={data.previews} />
+          <PreviewBrowser server={openPreview} onBack={() => setPreview(undefined)} onGrab={onGrab} session={previewSession} />
         ) : (
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
             <Artifacts

@@ -1,6 +1,6 @@
 import type { NoticeHook } from '@dorks/shared'
 import {
-  MessageSquareTextIcon,
+  MessageSquareIcon,
   CircleAlertIcon,
   CircleCheckIcon,
   CircleXIcon,
@@ -78,7 +78,7 @@ function notifyLine(hook: Extract<NoticeHook, { type: 'notify' }>): HookLine {
     const comments = hook.text.split('\n\n').filter((t) => t.trim())
     const first = comments[0]?.split('\n')[0] ?? ''
     const title = comments.length > 1 ? `${comments.length} comments on the preview` : `Comment on the preview: “${first.length > 80 ? `${first.slice(0, 80)}…` : first}”`
-    return { title, icon: MessageSquareTextIcon }
+    return { title, icon: MessageSquareIcon }
   }
   const said = sections(hook.text).flatMap(phrases)
   const prs = hook.prs.map((p) => `#${p.number}`)

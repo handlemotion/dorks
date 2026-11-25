@@ -1,7 +1,6 @@
 import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
-import { ArrowUpIcon, CheckIcon, EllipsisIcon, PencilIcon, ReplyIcon, RotateCcwIcon, Trash2Icon } from 'lucide-react'
+import { ArrowUpIcon, CheckIcon, EllipsisIcon, PencilIcon, ReplyIcon, RotateCcwIcon, Trash2Icon, UserRoundIcon } from 'lucide-react'
 import type { CommentThread, CommentView } from '@dorks/shared'
-import { Avatar, AvatarFallback } from '@dorks/ui/avatar'
 import { Button } from '@dorks/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@dorks/ui/dropdown-menu'
 import { ago } from '../../lib/time'
@@ -11,7 +10,7 @@ import { Tip } from '../Tip'
 // by a line, the author, the time and the text, Resolve and a menu on the first message, and a reply box under the last.
 
 /** Who wrote a comment, as the thread shows it. */
-export type Names = { owner: string; agent: string }
+export type Names = { owner: string; agent: string; /** The owner's GitHub avatar, when the GitHub CLI is signed in. */ ownerImage?: string; agentIcon: ReactNode }
 export const authorName = (c: CommentView, names: Names) => (c.author === 'owner' ? names.owner : names.agent)
 
 /** A text box with Send in its corner; Enter sends, Shift+Enter is a new line. `compact` is one 32px row, for a thread. */
@@ -58,13 +57,17 @@ export function ChatBox(props: {
   )
 }
 
-const AVATAR = 'size-6 rounded-[6px] after:rounded-[6px]'
-
-export function Initial({ name, className = '' }: { name: string; className?: string }) {
+/**
+ * Who wrote a comment, as a picture: the owner's GitHub avatar (from the GitHub CLI's login) or a plain person glyph without one, and
+ * the agent's own mark. People here have no names to make initials from.
+ */
+export function Face({ author, names, round = false }: { author: CommentView['author']; names: Names; round?: boolean }) {
+  const shape = round ? 'rounded-full' : 'rounded-[6px]'
+  if (author === 'owner' && names.ownerImage) return <img src={names.ownerImage} alt="" className={`size-6 shrink-0 bg-foreground/[0.07] object-cover ${shape}`} />
   return (
-    <Avatar className={`${AVATAR} ${className}`}>
-      <AvatarFallback className="rounded-[6px] bg-foreground/[0.07] text-xs text-foreground">{name.slice(0, 1).toUpperCase()}</AvatarFallback>
-    </Avatar>
+    <span aria-hidden className={`flex size-6 shrink-0 items-center justify-center bg-foreground/[0.06] text-muted-foreground [&_svg]:size-3.5 ${shape}`}>
+      {author === 'owner' ? <UserRoundIcon /> : names.agentIcon}
+    </span>
   )
 }
 
@@ -121,7 +124,7 @@ export function CommentRow(props: {
         {props.replying && (
           <li className="flex gap-3">
             <span className="pt-1">
-              <Initial name={names.owner} />
+              <Face author="owner" names={names} />
             </span>
             <div className="min-w-0 flex-1">
               <ReplyBox onSend={(body) => actions.reply(root.id, body)} onCancel={() => props.onReplying(false)} />
@@ -141,7 +144,7 @@ function Message(props: { comment: CommentView; names: Names; actions: ThreadAct
   return (
     <li className="group/item flex gap-3">
       <span className="flex shrink-0 flex-col items-center">
-        <Initial name={name} />
+        <Face author={comment.author} names={names} />
         {props.joined && <span aria-hidden className="my-1.5 w-px flex-1 bg-border" />}
       </span>
       <div className={`flex min-w-0 flex-1 flex-col gap-1 ${props.joined ? 'pb-5' : ''}`}>
