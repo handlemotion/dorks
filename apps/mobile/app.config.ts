@@ -1,13 +1,15 @@
 import type { ConfigContext, ExpoConfig } from "expo/config";
 
-// The EAS project id: `eas init` prints it; set EAS_PROJECT_ID (or extra.eas.projectId) and EAS Update turns on. Until then the
-// app builds and runs without updates.
+// The EAS project (Expo account handleui): EAS Build, Submit and Update. EAS_PROJECT_ID overrides it for a fork.
+const EAS_PROJECT_ID = "cd31db4c-476f-4e2f-ba1e-27368794b2fe";
+
 export default ({ config }: ConfigContext): ExpoConfig => {
-  const projectId = process.env.EAS_PROJECT_ID || (config.extra?.eas as { projectId?: string } | undefined)?.projectId;
+  const projectId = process.env.EAS_PROJECT_ID || EAS_PROJECT_ID;
   return {
     ...config,
     name: "Dorks",
     slug: "dorks",
+    owner: "handleui",
     scheme: "dorks",
     version: "0.1.0",
     orientation: "portrait",
