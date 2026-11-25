@@ -174,6 +174,8 @@ export function createApi(config: ApiConfig) {
     /** Merges it; `sha` pins the head that was reviewed (a newer push answers 409 `conflict`). */
     mergePullRequest: (id: string, method: MergeMethod, sha?: string, url?: string) =>
       request<{ merged: true; sha?: string } | { merged: false; queued: true }>("POST", `${dork(id)}/pr/merge`, { method, sha, url }),
+    /** Marks a draft pull request ready for review. */
+    markPullRequestReady: (id: string, url?: string) => request<object>("POST", `${dork(id)}/pr/ready`, { url }),
     /** Merges the base branch into the PR's branch (GitHub's "Update branch"). */
     updatePullRequestBranch: (id: string, sha?: string, url?: string) => request<object>("POST", `${dork(id)}/pr/update-branch`, { sha, url }),
     getSettings: () => request<Settings>("GET", "/api/settings"),

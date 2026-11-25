@@ -436,6 +436,14 @@ export class DorksClient {
         this.invalidate(`dork:${id}`);
       }
     },
+    markPullRequestReady: async (id: string, url?: string) => {
+      try {
+        await this.api.markPullRequestReady(id, url);
+      } finally {
+        this.invalidate(`pr:${id}`);
+        this.invalidate(`subs:${id}`);
+      }
+    },
     updatePullRequestBranch: async (id: string, sha?: string, url?: string) => {
       try {
         await this.api.updatePullRequestBranch(id, sha, url);
