@@ -28,8 +28,8 @@ on top.
 ## Concepts
 
 - **Build**: the definition (name, machine size, setup script, repos, variables). Edited by the owner, or by an agent through a draft.
-- **Spec**: the parts of a build that change the image: setup script, repos and their scripts, machine size, and the *names* of the
-  variables marked "needed while building". `spec_hash = sha256` of their canonical JSON; it is what the owner approves.
+- **Spec**: the parts of a build that change the image: setup script, repos and their scripts, machine size, the *names* of the
+  variables marked "needed while building", and its services ([services](services.md)). `spec_hash = sha256` of their canonical JSON; it is what the owner approves.
 - **Build-time values**: the values of those variables. Not in the spec (a secret must not end up in an approval hash), but tracked for
   staleness through a keyed hash (HMAC with the server's key), so changing a version pin the setup reads marks the image out of date.
 - **Image**: the build's saved snapshot in the owner's Boat account, `dorks-b-<8 hex install id>-<8 hex build id>`. One per build;
@@ -106,7 +106,7 @@ limits are per account).
 | `create` | `POST /sandboxes` `from` the base snapshot, `type` = the build's size, `noEnv: true`, the 2 h lifetime safety net, the label. |
 | `start` | Wait for `ready`. |
 | `clone` | Upload a one-shot credential helper and the GitHub token as `/tmp/dorks-build/gh` (0600), clone each repo to `/home/user/work/<owner>/<repo>` (where the bridge looks, `infra/bridge/src/git.ts`; it fetches and checks out over an existing clone), with clean `origin` URLs. Delete the token file and helper before the next step. The setup script never sees the token. |
-| `setup` | Upload the script and, for an image run of an approved spec only, `/tmp/dorks-build/env` (0600) with the build-time variables. One **detached** command: `set -a; . env; set +a; rm env; bash -e setup.sh`, then each repo's script in its clone. The server attaches to the stream, appends redacted output to `log`, and stores `process_id`/`command_id`. Cap: 30 minutes (setting), then the run fails. |
+| `setup` | Then each service is started until it listens, its first page requested and stopped, to check it and warm its caches ([services](services.md)). Before that: upload the script and, for an image run of an approved spec only, `/tmp/dorks-build/env` (0600) with the build-time variables. One **detached** command: `set -a; . env; set +a; rm env; bash -e setup.sh`, then each repo's script in its clone. The server attaches to the stream, appends redacted output to `log`, and stores `process_id`/`command_id`. Cap: 30 minutes (setting), then the run fails. |
 | `scan` | Image runs: refuse to save if any build-time secret value or the GitHub token appears on disk (`grep -rlF` over `/home /root /etc /usr/local /opt /var/lib`), or if a clone's `.git/config` holds credentials. The run fails naming the file. `/tmp` is not in a saved snapshot, but it is cleared anyway. |
 | `save` | Image runs: `POST /saved-snapshots`, poll until **our** save is `ready` (as today). |
 | `finish` | Image runs: set `image`, `image_rev`, `image_hash`, `image_base`. Every run: delete the sandbox (`orphan:` retry job if Boat refuses). |

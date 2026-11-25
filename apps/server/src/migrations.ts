@@ -503,4 +503,9 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX preview_comments_dork ON preview_comments (dork_id, created_at);
   CREATE INDEX preview_comments_pending ON preview_comments (dork_id, notified);
   `,
+  `
+  -- A build's services (docs/services.md): dev servers and backing services checked and warmed at build time, started by the agent
+  -- on demand. JSON BuildService[]; part of the spec, so the owner approves them like the setup script.
+  ALTER TABLE builds ADD COLUMN services TEXT NOT NULL DEFAULT '[]';
+  `,
 ];

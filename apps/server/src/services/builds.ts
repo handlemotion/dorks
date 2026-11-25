@@ -1,13 +1,16 @@
 import { createHash, createHmac } from "node:crypto";
 import {
   buildRepo,
+  buildService,
   draftVar,
   machineType as machineTypeSchema,
   MAX_BUILD_NAME_CHARS,
   MAX_BUILD_REPOS,
+  MAX_BUILD_SERVICES,
   MAX_SCRIPT_CHARS,
   VAR_NAME,
   type BuildRepo,
+  type BuildService,
   type BuildSpec,
   type BuildVarView,
   type BuildView,
@@ -40,6 +43,7 @@ export interface BuildRow {
   machineType: MachineType;
   setupScript: string;
   repos: BuildRepo[];
+  services: BuildService[];
   rev: number;
   specHash: string;
   approvedHash: string | null;
@@ -65,6 +69,7 @@ const buildOf = (r: Record<string, unknown>): BuildRow => ({
   machineType: r.machine_type as MachineType,
   setupScript: r.setup_script as string,
   repos: json<BuildRepo[]>(r.repos) ?? [],
+  services: json<BuildService[]>(r.services) ?? [],
   rev: r.rev as number,
   specHash: r.spec_hash as string,
   approvedHash: (r.approved_hash as string | null) ?? null,
@@ -97,7 +102,7 @@ export const varsOf = (app: App, buildId: string): VarRow[] =>
   }));
 
 // ---------------------------------------------------------------- spec and hashes
-export function specOf(b: Pick<BuildRow, "machineType" | "setupScript" | "repos">, vars: { name: string; buildTime: boolean }[]): BuildSpec {
+export function specOf(b: Pick<BuildRow, "machineType" | "setupScript" | "repos"> & { services?: BuildService[] }, vars: { name: string; buildTime: boolean }[]): BuildSpec {
   return {
     machineType: b.machineType,
     setupScript: b.setupScript,
@@ -106,13 +111,34 @@ export function specOf(b: Pick<BuildRow, "machineType" | "setupScript" | "repos"
       .filter((v) => v.buildTime)
       .map((v) => v.name)
       .sort(),
+    services: (b.services ?? []).map(canonicalService),
   };
 }
+
+const canonicalService = (s: BuildService): BuildService => ({
+  name: s.name,
+  command: s.command,
+  ...(s.cwd ? { cwd: s.cwd } : {}),
+  ...(s.port ? { port: s.port } : {}),
+  ...(s.preview ? { preview: true } : {}),
+});
+
+/** A spec stored before services existed (drafts, runs) has none. */
+export const servicesOf = (s: Pick<BuildSpec, "services"> | { services?: BuildService[] }): BuildService[] => s.services ?? [];
 
 /** Canonical: fixed key order, so the same spec always hashes the same. */
 export const hashSpec = (s: BuildSpec): string =>
   createHash("sha256")
-    .update(JSON.stringify([s.machineType, s.setupScript, s.repos.map((r) => [r.repo.toLowerCase(), r.branch ?? null, r.setupScript ?? null]), s.buildTimeVars]))
+    .update(
+      JSON.stringify([
+        s.machineType,
+        s.setupScript,
+        s.repos.map((r) => [r.repo.toLowerCase(), r.branch ?? null, r.setupScript ?? null]),
+        s.buildTimeVars,
+        // Only when there are any, so a build without services keeps the hash (and the approval, and the image) it had before they existed.
+        ...(servicesOf(s).length ? [servicesOf(s).map((v) => [v.name, v.command, v.cwd ?? null, v.port ?? null, !!v.preview])] : []),
+      ]),
+    )
     .digest("hex");
 
 /** A keyed hash (never a plain one: values may be low-entropy secrets) of the build-time values, to tell when an image went stale. */
@@ -145,6 +171,7 @@ const specInput = z.object({
   machineType: machineTypeSchema.optional(),
   setupScript: z.string().max(MAX_SCRIPT_CHARS, "the setup script is longer than 64 KB").optional(),
   repos: z.array(buildRepo).max(MAX_BUILD_REPOS, `at most ${MAX_BUILD_REPOS} repositories`).optional(),
+  services: z.array(buildService).max(MAX_BUILD_SERVICES, `at most ${MAX_BUILD_SERVICES} services`).optional(),
 });
 
 function parse<T>(schema: z.ZodType<T>, v: unknown): T {
@@ -172,6 +199,18 @@ function uniqueRepos(repos: BuildRepo[]) {
   }
 }
 
+function uniqueServices(services: BuildService[]) {
+  const names = new Set<string>();
+  const ports = new Set<number>();
+  for (const s of services) {
+    if (names.has(s.name)) fail("invalid", `The service ${s.name} is listed twice.`);
+    if (s.port && ports.has(s.port)) fail("invalid", `Two services use port ${s.port}.`);
+    if (s.preview && !s.port) fail("invalid", `${s.name} is shown as a preview, so it needs a port.`);
+    names.add(s.name);
+    if (s.port) ports.add(s.port);
+  }
+}
+
 function nameTaken(app: App, name: string, except?: string) {
   const other = app.db.get<{ id: string }>("SELECT id FROM builds WHERE lower(name) = lower(?)", name);
   if (other && other.id !== except) fail("conflict", `A build named "${name}" already exists.`);
@@ -180,14 +219,15 @@ function nameTaken(app: App, name: string, except?: string) {
 // ---------------------------------------------------------------- owner: builds
 export function createBuild(app: App, input: Record<string, unknown>): string {
   const name = cleanName(input.name);
-  const spec = parse(specInput, { machineType: input.machineType, setupScript: input.setupScript, repos: input.repos });
+  const spec = parse(specInput, { machineType: input.machineType, setupScript: input.setupScript, repos: input.repos, services: input.services });
   uniqueRepos(spec.repos ?? []);
+  uniqueServices(spec.services ?? []);
   return app.db.tx(() => {
     if ((app.db.get<{ n: number }>("SELECT count(*) AS n FROM builds")?.n ?? 0) >= MAX_BUILDS) fail("limit", `At most ${MAX_BUILDS} builds.`);
     nameTaken(app, name);
     const id = app.uuid();
     const now = app.now();
-    const row = { machineType: spec.machineType ?? "default", setupScript: spec.setupScript ?? "", repos: spec.repos ?? [] };
+    const row = { machineType: spec.machineType ?? "default", setupScript: spec.setupScript ?? "", repos: spec.repos ?? [], services: spec.services ?? [] };
     const hash = hashSpec(specOf(row, []));
     insert(app.db, "builds", { id, name, ...row, rev: 1, specHash: hash, approvedHash: hash, createdAt: now, updatedAt: now });
     touch(app, { t: "builds" });
@@ -209,8 +249,9 @@ function respec(app: App, buildId: string) {
 export function updateBuild(app: App, buildId: string, input: Record<string, unknown>) {
   const patch: Record<string, unknown> = {};
   if (input.name !== undefined) patch.name = cleanName(input.name);
-  const spec = parse(specInput, { machineType: input.machineType, setupScript: input.setupScript, repos: input.repos });
+  const spec = parse(specInput, { machineType: input.machineType, setupScript: input.setupScript, repos: input.repos, services: input.services });
   if (spec.repos) uniqueRepos(spec.repos);
+  if (spec.services) uniqueServices(spec.services);
   Object.assign(patch, Object.fromEntries(Object.entries(spec).filter(([, v]) => v !== undefined)));
   app.db.tx(() => {
     ownBuild(app, buildId);
@@ -335,6 +376,7 @@ export async function buildView(app: App, b: BuildRow): Promise<BuildView> {
     machineType: b.machineType,
     setupScript: b.setupScript,
     repos: b.repos,
+    services: b.services,
     vars: varViews(app, b.id, plain),
     rev: b.rev,
     specHash: b.specHash,
@@ -376,7 +418,8 @@ interface DraftRow {
 }
 
 function draftViewOf(app: App, d: DraftRow): DraftView {
-  const spec = JSON.parse(d.spec) as BuildSpec;
+  const stored = JSON.parse(d.spec) as BuildSpec;
+  const spec = { ...stored, services: servicesOf(stored) };
   const build = getBuild(app, d.build_id);
   return {
     id: d.id,
@@ -423,6 +466,7 @@ const draftInput = z.object({
   machineType: machineTypeSchema.optional(),
   setupScript: z.string().max(MAX_SCRIPT_CHARS, "the setup script is longer than 64 KB").optional(),
   repos: z.array(buildRepo).max(MAX_BUILD_REPOS).optional(),
+  services: z.array(buildService).max(MAX_BUILD_SERVICES).optional(),
   vars: z.array(draftVar).max(MAX_VARS).optional(),
 });
 
@@ -442,7 +486,7 @@ function proposeBuild(app: App, dorkId: string, requested: string | undefined): 
   if ((app.db.get<{ n: number }>("SELECT count(*) AS n FROM builds")?.n ?? 0) >= MAX_BUILDS) fail("limit", `At most ${MAX_BUILDS} builds.`);
   const id = app.uuid();
   const now = app.now();
-  const row: Pick<BuildRow, "machineType" | "setupScript" | "repos"> = { machineType: "default", setupScript: "", repos: [] };
+  const row: Pick<BuildRow, "machineType" | "setupScript" | "repos" | "services"> = { machineType: "default", setupScript: "", repos: [], services: [] };
   insert(app.db, "builds", { id, name, ...row, rev: 1, specHash: hashSpec(specOf(row, [])), approvedHash: null, createdAt: now, updatedAt: now });
   update(app.db, "dorks", { id: dorkId }, { buildId: id });
   touch(app, { t: "builds" });
@@ -458,6 +502,7 @@ function proposeBuild(app: App, dorkId: string, requested: string | undefined): 
 export function writeDraft(app: App, dorkId: string, input: unknown): DraftView {
   const patch = parse(draftInput, input ?? {});
   if (patch.repos) uniqueRepos(patch.repos);
+  if (patch.services) uniqueServices(patch.services);
   for (const v of patch.vars ?? []) if (v.secret && v.value !== undefined) fail("invalid", `${v.name} is a secret: never put its value in a draft. Leave it out; the owner types it in.`);
   return app.db.tx(() => {
     const b = dorkBuild(app, dorkId) ?? proposeBuild(app, dorkId, patch.name);
@@ -469,7 +514,10 @@ export function writeDraft(app: App, dorkId: string, input: unknown): DraftView 
     const prevVars: DraftVar[] = live ? JSON.parse(live.vars) : [];
     const vars = patch.vars ? mergeChanges(prevVars, patch.vars) : prevVars;
     const merged = mergeVars(varsOf(app, b.id), vars);
-    const spec = specOf({ machineType: patch.machineType ?? prev.machineType, setupScript: patch.setupScript ?? prev.setupScript, repos: patch.repos ?? prev.repos }, merged);
+    const spec = specOf(
+      { machineType: patch.machineType ?? prev.machineType, setupScript: patch.setupScript ?? prev.setupScript, repos: patch.repos ?? prev.repos, services: patch.services ?? servicesOf(prev) },
+      merged,
+    );
     const now = app.now();
     if (existing) {
       update(app.db, "build_drafts", { id: existing.id }, { spec, vars, status: "editing", updatedAt: now, ...(live ? {} : { baseRev: b.rev, note: null }) });
@@ -548,7 +596,7 @@ export async function approveDraft(app: App, buildId: string, draftId: string, r
       fail("conflict", "The agent changed this draft while you were approving it. Review it again.");
     const b = ownBuild(app, buildId);
     const spec = JSON.parse(d.spec) as BuildSpec;
-    update(app.db, "builds", { id: buildId }, { machineType: spec.machineType, setupScript: spec.setupScript, repos: spec.repos });
+    update(app.db, "builds", { id: buildId }, { machineType: spec.machineType, setupScript: spec.setupScript, repos: spec.repos, services: servicesOf(spec) });
     for (const v of JSON.parse(d.vars) as DraftVar[]) {
       if (v.remove) {
         app.db.run("DELETE FROM build_vars WHERE build_id = ? AND name = ?", buildId, v.name);

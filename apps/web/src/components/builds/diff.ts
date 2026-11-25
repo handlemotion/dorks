@@ -1,4 +1,4 @@
-import type { BuildRepo } from '@dorks/client'
+import type { BuildRepo, BuildService } from '@dorks/client'
 
 // What an agent's change differs in: a line diff of scripts, and the repositories it adds, removes or changes.
 
@@ -40,5 +40,17 @@ export function repoChangesOf(was: BuildRepo[], now: BuildRepo[]) {
         return b && ((b.branch ?? '') !== (r.branch ?? '') || (b.setupScript ?? '') !== (r.setupScript ?? ''))
       })
       .map((r) => ({ r, what: 'Changed' as const })),
+  ]
+}
+
+/** Services the draft adds, removes or changes (command, directory, port or preview). */
+export function serviceChangesOf(was: BuildService[], now: BuildService[]) {
+  const key = (s: BuildService) => JSON.stringify([s.command, s.cwd ?? '', s.port ?? null, !!s.preview])
+  const before = new Map(was.map((s) => [s.name, s]))
+  const after = new Map(now.map((s) => [s.name, s]))
+  return [
+    ...now.filter((s) => !before.has(s.name)).map((s) => ({ s, what: 'Added' as const })),
+    ...was.filter((s) => !after.has(s.name)).map((s) => ({ s, what: 'Removed' as const })),
+    ...now.filter((s) => before.has(s.name) && key(before.get(s.name)!) !== key(s)).map((s) => ({ s, what: 'Changed' as const })),
   ]
 }

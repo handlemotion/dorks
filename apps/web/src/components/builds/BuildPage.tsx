@@ -13,6 +13,7 @@ import { Overview } from './Overview'
 import { AgentChanges } from './AgentChanges'
 import { SetupScript } from './SetupScript'
 import { Repositories } from './Repositories'
+import { Services } from './Services'
 import { Variables } from './Variables'
 import { MachineSize } from './MachineSize'
 import { Runs } from './Runs'
@@ -75,6 +76,7 @@ function BuildDetails({ build }: { build: BuildView }) {
         <AgentChanges build={build} />
         <Repositories build={build} />
         <SetupScript build={build} />
+        <Services build={build} />
         <Variables build={build} />
         <SettingsSection title="Machine">
           <MachineSize build={build} />

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { mcpServerConfig } from "./mcp";
 import { skillRef } from "./skills";
 import { notifyKind, prRef } from "./autonomy";
+import { buildService, MAX_BUILD_SERVICES } from "./builds";
 
 /**
  * An autonomy notification (docs/autonomy.md). Delivered and acked exactly like `user_message` (same dedupe by id), but the backend
@@ -76,6 +77,8 @@ export const toBridge = z.discriminatedUnion("t", [
     // The owner's skills (Customize, see skills.ts): the bridge keeps ~/.claude/skills in step, fetching changed ones with the `skill`
     // rpc. Absent from an older server: none. Not part of the agent's restart key: Claude Code reloads skills by itself.
     skills: z.array(skillRef).max(200).optional(),
+    // The dork's build's services (docs/services.md): what `service_start` can start. Absent: none (base machine, or an older server).
+    services: z.array(buildService).max(MAX_BUILD_SERVICES).optional(),
   }),
   z.object({ t: z.literal("user_message"), id: z.string(), text: z.string() }), // bridge dedupes by id
   notifyFrame(),

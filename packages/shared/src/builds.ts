@@ -31,6 +31,39 @@ export const buildRepo = z.object({
 });
 export type BuildRepo = z.infer<typeof buildRepo>;
 
+/** Service names: short, lowercase, as an agent types them (`service_start web`). */
+export const SERVICE_NAME = /^[a-z][a-z0-9-]{0,31}$/;
+export const MAX_BUILD_SERVICES = 10;
+/** Ports the box provider uses itself (Boat: SSH, the desktop stream, its agents), and the bridge's. */
+export const RESERVED_PORTS = (port: number) => [22, 4748, 6080, 8090, 8911].includes(port) || (port >= 47984 && port <= 48010);
+
+/**
+ * A dev server or backing service of a build (docs/services.md): checked and warmed at build time (started until it listens, its first
+ * page requested, then stopped, so the image holds its compiled caches), never started at boot. An agent starts it on demand with
+ * `service_start`. `cwd` is relative to the work directory (`owner/name` or deeper); absent: the work directory itself.
+ */
+export const buildService = z.object({
+  name: z.string().regex(SERVICE_NAME, "service names are lowercase letters, digits and dashes, e.g. web"),
+  command: z.string().trim().min(1, "give the service a command").max(2000),
+  cwd: z
+    .string()
+    .trim()
+    .max(300)
+    .regex(/^[\w.@+-]+(?:\/[\w.@+-]+)*$/, "cwd is a path under ~/work, like owner/name/apps/web")
+    .refine((p) => p.split("/").every((s) => s !== "." && s !== ".."), "cwd is a path under ~/work, like owner/name/apps/web")
+    .optional(),
+  port: z
+    .number()
+    .int()
+    .min(1)
+    .max(65535)
+    .refine((p) => !RESERVED_PORTS(p), "that port is reserved in the box")
+    .optional(),
+  /** A UI the user should see: `service_start` shows it in the user's Artifacts as a running preview. Needs a port. */
+  preview: z.boolean().optional(),
+});
+export type BuildService = z.infer<typeof buildService>;
+
 /** What changes the image. Variable values are not part of it; the names of variables exported while building are. */
 export interface BuildSpec {
   machineType: MachineType;
@@ -38,6 +71,8 @@ export interface BuildSpec {
   repos: BuildRepo[];
   /** Sorted names of the variables the setup script receives. */
   buildTimeVars: string[];
+  /** Dev servers and services the agent can start on demand; checked and warmed at build time. */
+  services: BuildService[];
 }
 
 /**
@@ -111,6 +146,7 @@ export interface BuildView {
   machineType: MachineType;
   setupScript: string;
   repos: BuildRepo[];
+  services: BuildService[];
   vars: BuildVarView[];
   rev: number;
   specHash: string;
