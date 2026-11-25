@@ -20,7 +20,7 @@ import { Button, buttonVariants } from '@dorks/ui/button'
 import type { Names, ThreadActions } from './preview/CommentThread'
 import { ProviderIcon, type AgentProvider } from './ChatComposer'
 import { PreviewMarks, useSize } from './preview/PreviewMarks'
-import { RULER_ROOM, Rulers } from './preview/Rulers'
+import { MARGIN, RULER, Rulers } from './preview/Rulers'
 import { useOverlay, type Overlay, type Picked, type PickMode, type Rect } from './preview/useOverlay'
 import { Tip } from './Tip'
 
@@ -457,6 +457,8 @@ export function PreviewBrowser({ server, onBack, onGrab, session }: { server: Pr
     } else if (p.snippet) onGrab?.(p.snippet)
   })
   const tools = overlay.ready && !html
+  // With rulers on, the page is laid out in the room right of and below them.
+  const ruled = rulers && tools ? RULER : 0
   const comments = usePreviewComments(client, session, server.port, overlay, tools, showComments, setActive)
   const stopSameOrigin = useCallback(() => setSameOriginPicking(false), [])
   const sameOriginBox = useSameOriginPicker(frame, stage, sameOriginPicking && !tools, stopSameOrigin, onGrab)
@@ -517,7 +519,7 @@ export function PreviewBrowser({ server, onBack, onGrab, session }: { server: Pr
     <>
       <PreviewBar server={server} path={tools ? overlay.path : '/'} onBack={onBack} onReload={() => setReloads((n) => n + 1)} device={device} onDevice={setDevice} />
       <div className={`relative flex min-h-0 flex-1 flex-col ${BACKDROP}`}>
-        <div ref={area} className="relative min-h-0 flex-1" style={{ margin: rulers && tools ? `${RULER_ROOM}px ${RULER_ROOM}px 4px` : '16px 16px 0' }}>
+        <div ref={area} className="relative min-h-0 flex-1" style={{ margin: `${MARGIN + ruled}px ${MARGIN}px 0 ${MARGIN + ruled}px` }}>
           <div
             ref={stage}
             className="absolute overflow-hidden rounded-[8px] border border-surface-line bg-white dark:border-transparent"
@@ -550,14 +552,13 @@ export function PreviewBrowser({ server, onBack, onGrab, session }: { server: Pr
               draft={onScreen(draft, view.scale)}
               onDraftSend={(body) => client!.actions.addComment(session!.id, { body, anchor: draft!.anchor, port: server.port ?? 0 })}
               onDraftClose={() => setDraft(null)}
-              imageUrl={client ? (id) => client.actions.imageUrl(id, 640) : undefined}
             >
               <HoverOutline box={hoverOnScreen(overlay.hover, sameOriginBox, view.scale)} />
             </PreviewMarks>
             {drawing && <DrawLayer onDrawn={(rect) => void capture(scaleRect(rect, 1 / view.scale))} />}
           </div>
-          <Rulers on={rulers && tools} view={view} pointer={overlay.pointer} />
         </div>
+        <Rulers on={ruled > 0} view={view} offset={{ x: MARGIN + ruled, y: MARGIN + ruled }} pointer={overlay.pointer} />
         <div className="flex h-12 shrink-0 items-center justify-center gap-0.5 px-2.5">
           <PreviewToolbar
             mode={tools ? 'overlay' : sameOrigin ? 'same-origin' : html ? 'none' : 'loading'}

@@ -68,8 +68,6 @@ export function PreviewMarks(props: {
   draft: Picked | null
   onDraftSend: (body: string) => Promise<unknown>
   onDraftClose: () => void
-  /** Where a shared image loads from (an area's screenshot). */
-  imageUrl?: (id: string) => string
   /** Drawn under the bubbles: the picker's hover box, the area being drawn. */
   children?: ReactNode
 }) {
@@ -110,13 +108,7 @@ export function PreviewMarks(props: {
                     className={`pointer-events-auto absolute cursor-pointer border-b-2 mix-blend-multiply dark:mix-blend-normal ${lit ? 'border-amber-500 bg-amber-300/45' : 'border-amber-500/60 bg-amber-300/25'}`}
                   />
                 ))
-              : lit && (
-                  <div
-                    aria-hidden
-                    className="absolute rounded-[4px] outline-2 outline-offset-2 outline-brand bg-brand/[0.06]"
-                    style={{ left: rects[0]!.x, top: rects[0]!.y, width: rects[0]!.width, height: rects[0]!.height }}
-                  />
-                )}
+              : null}
             <Bubble
               thread={thread}
               names={props.names}
@@ -143,7 +135,7 @@ export function PreviewMarks(props: {
               actions={props.actions}
               replying={replying === open.thread.root.id}
               onReplying={(on) => setReplying(on ? open.thread.root.id : null)}
-              quote={<AnchorPreview anchor={open.thread.root.anchor} imageUrl={props.imageUrl} />}
+              quote={<AnchorPreview anchor={open.thread.root.anchor} />}
             />
           </ul>
           {replying !== open.thread.root.id && (
@@ -157,11 +149,7 @@ export function PreviewMarks(props: {
       )}
       {props.draft && (
         <>
-          {props.draft.anchor.kind === 'text' ? (
-            <div aria-hidden className="absolute border-b-2 border-amber-500 bg-amber-300/40 mix-blend-multiply" style={place(props.draft.box)} />
-          ) : (
-            <div aria-hidden className="absolute rounded-[4px] border border-brand bg-brand/10" style={place(props.draft.box)} />
-          )}
+          {props.draft.anchor.kind === 'text' ? <div aria-hidden className="absolute border-b-2 border-amber-500 bg-amber-300/40 mix-blend-multiply" style={place(props.draft.box)} /> : null}
           <div ref={draftPanel} className="pointer-events-auto absolute z-20 rounded-[8px] border bg-background p-1" style={beside(props.draft.box, PANEL, 60, room)}>
             <NewComment onSend={props.onDraftSend} onClose={props.onDraftClose} />
           </div>
@@ -171,24 +159,9 @@ export function PreviewMarks(props: {
   )
 }
 
-/** Above a thread: the passage it is on, or the area's screenshot. */
-function AnchorPreview({ anchor, imageUrl }: { anchor: CommentThread['root']['anchor']; imageUrl?: (id: string) => string }) {
+/** Above a text comment's thread: the passage it is on. */
+function AnchorPreview({ anchor }: { anchor: CommentThread['root']['anchor'] }) {
   if (anchor?.kind === 'text') return <p className="mb-3 line-clamp-2 border-s-2 border-amber-500 ps-2.5 text-sm text-muted-foreground">{anchor.quote}</p>
-  if (anchor?.kind === 'area' && anchor.image && imageUrl)
-    return <img src={imageUrl(anchor.image)} alt="The area" className="mb-3 max-h-40 w-full rounded-[6px] bg-foreground/[0.04] object-contain outline outline-1 -outline-offset-1 outline-black/10" />
-  if (anchor?.kind === 'element')
-    return (
-      <p className="mb-3 flex min-w-0 items-center gap-1.5 border-s-2 border-brand ps-2.5 text-xs text-muted-foreground">
-        <span className="shrink-0 font-mono text-foreground">&lt;{anchor.label}&gt;</span>
-        {anchor.component && <span className="shrink-0">{anchor.component}</span>}
-        {anchor.file && (
-          <span className="min-w-0 truncate font-mono">
-            {anchor.file.split('/').pop()}
-            {anchor.line ? `:${anchor.line}` : ''}
-          </span>
-        )}
-      </p>
-    )
   return null
 }
 

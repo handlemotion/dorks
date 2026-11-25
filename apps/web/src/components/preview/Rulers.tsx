@@ -1,3 +1,5 @@
+import { useRef } from 'react'
+import { useSize } from './PreviewMarks'
 import type { Pointer } from './useOverlay'
 
 // Rulers around a running preview, design-tool style: a horizontal one along the top of the preview area and a vertical one down its
@@ -6,9 +8,8 @@ import type { Pointer } from './useOverlay'
 // Everything is drawn over the area and lets every event through to the page.
 
 export const RULER = 14
-const GAP = 3
-/** The room the rulers need on each side of the page (the margin is kept even, so the page stays centred). */
-export const RULER_ROOM = RULER + GAP + 10
+/** The page's margin in the pane; with rulers on, the top and left one starts after them. */
+export const MARGIN = 16
 const STEPS = [2, 5, 10, 20, 50, 100, 200, 500, 1000]
 
 /** Ticks every `minor` page pixels, numbers every `major`, spaced to stay readable at `scale`. */
@@ -70,24 +71,27 @@ function Ruler({ length, origin, scale, along, pointer, span }: { length: number
 }
 
 /**
- * Drawn in the preview area (the box the page is centred in): the rulers sit in its margin, `RULER + GAP` pixels outside it on the
- * top and the left, so the area needs at least that much room around it.
+ * Drawn over the whole preview pane (above the toolbar): a horizontal ruler along its top edge and a vertical one down its left, full
+ * length, numbered in the page's own pixels from the page's top-left corner, which sits `offset` into the pane. The page itself is laid
+ * out in the room to the right of and below them (`RULER_ROOM`).
  */
-export function Rulers({ on, view, pointer }: { on: boolean; view: View; pointer: Pointer | null }) {
-  if (!on) return null
+export function Rulers({ on, view, offset, pointer }: { on: boolean; view: View; offset: { x: number; y: number }; pointer: Pointer | null }) {
+  const pane = useRef<HTMLDivElement>(null)
+  const size = useSize(pane)
   const box = pointer?.box ?? null
   const s = view.scale
-  const out = RULER + GAP
+  const x0 = offset.x + view.left
+  const y0 = offset.y + view.top
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0">
+    <div ref={pane} aria-hidden className={`pointer-events-none absolute inset-x-0 top-0 bottom-12 ${on ? '' : 'hidden'}`}>
       {pointer && (
         <>
-          <div className="absolute w-px bg-red-500/40" style={{ left: view.left + pointer.x * s, top: view.top - GAP, height: view.height * s + GAP }} />
-          <div className="absolute h-px bg-red-500/40" style={{ top: view.top + pointer.y * s, left: view.left - GAP, width: view.width * s + GAP }} />
+          <div className="absolute inset-y-0 w-px bg-red-500/40" style={{ left: x0 + pointer.x * s }} />
+          <div className="absolute inset-x-0 h-px bg-red-500/40" style={{ top: y0 + pointer.y * s }} />
         </>
       )}
       {box && (
-        <div className="absolute border border-dashed border-red-500" style={{ left: view.left + box.x * s, top: view.top + box.y * s, width: box.width * s, height: box.height * s }}>
+        <div className="absolute border border-dashed border-red-500" style={{ left: x0 + box.x * s, top: y0 + box.y * s, width: box.width * s, height: box.height * s }}>
           <span
             className={`absolute left-0 rounded-(--control-radius) ${box.y * s < 28 ? 'top-full mt-1' : 'bottom-full mb-1'} bg-red-500 px-1.5 py-0.5 font-mono text-xs whitespace-nowrap text-white tabular-nums`}
           >
@@ -96,16 +100,17 @@ export function Rulers({ on, view, pointer }: { on: boolean; view: View; pointer
           </span>
         </div>
       )}
-      <div className="absolute overflow-hidden" style={{ left: view.left, top: view.top - out, width: view.width * s, height: RULER }}>
-        <Ruler length={view.width * s} origin={0} scale={s} along="x" pointer={pointer?.x ?? null} span={box ? [box.x, box.x + box.width] : null} />
+      <div className="absolute top-0 right-0 overflow-hidden border-b bg-background" style={{ left: RULER, height: RULER }}>
+        <Ruler length={size.width - RULER} origin={x0 - RULER} scale={s} along="x" pointer={pointer?.x ?? null} span={box ? [box.x, box.x + box.width] : null} />
       </div>
-      <div className="absolute overflow-hidden" style={{ left: view.left - out, top: view.top, width: RULER, height: view.height * s }}>
-        <Ruler length={view.height * s} origin={0} scale={s} along="y" pointer={pointer?.y ?? null} span={box ? [box.y, box.y + box.height] : null} />
+      <div className="absolute bottom-0 left-0 overflow-hidden border-r bg-background" style={{ top: RULER, width: RULER }}>
+        <Ruler length={size.height - RULER} origin={y0 - RULER} scale={s} along="y" pointer={pointer?.y ?? null} span={box ? [box.y, box.y + box.height] : null} />
       </div>
+      <div className="absolute top-0 left-0 border-r border-b bg-background" style={{ width: RULER, height: RULER }} />
       {pointer && (
         <span
           className="absolute rounded-(--control-radius) bg-foreground px-1.5 py-0.5 font-mono text-xs text-background tabular-nums"
-          style={{ left: view.left + pointer.x * s + 8, top: view.top + pointer.y * s + 8 }}
+          style={{ left: x0 + pointer.x * s + 8, top: y0 + pointer.y * s + 8 }}
         >
           {Math.round(pointer.x)}, {Math.round(pointer.y)}
         </span>
