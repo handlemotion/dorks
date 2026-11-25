@@ -94,6 +94,10 @@ IDs are UUID strings. Times are epoch milliseconds.
 | `POST /api/dorks/:id/model` | `{model: string\|null, effort: string\|null}` | `{}`. Claude only: a model and effort from `modelChoices` (null: the default). While the sandbox is up the bridge restarts the CLI on the same session with `--model`/`--effort` once the current turn ends; asleep, the next wake uses it |
 | `POST /api/dorks/:id/codex-model` | `{model, effort}` | `{}` |
 | `GET /api/dorks/:id/files` | `?q=&limit=<1..100, default 50>` | `{files: string[], listed, truncated}`: the repository paths that best match `q` (`rankFiles`, `packages/shared/src/mentions.ts`), from the last listing the bridge sent; `listed` is false until it has sent one. The composer's `@` menu ("Mentions" below) |
+| `GET /api/dorks/:id/workspace` | | `{roots: WorkspaceRoot[]}` (`packages/shared/src/workspace.ts`): the git checkouts in the sandbox's work directory, the session's own first ("Files" below). Error `sleeping` (409) unless the dork is `working` or `idle` and its bridge is connected (this never wakes it), `timeout` (504) when the bridge does not answer |
+| `GET /api/dorks/:id/workspace/tree` | `?root=` | `WorkspaceTree`: a checkout's files (tracked and untracked, not ignored, at most 20000) and their git status |
+| `GET /api/dorks/:id/workspace/file` | `?root=&path=` | `WorkspaceFile`: the text and SHA-256 of a file, or only its size when it is binary or over 1 MB |
+| `PUT /api/dorks/:id/workspace/file` | `{root, path, contents, sha?}` | `{sha, size}`: replaces an existing file's text. With `sha` (the version it was edited from) a file changed meanwhile is refused with `conflict` (409); without, it is overwritten |
 | `GET /api/dorks/:id/events` | `?before=<seq>&limit=<1..200, default 50>` or `?after=<seq>` | `{events: ClientEvent[], hasMore}`. `before` (or neither) returns newest first; `after` returns ascending, inclusive of `seq > after` |
 | `GET /api/dorks/:id/pr?url=` | | `PullRequestView`: one of the session's PRs read live from GitHub as the gh login (state, mergeability, checks, files with patches, comments). `url` picks it (its headline PR or any PR it has a subscription to, ended ones included); without it, the headline (the latest it opened). 404 for any other PR or without one |
 | `POST /api/dorks/:id/pr/merge` | `{method: "squash"\|"merge"\|"rebase", sha?, url?}` | `{merged, sha}`; `sha` pins the reviewed head (409 `conflict` if it moved, or GitHub refuses: conflicts, required checks or reviews) |
@@ -177,6 +181,8 @@ One stream per client. Messages are `data: <json>\n\n`; a `: ping` comment every
 
 The bridge closes a socket that has not finished the handshake within 10 s and takes at most 4 handshakes at once (more are closed with 1013). A newly verified socket replaces the old one, which is closed with 4000. Nothing is served to an unauthenticated socket.
 
+**Calls** (server to bridge, the Files tab): `{"t":"call","id":<n>,"op":"fs.roots"|"fs.tree"|"fs.read"|"fs.write","args":{...}}`, answered by `{"t":"ret","id":<n>,"ok":true,"result":...}` or `{"t":"ret","id":<n>,"ok":false,"error":{code,message}}` (`invalid`, `not_found`, `conflict`, else `failed`) on the same socket. A bridge older than calls ignores them and the server's call times out.
+
 **Requests** (bridge to server): `{"t":"rpc","id":<n>,"op":"<op>","args":{...}}`. **Responses**: `{"t":"res","id":<n>,"ok":true,"result":...}` or `{"t":"res","id":<n>,"ok":false,"error":AppError}`.
 
 | op | args | result |
@@ -203,6 +209,14 @@ The composer offers a menu above the box (`apps/web/src/components/ComposerMenu.
 
 - **Commands** come from Claude Code's `initialize` answer (`commands`: name, description, argument hint; skills included, their source at the end of the description, `(user)` or `(project)`). The bridge relays them as `agent_commands` and the server keeps them on the dork (`agent_commands`). Before a session has reported any, and for a new session, the menu lists the owner's installed skills. Other agents get no `/` menu.
 - **Files**: the bridge lists the working tree with `git ls-files --cached --others --exclude-standard` when the agent starts and every 15 s (`infra/bridge/src/files.ts`), and sends `files` only when the listing changed, at most 5000 paths in 180 KB (`truncated` past that). The server keeps the last listing per dork (`dork_files`), so the menu works while the box sleeps, and answers searches with `GET /api/dorks/:id/files`.
+
+### Files
+
+Chat details' **Files** tab (`apps/web/src/components/chat-details/Files.tsx`) browses and edits the repositories checked out in the sandbox: Pierre's editor (`@pierre/diffs`, `File` in an edit session) on the left, Pierre's file tree (`@pierre/trees`) on the right under a chooser of the checkouts. Nothing is stored on the server; each read is a `call` to the bridge (`infra/bridge/src/workspace.ts`, `services/workspace.ts`), only while the sandbox is awake.
+
+- **Checkouts**: every git repository in the work directory, at its top or one or two levels down (`owner/name`, where the bridge clones the session's repository and a build's), so one the agent cloned beside it shows too. Each is named after its GitHub `origin`, with its branch.
+- **Paths** are checked by shape (`validWorkspacePath`: relative, no `..`, nothing in `.git`) on the server and the bridge, then resolved through symlinks by the bridge, which refuses anything outside the checkout or in a `.git`. Only existing files are written, in place, so their owner and mode stay the agent user's.
+- **Saves** carry the SHA-256 of the version that was opened; when the agent changed the file meanwhile the save is a `conflict`, and the tab offers Reload or Overwrite. The tree is listed again every 15 s while the tab shows.
 
 ### Preview proxy
 

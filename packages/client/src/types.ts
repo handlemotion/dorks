@@ -1,5 +1,6 @@
 import type { AgentCommand, AgentModelChoice, BuildRepo, BuildService, ClientEvent, CommentPolicy, DorkMode, DorkState, MachineType, RunView } from "@dorks/shared";
 
+export type { WorkspaceFile, WorkspaceGitStatus, WorkspaceRoot, WorkspaceTree } from "@dorks/shared";
 export type { MergeMethod, MergeableState, PullRequestSection, PullRequestView, PullRequestFile, PullRequestComment, PullRequestChecks, PullRequestCheck, PullRequestPerson } from "@dorks/shared";
 export type { AutomationInput, AutomationRunView, AutomationTrigger, AutomationView, GithubEvent, GithubTrigger, ScheduleEvery, ScheduleTrigger, SentryEvent, SentryTrigger } from "@dorks/shared";
 export type {

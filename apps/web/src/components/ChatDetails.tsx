@@ -1,11 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { ActivityIcon, GitPullRequestIcon, LayersIcon, MonitorIcon, PanelLeftIcon, PlusIcon, SearchIcon, XIcon } from 'lucide-react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { ActivityIcon, FolderTreeIcon, GitPullRequestIcon, LayersIcon, MonitorIcon, PanelLeftIcon, PlusIcon, SearchIcon, XIcon } from 'lucide-react'
 import { Button } from '@dorks/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@dorks/ui/tabs'
 import { ComputerView } from './ComputerView'
 import { preloadDiffs } from './diffs'
 import { BAR_BUTTON, PreviewBrowser, useShownServers, type PreviewSession } from './PreviewBrowser'
 import { Tip } from './Tip'
+import { EmptyState } from './EmptyState'
 import { ProgressPanel } from './ProgressPanel'
 import { useProgress } from '../lib/progress'
 import { PullRequestPanel, TAB_CLASS, type PrStackEntry, type PullRequestPanelData } from './PullRequestPanel'
@@ -16,7 +17,9 @@ import { sessionPrs, stackOf, stackRoot } from './chat-details/prStack'
 import { PANEL_LABEL, type ChatDetailsData, type Panel, type TabKey } from './chat-details/types'
 import { useOpenTabs } from './chat-details/useOpenTabs'
 
-const PANEL_ICON: Record<Panel, ReactNode> = { progress: <ActivityIcon />, artifacts: <LayersIcon />, changes: <GitPullRequestIcon />, computer: <MonitorIcon /> }
+const PANEL_ICON: Record<Panel, ReactNode> = { progress: <ActivityIcon />, artifacts: <LayersIcon />, changes: <GitPullRequestIcon />, files: <FolderTreeIcon />, computer: <MonitorIcon /> }
+/** The Files tab (Pierre's tree and editor) loads when it is first opened. */
+const Files = lazy(() => import('./chat-details/Files'))
 
 /**
  * Chat details: the right side of a chat, full height and flush to the window's edge, split from the chat by one full-height hairline
@@ -184,6 +187,14 @@ export function ChatDetails({
           <div className="min-h-0 flex-1 overflow-y-auto">
             <PullRequestPanel changes={changes} pr={data.pr} pullRequest={data.pullRequest} onAsk={onAsk} />
           </div>
+        )
+      case 'files':
+        return data.workspace ? (
+          <Suspense>
+            <Files source={data.workspace} />
+          </Suspense>
+        ) : (
+          <EmptyState figure="cabinet" title="No sandbox files here" />
         )
       case 'computer':
         return (

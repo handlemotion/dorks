@@ -1,9 +1,9 @@
 import { CatchBoundary, createFileRoute, Link, useNavigate, useRouterState } from '@tanstack/react-router'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { DesktopOptions } from '@dorks/client'
 import { isDorkMode, type Block, type DorkMode } from '@dorks/shared'
 import { ChevronDownIcon, ChevronRightIcon, InfoIcon, MessageSquareIcon } from 'lucide-react'
-import { useBuilds, useDork, useDorkEvents, useDorks, useDorksClient, useGithubRepos, usePullRequest, useSettings, useSubscriptions } from '@dorks/client/react'
+import { useBuilds, useDork, useDorkEvents, useDorks, useDorksClient, useGithubRepos, usePullRequest, useSettings, useSubscriptions, useWorkspaceRoots, useWorkspaceTree } from '@dorks/client/react'
 import { ownersOf, useOwnerScope } from '../../../components/ownerScope'
 import { ownerOf } from '../../../components/RepoAvatar'
 import { List } from '../../../components/onboarding/List'
@@ -19,6 +19,7 @@ import { AGENT_NAMES, SessionChat } from '../../../components/SessionChat'
 import { ChatDetails } from '../../../components/ChatDetails'
 import { ChatSplit, ShowDetailsButton, useDetailsOpen, useWide } from '../../../components/chat-details/layout'
 import type { ChatDetailsData } from '../../../components/chat-details/types'
+import type { WorkspaceSource } from '../../../components/chat-details/Files'
 import type { PullRequestPanelData } from '../../../components/PullRequestPanel'
 import { latestTasks, progressStore, progressTurns } from '../../../lib/progress'
 import { environmentOf, type Environment, type EnvironmentBuild } from '../../../components/EnvironmentPicker'
@@ -393,6 +394,21 @@ function useSessionPullRequest(dorkId: string, url: string): PullRequestPanelDat
   }
 }
 
+/** The Files tab's reads and saves for this session, through the client (the server asks the sandbox's bridge). */
+function useWorkspace(dorkId: string): WorkspaceSource {
+  const { actions } = useDorksClient()
+  return useMemo(
+    () => ({
+      useRoots: () => useWorkspaceRoots(dorkId),
+      useTree: (root: string) => useWorkspaceTree(dorkId, root),
+      read: (root: string, path: string) => actions.readWorkspaceFile(dorkId, root, path),
+      write: (root: string, path: string, contents: string, sha?: string) => actions.writeWorkspaceFile(dorkId, root, path, contents, sha),
+      refresh: () => actions.refreshWorkspace(dorkId),
+    }),
+    [actions, dorkId],
+  )
+}
+
 /** A failed Codex session's ChatGPT models, to restart it on another one. */
 function CodexModelForm({ dork }: { dork: DorkView }) {
   const { actions } = useDorksClient()
@@ -469,6 +485,7 @@ function Thread({ dorkId }: { dorkId: string }) {
   const pullRequest = usePullRequestPanel(dorkId, dork)
   const subscriptions = useSubscriptions(dorkId)
   const usePr = useCallback((url: string) => useSessionPullRequest(dorkId, url), [dorkId])
+  const workspace = useWorkspace(dorkId)
   if (dork === undefined || loading)
     return (
       <p className="mt-4 px-6 text-sm text-muted-foreground" role="status">
@@ -487,7 +504,7 @@ function Thread({ dorkId }: { dorkId: string }) {
   ) : (
     <ChatDetails
       sessionId={dorkId}
-      data={{ ...detailsData(dork, view.blocks, actions, { used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent }), pullRequest, subscriptions, usePullRequest: usePr }}
+      data={{ ...detailsData(dork, view.blocks, actions, { used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent }), pullRequest, subscriptions, usePullRequest: usePr, workspace }}
       onClose={() => setDetailsOpen(false)}
       onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}
       previewSession={{ id: dorkId, agent: AGENT_NAMES[dork.provider], provider: dork.provider }}

@@ -5,7 +5,7 @@
 //   frames    -> the push rpc, batched (assistant text deltas coalesce for DELTA_BATCH_MS)
 //   secrets   <- the configure / gh_token rpcs (never in the snapshot)
 
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { WebSocketServer } from "ws";
 
 const { DORK_ID: dorkId, BRIDGE_SECRET: secret } = process.env;
@@ -60,17 +60,7 @@ wss.on("connection", (sock) => {
       if (again) rpc("connect").catch(() => {});
       return;
     }
-    if (ws !== sock) return;
-    if (msg.t === "res") {
-      const p = pendingRpc.get(msg.id);
-      if (!p) return;
-      pendingRpc.delete(msg.id);
-      if (msg.ok) p.resolve(msg.result);
-      else p.reject(Object.assign(new Error(msg.error?.message ?? "rpc failed"), { data: msg.error }));
-    } else if (msg.t === "commands") {
-      lastCmds = msg.cmds;
-      onCommandsCb?.(msg.cmds);
-    }
+    if (ws === sock) onFrame(sock, msg);
   });
   sock.on("close", () => {
     if (ws !== sock) return;
@@ -81,6 +71,21 @@ wss.on("connection", (sock) => {
     }
   });
 });
+/** A frame on the verified socket: an rpc answer, a call from the server (the Files tab) or the commands snapshot. */
+function onFrame(sock, msg) {
+  if (msg.t === "res") {
+    const p = pendingRpc.get(msg.id);
+    if (!p) return;
+    pendingRpc.delete(msg.id);
+    if (msg.ok) p.resolve(msg.result);
+    else p.reject(Object.assign(new Error(msg.error?.message ?? "rpc failed"), { data: msg.error }));
+  } else if (msg.t === "call") {
+    answerCall(sock, msg);
+  } else if (msg.t === "commands") {
+    lastCmds = msg.cmds;
+    onCommandsCb?.(msg.cmds);
+  }
+}
 const connected = () => (ws ? Promise.resolve() : new Promise((resolve) => waiters.push(resolve)));
 async function rpc(op, args = {}) {
   await connected();
@@ -233,6 +238,56 @@ const SIM_MODELS = [
   { model: "haiku", name: "Sim Haiku 1", description: "The quick one", resolved: "sim-haiku-1", efforts: SIM_EFFORTS },
 ];
 
+/** One `call` from the server (the Files tab), answered with its `ret` on the socket it came on. */
+function answerCall(sock, msg) {
+  const reply = (body) => sock.readyState === 1 && sock.send(JSON.stringify({ t: "ret", id: msg.id, ...body }));
+  try {
+    reply({ ok: true, result: workspaceCall(msg.op, msg.args ?? {}) });
+  } catch (e) {
+    reply({ ok: false, error: { code: e.code ?? "failed", message: e.message } });
+  }
+}
+
+// ---- the Files tab's calls (infra/bridge/src/workspace.ts), answered from memory: the session's repository plus a second clone,
+// so the repository chooser shows. Saves stick for the life of this process.
+let simRepo = null; // the configured repo's owner/name
+const simText = (path) =>
+  path.endsWith(".md")
+    ? `# ${path.split("/").pop().replace(/\.md$/, "")}\n\nA simulated file in the sandbox.\n`
+    : path.endsWith(".json")
+      ? `{\n  "name": "sim",\n  "private": true\n}\n`
+      : `// ${path}\nexport function hello(name: string) {\n  return \`Hello, \${name}\`\n}\n`;
+const simTrees = new Map();
+function simTree(root) {
+  if (!simTrees.has(root)) {
+    const paths = root === "sim/notes" ? ["README.md", "notes/ideas.md", "notes/todo.md"] : [...SIM_FILES, "assets/logo.png"];
+    simTrees.set(root, new Map(paths.map((p) => [p, p.endsWith(".png") ? null : simText(p)])));
+  }
+  return simTrees.get(root);
+}
+const simSha = (s) => createHash("sha256").update(s).digest("hex");
+const callError = (code, message) => Object.assign(new Error(message), { code });
+function workspaceCall(op, args) {
+  const roots = [...(simRepo ? [{ id: simRepo, name: simRepo, branch: "dorks/sim", primary: true }] : []), { id: "sim/notes", name: "sim/notes", branch: "main", primary: false }];
+  if (op === "fs.roots") return { roots };
+  if (!roots.some((r) => r.id === args.root)) throw callError("not_found", "That repository is not in this sandbox.");
+  const files = simTree(args.root);
+  if (op === "fs.tree") return { root: args.root, paths: [...files.keys()], truncated: false, status: args.root === simRepo ? [{ path: "src/app.tsx", status: "modified" }] : [] };
+  if (!files.has(args.path)) throw callError("not_found", "That file is not there any more.");
+  const text = files.get(args.path);
+  if (op === "fs.read")
+    return text === null
+      ? { root: args.root, path: args.path, kind: "binary", size: 2048 }
+      : { root: args.root, path: args.path, kind: "text", contents: text, sha: simSha(text), size: Buffer.byteLength(text) };
+  if (op === "fs.write") {
+    if (text === null) throw callError("invalid", "Not a text file.");
+    if (args.sha && args.sha !== simSha(text)) throw callError("conflict", "The file changed in the sandbox since you opened it.");
+    files.set(args.path, args.contents);
+    return { sha: simSha(args.contents), size: Buffer.byteLength(args.contents) };
+  }
+  throw callError("invalid", `unknown call: ${op}`);
+}
+
 async function runTurn(text) {
   const n = bseq;
   const mid = `m${n}`;
@@ -278,6 +333,7 @@ async function configure(cid) {
   if (cfg.provider !== "codex") queue.push({ t: "agent_models", models: SIM_MODELS, effort: cfg.effort ?? null });
   if (cfg.provider === "claude" || !cfg.provider) queue.push({ t: "agent_commands", commands: SIM_COMMANDS });
   if (cfg.repo) queue.push({ t: "files", paths: SIM_FILES, truncated: false });
+  simRepo = cfg.repo?.fullName ?? null;
   return void flushNow();
 }
 

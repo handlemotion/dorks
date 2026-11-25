@@ -367,8 +367,11 @@ importers:
         specifier: 0.5.1
         version: 0.5.1(react@19.3.0)
       '@pierre/diffs':
-        specifier: ^1.6.4
-        version: 1.6.4(@shikijs/themes@4.6.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        specifier: ^1.7.1
+        version: 1.7.1(@shikijs/themes@4.6.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@pierre/trees':
+        specifier: ^1.0.0
+        version: 1.0.0(@pierre/theme@2.1.0)(@shikijs/themes@4.6.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(shiki@4.6.0)
       '@ramka/react':
         specifier: 0.0.2
         version: 0.0.2(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -519,7 +522,7 @@ importers:
         version: 1.9.0(@types/react@19.3.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@pierre/words':
         specifier: ^0.3.0
-        version: 0.3.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 0.3.0(@pierre/highlights@0.5.2)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@shadcn/helpers':
         specifier: ^0.3.0
         version: 0.3.0(ai@7.0.166(zod@4.6.6))
@@ -2139,8 +2142,8 @@ packages:
     resolution: {integrity: sha512-bKWQI1g9jn8bWUZsvhbOLfgva576Fbp1KwoTNSUCMdT9tlTAvQS2JkifX1UrhPPdyN4GHvM20HhvIMqqU1yotQ==}
     engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
 
-  '@pierre/diffs@1.6.4':
-    resolution: {integrity: sha512-RsKoruCOp50qaDM3a7BQan5K77xMkGWT1NF01fiYP1PfT3v4CvIjwytNk5WjZG0BesBkMOP2UbrBIDigB1k0ug==}
+  '@pierre/diffs@1.7.1':
+    resolution: {integrity: sha512-saKteoCq9tWbRqLruIixV6sKgxIcY0OK6RkKcr8lYv7r4iJhXQJbmVPN3VBmjBHivgMIG2Att6tV/AOXXzEvvg==}
     peerDependencies:
       react: 19.3.0
       react-dom: 19.3.0
@@ -2150,11 +2153,14 @@ packages:
       react-dom:
         optional: true
 
-  '@pierre/highlights@0.4.0':
-    resolution: {integrity: sha512-2a38H7ep3KweGi1fGQpJk+Krod2OMpDIXagKPlqBd1Y9P460T7zQmc66Wm2JAH1SpIG93wCyyhZVrkc5dnAJVQ==}
+  '@pierre/highlights@0.5.2':
+    resolution: {integrity: sha512-CV+yFa8dodaU3w7U42FR+AfoavrsfcH0/n3rckDu1A/UXan1Dzo6OdM/MPOAAsGM/EbKhDxD6k+qMcNUtnLfsg==}
 
-  '@pierre/theme@2.0.0':
-    resolution: {integrity: sha512-yNDd9GYLQl1mEUJR8AneJ5e4ohLIHQd/wZLWr4fagt78vS2RwwZNW530vVgHqXFAyFVcFlRmGUD5ramXH46OXw==}
+  '@pierre/patches@0.0.1':
+    resolution: {integrity: sha512-NycJQVQNuqmBdr7u1LsUcmkiIz1fRm9xhWZyRbm21oJYd0MVVCa45t9Lsuj5IKrTMBonxOuh4LMv+R3BpL4bmQ==}
+
+  '@pierre/theme@2.1.0':
+    resolution: {integrity: sha512-GIE3AD8eqUlZN2sFrMmp9gt+rNZsT+EhrdwB0KmLcwkqunrp2jU2j14SeAb64Ol/srWo4rHyNaWf20+bPzFbvg==}
     engines: {vscode: ^1.0.0}
 
   '@pierre/theming@1.0.2':
@@ -2175,6 +2181,17 @@ packages:
       react-dom:
         optional: true
       shiki:
+        optional: true
+
+  '@pierre/trees@1.0.0':
+    resolution: {integrity: sha512-skHNPs4LK1nScFrSvMwN4LnZyHfFf1M7I9ivWePecFqWSYYJYdgKUFCaxPBL0MPY/Z8c3q0yhl8bkkzdDfotug==}
+    peerDependencies:
+      react: 19.3.0
+      react-dom: 19.3.0
+    peerDependenciesMeta:
+      react:
+        optional: true
+      react-dom:
         optional: true
 
   '@pierre/words@0.3.0':
@@ -5635,6 +5652,14 @@ packages:
     resolution: {integrity: sha512-C+y9x90UElAddDZmV4qOx9W53B61PO7cIqWz2dQsWlwswuq4mr8NEwytdGKboYbQlGZ3awrkTeNvcZiZNHnQ8A==}
     engines: {node: '>=20'}
 
+  preact-render-to-string@6.6.5:
+    resolution: {integrity: sha512-O6MHzYNIKYaiSX3bOw0gGZfEbOmlIDtDfWwN1JJdc/T3ihzRT6tGGSEWE088dWrEDGa1u7101q+6fzQnO9XCPA==}
+    peerDependencies:
+      preact: '>=10 || >= 11.0.0-0'
+
+  preact@11.0.0-beta.0:
+    resolution: {integrity: sha512-IcODoASASYwJ9kxz7+MJeiJhvLriwSb4y4mHIyxdgaRZp6kPUud7xytrk/6GZw8U3y6EFJaRb5wi9SrEK+8+lg==}
+
   prettier@3.9.9:
     resolution: {integrity: sha512-Z/CJHIkdujO/OtN7nXUii0Rf3VT5SRuhjBA82Xvu2XhBUgX3nhP67T0LHceBdQLex7OOFGTox+Q5Yg8Jk2Qivg==}
     engines: {node: '>=14'}
@@ -8287,11 +8312,12 @@ snapshots:
 
   '@oxlint/plugins@1.93.0': {}
 
-  '@pierre/diffs@1.6.4(@shikijs/themes@4.6.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@pierre/diffs@1.7.1(@shikijs/themes@4.6.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
-      '@pierre/highlights': 0.4.0
-      '@pierre/theme': 2.0.0
-      '@pierre/theming': 1.0.2(@pierre/theme@2.0.0)(@shikijs/themes@4.6.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(shiki@4.6.0)
+      '@pierre/highlights': 0.5.2
+      '@pierre/patches': 0.0.1
+      '@pierre/theme': 2.1.0
+      '@pierre/theming': 1.0.2(@pierre/theme@2.1.0)(@shikijs/themes@4.6.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(shiki@4.6.0)
       diff: 9.0.0
       hast-util-to-html: 9.0.5
       lru_map: 0.4.1
@@ -8302,20 +8328,36 @@ snapshots:
     transitivePeerDependencies:
       - '@shikijs/themes'
 
-  '@pierre/highlights@0.4.0': {}
+  '@pierre/highlights@0.5.2': {}
 
-  '@pierre/theme@2.0.0': {}
+  '@pierre/patches@0.0.1': {}
 
-  '@pierre/theming@1.0.2(@pierre/theme@2.0.0)(@shikijs/themes@4.6.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(shiki@4.6.0)':
+  '@pierre/theme@2.1.0': {}
+
+  '@pierre/theming@1.0.2(@pierre/theme@2.1.0)(@shikijs/themes@4.6.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(shiki@4.6.0)':
     optionalDependencies:
-      '@pierre/theme': 2.0.0
+      '@pierre/theme': 2.1.0
       '@shikijs/themes': 4.6.0
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
       shiki: 4.6.0
 
-  '@pierre/words@0.3.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@pierre/trees@1.0.0(@pierre/theme@2.1.0)(@shikijs/themes@4.6.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(shiki@4.6.0)':
+    dependencies:
+      '@pierre/theming': 1.0.2(@pierre/theme@2.1.0)(@shikijs/themes@4.6.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(shiki@4.6.0)
+      preact: 11.0.0-beta.0
+      preact-render-to-string: 6.6.5(preact@11.0.0-beta.0)
     optionalDependencies:
+      react: 19.3.0
+      react-dom: 19.3.0(react@19.3.0)
+    transitivePeerDependencies:
+      - '@pierre/theme'
+      - '@shikijs/themes'
+      - shiki
+
+  '@pierre/words@0.3.0(@pierre/highlights@0.5.2)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+    optionalDependencies:
+      '@pierre/highlights': 0.5.2
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
 
@@ -11941,6 +11983,12 @@ snapshots:
       source-map-js: 1.2.2
 
   powershell-utils@0.2.1: {}
+
+  preact-render-to-string@6.6.5(preact@11.0.0-beta.0):
+    dependencies:
+      preact: 11.0.0-beta.0
+
+  preact@11.0.0-beta.0: {}
 
   prettier@3.9.9: {}
 

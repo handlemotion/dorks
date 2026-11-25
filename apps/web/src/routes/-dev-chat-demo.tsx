@@ -12,8 +12,9 @@ import { ChatToc } from '../components/ChatToc'
 import { ChatDetails } from '../components/ChatDetails'
 import { ChatSplit, ShowDetailsButton, useDetailsOpen } from '../components/chat-details/layout'
 import type { ChatDetailsData } from '../components/chat-details/types'
+import type { WorkspaceSource } from '../components/chat-details/Files'
 import type { PullRequestPanelData } from '../components/PullRequestPanel'
-import type { PullRequestView } from '@dorks/client'
+import type { PullRequestView, WorkspaceTree } from '@dorks/client'
 import { currentStep, latestTasks, progressStore, progressTurns, stepLabel } from '../lib/progress'
 import { Composer, type AgentProvider } from '../components/ChatComposer'
 import { ChatMenu } from '../components/ChatMenu'
@@ -310,6 +311,59 @@ function useDemoStackPr(url: string): PullRequestPanelData | undefined {
   return pr ? { view: { ...DEMO_PR, ...pr, url, state: 'open', mergeableState: 'clean', mergeable: true }, refresh: () => {}, merge: async () => {} } : undefined
 }
 
+/** The Files tab's demo: two checkouts held in memory; saves stick until the page reloads. */
+const DEMO_FILES: Record<string, Map<string, string>> = {
+  'acme/demo': new Map([
+    ['README.md', '# demo\n\nThe reconnect demo app.\n'],
+    ['package.json', '{\n  "name": "demo",\n  "private": true\n}\n'],
+    ['src/bridge/reconnect.ts', 'export async function reconnect(bridge: Bridge) {\n  await box.resume()\n  await bridge.ready()\n  await queue.flush()\n}\n'],
+    ['src/bridge/gate.ts', 'export class ReconnectGate {\n  private attempt: Promise<void> | null = null\n}\n'],
+    ['src/app.tsx', 'export function App() {\n  return <main>Demo</main>\n}\n'],
+  ]),
+  'acme/docs': new Map([
+    ['README.md', '# docs\n'],
+    ['guides/setup.md', '# Setup\n'],
+  ]),
+}
+const DEMO_TREES: Record<string, WorkspaceTree> = Object.fromEntries(
+  Object.entries(DEMO_FILES).map(([root, files]) => [
+    root,
+    {
+      root,
+      paths: [...files.keys()],
+      truncated: false,
+      status:
+        root === 'acme/demo'
+          ? [
+              { path: 'src/bridge/gate.ts', status: 'added' as const },
+              { path: 'src/bridge/reconnect.ts', status: 'modified' as const },
+            ]
+          : [],
+    },
+  ]),
+)
+const demoSha = (s: string) => String(s.length) + ':' + s.slice(0, 8)
+const DEMO_WORKSPACE: WorkspaceSource = {
+  useRoots: () => ({
+    data: {
+      roots: [
+        { id: 'acme/demo', name: 'acme/demo', branch: 'dorks/bridge-reconnect', primary: true },
+        { id: 'acme/docs', name: 'acme/docs', branch: 'main', primary: false },
+      ],
+    },
+  }),
+  useTree: (root) => ({ data: DEMO_TREES[root] }),
+  read: async (root, path) => {
+    const contents = DEMO_FILES[root]?.get(path) ?? ''
+    return { root, path, kind: 'text', contents, sha: demoSha(contents), size: contents.length }
+  },
+  write: async (root, path, contents) => {
+    DEMO_FILES[root]?.set(path, contents)
+    return { sha: demoSha(contents) }
+  },
+  refresh: () => {},
+}
+
 /** The demo's pull request: `?pr=dirty|behind|blocked|draft|merged` shows the other merge states. */
 const DEMO_PR_STATE = new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('pr')
 const DEMO_PR: PullRequestView = {
@@ -459,7 +513,7 @@ export function Demo() {
           detailsOpen && !showNew ? (
             <ChatDetails
               sessionId="preview"
-              data={{ ...details, progress: progressTurns(blocks), tasks: latestTasks(blocks), pullRequest: demoPullRequest, usePullRequest: useDemoStackPr }}
+              data={{ ...details, progress: progressTurns(blocks), tasks: latestTasks(blocks), pullRequest: demoPullRequest, usePullRequest: useDemoStackPr, workspace: DEMO_WORKSPACE }}
               onClose={() => setDetailsOpen(false)}
               onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}
               onAsk={setText}

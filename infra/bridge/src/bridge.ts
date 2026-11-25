@@ -28,6 +28,7 @@ import { Services } from "./services";
 import { claudeOneShot, cleanTitle, titlePrompt } from "./title";
 import { syncSkills } from "./skills";
 import { FileWatcher } from "./files";
+import { Workspace } from "./workspace";
 import type { CommandEntry, Transport } from "./transport";
 
 const EFFORTS = effortLevel.options;
@@ -186,6 +187,9 @@ export class Bridge {
       (v) => this.redactor.add(v),
     );
     this.rpc = new RpcServer(join(sockDir, this.runAs ? "cred/cred.sock" : "cred.sock"), this.rpcMethods(), this.runAs);
+    // The Files tab: the server reads and writes the box's checkouts through `call` frames (workspace.ts).
+    const workspace = new Workspace({ workDir: this.cfg.workDir, primary: () => this.agentCtx?.dir ?? null, baseEnv: env, runAs: this.runAs });
+    this.t.onCall?.((op, args) => workspace.call(op, args));
     this.written = this.loadWritten();
   }
 

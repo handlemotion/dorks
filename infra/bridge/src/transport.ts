@@ -50,6 +50,11 @@ export interface Transport {
   getImage(id: string): Promise<{ mime: string; data: string } | null>;
   /** This dork's non-ended PR subscriptions (SubscriptionView[], validated by the caller), pushed on every change. */
   subscribeSubscriptions(onList: (views: unknown) => void, onError: () => void): () => void;
+  /**
+   * Answers the server's `call` frames (requests from the server to this bridge: the Files tab's reads and writes). A rejection with
+   * an `invalid`, `not_found` or `conflict` `code` reaches the owner as that error; anything else as `failed`.
+   */
+  onCall?(handler: CallHandler): void;
   /** Fires each time the underlying connection comes back after a drop. */
   onReconnect(cb: () => void): () => void;
   /** True when an error means the backend will never accept this bridge (wrong secret / dork deleted): retrying is pointless. */
@@ -75,6 +80,10 @@ const OPEN_WAIT_MS = 15_000;
 const HANDSHAKE_MS = 10_000;
 /** At most this many sockets may be mid-handshake at once; more are turned away. */
 const MAX_HANDSHAKES = 4;
+
+export type CallHandler = (op: string, args: Record<string, unknown>) => Promise<unknown>;
+/** The codes a call may answer with; any other failure is `failed`, so nothing internal leaks. */
+const CALL_CODES = new Set(["invalid", "not_found", "conflict"]);
 
 type Pending = { resolve: (v: any) => void; reject: (e: unknown) => void; timer: ReturnType<typeof setTimeout> };
 type Waiter = { resolve: () => void; reject: (e: unknown) => void; timer: ReturnType<typeof setTimeout> };
@@ -108,6 +117,7 @@ export class WsTransport implements Transport {
   private lastCommands?: CommandEntry[];
   private lastList?: unknown;
   private everConnected = false;
+  private callHandler?: CallHandler;
   private closed = false;
   private handshaking = 0;
   private readonly stopAccepting: () => void;
@@ -171,7 +181,7 @@ export class WsTransport implements Transport {
         return stage === "done" ? undefined : finish(false);
       }
       if (stage === "done") {
-        if (this.ws === ws) this.onFrame(msg);
+        if (this.ws === ws) this.onFrame(msg, ws);
       } else if (stage === "hello") {
         if (msg?.t !== "hello" || !isNonce(msg.nonce)) return finish(false);
         theirs = msg.nonce;
@@ -227,8 +237,9 @@ export class WsTransport implements Transport {
     for (const s of [...this.listSubs]) s.err();
   }
 
-  private onFrame(msg: any) {
-    if (msg.t === "res") {
+  private onFrame(msg: any, ws: BridgeSocket) {
+    if (msg.t === "call") void this.answerCall(msg, ws);
+    else if (msg.t === "res") {
       const p = this.pending.get(msg.id);
       if (!p) return;
       this.pending.delete(msg.id);
@@ -242,6 +253,30 @@ export class WsTransport implements Transport {
       this.lastList = msg.views;
       for (const s of [...this.listSubs]) s.on(this.lastList);
     }
+  }
+
+  /** One `call` from the server, answered with a `ret` frame on the socket it came on (dropped if that socket is gone). */
+  private async answerCall(msg: { id?: unknown; op?: unknown; args?: unknown }, ws: BridgeSocket) {
+    if (typeof msg.id !== "number") return;
+    let reply: object;
+    try {
+      if (!this.callHandler || typeof msg.op !== "string") throw Object.assign(new Error("This bridge does not answer that call."), { code: "invalid" });
+      const args = msg.args && typeof msg.args === "object" ? (msg.args as Record<string, unknown>) : {};
+      reply = { t: "ret", id: msg.id, ok: true, result: (await this.callHandler(msg.op, args)) ?? null };
+    } catch (e) {
+      const code = (e as { code?: unknown })?.code;
+      reply = {
+        t: "ret",
+        id: msg.id,
+        ok: false,
+        error: typeof code === "string" && CALL_CODES.has(code) ? { code, message: (e as Error).message } : { code: "failed", message: "The sandbox could not do that." },
+      };
+    }
+    if (ws.readyState === 1) ws.send(JSON.stringify(reply));
+  }
+
+  onCall(handler: CallHandler) {
+    this.callHandler = handler;
   }
 
   private async rpc<T = unknown>(op: string, args: object = {}): Promise<T> {
