@@ -128,7 +128,9 @@ function Panels({ sidebar, children }: { sidebar: ReactNode; children: ReactNode
           if (shown !== open) setOpen(shown)
         }}
       >
-        {sidebar}
+        {/* Only while open: collapsed, the peek (Frame) shows it instead. One instance at a time, so per-instance state (folded
+            repositories, owner scope, chat order) is read fresh from storage by whichever one is shown. */}
+        {open && sidebar}
       </ResizablePanel>
       {/* Drag to resize; a click snaps the sidebar back to its default width. */}
       <PanelResizeHandle aria-label="Resize sidebar" onReset={() => panel.current?.resize(SIDEBAR_WIDTH)} disabled={!open} className={!open ? 'hidden' : undefined} />
