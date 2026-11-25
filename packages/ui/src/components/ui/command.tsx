@@ -87,11 +87,15 @@ function CommandInput({
   )
 }
 
-/** A menu's search row: no fill, a hairline under it as part of the menu, about a row's height, its icon on the rows' icon column. */
+/**
+ * A menu's search row: no fill, a hairline under it as part of the menu, about a row's height, its icon on the rows' icon column.
+ * `end` sits at the row's end, for one small action on the list (refresh it, say).
+ */
 function CommandMenuInput({
   className,
+  end,
   ...props
-}: React.ComponentProps<typeof CommandPrimitive.Input>) {
+}: React.ComponentProps<typeof CommandPrimitive.Input> & { end?: React.ReactNode }) {
   return (
     <div data-slot="command-input-wrapper" className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
       <SearchIcon className="size-3.5 shrink-0 text-muted-foreground" />
@@ -103,6 +107,7 @@ function CommandMenuInput({
         )}
         {...props}
       />
+      {end}
     </div>
   )
 }

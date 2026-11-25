@@ -22,16 +22,47 @@ describe("MCP protocol", () => {
   it("initialize answers with the requested protocol version when it is one we speak, the newest otherwise", async () => {
     const a = await rpc(server(), "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "claude-code", version: "2" } });
     expect(a.result.protocolVersion).toBe("2025-06-18");
-    expect(a.result.capabilities).toEqual({ tools: { listChanged: false } });
+    expect(a.result.capabilities).toEqual({ tools: { listChanged: false }, resources: { listChanged: false } });
     expect(a.result.serverInfo.name).toBe("dorks");
     expect((await rpc(server(), "initialize", { protocolVersion: "1999-01-01" })).result.protocolVersion).toBe("2025-11-25");
   });
 
   it("answers ping, rejects unknown methods, and never answers notifications", async () => {
     expect((await rpc(server(), "ping")).result).toEqual({});
-    expect((await rpc(server(), "resources/list")).error.code).toBe(-32601);
+    expect((await rpc(server(), "prompts/list")).error.code).toBe(-32601);
+    expect((await rpc(server(), "skills/list")).error.code).toBe(-32601); // modern only
     expect(await server().handle(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }))).toBeNull();
     expect(await server().handle(JSON.stringify({ jsonrpc: "2.0", method: "nope" }))).toBeNull();
+  });
+
+  it("serves MCP 2026-07-28 statelessly: discover, per-request versions, resultType and cache hints", async () => {
+    const meta = { _meta: { "io.modelcontextprotocol/protocolVersion": "2026-07-28" } };
+    const d = (await rpc(server(), "server/discover", meta)).result;
+    expect(d.supportedVersions).toEqual(["2026-07-28"]);
+    expect(d.capabilities.extensions["io.modelcontextprotocol/skills"]).toEqual({});
+    expect(d.instructions).toContain("machine-setup");
+    expect(d).toMatchObject({ resultType: "complete", cacheScope: "private", _meta: { "io.modelcontextprotocol/serverInfo": { name: "dorks" } } });
+    // No initialize first: any request is served on its own.
+    const t = (await rpc(server(), "tools/list", meta)).result;
+    expect(t.resultType).toBe("complete");
+    expect(t.tools.some((x: any) => x.name === "machine_draft")).toBe(true);
+    const bad = await rpc(server(), "tools/list", { _meta: { "io.modelcontextprotocol/protocolVersion": "2099-01-01" } });
+    expect(bad.error).toMatchObject({ code: -32022, data: { supported: ["2026-07-28"], requested: "2099-01-01" } });
+  });
+
+  it("serves the machine-setup skill with a manifest whose digest and size match the bytes it reads", async () => {
+    const meta = { _meta: { "io.modelcontextprotocol/protocolVersion": "2026-07-28" } };
+    const [entry] = (await rpc(server(), "skills/list", meta)).result.skills;
+    expect(entry.uri).toBe("skill://machine-setup/SKILL.md");
+    expect(entry.frontmatter.name).toBe("machine-setup");
+    expect((await rpc(server(), "skills/get", { ...meta, uri: entry.uri })).result.skill).toEqual(entry);
+    expect((await rpc(server(), "skills/get", { ...meta, uri: "skill://nope/SKILL.md" })).error.code).toBe(-32602);
+    const { text } = (await rpc(server(), "resources/read", { ...meta, uri: entry.uri })).result.contents[0];
+    const { createHash } = await import("node:crypto");
+    expect(entry.resources).toEqual([{ uri: entry.uri, size: Buffer.byteLength(text), digest: "sha256:" + createHash("sha256").update(text).digest("hex") }]);
+    expect(text).toMatch(/^---\nname: "machine-setup"\ndescription: ".+"\n---\n/);
+    // Legacy clients read the same file as a plain resource.
+    expect((await rpc(server(), "resources/list")).result.resources[0]).toMatchObject({ uri: entry.uri, name: "machine-setup" });
   });
 
   it("rejects malformed input with a JSON-RPC error", async () => {

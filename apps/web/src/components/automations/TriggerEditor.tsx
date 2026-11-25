@@ -20,6 +20,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@dorks/ui/popover'
 import githubDark from '../../assets/providers/github-dark.svg'
 import githubLight from '../../assets/providers/github-light.svg'
 import { REPO, REPO_ITEM, RepoRow } from '../RepoAvatar'
+import { RefreshRepositories } from '../EnvironmentPicker'
 import { Logo } from '../onboarding/List'
 import { OwnerAvatar, ownerOf } from '../RepoAvatar'
 import { localTimeZone } from './templates'
@@ -107,9 +108,11 @@ export function RepoChip({ repo, onChange, repositories, disabled }: { repo: str
       </PopoverTrigger>
       <PopoverContent align="start" className={`${MENU_POPUP_CLASS} w-80 gap-0 p-0`}>
         <Command shouldFilter={false} loop className="rounded-none bg-transparent p-0">
-          <CommandMenuInput aria-label="Search repositories" autoFocus value={query} onValueChange={setQuery} placeholder="Search repositories…" />
+          <CommandMenuInput aria-label="Search repositories" autoFocus value={query} onValueChange={setQuery} placeholder="Search repositories…" end={<RefreshRepositories />} />
           <CommandList className="max-h-72 p-1">
-            <CommandEmpty className="px-2 py-3 text-left text-xs text-muted-foreground">{typed ? 'No repositories match. Type a full owner/name to use it.' : 'Type an owner/name.'}</CommandEmpty>
+            <CommandEmpty className="px-2 py-3 text-left text-xs text-muted-foreground">
+              {typed ? 'No repositories match. Type a full owner/name to use it, or refresh the list.' : 'Type an owner/name.'}
+            </CommandEmpty>
             {canUseTyped && (
               <CommandItem value={`use:${typed}`} onSelect={() => choose(typed)} className={REPO_ITEM}>
                 <PlusIcon className="size-3.5 text-muted-foreground" />
