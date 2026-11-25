@@ -1,4 +1,4 @@
-import { createContext, useContext, type ReactNode } from 'react'
+import { createContext, useContext, useState, type ReactNode } from 'react'
 import { ChevronLeftIcon, ChevronRightIcon, XIcon } from 'lucide-react'
 import * as Lightbox from '@ramka/react/lightbox'
 
@@ -27,13 +27,7 @@ export function ImageLightbox({ images, label, children }: { images: LightboxIma
               <Lightbox.Slide key={image.id} className={`h-full min-w-full flex-[0_0_100%] px-16 pt-14 ${images.length > 1 ? 'pb-[134px]' : 'pb-16'}`}>
                 <Lightbox.Item index={index} caption={image.caption ?? image.alt} aria-roledescription="slide" aria-label={`${index + 1} of ${images.length}`} className="size-full">
                   <Lightbox.Zoom>
-                    <Lightbox.Media
-                      width={image.width}
-                      height={image.height}
-                      className="overflow-hidden rounded-(--control-radius) outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
-                    >
-                      <img src={image.src} alt={image.alt} className="size-full object-contain select-none" draggable={false} />
-                    </Lightbox.Media>
+                    <SlideMedia image={image} />
                   </Lightbox.Zoom>
                 </Lightbox.Item>
               </Lightbox.Slide>
@@ -87,6 +81,35 @@ export function ImageLightbox({ images, label, children }: { images: LightboxIma
         </Lightbox.Content>
       </Lightbox.Portal>
     </Lightbox.Root>
+  )
+}
+
+/**
+ * The image of one slide, fitted to it. ramka fits the media box from its pixel size, which it reads only once, before the image has
+ * loaded; transcript and attached images come without one, so without this the box falls back to the image's natural size and a
+ * large screenshot opens far bigger than the screen. The size measured on load fills in for a missing one.
+ */
+function SlideMedia({ image }: { image: LightboxImage }) {
+  const [measured, setMeasured] = useState<{ width: number; height: number } | null>(null)
+  const known = image.width && image.height ? { width: image.width, height: image.height } : null
+  const size = known ?? measured
+  return (
+    <Lightbox.Media width={size?.width} height={size?.height} className="overflow-hidden rounded-(--control-radius) outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10">
+      <img
+        src={image.src}
+        alt={image.alt}
+        className="size-full object-contain select-none"
+        draggable={false}
+        onLoad={
+          known
+            ? undefined
+            : (e) => {
+                const { naturalWidth: width, naturalHeight: height } = e.currentTarget
+                if (width > 0 && height > 0) setMeasured((prev) => (prev?.width === width && prev.height === height ? prev : { width, height }))
+              }
+        }
+      />
+    </Lightbox.Media>
   )
 }
 
