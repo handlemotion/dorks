@@ -39,6 +39,12 @@ export function previewMethods(t: Transport, log: Log, role: () => CrewRole | nu
       }
       return callBackend(t, log, () => t.showPreview(port, { title, localhost: p.localhost === true, ...(via ? { via } : {}) }), true);
     },
+    // `comment`: the comment_* MCP tools. The server checks everything and scopes it to this dork; this only forwards.
+    comment: async (params) => {
+      const p = (params ?? {}) as Record<string, unknown>;
+      if (!["list", "reply", "resolve"].includes(p.action as string)) throw new RpcError("invalid", "unknown comment action");
+      return callBackend(t, log, () => t.comment(p), true);
+    },
     // `build`: the machine_* MCP tools. The server validates everything and scopes it to this dork's build; this only forwards.
     build: async (params) => {
       const p = (params ?? {}) as Record<string, unknown>;

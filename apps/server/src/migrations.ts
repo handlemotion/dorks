@@ -483,4 +483,24 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (id, width)
   );
   `,
+  `
+  -- Preview comments (services/comments.ts): the owner's threads on a running preview, and the agent's replies. \`notified = 0\` marks
+  -- an owner comment still waiting for the comments_notify timer to hand it to the agent.
+  CREATE TABLE preview_comments (
+    id TEXT PRIMARY KEY,
+    dork_id TEXT NOT NULL REFERENCES dorks (id) ON DELETE CASCADE,
+    parent_id TEXT REFERENCES preview_comments (id) ON DELETE CASCADE,
+    author TEXT NOT NULL CHECK (author IN ('owner', 'agent')),
+    body TEXT NOT NULL,
+    anchor TEXT,
+    port INTEGER,
+    resolved_at INTEGER,
+    resolved_by TEXT CHECK (resolved_by IN ('owner', 'agent')),
+    notified INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    edited_at INTEGER
+  );
+  CREATE INDEX preview_comments_dork ON preview_comments (dork_id, created_at);
+  CREATE INDEX preview_comments_pending ON preview_comments (dork_id, notified);
+  `,
 ];

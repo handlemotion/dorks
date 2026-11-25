@@ -4,7 +4,7 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { ClientEvent, McpServerView, PullRequestView, SkillCandidate, SkillView } from "@dorks/shared";
+import type { ClientEvent, CommentAnchor, CommentView, McpServerView, PullRequestView, SkillCandidate, SkillView } from "@dorks/shared";
 import type { Dork, Settings, SnapshotStatus } from "./types.ts";
 import { mockAutomations } from "./mock-automations.ts";
 
@@ -659,9 +659,84 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     if (local && c.method === "POST") return decideLocal(c, d, decodeURIComponent(local[1]!));
     const queued = /^queue\/([^/]+)(\/send)?$/.exec(sub);
     if (queued) return takeQueued(c, d, decodeURIComponent(queued[1]!), !!queued[2]);
+    const cm = /^comments(?:\/([^/]+)(\/replies)?)?$/.exec(sub);
+    if (cm) return routeComments(c, d, cm[1] ? decodeURIComponent(cm[1]) : undefined, !!cm[2]);
     const handle = dorkRoutes.get(`${c.method} ${sub}`) ?? dorkRoutes.get(`* ${sub}`);
     if (!handle) return fail(c.res, "not_found", "Unknown route.");
     return handle(c, d);
+  };
+
+  // Preview comments (routeComments below).
+  const comments = new Map<string, CommentView[]>();
+  const commentText = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const newComment = (fields: Pick<CommentView, "parentId" | "author" | "body" | "anchor" | "port">): CommentView => ({
+    id: randomUUID(),
+    ...fields,
+    resolvedAt: null,
+    resolvedBy: null,
+    createdAt: Date.now(),
+    editedAt: null,
+  });
+  /** The mock agent's answer in a thread, a moment after the owner wrote in it, with the transcript card the real fold appends. */
+  const agentAnswers = (d: MockDork, list: CommentView[], threadId: string, text: string) =>
+    setTimeout(() => {
+      if (!list.some((c) => c.id === threadId)) return;
+      append(d.id, { type: "notify", kinds: [], prs: [], text, source: "preview" });
+      list.push(newComment({ parentId: threadId, author: "agent", body: "On it. I'll update it and let you know here.", anchor: null, port: null }));
+      broadcast({ t: "comments", dorkId: d.id });
+    }, 1500);
+
+  /** `GET|POST /api/dorks/:id/comments`: the threads, or a new one. */
+  const routeThreads = ({ method, body, res }: Ctx, d: MockDork, list: CommentView[]) => {
+    if (method === "GET") return json(res, 200, list);
+    if (method !== "POST") return fail(res, "not_found", "Unknown route.");
+    const text = commentText(body.body);
+    if (!text) return fail(res, "invalid", "the comment is empty");
+    // A light check (this file imports nothing at runtime); the real server parses it with `commentAnchor`.
+    const a = body.anchor as CommentAnchor | undefined;
+    if (!a || !["element", "text", "area"].includes(a.kind) || typeof a.selector !== "string" || typeof a.path !== "string") return fail(res, "invalid", "the comment needs an anchor on the page");
+    const c = newComment({ parentId: null, author: "owner", body: text, anchor: a, port: typeof body.port === "number" ? body.port : null });
+    list.push(c);
+    broadcast({ t: "comments", dorkId: d.id });
+    agentAnswers(d, list, c.id, text);
+    return json(res, 200, { id: c.id });
+  };
+
+  /** `POST …/comments/:cid/replies`, `PATCH|DELETE …/comments/:cid`. */
+  const routeComment = ({ method, body, res }: Ctx, d: MockDork, list: CommentView[], c: CommentView, replies: boolean) => {
+    if (replies && method === "POST") {
+      const text = commentText(body.body);
+      if (!text) return fail(res, "invalid", "the comment is empty");
+      const r = newComment({ parentId: c.id, author: "owner", body: text, anchor: null, port: null });
+      list.push(r);
+      Object.assign(c, { resolvedAt: null, resolvedBy: null });
+      agentAnswers(d, list, c.id, text);
+      broadcast({ t: "comments", dorkId: d.id });
+      return json(res, 200, { id: r.id });
+    }
+    if (!replies && method === "PATCH") {
+      if (commentText(body.body)) Object.assign(c, { body: commentText(body.body), editedAt: Date.now() });
+      if (typeof body.resolved === "boolean") Object.assign(c, body.resolved ? { resolvedAt: Date.now(), resolvedBy: "owner" } : { resolvedAt: null, resolvedBy: null });
+    } else if (!replies && method === "DELETE")
+      comments.set(
+        d.id,
+        list.filter((x) => x.id !== c.id && x.parentId !== c.id),
+      );
+    else return fail(res, "not_found", "Unknown route.");
+    broadcast({ t: "comments", dorkId: d.id });
+    return json(res, 200, {});
+  };
+
+  /**
+   * Preview comments (services/comments.ts on the real server). The mock agent answers each new comment of the owner's in its
+   * thread a moment later, so the bubbles and threads can be tried without a sandbox.
+   */
+  const routeComments = (c: Ctx, d: MockDork, commentId: string | undefined, replies: boolean) => {
+    const list = comments.get(d.id) ?? [];
+    comments.set(d.id, list);
+    if (!commentId) return routeThreads(c, d, list);
+    const found = list.find((x) => x.id === commentId);
+    return found ? routeComment(c, d, list, found, replies) : fail(c.res, "not_found", "no such comment");
   };
 
   /** `DELETE /api/dorks/:id/queue/:qid` removes a queued message; `POST …/send` sends it now. */
@@ -1039,6 +1114,28 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     return fail(res, "not_found", "Unknown route.");
   };
 
+  // Shared images (the composer's attachments, a captured area of a preview): kept in memory, served without the token like the
+  // real server's `GET /images/:id` (the id is the capability).
+  const images = new Map<string, { type: string; bytes: Buffer }>();
+  const serveImage = (res: ServerResponse, path: string) => {
+    const img = images.get(decodeURIComponent(path.slice("/images/".length)));
+    if (!img) return fail(res, "not_found", "No such image.");
+    return void res.writeHead(200, { "content-type": img.type }).end(img.bytes);
+  };
+  const uploadImage = async (req: IncomingMessage, res: ServerResponse) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(chunk as Buffer);
+    const id = randomUUID().replace(/-/g, ""); // 32 hex characters, like the real server's image ids
+    images.set(id, { type: req.headers["content-type"] ?? "image/png", bytes: Buffer.concat(chunks) });
+    return json(res, 200, { id });
+  };
+  /** The health check and `GET /images/:id` (no token), `POST /api/images` (with it); undefined for any other route. */
+  const routeImages = (req: IncomingMessage, res: ServerResponse, route: string, authorized: boolean) => {
+    if (route.endsWith(" /api/health")) return json(res, 200, { ok: true }) ?? true;
+    if (route.startsWith("GET /images/")) return serveImage(res, route.slice("GET ".length)) ?? true;
+    if (route === "POST /api/images" && authorized) return uploadImage(req, res);
+    return undefined;
+  };
   const route = async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", "http://mock");
     const path = url.pathname;
@@ -1047,8 +1144,9 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     res.setHeader("access-control-allow-headers", "authorization, content-type, accept");
     res.setHeader("access-control-allow-methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
     if (method === "OPTIONS") return void res.writeHead(204).end();
-    if (path === "/api/health") return json(res, 200, { ok: true });
     const bearer = /^Bearer (.+)$/.exec(req.headers.authorization ?? "")?.[1] ?? url.searchParams.get("access_token");
+    const image = routeImages(req, res, `${method} ${path}`, bearer === token);
+    if (image) return image;
     if (bearer !== token) return fail(res, "forbidden", "The owner token was rejected.");
     if (path === "/api/live" && method === "GET") return openLive(req, res);
 
@@ -1061,7 +1159,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     const automation = automations(method, path, body);
     if (automation) return "error" in automation ? fail(res, automation.error, automation.message) : json(res, automation.status, automation.body);
     const m =
-      /^\/api\/dorks\/([^/]+)(?:\/(local\/[^/]+|messages|queue(?:\/[^/]+(?:\/send)?)?|interrupt|desktop|archive|model|codex-model|events|pr(?:\/merge|\/update-branch)?|subscriptions(?:\/resume)?))?$/.exec(
+      /^\/api\/dorks\/([^/]+)(?:\/(local\/[^/]+|messages|queue(?:\/[^/]+(?:\/send)?)?|interrupt|desktop|archive|model|codex-model|events|pr(?:\/merge|\/update-branch)?|subscriptions(?:\/resume)?|comments(?:\/[^/]+(?:\/replies)?)?))?$/.exec(
         path,
       );
     if (m) return routeDork(c, m);

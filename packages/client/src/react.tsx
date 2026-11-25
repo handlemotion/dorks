@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useSyncExternalStore, type ReactNode } from "react";
-import { toAppError, type ComposioStatus, type McpServerView, type SkillView, type PullRequestView, type SubscriptionView } from "@dorks/shared";
+import { toAppError, type ComposioStatus, type McpServerView, type SkillView, type PullRequestView, type SubscriptionView, type CommentView } from "@dorks/shared";
 import type { DorksClient, ConnectionState } from "./client.ts";
 import type { EventsState } from "./events.ts";
 import type { QueryState, Store } from "./store.ts";
@@ -14,6 +14,11 @@ export function DorksProvider({ client, children }: { client: DorksClient; child
     return () => client.close();
   }, [client]);
   return <Ctx.Provider value={client}>{children}</Ctx.Provider>;
+}
+
+/** The client, or null outside <DorksProvider> (a design demo that renders app components without a server). */
+export function useOptionalDorksClient(): DorksClient | null {
+  return useContext(Ctx);
 }
 
 export function useDorksClient(): DorksClient {
@@ -142,6 +147,11 @@ export function usePullRequest(dorkId: string, url?: string): QueryState<PullReq
 
 export function useSubscriptions(dorkId: string): SubscriptionView[] | undefined {
   return useStore(useDorksClient().subscriptions(dorkId)).data;
+}
+
+/** The owner's comment threads on the session's previews, live; `undefined` while loading. */
+export function useComments(dorkId: string): CommentView[] | undefined {
+  return useStore(useDorksClient().comments(dorkId)).data;
 }
 
 export function useDorkEvents(dorkId: string): EventsState & { loadMore: () => void; send: (text: string) => Promise<void> } {

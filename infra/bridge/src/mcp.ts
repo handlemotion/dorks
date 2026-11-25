@@ -117,6 +117,57 @@ const TOOLS: Tool[] = [
       return `Showing port ${shown.port} in the user's Artifacts at ${shown.url}. If the page is blank or errors, check that the server answers on that port.`;
     },
   },
+  // Preview comments (docs/architecture.md, "Preview comments"): the user's threads on the running preview. They arrive as
+  // <dorks-event source="preview"> turns; these answer and close them.
+  {
+    name: "comment_list",
+    title: "Read the user's comments on the preview",
+    description:
+      "The user's comment threads on the running preview, each with its id, where it points (the page path, the element or the quoted text, " +
+      "and the React component and source file when the page is a dev build) and every message in it. Open threads only unless `all` is true.",
+    inputSchema: { type: "object", properties: { all: { type: "boolean", description: "Optional: include resolved threads." } }, additionalProperties: false },
+    annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
+    async run(args, sock) {
+      const r = await rpcCall<{ text: string }>(sock, "comment", { action: "list", all: args.all === true });
+      return r.text;
+    },
+  },
+  {
+    name: "comment_reply",
+    title: "Answer a comment on the preview",
+    description:
+      "Write in a comment thread on the preview: answer the user, say what you changed, or ask what they meant. The user sees it on the " +
+      "page, beside the element. Use comment_resolve instead once the comment is done.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string", description: "The thread's id (from the notification or comment_list)." }, body: { type: "string", description: "What to write." } },
+      required: ["id", "body"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: false },
+    async run(args, sock) {
+      if (typeof args.id !== "string" || typeof args.body !== "string" || !args.body.trim()) throw new ToolError("`id` and a non-empty `body` are required.");
+      await rpcCall(sock, "comment", { action: "reply", id: args.id, body: args.body });
+      return "Replied. The user sees it in the thread on the preview.";
+    },
+  },
+  {
+    name: "comment_resolve",
+    title: "Resolve a comment on the preview",
+    description: "Mark a comment thread on the preview as done, with an optional last message saying what you changed. The user can reopen it, " + "which notifies you again.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string", description: "The thread's id." }, body: { type: "string", description: "Optional: a short note of what you changed." } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: false },
+    async run(args, sock) {
+      if (typeof args.id !== "string") throw new ToolError("`id` is required.");
+      await rpcCall(sock, "comment", { action: "resolve", id: args.id, ...(typeof args.body === "string" && args.body.trim() ? { body: args.body } : {}) });
+      return "Resolved.";
+    },
+  },
   {
     name: "screenshot_share",
     title: "Show the user a screenshot",
@@ -700,6 +751,7 @@ export class McpServer {
           instructions:
             "Tools for the pull requests you work on in this box, and for showing the user your work. `gh pr create` subscribes you automatically; subscribed PRs wake you with <dorks-event> turns when CI, reviews, comments or conflicts need you. " +
             "When you start a web server the user should see, call preview_show with its port. When you change anything visual, verify it with screenshot_share and put the image it returns in your final answer. " +
+            'The user\'s comments on a running preview arrive as <dorks-event source="preview"> turns: answer them with comment_reply or comment_resolve. ' +
             "To install tools, set variables or pre-clone repos for future sessions, search for the machine_ tools. " +
             "In a crew (a coordinator and its worker dorks), the dork_ tools start, message and follow the other dorks.",
         });

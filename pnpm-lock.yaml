@@ -337,6 +337,9 @@ importers:
       esbuild:
         specifier: ^0.28.1
         version: 0.28.1
+      modern-screenshot:
+        specifier: ^4.7.0
+        version: 4.7.0
       react-grab:
         specifier: 0.2.0
         version: 0.2.0(react@19.2.3)
@@ -3142,6 +3145,9 @@ packages:
 
   minimist@1.2.8:
     resolution: {integrity: sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA==}
+
+  modern-screenshot@4.7.0:
+    resolution: {integrity: sha512-9YxN+ddPSMMlhylOv25VHzXrl9u67QRxoh7+SEewGtgUw7t6hHTrjptSDJUSne9oG4Xk/h2cwG15nIt4Hc9ujg==}
 
   motion-dom@14.10.1:
     resolution: {integrity: sha512-NzVzM7y3JJl3rYlVN4yM6kbziab/tHNBEV6gqOoAQIg8npHlIMhW2oPnzr0HkP+rR8xMoiX9+zSZ4BLaVuJadw==}
@@ -6331,6 +6337,8 @@ snapshots:
       brace-expansion: 5.0.12
 
   minimist@1.2.8: {}
+
+  modern-screenshot@4.7.0: {}
 
   motion-dom@14.10.1:
     dependencies:

@@ -52,7 +52,8 @@ export const clientEvent = z.discriminatedUnion("type", [
     kind: z.enum(["report", "note"]),
     text: z.string(),
   }),
-  z.object({ ...base, type: z.literal("notify"), kinds: z.array(notifyKind), prs: z.array(prRef), text: z.string() }),
+  // `source`: "preview" for the owner's preview comments (docs/architecture.md, "Preview comments"); absent for GitHub.
+  z.object({ ...base, type: z.literal("notify"), kinds: z.array(notifyKind), prs: z.array(prRef), text: z.string(), source: z.literal("preview").optional() }),
   // A PR subscription changed (subscribed, ended, or stalled after CI_FIX_MAX_ATTEMPTS).
   z.object({ ...base, type: z.literal("subscription"), repo: z.string(), number: z.number(), status: z.enum(["active", "stalled", "ended"]), reason: z.string().optional() }),
   // Builds (docs/builds.md): the agent submitted a draft of its machine for the owner's approval, and the owner's answer.

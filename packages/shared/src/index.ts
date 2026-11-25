@@ -10,3 +10,4 @@ export * from "./crew";
 export * from "./skills";
 export * from "./automations";
 export * from "./bridgeProof";
+export * from "./comments";

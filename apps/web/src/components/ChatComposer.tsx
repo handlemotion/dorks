@@ -1,4 +1,4 @@
-import { ArrowUpIcon, BoxIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SparkleIcon, SquareIcon, SquareTerminalIcon, XIcon, ZapIcon } from 'lucide-react'
+import { ArrowUpIcon, BoxIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon, ZapIcon } from 'lucide-react'
 import { modelLabel, type AgentModelChoice } from '@dorks/shared'
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type RefObject, type ReactNode } from 'react'
 import {
@@ -18,8 +18,11 @@ import { MENU_POPUP_CLASS } from '@dorks/ui/dropdown-menu'
 import { Command, CommandEmpty, CommandItem, CommandMenuInput, CommandList, CommandSeparator } from '@dorks/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@dorks/ui/popover'
 import claudeLogo from '../assets/providers/claude.svg'
-import openaiDark from '../assets/providers/openai-dark.svg'
-import openaiLight from '../assets/providers/openai-light.svg'
+import antigravityLogo from '../assets/providers/antigravity.svg'
+import codexDark from '../assets/providers/codex_dark.svg'
+import codexLight from '../assets/providers/codex_light.svg'
+import opencodeDark from '../assets/providers/opencode-dark.svg'
+import opencodeLight from '../assets/providers/opencode.svg'
 import { Logo } from './onboarding/List'
 import { OwnerAvatar, ownerOf } from './RepoAvatar'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@dorks/ui/input-group'
@@ -33,11 +36,12 @@ export type AgentProvider = 'codex' | 'claude' | 'opencode' | 'antigravity'
 
 const AGENT_NAMES: Record<AgentProvider, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode', antigravity: 'Antigravity' }
 
-function ProviderIcon({ provider }: { provider: AgentProvider }) {
-  if (provider === 'opencode') return <SquareTerminalIcon className="size-3.5" />
-  if (provider === 'antigravity') return <SparkleIcon className="size-3.5" />
-  // svgl pads the OpenAI mark inside its viewBox, so it is scaled to sit at Claude's size.
-  return provider === 'claude' ? <Logo light={claudeLogo} className="size-3.5" /> : <Logo light={openaiLight} dark={openaiDark} className="size-3.5 scale-[1.3]" />
+export function ProviderIcon({ provider }: { provider: AgentProvider }) {
+  // Each agent's own mark (svgl): Claude, Codex, OpenCode and Antigravity.
+  if (provider === 'opencode') return <Logo light={opencodeLight} dark={opencodeDark} className="size-3.5 rounded-[2px]" />
+  if (provider === 'antigravity') return <Logo light={antigravityLogo} className="size-3.5" />
+  if (provider === 'codex') return <Logo light={codexLight} dark={codexDark} className="size-3.5" />
+  return <Logo light={claudeLogo} className="size-3.5" />
 }
 
 /** The effort as signal bars: `level` of three filled, the rest faint. */
