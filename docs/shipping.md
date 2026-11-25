@@ -27,7 +27,9 @@ Every poll pass (10 s) for the first 10 minutes, then every 30 s (`shipDue`), fo
 | `GET /commits/<merge>/status` | A `status` stage per commit status context |
 | `GET /deployments?sha=<merge>` and `GET /deployments` (recent) | One `deployment` stage per environment: the newest deployment that **contains** the merge, remembered so it is still followed after newer deployments push it off the recent page. A later commit's deployment counts when `GET /compare/<merge>...<sha>` says `ahead` or `identical` (a deploy that batched several merges); it says `with <sha>`. A branch preview (`diverged`) never counts. Its latest status gives the state and `environment_url` |
 
-Ancestry answers (`GET /compare/<merge>...<sha>`, at most 3 new ones a pass) are remembered per ship. A read that fails (other than a
+Ancestry answers (`GET /compare/<merge>...<sha>`, at most 3 new ones a pass) are remembered per ship. A card lists at most 15
+workflow runs, 15 other apps' checks and 15 commit statuses, and keeps only http(s) links (a status's `javascript:` target is
+dropped): the card and the agent open them. A read that fails (other than a
 rate limit or a rejected token, which stop the pass like the PR poller) keeps what it showed last time. Bodies are kept with their ETags in `ships.poll`, so a 304 rebuilds the same stages.
 
 ### Status
@@ -57,7 +59,8 @@ failed), its name, a few words and its time, linking to the run, check or deploy
 under its row.
 
 **Where it sits** (`ShipPin`): while a turn runs, the card stays where the merge happened in the thread. Once the turn ends, the
-session's latest ship is pinned at the end of the chat, close under the last answer and above the status line, and its place in the thread shrinks to one line
+session's latest ship is pinned at the end of the chat, close under the last answer and above the status line (until the owner
+writes again after it ended; a merge that started nothing is never pinned and is one line), and its place in the thread shrinks to one line
 (nothing, when nothing follows it). Older ships stay in the thread as cards.
 
 Archived sessions are still watched (people archive after merging); deleting a session drops its ships.
@@ -83,7 +86,8 @@ subscription carries them, so they render as that PR's section):
   login from [secure inputs](secure-inputs.md) when it needs one), never to deploy or touch production data, and to report with
   `ship_verify { ok, note }`. A `verify` stage (`Verify on production`) joins the card as pending, so the ship waits for it; the
   agent's note becomes its detail. A failed check fails the ship (and the tool's answer asks for a fix-forward or revert PR). With no
-  answer after `SHIP_VERIFY_MS` (20 minutes) the stage is skipped (`Not verified in time`) and the ship settles without it.
+  answer after `SHIP_VERIFY_MS` (20 minutes) the stage is skipped (`Not verified in time`) and the ship settles without it; a watch
+that ends (stalled) while it is still open closes it the same way.
 - **`ship_failed`**, once per ship: the first time a stage from GitHub fails. The agent gets each failing stage with its log URL and the
   merge commit, and is asked to read the logs, find the cause and open a fix-forward PR, or a revert PR when the fix is not obvious or
   production is broken. The new PR is an ordinary subscribed PR: when it merges, it gets its own ship.

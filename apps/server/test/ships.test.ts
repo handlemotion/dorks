@@ -5,7 +5,7 @@ import { needsAttentionOf } from "../src/data";
 import { pollOnce, POLL_MS } from "../src/services/poller";
 import { updateSettings } from "../src/services/settings";
 import { SHIP_VERIFY_MS } from "@dorks/shared";
-import { SHIP_QUIET_MS, SHIP_SETTLE_MS, shipOp } from "../src/services/ships";
+import { SHIP_MAX_MS, SHIP_QUIET_MS, SHIP_SETTLE_MS, SHIP_SLOW_MS, shipOp } from "../src/services/ships";
 import * as subs from "../src/services/subscriptions";
 import { fakeFetch, harness } from "./harness";
 
@@ -42,6 +42,7 @@ function github() {
     },
     runs: [] as Run[],
     jobs: {} as Record<number, { id: number; name: string; status: string; conclusion: string | null; html_url: string; steps: Step[] }[]>,
+    statuses: [] as { context: string; state: string; target_url: string }[],
     checkRuns: [] as { id: number; name: string; status: string; conclusion: string | null; details_url: string; app: { slug: string } }[],
     deployments: [] as { id: number; sha: string; environment: string; created_at: string }[],
     deploymentStatuses: {} as Record<number, { state: string; environment_url?: string; log_url?: string }[]>,
@@ -71,7 +72,7 @@ function github() {
     const jobs = /^\/actions\/runs\/(\d+)\/jobs$/.exec(p);
     if (jobs) return reply(url, init, { jobs: state.jobs[Number(jobs[1])] ?? [] });
     if (p === `/commits/${MERGE}/check-runs`) return reply(url, init, { check_runs: state.checkRuns });
-    if (p === `/commits/${MERGE}/status`) return reply(url, init, { statuses: [] });
+    if (p === `/commits/${MERGE}/status`) return reply(url, init, { statuses: state.statuses });
     if (p === "/deployments") {
       const sha = url.searchParams.get("sha");
       return reply(url, init, (sha ? state.deployments.filter((d) => d.sha === sha) : state.deployments).toSorted((a, b) => b.id - a.id).slice(0, Number(url.searchParams.get("per_page") ?? 30)));
@@ -131,6 +132,7 @@ describe("ships", () => {
       { id: 20, name: "deploy", status: "in_progress", conclusion: null, html_url: "j20", steps: [{ name: "Run database migrations", number: 3, status: "in_progress", conclusion: null }] },
     ];
     s.gh.state.checkRuns.push({ id: 5, name: "Cloudflare Pages", status: "in_progress", conclusion: null, details_url: "https://dash.cloudflare.com/x", app: { slug: "cloudflare-pages" } });
+    s.gh.state.statuses.push({ context: "netlify", state: "pending", target_url: "javascript:alert(1)" }); // never a link
     s.gh.state.checkRuns.push({ id: 6, name: "test", status: "in_progress", conclusion: null, details_url: "x", app: { slug: "github-actions" } }); // already a run above
     await s.tick();
     expect(s.card()!.stages.map((x) => [x.kind, x.name, x.state])).toEqual([
@@ -138,7 +140,9 @@ describe("ships", () => {
       ["workflow", "Deploy", "running"],
       ["migration", "Run database migrations", "running"],
       ["check", "Cloudflare Pages", "running"],
+      ["status", "netlify", "running"],
     ]);
+    expect(s.card()!.stages.find((x) => x.name === "netlify")!.url).toBeUndefined();
 
     // Everything passes; production is deployed from a later commit that contains the merge, and a branch preview that does not.
     for (const r of s.gh.state.runs) Object.assign(r, { status: "completed", conclusion: "success" });
@@ -149,6 +153,7 @@ describe("ships", () => {
       steps: [{ name: "Run database migrations", number: 3, status: "completed", conclusion: "success" }],
     };
     Object.assign(s.gh.state.checkRuns[0], { status: "completed", conclusion: "success" });
+    s.gh.state.statuses[0].state = "success";
     s.gh.state.deployments.push({ id: 40, sha: "later111", environment: "production", created_at: s.iso() }, { id: 41, sha: "branch22", environment: "Preview", created_at: s.iso() });
     s.gh.state.compare = { later111: "ahead", branch22: "diverged" };
     s.gh.state.deploymentStatuses[40] = [{ state: "in_progress" }];
@@ -264,5 +269,20 @@ describe("ships", () => {
     await f.tick();
     expect(fInbox()).toHaveLength(1);
     expect(fInbox()[0].summary).toContain("Deploy failed: https://github.com/octo/hello/actions/runs/1");
+  });
+
+  it("a watch that ends while the agent's check is open closes the check", async () => {
+    const s = await setup();
+    await s.merge();
+    s.gh.state.runs.push(s.run({ id: 1, name: "Nightly smoke", status: "in_progress" })); // never finishes
+    await s.tick(SHIP_MAX_MS - SHIP_VERIFY_MS / 2);
+    s.gh.state.deployments.push({ id: 40, sha: MERGE, environment: "production", created_at: s.iso() });
+    s.gh.state.deploymentStatuses[40] = [{ state: "success", environment_url: "https://hello.example" }];
+    await s.tick(SHIP_SLOW_MS); // an old ship is read every SHIP_SLOW_MS
+    expect(s.card()!.stages.at(-1)).toMatchObject({ kind: "verify", state: "pending" });
+    await s.tick(SHIP_VERIFY_MS / 2);
+    expect(s.card()).toMatchObject({ status: "stalled" });
+    expect(s.card()!.endedAt).toBeDefined();
+    expect(s.card()!.stages.at(-1)).toMatchObject({ kind: "verify", state: "skipped", detail: "Not verified before the watch ended" });
   });
 });

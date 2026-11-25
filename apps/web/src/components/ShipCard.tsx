@@ -31,14 +31,19 @@ export function ShipPin({ blocks, state, children }: { blocks: Block[]; state: s
   )
 }
 
-/** The session's latest ship, pinned at the end of the chat unless a turn is running (then it stays where the merge happened). */
+/**
+ * The session's latest ship, pinned at the end of the chat unless a turn is running (then it stays where the merge happened). Not
+ * pinned once there is nothing to follow: a merge that started nothing, or a ship that ended before the owner wrote again.
+ */
 function pinnedShip(blocks: Block[], state: string): ShipBlock | undefined {
   if (state === 'working' || state === 'creating' || state === 'waking') return undefined
-  for (let i = blocks.length - 1; i >= 0; i--) {
-    const b = blocks[i]
-    if (b.kind === 'ship') return b
-  }
-  return undefined
+  let i = blocks.length - 1
+  while (i >= 0 && blocks[i].kind !== 'ship') i--
+  const b = blocks[i] as ShipBlock | undefined
+  if (!b || b.ship.status === 'quiet') return undefined
+  const ended = b.ship.endedAt
+  const movedOn = ended !== undefined && blocks.slice(i + 1).some((x) => x.kind === 'user' && (x.at ?? 0) > ended)
+  return movedOn ? undefined : b
 }
 
 /** Line icons while a stage waits or runs, filled ones once it passed (green) or failed (red). One table, so the set can be swapped. */
@@ -89,6 +94,7 @@ const host = (url: string) => url.replace(/^https?:\/\//, '').replace(/\/$/, '')
 /** A ship in the thread: the whole card, or one line when the same ship is pinned at the end of the chat. */
 export function ShipCard({ block, pinned = false }: { block: ShipBlock; pinned?: boolean }) {
   const pin = useContext(PinnedShip)
+  if (block.ship.status === 'quiet') return <ShipLine ship={block.ship} /> // nothing ran: there is nothing to list
   if (!pinned && pin?.id === block.ship.id) return pin.line ? <ShipLine ship={block.ship} /> : null
   return <ShipPanel ship={block.ship} pinned={pinned} />
 }

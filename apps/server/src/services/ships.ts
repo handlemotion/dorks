@@ -34,6 +34,7 @@ export const SHIP_QUIET_MS = 5 * 60_000;
 /** The watch ends this long after the merge, whatever is still running (`stalled`). A failed ship is watched until then for re-runs. */
 export const SHIP_MAX_MS = 60 * 60_000;
 const MAX_RUNS = 15;
+const MAX_OTHERS = 15; // other apps' checks, and commit statuses, each: a card is a summary, not the checks tab
 const MAX_COMPARES = 3; // per pass: later commits (a deployment's, a replacing run's) whose ancestry is not known yet
 const MAX_CONTAINS = 50; // ancestry answers remembered per ship
 /** Young ships are read every poll pass; after this long, at most every `SHIP_SLOW_MS`, so long deploys cost fewer requests. */
@@ -246,6 +247,25 @@ export interface ShipObservation {
   poll: ShipPoll;
 }
 
+/** An http(s) URL, else nothing: links come from other apps' statuses and deployments, and the card and the agent open them. */
+const web = (url: string | undefined) => {
+  if (!url) return undefined;
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" || u.protocol === "http:" ? url : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/** A stage with only web links (a `javascript:` target URL is dropped, not linked). */
+function webLinks(s: ShipStage): ShipStage {
+  const { url, environmentUrl, ...rest } = s;
+  const u = web(url);
+  const e = web(environmentUrl);
+  return { ...rest, ...(u ? { url: u } : {}), ...(e ? { environmentUrl: e } : {}) };
+}
+
 /** Whether a failure of one read should stop the whole pass (rate limit, bad token) rather than keep what that read showed before. */
 const fatal = (e: GithubError) => e.retryAt !== undefined || e.status === 401;
 
@@ -330,7 +350,7 @@ export const observeShip = (app: App, token: string, ship: Ship): Effect.Effect<
       ...(old.mergedAt ? { mergedAt: old.mergedAt } : {}),
       ...(old.doneAt ? { doneAt: old.doneAt } : {}),
     };
-    return { stages: [...runs.stages, ...checks, ...deployments.stages], poll };
+    return { stages: [...runs.stages, ...checks, ...deployments.stages].map(webLinks), poll };
   });
 
 /**
@@ -376,7 +396,7 @@ const readChecks = ({ ship, base, body, kept }: Look) =>
   Effect.gen(function* () {
     const checks = yield* body(GhCheckRuns, `${base}/commits/${ship.sha}/check-runs?per_page=100`);
     const status = yield* body(GhCombinedStatus, `${base}/commits/${ship.sha}/status`);
-    return [...(checks ? checkStages(checks) : kept("check:")), ...(status ? status.statuses.map(statusStage) : kept("status:"))];
+    return [...(checks ? checkStages(checks) : kept("check:")), ...(status ? status.statuses.slice(0, MAX_OTHERS).map(statusStage) : kept("status:"))];
   });
 
 /**
@@ -405,7 +425,7 @@ const readDeployments = ({ ship, old, base, body, kept, contains }: Look) =>
 function checkStages(checks: typeof GhCheckRuns.Type): ShipStage[] {
   const byName = new Map<string, (typeof checks.check_runs)[number]>();
   for (const c of checks.check_runs) if (c.app?.slug !== "github-actions" && (byName.get(c.name)?.id ?? -1) < c.id) byName.set(c.name, c);
-  return [...byName.values()].map((c) => {
+  return [...byName.values()].slice(0, MAX_OTHERS).map((c) => {
     const { state, detail } = runState(c.status, c.conclusion);
     const url = c.details_url || c.html_url;
     return { id: `check:${c.name}`, kind: "check", name: c.name, state, ...(url ? { url } : {}), ...(detail ? { detail } : {}), ...times(c.started_at, c.completed_at, c.status === "completed") };
@@ -498,6 +518,12 @@ function involveAgent(app: App, ship: Ship, github: ShipStage[]): { agent: ShipA
   return { agent, stages: agent.verify ? [...github, verifyStage(agent.verify, agent.deployedAt ?? now)] : github };
 }
 
+/** The agent's check as skipped: the watch ended before it reported. */
+function closeVerify({ agent }: { agent: ShipAgent }, github: ShipStage[], now: number): { agent: ShipAgent; stages: ShipStage[] } {
+  const verify = { ...agent.verify!, state: "skipped" as const, note: "Not verified before the watch ended", at: now };
+  return { agent: { ...agent, verify }, stages: [...github, verifyStage(verify, agent.deployedAt ?? now)] };
+}
+
 /** Saves a ship's new state: a `ship` event when what the card shows changed, the dork's row when its status did. In a transaction. */
 function saveShip(app: App, ship: Ship, next: Ship, poll: ShipPoll) {
   update(app.db, "ships", { id: ship.id }, { stages: next.stages, status: next.status, agent: next.agent ?? null, poll, endedAt: next.endedAt ?? null });
@@ -510,8 +536,10 @@ export function applyShip(app: App, id: number, obs: ShipObservation) {
   app.db.tx(() => {
     const ship = getShip(app, id);
     if (!ship || ship.endedAt !== undefined) return;
-    const { agent, stages } = involveAgent(app, ship, obs.stages);
-    const d = decide(ship.startedAt, stages, ship.poll?.doneAt, app.now());
+    const involved = involveAgent(app, ship, obs.stages);
+    const d = decide(ship.startedAt, involved.stages, ship.poll?.doneAt, app.now());
+    // The watch ends (stalled) with the agent's check still open: it no longer waits, and the card must not say it does.
+    const { agent, stages } = d.end && involved.agent.verify?.state === "pending" ? closeVerify(involved, obs.stages, app.now()) : involved;
     const { doneAt: _, ...poll } = obs.poll;
     const next: Ship = { ...ship, stages, agent, status: d.status, endedAt: d.end ? app.now() : undefined };
     saveShip(app, ship, next, { ...poll, readAt: app.now(), ...(d.doneAt !== undefined ? { doneAt: d.doneAt } : {}) });
