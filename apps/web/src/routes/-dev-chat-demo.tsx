@@ -429,7 +429,16 @@ export function Demo() {
                 <p className="text-sm text-muted-foreground">Choose a repository and agent, then describe the change you want.</p>
               </div>
               <div className="-mx-4">
-                <Composer text={text} setText={setText} repo={repo} setRepo={setRepo} provider={provider} setProvider={setProvider} onSubmit={() => send()} pending={false} error="" />
+                <Composer
+                  text={text}
+                  setText={setText}
+                  environment={{ builds: [], repositories: [], value: { buildId: null, repo }, onChange: (e) => setRepo(e.repo) }}
+                  provider={provider}
+                  setProvider={setProvider}
+                  onSubmit={() => send()}
+                  pending={false}
+                  error=""
+                />
               </div>
             </div>
           ) : (

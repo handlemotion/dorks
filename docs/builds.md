@@ -197,14 +197,19 @@ create passes the build's `type`. Existing boxes are untouched by rebuilds; a re
   Variables (Secret and "Needed while building"; "Fill in" for requested ones), Size, Runs ("Try the setup", the runs, the selected one's
   live log), Name and removal.
 - **Settings**: "CLI secrets" is now "Shared variables": they reach every session, on any machine; a build's variable of the same name wins.
-- **New session composer**: a machine menu beside the repository once a build is built (the default build preselected, "Base machine"
-  always offered); the build's repositories come first in the repository picker.
+- **New session composer**: one chooser for where the session runs. It lists the built builds that hold a repository (each by name, with
+  its repositories' owners as stacked avatars), then every other repository under "Base machine". A repository and the build holding it
+  are one choice: a build's repositories are only offered through it, and a build starts the session in its first repository.
 - **Chat**: an agent's submitted draft is a card in the transcript ("Proposed a change to the machine web. Waiting for you.", the note,
   "Review the change"); the owner's decision updates the card and reaches the agent as its next turn.
 
 ## How dorks pick a build
 
-- The composer's machine menu, defaulting to `settings.defaultBuildId` (set on the build's page: "Use for new sessions"), else the base.
+- The composer's chooser. Until the owner picks: a preset repository (the sidebar's + on a repository group) on the build that holds it,
+  else `settings.defaultBuildId` (set on the build's page: "Use for new sessions") when it is built, else the first repository, on its
+  build if one holds it.
+- **Adding a repository to a build** picks from the same list as the composer (the GitHub CLI login's repositories and the ones chats
+  used, or a typed `owner/repo`); its branch and setup script are set afterwards with Edit.
 - A dork keeps its build for life. Moving a dork to another build would mean re-creating its box (losing on-disk state); not in v1.
 - **Setup session**: "Set up with an agent" on a build's page asks for the target repository (the build's first one preselected, or none)
   and optional notes, then creates a dork with `buildId` = that build, `setup: true`, that repo (cloned in its box) and a first message
