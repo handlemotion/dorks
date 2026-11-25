@@ -12,22 +12,23 @@ subscription stops. It follows the merge commit until what it set off has finish
 
 ## What is watched (v1)
 
-When the poller sees a session's PR merge (`pr_closed` with `merge_commit_sha`), `startShip` inserts a `ships` row for that PR
-and session (once per PR per session) and appends a `ship` event. The box is not involved and is not woken: the server watches
+When the poller sees a session's PR merge into the repository's **default branch** (`pr_closed` with `merge_commit_sha`; a stacked
+PR merging into its parent's branch is not a release), `startShip` inserts a `ships` row for that PR and session (once per PR per
+session, linked to its subscription) and appends a `ship` event. The box is not involved and is not woken: the server watches
 while the sandbox sleeps.
 
-Every poll pass (10 s), for each open ship, with conditional requests (a 304 is free against the rate limit), as the GitHub CLI's login:
+Every poll pass (10 s) for the first 10 minutes, then every 30 s (`shipDue`), for each open ship, with conditional requests (a 304 is free against the rate limit), as the GitHub CLI's login:
 
 | Read | Becomes |
 |---|---|
-| `GET /repos/:r/actions/runs?head_sha=<merge>` | One `workflow` stage per run (at most 15), leaving out `pull_request*` runs: a rebase merge keeps the PR's commits, and their PR runs are not the merge's |
-| `GET /actions/runs/:id/jobs` per run, until its jobs are read once after it completes | A `migration` stage for each job whose name matches `/migrat/i`, else for each such step |
+| `GET /repos/:r/actions/runs?head_sha=<merge>` | One `workflow` stage per run (at most 15), leaving out `pull_request*` runs: a rebase merge keeps the PR's commits, and their PR runs are not the merge's. A **cancelled** run (a newer push cancelled it, `concurrency: cancel-in-progress`) is followed to the first later run of the same workflow on the base whose commit contains the merge (`/actions/workflows/:id/runs`), shown as `with <sha>` |
+| `GET /actions/runs/:id/jobs` per run, until every job is seen completed | A `migration` stage for each job whose name matches `/migrat/i`, else for each such step |
 | `GET /commits/<merge>/check-runs` | A `check` stage per check run by name from any app other than GitHub Actions (Cloudflare Pages, Vercel, Netlify...) |
 | `GET /commits/<merge>/status` | A `status` stage per commit status context |
-| `GET /deployments?sha=<merge>` and `GET /deployments` (recent) | One `deployment` stage per environment: the newest deployment that **contains** the merge. A later commit's deployment counts when `GET /compare/<merge>...<sha>` says `ahead` or `identical` (a deploy that batched several merges); it says `with <sha>`. A branch preview (`diverged`) never counts. Its latest status gives the state and `environment_url` |
+| `GET /deployments?sha=<merge>` and `GET /deployments` (recent) | One `deployment` stage per environment: the newest deployment that **contains** the merge, remembered so it is still followed after newer deployments push it off the recent page. A later commit's deployment counts when `GET /compare/<merge>...<sha>` says `ahead` or `identical` (a deploy that batched several merges); it says `with <sha>`. A branch preview (`diverged`) never counts. Its latest status gives the state and `environment_url` |
 
-A read that fails (other than a rate limit or a rejected token, which stop the pass like the PR poller) keeps what it showed last
-time. Bodies are kept with their ETags in `ships.poll`, so a 304 rebuilds the same stages.
+Ancestry answers (`GET /compare/<merge>...<sha>`, at most 3 new ones a pass) are remembered per ship. A read that fails (other than a
+rate limit or a rejected token, which stop the pass like the PR poller) keeps what it showed last time. Bodies are kept with their ETags in `ships.poll`, so a 304 rebuilds the same stages.
 
 ### Status
 
@@ -47,17 +48,20 @@ An `inactive` deployment was replaced by a newer one, so it was live: `passed`.
 
 ### The card
 
-Each change to what the card shows appends one `ship` event with the whole `ShipView`; clients keep the latest per `ship.id` in
-the place of the first (`fold`, block kind `ship`). It is one line, `Shipping #N to main` / `Shipped #N to main in 6m 40s` /
-`#N failed to ship` / `#N was still shipping after an hour` / `Nothing ran after merging #N`, that opens on its stages: one 24px row
-each, with its state, name, a few words and how long it took, linking to the run, check or deployment log. It is open while it
-watches or failed and folds away once shipped. A passed deployment's live URL sits under it. Archived sessions are still watched
-(people archive after merging); deleting a session drops its ships.
+Each change to what the card shows appends one `ship` event with the whole `ShipView`; clients keep the latest per `ship.id`
+(`fold`, block kind `ship`). `ShipCard` (`apps/web/src/components/ShipCard.tsx`) is a card on the surface fill: the headline
+(`Shipping #N to main`, `Shipped #N to main`, `#N failed to ship`, `#N was still shipping after an hour`, `Nothing ran after merging
+#N`) with how long it has run or took, the PR's title, one 24px row per stage (state, name, a few words, its time, linking to the run,
+check or deployment log), then `Open <host>` for a passed deployment's live URL or `See why <stage> failed`, and the merge commit.
+
+**Where it sits** (`ShipPin`): while a turn runs, the card stays where the merge happened in the thread. Once the turn ends, the
+session's latest ship is pinned at the end of the chat, above the status line, and its place in the thread shrinks to one line
+(nothing, when nothing follows it). Older ships stay in the thread as cards.
+
+Archived sessions are still watched (people archive after merging); deleting a session drops its ships.
 
 ### Limits
 
-- A deploy workflow whose run on the merge commit is cancelled by a newer push (`concurrency: cancel-in-progress`) shows as skipped,
-  even when the newer run deployed this change. Deployments are matched by ancestry; workflow runs are not yet.
 - Migrations are found by name only. A migration that runs inside an unnamed step, or in a platform outside GitHub, is not a stage of
   its own (it is still inside its workflow's or deployment's state).
 - Deploys that report nothing to GitHub (a `wrangler deploy` from a laptop, a Cloudflare Workers Build without the GitHub app) are

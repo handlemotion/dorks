@@ -395,6 +395,8 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     const ship: ShipView = { id: start, repo, number: pr.number, url: pr.url, title: pr.title, baseRef: pr.baseRef ?? "main", sha, status: "watching", stages: [], startedAt: start };
     const run = (n: number) => `https://github.com/${repo}/actions/runs/${n}`;
     const stage = (s: ShipStage) => s;
+    // A PR whose title says "fail" fails its deploy, to see the failed card.
+    const fails = /fail/i.test(pr.title ?? "");
     const steps: ((t: number) => void)[] = [
       (t) => {
         ship.stages = [
@@ -418,10 +420,11 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       },
       (t) => {
         Object.assign(ship.stages[1], { state: "passed", endedAt: t });
-        Object.assign(ship.stages[4], { state: "passed", endedAt: t, environmentUrl: "https://demo.pages.dev" });
+        Object.assign(ship.stages[4], fails ? { state: "failed", endedAt: t } : { state: "passed", endedAt: t, environmentUrl: "https://demo.pages.dev" });
+        if (fails) ship.status = "failed";
       },
       (t) => {
-        Object.assign(ship, { status: "shipped", endedAt: t });
+        if (!fails) Object.assign(ship, { status: "shipped", endedAt: t });
       },
     ];
     append(dorkId, { type: "ship", ship: structuredClone(ship) });

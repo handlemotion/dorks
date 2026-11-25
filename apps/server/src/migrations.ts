@@ -558,6 +558,7 @@ export const MIGRATIONS: string[] = [
   CREATE TABLE ships (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     dork_id TEXT NOT NULL REFERENCES dorks (id) ON DELETE CASCADE,
+    subscription_id INTEGER REFERENCES pr_subscriptions (id) ON DELETE SET NULL,
     repo TEXT NOT NULL,
     number INTEGER NOT NULL,
     url TEXT NOT NULL,

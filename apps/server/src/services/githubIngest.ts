@@ -15,7 +15,7 @@ export interface Actor {
 }
 
 export type PrEvent =
-  /** `mergeSha`, `mergedAt`: the merge commit and when it landed, which the ship tracker follows (services/ships.ts). */
+  /** `mergeSha`, `mergedAt`: the merge commit and when it landed, which the ship tracker follows (services/ships.ts); only for a merge into the default branch. */
   | { kind: "pr_closed"; merged: boolean; sender: Actor; mergeSha?: string; mergedAt?: number }
   | { kind: "pr_synchronize"; headSha: string; headRef: string }
   /** `sender` and `at` when GitHub's issue events say who retargeted the PR. */

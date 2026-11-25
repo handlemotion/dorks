@@ -112,7 +112,7 @@ export const GhPr = Schema.Struct({
   mergeable: Schema.NullOr(Schema.Boolean),
   merged_by: Actor,
   head: Schema.Struct({ ref: Schema.String, sha: Schema.String }),
-  base: Schema.Struct({ ref: Schema.String, sha: Schema.String }),
+  base: Schema.Struct({ ref: Schema.String, sha: Schema.String, repo: Schema.optional(Schema.NullOr(Schema.Struct({ default_branch: Schema.optional(Schema.String) }))) }),
   merge_commit_sha: Schema.optional(Schema.NullOr(Schema.String)),
   merged_at: Schema.optional(Schema.NullOr(Schema.String)),
 });
@@ -156,7 +156,20 @@ export const GhViewer = Schema.Struct({ login: Schema.String });
 const Str = Schema.optional(Schema.NullOr(Schema.String));
 
 export const GhWorkflowRuns = Schema.Struct({
-  workflow_runs: Schema.Array(Schema.Struct({ id: Schema.Number, name: Str, event: Schema.String, status: Str, conclusion: Str, html_url: Schema.String, run_started_at: Str, updated_at: Str })),
+  workflow_runs: Schema.Array(
+    Schema.Struct({
+      id: Schema.Number,
+      name: Str,
+      event: Schema.String,
+      status: Str,
+      conclusion: Str,
+      html_url: Schema.String,
+      run_started_at: Str,
+      updated_at: Str,
+      workflow_id: Schema.optional(Schema.Number),
+      head_sha: Schema.optional(Schema.String),
+    }),
+  ),
 });
 export type GhWorkflowRun = (typeof GhWorkflowRuns.Type)["workflow_runs"][number];
 

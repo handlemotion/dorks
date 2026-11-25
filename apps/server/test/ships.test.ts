@@ -12,7 +12,18 @@ import { fakeFetch, harness } from "./harness";
 // deployments, including a later commit's deploy that contains it) and settles on shipped, failed or quiet.
 
 const MERGE = "merge0000000";
-type Run = { id: number; name: string; event: string; status: string; conclusion: string | null; html_url: string; run_started_at: string; updated_at: string };
+type Run = {
+  id: number;
+  name: string;
+  workflow_id?: number;
+  head_sha?: string;
+  event: string;
+  status: string;
+  conclusion: string | null;
+  html_url: string;
+  run_started_at: string;
+  updated_at: string;
+};
 type Step = { name: string; number: number; status: string; conclusion: string | null };
 
 function github() {
@@ -24,7 +35,7 @@ function github() {
       mergeable: true,
       merged_by: null as null | { login: string; type: string },
       head: { ref: "agent/x", sha: "aaa1111" },
-      base: { ref: "main", sha: "base000" },
+      base: { ref: "main", sha: "base000", repo: { default_branch: "main" } },
       merge_commit_sha: null as string | null,
       merged_at: null as string | null,
     },
@@ -53,7 +64,9 @@ function github() {
     if (p === "/pulls/7") return reply(url, init, state.pr);
     if (p === "/pulls/7/reviews" || p === "/issues/7/comments" || p === "/pulls/7/comments") return reply(url, init, []);
     if (/^\/commits\/[^/]+\/check-suites$/.test(p)) return reply(url, init, { check_suites: [] });
-    if (p === "/actions/runs") return reply(url, init, { workflow_runs: state.runs.filter(() => url.searchParams.get("head_sha") === MERGE) });
+    if (p === "/actions/runs") return reply(url, init, { workflow_runs: state.runs.filter((r) => (r.head_sha ?? MERGE) === url.searchParams.get("head_sha")) });
+    const wf = /^\/actions\/workflows\/(\d+)\/runs$/.exec(p);
+    if (wf) return reply(url, init, { workflow_runs: state.runs.filter((r) => r.workflow_id === Number(wf[1])).toSorted((a, b) => b.id - a.id) });
     const jobs = /^\/actions\/runs\/(\d+)\/jobs$/.exec(p);
     if (jobs) return reply(url, init, { jobs: state.jobs[Number(jobs[1])] ?? [] });
     if (p === `/commits/${MERGE}/check-runs`) return reply(url, init, { check_runs: state.checkRuns });
@@ -187,5 +200,24 @@ describe("ships", () => {
     await q.merge();
     await q.tick(SHIP_QUIET_MS);
     expect(q.card()).toMatchObject({ status: "quiet", stages: [] });
+  });
+
+  it("follows a cancelled deploy to the newer run that shipped it; a merge into a stacked parent branch is not a ship", async () => {
+    const s = await setup();
+    await s.merge();
+    s.gh.state.runs.push(s.run({ id: 1, name: "Deploy", workflow_id: 9, status: "completed", conclusion: "cancelled" })); // superseded by a newer push
+    s.gh.state.runs.push(s.run({ id: 2, name: "Deploy", workflow_id: 9, head_sha: "newer99", status: "in_progress" }));
+    s.gh.state.compare = { newer99: "ahead" };
+    await s.tick();
+    expect(s.card()!.stages).toMatchObject([{ id: "run:1", name: "Deploy", state: "running", detail: "with newer99" }]);
+    Object.assign(s.gh.state.runs[1], { status: "completed", conclusion: "success" });
+    await s.tick();
+    await s.tick(SHIP_SETTLE_MS);
+    expect(s.card()).toMatchObject({ status: "shipped", stages: [{ state: "passed" }] });
+
+    const stacked = await setup();
+    stacked.gh.state.pr.base.ref = "agent/parent";
+    await stacked.merge();
+    expect(stacked.card()).toBeUndefined();
   });
 });

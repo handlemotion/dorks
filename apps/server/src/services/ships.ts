@@ -31,7 +31,11 @@ export const SHIP_QUIET_MS = 5 * 60_000;
 /** The watch ends this long after the merge, whatever is still running (`stalled`). A failed ship is watched until then for re-runs. */
 export const SHIP_MAX_MS = 60 * 60_000;
 const MAX_RUNS = 15;
-const MAX_COMPARES = 3; // per pass: later deployments whose ancestry is not known yet
+const MAX_COMPARES = 3; // per pass: later commits (a deployment's, a replacing run's) whose ancestry is not known yet
+const MAX_CONTAINS = 50; // ancestry answers remembered per ship
+/** Young ships are read every poll pass; after this long, at most every `SHIP_SLOW_MS`, so long deploys cost fewer requests. */
+export const SHIP_FAST_MS = 10 * 60_000;
+export const SHIP_SLOW_MS = 30_000;
 const MIGRATION = /migrat/i;
 
 interface ShipPoll {
@@ -48,11 +52,15 @@ interface ShipPoll {
   doneAt?: number;
   /** GitHub's merge time: deployments created before it are not this merge's. */
   mergedAt?: number;
+  /** When the ship was last read (`shipDue`). */
+  readAt?: number;
 }
 
 export interface Ship {
   id: number;
   dorkId: string;
+  /** The PR's (ended) subscription: its notifications go through it (null once purged). */
+  subscriptionId?: number;
   repo: string;
   number: number;
   url: string;
@@ -69,6 +77,7 @@ export interface Ship {
 const shipOf = (r: Row): Ship => ({
   id: r.id as number,
   dorkId: r.dork_id as string,
+  subscriptionId: (r.subscription_id as number | null) ?? undefined,
   repo: r.repo as string,
   number: r.number as number,
   url: r.url as string,
@@ -104,6 +113,9 @@ export const getShip = (app: App, id: number): Ship | undefined => {
 /** Ships still watched: not ended, and the session is not being deleted (an archived session's ship is still followed). */
 export const openShips = (app: App): Ship[] => app.db.all("SELECT s.* FROM ships s JOIN dorks d ON d.id = s.dork_id WHERE s.ended_at IS NULL AND d.deleting = 0 ORDER BY s.id").map(shipOf);
 
+/** Whether a pass should read this ship now: every pass while young, then every `SHIP_SLOW_MS`. */
+export const shipDue = (ship: Ship, now: number) => now - ship.startedAt < SHIP_FAST_MS || now - (ship.poll?.readAt ?? 0) >= SHIP_SLOW_MS;
+
 const touchDork = (app: App, dorkId: string) => {
   touch(app, { t: "dork", dorkId });
   touch(app, { t: "dorks" });
@@ -114,6 +126,7 @@ export function startShip(app: App, sub: Subscription, sha: string, mergedAt?: n
   if (app.db.get("SELECT 1 AS x FROM ships WHERE dork_id = ? AND repo = ? AND number = ?", sub.dorkId, sub.repo, sub.number)) return;
   insert(app.db, "ships", {
     dorkId: sub.dorkId,
+    subscriptionId: sub.id,
     repo: sub.repo,
     number: sub.number,
     url: sub.url,
@@ -183,9 +196,11 @@ const times = (start: string | null | undefined, end: string | null | undefined,
   ...(done && ms(end) !== undefined ? { endedAt: ms(end) } : {}),
 });
 
-const runStage = (r: GhWorkflowRun): ShipStage => {
-  const { state, detail } = runState(r.status, r.conclusion);
-  return { id: `run:${r.id}`, kind: "workflow", name: r.name || "Workflow", state, url: r.html_url, ...(detail ? { detail } : {}), ...times(r.run_started_at, r.updated_at, r.status === "completed") };
+/** `id`: the run on the merge commit, kept when a later run that replaced it is shown instead (`via` says which commit it ran). */
+const runStage = (r: GhWorkflowRun, id = r.id, via?: string): ShipStage => {
+  const { state, detail: d } = runState(r.status, r.conclusion);
+  const detail = via ? `with ${short(via)}` : d;
+  return { id: `run:${id}`, kind: "workflow", name: r.name || "Workflow", state, url: r.html_url, ...(detail ? { detail } : {}), ...times(r.run_started_at, r.updated_at, r.status === "completed") };
 };
 
 /** Jobs named for migrations, else steps that are: what a merge does to the database, as its own stages. */
@@ -230,6 +245,8 @@ interface Look {
   body: Body;
   /** The stages the last pass showed whose id starts with `prefix`: what a failed read keeps. */
   kept: (prefix: string) => ShipStage[];
+  /** Whether `sha` contains the merge commit: remembered, else asked (at most `MAX_COMPARES` times a pass); undefined when unknown. */
+  contains: (sha: string) => Effect.Effect<boolean | undefined, GithubError>;
 }
 
 /** Conditional reads that remember their bodies: a 304, or a failed read, answers what the path said last time. */
@@ -263,12 +280,29 @@ function reader(app: App, token: string, old: ShipPoll) {
   return { body, etags, bodies };
 }
 
+/** Ancestry answers for one pass, starting from what earlier passes learned. */
+function ancestry(ship: Ship, old: ShipPoll, body: Body) {
+  const known: Record<string, boolean> = { ...old.contains, [ship.sha]: true };
+  let asked = 0;
+  const contains = (sha: string): Effect.Effect<boolean | undefined, GithubError> =>
+    Effect.gen(function* () {
+      if (known[sha] !== undefined || asked >= MAX_COMPARES) return known[sha];
+      asked++;
+      const c = yield* body(GhCompare, `/repos/${ship.repo}/compare/${ship.sha}...${sha}`);
+      if (c) known[sha] = c.status === "ahead" || c.status === "identical";
+      return known[sha];
+    });
+  const remembered = () => Object.fromEntries(Object.entries(known).slice(-MAX_CONTAINS));
+  return { contains, remembered };
+}
+
 /** Reads what the merge commit set off. Fails only on a rate limit or a bad token; any other failed read keeps its last answer. */
 export const observeShip = (app: App, token: string, ship: Ship): Effect.Effect<ShipObservation, GithubError> =>
   Effect.gen(function* () {
     const old = ship.poll ?? {};
     const { body, etags, bodies } = reader(app, token, old);
-    const look: Look = { ship, old, base: `/repos/${ship.repo}`, body, kept: (prefix) => ship.stages.filter((s) => s.id.startsWith(prefix)) };
+    const { contains, remembered } = ancestry(ship, old, body);
+    const look: Look = { ship, old, base: `/repos/${ship.repo}`, body, contains, kept: (prefix) => ship.stages.filter((s) => s.id.startsWith(prefix)) };
     const runs = yield* readRuns(look);
     const checks = yield* readChecks(look);
     const deployments = yield* readDeployments(look);
@@ -276,7 +310,7 @@ export const observeShip = (app: App, token: string, ship: Ship): Effect.Effect<
       etags,
       bodies,
       jobsRead: runs.jobsRead,
-      contains: deployments.contains,
+      contains: remembered(),
       deployments: deployments.followed,
       ...(old.mergedAt ? { mergedAt: old.mergedAt } : {}),
       ...(old.doneAt ? { doneAt: old.doneAt } : {}),
@@ -284,9 +318,23 @@ export const observeShip = (app: App, token: string, ship: Ship): Effect.Effect<
     return { stages: [...runs.stages, ...checks, ...deployments.stages], poll };
   });
 
-/** Workflow runs on the merge commit (a push to the base, and what that starts), each followed by its migration stages. */
-const readRuns = ({ ship, old, base, body, kept }: Look) =>
+/**
+ * A cancelled run on the merge commit was usually replaced by a newer push (`concurrency: cancel-in-progress` on a deploy): the first
+ * later run of the same workflow on the base whose commit contains the merge is the one that shipped it.
+ */
+const successor = ({ ship, base, body, contains }: Look, run: GhWorkflowRun) =>
   Effect.gen(function* () {
+    if (run.workflow_id === undefined) return undefined;
+    const later = yield* body(GhWorkflowRuns, `${base}/actions/workflows/${run.workflow_id}/runs?branch=${encodeURIComponent(ship.baseRef)}&per_page=10`);
+    const candidates = (later?.workflow_runs ?? []).filter((x) => x.id > run.id && x.head_sha && x.head_sha !== ship.sha && x.conclusion !== "cancelled").toSorted((a, b) => a.id - b.id);
+    for (const x of candidates) if (yield* contains(x.head_sha!)) return x;
+    return undefined;
+  });
+
+/** Workflow runs on the merge commit (a push to the base, and what that starts), each followed by its migration stages. */
+const readRuns = (look: Look) =>
+  Effect.gen(function* () {
+    const { ship, old, base, body, kept } = look;
     const stages: ShipStage[] = [];
     const jobsRead: number[] = [];
     const runs = yield* body(GhWorkflowRuns, `${base}/actions/runs?head_sha=${ship.sha}&per_page=50`);
@@ -295,8 +343,9 @@ const readRuns = ({ ship, old, base, body, kept }: Look) =>
       .filter((r) => !r.event.startsWith("pull_request")) // a rebase merge keeps the PR's commits: its PR runs are not the merge's
       .toSorted((a, b) => (ms(a.run_started_at) ?? 0) - (ms(b.run_started_at) ?? 0) || a.id - b.id)
       .slice(0, MAX_RUNS);
-    for (const r of list) {
-      stages.push(runStage(r));
+    for (const own of list) {
+      const r = own.status === "completed" && own.conclusion === "cancelled" ? ((yield* successor(look, own)) ?? own) : own;
+      stages.push(runStage(r, own.id, r === own ? undefined : r.head_sha));
       const done = r.status === "completed";
       // A finished run's jobs were read once after it finished: its migration stages are final.
       const jobs = done && old.jobsRead?.includes(r.id) ? undefined : yield* body(GhJobs, `${base}/actions/runs/${r.id}/jobs?per_page=100`);
@@ -317,31 +366,25 @@ const readChecks = ({ ship, base, body, kept }: Look) =>
 
 /**
  * Deployments of this commit, or of a later one on the base that contains it (a deploy that batched several merges): per environment,
- * the newest that contains the merge. Ancestry is asked at most `MAX_COMPARES` times a pass and remembered.
+ * the newest that contains the merge. The one followed is remembered, so it is still followed after it leaves the recent page.
  */
-const readDeployments = ({ ship, old, base, body, kept }: Look) =>
+const readDeployments = ({ ship, old, base, body, kept, contains }: Look) =>
   Effect.gen(function* () {
-    const contains: Record<string, boolean> = { ...old.contains, [ship.sha]: true };
     const exact = yield* body(GhDeployments, `${base}/deployments?sha=${ship.sha}&per_page=20`);
     const recent = yield* body(GhDeployments, `${base}/deployments?per_page=20`);
-    if (!exact && !recent) return { stages: kept("dep:"), contains: old.contains ?? {}, followed: old.deployments ?? {} };
+    if (!exact && !recent) return { stages: kept("dep:"), followed: old.deployments ?? {} };
     const since = (old.mergedAt ?? ship.startedAt) - 60_000;
-    const later = (recent ?? []).filter((d) => d.sha !== ship.sha && (ms(d.created_at) ?? 0) >= since);
-    for (const d of later.filter((x) => contains[x.sha] === undefined).slice(0, MAX_COMPARES)) {
-      const c = yield* body(GhCompare, `${base}/compare/${ship.sha}...${d.sha}`);
-      if (c) contains[d.sha] = c.status === "ahead" || c.status === "identical";
-    }
+    const later: GhDeployment[] = [];
+    for (const d of recent ?? []) if (d.sha !== ship.sha && (ms(d.created_at) ?? 0) >= since && (yield* contains(d.sha))) later.push(d);
     const byEnv = new Map<string, GhDeployment>();
-    const candidates = [...Object.values(old.deployments ?? {}), ...(exact ?? []), ...later.filter((x) => contains[x.sha])];
+    const candidates = [...Object.values(old.deployments ?? {}), ...(exact ?? []), ...later];
     for (const d of candidates.toSorted((a, b) => b.id - a.id)) if (!byEnv.has(d.environment)) byEnv.set(d.environment, d);
     const stages: ShipStage[] = [];
     for (const d of [...byEnv.values()].toSorted((a, b) => a.id - b.id)) {
       const statuses = yield* body(GhDeploymentStatuses, `${base}/deployments/${d.id}/statuses?per_page=1`);
       stages.push(deploymentStage(d, statuses?.[0], ship.sha));
     }
-    // Keep the ancestry answers small: only commits still in view.
-    const inView = new Set([...(recent ?? []).map((d) => d.sha), ship.sha]);
-    return { stages, contains: Object.fromEntries(Object.entries(contains).filter(([sha]) => inView.has(sha))), followed: Object.fromEntries(byEnv) };
+    return { stages, followed: Object.fromEntries(byEnv) };
   });
 
 function checkStages(checks: typeof GhCheckRuns.Type): ShipStage[] {
@@ -404,7 +447,12 @@ export function applyShip(app: App, id: number, obs: ShipObservation) {
     const d = decide(ship.startedAt, obs.stages, ship.poll?.doneAt, app.now());
     const next: Ship = { ...ship, stages: obs.stages, status: d.status, endedAt: d.end ? app.now() : undefined };
     const { doneAt: _, ...poll } = obs.poll;
-    update(app.db, "ships", { id }, { stages: obs.stages, status: d.status, poll: { ...poll, ...(d.doneAt !== undefined ? { doneAt: d.doneAt } : {}) }, endedAt: next.endedAt ?? null });
+    update(
+      app.db,
+      "ships",
+      { id },
+      { stages: obs.stages, status: d.status, poll: { ...poll, readAt: app.now(), ...(d.doneAt !== undefined ? { doneAt: d.doneAt } : {}) }, endedAt: next.endedAt ?? null },
+    );
     if (JSON.stringify(shipView(ship)) !== JSON.stringify(shipView(next))) append(app, ship.dorkId, { type: "ship", ship: shipView(next) });
     if (ship.status !== d.status || d.end) touchDork(app, ship.dorkId);
   });

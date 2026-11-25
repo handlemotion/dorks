@@ -20,7 +20,7 @@ import {
 import { githubToken, readSettings } from "./settings";
 import { update } from "../db";
 import { ingestEnv, ingestEvent, type Actor, type PrEvent } from "./githubIngest";
-import { applyShip, getShip, observeShip, openShips, type Ship } from "./ships";
+import { applyShip, getShip, observeShip, openShips, shipDue, type Ship } from "./ships";
 import { endSubscription, getSub, pollable, savePollState, updateSubscription, type PollState, type Subscription } from "./subscriptions";
 
 // PR autonomy without webhooks: read each subscribed PR with conditional requests (a 304 is free against the rate limit), turn
@@ -125,7 +125,10 @@ const observePr = (look: Look): Effect.Effect<PrLook, GithubError> =>
         kind: "pr_closed",
         merged: state === "merged",
         sender: actor(by),
-        ...(state === "merged" && pr.merge_commit_sha ? { mergeSha: pr.merge_commit_sha, mergedAt: time(pr.merged_at) } : {}),
+        // Only a merge into the default branch ships: a stacked PR merging into its parent's branch is not a release.
+        ...(state === "merged" && pr.merge_commit_sha && (!pr.base.repo?.default_branch || pr.base.ref === pr.base.repo.default_branch)
+          ? { mergeSha: pr.merge_commit_sha, mergedAt: time(pr.merged_at) }
+          : {}),
       });
       return { done: { events, baseline, poll } };
     } else {
@@ -327,7 +330,7 @@ export const pollOnceEffect = (app: App): Effect.Effect<number | null> =>
     }
     for (const s of ships) {
       const ship = getShip(app, s.id);
-      if (!ship || ship.endedAt !== undefined) continue;
+      if (!ship || ship.endedAt !== undefined || !shipDue(ship, app.now())) continue;
       const stop = yield* pollShip(app, token, ship);
       if (stop !== undefined) return stop;
     }
