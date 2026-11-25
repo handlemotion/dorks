@@ -3,7 +3,7 @@ import type { McpServerView, SkillView } from '@dorks/client'
 import { FluidHoverHighlight } from '@dorks/ui/fluid-hover-highlight'
 import { useSidebar } from '@dorks/ui/sidebar'
 import type { Connector } from '../connectors'
-import { SIDEBAR_ROW, SIDEBAR_SECTION } from '../sidebarChrome'
+import { SIDEBAR_ROW, SIDEBAR_SECTION, SIDEBAR_WIDTH } from '../sidebarChrome'
 import { useRowHover } from '../useRowHover'
 import { TITLEBAR_CONTROLS_END } from '../WindowControls'
 import { ConnectorIcon } from './PluginsDialogs'
@@ -15,7 +15,7 @@ export type InstalledPlugin = { kind: 'connector'; key: string; connector: Conne
 export type SelectedItem = InstalledPlugin | { kind: 'skill'; key: string; skill: SkillView }
 
 /**
- * The second navbar column inside the Plugins page: close to the main sidebar's width (280px vs 300px), with no divider under its
+ * The second navbar column inside the Plugins page: as wide as the main sidebar's default (300px), with no divider under its
  * title bar, top tab links for Plugins and Skills, and an Installed group listing active plugins (connectors and custom MCP servers).
  */
 export function PluginsNav({
@@ -36,7 +36,7 @@ export function PluginsNav({
   const skillsActive = tab === 'skills' && (!selected || selected.startsWith('skill:'))
 
   return (
-    <aside aria-label="Plugins navigation" className="hidden h-full w-[280px] shrink-0 flex-col border-r border-border bg-background md:flex">
+    <aside aria-label="Plugins navigation" style={{ width: SIDEBAR_WIDTH }} className="hidden h-full shrink-0 flex-col border-r border-border bg-background md:flex">
       <div data-tauri-drag-region className="flex h-12 shrink-0 items-center pr-3 pl-3.5" style={!open || isMobile ? { paddingLeft: TITLEBAR_CONTROLS_END } : undefined}>
         <span className="truncate text-sm font-normal text-foreground">Plugins</span>
       </div>

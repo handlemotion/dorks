@@ -17,11 +17,7 @@ function Notices({ build }: { build: BuildView }) {
   return (
     <SettingsGroupBody>
       {stale && <p>{stale}.</p>}
-      {missing.length > 0 && (
-        <p className="text-amber-700 dark:text-amber-400">
-          Fill in {missing.join(', ')} below before building: the setup needs {missing.length === 1 ? 'it' : 'them'}.
-        </p>
-      )}
+      {missing.length > 0 && <p className="text-amber-700 dark:text-amber-400">Fill in {missing.join(', ')} below to build.</p>}
       {failed && (
         <pre role="alert" className="font-mono text-xs whitespace-pre-wrap text-destructive">
           {failed}
@@ -73,7 +69,7 @@ export function Overview({ build }: { build: BuildView }) {
         <SettingsRow
           label="Use for new sessions"
           htmlFor="build-default"
-          description={build.image ? 'New sessions start on this build’s image instead of the base.' : 'Build it before sessions can start on it.'}
+          description={build.image ? undefined : 'Build it first.'}
           control={<Switch id="build-default" checked={build.isDefault} disabled={pending || !build.image} onCheckedChange={(on) => void run(() => actions.setDefaultBuild(build.id, on))} />}
         />
       </SettingsGroup>

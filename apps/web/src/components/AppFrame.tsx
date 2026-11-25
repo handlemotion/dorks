@@ -4,10 +4,9 @@ import { ResizablePanel, ResizablePanelGroup } from '@dorks/ui/resizable'
 import { SidebarInset, SidebarProvider, useSidebar } from '@dorks/ui/sidebar'
 import { useDefaultLayout, usePanelRef } from 'react-resizable-panels'
 import { AppSidebar } from './AppSidebar'
+import { SIDEBAR_WIDTH } from './sidebarChrome'
 import { TITLEBAR_START, WindowControls } from './WindowControls'
 import { PanelResizeHandle } from '@dorks/ui/panel-resize-handle'
-
-const SIDEBAR_WIDTH = 300
 
 /**
  * The app frame is flat and white (`bg-background`, #ffffff): the sidebar and the page share it, split by a full-height divider that is also

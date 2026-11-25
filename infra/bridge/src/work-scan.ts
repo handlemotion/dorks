@@ -113,7 +113,8 @@ async function scanRepo(dir: string, o: ScanOptions): Promise<{ done: Finding[];
   const pushed: PushedCandidate[] = [];
   const found = (kind: FindingKind, branch: string, detail: string) => ({ kind, dir, repo, branch, detail });
   // Edits that were never committed: the commonest way to stop "done" with nothing on GitHub. Ignored files do not count.
-  const status = await out("status", "--porcelain", "--untracked-files=normal");
+  // A background read: no optional locks, so it never holds index.lock while the agent runs `git add` or `git commit`.
+  const status = await out("--no-optional-locks", "status", "--porcelain", "--untracked-files=normal");
   if (status) {
     const n = status.split("\n").length;
     const branch = (await out("branch", "--show-current")) || "HEAD (detached)";

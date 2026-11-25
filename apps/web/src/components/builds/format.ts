@@ -8,11 +8,11 @@ export { TONE_TEXT, type Tone } from '../settings/kit'
 
 // Pure helpers for the Builds pages: machine sizes, run steps, and how a build or a run reads.
 
-export const SIZES: { value: MachineType; label: string; short: string }[] = [
-  { value: 'small', label: 'Small · 2 CPU, 4 GB', short: 'Small · 2 CPU' },
-  { value: 'default', label: 'Default · 4 CPU, 8 GB', short: 'Default · 4 CPU' },
-  { value: 'large', label: 'Large · 8 CPU, 16 GB', short: 'Large · 8 CPU' },
-  { value: 'xlarge', label: 'Extra large · 16 CPU, 32 GB', short: 'Extra large · 16 CPU' },
+export const SIZES: { value: MachineType; label: string; short: string; price: string }[] = [
+  { value: 'small', label: 'Small · 2 CPU, 4 GB', short: 'Small · 2 CPU', price: '$0.018/h' },
+  { value: 'default', label: 'Default · 4 CPU, 8 GB', short: 'Default · 4 CPU', price: '$0.036/h' },
+  { value: 'large', label: 'Large · 8 CPU, 16 GB', short: 'Large · 8 CPU', price: '$0.072/h' },
+  { value: 'xlarge', label: 'Extra large · 16 CPU, 32 GB', short: 'Extra large · 16 CPU', price: '$0.20/h, on Boat’s $100 plan' },
 ]
 export const sizeOf = (m: MachineType) => SIZES.find((s) => s.value === m) ?? SIZES[1]
 

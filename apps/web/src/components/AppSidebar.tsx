@@ -63,10 +63,13 @@ export function AppSidebar() {
     mode: d.mode,
     parentId: d.parentId,
   }))
+  // Agents' changes waiting for the owner: a count beside Builds, so a proposal is found from anywhere.
+  const reviews = (builds ?? []).reduce((n, b) => n + b.drafts.filter((d) => d.status === 'submitted').length, 0)
   return (
     <AppSidebarView
       chats={chats}
       accounts={github}
+      counts={{ '/builds': reviews }}
       onDisconnect={disconnect}
       usage={
         <>
@@ -183,8 +186,11 @@ export function AppSidebarView({
   chatTo,
   usage,
   onArchive,
+  counts,
 }: {
   chats: Chat[]
+  /** A count beside a page in the nav (Builds: agents' changes to review); nothing when zero. */
+  counts?: Partial<Record<(typeof PAGES)[number]['to'], number>>
   /** What the GitHub CLI's login can see (`GET /api/github/repos`): its user and organizations fill the owner switcher. */
   accounts?: { login: string | null; orgs: string[]; repos: string[] }
   onDisconnect?: (() => void) | null
@@ -243,6 +249,14 @@ export function AppSidebarView({
                 <Link key={to} to={to} {...rowLink(pathname === to)}>
                   <Icon />
                   {label}
+                  {!!counts?.[to] && (
+                    <span
+                      aria-label={`${counts[to]} to review`}
+                      className="ms-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[11px] leading-none text-brand-foreground tabular-nums"
+                    >
+                      {counts[to]}
+                    </span>
+                  )}
                 </Link>
               ))}
             </nav>
