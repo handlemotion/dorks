@@ -18,7 +18,7 @@ const MAX_REPOS = 10
 export function Repositories({ build }: { build: BuildView }) {
   const [editing, setEditing] = useState<BuildRepo | null>(null)
   const { actions } = useDorksClient()
-  const { run, error } = usePending()
+  const { run, pending, error } = usePending()
   const add = (repo: string) => run(() => actions.updateBuild(build.id, { repos: [...build.repos, { repo }] }))
   return (
     <SettingsSection
@@ -28,7 +28,7 @@ export function Repositories({ build }: { build: BuildView }) {
           Cloned into <code>~/work/owner/name</code> when the machine is built. Sessions fetch before they start. A new session on this build starts in the first one.
         </>
       }
-      actions={build.repos.length < MAX_REPOS && <AddRepository build={build} onPick={(repo) => void add(repo)} />}
+      actions={build.repos.length < MAX_REPOS && <AddRepository build={build} disabled={pending} onPick={(repo) => void add(repo)} />}
     >
       <SettingsGroup label="repositories">
         {build.repos.length === 0 && <SettingsGroupBody>No repositories yet. Each one is cloned and set up when the machine is built.</SettingsGroupBody>}
@@ -69,7 +69,7 @@ export function Repositories({ build }: { build: BuildView }) {
 }
 
 /** Add repository: the same searchable list the new session's chooser offers (the GitHub CLI login's and the ones chats used). */
-function AddRepository({ build, onPick }: { build: BuildView; onPick: (repo: string) => void }) {
+function AddRepository({ build, disabled, onPick }: { build: BuildView; disabled: boolean; onPick: (repo: string) => void }) {
   const [open, setOpen] = useState(false)
   const github = useGithubRepos()
   const dorks = useDorks()
@@ -78,7 +78,9 @@ function AddRepository({ build, onPick }: { build: BuildView; onPick: (repo: str
   const repositories = [...new Set([...recent, ...(github?.repos ?? [])])].filter((r) => !added.has(r.toLowerCase()))
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger render={<Button size="sm" variant="ghost" />}>Add repository</PopoverTrigger>
+      <PopoverTrigger disabled={disabled} render={<Button size="sm" variant="ghost" />}>
+        Add repository
+      </PopoverTrigger>
       <PopoverContent align="end" className={`${MENU_POPUP_CLASS} w-80 gap-0 p-0 ring-0`}>
         {open && (
           <RepoCommand
