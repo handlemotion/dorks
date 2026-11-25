@@ -47,7 +47,11 @@ export const gitEnv = (base: NodeJS.ProcessEnv, id?: Identity | null): NodeJS.Pr
   return env;
 };
 
-/** Clone-or-fetch the repo and check out the dork branch (creating it if needed). Idempotent; never rewrites local work. Returns the repo dir. */
+/**
+ * Clone-or-fetch the repo and check out the dork branch (creating it if needed). Idempotent; never rewrites local work. Returns the repo dir.
+ * Once the dork branch exists locally the checkout is the agent's: it may have switched to another branch (a PR it took over, a stack), and
+ * a later configure (a new model or secret, a restarted bridge) must not switch it back.
+ */
 export async function prepareRepo(ctx: GitCtx, repo: { fullName: string; branch: string }): Promise<string> {
   const { fullName, branch } = repo;
   if (!REPO_RE.test(fullName) || fullName.includes("..")) throw new SetupError("invalid repo name");
@@ -82,7 +86,7 @@ export async function prepareRepo(ctx: GitCtx, repo: { fullName: string; branch:
 
   const exists = async (ref: string) => (await run(["show-ref", "--verify", "--quiet", ref], dir, env)).code === 0;
   let ok: boolean;
-  if (await exists(`refs/heads/${branch}`)) ok = (await run(["checkout", "--quiet", branch], dir, env)).code === 0;
+  if (await exists(`refs/heads/${branch}`)) ok = true; // set up before: leave HEAD wherever the agent put it
   else if (await exists(`refs/remotes/origin/${branch}`)) ok = (await run(["checkout", "--quiet", "-b", branch, "--track", `origin/${branch}`], dir, env)).code === 0;
   else {
     // A new dork branch starts from the freshly fetched upstream of the checked-out branch, not from whatever is checked out: a clone
