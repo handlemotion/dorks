@@ -9,7 +9,7 @@ import { Input } from '@dorks/ui/input'
 export function RailPage({ children }: { children: ReactNode }) {
   return (
     <div className="app-main min-h-0 flex-1 overflow-y-auto">
-      <div data-tauri-drag-region className="h-10 shrink-0" />
+      <div data-tauri-drag-region className="h-16 shrink-0" />
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 pb-16 sm:px-6">{children}</div>
     </div>
   )
