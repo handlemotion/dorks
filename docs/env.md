@@ -51,6 +51,16 @@ Token settings are write-only: reads return booleans, and an empty string clears
 
 No build-time variables. In `vp dev` only, `?server=<url>&token=<token>` skips the connect screen. The mock server reads `MOCK_PORT`, `MOCK_TOKEN`, `MOCK_CONFIGURED` and `MOCK_TICK`.
 
+## iPhone app (`apps/mobile`)
+
+Read at build time; `EXPO_PUBLIC_*` values ship inside the app, so never put a secret behind that prefix. See [apps/mobile/README.md](../apps/mobile/README.md).
+
+| Variable | Purpose |
+|---|---|
+| `EXPO_PUBLIC_CLOUD_URL` | The relay's origin (default `https://dorks-cloud.handle-473.workers.dev`). |
+| `EXPO_PUBLIC_DEV_PASSWORD` | `1` adds an email and password sign-in, for the simulator. Never set it for a TestFlight build. |
+| `EAS_PROJECT_ID` | The EAS project (or `extra.eas.projectId`); turns on EAS Update. |
+
 ## In-sandbox bridge (`infra/bridge`)
 
 Set by the server when it creates the sandbox: `DORK_ID`, `BRIDGE_PORT` (the loopback port the bridge listens on, `4748`) and `BRIDGE_SECRET`. Tuning variables are listed in [infra/bridge/README.md](../infra/bridge/README.md). The `screenshot_share` tool also reads Playwright's own `PLAYWRIGHT_BROWSERS_PATH` (default `~/.cache/ms-playwright`, `~/Library/Caches/ms-playwright` on macOS) to find a Chromium when no Chrome is installed.

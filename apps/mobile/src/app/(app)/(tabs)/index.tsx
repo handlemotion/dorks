@@ -1,0 +1,149 @@
+import type { Dork } from "@dorks/client";
+import { useBuilds, useConnection, useDork, useDorkEvents, useDorks, useDorksClient, useGithubRepos, useSettings } from "@dorks/client/react";
+import { useState, type ReactNode } from "react";
+import { KeyboardAvoidingView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-screens/experimental";
+import { Composer } from "@/components/Composer";
+import { BarText, BuildMenu, MenuBar, ModelMenu, RepoMenu } from "@/components/ComposerMenus";
+import { Header } from "@/components/Header";
+import { PrPills } from "@/components/PrPills";
+import { QueuedMessages } from "@/components/QueuedMessages";
+import { StatusLine } from "@/components/StatusLine";
+import { Thread } from "@/components/Thread";
+import { useCurrentChat } from "@/lib/chat";
+import { errorText, greeting } from "@/lib/format";
+import { type as size, useColors } from "@/lib/theme";
+
+/** The page under the header: the tab bar's inset at the bottom, and the keyboard's while it is up. */
+function Page({ title, children }: { title?: string; children: ReactNode }) {
+  const c = useColors();
+  return (
+    <SafeAreaView edges={{ bottom: true }} style={[s.fill, { backgroundColor: c.background }]}>
+      <Header title={title} />
+      <KeyboardAvoidingView behavior="padding" style={s.fill}>
+        {children}
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+export default function ChatTab() {
+  const { dorkId } = useCurrentChat();
+  return dorkId ? <SessionChat key={dorkId} dorkId={dorkId} /> : <NewChat />;
+}
+
+/** An empty chat: the greeting over the composer, and the repository, model and build the session starts with. */
+function NewChat() {
+  const c = useColors();
+  const { actions } = useDorksClient();
+  const { setDorkId } = useCurrentChat();
+  const settings = useSettings();
+  const github = useGithubRepos();
+  const builds = (useBuilds() ?? []).filter((b) => b.image);
+  const recent = useDorks()?.[0]?.repo;
+  const [repo, setRepo] = useState<string>();
+  const [model, setModel] = useState<{ model: string | null; effort: string | null }>({ model: null, effort: null });
+  const [buildId, setBuildId] = useState<string>();
+  const chosenRepo = repo ?? recent ?? "";
+  const chosenBuild = buildId ?? settings?.defaultBuildId ?? "";
+
+  const start = async (message: string) => {
+    const { id } = await actions.createDork({
+      message,
+      ...(chosenRepo ? { repo: chosenRepo, mode: "code" as const } : { mode: "chat" as const }),
+      ...(model.model ? { model: model.model } : {}),
+      ...(model.effort ? { effort: model.effort } : {}),
+      buildId: chosenBuild || null,
+    });
+    setDorkId(id);
+  };
+
+  return (
+    <Page>
+      <View style={s.greeting}>
+        <Text style={[s.hello, { color: c.text }]}>{greeting()}</Text>
+        <Text style={[s.ask, { color: c.muted }]}>What are we tackling today?</Text>
+      </View>
+      <Composer
+        busy={false}
+        onSend={start}
+        below={
+          <MenuBar>
+            <RepoMenu repos={github?.repos ?? []} value={chosenRepo} onChange={setRepo} />
+            <ModelMenu choices={settings?.claudeModels ?? []} model={model.model ?? undefined} effort={model.effort ?? undefined} onChange={(m, e) => setModel({ model: m, effort: e })} />
+            {builds.length > 0 && <BuildMenu builds={builds} value={chosenBuild} onChange={setBuildId} />}
+          </MenuBar>
+        }
+      />
+    </Page>
+  );
+}
+
+const BUSY = new Set<Dork["state"]>(["working", "creating", "waking"]);
+
+/** A session's thread and its composer: PRs and queued messages above it, its repository, model and build under it. */
+function SessionChat({ dorkId }: { dorkId: string }) {
+  const c = useColors();
+  const dork = useDork(dorkId);
+  const { view, canLoadMore, loadMore, send } = useDorkEvents(dorkId);
+  const { actions } = useDorksClient();
+  const { live } = useConnection();
+  const settings = useSettings();
+  const builds = useBuilds();
+  const [error, setError] = useState<string>();
+  const run = (p: Promise<unknown>) =>
+    p.then(
+      () => setError(undefined),
+      (e) => setError(errorText(e)),
+    );
+
+  if (dork === undefined) return <Page>{null}</Page>;
+  if (dork === null)
+    return (
+      <Page>
+        <View style={s.greeting}>
+          <Text style={[s.ask, { color: c.muted }]}>This chat is no longer on your Mac.</Text>
+        </View>
+      </Page>
+    );
+
+  const busy = BUSY.has(dork.state);
+  const build = dork.buildId ? (builds?.find((b) => b.id === dork.buildId)?.name ?? "Build") : "Base machine";
+  return (
+    <Page title={dork.title}>
+      <Thread blocks={view.blocks} onLoadMore={() => canLoadMore && loadMore()} footer={<StatusLine state={dork.state} live={live} blocks={view.blocks} />} />
+      <Composer
+        busy={busy && !dork.archived}
+        onSend={send}
+        onQueue={(m) => actions.queueMessage(dorkId, m)}
+        onStop={dork.state === "working" ? () => void run(actions.interrupt(dorkId)) : undefined}
+        above={
+          <>
+            {error && <Text style={[s.error, { color: c.danger }]}>{error}</Text>}
+            <QueuedMessages queue={dork.queue ?? []} onSend={(id) => void run(actions.takeQueued(dorkId, id, true))} onRemove={(id) => void run(actions.takeQueued(dorkId, id, false))} />
+            <PrPills dorkId={dorkId} />
+          </>
+        }
+        below={
+          <MenuBar>
+            <BarText>{dork.repo ? (dork.repo.split("/")[1] ?? dork.repo) : "No repository"}</BarText>
+            {dork.provider === "claude" ? (
+              <ModelMenu choices={dork.modelChoices ?? settings?.claudeModels ?? []} model={dork.model} effort={dork.effort} onChange={(m, e) => void run(actions.chooseModel(dorkId, m, e))} />
+            ) : (
+              <BarText>{dork.provider}</BarText>
+            )}
+            <BarText>{build}</BarText>
+          </MenuBar>
+        }
+      />
+    </Page>
+  );
+}
+
+const s = StyleSheet.create({
+  fill: { flex: 1 },
+  greeting: { flex: 1, alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 32 },
+  hello: { fontSize: 28, fontWeight: "500" },
+  ask: { fontSize: 17, textAlign: "center" },
+  error: { fontSize: size.small, paddingHorizontal: 10 },
+});
