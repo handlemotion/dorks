@@ -1,8 +1,9 @@
+import * as AppleAuthentication from "expo-apple-authentication";
 import { Image } from "expo-image";
 import { router } from "expo-router";
 import { SymbolView } from "expo-symbols";
 import { useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "@/components/Button";
 import { authClient } from "@/lib/auth";
@@ -14,9 +15,8 @@ type Social = "google" | "apple";
 
 const mark = { light: require("../../assets/splash.png"), dark: require("../../assets/splash-dark.png") };
 const google = require("../../assets/sign-in/google.png");
-const apple = require("../../assets/sign-in/apple.png");
 
-/** Sign-in, ported from Wok's iOS app: Google, Apple (native), or email, which pushes the email and code pages. */
+/** Sign-in: Apple first (Apple's own button, filled), then Google and email; email pushes the email and code pages. */
 export default function SignIn() {
   const c = useColors();
   const dark = useIsDark();
@@ -51,6 +51,7 @@ export default function SignIn() {
           </Text>
         ) : null}
         <View style={styles.actions}>
+          <AppleButton pending={pending === "apple"} disabled={finishing || methods?.apple === false} onPress={() => social.run("apple")} />
           <Button
             intent="outline"
             size="lg"
@@ -59,15 +60,6 @@ export default function SignIn() {
             isPending={pending === "google"}
             disabled={finishing || methods?.google === false}
             onPress={() => social.run("google")}
-          />
-          <Button
-            intent="outline"
-            size="lg"
-            icon={({ size, color }) => <Image source={apple} tintColor={color} style={{ width: size, height: size }} accessible={false} />}
-            label="Sign in with Apple"
-            isPending={pending === "apple"}
-            disabled={finishing || methods?.apple === false}
-            onPress={() => social.run("apple")}
           />
           <Button
             intent="outline"
@@ -86,6 +78,27 @@ export default function SignIn() {
   );
 }
 
+/** Apple's own button (its glyph and wording at Apple's sizes), filled black, white in dark mode, with our spinner over it while it signs in. */
+function AppleButton({ pending, disabled, onPress }: { pending: boolean; disabled: boolean; onPress: () => void }) {
+  const dark = useIsDark();
+  return (
+    <View pointerEvents={disabled ? "none" : "auto"} style={[styles.apple, disabled && !pending ? styles.dimmed : null]}>
+      <AppleAuthentication.AppleAuthenticationButton
+        buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+        buttonStyle={dark ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+        cornerRadius={24}
+        style={styles.apple}
+        onPress={onPress}
+      />
+      {pending ? (
+        <View style={[styles.applePending, { backgroundColor: dark ? "#ffffff" : "#000000" }]}>
+          <ActivityIndicator color={dark ? "#000000" : "#ffffff"} />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   screen: { flex: 1, paddingHorizontal: 24, paddingBottom: 16 },
   // The mark and title sit on the screen's optical centre, a little above the middle.
@@ -95,5 +108,8 @@ const styles = StyleSheet.create({
   error: { fontFamily: fonts.regular, fontSize: 13, lineHeight: 18, textAlign: "center" },
   footer: { gap: 18 },
   actions: { gap: 10 },
+  apple: { height: 48, width: "100%" },
+  applePending: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, borderRadius: 24, alignItems: "center", justifyContent: "center" },
+  dimmed: { opacity: 0.5 },
   legal: { fontFamily: fonts.regular, fontSize: 12, lineHeight: 17, textAlign: "center" },
 });

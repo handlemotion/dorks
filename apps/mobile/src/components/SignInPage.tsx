@@ -10,22 +10,24 @@ export function SignInPage({ title, detail, children, footer }: { title: string;
   const c = useColors();
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: c.welcome }]} edges={["top", "bottom"]}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.body}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Back" hitSlop={12} onPress={() => router.back()} style={styles.back}>
-          <SymbolView name="chevron.left" size={20} tintColor={c.text} weight="medium" />
-        </Pressable>
-        <View style={styles.head}>
-          <Text accessibilityRole="header" maxFontSizeMultiplier={1.4} style={[styles.title, { color: c.text }]}>
-            {title}
-          </Text>
-          {detail ? (
-            <Text maxFontSizeMultiplier={1.4} style={[styles.detail, { color: c.muted }]}>
-              {detail}
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.fill}>
+        <View style={styles.body}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Back" hitSlop={12} onPress={() => router.back()} style={styles.back}>
+            <SymbolView name="chevron.left" size={20} tintColor={c.text} weight="medium" />
+          </Pressable>
+          <View style={styles.head}>
+            <Text accessibilityRole="header" maxFontSizeMultiplier={1.4} style={[styles.title, { color: c.text }]}>
+              {title}
             </Text>
-          ) : null}
+            {detail ? (
+              <Text maxFontSizeMultiplier={1.4} style={[styles.detail, { color: c.muted }]}>
+                {detail}
+              </Text>
+            ) : null}
+          </View>
+          <View style={styles.content}>{children}</View>
+          <View style={styles.footer}>{footer}</View>
         </View>
-        <View style={styles.content}>{children}</View>
-        <View style={styles.footer}>{footer}</View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -70,6 +72,8 @@ export function CodeBoxes({ value, onChange, onSubmit, invalid }: { value: strin
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
+  // The keyboard avoider sets its own bottom padding to the keyboard's height, so the gap above the keyboard lives on the view inside it.
+  fill: { flex: 1 },
   body: { flex: 1, paddingHorizontal: 24, paddingBottom: 16 },
   back: { width: 32, height: 44, justifyContent: "center", marginLeft: -4 },
   head: { gap: 8, paddingTop: 12 },
