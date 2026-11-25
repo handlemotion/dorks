@@ -7,7 +7,7 @@ import { imageBytes } from "./bridge";
 // original (`image_thumbs`, deleted with it), so each is made once.
 
 /** The widths a copy can have; a request is served at the smallest one at least as wide (the largest past them). */
-export const THUMB_WIDTHS = [640, 1280] as const;
+export const THUMB_WIDTHS = [640, 1280, 1920] as const;
 
 /** `Bun.Image` (Bun 1.3.14+, the sidecar's runtime). Absent under Node (the tests) or an older Bun: the original is served instead. */
 type BunImage = {
@@ -49,7 +49,7 @@ async function makeThumb(app: App, id: string, width: number, original: { mime: 
     const image = new BunImage!(original.bytes);
     const { width: full } = await image.metadata();
     if (full <= width) return original;
-    const bytes = await image.resize(width).webp({ quality: 82 }).bytes();
+    const bytes = await image.resize(width).webp({ quality: 92 }).bytes();
     if (bytes.length >= original.bytes.length) return original;
     // The image may have been deleted meanwhile (the reference fails): the copy is simply not kept.
     try {
