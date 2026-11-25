@@ -62,8 +62,8 @@ const TRAILING = 'ms-auto text-muted-foreground!'
 
 /**
  * The sidebar's foot: the owner's avatar and GitHub login, opening one menu (upwards) with who is signed in and the app's version,
- * Settings (`⌘,`), Usage, What's new (the latest releases on a timeline, then the full changelog), Docs, Report a problem and
- * Change server.
+ * What's new (the latest releases on a timeline, then the full changelog), then Settings (`⌘,`), Usage, Docs and Report a problem,
+ * and Change server.
  */
 export function AccountMenu({
   login,
@@ -100,30 +100,10 @@ export function AccountMenu({
           </div>
         </div>
         <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          <DropdownMenuItem onClick={() => void navigate({ to: '/settings' })}>
-            <SettingsIcon />
-            Settings
-            <DropdownMenuShortcut>{SETTINGS_KEY}</DropdownMenuShortcut>
-          </DropdownMenuItem>
-          {usage && used !== undefined && (
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger className="[&>svg:last-child]:ml-1">
-                <ChartNoAxesColumnIcon />
-                Usage
-                <span className="ms-auto text-xs text-muted-foreground tabular-nums">{usedPercent(used)}</span>
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="w-80 gap-0 p-0 text-[13px]">
-                <UsageSections usage={usage} provider="claude" />
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-          )}
-        </DropdownMenuGroup>
         {shown.length > 0 && (
           <>
-            <DropdownMenuSeparator />
             <DropdownMenuGroup aria-label="What's new">
-              <DropdownMenuLabel>What's new</DropdownMenuLabel>
+              <DropdownMenuLabel className="min-h-6 pt-1">What's new</DropdownMenuLabel>
               {shown.map((r) => (
                 <DropdownMenuLinkItem key={r.version} href={r.url} target="_blank" rel="noreferrer" title={r.headline} className={JOINED}>
                   <Dot current={r.version === version} />
@@ -137,10 +117,27 @@ export function AccountMenu({
                 <GlobeIcon className={TRAILING} />
               </DropdownMenuLinkItem>
             </DropdownMenuGroup>
+            <DropdownMenuSeparator />
           </>
         )}
-        <DropdownMenuSeparator />
         <DropdownMenuGroup>
+          <DropdownMenuItem onClick={() => void navigate({ to: '/settings' })}>
+            <SettingsIcon />
+            Settings
+            <DropdownMenuShortcut>{SETTINGS_KEY}</DropdownMenuShortcut>
+          </DropdownMenuItem>
+          {usage && used !== undefined && (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className="[&>svg:last-child]:-ml-1">
+                <ChartNoAxesColumnIcon />
+                Usage
+                <span className="ms-auto text-xs text-muted-foreground tabular-nums">{usedPercent(used)}</span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-80 gap-0 p-0 text-[13px]">
+                <UsageSections usage={usage} provider="claude" />
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          )}
           <DropdownMenuLinkItem href={DOCS_URL} target="_blank" rel="noreferrer">
             <BookOpenIcon />
             Docs
