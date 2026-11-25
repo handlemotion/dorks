@@ -131,7 +131,7 @@ export class Bridge {
       env,
       runAs: this.runAs,
       prs: this.prs,
-      hasPr: prLookup(env, this.self[1], () => this.github.get()),
+      prStatus: prLookup(env, this.self[1], () => this.github.get()),
       log: this.log,
     });
     // With privilege separation the socket lives in a directory only the Claude user can enter (the state dir itself stays root-only,

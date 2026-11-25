@@ -11,7 +11,11 @@ export type FindingKind =
   | "uncommitted" // changed or new files in the working tree, not committed at all
   | "unpushed" // commits on a branch that its remote counterpart does not have
   | "unpublished" // a branch with commits beyond the default branch that was never pushed
-  | "no_pr"; // a pushed branch with commits beyond the default branch and no pull request
+  | "no_pr" // a pushed branch with commits beyond the default branch and no pull request
+  | "pr_ended"; // commits were pushed to a branch whose pull request is already merged or closed
+
+/** What GitHub says about pull requests for a pushed branch. */
+export type BranchPrStatus = { state: "open" } | { state: "merged" | "closed"; number: number; headSha: string | null } | { state: "none" };
 
 export interface Finding {
   kind: FindingKind;
@@ -28,8 +32,8 @@ export interface ScanOptions {
   env: NodeJS.ProcessEnv;
   /** Run git as the user that owns the working trees (git refuses repositories owned by someone else). */
   runAs?: Identity | null;
-  /** Whether a pull request (open, merged or closed) exists for the branch; null when it cannot be told. Unknown never produces a finding. */
-  hasPr: (repo: string, branch: string) => Promise<boolean | null>;
+  /** Pull request status for a pushed branch; null when it cannot be told. Unknown never produces a finding. */
+  prStatus: (repo: string, branch: string) => Promise<BranchPrStatus | null>;
 }
 
 const GIT_TIMEOUT_MS = 10_000;
@@ -73,7 +77,7 @@ async function classifyBranch(
   base: string | null,
   count: (range: string) => Promise<number>,
   exists: (ref: string) => Promise<boolean>,
-): Promise<{ kind: FindingKind; detail: string; pushed: boolean } | null> {
+): Promise<{ kind: FindingKind; detail: string; pushed: boolean; remote?: string } | null> {
   const isBase = base === `origin/${branch}`;
   // `git checkout -b feat origin/main` leaves feat tracking the default branch, which says nothing about whether feat was pushed.
   let remote: string | null = upstream && (isBase || upstream !== base) ? upstream : null;
@@ -82,10 +86,16 @@ async function classifyBranch(
   if (!remote) return beyondBase > 0 ? { kind: "unpublished", detail: `${commits(beyondBase)} not pushed anywhere (no upstream)`, pushed: false } : null;
   const ahead = await count(`${remote}..${branch}`);
   if (ahead > 0) return { kind: "unpushed", detail: `${commits(ahead)} not pushed to ${remote}`, pushed: false };
-  return beyondBase > 0 ? { kind: "no_pr", detail: `pushed to ${remote}, no pull request`, pushed: true } : null;
+  return beyondBase > 0 ? { kind: "no_pr", detail: `pushed to ${remote}, no pull request`, pushed: true, remote } : null;
 }
 
-async function scanRepo(dir: string, o: ScanOptions): Promise<{ done: Finding[]; pushed: Finding[] }> {
+interface PushedCandidate {
+  finding: Finding;
+  remote: string;
+  headSha: string;
+}
+
+async function scanRepo(dir: string, o: ScanOptions): Promise<{ done: Finding[]; pushed: PushedCandidate[] }> {
   const env = gitEnv(o.env, o.runAs);
   const out = async (...args: string[]) => {
     const r = await runGit(args, dir, env, o.runAs, GIT_TIMEOUT_MS);
@@ -100,7 +110,7 @@ async function scanRepo(dir: string, o: ScanOptions): Promise<{ done: Finding[];
   for (const guess of base ? [] : ["origin/main", "origin/master"]) if (await exists(`refs/remotes/${guess}`)) base = guess;
 
   const done: Finding[] = [];
-  const pushed: Finding[] = [];
+  const pushed: PushedCandidate[] = [];
   const found = (kind: FindingKind, branch: string, detail: string) => ({ kind, dir, repo, branch, detail });
   // Edits that were never committed: the commonest way to stop "done" with nothing on GitHub. Ignored files do not count.
   const status = await out("status", "--porcelain", "--untracked-files=normal");
@@ -109,20 +119,49 @@ async function scanRepo(dir: string, o: ScanOptions): Promise<{ done: Finding[];
     const branch = (await out("branch", "--show-current")) || "HEAD (detached)";
     done.push(found("uncommitted", branch, `${n} ${n === 1 ? "file" : "files"} changed and not committed`));
   }
-  const heads = await out("for-each-ref", "--format=%(refname:short)%09%(upstream:short)%09%(upstream:track,nobracket)", "refs/heads");
+  const heads = await out("for-each-ref", "--format=%(refname:short)%09%(upstream:short)%09%(upstream:track,nobracket)%09%(objectname)", "refs/heads");
   for (const line of heads ? heads.split("\n") : []) {
-    const [branch = "", upstream = "", track = ""] = line.split("\t");
+    const [branch = "", upstream = "", track = "", headSha = ""] = line.split("\t");
     if (!branch || track === "gone") continue; // gone: its remote branch was deleted (merged and cleaned up)
     const f = await classifyBranch(branch, upstream, base, count, exists);
-    if (f) (f.pushed ? pushed : done).push(found(f.kind, branch, f.detail));
+    if (!f) continue;
+    if (f.pushed) pushed.push({ finding: found(f.kind, branch, f.detail), remote: f.remote ?? `origin/${branch}`, headSha });
+    else done.push(found(f.kind, branch, f.detail));
   }
   return { done, pushed };
+}
+
+/**
+ * True only when `prHeadSha` exists locally and `branchSha` is not an ancestor of it (meaning commits were added beyond the PR's head).
+ * When a collaborator pushed extra commits before merging (fetched or unfetched), this returns false instead of a false positive.
+ */
+async function hasCommitsBeyondPr(dir: string, o: ScanOptions, branchSha: string, prHeadSha: string): Promise<boolean> {
+  if (!branchSha || !prHeadSha || branchSha === prHeadSha) return false;
+  const env = gitEnv(o.env, o.runAs);
+  const known = await runGit(["rev-parse", "--verify", "--quiet", `${prHeadSha}^{commit}`], dir, env, o.runAs, GIT_TIMEOUT_MS);
+  if (known.code !== 0) return false;
+  const ancestor = await runGit(["merge-base", "--is-ancestor", branchSha, prHeadSha], dir, env, o.runAs, GIT_TIMEOUT_MS);
+  return ancestor.code === 1;
 }
 
 /** Everything under the workdir that has not made it to a PR yet, repository by repository, branch by branch. */
 export async function scanWork(o: ScanOptions): Promise<Finding[]> {
   const scans = await Promise.all(findRepos(o.workDir).map((dir) => scanRepo(dir, o)));
   const candidates = scans.flatMap((s) => s.pushed).slice(0, MAX_PR_LOOKUPS);
-  const noPr = (await Promise.all(candidates.map(async (f) => ((f.repo ? await o.hasPr(f.repo, f.branch) : null) === false ? f : null)))).filter((f) => f !== null);
-  return [...scans.flatMap((s) => s.done), ...noPr];
+  const prFindings = (
+    await Promise.all(
+      candidates.map(async ({ finding, remote, headSha }) => {
+        const status = finding.repo ? await o.prStatus(finding.repo, finding.branch) : null;
+        if (!status || status.state === "open") return null;
+        if (status.state === "none") return finding;
+        if (!status.headSha || !(await hasCommitsBeyondPr(finding.dir, o, headSha, status.headSha))) return null;
+        return {
+          ...finding,
+          kind: "pr_ended" as const,
+          detail: `pushed to ${remote}, but PR #${status.number} is already ${status.state} — these commits did not go into it`,
+        };
+      }),
+    )
+  ).filter((f) => f !== null);
+  return [...scans.flatMap((s) => s.done), ...prFindings];
 }
