@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { notifyKind, prRef } from "./autonomy";
 import { appError, type AppError } from "./errors";
+import { inputField } from "./inputs";
 
 export const dorkState = z.enum(["creating", "working", "idle", "sleeping", "waking", "error"]);
 
@@ -81,6 +82,10 @@ export const clientEvent = z.discriminatedUnion("type", [
     via: z.enum(["session", "always", "standing", "once", "grant"]).optional(),
   }),
   z.object({ ...base, type: z.literal("local_result"), requestId: z.string(), ok: z.boolean(), exitCode: z.number().nullable().optional(), preview: z.string(), truncated: z.boolean().optional() }),
+  // Secure inputs (docs/secure-inputs.md): the agent asked the owner for values it may use but never read, and how that ended. Neither
+  // event carries a value: `names` are the fields the owner filled in.
+  z.object({ ...base, type: z.literal("input_request"), requestId: z.string(), title: z.string(), description: z.string().optional(), fields: z.array(inputField) }),
+  z.object({ ...base, type: z.literal("input_response"), requestId: z.string(), status: z.enum(["provided", "dismissed", "expired"]), names: z.array(z.string()).optional() }),
   z.object({ ...base, type: z.literal("rate_limited"), resetsAt: z.number().optional() }),
   z.object({ ...base, type: z.literal("agent_exited"), message: z.string() }),
   // `error` is the typed form (absent on events stored before the taxonomy); `message` is always present for display.

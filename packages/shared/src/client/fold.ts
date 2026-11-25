@@ -1,5 +1,6 @@
 import type { DorkState, ClientEvent, LocalKind, TurnOutcome } from "../events";
 import type { NotifyKind, PrRef } from "../autonomy";
+import type { InputField } from "../inputs";
 
 /**
  * What an autonomy notice came from (docs/autonomy.md), kept so clients can label it by what happened and give it its own icon: a PR
@@ -49,6 +50,19 @@ export type Block =
       exitCode?: number | null;
       preview?: string;
       truncated?: boolean;
+      at: number;
+    }
+  /** The agent asked the owner for values it uses without reading them (docs/secure-inputs.md). Never holds a value. */
+  | {
+      kind: "input";
+      id: string;
+      requestId: string;
+      title: string;
+      description?: string;
+      fields: InputField[];
+      status: "pending" | "provided" | "dismissed" | "expired";
+      /** The fields the owner filled in. */
+      names?: string[];
       at: number;
     }
   /**
@@ -162,6 +176,14 @@ const HANDLERS: Handlers = {
     if (i < 0) return;
     const b = v.blocks[i] as Extract<Block, { kind: "local" }>;
     v.blocks[i] = { ...b, status: e.ok ? "done" : "failed", exitCode: e.exitCode, preview: e.preview, truncated: e.truncated };
+  },
+  input_request(v, e) {
+    v.blocks.push({ kind: "input", id: `i${e.seq}`, requestId: e.requestId, title: e.title, description: e.description, fields: e.fields, status: "pending", at: e.ts });
+  },
+  input_response(v, e) {
+    const i = v.blocks.findIndex((b) => b.kind === "input" && b.requestId === e.requestId);
+    if (i < 0) return;
+    v.blocks[i] = { ...(v.blocks[i] as Extract<Block, { kind: "input" }>), status: e.status, names: e.names };
   },
   rate_limited(v, e) {
     v.rateLimitedUntil = e.resetsAt ?? null;

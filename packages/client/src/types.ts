@@ -208,6 +208,9 @@ export interface LocalAccess {
 /** The owner's answer to a session's first request: `session` allows this session, `always` every session (`localAlwaysAllow`). */
 export type LocalDecision = { decision: "session" | "always" | "deny" };
 
+/** The owner's answer to an agent's secure-input request (docs/secure-inputs.md): the values, or a dismissal. */
+export type InputAnswer = { values: Record<string, string> } | { dismiss: true };
+
 export interface BoatCheck {
   status: "ok" | "invalid" | "needs_org" | "credit_required" | "unreachable";
   /** Plain words for the user. */

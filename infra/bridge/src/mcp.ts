@@ -381,6 +381,69 @@ const TOOLS: Tool[] = [
       return waitLocal(sock, args.requestId);
     },
   },
+  // ---- input_*: secure inputs (docs/secure-inputs.md). The user types values the agent uses without ever reading them.
+  {
+    name: "input_request",
+    title: "Ask the user for a login, code or secret",
+    description:
+      "Ask the user for values you need but must not read: a login (email and password), a one-time code (2FA, SMS, email), an API key, " +
+      "a card number. They get a form in their chat and type the values in; you never see them. Waits for the answer (up to 5 minutes, " +
+      "then use input_wait) and returns the names you can use. Use a value by writing {{secret:NAME}} in any tool's input: in a Bash " +
+      "command (it becomes a shell variable, so put it where a variable expands: bare or in double quotes, never in single quotes), in a " +
+      "browser tool's text to type, in a file you write. The value is filled in as the tool runs and shown as [redacted] in anything you " +
+      "read back. Never try to print, decode or send a value anywhere but where the user meant it to go. Asking again under the same " +
+      "name replaces the value (a new one-time code). One request at a time; if the user dismisses it, do not ask again in this turn.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: 'A short title for the form, e.g. "Stripe login" or "Verification code".' },
+        description: { type: "string", description: "One or two sentences for the user: what this is for and where the values go." },
+        fields: {
+          type: "array",
+          minItems: 1,
+          maxItems: 8,
+          description: "The values to ask for, in the order the form shows them.",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: "What you write in {{secret:NAME}}: a letter, then letters, digits or _ (e.g. stripe_password)." },
+              label: { type: "string", description: 'The label the user sees, e.g. "Email or phone".' },
+              kind: { type: "string", enum: ["text", "email", "secret", "otp"], description: "secret: masked (passwords, keys); otp: a one-time code; email; text." },
+              description: { type: "string", description: "Optional: a hint under the label." },
+              optional: { type: "boolean", description: "Optional: true when the user may leave it empty." },
+            },
+            required: ["name", "label", "kind"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["title", "fields"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: false },
+    async run(args, sock) {
+      if (typeof args.title !== "string" || !args.title.trim()) throw new ToolError("`title` is required.");
+      if (!Array.isArray(args.fields) || !args.fields.length) throw new ToolError("`fields` must list at least one field.");
+      const r = await rpcCall<InputResult>(sock, "input", { action: "request", title: args.title, description: args.description, fields: args.fields });
+      return waitInput(sock, r.requestId, r);
+    },
+  },
+  {
+    name: "input_wait",
+    title: "Keep waiting for the user's secure input",
+    description: "Keep waiting for an input_request that was still waiting for the user when that call returned. Waits up to 5 more minutes. A request expires 30 minutes after you asked.",
+    inputSchema: {
+      type: "object",
+      properties: { requestId: { type: "string", description: "The request id the earlier call returned." } },
+      required: ["requestId"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
+    async run(args, sock) {
+      if (typeof args.requestId !== "string" || !args.requestId) throw new ToolError("`requestId` is required.");
+      return waitInput(sock, args.requestId);
+    },
+  },
   // ---- machine_*: the build this session's machine starts from (docs/builds.md). Deferred like every MCP tool, so a session that never
   // touches its machine pays only for these names. The server scopes every call to this dork's own build and never returns a secret.
   {
@@ -560,6 +623,34 @@ type LocalResult = {
   truncated?: boolean;
   error?: string;
 };
+
+type InputResult = { requestId: string; status: "pending" | "provided" | "dismissed" | "expired"; names?: string[] };
+
+async function waitInput(sock: string, requestId: string, first?: InputResult): Promise<string> {
+  const deadline = Date.now() + LOCAL_WAIT_MS;
+  let r = first;
+  while (!r || (r.status === "pending" && Date.now() < deadline)) r = await rpcCall<InputResult>(sock, "input", { action: "wait", requestId, waitMs: 8_000 });
+  return describeInput(r);
+}
+
+export function describeInput(r: InputResult): string {
+  const id = `(request ${r.requestId})`;
+  switch (r.status) {
+    case "pending":
+      return `Still waiting for the user ${id}. Call input_wait with this requestId to keep waiting, or carry on without it. Do not ask again meanwhile.`;
+    case "dismissed":
+      return `The user dismissed the form ${id}. Do not ask again in this turn: continue without it, or say in your final answer what you need.`;
+    case "expired":
+      return `The user did not answer in time ${id}. Continue without it, or ask in your final answer.`;
+  }
+  const names = r.names ?? [];
+  if (!names.length) return `The user submitted the form without values ${id}.`;
+  return [
+    `The user provided ${names.join(", ")} ${id}. You cannot read them; use them by writing these references in a tool's input:`,
+    ...names.map((n) => `- {{secret:${n}}}`),
+    'In Bash a reference becomes a shell variable: write it bare or in double quotes (e.g. curl -u "me:{{secret:password}}"), not in single quotes.',
+  ].join("\n");
+}
 
 async function askLocal(sock: string, args: Record<string, unknown>): Promise<string> {
   const r = await rpcCall<LocalResult>(sock, "local", { action: "request", ...args });
@@ -861,6 +952,7 @@ export class McpServer {
           serverInfo: { name: MCP_SERVER_NAME, title: "Dorks", version: "0.1.0" },
           instructions:
             "Tools for the pull requests you work on in this box, and for showing the user your work. `gh pr create` subscribes you automatically; subscribed PRs wake you with <dorks-event> turns when CI, reviews, comments or conflicts need you. " +
+            "When you need a login, a one-time code or any secret, ask with input_request and use it as {{secret:NAME}} without reading it. " +
             "When you start a web server the user should see, call preview_show with its port. When you change anything visual, verify it with screenshot_share and put the image it returns in your final answer. " +
             'The user\'s comments on a running preview arrive as <dorks-event source="preview"> turns: answer them with comment_reply or comment_resolve. ' +
             "To install tools, set variables or pre-clone repos for future sessions, search for the machine_ tools. " +

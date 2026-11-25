@@ -31,6 +31,7 @@ import type {
   GithubRepos,
   LocalAccess,
   LocalDecision,
+  InputAnswer,
 } from "./types.ts";
 
 export interface ClientConfig extends ApiConfig {
@@ -501,6 +502,10 @@ export class DorksClient {
       this.invalidate("composio");
     },
     /** The owner's answer to an agent's request to use this computer. The transcript shows the outcome. */
+    /** The owner's answer to an agent's secure-input request. The transcript shows the outcome, never the values. */
+    answerInput: async (dorkId: string, requestId: string, a: InputAnswer) => {
+      await this.api.answerInput(dorkId, requestId, a);
+    },
     decideLocal: async (dorkId: string, requestId: string, d: LocalDecision) => {
       await this.api.decideLocal(dorkId, requestId, d);
       this.invalidate("local-access");

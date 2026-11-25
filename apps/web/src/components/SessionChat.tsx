@@ -178,7 +178,9 @@ export function SessionChat({
     })
   const queueing = useQueueControls(dork, canReply, sendWith)
   const current = dork.state === 'working' ? currentStep(view.blocks) : {}
-  const needsAttention = Boolean(dork.needsAttention) || view.blocks.some((b) => (b.kind === 'local' && b.status === 'pending') || (b.kind === 'build' && b.approved === null))
+  const needsAttention =
+    Boolean(dork.needsAttention) ||
+    view.blocks.some((b) => (b.kind === 'local' && b.status === 'pending') || (b.kind === 'input' && b.status === 'pending') || (b.kind === 'build' && b.approved === null))
   const { blocks, problem } = splitProblem(view.blocks, dork.state)
   return (
     <>
