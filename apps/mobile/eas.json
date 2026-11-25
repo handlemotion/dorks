@@ -34,12 +34,18 @@
     "production": {
       "extends": "base",
       "channel": "production",
-      "autoIncrement": true
+      "autoIncrement": true,
+      "ios": {
+        "credentialsSource": "local"
+      }
     }
   },
   "submit": {
     "production": {
-      "ios": {}
+      "ios": {
+        "ascAppId": "6839401417",
+        "appleTeamId": "ZVGTVNUPVA"
+      }
     }
   }
 }
