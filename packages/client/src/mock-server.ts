@@ -116,17 +116,165 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     return typeof url === "string" && url ? list.find((p) => p.url === url) : list.at(-1);
   };
   const secrets = new Map<string, string>();
-  const mcpServers = new Map<string, McpServerView>();
-  const skills = new Map<string, SkillView>();
+  const now = Date.now();
+  const mcpServers = new Map<string, McpServerView>([
+    [
+      "sentry",
+      {
+        name: "sentry",
+        transport: "http",
+        url: "https://mcp.sentry.dev/mcp",
+        command: null,
+        args: [],
+        headerNames: ["Authorization"],
+        envNames: [],
+        oauth: null,
+        createdAt: now - 86_400_000 * 6,
+      },
+    ],
+    [
+      "linear",
+      {
+        name: "linear",
+        transport: "http",
+        url: "https://mcp.linear.app/mcp",
+        command: null,
+        args: [],
+        headerNames: ["Authorization"],
+        envNames: [],
+        oauth: null,
+        createdAt: now - 86_400_000 * 5,
+      },
+    ],
+    [
+      "cloudflare",
+      {
+        name: "cloudflare",
+        transport: "http",
+        url: "https://mcp.cloudflare.com/mcp",
+        command: null,
+        args: [],
+        headerNames: ["Authorization"],
+        envNames: [],
+        oauth: null,
+        createdAt: now - 86_400_000 * 4,
+      },
+    ],
+    [
+      "context7",
+      {
+        name: "context7",
+        transport: "http",
+        url: "https://mcp.context7.com/mcp",
+        command: null,
+        args: [],
+        headerNames: ["CONTEXT7_API_KEY"],
+        envNames: [],
+        oauth: null,
+        createdAt: now - 86_400_000 * 3,
+      },
+    ],
+    [
+      "composio",
+      {
+        name: "composio",
+        transport: "http",
+        url: "https://app.composio.dev/tool_router/v3/trs_mock/mcp",
+        command: null,
+        args: [],
+        headerNames: ["x-api-key"],
+        envNames: [],
+        oauth: null,
+        createdAt: now - 86_400_000 * 3,
+      },
+    ],
+    [
+      "postgres",
+      {
+        name: "postgres",
+        transport: "stdio",
+        url: null,
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-postgres"],
+        headerNames: [],
+        envNames: ["DATABASE_URL"],
+        oauth: null,
+        createdAt: now - 86_400_000 * 2,
+      },
+    ],
+  ]);
+  const skills = new Map<string, SkillView>([
+    [
+      "frontend-design",
+      {
+        name: "frontend-design",
+        description: "Create distinctive, production-grade web interfaces with high design quality",
+        source: { repo: "anthropics/skills", ref: null, path: "skills/frontend-design" },
+        sha: "a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e",
+        url: "https://github.com/anthropics/skills/tree/a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e/skills/frontend-design",
+        fileCount: 4,
+        bytes: 12_480,
+        installedAt: now - 86_400_000 * 5,
+        updatedAt: now - 86_400_000 * 2,
+      },
+    ],
+    [
+      "pdf",
+      {
+        name: "pdf",
+        description: "Extract text, fill forms, merge and generate structured PDF documents",
+        source: { repo: "anthropics/skills", ref: null, path: "skills/pdf" },
+        sha: "a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e",
+        url: "https://github.com/anthropics/skills/tree/a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e/skills/pdf",
+        fileCount: 3,
+        bytes: 8_192,
+        installedAt: now - 86_400_000 * 4,
+        updatedAt: now - 86_400_000 * 1,
+      },
+    ],
+    [
+      "webapp-testing",
+      {
+        name: "webapp-testing",
+        description: "Verify running web applications with Playwright scripts and visual checks",
+        source: { repo: "anthropics/skills", ref: null, path: "skills/webapp-testing" },
+        sha: "a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e",
+        url: "https://github.com/anthropics/skills/tree/a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e/skills/webapp-testing",
+        fileCount: 5,
+        bytes: 15_360,
+        installedAt: now - 86_400_000 * 3,
+        updatedAt: now - 3_600_000 * 6,
+      },
+    ],
+    [
+      "vercel-react-best-practices",
+      {
+        name: "vercel-react-best-practices",
+        description: "React and Next.js performance, data fetching and rendering patterns",
+        source: { repo: "vercel-labs/agent-skills", ref: null, path: "skills/vercel-react-best-practices" },
+        sha: "9f8e7d6c5b4a3928171605f4e3d2c1b0a9f8e7d6",
+        url: "https://github.com/vercel-labs/agent-skills/tree/9f8e7d6c5b4a3928171605f4e3d2c1b0a9f8e7d6/skills/vercel-react-best-practices",
+        fileCount: 6,
+        bytes: 18_432,
+        installedAt: now - 86_400_000 * 2,
+        updatedAt: now - 3_600_000 * 2,
+      },
+    ],
+  ]);
   /** A loose stand-in for services/skills.ts: `owner/repo` from the pasted text, and a few made-up skills in it. */
   const mockResolve = (source: string) => {
     const m = /([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?(?:[/@#\s]|$)/.exec(source.replace(/https?:\/\/github\.com\//, ""));
     if (!m) return null;
     const repo = `${m[1]}/${m[2]}`;
-    const names = m[2] === "skills" || m[2]!.endsWith("-skills") ? ["frontend-design", "pdf", "webapp-testing", "skill-creator"] : [m[2]!.toLowerCase().replace(/[^a-z0-9]+/g, "-")];
+    const byRepo: Record<string, string[]> = {
+      "anthropics/skills": ["frontend-design", "canvas-design", "pdf", "docx", "xlsx", "pptx", "webapp-testing", "mcp-builder", "skill-creator"],
+      "vercel-labs/agent-skills": ["vercel-react-best-practices", "web-design-guidelines"],
+      "supabase/agent-skills": ["supabase-postgres-best-practices"],
+    };
+    const names = byRepo[repo] ?? (m[2] === "skills" || m[2]!.endsWith("-skills") ? ["frontend-design", "pdf", "webapp-testing", "skill-creator"] : [m[2]!.toLowerCase().replace(/[^a-z0-9]+/g, "-")]);
     const found: SkillCandidate[] = names.map((name) => ({
       name,
-      description: `Mock skill ${name} from ${repo}.`,
+      description: `Skill ${name} from ${repo}.`,
       path: names.length > 1 ? `skills/${name}` : "",
       fileCount: 3,
       bytes: 4096,
@@ -136,7 +284,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     return { repo, ref: null, sha: "0123456789abcdef0123456789abcdef01234567", skills: found, requested: requested.length || names.length > 1 ? requested : names };
   };
   // Composio: a sign-in "finishes" when its link is requested, so the UI's wait ends on the next read.
-  const composioApps = new Set<string>();
+  const composioApps = new Set<string>(["figma", "slack", "gmail"]);
   let localAccessEnabled = true;
   /** Local access (docs/local-access.md): the sessions the owner allowed, and requests waiting for an answer (requestId -> its answer). */
   const localAllowed = new Map<string, number>();
