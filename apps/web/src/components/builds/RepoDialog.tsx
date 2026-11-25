@@ -7,21 +7,19 @@ import { Field, FieldDescription, FieldLabel } from '@dorks/ui/field'
 import { Input } from '@dorks/ui/input'
 import { Textarea } from '@dorks/ui/textarea'
 import { usePending } from '../../lib/pending'
-import { Runs } from './Runs'
 
-/** Adds a repository, or edits (or removes) one. */
-export function RepoDialog({ build, repo, onClose }: { build: BuildView; repo: BuildRepo | null; onClose: () => void }) {
+/** Edits (or removes) one of the build's repositories; they are added from the list beside the section's title. */
+export function RepoDialog({ build, repo, onClose }: { build: BuildView; repo: BuildRepo; onClose: () => void }) {
   const { actions } = useDorksClient()
-  const [name, setName] = useState(repo?.repo ?? '')
-  const [branch, setBranch] = useState(repo?.branch ?? '')
-  const [script, setScript] = useState(repo?.setupScript ?? '')
+  const [branch, setBranch] = useState(repo.branch ?? '')
+  const [script, setScript] = useState(repo.setupScript ?? '')
   const { run, pending, error } = usePending()
   const save = (repos: BuildRepo[]) =>
     run(async () => {
       await actions.updateBuild(build.id, { repos })
       onClose()
     })
-  const next: BuildRepo = { repo: name.trim(), ...(branch.trim() ? { branch: branch.trim() } : {}), ...(script.trim() ? { setupScript: script } : {}) }
+  const next: BuildRepo = { repo: repo.repo, ...(branch.trim() ? { branch: branch.trim() } : {}), ...(script.trim() ? { setupScript: script } : {}) }
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
@@ -29,18 +27,14 @@ export function RepoDialog({ build, repo, onClose }: { build: BuildView; repo: B
           className="contents"
           onSubmit={(e) => {
             e.preventDefault()
-            void save(repo ? build.repos.map((r) => (r.repo === repo.repo ? next : r)) : [...build.repos, next])
+            void save(build.repos.map((r) => (r.repo === repo.repo ? next : r)))
           }}
         >
           <DialogHeader className="gap-2">
-            <DialogTitle className="text-sm font-medium">{repo ? `Edit ${repo.repo}` : 'Add a repository'}</DialogTitle>
+            <DialogTitle className="text-sm font-medium">Edit {repo.repo}</DialogTitle>
             <DialogDescription className="text-sm leading-5">Cloned when the machine is built, then its setup runs inside the clone.</DialogDescription>
           </DialogHeader>
           <div data-slot="dialog-body" className="flex flex-col gap-4">
-            <Field>
-              <FieldLabel htmlFor="repo-name">Repository</FieldLabel>
-              <Input id="repo-name" aria-label="repository" placeholder="owner/name" value={name} onChange={(e) => setName(e.target.value)} autoFocus={!repo} />
-            </Field>
             <Field>
               <FieldLabel htmlFor="repo-branch">Branch</FieldLabel>
               <Input id="repo-branch" aria-label="branch" placeholder="The default branch" value={branch} onChange={(e) => setBranch(e.target.value)} />
@@ -66,22 +60,20 @@ export function RepoDialog({ build, repo, onClose }: { build: BuildView; repo: B
             )}
           </div>
           <DialogFooter>
-            {repo && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="me-auto text-destructive"
-                disabled={pending}
-                aria-label={`remove ${repo.repo}`}
-                onClick={() => void save(build.repos.filter((r) => r.repo !== repo.repo))}
-              >
-                Remove
-              </Button>
-            )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="me-auto text-destructive"
+              disabled={pending}
+              aria-label={`remove ${repo.repo}`}
+              onClick={() => void save(build.repos.filter((r) => r.repo !== repo.repo))}
+            >
+              Remove
+            </Button>
             <DialogClose render={<Button type="button" variant="outline" size="sm" />}>Cancel</DialogClose>
-            <Button type="submit" size="sm" disabled={pending || !name.trim()}>
-              {repo ? 'Save' : 'Add repository'}
+            <Button type="submit" size="sm" disabled={pending}>
+              Save
             </Button>
           </DialogFooter>
         </form>

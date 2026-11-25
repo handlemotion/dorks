@@ -21,6 +21,7 @@ import { ChatSplit, ShowDetailsButton, useDetailsOpen, useWide } from '../../../
 import type { ChatDetailsData } from '../../../components/chat-details/types'
 import type { PullRequestPanelData } from '../../../components/PullRequestPanel'
 import { latestTasks, progressStore, progressTurns } from '../../../lib/progress'
+import { environmentOf, type Environment, type EnvironmentBuild } from '../../../components/EnvironmentPicker'
 import { withImages, Composer, preferredModel, type AgentProvider, type ModelPicker } from '../../../components/ChatComposer'
 import { ChatMenu } from '../../../components/ChatMenu'
 import { UsageMenu } from '../../../components/UsageMenu'
@@ -146,12 +147,23 @@ function Dorks() {
   )
 }
 
-/** The build's repositories, then the ones chats used, then everything the GitHub CLI login can see; only the owner in scope's. */
-function useNewSessionRepos(buildRepos: string[], dorks: { repo: string }[] | undefined): string[] {
+/** The repositories chats used, then everything the GitHub CLI login can see; only the owner in scope's. */
+function useNewSessionRepos(dorks: { repo: string }[] | undefined): string[] {
   const github = useGithubRepos()
   const recent = [...new Set(dorks?.map((d) => d.repo).filter(Boolean) ?? [])].sort()
   const [scope] = useOwnerScope(ownersOf(recent, github))
-  return [...new Set([...buildRepos, ...recent, ...(github?.repos ?? [])])].filter((r) => !scope || ownerOf(r) === scope)
+  return [...new Set([...recent, ...(github?.repos ?? [])])].filter((r) => !scope || ownerOf(r) === scope)
+}
+
+/**
+ * Where a new session starts until the owner picks: the preset repository (the sidebar's +) in the build that holds it, else the default
+ * build, else the first repository, in its build if one holds it.
+ */
+function initialEnvironment(builds: EnvironmentBuild[], repositories: string[], initialRepo: string | undefined, defaultBuildId: string | null | undefined): Environment {
+  if (initialRepo) return environmentOf(builds, initialRepo)
+  const preferred = builds.find((b) => b.id === defaultBuildId)
+  if (preferred) return { buildId: preferred.id, repo: preferred.repos[0]! }
+  return environmentOf(builds, repositories[0] ?? '')
 }
 
 /**
@@ -230,14 +242,13 @@ function NewDork({
   const [choice, setChoice] = useState<{ model?: string; effort?: string; fast?: boolean }>({})
   const dorks = useDorks()
   const builds = useBuilds()
-  const built = (builds ?? []).filter((b) => b.image).map((b) => ({ id: b.id, name: b.name, repos: b.repos.map((r) => r.repo) }))
-  const [picked, setPicked] = useState<string | null | undefined>(undefined)
-  // Until the owner picks one: the default build when it is built, else the base machine.
-  const buildId = picked !== undefined ? picked : built.some((b) => b.id === settings?.defaultBuildId) ? (settings?.defaultBuildId ?? null) : null
-  const buildRepos = built.find((b) => b.id === buildId)?.repos ?? []
-  const repositories = useNewSessionRepos(buildRepos, dorks)
-  const [chosen, setRepo] = useState(initialRepo)
-  const repo = chosen ?? repositories[0] ?? ''
+  // A session starts in a repository, so only built builds that hold one are offered.
+  const built: EnvironmentBuild[] = (builds ?? []).filter((b) => b.image && b.repos.length > 0).map((b) => ({ id: b.id, name: b.name, repos: b.repos.map((r) => r.repo) }))
+  const repositories = useNewSessionRepos(dorks)
+  const [picked, setPicked] = useState<Environment | undefined>(undefined)
+  // A picked build that is gone (deleted, or its image removed) falls back like an unpicked one.
+  const env = picked && (picked.buildId === null || built.some((b) => b.id === picked.buildId)) ? picked : initialEnvironment(built, repositories, initialRepo, settings?.defaultBuildId)
+  const { buildId, repo } = env
   const [message, setMessage] = useDraft('new')
   const [provider, pickProvider] = useState<AgentProvider>(() => firstReady(claudeReady, codexReady, antigravityReady))
   // A model belongs to its agent: switching agents starts the new one on its default.
@@ -253,9 +264,7 @@ function NewDork({
       <Composer
         text={message}
         setText={setMessage}
-        repo={repo}
-        setRepo={setRepo}
-        repositories={repositories}
+        environment={{ builds: built, repositories, value: env, onChange: setPicked }}
         provider={provider}
         setProvider={setProvider}
         codexEnabled={codexReady}
@@ -266,7 +275,6 @@ function NewDork({
         upload={actions.uploadImage}
         draftKey="new"
         usage={<UsageMenu provider={provider} />}
-        machine={{ builds: built, buildId, onChange: setPicked }}
         focusKey={visit}
         onSubmit={(images) =>
           run(async () => {

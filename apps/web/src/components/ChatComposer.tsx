@@ -1,4 +1,4 @@
-import { ArrowUpIcon, BoxIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon, ZapIcon } from 'lucide-react'
+import { ArrowUpIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon, ZapIcon } from 'lucide-react'
 import { modelLabel, type AgentModelChoice } from '@dorks/shared'
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type RefObject, type ReactNode } from 'react'
 import {
@@ -14,9 +14,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@dorks/ui/dropdown-menu'
-import { MENU_POPUP_CLASS } from '@dorks/ui/dropdown-menu'
-import { Command, CommandEmpty, CommandItem, CommandMenuInput, CommandList, CommandSeparator } from '@dorks/ui/command'
-import { Popover, PopoverContent, PopoverTrigger } from '@dorks/ui/popover'
 import claudeLogo from '../assets/providers/claude.svg'
 import antigravityLogo from '../assets/providers/antigravity.svg'
 import codexDark from '../assets/providers/codex_dark.svg'
@@ -25,6 +22,7 @@ import opencodeDark from '../assets/providers/opencode-dark.svg'
 import opencodeLight from '../assets/providers/opencode.svg'
 import { Logo } from './onboarding/List'
 import { OwnerAvatar, ownerOf } from './RepoAvatar'
+import { EnvironmentPicker, type EnvironmentChoice } from './EnvironmentPicker'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@dorks/ui/input-group'
 import { Tip } from './Tip'
 import { ImageLightbox, ImageTrigger } from './ImageLightbox'
@@ -304,14 +302,15 @@ function MainButton({ onStop, isNewSession, pending, canSend, canQueue }: { onSt
   )
 }
 
-/** The repository: a picker for a new session, else its name. */
 /** The box's hint: what the session's agent is asked for. */
 const hintOf = (placeholder?: string) => placeholder ?? 'Ask the agent to change your code...'
 
-function RepositoryControl({ repo, setRepo, repositories, disabled, hidden }: { repo?: string; setRepo?: (repo: string) => void; repositories: string[]; disabled: boolean; hidden?: boolean }) {
+/** Where the session runs: the environment chooser for a new session, else its repository. */
+
+function RepositoryControl({ repo, environment, disabled, hidden }: { repo?: string; environment?: EnvironmentChoice; disabled: boolean; hidden?: boolean }) {
   if (hidden) return null
+  if (environment) return <EnvironmentPicker choice={environment} disabled={disabled} />
   if (repo === undefined) return null
-  if (setRepo) return <RepositoryPicker repo={repo} setRepo={setRepo} repositories={repositories} disabled={disabled} />
   return (
     <span title={repo} data-testid="chat-repository" className="flex h-7 min-w-0 items-center gap-1.5 px-2 text-[13px] text-muted-foreground">
       {repo ? <OwnerAvatar owner={ownerOf(repo)} size={16} className="size-3.5 shrink-0" /> : <FolderIcon className="size-3.5 shrink-0" />}
@@ -694,8 +693,8 @@ function ModelMenu({
 /**
  * The message box: the AI Elements prompt input, copied from the published component (ui.shadcn.com/docs/ai-elements/base/prompt-input,
  * `PromptInputDemo` in @dorks/ui): the box holds the text, attachments and main button; the compact bar below holds the repository
- * and one menu for the model (by agent) and the effort. The main button sends, or stops the agent while it is working. With `setRepo` it is the "new session" form (the first
- * message also names the repository). Claude's models and efforts are the ones the agent reported; images are attached with the + button, by pasting or by dropping them
+ * and one menu for the model (by agent) and the effort. The main button sends, or stops the agent while it is working. With `environment` it is the "new session" form (the first
+ * message also picks the build or repository). Claude's models and efforts are the ones the agent reported; images are attached with the + button, by pasting or by dropping them
  * anywhere in the window (from Finder too: the desktop shell leaves file drops to the page).
  */
 export function Composer({
@@ -706,8 +705,7 @@ export function Composer({
   disabled,
   error,
   repo,
-  setRepo,
-  repositories = [],
+  environment,
   placeholder,
   showRepo,
   provider = 'claude',
@@ -724,7 +722,6 @@ export function Composer({
   upload,
   reply,
   onClearReply,
-  machine,
   focusKey,
   draftKey,
   usage,
@@ -737,8 +734,8 @@ export function Composer({
   disabled?: boolean
   error: string
   repo?: string
-  setRepo?: (repo: string) => void
-  repositories?: string[]
+  /** The new session form's one chooser: a build (with its repositories) or a repository on the base machine. */
+  environment?: EnvironmentChoice
   /** The box's hint (default: asks for a code change). */
   placeholder?: string
   /** False for a session with no repository of its own to show (a dork). */
@@ -769,8 +766,6 @@ export function Composer({
   /** What the next message replies to: a banner above the text, with an X (or Escape) to drop it. */
   reply?: Reply
   onClearReply?: () => void
-  /** The build a new session starts on (docs/builds.md); shown once there is a built one. */
-  machine?: MachinePicker
   /** Puts the cursor in the box on mount and whenever this changes (a new visit to the page), once it is enabled. Not on touch screens, where it would pop the keyboard. */
   focusKey?: string
   /** Keeps the attached images under this key (the text draft's) while the owner visits other chats. */
@@ -788,7 +783,7 @@ export function Composer({
   }, [reply])
   // The text stays beside attach and the main button as it wraps, its last line level with them, with or without attached images
   // above it.
-  const isNewSession = setRepo !== undefined
+  const isNewSession = environment !== undefined
   const locked = !!(pending || disabled)
   const dragging = useFileDrop(attach, !!upload && !locked, formRef)
   useEffect(() => {
@@ -796,7 +791,7 @@ export function Composer({
     textRef.current?.focus()
   }, [focusKey, locked])
   const hasContent = text.trim().length > 0 || ready.length > 0
-  const canSend = hasContent && !uploading && !locked && (!isNewSession || !!repo?.trim())
+  const canSend = hasContent && !uploading && !locked && (!environment || !!environment.value.repo.trim())
   const submit = async (handler = onSubmit) => {
     const sent = files
     try {
@@ -921,8 +916,7 @@ export function Composer({
         {/* Compact, shared baseline for the repository and model controls. 9px in (8px plus the box's 1px border), like attach and send, so the repository
             button lines up under attach and the model button under send. */}
         <div className="flex items-center gap-2 px-[9px] pt-2 text-[13px] [--control-radius:6px]">
-          <RepositoryControl repo={repo} setRepo={setRepo} repositories={repositories} disabled={locked} hidden={showRepo === false} />
-          {machine && machine.builds.length > 0 && <MachineMenu machine={machine} disabled={locked} />}
+          <RepositoryControl repo={repo} environment={environment} disabled={locked} hidden={showRepo === false} />
           <ModelMenu
             provider={provider}
             setProvider={setProvider}
@@ -943,138 +937,5 @@ export function Composer({
         </p>
       )}
     </div>
-  )
-}
-
-export interface MachinePicker {
-  /** Builds with an image; the base machine is always offered too. */
-  builds: { id: string; name: string }[]
-  /** null: the base machine. */
-  buildId: string | null
-  onChange: (buildId: string | null) => void
-}
-
-/** Which machine a new session starts on: a build, or the base. */
-function MachineMenu({ machine, disabled }: { machine: MachinePicker; disabled?: boolean }) {
-  const BASE = '__base__'
-  const name = machine.builds.find((b) => b.id === machine.buildId)?.name ?? 'Base machine'
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        disabled={disabled}
-        render={<InputGroupButton size="sm" variant="ghost" aria-label={`Machine: ${name}`} className="h-7 min-w-0 gap-1.5 px-2 text-[13px] text-muted-foreground hover:text-foreground" />}
-      >
-        <BoxIcon className="size-3.5 shrink-0" />
-        <span className="max-w-40 truncate" data-testid="machine-label">
-          {name}
-        </span>
-        <ChevronDownIcon />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-56">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Machine</DropdownMenuLabel>
-          <DropdownMenuRadioGroup value={machine.buildId ?? BASE} onValueChange={(v) => machine.onChange(v === BASE ? null : v)}>
-            {machine.builds.map((b) => (
-              <DropdownMenuRadioItem key={b.id} value={b.id} closeOnClick>
-                <span className="min-w-0 truncate">{b.name}</span>
-              </DropdownMenuRadioItem>
-            ))}
-            <DropdownMenuRadioItem value={BASE} closeOnClick>
-              Base machine
-            </DropdownMenuRadioItem>
-          </DropdownMenuRadioGroup>
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
-export const REPO = /^[\w.-]+\/[\w.-]+$/
-
-/** One repository row: the owner's avatar, then `owner/name` with the owner muted. */
-export function RepoRow({ repo }: { repo: string }) {
-  const owner = ownerOf(repo)
-  return (
-    <>
-      <OwnerAvatar owner={owner} />
-      <span className="min-w-0 flex-1 truncate">
-        <span className="text-muted-foreground">{owner}/</span>
-        {repo.slice(owner.length + 1)}
-      </span>
-    </>
-  )
-}
-
-export const REPO_ITEM = 'h-8 gap-2 rounded-[6px] px-2 py-0 font-normal data-selected:bg-foreground/[0.05] [&>svg:last-child]:size-3.5'
-
-/**
- * The repository for a new session: a searchable list of the GitHub CLI login's repositories (and the ones chats used), the chosen one
- * first. Typing a full `owner/repo` that is not listed offers it too, since a first session may name any repository.
- */
-function RepositoryPicker({ repo, setRepo, repositories, disabled }: { repo: string; setRepo: (repo: string) => void; repositories: string[]; disabled?: boolean }) {
-  const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState('')
-  const choose = (value: string) => {
-    setRepo(value.trim())
-    setOpen(false)
-  }
-  const q = query.trim().toLowerCase()
-  const others = repositories.filter((r) => r !== repo && (!q || r.toLowerCase().includes(q)))
-  const showSelected = !!repo && (!q || repo.toLowerCase().includes(q))
-  const typed = query.trim()
-  const canUseTyped = REPO.test(typed) && !repositories.some((r) => r.toLowerCase() === typed.toLowerCase()) && typed.toLowerCase() !== repo.toLowerCase()
-  return (
-    <Popover
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next)
-        if (next) setQuery('')
-      }}
-    >
-      <PopoverTrigger
-        disabled={disabled}
-        render={
-          <InputGroupButton
-            size="sm"
-            variant="ghost"
-            className="h-7 min-w-0 gap-1.5 px-2 text-[13px] text-muted-foreground hover:text-foreground"
-            aria-label={`Repository: ${repo || 'Choose repository'}`}
-            title={repo}
-          />
-        }
-      >
-        {repo ? <OwnerAvatar owner={ownerOf(repo)} size={16} className="size-3.5" /> : <FolderIcon />}
-        <span className="max-w-48 truncate">{repo || 'Choose repository'}</span>
-        <ChevronDownIcon />
-      </PopoverTrigger>
-      {/* Styled as the app's dropdown menus (hairline, soft shadow, 32px rows), since that is what it is. */}
-      <PopoverContent align="start" className={`${MENU_POPUP_CLASS} w-80 gap-0 p-0 ring-0`}>
-        <Command shouldFilter={false} loop className="rounded-none bg-transparent p-0">
-          <CommandMenuInput aria-label="Search repositories" autoFocus value={query} onValueChange={setQuery} placeholder="Search repositories…" />
-          <CommandList className="max-h-72 p-1">
-            <CommandEmpty className="px-2 py-3 text-left text-xs text-muted-foreground">
-              {typed ? 'No repositories match. Type a full owner/repo to use it.' : 'No repositories yet. Type an owner/repo.'}
-            </CommandEmpty>
-            {canUseTyped && (
-              <CommandItem value={`use:${typed}`} onSelect={() => choose(typed)} className={REPO_ITEM}>
-                <PlusIcon className="size-3.5 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate">Use {typed}</span>
-              </CommandItem>
-            )}
-            {showSelected && (
-              <CommandItem value={repo} data-checked="true" onSelect={() => choose(repo)} className={REPO_ITEM}>
-                <RepoRow repo={repo} />
-              </CommandItem>
-            )}
-            {showSelected && others.length > 0 && <CommandSeparator className="-mx-1 my-1 bg-border" />}
-            {others.map((value) => (
-              <CommandItem key={value} value={value} onSelect={() => choose(value)} className={REPO_ITEM}>
-                <RepoRow repo={value} />
-              </CommandItem>
-            ))}
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
   )
 }
