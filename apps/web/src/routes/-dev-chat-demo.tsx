@@ -8,6 +8,7 @@ import { AppSidebarView } from '../components/AppSidebar'
 import { UsageMenuView } from '../components/UsageMenu'
 import { AgentStatus } from '../components/AgentStatus'
 import { ChatMessages } from '../components/ChatBlock'
+import { ChatToc } from '../components/ChatToc'
 import { ChatDetails } from '../components/ChatDetails'
 import { ChatSplit, ShowDetailsButton, useDetailsOpen } from '../components/chat-details/layout'
 import type { ChatDetailsData } from '../components/chat-details/types'
@@ -458,6 +459,7 @@ export function Demo() {
                       </div>
                     </MessageScrollerContent>
                   </MessageScrollerViewport>
+                  <ChatToc blocks={blocks} />
                   <MessageScrollerButton />
                 </MessageScroller>
               </MessageScrollerProvider>
