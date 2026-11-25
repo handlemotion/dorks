@@ -17,3 +17,6 @@ export const SIDEBAR_SECTION = 'flex h-7 min-w-0 shrink-0 items-center px-2 text
 
 /** The sidebar's icon buttons (the collapse toggle): the app's 30px bar button with a 14px icon, filled only on hover. */
 export const SIDEBAR_ICON_BUTTON = 'size-[30px] rounded-[6px] text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground aria-expanded:bg-foreground/[0.05] [&_svg]:size-3.5!'
+
+/** The main sidebar's default width in px; second navbar columns (Plugins) match it. */
+export const SIDEBAR_WIDTH = 300
