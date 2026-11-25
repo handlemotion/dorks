@@ -278,7 +278,10 @@ export function startPhoneLink(app: App, handle: (r: Request) => Response | Prom
       const r = (await res.json()) as { status: string; macId?: string; macToken?: string };
       if (r.status === "claimed" && r.macId && r.macToken) {
         const name = macName();
-        savePaired(app, { macId: r.macId, name, tokenEnc: (await encrypt(app.ring, r.macToken, aad.cloudMacToken(OWNER))).value });
+        const tokenEnc = (await encrypt(app.ring, r.macToken, aad.cloudMacToken(OWNER))).value;
+        // Reading the body and encrypting both yield: a Cancel or a newer pairing meanwhile wins over this answer.
+        if (pairing !== p || stopped) return;
+        savePaired(app, { macId: r.macId, name, tokenEnc });
         paired = { macId: r.macId, name, token: r.macToken };
         pairing = null;
         failures = 0;

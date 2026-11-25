@@ -128,4 +128,36 @@ describe("phone link", () => {
     expect(h.app.db.get<{ cloud_mac_id: string | null }>("SELECT cloud_mac_id FROM settings WHERE id = 1")!.cloud_mac_id).toBeNull();
     link.stop();
   });
+
+  it("ignores a claim that arrives after the pairing was cancelled", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((ok) => (release = ok));
+    const fetch = fakeFetch((url) => {
+      if (url.pathname === "/v1/pair/start") return Response.json({ pairId: "p1", pollToken: "pt", code: "ABCD2345", expiresAt: Date.now() + 600_000 });
+      if (url.pathname === "/v1/pair/poll")
+        // The answer's body arrives only after the owner pressed Cancel.
+        return new Response(
+          new ReadableStream({
+            async start(c) {
+              await held;
+              c.enqueue(new TextEncoder().encode(JSON.stringify({ status: "claimed", macId: "mac1", macToken: "mac-secret" })));
+              c.close();
+            },
+          }),
+        );
+      return new Response("{}", { status: 404 });
+    });
+    const h = harness({ fetch, config: { cloudUrl: CLOUD } });
+    const { r, dial } = fakeRelay();
+    const link = startPhoneLink(h.app, () => new Response("{}"), dial, 5);
+    await link.pair();
+    await until(() => fetch.calls.some((c) => c.url === "/v1/pair/poll"));
+    link.cancelPair();
+    release();
+    await new Promise((ok) => setTimeout(ok, 50));
+    expect(link.view()).toMatchObject({ paired: false, pairing: null });
+    expect(r.dials).toEqual([]);
+    expect(h.app.db.get<{ cloud_mac_id: string | null }>("SELECT cloud_mac_id FROM settings WHERE id = 1")!.cloud_mac_id).toBeNull();
+    link.stop();
+  });
 });
