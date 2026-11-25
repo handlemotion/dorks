@@ -280,14 +280,14 @@ const ASYNC_WAIT_MS = 30_000;
 
 /**
  * GitHub's asynchronous merge (`PUT …/merge-async`, the one stacked PRs require): it answers with a request id at once and merges
- * in the background, so wait for the outcome, a while: merged, or failed with GitHub's reason. A merge queue, or a stack still
+ * in the background, so wait for the outcome, a while: merged, or failed with GitHub's reason. A 200 is a settled answer (already
+ * merged, or already in a merge queue) read like any other. A merge queue, or a stack still
  * merging when the wait runs out, is reported as queued; the poller records the merge when it lands.
  */
 async function mergeAsync(app: App, token: string, repo: string, number: number, method: MergeMethod, sha?: string): Promise<MergeResult> {
   const r = await call(app, token, "PUT", `/repos/${repo}/pulls/${number}/merge-async`, { merge_method: method, ...(sha ? { sha } : {}) });
   setTimer(app, "", "poll", 0);
-  if (r.status === 200) return { merged: true };
-  if (r.status !== 202 && r.status !== 409) {
+  if (r.status !== 200 && r.status !== 202 && r.status !== 409) {
     const message = asyncMessage(r.json) ?? ghMessage(r.json);
     if (r.status === 400) return fail("conflict", message ?? "GitHub says this pull request cannot be merged yet.");
     return mergeRefused(r.status, message);
@@ -300,7 +300,7 @@ async function mergeAsync(app: App, token: string, repo: string, number: number,
     if (poll.status !== 200) break;
     result = obj(poll.json);
   }
-  const status = s(result.status);
+  const status = s(result.status) || (r.status === 200 ? "merged" : "");
   if (status === "merged") {
     setTimer(app, "", "poll", 0);
     const merged = s(obj(result.details).sha);

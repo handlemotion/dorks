@@ -68,7 +68,7 @@ export function Stat({ additions, deletions }: { additions: number; deletions: n
 type Section = 'overview' | 'files' | 'checks' | 'comments'
 
 /** One PR of a stack, as the overview lists it: root first, `current` the one shown. */
-export type PrStackEntry = { url: string; number?: number; title?: string; state?: PrStatusState; draft?: boolean; current: boolean }
+export type PrStackEntry = { url: string; number?: number; title?: string; state?: PrStatusState; draft?: boolean; current: boolean; /** The PR whose branch it builds on. */ parent?: string }
 
 export function PullRequestPanel({
   changes,
@@ -371,16 +371,18 @@ type Step = {
 }
 
 /**
- * What merging the shown PR takes with it. GitHub merges a stacked PR together with every open PR below it, so from the top of a
- * stack one merge lands the whole stack; from the middle, the PRs up to the shown one.
+ * What merging the shown PR takes with it. GitHub merges a stacked PR together with every open PR below it (its chain of bases, not
+ * sibling branches), so from the top of a single-line stack one merge lands the whole stack; from the middle, the PRs up to it.
  */
 type StackMerge = { count: number; whole: boolean }
 function stackMerge(stack?: PrStackEntry[]): StackMerge {
-  const at = stack?.findIndex((p) => p.current) ?? -1
-  if (!stack || at < 0) return { count: 1, whole: false }
+  const current = stack?.find((p) => p.current)
+  if (!stack || !current) return { count: 1, whole: false }
   const open = (p: PrStackEntry) => p.current || p.state === 'open' || p.state === undefined
-  const count = stack.slice(0, at + 1).filter(open).length
-  return { count, whole: count > 1 && !stack.slice(at + 1).some(open) }
+  const chain = new Set<string>()
+  for (let p: PrStackEntry | undefined = current; p && !chain.has(p.url); p = stack.find((o) => o.url === p!.parent)) chain.add(p.url)
+  const downstack = stack.filter((p) => chain.has(p.url) && open(p))
+  return { count: downstack.length, whole: downstack.length > 1 && stack.filter(open).length === downstack.length }
 }
 
 /** The buttons for the PR's next step: unblock it, or merge it (with the confirm). */
