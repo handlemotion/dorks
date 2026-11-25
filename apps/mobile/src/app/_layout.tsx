@@ -4,6 +4,7 @@ import { StatusBar } from "expo-status-bar";
 import * as Updates from "expo-updates";
 import { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 import { authClient } from "@/lib/auth";
 import { holdSplash } from "@/lib/splash";
 import { useColors, useIsDark } from "@/lib/theme";
@@ -30,19 +31,21 @@ export default function RootLayout() {
   if (isPending || !fontsLoaded) return null;
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider value={theme}>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Protected guard={!!session}>
-            <Stack.Screen name="(app)" />
-          </Stack.Protected>
-          <Stack.Protected guard={!session}>
-            <Stack.Screen name="sign-in" />
-            <Stack.Screen name="sign-in-email" />
-            <Stack.Screen name="sign-in-code" />
-          </Stack.Protected>
-        </Stack>
-        <StatusBar style="auto" />
-      </ThemeProvider>
+      <KeyboardProvider>
+        <ThemeProvider value={theme}>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Protected guard={!!session}>
+              <Stack.Screen name="(app)" />
+            </Stack.Protected>
+            <Stack.Protected guard={!session}>
+              <Stack.Screen name="sign-in" />
+              <Stack.Screen name="sign-in-email" />
+              <Stack.Screen name="sign-in-code" />
+            </Stack.Protected>
+          </Stack>
+          <StatusBar style="auto" />
+        </ThemeProvider>
+      </KeyboardProvider>
     </GestureHandlerRootView>
   );
 }

@@ -14,9 +14,8 @@ type Social = "google" | "apple";
 
 const mark = { light: require("../../assets/splash.png"), dark: require("../../assets/splash-dark.png") };
 const google = require("../../assets/sign-in/google.png");
-const apple = require("../../assets/sign-in/apple.png");
 
-/** Sign-in, ported from Wok's iOS app: Google, Apple (native), or email, which pushes the email and code pages. */
+/** Sign-in: Apple first (filled black, Apple's logo at the leading edge like the others), then Google and email; email pushes the email and code pages. */
 export default function SignIn() {
   const c = useColors();
   const dark = useIsDark();
@@ -52,6 +51,15 @@ export default function SignIn() {
         ) : null}
         <View style={styles.actions}>
           <Button
+            intent="apple"
+            size="lg"
+            icon={({ size, color }) => <SymbolView name="apple.logo" size={size} tintColor={color} weight="medium" />}
+            label="Continue with Apple"
+            isPending={pending === "apple"}
+            disabled={finishing || methods?.apple === false}
+            onPress={() => social.run("apple")}
+          />
+          <Button
             intent="outline"
             size="lg"
             icon={({ size }) => <Image source={google} style={{ width: size, height: size }} accessible={false} />}
@@ -59,15 +67,6 @@ export default function SignIn() {
             isPending={pending === "google"}
             disabled={finishing || methods?.google === false}
             onPress={() => social.run("google")}
-          />
-          <Button
-            intent="outline"
-            size="lg"
-            icon={({ size, color }) => <Image source={apple} tintColor={color} style={{ width: size, height: size }} accessible={false} />}
-            label="Sign in with Apple"
-            isPending={pending === "apple"}
-            disabled={finishing || methods?.apple === false}
-            onPress={() => social.run("apple")}
           />
           <Button
             intent="outline"
