@@ -285,7 +285,7 @@ function applyEvent(b: Batch, f: FrameOf<"event">) {
       patchDork(b.app, b.dorkId, b.dork.provider === "codex" ? { codexThreadId: n.sessionId } : { claudeSessionId: n.sessionId, ...(n.model ? { agentModel: n.model } : {}) });
     } else {
       b.flush();
-      dispatch(b.app, b.dorkId, { t: "turn_idle" });
+      dispatch(b.app, b.dorkId, { t: n.kind === "idle" ? "turn_idle" : "turn_started" });
     }
   }
 }

@@ -8,6 +8,7 @@ describe("normalize", () => {
     const n = createNormalizer();
     expect(n({ type: "system", subtype: "init", session_id: "s1" })).toEqual([{ kind: "session", sessionId: "s1" }]);
     expect(n({ type: "system", subtype: "session_state_changed", state: "idle" })).toEqual([{ kind: "idle" }]);
+    expect(n({ type: "system", subtype: "session_state_changed", state: "running" })).toEqual([{ kind: "running" }]);
   });
 
   it("streams text deltas under the in-flight message id", () => {

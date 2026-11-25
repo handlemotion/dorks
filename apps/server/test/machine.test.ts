@@ -9,6 +9,7 @@ const INPUTS: Input["t"][] = [
   "notify",
   "agent_ready",
   "turn_idle",
+  "turn_started",
   "sleep_due",
   "paused",
   "bridge_lost",
@@ -40,6 +41,12 @@ describe("machine: spec behaviours", () => {
   });
   it("a new message cancels the sleep timer and any pause in progress", () => {
     expect(run(ctx("idle"), "user_message")).toMatchObject({ state: "working", effects: ["cancel_sleep", "cancel_pause", "deliver_outbox"] });
+  });
+  it("a turn the agent starts itself makes an idle dork working, so notifications wait for its end and the box stays up", () => {
+    expect(run(ctx("idle"), "turn_started")).toMatchObject({ state: "working", effects: ["cancel_sleep", "cancel_pause"] });
+    expect(run(ctx("working"), "turn_started")).toMatchObject({ state: "working", effects: [] });
+    expect(run(ctx("idle", { archived: true }), "turn_started")).toMatchObject({ state: "idle", effects: [] });
+    expect(run(ctx("working", { queued: true, notifyHeld: true }), "turn_idle").effects).toContain("release_notify");
   });
   it("mid-turn messages steer without changing state", () => {
     expect(run(ctx("working"), "user_message")).toMatchObject({ state: "working", effects: ["deliver_outbox"] });

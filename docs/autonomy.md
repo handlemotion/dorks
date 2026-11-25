@@ -73,6 +73,7 @@ Lifecycle machine (`apps/server/src/core/machine.ts`), input `notify`, by state:
 Other rules:
 
 - `turn_idle` with a held notify delivers it. The dork stays `working`: the notify starts the next turn.
+- `turn_started` (the CLI's `session_state_changed: running`) moves an `idle` dork to `working`. Claude Code starts turns on its own when a background task or subagent finishes; without it those turns ran while the dork read `idle`, so notifications were released into them (the CLI folds a message that lands mid-turn in as a side note the agent may skip) and the sleep timer could pause the box under them. As a backstop the bridge itself never writes a notify while its agent is mid-turn: it leaves it unacked and walks the commands again at the next idle.
 - Pending user messages are always delivered before notifications.
 - An unacked notify counts as `queued`, so the dork neither idles nor sleeps under it, and a pause that lands wakes it again.
 - A notify command is `released` or held. It is held if the dork is `working` or a user message is unacked when it is folded; sending a user message holds a released one again. The bridge sees a notify only if it is released (or the dork is idle), no user message is unacked, and the sandbox is deliverable (working or idle, no pause in flight). A turn boundary with no user message ahead releases the held ones.

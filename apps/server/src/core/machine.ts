@@ -24,6 +24,7 @@ export type Input =
   | { t: "notify" } // an autonomy notification (docs/autonomy.md) was persisted; it wakes a sleeping dork like a message, but never lands mid-turn
   | { t: "agent_ready" }
   | { t: "turn_idle" }
+  | { t: "turn_started" } // the agent began a turn; one it started on its own (a background task finished) moves an idle dork to working
   | { t: "sleep_due" }
   | { t: "paused" }
   | { t: "bridge_lost" }
@@ -142,6 +143,9 @@ const HANDLERS: Record<Input["t"], Handler> = {
   notify: onMessage,
   agent_ready: onAgentReady,
   turn_idle: onTurnIdle,
+  // Without it, a turn the agent starts itself runs while the dork reads idle: notifications are released into the middle of it (the CLI
+  // folds them in as a side note the agent can skip), and the sleep timer can pause the box under it.
+  turn_started: (c, { stay, go }) => (c.state === "idle" && !c.archived ? go("working", ["cancel_sleep", "cancel_pause"]) : stay()),
   sleep_due: (c, { stay }) => (c.state === "idle" && !c.queued ? stay(["pause_box"]) : stay()),
   paused: (c, { stay, go }) => (AWAKE.includes(c.state) || c.state === "error" ? go("sleeping", STOPPED) : stay()),
   bridge_lost: (c, { stay }) => (AWAKE.includes(c.state) ? stay(["arm_watchdog"]) : stay()),
