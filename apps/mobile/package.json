@@ -20,6 +20,7 @@
     "@better-auth/expo": "^1.7.28",
     "@dorks/client": "workspace:*",
     "@dorks/shared": "workspace:*",
+    "@expo-google-fonts/inter": "^0.4.2",
     "@expo/ui": "~58.0.29",
     "better-auth": "^1.7.28",
     "expo": "~58.0.26",

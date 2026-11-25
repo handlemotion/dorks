@@ -24,8 +24,11 @@ and agents never connect to the phone: the phone reads and writes the Mac's UI A
   owner token, but only when it is on the relay allowlist below; a compromised relay can do no more than the phone could.
 - **Separate private repository** for the cloud service (`handlemotion/dorks-cloud`): it holds accounts and deploy config, while
   this repository is public. The protocol between the Mac and the relay is specified here, so either side can change against it.
-- **Sign in with Apple** (native, `expo-apple-authentication`, Better Auth's `apple` provider with the ID token). No OAuth app to
-  register, nothing to type, and it satisfies App Review guideline 4.8 for external TestFlight. Other providers can come later.
+- **Sign-in starts from Wok's** (handlemotion/omni `apps/ios`), in Inter: Continue with Google, Sign in with Apple, or Continue
+  with email, which pushes an email page and then a code page (six boxes, autofill, Resend after 30 s; swipe back between them). Apple stays native (`expo-apple-authentication`, Better Auth's `apple` provider with the ID token), which
+  satisfies App Review guideline 4.8; Google is Better Auth's web OAuth through `ASWebAuthenticationSession` back to `dorks://`; the
+  code is Better Auth's `emailOTP` plugin. `GET /v1/sign-in-methods` says which ones the relay has configured, and the app disables
+  the others. The launch screen stays up until sign-in or the Macs list can draw, then fades (200 ms).
 - **Pairing, not credentials.** The Mac never signs in to an account. Settings shows a short code and a QR code; the signed-in phone
   claims it, and the Mac receives a Mac token that only opens its own relay socket.
 
@@ -92,7 +95,8 @@ socket (hibernatable WebSockets) and multiplexes phone requests over it.
 
 | Method and path | Auth | Result |
 |---|---|---|
-| `/api/auth/*` | | Better Auth (Apple ID token sign-in, `bearer` plugin, `expo` plugin) |
+| `/api/auth/*` | | Better Auth (Apple ID token, Google OAuth, email code (`emailOTP`), `bearer` plugin, `expo` plugin) |
+| `GET /v1/sign-in-methods` | none | `{google, apple, email}`: which sign-in methods are configured |
 | `POST /v1/pair/start` | none | `{pairId, pollToken, code, expiresAt}` (rate limited per IP) |
 | `POST /v1/pair/poll` | `pollToken` | `{status: "pending"}`, or once `{status: "claimed", macId, macToken}`; 404 when expired |
 | `POST /v1/pair/claim` | session | `{macId, name}` |
