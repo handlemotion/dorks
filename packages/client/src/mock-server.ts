@@ -342,6 +342,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     commentPolicy: { mode: "all" },
     claudeCodeMode: true,
     localAlwaysAllow: false,
+    sentry: { connected: false, org: null, url: null },
     claudeModels: MOCK_MODELS,
   };
 
@@ -1096,6 +1097,17 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     if (body.commentPolicy) settings.commentPolicy = body.commentPolicy as Settings["commentPolicy"];
     if (typeof body.claudeCodeMode === "boolean") settings.claudeCodeMode = body.claudeCodeMode;
     if (typeof body.localAlwaysAllow === "boolean") settings.localAlwaysAllow = body.localAlwaysAllow;
+    return saveSentry(body);
+  };
+
+  /** Sentry's fields of a settings PUT. Like apps/server, which checks a Sentry token with Sentry before saving it. */
+  const saveSentry = (body: Record<string, unknown>): string | null => {
+    if (typeof body.sentryToken === "string" && body.sentryToken.startsWith("bad")) return "Sentry rejected that token.";
+    if (body.sentryToken === undefined && body.sentryOrg === undefined && body.sentryUrl === undefined) return null;
+    const s = settings.sentry ?? { connected: false, org: null, url: null };
+    const org = typeof body.sentryOrg === "string" ? body.sentryOrg.trim() || null : s.org;
+    const hasToken = typeof body.sentryToken === "string" ? body.sentryToken !== "" : s.connected;
+    settings.sentry = { connected: hasToken && !!org, org, url: typeof body.sentryUrl === "string" ? body.sentryUrl.trim() || null : s.url };
     return null;
   };
 
@@ -1163,6 +1175,16 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         if (key.startsWith("bad")) return json(res, 200, { status: "invalid", message: "Boat rejected that key. Check it and its access (create, use, save and delete sandboxes)." });
         return json(res, 200, { status: "ok", message: "Boat accepted the key." });
       },
+    ],
+    [
+      "GET /api/sentry/projects",
+      ({ res }) =>
+        settings.sentry?.connected
+          ? json(res, 200, {
+              org: settings.sentry.org,
+              projects: ["api", "web", "worker"].map((slug) => ({ slug, name: slug, platform: slug === "web" ? "javascript-react" : "node" })),
+            })
+          : fail(res, "not_configured", "Connect Sentry in Settings first."),
     ],
     [
       "GET /api/github/repos",

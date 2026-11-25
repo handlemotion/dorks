@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import * as automations from "../../services/automations";
-import { looseBody, ok, service } from "../route";
+import { sentryProjects } from "../../services/automationSentry";
+import { looseBody, ok, service, serviceAsync } from "../route";
 import { handler, id, type Routes } from "./shared";
 
 // ---- automations (docs/automations.md)
@@ -39,6 +40,10 @@ export const automationRoutes: Routes = (api, app) => {
   api.get(
     "/api/automations/:id/runs",
     on((c) => service((a) => c.json(automations.listRuns(a, id(c))))),
+  );
+  api.get(
+    "/api/sentry/projects",
+    on((c) => serviceAsync((a) => sentryProjects(a)).pipe(Effect.map((projects) => c.json(projects)))),
   );
   api.post(
     "/api/automations/:id/runs",

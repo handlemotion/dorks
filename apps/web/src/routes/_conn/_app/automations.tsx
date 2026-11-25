@@ -15,7 +15,7 @@ import { EmptyState } from '../../../components/EmptyState'
 import { PageHeader } from '../../../components/PageHeader'
 import { PageRail, RailPage } from '../../../components/PageRail'
 import { Tip } from '../../../components/Tip'
-import { DAYS, EVENTS, EVERY, GithubMark, TriggerList } from '../../../components/automations/TriggerEditor'
+import { DAYS, EVENTS, EVERY, GithubMark, SENTRY_EVENTS, SentryMark, TriggerList, TriggerMark } from '../../../components/automations/TriggerEditor'
 import { TEMPLATES, type AutomationTemplate } from '../../../components/automations/templates'
 import { SettingsFacts, SettingsGroup, SettingsGroupBody, SettingsInputRow, SettingsSection, SettingsSections, SettingsStatus, StatusDot, TONE_TEXT, type Tone } from '../../../components/settings/kit'
 import { usePending } from '../../../lib/pending'
@@ -70,6 +70,8 @@ const label = <T extends string>(list: { value: T; label: string }[], v: T) => l
 /** A trigger in a few words: `Every Monday at 09:00 in octo/app`, `PR opened in octo/app`. */
 function triggerText(t: AutomationTrigger) {
   if (t.kind === 'github') return `${label(EVENTS, t.event)} in ${t.repo || 'a repository'}`
+  if (t.kind === 'sentry')
+    return `${label(SENTRY_EVENTS, t.event)}${t.event === 'sentry_spike' ? ` (${t.threshold ?? 100}/h)` : ''} in Sentry ${t.project || 'project'}${t.environment ? ` (${t.environment})` : ''}`
   const when = t.every === 'hour' ? `Every hour at :${t.time.slice(3)}` : t.every === 'week' ? `Every ${DAYS[t.day ?? 1]} at ${t.time}` : `${label(EVERY, t.every)} at ${t.time}`
   return `${when} in ${t.repo || 'a repository'}`
 }
@@ -106,7 +108,11 @@ function AutomationList() {
         {!!automations?.length && <PageRail query={query} onQueryChange={setQuery} placeholder="Search automations…" actions={<NewButton variant="default" />} />}
         <SettingsSections>
           {automations?.length === 0 && (
-            <EmptyState figure="relay" title="No automations yet" description="An agent that runs on a schedule, or when something happens in a repository. Start from a template, or from scratch.">
+            <EmptyState
+              figure="relay"
+              title="No automations yet"
+              description="An agent that runs on a schedule, or when something happens in a repository or in Sentry. Start from a template, or from scratch."
+            >
               <NewButton />
             </EmptyState>
           )}
@@ -146,7 +152,9 @@ function Templates({ templates }: { templates: AutomationTemplate[] }) {
       <SettingsGroup label="templates">
         {templates.map((t) => (
           <div key={t.id} className={ROW}>
-            <span className="flex w-4 shrink-0 justify-center text-muted-foreground">{t.input.triggers[0].kind === 'schedule' ? <ClockIcon className="size-4" /> : <GithubMark />}</span>
+            <span className="flex w-4 shrink-0 justify-center text-muted-foreground">
+              <TriggerMark kind={t.input.triggers[0].kind} />
+            </span>
             <RowText title={t.title} description={t.description} />
             <Button size="sm" variant="ghost" nativeButton={false} render={<Link to="/automations" search={{ automation: 'new', template: t.id }} />}>
               Use
@@ -186,7 +194,7 @@ function AutomationForm({ draft, setDraft, overview, disabled }: { draft: Draft;
           <TriggerList triggers={draft.triggers} onChange={(triggers) => set({ triggers })} repositories={repos?.repos ?? []} disabled={disabled} />
         </SettingsGroup>
       </SettingsSection>
-      <SettingsSection title="Instructions" description="Each run also gets what started it: the pull request, issue or comment.">
+      <SettingsSection title="Instructions" description="Each run also gets what started it: the pull request, issue, comment or Sentry issue.">
         <SettingsGroup label="instructions">
           <Textarea
             aria-label="instructions"
@@ -470,7 +478,7 @@ function Facts({ automation: a }: { automation: AutomationView }) {
         },
         {
           label: 'Next run',
-          value: a.nextRunAt ? upcoming(a.nextRunAt) : <span className="text-muted-foreground">{a.enabled && a.triggers.some((t) => t.kind === 'github') ? 'On events' : 'None'}</span>,
+          value: a.nextRunAt ? upcoming(a.nextRunAt) : <span className="text-muted-foreground">{a.enabled && a.triggers.some((t) => t.kind !== 'schedule') ? 'On events' : 'None'}</span>,
         },
         {
           label: 'Last run',
@@ -559,10 +567,21 @@ const SOURCE: Record<AutomationRunView['source'], string> = {
   pr_merged: 'PR merged',
   issue_opened: 'Issue opened',
   comment: 'Comment',
+  sentry_issue: 'New Sentry issue',
+  sentry_spike: 'Sentry error spike',
+  sentry_monitor: 'Sentry monitor failing',
 }
 
 const SourceIcon = ({ source }: { source: AutomationRunView['source'] }) =>
-  source === 'schedule' ? <ClockIcon className="size-4 text-muted-foreground" /> : source === 'manual' ? <HandIcon className="size-4 text-muted-foreground" /> : <GithubMark />
+  source === 'schedule' ? (
+    <ClockIcon className="size-4 text-muted-foreground" />
+  ) : source === 'manual' ? (
+    <HandIcon className="size-4 text-muted-foreground" />
+  ) : source.startsWith('sentry_') ? (
+    <SentryMark />
+  ) : (
+    <GithubMark />
+  )
 
 /** The last runs, under the settings. Left out until the first run: Last run already says None yet. */
 function RunHistory({ automation: a }: { automation: AutomationView }) {
@@ -588,7 +607,13 @@ function RunHistory({ automation: a }: { automation: AutomationView }) {
                 {ago(r.createdAt)}
               </span>
               {r.url && (
-                <Button size="icon-sm" variant="ghost" aria-label="Open on GitHub" nativeButton={false} render={<a href={r.url} target="_blank" rel="noreferrer" />}>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={r.source.startsWith('sentry_') ? 'Open in Sentry' : 'Open on GitHub'}
+                  nativeButton={false}
+                  render={<a href={r.url} target="_blank" rel="noreferrer" />}
+                >
                   <ExternalLinkIcon />
                 </Button>
               )}

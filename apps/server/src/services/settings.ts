@@ -4,6 +4,7 @@ import { fail, OWNER, touch, type App } from "../app";
 import { aad, decrypt, encrypt } from "../core/crypto";
 import { json, update } from "../db";
 import type { GhLogin } from "../lib/ghCli";
+import { organizationApi, SENTRY_URL, SentryError, sentryOrigin, type SentryClient } from "../lib/sentry";
 import { antigravitySignInView, cancelAntigravitySignIn } from "./antigravitySignIn";
 import { boatSignInView, invalidateBoatSignIn } from "./boatSignIn";
 
@@ -35,6 +36,12 @@ export interface Settings {
   claudeCodeMode: boolean;
   /** Every session may use the owner's computer without asking (docs/local-access.md). */
   localAlwaysAllow: boolean;
+  /** Sentry, for automations' Sentry triggers (docs/automations.md, "Sentry"): the owner's token, its organization, a self-hosted URL. */
+  sentryTokenEnc?: string;
+  sentryOrg?: string;
+  sentryUrl?: string;
+  /** The API origin the organization lives on (its region), learned when the token was checked. */
+  sentryApi?: string;
 }
 
 const n = <T>(v: T | null | undefined): T | undefined => (v === null || v === undefined ? undefined : v);
@@ -57,6 +64,10 @@ export function readSettings(app: App): Settings {
     commentPolicy: json(r.comment_policy),
     claudeCodeMode: !!r.claude_code_mode,
     localAlwaysAllow: !!r.local_always_allow,
+    sentryTokenEnc: n(r.sentry_token_enc as string | null),
+    sentryOrg: n(r.sentry_org as string | null),
+    sentryUrl: n(r.sentry_url as string | null),
+    sentryApi: n(r.sentry_api as string | null),
   };
 }
 
@@ -86,6 +97,7 @@ export function settingsView(app: App) {
     commentPolicy: s.commentPolicy ?? DEFAULT_COMMENT_POLICY,
     claudeCodeMode: s.claudeCodeMode,
     localAlwaysAllow: s.localAlwaysAllow,
+    sentry: { connected: !!(s.sentryTokenEnc && s.sentryOrg), org: s.sentryOrg ?? null, url: s.sentryUrl ?? null },
     boxProvider: app.cfg.boxProvider,
     claudeModels: knownModelChoices(app),
     defaultBuildId: app.db.get<{ default_build_id: string | null }>("SELECT default_build_id FROM settings WHERE id = 1")?.default_build_id ?? null,
@@ -113,6 +125,10 @@ export interface SettingsPatch {
   claudeCodeMode?: unknown;
   /** Sessions use the owner's computer without asking; off, each session asks once again (those already allowed stay allowed). */
   localAlwaysAllow?: unknown;
+  /** Sentry's token ("" disconnects), organization slug and, for a self-hosted Sentry, its URL ("" for sentry.io). Checked with Sentry first. */
+  sentryToken?: unknown;
+  sentryOrg?: unknown;
+  sentryUrl?: unknown;
 }
 
 const text = (v: unknown, what: string, max: number) => {
@@ -211,6 +227,7 @@ export async function updateSettings(app: App, patch: SettingsPatch, opts: { fro
   if (patch.commentPolicy !== undefined) row.commentPolicy = commentPolicyOf(patch.commentPolicy);
   if (patch.claudeCodeMode !== undefined) row.claudeCodeMode = flagOf(patch.claudeCodeMode, "claudeCodeMode");
   if (patch.localAlwaysAllow !== undefined) row.localAlwaysAllow = flagOf(patch.localAlwaysAllow, "localAlwaysAllow");
+  Object.assign(row, await sentryConnection(app, patch, before));
   if (!Object.keys(row).length) return;
   if (opts.unless?.()) throw new StaleSignIn("superseded");
   app.db.tx(() => {
@@ -236,6 +253,57 @@ async function afterSave(app: App, patch: SettingsPatch, row: Record<string, unk
 function boatKeyChanged(app: App, previousKeyId: string | undefined, fromSignIn: boolean) {
   if (!fromSignIn) invalidateBoatSignIn(app);
   if (previousKeyId) void app.boatCli.revokeKey(previousKeyId).catch(() => console.error("boat: could not revoke the previous key"));
+}
+
+// ---------------------------------------------------------------- Sentry
+
+const SENTRY_ORG = /^[a-z0-9][a-z0-9_-]{0,99}$/i;
+
+/** The Sentry fields a patch gives, checked, with the saved ones for those it leaves out. */
+function sentryFields(patch: SettingsPatch, before: Settings) {
+  const token = patch.sentryToken !== undefined ? text(patch.sentryToken, "Sentry token", MAX_TOKEN_CHARS) : undefined;
+  const org = patch.sentryOrg !== undefined ? text(patch.sentryOrg, "Sentry organization", 100) : (before.sentryOrg ?? "");
+  const rawUrl = patch.sentryUrl !== undefined ? text(patch.sentryUrl, "Sentry URL", 300) : (before.sentryUrl ?? "");
+  const url = rawUrl ? sentryOrigin(rawUrl) : null;
+  if (rawUrl && !url) fail("invalid", "Enter your Sentry's URL, like https://sentry.example.com.");
+  if (org && !SENTRY_ORG.test(org)) fail("invalid", "Enter the organization's slug, as in its Sentry URL.");
+  return { token, org, url };
+}
+
+/** The organization's API origin, checking the token can read it; a refusal is told in plain words. */
+async function checkSentry(app: App, token: string, org: string, url: string | null): Promise<string> {
+  try {
+    return await organizationApi({ fetch: app.fetch, token, base: url ?? SENTRY_URL, now: () => app.now() }, org);
+  } catch (e) {
+    if (!(e instanceof SentryError)) throw e;
+    if (e.reason === "auth") fail("invalid", "Sentry rejected that token.");
+    if (e.reason === "forbidden") fail("invalid", `That token cannot read the organization ${org}. Make a personal token with org:read, project:read and event:read.`);
+    if (e.reason === "not_found") fail("invalid", `Sentry has no organization ${org} that this token can see.`);
+    return fail("failed", "Sentry could not be reached. Try again.");
+  }
+}
+
+/**
+ * The Sentry columns a patch sets (none when it touches no Sentry field). A token, organization or URL that leaves Sentry connected is
+ * checked with Sentry first (the token reads the organization), which also learns the organization's region; an empty token disconnects.
+ */
+async function sentryConnection(app: App, patch: SettingsPatch, before: Settings): Promise<Record<string, unknown>> {
+  if (patch.sentryToken === undefined && patch.sentryOrg === undefined && patch.sentryUrl === undefined) return {};
+  const { token, org, url } = sentryFields(patch, before);
+  const out: Record<string, unknown> = { sentryOrg: org || null, sentryUrl: url };
+  if (token === "") return { ...out, sentryTokenEnc: null, sentryApi: null };
+  const key = token ?? (before.sentryTokenEnc ? await decrypt(app.ring, before.sentryTokenEnc, aad.sentryToken(OWNER)) : undefined);
+  if (token) out.sentryTokenEnc = (await encrypt(app.ring, token, aad.sentryToken(OWNER))).value;
+  out.sentryApi = key && org ? await checkSentry(app, key, org, url) : null;
+  return out;
+}
+
+/** A client for the saved Sentry connection, or null when Sentry is not connected. */
+export async function sentryClient(app: App): Promise<{ client: SentryClient; org: string } | null> {
+  const s = readSettings(app);
+  if (!s.sentryTokenEnc || !s.sentryOrg) return null;
+  const token = await decrypt(app.ring, s.sentryTokenEnc, aad.sentryToken(OWNER));
+  return { client: { fetch: app.fetch, token, base: s.sentryApi ?? s.sentryUrl ?? SENTRY_URL, now: () => app.now() }, org: s.sentryOrg };
 }
 
 // ---------------------------------------------------------------- connecting GitHub by itself
