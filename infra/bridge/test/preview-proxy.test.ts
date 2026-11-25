@@ -94,6 +94,9 @@ describe("preview proxy", () => {
     const dev = await devServer();
     const first = await proxyFor(dev.port);
     expect(await first.proxies.forTarget(dev.port)).toBe(first.port);
+    const other = await devServer(); // two calls at once for one port share one proxy
+    const [a, b] = await Promise.all([first.proxies.forTarget(other.port), first.proxies.forTarget(other.port)]);
+    expect(a).toBe(b);
     first.proxies.close();
     const again = new PreviewProxies(first.file, () => {});
     closers.push(() => again.close());

@@ -206,6 +206,8 @@ type Entry = { target: number; port: number };
  */
 export class PreviewProxies {
   private running = new Map<number, { port: number; server: Server }>();
+  /** Starts in flight, per target: two preview.show calls at once for one port share one proxy. */
+  private starting = new Map<number, Promise<number>>();
   constructor(
     private file: string,
     private log: Log,
@@ -215,10 +217,18 @@ export class PreviewProxies {
   async forTarget(target: number): Promise<number> {
     const have = this.running.get(target);
     if (have) return have.port;
-    const p = await startProxy(target, 0, this.log);
-    this.running.set(target, p);
-    this.save();
-    return p.port;
+    let pending = this.starting.get(target);
+    if (!pending) {
+      pending = startProxy(target, 0, this.log)
+        .then((p) => {
+          this.running.set(target, p);
+          this.save();
+          return p.port;
+        })
+        .finally(() => this.starting.delete(target));
+      this.starting.set(target, pending);
+    }
+    return pending;
   }
 
   /** Listens again on the ports of the proxies saved before the box was paused. One that cannot be bound is dropped. */
