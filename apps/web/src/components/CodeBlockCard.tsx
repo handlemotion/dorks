@@ -4,6 +4,7 @@ import { markdownPatch } from '../lib/markdownPatch'
 import { useTheme } from 'next-themes'
 import type { MarkdownCodeBlockProps } from '@dorks/ui/markdown'
 import { CodeBlockCopyButton } from '@dorks/ui/code-block'
+import { MermaidBlock } from './MermaidBlock'
 
 const LANG_EXT: Record<string, string> = {
   typescript: 'ts',
@@ -38,7 +39,13 @@ const CODE_CSS = '[data-code] { padding-block: 10px; padding-inline: 4px; }'
  * Fenced code block for markdown: a card-on-card layout (muted outer frame with header + copy button,
  * concentric 6px inner surface card) highlighted with Pierre (`@pierre/diffs/react`).
  */
-export function MarkdownCodeBlock({ code, language, incomplete }: MarkdownCodeBlockProps) {
+export function MarkdownCodeBlock(props: MarkdownCodeBlockProps) {
+  // A `mermaid` fence is drawn as its diagram, with the code block as its fallback (streaming, loading, or a diagram that won't parse).
+  if (props.language.trim().toLowerCase() === 'mermaid') return <MermaidBlock code={props.code.replace(/\n$/, '')} incomplete={props.incomplete} fallback={<CodeCard {...props} />} />
+  return <CodeCard {...props} />
+}
+
+function CodeCard({ code, language, incomplete }: MarkdownCodeBlockProps) {
   const { resolvedTheme } = useTheme()
   const trimmed = code.replace(/\n$/, '')
   const file = useMemo(() => ({ name: fileNameFor(language), contents: trimmed }), [language, trimmed])
