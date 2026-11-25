@@ -152,7 +152,7 @@ export function PluginsDirectory({
 
   return (
     <div className="app-main min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 pt-5 pb-16 sm:px-6">
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 pt-5 pb-16 sm:px-6">
         <SearchBar
           query={query}
           onQueryChange={setQuery}
@@ -205,10 +205,8 @@ export function PluginsDirectory({
                               <span className="truncate font-mono text-xs leading-4 text-foreground">{s.name}</span>
                               <span className="truncate font-mono text-xs leading-4 text-muted-foreground">{where}</span>
                             </span>
-                            <span className="hidden shrink-0 text-xs text-muted-foreground md:inline">{s.transport === 'http' ? 'HTTP' : 'Local'}</span>
-                            <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                            <span title="Installed" aria-label="Installed" className="flex shrink-0 items-center">
                               <StatusDot tone="success" />
-                              <span className="hidden sm:inline">Installed</span>
                             </span>
                           </button>
                           <DropdownMenu>
@@ -248,11 +246,9 @@ export function PluginsDirectory({
                             <span className="truncate text-sm leading-4 text-foreground">{c.name}</span>
                             <span className="truncate text-xs leading-4 text-muted-foreground">{c.description}</span>
                           </span>
-                          <span className="hidden shrink-0 text-xs text-muted-foreground md:inline">{c.toolkit ? 'OAuth' : 'API key'}</span>
                           {connected ? (
-                            <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                            <span title="Installed" aria-label="Installed" className="flex shrink-0 items-center">
                               <StatusDot tone="success" />
-                              <span className="hidden sm:inline">Installed</span>
                             </span>
                           ) : (
                             <PlusIcon aria-hidden className="me-1 size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
@@ -325,7 +321,7 @@ export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { sk
 
   return (
     <div className="app-main min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 pt-5 pb-16 sm:px-6">
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 pt-5 pb-16 sm:px-6">
         <SearchBar
           query={query}
           onQueryChange={setQuery}
@@ -372,9 +368,8 @@ export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { sk
                           <span className="truncate font-mono text-xs leading-4 text-foreground">{s.name}</span>
                           <span className="truncate text-xs leading-4 text-muted-foreground">{s.description || 'Shared across every session in ~/.claude/skills.'}</span>
                         </span>
-                        <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                        <span title="Installed" aria-label="Installed" className="flex shrink-0 items-center">
                           <StatusDot tone="success" />
-                          <span className="hidden sm:inline">Installed</span>
                         </span>
                       </button>
                       <DropdownMenu>

@@ -1,17 +1,31 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { BookOpenIcon, ExternalLinkIcon, ServerIcon } from 'lucide-react'
 import type { McpServerView, SkillView } from '@dorks/client'
 import { useDorksClient } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
 import { toast } from 'sonner'
 import type { Connector } from '../connectors'
-import { SettingsButtonRow, SettingsGroup, SettingsRow, SettingsSection, SettingsSections, SettingsStatus, SettingsValueRow, StatusDot } from '../settings/kit'
+import { SettingsButtonRow, SettingsGroup, SettingsSection, SettingsSections, SettingsStatus, SettingsValueRow, StatusDot } from '../settings/kit'
 import { usePending } from '../../lib/pending'
 import { ago } from '../../lib/time'
 import { ConnectorIcon, signInMcp } from './PluginsDialogs'
 import type { SelectedItem } from './PluginsNav'
 
 const kb = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`)
+
+/** Top overview row inside SettingsGroup, matching the main Plugins list's icon + title/description alignment. */
+function OverviewRow({ icon, title, description, mono, control }: { icon: ReactNode; title: string; description?: ReactNode; mono?: boolean; control?: ReactNode }) {
+  return (
+    <div className="flex min-h-13 w-full min-w-0 items-center gap-3 py-2.5 ps-4 pe-3 text-start">
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-[6px] bg-foreground/[0.04] text-muted-foreground">{icon}</span>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className={mono ? 'truncate font-mono text-xs leading-4 text-foreground' : 'truncate text-sm leading-4 text-foreground'}>{title}</span>
+        {description && <span className="truncate text-xs leading-4 text-muted-foreground">{description}</span>}
+      </div>
+      {control && <div className="flex shrink-0 items-center gap-2">{control}</div>}
+    </div>
+  )
+}
 
 /** Focused settings-kit detail view for an installed plugin, custom server, or skill. */
 export function InstalledDetail({ item, onManageConnector, onEditServer, onRemoved }: { item: SelectedItem; onManageConnector: () => void; onEditServer: () => void; onRemoved: () => void }) {
@@ -25,25 +39,18 @@ function ConnectorDetail({ connector: c, onManage, onRemoved }: { connector: Con
   const { run, pending, error } = usePending()
   return (
     <div className="app-main min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-3xl px-4 pt-8 pb-16 sm:px-6">
+      <div className="mx-auto w-full max-w-2xl px-4 pt-6 pb-16 sm:px-6">
         <SettingsSections>
           <SettingsSection title="Overview">
             <SettingsGroup label={`${c.name} overview`}>
-              <SettingsRow
-                label={
-                  <span className="flex items-center gap-2.5">
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-[6px] bg-foreground/[0.04]">
-                      <ConnectorIcon connector={c} className="size-4" />
-                    </span>
-                    <span className="truncate">{c.name}</span>
-                  </span>
-                }
+              <OverviewRow
+                icon={<ConnectorIcon connector={c} className="size-4" />}
+                title={c.name}
                 description={c.description}
                 control={
                   <>
-                    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span title="Installed" aria-label="Installed" className="flex items-center">
                       <StatusDot tone="success" />
-                      Installed
                     </span>
                     <Button size="sm" variant="outline" onClick={onManage}>
                       {c.toolkit ? 'Manage' : 'Replace key'}
@@ -91,25 +98,19 @@ function ServerDetail({ server: s, onEdit, onRemoved }: { server: McpServerView;
   const secrets = [...s.headerNames, ...s.envNames]
   return (
     <div className="app-main min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-3xl px-4 pt-8 pb-16 sm:px-6">
+      <div className="mx-auto w-full max-w-2xl px-4 pt-6 pb-16 sm:px-6">
         <SettingsSections>
           <SettingsSection title="Configuration">
             <SettingsGroup label={`${s.name} configuration`}>
-              <SettingsRow
-                label={
-                  <span className="flex items-center gap-2.5">
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-[6px] bg-foreground/[0.04] text-muted-foreground">
-                      <ServerIcon className="size-3.5" />
-                    </span>
-                    <span className="truncate font-mono text-xs">{s.name}</span>
-                  </span>
-                }
+              <OverviewRow
+                icon={<ServerIcon className="size-3.5" />}
+                title={s.name}
+                mono
                 description={<span className="font-mono">{where}</span>}
                 control={
                   <>
-                    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span title={s.oauth === 'signed_out' ? 'Sign in required' : 'Installed'} aria-label={s.oauth === 'signed_out' ? 'Sign in required' : 'Installed'} className="flex items-center">
                       <StatusDot tone={s.oauth === 'signed_out' ? 'warning' : 'success'} />
-                      {s.oauth === 'signed_out' ? 'Sign in required' : 'Installed'}
                     </span>
                     {s.oauth === 'signed_out' && (
                       <Button size="sm" variant="outline" disabled={pending} onClick={() => void run(() => signInMcp(actions, s.name))}>
@@ -170,25 +171,19 @@ function SkillDetail({ skill: s, onRemoved }: { skill: SkillView; onRemoved: () 
   const [note, setNote] = useState('')
   return (
     <div className="app-main min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-3xl px-4 pt-8 pb-16 sm:px-6">
+      <div className="mx-auto w-full max-w-2xl px-4 pt-6 pb-16 sm:px-6">
         <SettingsSections>
           <SettingsSection title="Source">
             <SettingsGroup label={`${s.name} details`}>
-              <SettingsRow
-                label={
-                  <span className="flex items-center gap-2.5">
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-[6px] bg-foreground/[0.04] text-muted-foreground">
-                      <BookOpenIcon className="size-3.5" />
-                    </span>
-                    <span className="truncate font-mono text-xs">{s.name}</span>
-                  </span>
-                }
+              <OverviewRow
+                icon={<BookOpenIcon className="size-3.5" />}
+                title={s.name}
+                mono
                 description={s.description || 'Shared across every session in ~/.claude/skills.'}
                 control={
                   <>
-                    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span title="Installed" aria-label="Installed" className="flex items-center">
                       <StatusDot tone="success" />
-                      Installed
                     </span>
                     <Button
                       size="sm"

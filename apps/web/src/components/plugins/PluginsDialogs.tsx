@@ -50,7 +50,7 @@ function luminance(hex: string) {
 export function ConnectorIcon({ connector: c, className = 'size-4' }: { connector: Connector; className?: string }) {
   if (!c.icon)
     return (
-      <span aria-hidden className={`flex shrink-0 items-center justify-center text-xs font-medium text-foreground ${className}`}>
+      <span aria-hidden className={`flex shrink-0 items-center justify-center text-xs text-foreground ${className}`}>
         {c.name[0]}
       </span>
     )
