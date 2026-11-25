@@ -33,6 +33,7 @@ import type {
   Settings,
   LocalAccess,
   LocalDecision,
+  InputAnswer,
   SettingsPatch,
   SnapshotStatus,
   Usage,
@@ -157,6 +158,8 @@ export function createApi(config: ApiConfig) {
     subscribe: (id: string, pr: PrRefInput) => request<object>("POST", `${dork(id)}/subscriptions`, pr),
     unsubscribe: (id: string, pr: PrRefInput) => request<object>("DELETE", `${dork(id)}/subscriptions`, pr),
     resumeSubscription: (id: string, pr: PrRefInput) => request<object>("POST", `${dork(id)}/subscriptions/resume`, pr),
+    /** The session's files that match `q`, best first, for the composer's `@` menu; `listed` is false until its box has listed them. */
+    searchFiles: (id: string, q: string, limit = 50) => request<{ files: string[]; listed: boolean; truncated: boolean }>("GET", `${dork(id)}/files`, undefined, { q, limit }),
     listComments: (id: string) => request<CommentView[]>("GET", `${dork(id)}/comments`),
     addComment: (id: string, input: NewComment) => request<{ id: string }>("POST", `${dork(id)}/comments`, input),
     replyComment: (id: string, commentId: string, body: string) => request<{ id: string }>("POST", `${dork(id)}/comments/${encodeURIComponent(commentId)}/replies`, { body }),
@@ -171,6 +174,8 @@ export function createApi(config: ApiConfig) {
     updatePullRequestBranch: (id: string, sha?: string, url?: string) => request<object>("POST", `${dork(id)}/pr/update-branch`, { sha, url }),
     getSettings: () => request<Settings>("GET", "/api/settings"),
     decideLocal: (id: string, requestId: string, d: LocalDecision) => request<object>("POST", `${dork(id)}/local/${enc(requestId)}`, d),
+    /** Sends the values the owner typed (or a dismissal). The answer never echoes them. */
+    answerInput: (id: string, requestId: string, a: InputAnswer) => request<object>("POST", `${dork(id)}/inputs/${enc(requestId)}`, a),
     localAccess: () => request<LocalAccess>("GET", "/api/local-access"),
     setLocalAccess: (enabled: boolean) => request<object>("PUT", "/api/local-access", { enabled }),
     revokeLocalSessions: (dorkId?: string) => request<object>("DELETE", dorkId ? `/api/local-access/sessions?dork=${enc(dorkId)}` : "/api/local-access/sessions"),

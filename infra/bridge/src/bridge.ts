@@ -11,6 +11,7 @@ import { AntigravityAgent } from "./antigravity";
 import type { Config } from "./config";
 import { GithubToken, helperCommand } from "./credentials";
 import { McpOAuthProxy, type ProxyRoute } from "./mcp-proxy";
+import { SecretInputs } from "./inputs";
 import { HookService, mcpConfigPath, settingsPath, userMcpServers, writeClaudeMcpConfig, writeClaudeSettings } from "./hooks";
 import { resolveIdentity, type Identity } from "./runas";
 import { EventPipeline } from "./events";
@@ -22,12 +23,16 @@ import { prLabel } from "./pr-ref";
 import { prLookup } from "./pr-lookup";
 import { PrSubscriptions } from "./prs";
 import { errTag, type Log, type Redactor } from "./redact";
-import { RpcServer } from "./rpc";
+import { RpcServer, type RpcMethods } from "./rpc";
+import { Services } from "./services";
 import { claudeOneShot, cleanTitle, titlePrompt } from "./title";
 import { syncSkills } from "./skills";
+import { FileWatcher } from "./files";
 import type { CommandEntry, Transport } from "./transport";
 
 const EFFORTS = effortLevel.options;
+/** The verify judge must answer inside the Stop hook's 60 s, beside the git scan. */
+const JUDGE_TIMEOUT_MS = 40_000;
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 type AnyAgent = Agent | CodexAgent | OpenCodeAgent | AntigravityAgent;
 /** Codex, OpenCode and Antigravity start their session after the process: messages wait for it. Claude Code takes them at once. */
@@ -68,6 +73,11 @@ export class Bridge {
   private github: GithubToken;
   private prs: PrSubscriptions;
   private hooks: HookService;
+  /** The build's services (services.ts): started on demand by the agent. */
+  private services: Services;
+  private previewRpc: RpcMethods;
+  /** Secure inputs (docs/secure-inputs.md): the owner's values, in memory only. */
+  private inputs: SecretInputs;
   /** The owner's OAuth MCP servers, behind a loopback proxy that adds a current token (mcp-proxy.ts). */
   private mcpProxy: McpOAuthProxy;
   private runAs: Identity | null;
@@ -91,6 +101,9 @@ export class Bridge {
   private configuring = 0; // configure jobs in flight (an interrupt arriving meanwhile is deferred, not dropped)
   private configAttempts = new Map<string, number>();
   private agentCtx: { dir: string; env: NodeJS.ProcessEnv } | null = null;
+  /** Lists the working tree for the composer's `@` menu (files.ts). */
+  private files: FileWatcher | null = null;
+  private filesDir = "";
   /** The first message to name the dork after, until a name is sent (or tried) by this process. */
   private nameFrom: string | null = null;
   /** The dork's place in a crew (docs/crew.md), from the last configure: its guidance and the crew tools its MCP server lists. */
@@ -129,13 +142,29 @@ export class Bridge {
     this.github = new GithubToken(["github.com", host].filter(Boolean));
     this.prs = new PrSubscriptions(this.t, this.log);
     const env = this.d.baseEnv ?? process.env;
+    this.inputs = new SecretInputs(this.t, this.redactor, this.log);
     this.hooks = new HookService({
+      inputs: this.inputs,
       workDir: this.cfg.workDir,
       stateDir: this.cfg.stateDir,
       env,
       runAs: this.runAs,
       prs: this.prs,
       prStatus: prLookup(env, this.self[1], () => this.github.get()),
+      services: () => this.services.summary(),
+      judge: (prompt) => this.judge(prompt),
+      // Claude only for now (the one agent tested live, AGENTS.md); a crew coordinator writes no code.
+      skipVerify: () => this.provider !== "claude" || this.role === "coordinator",
+      log: this.log,
+    });
+    this.previewRpc = previewMethods(this.t, this.log, () => this.role, this.previews, this.cfg.bridgePort);
+    this.services = new Services({
+      workDir: this.cfg.workDir,
+      logDir: "/tmp/dorks-services",
+      runAs: this.runAs,
+      env: () => this.agentCtx?.env ?? null,
+      showPreview: async (port, title) => obj(await this.previewRpc["preview.show"]({ port, title })).url as string | undefined,
+      onStart: (name) => this.hooks.activity.service(name),
       log: this.log,
     });
     // With privilege separation the socket lives in a directory only the Claude user can enter (the state dir itself stays root-only,
@@ -233,6 +262,8 @@ export class Bridge {
     await Promise.race([this.outbox.drained(), new Promise((r) => setTimeout(r, drainMs))]);
     this.outbox.stop();
     this.prs.stop();
+    this.files?.stop();
+    this.services.stopAll();
     this.rpc.close();
     this.mcpProxy.close();
     this.previews.close();
@@ -241,7 +272,7 @@ export class Bridge {
 
   /** The local RPC table (rpc.ts): what the git helper, the `dorks` CLI and the `gh` shim can ask of this process. */
   private rpcMethods() {
-    return { token: this.github.rpc, ...this.prs.methods, ...previewMethods(this.t, this.log, () => this.role, this.previews, this.cfg.bridgePort), ...this.hooks.methods };
+    return { token: this.github.rpc, ...this.prs.methods, ...this.previewRpc, ...this.inputs.methods, ...this.hooks.methods, ...this.services.methods };
   }
 
   // ------------------------------------------------------------------ commands
@@ -296,7 +327,7 @@ export class Bridge {
       }
       this.written.add(id);
       this.persistWritten(id);
-      this.hooks.noteTurn(notify?.kinds ?? []);
+      this.hooks.noteTurn(notify?.kinds ?? [], text);
       if (notify) this.log("notify delivered:", notify.kinds.join(",") || "-", notify.prs.map(prLabel).join(",") || "-"); // never the text
     }
     this.acked.add(id);
@@ -388,6 +419,8 @@ export class Bridge {
     this.proxyOAuthServers(cfg.mcpServers ?? []);
     this.redactor.addAll(Object.values(userMcp.env));
     this.github.set(cfg.ghToken);
+    // Values the owner gave earlier in this session (a restart or a wake forgot them): known before the agent runs a tool again.
+    await this.inputs.refresh().catch((e) => this.log("could not fetch the inputs:", errTag(e)));
 
     const provider = cfg.provider ?? "claude";
     const env = childEnv(this.d.baseEnv ?? process.env, cfg.env, this.log, this.runAs);
@@ -414,6 +447,7 @@ export class Bridge {
     writeClaudeMcpConfig(this.cfg.stateDir, this.self, this.rpc.sockPath, userMcp.config);
     this.userMcp = userMcp.config;
     this.agentCtx = { dir, env };
+    this.services.set(cfg.services ?? []);
     this.agentKey = key;
     this.provider = provider;
     this.role = cfg.role ?? null;
@@ -494,7 +528,8 @@ export class Bridge {
       onRaw: (raw: unknown) => {
         const sid = agent.sessionId;
         if (sid) this.lastSessionId = sid;
-        this.pipeline.ingest(raw);
+        this.hooks.activity.ingest(raw); // the turn's tool calls, for the verify gate
+        this.pipeline.ingest(this.inputs.scrubDeep(raw)); // a secure input never reaches the transcript
         // A turn boundary: a notify held back while the agent was busy (see deliver) can go out now.
         if (isIdleEvent(raw) && this.agent === agent) this.process();
       },
@@ -528,7 +563,10 @@ export class Bridge {
     };
     // Claude Code runs these as hooks; the other agents' finished tool calls arrive on their event streams, so the bridge calls them itself.
     // Hooks fail open and log their own errors.
-    const onShell = (command: string, output: string) => void this.hooks.methods["hook.postToolUse"]({ tool_name: "Bash", tool_input: { command }, tool_response: { stdout: output } });
+    const onShell = (command: string, output: string) => {
+      this.hooks.activity.shell(command);
+      void this.hooks.methods["hook.postToolUse"]({ tool_name: "Bash", tool_input: { command }, tool_response: { stdout: output } });
+    };
     const onIssue = (message: string) => this.pipeline.control({ t: "codex_issue", message: message.slice(0, 1000) }, true);
     const agent: AnyAgent =
       this.provider === "antigravity"
@@ -587,6 +625,7 @@ export class Bridge {
                 extraArgs: [...computerArgs(), ...crewArgs(this.role), ...this.cfg.claudeExtraArgs],
                 model: this.claudeModel.model,
                 effort: this.claudeModel.effort,
+                onCommands: (commands) => this.pipeline.control({ t: "agent_commands", commands }, true),
                 onModels: (models) => {
                   const effort = this.claudeModel.effort;
                   this.pipeline.control({ t: "agent_models", models, effort: effort && (EFFORTS as readonly string[]).includes(effort) ? (effort as EffortLevel) : null }, true);
@@ -595,8 +634,33 @@ export class Bridge {
                 mcpConfigFile: mcpConfigPath(this.cfg.stateDir),
               });
     this.agent = agent;
+    this.watchFiles(dir);
+    this.hooks.turnBoundary(); // the verify gate judges each turn against the trees as they are now
     this.log("agent started", resume ? "(resuming a session)" : "(new session)");
     for (const text of resend) void agent.sendUserMessage(text).catch(() => this.log("could not resend a message to the new session"));
+  }
+
+  /** The repository's files for the composer's `@` menu: one watcher per working directory, kept across agent restarts. */
+  private watchFiles(dir: string) {
+    if (this.files && this.filesDir === dir) return;
+    this.files?.stop();
+    this.filesDir = dir;
+    this.files = new FileWatcher({ dir, baseEnv: this.d.baseEnv ?? process.env, runAs: this.runAs, send: (l) => this.pipeline.control({ t: "files", ...l }, true) });
+    this.files.start();
+  }
+
+  // ------------------------------------------------------------------ verify judge
+  /** One answer from Haiku beside the agent (never in its session, nothing in its transcript), as the dork's title is made. */
+  private async judge(prompt: string): Promise<string | null> {
+    if (!(this.agent instanceof Agent) || !this.agentCtx) return null;
+    const { env } = this.agentCtx;
+    const reply = claudeOneShot({ bin: this.cfg.claudeBin, env, cwd: this.runAs?.home ?? env.HOME ?? this.cfg.stateDir, runAs: this.runAs, prompt });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([reply, new Promise<null>((r) => (timer = setTimeout(() => r(null), JUDGE_TIMEOUT_MS)))]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   // ------------------------------------------------------------------ title

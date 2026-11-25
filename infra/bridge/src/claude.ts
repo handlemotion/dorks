@@ -3,7 +3,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { modelLabel, type AgentModelChoice } from "@dorks/shared";
+import { MAX_AGENT_COMMANDS, modelLabel, type AgentCommand, type AgentModelChoice } from "@dorks/shared";
 import { CHILD_ENV_DENY } from "./config";
 import { COORDINATOR_GUIDANCE, FINAL_ANSWER_GUIDANCE, SKILLS_GUIDANCE, WORKER_GUIDANCE } from "./guidance";
 import type { CrewRole } from "@dorks/shared";
@@ -60,6 +60,8 @@ export interface AgentOptions {
   onRaw: (raw: unknown) => void;
   /** The models the CLI offers this account, from its answer to our `initialize` request. */
   onModels?: (models: AgentModelChoice[]) => void;
+  /** The slash commands and skills the CLI offers this session, from the same `initialize` answer. */
+  onCommands?: (commands: AgentCommand[]) => void;
   /** Not called when the exit was requested through {@link Agent.stop}. */
   onExit: (info: ExitInfo) => void;
 }
@@ -275,9 +277,10 @@ export class Agent {
   }
 
   private onControlResponse(msg: unknown) {
-    const r = (msg as { response?: { request_id?: string; subtype?: string; response?: { models?: unknown } } }).response;
-    if (r?.request_id !== this.initRequest || r.subtype !== "success" || !this.o.onModels) return;
-    this.o.onModels(modelChoices(r.response?.models));
+    const r = (msg as { response?: { request_id?: string; subtype?: string; response?: { models?: unknown; commands?: unknown } } }).response;
+    if (r?.request_id !== this.initRequest || r.subtype !== "success") return;
+    this.o.onModels?.(modelChoices(r.response?.models));
+    this.o.onCommands?.(agentCommands(r.response?.commands));
   }
 
   private releaseHeld() {
@@ -366,6 +369,27 @@ export function modelChoices(raw: unknown): AgentModelChoice[] {
       efforts,
       ...(o.supportsFastMode === true ? { fast: true } : {}),
     });
+  }
+  return out;
+}
+
+const COMMAND_NAME = /^[\w.:-]{1,80}$/;
+
+/** The CLI's `initialize` command list (`{name, description, argumentHint}`, skills included) in the wire shape; internal ones (`__…`) left out. */
+export function agentCommands(raw: unknown): AgentCommand[] {
+  if (!Array.isArray(raw)) return [];
+  const out: AgentCommand[] = [];
+  const seen = new Set<string>();
+  for (const c of raw) {
+    const o = (c && typeof c === "object" ? c : {}) as Record<string, unknown>;
+    if (typeof o.name !== "string" || !COMMAND_NAME.test(o.name) || o.name.startsWith("__") || seen.has(o.name)) continue;
+    seen.add(o.name);
+    out.push({
+      name: o.name,
+      ...(typeof o.description === "string" && o.description.trim() ? { description: o.description.trim().slice(0, 300) } : {}),
+      ...(typeof o.argumentHint === "string" && o.argumentHint.trim() ? { argumentHint: o.argumentHint.trim().slice(0, 200) } : {}),
+    });
+    if (out.length >= MAX_AGENT_COMMANDS) break;
   }
   return out;
 }

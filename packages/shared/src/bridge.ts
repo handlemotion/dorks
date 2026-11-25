@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { mcpServerConfig } from "./mcp";
 import { skillRef } from "./skills";
+import { agentCommand, filePath, MAX_AGENT_COMMANDS, MAX_FILE_PATHS } from "./mentions";
 import { notifyKind, prRef } from "./autonomy";
+import { buildService, MAX_BUILD_SERVICES } from "./builds";
 
 /**
  * An autonomy notification (docs/autonomy.md). Delivered and acked exactly like `user_message` (same dedupe by id), but the backend
@@ -76,6 +78,8 @@ export const toBridge = z.discriminatedUnion("t", [
     // The owner's skills (Customize, see skills.ts): the bridge keeps ~/.claude/skills in step, fetching changed ones with the `skill`
     // rpc. Absent from an older server: none. Not part of the agent's restart key: Claude Code reloads skills by itself.
     skills: z.array(skillRef).max(200).optional(),
+    // The dork's build's services (docs/services.md): what `service_start` can start. Absent: none (base machine, or an older server).
+    services: z.array(buildService).max(MAX_BUILD_SERVICES).optional(),
   }),
   z.object({ t: z.literal("user_message"), id: z.string(), text: z.string() }), // bridge dedupes by id
   notifyFrame(),
@@ -95,6 +99,11 @@ export const fromBridge = z.discriminatedUnion("t", [
   // Claude: the models the CLI offers this account (its `initialize` answer) and the effort the bridge started it with.
   // OpenCode: every `provider/model` its configured providers offer, with no efforts. Antigravity: `agy models`, with no efforts.
   z.object({ t: z.literal("agent_models"), models: z.array(agentModelChoice).max(100), effort: effortLevel.nullable() }),
+  // Claude: the slash commands and skills the CLI offers this session (its `initialize` answer), for the composer's `/` menu.
+  z.object({ t: z.literal("agent_commands"), commands: z.array(agentCommand).max(MAX_AGENT_COMMANDS) }),
+  // The repository's files (`git ls-files`, tracked and untracked but not ignored), for the composer's `@` menu. Sent when the
+  // listing changes; `truncated` when there were more than fit.
+  z.object({ t: z.literal("files"), paths: z.array(filePath).max(MAX_FILE_PATHS), truncated: z.boolean() }),
   z.object({ t: z.literal("ready") }), // repo cloned + claude running
   z.object({ t: z.literal("ack"), id: z.string() }), // user_message id received
   z.object({ t: z.literal("agent_exited"), code: z.number().nullable(), stderrTail: z.string() }),

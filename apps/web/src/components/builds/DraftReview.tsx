@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { ChevronRightIcon, GitBranchIcon, SparklesIcon } from 'lucide-react'
+import { ChevronRightIcon, GitBranchIcon, ServerIcon, SparklesIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from 'cn'
 import type { BuildView, DraftView } from '@dorks/client'
@@ -11,7 +11,8 @@ import { SettingsGroup, SettingsGroupBody, SettingsInputRow, SettingsSection, Se
 import { usePending } from '../../lib/pending'
 import { sizeOf, ago, firstLine, runStatus, runTook } from './format'
 import { Tag, ROW, RowText, Page, BuildCrumb, RunIcon } from './shared'
-import { type DiffLine, diffLines, repoChangesOf } from './diff'
+import { type DiffLine, diffLines, repoChangesOf, serviceChangesOf } from './diff'
+import { serviceWhere } from './Services'
 
 function Diff({ lines, label }: { lines: DiffLine[]; label: string }) {
   return (
@@ -80,8 +81,9 @@ export function DraftReview({ build, draft }: { build: BuildView; draft: DraftVi
   const added = script?.filter((l) => l.kind === '+').length ?? 0
   const removed = script?.filter((l) => l.kind === '-').length ?? 0
   const repoChanges = repoChangesOf(build.repos, s.repos)
+  const serviceChanges = serviceChangesOf(build.services, s.services)
   const sizeChanged = s.machineType !== build.machineType
-  const nothing = !script && repoChanges.length === 0 && !sizeChanged && draft.vars.length === 0
+  const nothing = !script && repoChanges.length === 0 && serviceChanges.length === 0 && !sizeChanged && draft.vars.length === 0
   const back = () => navigate({ to: '/builds', search: { build: build.id } })
   const approve = () =>
     run(async () => {
@@ -146,6 +148,28 @@ export function DraftReview({ build, draft }: { build: BuildView; draft: DraftVi
                       </>
                     }
                   />
+                  <Tag tone={what === 'Added' ? 'added' : what === 'Removed' ? 'removed' : undefined}>{what}</Tag>
+                </div>
+              ))}
+            </SettingsGroup>
+          </SettingsSection>
+        )}
+
+        {serviceChanges.length > 0 && (
+          <SettingsSection title="Services">
+            <SettingsGroup label="service changes">
+              {serviceChanges.map(({ s: svc, what }) => (
+                <div key={`${what}:${svc.name}`} className={ROW}>
+                  <ServerIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                  <RowText
+                    title={
+                      <>
+                        <span className="font-mono text-xs">{svc.name}</span> <code className="font-mono text-xs text-muted-foreground">{svc.command}</code>
+                      </>
+                    }
+                    description={serviceWhere(svc)}
+                  />
+                  {svc.preview && <Tag>Preview</Tag>}
                   <Tag tone={what === 'Added' ? 'added' : what === 'Removed' ? 'removed' : undefined}>{what}</Tag>
                 </div>
               ))}

@@ -15,7 +15,7 @@ import { usePending } from '../lib/pending'
 type LocalBlock = Extract<Block, { kind: 'local' }>
 
 /** The dork the transcript belongs to, so a card can answer for it. Without it (demos) the cards are read-only. */
-const LocalAccessContext = createContext<{ dorkId: string; agent: string } | null>(null)
+export const LocalAccessContext = createContext<{ dorkId: string; agent: string } | null>(null)
 
 export function LocalAccessProvider({ dorkId, agent, children }: { dorkId: string; agent: string; children: ReactNode }) {
   return <LocalAccessContext.Provider value={{ dorkId, agent }}>{children}</LocalAccessContext.Provider>

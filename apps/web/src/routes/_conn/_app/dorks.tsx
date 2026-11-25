@@ -25,6 +25,7 @@ import { environmentOf, type Environment, type EnvironmentBuild } from '../../..
 import { withImages, Composer, preferredModel, type AgentProvider, type ModelPicker } from '../../../components/ChatComposer'
 import { ChatMenu } from '../../../components/ChatMenu'
 import { UsageMenu } from '../../../components/UsageMenu'
+import { useMentions } from '../../../components/ComposerMenu'
 import { ArchiveButton, PageHeader } from '../../../components/PageHeader'
 import { SetupStatus } from '../../../components/SetupStatus'
 import { canCreate } from '../../../lib/onboarding'
@@ -258,6 +259,7 @@ function NewDork({
   }
   const { run, pending, error } = usePending()
   const agent = agentGate(provider, claudeReady, codexReady, antigravityReady)
+  const mentions = useMentions(provider)
   return (
     <div className="[&>div]:max-w-none">
       {agent.notice && <AgentNotice provider={provider} />}
@@ -275,6 +277,7 @@ function NewDork({
         upload={actions.uploadImage}
         draftKey="new"
         usage={<UsageMenu provider={provider} />}
+        mentions={mentions}
         focusKey={visit}
         onSubmit={(images) =>
           run(async () => {

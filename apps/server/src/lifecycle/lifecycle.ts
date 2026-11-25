@@ -5,6 +5,7 @@ import { foldInbox } from "../services/notify";
 import { foldCrew } from "../services/crew";
 import { foldComments } from "../services/comments";
 import { expireLocal } from "../services/local";
+import { expireInput } from "../services/inputs";
 import {
   append,
   beginPause,
@@ -34,6 +35,7 @@ export function fireTimer(app: App, dorkId: string, name: string) {
   const dork = getDork(app.db, dorkId);
   if (!dork || dork.deleting) return;
   if (expireLocal(app, dorkId, name)) return; // `local:<request id>`: an unanswered request to use the owner's computer
+  if (expireInput(app, dorkId, name)) return; // `input:<request id>`: an unanswered request for secure inputs
   const fold = FOLDS[name];
   if (fold) return fold(app, dorkId);
   const rt = runtimeOf(app.db, dorkId);

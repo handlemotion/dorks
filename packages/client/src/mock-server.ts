@@ -92,6 +92,35 @@ const view = (d: MockDork): Dork => {
   return row;
 };
 
+/** What the composer's `/` menu offers: the CLI's `initialize` commands, skills marked by where they come from. */
+const MOCK_COMMANDS = [
+  { name: "code-review", description: "Review the changes since a fixed point along two axes: Standards and Spec. (user)" },
+  { name: "frontend-design", description: "Create distinctive, production-grade frontend interfaces with high design quality. (user)" },
+  { name: "pdf", description: "Read, fill and merge PDF files. (user)" },
+  { name: "tdd", description: "Test-driven development: red, green, refactor. (user)" },
+  { name: "release-notes", description: "Draft release notes from the pull requests merged since a tag. (project)", argumentHint: "[since tag]" },
+  { name: "compact", description: "Free up context by summarizing the conversation so far", argumentHint: "<optional custom summarization instructions>" },
+  { name: "context", description: "Show current context usage" },
+  { name: "init", description: "Initialize a new CLAUDE.md file with codebase documentation" },
+  { name: "security-review", description: "Complete a security review of the pending changes on the current branch" },
+];
+/** What the composer's `@` menu searches: the repository's files as the bridge would list them. */
+const MOCK_FILES = [
+  "AGENTS.md",
+  "README.md",
+  "package.json",
+  "apps/web/src/main.tsx",
+  "apps/web/src/components/ChatComposer.tsx",
+  "apps/web/src/components/SessionChat.tsx",
+  "apps/web/src/components/EmptyState.tsx",
+  "apps/web/src/lib/draft.ts",
+  "apps/server/src/main.ts",
+  "apps/server/src/services/files.ts",
+  "packages/shared/src/mentions.ts",
+  "packages/ui/src/components/ui/command.tsx",
+  "docs/architecture.md",
+  "docs/development.md",
+];
 const MOCK_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 /** What a Claude agent reports from the CLI's `initialize` answer. */
 const MOCK_MODELS = [
@@ -140,6 +169,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   let localAccessEnabled = true;
   /** Local access (docs/local-access.md): the sessions the owner allowed, and requests waiting for an answer (requestId -> its answer). */
   const localAllowed = new Map<string, number>();
+  const inputWaiting = new Map<string, { dorkId: string; names: string[]; answer: (names: string[] | null) => void }>();
   const localWaiting = new Map<string, { dorkId: string; answer: (allowed: "session" | "always" | null) => void }>();
   const live = new Set<ServerResponse>();
   const timers = new Set<ReturnType<typeof setTimeout>>();
@@ -251,10 +281,41 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     });
   };
 
-  /** The fake agent: a turn of tool calls and a streamed answer, ending idle. A prompt that mentions "computer" first asks to use it. */
+  /** The fake agent's `input_request` (docs/secure-inputs.md): a login form; `then` continues the turn once the owner answered. */
+  const askInput = (dorkId: string, then: () => void) => {
+    const requestId = `input-${randomUUID().slice(0, 8)}`;
+    append(dorkId, {
+      type: "input_request",
+      requestId,
+      title: "Page login",
+      description: "Sign in to the account that manages this page. Posts go out as the page.",
+      fields: [
+        { name: "page_login", label: "Email or phone", kind: "email" },
+        { name: "page_password", label: "Password", kind: "secret" },
+      ],
+    });
+    inputWaiting.set(requestId, {
+      dorkId,
+      names: ["page_login", "page_password"],
+      answer: (names) => {
+        inputWaiting.delete(requestId);
+        append(dorkId, names ? { type: "input_response", requestId, status: "provided", names } : { type: "input_response", requestId, status: "dismissed" });
+        then();
+      },
+    });
+  };
+
+  /**
+   * The fake agent: a turn of tool calls and a streamed answer, ending idle. A prompt that mentions "computer" first asks to use it;
+   * one that mentions "login" first asks for one (a secure input).
+   */
   const runTurn = (dorkId: string, prompt: string, localDone = false): void => {
     const d = dorks.get(dorkId);
     if (!d) return;
+    if (!localDone && /\blogin\b/i.test(prompt)) {
+      later(tick, () => askInput(dorkId, () => runTurn(dorkId, prompt, true)));
+      return;
+    }
     if (!localDone && /\bcomputer\b/i.test(prompt)) {
       const reason = "To see which simulators are booted on your Mac before I run the UI tests there.";
       later(tick, () =>
@@ -464,6 +525,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
             fast: body.fast === true,
             agentModel: MOCK_MODELS.find((c) => c.model === (str(body.model) ?? "default"))?.resolved,
             modelChoices: MOCK_MODELS,
+            commands: MOCK_COMMANDS,
           }
         : provider === "antigravity"
           ? { model: str(body.model), modelChoices: MOCK_AGY_MODELS }
@@ -588,6 +650,14 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     ],
     ["GET events", listEvents],
     [
+      "GET files",
+      ({ url, res }) => {
+        const q = (url.searchParams.get("q") ?? "").toLowerCase();
+        const files = MOCK_FILES.filter((p) => p.toLowerCase().includes(q)).sort((a, b) => a.length - b.length);
+        json(res, 200, { files, listed: true, truncated: false });
+      },
+    ],
+    [
       "GET pr",
       ({ url, res }, d) => {
         const pr = prOf(d.id, url.searchParams.get("url"));
@@ -657,6 +727,8 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     const sub = m[2] ?? "";
     const local = /^local\/([^/]+)$/.exec(sub);
     if (local && c.method === "POST") return decideLocal(c, d, decodeURIComponent(local[1]!));
+    const input = /^inputs\/([^/]+)$/.exec(sub);
+    if (input && c.method === "POST") return answerInput(c, d, decodeURIComponent(input[1]!));
     const queued = /^queue\/([^/]+)(\/send)?$/.exec(sub);
     if (queued) return takeQueued(c, d, decodeURIComponent(queued[1]!), !!queued[2]);
     const cm = /^comments(?:\/([^/]+)(\/replies)?)?$/.exec(sub);
@@ -749,6 +821,20 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     if (send) {
       if (d.state === "working") append(d.id, { type: "user_message", text: item.text });
       else startTurn(d.id, item.text);
+    }
+    return json(res, 200, {});
+  };
+
+  /** `POST /api/dorks/:id/inputs/:requestId`: the owner's values (kept nowhere: the mock only notes which fields were filled) or a dismissal. */
+  const answerInput = ({ body, res }: Ctx, d: MockDork, requestId: string) => {
+    const waiting = inputWaiting.get(requestId);
+    if (!waiting || waiting.dorkId !== d.id) return fail(res, "conflict", "This request was already answered.");
+    if (body.dismiss === true) waiting.answer(null);
+    else {
+      const values = (body.values ?? {}) as Record<string, unknown>;
+      const names = waiting.names.filter((n) => typeof values[n] === "string" && values[n] !== "");
+      if (names.length < waiting.names.length) return fail(res, "invalid", "Fill in every field.");
+      waiting.answer(names);
     }
     return json(res, 200, {});
   };
@@ -1159,7 +1245,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     const automation = automations(method, path, body);
     if (automation) return "error" in automation ? fail(res, automation.error, automation.message) : json(res, automation.status, automation.body);
     const m =
-      /^\/api\/dorks\/([^/]+)(?:\/(local\/[^/]+|messages|queue(?:\/[^/]+(?:\/send)?)?|interrupt|desktop|archive|model|codex-model|events|pr(?:\/merge|\/update-branch)?|subscriptions(?:\/resume)?|comments(?:\/[^/]+(?:\/replies)?)?))?$/.exec(
+      /^\/api\/dorks\/([^/]+)(?:\/(local\/[^/]+|inputs\/[^/]+|messages|queue(?:\/[^/]+(?:\/send)?)?|interrupt|desktop|archive|model|codex-model|events|files|pr(?:\/merge|\/update-branch)?|subscriptions(?:\/resume)?|comments(?:\/[^/]+(?:\/replies)?)?))?$/.exec(
         path,
       );
     if (m) return routeDork(c, m);

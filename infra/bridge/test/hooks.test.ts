@@ -453,3 +453,48 @@ describe("PR lookup through gh", () => {
     expect(await lookup("/nonexistent/gh")("acme/demo", "b")).toBeNull();
   });
 });
+
+describe("verify gate", () => {
+  const edit = { type: "assistant", message: { content: [{ type: "tool_use", name: "Edit", input: { file_path: "/w/acme/shop/src/cart.ts" } }] } };
+  const bash = (command: string) => ({ type: "assistant", message: { content: [{ type: "tool_use", name: "Bash", input: { command } }] } });
+  const web = [{ name: "web", port: 5173, preview: true, state: "stopped" }];
+
+  it("sends a turn that changed code back once when the judge finds it was not exercised live, naming the services", async () => {
+    const prompts: string[] = [];
+    const judge = async (p: string) => (prompts.push(p), '{"verdict": "needs_live_test", "what": "Start web and add an item on /cart."}');
+    const h = service(tmp("empty-"), { judge, services: () => web });
+    h.svc.turnBoundary();
+    h.svc.noteTurn([], "Fix the cart total");
+    h.svc.activity.ingest(edit);
+    h.svc.activity.ingest(bash("pnpm vitest run cart"));
+
+    const r = await h.stop({ last_assistant_message: "Fixed, tests pass." });
+    expect(r.decision).toBe("block");
+    expect(r.reason).toContain("Start web and add an item on /cart.");
+    expect(r.reason).toContain("`web` (port 5173, opens as a preview)");
+    expect(prompts[0]).toContain("Fix the cart total");
+    expect(prompts[0]).toContain("1. Edit: /w/acme/shop/src/cart.ts\n2. Bash: pnpm vitest run cart");
+    expect(prompts[0]).toContain("Fixed, tests pass.");
+
+    // The continuation is never blocked again, and the next turn starts from nothing: no edit, no judge.
+    expect(await h.stop({ stop_hook_active: true })).toBeNull();
+    expect(await h.stop()).toBeNull();
+    expect(prompts).toHaveLength(1);
+  });
+
+  it("lets it stop when the judge says verified, and falls back to a live-looking step after the last edit without a judge", async () => {
+    const ok = service(tmp("empty-"), { judge: async () => '{"verdict": "verified", "what": ""}' });
+    ok.svc.turnBoundary();
+    ok.svc.activity.ingest(edit);
+    expect(await ok.stop()).toBeNull();
+
+    const fallback = service(tmp("empty-"), { judge: async () => null });
+    fallback.svc.turnBoundary();
+    fallback.svc.activity.ingest(bash("curl -s localhost:5173/cart"));
+    fallback.svc.activity.ingest(edit);
+    expect((await fallback.stop()).decision).toBe("block"); // the request came before the edit
+    fallback.svc.activity.ingest(edit);
+    fallback.svc.activity.ingest(bash("curl -s localhost:5173/cart"));
+    expect(await fallback.stop({ stop_hook_active: false, session_id: "s2" })).toBeNull();
+  });
+});

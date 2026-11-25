@@ -1,4 +1,4 @@
-import type { AgentModelChoice, ClientEvent, DorkState } from "@dorks/shared";
+import type { AgentCommand, AgentModelChoice, ClientEvent, DorkState } from "@dorks/shared";
 import type { Db, Row } from "./db";
 import { bool, json } from "./db";
 
@@ -41,6 +41,8 @@ export interface DorkRow {
   agentEffort?: string;
   /** The models the agent offers this account, as it last reported them. */
   modelChoices?: AgentModelChoice[];
+  /** The slash commands and skills the agent last offered (Claude's `initialize` answer). */
+  agentCommands?: AgentCommand[];
   preview?: string;
   /** Dev servers the agent showed (preview_show), oldest first. */
   previews?: Preview[];
@@ -115,6 +117,7 @@ export const dorkOf = (r: Row): DorkRow => ({
   agentModel: u(r.agent_model as string | null),
   agentEffort: u(r.agent_effort as string | null),
   modelChoices: json(r.model_choices),
+  agentCommands: json(r.agent_commands),
   preview: u(r.preview as string | null),
   previews: json(r.previews),
   images: json(r.images),
@@ -171,10 +174,11 @@ export const prStateOf = (db: Db, d: DorkRow): "open" | "merged" | "closed" | un
     ? (db.get<{ state: string }>("SELECT state FROM pr_subscriptions WHERE dork_id = ? AND url = ? ORDER BY id DESC LIMIT 1", d.id, d.prUrl)?.state as "open" | "merged" | "closed" | undefined)
     : undefined;
 
-/** True when the dork is waiting on the owner: a pending computer-access request or a submitted build draft awaiting approval. */
+/** True when the dork is waiting on the owner: a pending computer-access or secure-input request, or a submitted build draft awaiting approval. */
 export const needsAttentionOf = (db: Db, dorkId: string): boolean =>
   Boolean(
     db.get<{ one: number }>("SELECT 1 AS one FROM local_requests WHERE dork_id = ? AND status = 'pending' LIMIT 1", dorkId) ??
+    db.get<{ one: number }>("SELECT 1 AS one FROM input_requests WHERE dork_id = ? AND status = 'pending' LIMIT 1", dorkId) ??
     db.get<{ one: number }>("SELECT 1 AS one FROM build_drafts WHERE dork_id = ? AND status = 'submitted' LIMIT 1", dorkId),
   );
 
@@ -201,7 +205,8 @@ export const dorkView = (d: DorkRow, prState?: "open" | "merged" | "closed", nee
   prUrl: d.prUrl,
   prState,
   ...(needsAttention ? { needsAttention: true } : {}),
-  ...(queue ? { queue } : {}),
+  // A single dork's read also carries what its composer offers: queued messages and the agent's commands.
+  ...(queue ? { queue, commands: d.agentCommands ?? [] } : {}),
   codexModel: d.codexModel,
   codexModelChoices: d.codexModelChoices,
   model: d.model,

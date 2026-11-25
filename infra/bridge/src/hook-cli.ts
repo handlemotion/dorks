@@ -8,7 +8,9 @@ import { rpcCall } from "./rpc";
 
 /** The CLI name of each hook, its RPC method, and how long Claude Code may wait for it (seconds; the RPC gives up a little earlier). */
 export const HOOK_EVENTS = {
-  stop: { claude: "Stop", method: "hook.stop", timeoutS: 30 },
+  // 60: besides the git scan, the verify gate may wait on a small model's answer (verify.ts).
+  stop: { claude: "Stop", method: "hook.stop", timeoutS: 60 },
+  "pre-tool-use": { claude: "PreToolUse", method: "hook.preToolUse", timeoutS: 20 },
   "post-tool-use": { claude: "PostToolUse", method: "hook.postToolUse", timeoutS: 15 },
   "session-start": { claude: "SessionStart", method: "hook.sessionStart", timeoutS: 10 },
 } as const;

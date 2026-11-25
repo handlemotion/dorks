@@ -31,6 +31,7 @@ import type {
   GithubRepos,
   LocalAccess,
   LocalDecision,
+  InputAnswer,
 } from "./types.ts";
 
 export interface ClientConfig extends ApiConfig {
@@ -350,6 +351,8 @@ export class DorksClient {
     },
     /** Uploads an image for the message being written; resolves with its id. */
     uploadImage: async (image: Blob) => (await this.api.uploadImage(image)).id,
+    /** The session's files matching `q`, best first (the composer's `@` menu). */
+    searchFiles: async (id: string, q: string) => (await this.api.searchFiles(id, q)).files,
     /** Where a shared screenshot (`dorks-image:<id>` in a message) loads from. The id is the capability: no token in the URL. */
     /** `width`: a smaller copy for showing it small (the server snaps it to a size it keeps; an older server sends the original). */
     imageUrl: (imageId: string, width?: number) => `${this.cfg.baseUrl.replace(/\/+$/, "")}/images/${encodeURIComponent(imageId)}${width ? `?w=${width}` : ""}`,
@@ -499,6 +502,10 @@ export class DorksClient {
       this.invalidate("composio");
     },
     /** The owner's answer to an agent's request to use this computer. The transcript shows the outcome. */
+    /** The owner's answer to an agent's secure-input request. The transcript shows the outcome, never the values. */
+    answerInput: async (dorkId: string, requestId: string, a: InputAnswer) => {
+      await this.api.answerInput(dorkId, requestId, a);
+    },
     decideLocal: async (dorkId: string, requestId: string, d: LocalDecision) => {
       await this.api.decideLocal(dorkId, requestId, d);
       this.invalidate("local-access");
