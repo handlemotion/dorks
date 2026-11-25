@@ -34,6 +34,8 @@ import type {
   Settings,
   LocalAccess,
   LocalDecision,
+  PhonePairing,
+  PhoneStatus,
   InputAnswer,
   SettingsPatch,
   SnapshotStatus,
@@ -183,6 +185,11 @@ export function createApi(config: ApiConfig) {
     /** Sends the values the owner typed (or a dismissal). The answer never echoes them. */
     answerInput: (id: string, requestId: string, a: InputAnswer) => request<object>("POST", `${dork(id)}/inputs/${enc(requestId)}`, a),
     localAccess: () => request<LocalAccess>("GET", "/api/local-access"),
+    phone: () => request<PhoneStatus>("GET", "/api/phone"),
+    /** Starts pairing with the iPhone app: a code and a QR link, valid for 10 minutes. */
+    pairPhone: (name?: string) => request<PhonePairing>("POST", "/api/phone/pair", name ? { name } : {}),
+    cancelPhonePair: () => request<object>("DELETE", "/api/phone/pair"),
+    unpairPhone: () => request<object>("DELETE", "/api/phone"),
     setLocalAccess: (enabled: boolean) => request<object>("PUT", "/api/local-access", { enabled }),
     revokeLocalSessions: (dorkId?: string) => request<object>("DELETE", dorkId ? `/api/local-access/sessions?dork=${enc(dorkId)}` : "/api/local-access/sessions"),
     updateSettings: (patch: SettingsPatch) => request<object>("PUT", "/api/settings", patch),
