@@ -47,4 +47,6 @@ export const aad = {
   secret: (userId: string, name: string) => `${userId}|secret|${name}`,
   boatKey: (userId: string) => `${userId}|boat_key`,
   mcpServer: (userId: string, name: string) => `${userId}|mcp_server|${name}`,
+  /** A value the owner gave one session's agent through a secure input (services/inputs.ts). */
+  input: (userId: string, dorkId: string, name: string) => `${userId}|input|${dorkId}|${name}`,
 };

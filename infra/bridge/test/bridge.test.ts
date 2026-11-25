@@ -746,8 +746,9 @@ describe("autonomy: hooks", () => {
     const rep = await readReport(s.report);
     expect(rep.argv.slice(rep.argv.indexOf("--settings"), rep.argv.indexOf("--settings") + 2)).toEqual(["--settings", file]);
     const hooks = settingsOf(s).hooks;
-    expect(Object.keys(hooks).sort()).toEqual(["PostToolUse", "SessionStart", "Stop"]);
-    expect(hooks.PostToolUse[0].matcher).toBe("Bash");
+    expect(Object.keys(hooks).sort()).toEqual(["PostToolUse", "PreToolUse", "SessionStart", "Stop"]);
+    expect(hooks.PreToolUse[0].matcher).toBe("*"); // secure inputs: filled into any tool's input, redacted from any tool's output
+    expect(hooks.PostToolUse[0].matcher).toBe("*");
     expect(hooks.SessionStart[0].matcher).toBe("startup|resume|compact");
     expect(existsSync(join(dir(s), ".claude"))).toBe(false); // nothing is written into the repo
   });

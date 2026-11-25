@@ -10,12 +10,15 @@ import type { RpcMethods } from "./rpc";
 import type { Identity } from "./runas";
 import { changedFiles, judgePrompt, parseVerdict, TurnActivity, verifyReason, workState, type ServiceSummary, type WorkState } from "./verify";
 import { scanWork, type BranchPrStatus, type Finding } from "./work-scan";
+import type { SecretInputs } from "./inputs";
 
 // The bridge's side of the Claude Code hooks (docs/autonomy.md). Claude runs `dorks hook <event>` (hook-cli.ts), which forwards the hook's
 // JSON input to the `hook.*` methods below and prints what they return:
 //   Stop          the "done" gates: a code change not tested against running software (verify.ts, judged by a small model), and
 //                 uncommitted or unpushed work, or a pushed branch without a PR; each blocks the stop once
-//   PostToolUse   backs up the gh shim: subscribes to PRs `gh pr create` printed, unsubscribes from ones `gh pr merge|close` ended
+//   PreToolUse    fills in secure inputs: a `{{secret:NAME}}` in a tool's input becomes the owner's value (inputs.ts)
+//   PostToolUse   redacts secure inputs from every tool's output (inputs.ts); for Bash, also backs up the gh shim: subscribes to PRs
+//                 `gh pr create` printed, unsubscribes from ones `gh pr merge|close` ended
 //   SessionStart  re-injects the subscribed PRs and how autonomy works after a start, resume or compaction
 // A handler that throws answers nothing (Claude Code carries on as if the hook did not exist); `dorks hook` does the same when this
 // process is unreachable.
@@ -44,7 +47,9 @@ function claudeSettings(self: [node: string, cli: string]) {
     attribution: { commit: "", pr: "" },
     hooks: {
       Stop: [{ hooks: run("stop") }],
-      PostToolUse: [{ matcher: "Bash", hooks: run("post-tool-use") }],
+      // Every tool: a secure input may be used by, or turn up in the output of, any of them.
+      PreToolUse: [{ matcher: "*", hooks: run("pre-tool-use") }],
+      PostToolUse: [{ matcher: "*", hooks: run("post-tool-use") }],
       SessionStart: [{ matcher: "startup|resume|compact", hooks: run("session-start") }],
     },
   };
@@ -130,6 +135,8 @@ export interface HookDeps {
   judge?: (prompt: string) => Promise<string | null>;
   /** No verify gate for this session (a crew coordinator, which writes no code). */
   skipVerify?: () => boolean;
+  /** Secure inputs (docs/secure-inputs.md): filled into tool inputs, redacted from tool outputs. */
+  inputs?: Pick<SecretInputs, "preToolUse" | "postToolUse">;
   log: Log;
 }
 
@@ -163,6 +170,7 @@ export class HookService {
 
   readonly methods: RpcMethods = {
     "hook.stop": (p) => this.run("stop", () => this.stop(asInput(p))),
+    "hook.preToolUse": (p) => this.run("pre-tool-use", async () => (await this.d.inputs?.preToolUse(asInput(p))) ?? null),
     "hook.postToolUse": (p) => this.run("post-tool-use", () => this.postToolUse(asInput(p))),
     "hook.sessionStart": (p) => this.run("session-start", () => this.sessionStart()),
   };
@@ -273,11 +281,16 @@ export class HookService {
 
   // ------------------------------------------------------------------ PostToolUse
   private async postToolUse(input: HookInput): Promise<HookOutput> {
-    if (input.tool_name !== "Bash") return null;
+    const redacted = this.d.inputs?.postToolUse(input) ?? null;
+    if (input.tool_name === "Bash") await this.followPrs(input);
+    return redacted; // null: nothing changes what the agent sees of the tool result
+  }
+
+  private async followPrs(input: HookInput): Promise<void> {
     const command = text(asInput(input.tool_input).command);
     const creates = CREATES_PRS.test(command);
     const ends = ENDS_PRS.test(command);
-    if (!creates && !ends) return null; // every Bash call passes through here: no waiting on the subscription list for the ones that do not matter
+    if (!creates && !ends) return; // every Bash call passes through here: no waiting on the subscription list for the ones that do not matter
     const output = toolOutput(input.tool_response);
     const known = await this.d.prs.list();
 
@@ -291,7 +304,6 @@ export class HookService {
         if (ref && known?.some((s) => samePr(s, ref))) await this.d.prs.unsubscribe(ref);
       }
     }
-    return null; // nothing that changes what the agent sees of the tool result
   }
 
   // ------------------------------------------------------------------ SessionStart

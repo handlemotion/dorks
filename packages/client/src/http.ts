@@ -33,6 +33,7 @@ import type {
   Settings,
   LocalAccess,
   LocalDecision,
+  InputAnswer,
   SettingsPatch,
   SnapshotStatus,
   Usage,
@@ -171,6 +172,8 @@ export function createApi(config: ApiConfig) {
     updatePullRequestBranch: (id: string, sha?: string, url?: string) => request<object>("POST", `${dork(id)}/pr/update-branch`, { sha, url }),
     getSettings: () => request<Settings>("GET", "/api/settings"),
     decideLocal: (id: string, requestId: string, d: LocalDecision) => request<object>("POST", `${dork(id)}/local/${enc(requestId)}`, d),
+    /** Sends the values the owner typed (or a dismissal). The answer never echoes them. */
+    answerInput: (id: string, requestId: string, a: InputAnswer) => request<object>("POST", `${dork(id)}/inputs/${enc(requestId)}`, a),
     localAccess: () => request<LocalAccess>("GET", "/api/local-access"),
     setLocalAccess: (enabled: boolean) => request<object>("PUT", "/api/local-access", { enabled }),
     revokeLocalSessions: (dorkId?: string) => request<object>("DELETE", dorkId ? `/api/local-access/sessions?dork=${enc(dorkId)}` : "/api/local-access/sessions"),
