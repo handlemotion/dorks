@@ -60,9 +60,8 @@ export function UsageMenu({ provider }: { provider: AgentProvider }) {
  * when no account reports anything.
  */
 export function UsageMenuView({ usage, provider }: { usage: Usage; provider: AgentProvider }) {
-  const { plan, modelLimits, cloud, machine } = limitsOf(usage, provider)
-  if (!modelLimits.length && !cloud) return null
-  const ring = Math.max(...[...modelLimits, ...(machine ? [machine] : [])].map((l) => l.used), cloud?.blocked ? 1 : 0)
+  const ring = fullestUsed(usage, provider)
+  if (ring === undefined) return null
   const label = `Usage: ${pct(ring)} of the fullest limit used`
   return (
     <Popover>
@@ -82,35 +81,54 @@ export function UsageMenuView({ usage, provider }: { usage: Usage; provider: Age
       {/* Styled as the app's dropdown menus (hairline, soft shadow), like the repository picker; `ring-0` drops the popover's own ring,
           which doubled the hairline. */}
       <PopoverContent align="end" className={`${MENU_POPUP_CLASS} w-80 gap-0 p-0 text-[13px] ring-0`}>
-        {modelLimits.length > 0 && plan && (
-          <Section title={plan.name} href={plan.usage}>
-            {modelLimits.map((l) => (
-              <Bar key={l.label} limit={l} />
-            ))}
-          </Section>
-        )}
-        {cloud && (
-          <Section title="Boat" href={BOAT_USAGE} divided={modelLimits.length > 0}>
-            {cloud.blocked && (
-              <p role="alert" className="text-destructive">
-                {cloud.blocked}
-              </p>
-            )}
-            {machine && <Bar limit={machine} />}
-            {(cloud.startsHour || cloud.startsDay) && (
-              <Row
-                label="Starts"
-                value={[cloud.startsHour && `${cloud.startsHour.used}/${cloud.startsHour.limit} this hour`, cloud.startsDay && `${cloud.startsDay.used}/${cloud.startsDay.limit} today`]
-                  .filter(Boolean)
-                  .join(' · ')}
-              />
-            )}
-            {cloud.sandboxes && <Row label="Running sandboxes" value={`${cloud.sandboxes.used} of ${cloud.sandboxes.limit}`} />}
-            {cloud.walletDollars !== undefined && <Row label="Wallet" value={dollars.format(cloud.walletDollars)} />}
-          </Section>
-        )}
+        <UsageSections usage={usage} provider={provider} />
       </PopoverContent>
     </Popover>
+  )
+}
+
+/** The fullest limit's share used (the ring's fill), or undefined when no account reports anything. */
+export function fullestUsed(usage: Usage, provider: AgentProvider): number | undefined {
+  const { modelLimits, cloud, machine } = limitsOf(usage, provider)
+  if (!modelLimits.length && !cloud) return undefined
+  return Math.max(...[...modelLimits, ...(machine ? [machine] : [])].map((l) => l.used), cloud?.blocked ? 1 : 0)
+}
+
+export const usedPercent = pct
+
+/** The usage menu's body: the agent's model limits, then Boat's. Shared by the composer's ring and the sidebar's account menu. */
+export function UsageSections({ usage, provider }: { usage: Usage; provider: AgentProvider }) {
+  const { plan, modelLimits, cloud, machine } = limitsOf(usage, provider)
+  return (
+    <>
+      {modelLimits.length > 0 && plan && (
+        <Section title={plan.name} href={plan.usage}>
+          {modelLimits.map((l) => (
+            <Bar key={l.label} limit={l} />
+          ))}
+        </Section>
+      )}
+      {cloud && (
+        <Section title="Boat" href={BOAT_USAGE} divided={modelLimits.length > 0}>
+          {cloud.blocked && (
+            <p role="alert" className="text-destructive">
+              {cloud.blocked}
+            </p>
+          )}
+          {machine && <Bar limit={machine} />}
+          {(cloud.startsHour || cloud.startsDay) && (
+            <Row
+              label="Starts"
+              value={[cloud.startsHour && `${cloud.startsHour.used}/${cloud.startsHour.limit} this hour`, cloud.startsDay && `${cloud.startsDay.used}/${cloud.startsDay.limit} today`]
+                .filter(Boolean)
+                .join(' · ')}
+            />
+          )}
+          {cloud.sandboxes && <Row label="Running sandboxes" value={`${cloud.sandboxes.used} of ${cloud.sandboxes.limit}`} />}
+          {cloud.walletDollars !== undefined && <Row label="Wallet" value={dollars.format(cloud.walletDollars)} />}
+        </Section>
+      )}
+    </>
   )
 }
 
