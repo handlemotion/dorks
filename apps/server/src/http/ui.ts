@@ -10,6 +10,7 @@ import { pullRoutes } from "./ui/pulls";
 import { localRoutes } from "./ui/local";
 import { subscriptionRoutes } from "./ui/subscriptions";
 import { commentRoutes } from "./ui/comments";
+import { fileRoutes } from "./ui/files";
 import { settingsRoutes } from "./ui/settings";
 import { customizeRoutes } from "./ui/customize";
 import { accountRoutes } from "./ui/accounts";
@@ -57,6 +58,7 @@ export function uiApp(app: App): Hono {
     localRoutes,
     subscriptionRoutes,
     commentRoutes,
+    fileRoutes,
     settingsRoutes,
     customizeRoutes,
     accountRoutes,

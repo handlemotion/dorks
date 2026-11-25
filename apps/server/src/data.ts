@@ -1,4 +1,4 @@
-import type { AgentModelChoice, ClientEvent, DorkState } from "@dorks/shared";
+import type { AgentCommand, AgentModelChoice, ClientEvent, DorkState } from "@dorks/shared";
 import type { Db, Row } from "./db";
 import { bool, json } from "./db";
 
@@ -41,6 +41,8 @@ export interface DorkRow {
   agentEffort?: string;
   /** The models the agent offers this account, as it last reported them. */
   modelChoices?: AgentModelChoice[];
+  /** The slash commands and skills the agent last offered (Claude's `initialize` answer). */
+  agentCommands?: AgentCommand[];
   preview?: string;
   /** Dev servers the agent showed (preview_show), oldest first. */
   previews?: Preview[];
@@ -115,6 +117,7 @@ export const dorkOf = (r: Row): DorkRow => ({
   agentModel: u(r.agent_model as string | null),
   agentEffort: u(r.agent_effort as string | null),
   modelChoices: json(r.model_choices),
+  agentCommands: json(r.agent_commands),
   preview: u(r.preview as string | null),
   previews: json(r.previews),
   images: json(r.images),
@@ -202,7 +205,8 @@ export const dorkView = (d: DorkRow, prState?: "open" | "merged" | "closed", nee
   prUrl: d.prUrl,
   prState,
   ...(needsAttention ? { needsAttention: true } : {}),
-  ...(queue ? { queue } : {}),
+  // A single dork's read also carries what its composer offers: queued messages and the agent's commands.
+  ...(queue ? { queue, commands: d.agentCommands ?? [] } : {}),
   codexModel: d.codexModel,
   codexModelChoices: d.codexModelChoices,
   model: d.model,

@@ -218,6 +218,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let aborted = false;
 // What a real bridge relays from the CLI's `initialize` answer.
 const SIM_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+// What the composer's `/` and `@` menus offer (the real bridge relays the CLI's `initialize` commands and `git ls-files`).
+const SIM_COMMANDS = [
+  { name: "code-review", description: "Review the changes since a fixed point along Standards and Spec. (user)" },
+  { name: "tdd", description: "Test-driven development: red, green, refactor. (user)" },
+  { name: "release-notes", description: "Draft release notes from merged pull requests. (project)", argumentHint: "[since tag]" },
+  { name: "compact", description: "Free up context by summarizing the conversation so far", argumentHint: "<optional custom summarization instructions>" },
+  { name: "init", description: "Initialize a new CLAUDE.md file with codebase documentation" },
+];
+const SIM_FILES = ["README.md", "package.json", "AGENTS.md", "src/index.ts", "src/app.tsx", "src/components/Button.tsx", "src/components/Composer.tsx", "src/lib/format.ts", "docs/architecture.md"];
 const SIM_MODELS = [
   { model: "default", name: "Default (recommended)", description: "Sim Opus 1", resolved: "sim-opus-1", efforts: SIM_EFFORTS },
   { model: "opus", name: "Sim Opus 1", description: "The thorough one", resolved: "sim-opus-1", efforts: SIM_EFFORTS },
@@ -267,6 +276,8 @@ async function configure(cid) {
   // The real bridge asks Haiku (or a light Codex model) for this; the sim names the dork after the first few words.
   if (cfg.nameFrom) queue.push({ t: "title", text: `Sim: ${cfg.nameFrom.replace(/\s+/g, " ").trim().split(" ").slice(0, 5).join(" ")}`.slice(0, 120) });
   if (cfg.provider !== "codex") queue.push({ t: "agent_models", models: SIM_MODELS, effort: cfg.effort ?? null });
+  if (cfg.provider === "claude" || !cfg.provider) queue.push({ t: "agent_commands", commands: SIM_COMMANDS });
+  if (cfg.repo) queue.push({ t: "files", paths: SIM_FILES, truncated: false });
   return void flushNow();
 }
 
