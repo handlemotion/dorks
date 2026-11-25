@@ -13,6 +13,7 @@ import {
   ExternalLinkIcon,
   GitCompareArrowsIcon,
   GitMergeIcon,
+  GitPullRequestArrowIcon,
   LoaderIcon,
   RefreshCwIcon,
   WrapTextIcon,
@@ -45,6 +46,8 @@ export type PullRequestPanelData = {
   error?: string
   merge?: (method: MergeMethod, sha: string) => Promise<void>
   updateBranch?: (sha: string) => Promise<void>
+  /** Marks a draft ready for review. */
+  markReady?: () => Promise<void>
   refresh?: () => void
 }
 
@@ -317,21 +320,21 @@ const BLOCKER_BUTTON = 'bg-red-600 text-white hover:bg-red-700 dark:bg-red-600 d
 /**
  * The PR's one next step, on the right of its tabs, GitHub's way: the green merge button when it can merge (a click asks once more
  * in place, since a merge cannot be taken back), or the button that unblocks it, which names the problem itself ("Resolve
- * conflicts", "Update branch", "Fix checks"). Nothing for a draft, a merged or a closed PR: the state above says so. GitHub's
+ * conflicts", "Update branch", "Fix checks"). A draft's one step is "Ready for review"; a merged or closed PR has none. GitHub's
  * reason shows under the title when it refuses.
  */
 function PrActions({ view, data, stack, onAsk }: { view: PullRequestView; data?: PullRequestPanelData; stack?: PrStackEntry[]; onAsk?: (text: string) => void }) {
   const [method, setMethod] = useMergeMethod(view.mergeMethods)
   const [confirming, setConfirming] = useState(false)
-  const [busy, setBusy] = useState<'merge' | 'update'>()
+  const [busy, setBusy] = useState<'merge' | 'update' | 'ready'>()
   const [error, setError] = useState<string>()
   // A new head (a push) or state cancels a pending confirm: the owner confirms what they see.
   useEffect(() => {
     setConfirming(false)
     setError(undefined)
   }, [view.headSha, view.state])
-  if (view.state !== 'open' || view.draft) return null
-  const run = async (kind: 'merge' | 'update', f: () => Promise<void>) => {
+  if (view.state !== 'open') return null
+  const run = async (kind: 'merge' | 'update' | 'ready', f: () => Promise<void>) => {
     setBusy(kind)
     setError(undefined)
     try {
@@ -343,7 +346,9 @@ function PrActions({ view, data, stack, onAsk }: { view: PullRequestView; data?:
       setBusy(undefined)
     }
   }
-  const action = nextStep({ view, data, onAsk, method, setMethod, confirming, setConfirming, busy, run, merging: stackMerge(stack) })
+  const action = view.draft
+    ? data?.markReady && <ReadyButton busy={busy === 'ready'} onClick={() => void run('ready', data.markReady!)} />
+    : nextStep({ view, data, onAsk, method, setMethod, confirming, setConfirming, busy, run, merging: stackMerge(stack) })
   if (!action && !error && !data?.error) return null
   return (
     <div className="ml-auto flex shrink-0 items-center gap-1.5 pr-[1px]">
@@ -365,9 +370,19 @@ type Step = {
   setMethod: (m: MergeMethod) => void
   confirming: boolean
   setConfirming: (c: boolean) => void
-  busy?: 'merge' | 'update'
-  run: (kind: 'merge' | 'update', f: () => Promise<void>) => Promise<void>
+  busy?: 'merge' | 'update' | 'ready'
+  run: (kind: 'merge' | 'update' | 'ready', f: () => Promise<void>) => Promise<void>
   merging: StackMerge
+}
+
+/** A draft's next step, as on GitHub: mark it ready for review. */
+function ReadyButton({ busy, onClick }: { busy: boolean; onClick: () => void }) {
+  return (
+    <Button size="xs" variant="outline" className={ACTION_BUTTON} disabled={busy} onClick={onClick}>
+      {busy ? <LoaderIcon className="animate-spin" /> : <GitPullRequestArrowIcon />}
+      Ready for review
+    </Button>
+  )
 }
 
 /**
@@ -508,7 +523,7 @@ function MergeButton({
   setMethod: (m: MergeMethod) => void
   merging: StackMerge
   confirming: boolean
-  busy?: 'merge' | 'update'
+  busy?: 'merge' | 'update' | 'ready'
   onMerge: () => void
   onCancel: () => void
 }) {

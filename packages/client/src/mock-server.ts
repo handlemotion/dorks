@@ -904,6 +904,19 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       },
     ],
     [
+      "POST pr/ready",
+      ({ body, res }, d) => {
+        const pr = prOf(d.id, body.url);
+        if (!pr) return fail(res, "not_found", "This session has no pull request yet.");
+        if (pr.state !== "open") return fail(res, "conflict", "This pull request is no longer open.");
+        pr.draft = false;
+        if (pr.mergeableState === "draft") pr.mergeableState = "clean";
+        broadcast({ t: "subscriptions", dorkId: d.id });
+        broadcast({ t: "dork", dorkId: d.id });
+        return json(res, 200, {});
+      },
+    ],
+    [
       "POST pr/update-branch",
       ({ body, res }, d) => {
         const pr = prOf(d.id, body.url);
@@ -1466,7 +1479,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     const automation = automations(method, path, body);
     if (automation) return "error" in automation ? fail(res, automation.error, automation.message) : json(res, automation.status, automation.body);
     const m =
-      /^\/api\/dorks\/([^/]+)(?:\/(local\/[^/]+|inputs\/[^/]+|messages|queue(?:\/[^/]+(?:\/send)?)?|interrupt|desktop|archive|mode|model|codex-model|events|files|pr(?:\/merge|\/update-branch)?|subscriptions(?:\/resume)?|comments(?:\/[^/]+(?:\/replies)?)?))?$/.exec(
+      /^\/api\/dorks\/([^/]+)(?:\/(local\/[^/]+|inputs\/[^/]+|messages|queue(?:\/[^/]+(?:\/send)?)?|interrupt|desktop|archive|mode|model|codex-model|events|files|pr(?:\/merge|\/ready|\/update-branch)?|subscriptions(?:\/resume)?|comments(?:\/[^/]+(?:\/replies)?)?))?$/.exec(
         path,
       );
     if (m) return routeDork(c, m);
