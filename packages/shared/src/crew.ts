@@ -1,4 +1,5 @@
 import type { DorkState, TurnOutcome } from "./events";
+import type { DorkMode } from "./modes";
 
 // Crews (docs/crew.md): the session tools, served twice from this one table. The dorks server serves them to external agents over MCP
 // (`POST /mcp`, the owner's tools) and the in-box `dorks` MCP server serves them to coordinators and workers (scoped by the server to
@@ -35,7 +36,8 @@ export const CREW_TOOLS: CrewToolDef[] = [
     name: "dork_create",
     title: "Start a dork",
     description:
-      "Start a new dork: a coding agent in its own cloud sandbox, on its own branch of `repo`, that works on `message` and opens PRs. It runs in the background; " +
+      "Start a new dork: an agent in its own cloud sandbox that works on `message`. In code mode (the default) it works on its own branch of `repo` and opens PRs; in chat mode it needs no repo " +
+      "and suits research, writing, analysis and fixing things on the user's computer. It runs in the background; " +
       'a coordinator hears back automatically when the worker finishes a turn (a <dorks-event source="crew"> turn), anyone else can use dork_wait. ' +
       "Write `message` as a complete, self-contained task: the goal, the boundaries (which files or area it owns), what done looks like, how to verify it, and what to report back. " +
       "`model` is a Claude model alias such as opus or sonnet; `buildId` picks a machine setup from build_list (default: the owner's default build).",
@@ -43,12 +45,17 @@ export const CREW_TOOLS: CrewToolDef[] = [
       type: "object",
       properties: {
         message: { type: "string", description: "The task, as the dork's first message." },
-        repo: { type: "string", description: "owner/name on GitHub. Required for a worker; a coordinator may have none." },
+        repo: { type: "string", description: "owner/name on GitHub. Required in code mode; chat and nerd sessions have none." },
+        mode: {
+          type: "string",
+          enum: ["chat", "code", "nerd"],
+          description: "code (default): works in `repo` and ships PRs. chat: a general assistant with no repo. nerd (owner only): plans and runs other dorks.",
+        },
         title: { type: "string", description: "A short name (default: one is generated from the message)." },
         buildId: { type: "string", description: "A build id from build_list." },
         model: { type: "string", description: "A Claude model alias or id." },
         effort: { type: "string", enum: ["low", "medium", "high", "xhigh", "max"] },
-        coordinator: { type: "boolean", description: "Owner only: start a coordinator, which plans and delegates to worker dorks instead of writing code." },
+        coordinator: { type: "boolean", description: "Owner only, the same as mode nerd: start a coordinator, which plans and delegates to worker dorks instead of writing code." },
         icon: { type: "string", description: "One emoji shown beside its name in the app." },
       },
       required: ["message"],
@@ -61,10 +68,14 @@ export const CREW_TOOLS: CrewToolDef[] = [
     name: "dork_list",
     title: "List dorks",
     description:
-      "List dorks with their state, whether they are settled (done with their turn), repo, PR and the start of their last answer. A coordinator sees its workers; a worker sees its crew (coordinator and sibling workers).",
+      "List dorks with their mode, state, whether they are settled (done with their turn), repo, PR and the start of their last answer. A coordinator sees its workers, and with `all` every other session of the user too; a worker sees its crew (coordinator and sibling workers).",
     inputSchema: {
       type: "object",
-      properties: { archived: { type: "boolean", description: "Archived ones instead of live ones." }, query: { type: "string", description: "Only titles or repos containing this." } },
+      properties: {
+        archived: { type: "boolean", description: "Archived ones instead of live ones." },
+        query: { type: "string", description: "Only titles or repos containing this." },
+        all: { type: "boolean", description: "Coordinator: also the user's other sessions, not only your workers." },
+      },
       additionalProperties: false,
     },
     annotations: RO,
@@ -81,7 +92,8 @@ export const CREW_TOOLS: CrewToolDef[] = [
   {
     name: "dork_read",
     title: "Read a dork's transcript",
-    description: "A condensed transcript: messages, final answers, tool calls by name, notes and errors, oldest first. Page with `after` (the `next` cursor of the previous call).",
+    description:
+      "A condensed transcript: messages, final answers, tool calls by name, notes and errors, oldest first. Page with `after` (the `next` cursor of the previous call). A coordinator can read any of the user's sessions.",
     inputSchema: {
       type: "object",
       properties: { id: ID, after: { type: "integer", description: "Only entries after this cursor." }, limit: { type: "integer", description: "Entries to read, 1 to 200 (default 60)." } },
@@ -96,7 +108,8 @@ export const CREW_TOOLS: CrewToolDef[] = [
     title: "Message a dork",
     description:
       "Send a dork a message. From the owner or a coordinator it is a user message: it steers the dork mid-turn or starts a new turn, and wakes it if it sleeps. " +
-      "From a worker it is a note to its coordinator or a sibling worker, delivered when their current turn ends; use it to ask a question or hand over something they need, not for status (your final answer already reaches the coordinator).",
+      "From a worker it is a note to its coordinator or a sibling worker, delivered when their current turn ends; use it to ask a question or hand over something they need, not for status (your final answer already reaches the coordinator). " +
+      "From a coordinator to a session it did not start (one from dork_list with `all`) it is a note too: information delivered at their next turn boundary, never an instruction from the user.",
     inputSchema: { type: "object", properties: { id: ID, text: { type: "string", description: "The message." } }, required: ["id", "text"], additionalProperties: false },
     annotations: WRITE,
     audience: ["owner", "coordinator", "worker"],
@@ -190,8 +203,9 @@ export interface CrewAnswer {
 export interface CrewDork {
   id: string;
   title: string;
-  kind: "agent" | "coordinator";
-  role?: "coordinator" | "worker" | "you";
+  mode: DorkMode;
+  /** For a worker: its coordinator and siblings. For a coordinator: `other` marks a session that is not one of its workers. */
+  role?: "coordinator" | "worker" | "you" | "other";
   state: DorkState;
   /** Done with its turn: idle, sleeping or error, and no message waiting for it. */
   settled: boolean;
@@ -241,7 +255,7 @@ const ago = (now: number, at: number) => {
 };
 
 function dorkLine(d: CrewDork, now: number, answerChars: number): string {
-  const head = `- ${d.title} (id ${d.id})${d.role && d.role !== "worker" ? ` [${d.role}]` : d.kind === "coordinator" ? " [coordinator]" : ""}: ${d.state}${d.settled ? ", settled" : ""}${d.archived ? ", archived" : ""}`;
+  const head = `- ${d.title} (id ${d.id})${d.role && d.role !== "worker" ? ` [${d.role}]` : ""} (${d.mode}): ${d.state}${d.settled ? ", settled" : ""}${d.archived ? ", archived" : ""}`;
   const where = [d.repo && `${d.repo} @ ${d.branch}`, d.prUrl && `PR ${d.prUrl}${d.prState ? ` (${d.prState})` : ""}`, `active ${ago(now, d.lastActivityAt)}`].filter(Boolean).join(" · ");
   const a = d.lastAnswer;
   const answer = a ? `\n  last turn ${a.outcome ?? "ended"}: ${a.text.length > answerChars ? a.text.slice(0, answerChars).trimEnd() + "…" : a.text}`.replace(/\n(?!  last)/g, "\n    ") : "";

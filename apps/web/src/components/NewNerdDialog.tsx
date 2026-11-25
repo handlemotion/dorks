@@ -23,7 +23,7 @@ export function NewNerdDialog({ open, onOpenChange }: { open: boolean; onOpenCha
   const { run, pending, error } = usePending()
   const start = () =>
     run(async () => {
-      const { id } = await actions.createDork({ kind: 'coordinator', icon, message: goal.trim(), ...(name.trim() ? { title: name.trim() } : {}) })
+      const { id } = await actions.createDork({ mode: 'nerd', icon, message: goal.trim(), ...(name.trim() ? { title: name.trim() } : {}) })
       onOpenChange(false)
       setName('')
       setGoal('')

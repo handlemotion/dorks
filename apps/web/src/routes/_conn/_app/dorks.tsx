@@ -1,7 +1,7 @@
 import { CatchBoundary, createFileRoute, Link, useNavigate, useRouterState } from '@tanstack/react-router'
 import { useCallback, useEffect, useState } from 'react'
 import type { DesktopOptions } from '@dorks/client'
-import type { Block } from '@dorks/shared'
+import { isDorkMode, type Block, type DorkMode } from '@dorks/shared'
 import { ChevronDownIcon, ChevronRightIcon, InfoIcon, MessageSquareIcon } from 'lucide-react'
 import { useBuilds, useDork, useDorkEvents, useDorks, useDorksClient, useGithubRepos, usePullRequest, useSettings, useSubscriptions } from '@dorks/client/react'
 import { ownersOf, useOwnerScope } from '../../../components/ownerScope'
@@ -260,6 +260,8 @@ function NewDork({
   const { run, pending, error } = usePending()
   const agent = agentGate(provider, claudeReady, codexReady, antigravityReady)
   const mentions = useMentions(provider)
+  // A session opened from a repository's + is a code session; otherwise the mode picked last time.
+  const [mode, setMode] = useNewSessionMode(initialRepo)
   return (
     <div className="[&>div]:max-w-none">
       {agent.notice && <AgentNotice provider={provider} />}
@@ -267,6 +269,7 @@ function NewDork({
         text={message}
         setText={setMessage}
         environment={{ builds: built, repositories, value: env, onChange: setPicked }}
+        mode={{ value: mode, onChange: setMode }}
         provider={provider}
         setProvider={setProvider}
         codexEnabled={codexReady}
@@ -284,7 +287,9 @@ function NewDork({
             onCreated(
               (
                 await actions.createDork({
-                  repo: repo.trim(),
+                  mode,
+                  // Only a code session works in a repository; the others start on the chosen build's machine with none.
+                  ...(mode === 'code' ? { repo: repo.trim() } : {}),
                   message: withImages(message, images),
                   provider,
                   buildId,
@@ -298,6 +303,31 @@ function NewDork({
       />
     </div>
   )
+}
+
+const MODE_KEY = 'dorks.new-session-mode'
+
+/** The new session's mode (docs/modes.md): code from a repository's +, else the one picked last, remembered per browser. */
+function useNewSessionMode(initialRepo: string | undefined) {
+  const [picked, setPicked] = useState<DorkMode>(() => {
+    try {
+      const saved = localStorage.getItem(MODE_KEY)
+      return isDorkMode(saved) ? saved : 'code'
+    } catch {
+      return 'code'
+    }
+  })
+  const [fromRepo, setFromRepo] = useState(!!initialRepo)
+  const pick = (m: DorkMode) => {
+    setPicked(m)
+    setFromRepo(false)
+    try {
+      localStorage.setItem(MODE_KEY, m)
+    } catch {
+      // Not remembered.
+    }
+  }
+  return [fromRepo ? 'code' : picked, pick] as const
 }
 
 type DorkView = NonNullable<ReturnType<typeof useDork>>
@@ -448,7 +478,7 @@ function Thread({ dorkId }: { dorkId: string }) {
         That session could not be found.
       </p>
     )
-  const crew = dork.kind === 'coordinator'
+  const crew = dork.mode === 'nerd'
   const details = !detailsOpen ? undefined : crew ? (
     <CrewDetails dork={dork} onClose={() => setDetailsOpen(false)} onAsk={setText} />
   ) : (
@@ -463,7 +493,7 @@ function Thread({ dorkId }: { dorkId: string }) {
   )
   return (
     <ChatSplit details={details}>
-      <section className="flex min-w-0 flex-1 flex-col" aria-label="thread" data-state={dork.state} data-kind={dork.kind ?? 'agent'}>
+      <section className="flex min-w-0 flex-1 flex-col" aria-label="thread" data-state={dork.state} data-mode={dork.mode ?? 'code'}>
         <PageHeader
           parent={dork.parentId ? <ParentCrumb id={dork.parentId} /> : undefined}
           title={crew && dork.icon ? `${dork.icon} ${dork.title}` : dork.title}

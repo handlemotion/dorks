@@ -1,4 +1,4 @@
-import type { DorkState, SubscriptionView } from '@dorks/shared'
+import type { DorkMode, DorkState, SubscriptionView } from '@dorks/shared'
 import { Link, useRouter, type RegisteredRouter } from '@tanstack/react-router'
 import { move } from '@dnd-kit/helpers'
 import { Accessibility, defaultPreset, KeyboardSensor, PointerActivationConstraints, PointerSensor } from '@dnd-kit/dom'
@@ -32,7 +32,7 @@ export type Chat = {
   pr?: { number: number; state?: PrState }
   /** A dork (coordinator) shows its emoji instead of the working icon (docs/crew.md). */
   icon?: string
-  kind?: 'agent' | 'coordinator'
+  mode?: DorkMode
   /** A worker's coordinator: workers live inside their dork, not in the sidebar. */
   parentId?: string | null
 }
@@ -145,7 +145,7 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
             {chat.icon}
           </span>
         ) : (
-          <DorkIcon size={14} state={iconState} label={iconLabel} />
+          <DorkIcon size={14} state={iconState} label={iconLabel} nerd={chat.mode === 'nerd'} />
         )}
         <span className="min-w-0 flex-1 truncate">{chat.title}</span>
       </Link>

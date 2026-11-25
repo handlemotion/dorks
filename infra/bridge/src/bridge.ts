@@ -1,11 +1,11 @@
-import { commandFrame, effortLevel, type EffortLevel, type CrewRole, type FromBridge, type McpServerConfig, type PrRef, type SkillRef } from "@dorks/shared";
+import { commandFrame, effortLevel, type EffortLevel, MODES, type CrewRole, type DorkMode, type FromBridge, type McpServerConfig, type PrRef, type SkillRef } from "@dorks/shared";
 import { createHash } from "node:crypto";
 import { appendFileSync, chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { dirname, join } from "node:path";
 import { Agent, BOAT_COMPUTER_DRIVER, childEnv, COMPUTER_PROMPT, computerArgs, configDirOf, crewArgs, findTranscripts } from "./claude";
 import { CodexAgent } from "./codex";
-import { COORDINATOR_GUIDANCE, FINAL_ANSWER_GUIDANCE, SKILLS_GUIDANCE, WORKER_GUIDANCE } from "./guidance";
+import { CHAT_SYSTEM_PROMPT, COORDINATOR_GUIDANCE, FINAL_ANSWER_GUIDANCE, SKILLS_GUIDANCE, WORKER_GUIDANCE } from "./guidance";
 import { OpenCodeAgent } from "./opencode";
 import { AntigravityAgent } from "./antigravity";
 import type { Config } from "./config";
@@ -41,9 +41,16 @@ const isIdleEvent = (raw: unknown) => {
   const m = raw as { type?: unknown; subtype?: unknown; state?: unknown } | null;
   return m?.type === "system" && m.subtype === "session_state_changed" && m.state === "idle";
 };
-/** What Claude Code gets as appended system prompts (claude.ts), as one system prompt (OpenCode) or always-on rule (Antigravity). */
-function agentSystem(role: CrewRole | null, driverPresent = existsSync(BOAT_COMPUTER_DRIVER)) {
-  return [`${FINAL_ANSWER_GUIDANCE} ${SKILLS_GUIDANCE}`, role === "coordinator" ? COORDINATOR_GUIDANCE : role === "worker" ? WORKER_GUIDANCE : "", driverPresent ? COMPUTER_PROMPT : ""]
+/**
+ * What Claude Code gets as appended system prompts (claude.ts), as one system prompt (OpenCode) or always-on rule (Antigravity). A chat
+ * session (docs/modes.md) has its own prompt in place of the coding final-answer guidance.
+ */
+function agentSystem(role: CrewRole | null, mode: DorkMode, driverPresent = existsSync(BOAT_COMPUTER_DRIVER)) {
+  return [
+    mode === "chat" ? `${CHAT_SYSTEM_PROMPT}\n\n${SKILLS_GUIDANCE}` : `${FINAL_ANSWER_GUIDANCE} ${SKILLS_GUIDANCE}`,
+    role === "coordinator" ? COORDINATOR_GUIDANCE : role === "worker" ? WORKER_GUIDANCE : "",
+    driverPresent ? COMPUTER_PROMPT : "",
+  ]
     .filter(Boolean)
     .join("\n\n");
 }
@@ -108,6 +115,8 @@ export class Bridge {
   private nameFrom: string | null = null;
   /** The dork's place in a crew (docs/crew.md), from the last configure: its guidance and the crew tools its MCP server lists. */
   private role: CrewRole | null = null;
+  /** The dork's mode from the last configure (docs/modes.md); code for an older server that sends none. */
+  private mode: DorkMode = "code";
   private naming = false;
   private readonly cfg: Config;
   /** [node, cli.mjs]: how the git credential helper and the hooks invoke this binary. */
@@ -154,10 +163,11 @@ export class Bridge {
       services: () => this.services.summary(),
       judge: (prompt) => this.judge(prompt),
       // Claude only for now (the one agent tested live, AGENTS.md); a crew coordinator writes no code.
-      skipVerify: () => this.provider !== "claude" || this.role === "coordinator",
+      skipVerify: () => this.provider !== "claude" || this.role === "coordinator" || !MODES[this.mode].autonomy,
+      autonomy: () => MODES[this.mode].autonomy,
       log: this.log,
     });
-    this.previewRpc = previewMethods(this.t, this.log, () => this.role, this.previews, this.cfg.bridgePort);
+    this.previewRpc = previewMethods(this.t, this.log, () => ({ role: this.role, mode: this.mode }), this.previews, this.cfg.bridgePort);
     this.services = new Services({
       workDir: this.cfg.workDir,
       logDir: "/tmp/dorks-services",
@@ -428,7 +438,19 @@ export class Bridge {
     await this.syncSkills(provider, env, cfg.skills);
     const key = createHash("sha256")
       .update(
-        JSON.stringify([provider, cfg.codexModel, cfg.model ?? null, cfg.effort ?? null, !!cfg.fast, !!cfg.codeMode, cfg.repo, Object.entries(cfg.env).sort(), cfg.mcpServers ?? [], cfg.role ?? null]),
+        JSON.stringify([
+          provider,
+          cfg.codexModel,
+          cfg.model ?? null,
+          cfg.effort ?? null,
+          !!cfg.fast,
+          !!cfg.codeMode,
+          cfg.repo,
+          Object.entries(cfg.env).sort(),
+          cfg.mcpServers ?? [],
+          cfg.role ?? null,
+          cfg.mode, // absent (an older server) is code
+        ]),
       )
       .digest("hex");
     if (this.agent?.alive && key === this.agentKey) {
@@ -451,6 +473,7 @@ export class Bridge {
     this.agentKey = key;
     this.provider = provider;
     this.role = cfg.role ?? null;
+    this.mode = cfg.mode ?? "code";
     this.codexModel = cfg.codexModel;
     this.claudeModel = { model: cfg.model, effort: cfg.effort, fast: cfg.fast, codeMode: cfg.codeMode };
     this.startAgent(this.resumableSession(provider, env, cfg.resumeSessionId), []);
@@ -577,7 +600,7 @@ export class Bridge {
             sock: this.rpc.sockPath,
             userMcp: this.userMcp,
             skillsDir: join(configDirOf(env), "skills"),
-            system: agentSystem(this.role),
+            system: agentSystem(this.role, this.mode),
             onModels: (models) => this.pipeline.control({ t: "agent_models", models: models.map((m) => ({ ...m, efforts: [] })), effort: null }, true),
             onIssue,
             onReady,
@@ -594,7 +617,7 @@ export class Bridge {
               userMcp: this.userMcp,
               skillsDir: join(configDirOf(env), "skills"),
               stateDir: this.cfg.stateDir,
-              system: agentSystem(this.role),
+              system: agentSystem(this.role, this.mode),
               onModels: (models) =>
                 this.pipeline.control(
                   { t: "agent_models", models: models.slice(0, 100).map((model) => ({ model, name: model.slice(model.indexOf("/") + 1).slice(0, 80), efforts: [] })), effort: null },
@@ -632,6 +655,7 @@ export class Bridge {
                 },
                 settingsFile: settingsPath(this.cfg.stateDir, this.claudeModel),
                 mcpConfigFile: mcpConfigPath(this.cfg.stateDir),
+                ...(this.mode === "chat" ? { systemPrompt: CHAT_SYSTEM_PROMPT } : {}),
               });
     this.agent = agent;
     this.watchFiles(dir);

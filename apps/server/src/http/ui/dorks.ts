@@ -13,13 +13,28 @@ import {
   renameDork,
   sendMessage,
   setArchived,
+  setMode,
   takeQueued,
 } from "../../services/dorks";
 import { chooseModel } from "../../services/models";
 import { ApiError, body, intQuery, ok, service, serviceAsync } from "../route";
 import { handler, id, Loose, str, type Routes } from "./shared";
 
-const CreateDork = Schema.Struct({ repo: Loose, message: Loose, title: Loose, provider: Loose, model: Loose, effort: Loose, fast: Loose, buildId: Loose, setup: Loose, kind: Loose, icon: Loose });
+const CreateDork = Schema.Struct({
+  repo: Loose,
+  message: Loose,
+  title: Loose,
+  provider: Loose,
+  model: Loose,
+  effort: Loose,
+  fast: Loose,
+  buildId: Loose,
+  setup: Loose,
+  mode: Loose,
+  kind: Loose,
+  icon: Loose,
+});
+const Mode = Schema.Struct({ mode: Loose });
 const Text = Schema.Struct({ text: Loose });
 const Title = Schema.Struct({ title: Loose });
 const Theme = Schema.Struct({ theme: Loose });
@@ -62,7 +77,8 @@ export const dorkRoutes: Routes = (api, app) => {
             fast: b.fast,
             buildId: b.buildId,
             setup: b.setup,
-            kind: b.kind,
+            // `kind: "coordinator"` is the name a nerd had before modes (docs/modes.md).
+            mode: b.mode ?? (b.kind === "coordinator" ? "nerd" : undefined),
             icon: b.icon,
           }),
         );
@@ -133,6 +149,15 @@ export const dorkRoutes: Routes = (api, app) => {
     on((c) =>
       body(c, Archived, "archived must be a boolean").pipe(
         Effect.flatMap((b) => service((a) => setArchived(a, id(c), b.archived))),
+        ok(c),
+      ),
+    ),
+  );
+  api.post(
+    "/api/dorks/:id/mode",
+    on((c) =>
+      body(c, Mode).pipe(
+        Effect.flatMap((b) => service((a) => setMode(a, id(c), b.mode))),
         ok(c),
       ),
     ),

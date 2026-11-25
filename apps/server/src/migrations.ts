@@ -545,4 +545,10 @@ export const MIGRATIONS: string[] = [
     updated_at INTEGER NOT NULL
   );
   `,
+  `
+  -- Modes (docs/modes.md) replace kind: a coordinator is a nerd, every other dork so far is a code session.
+  ALTER TABLE dorks ADD COLUMN mode TEXT NOT NULL DEFAULT 'code' CHECK (mode IN ('chat', 'code', 'nerd'));
+  UPDATE dorks SET mode = 'nerd' WHERE kind = 'coordinator';
+  ALTER TABLE dorks DROP COLUMN kind;
+  `,
 ];

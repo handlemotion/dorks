@@ -29,7 +29,7 @@ import { ownersOf, useOwnerScope } from './ownerScope'
 import { SIDEBAR_ROW, SIDEBAR_SECTION } from './sidebarChrome'
 import { UpdatePrompt } from './UpdatePrompt'
 import { useRowHover } from './useRowHover'
-import { NERD_ICONS, NewNerdDialog } from './NewNerdDialog'
+import { NewNerdDialog } from './NewNerdDialog'
 
 const PR_NUMBER = /\/pull\/(\d+)/
 
@@ -58,9 +58,8 @@ export function AppSidebar() {
     state: d.state,
     attention: d.needsAttention,
     pr: prOf(d.prUrl, d.prState),
-    kind: d.kind,
+    mode: d.mode,
     parentId: d.parentId,
-    icon: d.kind === 'coordinator' ? (d.icon ?? NERD_ICONS[0]) : undefined,
   }))
   return (
     <AppSidebarView
@@ -196,9 +195,10 @@ export function AppSidebarView({
   const selected = typeof dork === 'string' ? dork : undefined
   // A worker open full screen keeps its dork highlighted: workers have no rows of their own.
   const activeId = chats.find((c) => c.id === selected)?.parentId ?? selected
-  // Nerds (coordinators) get their own group; their workers live inside them, not in the sidebar.
-  const crews = chats.filter((c) => c.kind === 'coordinator')
-  const sessions = chats.filter((c) => c.kind !== 'coordinator' && !c.parentId)
+  // Nerds (coordinators) and chats (docs/modes.md) get their own groups; a nerd's workers live inside it, not in the sidebar.
+  const crews = chats.filter((c) => c.mode === 'nerd')
+  const talks = chats.filter((c) => c.mode === 'chat' && !c.parentId)
+  const sessions = chats.filter((c) => c.mode !== 'nerd' && c.mode !== 'chat' && !c.parentId)
   const [newNerd, setNewNerd] = useState(false)
   const owners = ownersOf(
     sessions.flatMap((c) => (c.repo ? [c.repo] : [])),
@@ -242,7 +242,15 @@ export function AppSidebarView({
                 </Link>
               ))}
             </nav>
-            {SHOW_NERDS && <NerdsGroup chats={crews} orderKey={`${orderKey}.nerds`} chatTo={chatTo} activeId={activeId} onArchive={onArchive} onNew={() => setNewNerd(true)} />}
+            {crews.length > 0 && <NerdsGroup chats={crews} orderKey={`${orderKey}.nerds`} chatTo={chatTo} activeId={activeId} onArchive={onArchive} onNew={() => setNewNerd(true)} />}
+            {talks.length > 0 && (
+              <nav aria-label="Chats" className="flex shrink-0 flex-col gap-0.5">
+                <div className={`${SIDEBAR_SECTION} pr-1`}>
+                  <span className="min-w-0 flex-1 truncate">Chats</span>
+                </div>
+                <ChatList chats={talks} orderKey={`${orderKey}.chats`} to={chatTo} activeId={activeId} onArchive={onArchive} />
+              </nav>
+            )}
             {groups.map(([repo, list]) => {
               const key = repo || 'other'
               const open = !collapsed.has(key)
@@ -290,12 +298,9 @@ export function AppSidebarView({
 const GROUP_ADD =
   'flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none group-hover/section:opacity-100 hover:bg-foreground/[0.05] hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring [@media(hover:none)]:opacity-100'
 
-/** The Nerds group is not ready yet: hidden from the sidebar until it is. */
-const SHOW_NERDS = false
-
 /**
- * The Nerds group, above the repositories: coordinator sessions (docs/crew.md), each with its emoji. Its `+` opens New nerd; with no
- * nerds yet the group holds one row that does the same, so the feature is findable.
+ * The Nerds group, above the repositories: nerd sessions (docs/crew.md, docs/modes.md), each with its emoji. Its `+` opens New nerd. It
+ * shows once there is a nerd; the first one starts from New session's mode menu.
  */
 function NerdsGroup({
   chats,

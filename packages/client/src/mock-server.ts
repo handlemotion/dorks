@@ -8,6 +8,10 @@ import type { ClientEvent, CommentAnchor, CommentView, McpServerView, PullReques
 import type { Dork, Settings, SnapshotStatus } from "./types.ts";
 import { mockAutomations } from "./mock-automations.ts";
 
+/** A new session's mode (docs/modes.md) from its body: `mode`, or the older `kind: "coordinator"` for a nerd; code by default. */
+const modeOf = (body: Record<string, unknown>): "chat" | "code" | "nerd" | undefined =>
+  body.mode === undefined || body.mode === null ? (body.kind === "coordinator" ? "nerd" : "code") : body.mode === "chat" || body.mode === "code" || body.mode === "nerd" ? body.mode : undefined;
+
 const SNAPSHOT_STEPS = [
   ["prepare", "Cleaning up earlier builds"],
   ["create", "Creating a build sandbox"],
@@ -538,7 +542,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
    * as a crew report, the way the server folds them.
    */
   const crewTurnEnded = (d: MockDork, answer: string) => {
-    if (d.kind === "coordinator" && ![...dorks.values()].some((w) => w.parentId === d.id)) {
+    if (d.mode === "nerd" && ![...dorks.values()].some((w) => w.parentId === d.id)) {
       const repo = "acme/demo";
       for (const task of ["Add the invoices table and its migration, then open a pr", "Wire the billing API to the invoices table, then open a pr"]) {
         const id = addDork({ repo, message: task, provider: "claude" }, d);
@@ -623,10 +627,11 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   };
 
   const createDork = ({ body, res }: Ctx) => {
-    const coordinator = body.kind === "coordinator";
+    const mode = modeOf(body);
+    if (!mode) return fail(res, "invalid", "mode must be chat, code or nerd");
     const repo = str(body.repo)?.trim() ?? "";
     const message = str(body.message)?.trim();
-    if (!(coordinator && !repo) && !/^[\w.-]+\/[\w.-]+$/.test(repo)) return fail(res, "invalid", "repo must look like owner/name");
+    if (!(mode !== "code" && !repo) && !/^[\w.-]+\/[\w.-]+$/.test(repo)) return fail(res, "invalid", "repo must look like owner/name");
     if (!message) return fail(res, "invalid", "message is required");
     const provider = body.provider === "codex" || body.provider === "opencode" || body.provider === "antigravity" ? body.provider : "claude";
     const blocked = cannotCreate(provider);
@@ -655,7 +660,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     dorks.set(id, {
       id,
       title: str(body.title) || message.slice(0, 48),
-      kind: body.kind === "coordinator" ? "coordinator" : "agent",
+      mode: modeOf(body) ?? "code",
       parentId: parent?.id ?? null,
       ...(str(body.icon) ? { icon: str(body.icon) } : {}),
       repo,
@@ -783,6 +788,20 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       "POST archive",
       ({ body, res }, d) => {
         d.archived = body.archived === true;
+        touched(d);
+        return json(res, 200, {});
+      },
+    ],
+    [
+      "POST mode",
+      ({ body, res }, d) => {
+        const mode = body.mode === "chat" || body.mode === "code" || body.mode === "nerd" ? body.mode : undefined;
+        if (!mode) return fail(res, "invalid", "mode must be chat, code or nerd");
+        if (d.archived) return fail(res, "archived", "This session is archived.");
+        if (d.parentId && mode !== d.mode) return fail(res, "invalid", "A worker keeps the mode its coordinator gave it.");
+        if (d.mode === "nerd" && mode !== "nerd" && [...dorks.values()].some((w) => w.parentId === d.id && !w.archived))
+          return fail(res, "conflict", "This nerd still runs sessions. Archive them before switching.");
+        d.mode = mode;
         touched(d);
         return json(res, 200, {});
       },
@@ -1393,7 +1412,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     const automation = automations(method, path, body);
     if (automation) return "error" in automation ? fail(res, automation.error, automation.message) : json(res, automation.status, automation.body);
     const m =
-      /^\/api\/dorks\/([^/]+)(?:\/(local\/[^/]+|inputs\/[^/]+|messages|queue(?:\/[^/]+(?:\/send)?)?|interrupt|desktop|archive|model|codex-model|events|files|pr(?:\/merge|\/update-branch)?|subscriptions(?:\/resume)?|comments(?:\/[^/]+(?:\/replies)?)?))?$/.exec(
+      /^\/api\/dorks\/([^/]+)(?:\/(local\/[^/]+|inputs\/[^/]+|messages|queue(?:\/[^/]+(?:\/send)?)?|interrupt|desktop|archive|mode|model|codex-model|events|files|pr(?:\/merge|\/update-branch)?|subscriptions(?:\/resume)?|comments(?:\/[^/]+(?:\/replies)?)?))?$/.exec(
         path,
       );
     if (m) return routeDork(c, m);

@@ -1,8 +1,8 @@
-import { MAX_LIVE_WORKERS, type ClientEvent } from "@dorks/shared";
+import { isDorkMode, MAX_LIVE_WORKERS, MODES, type ClientEvent, type DorkMode } from "@dorks/shared";
 import { fail, touch, type App } from "../app";
-import { dorkOf, dorkView, eventOf, getDork, needsAttentionOf, prStateOf, queuedMessagesOf, type DorkKind, type DorkRow, type DorkView, type Provider } from "../data";
+import { dorkOf, dorkView, eventOf, getDork, needsAttentionOf, prStateOf, queuedMessagesOf, type DorkRow, type DorkView, type Provider } from "../data";
 import { insert } from "../db";
-import { dispatch, MAX_MESSAGE_CHARS, patchDork, patchRuntime, persistUserMessage, setTimer } from "../lifecycle/dispatch";
+import { dispatch, enqueueConfigure, isAwake, MAX_MESSAGE_CHARS, patchDork, patchRuntime, persistUserMessage, setTimer } from "../lifecycle/dispatch";
 import { withoutImages } from "../lib/messageText";
 import { knownModelChoices, validAntigravityModel, validModelChoice, validOpenCodeModel } from "./models";
 import { validRepo } from "../lib/repo";
@@ -94,27 +94,31 @@ function checkBuild(app: App, input: unknown, setup: boolean): string | null {
   return buildId;
 }
 
-/** A coordinator (docs/crew.md) is a top-level session, never a setup session or a worker; its icon is one emoji. */
-function checkKind(input: { kind?: unknown; icon?: unknown }, setup: boolean, parent?: DorkRow): { kind: DorkKind; icon: string | null } {
-  if (input.kind !== undefined && input.kind !== "agent" && input.kind !== "coordinator") fail("invalid", "kind must be agent or coordinator");
-  const kind: DorkKind = input.kind === "coordinator" ? "coordinator" : "agent";
-  if (kind === "coordinator" && (setup || parent)) fail("invalid", "A coordinator cannot be a setup session or a worker.");
+/**
+ * The session's mode (docs/modes.md), code when omitted. A nerd (a coordinator, docs/crew.md) is a top-level session, never a setup
+ * session or a worker, and a setup session is always code; its icon is one emoji.
+ */
+function checkMode(input: { mode?: unknown; icon?: unknown }, setup: boolean, parent?: DorkRow): { mode: DorkMode; icon: string | null } {
+  if (input.mode !== undefined && input.mode !== null && !isDorkMode(input.mode)) fail("invalid", "mode must be chat, code or nerd");
+  const mode: DorkMode = isDorkMode(input.mode) ? input.mode : "code";
+  if (mode === "nerd" && (setup || parent)) fail("invalid", "A nerd cannot be a setup session or a worker.");
+  if (mode !== "code" && setup) fail("invalid", "A setup session is a code session.");
   if (input.icon !== undefined && input.icon !== null && (typeof input.icon !== "string" || input.icon.length > 16)) fail("invalid", "icon must be one emoji");
-  return { kind, icon: typeof input.icon === "string" && input.icon.trim() ? input.icon.trim() : null };
+  return { mode, icon: typeof input.icon === "string" && input.icon.trim() ? input.icon.trim() : null };
 }
 
 export function createDork(
   app: App,
-  input: { repo?: string; message: string; title?: string; provider?: Provider; model?: unknown; effort?: unknown; fast?: unknown; buildId?: unknown; setup?: unknown; kind?: unknown; icon?: unknown },
+  input: { repo?: string; message: string; title?: string; provider?: Provider; model?: unknown; effort?: unknown; fast?: unknown; buildId?: unknown; setup?: unknown; mode?: unknown; icon?: unknown },
   // Set only by the crew service (services/crew.ts), never from a request body: the coordinator starting this worker.
   parent?: DorkRow,
 ): string {
   const { message, title, provider = "claude" } = input;
   const setup = input.setup === true;
   if (provider !== "claude" && provider !== "codex" && provider !== "opencode" && provider !== "antigravity") fail("invalid", "provider must be claude, codex, opencode or antigravity");
-  const { kind, icon } = checkKind(input, setup, parent);
-  // A coordinator plans and delegates (docs/crew.md): it needs no repository of its own.
-  const repo = checkRepo(input.repo, setup || kind === "coordinator");
+  const { mode, icon } = checkMode(input, setup, parent);
+  // Only a code session works in a repository; a chat or a nerd starts in an empty work directory (one may still be named).
+  const repo = checkRepo(input.repo, setup || !MODES[mode].needsRepo);
   const buildId = checkBuild(app, input.buildId, setup);
   if (title !== undefined && (typeof title !== "string" || title.trim().length > MAX_TITLE_CHARS)) fail("invalid", "title too long");
   const text = checkText(message);
@@ -148,7 +152,7 @@ export function createDork(
       createdAt: now,
       deleting: false,
       buildId,
-      kind,
+      mode,
       parentId: parent?.id ?? null,
       icon,
       ...choice,
@@ -274,8 +278,30 @@ export function checkWorkerRoom(app: App, coordinatorId: string) {
 
 /** Stopping a coordinator stops its crew (docs/crew.md): its live workers are archived with it. Unarchiving brings back only the coordinator. */
 function archiveWorkers(app: App, dork: DorkRow) {
-  if (dork.kind !== "coordinator") return;
   for (const w of app.db.all<{ id: string }>("SELECT id FROM dorks WHERE parent_id = ? AND archived = 0 AND deleting = 0", dork.id)) dispatch(app, w.id, { t: "archive" });
+}
+
+/**
+ * Switches a session's mode (docs/modes.md). Stored at once; an awake agent restarts on the same session with the new mode's
+ * instructions and tools once its current turn is over (as for a model change), a sleeping one wakes with them. A worker keeps its
+ * crew's mode, and a nerd with live workers stays one until they are archived.
+ */
+export function setMode(app: App, dorkId: string, mode: unknown) {
+  app.db.tx(() => {
+    const dork = owned(app, dorkId);
+    if (!isDorkMode(mode)) fail("invalid", "mode must be chat, code or nerd");
+    if (dork.archived) fail("archived", "dork is archived");
+    if (dork.mode === mode) return;
+    if (dork.parentId) fail("invalid", "A worker keeps the mode its coordinator gave it.");
+    const live = app.db.get<{ n: number }>("SELECT count(*) AS n FROM dorks WHERE parent_id = ? AND archived = 0 AND deleting = 0", dorkId)?.n ?? 0;
+    if (dork.mode === "nerd" && live > 0) fail("conflict", `This nerd still runs ${live} session${live === 1 ? "" : "s"}. Archive them before switching.`);
+    patchDork(app, dorkId, { mode });
+    if (isAwake(dork.state)) {
+      // As in chooseModel: replace a configure the bridge may already have fetched, so it fetches the new one.
+      app.db.run("DELETE FROM commands WHERE dork_id = ? AND kind = 'configure' AND acked = 0", dorkId);
+      enqueueConfigure(app, dorkId);
+    }
+  });
 }
 
 export function renameDork(app: App, dorkId: string, title: string) {
