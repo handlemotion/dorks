@@ -1,7 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { CircleCheckIcon, CircleDashedIcon, CircleIcon, CircleMinusIcon, CircleXIcon, ExternalLinkIcon, LoaderIcon, RocketIcon, TriangleAlertIcon } from 'lucide-react'
+import { CircleCheckIcon, CircleDashedIcon, CircleIcon, CircleMinusIcon, CircleXIcon, ExternalLinkIcon, LoaderIcon, RocketIcon } from 'lucide-react'
 import type { Block, ShipStage, ShipStageState, ShipView } from '@dorks/shared'
-import { Button } from '@dorks/ui/button'
 import { Trace, TraceIcon, TraceLine, TraceTitle } from '@dorks/ui/trace'
 import { workedFor } from '../lib/duration'
 
@@ -42,33 +41,27 @@ function pinnedShip(blocks: Block[], state: string): ShipBlock | undefined {
   return undefined
 }
 
+/** Line icons while a stage waits or runs, filled ones once it passed (green) or failed (red). One table, so the set can be swapped. */
 const STAGE_ICON: Record<ShipStageState, { icon: typeof CircleIcon; className: string; label: string }> = {
   pending: { icon: CircleDashedIcon, className: 'text-muted-foreground', label: 'Waiting' },
   running: { icon: LoaderIcon, className: 'animate-spin text-muted-foreground motion-reduce:animate-none', label: 'Running' },
-  passed: { icon: CircleCheckIcon, className: 'text-muted-foreground', label: 'Passed' },
-  failed: { icon: CircleXIcon, className: 'text-destructive', label: 'Failed' },
+  // The stroke takes the card's fill, so the check and the x read as cut out of a filled circle.
+  passed: { icon: CircleCheckIcon, className: 'fill-emerald-500 text-surface dark:fill-emerald-400', label: 'Passed' },
+  failed: { icon: CircleXIcon, className: 'fill-red-500 text-surface dark:fill-red-400', label: 'Failed' },
   skipped: { icon: CircleMinusIcon, className: 'text-muted-foreground/60', label: 'Skipped' },
 }
-
-const HEAD = {
-  watching: { icon: LoaderIcon, className: 'animate-spin text-muted-foreground motion-reduce:animate-none' },
-  shipped: { icon: CircleCheckIcon, className: 'text-muted-foreground' },
-  failed: { icon: CircleXIcon, className: 'text-destructive' },
-  stalled: { icon: TriangleAlertIcon, className: 'text-destructive' },
-  quiet: { icon: CircleMinusIcon, className: 'text-muted-foreground' },
-} as const
 
 function headline(ship: ShipView) {
   const pr = `#${ship.number}`
   switch (ship.status) {
     case 'watching':
-      return `Shipping ${pr} to ${ship.baseRef}`
+      return `Shipping ${pr}`
     case 'shipped':
-      return `Shipped ${pr} to ${ship.baseRef}`
+      return `Shipped ${pr}`
     case 'failed':
       return `${pr} failed to ship`
     case 'stalled':
-      return `${pr} was still shipping after an hour`
+      return `${pr} still shipping after an hour`
     case 'quiet':
       return `Nothing ran after merging ${pr}`
   }
@@ -97,7 +90,7 @@ const host = (url: string) => url.replace(/^https?:\/\//, '').replace(/\/$/, '')
 export function ShipCard({ block, pinned = false }: { block: ShipBlock; pinned?: boolean }) {
   const pin = useContext(PinnedShip)
   if (!pinned && pin?.id === block.ship.id) return pin.line ? <ShipLine ship={block.ship} /> : null
-  return <ShipPanel ship={block.ship} />
+  return <ShipPanel ship={block.ship} pinned={pinned} />
 }
 
 function ShipLine({ ship }: { ship: ShipView }) {
@@ -113,13 +106,11 @@ function ShipLine({ ship }: { ship: ShipView }) {
   )
 }
 
-function ShipPanel({ ship }: { ship: ShipView }) {
+function ShipPanel({ ship, pinned }: { ship: ShipView; pinned: boolean }) {
   const watching = ship.endedAt === undefined
   const now = useNow(watching)
-  const head = HEAD[ship.status]
   const time = watching ? workedFor(now - ship.startedAt) : ship.stages.length ? workedFor(lastEnd(ship.stages, ship.endedAt!) - ship.startedAt) : undefined
   const live = [...ship.stages].reverse().find((s) => s.kind === 'deployment' && s.state === 'passed' && s.environmentUrl)?.environmentUrl
-  const failure = ship.stages.find((s) => s.state === 'failed' && s.url)
   const bad = ship.status === 'failed' || ship.status === 'stalled'
   return (
     <section
@@ -127,46 +118,44 @@ function ShipPanel({ ship }: { ship: ShipView }) {
       aria-label={headline(ship)}
       data-testid="ship"
       data-status={ship.status}
-      className="flex w-full min-w-0 flex-col gap-3 rounded-[6px] border border-surface-line bg-surface px-4 py-3"
+      // Pinned, it belongs to the last answer above it: it takes back most of the thread's gap (the answer keeps its time line).
+      className={`flex w-full min-w-0 flex-col gap-2 rounded-[6px] border border-surface-line bg-surface px-3.5 pt-2.5 pb-3 ${pinned ? '-mt-5' : ''}`}
     >
-      <div className="flex min-w-0 flex-col gap-1">
-        <p className="flex min-w-0 items-center gap-2.5 text-sm text-foreground">
-          <head.icon aria-hidden className={`size-4 shrink-0 ${head.className}`} />
-          <span className={`min-w-0 truncate ${bad ? 'text-destructive' : ''}`}>{headline(ship)}</span>
-          {time && <span className="ml-auto shrink-0 pl-3 text-xs text-muted-foreground tabular-nums">{time}</span>}
-        </p>
-        {ship.title && <p className="truncate pl-6.5 text-sm text-muted-foreground">{ship.title}</p>}
-      </div>
-      {ship.stages.length > 0 ? (
-        <ul className="flex min-w-0 flex-col pl-6.5">
-          {ship.stages.map((s) => (
-            <li key={s.id}>
-              <StageRow stage={s} now={now} />
-            </li>
-          ))}
-        </ul>
-      ) : (
-        watching && <p className="pl-6.5 text-sm text-muted-foreground">Waiting for workflows and deploys on the merge commit to start.</p>
-      )}
-      <div className="flex min-w-0 flex-wrap items-center gap-2 pl-6.5">
-        {live && ship.status !== 'failed' && (
-          <Button size="sm" variant="outline" nativeButton={false} render={<a href={live} target="_blank" rel="noreferrer" />}>
-            Open {host(live)}
-            <ExternalLinkIcon aria-hidden />
-          </Button>
-        )}
-        {failure && (
-          <Button size="sm" variant="outline" nativeButton={false} render={<a href={failure.url} target="_blank" rel="noreferrer" />}>
-            See why {failure.name} failed
-          </Button>
-        )}
-        <p className="ml-auto flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+      <p className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
+        <span className={`min-w-0 truncate ${bad ? 'text-destructive' : ''}`}>{headline(ship)}</span>
+        <span className="ml-auto flex shrink-0 items-center gap-1.5 tabular-nums">
           <a href={`https://github.com/${ship.repo}/commit/${ship.sha}`} target="_blank" rel="noreferrer" className="font-mono hover:text-foreground">
             {ship.sha.slice(0, 7)}
           </a>
-          {watching && <span>· {ship.status === 'failed' ? 'Watching for a re-run' : 'Watching'}</span>}
-        </p>
-      </div>
+          {live && (
+            <>
+              <span aria-hidden>·</span>
+              <a href={live} target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:text-foreground">
+                {host(live)}
+                <ExternalLinkIcon aria-hidden className="size-3" />
+              </a>
+            </>
+          )}
+          {time && (
+            <>
+              <span aria-hidden>·</span>
+              <span>{time}</span>
+            </>
+          )}
+        </span>
+      </p>
+      <ul className="flex min-w-0 flex-col">
+        {ship.stages.map((s) => (
+          <li key={s.id}>
+            <StageRow stage={s} now={now} />
+          </li>
+        ))}
+        {!ship.stages.length && watching && (
+          <li>
+            <StageRow stage={{ id: 'waiting', kind: 'workflow', name: 'Waiting for workflows and deploys to start', state: 'pending' }} now={now} />
+          </li>
+        )}
+      </ul>
     </section>
   )
 }
@@ -177,7 +166,7 @@ function StageRow({ stage, now }: { stage: ShipStage; now: number }) {
     return (
       <div className="flex min-w-0 flex-col pb-1">
         <StageRow stage={{ ...stage, detail: undefined }} now={now} />
-        <p className="pl-5.5 text-sm text-muted-foreground">{stage.detail}</p>
+        <p className="pl-6 text-sm text-muted-foreground">{stage.detail}</p>
       </div>
     )
   }
@@ -185,13 +174,15 @@ function StageRow({ stage, now }: { stage: ShipStage; now: number }) {
   const elapsed = stage.startedAt !== undefined && (stage.endedAt !== undefined || stage.state === 'running') ? workedFor((stage.endedAt ?? now) - stage.startedAt) : undefined
   const content = (
     <>
-      <look.icon aria-label={look.label} className={`size-3.5 shrink-0 ${look.className}`} />
-      <span className={`min-w-0 truncate ${stage.state === 'failed' ? 'text-destructive' : 'text-foreground'}`}>{stage.name}</span>
+      <look.icon aria-label={look.label} className={`size-4 shrink-0 ${look.className}`} />
+      <span className={`min-w-0 truncate ${stage.state === 'failed' ? 'text-destructive' : stage.state === 'pending' || stage.state === 'skipped' ? 'text-muted-foreground' : 'text-foreground'}`}>
+        {stage.name}
+      </span>
       {stage.detail && <span className="min-w-0 shrink truncate text-muted-foreground">{stage.detail}</span>}
       {elapsed && <span className="ml-auto shrink-0 pl-3 text-xs text-muted-foreground tabular-nums">{elapsed}</span>}
     </>
   )
-  const cls = 'flex h-6 min-w-0 items-center gap-2 text-sm'
+  const cls = 'flex h-7 min-w-0 items-center gap-2 text-sm'
   return stage.url ? (
     <a href={stage.url} target="_blank" rel="noreferrer" data-stage={stage.state} className={`${cls} hover:[&>span:first-of-type]:underline`}>
       {content}

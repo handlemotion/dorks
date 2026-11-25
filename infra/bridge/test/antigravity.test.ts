@@ -62,9 +62,15 @@ async function setup(env: Record<string, string> = {}) {
   const reports = () =>
     existsSync(report)
       ? readFileSync(report, "utf8")
-          .trim()
           .split("\n")
-          .map((l) => JSON.parse(l))
+          .flatMap((l) => {
+            // The fake agy may be mid-write: a partial last line is read again on the next poll.
+            try {
+              return [JSON.parse(l)];
+            } catch {
+              return [];
+            }
+          })
       : [];
   /** The streaming session's starts (not `agy models` or the title's `agy -p`). */
   const sessions = () => reports().filter((r) => r.args?.includes("--input-format"));

@@ -49,13 +49,15 @@ An `inactive` deployment was replaced by a newer one, so it was live: `passed`.
 ### The card
 
 Each change to what the card shows appends one `ship` event with the whole `ShipView`; clients keep the latest per `ship.id`
-(`fold`, block kind `ship`). `ShipCard` (`apps/web/src/components/ShipCard.tsx`) is a card on the surface fill: the headline
-(`Shipping #N to main`, `Shipped #N to main`, `#N failed to ship`, `#N was still shipping after an hour`, `Nothing ran after merging
-#N`) with how long it has run or took, the PR's title, one 24px row per stage (state, name, a few words, its time, linking to the run,
-check or deployment log), then `Open <host>` for a passed deployment's live URL or `See why <stage> failed`, and the merge commit.
+(`fold`, block kind `ship`). `ShipCard` (`apps/web/src/components/ShipCard.tsx`) is a minimal card on the surface fill: a small top line with the
+headline (`Shipping #N`, `Shipped #N`, `#N failed to ship`, `#N still shipping after an hour`, `Nothing ran after merging #N`) and,
+right, the merge commit, a passed deployment's host (its live URL) and how long it has run or took; then one row per stage with its
+state icon at the left edge (line icons while waiting, running or skipped; a filled green check once passed, a filled red x once
+failed), its name, a few words and its time, linking to the run, check or deployment log. The agent's verify note gets its own line
+under its row.
 
 **Where it sits** (`ShipPin`): while a turn runs, the card stays where the merge happened in the thread. Once the turn ends, the
-session's latest ship is pinned at the end of the chat, above the status line, and its place in the thread shrinks to one line
+session's latest ship is pinned at the end of the chat, close under the last answer and above the status line, and its place in the thread shrinks to one line
 (nothing, when nothing follows it). Older ships stay in the thread as cards.
 
 Archived sessions are still watched (people archive after merging); deleting a session drops its ships.
