@@ -601,4 +601,10 @@ export const MIGRATIONS: string[] = [
   -- what it reported when it verified the live deployment.
   ALTER TABLE ships ADD COLUMN agent TEXT;
   `,
+  `
+  -- Unread chats (docs/architecture.md): when the agent last finished a turn and when the owner last read the chat, on any device.
+  -- A chat is unread while replied_at is newer than read_at.
+  ALTER TABLE dorks ADD COLUMN replied_at INTEGER;
+  ALTER TABLE dorks ADD COLUMN read_at INTEGER;
+  `,
 ];

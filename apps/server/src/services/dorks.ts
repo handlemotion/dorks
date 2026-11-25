@@ -1,6 +1,6 @@
 import { isDorkMode, MAX_LIVE_WORKERS, MODES, type ClientEvent, type DorkMode } from "@dorks/shared";
 import { fail, touch, type App } from "../app";
-import { dorkOf, dorkView, eventOf, getDork, needsAttentionOf, prStateOf, queuedMessagesOf, type DorkRow, type DorkView, type Provider } from "../data";
+import { dorkOf, dorkView, eventOf, getDork, isUnread, needsAttentionOf, prStateOf, queuedMessagesOf, type DorkRow, type DorkView, type Provider } from "../data";
 import { insert } from "../db";
 import { dispatch, enqueueConfigure, isAwake, MAX_MESSAGE_CHARS, patchDork, patchRuntime, persistUserMessage, setTimer } from "../lifecycle/dispatch";
 import { withoutImages } from "../lib/messageText";
@@ -301,6 +301,14 @@ export function setMode(app: App, dorkId: string, mode: unknown) {
       app.db.run("DELETE FROM commands WHERE dork_id = ? AND kind = 'configure' AND acked = 0", dorkId);
       enqueueConfigure(app, dorkId);
     }
+  });
+}
+
+/** The owner read the chat (on any device): it stops showing as unread. */
+export function markRead(app: App, dorkId: string) {
+  app.db.tx(() => {
+    const dork = owned(app, dorkId);
+    if (isUnread(dork)) patchDork(app, dorkId, { readAt: app.now() });
   });
 }
 

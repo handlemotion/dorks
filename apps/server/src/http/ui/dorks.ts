@@ -8,6 +8,7 @@ import {
   interrupt,
   listDorks,
   listEvents,
+  markRead,
   queueMessage,
   removeDork,
   renameDork,
@@ -143,6 +144,10 @@ export const dorkRoutes: Routes = (api, app) => {
         return c.json({ url });
       }),
     ),
+  );
+  api.post(
+    "/api/dorks/:id/read",
+    on((c) => service((a) => markRead(a, id(c))).pipe(ok(c))),
   );
   api.post(
     "/api/dorks/:id/archive",

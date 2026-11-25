@@ -363,6 +363,11 @@ export class DorksClient {
       this.invalidate("dorks");
       this.invalidate(`dork:${id}`);
     },
+    markRead: async (id: string) => {
+      await this.api.markRead(id);
+      this.invalidate("dorks");
+      this.invalidate(`dork:${id}`);
+    },
     archiveDork: async (id: string, archived: boolean) => {
       await this.api.setArchived(id, archived);
       this.invalidate("dorks");

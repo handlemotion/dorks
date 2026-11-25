@@ -89,6 +89,7 @@ IDs are UUID strings. Times are epoch milliseconds.
 | `POST /api/dorks/:id/queue/:queuedId/send` | | `{}`: sends a queued message now instead, steering the running turn |
 | `POST /api/dorks/:id/interrupt` | | `{}` |
 | `POST /api/dorks/:id/desktop` | `{theme?: "light"\|"dark"}` | `{url}`: a fresh live view of the dork's computer for an iframe ([computer use](computer-use.md)). Never stored or logged; minted per view because Boat's URL must be opened within 10 minutes. Error `sleeping` (409) unless the dork is `working` or `idle` (this never wakes it), `timeout` (504) while the stream is still starting. Under the sim it is a path to a stand-in page, `GET /sim/desktop` |
+| `POST /api/dorks/:id/read` | none | `{}`; the owner read the chat. A dork is `unread: true` from the end of a turn (working → idle) until this or the owner's next message, on every device |
 | `POST /api/dorks/:id/archive` | `{archived: boolean}` | `{}` |
 | `POST /api/dorks/:id/mode` | `{mode: "chat"\|"code"\|"nerd"}` | `{}`. Switches the session's [mode](modes.md); while the sandbox is up the bridge restarts the agent on the same session with the new mode once the current turn ends. `invalid` for a worker, `conflict` for a nerd with live workers |
 | `POST /api/dorks/:id/model` | `{model: string\|null, effort: string\|null}` | `{}`. Claude only: a model and effort from `modelChoices` (null: the default). While the sandbox is up the bridge restarts the CLI on the same session with `--model`/`--effort` once the current turn ends; asleep, the next wake uses it |

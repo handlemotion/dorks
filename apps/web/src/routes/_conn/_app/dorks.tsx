@@ -22,6 +22,7 @@ import type { ChatDetailsData } from '../../../components/chat-details/types'
 import type { WorkspaceSource } from '../../../components/chat-details/Files'
 import type { PullRequestPanelData } from '../../../components/PullRequestPanel'
 import { latestTasks, progressStore, progressTurns } from '../../../lib/progress'
+import { useMarkRead } from '../../../lib/markRead'
 import { environmentOf, type Environment, type EnvironmentBuild } from '../../../components/EnvironmentPicker'
 import { withImages, Composer, preferredModel, type AgentProvider, type ModelPicker } from '../../../components/ChatComposer'
 import { ChatMenu } from '../../../components/ChatMenu'
@@ -479,6 +480,7 @@ function Thread({ dorkId }: { dorkId: string }) {
   const setText = draft[1]
   // Each chat's Progress starts on its newest step.
   useEffect(() => progressStore.reset(), [dorkId])
+  useMarkRead(dorkId, dork?.unread)
   const computerUsed = view.blocks.some((b) => b.kind === 'tool' && b.name.startsWith('mcp__computer__'))
   const fetchDesktopUrl = useCallback((opts: DesktopOptions) => actions.desktopUrl(dorkId, opts), [actions, dorkId])
   const interruptAgent = useCallback(() => actions.interrupt(dorkId), [actions, dorkId])

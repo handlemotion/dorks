@@ -11,7 +11,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@dorks/ui/c
 import { DropdownMenuItem } from '@dorks/ui/dropdown-menu'
 import { useStoredOrder } from '../lib/storedOrder'
 import { Tip } from './Tip'
-import { DorkIcon, dorkIconState } from './DorkIcon'
+import { DorkIcon, dorkIconState, type DorkIconState } from './DorkIcon'
 import { SIDEBAR_ROW } from './sidebarChrome'
 import { prStatus } from './PrStatus'
 
@@ -26,10 +26,12 @@ export type Chat = {
   repo?: string
   /** Something is moving in this chat. */
   working: boolean
-  /** Lifecycle state of the dork, used to distinguish working (animated), awake (coloured) and asleep (grey). */
+  /** Lifecycle state of the dork, used to distinguish working (animated grey), awake (still grey) and asleep (grey outline). */
   state?: DorkState
   /** True when the dork is waiting on the owner (computer access, build approval, etc.). */
   attention?: boolean
+  /** The agent finished a turn the owner has not opened yet: the icon is blue. */
+  unread?: boolean
   pr?: { number: number; state?: PrState }
   /** A dork (coordinator) shows its emoji instead of the working icon (docs/crew.md). */
   icon?: string
@@ -126,9 +128,11 @@ export function ChatList({
   )
 }
 
+const ICON_LABEL: Record<DorkIconState, string> = { attention: 'Needs attention', working: 'Working…', unread: 'Unread', awake: 'Awake', error: 'Error', asleep: 'Asleep' }
+
 /**
- * A chat row. The leading DorkIcon animates with colour while the chat is working, rests coloured when awake, and turns grey when
- * asleep; the right edge shows the pull request number, colored by PR state, when the chat has opened one. The row is active
+ * A chat row. The leading DorkIcon animates in grey while the chat is working, is blue while a finished turn is unread, yellow
+ * while the dork waits on the owner, still grey when awake and a grey outline when asleep; the right edge shows the pull request number, colored by PR state, when the chat has opened one. The row is active
  * (`data-active`, `aria-current`) while its chat is the one in the URL. With `onArchive`, hovering the row swaps the PR number
  * for an archive button, and a right click opens the row's menu.
  */
@@ -136,8 +140,8 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
   // `data` feeds announcements; the link is the handle so interactive-element filtering allows row drags.
   const { ref, handleRef, isDragging } = useSortable({ id: chat.id, index, data: chat })
   const router = useRouter()
-  const iconState = dorkIconState(chat.state, { working: chat.working, attention: chat.attention })
-  const iconLabel = iconState === 'attention' ? 'Needs attention' : iconState === 'working' ? 'Working…' : iconState === 'awake' ? 'Awake' : iconState === 'error' ? 'Error' : 'Asleep'
+  const iconState = dorkIconState(chat.state, { working: chat.working, attention: chat.attention, unread: chat.unread })
+  const iconLabel = ICON_LABEL[iconState]
   const row = (
     <div ref={ref} data-chat-id={chat.id} data-dragging={isDragging || undefined} className="group/row relative flex min-w-0 data-[dragging]:z-30 data-[dragging]:opacity-60">
       <Link

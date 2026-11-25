@@ -59,6 +59,7 @@ export function AppSidebar() {
     working: MOVING.has(d.state),
     state: d.state,
     attention: d.needsAttention,
+    unread: d.unread,
     pr: prOf(d.prUrl, d.prState),
     mode: d.mode,
     parentId: d.parentId,

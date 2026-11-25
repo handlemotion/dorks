@@ -128,7 +128,8 @@ export const patchDork = (app: App, dorkId: string, patch: Record<string, unknow
 export function persistUserMessage(app: App, dorkId: string, text: string, from?: { id: string; title: string }) {
   enqueue(app, dorkId, "user_message", text);
   append(app, dorkId, { type: "user_message", text, ...(from ? { from } : {}) });
-  patchDork(app, dorkId, { preview: messagePreview(text), lastActivityAt: app.now() });
+  // The owner writing in a chat has read it; a coordinator's message to its worker reads nothing.
+  patchDork(app, dorkId, { preview: messagePreview(text), lastActivityAt: app.now(), ...(from ? {} : { readAt: app.now() }) });
 }
 
 /** The oldest queued message goes out: it becomes the next turn's user message. */
@@ -151,6 +152,8 @@ export function dispatch(app: App, dorkId: string, input: Input): Result | null 
   if (r.rejected) return r;
   if (r.state !== before.state || r.archived !== before.archived) patchDork(app, dorkId, { state: r.state, archived: r.archived, lastActivityAt: app.now() });
   if (r.state !== before.state) append(app, dorkId, { type: "status", state: r.state });
+  // A finished turn is unread until the owner opens the chat (markRead) or writes in it.
+  if (input.t === "turn_idle" && before.state === "working" && r.state === "idle") patchDork(app, dorkId, { repliedAt: app.now() });
   if (input.t === "paused" && r.state === "sleeping") clearControlRows(app, dorkId); // nothing may replay into the next wake
   for (const effect of r.effects) runEffect(app, dorkId, effect);
   // A Stop holds the queue for the turn it stopped only.

@@ -57,6 +57,10 @@ export interface DorkRow {
   /** An emoji the owner picked for a coordinator. */
   icon?: string;
   deleting: boolean;
+  /** When the agent last finished a turn; the chat is unread while this is newer than `readAt`. */
+  repliedAt?: number;
+  /** When the owner last read the chat (opened it or wrote in it). */
+  readAt?: number;
   lastActivityAt: number;
   createdAt: number;
 }
@@ -126,6 +130,8 @@ export const dorkOf = (r: Row): DorkRow => ({
   parentId: u(r.parent_id as string | null),
   icon: u(r.icon as string | null),
   deleting: bool(r.deleting),
+  repliedAt: u(r.replied_at as number | null),
+  readAt: u(r.read_at as number | null),
   lastActivityAt: r.last_activity_at as number,
   createdAt: r.created_at as number,
 });
@@ -185,6 +191,9 @@ export const needsAttentionOf = (db: Db, dorkId: string): boolean =>
     db.get<{ one: number }>("SELECT 1 AS one FROM ships WHERE dork_id = ? AND status = 'failed' AND ended_at IS NULL LIMIT 1", dorkId),
   );
 
+/** The agent finished a turn the owner has not read yet. */
+export const isUnread = (d: Pick<DorkRow, "repliedAt" | "readAt">): boolean => d.repliedAt !== undefined && d.repliedAt > (d.readAt ?? 0);
+
 /** The wire shape of a dork for the UI: no box id, session ids or other internals. */
 /** A message the owner queued for when the agent's current turn ends, oldest first. */
 export type QueuedMessage = { id: string; text: string; createdAt: number };
@@ -208,6 +217,7 @@ export const dorkView = (d: DorkRow, prState?: "open" | "merged" | "closed", nee
   prUrl: d.prUrl,
   prState,
   ...(needsAttention ? { needsAttention: true } : {}),
+  ...(isUnread(d) ? { unread: true } : {}),
   // A single dork's read also carries what its composer offers: queued messages and the agent's commands.
   ...(queue ? { queue, commands: d.agentCommands ?? [] } : {}),
   codexModel: d.codexModel,
