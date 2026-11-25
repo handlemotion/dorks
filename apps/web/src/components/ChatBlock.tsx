@@ -327,6 +327,12 @@ function toolRun(blocks: AgentBlock[], start: number): ToolBlock[] {
   return run
 }
 
+/**
+ * The dorks tools whose call already has its own row in the thread (the request on the owner's computer, the secure input form):
+ * their tool line would say the same thing again ("Used local run"). They stay in Progress.
+ */
+const OWN_ROW_TOOLS = /^mcp__dorks__(local_run|local_read|local_wait|input_request|input_wait)$/
+
 function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => void): ReactNode[] {
   const content: ReactNode[] = []
   for (let i = 0; i < blocks.length; i++) {
@@ -334,35 +340,17 @@ function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => vo
     if (block.kind === 'tool') {
       const run = toolRun(blocks, i)
       i += run.length - 1
-      // A run of to-do calls is one card, in place, showing the list as they left it; any other run of calls is one line.
-      content.push(isTodoTool(block.name) ? <TodoCard key={block.id} id={block.id} /> : <ToolLine key={block.id} tools={run} onOpen={onOpenSteps} />)
+      // A run of to-do calls is one card, in place, showing the list as they left it; any other run of calls is one line, without the
+      // calls that have their own row (`OWN_ROW_TOOLS`).
+      const tools = run.filter((t) => !OWN_ROW_TOOLS.test(t.name))
+      if (isTodoTool(block.name)) content.push(<TodoCard key={block.id} id={block.id} />)
+      else if (tools.length) content.push(<ToolLine key={block.id} tools={tools} onOpen={onOpenSteps} />)
     } else if (block.kind === 'assistant') {
       // Assistant text is unbubbled markdown, as in the AI Elements chat pattern. No streaming caret: the markdown is a block, so it
       // fell on a line of its own, and the status line below already says the agent is working.
       content.push(<AgentText key={block.id} block={block} />)
     } else if (block.kind === 'build') {
-      // The agent asked the owner to approve a change to its machine (docs/builds.md). The diff and the decision live on the build's page.
-      const state = block.approved === null ? 'Waiting for you' : block.approved ? 'Approved' : `Rejected${block.reason ? `: ${block.reason}` : ''}`
-      content.push(
-        <Trace key={block.id} role="status" data-testid="build-draft">
-          <TraceLine>
-            <TraceIcon>
-              <BoxIcon />
-            </TraceIcon>
-            <TraceTitle>
-              Proposed a change to the machine {block.buildName}. {state}.
-            </TraceTitle>
-          </TraceLine>
-          {block.note && <p className="pl-6 text-sm text-muted-foreground">{block.note}</p>}
-          {block.buildId && block.approved === null && (
-            <div className="pt-2 pl-6">
-              <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/builds" search={{ build: block.buildId }} />}>
-                Review the change
-              </Button>
-            </div>
-          )}
-        </Trace>,
-      )
+      content.push(<BuildDraft key={block.id} block={block} />)
     } else if (block.kind === 'local') {
       // The agent asked to use the owner's computer (docs/local-access.md): the session's one access card, then a line per command.
       content.push(<LocalRequestCard key={block.id} block={block} />)
@@ -375,19 +363,46 @@ function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => vo
     } else if (block.kind === 'crew') {
       content.push(<CrewCard key={block.id} block={block} />)
     } else if (block.kind === 'notice') {
-      content.push(<Notice key={block.id} block={block} />)
+      // Right after an answer it sits just under the answer's time line (20px from its text), not a full gap below it.
+      const prev = blocks[i - 1]
+      content.push(<Notice key={block.id} block={block} className={prev?.kind === 'assistant' && prev.final ? '-mt-3' : undefined} />)
     }
   }
   return content
 }
 
+/** The agent asked the owner to approve a change to its machine (docs/builds.md). The diff and the decision live on the build's page. */
+function BuildDraft({ block }: { block: Extract<AgentBlock, { kind: 'build' }> }) {
+  const state = block.approved === null ? 'Waiting for you' : block.approved ? 'Approved' : `Rejected${block.reason ? `: ${block.reason}` : ''}`
+  return (
+    <Trace role="status" data-testid="build-draft">
+      <TraceLine>
+        <TraceIcon>
+          <BoxIcon />
+        </TraceIcon>
+        <TraceTitle>
+          Proposed a change to the machine {block.buildName}. {state}.
+        </TraceTitle>
+      </TraceLine>
+      {block.note && <p className="pl-6 text-sm text-muted-foreground">{block.note}</p>}
+      {block.buildId && block.approved === null && (
+        <div className="pt-2 pl-6">
+          <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/builds" search={{ build: block.buildId }} />}>
+            Review the change
+          </Button>
+        </div>
+      )}
+    </Trace>
+  )
+}
+
 /** A notice; an autonomy event (a PR comment, CI, the agent's PR opened) says what happened in a few words, with the digest on hover. */
-function Notice({ block }: { block: Extract<Block, { kind: 'notice' }> }) {
+function Notice({ block, className }: { block: Extract<Block, { kind: 'notice' }>; className?: string }) {
   const line = block.hook ? hookLine(block.hook) : undefined
   const error = block.level === 'error'
   const Icon = line?.icon ?? (error ? CircleAlertIcon : CircleCheckIcon)
   return (
-    <Trace role={error ? 'alert' : 'status'} data-testid={line ? 'hook' : undefined}>
+    <Trace role={error ? 'alert' : 'status'} data-testid={line ? 'hook' : undefined} className={className}>
       <TraceLine status={error ? 'error' : undefined} title={line ? block.text : undefined}>
         <TraceIcon>
           <Icon />

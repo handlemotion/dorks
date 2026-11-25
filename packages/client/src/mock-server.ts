@@ -401,9 +401,11 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   const simulateShip = (dorkId: string, pr: { url: string; number: number; title?: string; baseRef?: string; repo?: string }) => {
     const repo = pr.repo ?? pr.url.replace("https://github.com/", "").split("/pull/")[0];
     const start = Date.now();
-    const sha = "9f3c2a17e0b5d4c8a6f1e2d3c4b5a6978899aabb";
-    const ship: ShipView = { id: start, repo, number: pr.number, url: pr.url, title: pr.title, baseRef: pr.baseRef ?? "main", sha, status: "watching", stages: [], startedAt: start };
-    const run = (n: number) => `https://github.com/${repo}/actions/runs/${n}`;
+    // Each merge its own commit and runs; the production deploy is one log for every merge in it (a deploy that batched them), so two
+    // merges in a row show as one card.
+    const sha = `${(0x9f3c2a1 + pr.number).toString(16)}7e0b5d4c8a6f1e2d3c4b5a6978899aabb`;
+    const ship: ShipView = { id: start + pr.number, repo, number: pr.number, url: pr.url, title: pr.title, baseRef: pr.baseRef ?? "main", sha, status: "watching", stages: [], startedAt: start };
+    const run = (n: number) => `https://github.com/${repo}/actions/runs/${pr.number * 10 + n}`;
     const stage = (s: ShipStage) => s;
     // A PR whose title says "fail" fails its deploy, to see the failed card.
     const fails = /fail/i.test(pr.title ?? "");
@@ -426,7 +428,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       (t) => {
         Object.assign(ship.stages[2], { state: "passed", endedAt: t });
         Object.assign(ship.stages[3], { state: "passed", endedAt: t });
-        ship.stages.push(stage({ id: "dep:production", kind: "deployment", name: "Deploy to production", state: "running", url: run(2), startedAt: t }));
+        ship.stages.push(stage({ id: "dep:production", kind: "deployment", name: "Deploy to production", state: "running", url: `https://github.com/${repo}/deployments/production`, startedAt: t }));
       },
       (t) => {
         Object.assign(ship.stages[1], { state: "passed", endedAt: t });
@@ -482,15 +484,22 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
    */
   const askLocal = (dorkId: string, command: string, reason: string, output: string, then: () => void) => {
     const requestId = `local-${randomUUID().slice(0, 8)}`;
+    const toolId = `tool-${requestId}`;
+    // The real agent calls the dorks MCP tool around the request: its tool_use comes first, its tool_result once the request settled.
+    append(dorkId, { type: "tool_use", toolId, name: "mcp__dorks__local_run", summary: command, input: { command, reason } });
     append(dorkId, { type: "local_request", requestId, kind: "run", command, cwd: "~/app", reason });
     const run = (via: "session" | "always" | "standing") => {
       append(dorkId, { type: "local_decision", requestId, decision: "allowed", via });
       later(tick, () => {
         append(dorkId, { type: "local_result", requestId, ok: true, exitCode: 0, preview: output });
+        append(dorkId, { type: "tool_result", toolId, ok: true, preview: output });
         then();
       });
     };
-    if (!localAccessEnabled) return then();
+    if (!localAccessEnabled) {
+      append(dorkId, { type: "tool_result", toolId, ok: false, preview: "Access to the user's computer is off." });
+      return then();
+    }
     if (settings.localAlwaysAllow || localAllowed.has(dorkId)) return run("standing");
     localWaiting.set(requestId, {
       dorkId,
@@ -498,6 +507,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         localWaiting.delete(requestId);
         if (allowed) return run(allowed);
         append(dorkId, { type: "local_decision", requestId, decision: "denied" });
+        append(dorkId, { type: "tool_result", toolId, ok: false, preview: "The user declined." });
         then();
       },
     });

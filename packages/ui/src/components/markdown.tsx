@@ -109,8 +109,8 @@ const COMPONENTS: Components = {
   tr: withClass("border-border"),
   th: withClass("whitespace-nowrap px-4 py-2 text-left font-semibold text-sm"),
   td: withClass("px-4 py-2 text-sm"),
-  // A paragraph of nothing but images is no paragraph (as in Streamdown): its images sit in the flow without a paragraph's gap under them.
-  p: (html) => (html.replace(IMAGE_ISLANDS, "").replace(/^<p data-markdown="p">\s*<\/p>$/, "") === "" ? withClass("contents")(html) : html),
+  // A paragraph of nothing but images is a row of them, wrapping. Still a block, so it keeps the paragraph gap below as well as above.
+  p: (html) => (html.replace(IMAGE_ISLANDS, "").replace(/^<p data-markdown="p">\s*<\/p>$/, "") === "" ? withClass("flex flex-wrap items-start gap-2")(html) : html),
   img: (html) => {
     const src = attr(html, "src")
     return island("span", IMAGE, { src: src.startsWith(SRC_PREFIX) ? decodeURIComponent(src.slice(SRC_PREFIX.length)) : src, alt: attr(html, "alt") })
