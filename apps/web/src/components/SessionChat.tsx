@@ -5,6 +5,7 @@ import { Button } from '@dorks/ui/button'
 import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport } from '@dorks/ui/message-scroller'
 import { AgentStatus } from './AgentStatus'
 import { ChatMessages } from './ChatBlock'
+import { ChatToc } from './ChatToc'
 import { UsageMenu } from './UsageMenu'
 import { Composer, withImages, type AttachedImage, type ModelPicker } from './ChatComposer'
 import { LocalAccessProvider } from './LocalRequest'
@@ -221,6 +222,7 @@ export function SessionChat({
               </div>
             </MessageScrollerContent>
           </MessageScrollerViewport>
+          <ChatToc blocks={blocks} hidden={compact} />
           <MessageScrollerButton />
         </MessageScroller>
       </MessageScrollerProvider>
