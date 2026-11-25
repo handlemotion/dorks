@@ -56,6 +56,10 @@ export function RefreshRepositories() {
       className="-me-1.5 shrink-0 text-muted-foreground hover:text-foreground"
       disabled={busy}
       onClick={refresh}
+      // cmdk's Command handles Enter on any descendant by selecting the highlighted item; keep it to this button's own click.
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.stopPropagation()
+      }}
       aria-label="Refresh repositories from GitHub"
       title="Refresh from GitHub"
     >
