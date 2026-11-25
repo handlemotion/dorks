@@ -33,6 +33,7 @@ import type {
   SentryProjects,
   LocalAccess,
   LocalDecision,
+  PhoneStatus,
   InputAnswer,
 } from "./types.ts";
 
@@ -153,6 +154,7 @@ export class DorksClient {
         this.invalidate("skills");
         this.invalidate("composio");
         this.invalidate("local-access");
+        this.invalidate("phone");
         break;
       case "snapshot":
         this.invalidate("snapshot");
@@ -253,6 +255,11 @@ export class DorksClient {
   /** Local access: the switch and the sessions allowed to use this computer (docs/local-access.md). */
   localAccess() {
     return this.query<LocalAccess>("local-access", () => this.api.localAccess());
+  }
+
+  /** The phone link: paired or not, the link's state and a pairing in progress. Refreshed with settings. */
+  phone() {
+    return this.query<PhoneStatus>("phone", () => this.api.phone());
   }
   mcpServers() {
     return this.query<McpServerView[]>("mcp-servers", () => this.api.listMcpServers());
@@ -536,6 +543,19 @@ export class DorksClient {
       await this.api.setLocalAccess(enabled);
       this.invalidate("local-access");
       this.invalidate("settings"); // turning it off also turns Always allow off
+    },
+    pairPhone: async (name?: string) => {
+      const p = await this.api.pairPhone(name);
+      this.invalidate("phone");
+      return p;
+    },
+    cancelPhonePair: async () => {
+      await this.api.cancelPhonePair();
+      this.invalidate("phone");
+    },
+    unpairPhone: async () => {
+      await this.api.unpairPhone();
+      this.invalidate("phone");
     },
     /** Ends one session's permission to use this computer, or every session's. */
     revokeLocalSessions: async (dorkId?: string) => {

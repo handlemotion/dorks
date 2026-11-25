@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { ClientEvent, CommentAnchor, CommentView, McpServerView, PullRequestView, ShipStage, ShipView, SkillCandidate, SkillView } from "@dorks/shared";
-import type { Dork, Settings, SnapshotStatus } from "./types.ts";
+import type { Dork, PhoneStatus, Settings, SnapshotStatus } from "./types.ts";
 import { mockAutomations } from "./mock-automations.ts";
 
 /** A new session's mode (docs/modes.md) from its body: `mode`, or the older `kind: "coordinator"` for a nerd; code by default. */
@@ -319,6 +319,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   // Composio: a sign-in "finishes" when its link is requested, so the UI's wait ends on the next read.
   const composioApps = new Set<string>(["figma", "slack", "gmail"]);
   let localAccessEnabled = true;
+  let phone: PhoneStatus = { cloudUrl: "https://dorks-cloud.example", paired: false, macId: null, name: null, link: "off", pairing: null };
   /** Local access (docs/local-access.md): the sessions the owner allowed, and requests waiting for an answer (requestId -> its answer). */
   const localAllowed = new Map<string, number>();
   const inputWaiting = new Map<string, { dorkId: string; names: string[]; answer: (names: string[] | null) => void }>();
@@ -1276,6 +1277,38 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
           });
         broadcast({ t: "settings" });
         return json(res, 200, { installed: pick.map((s) => s.name) });
+      },
+    ],
+    // The phone link (docs/mobile.md): a pairing the fake phone claims after 8 s.
+    ["GET /api/phone", ({ res }) => json(res, 200, phone)],
+    [
+      "POST /api/phone/pair",
+      ({ res }) => {
+        const code = "MOCK2345";
+        phone = { ...phone, pairing: { code: "MOCK-2345", url: `dorks://pair?code=${code}&cloud=${encodeURIComponent(phone.cloudUrl!)}`, expiresAt: Date.now() + 600_000 } };
+        setTimeout(() => {
+          if (!phone.pairing) return;
+          phone = { ...phone, paired: true, macId: "mock-mac", name: "Mock Mac", link: "online", pairing: null };
+          broadcast({ t: "settings" });
+        }, 8_000);
+        broadcast({ t: "settings" });
+        return json(res, 200, phone.pairing);
+      },
+    ],
+    [
+      "DELETE /api/phone/pair",
+      ({ res }) => {
+        phone = { ...phone, pairing: null };
+        broadcast({ t: "settings" });
+        return json(res, 200, {});
+      },
+    ],
+    [
+      "DELETE /api/phone",
+      ({ res }) => {
+        phone = { ...phone, paired: false, macId: null, name: null, link: "off" };
+        broadcast({ t: "settings" });
+        return json(res, 200, {});
       },
     ],
     // Local access (docs/local-access.md): the switch and the sessions allowed; the fake agent asks when a prompt mentions "computer".
