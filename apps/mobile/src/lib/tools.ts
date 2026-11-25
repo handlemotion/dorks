@@ -19,6 +19,8 @@ function toolAction(name: string): { verb: string; one: string; many: string } {
     Task: ["ran", "an agent", "agents"],
     Agent: ["ran", "an agent", "agents"],
     TodoWrite: ["updated", "the plan", "the plan"],
+    TaskCreate: ["updated", "the plan", "the plan"],
+    TaskUpdate: ["updated", "the plan", "the plan"],
   };
   const k = known[name];
   if (k) return { verb: k[0], one: k[1], many: k[2] };

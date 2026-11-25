@@ -14,7 +14,8 @@ import { ImageLightbox, ImageTrigger, useLightboxImages, type LightboxImage } fr
 import { CodeBlock, CodeBlockContent } from '@dorks/ui/code-block'
 import { INLINE_WIDTH, sizedImage, THUMB_WIDTH } from '../lib/images'
 import { Message, MessageContent } from '@dorks/ui/message'
-import { toolStep } from '../lib/progress'
+import { isTodoTool, taskSnapshots, toolStep } from '../lib/progress'
+import { TaskSnapshots, TodoCard } from './TodoCard'
 import { hookLine } from '../lib/hooks'
 import { MessageScrollerItem } from '@dorks/ui/message-scroller'
 import { LocalRequestCard } from './LocalRequest'
@@ -204,6 +205,8 @@ function toolAction(name: string): { verb: string; one: string; many: string } {
     case 'Agent':
       return { verb: 'ran', one: 'an agent', many: 'agents' }
     case 'TodoWrite':
+    case 'TaskCreate':
+    case 'TaskUpdate':
       return { verb: 'updated', one: 'the plan', many: 'the plan' }
     default: {
       const tool = (mcp?.[1] ?? name).replace(/[_-]+/g, ' ')
@@ -316,15 +319,23 @@ function AgentText({ block }: { block: Extract<AgentBlock, { kind: 'assistant' }
   )
 }
 
+/** The tool calls in a row from `start`: to-do calls with to-do calls, the rest with the rest (the agent's messages split both). */
+function toolRun(blocks: AgentBlock[], start: number): ToolBlock[] {
+  const todo = isTodoTool((blocks[start] as ToolBlock).name)
+  const run: ToolBlock[] = [blocks[start] as ToolBlock]
+  for (let j = start + 1; blocks[j]?.kind === 'tool' && isTodoTool((blocks[j] as ToolBlock).name) === todo; j++) run.push(blocks[j] as ToolBlock)
+  return run
+}
+
 function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => void): ReactNode[] {
   const content: ReactNode[] = []
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
     if (block.kind === 'tool') {
-      // Tool calls in a row are one line; the agent's messages split them.
-      const tools: ToolBlock[] = [block]
-      while (blocks[i + 1]?.kind === 'tool') tools.push(blocks[++i] as ToolBlock)
-      content.push(<ToolLine key={tools[0].id} tools={tools} onOpen={onOpenSteps} />)
+      const run = toolRun(blocks, i)
+      i += run.length - 1
+      // A run of to-do calls is one card, in place, showing the list as they left it; any other run of calls is one line.
+      content.push(isTodoTool(block.name) ? <TodoCard key={block.id} id={block.id} /> : <ToolLine key={block.id} tools={run} onOpen={onOpenSteps} />)
     } else if (block.kind === 'assistant') {
       // Assistant text is unbubbled markdown, as in the AI Elements chat pattern. No streaming caret: the markdown is a block, so it
       // fell on a line of its own, and the status line below already says the agent is working.
@@ -533,19 +544,22 @@ export function ChatMessages({
   const onOpenSteps = useStableHandler(openSteps)
   const { blocks, refs } = resolveSharedImages(raw, imageUrl)
   const images = useStableImages(transcriptImages(blocks))
+  const snapshots = useMemo(() => taskSnapshots(blocks), [blocks])
   const reply = useMemo<ReplyHandlers>(() => ({ onReply, onSend: onReplySend, agent, refOf: (src) => refs.get(src) }), [onReply, onReplySend, agent, refs])
   const messages = entries(blocks).map((entry) =>
     entry.kind === 'user' ? <UserEntry key={entry.block.id} block={entry.block} imageUrl={imageUrl} /> : <AgentEntry key={entry.id} id={entry.id} blocks={entry.blocks} onOpenSteps={onOpenSteps} />,
   )
   return (
     <ReplyContext.Provider value={reply}>
-      {images.length > 0 ? (
-        <ImageLightbox images={images} label="Images in this chat">
-          {messages}
-        </ImageLightbox>
-      ) : (
-        messages
-      )}
+      <TaskSnapshots.Provider value={snapshots}>
+        {images.length > 0 ? (
+          <ImageLightbox images={images} label="Images in this chat">
+            {messages}
+          </ImageLightbox>
+        ) : (
+          messages
+        )}
+      </TaskSnapshots.Provider>
       <SelectionReply />
     </ReplyContext.Provider>
   )
