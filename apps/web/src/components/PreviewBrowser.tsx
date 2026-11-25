@@ -286,13 +286,13 @@ function DrawLayer({ onDrawn }: { onDrawn: (rect: Rect) => void }) {
   )
 }
 
-export function ToolButton({ label, icon, pressed, onClick, count }: { label: string; icon: ReactNode; pressed: boolean; onClick: () => void; count?: number }) {
+export function ToolButton({ label, icon, pressed, onClick, count, className = '' }: { label: string; icon: ReactNode; pressed: boolean; onClick: () => void; count?: number; className?: string }) {
   return (
     <Tip label={label} side="top">
       <Button
         variant="ghost"
         size="icon-sm"
-        className={`h-7 w-auto min-w-7 gap-1 rounded-[6px] px-[7px] text-muted-foreground transition-none hover:bg-foreground/[0.05] hover:text-foreground [&_svg:not([class*='size-'])]:size-3.5 ${PRESSED}`}
+        className={`h-7 w-auto min-w-7 gap-1 rounded-[6px] px-[7px] text-muted-foreground transition-none hover:bg-foreground/[0.05] hover:text-foreground [&_svg:not([class*='size-'])]:size-3.5 ${PRESSED} ${className}`}
         aria-label={label}
         aria-pressed={pressed}
         onClick={onClick}

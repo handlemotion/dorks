@@ -26,12 +26,12 @@ const control =
 const railControl =
   'inline-flex size-7 items-center justify-center rounded-[6px] text-muted-foreground outline-none transition-none hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-30 [&_svg]:size-3.5'
 
-/** The thumbnail column's width: 56px thumbnails with 16px around them. */
-const COLUMN = 88
+/** The thumbnail column's width: 56px thumbnails, 24px from the screen's edge and 24px from the image. */
+const COLUMN = 104
 
 /**
  * Every image in the app opens in this lightbox (ramka's headless primitives, `@ramka/react/lightbox`), skinned flat: the app's own
- * background at 92% over a blur of what is under it, no shadows, 6px controls, above everything in the app (z-50: the sidebar rows and the floating title bar controls are stacked). One lightbox per place images live, so navigation stays within that place: the artifacts of a
+ * background at 85% over a blur of what is under it, no shadows, 6px controls, above everything in the app (z-50: the sidebar rows and the floating title bar controls are stacked). One lightbox per place images live, so navigation stays within that place: the artifacts of a
  * chat page through the artifacts, the images in a transcript through the transcript. Thumbnails open it through `ImageTrigger` with
  * their index in `images`; the viewer morphs from the thumbnail (a View Transition, a fade where unsupported or with reduced motion),
  * swipes, arrow keys or the thumbnail column move between images, zooms with pinch, wheel or double click, and closes on Escape or by pulling down.
@@ -48,11 +48,11 @@ export function ImageLightbox({ images, label, children }: { images: LightboxIma
     <Lightbox.Root count={images.length} onValueChange={(value) => setIndex(value)}>
       <IndexContext.Provider value={images}>{children}</IndexContext.Provider>
       <Lightbox.Portal>
-        <Lightbox.Backdrop className="fixed inset-0 z-50 bg-background/92 opacity-0 backdrop-blur-md transition-opacity duration-(--lightbox-vt-duration,300ms) data-open:opacity-[calc(1_-_var(--lightbox-pull-progress,0)*0.6)] data-open:starting:opacity-0 data-pulling:transition-none" />
+        <Lightbox.Backdrop className="fixed inset-0 z-50 bg-background/85 opacity-0 backdrop-blur-md transition-opacity duration-(--lightbox-vt-duration,300ms) data-open:opacity-[calc(1_-_var(--lightbox-pull-progress,0)*0.6)] data-open:starting:opacity-0 data-pulling:transition-none" />
         <Lightbox.Content aria-label={label} className="group/lb fixed inset-0 z-50 flex flex-col outline-none">
           <Lightbox.Slides preload={2} aria-roledescription="carousel" aria-label={label} className="flex-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {images.map((image, i) => (
-              <Lightbox.Slide key={image.id} className="h-full min-w-full flex-[0_0_100%] pt-14 pr-16 pb-[76px]" style={{ paddingLeft: multiple ? COLUMN + 16 : 64 }}>
+              <Lightbox.Slide key={image.id} className="h-full min-w-full flex-[0_0_100%] pt-14 pr-16 pb-[76px]" style={{ paddingLeft: multiple ? COLUMN : 64 }}>
                 <Lightbox.Item index={i} caption={image.caption ?? image.alt} aria-roledescription="slide" aria-label={`${i + 1} of ${images.length}`} className="size-full">
                   <Lightbox.Zoom>
                     <SlideMedia
@@ -191,7 +191,7 @@ function Toolbar(props: { multiple: boolean; comments: number | null; commenting
                   <ChevronLeftIcon />
                 </Lightbox.Previous>
               </Tip>
-              <Lightbox.Counter className="px-1 text-xs text-muted-foreground tabular-nums">{({ current, total }) => `${current} / ${total}`}</Lightbox.Counter>
+              <Lightbox.Counter className="w-14 text-center text-xs text-muted-foreground tabular-nums">{({ current, total }) => `${current} / ${total}`}</Lightbox.Counter>
               <Tip label="Next image" side="top">
                 <Lightbox.Next aria-label="Next image" className={railControl}>
                   <ChevronRightIcon />
@@ -200,7 +200,7 @@ function Toolbar(props: { multiple: boolean; comments: number | null; commenting
               <RailDivider />
             </>
           )}
-          <Lightbox.Caption className="max-w-[min(48ch,50vw)] truncate px-2 text-sm text-foreground data-[has-caption]:min-w-0" />
+          <Lightbox.Caption className="w-60 truncate px-2 text-center text-sm text-foreground" />
           {props.comments !== null && (
             <>
               <RailDivider />
@@ -211,6 +211,7 @@ function Toolbar(props: { multiple: boolean; comments: number | null; commenting
                 pressed={props.showComments && props.comments > 0}
                 onClick={props.onShowComments}
                 count={props.comments}
+                className="w-11! justify-start"
               />
             </>
           )}
@@ -245,7 +246,7 @@ function ThumbnailColumn({ images, index, label }: { images: LightboxImage[]; in
       className="pointer-events-auto fixed top-14 bottom-[76px] left-0 overflow-y-auto [scrollbar-width:none] group-data-pulling/lb:opacity-0 [&::-webkit-scrollbar]:hidden"
       style={{ width: COLUMN }}
     >
-      <Lightbox.ThumbnailGroup aria-label={`${label} thumbnails`} className="flex min-h-full flex-col items-center justify-center gap-2 py-1">
+      <Lightbox.ThumbnailGroup aria-label={`${label} thumbnails`} className="flex min-h-full flex-col items-center justify-center gap-2 py-1 ps-2">
         {images.map((image, i) => (
           <Lightbox.Thumbnail
             key={image.id}
