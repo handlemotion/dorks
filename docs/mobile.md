@@ -134,6 +134,21 @@ Expo SDK 58, Expo Router, iOS 26+ look (Liquid Glass through native components),
   updates and a native change makes a new build.
 - The app is not part of the desktop release (changesets); it versions on its own.
 
+## Later: Dorks Cloud (paid plan)
+
+Today automations only run while the Mac is awake, because the Mac's server owns the scheduler. The fix is not to rewrite the scheduler
+in the Worker (two copies of the lifecycle would drift) but to let the **same server** run somewhere that is always on:
+
+- **Hosted server**: the `apps/server` binary (Bun, SQLite) runs per account in the cloud (a Boat sandbox, Cloudflare Containers
+  or a small VM) and dials the relay exactly like a Mac does. The phone cannot tell the difference: it is just another "Mac" in
+  `/v1/macs`. Automations, PR polling and timers then run around the clock.
+- **What it costs**: the relay alone is close to free per user (one Durable Object, a few D1 rows), so it can stay free. The plan pays
+  for the always-on server and, optionally, sandbox credit through Dorks' own Boat account instead of the user's own key.
+- **Trust change**: a hosted server holds the user's Claude, Boat and GitHub credentials, which the relay never does. It needs its own
+  key handling (per-account encryption keys, no operator access) before it ships.
+- **Mac and cloud together**: one owner, two servers means two databases. v1 of the plan picks one per account (move the Mac's data up
+  once); syncing both is the "Sync later" of [architecture](architecture.md) (the append-only `events` table).
+
 ## Not in v1
 
 Builds tab, push notifications (turn finished, PR ready: the relay can send them through Expo push once the Mac reports them),
