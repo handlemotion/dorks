@@ -127,9 +127,10 @@ function ShipPanel({ ship, tuck }: { ship: ShipView; tuck?: 'answer' | 'notice' 
       aria-label={headline(ship)}
       data-testid="ship"
       data-status={ship.status}
+      // pb-1.5: the last 28px row already leaves 4px under its text, so the card's text sits as far from its bottom edge as from its top.
       // Pinned right under the last answer, it belongs to it: it takes back most of the thread's gap (the answer keeps its time line).
       // Under a notice it sits 12px down, as the notices do from each other.
-      className={`flex w-full min-w-0 flex-col gap-2 rounded-[6px] border border-surface-line bg-surface px-3.5 pt-2.5 pb-3 ${tuck === 'answer' ? '-mt-5' : tuck === 'notice' ? '-mt-3' : ''}`}
+      className={`flex w-full min-w-0 flex-col gap-2 rounded-[6px] border border-surface-line bg-surface px-3.5 pt-2.5 pb-1.5 ${tuck === 'answer' ? '-mt-5' : tuck === 'notice' ? '-mt-3' : ''}`}
     >
       <p className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
         <span className={`min-w-0 truncate ${bad ? 'text-destructive' : ''}`}>{headline(ship)}</span>
