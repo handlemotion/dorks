@@ -166,7 +166,7 @@ function StageRow({ stage, now }: { stage: ShipStage; now: number }) {
     return (
       <div className="flex min-w-0 flex-col pb-1">
         <StageRow stage={{ ...stage, detail: undefined }} now={now} />
-        <p className="pl-6 text-sm text-muted-foreground">{stage.detail}</p>
+        <p className="mt-1 pl-6 text-sm text-muted-foreground">{stage.detail}</p>
       </div>
     )
   }
