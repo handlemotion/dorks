@@ -168,7 +168,7 @@ pub async fn install(app: &AppHandle) -> Result<(), String> {
     result
 }
 
-/// The install itself; the caller holds `busy`. Only returns on failure (success relaunches).
+/// The install itself; the caller holds `busy`. On success the app is exiting and relaunches once it is gone.
 #[cfg(feature = "updater")]
 async fn install_locked(app: &AppHandle) -> Result<(), String> {
     use std::sync::atomic::Ordering;
@@ -221,6 +221,51 @@ async fn install_locked(app: &AppHandle) -> Result<(), String> {
     crate::window::flush(app);
     crate::boot::stop_runtime(app).await;
     state.shutdown_done.store(true, Ordering::SeqCst);
+    relaunch(app);
+    Ok(())
+}
+
+/// Starts the new version once this process is gone, then exits.
+///
+/// Not `app.restart()`: on macOS that runs `open -n Dorks.app` while this process is still alive, so the Dock gives the
+/// new instance a tile of its own next to the pinned one, and the user is left with two Dorks icons. A detached shell
+/// waits for this pid to exit (30 s at most) and then opens the bundle normally, so it lands in the usual tile.
+#[cfg(all(feature = "updater", target_os = "macos"))]
+fn relaunch(app: &AppHandle) {
+    use std::os::unix::process::CommandExt;
+    use std::process::{Command, Stdio};
+
+    const OPEN_WHEN_GONE: &str =
+        "i=0; while kill -0 \"$1\" 2>/dev/null && [ $i -lt 300 ]; do sleep 0.1; i=$((i+1)); done; exec /usr/bin/open \"$2\"";
+
+    // `…/Dorks.app/Contents/MacOS/dorks` → `…/Dorks.app`
+    let bundle = tauri::process::current_binary(&app.env())
+        .ok()
+        .and_then(|exe| exe.ancestors().nth(3).map(std::path::Path::to_path_buf))
+        .filter(|path| path.extension().is_some_and(|ext| ext == "app"));
+    let Some(bundle) = bundle else {
+        app.restart();
+    };
+    let spawned = Command::new("/bin/sh")
+        .arg("-c")
+        .arg(OPEN_WHEN_GONE)
+        .arg("sh")
+        .arg(std::process::id().to_string())
+        .arg(&bundle)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .process_group(0)
+        .spawn();
+    if let Err(e) = spawned {
+        eprintln!("dorks: could not schedule the relaunch ({e}), restarting directly");
+        app.restart();
+    }
+    app.exit(0);
+}
+
+#[cfg(all(feature = "updater", not(target_os = "macos")))]
+fn relaunch(app: &AppHandle) {
     app.restart();
 }
 
