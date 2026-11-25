@@ -109,7 +109,7 @@
 }
 
 /* DorkIcon (components/DorkIcon.tsx): while working, four flaps cycle smoothly upward — the top flap scales down and disappears
-   while a new flap scales in underneath, and the cyan-blue-violet gradient drifts gently inside the silhouette. */
+   while a new flap scales in underneath in one flat colour. */
 .dork-flap {
   transform-origin: 100px 100px;
 }
@@ -162,16 +162,6 @@
   }
 }
 
-@keyframes dork-gradient-drift {
-  0%,
-  100% {
-    transform: translateY(-20px);
-  }
-  50% {
-    transform: translateY(20px);
-  }
-}
-
 @media (prefers-reduced-motion: no-preference) {
   .status-shimmer {
     --shimmer-base: var(--muted-foreground);
@@ -194,9 +184,6 @@
   }
   .dork-flap-4 {
     animation: dork-flap-cycle 6.4s linear -4.8s infinite;
-  }
-  .dork-gradient-drift {
-    animation: dork-gradient-drift 4s ease-in-out infinite;
   }
 }
 

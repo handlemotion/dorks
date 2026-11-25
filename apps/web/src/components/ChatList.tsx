@@ -131,7 +131,7 @@ export function ChatList({
 const ICON_LABEL: Record<DorkIconState, string> = { attention: 'Needs attention', working: 'Working…', unread: 'Unread', awake: 'Awake', error: 'Error', asleep: 'Asleep' }
 
 /**
- * A chat row. The leading DorkIcon animates in grey while the chat is working, is blue while a finished turn is unread, yellow
+ * A chat row. The leading DorkIcon (flat colours, no gradients) animates in grey while the chat is working, is blue while a finished turn is unread, yellow
  * while the dork waits on the owner, still grey when awake and a grey outline when asleep; the right edge shows the pull request number, colored by PR state, when the chat has opened one. The row is active
  * (`data-active`, `aria-current`) while its chat is the one in the URL. With `onArchive`, hovering the row swaps the PR number
  * for an archive button, and a right click opens the row's menu.
