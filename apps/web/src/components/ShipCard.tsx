@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { CircleCheckIcon, CircleDashedIcon, CircleIcon, CircleMinusIcon, CircleXIcon, ExternalLinkIcon, LoaderIcon, RocketIcon } from 'lucide-react'
+import { CircleCheckIcon, CircleDashedIcon, CircleIcon, CircleMinusIcon, CircleXIcon, ExternalLinkIcon, LoaderCircleIcon, RocketIcon } from 'lucide-react'
 import type { Block, ShipStage, ShipStageState, ShipView } from '@dorks/shared'
 import { Trace, TraceIcon, TraceLine, TraceTitle } from '@dorks/ui/trace'
 import { workedFor } from '../lib/duration'
@@ -49,7 +49,7 @@ function pinnedShip(blocks: Block[], state: string): ShipBlock | undefined {
 /** Line icons while a stage waits or runs, filled ones once it passed (green) or failed (red). One table, so the set can be swapped. */
 const STAGE_ICON: Record<ShipStageState, { icon: typeof CircleIcon; className: string; label: string }> = {
   pending: { icon: CircleDashedIcon, className: 'text-muted-foreground', label: 'Waiting' },
-  running: { icon: LoaderIcon, className: 'animate-spin text-muted-foreground motion-reduce:animate-none', label: 'Running' },
+  running: { icon: LoaderCircleIcon, className: 'animate-spin text-muted-foreground motion-reduce:animate-none', label: 'Running' },
   // The stroke takes the card's fill, so the check and the x read as cut out of a filled circle.
   passed: { icon: CircleCheckIcon, className: 'fill-emerald-500 text-surface dark:fill-emerald-400', label: 'Passed' },
   failed: { icon: CircleXIcon, className: 'fill-red-500 text-surface dark:fill-red-400', label: 'Failed' },
@@ -180,7 +180,9 @@ function StageRow({ stage, now }: { stage: ShipStage; now: number }) {
   const elapsed = stage.startedAt !== undefined && (stage.endedAt !== undefined || stage.state === 'running') ? workedFor((stage.endedAt ?? now) - stage.startedAt) : undefined
   const content = (
     <>
-      <look.icon aria-label={look.label} className={`size-4 shrink-0 ${look.className}`} />
+      {/* Optically placed: the circle sits 1px inside its box (so it lines up with the headline's left edge pulled back) and a 14px
+          line's letters sit low in their box (so it comes down 1px to their middle). Offsets, so the name and the note keep their column. */}
+      <look.icon aria-label={look.label} className={`relative top-px -left-px size-4 shrink-0 ${look.className}`} />
       <span className={`min-w-0 truncate ${stage.state === 'failed' ? 'text-destructive' : stage.state === 'pending' || stage.state === 'skipped' ? 'text-muted-foreground' : 'text-foreground'}`}>
         {stage.name}
       </span>

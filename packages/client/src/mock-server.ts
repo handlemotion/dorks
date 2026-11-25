@@ -482,15 +482,22 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
    */
   const askLocal = (dorkId: string, command: string, reason: string, output: string, then: () => void) => {
     const requestId = `local-${randomUUID().slice(0, 8)}`;
+    const toolId = `tool-${requestId}`;
+    // The real agent calls the dorks MCP tool around the request: its tool_use comes first, its tool_result once the request settled.
+    append(dorkId, { type: "tool_use", toolId, name: "mcp__dorks__local_run", summary: command, input: { command, reason } });
     append(dorkId, { type: "local_request", requestId, kind: "run", command, cwd: "~/app", reason });
     const run = (via: "session" | "always" | "standing") => {
       append(dorkId, { type: "local_decision", requestId, decision: "allowed", via });
       later(tick, () => {
         append(dorkId, { type: "local_result", requestId, ok: true, exitCode: 0, preview: output });
+        append(dorkId, { type: "tool_result", toolId, ok: true, preview: output });
         then();
       });
     };
-    if (!localAccessEnabled) return then();
+    if (!localAccessEnabled) {
+      append(dorkId, { type: "tool_result", toolId, ok: false, preview: "Access to the user's computer is off." });
+      return then();
+    }
     if (settings.localAlwaysAllow || localAllowed.has(dorkId)) return run("standing");
     localWaiting.set(requestId, {
       dorkId,
@@ -498,6 +505,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         localWaiting.delete(requestId);
         if (allowed) return run(allowed);
         append(dorkId, { type: "local_decision", requestId, decision: "denied" });
+        append(dorkId, { type: "tool_result", toolId, ok: false, preview: "The user declined." });
         then();
       },
     });
