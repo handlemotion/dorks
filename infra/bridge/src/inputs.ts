@@ -39,12 +39,21 @@ export function mapStrings(v: unknown, f: (s: string) => string): unknown {
   return o ? Object.fromEntries(Object.entries(o).map(([k, x]) => [k, mapStrings(x, f)])) : v;
 }
 
+/** A run of base64 or base64url long enough to hold a short value with something around it. */
+const BASE64_TOKEN = /[A-Za-z0-9+/_-]{8,}={0,2}/g;
+function decodeBase64(tok: string): string | null {
+  const b = Buffer.from(tok.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+  return b.length ? b.toString("utf8") : null;
+}
+
 const refsIn = (s: string) => [...new Set([...s.matchAll(SECRET_REF)].map((m) => m[1]!))];
 const envName = (name: string) => `DORKS_SECRET_${name}`;
 
 export class SecretInputs {
   private values = new Map<string, string>();
-  /** Every form of every value, longest first (so a value containing another is masked whole). */
+  /** Every value this process has held, replaced ones included: an old password may still sit in a file or a log. */
+  private seen = new Set<string>();
+  /** Every form of every value ever held, longest first (so a value containing another is masked whole). */
   private masks: string[] = [];
 
   constructor(
@@ -61,18 +70,31 @@ export class SecretInputs {
   async refresh() {
     const r = obj(await callBackend(this.t as Transport, this.log, () => this.t.input({ action: "values" })));
     const values = obj(r?.values) ?? {};
-    for (const [name, value] of Object.entries(values)) if (typeof value === "string") this.values.set(name, value);
+    for (const [name, value] of Object.entries(values))
+      if (typeof value === "string") {
+        this.values.set(name, value);
+        this.seen.add(value);
+      }
     const masks = new Set<string>();
-    for (const v of this.values.values()) for (const m of variants(v)) masks.add(m);
+    for (const v of this.seen) for (const m of variants(v)) masks.add(m);
     this.masks = [...masks].sort((a, b) => b.length - a.length);
     this.redactor.addAll(this.masks);
   }
 
-  /** Replaces every form of every value with [redacted]. */
+  /**
+   * Replaces every form of every value with [redacted], and any base64 token that decodes to text holding a value: a value inside a
+   * larger encoded string (a Basic authorization header encodes `user:password`, not the password alone) is caught whole.
+   */
   scrub(text: string): string {
     let out = text;
     for (const m of this.masks) if (out.includes(m)) out = out.split(m).join(REDACTED);
-    return out;
+    return out.replace(BASE64_TOKEN, (tok) => (this.holdsValue(decodeBase64(tok)) ? REDACTED : tok));
+  }
+
+  private holdsValue(decoded: string | null): boolean {
+    if (!decoded) return false;
+    for (const v of this.seen) if (v.length >= MIN_SCRUB && decoded.includes(v)) return true;
+    return false;
   }
 
   scrubDeep<T>(v: T): T {

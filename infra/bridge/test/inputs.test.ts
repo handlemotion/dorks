@@ -45,4 +45,16 @@ describe("secure inputs in the bridge", () => {
     expect(JSON.stringify(s.inputs.scrubDeep({ message: { content: [{ type: "tool_result", content: `got ${password}` }] } }))).not.toContain("p@ss");
     expect(s.redactor.scrub(password)).toBe("[redacted]");
   });
+
+  it("redacts a value inside a larger encoded string, and keeps redacting a value after it was replaced", async () => {
+    const s = setup();
+    s.values.password = "new-test-password";
+    await s.inputs.refresh();
+    const header = `> Authorization: Basic ${Buffer.from("user:new-test-password").toString("base64")}`; // curl -v -u "user:{{secret:password}}"
+    expect(s.inputs.scrub(header)).toBe("> Authorization: Basic [redacted]");
+    expect(s.inputs.scrub("> Authorization: Basic dXNlcjpvdGhlcg==")).toBe("> Authorization: Basic dXNlcjpvdGhlcg=="); // user:other
+    s.values.password = "a-fresh-password"; // asked again under the same name
+    await s.inputs.refresh();
+    expect(s.inputs.scrub("old new-test-password, new a-fresh-password")).toBe("old [redacted], new [redacted]");
+  });
 });

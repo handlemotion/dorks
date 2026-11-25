@@ -33,7 +33,9 @@ Claude Code's hooks run the bridge (`infra/bridge/src/inputs.ts`, through `dorks
   a file to write, an MCP tool's arguments) it is the value itself. The dorks MCP tools are left alone. A reference to a name with no
   value stops the call, telling the agent to ask for it.
 - **PostToolUse** replaces the value, and its base64, base64url, URL-encoded and JSON-escaped forms, with `[redacted]` in every tool's
-  output (`updatedToolOutput`) before the model sees it: a value echoed, written to a file and read back, or printed by a server.
+  output (`updatedToolOutput`) before the model sees it: a value echoed, written to a file and read back, or printed by a server. A
+  base64 token that decodes to text holding a value is redacted whole (a Basic authorization header encodes `user:password`). A value
+  replaced under the same name stays redacted for as long as the bridge runs, since the old one may still sit in a file or a log.
 - The bridge scrubs the same forms from every event it sends (the transcript) and from its logs.
 
 Values are never in the agent's environment, a file the bridge writes, the CLI's config, an event, a server log, or a UI API response.
