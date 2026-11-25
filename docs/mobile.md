@@ -24,8 +24,8 @@ and agents never connect to the phone: the phone reads and writes the Mac's UI A
   owner token, but only when it is on the relay allowlist below; a compromised relay can do no more than the phone could.
 - **Separate private repository** for the cloud service (`handlemotion/dorks-cloud`): it holds accounts and deploy config, while
   this repository is public. The protocol between the Mac and the relay is specified here, so either side can change against it.
-- **Sign-in is Wok's** (handlemotion/omni `apps/ios`, ported as is): Continue with Google, Sign in with Apple, or Continue with email
-  and a 6-digit code. Apple stays native (`expo-apple-authentication`, Better Auth's `apple` provider with the ID token), which
+- **Sign-in starts from Wok's** (handlemotion/omni `apps/ios`), in Inter: Continue with Google, Sign in with Apple, or Continue
+  with email, which pushes an email page and then a code page (six boxes, autofill, Resend after 30 s; swipe back between them). Apple stays native (`expo-apple-authentication`, Better Auth's `apple` provider with the ID token), which
   satisfies App Review guideline 4.8; Google is Better Auth's web OAuth through `ASWebAuthenticationSession` back to `dorks://`; the
   code is Better Auth's `emailOTP` plugin. `GET /v1/sign-in-methods` says which ones the relay has configured, and the app disables
   the others. The launch screen stays up until sign-in or the Macs list can draw, then fades (200 ms).

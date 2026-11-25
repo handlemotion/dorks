@@ -39,10 +39,16 @@ export async function sendEmailOtp(email: string) {
   if (error) throw new Error(error.message || "Could not send code");
 }
 
+const OTP_ERRORS: Record<string, string> = {
+  INVALID_OTP: "That code isn't right.",
+  OTP_EXPIRED: "That code has expired. Resend a new one.",
+  TOO_MANY_ATTEMPTS: "Too many tries. Resend a new code.",
+};
+
 /** Verifies the 6-digit code and saves the session cookie into SecureStore. */
 export async function verifyEmailOtp(email: string, otp: string) {
   const { error } = await authClient.signIn.emailOtp({ email: email.trim(), otp: otp.trim() });
-  if (error) throw new Error(error.message || "Invalid code");
+  if (error) throw new Error(OTP_ERRORS[error.code ?? ""] ?? (error.message || "Invalid code"));
 }
 
 export interface SignInMethods {
@@ -93,5 +99,6 @@ export function useAction<A extends unknown[]>(fn: (...args: A) => Promise<void>
       },
     );
   }, []);
-  return { ...state, run };
+  const reset = useCallback(() => setState({ isPending: false, isSuccess: false, error: null }), []);
+  return { ...state, run, reset };
 }

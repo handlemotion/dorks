@@ -1,7 +1,7 @@
 import { useEffect, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View, type PressableProps } from "react-native";
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withTiming } from "react-native-reanimated";
-import { useColors } from "@/lib/theme";
+import { fonts, useColors } from "@/lib/theme";
 
 const GLYPH = { sm: 15, field: 18 };
 
@@ -16,7 +16,7 @@ export interface ButtonProps extends Omit<PressableProps, "children"> {
   isPending?: boolean;
 }
 
-/** A labelled action (Wok's iOS button). Squeezes to 0.97 while pressed. */
+/** A labelled action (Wok's iOS button): the label centred, a glyph or the pending spinner at the leading edge. Squeezes to 0.97 while pressed. */
 export function Button({ label, intent = "primary", size = "md", isPending, disabled, icon, style, ...props }: ButtonProps) {
   const c = useColors();
   const primary = intent === "primary";
@@ -28,6 +28,7 @@ export function Button({ label, intent = "primary", size = "md", isPending, disa
       : intent === "outline"
         ? { backgroundColor: c.surface, borderWidth: 1, borderColor: c.border }
         : styles.quiet;
+  const quiet = intent === "quiet";
   return (
     <Pressable
       {...props}
@@ -36,8 +37,8 @@ export function Button({ label, intent = "primary", size = "md", isPending, disa
       disabled={disabled || isPending}
       style={(state) => [styles.base, styles[size], fill, (disabled || isPending) && styles.dimmed, state.pressed && styles.pressed, typeof style === "function" ? style(state) : style]}
     >
-      <View style={styles.row}>
-        {isPending ? <Spinner size={glyph} color={ink} /> : icon?.({ size: glyph, color: ink })}
+      {isPending || icon ? <View style={[styles.lead, { width: glyph }]}>{isPending ? <Spinner size={glyph} color={ink} /> : icon?.({ size: glyph, color: ink })}</View> : null}
+      <View style={[styles.row, quiet && styles.flush]}>
         <Text maxFontSizeMultiplier={1.6} numberOfLines={1} style={[size === "sm" ? styles.smLabel : styles.label, { color: ink }]}>
           {label}
         </Text>
@@ -69,9 +70,12 @@ const styles = StyleSheet.create({
   md: { minHeight: 44, paddingHorizontal: 18 },
   lg: { minHeight: 48, paddingHorizontal: 20 },
   quiet: { minHeight: 36, paddingHorizontal: 0, alignSelf: "flex-start" },
+  flush: { paddingHorizontal: 0 },
   dimmed: { opacity: 0.5 },
   pressed: { transform: [{ scale: 0.97 }] },
-  row: { flexDirection: "row", alignItems: "center", gap: 8, maxWidth: "100%" },
-  label: { flexShrink: 1, fontSize: 15, lineHeight: 20, fontWeight: "500" },
-  smLabel: { flexShrink: 1, fontSize: 13, lineHeight: 18, fontWeight: "500" },
+  /** The glyph sits at the button's leading edge, so labels in a stack of buttons share one centre line. */
+  lead: { position: "absolute", left: 20, top: 0, bottom: 0, alignItems: "center", justifyContent: "center" },
+  row: { flexDirection: "row", alignItems: "center", maxWidth: "100%", paddingHorizontal: 28 },
+  label: { flexShrink: 1, fontSize: 15, lineHeight: 20, fontFamily: fonts.medium },
+  smLabel: { flexShrink: 1, fontSize: 13, lineHeight: 18, fontFamily: fonts.medium },
 });

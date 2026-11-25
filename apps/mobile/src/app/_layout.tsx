@@ -1,3 +1,4 @@
+import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, useFonts } from "@expo-google-fonts/inter";
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as Updates from "expo-updates";
@@ -21,11 +22,12 @@ export default function RootLayout() {
   const c = useColors();
   const dark = useIsDark();
   const { data: session, isPending } = authClient.useSession();
+  const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold });
   useLaunchUpdate();
   const base = dark ? DarkTheme : DefaultTheme;
   const theme = { ...base, colors: { ...base.colors, background: c.background, card: c.background, text: c.text, border: c.hairline, primary: c.brand } };
   // The launch screen stays up (holdSplash) until the first real screen lets it go: sign-in, or the app once its Macs load.
-  if (isPending) return null;
+  if (isPending || !fontsLoaded) return null;
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider value={theme}>
@@ -35,6 +37,8 @@ export default function RootLayout() {
           </Stack.Protected>
           <Stack.Protected guard={!session}>
             <Stack.Screen name="sign-in" />
+            <Stack.Screen name="sign-in-email" />
+            <Stack.Screen name="sign-in-code" />
           </Stack.Protected>
         </Stack>
         <StatusBar style="auto" />

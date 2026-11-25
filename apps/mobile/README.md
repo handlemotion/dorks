@@ -5,7 +5,9 @@ An Expo (SDK 58, Expo Router) app: a second UI for the server on your Mac, reach
 
 ```
 src/app/_layout.tsx            sign-in gate, theme, EAS Update on launch, holds the launch screen (src/lib/splash.ts)
-src/app/sign-in.tsx            Wok's sign-in, ported: Google, Apple (native) or a 6-digit email code (src/lib/signIn.ts)
+src/app/sign-in.tsx            Wok's sign-in, ported: Google, Apple (native) or email (src/lib/signIn.ts)
+src/app/sign-in-email.tsx      email page, pushed; sends the code
+src/app/sign-in-code.tsx       6-digit code page (six boxes, autofill, Resend after 30 s)
 src/app/(app)/_layout.tsx      Macs, the picked Mac's client, the sliding sidebar shell
 src/app/(app)/(tabs)/          native tabs: Chat (index) and Customize
 src/app/(app)/pr.tsx           a pull request as a form sheet, with Slide to merge

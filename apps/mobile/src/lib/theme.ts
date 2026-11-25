@@ -64,6 +64,8 @@ const dark: typeof light = {
 export type Colors = typeof light;
 
 export const radius = { control: 6, bubble: 10 };
+/** Inter, loaded in the root layout (sign-in uses it, as Wok's app does). */
+export const fonts = { regular: "Inter_400Regular", medium: "Inter_500Medium", semibold: "Inter_600SemiBold" };
 export const type = { message: 16, ui: 15, small: 13, mono: "Menlo" };
 
 export function useColors(): Colors {

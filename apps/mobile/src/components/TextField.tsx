@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { StyleSheet, TextInput, type TextInputProps } from "react-native";
-import { useColors } from "@/lib/theme";
+import { fonts, useColors } from "@/lib/theme";
 
 export interface TextFieldProps extends TextInputProps {
   /** Read by VoiceOver; the field shows no visible label. */
@@ -31,5 +31,5 @@ export function TextField({ label, style, onFocus, onBlur, ...props }: TextField
 }
 
 const styles = StyleSheet.create({
-  input: { fontSize: 15, lineHeight: 20, height: 48, paddingHorizontal: 20, borderRadius: 999, borderWidth: 1 },
+  input: { fontSize: 16, fontFamily: fonts.regular, height: 48, paddingHorizontal: 20, borderRadius: 999, borderWidth: 1 },
 });
