@@ -1,5 +1,4 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { SparkleIcon } from 'lucide-react'
 import { useDorksClient } from '@dorks/client/react'
 import type { Settings } from '@dorks/client'
 import { Button } from '@dorks/ui/button'
@@ -10,6 +9,7 @@ import githubDark from '../../assets/providers/github-dark.svg'
 import githubLight from '../../assets/providers/github-light.svg'
 import grokDark from '../../assets/providers/grok-dark.svg'
 import grokLight from '../../assets/providers/grok-light.svg'
+import antigravityLogo from '../../assets/providers/antigravity.svg'
 import openaiDark from '../../assets/providers/openai-dark.svg'
 import openaiLight from '../../assets/providers/openai-light.svg'
 import { BoatCheckError, saveBoat } from '../../lib/boat'
@@ -144,7 +144,7 @@ export function AgentSignIn({ settings, onNext }: StepProps) {
           <Row icon={<Logo light={claudeLogo} />} name="Claude" connected={settings.claudeToken} onOpen={() => setOpen('claude')} />
           {/* svgl pads the OpenAI mark inside its viewBox, so it is scaled to sit at the others' size. */}
           <Row icon={<Logo light={openaiLight} dark={openaiDark} className="scale-[1.3]" />} name="Codex" connected={!!settings.boatEnvironment} onOpen={() => setOpen('codex')} />
-          <Row icon={<SparkleIcon className="size-4" />} name="Antigravity" connected={!!settings.antigravityToken} onOpen={() => setOpen('antigravity')} />
+          <Row icon={<Logo light={antigravityLogo} className="size-4" />} name="Antigravity" connected={!!settings.antigravityToken} onOpen={() => setOpen('antigravity')} />
           <Row icon={<Logo light={grokLight} dark={grokDark} />} name="Grok" soon />
         </List>
       </Body>

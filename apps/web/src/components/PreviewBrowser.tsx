@@ -289,7 +289,14 @@ function DrawLayer({ onDrawn }: { onDrawn: (rect: Rect) => void }) {
 function ToolButton({ label, icon, pressed, onClick, count }: { label: string; icon: ReactNode; pressed: boolean; onClick: () => void; count?: number }) {
   return (
     <Tip label={label} side="top">
-      <Button variant="ghost" size="icon-sm" className={`${BAR_BUTTON} w-auto min-w-[30px] gap-1 px-[8px] hover:bg-background ${PRESSED}`} aria-label={label} aria-pressed={pressed} onClick={onClick}>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        className={`h-7 w-auto min-w-7 gap-1 rounded-[6px] px-[7px] text-muted-foreground transition-none hover:bg-foreground/[0.05] hover:text-foreground [&_svg:not([class*='size-'])]:size-3.5 ${PRESSED}`}
+        aria-label={label}
+        aria-pressed={pressed}
+        onClick={onClick}
+      >
         {icon}
         {count ? <span className="text-xs tabular-nums">{count}</span> : null}
       </Button>
@@ -389,14 +396,19 @@ function PreviewToolbar(props: {
   const session = props.mode === 'overlay' ? props.session : undefined
   if (props.mode === 'loading') return <span className="text-xs text-muted-foreground">Comments and tools appear once the page loads.</span>
   if (props.mode === 'none') return null
-  if (!session) return <ToolButton label="Select an element to send to the agent" icon={<SquareMousePointerIcon />} pressed={props.active === 'attach'} onClick={() => props.onTool('attach')} />
+  if (!session)
+    return (
+      <Rail>
+        <ToolButton label="Select an element to send to the agent" icon={<SquareMousePointerIcon />} pressed={props.active === 'attach'} onClick={() => props.onTool('attach')} />
+      </Rail>
+    )
   return (
-    <>
+    <Rail>
       <ToolButton label="Comment on an element" icon={<MessageSquarePlusIcon />} pressed={props.active === 'comment'} onClick={() => props.onTool('comment')} />
       <ToolButton label="Comment on text" icon={<TextCursorIcon />} pressed={props.active === 'text'} onClick={() => props.onTool('text')} />
       <ToolButton label="Comment on an area" icon={<SquareDashedIcon />} pressed={props.active === 'capture'} onClick={() => props.onTool('capture')} />
       <ToolButton label={props.rulers ? 'Hide rulers' : 'Rulers'} icon={<RulerIcon />} pressed={props.rulers} onClick={props.onRulers} />
-      <span aria-hidden className="mx-1.5 h-4 w-px bg-border" />
+      <RailDivider />
       <ToolButton
         label={props.showComments ? 'Hide comments' : 'Show comments'}
         icon={<MessagesSquareIcon />}
@@ -404,8 +416,22 @@ function PreviewToolbar(props: {
         onClick={props.onShowComments}
         count={props.openCount}
       />
-    </>
+    </Rail>
   )
+}
+
+/** The rail the tools sit on, after omni's preview rail: white, a hairline, 2px around 28px tools. */
+function Rail({ children }: { children: ReactNode }) {
+  return (
+    <div role="toolbar" aria-label="Preview tools" className="flex items-center gap-0.5 rounded-[8px] border bg-background p-0.5">
+      {children}
+    </div>
+  )
+}
+
+/** Splits groups of tools: a full-height hairline from rail edge to rail edge. */
+function RailDivider() {
+  return <span aria-hidden className="mx-0.5 -my-0.5 w-px self-stretch bg-border" />
 }
 
 /**
@@ -559,7 +585,7 @@ export function PreviewBrowser({ server, onBack, onGrab, session }: { server: Pr
           </div>
         </div>
         <Rulers on={ruled > 0} view={view} offset={{ x: MARGIN + ruled, y: MARGIN + ruled }} pointer={overlay.pointer} />
-        <div className="flex h-12 shrink-0 items-center justify-center gap-0.5 px-2.5">
+        <div className="flex shrink-0 justify-center px-5 pt-3 pb-4">
           <PreviewToolbar
             mode={tools ? 'overlay' : sameOrigin ? 'same-origin' : html ? 'none' : 'loading'}
             session={session}

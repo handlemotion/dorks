@@ -63,9 +63,9 @@ export function ChatBox(props: {
  */
 export function Face({ author, names, round = false }: { author: CommentView['author']; names: Names; round?: boolean }) {
   const shape = round ? 'rounded-full' : 'rounded-[6px]'
-  if (author === 'owner' && names.ownerImage) return <img src={names.ownerImage} alt="" className={`size-6 shrink-0 bg-foreground/[0.07] object-cover ${shape}`} />
+  if (author === 'owner' && names.ownerImage) return <img src={names.ownerImage} alt="" className={`size-6 shrink-0 border object-cover ${shape}`} />
   return (
-    <span aria-hidden className={`flex size-6 shrink-0 items-center justify-center bg-foreground/[0.06] text-muted-foreground [&_svg]:size-3.5 ${shape}`}>
+    <span aria-hidden className={`flex size-6 shrink-0 items-center justify-center border text-muted-foreground [&_svg]:size-3.5 ${shape}`}>
       {author === 'owner' ? <UserRoundIcon /> : names.agentIcon}
     </span>
   )

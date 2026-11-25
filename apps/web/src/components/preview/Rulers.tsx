@@ -83,7 +83,7 @@ export function Rulers({ on, view, offset, pointer }: { on: boolean; view: View;
   const x0 = offset.x + view.left
   const y0 = offset.y + view.top
   return (
-    <div ref={pane} aria-hidden className={`pointer-events-none absolute inset-x-0 top-0 bottom-12 ${on ? '' : 'hidden'}`}>
+    <div ref={pane} aria-hidden className={`pointer-events-none absolute inset-x-0 top-0 bottom-[66px] ${on ? '' : 'hidden'}`}>
       {pointer && (
         <>
           <div className="absolute inset-y-0 w-px bg-red-500/40" style={{ left: x0 + pointer.x * s }} />
