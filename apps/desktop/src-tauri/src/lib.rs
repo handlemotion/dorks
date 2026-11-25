@@ -45,6 +45,7 @@ pub fn run() {
             commands::server_status,
             commands::restart_server,
             commands::open_data_dir,
+            commands::open_url,
             commands::set_keep_awake,
             commands::keep_awake_mode,
             commands::set_keep_awake_mode,

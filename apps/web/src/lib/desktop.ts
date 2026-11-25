@@ -33,9 +33,44 @@ const invoke = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
 
 export const isDesktop = () => !!window.__TAURI__?.core
 
-/** Opens a web page in the default browser: in the desktop app the shell takes the new window and hands it over (boot.rs, `on_new_window`). */
+/** Opens a web page in the default browser: invokes the shell's `open_url` command directly in the desktop app (falling back to `window.open` on older shells or in a plain browser). */
 export function openExternal(url: string) {
+  if (isDesktop()) {
+    void invoke('open_url', { url }).catch(() => window.open(url, '_blank', 'noopener,noreferrer'))
+    return
+  }
   window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+/** Returns the external URL to open in the OS browser for an anchor click, or null when the link should stay inside the app. */
+export function externalLinkHref(rawHref: string | null, resolvedHref: string, target: string, pageOrigin: string): string | null {
+  if (!rawHref || rawHref.startsWith('#')) return null
+  let url: URL
+  try {
+    url = new URL(resolvedHref)
+  } catch {
+    return null
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:' && url.protocol !== 'mailto:') return null
+  if (url.origin === pageOrigin && target !== '_blank') return null
+  return url.href
+}
+
+/**
+ * In the desktop app (WKWebView on macOS), single-clicking `target="_blank"` links can be dropped unless opened through the shell.
+ * Intercept plain left-clicks on external anchors and hand them straight to `openExternal`; Cmd/middle-clicks still hit `on_new_window`.
+ */
+export function installDesktopLinkHandler() {
+  if (!isDesktop()) return
+  document.addEventListener('click', (e) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+    const anchor = e.target instanceof Element ? e.target.closest('a[href]') : null
+    if (!(anchor instanceof HTMLAnchorElement)) return
+    const href = externalLinkHref(anchor.getAttribute('href'), anchor.href, anchor.target, window.location.origin)
+    if (!href) return
+    e.preventDefault()
+    openExternal(href)
+  })
 }
 
 /** Tells the shell whether dorks are working, so it can hold the Mac awake (a no-op outside the app). */
