@@ -13,6 +13,7 @@ import { Switch } from '@dorks/ui/switch'
 import { Textarea } from '@dorks/ui/textarea'
 import { EmptyState } from '../../../components/EmptyState'
 import { PageHeader } from '../../../components/PageHeader'
+import { PageRail, RailPage } from '../../../components/PageRail'
 import { Tip } from '../../../components/Tip'
 import { DAYS, EVENTS, EVERY, GithubMark, TriggerList } from '../../../components/automations/TriggerEditor'
 import { TEMPLATES, type AutomationTemplate } from '../../../components/automations/templates'
@@ -95,44 +96,57 @@ function NewButton({ variant = 'outline' }: { variant?: 'outline' | 'default' })
 
 function AutomationList() {
   const automations = useAutomations()
+  const [query, setQuery] = useState('')
+  const q = query.trim().toLowerCase()
+  const shown = automations?.filter((a) => !q || a.name.toLowerCase().includes(q) || a.triggers.some((t) => triggerText(t).toLowerCase().includes(q)))
+  const templates = TEMPLATES.filter((t) => !q || t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q))
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PageHeader title="Automations" actions={automations?.length ? <NewButton /> : undefined} />
-      <Page>
-        {automations?.length === 0 && (
-          <EmptyState figure="relay" title="No automations yet" description="An agent that runs on a schedule, or when something happens in a repository. Start from a template, or from scratch.">
-            <NewButton />
-          </EmptyState>
-        )}
-        {!!automations?.length && (
-          <SettingsSection title="Automations">
-            <SettingsGroup label="automations">
-              {automations.map((a) => {
-                const s = status(a)
-                return (
-                  <Link key={a.id} to="/automations" search={{ automation: a.id }} className={LINK_ROW}>
-                    <StatusDot tone={s.tone} />
-                    <RowText title={a.name} description={a.triggers.map(triggerText).join(' · ')} />
-                    <span className="hidden w-28 shrink-0 text-xs text-muted-foreground md:block">{a.lastRun ? `Ran ${ago(a.lastRun.createdAt)}` : 'No runs yet'}</span>
-                    <span className={cn('w-44 shrink-0 truncate text-end text-xs', TONE_TEXT[s.tone])}>{s.text}</span>
-                    <ChevronRightIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-                  </Link>
-                )
-              })}
-            </SettingsGroup>
-          </SettingsSection>
-        )}
-        {automations && <Templates />}
-      </Page>
+      <RailPage>
+        {!!automations?.length && <PageRail query={query} onQueryChange={setQuery} placeholder="Search automations…" actions={<NewButton variant="default" />} />}
+        <SettingsSections>
+          {automations?.length === 0 && (
+            <EmptyState figure="relay" title="No automations yet" description="An agent that runs on a schedule, or when something happens in a repository. Start from a template, or from scratch.">
+              <NewButton />
+            </EmptyState>
+          )}
+          {q && !shown?.length && !templates.length && (
+            <EmptyState figure="relay" title="No matching automations" description="Try another name, repository or event.">
+              <Button variant="outline" size="sm" onClick={() => setQuery('')}>
+                Clear search
+              </Button>
+            </EmptyState>
+          )}
+          {!!shown?.length && (
+            <SettingsSection title="Automations">
+              <SettingsGroup label="automations">
+                {shown.map((a) => {
+                  const s = status(a)
+                  return (
+                    <Link key={a.id} to="/automations" search={{ automation: a.id }} className={LINK_ROW}>
+                      <StatusDot tone={s.tone} />
+                      <RowText title={a.name} description={a.triggers.map(triggerText).join(' · ')} />
+                      <span className="hidden w-28 shrink-0 text-xs text-muted-foreground md:block">{a.lastRun ? `Ran ${ago(a.lastRun.createdAt)}` : 'No runs yet'}</span>
+                      <span className={cn('w-44 shrink-0 truncate text-end text-xs', TONE_TEXT[s.tone])}>{s.text}</span>
+                      <ChevronRightIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+                    </Link>
+                  )
+                })}
+              </SettingsGroup>
+            </SettingsSection>
+          )}
+          {automations && templates.length > 0 && <Templates templates={templates} />}
+        </SettingsSections>
+      </RailPage>
     </div>
   )
 }
 
-function Templates() {
+function Templates({ templates }: { templates: AutomationTemplate[] }) {
   return (
     <SettingsSection title="Templates">
       <SettingsGroup label="templates">
-        {TEMPLATES.map((t) => (
+        {templates.map((t) => (
           <div key={t.id} className={ROW}>
             <span className="flex w-4 shrink-0 justify-center text-muted-foreground">{t.input.triggers[0].kind === 'schedule' ? <ClockIcon className="size-4" /> : <GithubMark />}</span>
             <RowText title={t.title} description={t.description} />

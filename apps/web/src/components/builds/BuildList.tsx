@@ -2,15 +2,19 @@ import { useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { KeyRoundIcon, PlusIcon, SparklesIcon } from 'lucide-react'
 import { cn } from 'cn'
+import type { BuildView } from '@dorks/client'
 import { useBuilds, useDorksClient } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
 import { EmptyState } from '../EmptyState'
-import { PageHeader } from '../PageHeader'
-import { SettingsGroup, SettingsSection } from '../settings/kit'
+import { PageRail, RailPage } from '../PageRail'
+import { SettingsGroup, SettingsSection, SettingsSections } from '../settings/kit'
 import { usePending } from '../../lib/pending'
 import { sizeOf, ago, status, TONE_TEXT, firstLine } from './format'
-import { Dot, ROW, LINK_ROW, Chevron, RowText, Page } from './shared'
+import { Dot, ROW, LINK_ROW, Chevron, RowText } from './shared'
 import { SetupDialog } from './SetupDialog'
+
+/** A build matches a search by its name or one of its repositories. */
+const matches = (b: BuildView, q: string) => !q || b.name.toLowerCase().includes(q) || b.repos.some((r) => r.repo.toLowerCase().includes(q))
 
 export function BuildList() {
   const builds = useBuilds()
@@ -18,6 +22,8 @@ export function BuildList() {
   const navigate = useNavigate()
   const { run, pending } = usePending()
   const [settingUp, setSettingUp] = useState(false)
+  const [query, setQuery] = useState('')
+  const q = query.trim().toLowerCase()
   const create = () =>
     run(async () => {
       const taken = new Set(builds?.map((b) => b.name.toLowerCase()))
@@ -27,7 +33,7 @@ export function BuildList() {
       await navigate({ to: '/builds', search: { build: id } })
     })
   const newButton = (
-    <Button size="sm" variant="outline" disabled={pending} onClick={() => void create()}>
+    <Button size="sm" variant={builds?.length ? 'default' : 'outline'} disabled={pending} onClick={() => void create()}>
       <PlusIcon data-icon="inline-start" />
       New build
     </Button>
@@ -35,7 +41,7 @@ export function BuildList() {
   if (builds && builds.length === 0)
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <PageHeader title="Builds" />
+        <div data-tauri-drag-region className="h-12 shrink-0" />
         <div className="flex min-h-0 flex-1 items-center justify-center pb-12">
           <EmptyState figure="stack" title="No builds yet" description="A build is a machine set up once: tools installed, variables set, repositories cloned.">
             {newButton}
@@ -46,54 +52,70 @@ export function BuildList() {
   const reviews = builds?.flatMap((b) => b.drafts.filter((d) => d.status === 'submitted').map((d) => ({ b, d }))) ?? []
   const requested = builds?.flatMap((b) => b.vars.filter((v) => v.requested).map((v) => ({ b, v }))) ?? []
   const fallback = builds?.find((b) => b.isDefault)
+  const shown = builds?.filter((b) => matches(b, q))
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PageHeader
-        title="Builds"
-        actions={
-          <>
-            {fallback && (
-              <Button size="sm" variant="ghost" onClick={() => setSettingUp(true)}>
-                Set up with an agent
-              </Button>
-            )}
-            {newButton}
-          </>
-        }
-      />
       {fallback && <SetupDialog build={fallback} open={settingUp} onOpenChange={setSettingUp} />}
-      <Page>
-        {(reviews.length > 0 || requested.length > 0) && (
-          <SettingsSection title="Needs you">
-            <SettingsGroup label="needs you">
-              {reviews.map(({ b, d }) => (
-                <div key={d.id} className={ROW}>
-                  <SparklesIcon aria-hidden className="size-4 shrink-0 text-brand" />
-                  <RowText title={`An agent proposed changes to ${b.name}`} description={`${d.note ? `${firstLine(d.note)} · ` : ''}from ${d.dorkTitle || 'a session'} · ${ago(d.updatedAt)}`} />
-                  <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/builds" search={{ build: b.id, review: d.id }} />}>
-                    Review
-                  </Button>
-                </div>
-              ))}
-              {requested.map(({ b, v }) => (
-                <div key={`${b.id}:${v.name}`} className={ROW}>
-                  <KeyRoundIcon aria-hidden className="size-4 shrink-0 text-amber-700 dark:text-amber-400" />
-                  <RowText
-                    title={
-                      <>
-                        <code className="font-mono text-xs">{v.name}</code> is waiting for a value
-                      </>
-                    }
-                    description={`${b.name} needs it${v.buildTime ? ' while building' : ''}`}
-                  />
-                  <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/builds" search={{ build: b.id }} />}>
-                    Fill in
-                  </Button>
-                </div>
-              ))}
-            </SettingsGroup>
-          </SettingsSection>
-        )}
+      <RailPage>
+        <PageRail
+          query={query}
+          onQueryChange={setQuery}
+          placeholder="Search builds…"
+          actions={
+            <>
+              {fallback && (
+                <Button size="sm" variant="ghost" onClick={() => setSettingUp(true)}>
+                  Set up with an agent
+                </Button>
+              )}
+              {newButton}
+            </>
+          }
+        />
+        <SettingsSections>
+          {(reviews.length > 0 || requested.length > 0) && (
+            <SettingsSection title="Needs you">
+              <SettingsGroup label="needs you">
+                {reviews.map(({ b, d }) => (
+                  <div key={d.id} className={ROW}>
+                    <SparklesIcon aria-hidden className="size-4 shrink-0 text-brand" />
+                    <RowText title={`An agent proposed changes to ${b.name}`} description={`${d.note ? `${firstLine(d.note)} · ` : ''}from ${d.dorkTitle || 'a session'} · ${ago(d.updatedAt)}`} />
+                    <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/builds" search={{ build: b.id, review: d.id }} />}>
+                      Review
+                    </Button>
+                  </div>
+                ))}
+                {requested.map(({ b, v }) => (
+                  <div key={`${b.id}:${v.name}`} className={ROW}>
+                    <KeyRoundIcon aria-hidden className="size-4 shrink-0 text-amber-700 dark:text-amber-400" />
+                    <RowText
+                      title={
+                        <>
+                          <code className="font-mono text-xs">{v.name}</code> is waiting for a value
+                        </>
+                      }
+                      description={`${b.name} needs it${v.buildTime ? ' while building' : ''}`}
+                    />
+                    <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/builds" search={{ build: b.id }} />}>
+                      Fill in
+                    </Button>
+                  </div>
+                ))}
+              </SettingsGroup>
+            </SettingsSection>
+          )}
+          <BuildRows builds={shown} query={q} onClear={() => setQuery('')} />
+        </SettingsSections>
+      </RailPage>
+    </div>
+  )
+}
+
+/** The builds a search left, or a way back when it left none. */
+function BuildRows({ builds, query, onClear }: { builds?: BuildView[]; query: string; onClear: () => void }) {
+  return (
+    <>
+      {!!builds?.length && (
         <SettingsSection title="Builds" description="A build is a machine set up once: tools installed, variables set, repositories cloned. Sessions start from its saved image.">
           <SettingsGroup label="builds">
             {builds?.map((b) => {
@@ -118,7 +140,14 @@ export function BuildList() {
             })}
           </SettingsGroup>
         </SettingsSection>
-      </Page>
-    </div>
+      )}
+      {query && !builds?.length && (
+        <EmptyState figure="stack" title="No matching builds" description="Try another name or repository.">
+          <Button variant="outline" size="sm" onClick={onClear}>
+            Clear search
+          </Button>
+        </EmptyState>
+      )}
+    </>
   )
 }
