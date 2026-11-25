@@ -31,11 +31,10 @@ export function dropOwner<T extends TreeNode>(forms: T[], target: TreeNode): T |
 }
 
 /** The composers on screen that take dropped files now, in the order they mounted. */
-type Zone = { form: () => HTMLElement | null; enabled: () => boolean; attach?: (files: File[]) => void }
-const zones = new Set<Zone>()
+const zones = new Set<{ form: () => HTMLElement | null; enabled: () => boolean }>()
 
 /** Registers a composer's form as a drop zone; returns the unregister. */
-export function addDropZone(zone: Zone) {
+export function addDropZone(zone: { form: () => HTMLElement | null; enabled: () => boolean }) {
   zones.add(zone)
   return () => void zones.delete(zone)
 }
@@ -47,16 +46,4 @@ export function dropZoneFor(target: EventTarget | null): HTMLElement | undefined
     return f ? [f] : []
   })
   return target instanceof Node ? dropOwner(forms, target) : forms[0]
-}
-
-/**
- * Attaches files to the composer nearest `from`, as if they were dropped there (a preview's captured area goes to its chat's
- * composer). Returns false when no composer takes files now.
- */
-export function attachFiles(files: File[], from: Node | null): boolean {
-  const form = dropZoneFor(from)
-  const zone = [...zones].find((z) => z.enabled() && z.form() === form)
-  if (!zone?.attach) return false
-  zone.attach(files)
-  return true
 }

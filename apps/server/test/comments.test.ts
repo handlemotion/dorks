@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { addComment, commentOp, listComments, replyComment } from "../src/services/comments";
+import { getImage, uploadImage } from "../src/services/bridge";
 import { harness } from "./harness";
 
 // Preview comments (services/comments.ts): the owner's comments reach the agent as one notify turn after the debounce; the agent's
@@ -39,5 +40,18 @@ describe("preview comments", () => {
         .filter((c) => c.kind === "notify")
         .at(-1)!.text,
     ).toContain(`## Reply in thread ${first}`);
+  });
+
+  it("hand an area's screenshot to the agent as an image line, and make it the dork's", () => {
+    const h = harness();
+    const id = h.seed("idle");
+    const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+    const image = uploadImage(h.app, png).id;
+    addComment(h.app, id, { body: "Too much space here", anchor: { kind: "area", path: "/", selector: "", label: "area", rect: { x: 10, y: 400, width: 300, height: 120 }, image }, port: 3000 });
+    h.timer(id, "comments_notify");
+    const text = h.cmds(id).find((c) => c.kind === "notify")!.text;
+    expect(text).toContain("the area at 10,400 (300 × 120 px)");
+    expect(text).toContain(`![Screenshot of the area](dorks-image:${image})`);
+    expect(getImage(h.app, id, image)).not.toBeNull();
   });
 });

@@ -22,6 +22,16 @@ export const commentAnchor = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("element"), ...where, html: z.string().max(4000).optional() }),
   /** A passage of text inside the element: the words, and a little of what comes before and after them, to find them again. */
   z.object({ kind: z.literal("text"), ...where, quote: z.string().min(1).max(2000), prefix: z.string().max(200), suffix: z.string().max(200) }),
+  /** A drawn area, in document pixels (scrolled with the page), with its screenshot (an image id, `dorks-image:<id>`). */
+  z.object({
+    kind: z.literal("area"),
+    ...where,
+    rect: z.object({ x: z.number(), y: z.number(), width: z.number().positive(), height: z.number().positive() }),
+    image: z
+      .string()
+      .regex(/^[0-9a-f]{32}$/)
+      .optional(),
+  }),
 ]);
 export type CommentAnchor = z.infer<typeof commentAnchor>;
 
@@ -63,6 +73,7 @@ export function commentThreads(comments: CommentView[], resolved?: boolean): Com
 
 /** One line on where a thread points, for the agent and for mentions: `on /settings, <button> in SubmitButton (src/Button.tsx:12)`. */
 export function anchorLine(a: CommentAnchor): string {
+  if (a.kind === "area") return `on ${a.path || "/"}, the area at ${Math.round(a.rect.x)},${Math.round(a.rect.y)} (${Math.round(a.rect.width)} × ${Math.round(a.rect.height)} px)`;
   const what =
     a.kind === "text"
       ? `the text "${a.quote.length > 120 ? `${a.quote.slice(0, 120)}…` : a.quote}" in ${a.component ?? `<${a.label}>`}`

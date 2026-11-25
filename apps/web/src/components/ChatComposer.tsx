@@ -167,7 +167,7 @@ function useFileDrop(attach: (files: File[]) => void, enabled: boolean, formRef:
   useEffect(() => {
     const hasFiles = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files')
     const mine = (e: DragEvent) => !!attachRef.current && !!formRef.current && dropZoneFor(e.target) === formRef.current
-    const unregister = addDropZone({ form: () => formRef.current, enabled: () => !!attachRef.current, attach: (files) => attachRef.current?.(files) })
+    const unregister = addDropZone({ form: () => formRef.current, enabled: () => !!attachRef.current })
     // dragenter/dragleave fire for every child crossed; the count is back at 0 only once the drag has left the window.
     let depth = 0
     const enter = (e: DragEvent) => {

@@ -13,7 +13,7 @@ import {
   SquareMousePointerIcon,
   TextCursorIcon,
 } from 'lucide-react'
-import { commentThreads, type CommentView } from '@dorks/shared'
+import { commentThreads, type CommentAnchor, type CommentView } from '@dorks/shared'
 import type { DorksClient, QueryState, Store } from '@dorks/client'
 import { useOptionalDorksClient } from '@dorks/client/react'
 import { Button, buttonVariants } from '@dorks/ui/button'
@@ -22,7 +22,6 @@ import { ProviderIcon, type AgentProvider } from './ChatComposer'
 import { PreviewMarks, useSize } from './preview/PreviewMarks'
 import { Rulers } from './preview/Rulers'
 import { useOverlay, type Overlay, type Picked, type PickMode, type Rect } from './preview/useOverlay'
-import { attachFiles } from '../lib/fileDrop'
 import { Tip } from './Tip'
 
 /** A dev server running in the sandbox. `html` renders an inline (same-origin) page instead of the URL; the dev demo uses it. */
@@ -144,6 +143,9 @@ function namesOf(login: string | null | undefined, session: PreviewSession | und
   }
 }
 
+/** What the overlay needs beyond the selector to find an anchor again: the quoted words, or the area's rectangle. */
+const markExtra = (a: CommentAnchor) => (a.kind === 'text' ? { quote: a.quote, prefix: a.prefix, suffix: a.suffix } : a.kind === 'area' ? { rect: a.rect } : {})
+
 /** A drawn rectangle from two corners. */
 const between = (a: { x: number; y: number }, b: { x: number; y: number }): Rect => ({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(a.x - b.x), height: Math.abs(a.y - b.y) })
 
@@ -231,7 +233,7 @@ function usePreviewComments(
       open.flatMap((t) => {
         const a = t.root.anchor
         if (!a) return []
-        return [{ id: t.root.id, kind: a.kind, path: a.path, selector: a.selector, ...(a.kind === 'text' ? { quote: a.quote, prefix: a.prefix, suffix: a.suffix } : {}) }]
+        return [{ id: t.root.id, kind: a.kind, path: a.path, selector: a.selector, ...markExtra(a) }]
       }),
     )
   }, [tools, open, setMarks])
@@ -392,7 +394,7 @@ function PreviewToolbar(props: {
     <>
       <ToolButton label="Comment on an element" icon={<MessageSquarePlusIcon />} pressed={props.active === 'comment'} onClick={() => props.onTool('comment')} />
       <ToolButton label="Comment on text" icon={<TextCursorIcon />} pressed={props.active === 'text'} onClick={() => props.onTool('text')} />
-      <ToolButton label="Capture an area" icon={<ScanIcon />} pressed={props.active === 'capture'} onClick={() => props.onTool('capture')} />
+      <ToolButton label="Comment on an area" icon={<ScanIcon />} pressed={props.active === 'capture'} onClick={() => props.onTool('capture')} />
       <ToolButton label={props.rulers ? 'Hide rulers' : 'Rulers'} icon={<RulerIcon />} pressed={props.rulers} onClick={props.onRulers} />
       <span aria-hidden className="mx-1.5 h-4 w-px bg-border" />
       <ToolButton
@@ -413,7 +415,7 @@ function PreviewToolbar(props: {
  *
  * - **Comment** on an element or on a passage of text. Comments are threads Dorks keeps (services/comments.ts): a bubble over the
  *   element, the text highlighted, the thread beside it. The agent hears about them as a notification and answers in the thread.
- * - **Capture an area**: it goes to the chat's composer as an image. A picked element can go to the composer too, instead of a comment.
+ * - **Capture an area**: a comment on a drawn rectangle, with its screenshot (the agent sees the image).
  * - **Show comments** or hide them.
  *
  * All of it works through the overlay the bridge's preview proxy adds to the page (infra/bridge/overlay/overlay.ts), over
@@ -434,7 +436,8 @@ export function PreviewBrowser({ server, onBack, onGrab, session }: { server: Pr
   const stage = useRef<HTMLDivElement>(null)
   const area = useRef<HTMLDivElement>(null)
   const [device, setDevice] = useDevice()
-  const view = viewport(useSize(area), DEVICES[device])
+  const areaSize = useSize(area)
+  const view = viewport(areaSize, DEVICES[device])
 
   // The comment being written, the area being drawn.
   const intent = session ? 'comment' : 'attach'
@@ -447,7 +450,7 @@ export function PreviewBrowser({ server, onBack, onGrab, session }: { server: Pr
   const [problem, setProblem] = useState('')
 
   const overlay = useOverlay(frame, current, reloads, (p) => {
-    // One element tool: the pick opens a comment on it, which can go to the chat's composer instead (attachDraft).
+    // One element tool: the pick opens a comment on it.
     if (session) {
       setActive(null)
       setDraft(p)
@@ -476,26 +479,24 @@ export function PreviewBrowser({ server, onBack, onGrab, session }: { server: Pr
     return () => window.removeEventListener('keydown', onKey)
   }, [drawing])
 
+  /** A drawn area becomes a comment on it: its screenshot is uploaded now, the comment box opens beside it. */
   const capture = async (rect: Rect) => {
     setDrawing(false)
     setCapturing(true)
     setProblem('')
     try {
-      const dataUrl = await overlay.capture(rect)
-      const blob = await (await fetch(dataUrl)).blob()
-      const name = `${server.name} ${overlay.path}`.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '')
-      if (!attachFiles([new File([blob], `${name || 'preview'}.png`, { type: 'image/png' })], stage.current)) throw new Error('No message box to add it to.')
+      const shot = await overlay.capture(rect)
+      const image = client ? await client.actions.uploadImage(await (await fetch(shot.data)).blob()) : undefined
+      const doc = { ...rect, x: rect.x + shot.scroll.x, y: rect.y + shot.scroll.y }
+      setActive(null)
+      setDraft({ anchor: { kind: 'area', path: overlay.path, selector: '', label: 'area', rect: doc, ...(image ? { image } : {}) }, box: rect })
     } catch (e) {
       setProblem(e instanceof Error ? e.message : 'The area could not be captured.')
     } finally {
       setCapturing(false)
     }
   }
-  /** The picked element goes to the chat's composer as context instead of a comment. */
-  const attachDraft = () => {
-    if (draft?.snippet) onGrab?.(`Element on ${draft.anchor.path}:\n\`\`\`\n${draft.snippet}\n\`\`\``)
-    setDraft(null)
-  }
+
   const activeTool = activeToolOf({ drawing: drawing || capturing, picking: overlay.picking, intent, sameOriginPicking })
   const onTool = (tool: Tool) => {
     setDraft(null)
@@ -516,7 +517,7 @@ export function PreviewBrowser({ server, onBack, onGrab, session }: { server: Pr
     <>
       <PreviewBar server={server} path={tools ? overlay.path : '/'} onBack={onBack} onReload={() => setReloads((n) => n + 1)} device={device} onDevice={setDevice} />
       <div className={`relative flex min-h-0 flex-1 flex-col ${BACKDROP}`}>
-        <div ref={area} className="relative mx-2.5 mt-2.5 min-h-0 flex-1">
+        <div ref={area} className="relative mx-7 mt-7 min-h-0 flex-1">
           <div
             ref={stage}
             className="absolute overflow-hidden rounded-[8px] border border-surface-line bg-white dark:border-transparent"
@@ -549,13 +550,13 @@ export function PreviewBrowser({ server, onBack, onGrab, session }: { server: Pr
               draft={onScreen(draft, view.scale)}
               onDraftSend={(body) => client!.actions.addComment(session!.id, { body, anchor: draft!.anchor, port: server.port ?? 0 })}
               onDraftClose={() => setDraft(null)}
-              onDraftAttach={draft?.snippet ? attachDraft : undefined}
+              imageUrl={client ? (id) => client.actions.imageUrl(id, 640) : undefined}
             >
               <HoverOutline box={hoverOnScreen(overlay.hover, sameOriginBox, view.scale)} />
             </PreviewMarks>
-            <Rulers on={rulers && tools} width={view.width} height={view.height} scale={view.scale} pointer={overlay.pointer} />
             {drawing && <DrawLayer onDrawn={(rect) => void capture(scaleRect(rect, 1 / view.scale))} />}
           </div>
+          <Rulers on={rulers && tools} view={view} area={areaSize} pointer={overlay.pointer} />
         </div>
         <div className="flex h-12 shrink-0 items-center justify-center gap-0.5 px-2.5">
           <PreviewToolbar

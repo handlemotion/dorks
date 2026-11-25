@@ -694,7 +694,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     if (!text) return fail(res, "invalid", "the comment is empty");
     // A light check (this file imports nothing at runtime); the real server parses it with `commentAnchor`.
     const a = body.anchor as CommentAnchor | undefined;
-    if (!a || (a.kind !== "element" && a.kind !== "text") || typeof a.selector !== "string" || typeof a.path !== "string") return fail(res, "invalid", "the comment needs an anchor on the page");
+    if (!a || !["element", "text", "area"].includes(a.kind) || typeof a.selector !== "string" || typeof a.path !== "string") return fail(res, "invalid", "the comment needs an anchor on the page");
     const c = newComment({ parentId: null, author: "owner", body: text, anchor: a, port: typeof body.port === "number" ? body.port : null });
     list.push(c);
     broadcast({ t: "comments", dorkId: d.id });

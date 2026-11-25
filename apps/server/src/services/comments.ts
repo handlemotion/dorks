@@ -3,6 +3,7 @@ import { fail, touch, type App } from "../app";
 import { getDork } from "../data";
 import { insert, update } from "../db";
 import { append, dispatch, hasTimer, setTimer, userMessagePending } from "../lifecycle/dispatch";
+import { claimImages } from "./bridge";
 import { owned } from "./dorks";
 
 // Preview comments (docs/architecture.md, "Preview comments"). The owner comments on a running preview; each comment of theirs waits
@@ -84,6 +85,8 @@ export function addComment(app: App, dorkId: string, input: { body: unknown; anc
     if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) return fail("invalid", "port must be the preview's port");
     room(app, dorkId);
     const id = app.uuid();
+    // An area's screenshot was uploaded like an attachment: the comment makes it this dork's, so the agent can load it.
+    if (parsed.data.kind === "area" && parsed.data.image) claimImages(app, dorkId, `dorks-image:${parsed.data.image}`);
     insert(app.db, "preview_comments", { id, dorkId, parentId: null, author: "owner", body: text(input.body), anchor: JSON.stringify(parsed.data), port, notified: false, createdAt: app.now() });
     queue(app, dorkId);
     touch(app, { t: "comments", dorkId });
@@ -184,7 +187,10 @@ export function foldComments(app: App, dorkId: string) {
     const c = view(r);
     const root = c.parentId ? byId.get(c.parentId) : c;
     const where = root?.anchor ? anchorLine(root.anchor) : "on the preview";
-    return c.parentId ? `## Reply in thread ${c.parentId} (${where})\n  > ${quote(c.body)}` : `## New comment ${c.id} ${where}${c.port ? `, port ${c.port}` : ""}\n  > ${quote(c.body)}`;
+    if (c.parentId) return `## Reply in thread ${c.parentId} (${where})\n  > ${quote(c.body)}`;
+    // The bridge turns this line into the image itself in the agent's turn (infra/bridge/src/claude.ts, userContent).
+    const shot = c.anchor?.kind === "area" && c.anchor.image ? `\n  ![Screenshot of the area](dorks-image:${c.anchor.image})` : "";
+    return `## New comment ${c.id} ${where}${c.port ? `, port ${c.port}` : ""}\n  > ${quote(c.body)}${shot}`;
   });
   const digest = rows.map((r) => r.body).join("\n\n");
   const text = [

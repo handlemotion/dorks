@@ -7,8 +7,10 @@ import type { CommentAnchor } from '@dorks/shared'
 
 export type Rect = { x: number; y: number; width: number; height: number }
 export type HoverBox = Rect & { radius: string; label: string }
-export type Mark = { id: string; kind: 'element' | 'text'; path: string; selector: string; quote?: string; prefix?: string; suffix?: string }
+export type Mark = { id: string; kind: 'element' | 'text' | 'area'; path: string; selector: string; quote?: string; prefix?: string; suffix?: string; rect?: Rect }
 export type PickMode = 'element' | 'text'
+/** A captured area: the PNG, and how far the page was scrolled (to place the area in the document). */
+export type Shot = { data: string; scroll: { x: number; y: number } }
 /** Where the pointer is over the page (the rulers), and the element under it, in the page's pixels. */
 export type Pointer = { x: number; y: number; box: Rect | null; label: string | null }
 /** A picked element or passage: its anchor, where it is in the frame, and (for an element) React Grab's snippet. */
@@ -26,6 +28,7 @@ type FromOverlay = {
   x?: unknown
   y?: unknown
   label?: unknown
+  scroll?: unknown
   id?: unknown
   data?: unknown
   error?: unknown
@@ -50,7 +53,7 @@ export function useOverlay(frame: RefObject<HTMLIFrameElement | null>, url: stri
   const [picking, setPicking] = useState<PickMode | null>(null)
   const [rects, setRects] = useState<Map<string, Rect[] | null>>(new Map())
   const [pointer, setPointer] = useState<Pointer | null>(null)
-  const captures = useRef(new Map<string, { resolve: (data: string) => void; reject: (e: Error) => void }>())
+  const captures = useRef(new Map<string, { resolve: (shot: Shot) => void; reject: (e: Error) => void }>())
   const picked = useRef(onPicked)
   picked.current = onPicked
   const origin = originOf(url)
@@ -69,7 +72,7 @@ export function useOverlay(frame: RefObject<HTMLIFrameElement | null>, url: stri
       const waiting = typeof d.id === 'string' ? captures.current.get(d.id) : undefined
       if (!waiting) return
       captures.current.delete(d.id as string)
-      if (typeof d.data === 'string') waiting.resolve(d.data)
+      if (typeof d.data === 'string') waiting.resolve({ data: d.data, scroll: (d.scroll as { x: number; y: number } | undefined) ?? { x: 0, y: 0 } })
       else waiting.reject(new Error(typeof d.error === 'string' ? d.error : 'capture failed'))
     }
     const onPick = (d: FromOverlay) => {
@@ -136,7 +139,7 @@ export function useOverlay(frame: RefObject<HTMLIFrameElement | null>, url: stri
     track,
     /** The area `rect` of the frame's viewport as a PNG data URL. */
     capture: (rect: Rect) =>
-      new Promise<string>((resolve, reject) => {
+      new Promise<Shot>((resolve, reject) => {
         const id = Math.random().toString(36).slice(2)
         captures.current.set(id, { resolve, reject })
         post({ type: 'capture', id, rect })

@@ -214,12 +214,12 @@ The `Transport` interface in `infra/bridge/src/transport.ts` is unchanged; `WsTr
 
 The owner comments on a running preview in Chat details (`PreviewBrowser`): on an element, or on a passage of text. Dorks keeps the threads (`preview_comments`, `apps/server/src/services/comments.ts`); the agent answers in them.
 
-- **Anchors** come from the preview overlay: the page path, React Grab's selector for the element, its tag, and the component and source file when the page is a dev build; a text comment adds the quoted words and up to 32 characters before and after them, so the overlay can find the passage again after a reload or an edit. The app draws a bubble on each commented element and highlights each passage, from the positions the overlay reports (`marks`).
+- **Anchors** come from the preview overlay: the page path, React Grab's selector for the element, its tag, and the component and source file when the page is a dev build; a text comment adds the quoted words and up to 32 characters before and after them, so the overlay can find the passage again after a reload or an edit; an area comment is a rectangle in document pixels plus its screenshot (an uploaded image the comment claims for the dork; the notification carries it as `![…](dorks-image:<id>)`, which the bridge turns into the image in the agent's turn). The app draws a bubble on each commented element and highlights each passage, from the positions the overlay reports (`marks`).
 - **Delivery** reuses the autonomy path (docs/autonomy.md): each comment or reply of the owner's waits (`notified = 0`) for the `comments_notify` timer (5 s from the first, not sliding), which folds them into one `notify` command, `<dorks-event source="preview">`, held mid-turn like any notification, with a transcript card (`notify` event, `source: "preview"`). Every agent gets it the same way.
 - **Answers**: the MCP tools `comment_list`, `comment_reply` and `comment_resolve` (bridge op `comment`, `{action: "list" | "reply" | "resolve", id?, body?, all?}`). The agent's replies wake nothing. The owner can reopen a thread or write in it again, which reaches the agent as a reply.
 - **Live**: every change publishes `{t: "comments", dorkId}` on `/api/live`.
 
-The same toolbar captures an area (the overlay renders the page from its DOM with `modern-screenshot` and cuts the rectangle the owner drew) as an image attached to the chat's composer (`attachFiles`, `lib/fileDrop.ts`), and shows rulers: the overlay follows the pointer (`track`) and reports the element under it.
+Nothing in the preview writes to the chat's composer: every tool ends in a comment. The toolbar also shows rulers: the overlay follows the pointer (`track`) and reports the element under it.
 
 ## Base snapshot ("Prepare Boat")
 

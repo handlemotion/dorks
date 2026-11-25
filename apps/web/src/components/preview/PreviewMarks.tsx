@@ -1,7 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { SquareMousePointerIcon } from 'lucide-react'
 import type { CommentThread } from '@dorks/shared'
-import { Button } from '@dorks/ui/button'
 import { CommentRow, Face, NewComment, authorName, type Names, type ThreadActions } from './CommentThread'
 import type { Picked, Rect } from './useOverlay'
 
@@ -70,8 +68,8 @@ export function PreviewMarks(props: {
   draft: Picked | null
   onDraftSend: (body: string) => Promise<unknown>
   onDraftClose: () => void
-  /** For a picked element: send it to a message instead of commenting. */
-  onDraftAttach?: () => void
+  /** Where a shared image loads from (an area's screenshot). */
+  imageUrl?: (id: string) => string
   /** Drawn under the bubbles: the picker's hover box, the area being drawn. */
   children?: ReactNode
 }) {
@@ -145,11 +143,7 @@ export function PreviewMarks(props: {
               actions={props.actions}
               replying={replying === open.thread.root.id}
               onReplying={(on) => setReplying(on ? open.thread.root.id : null)}
-              quote={
-                open.thread.root.anchor?.kind === 'text' ? (
-                  <p className="mb-3 line-clamp-2 border-s-2 border-amber-500 ps-2.5 text-sm text-muted-foreground">{open.thread.root.anchor.quote}</p>
-                ) : undefined
-              }
+              quote={<AnchorPreview anchor={open.thread.root.anchor} imageUrl={props.imageUrl} />}
             />
           </ul>
           {replying !== open.thread.root.id && (
@@ -168,21 +162,21 @@ export function PreviewMarks(props: {
           ) : (
             <div aria-hidden className="absolute rounded-[4px] border border-brand bg-brand/10" style={place(props.draft.box)} />
           )}
-          <div ref={draftPanel} className="pointer-events-auto absolute z-20 rounded-[8px] border bg-background p-1" style={beside(props.draft.box, PANEL, props.onDraftAttach ? 96 : 60, room)}>
+          <div ref={draftPanel} className="pointer-events-auto absolute z-20 rounded-[8px] border bg-background p-1" style={beside(props.draft.box, PANEL, 60, room)}>
             <NewComment onSend={props.onDraftSend} onClose={props.onDraftClose} />
-            {props.onDraftAttach && (
-              <div className="flex justify-end px-1 pt-1">
-                <Button variant="ghost" size="xs" className="rounded-[6px] text-muted-foreground hover:text-foreground [&_svg]:size-3.5" onClick={props.onDraftAttach}>
-                  <SquareMousePointerIcon />
-                  Add to the message instead
-                </Button>
-              </div>
-            )}
           </div>
         </>
       )}
     </div>
   )
+}
+
+/** Above a thread: the passage it is on, or the area's screenshot. */
+function AnchorPreview({ anchor, imageUrl }: { anchor: CommentThread['root']['anchor']; imageUrl?: (id: string) => string }) {
+  if (anchor?.kind === 'text') return <p className="mb-3 line-clamp-2 border-s-2 border-amber-500 ps-2.5 text-sm text-muted-foreground">{anchor.quote}</p>
+  if (anchor?.kind === 'area' && anchor.image && imageUrl)
+    return <img src={imageUrl(anchor.image)} alt="The area" className="mb-3 max-h-40 w-full rounded-[6px] bg-foreground/[0.04] object-contain outline outline-1 -outline-offset-1 outline-black/10" />
+  return null
 }
 
 /** A thread's bubble: the first author's initial in a round bubble whose bottom-left corner points at the element; a count of replies. */

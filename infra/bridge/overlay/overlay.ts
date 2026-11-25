@@ -22,7 +22,7 @@ import { domToPng } from "modern-screenshot";
 import { getElementAtPoint, getElementBounds, getElementContext, getElementSelector } from "react-grab/primitives";
 
 type Rect = { x: number; y: number; width: number; height: number };
-type MarkInput = { id: string; kind: "element" | "text"; path: string; selector: string; quote?: string; prefix?: string; suffix?: string };
+type MarkInput = { id: string; kind: "element" | "text" | "area"; path: string; selector: string; quote?: string; prefix?: string; suffix?: string; rect?: Rect };
 type HostMessage = { dorks?: unknown; type?: unknown; on?: unknown; mode?: unknown; marks?: unknown; id?: unknown; rect?: unknown };
 
 const CONTEXT = 32;
@@ -91,6 +91,7 @@ function safeQuery(selector: string): Element | null {
 /** Where the comment's anchor is in the viewport now. */
 function locate(m: MarkInput): Rect[] | null {
   if (m.path !== path()) return null;
+  if (m.kind === "area") return m.rect ? [{ ...m.rect, x: m.rect.x - window.scrollX, y: m.rect.y - window.scrollY }] : null;
   if (m.kind === "text") {
     const r = findText(m);
     if (!r) return null;
@@ -295,7 +296,7 @@ if (w.parent !== w && !w.__dorksOverlay) {
       canvas.width = Math.max(1, Math.round(r.width * scale));
       canvas.height = Math.max(1, Math.round(r.height * scale));
       canvas.getContext("2d")!.drawImage(img, r.x * scale, r.y * scale, r.width * scale, r.height * scale, 0, 0, canvas.width, canvas.height);
-      post({ type: "captured", id, data: canvas.toDataURL("image/png") });
+      post({ type: "captured", id, data: canvas.toDataURL("image/png"), scroll: { x: w.scrollX, y: w.scrollY } });
     } catch (e) {
       post({ type: "captured", id, error: e instanceof Error ? e.message : "capture failed" });
     }
