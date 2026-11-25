@@ -1,4 +1,5 @@
 import { expoClient } from "@better-auth/expo/client";
+import { emailOTPClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 import * as SecureStore from "expo-secure-store";
 import { CLOUD_URL } from "./config";
@@ -6,7 +7,7 @@ import { CLOUD_URL } from "./config";
 /** Better Auth against the relay; the session (and its cookie) is kept in the keychain. */
 export const authClient = createAuthClient({
   baseURL: CLOUD_URL,
-  plugins: [expoClient({ scheme: "dorks", storagePrefix: "dorks", storage: SecureStore })],
+  plugins: [expoClient({ scheme: "dorks", storagePrefix: "dorks", storage: SecureStore }), emailOTPClient()],
 });
 
 /** The signed-in session's token: the relay reads it as a bearer token, for its own routes and the relayed UI API alike. */

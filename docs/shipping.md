@@ -59,6 +59,13 @@ state icon at the left edge (line icons while waiting, running or skipped; a fil
 failed), its name, a few words and its time, linking to the run, check or deployment log. The agent's verify note gets its own line
 under its row.
 
+**Merges that ship together share a card**: a PR that merges while the session's previous ship is still watched joins its card
+(`shipGroups` in `ShipCard.tsx`, client side only; each merge is still its own ship on the server, with its own agent wake-ups).
+The headline names every PR (`Shipping #7 and #8`; a failure names only the failed ones), the top line lists each merge commit, and
+the card sits at the newest merge (the earlier merges' places show nothing). A stage two merges share (the same log: a deploy that
+included both, a run that replaced a cancelled one) shows once; a row only some of them have says which PR it is (`CI #7`), and rows of
+the same name sit together. Each PR's `Verify on production` stays its own row.
+
 **Where it sits** (`ShipPin`): while a turn runs, the card stays where the merge happened in the thread. Once the turn ends, the
 session's latest ship is pinned at the end of the chat, close under the last answer and above the status line (until the owner
 writes again after it ended; a merge that started nothing is never pinned and is one line), and its place in the thread shrinks to one line

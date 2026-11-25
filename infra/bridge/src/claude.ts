@@ -181,6 +181,8 @@ export function childEnv(base: NodeJS.ProcessEnv, cfgEnv: Record<string, string>
   if (id) Object.assign(env, { HOME: id.home, USER: id.user, LOGNAME: id.user });
   env.CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS = "1"; // without it the stream never says the turn is over (session_state_changed idle)
   env.GIT_TERMINAL_PROMPT = "0"; // a credential prompt would hang an unattended box
+  // The to-do tools (TaskCreate, TaskUpdate, ...): the CLI leaves them out for newer models unless asked; the thread shows them as cards.
+  env.CLAUDE_CODE_ENABLE_TODO_TOOLS = "1";
   return env;
 }
 

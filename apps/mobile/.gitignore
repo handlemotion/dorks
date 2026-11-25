@@ -4,3 +4,6 @@ ios/
 android/
 dist/
 *.ipa
+
+# EAS local iOS credentials (signing certificate and profile paths, the p12 password): never committed
+credentials.json

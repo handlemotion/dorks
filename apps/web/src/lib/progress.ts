@@ -189,6 +189,8 @@ export function toolStep(name: string, status: ProgressToolBlock['status']): { k
     case 'Agent':
       return pick('agent', 'Running an agent', 'Ran an agent', 'Agent failed')
     case 'TodoWrite':
+    case 'TaskCreate':
+    case 'TaskUpdate':
       return pick('plan', 'Updating the plan', 'Updated the plan', 'Plan update failed')
     default:
       return pick('other', 'Using', 'Used', 'Failed')
@@ -257,20 +259,79 @@ export function matchesFilter(block: WorkBlock, query: string): boolean {
     })
 }
 
-/** One of the agent's tasks, from its latest plan (a `TodoWrite` call). */
+/** One of the agent's tasks, from its to-do tools (`TodoWrite`, or `TaskCreate` and `TaskUpdate`). */
 export type ProgressTask = { content: string; status: 'pending' | 'in_progress' | 'completed' }
 
-/** The agent's tasks as its newest plan left them; none before it made one. */
-export function latestTasks(blocks: readonly Block[]): ProgressTask[] {
-  for (let i = blocks.length - 1; i >= 0; i--) {
-    const b = blocks[i]
-    if (b.kind !== 'tool' || b.name !== 'TodoWrite' || !Array.isArray(b.input?.todos)) continue
-    return b.input.todos.flatMap((t) => {
-      const todo = (t ?? {}) as Record<string, unknown>
-      const content = str(todo.content)
-      const status = todo.status === 'completed' || todo.status === 'in_progress' ? todo.status : 'pending'
-      return content ? [{ content, status }] : []
-    })
+/** The tool calls that change the agent's task list: each run of them in the thread is one to-do card. */
+export const TODO_TOOLS: ReadonlySet<string> = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate'])
+export const isTodoTool = (name: string) => TODO_TOOLS.has(name)
+
+const TASK_STATUSES = new Set(['pending', 'in_progress', 'completed'])
+const taskStatus = (v: unknown, fallback: ProgressTask['status']): ProgressTask['status'] => (TASK_STATUSES.has(v as string) ? (v as ProgressTask['status']) : fallback)
+
+/** The task list being folded: tasks by id, the next id `TaskCreate` would get, and which family of tools made the list. */
+type TaskFold = { tasks: Map<string, ProgressTask>; next: number; family?: 'todo' | 'task' }
+
+/** A `TodoWrite` replaces the whole list. */
+function applyTodoWrite(s: TaskFold, input: Record<string, unknown>): TaskFold {
+  if (!Array.isArray(input.todos)) return s
+  const tasks = new Map<string, ProgressTask>()
+  for (const t of input.todos) {
+    const todo = (t ?? {}) as Record<string, unknown>
+    const content = str(todo.content)
+    if (content) tasks.set(String(tasks.size + 1), { content, status: taskStatus(todo.status, 'pending') })
   }
-  return []
+  return { tasks, next: tasks.size + 1, family: 'todo' }
+}
+
+/** A `TaskCreate` adds one task, its id from the result (`Task #3 created successfully`), else the next number. A list `TodoWrite` made is not continued. */
+function applyTaskCreate(s: TaskFold, input: Record<string, unknown>, preview: string | undefined): TaskFold {
+  const fresh = s.family === 'task'
+  const tasks = fresh ? s.tasks : new Map<string, ProgressTask>()
+  const next = fresh ? s.next : 1
+  const id = /Task #(\S+) created/.exec(preview ?? '')?.[1] ?? String(next)
+  const content = str(input.subject) ?? str(input.description)
+  if (content) tasks.set(id, { content, status: 'pending' })
+  return { tasks, next: /^\d+$/.test(id) ? Math.max(next, Number(id) + 1) : next, family: 'task' }
+}
+
+/** A `TaskUpdate` changes one task's status or subject, or deletes it. */
+function applyTaskUpdate(s: TaskFold, input: Record<string, unknown>): TaskFold {
+  const id = typeof input.taskId === 'number' ? String(input.taskId) : str(input.taskId)
+  const task = id ? s.tasks.get(id) : undefined
+  if (!id || !task) return s
+  if (input.status === 'deleted') s.tasks.delete(id)
+  else s.tasks.set(id, { content: str(input.subject) ?? task.content, status: taskStatus(input.status, task.status) })
+  return s
+}
+
+/**
+ * The task list after each run of to-do calls, keyed by the run's first call: what the card at that spot in the thread shows. The
+ * list builds up across the whole session. A failed call changes nothing; a call still running counts, so the card moves as the
+ * agent works.
+ */
+export function taskSnapshots(blocks: readonly Block[]): Map<string, ProgressTask[]> {
+  const out = new Map<string, ProgressTask[]>()
+  let s: TaskFold = { tasks: new Map(), next: 1 }
+  let run: string | undefined // the first call of the run of to-do calls we are in
+  for (const b of blocks) {
+    if (b.kind !== 'tool' || !isTodoTool(b.name)) {
+      run = undefined
+      continue
+    }
+    run ??= b.id
+    const input = b.input ?? {}
+    if (b.status === 'error') {
+      // a failed call changes nothing
+    } else if (b.name === 'TodoWrite') s = applyTodoWrite(s, input)
+    else if (b.name === 'TaskCreate') s = applyTaskCreate(s, input, b.preview)
+    else s = applyTaskUpdate(s, input)
+    out.set(run, [...s.tasks.values()])
+  }
+  return out
+}
+
+/** The agent's tasks as its newest to-do call left them; none before it made a list. */
+export function latestTasks(blocks: readonly Block[]): ProgressTask[] {
+  return [...taskSnapshots(blocks).values()].at(-1) ?? []
 }
