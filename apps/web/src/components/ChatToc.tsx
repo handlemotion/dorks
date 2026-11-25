@@ -86,10 +86,10 @@ export function ChatToc({ blocks, hidden }: { blocks: Block[]; hidden?: boolean 
     <nav
       aria-label="Message index"
       data-testid="chat-toc"
-      className="pointer-events-auto absolute top-1/2 left-2 z-20 hidden max-h-[60%] -translate-y-1/2 items-center sm:flex"
+      className="pointer-events-auto absolute top-1/2 left-2 z-20 hidden max-h-[60%] -translate-y-1/2 flex-col sm:flex"
       onMouseLeave={() => setHovered(null)}
     >
-      <div ref={listRef} onScroll={() => setHovered(null)} className="flex max-h-full flex-col overflow-y-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div ref={listRef} onScroll={() => setHovered(null)} className="relative flex min-h-0 flex-col overflow-y-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {items.map((item) => {
           const isActive = item.id === activeId
           const isHovered = hovered?.id === item.id
