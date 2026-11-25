@@ -17,7 +17,6 @@ export function Services({ build }: { build: BuildView }) {
   return (
     <SettingsSection
       title="Services"
-      description="Dev servers and backing services. The build starts each one once and warms its caches; agents start them when they test a change."
       actions={
         <Button size="sm" variant="ghost" onClick={() => setEditing('new')}>
           Add service

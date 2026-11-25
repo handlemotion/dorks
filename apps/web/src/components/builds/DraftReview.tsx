@@ -6,8 +6,10 @@ import { cn } from 'cn'
 import type { BuildView, DraftView } from '@dorks/client'
 import { useDorksClient, useRuns } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@dorks/ui/dialog'
+import { Input } from '@dorks/ui/input'
 import { PageHeader } from '../PageHeader'
-import { SettingsGroup, SettingsGroupBody, SettingsInputRow, SettingsSection, SettingsStatus } from '../settings/kit'
+import { SettingsGroup, SettingsGroupBody, SettingsSection, SettingsStatus } from '../settings/kit'
 import { usePending } from '../../lib/pending'
 import { sizeOf, ago, firstLine, runStatus, runTook } from './format'
 import { Tag, ROW, RowText, Page, BuildCrumb, RunIcon } from './shared'
@@ -74,6 +76,7 @@ export function DraftReview({ build, draft }: { build: BuildView; draft: DraftVi
   const { actions } = useDorksClient()
   const navigate = useNavigate()
   const [reason, setReason] = useState('')
+  const [rejecting, setRejecting] = useState(false)
   const { run, pending, error } = usePending()
   const s = draft.spec
   const waiting = draft.status === 'editing'
@@ -98,9 +101,14 @@ export function DraftReview({ build, draft }: { build: BuildView; draft: DraftVi
         title={waiting ? 'Change in progress' : 'Change to review'}
         actions={
           !waiting && (
-            <Button size="sm" disabled={pending} onClick={() => void approve()}>
-              Approve and build
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="ghost" disabled={pending} onClick={() => setRejecting(true)}>
+                Reject
+              </Button>
+              <Button size="sm" disabled={pending} onClick={() => void approve()}>
+                Approve and build
+              </Button>
+            </div>
           )
         }
       />
@@ -187,7 +195,7 @@ export function DraftReview({ build, draft }: { build: BuildView; draft: DraftVi
                     {v.remove ? '' : v.value !== undefined && !v.secret ? <code className="font-mono text-foreground">{v.value}</code> : ''}
                     {v.why ? `${v.value !== undefined && !v.secret && !v.remove ? ' · ' : ''}${v.why}` : ''}
                   </span>
-                  {v.remove ? <Tag tone="removed">Removed</Tag> : v.secret ? <Tag>Secret · you fill it in</Tag> : null}
+                  {v.remove ? <Tag tone="removed">Removed</Tag> : v.secret ? <Tag>Secret</Tag> : null}
                   {v.buildTime && !v.remove && <Tag>Build time</Tag>}
                 </div>
               ))}
@@ -208,36 +216,42 @@ export function DraftReview({ build, draft }: { build: BuildView; draft: DraftVi
           </SettingsSection>
         )}
 
-        {!waiting && (
-          <div className="flex flex-col gap-2.5">
-            <SettingsGroup
-              label="reject"
-              onSubmit={() =>
-                void run(async () => {
-                  await actions.rejectDraft(build.id, draft.id, reason.trim() || undefined)
-                  await back()
-                })
-              }
-            >
-              <SettingsInputRow
-                id="reject-reason"
-                aria-label="reason to reject"
-                label="Reject"
-                description="Optional reason. The agent reads it and tries again."
-                placeholder="Why not"
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                trailing={
-                  <Button type="submit" size="sm" variant="outline" disabled={pending}>
-                    Reject
-                  </Button>
-                }
-              />
-            </SettingsGroup>
-            <SettingsStatus error={error} />
-          </div>
-        )}
+        <SettingsStatus error={error} />
       </Page>
+      <Dialog open={rejecting} onOpenChange={setRejecting}>
+        <DialogContent>
+          <form
+            className="contents"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void run(async () => {
+                await actions.rejectDraft(build.id, draft.id, reason.trim() || undefined)
+                setRejecting(false)
+                await back()
+              })
+            }}
+          >
+            <DialogHeader className="gap-2">
+              <DialogTitle className="text-sm font-medium">Reject this change?</DialogTitle>
+              <DialogDescription className="text-sm leading-5">The agent reads your reason and tries again.</DialogDescription>
+            </DialogHeader>
+            <div data-slot="dialog-body" className="flex flex-col gap-4">
+              <Input autoFocus aria-label="reason to reject" placeholder="Reason (optional)" value={reason} onChange={(e) => setReason(e.target.value)} />
+              {error && (
+                <p role="alert" className="text-xs text-destructive">
+                  {error}
+                </p>
+              )}
+            </div>
+            <DialogFooter>
+              <DialogClose render={<Button type="button" variant="outline" size="sm" />}>Cancel</DialogClose>
+              <Button type="submit" variant="destructive" size="sm" disabled={pending}>
+                Reject
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -63,7 +63,7 @@ export function RunPage({ build, runId }: { build: BuildView; runId: string }) {
           )
         }
       />
-      <div className="border-y">
+      <div className="border-b">
         <Facts
           items={[
             {

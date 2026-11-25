@@ -31,7 +31,6 @@ export function NameAndDelete({ build }: { build: BuildView }) {
         />
         <SettingsRow
           label="Delete build"
-          description="Removes its image from Boat. Sessions on it keep their machines."
           control={
             <Button type="button" size="sm" variant="outline" className="text-destructive" onClick={() => setConfirming(true)}>
               Delete

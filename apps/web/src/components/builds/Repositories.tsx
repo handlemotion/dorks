@@ -21,17 +21,9 @@ export function Repositories({ build }: { build: BuildView }) {
   const { run, pending, error } = usePending()
   const add = (repo: string) => run(() => actions.updateBuild(build.id, { repos: [...build.repos, { repo }] }))
   return (
-    <SettingsSection
-      title="Repositories"
-      description={
-        <>
-          Cloned into <code>~/work/owner/name</code> when the machine is built. Sessions fetch before they start. A new session on this build starts in the first one.
-        </>
-      }
-      actions={build.repos.length < MAX_REPOS && <AddRepository build={build} disabled={pending} onPick={(repo) => void add(repo)} />}
-    >
+    <SettingsSection title="Repositories" actions={build.repos.length < MAX_REPOS && <AddRepository build={build} disabled={pending} onPick={(repo) => void add(repo)} />}>
       <SettingsGroup label="repositories">
-        {build.repos.length === 0 && <SettingsGroupBody>No repositories yet. Each one is cloned and set up when the machine is built.</SettingsGroupBody>}
+        {build.repos.length === 0 && <SettingsGroupBody>No repositories yet.</SettingsGroupBody>}
         {build.repos.map((r) => (
           <div key={r.repo} className={ROW}>
             <OwnerAvatar owner={ownerOf(r.repo)} />
