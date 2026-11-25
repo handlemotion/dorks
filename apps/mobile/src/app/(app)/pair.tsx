@@ -51,7 +51,7 @@ export default function PairScreen() {
   }, [params.code]);
 
   return (
-    <ScrollView style={{ backgroundColor: c.background }} contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
+    <ScrollView contentInsetAdjustmentBehavior="automatic" style={{ backgroundColor: c.background }} contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
       <Text style={[s.title, { color: c.text }]}>Pair a Mac</Text>
       <View style={[s.camera, { backgroundColor: c.fill }]}>
         {permission?.granted ? (
