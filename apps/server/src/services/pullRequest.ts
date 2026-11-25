@@ -243,11 +243,16 @@ export async function getPullRequest(app: App, dorkId: string, url?: unknown): P
   };
 }
 
+/** What a merge request came to: merged, or handed to GitHub (a merge queue, a stack still merging) for the poller to see land. */
+export type MergeResult = { merged: true; sha?: string } | { merged: false; queued: true };
+
 /**
  * `POST /api/dorks/:id/pr/merge`: merges with `method`, pinned to `sha` (the head the owner looked at) so a push that lands in
  * between is not merged unseen. GitHub's reason for a refusal (conflicts, required checks or reviews, a moved head) is passed on.
+ * A stacked PR (GitHub's native stacks) goes through the asynchronous merge, which also merges every open PR below it: merging the
+ * top of a stack merges the whole stack in one go.
  */
-export async function mergePullRequest(app: App, dorkId: string, method: unknown, sha: unknown, url?: unknown): Promise<{ merged: true; sha?: string }> {
+export async function mergePullRequest(app: App, dorkId: string, method: unknown, sha: unknown, url?: unknown): Promise<MergeResult> {
   if (typeof method !== "string" || !MERGE_METHODS.includes(method as MergeMethod)) return fail("invalid", "method must be squash, merge or rebase");
   if (sha !== undefined && (typeof sha !== "string" || !/^[0-9a-f]{40}$/.test(sha))) return fail("invalid", "sha must be a commit sha");
   const { repo, number } = prRef(app, dorkId, url);
@@ -257,6 +262,7 @@ export async function mergePullRequest(app: App, dorkId: string, method: unknown
   if (pr.merged === true || pr.merged_at) return fail("conflict", "This pull request is already merged.");
   if (pr.state === "closed") return fail("conflict", "This pull request is closed.");
   if (sha && s(obj(pr.head).sha) !== sha) return fail("conflict", "New commits landed on the branch. Look them over, then merge again.");
+  if (pr.stack) return mergeAsync(app, token, repo, number, method as MergeMethod, sha as string | undefined);
   const r = await call(app, token, "PUT", `/repos/${repo}/pulls/${number}/merge`, { merge_method: method, ...(sha ? { sha } : {}) });
   const message = ghMessage(r.json);
   if (r.status === 200) {
@@ -264,7 +270,50 @@ export async function mergePullRequest(app: App, dorkId: string, method: unknown
     const merged = obj(r.json).sha;
     return { merged: true, sha: typeof merged === "string" ? merged : undefined };
   }
+  // A stack GitHub did not mark on the PR object: the synchronous endpoint names the asynchronous one.
+  if (r.status === 403 && /stacked/i.test(message ?? "")) return mergeAsync(app, token, repo, number, method as MergeMethod, sha as string | undefined);
   return mergeRefused(r.status, message);
+}
+
+const ASYNC_POLL_MS = 1_000;
+const ASYNC_WAIT_MS = 30_000;
+
+/**
+ * GitHub's asynchronous merge (`PUT …/merge-async`, the one stacked PRs require): it answers with a request id at once and merges
+ * in the background, so wait for the outcome, a while: merged, or failed with GitHub's reason. A merge queue, or a stack still
+ * merging when the wait runs out, is reported as queued; the poller records the merge when it lands.
+ */
+async function mergeAsync(app: App, token: string, repo: string, number: number, method: MergeMethod, sha?: string): Promise<MergeResult> {
+  const r = await call(app, token, "PUT", `/repos/${repo}/pulls/${number}/merge-async`, { merge_method: method, ...(sha ? { sha } : {}) });
+  setTimer(app, "", "poll", 0);
+  if (r.status === 200) return { merged: true };
+  if (r.status !== 202 && r.status !== 409) {
+    const message = asyncMessage(r.json) ?? ghMessage(r.json);
+    if (r.status === 400) return fail("conflict", message ?? "GitHub says this pull request cannot be merged yet.");
+    return mergeRefused(r.status, message);
+  }
+  const uuid = s(obj(obj(r.json).details).uuid);
+  let result = obj(r.json);
+  for (const deadline = Date.now() + ASYNC_WAIT_MS; uuid && s(result.status) === "pending" && Date.now() < deadline;) {
+    await new Promise((done) => setTimeout(done, ASYNC_POLL_MS));
+    const poll = await call(app, token, "GET", `/repos/${repo}/pulls/${number}/merge-async/${encodeURIComponent(uuid)}`);
+    if (poll.status !== 200) break;
+    result = obj(poll.json);
+  }
+  const status = s(result.status);
+  if (status === "merged") {
+    setTimer(app, "", "poll", 0);
+    const merged = s(obj(result.details).sha);
+    return { merged: true, sha: merged || undefined };
+  }
+  if (status === "failed") return fail("conflict", asyncMessage(result) ? `GitHub could not merge: ${asyncMessage(result)}` : "GitHub could not merge this pull request.");
+  return { merged: false, queued: true };
+}
+
+/** The message an asynchronous merge result carries, in `details`. */
+function asyncMessage(json: unknown): string | undefined {
+  const m = obj(obj(json).details).message;
+  return typeof m === "string" && m ? m : undefined;
 }
 
 /** Why GitHub refused a merge, as the owner should read it. */

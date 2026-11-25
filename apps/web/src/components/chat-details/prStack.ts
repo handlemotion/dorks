@@ -81,7 +81,12 @@ export function stackOf(prs: IndexPr[], url: string): PrStackEntry[] | undefined
   let end = root + 1
   while (end < prs.length && prs[end].depth > 0) end++
   if (end - root < 2) return undefined
-  return prs.slice(root, end).map((p) => ({ url: p.url, number: p.number, state: p.state, draft: p.draft, current: p.url === url }))
+  return prs.slice(root, end).map((p) => ({ url: p.url, number: p.number, title: p.title, state: p.state, draft: p.draft, current: p.url === url }))
+}
+
+/** The url of the root of the stack a PR is in, which names the stack's one tab; undefined when the PR stands alone. */
+export function stackRoot(prs: IndexPr[], url: string): string | undefined {
+  return stackOf(prs, url)?.[0].url
 }
 
 /** "owner/name" from a GitHub pull request url. */

@@ -1,5 +1,5 @@
 import { expect, it } from 'vite-plus/test'
-import { stackOf, stackOrder } from './prStack'
+import { stackOf, stackOrder, stackRoot } from './prStack'
 
 const pr = (number: number, headRef: string, baseRef: string, repo = 'acme/app') => ({ url: `https://github.com/${repo}/pull/${number}`, title: `#${number}`, repo, number, headRef, baseRef })
 
@@ -21,4 +21,7 @@ it('orders stacked PRs under their base, scoped to the repo, and survives a bran
     [3, true],
   ])
   expect(stackOf(prs, prs[3].url)).toBeUndefined()
+  // A stack's PRs share one tab, named for its root; a lone PR keeps its own.
+  expect([prs[1].url, prs[2].url].map((u) => stackRoot(prs, u))).toEqual([prs[0].url, prs[0].url])
+  expect(stackRoot(prs, prs[3].url)).toBeUndefined()
 })

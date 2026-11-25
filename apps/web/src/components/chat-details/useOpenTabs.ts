@@ -64,8 +64,33 @@ export function useOpenTabs(sessionId?: string) {
       }),
     [],
   )
+  /**
+   * Keeps one tab per group (a stack's PRs share one tab): of a group's open tabs, the selected one stays, else the last opened, in
+   * the place of the group's first tab. `groupOf` names a key's group, undefined for a tab that stands alone.
+   */
+  const collapse = useCallback(
+    (groupOf: (key: TabKey) => string | undefined) =>
+      setState((s) => {
+        const members = new Map<string, TabKey[]>()
+        for (const k of s.keys) {
+          const g = groupOf(k)
+          if (g) members.set(g, [...(members.get(g) ?? []), k])
+        }
+        if (![...members.values()].some((m) => m.length > 1)) return s
+        const keeper = (m: TabKey[]) => (m.includes(s.selected) ? s.selected : m.at(-1)!)
+        const keys: TabKey[] = []
+        for (const k of s.keys) {
+          const g = groupOf(k)
+          if (!g) keys.push(k)
+          else if (members.get(g)![0] === k) keys.push(keeper(members.get(g)!))
+        }
+        return { ...s, keys, selected: keys.includes(s.selected) ? s.selected : keeper(members.get(groupOf(s.selected)!)!) }
+      }),
+    [],
+  )
   return {
     keys: state.keys,
+    collapse,
     selected: state.selected,
     open,
     openNewPrs,

@@ -207,6 +207,36 @@ const details: ChatDetailsData = {
       state: 'open',
     },
     {
+      repo: 'acme/demo',
+      number: 143,
+      url: 'https://github.com/acme/demo/pull/143',
+      title: 'Show the reconnect state in the status bar',
+      source: 'auto',
+      status: 'active',
+      ci: 'pending',
+      review: 'none',
+      mergeable: true,
+      ciFixAttempts: 0,
+      state: 'open',
+      headRef: 'dorks/reconnect-status',
+      baseRef: 'dorks/bridge-reconnect',
+    },
+    {
+      repo: 'acme/demo',
+      number: 144,
+      url: 'https://github.com/acme/demo/pull/144',
+      title: 'Retry queued frames once the socket is back',
+      source: 'auto',
+      status: 'active',
+      ci: 'pending',
+      review: 'none',
+      mergeable: true,
+      ciFixAttempts: 0,
+      state: 'open',
+      headRef: 'dorks/retry-frames',
+      baseRef: 'dorks/reconnect-status',
+    },
+    {
       repo: 'acme/bridge',
       number: 57,
       url: 'https://github.com/acme/bridge/pull/57',
@@ -256,6 +286,28 @@ const details: ChatDetailsData = {
     height: 576,
     src: demoChatShot,
   })),
+}
+
+/** The PRs stacked on the demo's: #143 on its branch, #144 on #143's. */
+const DEMO_STACK: Record<string, Pick<PullRequestView, 'number' | 'title' | 'headRef' | 'baseRef' | 'body'>> = {
+  'https://github.com/acme/demo/pull/143': {
+    number: 143,
+    title: 'Show the reconnect state in the status bar',
+    headRef: 'dorks/reconnect-status',
+    baseRef: 'dorks/bridge-reconnect',
+    body: 'Adds a reconnecting badge to the status bar while the bridge waits for its handshake.',
+  },
+  'https://github.com/acme/demo/pull/144': {
+    number: 144,
+    title: 'Retry queued frames once the socket is back',
+    headRef: 'dorks/retry-frames',
+    baseRef: 'dorks/reconnect-status',
+    body: 'Frames queued during a reconnect are sent again once the new socket opens.',
+  },
+}
+function useDemoStackPr(url: string): PullRequestPanelData | undefined {
+  const pr = DEMO_STACK[url]
+  return pr ? { view: { ...DEMO_PR, ...pr, url, state: 'open', mergeableState: 'clean', mergeable: true }, refresh: () => {}, merge: async () => {} } : undefined
 }
 
 /** The demo's pull request: `?pr=dirty|behind|blocked|draft|merged` shows the other merge states. */
@@ -403,7 +455,7 @@ export function Demo() {
           detailsOpen && !showNew ? (
             <ChatDetails
               sessionId="preview"
-              data={{ ...details, progress: progressTurns(blocks), tasks: latestTasks(blocks), pullRequest: demoPullRequest }}
+              data={{ ...details, progress: progressTurns(blocks), tasks: latestTasks(blocks), pullRequest: demoPullRequest, usePullRequest: useDemoStackPr }}
               onClose={() => setDetailsOpen(false)}
               onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}
               onAsk={setText}

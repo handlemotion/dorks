@@ -45,14 +45,17 @@ Rules that tooling enforces live in `AGENTS.md` and `packages/ui/README.md`; thi
   them from the chat, and the resize handle sits on it. Details hide below `lg`.
 - **Chat details tabs** work like a browser's: an open-tabs strip (Progress, Artifacts, Changes (the local diff, before any PR),
   Computer, and one tab per pull request, keyed by its url, always named `#N`, never its title; a session can have many PRs, merged
-  and closed ones included, and each keeps its tab), each a 28px 6px-radius tab whose icon turns into an X on hover (nothing
+  and closed ones included, and each keeps its tab; the PRs of one stack, each on the branch of the one before, share one tab,
+  `Stack #N` after its root, showing the PR last opened. Under that PR's title and meta line, a `Stack` list draws the stack root first as
+  dots on one vertical line (each dot in its PR's state colour, the shown PR in the foreground); a row brings its PR into the tab, and
+  the merge button reads `Merge stack` from the top, since GitHub merges a stacked PR with every open PR below it), each a 28px 6px-radius tab whose icon turns into an X on hover (nothing
   moves), then `+` for a New tab. Closing the selected tab selects its neighbour; closing the last leaves a New tab. Opening a panel
   that is already open focuses it; the agent's reveals (Progress, Computer, a shown preview in Artifacts, a pull request it
   just opened) open or focus their tab.
   Open tabs and the selected one are remembered per session. A chat's details start on a New tab; Progress opens when the thread asks for it (a tool line, the status line). A **New tab** is an index in a centred 420px column: a search box
   ("Search PRs, artifacts and tools") that filters by name, then Pull requests, Tools (the panels) and Artifacts last (it can run long), each a titled list of 30px rows, 8px
   under its title, that open in the New tab's place (a PR on one row: state icon, title, `#N`, diff stats when known; a PR stacked on
-  another PR's branch is indented under it, and its overview gets a `Stack` row, `#7 → #8`, each number opening its tab; image
+  another PR's branch is indented under it; image
   thumbnails get a 15% hairline; Changes is left out once PRs have their rows); empty sections are left out, and a search with no results says `No matches`.
 - **Dorks** (coordinators, `docs/crew.md`) are a sidebar group with their emoji; their workers have no rows. A dork's details are
   `CrewDetails`: the same 40px bar and 28px tabs, fixed to Sessions, Artifacts and one tab per worker PR. A worker opens inside
