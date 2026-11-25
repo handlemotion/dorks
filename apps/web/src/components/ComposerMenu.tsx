@@ -108,7 +108,10 @@ function offeredTrigger(text: string, caret: number | null, mentions?: Mentions)
 
 /** The text with the typed token replaced by the picked item and one space after it, and where the caret goes. */
 function insertItem(text: string, caret: number | null, trigger: Trigger, item: Item) {
-  const rest = text.slice(Math.min(caret ?? text.length, text.length))
+  // The whole token is replaced, up to the next space, even when the caret sits inside it.
+  let end = Math.min(caret ?? text.length, text.length)
+  while (end < text.length && !/\s/.test(text[end]!)) end++
+  const rest = text.slice(end)
   const spaced = rest.startsWith(' ')
   const insert = spaced ? item.insert : `${item.insert} `
   return { next: text.slice(0, trigger.start) + insert + rest, at: trigger.start + insert.length + (spaced ? 1 : 0) }
