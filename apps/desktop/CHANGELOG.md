@@ -1,5 +1,21 @@
 # @dorks/desktop
 
+## 0.9.0
+
+### Minor Changes
+
+- [#224](https://github.com/handlemotion/dorks/pull/224) [`47c9460`](https://github.com/handlemotion/dorks/commit/47c94601178cb8d1f8f22d76e24f77f5c16f29aa) Thanks [@handlemotion](https://github.com/handlemotion)! - Comment on images: in the image viewer, click or drag on a screenshot to leave a comment for the agent, like on a running preview. The viewer is cleaner too: thumbnails down the side, one toolbar under the image with the count and caption, and a soft blurred backdrop.
+
+- [#223](https://github.com/handlemotion/dorks/pull/223) [`7f178df`](https://github.com/handlemotion/dorks/commit/7f178df6b30a7a4664c849542f336c973d311312) Thanks [@handlemotion](https://github.com/handlemotion)! - Claude agents now keep a to-do list, and each time they create or update it a to-do card shows the whole list right there in the chat.
+
+- [#218](https://github.com/handlemotion/dorks/pull/218) [`c13ed04`](https://github.com/handlemotion/dorks/commit/c13ed04d9e3c48038f453030faf46e24cbb51694) Thanks [@handlemotion](https://github.com/handlemotion)! - Chats now show when they're unread: a session's icon turns blue when the agent finishes a turn you haven't opened yet, on every device. Yellow now only means the agent needs your permission or an answer; a working chat is grey, and a sleeping one is an outline.
+
+### Patch Changes
+
+- [#226](https://github.com/handlemotion/dorks/pull/226) [`7920bd6`](https://github.com/handlemotion/dorks/commit/7920bd62c631fe751d36b559200b69bc4fdaf2ea) Thanks [@handlemotion](https://github.com/handlemotion)! - The message box keeps the cursor while a message sends, and typing anywhere in a chat with nothing else focused goes straight into it.
+
+- [#220](https://github.com/handlemotion/dorks/pull/220) [`731352a`](https://github.com/handlemotion/dorks/commit/731352a6295c86bd4eafdaecdfcee6a19ff6e6f6) Thanks [@handlemotion](https://github.com/handlemotion)! - PRs that merge while an earlier one is still shipping share one ship card ("Shipping [#7](https://github.com/handlemotion/dorks/issues/7) and [#8](https://github.com/handlemotion/dorks/issues/8)"). The ship card's running stages use a single-arc spinner, and its icons line up with their text. The card, the "PR merged" style notices and the answer above them are spaced evenly, and a screenshot in a message has the same space below it as above. A command or read on your computer, or a secure input request, no longer also shows a "Used local run" line in the thread.
+
 ## 0.8.0
 
 ### Minor Changes
