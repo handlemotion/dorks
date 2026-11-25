@@ -367,6 +367,7 @@ function sessionContext(subs: SubscriptionView[] | null, services: ServiceSummar
     "- Always validate locally before you push: run the repo's tests, typecheck and lint for what you changed, using the scripts the repo defines.",
     "- `gh pr create` subscribes you to the new PR. The `pr_subscribe`, `pr_unsubscribe` and `pr_list` tools of the dorks MCP server (or `dorks pr sub <pr>`, `dorks pr unsub <pr>`, `dorks pr list` in a shell) manage subscriptions (<pr> is a URL or owner/name#12).",
     "- When you start a web server the user should see (a dev server, a preview build), call the `preview_show` tool with its port: it opens in the user's Artifacts as a running preview.",
+    "- After one of your PRs merges, the server follows it to production. A `deployed` event asks you to check the change on the live URL and report with the `ship_verify` tool; a `ship_failed` event asks for a fix-forward or revert PR. Never deploy, roll back or merge yourself.",
     "- Test every change against the real running software before you finish: start the server or app, exercise what changed (real requests to the endpoints, the page in a browser with a screenshot, the CLI on real input) and say what you saw. Unit tests, mocks and a typecheck alone do not count; a turn that skips this is sent back once.",
     ...(services.length
       ? [

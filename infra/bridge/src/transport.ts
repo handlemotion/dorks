@@ -37,6 +37,8 @@ export interface Transport {
   crew(args: Record<string, unknown>): Promise<unknown>;
   /** The comment_* MCP tools: the owner's comments on the running preview (docs/architecture.md, "Preview comments"). */
   comment(args: Record<string, unknown>): Promise<unknown>;
+  /** The ship_verify MCP tool: the agent's check of a merged PR's live deployment (docs/shipping.md, "The agent"). */
+  ship(args: Record<string, unknown>): Promise<unknown>;
   /**
    * A current access token for the owner's OAuth MCP server `name` (docs/mcp.md, "OAuth"). `stale` is a token the server just
    * refused, so the backend refreshes even before it expires.
@@ -304,6 +306,7 @@ export class WsTransport implements Transport {
   input = async (args: Record<string, unknown>) => this.rpc<unknown>("input", args);
   crew = async (args: Record<string, unknown>) => this.rpc<unknown>("crew", args);
   comment = async (args: Record<string, unknown>) => this.rpc<unknown>("comment", args);
+  ship = async (args: Record<string, unknown>) => this.rpc<unknown>("ship", args);
   shareImage = async (data: string, caption?: string) => this.rpc<{ id: string; width?: number; height?: number }>("share_image", { data, caption });
 
   subscribeSubscriptions(onList: (views: unknown) => void, onError: () => void) {

@@ -1,6 +1,7 @@
 import { Effect } from "effect";
-import type { ShipStage, ShipStageState, ShipStatus, ShipView } from "@dorks/shared";
-import { touch, type App } from "../app";
+import { SHIP_VERIFY_MS, type NotifyKind, type ShipStage, type ShipStageState, type ShipStatus, type ShipView } from "@dorks/shared";
+import { fail, touch, type App } from "../app";
+import { getDork } from "../data";
 import { insert, json, update, type Row } from "../db";
 import { append, setTimer } from "../lifecycle/dispatch";
 import {
@@ -16,13 +17,15 @@ import {
   type GithubError,
   type GhWorkflowRun,
 } from "../lib/github";
+import { enqueueNotification } from "./notify";
 import type { Subscription } from "./subscriptions";
 
 // Post-merge shipping (docs/shipping.md). When a session's PR merges, a ship follows its merge commit: the workflow runs it started
 // (a job or step named for migrations gets its own stage), other apps' check runs (Cloudflare Pages, Vercel), commit statuses and
 // deployments, including a later commit's deployment that contains this one. The poller (services/poller.ts) reads every open ship
 // each pass with conditional requests; each change appends a `ship` event with the whole snapshot, which the chat shows as one card.
-// Nothing here wakes the agent: the box stays asleep while the server watches.
+// The box stays asleep while the server watches; the agent is woken twice at most (`involveAgent`): when the ship reaches a live
+// deployment, to verify the change there and report with `ship_verify`, and when it fails, to open a fix-forward or revert PR.
 
 /** After everything finished, wait this long for follow-ups (a deploy workflow CI starts) before calling it shipped. */
 export const SHIP_SETTLE_MS = 60_000;
@@ -72,6 +75,17 @@ export interface Ship {
   startedAt: number;
   endedAt?: number;
   poll?: ShipPoll;
+  agent?: ShipAgent;
+}
+
+/** The agent's part in a ship (docs/shipping.md, "The agent"). */
+export interface ShipAgent {
+  /** When the agent was told the ship reached a live deployment (once per ship). */
+  deployedAt?: number;
+  /** When the agent was told the ship failed (once per ship). */
+  failedAt?: number;
+  /** Its check of the live deployment: pending from the `deployed` notification until it reports or `SHIP_VERIFY_MS` passes. */
+  verify?: { state: "pending" | "passed" | "failed" | "skipped"; env: string; url: string; note?: string; at?: number };
 }
 
 const shipOf = (r: Row): Ship => ({
@@ -89,6 +103,7 @@ const shipOf = (r: Row): Ship => ({
   startedAt: r.started_at as number,
   endedAt: (r.ended_at as number | null) ?? undefined,
   poll: json(r.poll),
+  agent: json(r.agent),
 });
 
 export const shipView = (s: Ship): ShipView => ({
@@ -439,21 +454,95 @@ export function decide(startedAt: number, stages: ShipStage[], doneAt: number | 
   return { status: "watching", doneAt: done, end: false };
 }
 
-/** Applies one observation in a transaction: a `ship` event when what the card shows changed, the dork's row when its status did. */
+// ---------------------------------------------------------------- the agent
+const verifyStage = (v: NonNullable<ShipAgent["verify"]>, since: number): ShipStage => ({
+  id: "verify",
+  kind: "verify",
+  name: `Verify on ${v.env}`,
+  state: v.state,
+  url: v.url,
+  ...(v.note ? { detail: v.note } : v.state === "pending" ? { detail: "The agent is checking the change" } : {}),
+  startedAt: since,
+  ...(v.at !== undefined ? { endedAt: v.at } : {}),
+});
+
+/** Whether the agent can be woken for this ship: the session is live, and the ship still has its subscription (notifications go through it). */
+function wakeable(app: App, ship: Ship) {
+  const d = getDork(app.db, ship.dorkId);
+  return !!d && !d.archived && !d.deleting && ship.subscriptionId !== undefined;
+}
+
+const failureLine = (s: ShipStage) => `${s.name} failed${s.detail ? ` (${s.detail})` : ""}${s.url ? `: ${s.url}` : ""}`;
+
+/**
+ * The agent's part, from what the tracker just saw: told once that the ship is live (it verifies the change there; the ship waits for
+ * its `verify` stage) and once that it failed (it opens a fix-forward or revert PR). Returns the stages with the verify stage.
+ */
+function involveAgent(app: App, ship: Ship, github: ShipStage[]): { agent: ShipAgent; stages: ShipStage[] } {
+  const now = app.now();
+  const agent: ShipAgent = { ...ship.agent };
+  const notify = (kind: NotifyKind, summary: string) => enqueueNotification(app, ship.dorkId, ship.subscriptionId!, kind, summary);
+  const failures = github.filter((s) => s.state === "failed");
+  const live = github.find((s) => s.kind === "deployment" && s.state === "passed" && s.environmentUrl);
+  if (agent.deployedAt === undefined && live && !failures.length && wakeable(app, ship)) {
+    const env = live.name.replace(/^Deploy to /, "");
+    agent.deployedAt = now;
+    agent.verify = { state: "pending", env, url: live.environmentUrl! };
+    notify("deployed", `Merge commit ${short(ship.sha)} is live on ${env}: ${live.environmentUrl}`);
+  }
+  if (agent.verify?.state === "pending" && now - (agent.deployedAt ?? now) >= SHIP_VERIFY_MS) agent.verify = { ...agent.verify, state: "skipped", note: "Not verified in time", at: now };
+  if (agent.failedAt === undefined && failures.length && wakeable(app, ship)) {
+    agent.failedAt = now;
+    notify("ship_failed", `${failures.map(failureLine).join("; ")}. Merge commit ${ship.sha} on ${ship.baseRef}.`);
+  }
+  return { agent, stages: agent.verify ? [...github, verifyStage(agent.verify, agent.deployedAt ?? now)] : github };
+}
+
+/** Saves a ship's new state: a `ship` event when what the card shows changed, the dork's row when its status did. In a transaction. */
+function saveShip(app: App, ship: Ship, next: Ship, poll: ShipPoll) {
+  update(app.db, "ships", { id: ship.id }, { stages: next.stages, status: next.status, agent: next.agent ?? null, poll, endedAt: next.endedAt ?? null });
+  if (JSON.stringify(shipView(ship)) !== JSON.stringify(shipView(next))) append(app, ship.dorkId, { type: "ship", ship: shipView(next) });
+  if (ship.status !== next.status || next.endedAt !== undefined) touchDork(app, ship.dorkId);
+}
+
+/** Applies one observation in a transaction. */
 export function applyShip(app: App, id: number, obs: ShipObservation) {
   app.db.tx(() => {
     const ship = getShip(app, id);
     if (!ship || ship.endedAt !== undefined) return;
-    const d = decide(ship.startedAt, obs.stages, ship.poll?.doneAt, app.now());
-    const next: Ship = { ...ship, stages: obs.stages, status: d.status, endedAt: d.end ? app.now() : undefined };
+    const { agent, stages } = involveAgent(app, ship, obs.stages);
+    const d = decide(ship.startedAt, stages, ship.poll?.doneAt, app.now());
     const { doneAt: _, ...poll } = obs.poll;
-    update(
-      app.db,
-      "ships",
-      { id },
-      { stages: obs.stages, status: d.status, poll: { ...poll, readAt: app.now(), ...(d.doneAt !== undefined ? { doneAt: d.doneAt } : {}) }, endedAt: next.endedAt ?? null },
-    );
-    if (JSON.stringify(shipView(ship)) !== JSON.stringify(shipView(next))) append(app, ship.dorkId, { type: "ship", ship: shipView(next) });
-    if (ship.status !== d.status || d.end) touchDork(app, ship.dorkId);
+    const next: Ship = { ...ship, stages, agent, status: d.status, endedAt: d.end ? app.now() : undefined };
+    saveShip(app, ship, next, { ...poll, readAt: app.now(), ...(d.doneAt !== undefined ? { doneAt: d.doneAt } : {}) });
+  });
+}
+
+/**
+ * The `ship` bridge op: the agent's `ship_verify` tool. Records its check of the live deployment on the session's ship that waits for
+ * one; a failed check fails the ship.
+ */
+export function shipOp(app: App, dorkId: string, args: Record<string, unknown>): { text: string } {
+  if (args.action !== "verify") return fail("invalid", "unknown ship action");
+  if (typeof args.ok !== "boolean" || typeof args.note !== "string" || !args.note.trim()) return fail("invalid", "`ok` and a non-empty `note` are required");
+  const { ok, note } = args as { ok: boolean; note: string };
+  return app.db.tx(() => {
+    const ship = app.db
+      .all("SELECT * FROM ships WHERE dork_id = ? ORDER BY id DESC", dorkId)
+      .map(shipOf)
+      .find((s) => s.agent?.verify?.state === "pending");
+    if (!ship?.agent?.verify) return fail("not_found", "No merged PR of this session is waiting for verification: ship_verify answers a `deployed` notification.");
+    const now = app.now();
+    const verify = { ...ship.agent.verify, state: ok ? ("passed" as const) : ("failed" as const), note: note.trim().slice(0, 300), at: now };
+    const agent = { ...ship.agent, verify };
+    const stages = [...ship.stages.filter((s) => s.kind !== "verify"), verifyStage(verify, agent.deployedAt ?? now)];
+    const d = decide(ship.startedAt, stages, ship.poll?.doneAt, now);
+    const next: Ship = { ...ship, stages, agent, status: d.status, endedAt: d.end ? now : undefined };
+    saveShip(app, ship, next, { ...ship.poll, ...(d.doneAt !== undefined ? { doneAt: d.doneAt } : {}) });
+    return {
+      text: ok
+        ? `Recorded: #${ship.number} verified on ${verify.env}. The ship card shows your note.`
+        : `Recorded: #${ship.number} failed verification on ${verify.env}. Open a fix-forward PR, or a revert PR when the fix is not obvious. Do not deploy, roll back or merge yourself.`,
+    };
   });
 }

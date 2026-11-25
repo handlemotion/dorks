@@ -52,6 +52,12 @@ export function previewMethods(
       if (!["list", "reply", "resolve"].includes(p.action as string)) throw new RpcError("invalid", "unknown comment action");
       return callBackend(t, log, () => t.comment(p), true);
     },
+    // `ship`: the ship_verify MCP tool. The server finds the ship waiting for a check and records it; this only forwards.
+    ship: async (params) => {
+      const p = (params ?? {}) as Record<string, unknown>;
+      if (p.action !== "verify") throw new RpcError("invalid", "unknown ship action");
+      return callBackend(t, log, () => t.ship(p), true);
+    },
     // `build`: the machine_* MCP tools. The server validates everything and scopes it to this dork's build; this only forwards.
     build: async (params) => {
       const p = (params ?? {}) as Record<string, unknown>;

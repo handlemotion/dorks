@@ -50,6 +50,8 @@ export const notifyKind = z.enum([
   "base_changed", // the PR's base branch was edited (e.g. a stack parent merged and GitHub retargeted it)
   "ready", // CI green + approved (or no review required): the agent posts a standby note and goes idle
   "closed", // closed or merged: the subscription ended
+  "deployed", // a merged PR's ship reached a live deployment: verify the change there and report with ship_verify (docs/shipping.md)
+  "ship_failed", // a merged PR's ship failed (the base's build, a migration, a deploy): diagnose and open a fix-forward or revert PR
 ]);
 export type NotifyKind = z.infer<typeof notifyKind>;
 

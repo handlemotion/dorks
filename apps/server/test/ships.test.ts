@@ -4,7 +4,8 @@ import { dorkView } from "../src/data";
 import { needsAttentionOf } from "../src/data";
 import { pollOnce, POLL_MS } from "../src/services/poller";
 import { updateSettings } from "../src/services/settings";
-import { SHIP_QUIET_MS, SHIP_SETTLE_MS } from "../src/services/ships";
+import { SHIP_VERIFY_MS } from "@dorks/shared";
+import { SHIP_QUIET_MS, SHIP_SETTLE_MS, shipOp } from "../src/services/ships";
 import * as subs from "../src/services/subscriptions";
 import { fakeFetch, harness } from "./harness";
 
@@ -164,12 +165,13 @@ describe("ships", () => {
 
     s.gh.state.deploymentStatuses[40].push({ state: "success", environment_url: "https://hello.example" });
     await s.tick();
-    expect(s.card()).toMatchObject({ status: "watching" }); // all green: waits for follow-ups before calling it
-    expect(s.card()!.stages.at(-1)).toMatchObject({ state: "passed", environmentUrl: "https://hello.example" });
+    expect(s.card()).toMatchObject({ status: "watching" }); // all green: waits for the agent's check and follow-ups before calling it
+    expect(s.card()!.stages.find((x) => x.id === "dep:production")).toMatchObject({ state: "passed", environmentUrl: "https://hello.example" });
 
     const events = s.h.events(s.id).length;
     await s.tick(); // nothing changed: no new event
     expect(s.h.events(s.id).length).toBe(events);
+    shipOp(s.h.app, s.id, { action: "verify", ok: true, note: "Checked it live." });
     await s.tick(SHIP_SETTLE_MS);
     expect(s.card()).toMatchObject({ status: "shipped" });
     expect(s.card()!.endedAt).toBeDefined();
@@ -219,5 +221,48 @@ describe("ships", () => {
     stacked.gh.state.pr.base.ref = "agent/parent";
     await stacked.merge();
     expect(stacked.card()).toBeUndefined();
+  });
+
+  it("tells the agent once the merge is live and waits for its check; tells it once when the ship fails", async () => {
+    const s = await setup();
+    const inbox = () => s.h.app.db.all<{ kind: string; summary: string }>("SELECT kind, summary FROM inbox WHERE dork_id = ? ORDER BY id", s.id);
+    await s.merge();
+    expect(() => shipOp(s.h.app, s.id, { action: "verify", ok: true, note: "Looks right." })).toThrow(/waiting for verification/);
+    s.gh.state.deployments.push({ id: 40, sha: MERGE, environment: "production", created_at: s.iso() });
+    s.gh.state.deploymentStatuses[40] = [{ state: "success", environment_url: "https://hello.example" }];
+    await s.tick();
+    expect(inbox().map((r) => r.kind)).toEqual(["closed", "deployed"]);
+    expect(inbox()[1].summary).toContain("https://hello.example");
+    expect(s.card()!.stages.at(-1)).toMatchObject({ kind: "verify", name: "Verify on production", state: "pending" });
+    await s.tick(SHIP_SETTLE_MS * 2);
+    expect(s.card()).toMatchObject({ status: "watching" }); // waits for the agent's check
+
+    expect(shipOp(s.h.app, s.id, { action: "verify", ok: true, note: "Opened /settings; the new toggle saves." }).text).toMatch(/verified on production/);
+    expect(s.card()!.stages.at(-1)).toMatchObject({ state: "passed", detail: "Opened /settings; the new toggle saves." });
+    await s.tick();
+    await s.tick(SHIP_SETTLE_MS);
+    expect(s.card()).toMatchObject({ status: "shipped" });
+    expect(inbox().filter((r) => r.kind === "deployed")).toHaveLength(1);
+
+    // Nobody reports: the ship stops waiting after SHIP_VERIFY_MS.
+    const quiet = await setup();
+    await quiet.merge();
+    quiet.gh.state.deployments.push({ id: 40, sha: MERGE, environment: "production", created_at: quiet.iso() });
+    quiet.gh.state.deploymentStatuses[40] = [{ state: "success", environment_url: "https://hello.example" }];
+    await quiet.tick();
+    await quiet.tick(SHIP_VERIFY_MS);
+    await quiet.tick(SHIP_SETTLE_MS);
+    expect(quiet.card()).toMatchObject({ status: "shipped" });
+    expect(quiet.card()!.stages.at(-1)).toMatchObject({ kind: "verify", state: "skipped", detail: "Not verified in time" });
+
+    // A failure wakes it once, with what failed and where.
+    const f = await setup();
+    const fInbox = () => f.h.app.db.all<{ kind: string; summary: string }>("SELECT kind, summary FROM inbox WHERE dork_id = ? AND kind = 'ship_failed'", f.id);
+    await f.merge();
+    f.gh.state.runs.push(f.run({ id: 1, name: "Deploy", status: "completed", conclusion: "failure" }));
+    await f.tick();
+    await f.tick();
+    expect(fInbox()).toHaveLength(1);
+    expect(fInbox()[0].summary).toContain("Deploy failed: https://github.com/octo/hello/actions/runs/1");
   });
 });

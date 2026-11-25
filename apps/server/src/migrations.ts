@@ -574,4 +574,9 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX ships_open ON ships (ended_at);
   `,
+  `
+  -- The agent's part in a ship (services/ships.ts, docs/shipping.md): JSON ShipAgent, when it was told the ship deployed or failed and
+  -- what it reported when it verified the live deployment.
+  ALTER TABLE ships ADD COLUMN agent TEXT;
+  `,
 ];

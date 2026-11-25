@@ -36,6 +36,10 @@ const INSTRUCTIONS: Record<NotifyKind, string> = {
     "The PR's base branch changed (for example a stack parent was merged). Rebase onto (or merge) the new base, validate locally, then push; use `git push --force-with-lease` if you rebased.",
   ready: "CI is green and the PR is approved. Post a short comment on the PR saying you are on standby, then stop. Do not merge it.",
   closed: "The PR was closed or merged and your subscription to it has ended. Leave it alone.",
+  deployed:
+    "The merged PR is live. Verify the change you made, not just that the site loads: open the live URL above and exercise exactly what the PR changed (a browser or Playwright for pages, curl for endpoints; a test login from a secure input if it needs one). Do not change production data and do not deploy. Then report with the `ship_verify` tool: `ok`, and a one or two sentence `note` of what you checked and saw. If it does not work, report it failed and open a fix-forward PR (or a revert PR when the fix is not obvious).",
+  ship_failed:
+    "The merged PR failed to ship. Read the failing logs (`gh run view <id> --log-failed` for workflow runs, the linked log for a deployment), find the cause, then open a fix-forward PR, or a revert PR (`gh pr create` from a branch with `git revert` of the merge commit) when the fix is not obvious or production is broken. Never deploy, roll back or touch production data yourself, and never merge. Say in your final answer what failed and which PR fixes it.",
 };
 
 const ORDER = notifyKind.options as NotifyKind[];

@@ -172,6 +172,15 @@ function ShipPanel({ ship }: { ship: ShipView }) {
 }
 
 function StageRow({ stage, now }: { stage: ShipStage; now: number }) {
+  // The agent's note on its check is the point of that row: its own line under it, not a clipped detail.
+  if (stage.kind === 'verify' && stage.detail) {
+    return (
+      <div className="flex min-w-0 flex-col pb-1">
+        <StageRow stage={{ ...stage, detail: undefined }} now={now} />
+        <p className="pl-5.5 text-sm text-muted-foreground">{stage.detail}</p>
+      </div>
+    )
+  }
   const look = STAGE_ICON[stage.state]
   const elapsed = stage.startedAt !== undefined && (stage.endedAt !== undefined || stage.state === 'running') ? workedFor((stage.endedAt ?? now) - stage.startedAt) : undefined
   const content = (
