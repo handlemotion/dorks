@@ -574,4 +574,11 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX ships_open ON ships (ended_at);
   `,
+  `
+  -- The phone link (services/phoneLink.ts, docs/mobile.md): this Mac's id in the cloud relay, its name there, and the Mac token the
+  -- relay gave it when a phone paired (encrypted).
+  ALTER TABLE settings ADD COLUMN cloud_mac_id TEXT;
+  ALTER TABLE settings ADD COLUMN cloud_mac_name TEXT;
+  ALTER TABLE settings ADD COLUMN cloud_mac_token_enc TEXT;
+  `,
 ];
