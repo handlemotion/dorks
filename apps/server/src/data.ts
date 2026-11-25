@@ -1,11 +1,10 @@
-import type { AgentCommand, AgentModelChoice, ClientEvent, DorkState } from "@dorks/shared";
+import type { AgentCommand, AgentModelChoice, ClientEvent, DorkMode, DorkState } from "@dorks/shared";
 import type { Db, Row } from "./db";
 import { bool, json } from "./db";
 
 // Typed readers over the schema (migrations.ts). Columns are snake_case in SQL and camelCase here; NULL becomes undefined.
 
 export type Provider = "claude" | "codex" | "opencode" | "antigravity";
-export type DorkKind = "agent" | "coordinator";
 export type TitleSource = "message" | "auto" | "user";
 
 export interface Pause {
@@ -51,8 +50,8 @@ export interface DorkRow {
   prUrl?: string;
   /** The build the dork's machine starts from (docs/builds.md); undefined: the base snapshot. */
   buildId?: string;
-  /** `coordinator`: plans and delegates to worker dorks (docs/crew.md). */
-  kind: DorkKind;
+  /** chat, code or nerd (docs/modes.md); a nerd plans and delegates to worker dorks (docs/crew.md). */
+  mode: DorkMode;
   /** The coordinator that started this worker. */
   parentId?: string;
   /** An emoji the owner picked for a coordinator. */
@@ -123,7 +122,7 @@ export const dorkOf = (r: Row): DorkRow => ({
   images: json(r.images),
   prUrl: u(r.pr_url as string | null),
   buildId: u(r.build_id as string | null),
-  kind: ((r.kind as string | null) ?? "agent") as DorkKind,
+  mode: ((r.mode as string | null) ?? "code") as DorkMode,
   parentId: u(r.parent_id as string | null),
   icon: u(r.icon as string | null),
   deleting: bool(r.deleting),
@@ -216,7 +215,7 @@ export const dorkView = (d: DorkRow, prState?: "open" | "merged" | "closed", nee
   agentEffort: d.agentEffort,
   modelChoices: d.modelChoices,
   buildId: d.buildId ?? null,
-  kind: d.kind,
+  mode: d.mode,
   parentId: d.parentId ?? null,
   icon: d.icon,
   lastActivityAt: d.lastActivityAt,

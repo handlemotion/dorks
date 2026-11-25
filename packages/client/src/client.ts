@@ -4,6 +4,7 @@ import type {
   AutomationView,
   CommentView,
   ComposioStatus,
+  DorkMode,
   McpServerInput,
   McpServerView,
   MergeMethod,
@@ -339,6 +340,12 @@ export class DorksClient {
     interrupt: async (id: string) => {
       await this.api.interrupt(id);
       this.invalidate(`dork:${id}`);
+    },
+    /** Switches the session's mode (docs/modes.md); an awake agent restarts with it once its turn ends. */
+    setMode: async (id: string, mode: DorkMode) => {
+      await this.api.setMode(id, mode);
+      this.invalidate(`dork:${id}`);
+      this.invalidate("dorks");
     },
     chooseModel: async (id: string, model: string | null, effort: string | null, fast = false) => {
       await this.api.chooseModel(id, model, effort, fast);

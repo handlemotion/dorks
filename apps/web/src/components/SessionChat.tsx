@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
-import type { AgentModelChoice } from '@dorks/shared'
+import type { AgentModelChoice, DorkMode } from '@dorks/shared'
 import { useConnection, useDork, useDorkEvents, useDorksClient, useSettings } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
 import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport } from '@dorks/ui/message-scroller'
@@ -10,6 +10,7 @@ import { UsageMenu } from './UsageMenu'
 import { useMentions } from './ComposerMenu'
 import { Composer, withImages, type AttachedImage, type ModelPicker } from './ChatComposer'
 import { LocalAccessProvider } from './LocalRequest'
+import type { ModeChoice } from './ModeMenu'
 import { QueuedMessages } from './QueuedMessages'
 import { SEND_KEY } from './Reply'
 import { useDraft } from '../lib/draft'
@@ -18,6 +19,12 @@ import { withReply, type Reply } from '../lib/reply'
 import { currentStep, stepLabel } from '../lib/progress'
 
 export type DorkView = NonNullable<ReturnType<typeof useDork>>
+
+/** The session's mode menu (docs/modes.md): a worker keeps the mode its nerd gave it; anything else switches, and the agent restarts with it once its turn ends. */
+const sessionMode = (dork: DorkView, change: (mode: DorkMode) => void): ModeChoice => ({
+  value: dork.mode ?? 'code',
+  ...(dork.parentId ? { lockedReason: 'A worker keeps the mode its nerd gave it' } : { onChange: change }),
+})
 
 type SendWith = (deliver: (message: string) => Promise<unknown>) => (images: AttachedImage[]) => Promise<boolean>
 
@@ -32,7 +39,7 @@ function useQueueControls(dork: DorkView, canReply: boolean, sendWith: SendWith)
   const queue = dork.queue ?? []
   return {
     error: action.error,
-    placeholder: busy ? `Enter to steer, ${SEND_KEY} Enter to queue` : dork.kind === 'coordinator' ? 'Tell the dork what to do next...' : undefined,
+    placeholder: busy ? `Enter to steer, ${SEND_KEY} Enter to queue` : undefined,
     onQueue: busy ? sendWith((message) => actions.queueMessage(dork.id, message)) : undefined,
     queued:
       queue.length > 0 ? (
@@ -156,6 +163,7 @@ export function SessionChat({
   const { run, pending, error } = usePending()
   const stop = usePending()
   const modelSwitch = usePending()
+  const modeSwitch = usePending()
   const settings = useSettings()
   const { live } = useConnection()
   const agent = AGENT_NAMES[dork.provider]
@@ -234,12 +242,12 @@ export function SessionChat({
         text={text}
         setText={setText}
         repo={dork.repo}
-        {...(dork.kind === 'coordinator' ? { showRepo: false } : {})}
+        mode={sessionMode(dork, (mode) => void modeSwitch.run(() => actions.setMode(dorkId, mode)))}
         placeholder={queueing.placeholder}
         provider={dork.provider ?? 'claude'}
         pending={pending}
         disabled={dork.archived}
-        error={[error, stop.error, queueing.error, extraError, modelSwitch.error].find(Boolean) ?? ''}
+        error={[error, stop.error, queueing.error, extraError, modelSwitch.error, modeSwitch.error].find(Boolean) ?? ''}
         agentLabel={dork.codexModel?.model}
         picker={claudePicker(dork, settings?.claudeModels, (model, effort, fast) => void modelSwitch.run(() => actions.chooseModel(dorkId, model ?? null, effort ?? null, fast)))}
         upload={actions.uploadImage}

@@ -54,6 +54,8 @@ export interface AgentOptions {
   settingsFile?: string;
   /** The `dorks` MCP server for the CLI (`--mcp-config`), see mcp.ts. */
   mcpConfigFile?: string;
+  /** Replaces Claude Code's own system prompt (`--system-prompt`): a chat session's (docs/modes.md). */
+  systemPrompt?: string;
   runAs?: Identity | null;
   redactor: Redactor;
   log: Log;
@@ -130,6 +132,8 @@ export function computerArgs(driverPresent = existsSync(BOAT_COMPUTER_DRIVER)): 
  *   --mcp-config <file>             the `dorks` MCP server (mcp.ts): PR subscription tools. Added on top of the repo's own MCP servers, not instead
  *   --model / --effort              the model and effort chosen in the UI (omitted: the CLI's default)
  *   --append-system-prompt          the standing final-answer guidance (guidance.ts), on top of Claude Code's own system prompt
+ *   --system-prompt                 a chat session's prompt (guidance.ts) in place of Claude Code's, which is written for coding; the
+ *                                   final-answer guidance is then left out (the chat prompt has its own), the skills guidance stays
  *   --resume <id>                   continue the stored session after a sleep/wake or restart
  * Not used on purpose: --bare (it never reads OAuth, and we authenticate with CLAUDE_CODE_OAUTH_TOKEN), --no-session-persistence
  * (the transcript on disk is what makes resume work).
@@ -142,6 +146,7 @@ export function claudeArgs(o: {
   mcpConfigFile?: string;
   model?: string;
   effort?: string;
+  systemPrompt?: string;
 }): string[] {
   return [
     "-p",
@@ -155,8 +160,9 @@ export function claudeArgs(o: {
     o.permissionMode,
     ...(o.model ? ["--model", o.model] : []),
     ...(o.effort ? ["--effort", o.effort] : []),
+    ...(o.systemPrompt ? ["--system-prompt", o.systemPrompt] : []),
     "--append-system-prompt",
-    `${FINAL_ANSWER_GUIDANCE} ${SKILLS_GUIDANCE}`,
+    o.systemPrompt ? SKILLS_GUIDANCE : `${FINAL_ANSWER_GUIDANCE} ${SKILLS_GUIDANCE}`,
     ...(o.settingsFile ? ["--settings", o.settingsFile] : []),
     ...(o.mcpConfigFile ? ["--mcp-config", o.mcpConfigFile] : []),
     ...(o.resumeSessionId ? ["--resume", o.resumeSessionId] : []),

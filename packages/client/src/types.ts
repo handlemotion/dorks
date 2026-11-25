@@ -1,4 +1,4 @@
-import type { AgentCommand, AgentModelChoice, BuildRepo, BuildService, ClientEvent, CommentPolicy, DorkState, MachineType, RunView } from "@dorks/shared";
+import type { AgentCommand, AgentModelChoice, BuildRepo, BuildService, ClientEvent, CommentPolicy, DorkMode, DorkState, MachineType, RunView } from "@dorks/shared";
 
 export type { MergeMethod, MergeableState, PullRequestSection, PullRequestView, PullRequestFile, PullRequestComment, PullRequestChecks, PullRequestCheck, PullRequestPerson } from "@dorks/shared";
 export type { AutomationInput, AutomationRunView, AutomationTrigger, AutomationView, GithubEvent, GithubTrigger, ScheduleEvery, ScheduleTrigger } from "@dorks/shared";
@@ -64,8 +64,8 @@ export interface Dork {
   modelChoices?: AgentModelChoice[];
   /** The build its machine starts from (docs/builds.md); null: the base snapshot. Absent on older servers. */
   buildId?: string | null;
-  /** `coordinator`: plans and runs worker dorks instead of coding (docs/crew.md). Absent on older servers. */
-  kind?: "agent" | "coordinator";
+  /** chat, code or nerd (docs/modes.md); a nerd plans and runs worker dorks instead of coding (docs/crew.md). Absent on older servers: code. */
+  mode?: DorkMode;
   /** The coordinator that started this worker; null otherwise. Absent on older servers. */
   parentId?: string | null;
   /** A coordinator's emoji. */
@@ -75,14 +75,14 @@ export interface Dork {
 }
 
 export interface CreateDorkInput {
-  /** owner/name; optional only for a setup session. */
+  /** owner/name; optional for a setup session and in chat and nerd mode. */
   repo?: string;
   /** The build to start from; null: the base machine; omitted: the default build, else the base machine. */
   buildId?: string | null;
   /** A machine-setup session for `buildId`: no repo needed, and the build needs no image yet. */
   setup?: boolean;
-  /** `coordinator`: a session that plans and delegates to worker dorks; needs no repo (docs/crew.md). */
-  kind?: "agent" | "coordinator";
+  /** chat, code (default) or nerd (docs/modes.md). Only code needs a repo. */
+  mode?: DorkMode;
   /** One emoji for a coordinator, shown in the sidebar. */
   icon?: string;
   message: string;

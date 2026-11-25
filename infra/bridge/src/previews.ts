@@ -1,4 +1,4 @@
-import type { CrewRole } from "@dorks/shared";
+import type { CrewRole, DorkMode } from "@dorks/shared";
 import { callBackend } from "./prs";
 import type { PreviewProxies } from "./preview-proxy";
 import { errTag, type Log } from "./redact";
@@ -14,10 +14,17 @@ export type ShownPreview = { port: number; url: string; title?: string };
 /** Ports the box provider uses itself (Boat: SSH, the desktop stream, its agents); the server refuses them too. */
 const reserved = (port: number) => [22, 6080, 8090, 8911].includes(port) || (port >= 47984 && port <= 48010);
 
-export function previewMethods(t: Transport, log: Log, role: () => CrewRole | null = () => null, proxies?: PreviewProxies, bridgePort?: number): RpcMethods {
+export function previewMethods(
+  t: Transport,
+  log: Log,
+  crew: () => { role: CrewRole | null; mode: DorkMode } = () => ({ role: null, mode: "code" }),
+  proxies?: PreviewProxies,
+  bridgePort?: number,
+): RpcMethods {
   return {
-    // `crew.role`: which crew tools the in-box MCP server lists (docs/crew.md). Answered here from the last configure.
-    "crew.role": () => ({ role: role() }),
+    // `crew.role`: which crew tools (docs/crew.md) and which mode's tools (docs/modes.md) the in-box MCP server lists. Answered here
+    // from the last configure.
+    "crew.role": () => crew(),
     // `crew`: a crew tool call. The server checks the tool against this dork's role and scopes every id to its crew; this only forwards.
     crew: async (params) => {
       const p = (params ?? {}) as Record<string, unknown>;

@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useLocation } from '@tanstack/react-router'
 import { BlocksIcon, BoxIcon, ChevronDownIcon, ChevronRightIcon, PlusIcon, ServerIcon, SettingsIcon, WorkflowIcon } from 'lucide-react'
 import type { DorkState } from '@dorks/shared'
-import { useDorks, useGithubRepos } from '@dorks/client/react'
+import { useBuilds, useDorks, useGithubRepos } from '@dorks/client/react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@dorks/ui/collapsible'
 import {
   DropdownMenu,
@@ -29,7 +29,6 @@ import { ownersOf, useOwnerScope } from './ownerScope'
 import { SIDEBAR_ROW, SIDEBAR_SECTION } from './sidebarChrome'
 import { UpdatePrompt } from './UpdatePrompt'
 import { useRowHover } from './useRowHover'
-import { NERD_ICONS, NewNerdDialog } from './NewNerdDialog'
 
 const PR_NUMBER = /\/pull\/(\d+)/
 
@@ -50,17 +49,19 @@ export function AppSidebar() {
   const disconnect = useDisconnect()
   const github = useGithubRepos()
   const archive = useArchiveDork()
+  const builds = useBuilds()
+  // A nerd has no repository of its own: it sits with the repository of the build it works on (its first), else in Other.
+  const buildRepo = new Map((builds ?? []).map((b) => [b.id, b.repos[0]?.repo ?? '']))
   const chats: Chat[] = (dorks ?? []).map((d) => ({
     id: d.id,
     title: d.title,
-    repo: d.repo,
+    repo: d.mode === 'nerd' && !d.repo ? (buildRepo.get(d.buildId ?? '') ?? '') : d.repo,
     working: MOVING.has(d.state),
     state: d.state,
     attention: d.needsAttention,
     pr: prOf(d.prUrl, d.prState),
-    kind: d.kind,
+    mode: d.mode,
     parentId: d.parentId,
-    icon: d.kind === 'coordinator' ? (d.icon ?? NERD_ICONS[0]) : undefined,
   }))
   return (
     <AppSidebarView
@@ -76,6 +77,9 @@ export function AppSidebar() {
     />
   )
 }
+
+/** Chats shown before Show more, so the repository groups stay in view under them. */
+const CHATS_SHOWN = 5
 
 const ALL = ''
 
@@ -196,10 +200,10 @@ export function AppSidebarView({
   const selected = typeof dork === 'string' ? dork : undefined
   // A worker open full screen keeps its dork highlighted: workers have no rows of their own.
   const activeId = chats.find((c) => c.id === selected)?.parentId ?? selected
-  // Nerds (coordinators) get their own group; their workers live inside them, not in the sidebar.
-  const crews = chats.filter((c) => c.kind === 'coordinator')
-  const sessions = chats.filter((c) => c.kind !== 'coordinator' && !c.parentId)
-  const [newNerd, setNewNerd] = useState(false)
+  // Chats (docs/modes.md) come first in their own group; nerds sit in the repository groups with the sessions of their build. A nerd's
+  // workers live inside it, not in the sidebar.
+  const talks = chats.filter((c) => c.mode === 'chat' && !c.parentId)
+  const sessions = chats.filter((c) => c.mode !== 'chat' && !c.parentId)
   const owners = ownersOf(
     sessions.flatMap((c) => (c.repo ? [c.repo] : [])),
     accounts,
@@ -242,7 +246,14 @@ export function AppSidebarView({
                 </Link>
               ))}
             </nav>
-            {SHOW_NERDS && <NerdsGroup chats={crews} orderKey={`${orderKey}.nerds`} chatTo={chatTo} activeId={activeId} onArchive={onArchive} onNew={() => setNewNerd(true)} />}
+            {talks.length > 0 && (
+              <nav aria-label="Chats" className="flex shrink-0 flex-col gap-0.5">
+                <div className={`${SIDEBAR_SECTION} pr-1`}>
+                  <span className="min-w-0 flex-1 truncate">Chats</span>
+                </div>
+                <ChatList chats={talks} orderKey={`${orderKey}.chats`} to={chatTo} activeId={activeId} onArchive={onArchive} limit={CHATS_SHOWN} />
+              </nav>
+            )}
             {groups.map(([repo, list]) => {
               const key = repo || 'other'
               const open = !collapsed.has(key)
@@ -272,7 +283,6 @@ export function AppSidebarView({
               )
             })}
           </div>
-          {newNerd && <NewNerdDialog open onOpenChange={setNewNerd} />}
           <div className="flex shrink-0 flex-col gap-2 pt-1.5">
             {usage}
             <Link to="/settings" {...rowLink(pathname === '/settings')}>
@@ -283,51 +293,5 @@ export function AppSidebarView({
         </div>
       </div>
     </Sidebar>
-  )
-}
-
-/** The `+` beside a group's label: shown on hover (always on touch), like the repository groups'. */
-const GROUP_ADD =
-  'flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none group-hover/section:opacity-100 hover:bg-foreground/[0.05] hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring [@media(hover:none)]:opacity-100'
-
-/** The Nerds group is not ready yet: hidden from the sidebar until it is. */
-const SHOW_NERDS = false
-
-/**
- * The Nerds group, above the repositories: coordinator sessions (docs/crew.md), each with its emoji. Its `+` opens New nerd; with no
- * nerds yet the group holds one row that does the same, so the feature is findable.
- */
-function NerdsGroup({
-  chats,
-  orderKey,
-  chatTo,
-  activeId,
-  onArchive,
-  onNew,
-}: {
-  chats: Chat[]
-  orderKey: string
-  chatTo?: ChatRoute
-  activeId?: string
-  onArchive?: (id: string) => void
-  onNew: () => void
-}) {
-  return (
-    <nav aria-label="Nerds" className="flex shrink-0 flex-col gap-0.5">
-      <div className={`group/section ${SIDEBAR_SECTION} pr-1`}>
-        <span className="min-w-0 flex-1 truncate">Nerds</span>
-        <button type="button" aria-label="New nerd" title="New nerd" onClick={onNew} className={GROUP_ADD}>
-          <PlusIcon aria-hidden className="size-3.5" />
-        </button>
-      </div>
-      {chats.length ? (
-        <ChatList chats={chats} orderKey={orderKey} to={chatTo} activeId={activeId} onArchive={onArchive} />
-      ) : (
-        <button type="button" onClick={onNew} className={`${SIDEBAR_ROW} text-muted-foreground`}>
-          <PlusIcon />
-          New nerd
-        </button>
-      )}
-    </nav>
   )
 }

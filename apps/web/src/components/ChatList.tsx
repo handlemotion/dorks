@@ -1,10 +1,11 @@
-import type { DorkState, SubscriptionView } from '@dorks/shared'
+import type { DorkMode, DorkState, SubscriptionView } from '@dorks/shared'
 import { Link, useRouter, type RegisteredRouter } from '@tanstack/react-router'
 import { move } from '@dnd-kit/helpers'
 import { Accessibility, defaultPreset, KeyboardSensor, PointerActivationConstraints, PointerSensor } from '@dnd-kit/dom'
 import { DragDropProvider, type DragEndEvent, type DragOverEvent, type DragStartEvent } from '@dnd-kit/react'
 import { isSortable, useSortable } from '@dnd-kit/react/sortable'
-import { ArchiveIcon, LinkIcon } from 'lucide-react'
+import { useState } from 'react'
+import { ArchiveIcon, ChevronDownIcon, ChevronUpIcon, LinkIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@dorks/ui/context-menu'
 import { DropdownMenuItem } from '@dorks/ui/dropdown-menu'
@@ -32,7 +33,7 @@ export type Chat = {
   pr?: { number: number; state?: PrState }
   /** A dork (coordinator) shows its emoji instead of the working icon (docs/crew.md). */
   icon?: string
-  kind?: 'agent' | 'coordinator'
+  mode?: DorkMode
   /** A worker's coordinator: workers live inside their dork, not in the sidebar. */
   parentId?: string | null
 }
@@ -82,6 +83,7 @@ export function ChatList({
   to = '/dorks' as ChatRoute,
   activeId,
   onArchive,
+  limit,
 }: {
   chats: Chat[]
   orderKey: string
@@ -90,12 +92,17 @@ export function ChatList({
   activeId?: string
   /** Archives a chat: the row's hover button and its right-click menu. Without it, neither shows. */
   onArchive?: (id: string) => void
+  /** Rows shown before a Show more row (the open chat always shows). Without it, all of them. */
+  limit?: number
 }) {
   const [order, setOrder] = useStoredOrder(
     orderKey,
     chats.map((c) => c.id),
   )
+  const [expanded, setExpanded] = useState(false)
   const byId = new Map(chats.map((c) => [c.id, c]))
+  const hidden = limit !== undefined && !expanded ? order.slice(limit).filter((id) => id !== activeId).length : 0
+  const shown = hidden ? order.filter((id, i) => i < limit! || id === activeId) : order
   return (
     <DragDropProvider
       sensors={SENSORS}
@@ -106,9 +113,15 @@ export function ChatList({
         if (next !== order) setOrder(next)
       }}
     >
-      {order.map((id, index) => (
-        <ChatItem key={id} chat={byId.get(id)!} index={index} to={to} active={id === activeId} onArchive={onArchive} />
+      {shown.map((id) => (
+        <ChatItem key={id} chat={byId.get(id)!} index={order.indexOf(id)} to={to} active={id === activeId} onArchive={onArchive} />
       ))}
+      {limit !== undefined && order.length > limit && (
+        <button type="button" onClick={() => setExpanded(!expanded)} className={`${SIDEBAR_ROW} text-muted-foreground`}>
+          {expanded ? <ChevronUpIcon /> : <ChevronDownIcon />}
+          {expanded ? 'Show less' : `Show ${hidden} more`}
+        </button>
+      )}
     </DragDropProvider>
   )
 }
@@ -145,7 +158,7 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
             {chat.icon}
           </span>
         ) : (
-          <DorkIcon size={14} state={iconState} label={iconLabel} />
+          <DorkIcon size={14} state={iconState} label={iconLabel} nerd={chat.mode === 'nerd'} />
         )}
         <span className="min-w-0 flex-1 truncate">{chat.title}</span>
       </Link>

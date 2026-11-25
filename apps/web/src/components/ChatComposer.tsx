@@ -23,6 +23,7 @@ import opencodeLight from '../assets/providers/opencode.svg'
 import { Logo } from './onboarding/List'
 import { OwnerAvatar, ownerOf } from './RepoAvatar'
 import { EnvironmentPicker, type EnvironmentChoice } from './EnvironmentPicker'
+import { MODE_HINTS, ModeMenu, type ModeChoice } from './ModeMenu'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@dorks/ui/input-group'
 import { Tip } from './Tip'
 import { ImageLightbox, ImageTrigger } from './ImageLightbox'
@@ -303,13 +304,17 @@ function MainButton({ onStop, isNewSession, pending, canSend, canQueue }: { onSt
   )
 }
 
-/** The box's hint: what the session's agent is asked for. */
-const hintOf = (placeholder?: string) => placeholder ?? 'Ask the agent to change your code...'
+/** Whether the session needs a repository, and the box's hint: the caller's, else what the mode's agent is asked for. */
+const modeOf = (mode: ModeChoice | undefined, placeholder?: string) => ({
+  needsRepo: !mode || mode.value === 'code',
+  hint: placeholder ?? MODE_HINTS[mode?.value ?? 'code'],
+})
 
 /** Where the session runs: the environment chooser for a new session, else its repository. */
 
-function RepositoryControl({ repo, environment, disabled, hidden }: { repo?: string; environment?: EnvironmentChoice; disabled: boolean; hidden?: boolean }) {
-  if (hidden) return null
+function RepositoryControl({ repo, environment, disabled, hidden, needsRepo }: { repo?: string; environment?: EnvironmentChoice; disabled: boolean; hidden?: boolean; needsRepo: boolean }) {
+  // A chat or a nerd works in no repository: no chooser, and an existing session shows one only if it has it.
+  if (hidden || (!needsRepo && (environment || !repo))) return null
   if (environment) return <EnvironmentPicker choice={environment} disabled={disabled} />
   if (repo === undefined) return null
   return (
@@ -707,6 +712,7 @@ export function Composer({
   error,
   repo,
   environment,
+  mode,
   placeholder,
   showRepo,
   provider = 'claude',
@@ -738,7 +744,9 @@ export function Composer({
   repo?: string
   /** The new session form's one chooser: a build (with its repositories) or a repository on the base machine. */
   environment?: EnvironmentChoice
-  /** The box's hint (default: asks for a code change). */
+  /** The session's mode (docs/modes.md): the bar's first menu. Only code asks for a repository. */
+  mode?: ModeChoice
+  /** The box's hint (default: the mode's, else asks for a code change). */
   placeholder?: string
   /** False for a session with no repository of its own to show (a dork). */
   showRepo?: boolean
@@ -796,7 +804,8 @@ export function Composer({
     textRef.current?.focus()
   }, [focusKey, locked])
   const hasContent = text.trim().length > 0 || ready.length > 0
-  const canSend = hasContent && !uploading && !locked && (!environment || !!environment.value.repo.trim())
+  const { needsRepo, hint } = modeOf(mode, placeholder)
+  const canSend = hasContent && !uploading && !locked && (!environment || !needsRepo || !!environment.value.repo.trim())
   const submit = async (handler = onSubmit) => {
     const sent = files
     try {
@@ -871,7 +880,7 @@ export function Composer({
               data-1p-ignore
               data-lpignore="true"
               data-form-type="other"
-              placeholder={hintOf(placeholder)}
+              placeholder={hint}
               value={text}
               {...menu.inputProps}
               onChange={(e) => {
@@ -930,7 +939,8 @@ export function Composer({
         {/* Compact, shared baseline for the repository and model controls. 9px in (8px plus the box's 1px border), like attach and send, so the repository
             button lines up under attach and the model button under send. */}
         <div className="flex items-center gap-2 px-[9px] pt-2 text-[13px] [--control-radius:6px]">
-          <RepositoryControl repo={repo} environment={environment} disabled={locked} hidden={showRepo === false} />
+          <ModeMenu mode={mode} disabled={locked} />
+          <RepositoryControl repo={repo} environment={environment} disabled={locked} hidden={showRepo === false} needsRepo={needsRepo} />
           <ModelMenu
             provider={provider}
             setProvider={setProvider}

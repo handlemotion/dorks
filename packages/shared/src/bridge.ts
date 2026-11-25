@@ -4,6 +4,7 @@ import { skillRef } from "./skills";
 import { agentCommand, filePath, MAX_AGENT_COMMANDS, MAX_FILE_PATHS } from "./mentions";
 import { notifyKind, prRef } from "./autonomy";
 import { buildService, MAX_BUILD_SERVICES } from "./builds";
+import { DORK_MODES } from "./modes";
 
 /**
  * An autonomy notification (docs/autonomy.md). Delivered and acked exactly like `user_message` (same dedupe by id), but the backend
@@ -75,6 +76,8 @@ export const toBridge = z.discriminatedUnion("t", [
     mcpServers: z.array(mcpServerConfig).max(50).optional(),
     // The dork's place in a crew (docs/crew.md): its guidance and which crew tools the in-box MCP server lists. Absent: a plain dork.
     role: z.enum(["coordinator", "worker"]).optional(),
+    // The dork's mode (docs/modes.md): its instructions, hooks and in-box tools. Absent from an older server: code.
+    mode: z.enum(DORK_MODES).optional(),
     // The owner's skills (Customize, see skills.ts): the bridge keeps ~/.claude/skills in step, fetching changed ones with the `skill`
     // rpc. Absent from an older server: none. Not part of the agent's restart key: Claude Code reloads skills by itself.
     skills: z.array(skillRef).max(200).optional(),

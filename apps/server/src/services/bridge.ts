@@ -550,6 +550,7 @@ const configureFrame = (app: App, dork: DorkRow): Effect.Effect<ToBridge, Onboar
       resumeSessionId: (dork.provider === "codex" ? dork.codexThreadId : dork.claudeSessionId) ?? null,
       ...(dork.titleSource === "message" ? nameFrom(app, dork.id) : {}),
       ...(crewRole(app, dork) ? { role: crewRole(app, dork) } : {}),
+      mode: dork.mode,
       ...skillsField(app),
       ...servicesField(app, dork),
     })),

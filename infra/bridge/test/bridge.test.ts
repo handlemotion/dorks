@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
 import { Bridge, SleepingError } from "../src/bridge";
+import { CHAT_SYSTEM_PROMPT } from "../src/guidance";
 import { rpcCall } from "../src/rpc";
 import { loadConfig } from "../src/config";
 import { makeLogger, Redactor } from "../src/redact";
@@ -326,6 +327,28 @@ describe("bridge with a fake claude CLI", () => {
     expect(rep.argv).toEqual(expect.arrayContaining(["--model", "haiku", "--effort", "low", "--resume"]));
     await waitFor(() => s.t.of("agent_models").length >= 2, "models again");
     expect(s.t.of("agent_models").at(-1)).toMatchObject({ effort: "low" });
+  });
+
+  it("switching to chat mode restarts the CLI on the same session with the chat prompt in place of Claude Code's own", async () => {
+    const s = await setup();
+    await s.bridge.start();
+    configure(s.t);
+    await waitFor(() => s.t.of("ready").length, "ready");
+    const first = await readReport(s.report);
+    expect(first.argv).not.toContain("--system-prompt");
+    s.t.emit([msg("m1", "hello")]);
+    await waitFor(() => s.t.events().some((e) => (e.raw as any).type === "result"), "first turn");
+    s.t.configureFrame = { ...s.t.configureFrame!, mode: "chat" };
+    configure(s.t, "cfg2");
+    const rep = await waitFor(async () => {
+      const r = await readReport(s.report);
+      return r.pid !== first.pid && r;
+    }, "restarted CLI");
+    expect(rep.argv).toEqual(expect.arrayContaining(["--system-prompt", CHAT_SYSTEM_PROMPT, "--resume"]));
+    // The in-box MCP server hides the PR tools for it, and the Stop gate never holds a chat back.
+    const sock = join(s.state, "cred.sock");
+    expect(await rpcCall(sock, "crew.role")).toEqual({ role: null, mode: "chat" });
+    expect(await rpcCall(sock, "hook.stop", { session_id: "s1" })).toBeNull();
   });
 
   it("configure on an existing clone fetches and checks out; a branch that exists on the remote is tracked", async () => {

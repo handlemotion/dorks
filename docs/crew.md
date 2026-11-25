@@ -27,8 +27,8 @@ sandbox, repo, branch and PRs), follows them, and reports to the owner. Together
 
 ## Data
 
-- `dorks.kind`: `agent` (every dork so far) or `coordinator`. `dorks.parent_id`: the coordinator that created a worker (null otherwise).
-  The `Dork` view gains `kind` and `parentId`.
+- `dorks.mode`: a coordinator is a dork in `nerd` mode ([modes](modes.md)). `dorks.parent_id`: the coordinator that created a worker (null
+  otherwise). The `Dork` view carries `mode` and `parentId`.
 - `crew_inbox`: notes and reports waiting for a dork (`dork_id`, `from_id`, `kind` `report|note`, `text`, `delivered`). The per-dork
   `crew_notify` timer (3 s, from the first row, not sliding) folds them into one `notify` command (`kinds: []`, so older bridges
   accept it) and one `crew` transcript event per row.
@@ -79,11 +79,12 @@ one `dork_get` reports as `settled: true`. `lastAnswer` is the final answer of i
 
 ## Web
 
-In the app a coordinator is called a **nerd**. The feature is not ready: the sidebar group is hidden (`SHOW_NERDS` in `AppSidebar`).
+In the app a coordinator is called a **nerd**: New session's mode menu starts one, and the sidebar lists it in the repository group
+of the build it works on. A nerd can also read and leave notes for the owner's other sessions: [modes](modes.md), "Nerd reach".
 
-- **Sidebar:** a **Nerds** group above the repositories (`AppSidebar`), each nerd with the emoji picked for it. Its `+` (or the
-  `New nerd` row while there are none) opens **New nerd** (`NewNerdDialog`): an emoji, an optional name and the goal; it creates a
-  coordinator (`POST /api/dorks {kind: "coordinator", icon, message}`) and opens it. Workers have no rows: they live inside their dork.
+- **Sidebar:** a nerd is a row in the repository group of the build it works on, with the dork mark in green while it works
+  ([modes](modes.md)). New session's mode menu starts one (`POST /api/dorks {mode: "nerd", message}`) and opens it. Workers have no
+  rows: they live inside their nerd.
 - **The dork's chat** is a normal chat (`SessionChat`) whose box asks what the dork should do next and shows no repository. Crew reports and
   notes are folded lines in the transcript ("Report from …") that open on the whole text.
 - **Dork details** (`CrewDetails`) replace Chat details: **Sessions** (its workers: state, title, repository, PR), **Artifacts** (the

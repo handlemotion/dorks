@@ -3,6 +3,7 @@ import { AppFail } from "../src/app";
 import { update } from "../src/db";
 import { uiApp } from "../src/http/ui";
 import { crewCall, type Caller } from "../src/services/crew";
+import { createDork, setMode } from "../src/services/dorks";
 import { updateSettings } from "../src/services/settings";
 import { harness } from "./harness";
 
@@ -35,7 +36,7 @@ async function crew() {
 }
 
 describe("crew scope", () => {
-  it("a coordinator reaches only its own workers; a worker only its crew; a plain dork nothing", async () => {
+  it("a coordinator steers only its own workers and only reads or notes the rest; a worker reaches only its crew; a plain dork nothing", async () => {
     const c = await crew();
     const a = await c.coordinator();
     const b = await c.coordinator();
@@ -44,14 +45,33 @@ describe("crew scope", () => {
     const wb = await c.worker(b);
     const plain = c.h.seed("idle");
 
-    expect(c.h.dork(a).kind).toBe("coordinator");
+    expect(c.h.dork(a).mode).toBe("nerd");
     expect(c.h.dork(wa).parentId).toBe(a);
     // The worker's first message says who sent it.
     expect(c.h.events(wa).find((e) => e.body.type === "user_message")?.body).toMatchObject({ from: { id: a } });
 
     expect(await c.code(c.call({ dorkId: a }, "dork_get", { id: wa }))).toBe("ok");
-    expect(await c.code(c.call({ dorkId: a }, "dork_get", { id: wb }))).toBe("not_found");
-    expect(await c.code(c.call({ dorkId: a }, "dork_send", { id: plain, text: "hi" }))).toBe("not_found");
+    // A nerd's reach (docs/modes.md): it reads any other session and leaves it a note, but steers, stops and archives only its workers.
+    expect(await c.code(c.call({ dorkId: a }, "dork_get", { id: wb }))).toBe("ok");
+    expect(await c.code(c.call({ dorkId: a }, "dork_read", { id: plain }))).toBe("ok");
+    expect(await c.call({ dorkId: a }, "dork_send", { id: plain, text: "The billing schema moved" })).toMatchObject({ delivery: "note" });
+    expect(await c.call({ dorkId: a }, "dork_send", { id: wa, text: "Use the new schema" })).toMatchObject({ delivery: "message" });
+    expect(await c.code(c.call({ dorkId: a }, "dork_stop", { id: plain }))).toBe("not_found");
+    expect(await c.code(c.call({ dorkId: a }, "dork_archive", { id: wb }))).toBe("not_found");
+    expect(await c.code(c.call({ dorkId: a }, "dork_get", { id: a }))).toBe("not_found");
+    const all = (await c.call({ dorkId: a }, "dork_list", { all: true })) as { dorks: { id: string; role?: string }[] };
+    expect(
+      all.dorks
+        .slice(0, 2)
+        .map((d) => d.id)
+        .sort(),
+    ).toEqual([wa, wa2].sort());
+    expect(
+      all.dorks
+        .filter((d) => d.role === "other")
+        .map((d) => d.id)
+        .sort(),
+    ).toEqual([b, wb, plain].sort());
     expect(await c.code(c.call({ dorkId: a }, "dork_create", { message: "x", coordinator: true }))).toBe("forbidden");
     expect(await c.code(c.call({ dorkId: a }, "dork_delete", { id: wa }))).toBe("forbidden");
     const listed = (await c.call({ dorkId: a }, "dork_list")) as { dorks: { id: string }[] };
@@ -113,6 +133,39 @@ describe("reports", () => {
     const plain = c.h.seed("working");
     c.finishTurn(plain, "done");
     expect(c.h.hasTimer(plain, "crew_notify")).toBe(false);
+  });
+});
+
+describe("modes", () => {
+  it("only code needs a repo; a switch restarts an awake agent; workers and busy nerds keep their mode", async () => {
+    const c = await crew();
+    const app = c.h.app;
+    const fails = (f: () => unknown) => c.code(Promise.resolve().then(f));
+    const chat = createDork(app, { message: "Help me plan a trip", mode: "chat" });
+    expect(c.h.dork(chat)).toMatchObject({ mode: "chat", repo: "" });
+    expect(await fails(() => createDork(app, { message: "Fix it", mode: "code" }))).toBe("invalid");
+    expect(await fails(() => createDork(app, { message: "x", mode: "pirate" }))).toBe("invalid");
+
+    const awake = c.h.seed("idle");
+    const configures = () => app.db.all("SELECT 1 FROM commands WHERE dork_id = ? AND kind = 'configure' AND acked = 0", awake).length;
+    const before = configures();
+    setMode(app, awake, "chat");
+    expect(c.h.dork(awake).mode).toBe("chat");
+    expect(configures()).toBe(before + 1);
+    setMode(app, awake, "chat"); // no change, no restart
+    expect(configures()).toBe(before + 1);
+
+    const nerd = await c.coordinator();
+    const w = await c.worker(nerd);
+    expect(await fails(() => setMode(app, nerd, "chat"))).toBe("conflict");
+    expect(await fails(() => setMode(app, w, "nerd"))).toBe("invalid");
+    await c.call({ dorkId: nerd }, "dork_archive", { id: w });
+    setMode(app, nerd, "chat");
+    expect(c.h.dork(nerd).mode).toBe("chat");
+    // A nerd may start a chat worker with no repo, never another nerd.
+    const n2 = await c.coordinator();
+    expect(await c.code(c.call({ dorkId: n2 }, "dork_create", { message: "Research flight prices", mode: "chat" }))).toBe("ok");
+    expect(await c.code(c.call({ dorkId: n2 }, "dork_create", { message: "x", mode: "nerd" }))).toBe("forbidden");
   });
 });
 
