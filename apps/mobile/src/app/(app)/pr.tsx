@@ -12,42 +12,21 @@ import { prColor, type as size, useColors, type Colors } from "@/lib/theme";
 
 const STATE: Record<string, string> = { open: "Open", merged: "Merged", closed: "Closed" };
 const BLOCKED: Partial<Record<PullRequestView["mergeableState"], string>> = {
-  dirty: "Has merge conflicts with the base branch.",
-  blocked: "Blocked by branch protection: required checks or reviews.",
-  behind: "Behind its base branch.",
-  unknown: "GitHub is still checking whether it can merge.",
-  draft: "Still a draft.",
+  dirty: "Conflicts",
+  blocked: "Blocked by branch protection",
+  behind: "Behind base",
+  unknown: "Checking",
+  draft: "Draft",
 };
 
 export default function PullRequestSheet() {
   const c = useColors();
   const { dork, url } = useLocalSearchParams<{ dork: string; url?: string }>();
   const { data: pr, status, error } = usePullRequest(dork, url);
-  const subs = useSubscriptions(dork);
-  const { actions } = useDorksClient();
-  const [merged, setMerged] = useState<string>();
-  const [mergeError, setMergeError] = useState<string>();
 
   if (!pr) {
-    return (
-      <View style={[s.center, { backgroundColor: c.background }]}>{status === "loading" ? <ActivityIndicator /> : <Text style={{ color: c.muted }}>{error?.message ?? "No pull request."}</Text>}</View>
-    );
+    return <View style={[s.center, { backgroundColor: c.background }]}>{status === "loading" ? <ActivityIndicator /> : <Text style={{ color: c.muted }}>{error?.message ?? "Not found"}</Text>}</View>;
   }
-
-  // Stacked on another open PR of this session: GitHub merges every open PR below it too.
-  const stacked = (subs ?? []).some((p) => p.state === "open" && p.number !== pr.number && p.headRef === pr.baseRef);
-  const method = pr.mergeMethods[0] ?? "merge";
-  const canMerge = pr.state === "open" && !pr.draft && pr.mergeableState !== "dirty";
-  const merge = async () => {
-    setMergeError(undefined);
-    try {
-      const r = await actions.mergePullRequest(dork, method, pr.headSha, pr.url);
-      setMerged(r.merged ? "Merged." : "Queued to merge.");
-    } catch (e) {
-      setMergeError(errorText(e));
-      throw e;
-    }
-  };
 
   return (
     <ScrollView style={{ backgroundColor: c.background }} contentContainerStyle={s.body}>
@@ -61,20 +40,13 @@ export default function PullRequestSheet() {
         </Text>
       </View>
 
-      {pr.state === "open" && (
-        <View style={s.merge}>
-          <MergeFacts method={method} base={pr.baseRef} head={pr.headRef} />
-          {BLOCKED[pr.mergeableState] && <Text style={[s.meta, { color: c.muted }]}>{BLOCKED[pr.mergeableState]}</Text>}
-          {merged ? <Text style={[s.meta, { color: c.merged }]}>{merged}</Text> : <SlideToMerge label={stacked ? "Slide to merge stack" : "Slide to merge"} disabled={!canMerge} onMerge={merge} />}
-          {mergeError && <Text style={[s.meta, { color: c.danger }]}>{mergeError}</Text>}
-        </View>
-      )}
+      {pr.state === "open" && <MergeCard dork={dork} pr={pr} c={c} />}
 
       <Checks pr={pr} c={c} />
 
       <Section title="Files" c={c}>
         {pr.unavailable?.includes("files") ? (
-          <Text style={[s.meta, { color: c.muted }]}>GitHub did not return the files this time.</Text>
+          <Text style={[s.meta, { color: c.muted }]}>Unavailable</Text>
         ) : (
           pr.files.map((f) => (
             <View key={f.path} style={[s.file, { borderBottomColor: c.hairline }]}>
@@ -88,6 +60,36 @@ export default function PullRequestSheet() {
         )}
       </Section>
     </ScrollView>
+  );
+}
+
+/** "Merge via squash", base ← head, and the slide, pinned to the head SHA shown. */
+function MergeCard({ dork, pr, c }: { dork: string; pr: PullRequestView; c: Colors }) {
+  const subs = useSubscriptions(dork);
+  const { actions } = useDorksClient();
+  const [merged, setMerged] = useState<string>();
+  const [mergeError, setMergeError] = useState<string>();
+  // Stacked on another open PR of this session: GitHub merges every open PR below it too.
+  const stacked = (subs ?? []).some((p) => p.state === "open" && p.number !== pr.number && p.headRef === pr.baseRef);
+  const method = pr.mergeMethods[0] ?? "merge";
+  const canMerge = !pr.draft && pr.mergeableState !== "dirty";
+  const merge = async () => {
+    setMergeError(undefined);
+    try {
+      const r = await actions.mergePullRequest(dork, method, pr.headSha, pr.url);
+      setMerged(r.merged ? "Merged" : "Queued");
+    } catch (e) {
+      setMergeError(errorText(e));
+      throw e;
+    }
+  };
+  const note = mergeError ?? BLOCKED[pr.mergeableState];
+  return (
+    <View style={[s.merge, { backgroundColor: c.card }]}>
+      <MergeFacts method={method} base={pr.baseRef} head={pr.headRef} />
+      {merged ? <Text style={[s.meta, { color: c.merged }]}>{merged}</Text> : <SlideToMerge label={stacked ? "Slide to merge stack…" : "Slide to merge…"} disabled={!canMerge} onMerge={merge} />}
+      {note && <Text style={[s.meta, { color: mergeError ? c.danger : c.muted }]}>{note}</Text>}
+    </View>
   );
 }
 
@@ -126,7 +128,7 @@ const s = StyleSheet.create({
   head: { gap: 6 },
   title: { fontSize: 20, fontWeight: "500", lineHeight: 26 },
   meta: { fontSize: size.small, lineHeight: 18 },
-  merge: { gap: 12 },
+  merge: { gap: 18, padding: 20, borderRadius: 28 },
   section: { gap: 8 },
   sectionTitle: { fontSize: size.small },
   checkRow: { flexDirection: "row", alignItems: "center", gap: 8 },

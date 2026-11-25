@@ -1,10 +1,11 @@
 import type { Dork } from "@dorks/client";
 import { useBuilds, useConnection, useDork, useDorkEvents, useDorks, useDorksClient, useGithubRepos, useSettings } from "@dorks/client/react";
 import { useState, type ReactNode } from "react";
-import { KeyboardAvoidingView, StyleSheet, Text, View } from "react-native";
-import { SafeAreaView } from "react-native-screens/experimental";
+import { GlassView } from "expo-glass-effect";
+import { KeyboardAvoidingView, Pressable, StyleSheet, Text, View } from "react-native";
 import { Composer } from "@/components/Composer";
-import { BarText, BuildMenu, MenuBar, ModelMenu, RepoMenu } from "@/components/ComposerMenus";
+import { BuildMenu, ModelMenu, RepoMenu } from "@/components/ComposerMenus";
+import { GlassIconButton } from "@/components/Glass";
 import { Header } from "@/components/Header";
 import { PrPills } from "@/components/PrPills";
 import { QueuedMessages } from "@/components/QueuedMessages";
@@ -15,15 +16,15 @@ import { errorText, greeting } from "@/lib/format";
 import { type as size, useColors } from "@/lib/theme";
 
 /** The page under the header: the tab bar's inset at the bottom, and the keyboard's while it is up. */
-function Page({ title, children }: { title?: string; children: ReactNode }) {
+function Page({ title, right, children }: { title?: string; right?: ReactNode; children: ReactNode }) {
   const c = useColors();
   return (
-    <SafeAreaView edges={{ bottom: true }} style={[s.fill, { backgroundColor: c.background }]}>
-      <Header title={title} />
+    <View style={[s.fill, { backgroundColor: c.background }]}>
+      <Header title={title} right={right} />
       <KeyboardAvoidingView behavior="padding" style={s.fill}>
         {children}
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -32,7 +33,7 @@ export default function ChatTab() {
   return dorkId ? <SessionChat key={dorkId} dorkId={dorkId} /> : <NewChat />;
 }
 
-/** An empty chat: the greeting over the composer, and the repository, model and build the session starts with. */
+/** An empty chat: the greeting, the latest chat as a card, and the composer; its + menu picks the repository, model and build. */
 function NewChat() {
   const c = useColors();
   const { actions } = useDorksClient();
@@ -60,19 +61,22 @@ function NewChat() {
 
   return (
     <Page>
-      <View style={s.greeting}>
-        <Text style={[s.hello, { color: c.text }]}>{greeting()}</Text>
-        <Text style={[s.ask, { color: c.muted }]}>What are we tackling today?</Text>
+      <View style={s.center}>
+        <View style={s.greeting}>
+          <Text style={[s.hello, { color: c.text }]}>{greeting()} 👋</Text>
+          <Text style={[s.hello, { color: c.muted }]}>What are we tackling today?</Text>
+        </View>
+        <RecentChats onOpen={setDorkId} />
       </View>
       <Composer
         busy={false}
         onSend={start}
-        below={
-          <MenuBar>
+        menu={
+          <>
             <RepoMenu repos={github?.repos ?? []} value={chosenRepo} onChange={setRepo} />
             <ModelMenu choices={settings?.claudeModels ?? []} model={model.model ?? undefined} effort={model.effort ?? undefined} onChange={(m, e) => setModel({ model: m, effort: e })} />
             {builds.length > 0 && <BuildMenu builds={builds} value={chosenBuild} onChange={setBuildId} />}
-          </MenuBar>
+          </>
         }
       />
     </Page>
@@ -89,7 +93,7 @@ function SessionChat({ dorkId }: { dorkId: string }) {
   const { actions } = useDorksClient();
   const { live } = useConnection();
   const settings = useSettings();
-  const builds = useBuilds();
+  const { setDorkId } = useCurrentChat();
   const [error, setError] = useState<string>();
   const run = (p: Promise<unknown>) =>
     p.then(
@@ -102,15 +106,14 @@ function SessionChat({ dorkId }: { dorkId: string }) {
     return (
       <Page>
         <View style={s.greeting}>
-          <Text style={[s.ask, { color: c.muted }]}>This chat is no longer on your Mac.</Text>
+          <Text style={[s.hello, { color: c.muted }]}>Chat deleted</Text>
         </View>
       </Page>
     );
 
   const busy = BUSY.has(dork.state);
-  const build = dork.buildId ? (builds?.find((b) => b.id === dork.buildId)?.name ?? "Build") : "Base machine";
   return (
-    <Page title={dork.title}>
+    <Page title={dork.title} right={<GlassIconButton icon="square.and.pencil" label="New chat" onPress={() => setDorkId(null)} />}>
       <Thread blocks={view.blocks} onLoadMore={() => canLoadMore && loadMore()} footer={<StatusLine state={dork.state} live={live} blocks={view.blocks} />} />
       <Composer
         busy={busy && !dork.archived}
@@ -124,26 +127,53 @@ function SessionChat({ dorkId }: { dorkId: string }) {
             <PrPills dorkId={dorkId} />
           </>
         }
-        below={
-          <MenuBar>
-            <BarText>{dork.repo ? (dork.repo.split("/")[1] ?? dork.repo) : "No repository"}</BarText>
-            {dork.provider === "claude" ? (
-              <ModelMenu choices={dork.modelChoices ?? settings?.claudeModels ?? []} model={dork.model} effort={dork.effort} onChange={(m, e) => void run(actions.chooseModel(dorkId, m, e))} />
-            ) : (
-              <BarText>{dork.provider}</BarText>
-            )}
-            <BarText>{build}</BarText>
-          </MenuBar>
+        menu={
+          dork.provider === "claude" ? (
+            <ModelMenu choices={dork.modelChoices ?? settings?.claudeModels ?? []} model={dork.model} effort={dork.effort} onChange={(m, e) => void run(actions.chooseModel(dorkId, m, e))} />
+          ) : undefined
         }
       />
     </Page>
   );
 }
 
+/** The latest chat as a glass card, with the next one peeking out under it, like a notification stack. */
+function RecentChats({ onOpen }: { onOpen: (id: string) => void }) {
+  const c = useColors();
+  const dorks = useDorks();
+  const latest = dorks?.[0];
+  if (!latest) return null;
+  return (
+    <Pressable onPress={() => onOpen(latest.id)} accessibilityRole="button" style={s.stack}>
+      {(dorks?.length ?? 0) > 1 && <GlassView style={[s.card, s.behind]} />}
+      <GlassView isInteractive style={[s.card, s.front]}>
+        <Text style={s.icon}>{latest.icon ?? "💬"}</Text>
+        <View style={s.cardText}>
+          <Text numberOfLines={1} style={[s.cardTitle, { color: c.text }]}>
+            {latest.title}
+          </Text>
+          {latest.preview ? (
+            <Text numberOfLines={1} style={[s.cardTitle, { color: c.muted }]}>
+              {latest.preview}
+            </Text>
+          ) : null}
+        </View>
+      </GlassView>
+    </Pressable>
+  );
+}
+
 const s = StyleSheet.create({
   fill: { flex: 1 },
-  greeting: { flex: 1, alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 32 },
-  hello: { fontSize: 28, fontWeight: "500" },
-  ask: { fontSize: 17, textAlign: "center" },
+  center: { flex: 1, justifyContent: "center", gap: 28, paddingHorizontal: 28 },
+  greeting: { alignItems: "center", gap: 2 },
+  hello: { fontSize: 20, lineHeight: 26, textAlign: "center" },
   error: { fontSize: size.small, paddingHorizontal: 10 },
+  stack: { paddingBottom: 10 },
+  card: { borderRadius: 24 },
+  front: { flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: 18, paddingVertical: 16 },
+  behind: { position: "absolute", left: 14, right: 14, top: 10, bottom: 0 },
+  icon: { fontSize: 30 },
+  cardText: { flex: 1, gap: 2 },
+  cardTitle: { fontSize: 16, lineHeight: 21 },
 });

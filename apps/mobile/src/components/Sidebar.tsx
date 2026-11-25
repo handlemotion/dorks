@@ -24,13 +24,16 @@ function Row({ icon, label, onPress, selected, detail }: { icon?: SFSymbol; labe
   );
 }
 
-function ChatList({ onOpen }: { onOpen: (id: string) => void }) {
+function ChatsTitle() {
   const c = useColors();
+  return useDorks()?.length ? <Text style={[s.section, { color: c.muted }]}>Chats</Text> : null;
+}
+
+function ChatList({ onOpen }: { onOpen: (id: string) => void }) {
   const dorks = useDorks();
   const { dorkId } = useCurrentChat();
   if (!dorks) return null;
-  if (!dorks.length) return <Text style={[s.empty, { color: c.muted }]}>No chats yet</Text>;
-  return dorks.map((d: Dork) => <Row key={d.id} label={d.title || "New chat"} detail={d.state === "working" ? "Working" : undefined} selected={d.id === dorkId} onPress={() => onOpen(d.id)} />);
+  return dorks.map((d: Dork) => <Row key={d.id} label={d.title || "New chat"} detail={d.state === "working" ? "…" : undefined} selected={d.id === dorkId} onPress={() => onOpen(d.id)} />);
 }
 
 /** The Mac the app talks to, switchable when more than one is paired. */
@@ -38,15 +41,21 @@ function MacMenu() {
   const c = useColors();
   const { macs, mac, select } = useMacs();
   if (!mac) return null;
-  const label = `${mac.name}${mac.online ? "" : " (offline)"}`;
-  if (!macs || macs.length < 2) return <Text style={[s.mac, { color: c.muted }]}>{label}</Text>;
+  const label = mac.name;
+  if (!macs || macs.length < 2)
+    return (
+      <View style={s.macRow}>
+        <View style={[s.dot, { backgroundColor: mac.online ? c.open : c.draft }]} />
+        <Text style={[s.mac, { color: c.muted }]}>{label}</Text>
+      </View>
+    );
   return (
     <Host matchContents>
       <Menu label={label}>
         <Picker selection={mac.id} onSelectionChange={(id: string) => select(id)}>
           {macs.map((m) => (
             <UIText key={m.id} modifiers={[tag(m.id)]}>
-              {m.online ? m.name : `${m.name} (offline)`}
+              {m.name}
             </UIText>
           ))}
         </Picker>
@@ -63,7 +72,7 @@ export function Sidebar() {
   const shell = useShell();
   const { setDorkId } = useCurrentChat();
   const client = useOptionalDorksClient();
-  const go = (path: "/" | "/customize" | "/settings") => {
+  const go = (path: "/" | "/customize" | "/automations" | "/settings") => {
     shell.close();
     if (path === "/settings") router.push(path);
     else router.navigate(path);
@@ -80,13 +89,13 @@ export function Sidebar() {
       </View>
       <View style={s.group}>
         {client && <Row icon="square.and.pencil" label="New chat" onPress={() => openChat(null)} />}
-        <Row icon="bubble.left" label="Chat" onPress={() => go("/")} />
-        {client && <Row icon="slider.horizontal.3" label="Customize" onPress={() => go("/customize")} />}
+        {client && <Row icon="square.grid.2x2" label="Plugins" onPress={() => go("/customize")} />}
+        {client && <Row icon="clock" label="Automations" onPress={() => go("/automations")} />}
         <Row icon="gearshape" label="Settings" onPress={() => go("/settings")} />
       </View>
       {client && (
         <>
-          <Text style={[s.section, { color: c.muted }]}>Chats</Text>
+          <ChatsTitle />
           <ScrollView contentContainerStyle={[s.group, { paddingBottom: insets.bottom + 16 }]}>
             <ChatList onOpen={openChat} />
           </ScrollView>
@@ -106,5 +115,6 @@ const s = StyleSheet.create({
   label: { flex: 1, fontSize: size.ui },
   detail: { fontSize: size.small },
   section: { fontSize: size.small, paddingHorizontal: 10, paddingTop: 20, paddingBottom: 6 },
-  empty: { fontSize: size.ui, paddingHorizontal: 10 },
+  macRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  dot: { width: 6, height: 6, borderRadius: 3 },
 });

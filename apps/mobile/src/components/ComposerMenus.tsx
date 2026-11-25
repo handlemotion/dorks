@@ -1,35 +1,11 @@
 import type { AgentModelChoice } from "@dorks/shared";
 import { modelLabel } from "@dorks/shared";
-import { Host, Menu, Picker, Section, Text as UIText } from "@expo/ui/swift-ui";
-import { font, tag, tint } from "@expo/ui/swift-ui/modifiers";
-import { StyleSheet, Text, View } from "react-native";
-import { type as size, useColors } from "@/lib/theme";
+import { Menu, Picker, Section, Text as UIText } from "@expo/ui/swift-ui";
+import { tag } from "@expo/ui/swift-ui/modifiers";
 
-// The compact bar under the composer: repository, model (with effort) and build, each a native SwiftUI menu. A value fixed for a
-// session (its repository and build) shows as plain text.
+// Submenus of the composer's + menu: repository, model (with effort) and build, each a native picker with the current value checked.
 
 const DEFAULT = "default";
-
-/** A native menu whose label is the current value, small and muted, like the desktop's composer bar. */
-function BarMenu({ label, children }: { label: string; children: React.ReactNode }) {
-  const c = useColors();
-  return (
-    <Host matchContents>
-      <Menu label={label} modifiers={[tint(c.muted), font({ size: size.small })]}>
-        {children}
-      </Menu>
-    </Host>
-  );
-}
-
-export function BarText({ children }: { children: string }) {
-  const c = useColors();
-  return (
-    <Text numberOfLines={1} style={[s.text, { color: c.muted }]}>
-      {children}
-    </Text>
-  );
-}
 
 export function ModelMenu({
   choices,
@@ -42,13 +18,11 @@ export function ModelMenu({
   effort: string | undefined;
   onChange: (model: string | null, effort: string | null) => void;
 }) {
-  const current = choices.find((m) => m.model === model);
-  const efforts = current?.efforts ?? [];
-  const label = [current ? modelLabel(current) : "Default model", effort && efforts.includes(effort as never) ? effort : undefined].filter(Boolean).join(" · ");
-  if (!choices.length) return <BarText>{label}</BarText>;
+  if (!choices.length) return null;
+  const efforts = choices.find((m) => m.model === model)?.efforts ?? [];
   return (
-    <BarMenu label={label}>
-      <Section title="Model">
+    <Menu label="Model" systemImage="cpu">
+      <Section>
         <Picker selection={model ?? DEFAULT} onSelectionChange={(m: string) => onChange(m === DEFAULT ? null : m, null)}>
           <UIText modifiers={[tag(DEFAULT)]}>Default</UIText>
           {choices.map((m) => (
@@ -70,30 +44,31 @@ export function ModelMenu({
           </Picker>
         </Section>
       )}
-    </BarMenu>
+    </Menu>
   );
 }
 
 /** `""` is no repository: a plain chat (mode `chat`). */
 export function RepoMenu({ repos, value, onChange }: { repos: string[]; value: string; onChange: (repo: string) => void }) {
   return (
-    <BarMenu label={value ? (value.split("/")[1] ?? value) : "No repository"}>
+    <Menu label="Repository" systemImage="folder">
       <Picker selection={value} onSelectionChange={(r: string) => onChange(r)}>
-        <UIText modifiers={[tag("")]}>No repository</UIText>
+        <UIText modifiers={[tag("")]}>None</UIText>
         {repos.map((r) => (
           <UIText key={r} modifiers={[tag(r)]}>
             {r}
           </UIText>
         ))}
       </Picker>
-    </BarMenu>
+    </Menu>
   );
 }
 
 /** `""` is the base machine. Only builds with an image can start a session. */
 export function BuildMenu({ builds, value, onChange }: { builds: { id: string; name: string }[]; value: string; onChange: (id: string) => void }) {
+  if (!builds.length) return null;
   return (
-    <BarMenu label={builds.find((b) => b.id === value)?.name ?? "Base machine"}>
+    <Menu label="Build" systemImage="shippingbox">
       <Picker selection={value} onSelectionChange={(id: string) => onChange(id)}>
         <UIText modifiers={[tag("")]}>Base machine</UIText>
         {builds.map((b) => (
@@ -102,15 +77,6 @@ export function BuildMenu({ builds, value, onChange }: { builds: { id: string; n
           </UIText>
         ))}
       </Picker>
-    </BarMenu>
+    </Menu>
   );
 }
-
-export function MenuBar({ children }: { children: React.ReactNode }) {
-  return <View style={s.bar}>{children}</View>;
-}
-
-const s = StyleSheet.create({
-  bar: { flexDirection: "row", alignItems: "center", gap: 16, paddingHorizontal: 18, minHeight: 28 },
-  text: { fontSize: size.small, flexShrink: 1 },
-});

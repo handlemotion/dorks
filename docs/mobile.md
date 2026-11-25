@@ -79,7 +79,8 @@ Allowed for v1 (everything the phone shows):
 - `/api/dorks` and everything under `/api/dorks/:id` **except** `/local/*` (running commands on the Mac), `/inputs/*`
   (secret values would cross the relay) and `/desktop`
 - `POST /api/images`, `GET /api/images/:id` (served as the Mac's `/images/:id`)
-- Customize: `GET /api/skills`, `POST /api/skills/resolve`, `POST /api/skills`, `POST /api/skills/:name/update`,
+- Automations: `GET /api/automations`, `GET /api/automations/:id`, `GET|POST /api/automations/:id/runs`, `PATCH /api/automations/:id` (on or off)
+- Plugins: `GET /api/skills`, `POST /api/skills/resolve`, `POST /api/skills`, `POST /api/skills/:name/update`,
   `DELETE /api/skills/:name`, `GET /api/mcp-servers`, `GET /api/composio`
 
 Never: settings writes, secrets, MCP server definitions, local access, `/mcp`, the sim routes. These stay on the Mac.
@@ -112,7 +113,7 @@ Expo SDK 58, Expo Router, iOS 26+ look (Liquid Glass through native components),
 
 - **Shell**: a top-left glass menu button slides the whole app to the right and reveals the sidebar underneath (a pan from the left
   edge does the same): New chat, the chat list (the desktop sidebar's sessions), and links to Chat, Customize and Settings.
-- **Tabs** (native tab bar, `expo-router/native-tabs`, Liquid Glass): **Chat** and **Customize**. Builds comes later.
+- **Tabs**: a compact bar of three icons at the centre: **Chat**, **Plugins** (skills, MCP servers, connected apps) and **Automations** (on or off, run now, the last run). Builds comes later.
 - **Chat**: the empty state greets ("Good morning", "What are we tackling today?") above the composer. The composer is glass with
   `+` (photo library, attaches images through `POST /api/images`), the text, and send; under it the repository, model (any of
   `settings.claudeModels`, effort included) and build (any of `/api/builds`) as native menus. A thread is the desktop's: the same
