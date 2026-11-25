@@ -104,6 +104,9 @@ describe("phone link", () => {
     r.sock!.frame({ t: "req", id: "1", method: "GET", path: "/api/dorks", headers: { accept: "application/json" } });
     r.sock!.frame({ t: "req", id: "2", method: "GET", path: "/api/secrets" });
     r.sock!.frame({ t: "req", id: "3", method: "GET", path: "/api/live" });
+    r.sock!.frame({ t: "req", id: "4", method: "GET", path: "/api/images/0123456789abcdef0123456789abcdef" });
+    await until(() => r.sent.some((s) => s.id === "4" && s.t === "end"));
+    expect(JSON.parse(body(r.sent, "4")).error.code).toBe("not_found"); // reached /images/:id, which knows no such image
     await until(() => r.sent.some((s) => s.id === "1" && s.t === "end") && r.sent.some((s) => s.id === "2" && s.t === "end"));
     expect(r.sent.find((s) => s.id === "1" && s.t === "head")?.status).toBe(200);
     expect(JSON.parse(body(r.sent, "1"))).toEqual([]);

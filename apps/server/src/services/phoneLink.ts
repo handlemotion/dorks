@@ -39,7 +39,7 @@ const ALLOWED: [method: string, path: RegExp][] = [
   ["GET", /^\/api\/(live|settings|usage|github\/repos|builds|skills|mcp-servers|composio)$/],
   ["GET", /^\/api\/builds\/[^/]+$/],
   ["POST", /^\/api\/images$/],
-  ["GET", /^\/api\/images\/[^/]+(\/[^/]+)?$/],
+  ["GET", /^\/api\/images\/[^/]+$/],
   ["POST", /^\/api\/skills(\/resolve)?$/],
   ["POST", /^\/api\/skills\/[^/]+\/update$/],
   ["DELETE", /^\/api\/skills\/[^/]+$/],
@@ -91,7 +91,9 @@ export async function serveRelayed(app: App, handle: (r: Request) => Response | 
     if (typeof v === "string") headers[k] = v;
   }
   const body = f.body && method !== "GET" && method !== "HEAD" ? Buffer.from(f.body, "base64") : undefined;
-  const res = await handle(new Request(`http://127.0.0.1${url.pathname}${url.search}`, { method, headers, body, signal }));
+  // Images are served outside /api (an <img> cannot send the owner token); the relay only forwards /api, so map them back.
+  const path = method === "GET" && /^\/api\/images\/[^/]+$/.test(url.pathname) ? url.pathname.slice(4) : url.pathname;
+  const res = await handle(new Request(`http://127.0.0.1${path}${url.search}`, { method, headers, body, signal }));
   const ct = res.headers.get("content-type");
   send({ t: "head", id: f.id, status: res.status, headers: ct ? { "content-type": ct } : {} });
   if (res.body) {
