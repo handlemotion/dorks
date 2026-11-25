@@ -405,7 +405,9 @@ export class AntigravityAgent {
 
   private async pump() {
     if (!this.ready || !this.initSeen || this.current !== null || this.finishing || this.respawning || !this.queue.length || !this.alive) return;
-    this.current = this.queue.shift()!;
+    // Everything that waited goes in one turn. agy takes nothing mid-turn, so messages sent while it works (steering, notifications)
+    // pile up here; one turn each made the agent answer them one by one, late, and a Stop only skipped to the next of them.
+    this.current = this.queue.splice(0).join("\n\n");
     this.idle = false;
     this.startedAt = Date.now();
     let prompt = this.current.replace(ATTACHED, (_all, name: string) => `[${name.trim() || "image"}: attached, but Antigravity takes text only]`);

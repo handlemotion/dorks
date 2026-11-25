@@ -129,4 +129,23 @@ describe("Antigravity (agy) through its streaming headless mode", () => {
     await waitFor(() => results(s.transport).some((e) => !(e.raw as { is_error?: boolean }).is_error), "turn after the interrupt", 8000);
     expect(s.sessions()).toHaveLength(1); // the same agy process: SIGINT only cancelled the turn
   }, 20_000);
+  it("messages sent during a turn reach agy together as one turn, not one turn each to stop in a row", async () => {
+    const s = await setup({ FAKE_AGY_WAIT: "1" });
+    await waitFor(() => s.transport.of("ready")[0], "ready");
+    s.transport.emit([{ cid: "m1", frame: { t: "user_message", id: "m1", text: "long task" } }]);
+    await waitFor(() => s.reports().some((r) => r.prompt), "turn started");
+    // Steering while agy works: it takes no input mid-turn, so these wait for the turn to end.
+    for (const id of ["m2", "m3", "m4"]) s.transport.emit([{ cid: id, frame: { t: "user_message", id, text: `steer ${id}` } }]);
+    await waitFor(() => ["m2", "m3", "m4"].every((id) => s.transport.of("ack").some((a) => a.id === id)), "steers acked");
+    s.transport.emit([{ cid: "i1", frame: { t: "interrupt" } }]);
+    await waitFor(() => s.reports().filter((r) => r.prompt).length >= 2, "next turn");
+    await new Promise((r) => setTimeout(r, 1500));
+    const prompts = s
+      .reports()
+      .filter((r) => r.prompt)
+      .map((r) => r.prompt as string);
+    expect(prompts).toHaveLength(2); // the interrupted turn, then one turn with every message it had not seen
+    expect(prompts[1]).toContain("steer m2");
+    expect(prompts[1]).toContain("steer m4");
+  }, 20_000);
 });
