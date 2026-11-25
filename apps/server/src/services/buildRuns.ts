@@ -7,7 +7,7 @@ import { insert, update } from "../db";
 import { boatBuildFailureMessage } from "../lib/boatSnapshots";
 import { instanceId } from "../lib/box";
 import { hasTimer, setTimer } from "../lifecycle/dispatch";
-import { baseKey, buildVarValues, dorkBuild, draftView, getBuild, hashSpec, imageName, isProposal, ownBuild, secretValues, specOf, varsDigest, varsOf, type BuildRow } from "./builds";
+import { baseKey, buildVarValues, dorkBuild, draftView, getBuild, hashSpec, imageName, isProposal, ownBuild, secretValues, servicesOf, specOf, varsDigest, varsOf, type BuildRow } from "./builds";
 import { boatKey, githubToken, readSettings } from "./settings";
 
 // A build run (docs/builds.md, "A run, step by step"): a sandbox from the base snapshot runs the build's setup; an `image` run then
@@ -31,6 +31,38 @@ const SAVE_POLLS = 400;
 const FLUSH_MS = 500;
 const WORK = "/home/user/work";
 const TMP = "/tmp/dorks-build";
+/** How long a service may take to come up the first time, cold (a first compile, a docker pull). */
+const SERVICE_LIMIT_S = 300;
+
+/**
+ * `service-check <name> <dir> <port> <script>`: starts one service in its own process group, waits until its port listens (or, without
+ * a port, until it has kept running for 5 s), requests its first page, stops the whole group, and says how long it took. Exit 1 with
+ * the end of the service's output when it does not come up.
+ */
+const SERVICE_CHECK = `name="$1"; dir="$2"; port="$3"; script="$4"; log="${TMP}/service-$name.log"
+cd "$dir" 2>/dev/null || { echo "service $name: the directory $dir does not exist"; exit 1; }
+setsid bash "$script" >"$log" 2>&1 </dev/null &
+pid=$!
+start=$SECONDS
+ok=0
+listening() { ss -Hltn "sport = :$port" 2>/dev/null | grep -q .; }
+while [ $((SECONDS - start)) -lt ${SERVICE_LIMIT_S} ]; do
+  if [ -n "$port" ]; then listening && { ok=1; break; }
+  elif [ $((SECONDS - start)) -ge 5 ]; then kill -0 "$pid" 2>/dev/null && ok=1; break; fi
+  kill -0 "$pid" 2>/dev/null || break
+  sleep 1
+done
+ready=$((SECONDS - start))
+[ "$ok" = 1 ] && [ -n "$port" ] && curl -s -o /dev/null --max-time 120 "http://localhost:$port/" || true
+kill -TERM -- "-$pid" 2>/dev/null
+for _ in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
+kill -KILL -- "-$pid" 2>/dev/null
+if [ "$ok" = 1 ]; then echo "service $name: ready in \${ready}s\${port:+ on port $port}"; exit 0; fi
+if [ "$ready" -lt ${SERVICE_LIMIT_S} ]; then echo "service $name: it exited after \${ready}s\${port:+, before anything listened on port $port}. Its last output:"
+else echo "service $name: nothing listened on port $port within ${SERVICE_LIMIT_S}s. Its last output:"; fi
+tail -n 30 "$log"
+exit 1
+`;
 export const AGENT_TRIALS_PER_DAY = 10;
 export const AGENT_IMAGES_PER_DAY = 5;
 const DAY = 24 * 3600_000;
@@ -391,6 +423,18 @@ const writeSetup = Effect.fnUntraced(function* (driver: SnapshotOps, sandboxId: 
     parts.push(`echo ${q(`== ${repo.repo}`)}`, `(cd ${q(`${WORK}/${repo.repo}`)} && bash -e ${TMP}/repo-${i}.sh)`);
   });
   for (const [i, repo] of spec.repos.entries()) if (repo.setupScript?.trim()) yield* driver.writeFile(sandboxId, `${TMP}/repo-${i}.sh`, repo.setupScript, "utf8");
+  // Services (docs/services.md): each is started as the session would start it, waited on until it listens, asked for its first page
+  // (which is when Vite, Next.js and the like compile and fill their caches), then stopped. The image keeps those caches, so the
+  // agent's first start is fast, and a service that cannot start fails the build here instead of in a session.
+  const services = servicesOf(spec);
+  if (services.length) {
+    yield* driver.writeFile(sandboxId, `${TMP}/service-check`, SERVICE_CHECK, "utf8");
+    parts.push(`echo "== services"`);
+    for (const s of services) {
+      yield* driver.writeFile(sandboxId, `${TMP}/svc-${s.name}.sh`, s.command + "\n", "utf8");
+      parts.push(`bash ${TMP}/service-check ${q(s.name)} ${q(s.cwd ? `${WORK}/${s.cwd}` : WORK)} ${q(String(s.port ?? ""))} ${TMP}/svc-${s.name}.sh`);
+    }
+  }
   parts.push(`echo "== done"`);
   yield* driver.writeFile(sandboxId, `${TMP}/run`, parts.join("\n") + "\n", "utf8");
   return `${TMP}/run`;

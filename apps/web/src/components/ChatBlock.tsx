@@ -472,7 +472,7 @@ const UserEntry = memo(function UserEntry({ block, imageUrl }: { block: Extract<
               {/* The wrapper takes the bubble's 80% cap, so it hugs the bubble and the time sits just left of it. */}
               <Bubble align="end" className="max-w-full">
                 {/* The composer's grey in light, white in dark (see packages/ui/README.md). `!` beats the bubble variant background. */}
-                <BubbleContent className="rounded-[10px]! px-3! py-2! bg-user-bubble! text-(length:--text-message)! text-user-bubble-foreground!">{text}</BubbleContent>
+                <BubbleContent className="rounded-[10px]! px-3! py-2! whitespace-pre-wrap bg-user-bubble! text-(length:--text-message)! text-user-bubble-foreground!">{text}</BubbleContent>
               </Bubble>
             </HoverActions>
           )}

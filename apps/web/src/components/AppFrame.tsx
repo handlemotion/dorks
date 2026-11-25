@@ -1,5 +1,5 @@
-import { useEffect, type ReactNode } from 'react'
-import { Outlet } from '@tanstack/react-router'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Outlet, useLocation } from '@tanstack/react-router'
 import { ResizablePanel, ResizablePanelGroup } from '@dorks/ui/resizable'
 import { SidebarInset, SidebarProvider, useSidebar } from '@dorks/ui/sidebar'
 import { useDefaultLayout, usePanelRef } from 'react-resizable-panels'
@@ -19,12 +19,73 @@ export function FrameLayout({ sidebar, children }: { sidebar: ReactNode; childre
   return (
     <SidebarProvider data-app-frame className="relative h-svh min-h-0 bg-background">
       <Panels sidebar={sidebar}>{children}</Panels>
+      <Frame sidebar={sidebar} />
+    </SidebarProvider>
+  )
+}
+
+/** How long the pointer may be away from the toggle and the peeking sidebar before it slides away. */
+const PEEK_LINGER = 200
+
+/**
+ * The frame's floating parts: the title bar controls and, while the sidebar is collapsed, its peek. Hovering the toggle slides the
+ * sidebar in above the page (it fades in, nothing under it moves) so a page can be picked without opening it; it slides away when the
+ * pointer leaves it, a row is picked, or Escape is pressed. Clicking the toggle still opens the sidebar for real.
+ */
+function Frame({ sidebar }: { sidebar: ReactNode }) {
+  const { isMobile, open } = useSidebar()
+  const enabled = !isMobile && !open
+  const [peek, setPeek] = useState(false)
+  const timer = useRef<number | undefined>(undefined)
+  const cancel = useCallback(() => window.clearTimeout(timer.current), [])
+  const show = useCallback(() => {
+    cancel()
+    if (enabled) setPeek(true)
+  }, [cancel, enabled])
+  const hide = useCallback(() => {
+    cancel()
+    timer.current = window.setTimeout(function close() {
+      // A menu opened from the sidebar (the owner switcher, a row's context menu) lives in a portal outside it: stay until it closes.
+      if (document.querySelector('[role="menu"]')) timer.current = window.setTimeout(close, PEEK_LINGER)
+      else setPeek(false)
+    }, PEEK_LINGER)
+  }, [cancel])
+  useEffect(() => cancel, [cancel])
+  // Opening the sidebar for real, or moving to another page, ends the peek.
+  const { pathname, searchStr } = useLocation()
+  useEffect(() => {
+    cancel()
+    setPeek(false)
+  }, [enabled, pathname, searchStr, cancel])
+  useEffect(() => {
+    if (!peek) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setPeek(false)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [peek])
+  const shown = peek && enabled
+  return (
+    <>
+      {/* Kept mounted (hidden) while the sidebar is collapsed, so it slides in and out. */}
+      {enabled && (
+        <div
+          data-sidebar-peek
+          data-state={shown ? 'open' : 'closed'}
+          inert={!shown}
+          onPointerEnter={show}
+          onPointerLeave={hide}
+          style={{ width: SIDEBAR_WIDTH }}
+          className="absolute inset-y-0 left-0 z-10 flex border-r bg-background transition-[opacity,translate] duration-200 ease-out data-[state=closed]:pointer-events-none data-[state=closed]:-translate-x-4 data-[state=closed]:opacity-0 data-[state=closed]:duration-150 data-[state=closed]:ease-in motion-reduce:transition-none"
+        >
+          {sidebar}
+        </div>
+      )}
       {/* The title bar controls float over the frame's top-left corner, after the traffic lights, so opening or closing the sidebar never
           moves them; the sidebar's top bar and, while it is hidden, the page header leave room for them. */}
       <div className="pointer-events-none absolute top-0 left-0 z-20 flex h-12 items-center *:pointer-events-auto" style={{ paddingLeft: TITLEBAR_START }}>
-        <WindowControls />
+        <WindowControls onToggleEnter={show} onToggleLeave={hide} />
       </div>
-    </SidebarProvider>
+    </>
   )
 }
 
@@ -67,7 +128,9 @@ function Panels({ sidebar, children }: { sidebar: ReactNode; children: ReactNode
           if (shown !== open) setOpen(shown)
         }}
       >
-        {sidebar}
+        {/* Only while open: collapsed, the peek (Frame) shows it instead. One instance at a time, so per-instance state (folded
+            repositories, owner scope, chat order) is read fresh from storage by whichever one is shown. */}
+        {open && sidebar}
       </ResizablePanel>
       {/* Drag to resize; a click snaps the sidebar back to its default width. */}
       <PanelResizeHandle aria-label="Resize sidebar" onReset={() => panel.current?.resize(SIDEBAR_WIDTH)} disabled={!open} className={!open ? 'hidden' : undefined} />

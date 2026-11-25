@@ -8,14 +8,15 @@ import { Tip } from './Tip'
 /**
  * The title bar's controls: the sidebar toggle, then back and forward. AppFrame floats them over the window's top-left corner, right
  * after the macOS traffic lights (`--titlebar-inset-left` from the desktop shell, 0 in a browser), so they stay put whether the sidebar
- * is open or not.
+ * is open or not. Hovering the toggle while the sidebar is collapsed peeks it.
  */
-export function WindowControls() {
+export function WindowControls({ onToggleEnter, onToggleLeave }: { onToggleEnter?: () => void; onToggleLeave?: () => void }) {
   const router = useRouter()
   const canGoBack = useCanGoBack()
   return (
     <div className="flex shrink-0 items-center gap-0.5">
-      <SidebarTrigger className={SIDEBAR_ICON_BUTTON} />
+      {/* While the sidebar is collapsed, hovering the toggle peeks it (AppFrame). */}
+      <SidebarTrigger className={SIDEBAR_ICON_BUTTON} onPointerEnter={onToggleEnter} onPointerLeave={onToggleLeave} />
       <Tip label="Back">
         <Button variant="ghost" size="icon-sm" className={SIDEBAR_ICON_BUTTON} aria-label="Back" disabled={!canGoBack} onClick={() => router.history.back()}>
           <ArrowLeftIcon />

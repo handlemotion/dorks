@@ -504,6 +504,11 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX preview_comments_pending ON preview_comments (dork_id, notified);
   `,
   `
+  -- A build's services (docs/services.md): dev servers and backing services checked and warmed at build time, started by the agent
+  -- on demand. JSON BuildService[]; part of the spec, so the owner approves them like the setup script.
+  ALTER TABLE builds ADD COLUMN services TEXT NOT NULL DEFAULT '[]';
+  `,
+  `
   -- The composer's menus (docs/architecture.md, "Mentions"): the slash commands and skills the agent last offered (JSON
   -- AgentCommand[]), and the repository's files as the bridge last listed them (a JSON array of paths, kept apart so lists of dorks
   -- never read it).
