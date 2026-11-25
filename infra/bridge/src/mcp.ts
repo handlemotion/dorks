@@ -164,7 +164,9 @@ const TOOLS: Tool[] = [
     annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: false },
     async run(args, sock) {
       if (typeof args.name !== "string" || !args.name) throw new ToolError("`name` is required.");
-      const r = await rpcCall<ServiceLine & { already: boolean; tail: string }>(sock, "service", { action: "start", ...args });
+      // The bridge answers once the port listens: wait as long as the start may, plus a restart's stop and some slack.
+      const waitS = typeof args.waitSeconds === "number" && args.waitSeconds > 0 ? Math.min(args.waitSeconds, 600) : 120;
+      const r = await rpcCall<ServiceLine & { already: boolean; tail: string }>(sock, "service", { action: "start", ...args }, (waitS + 30) * 1000);
       const head =
         r.state === "running"
           ? `${r.name} is ${r.already ? "already running" : `up in ${((r.readyMs ?? 0) / 1000).toFixed(1)} s`}${r.port ? ` on port ${r.port}` : ""}.${r.url ? ` Showing it in the user's Artifacts at ${r.url}.` : ""}`
@@ -197,7 +199,7 @@ const TOOLS: Tool[] = [
     inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"], additionalProperties: false },
     annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: true, openWorldHint: false },
     async run(args, sock) {
-      const r = await rpcCall<ServiceLine>(sock, "service", { action: "stop", name: args.name });
+      const r = await rpcCall<ServiceLine>(sock, "service", { action: "stop", name: args.name }, 30_000);
       return `${r.name} is stopped.`;
     },
   },

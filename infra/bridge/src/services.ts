@@ -221,10 +221,13 @@ export class Services {
     const def = typeof name === "string" ? this.defs.get(name) : undefined;
     if (!def) throw new RpcError("invalid", `No service named "${String(name)}".`);
     const p = this.procs.get(def.name);
-    if (p && !p.exited && p.child.pid) {
-      signalGroup(p.child.pid, "SIGTERM");
-      for (let i = 0; i < 20 && !p.exited; i++) await new Promise((r) => setTimeout(r, 250));
-      if (!p.exited) signalGroup(p.child.pid, "SIGKILL");
+    // The group, not its leader: the shell may exit on SIGTERM while a child that ignores it keeps the port.
+    const pid = p?.child.pid;
+    if (pid && groupAlive(pid)) {
+      signalGroup(pid, "SIGTERM");
+      for (let i = 0; i < 20 && groupAlive(pid); i++) await new Promise((r) => setTimeout(r, 250));
+      if (groupAlive(pid)) signalGroup(pid, "SIGKILL");
+      for (let i = 0; i < 20 && groupAlive(pid); i++) await new Promise((r) => setTimeout(r, 100));
       this.d.log("service stopped:", def.name);
     }
     this.procs.delete(def.name);
@@ -263,7 +266,7 @@ export class Services {
 
   /** On bridge shutdown: the box is pausing, nothing would survive it anyway. */
   stopAll() {
-    for (const p of this.procs.values()) if (!p.exited && p.child.pid) signalGroup(p.child.pid, "SIGTERM");
+    for (const p of this.procs.values()) if (p.child.pid && groupAlive(p.child.pid)) signalGroup(p.child.pid, "SIGTERM");
   }
 
   readonly methods: RpcMethods = {
@@ -283,6 +286,16 @@ export class Services {
       }
     },
   };
+}
+
+/** Any process of the service's group is still alive (its leader may be gone). */
+function groupAlive(pid: number): boolean {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "EPERM";
+  }
 }
 
 function signalGroup(pid: number, signal: NodeJS.Signals) {

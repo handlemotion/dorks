@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { ServerIcon } from 'lucide-react'
 import type { BuildService, BuildView } from '@dorks/client'
 import { Button } from '@dorks/ui/button'
-import { SettingsGroup, SettingsGroupBody, SettingsSection } from '../settings/kit'
+import { EmptyState } from '../EmptyState'
+import { SettingsGroup, SettingsSection } from '../settings/kit'
 import { ROW, RowText, Tag } from './shared'
 import { ServiceDialog } from './ServiceDialog'
 
@@ -23,26 +24,33 @@ export function Services({ build }: { build: BuildView }) {
         </Button>
       }
     >
-      <SettingsGroup label="services">
-        {build.services.length === 0 && <SettingsGroupBody>No services yet. Add the dev server so agents can test changes against it right away.</SettingsGroupBody>}
-        {build.services.map((s) => (
-          <div key={s.name} className={ROW}>
-            <ServerIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-            <RowText
-              title={
-                <>
-                  <span className="font-mono text-xs">{s.name}</span> <code className="font-mono text-xs text-muted-foreground">{s.command}</code>
-                </>
-              }
-              description={serviceWhere(s)}
-            />
-            {s.preview && <Tag>Preview</Tag>}
-            <Button size="sm" variant="ghost" aria-label={`edit ${s.name}`} onClick={() => setEditing(s)}>
-              Edit
-            </Button>
-          </div>
-        ))}
-      </SettingsGroup>
+      {build.services.length === 0 ? (
+        <EmptyState figure="plug" title="No services yet" description="Add the dev server, and agents start it warm to test their changes against it.">
+          <Button size="sm" variant="outline" onClick={() => setEditing('new')}>
+            Add service
+          </Button>
+        </EmptyState>
+      ) : (
+        <SettingsGroup label="services">
+          {build.services.map((s) => (
+            <div key={s.name} className={ROW}>
+              <ServerIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+              <RowText
+                title={
+                  <>
+                    <span className="font-mono text-xs">{s.name}</span> <code className="font-mono text-xs text-muted-foreground">{s.command}</code>
+                  </>
+                }
+                description={serviceWhere(s)}
+              />
+              {s.preview && <Tag>Preview</Tag>}
+              <Button size="sm" variant="ghost" aria-label={`edit ${s.name}`} onClick={() => setEditing(s)}>
+                Edit
+              </Button>
+            </div>
+          ))}
+        </SettingsGroup>
+      )}
       {editing && <ServiceDialog build={build} service={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
     </SettingsSection>
   )

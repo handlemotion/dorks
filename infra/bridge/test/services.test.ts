@@ -52,6 +52,13 @@ describe("services", () => {
 
     expect(await svc.stop("web")).toMatchObject({ state: "stopped" });
     expect(await listening(port)).toBe(false);
+
+    // The shell exits on SIGTERM, its child ignores it and keeps the port: the stop still takes the group down.
+    const stubborn = `node -e "process.on('SIGTERM', () => {}); require('http').createServer((q, s) => s.end('x')).listen(${port})" & wait`;
+    await svc.start({ name: "stubborn", command: stubborn, port, waitSeconds: 20 });
+    expect(await listening(port)).toBe(true);
+    await svc.stop("stubborn");
+    expect(await listening(port)).toBe(false);
   }, 30_000);
 
   it("report a service that exits before it listens, with its output; refuse a build service's name with another command", async () => {
