@@ -37,8 +37,9 @@ export function Button({ label, intent = "primary", size = "md", isPending, disa
       disabled={disabled || isPending}
       style={(state) => [styles.base, styles[size], fill, (disabled || isPending) && styles.dimmed, state.pressed && styles.pressed, typeof style === "function" ? style(state) : style]}
     >
-      {isPending || icon ? <View style={[styles.lead, { width: glyph }]}>{isPending ? <Spinner size={glyph} color={ink} /> : icon?.({ size: glyph, color: ink })}</View> : null}
+      {!quiet && (isPending || icon) ? <View style={[styles.lead, { width: glyph }]}>{isPending ? <Spinner size={glyph} color={ink} /> : icon?.({ size: glyph, color: ink })}</View> : null}
       <View style={[styles.row, quiet && styles.flush]}>
+        {quiet && isPending ? <Spinner size={glyph} color={ink} /> : null}
         <Text maxFontSizeMultiplier={1.6} numberOfLines={1} style={[size === "sm" ? styles.smLabel : styles.label, { color: ink }]}>
           {label}
         </Text>
@@ -70,7 +71,8 @@ const styles = StyleSheet.create({
   md: { minHeight: 44, paddingHorizontal: 18 },
   lg: { minHeight: 48, paddingHorizontal: 20 },
   quiet: { minHeight: 36, paddingHorizontal: 0, alignSelf: "flex-start" },
-  flush: { paddingHorizontal: 0 },
+  /** A text-only button keeps its spinner inline, before the label. */
+  flush: { paddingHorizontal: 0, gap: 6 },
   dimmed: { opacity: 0.5 },
   pressed: { transform: [{ scale: 0.97 }] },
   /** The glyph sits at the button's leading edge, so labels in a stack of buttons share one centre line. */
