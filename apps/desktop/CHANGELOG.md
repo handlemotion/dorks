@@ -1,5 +1,39 @@
 # @dorks/desktop
 
+## 0.7.0
+
+### Minor Changes
+
+- [#193](https://github.com/handlemotion/dorks/pull/193) [`f37ec10`](https://github.com/handlemotion/dorks/commit/f37ec103f79c1dbede6fa6218aaea19660d6f78d) Thanks [@handlemotion](https://github.com/handlemotion)! - Builds can list their dev servers and services: the build checks and warms each one, and agents start them on demand to test changes against the running app. Agents are now sent back once when they finish a code change without testing it against running software.
+
+- [#195](https://github.com/handlemotion/dorks/pull/195) [`9ed9c85`](https://github.com/handlemotion/dorks/commit/9ed9c85490a78444650fb0d520f4736fa9cfb9cc) Thanks [@handlemotion](https://github.com/handlemotion)! - Sessions now have a mode: Chat for everyday conversation, writing and help with your computer (no repository needed), Code for repository work as before, and Nerd for running other sessions toward a goal. Pick it from the composer, and switch it any time.
+
+- [#191](https://github.com/handlemotion/dorks/pull/191) [`cee8046`](https://github.com/handlemotion/dorks/commit/cee804655ee8399ffbd6e9ed9acaf88a5b05ddeb) Thanks [@handlemotion](https://github.com/handlemotion)! - Type `/` in the message box to pick one of the agent's skills or commands, or `@` to mention a file from the repository.
+
+- [#187](https://github.com/handlemotion/dorks/pull/187) [`90b5868`](https://github.com/handlemotion/dorks/commit/90b5868aa55fdc0e111491fc880243d034b2e4e7) Thanks [@handlemotion](https://github.com/handlemotion)! - New sessions have one chooser for where they run: pick a build (shown with its repositories' owners) or a repository on the base machine, and a repository in a build always starts on that build. Builds add repositories from the same searchable list instead of a typed name.
+
+- [#189](https://github.com/handlemotion/dorks/pull/189) [`c0c3e98`](https://github.com/handlemotion/dorks/commit/c0c3e981ed993052d0e44abb921137ff1cd55dce) Thanks [@handlemotion](https://github.com/handlemotion)! - Redesign Customize into Plugins with a secondary navigation column for Plugins, Skills, and installed items, plus a searchable grouped table view.
+
+- [#194](https://github.com/handlemotion/dorks/pull/194) [`2a7a4ac`](https://github.com/handlemotion/dorks/commit/2a7a4ac8098faa54196c5178b697ed6dc99ccfd3) Thanks [@handlemotion](https://github.com/handlemotion)! - Agents can ask you for a login, a one-time code or another secret in a form in the chat; Claude uses what you type without ever seeing it.
+
+- [#190](https://github.com/handlemotion/dorks/pull/190) [`7a52921`](https://github.com/handlemotion/dorks/commit/7a5292174e58454b4e3deb4dcfae5fffd3615861) Thanks [@handlemotion](https://github.com/handlemotion)! - With the sidebar collapsed, hovering its toggle slides the sidebar in above the page so you can jump to another page without opening it.
+
+### Patch Changes
+
+- [#198](https://github.com/handlemotion/dorks/pull/198) [`0950982`](https://github.com/handlemotion/dorks/commit/09509823a1286f8d353eca7630a9d34bc00e461b) Thanks [@handlemotion](https://github.com/handlemotion)! - With Antigravity (and other agents that cannot take a message mid-turn), messages you send while the agent works now reach it together in its next turn, instead of one turn each that answered them late and had to be stopped one by one.
+
+- [#188](https://github.com/handlemotion/dorks/pull/188) [`035236d`](https://github.com/handlemotion/dorks/commit/035236d1559c8ddec297df9c3043d14a6a5763c9) Thanks [@handlemotion](https://github.com/handlemotion)! - The dork icon is blue only while the agent is working; an awake dork waiting for your next message is now yellow, like one asking for permission.
+
+- [#196](https://github.com/handlemotion/dorks/pull/196) [`d170608`](https://github.com/handlemotion/dorks/commit/d17060831cf3181e5ac94fca008b7427604efd94) Thanks [@handlemotion](https://github.com/handlemotion)! - Preview comments and PR notifications no longer land in the middle of a turn the agent started on its own (after a background task finished), where it could overlook them; they now arrive as their own turn once it ends. The session also shows as working during those turns instead of idle.
+
+- [#185](https://github.com/handlemotion/dorks/pull/185) [`8a1499c`](https://github.com/handlemotion/dorks/commit/8a1499c413243a2c2a1cb7a67d51b68a2da024e3) Thanks [@handlemotion](https://github.com/handlemotion)! - Large images in the chat and in attachments now open fitted to the image viewer instead of at their full pixel size.
+
+- [#197](https://github.com/handlemotion/dorks/pull/197) [`66587d0`](https://github.com/handlemotion/dorks/commit/66587d0edfc8ce68f4f89c9cac100dc96566c821) Thanks [@handlemotion](https://github.com/handlemotion)! - Updating Dorks no longer leaves a second Dorks icon in the Dock: the new version opens once the old one has quit.
+
+- [#192](https://github.com/handlemotion/dorks/pull/192) [`61e354d`](https://github.com/handlemotion/dorks/commit/61e354dadd8c968f7409a3ef964f4c0177257217) Thanks [@handlemotion](https://github.com/handlemotion)! - Your messages keep their line breaks (Shift Enter) in the chat instead of running together into one paragraph.
+
+- [#194](https://github.com/handlemotion/dorks/pull/194) [`2a7a4ac`](https://github.com/handlemotion/dorks/commit/2a7a4ac8098faa54196c5178b697ed6dc99ccfd3) Thanks [@handlemotion](https://github.com/handlemotion)! - Chat details start wider and the chat narrower (600px), so pull requests and previews get more room.
+
 ## 0.6.0
 
 ### Minor Changes
