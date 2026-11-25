@@ -284,6 +284,7 @@ function NewDork({
         usage={<UsageMenu provider={provider} />}
         mentions={mentions}
         focusKey={visit}
+        typeToFocus
         onSubmit={(images) =>
           run(async () => {
             onCreated(

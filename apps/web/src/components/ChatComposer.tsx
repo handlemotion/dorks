@@ -740,6 +740,7 @@ export function Composer({
   onClearReply,
   focusKey,
   draftKey,
+  typeToFocus,
   usage,
   mentions,
 }: {
@@ -789,6 +790,8 @@ export function Composer({
   focusKey?: string
   /** Keeps the attached images under this key (the text draft's) while the owner visits other chats. */
   draftKey?: string
+  /** The page's main composer: typing a character while nothing takes text (focus on the page, a button, the transcript) puts the cursor here, with the character. */
+  typeToFocus?: boolean
   /** The usage ring after the model menu (`<UsageMenu />`). */
   usage?: ReactNode
   /** What `/` (skills and commands) and `@` (the repository's files) offer in a menu above the box. */
@@ -809,9 +812,10 @@ export function Composer({
   const locked = !!(pending || disabled)
   const dragging = useFileDrop(attach, !!upload && !locked, formRef)
   useEffect(() => {
-    if (focusKey === undefined || locked || !matchMedia('(hover: hover)').matches) return
+    if (focusKey === undefined || disabled || !matchMedia('(hover: hover)').matches) return
     textRef.current?.focus()
-  }, [focusKey, locked])
+  }, [focusKey, disabled])
+  useTypeToFocus(textRef, !!typeToFocus && !disabled)
   const hasContent = text.trim().length > 0 || ready.length > 0
   const { needsRepo, hint } = modeOf(mode, placeholder)
   const canSend = hasContent && !uploading && !locked && (!environment || !needsRepo || !!environment.value.repo.trim())
@@ -918,7 +922,9 @@ export function Composer({
                   () => canSend && void submit(onQueue),
                 )
               }}
-              disabled={locked}
+              // Read-only, not disabled, while a message is sending: a disabled field drops the cursor, and the owner would have to click back in.
+              disabled={disabled}
+              readOnly={pending}
               ref={textRef}
               rows={1}
               // A 44px row: 12px above and below a 20px line of 15px text, 42px in from each side (past the 28px buttons, 8px from the
@@ -971,4 +977,35 @@ export function Composer({
       )}
     </div>
   )
+}
+
+/** Where typing goes already: a field, an editable element, or a dialog or menu (their own keys, type-ahead included). */
+function takesKeys(el: Element | null) {
+  if (!el || el === document.body) return false
+  if (el.closest('[role=dialog], [role=alertdialog], [role=menu], [role=listbox], [role=combobox]')) return true
+  return (
+    el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement || el instanceof HTMLIFrameElement || (el instanceof HTMLElement && el.isContentEditable)
+  )
+}
+
+/** A printable key pressed with nothing taking text moves the cursor to the end of the box; the key's own input then lands there. */
+function useTypeToFocus(textRef: RefObject<HTMLTextAreaElement | null>, enabled: boolean) {
+  useEffect(() => {
+    if (!enabled) return
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.defaultPrevented || e.isComposing || e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return
+      const el = textRef.current
+      const active = document.activeElement
+      if (!el || el === active || takesKeys(active)) return
+      // Space presses a focused button or link; only from the page itself does it start a message.
+      if (e.key === ' ' && active && active !== document.body) return
+      // An open modal (a dialog, a sheet) owns the keyboard even when its focus has left it.
+      if (document.querySelector('[role=dialog][aria-modal=true], [role=alertdialog]')) return
+      const end = el.value.length
+      el.focus()
+      el.setSelectionRange(end, end)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [enabled, textRef])
 }
