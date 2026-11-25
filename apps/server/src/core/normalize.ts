@@ -6,7 +6,9 @@ export type Normalized =
   | { kind: "event"; body: ClientEventBody }
   /** `model`: the model the agent reports it runs (Claude's `system/init`), the confirmation of what was asked for. */
   | { kind: "session"; sessionId: string; model?: string }
-  | { kind: "idle" };
+  | { kind: "idle" }
+  /** A turn began. Usually one the backend started with a message, but the CLI also starts turns on its own (a background task finished). */
+  | { kind: "running" };
 
 type Json = Record<string, unknown>;
 const obj = (v: unknown): Json | undefined => (v && typeof v === "object" && !Array.isArray(v) ? (v as Json) : undefined);
@@ -43,6 +45,7 @@ function fromSystem(m: Json): Normalized[] {
   const out: Normalized[] = [];
   if (m.subtype === "init" && str(m.session_id)) out.push({ kind: "session", sessionId: m.session_id as string, ...(str(m.model) ? { model: clip(m.model as string, 64) } : {}) });
   if (m.subtype === "session_state_changed" && m.state === "idle") out.push({ kind: "idle" });
+  if (m.subtype === "session_state_changed" && m.state === "running") out.push({ kind: "running" });
   return out;
 }
 

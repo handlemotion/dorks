@@ -32,6 +32,10 @@ const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object"
 type AnyAgent = Agent | CodexAgent | OpenCodeAgent | AntigravityAgent;
 /** Codex, OpenCode and Antigravity start their session after the process: messages wait for it. Claude Code takes them at once. */
 const isReady = (agent: AnyAgent) => agent instanceof Agent || agent.ready;
+const isIdleEvent = (raw: unknown) => {
+  const m = raw as { type?: unknown; subtype?: unknown; state?: unknown } | null;
+  return m?.type === "system" && m.subtype === "session_state_changed" && m.state === "idle";
+};
 /** What Claude Code gets as appended system prompts (claude.ts), as one system prompt (OpenCode) or always-on rule (Antigravity). */
 function agentSystem(role: CrewRole | null, driverPresent = existsSync(BOAT_COMPUTER_DRIVER)) {
   return [`${FINAL_ANSWER_GUIDANCE} ${SKILLS_GUIDANCE}`, role === "coordinator" ? COORDINATOR_GUIDANCE : role === "worker" ? WORKER_GUIDANCE : "", driverPresent ? COMPUTER_PROMPT : ""]
@@ -281,6 +285,10 @@ export class Bridge {
     if (this.acked.has(id)) return;
     if (!this.written.has(id)) {
       if (!this.agent?.alive || !isReady(this.agent)) return; // agent not up yet (or dead): reprocessed after configure; left unacked so the backend keeps it
+      // A notify never goes into a running turn: the CLI would fold it in as a side note the agent can skip. The backend holds them
+      // mid-turn too, but it cannot see a turn the agent starts itself (a background task finished) until that turn's first event
+      // arrives. Left unwritten and unacked; the next idle walks the commands again.
+      if (notify && !this.agent.idle) return;
       try {
         await this.agent.sendUserMessage(text);
       } catch {
@@ -487,6 +495,8 @@ export class Bridge {
         const sid = agent.sessionId;
         if (sid) this.lastSessionId = sid;
         this.pipeline.ingest(raw);
+        // A turn boundary: a notify held back while the agent was busy (see deliver) can go out now.
+        if (isIdleEvent(raw) && this.agent === agent) this.process();
       },
       onExit: ({ code, stderrTail, resumeMissing, pending }: { code: number | null; stderrTail: string; resumeMissing: boolean; pending: string[] }) => {
         if (this.agent === agent) this.agent = null;
