@@ -150,7 +150,12 @@ export function updateSubscription(app: App, id: number, patch: Partial<Omit<Sub
 }
 
 /** Bookkeeping that is not a subscription change: no `lastEventAt`, no notification to listeners. */
-export const savePollState = (app: App, id: number, poll: PollState) => update(app.db, "pr_subscriptions", { id }, { poll });
+export const savePollState = (app: App, id: number, poll: PollState) => {
+  // Most passes are all 304s and change nothing: skip the write (otherwise one per PR every 10 s, around the clock).
+  const row = app.db.get("SELECT poll FROM pr_subscriptions WHERE id = ?", id);
+  if (row && JSON.stringify(json(row.poll) ?? null) === JSON.stringify(poll ?? null)) return;
+  update(app.db, "pr_subscriptions", { id }, { poll });
+};
 
 const pollSoon = (app: App) => setTimer(app, "", "poll", 0);
 

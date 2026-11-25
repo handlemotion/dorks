@@ -561,12 +561,21 @@ export function ChatMessages({
   const onReply = useStableHandler(replyHandler)
   const onReplySend = useStableHandler(sendHandler)
   const onOpenSteps = useStableHandler(openSteps)
-  const { blocks, refs } = resolveSharedImages(raw, imageUrl)
-  const images = useStableImages(transcriptImages(blocks, refs))
+  // The transcript changes far less often than this renders (the composer, the status clock): walk it only when it changed.
+  const { blocks, refs } = useMemo(() => resolveSharedImages(raw, imageUrl), [raw, imageUrl])
+  const images = useStableImages(useMemo(() => transcriptImages(blocks, refs), [blocks, refs]))
   const snapshots = useMemo(() => taskSnapshots(blocks), [blocks])
   const reply = useMemo<ReplyHandlers>(() => ({ onReply, onSend: onReplySend, agent, refOf: (src) => refs.get(src) }), [onReply, onReplySend, agent, refs])
-  const messages = entries(blocks).map((entry) =>
-    entry.kind === 'user' ? <UserEntry key={entry.block.id} block={entry.block} imageUrl={imageUrl} /> : <AgentEntry key={entry.id} id={entry.id} blocks={entry.blocks} onOpenSteps={onOpenSteps} />,
+  const messages = useMemo(
+    () =>
+      entries(blocks).map((entry) =>
+        entry.kind === 'user' ? (
+          <UserEntry key={entry.block.id} block={entry.block} imageUrl={imageUrl} />
+        ) : (
+          <AgentEntry key={entry.id} id={entry.id} blocks={entry.blocks} onOpenSteps={onOpenSteps} />
+        ),
+      ),
+    [blocks, imageUrl, onOpenSteps],
   )
   return (
     <ReplyContext.Provider value={reply}>

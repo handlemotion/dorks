@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -570,20 +570,30 @@ function Tasks({ tasks }: { tasks: readonly ProgressTask[] }) {
 /** An edit's diff, one per change in it (Pierre diffs, unified, no file header: the title already names the file). */
 function EditDiffs({ edits }: { edits: StepEdit[] }) {
   const { resolvedTheme } = useTheme()
+  const themeType = resolvedTheme === 'dark' ? 'dark' : 'light'
   return (
     <div className="divide-y">
       {edits.map((edit, i) => (
-        <MultiFileDiff
-          key={i}
-          oldFile={{ name: edit.path, contents: edit.before }}
-          newFile={{ name: edit.path, contents: edit.after }}
-          className="block [--diffs-bg:var(--background)] [--diffs-font-family:var(--font-mono)] [--diffs-font-size:12px] [--diffs-header-font-family:var(--font-sans)] [--diffs-line-height:20px]"
-          options={{ diffStyle: 'unified', disableFileHeader: true, overflow: 'wrap', themeType: resolvedTheme === 'dark' ? 'dark' : 'light' }}
-        />
+        <EditDiff key={i} path={edit.path} before={edit.before} after={edit.after} themeType={themeType} />
       ))}
     </div>
   )
 }
+
+/** Pierre re-parses and redraws a diff whenever its file or options objects change, so they keep their identity across renders. */
+const EditDiff = memo(function EditDiff({ path, before, after, themeType }: { path: string; before: string; after: string; themeType: 'dark' | 'light' }) {
+  const oldFile = useMemo(() => ({ name: path, contents: before }), [path, before])
+  const newFile = useMemo(() => ({ name: path, contents: after }), [path, after])
+  const options = useMemo(() => ({ diffStyle: 'unified' as const, disableFileHeader: true, overflow: 'wrap' as const, themeType }), [themeType])
+  return (
+    <MultiFileDiff
+      oldFile={oldFile}
+      newFile={newFile}
+      className="block [--diffs-bg:var(--background)] [--diffs-font-family:var(--font-mono)] [--diffs-font-size:12px] [--diffs-header-font-family:var(--font-sans)] [--diffs-line-height:20px]"
+      options={options}
+    />
+  )
+})
 
 function CopyButton({ text }: { text: string | undefined }) {
   const [copied, setCopied] = useState(false)

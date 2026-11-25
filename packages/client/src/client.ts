@@ -56,6 +56,15 @@ export interface ConnectionState {
 
 const defaultRetry = (n: number) => Math.min(15_000, 1000 * 2 ** n);
 
+/** A read nothing has shown for this long is dropped (its data, its folded transcript), so a long-open app does not keep every chat ever visited. */
+const IDLE_MS = 5 * 60_000;
+/** Transcripts kept past `IDLE_MS` anyway, the most recently left first: going back to a recent chat stays instant. */
+const KEEP_IDLE_FEEDS = 3;
+const SWEEP_EVERY_MS = 60_000;
+
+/** The page is in a hidden window or tab (a desktop window closed to the menu bar). Never true outside a browser. */
+const pageHidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
+
 /**
  * Everything the UI reads and writes, over loopback HTTP + the `/api/live` SSE stream. Framework-agnostic: each read is a
  * `Store` (the `useSyncExternalStore` contract), so React hooks in ./react.tsx are thin and other UIs can use it directly.
@@ -70,6 +79,14 @@ export class DorksClient {
   private connection: ConnectionState = { live: "connecting", unauthorized: false };
   private readonly connListeners = new Set<() => void>();
   private readonly qopts: QueryOptions;
+  private lastSweep = Date.now();
+  /** Transcripts that advanced while the page was hidden: tailed once it shows again, not on every streamed token. */
+  private readonly staleFeeds = new Set<string>();
+  private readonly onVisibility = () => {
+    if (pageHidden()) return;
+    for (const id of this.staleFeeds) this.feeds.get(id)?.requestTail();
+    this.staleFeeds.clear();
+  };
 
   constructor(config: ClientConfig) {
     this.cfg = config;
@@ -80,6 +97,7 @@ export class DorksClient {
   /** Opens the live stream. Safe to call again after `close()`. */
   start() {
     if (this.closeLive) return;
+    if (typeof document !== "undefined") document.addEventListener("visibilitychange", this.onVisibility);
     this.closeLive = connectLive({
       baseUrl: this.cfg.baseUrl,
       token: this.cfg.token,
@@ -91,6 +109,7 @@ export class DorksClient {
   }
 
   close() {
+    if (typeof document !== "undefined") document.removeEventListener("visibilitychange", this.onVisibility);
     this.closeLive?.();
     this.closeLive = undefined;
   }
@@ -111,12 +130,43 @@ export class DorksClient {
   }
 
   private query<T>(key: string, fetcher: () => Promise<T>): Query<T> {
+    this.sweep();
     let q = this.queries.get(key) as Query<T> | undefined;
     if (!q) {
       q = new Query(fetcher, this.qopts);
       this.queries.set(key, q as Query<unknown>);
     }
     return q;
+  }
+
+  /** Drops reads nothing has shown for `IDLE_MS` (at most once a minute, on the next read). A later read starts them afresh. */
+  private sweep() {
+    const now = Date.now();
+    if (now - this.lastSweep < SWEEP_EVERY_MS) return;
+    this.lastSweep = now;
+    const old = (idleSince: number | undefined) => idleSince !== undefined && now - idleSince > IDLE_MS;
+    for (const [key, q] of this.queries) if (old(q.idleSince)) this.queries.delete(key);
+    const idleFeeds = [...this.feeds].filter(([, f]) => f.idleSince !== undefined).sort(([, a], [, b]) => b.idleSince! - a.idleSince!);
+    for (const [id, f] of idleFeeds.slice(KEEP_IDLE_FEEDS)) {
+      if (!old(f.idleSince)) continue;
+      this.feeds.delete(id);
+      this.staleFeeds.delete(id);
+    }
+  }
+
+  /** Forgets everything cached for a session (it was deleted). */
+  private forget(dorkId: string) {
+    this.feeds.delete(dorkId);
+    this.staleFeeds.delete(dorkId);
+    for (const key of this.queries.keys()) if (key.split(":")[1] === dorkId) this.queries.delete(key);
+  }
+
+  /** The live stream says a transcript advanced: catch up now, or once the page shows again. */
+  private tailFeed(dorkId: string) {
+    const feed = this.feeds.get(dorkId);
+    if (!feed) return;
+    if (pageHidden()) this.staleFeeds.add(dorkId);
+    else feed.requestTail();
   }
 
   private invalidate(prefix: string) {
@@ -127,7 +177,7 @@ export class DorksClient {
     switch (m.t) {
       case "hello":
         for (const q of this.queries.values()) q.invalidate();
-        for (const f of this.feeds.values()) f.requestTail();
+        for (const id of this.feeds.keys()) this.tailFeed(id);
         break;
       case "dorks":
         this.invalidate("dorks");
@@ -137,7 +187,7 @@ export class DorksClient {
         this.invalidate(`dork:${m.dorkId}`);
         break;
       case "events":
-        this.feeds.get(m.dorkId)?.requestTail();
+        this.tailFeed(m.dorkId);
         break;
       case "comments":
         this.invalidate(`comments:${m.dorkId}`);
@@ -289,6 +339,7 @@ export class DorksClient {
   }
 
   events(dorkId: string): EventsFeed {
+    this.sweep();
     let f = this.feeds.get(dorkId);
     if (!f) {
       const pageSize = this.cfg.pageSize ?? 40;
@@ -362,6 +413,7 @@ export class DorksClient {
       await this.api.deleteDork(id);
       this.invalidate("dorks");
       this.invalidate(`dork:${id}`);
+      this.forget(id);
     },
     markRead: async (id: string) => {
       await this.api.markRead(id);

@@ -9,19 +9,30 @@ export const liveRoutes: Routes = (api, app) => {
     streamSSE(c, async (stream) => {
       const send = (o: object) => stream.writeSSE({ data: JSON.stringify(o) });
       let alive = true;
-      const tails = new Map<string, number>(); // dorkId -> newest seq, flushed at most every 50 ms
+      // Every change is an invalidation, so a burst of the same one (a streaming answer, a dork patched field by field) is sent
+      // once: one entry per distinct change (a transcript's newest seq wins), flushed at most every 50 ms. A client that reads
+      // slowly gets the next batch only after the last one was written, so nothing piles up in the stream's buffer.
+      const pending = new Map<string, Change>();
       let flushTimer: ReturnType<typeof setTimeout> | undefined;
-      const flush = () => {
+      let writing = false;
+      const flush = async () => {
         flushTimer = undefined;
-        for (const [dorkId, seq] of tails) void send({ t: "events", dorkId, seq });
-        tails.clear();
+        if (writing) return; // the write in progress picks the new changes up
+        writing = true;
+        try {
+          while (alive && pending.size) {
+            const batch = [...pending.values()];
+            pending.clear();
+            for (const ch of batch) await send(ch);
+          }
+        } finally {
+          writing = false;
+        }
       };
       const off = app.hub.on((ch: Change) => {
         if (!alive || ch.t === "commands") return;
-        if (ch.t === "events") {
-          tails.set(ch.dorkId, ch.seq);
-          flushTimer ??= setTimeout(flush, 50);
-        } else void send(ch);
+        pending.set(ch.t === "events" ? `events:${ch.dorkId}` : JSON.stringify(ch), ch);
+        flushTimer ??= setTimeout(() => void flush().catch(() => {}), 50);
       });
       stream.onAbort(() => {
         alive = false;
