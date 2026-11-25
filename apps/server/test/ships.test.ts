@@ -4,7 +4,8 @@ import { dorkView } from "../src/data";
 import { needsAttentionOf } from "../src/data";
 import { pollOnce, POLL_MS } from "../src/services/poller";
 import { updateSettings } from "../src/services/settings";
-import { SHIP_QUIET_MS, SHIP_SETTLE_MS } from "../src/services/ships";
+import { SHIP_VERIFY_MS } from "@dorks/shared";
+import { SHIP_MAX_MS, SHIP_QUIET_MS, SHIP_SETTLE_MS, SHIP_SLOW_MS, shipOp } from "../src/services/ships";
 import * as subs from "../src/services/subscriptions";
 import { fakeFetch, harness } from "./harness";
 
@@ -41,6 +42,7 @@ function github() {
     },
     runs: [] as Run[],
     jobs: {} as Record<number, { id: number; name: string; status: string; conclusion: string | null; html_url: string; steps: Step[] }[]>,
+    statuses: [] as { context: string; state: string; target_url: string }[],
     checkRuns: [] as { id: number; name: string; status: string; conclusion: string | null; details_url: string; app: { slug: string } }[],
     deployments: [] as { id: number; sha: string; environment: string; created_at: string }[],
     deploymentStatuses: {} as Record<number, { state: string; environment_url?: string; log_url?: string }[]>,
@@ -70,7 +72,7 @@ function github() {
     const jobs = /^\/actions\/runs\/(\d+)\/jobs$/.exec(p);
     if (jobs) return reply(url, init, { jobs: state.jobs[Number(jobs[1])] ?? [] });
     if (p === `/commits/${MERGE}/check-runs`) return reply(url, init, { check_runs: state.checkRuns });
-    if (p === `/commits/${MERGE}/status`) return reply(url, init, { statuses: [] });
+    if (p === `/commits/${MERGE}/status`) return reply(url, init, { statuses: state.statuses });
     if (p === "/deployments") {
       const sha = url.searchParams.get("sha");
       return reply(url, init, (sha ? state.deployments.filter((d) => d.sha === sha) : state.deployments).toSorted((a, b) => b.id - a.id).slice(0, Number(url.searchParams.get("per_page") ?? 30)));
@@ -130,6 +132,7 @@ describe("ships", () => {
       { id: 20, name: "deploy", status: "in_progress", conclusion: null, html_url: "j20", steps: [{ name: "Run database migrations", number: 3, status: "in_progress", conclusion: null }] },
     ];
     s.gh.state.checkRuns.push({ id: 5, name: "Cloudflare Pages", status: "in_progress", conclusion: null, details_url: "https://dash.cloudflare.com/x", app: { slug: "cloudflare-pages" } });
+    s.gh.state.statuses.push({ context: "netlify", state: "pending", target_url: "javascript:alert(1)" }); // never a link
     s.gh.state.checkRuns.push({ id: 6, name: "test", status: "in_progress", conclusion: null, details_url: "x", app: { slug: "github-actions" } }); // already a run above
     await s.tick();
     expect(s.card()!.stages.map((x) => [x.kind, x.name, x.state])).toEqual([
@@ -137,7 +140,9 @@ describe("ships", () => {
       ["workflow", "Deploy", "running"],
       ["migration", "Run database migrations", "running"],
       ["check", "Cloudflare Pages", "running"],
+      ["status", "netlify", "running"],
     ]);
+    expect(s.card()!.stages.find((x) => x.name === "netlify")!.url).toBeUndefined();
 
     // Everything passes; production is deployed from a later commit that contains the merge, and a branch preview that does not.
     for (const r of s.gh.state.runs) Object.assign(r, { status: "completed", conclusion: "success" });
@@ -148,6 +153,7 @@ describe("ships", () => {
       steps: [{ name: "Run database migrations", number: 3, status: "completed", conclusion: "success" }],
     };
     Object.assign(s.gh.state.checkRuns[0], { status: "completed", conclusion: "success" });
+    s.gh.state.statuses[0].state = "success";
     s.gh.state.deployments.push({ id: 40, sha: "later111", environment: "production", created_at: s.iso() }, { id: 41, sha: "branch22", environment: "Preview", created_at: s.iso() });
     s.gh.state.compare = { later111: "ahead", branch22: "diverged" };
     s.gh.state.deploymentStatuses[40] = [{ state: "in_progress" }];
@@ -164,12 +170,13 @@ describe("ships", () => {
 
     s.gh.state.deploymentStatuses[40].push({ state: "success", environment_url: "https://hello.example" });
     await s.tick();
-    expect(s.card()).toMatchObject({ status: "watching" }); // all green: waits for follow-ups before calling it
-    expect(s.card()!.stages.at(-1)).toMatchObject({ state: "passed", environmentUrl: "https://hello.example" });
+    expect(s.card()).toMatchObject({ status: "watching" }); // all green: waits for the agent's check and follow-ups before calling it
+    expect(s.card()!.stages.find((x) => x.id === "dep:production")).toMatchObject({ state: "passed", environmentUrl: "https://hello.example" });
 
     const events = s.h.events(s.id).length;
     await s.tick(); // nothing changed: no new event
     expect(s.h.events(s.id).length).toBe(events);
+    shipOp(s.h.app, s.id, { action: "verify", ok: true, note: "Checked it live." });
     await s.tick(SHIP_SETTLE_MS);
     expect(s.card()).toMatchObject({ status: "shipped" });
     expect(s.card()!.endedAt).toBeDefined();
@@ -219,5 +226,92 @@ describe("ships", () => {
     stacked.gh.state.pr.base.ref = "agent/parent";
     await stacked.merge();
     expect(stacked.card()).toBeUndefined();
+  });
+
+  it("tells the agent once the merge is live and waits for its check; tells it once when the ship fails", async () => {
+    const s = await setup();
+    const inbox = () => s.h.app.db.all<{ kind: string; summary: string }>("SELECT kind, summary FROM inbox WHERE dork_id = ? ORDER BY id", s.id);
+    await s.merge();
+    expect(() => shipOp(s.h.app, s.id, { action: "verify", ok: true, note: "Looks right." })).toThrow(/waiting for verification/);
+    s.gh.state.deployments.push({ id: 40, sha: MERGE, environment: "production", created_at: s.iso() });
+    s.gh.state.deploymentStatuses[40] = [{ state: "success", environment_url: "https://hello.example" }];
+    await s.tick();
+    expect(inbox().map((r) => r.kind)).toEqual(["closed", "deployed"]);
+    expect(inbox()[1].summary).toContain("https://hello.example");
+    expect(s.card()!.stages.at(-1)).toMatchObject({ kind: "verify", name: "Verify on production", state: "pending" });
+    await s.tick(SHIP_SETTLE_MS * 2);
+    expect(s.card()).toMatchObject({ status: "watching" }); // waits for the agent's check
+
+    expect(shipOp(s.h.app, s.id, { action: "verify", ok: true, note: "Opened /settings; the new toggle saves." }).text).toMatch(/verified on production/);
+    expect(s.card()!.stages.at(-1)).toMatchObject({ state: "passed", detail: "Opened /settings; the new toggle saves." });
+    await s.tick();
+    await s.tick(SHIP_SETTLE_MS);
+    expect(s.card()).toMatchObject({ status: "shipped" });
+    expect(inbox().filter((r) => r.kind === "deployed")).toHaveLength(1);
+
+    // Nobody reports: the ship stops waiting after SHIP_VERIFY_MS.
+    const quiet = await setup();
+    await quiet.merge();
+    quiet.gh.state.deployments.push({ id: 40, sha: MERGE, environment: "production", created_at: quiet.iso() });
+    quiet.gh.state.deploymentStatuses[40] = [{ state: "success", environment_url: "https://hello.example" }];
+    await quiet.tick();
+    await quiet.tick(SHIP_VERIFY_MS);
+    await quiet.tick(SHIP_SETTLE_MS);
+    expect(quiet.card()).toMatchObject({ status: "shipped" });
+    expect(quiet.card()!.stages.at(-1)).toMatchObject({ kind: "verify", state: "skipped", detail: "Not verified in time" });
+
+    // A failure wakes it once, with what failed and where.
+    const f = await setup();
+    const fInbox = () => f.h.app.db.all<{ kind: string; summary: string }>("SELECT kind, summary FROM inbox WHERE dork_id = ? AND kind = 'ship_failed'", f.id);
+    await f.merge();
+    f.gh.state.runs.push(f.run({ id: 1, name: "Deploy", status: "completed", conclusion: "failure" }));
+    await f.tick();
+    await f.tick();
+    expect(fInbox()).toHaveLength(1);
+    expect(fInbox()[0].summary).toContain("Deploy failed: https://github.com/octo/hello/actions/runs/1");
+  });
+
+  it("a watch that ends while the agent's check is open closes the check", async () => {
+    const s = await setup();
+    await s.merge();
+    s.gh.state.runs.push(s.run({ id: 1, name: "Nightly smoke", status: "in_progress" })); // never finishes
+    await s.tick(SHIP_MAX_MS - SHIP_VERIFY_MS / 2);
+    s.gh.state.deployments.push({ id: 40, sha: MERGE, environment: "production", created_at: s.iso() });
+    s.gh.state.deploymentStatuses[40] = [{ state: "success", environment_url: "https://hello.example" }];
+    await s.tick(SHIP_SLOW_MS); // an old ship is read every SHIP_SLOW_MS
+    expect(s.card()!.stages.at(-1)).toMatchObject({ kind: "verify", state: "pending" });
+    await s.tick(SHIP_VERIFY_MS / 2);
+    expect(s.card()).toMatchObject({ status: "stalled" });
+    expect(s.card()!.endedAt).toBeDefined();
+    expect(s.card()!.stages.at(-1)).toMatchObject({ kind: "verify", state: "skipped", detail: "Not verified before the watch ended" });
+  });
+
+  it("ship_verify records against the PR the agent names when several wait; the row cap never hides an open check", async () => {
+    const s = await setup();
+    await s.merge();
+    s.gh.state.deployments.push({ id: 40, sha: MERGE, environment: "production", created_at: s.iso() });
+    s.gh.state.deploymentStatuses[40] = [{ state: "success", environment_url: "https://hello.example" }];
+    // Twenty finished checks and a twenty-first still running: the running one is kept, so the ship keeps watching.
+    for (let i = 0; i < 20; i++) s.gh.state.checkRuns.push({ id: 100 + i, name: `lint ${i}`, status: "completed", conclusion: "success", details_url: "https://ci.example", app: { slug: "ci" } });
+    s.gh.state.checkRuns.push({ id: 200, name: "slow e2e", status: "in_progress", conclusion: null, details_url: "https://ci.example", app: { slug: "ci" } });
+    await s.tick();
+    const checks = s.card()!.stages.filter((x) => x.kind === "check");
+    expect(checks).toHaveLength(15);
+    expect(checks.at(-1)).toMatchObject({ name: "slow e2e", state: "running" });
+
+    // A second merged PR of the same session waits for its check too.
+    const first = s.h.app.db.get<{ id: number; agent: string }>("SELECT id, agent FROM ships WHERE dork_id = ?", s.id)!;
+    s.h.app.db.run(
+      "INSERT INTO ships (dork_id, repo, number, url, base_ref, sha, status, stages, started_at, agent) VALUES (?, 'octo/hello', 8, 'u', 'main', 'other00', 'watching', '[]', ?, ?)",
+      s.id,
+      s.h.clock.t,
+      first.agent,
+    );
+    expect(() => shipOp(s.h.app, s.id, { action: "verify", ok: true, note: "Checked." })).toThrow(/octo\/hello#8, octo\/hello#7/);
+    shipOp(s.h.app, s.id, { action: "verify", repo: "Octo/Hello", number: 7, ok: false, note: "The toggle does not save." });
+    expect(s.card()!.stages.find((x) => x.kind === "verify")).toMatchObject({ state: "failed", detail: "The toggle does not save." });
+    const second = s.h.app.db.get<{ agent: string }>("SELECT agent FROM ships WHERE number = 8")!;
+    expect(JSON.parse(second.agent).verify.state).toBe("pending");
+    expect(() => shipOp(s.h.app, s.id, { action: "verify", repo: "octo/hello", number: 9, ok: true, note: "x" })).toThrow(/not waiting/);
   });
 });

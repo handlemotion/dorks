@@ -424,9 +424,14 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         Object.assign(ship.stages[1], { state: "passed", endedAt: t });
         Object.assign(ship.stages[4], fails ? { state: "failed", endedAt: t } : { state: "passed", endedAt: t, environmentUrl: "https://demo.pages.dev" });
         if (fails) ship.status = "failed";
+        // The agent is told the merge is live and checks it there (docs/shipping.md, "The agent").
+        else
+          ship.stages.push({ id: "verify", kind: "verify", name: "Verify on production", state: "pending", url: "https://demo.pages.dev", detail: "The agent is checking the change", startedAt: t });
       },
       (t) => {
-        if (!fails) Object.assign(ship, { status: "shipped", endedAt: t });
+        if (fails) return;
+        Object.assign(ship.stages[5], { state: "passed", endedAt: t, detail: "Opened /settings on the live site; the new toggle saves and survives a reload." });
+        Object.assign(ship, { status: "shipped", endedAt: t });
       },
     ];
     append(dorkId, { type: "ship", ship: structuredClone(ship) });

@@ -177,6 +177,7 @@ export class FakeTransport implements Transport {
   crewCalls: Record<string, unknown>[] = [];
   crew = async (args: Record<string, unknown>) => (this.crewCalls.push(args), { tool: "dork_send", id: "d1", delivery: "message" });
   comment = async (_args: Record<string, unknown>) => ({ text: "No open comments on the preview." });
+  ship = async (_args: Record<string, unknown>) => ({ text: "Recorded." });
   unsubscribePr = async (ref: PrRef) => {
     this.prCalls.push({ op: "unsub", ref });
     if (this.prError) throw this.prError;

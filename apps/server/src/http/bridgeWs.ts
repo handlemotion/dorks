@@ -7,6 +7,7 @@ import { localOp } from "../services/local";
 import { inputOp } from "../services/inputs";
 import { crewOp } from "../services/crew";
 import { commentOp } from "../services/comments";
+import { shipOp } from "../services/ships";
 import { mcpAccessToken } from "../services/mcpOAuth";
 import { skillBundle } from "../services/skills";
 import * as bridge from "../services/bridge";
@@ -59,6 +60,7 @@ const OPS = new Map<string, Op>([
   ["input", (app, id, a) => attemptPromise(() => inputOp(app, id, a))],
   ["crew", (app, id, a) => attemptPromise(() => crewOp(app, id, a))],
   ["comment", (app, id, a) => attempt(() => commentOp(app, id, a))],
+  ["ship", (app, id, a) => attempt(() => shipOp(app, id, a))],
   ["mcp_token", (app, _id, a) => attemptPromise(() => mcpAccessToken(app, a.name, a.stale))],
   ["skill", (app, id, a) => attempt(() => skillBundle(app, id, a.name))],
 ]);

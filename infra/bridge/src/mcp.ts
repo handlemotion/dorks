@@ -234,6 +234,31 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: "ship_verify",
+    title: "Report whether a merged PR works in production",
+    description:
+      "Answer a `deployed` notification: after one of your merged PRs went live, you opened the live URL and exercised exactly what the PR " +
+      "changed. Report `ok` (it works there) or not, with a one or two sentence `note` of what you checked and saw. The user sees it on the " +
+      "PR's ship card. When it does not work, also open a fix-forward PR (or a revert PR); never deploy or roll back yourself.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pr: { ...PR_PARAM, description: "The merged pull request you checked (from the `deployed` notification). " + PR_PARAM.description },
+        ok: { type: "boolean", description: "Whether the change works on the live deployment." },
+        note: { type: "string", description: "What you checked and what you saw, in one or two sentences." },
+      },
+      required: ["pr", "ok", "note"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: false },
+    async run(args, sock) {
+      if (typeof args.ok !== "boolean" || typeof args.note !== "string" || !args.note.trim()) throw new ToolError("`ok` and a non-empty `note` are required.");
+      const ref = prArg(args);
+      const r = await rpcCall<{ text: string }>(sock, "ship", { action: "verify", ...ref, ok: args.ok, note: args.note });
+      return r.text;
+    },
+  },
+  {
     name: "comment_reply",
     title: "Answer a comment on the preview",
     description:
@@ -901,7 +926,7 @@ async function renderPage(url: string, args: Record<string, unknown>): Promise<B
 const byName = new Map(TOOLS.map((t) => [t.name, t]));
 
 /** Tools only for a mode with coding autonomy (docs/modes.md): a chat ships nothing as a pull request, so it is not offered the PR tools. */
-const AUTONOMY_TOOLS = new Set(["pr_subscribe", "pr_unsubscribe", "pr_list"]);
+const AUTONOMY_TOOLS = new Set(["pr_subscribe", "pr_unsubscribe", "pr_list", "ship_verify"]);
 const modeTools = (mode: DorkMode) => (MODES[mode].autonomy ? TOOLS : TOOLS.filter((t) => !AUTONOMY_TOOLS.has(t.name)));
 
 type Crew = { role: CrewRole | null; mode: DorkMode };

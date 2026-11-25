@@ -98,7 +98,7 @@ interface PushedCandidate {
 async function scanRepo(dir: string, o: ScanOptions): Promise<{ done: Finding[]; pushed: PushedCandidate[] }> {
   const env = gitEnv(o.env, o.runAs);
   const out = async (...args: string[]) => {
-    const r = await runGit(args, dir, env, o.runAs, GIT_TIMEOUT_MS);
+    const r = await runGit(["--no-optional-locks", ...args], dir, env, o.runAs, GIT_TIMEOUT_MS); // never take index.lock from under the agent
     return r.code === 0 ? r.stdout.trim() : null;
   };
   const count = async (range: string) => Number(await out("rev-list", "--count", range)) || 0;
@@ -114,7 +114,7 @@ async function scanRepo(dir: string, o: ScanOptions): Promise<{ done: Finding[];
   const found = (kind: FindingKind, branch: string, detail: string) => ({ kind, dir, repo, branch, detail });
   // Edits that were never committed: the commonest way to stop "done" with nothing on GitHub. Ignored files do not count.
   // A background read: no optional locks, so it never holds index.lock while the agent runs `git add` or `git commit`.
-  const status = await out("--no-optional-locks", "status", "--porcelain", "--untracked-files=normal");
+  const status = await out("status", "--porcelain", "--untracked-files=normal");
   if (status) {
     const n = status.split("\n").length;
     const branch = (await out("branch", "--show-current")) || "HEAD (detached)";

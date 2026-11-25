@@ -8,8 +8,12 @@ import { z } from "zod";
 export const shipStageState = z.enum(["pending", "running", "passed", "failed", "skipped"]);
 export type ShipStageState = z.infer<typeof shipStageState>;
 
-/** `workflow`: a GitHub Actions run; `migration`: a job or step in one whose name says it migrates; `check`: another app's check run; `status`: a commit status; `deployment`: a GitHub deployment (one per environment). */
-export const shipStageKind = z.enum(["workflow", "migration", "check", "status", "deployment"]);
+/**
+ * `workflow`: a GitHub Actions run; `migration`: a job or step in one whose name says it migrates; `check`: another app's check run;
+ * `status`: a commit status; `deployment`: a GitHub deployment (one per environment); `verify`: the agent checking the change on the live
+ * deployment (docs/shipping.md, "The agent").
+ */
+export const shipStageKind = z.enum(["workflow", "migration", "check", "status", "deployment", "verify"]);
 export type ShipStageKind = z.infer<typeof shipStageKind>;
 
 export const shipStage = z.object({
@@ -53,3 +57,6 @@ export const shipView = z.object({
   endedAt: z.number().optional(),
 });
 export type ShipView = z.infer<typeof shipView>;
+
+/** How long the agent has to verify a live deployment (`ship_verify`) before the ship stops waiting for it. */
+export const SHIP_VERIFY_MS = 20 * 60_000;

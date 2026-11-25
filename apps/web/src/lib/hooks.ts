@@ -11,6 +11,7 @@ import {
   GitPullRequestIcon,
   MessageCircleIcon,
   MessageSquareDiffIcon,
+  RocketIcon,
   TriangleAlertIcon,
   type LucideIcon,
 } from 'lucide-react'
@@ -55,6 +56,8 @@ function phrases({ number, items }: Section): string[] {
   }
   const comments = of('comment')
   if (comments.length) out.push(`Got ${comments.length === 1 ? 'a comment' : `${comments.length} comments`} from ${names(unique(comments.map((c) => loginOf(c.summary))))} on ${pr}`)
+  if (of('ship_failed').length) out.push(`${pr} failed to ship`)
+  if (of('deployed').length) out.push(`${pr} is live; checking it there`)
   if (of('ready').length) out.push(`${pr} is green and approved`)
   else if (of('ci_passed').length) out.push(`CI passed on ${pr}`)
   return out
@@ -62,12 +65,14 @@ function phrases({ number, items }: Section): string[] {
 
 /** The icon of the most telling kind in a digest. */
 const NOTIFY_ICONS: [string, LucideIcon][] = [
+  ['ship_failed', CircleXIcon],
   ['ci_failed', CircleXIcon],
   ['conflict', TriangleAlertIcon],
   ['closed', GitMergeIcon],
   ['review', MessageSquareDiffIcon],
   ['comment', MessageCircleIcon],
   ['base_changed', GitBranchIcon],
+  ['deployed', RocketIcon],
   ['ready', CircleCheckIcon],
   ['ci_passed', CircleCheckIcon],
 ]
