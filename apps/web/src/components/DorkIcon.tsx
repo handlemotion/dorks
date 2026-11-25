@@ -45,9 +45,9 @@ export function dorkIconState(state: DorkState | undefined, opts?: { working?: b
 
 /**
  * The dork status mark: three stacked lobes.
- * - `working`: cyan → blue → violet gradient with animated flaps and flowing colour.
+ * - `working`: cyan → blue → violet gradient with animated flaps and flowing colour. Blue means the agent is actively working.
  * - `attention`: yellow → amber gradient with animated flaps when waiting on the owner (computer access, build approval, prompts).
- * - `awake`: the cyan → blue → violet gradient, still.
+ * - `awake`: the yellow → amber gradient, still: the turn is over and the dork waits for the next message before it sleeps.
  * - `asleep`: the same shape in muted grey, still.
  * - `error`: the same shape in destructive red, still.
  */
@@ -69,7 +69,7 @@ export function DorkIcon({
   const gradId = `dork-grad-${uid}`
   const animated = state === 'working' || state === 'attention'
   const colored = animated || state === 'awake'
-  const stops = state === 'attention' ? YELLOW_STOPS : BLUE_STOPS
+  const stops = state === 'working' ? BLUE_STOPS : YELLOW_STOPS
   const tone = state === 'asleep' ? 'text-muted-foreground/45' : state === 'error' ? 'text-destructive' : ''
 
   return (
