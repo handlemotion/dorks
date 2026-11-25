@@ -190,6 +190,9 @@ importers:
       vite-plus:
         specifier: 'catalog:'
         version: 1.6.0(@edge-runtime/vm@5.0.0)(@types/node@26.6.4)(@vitest/ui@5.1.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(typescript@6.0.3)(yaml@2.9.1)
+      ws:
+        specifier: ^8.22.2
+        version: 8.22.2
 
   apps/desktop:
     devDependencies:

@@ -71,8 +71,9 @@ export function Composer({
       await how(message);
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (e) {
-      setText(text);
-      setImages(images);
+      // Put the failed draft back without dropping what was typed or attached while it was sending.
+      setText((now) => (now.trim() ? `${text}\n${now}` : text));
+      setImages((now) => [...images, ...now]);
       setError(errorText(e));
     } finally {
       setSending(false);
