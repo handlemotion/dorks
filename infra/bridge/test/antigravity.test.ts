@@ -140,7 +140,10 @@ describe("Antigravity (agy) through its streaming headless mode", () => {
     s.transport.emit([{ cid: "i1", frame: { t: "interrupt" } }]);
     await waitFor(() => s.reports().filter((r) => r.prompt).length >= 2, "next turn");
     await new Promise((r) => setTimeout(r, 1500));
-    const prompts = s.reports().filter((r) => r.prompt).map((r) => r.prompt as string);
+    const prompts = s
+      .reports()
+      .filter((r) => r.prompt)
+      .map((r) => r.prompt as string);
     expect(prompts).toHaveLength(2); // the interrupted turn, then one turn with every message it had not seen
     expect(prompts[1]).toContain("steer m2");
     expect(prompts[1]).toContain("steer m4");
