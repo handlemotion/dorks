@@ -7,12 +7,12 @@ export type DorkIconState = 'working' | 'awake' | 'asleep' | 'attention' | 'erro
 const SHAPE_PATH =
   'M180 40c0-22.091-35.817-40-80-40S20 17.909 20 40c0 11.947 10.475 22.67 27.084 30C30.474 77.33 20 88.053 20 100s10.475 22.671 27.084 30C30.474 137.329 20 148.053 20 160c0 22.091 35.817 40 80 40s80-17.909 80-40c0-11.947-10.475-22.671-27.084-30C169.525 122.671 180 111.947 180 100s-10.475-22.67-27.084-30C169.525 62.67 180 51.947 180 40'
 
-const BLUE_STOPS = [
-  ['0%', '#00f0ff'],
-  ['22%', '#08a8ff'],
-  ['48%', '#0e6fff'],
-  ['78%', '#6a62ff'],
-  ['100%', '#8f5bff'],
+/** Working: the foreground colour (so it follows the theme) at these opacities, light at the top to strong at the bottom. */
+const GREY_STOPS = [
+  ['0%', '0.22'],
+  ['30%', '0.38'],
+  ['60%', '0.55'],
+  ['100%', '0.72'],
 ] as const
 
 /** A nerd's colour (docs/modes.md): the same mark in green, so the sessions that run other sessions stand apart. */
@@ -31,6 +31,28 @@ const YELLOW_STOPS = [
   ['82%', '#ff8800'],
   ['100%', '#ff6b00'],
 ] as const
+
+const TONE: Partial<Record<DorkIconState, string>> = { asleep: 'text-muted-foreground/70', error: 'text-destructive' }
+
+/** The gradient for a state; grey stops are opacities of the foreground colour (`grey`), which `tone` sets. */
+function palette(state: DorkIconState, nerd?: boolean) {
+  if (state !== 'working') return { stops: YELLOW_STOPS, grey: false, tone: TONE[state] ?? '' }
+  return nerd ? { stops: GREEN_STOPS, grey: false, tone: '' } : { stops: GREY_STOPS, grey: true, tone: 'text-foreground' }
+}
+
+/** Asleep: the shape's outline, an inside stroke about 1.2px wide at any size (twice that width, clipped to the shape). */
+function DorkOutline({ id, size }: { id: string; size: number }) {
+  return (
+    <>
+      <defs>
+        <clipPath id={id}>
+          <path d={SHAPE_PATH} />
+        </clipPath>
+      </defs>
+      <path d={SHAPE_PATH} fill="none" stroke="currentColor" strokeWidth={(2.4 * 206.186) / size} clipPath={`url(#${id})`} />
+    </>
+  )
+}
 
 /** Maps a dork's lifecycle state (and connection/attention state when relevant) to the icon's visual state. */
 export function dorkIconState(state: DorkState | undefined, opts?: { working?: boolean; live?: string; attention?: boolean }): DorkIconState {
@@ -54,12 +76,13 @@ export function dorkIconState(state: DorkState | undefined, opts?: { working?: b
 
 /**
  * The dork status mark: three stacked lobes.
- * - `working`: cyan → blue → violet gradient with animated flaps and flowing colour. Blue means the agent is actively working.
+ * - `working`: a grey gradient (the foreground colour at varying strength) with animated flaps and flowing colour. Grey, not
+ *   blue, so a working chat does not read as unread.
  * - `attention`: yellow → amber gradient with animated flaps when waiting on the owner (computer access, build approval, prompts).
  * - `awake`: the yellow → amber gradient, still: the turn is over and the dork waits for the next message before it sleeps.
- * - `asleep`: the same shape in muted grey, still.
+ * - `asleep`: the shape's outline only, in muted grey, no fill, still.
  * - `error`: the same shape in destructive red, still.
- * A nerd (`nerd`) is green where a session is blue (working); awake, attention, asleep and error look the same as any session's.
+ * A nerd (`nerd`) is green where a session is grey (working); awake, attention, asleep and error look the same as any session's.
  * `still` draws the working colours without motion (the nerd mark in the mode menu).
  */
 export function DorkIcon({
@@ -71,7 +94,7 @@ export function DorkIcon({
   still,
 }: {
   state: DorkIconState
-  /** A nerd session (docs/modes.md): green instead of the working blue. */
+  /** A nerd session (docs/modes.md): green instead of the working grey. */
   nerd?: boolean
   /** No motion: the working colours as a still mark. */
   still?: boolean
@@ -86,8 +109,7 @@ export function DorkIcon({
   const gradId = `dork-grad-${uid}`
   const animated = !still && (state === 'working' || state === 'attention')
   const colored = animated || state === 'awake' || (still && state === 'working')
-  const stops = state === 'working' ? (nerd ? GREEN_STOPS : BLUE_STOPS) : YELLOW_STOPS
-  const tone = state === 'asleep' ? 'text-muted-foreground/45' : state === 'error' ? 'text-destructive' : ''
+  const { stops, grey, tone } = palette(state, nerd)
 
   return (
     <svg
@@ -106,7 +128,7 @@ export function DorkIcon({
         <defs>
           <linearGradient id={gradId} x1="100" y1={animated ? -40 : 0} x2="100" y2={animated ? 240 : 200} gradientUnits="userSpaceOnUse">
             {stops.map(([offset, color]) => (
-              <stop key={offset} offset={offset} stopColor={color} />
+              <stop key={offset} offset={offset} stopColor={grey ? 'currentColor' : color} stopOpacity={grey ? Number(color) : undefined} />
             ))}
           </linearGradient>
           {animated && (
@@ -123,6 +145,8 @@ export function DorkIcon({
         <g mask={`url(#${maskId})`}>
           <rect x="0" y="-40" width="200" height="280" fill={`url(#${gradId})`} className="dork-gradient-drift" />
         </g>
+      ) : state === 'asleep' ? (
+        <DorkOutline id={`dork-clip-${uid}`} size={size} />
       ) : (
         <path d={SHAPE_PATH} fill={colored ? `url(#${gradId})` : 'currentColor'} />
       )}
