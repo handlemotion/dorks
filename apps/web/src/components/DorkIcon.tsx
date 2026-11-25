@@ -59,7 +59,8 @@ export function dorkIconState(state: DorkState | undefined, opts?: { working?: b
  * - `awake`: the yellow → amber gradient, still: the turn is over and the dork waits for the next message before it sleeps.
  * - `asleep`: the same shape in muted grey, still.
  * - `error`: the same shape in destructive red, still.
- * A nerd (`nerd`) is green where a session is blue (working) or yellow (awake); it still turns yellow when it needs the owner.
+ * A nerd (`nerd`) is green where a session is blue (working); awake, attention, asleep and error look the same as any session's.
+ * `still` draws the working colours without motion (the nerd mark in the mode menu).
  */
 export function DorkIcon({
   state,
@@ -67,10 +68,13 @@ export function DorkIcon({
   label,
   className,
   nerd,
+  still,
 }: {
   state: DorkIconState
-  /** A nerd session (docs/modes.md): green instead of blue and the awake yellow. */
+  /** A nerd session (docs/modes.md): green instead of the working blue. */
   nerd?: boolean
+  /** No motion: the working colours as a still mark. */
+  still?: boolean
   /** Rendered edge length in px. */
   size?: number
   /** Accessible label. Omit when decorative (sets `aria-hidden`). */
@@ -80,9 +84,9 @@ export function DorkIcon({
   const uid = useId().replace(/:/g, '')
   const maskId = `dork-mask-${uid}`
   const gradId = `dork-grad-${uid}`
-  const animated = state === 'working' || state === 'attention'
-  const colored = animated || state === 'awake'
-  const stops = nerd && state !== 'attention' ? GREEN_STOPS : state === 'working' ? BLUE_STOPS : YELLOW_STOPS
+  const animated = !still && (state === 'working' || state === 'attention')
+  const colored = animated || state === 'awake' || (still && state === 'working')
+  const stops = state === 'working' ? (nerd ? GREEN_STOPS : BLUE_STOPS) : YELLOW_STOPS
   const tone = state === 'asleep' ? 'text-muted-foreground/45' : state === 'error' ? 'text-destructive' : ''
 
   return (
