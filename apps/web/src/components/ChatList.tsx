@@ -26,7 +26,7 @@ export type Chat = {
   repo?: string
   /** Something is moving in this chat. */
   working: boolean
-  /** Lifecycle state of the dork, used to distinguish working (animated), awake (coloured) and asleep (grey). */
+  /** Lifecycle state of the dork, used to distinguish working (animated grey), awake (yellow) and asleep (grey outline). */
   state?: DorkState
   /** True when the dork is waiting on the owner (computer access, build approval, etc.). */
   attention?: boolean
@@ -127,8 +127,8 @@ export function ChatList({
 }
 
 /**
- * A chat row. The leading DorkIcon animates with colour while the chat is working, rests coloured when awake, and turns grey when
- * asleep; the right edge shows the pull request number, colored by PR state, when the chat has opened one. The row is active
+ * A chat row. The leading DorkIcon animates in grey while the chat is working, rests yellow when awake, and turns to a grey outline
+ * when asleep; the right edge shows the pull request number, colored by PR state, when the chat has opened one. The row is active
  * (`data-active`, `aria-current`) while its chat is the one in the URL. With `onArchive`, hovering the row swaps the PR number
  * for an archive button, and a right click opens the row's menu.
  */
