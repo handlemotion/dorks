@@ -2,6 +2,7 @@ import { Context, Effect, Layer } from "effect";
 import { startBridgeLinks } from "./http/bridgeLinks";
 import { AppEnv } from "./http/route";
 import { uiApp } from "./http/ui";
+import { startPhoneLink } from "./services/phoneLink";
 
 // The UI API's loopback listener under Bun.serve, and the bridge links the server dials out. Each is a scoped resource: closing
 // the scope stops it, closing its open connections.
@@ -32,6 +33,21 @@ export class BridgeLinks extends Context.Service<BridgeLinks, { readonly stop: (
       return yield* Effect.acquireRelease(
         Effect.sync(() => startBridgeLinks(app)),
         (links) => Effect.sync(() => links.stop()),
+      );
+    }),
+  );
+}
+
+/** The phone link (services/phoneLink.ts): the server dials the cloud relay so the iPhone app can reach its UI API. */
+export class PhoneLinkService extends Context.Service<PhoneLinkService, { readonly stop: () => void }>()("dorks/server/PhoneLink") {
+  static readonly layer = Layer.effect(
+    PhoneLinkService,
+    Effect.gen(function* () {
+      const app = yield* AppEnv;
+      const ui = uiApp(app);
+      return yield* Effect.acquireRelease(
+        Effect.sync(() => startPhoneLink(app, (r) => ui.fetch(r))),
+        (link) => Effect.sync(() => link.stop()),
       );
     }),
   );

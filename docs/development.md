@@ -11,6 +11,7 @@ Dorks is a local-first app. Read [docs/architecture.md](architecture.md) first: 
 | `apps/server` | The local server: SQLite, lifecycle machine, timers, Boat driver, GitHub poller, UI API, bridge socket. Bun at runtime, tests run on Node. |
 | `apps/web` | The UI, a static React SPA. |
 | `apps/desktop` | Tauri 2 macOS shell that supervises the server. |
+| `apps/mobile` | The iPhone app (Expo), a second UI for the Mac's server through the cloud relay ([mobile](mobile.md)). |
 | `apps/mobile` | The iPhone app (Expo), a second UI for the Mac's server through the cloud relay: [mobile](mobile.md). |
 | `packages/client` | Typed client, live stream and React hooks for the UI API, plus an in-memory mock server. |
 | `packages/shared` | Wire types shared by the server, bridge and clients (zod). |

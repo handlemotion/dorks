@@ -249,6 +249,7 @@ function WorkerPr({ worker }: { worker: Worker }) {
     refresh,
     merge: async (method, sha) => void (await actions.mergePullRequest(worker.id, method, sha)),
     updateBranch: (sha) => actions.updatePullRequestBranch(worker.id, sha),
+    markReady: () => actions.markPullRequestReady(worker.id),
   }
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">

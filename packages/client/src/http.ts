@@ -34,6 +34,8 @@ import type {
   Settings,
   LocalAccess,
   LocalDecision,
+  PhonePairing,
+  PhoneStatus,
   InputAnswer,
   SettingsPatch,
   SnapshotStatus,
@@ -174,6 +176,8 @@ export function createApi(config: ApiConfig) {
     /** Merges it; `sha` pins the head that was reviewed (a newer push answers 409 `conflict`). */
     mergePullRequest: (id: string, method: MergeMethod, sha?: string, url?: string) =>
       request<{ merged: true; sha?: string } | { merged: false; queued: true }>("POST", `${dork(id)}/pr/merge`, { method, sha, url }),
+    /** Marks a draft pull request ready for review. */
+    markPullRequestReady: (id: string, url?: string) => request<object>("POST", `${dork(id)}/pr/ready`, { url }),
     /** Merges the base branch into the PR's branch (GitHub's "Update branch"). */
     updatePullRequestBranch: (id: string, sha?: string, url?: string) => request<object>("POST", `${dork(id)}/pr/update-branch`, { sha, url }),
     getSettings: () => request<Settings>("GET", "/api/settings"),
@@ -181,6 +185,11 @@ export function createApi(config: ApiConfig) {
     /** Sends the values the owner typed (or a dismissal). The answer never echoes them. */
     answerInput: (id: string, requestId: string, a: InputAnswer) => request<object>("POST", `${dork(id)}/inputs/${enc(requestId)}`, a),
     localAccess: () => request<LocalAccess>("GET", "/api/local-access"),
+    phone: () => request<PhoneStatus>("GET", "/api/phone"),
+    /** Starts pairing with the iPhone app: a code and a QR link, valid for 10 minutes. */
+    pairPhone: (name?: string) => request<PhonePairing>("POST", "/api/phone/pair", name ? { name } : {}),
+    cancelPhonePair: () => request<object>("DELETE", "/api/phone/pair"),
+    unpairPhone: () => request<object>("DELETE", "/api/phone"),
     setLocalAccess: (enabled: boolean) => request<object>("PUT", "/api/local-access", { enabled }),
     revokeLocalSessions: (dorkId?: string) => request<object>("DELETE", dorkId ? `/api/local-access/sessions?dork=${enc(dorkId)}` : "/api/local-access/sessions"),
     updateSettings: (patch: SettingsPatch) => request<object>("PUT", "/api/settings", patch),

@@ -590,6 +590,13 @@ export const MIGRATIONS: string[] = [
   );
   `,
   `
+  -- The phone link (services/phoneLink.ts, docs/mobile.md): this Mac's id in the cloud relay, its name there, and the Mac token the
+  -- relay gave it when a phone paired (encrypted).
+  ALTER TABLE settings ADD COLUMN cloud_mac_id TEXT;
+  ALTER TABLE settings ADD COLUMN cloud_mac_name TEXT;
+  ALTER TABLE settings ADD COLUMN cloud_mac_token_enc TEXT;
+  `,
+  `
   -- The agent's part in a ship (services/ships.ts, docs/shipping.md): JSON ShipAgent, when it was told the ship deployed or failed and
   -- what it reported when it verified the live deployment.
   ALTER TABLE ships ADD COLUMN agent TEXT;
