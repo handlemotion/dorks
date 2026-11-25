@@ -255,6 +255,9 @@ export function SessionChat({
         picker={claudePicker(dork, settings?.claudeModels, (model, effort, fast) => void modelSwitch.run(() => actions.chooseModel(dorkId, model ?? null, effort ?? null, fast)))}
         upload={actions.uploadImage}
         draftKey={dorkId}
+        // The chat's own composer (not a crew worker's panel) takes the cursor when the chat opens and when the owner starts typing.
+        focusKey={compact ? undefined : dorkId}
+        typeToFocus={!compact}
         usage={<UsageMenu provider={dork.provider} />}
         mentions={mentions}
         reply={reply}
