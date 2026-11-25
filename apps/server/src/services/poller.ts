@@ -344,8 +344,10 @@ const pollEndedState = (app: App, token: string, sub: Subscription): Effect.Effe
     }),
     Effect.catch((e) =>
       Effect.sync(() => {
-        // Gone or no longer visible: stop asking (until a restart); anything else is tried again next time.
-        reads.set(sub.id, { at: e.status === 404 || e.status === 403 ? Number.MAX_SAFE_INTEGER : app.now(), etag: last?.etag });
+        // Gone or no longer visible: stop asking (until a restart). A rate limit (a 403 with `retryAt`) and anything else are tried
+        // again next time.
+        const gone = e.retryAt === undefined && (e.status === 404 || e.status === 403);
+        reads.set(sub.id, { at: gone ? Number.MAX_SAFE_INTEGER : app.now(), etag: last?.etag });
         return stopFor(app, sub, e);
       }),
     ),

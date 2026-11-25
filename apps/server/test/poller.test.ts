@@ -258,6 +258,19 @@ describe("poller", () => {
     expect(listDorks(s.h.app).find((d) => d.id === s.id)?.prs).toEqual([expect.objectContaining({ number: 7, state: "closed" })]);
   });
 
+  it("a rate limit on a stopped-watching PR is waited out, not taken as gone", async () => {
+    const s = await setup("auto");
+    await pollOnce(s.h.app);
+    s.h.app.db.tx(() => subs.unsubscribe(s.h.app, s.id, "octo/hello", 7));
+    s.gh.state.rateLimitedUntil = NOW + 2 * ENDED_STATE_MS;
+    expect(await s.tick()).toBeGreaterThan(ENDED_STATE_MS); // backs off until the limit lifts
+    s.gh.state.rateLimitedUntil = 0;
+    s.gh.state.pr.state = "closed";
+    s.h.clock.t += 2 * ENDED_STATE_MS;
+    await pollOnce(s.h.app);
+    expect(s.sub()).toMatchObject({ status: "ended", state: "closed" });
+  });
+
   it("a PR that is already merged when first seen just ends", async () => {
     const s = await setup();
     s.gh.state.pr.state = "closed";
