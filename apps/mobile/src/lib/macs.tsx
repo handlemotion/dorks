@@ -1,5 +1,5 @@
 import { createClient } from "@dorks/client";
-import { DorksProvider } from "@dorks/client/react";
+import { DorksProvider, useConnection } from "@dorks/client/react";
 import { fetch as expoFetch } from "expo/fetch";
 import * as SecureStore from "expo-secure-store";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
@@ -50,7 +50,12 @@ export function MacsProvider({ token, children }: { token: string; children: Rea
   useEffect(() => {
     void refresh();
     const sub = AppState.addEventListener("change", (s) => s === "active" && void refresh());
-    return () => sub.remove();
+    // Another Mac may come online or go away meanwhile; the picked one's state also follows its live stream (LiveSync below).
+    const timer = setInterval(() => AppState.currentState === "active" && void refresh(), 30_000);
+    return () => {
+      sub.remove();
+      clearInterval(timer);
+    };
   }, [refresh]);
 
   const select = useCallback((id: string) => {
@@ -75,7 +80,18 @@ export function MacClientProvider({ children }: { children: ReactNode }) {
   // Keyed by Mac: switching Macs starts the pages (and the open chat) afresh.
   return (
     <DorksProvider key={macId} client={client}>
+      <LiveSync />
       {children}
     </DorksProvider>
   );
+}
+
+/** Reads the Macs again when the picked Mac's live stream connects or drops, so its online label never lags the stream. */
+function LiveSync() {
+  const { live } = useConnection();
+  const { refresh } = useMacs();
+  useEffect(() => {
+    if (live === "live" || live === "offline") void refresh();
+  }, [live, refresh]);
+  return null;
 }
