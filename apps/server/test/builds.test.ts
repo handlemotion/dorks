@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vite-plus/test";
 import { update } from "../src/db";
 import { approveDraft, buildView, createBuild, getBuild, imageName, rejectDraft, setBuildVar, submitDraft, writeDraft } from "../src/services/builds";
@@ -42,6 +43,40 @@ describe("an image run", () => {
     expect(run(h, second.id).error).toContain("Unable to locate package jq");
     expect(getBuild(h.app, id)!.image).toBe(imageName(h.app, id));
     expect(d.boxes.size).toBe(0);
+  });
+});
+
+describe("services", () => {
+  it("a build without services keeps the spec hash it had before services existed, so no image goes stale on upgrade", async () => {
+    const h = await ready();
+    const id = createBuild(h.app, { name: "plain", setupScript: "echo hi" });
+    expect(getBuild(h.app, id)!.specHash).toBe(
+      createHash("sha256")
+        .update(JSON.stringify(["default", "echo hi", [], []]))
+        .digest("hex"),
+    );
+  });
+
+  it("are checked and warmed in the run: each starts from its directory until its port listens, and the run fails on one that does not", async () => {
+    const h = await ready();
+    const d = h.snapshotDriver;
+    const web = { name: "web", command: "pnpm dev --host 0.0.0.0", cwd: "acme/web/apps/site", port: 5173, preview: true };
+    const id = createBuild(h.app, { name: "web", repos: [{ repo: "acme/web" }], services: [web] });
+    expect((await buildView(h.app, getBuild(h.app, id)!)).services).toEqual([web]);
+    expect(() => createBuild(h.app, { name: "dup", services: [web, { ...web, name: "web2" }] })).toThrow(/port 5173/);
+
+    const first = startRun(h.app, id, { kind: "image", by: "owner" });
+    await h.settle();
+    expect(run(h, first.id).status).toBe("succeeded");
+    expect(d.files.get("/tmp/dorks-build/svc-web.sh")).toBe("pnpm dev --host 0.0.0.0\n");
+    expect(d.files.get("/tmp/dorks-build/run")).toContain("bash /tmp/dorks-build/service-check 'web' '/home/user/work/acme/web/apps/site' '5173' /tmp/dorks-build/svc-web.sh");
+    expect(d.files.get("/tmp/dorks-build/service-check")).toContain('ss -Hltn "sport = :$port"');
+
+    d.setupExit = 1;
+    d.setupOutput = "service web: nothing listened on port 5173 within 300s. Its last output:\nError: Cannot find module 'vite'\n";
+    const second = startRun(h.app, id, { kind: "image", by: "owner" });
+    await h.settle();
+    expect(run(h, second.id).error).toContain("Cannot find module 'vite'");
   });
 });
 

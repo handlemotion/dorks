@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import { describeRpcError, listLine, socketOf } from "./dorks";
 import { parsePrRef, prLabel, samePr } from "./pr-ref";
 import type { ShownPreview } from "./previews";
+import type { ServiceStatus } from "./services";
 import { rpcCall } from "./rpc";
 
 // `dorks mcp`: the same agent surface as `dorks pr …`, as MCP tools (Model Context Protocol) so the agent calls them as typed tools
@@ -38,6 +39,11 @@ type Content = { type: "text"; text: string } | { type: "image"; data: string; m
 
 /** Thrown by a tool for a problem the agent should read and act on; it becomes a tool result with `isError`, not a protocol error. */
 class ToolError extends Error {}
+
+type ServiceLine = ServiceStatus;
+const serviceLine = (s: ServiceLine) =>
+  `- ${s.name}: ${s.state}${s.port ? `, port ${s.port}` : ""}${s.preview ? " (UI, opens as a preview)" : ""}${s.source === "adhoc" ? " (started ad hoc)" : ""}. ` +
+  `\`${s.command}\` in ${s.cwd}, log ${s.log}${s.url ? `, preview ${s.url}` : ""}`;
 
 function prArg(args: Record<string, unknown>): PrRef {
   const ref = typeof args.pr === "string" ? parsePrRef(args.pr) : null;
@@ -115,6 +121,84 @@ const TOOLS: Tool[] = [
       if (args.title !== undefined && typeof args.title !== "string") throw new ToolError("`title` must be a string.");
       const shown = await rpcCall<ShownPreview>(sock, "preview.show", { port, title: args.title, localhost: args.localhost === true });
       return `Showing port ${shown.port} in the user's Artifacts at ${shown.url}. If the page is blank or errors, check that the server answers on that port.`;
+    },
+  },
+  // Services (docs/services.md): the build's dev servers and backing services, prebuilt and warmed in its image, started on demand.
+  {
+    name: "service_list",
+    title: "List this box's services",
+    description:
+      "The dev servers and backing services this session's machine has ready to start (prebuilt and warmed in its image, never running at boot), plus any you started with service_start, " +
+      "each with its command, directory, port, state and log file.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
+    async run(_args, sock) {
+      const r = await rpcCall<{ services: ServiceLine[] }>(sock, "service", { action: "list" });
+      if (!r.services.length)
+        return "This machine defines no services. Start a server with service_start (name, command, port) to have it managed here; propose it for future sessions with machine_draft `services`.";
+      return r.services.map(serviceLine).join("\n");
+    },
+  },
+  {
+    name: "service_start",
+    title: "Start a dev server or service",
+    description:
+      "Start one of this machine's services by name (see service_list) and wait until it listens on its port, so you can test your change against it at once. " +
+      "A service marked as a UI opens in the user's Artifacts as a running preview. Already running: returns at once (pass `restart: true` after a change it does not hot-reload). " +
+      "To run any other server the same way, give a new `name` with its `command`, `port` and `cwd` (under ~/work): it runs in the background as you, in its own process group, " +
+      "with your environment, its output in a log file. Then exercise what you changed against it for real: curl the endpoints, open the page and screenshot it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "The service's name, e.g. web." },
+        command: { type: "string", description: "Only for a service the machine does not define: the shell command, e.g. `pnpm dev --host 0.0.0.0 --port 5173`." },
+        cwd: { type: "string", description: "Only with `command`: the directory under ~/work, e.g. acme/shop/apps/web. Default: ~/work." },
+        port: { type: "integer", minimum: 1, maximum: 65535, description: "Only with `command`: the port it listens on; the start waits for it." },
+        preview: { type: "boolean", description: "Only with `command`: show it to the user as a running preview once it listens." },
+        restart: { type: "boolean", description: "Stop it first if it runs." },
+        waitSeconds: { type: "integer", minimum: 1, maximum: 600, description: "How long to wait for the port. Default 120." },
+      },
+      required: ["name"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: false },
+    async run(args, sock) {
+      if (typeof args.name !== "string" || !args.name) throw new ToolError("`name` is required.");
+      const r = await rpcCall<ServiceLine & { already: boolean; tail: string }>(sock, "service", { action: "start", ...args });
+      const head =
+        r.state === "running"
+          ? `${r.name} is ${r.already ? "already running" : `up in ${((r.readyMs ?? 0) / 1000).toFixed(1)} s`}${r.port ? ` on port ${r.port}` : ""}.${r.url ? ` Showing it in the user's Artifacts at ${r.url}.` : ""}`
+          : r.state === "starting"
+            ? `${r.name} is still starting: nothing listens on port ${r.port} yet. Check service_logs, then call service_start again to keep waiting.`
+            : `${r.name} exited${r.exitCode !== null ? ` with code ${r.exitCode}` : ""} before it was ready.`;
+      return `${head}\nLog: ${r.log}${r.tail.trim() ? `\nLast output:\n${r.tail.trimEnd()}` : ""}`;
+    },
+  },
+  {
+    name: "service_logs",
+    title: "Read a service's output",
+    description: "The last lines of a service's output (its log file, which you can also read or tail yourself).",
+    inputSchema: {
+      type: "object",
+      properties: { name: { type: "string" }, lines: { type: "integer", minimum: 1, maximum: 2000, description: "Default 100." } },
+      required: ["name"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
+    async run(args, sock) {
+      const r = await rpcCall<{ name: string; log: string; text: string }>(sock, "service", { action: "logs", name: args.name, lines: args.lines });
+      return r.text.trim() ? `${r.log}:\n${r.text.trimEnd()}` : `${r.name} has no output yet (${r.log}).`;
+    },
+  },
+  {
+    name: "service_stop",
+    title: "Stop a service",
+    description: "Stop a running service and everything it started (its whole process group).",
+    inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"], additionalProperties: false },
+    annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: true, openWorldHint: false },
+    async run(args, sock) {
+      const r = await rpcCall<ServiceLine>(sock, "service", { action: "stop", name: args.name });
+      return `${r.name} is stopped.`;
     },
   },
   // Preview comments (docs/architecture.md, "Preview comments"): the user's threads on the running preview. They arrive as
@@ -328,7 +412,7 @@ const TOOLS: Tool[] = [
       "time only, never at session start): write it idempotent and non-interactive, e.g. `sudo apt-get install -y ...`. `repos` is the whole list; each is " +
       "cloned to ~/work/<owner>/<name>, and its `setupScript` runs inside the clone (e.g. `pnpm install`). `vars` changes variables: a plain one may carry " +
       "`value`; for a secret give only the name and why, never a value (the owner types it in). Set `buildTime` only when the setup script needs the " +
-      "value; every variable reaches future sessions' environment anyway. Then run it with machine_run. A submitted draft cannot change until the owner decides. " +
+      "value; every variable reaches future sessions' environment anyway. `services` lists the dev servers and services sessions start to test changes (see its schema). Then run it with machine_run. A submitted draft cannot change until the owner decides. " +
       "On the base machine (no build yet) this proposes a new build named `name` and moves this session onto it.",
     inputSchema: {
       type: "object",
@@ -350,6 +434,24 @@ const TOOLS: Tool[] = [
           },
         },
         machineType: { type: "string", enum: ["small", "default", "large", "xlarge"], description: "Machine size: small 2 CPU/4 GB, default 4/8, large 8/16, xlarge 16/32." },
+        services: {
+          type: "array",
+          description:
+            "The full list of dev servers and backing services (replaces the draft's list). Each is started once at build time until its port listens and its first page is requested, " +
+            "which checks it and warms its caches into the image; sessions then start it on demand with service_start. Never started at boot.",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: "Lowercase, e.g. web, api, db." },
+              command: { type: "string", description: "Runs in the foreground until stopped, e.g. `pnpm dev --host 0.0.0.0 --port 5173` or `docker compose up postgres`." },
+              cwd: { type: "string", description: "Directory under ~/work, e.g. acme/shop or acme/shop/apps/web. Default: ~/work." },
+              port: { type: "integer", minimum: 1, maximum: 65535, description: "The port it listens on (what readiness waits for)." },
+              preview: { type: "boolean", description: "A UI the user should see: shown as a running preview when started. Needs a port." },
+            },
+            required: ["name", "command"],
+            additionalProperties: false,
+          },
+        },
         vars: {
           type: "array",
           description: "Variable changes, merged into the draft by name.",
@@ -494,12 +596,14 @@ export function describeLocal(r: LocalResult): string {
 type MachineRun = { id: string; kind: string; status: string; step: string | null; error: string | null; exitCode: number | null; startedBy: string; createdAt: number; finishedAt: number | null };
 type MachineVar = { name: string; secret: boolean; buildTime: boolean; value?: string; requested: boolean };
 type MachineRepo = { repo: string; branch?: string; setupScript?: string };
-type MachineSpec = { machineType: string; setupScript: string; repos: MachineRepo[]; buildTimeVars: string[] };
+type MachineService = { name: string; command: string; cwd?: string; port?: number; preview?: boolean };
+type MachineSpec = { machineType: string; setupScript: string; repos: MachineRepo[]; buildTimeVars: string[]; services?: MachineService[] };
 type MachineBuild = {
   name: string;
   machineType: string;
   setupScript: string;
   repos: MachineRepo[];
+  services?: MachineService[];
   vars: MachineVar[];
   approved: boolean;
   image: { stale: boolean; staleReason: string | null } | null;
@@ -518,6 +622,9 @@ const repoLines = (repos: MachineRepo[]) =>
   repos.length
     ? repos.map((r) => `- ${r.repo}${r.branch ? ` (branch ${r.branch})` : ""}${r.setupScript?.trim() ? `\n  setup:\n${script(r.setupScript).replace(/^/gm, "  ")}` : ""}`).join("\n")
     : "(none)";
+
+const serviceLines = (services: MachineService[] = []) =>
+  services.length ? services.map((s) => `- ${s.name}: \`${s.command}\` in ~/work${s.cwd ? `/${s.cwd}` : ""}${s.port ? `, port ${s.port}` : ""}${s.preview ? " (preview)" : ""}`).join("\n") : "(none)";
 
 function describeRun(r: MachineRun): string {
   const what = `${r.kind} run ${r.id}: ${r.status}${r.step && r.status === "running" ? ` (${r.step})` : ""}`;
@@ -538,6 +645,7 @@ function describeBuild(b: MachineBuild, d: MachineDraft | null): string {
     `Build "${b.name}", size ${b.machineType}, image ${image}.`,
     `Setup script:\n${script(b.setupScript)}`,
     `Repositories:\n${repoLines(b.repos)}`,
+    `Services:\n${serviceLines(b.services)}`,
     `Variables:\n${vars}`,
     `Last run: ${b.lastRun ? describeRun(b.lastRun) : "none"}`,
     d ? `Your draft:\n${describeDraft(d)}` : "You have no draft.",
@@ -554,6 +662,7 @@ function describeDraft(d: MachineDraft): string {
     `Status: ${d.status}${d.stale ? " (the build changed since you started this draft: check it with machine_get)" : ""}. Size ${d.spec.machineType}.`,
     `Setup script:\n${script(d.spec.setupScript)}`,
     `Repositories:\n${repoLines(d.spec.repos)}`,
+    `Services:\n${serviceLines(d.spec.services)}`,
     `Variable changes:\n${vars}`,
   ].join("\n\n");
 }
@@ -753,6 +862,7 @@ export class McpServer {
             "When you start a web server the user should see, call preview_show with its port. When you change anything visual, verify it with screenshot_share and put the image it returns in your final answer. " +
             'The user\'s comments on a running preview arrive as <dorks-event source="preview"> turns: answer them with comment_reply or comment_resolve. ' +
             "To install tools, set variables or pre-clone repos for future sessions, search for the machine_ tools. " +
+            "To test a change against a running dev server or service, start it with service_start (service_list shows what this machine has prebuilt). " +
             "In a crew (a coordinator and its worker dorks), the dork_ tools start, message and follow the other dorks.",
         });
         break;

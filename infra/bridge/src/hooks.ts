@@ -8,11 +8,13 @@ import type { PrSubscriptions } from "./prs";
 import { errTag, type Log } from "./redact";
 import type { RpcMethods } from "./rpc";
 import type { Identity } from "./runas";
+import { changedFiles, judgePrompt, parseVerdict, TurnActivity, verifyReason, workState, type ServiceSummary, type WorkState } from "./verify";
 import { scanWork, type BranchPrStatus, type Finding } from "./work-scan";
 
 // The bridge's side of the Claude Code hooks (docs/autonomy.md). Claude runs `dorks hook <event>` (hook-cli.ts), which forwards the hook's
 // JSON input to the `hook.*` methods below and prints what they return:
-//   Stop          the "done" gate: uncommitted or unpushed work, or a pushed branch without a PR, blocks the stop once
+//   Stop          the "done" gates: a code change not tested against running software (verify.ts, judged by a small model), and
+//                 uncommitted or unpushed work, or a pushed branch without a PR; each blocks the stop once
 //   PostToolUse   backs up the gh shim: subscribes to PRs `gh pr create` printed, unsubscribes from ones `gh pr merge|close` ended
 //   SessionStart  re-injects the subscribed PRs and how autonomy works after a start, resume or compaction
 // A handler that throws answers nothing (Claude Code carries on as if the hook did not exist); `dorks hook` does the same when this
@@ -122,6 +124,12 @@ export interface HookDeps {
   prs: Pick<PrSubscriptions, "list" | "subscribe" | "unsubscribe">;
   /** Pull request status for a pushed branch (see pr-lookup.ts); null when unknown. */
   prStatus: (repo: string, branch: string) => Promise<BranchPrStatus | null>;
+  /** The build's services and their state (services.ts), for the SessionStart context and the verify gate. */
+  services?: () => ServiceSummary[];
+  /** One answer from a small model (Haiku for Claude), for the verify gate; null or a rejection when none can be had. */
+  judge?: (prompt: string) => Promise<string | null>;
+  /** No verify gate for this session (a crew coordinator, which writes no code). */
+  skipVerify?: () => boolean;
   log: Log;
 }
 
@@ -140,8 +148,18 @@ const asInput = (v: unknown): HookInput => (v && typeof v === "object" && !Array
 
 export class HookService {
   private turnKinds: string[] = [];
+  /** What the agent did since the last turn that ended without being sent back (verify.ts). */
+  readonly activity = new TurnActivity();
+  /** The working trees when that turn ended: what tells this turn's changes apart. Null until taken, or when it could not be. */
+  private baseline: Promise<WorkState | null> | null = null;
 
   constructor(private d: HookDeps) {}
+
+  /** A turn ended and stays ended (or the agent just started): what comes next is judged against the trees as they are now. */
+  turnBoundary() {
+    this.activity.reset();
+    this.baseline = workState({ workDir: this.d.workDir, env: this.d.env, runAs: this.d.runAs }).catch(() => null);
+  }
 
   readonly methods: RpcMethods = {
     "hook.stop": (p) => this.run("stop", () => this.stop(asInput(p))),
@@ -149,9 +167,10 @@ export class HookService {
     "hook.sessionStart": (p) => this.run("session-start", () => this.sessionStart()),
   };
 
-  /** What the agent was last asked to do: the kinds of the `notify` turn just written to it (none for a user message). */
-  noteTurn(kinds: string[]) {
+  /** What the agent was last asked to do: the kinds of the `notify` turn just written to it (none for a user message), and its text. */
+  noteTurn(kinds: string[], text?: string) {
     this.turnKinds = kinds;
+    if (text) this.activity.request(text);
   }
 
   private async run(event: HookEvent, handler: () => Promise<HookOutput>): Promise<HookOutput> {
@@ -166,9 +185,14 @@ export class HookService {
   // ------------------------------------------------------------------ Stop
   private async stop(input: HookInput): Promise<HookOutput> {
     // Claude Code is already continuing because an earlier Stop hook blocked: never block twice in a row.
-    if (input.stop_hook_active === true) return null;
+    if (input.stop_hook_active === true) return this.allow();
     // The turn answering a `ready` notification is "post a standby note", not "ship something".
-    if (this.turnKinds.includes("ready")) return null;
+    if (this.turnKinds.includes("ready")) return this.allow();
+
+    const verifying = this.verify(text(input.last_assistant_message)).catch((e) => {
+      this.d.log("hook stop: verify gate failed:", errTag(e));
+      return null;
+    });
 
     const subs = (await this.d.prs.list()) ?? [];
     const prStatus = async (repo: string, branch: string): Promise<BranchPrStatus | null> => {
@@ -186,10 +210,42 @@ export class HookService {
     const present = new Set(found.map(conditionKey));
     const fresh = found.filter((f) => !raised.has(conditionKey(f)));
     this.saveRaised(session, [...raised].filter((k) => present.has(k)).concat(fresh.map(conditionKey)));
-    if (!fresh.length) return null;
+    const verify = await verifying;
+    if (!fresh.length && !verify) return this.allow();
 
-    this.d.log("hook stop: blocked for", [...new Set(fresh.map((f) => f.kind))].join(","));
-    return { decision: "block", reason: stopReason(fresh) };
+    this.d.log("hook stop: blocked for", [...(verify ? ["verify"] : []), ...new Set(fresh.map((f) => f.kind))].join(","));
+    // Test first, then ship: one block carries both, since the continuation it starts is never blocked again.
+    return { decision: "block", reason: [verify, fresh.length ? stopReason(fresh) : null].filter(Boolean).join("\n\n") };
+  }
+
+  /** The stop goes through: the next turn is judged on its own. */
+  private allow(): null {
+    this.turnBoundary();
+    return null;
+  }
+
+  /**
+   * The verify gate (verify.ts): did a turn that changed code test it against the running software? Null to let it stop, else the
+   * reason to send it back with. A small model judges from the turn's tool calls; without one, a live-looking step after the last
+   * edit is enough.
+   */
+  private async verify(finalMessage: string): Promise<string | null> {
+    if (!this.d.judge || this.d.skipVerify?.()) return null; // no judge configured: the gate is off (the bridge always has one)
+    const ctx = { workDir: this.d.workDir, env: this.d.env, runAs: this.d.runAs };
+    const [before, after] = await Promise.all([this.baseline ?? Promise.resolve(null), workState(ctx).catch(() => null)]);
+    const files = before && after ? await changedFiles(ctx, before, after) : [];
+    // Nothing on disk changed this turn and no edit tool ran (a question, a review): nothing to test.
+    if (!files.length && !this.activity.edited) return null;
+    const services = this.d.services?.() ?? [];
+    const prompt = judgePrompt({ ...this.activity.snapshot(), files, services, finalMessage });
+    const raw = this.d.judge ? await this.d.judge(prompt).catch(() => null) : null;
+    const verdict = raw ? parseVerdict(raw) : null;
+    if (verdict) {
+      this.d.log("hook stop: verify verdict", verdict.verdict);
+      return verdict.verdict === "needs_live_test" ? verifyReason(verdict.what, services) : null;
+    }
+    this.d.log("hook stop: verify judge gave no verdict, using the fallback");
+    return this.activity.liveAfterEdit ? null : verifyReason("", services);
   }
 
   private raisedFile() {
@@ -242,7 +298,7 @@ export class HookService {
   private async sessionStart(): Promise<HookOutput> {
     const subs = await this.d.prs.list();
     this.d.log("hook session-start: described", subs?.length ?? "no", "subscriptions");
-    return { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: sessionContext(subs) } };
+    return { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: sessionContext(subs, this.d.services?.() ?? []) } };
   }
 }
 
@@ -281,7 +337,7 @@ function describe(s: SubscriptionView) {
 }
 
 /** `subs` is null when the backend has not answered yet. */
-function sessionContext(subs: SubscriptionView[] | null): string {
+function sessionContext(subs: SubscriptionView[] | null, services: ServiceSummary[] = []): string {
   return [
     subs === null
       ? "Pull requests you are subscribed to: could not be loaded just now; call the `pr_list` tool (or run `dorks pr list`)."
@@ -294,6 +350,12 @@ function sessionContext(subs: SubscriptionView[] | null): string {
     "- Always validate locally before you push: run the repo's tests, typecheck and lint for what you changed, using the scripts the repo defines.",
     "- `gh pr create` subscribes you to the new PR. The `pr_subscribe`, `pr_unsubscribe` and `pr_list` tools of the dorks MCP server (or `dorks pr sub <pr>`, `dorks pr unsub <pr>`, `dorks pr list` in a shell) manage subscriptions (<pr> is a URL or owner/name#12).",
     "- When you start a web server the user should see (a dev server, a preview build), call the `preview_show` tool with its port: it opens in the user's Artifacts as a running preview.",
+    "- Test every change against the real running software before you finish: start the server or app, exercise what changed (real requests to the endpoints, the page in a browser with a screenshot, the CLI on real input) and say what you saw. Unit tests, mocks and a typecheck alone do not count; a turn that skips this is sent back once.",
+    ...(services.length
+      ? [
+          `- This box has prebuilt services, installed and warmed but not running: ${services.map((s) => `${s.name}${s.port ? ` (port ${s.port}${s.preview ? ", UI" : ""})` : ""}`).join(", ")}. Start one with the dorks \`service_start\` tool when you need it; it waits until it listens and shows a UI as a preview. \`service_logs\` and \`service_stop\` do the rest.`,
+        ]
+      : []),
     "- When a PR is ready (CI green and approved), post a short standby note in its thread and stop. Never merge it yourself.",
     "- Every change you make ships as a pull request: when the work is done, validate it, commit, push and open a PR (or push to the PR it belongs to) without asking the user first. The user has authorized commits, pushes and PRs in this box.",
     "- Stopping with uncommitted changes, unpushed commits or a pushed branch without a PR is blocked: you will be told to finish shipping it.",

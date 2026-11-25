@@ -548,8 +548,15 @@ const configureFrame = (app: App, dork: DorkRow): Effect.Effect<ToBridge, Onboar
       ...(dork.titleSource === "message" ? nameFrom(app, dork.id) : {}),
       ...(crewRole(app, dork) ? { role: crewRole(app, dork) } : {}),
       ...skillsField(app),
+      ...servicesField(app, dork),
     })),
   );
+
+/** The services of the dork's build (docs/services.md), for `service_start`; none on the base machine. */
+function servicesField(app: App, dork: DorkRow) {
+  const services = dork.buildId ? (getBuild(app, dork.buildId)?.services ?? []) : [];
+  return services.length ? { services } : {};
+}
 
 /** The GitHub CLI's current token, for the bridge's refresh path. Same gating as `configure`. */
 export async function ghToken(app: App, dorkId: string): Promise<{ token: string } | null> {

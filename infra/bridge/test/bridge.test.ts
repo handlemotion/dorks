@@ -761,6 +761,6 @@ describe("autonomy: hooks", () => {
     expect(blocked.reason).toContain("branch dork/abc: 1 commit not pushed anywhere (no upstream)");
     expect(await runHook(s, "Stop", { stop_hook_active: true })).toBeNull();
     expect(await runHook(s, "Stop", { stop_hook_active: false })).toBeNull(); // raised already
-    expect(s.logs.join("\n")).toContain("hook stop: blocked for unpublished");
+    expect(s.logs.join("\n")).toMatch(/hook stop: blocked for (verify,)?unpublished/);
   });
 });
