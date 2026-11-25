@@ -4,7 +4,10 @@ import * as Updates from "expo-updates";
 import { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { authClient } from "@/lib/auth";
+import { holdSplash } from "@/lib/splash";
 import { useColors, useIsDark } from "@/lib/theme";
+
+holdSplash();
 
 /** An EAS Update downloaded at launch (expo-updates checks on load) is applied at once, before there is anything to lose. */
 function useLaunchUpdate() {
@@ -21,6 +24,7 @@ export default function RootLayout() {
   useLaunchUpdate();
   const base = dark ? DarkTheme : DefaultTheme;
   const theme = { ...base, colors: { ...base.colors, background: c.background, card: c.background, text: c.text, border: c.hairline, primary: c.brand } };
+  // The launch screen stays up (holdSplash) until the first real screen lets it go: sign-in, or the app once its Macs load.
   if (isPending) return null;
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

@@ -5,11 +5,13 @@ import { Sidebar } from "@/components/Sidebar";
 import { useSessionToken } from "@/lib/auth";
 import { CurrentChatProvider } from "@/lib/chat";
 import { MacClientProvider, MacsProvider, useMacs } from "@/lib/macs";
+import { useSplashDone } from "@/lib/splash";
 import { useColors } from "@/lib/theme";
 
 function AppStack() {
   const c = useColors();
   const { macs, mac, error } = useMacs();
+  useSplashDone(macs !== undefined || !!error);
   if (macs === undefined && !error) return <View style={{ flex: 1, backgroundColor: c.background }} />;
   return (
     <Stack screenOptions={{ headerShown: false }}>

@@ -25,6 +25,13 @@ const light = {
   merged: "#8250df",
   closed: "#cf222e",
   draft: "#737373",
+  /** Sign-in (ported from Wok's iOS sign-in): its canvas, raised controls, their edge, quiet ink and the primary button. */
+  welcome: "#fafafa",
+  surface: "#ffffff",
+  border: "#e8e8e8",
+  subtle: "#a6a6a6",
+  primary: "#1d72e8",
+  primaryButton: "#1a7ef5",
 };
 
 const dark: typeof light = {
@@ -46,6 +53,12 @@ const dark: typeof light = {
   merged: "#a371f7",
   closed: "#f85149",
   draft: "#a1a1a1",
+  welcome: "#0a0a0a",
+  surface: "#171717",
+  border: "rgba(255,255,255,0.1)",
+  subtle: "#737373",
+  primary: "#1d72e8",
+  primaryButton: "#1a7ef5",
 };
 
 export type Colors = typeof light;
