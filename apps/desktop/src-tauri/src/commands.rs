@@ -39,6 +39,17 @@ pub fn open_data_dir(app: AppHandle, state: State<'_, AppState>) -> Result<(), S
     app.opener().open_path(state.paths.root().display().to_string(), None::<&str>).map_err(|e| e.to_string())
 }
 
+/// Opens an external web or mailto link in the OS default browser. Used by the UI on single-click in the desktop webview,
+/// where WKWebView can swallow `target="_blank"` clicks unless invoked directly.
+#[tauri::command]
+pub fn open_url(app: AppHandle, url: String) -> Result<(), String> {
+    let parsed = tauri::Url::parse(&url).map_err(|e| format!("invalid url: {e}"))?;
+    if !matches!(parsed.scheme(), "http" | "https" | "mailto") {
+        return Err(format!("unsupported url scheme: {}", parsed.scheme()));
+    }
+    app.opener().open_url(parsed.as_str(), None::<&str>).map_err(|e| e.to_string())
+}
+
 /// The UI reports whether dorks are working, and whether an active automation has a schedule (`scheduled`, absent from older UIs).
 /// With the default settings the Mac is kept awake only while either holds, and the app opens at login while a schedule exists.
 #[tauri::command]
