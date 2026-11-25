@@ -173,12 +173,16 @@ export const prStateOf = (db: Db, d: DorkRow): "open" | "merged" | "closed" | un
     ? (db.get<{ state: string }>("SELECT state FROM pr_subscriptions WHERE dork_id = ? AND url = ? ORDER BY id DESC LIMIT 1", d.id, d.prUrl)?.state as "open" | "merged" | "closed" | undefined)
     : undefined;
 
-/** True when the dork is waiting on the owner: a pending computer-access or secure-input request, or a submitted build draft awaiting approval. */
+/**
+ * True when the dork is waiting on the owner: a pending computer-access or secure-input request, a submitted build draft awaiting
+ * approval, or a merged PR that failed to ship while the server still watches it (docs/shipping.md).
+ */
 export const needsAttentionOf = (db: Db, dorkId: string): boolean =>
   Boolean(
     db.get<{ one: number }>("SELECT 1 AS one FROM local_requests WHERE dork_id = ? AND status = 'pending' LIMIT 1", dorkId) ??
     db.get<{ one: number }>("SELECT 1 AS one FROM input_requests WHERE dork_id = ? AND status = 'pending' LIMIT 1", dorkId) ??
-    db.get<{ one: number }>("SELECT 1 AS one FROM build_drafts WHERE dork_id = ? AND status = 'submitted' LIMIT 1", dorkId),
+    db.get<{ one: number }>("SELECT 1 AS one FROM build_drafts WHERE dork_id = ? AND status = 'submitted' LIMIT 1", dorkId) ??
+    db.get<{ one: number }>("SELECT 1 AS one FROM ships WHERE dork_id = ? AND status = 'failed' AND ended_at IS NULL LIMIT 1", dorkId),
   );
 
 /** The wire shape of a dork for the UI: no box id, session ids or other internals. */

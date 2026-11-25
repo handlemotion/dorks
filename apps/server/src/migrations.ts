@@ -551,4 +551,26 @@ export const MIGRATIONS: string[] = [
   UPDATE dorks SET mode = 'nerd' WHERE kind = 'coordinator';
   ALTER TABLE dorks DROP COLUMN kind;
   `,
+  `
+  -- Ships (services/ships.ts, docs/shipping.md): after a session's PR merges, what its merge commit set off (workflow runs, other apps'
+  -- checks, commit statuses, deployments). \`stages\` is JSON ShipStage[], \`poll\` the tracker's ETags and cached bodies. \`ended_at\` is
+  -- null while the poller still watches it.
+  CREATE TABLE ships (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dork_id TEXT NOT NULL REFERENCES dorks (id) ON DELETE CASCADE,
+    repo TEXT NOT NULL,
+    number INTEGER NOT NULL,
+    url TEXT NOT NULL,
+    title TEXT,
+    base_ref TEXT NOT NULL,
+    sha TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('watching', 'shipped', 'failed', 'stalled', 'quiet')),
+    stages TEXT NOT NULL DEFAULT '[]',
+    poll TEXT,
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER,
+    UNIQUE (dork_id, repo, number)
+  );
+  CREATE INDEX ships_open ON ships (ended_at);
+  `,
 ];

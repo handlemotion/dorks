@@ -3,6 +3,7 @@ import type { App } from "../app";
 import { append, setTimer } from "../lifecycle/dispatch";
 import { MAX_SUMMARY_CHARS } from "../lib/notifyRender";
 import { enqueueNotification } from "./notify";
+import { startShip } from "./ships";
 import { endSubscription, getSub, resetCiAttempts, updateSubscription, type Subscription } from "./subscriptions";
 
 // What a change observed on a subscribed PR does to the subscription (docs/autonomy.md). The poller (services/poller.ts) turns
@@ -14,7 +15,8 @@ export interface Actor {
 }
 
 export type PrEvent =
-  | { kind: "pr_closed"; merged: boolean; sender: Actor }
+  /** `mergeSha`, `mergedAt`: the merge commit and when it landed, which the ship tracker follows (services/ships.ts). */
+  | { kind: "pr_closed"; merged: boolean; sender: Actor; mergeSha?: string; mergedAt?: number }
   | { kind: "pr_synchronize"; headSha: string; headRef: string }
   /** `sender` and `at` when GitHub's issue events say who retargeted the PR. */
   | { kind: "pr_base_changed"; baseRef: string; from: string; sender?: Actor; at?: number }
@@ -127,6 +129,7 @@ function onClosed({ app, sub, env, notify }: Ingest, event: EventOf<"pr_closed">
   updateSubscription(app, sub.id, { state: how });
   if (event.merged) append(app, sub.dorkId, { type: "pr_merged", url: sub.url, number: sub.number });
   endSubscription(app, getSub(app, sub.id)!, how);
+  if (event.merged && event.mergeSha) startShip(app, getSub(app, sub.id)!, event.mergeSha, event.mergedAt);
   const own = !!env.ownLogin && event.sender.login.toLowerCase() === env.ownLogin.toLowerCase();
   if (!own) notify("closed", `${event.merged ? "Merged" : "Closed"} by ${event.sender.login}.`);
 }

@@ -1,6 +1,7 @@
 import type { DorkState, ClientEvent, LocalKind, TurnOutcome } from "../events";
 import type { NotifyKind, PrRef } from "../autonomy";
 import type { InputField } from "../inputs";
+import type { ShipView } from "../ship";
 
 /**
  * What an autonomy notice came from (docs/autonomy.md), kept so clients can label it by what happened and give it its own icon: a PR
@@ -65,6 +66,8 @@ export type Block =
       names?: string[];
       at: number;
     }
+  /** What a merged pull request set off (docs/shipping.md): one card per ship, kept at the place of its first event and updated in place. */
+  | { kind: "ship"; id: string; ship: ShipView; at: number }
   /**
    * The end of an agent turn: everything since the previous turn (or user message) belongs to it. `outcome` is null for turns stored
    * before the server stamped outcomes and final answers; render those as they always were.
@@ -133,6 +136,11 @@ const HANDLERS: Handlers = {
   pr_merged(v, e) {
     v.prUrl = e.url;
     notice(v, e, "info", `PR merged: ${e.url}`, { type: "pr_merged", url: e.url, number: e.number });
+  },
+  ship(v, e) {
+    const i = v.blocks.findIndex((b) => b.kind === "ship" && b.ship.id === e.ship.id);
+    if (i >= 0) v.blocks[i] = { ...(v.blocks[i] as Extract<Block, { kind: "ship" }>), ship: e.ship };
+    else v.blocks.push({ kind: "ship", id: `s${e.seq}`, ship: e.ship, at: e.ts });
   },
   notify(v, e) {
     notice(v, e, "info", e.text, { type: "notify", kinds: e.kinds, prs: e.prs, text: e.text, ...(e.source ? { source: e.source } : {}) });

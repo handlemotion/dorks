@@ -4,7 +4,7 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { ClientEvent, CommentAnchor, CommentView, McpServerView, PullRequestView, SkillCandidate, SkillView } from "@dorks/shared";
+import type { ClientEvent, CommentAnchor, CommentView, McpServerView, PullRequestView, ShipStage, ShipView, SkillCandidate, SkillView } from "@dorks/shared";
 import type { Dork, Settings, SnapshotStatus } from "./types.ts";
 import { mockAutomations } from "./mock-automations.ts";
 
@@ -382,6 +382,56 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       fn();
     }, ms);
     timers.add(t);
+  };
+
+  /**
+   * After a merge, a pretend ship (docs/shipping.md): CI and a deploy workflow with a migration step on the merge commit, a Cloudflare
+   * Pages check, then a production deployment, each step a few seconds apart, ending shipped.
+   */
+  const simulateShip = (dorkId: string, pr: { url: string; number: number; title?: string; baseRef?: string; repo?: string }) => {
+    const repo = pr.repo ?? pr.url.replace("https://github.com/", "").split("/pull/")[0];
+    const start = Date.now();
+    const sha = "9f3c2a17e0b5d4c8a6f1e2d3c4b5a6978899aabb";
+    const ship: ShipView = { id: start, repo, number: pr.number, url: pr.url, title: pr.title, baseRef: pr.baseRef ?? "main", sha, status: "watching", stages: [], startedAt: start };
+    const run = (n: number) => `https://github.com/${repo}/actions/runs/${n}`;
+    const stage = (s: ShipStage) => s;
+    const steps: ((t: number) => void)[] = [
+      (t) => {
+        ship.stages = [
+          stage({ id: "run:1", kind: "workflow", name: "CI", state: "running", url: run(1), startedAt: t }),
+          stage({ id: "check:Cloudflare Pages", kind: "check", name: "Cloudflare Pages", state: "running", url: "https://dash.cloudflare.com", startedAt: t }),
+        ];
+      },
+      (t) => {
+        Object.assign(ship.stages[0], { state: "passed", endedAt: t });
+        ship.stages.splice(
+          1,
+          0,
+          stage({ id: "run:2", kind: "workflow", name: "Deploy", state: "running", url: run(2), startedAt: t }),
+          stage({ id: "mig:2:1:3", kind: "migration", name: "Run database migrations", state: "running", url: run(2), startedAt: t }),
+        );
+      },
+      (t) => {
+        Object.assign(ship.stages[2], { state: "passed", endedAt: t });
+        Object.assign(ship.stages[3], { state: "passed", endedAt: t });
+        ship.stages.push(stage({ id: "dep:production", kind: "deployment", name: "Deploy to production", state: "running", url: run(2), startedAt: t }));
+      },
+      (t) => {
+        Object.assign(ship.stages[1], { state: "passed", endedAt: t });
+        Object.assign(ship.stages[4], { state: "passed", endedAt: t, environmentUrl: "https://demo.pages.dev" });
+      },
+      (t) => {
+        Object.assign(ship, { status: "shipped", endedAt: t });
+      },
+    ];
+    append(dorkId, { type: "ship", ship: structuredClone(ship) });
+    steps.forEach((step, i) =>
+      later(2500 * (i + 1), () => {
+        if (!dorks.has(dorkId)) return;
+        step(Date.now());
+        append(dorkId, { type: "ship", ship: structuredClone(ship) });
+      }),
+    );
   };
 
   const append = (dorkId: string, body: EventBody): ClientEvent => {
@@ -840,6 +890,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         if (pr.mergeableState === "dirty") return fail(res, "conflict", "Pull Request is not mergeable");
         Object.assign(pr, { state: "merged", mergedAt: Date.now(), mergedBy: pr.author, mergeableState: "unknown" });
         append(d.id, { type: "pr_merged", url: pr.url, number: pr.number });
+        simulateShip(d.id, pr);
         broadcast({ t: "subscriptions", dorkId: d.id });
         if (pr.url === d.prUrl) d.prState = "merged";
         // GitHub retargets PRs stacked on the merged branch to its base.
