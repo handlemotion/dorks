@@ -23,8 +23,9 @@ export const PinnedShip = createContext<{ id: number; line: boolean } | null>(nu
 export function ShipPin({ blocks, state, children }: { blocks: Block[]; state: string; children: ReactNode }) {
   const pinned = pinnedShip(blocks, state)
   const after = pinned ? blocks.slice(blocks.indexOf(pinned) + 1).some((b) => b.kind !== 'turn') : false
-  // Tucked under the answer only when the answer is the last thing above it; under a notice ("PR #7 merged") it keeps the thread's gap.
-  const tuck = blocks.filter((b) => b.kind !== 'turn' && b !== pinned).at(-1)?.kind === 'assistant'
+  // Tucked under the answer when the answer is the last thing above it; under a notice ("PR #7 merged") it keeps the notices' 12px rhythm.
+  const above = blocks.filter((b) => b.kind !== 'turn' && b !== pinned).at(-1)?.kind
+  const tuck = above === 'assistant' ? 'answer' : above === 'notice' ? 'notice' : undefined
   return (
     <PinnedShip.Provider value={pinned ? { id: pinned.ship.id, line: after } : null}>
       {children}
@@ -94,11 +95,11 @@ function lastEnd(stages: ShipStage[], fallback: number) {
 const host = (url: string) => url.replace(/^https?:\/\//, '').replace(/\/$/, '')
 
 /** A ship in the thread: the whole card, or one line when the same ship is pinned at the end of the chat. */
-export function ShipCard({ block, pinned = false, tuck = false }: { block: ShipBlock; pinned?: boolean; tuck?: boolean }) {
+export function ShipCard({ block, pinned = false, tuck }: { block: ShipBlock; pinned?: boolean; tuck?: 'answer' | 'notice' }) {
   const pin = useContext(PinnedShip)
   if (block.ship.status === 'quiet') return <ShipLine ship={block.ship} /> // nothing ran: there is nothing to list
   if (!pinned && pin?.id === block.ship.id) return pin.line ? <ShipLine ship={block.ship} /> : null
-  return <ShipPanel ship={block.ship} tuck={pinned && tuck} />
+  return <ShipPanel ship={block.ship} tuck={pinned ? tuck : undefined} />
 }
 
 function ShipLine({ ship }: { ship: ShipView }) {
@@ -114,7 +115,7 @@ function ShipLine({ ship }: { ship: ShipView }) {
   )
 }
 
-function ShipPanel({ ship, tuck }: { ship: ShipView; tuck: boolean }) {
+function ShipPanel({ ship, tuck }: { ship: ShipView; tuck?: 'answer' | 'notice' }) {
   const watching = ship.endedAt === undefined
   const now = useNow(watching)
   const time = watching ? workedFor(now - ship.startedAt) : ship.stages.length ? workedFor(lastEnd(ship.stages, ship.endedAt!) - ship.startedAt) : undefined
@@ -127,7 +128,8 @@ function ShipPanel({ ship, tuck }: { ship: ShipView; tuck: boolean }) {
       data-testid="ship"
       data-status={ship.status}
       // Pinned right under the last answer, it belongs to it: it takes back most of the thread's gap (the answer keeps its time line).
-      className={`flex w-full min-w-0 flex-col gap-2 rounded-[6px] border border-surface-line bg-surface px-3.5 pt-2.5 pb-3 ${tuck ? '-mt-5' : ''}`}
+      // Under a notice it sits 12px down, as the notices do from each other.
+      className={`flex w-full min-w-0 flex-col gap-2 rounded-[6px] border border-surface-line bg-surface px-3.5 pt-2.5 pb-3 ${tuck === 'answer' ? '-mt-5' : tuck === 'notice' ? '-mt-3' : ''}`}
     >
       <p className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
         <span className={`min-w-0 truncate ${bad ? 'text-destructive' : ''}`}>{headline(ship)}</span>
