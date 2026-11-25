@@ -113,7 +113,7 @@ export function PreviewMarks(props: {
               : lit && (
                   <div
                     aria-hidden
-                    className="absolute rounded-[4px] border border-brand bg-brand/[0.08]"
+                    className="absolute rounded-[4px] outline-2 outline-offset-2 outline-brand bg-brand/[0.06]"
                     style={{ left: rects[0]!.x, top: rects[0]!.y, width: rects[0]!.width, height: rects[0]!.height }}
                   />
                 )}
@@ -176,6 +176,19 @@ function AnchorPreview({ anchor, imageUrl }: { anchor: CommentThread['root']['an
   if (anchor?.kind === 'text') return <p className="mb-3 line-clamp-2 border-s-2 border-amber-500 ps-2.5 text-sm text-muted-foreground">{anchor.quote}</p>
   if (anchor?.kind === 'area' && anchor.image && imageUrl)
     return <img src={imageUrl(anchor.image)} alt="The area" className="mb-3 max-h-40 w-full rounded-[6px] bg-foreground/[0.04] object-contain outline outline-1 -outline-offset-1 outline-black/10" />
+  if (anchor?.kind === 'element')
+    return (
+      <p className="mb-3 flex min-w-0 items-center gap-1.5 border-s-2 border-brand ps-2.5 text-xs text-muted-foreground">
+        <span className="shrink-0 font-mono text-foreground">&lt;{anchor.label}&gt;</span>
+        {anchor.component && <span className="shrink-0">{anchor.component}</span>}
+        {anchor.file && (
+          <span className="min-w-0 truncate font-mono">
+            {anchor.file.split('/').pop()}
+            {anchor.line ? `:${anchor.line}` : ''}
+          </span>
+        )}
+      </p>
+    )
   return null
 }
 

@@ -9,7 +9,7 @@ import {
   MessagesSquareIcon,
   RotateCwIcon,
   RulerIcon,
-  ScanIcon,
+  SquareDashedIcon,
   SquareMousePointerIcon,
   TextCursorIcon,
 } from 'lucide-react'
@@ -20,7 +20,7 @@ import { Button, buttonVariants } from '@dorks/ui/button'
 import type { Names, ThreadActions } from './preview/CommentThread'
 import { ProviderIcon, type AgentProvider } from './ChatComposer'
 import { PreviewMarks, useSize } from './preview/PreviewMarks'
-import { Rulers } from './preview/Rulers'
+import { RULER_ROOM, Rulers } from './preview/Rulers'
 import { useOverlay, type Overlay, type Picked, type PickMode, type Rect } from './preview/useOverlay'
 import { Tip } from './Tip'
 
@@ -394,7 +394,7 @@ function PreviewToolbar(props: {
     <>
       <ToolButton label="Comment on an element" icon={<MessageSquarePlusIcon />} pressed={props.active === 'comment'} onClick={() => props.onTool('comment')} />
       <ToolButton label="Comment on text" icon={<TextCursorIcon />} pressed={props.active === 'text'} onClick={() => props.onTool('text')} />
-      <ToolButton label="Comment on an area" icon={<ScanIcon />} pressed={props.active === 'capture'} onClick={() => props.onTool('capture')} />
+      <ToolButton label="Comment on an area" icon={<SquareDashedIcon />} pressed={props.active === 'capture'} onClick={() => props.onTool('capture')} />
       <ToolButton label={props.rulers ? 'Hide rulers' : 'Rulers'} icon={<RulerIcon />} pressed={props.rulers} onClick={props.onRulers} />
       <span aria-hidden className="mx-1.5 h-4 w-px bg-border" />
       <ToolButton
@@ -517,7 +517,7 @@ export function PreviewBrowser({ server, onBack, onGrab, session }: { server: Pr
     <>
       <PreviewBar server={server} path={tools ? overlay.path : '/'} onBack={onBack} onReload={() => setReloads((n) => n + 1)} device={device} onDevice={setDevice} />
       <div className={`relative flex min-h-0 flex-1 flex-col ${BACKDROP}`}>
-        <div ref={area} className="relative mx-7 mt-7 min-h-0 flex-1">
+        <div ref={area} className="relative min-h-0 flex-1" style={{ margin: rulers && tools ? `${RULER_ROOM}px ${RULER_ROOM}px 4px` : '16px 16px 0' }}>
           <div
             ref={stage}
             className="absolute overflow-hidden rounded-[8px] border border-surface-line bg-white dark:border-transparent"
@@ -556,7 +556,7 @@ export function PreviewBrowser({ server, onBack, onGrab, session }: { server: Pr
             </PreviewMarks>
             {drawing && <DrawLayer onDrawn={(rect) => void capture(scaleRect(rect, 1 / view.scale))} />}
           </div>
-          <Rulers on={rulers && tools} view={view} area={areaSize} pointer={overlay.pointer} />
+          <Rulers on={rulers && tools} view={view} pointer={overlay.pointer} />
         </div>
         <div className="flex h-12 shrink-0 items-center justify-center gap-0.5 px-2.5">
           <PreviewToolbar
