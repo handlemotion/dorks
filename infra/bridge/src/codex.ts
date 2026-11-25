@@ -306,7 +306,8 @@ export class CodexAgent {
 
   private async pump() {
     if (!this.ready || this.current !== null || this.finishing || !this.queue.length || !this.alive) return;
-    this.current = this.queue.shift()!;
+    // Everything that waited goes in one turn (see AntigravityAgent.pump): never one turn per message sent mid-turn.
+    this.current = this.queue.splice(0).join("\n\n");
     this.idle = false;
     try {
       const account = await this.request("account/read", { refreshToken: false });
