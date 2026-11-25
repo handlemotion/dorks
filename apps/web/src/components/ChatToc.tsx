@@ -111,10 +111,10 @@ export function ChatToc({ blocks, hidden }: { blocks: Block[]; hidden?: boolean 
               <span
                 aria-hidden
                 className={
-                  isHovered
+                  isActive
                     ? 'block h-[2px] w-4 rounded-full bg-foreground transition-[width,background-color] duration-150 ease-out motion-reduce:transition-none'
-                    : isActive
-                      ? 'block h-[2px] w-3.5 rounded-full bg-foreground/75 transition-[width,background-color] duration-150 ease-out motion-reduce:transition-none'
+                    : isHovered
+                      ? 'block h-[2px] w-3 rounded-full bg-foreground/45 transition-[width,background-color] duration-150 ease-out motion-reduce:transition-none'
                       : 'block h-[2px] w-2.5 rounded-full bg-foreground/20 transition-[width,background-color] duration-150 ease-out motion-reduce:transition-none'
                 }
               />
