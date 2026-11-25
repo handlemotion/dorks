@@ -15,6 +15,7 @@ export type Artifact = {
   /** A smaller copy of `src` for tiles and lists. */
   thumb?: string
   href?: string
+  /** The image's `dorks-image` id on the session's server: it can be commented on in the lightbox. */ imageId?: string
   /** Pixel size of an image, when known. */ width?: number
   height?: number
 }

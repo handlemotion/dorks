@@ -81,13 +81,17 @@ export function addComment(app: App, dorkId: string, input: { body: unknown; anc
     if (dork.archived) fail("archived", "this session is archived");
     const parsed = commentAnchor.safeParse(input.anchor);
     if (!parsed.success) return fail("invalid", "the comment needs an anchor on the page");
-    const port = input.port;
-    if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) return fail("invalid", "port must be the preview's port");
+    const anchor = parsed.data;
+    // A comment on an image points at one of this session's images and has no preview port.
+    const port = anchor.kind === "image" ? null : input.port;
+    if (anchor.kind === "image") {
+      if (!app.db.get("SELECT 1 FROM images WHERE id = ? AND dork_id = ?", anchor.image, dorkId)) fail("not_found", "no such image in this session");
+    } else if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) return fail("invalid", "port must be the preview's port");
     room(app, dorkId);
     const id = app.uuid();
     // An area's screenshot was uploaded like an attachment: the comment makes it this dork's, so the agent can load it.
-    if (parsed.data.kind === "area" && parsed.data.image) claimImages(app, dorkId, `dorks-image:${parsed.data.image}`);
-    insert(app.db, "preview_comments", { id, dorkId, parentId: null, author: "owner", body: text(input.body), anchor: JSON.stringify(parsed.data), port, notified: false, createdAt: app.now() });
+    if (anchor.kind === "area" && anchor.image) claimImages(app, dorkId, `dorks-image:${anchor.image}`);
+    insert(app.db, "preview_comments", { id, dorkId, parentId: null, author: "owner", body: text(input.body), anchor: JSON.stringify(anchor), port, notified: false, createdAt: app.now() });
     queue(app, dorkId);
     touch(app, { t: "comments", dorkId });
     return { id };
@@ -189,13 +193,18 @@ export function foldComments(app: App, dorkId: string) {
     const where = root?.anchor ? anchorLine(root.anchor) : "on the preview";
     if (c.parentId) return `## Reply in thread ${c.parentId} (${where})\n  > ${quote(c.body)}`;
     // The bridge turns this line into the image itself in the agent's turn (infra/bridge/src/claude.ts, userContent).
-    const shot = c.anchor?.kind === "area" && c.anchor.image ? `\n  ![Screenshot of the area](dorks-image:${c.anchor.image})` : "";
+    const shot =
+      c.anchor?.kind === "area" && c.anchor.image
+        ? `\n  ![Screenshot of the area](dorks-image:${c.anchor.image})`
+        : c.anchor?.kind === "image"
+          ? `\n  ![The image commented on](dorks-image:${c.anchor.image})`
+          : "";
     return `## New comment ${c.id} ${where}${c.port ? `, port ${c.port}` : ""}\n  > ${quote(c.body)}${shot}`;
   });
   const digest = rows.map((r) => r.body).join("\n\n");
   const text = [
     `<${NOTIFY_TAG} source="preview">`,
-    "The user commented on the running preview.",
+    rows.some((r) => r.port === null && !r.parent_id) ? "The user commented on the running preview or on images in this session." : "The user commented on the running preview.",
     "",
     blocks.join("\n\n"),
     "",

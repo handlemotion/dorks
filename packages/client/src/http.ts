@@ -51,7 +51,8 @@ import type {
 export interface NewComment {
   body: string;
   anchor: CommentAnchor;
-  port: number;
+  /** The preview's port; none for a comment on an image. */
+  port?: number;
 }
 
 /**
