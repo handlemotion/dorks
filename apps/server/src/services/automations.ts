@@ -167,7 +167,7 @@ export function fireSchedules(app: App, id: string) {
     if (!a || !a.enabled) return;
     const now = app.now();
     for (const { t, due } of dueSchedules(a, now)) {
-      const late = now - due > LATE_MS ? { due: clock(due, t.timezone), at: clock(now, t.timezone) } : null;
+      const late = now - due > LATE_MS ? { due: dueText(due, now, t.timezone), at: clock(now, t.timezone) } : null;
       startRun(app, a, {
         ...scheduleRun(t, due),
         ...(late ? { note: `started at ${late.at}: Dorks was not running at ${late.due}` } : {}),
@@ -199,6 +199,10 @@ const scheduleRun = (t: ScheduleTrigger, due: number) => ({
 
 /** `08:25` on the wall clock in `tz`. */
 const clock = (ms: number, tz: string) => new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(ms);
+/** `Mon 23 Nov` in `tz`. */
+const date = (ms: number, tz: string) => new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "short", day: "numeric", month: "short" }).format(ms);
+/** When a late run was due: the time, and the day too when it was not today (a time missed yesterday can be later in the day than now). */
+const dueText = (due: number, now: number, tz: string) => (date(due, tz) === date(now, tz) ? clock(due, tz) : `${clock(due, tz)} on ${date(due, tz)}`);
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 export function scheduleText(t: ScheduleTrigger): string {
