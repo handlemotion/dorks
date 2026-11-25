@@ -19,6 +19,9 @@ describe("relay allowlist", () => {
       ["GET", "/api/builds/b1"],
       ["POST", "/api/images"],
       ["POST", "/api/skills/resolve"],
+      ["GET", "/api/automations"],
+      ["PATCH", "/api/automations/a1"],
+      ["POST", "/api/automations/a1/runs"],
     ])
       expect(relayAllowed(m!, p!), `${m} ${p}`).toBe(true);
     for (const [m, p] of [
@@ -32,6 +35,8 @@ describe("relay allowlist", () => {
       ["POST", "/api/dorks/d1/%2e%2e/%2e%2e/settings"],
       ["GET", "/api/dorks//../secrets"],
       ["POST", "/mcp"],
+      ["POST", "/api/automations"],
+      ["DELETE", "/api/automations/a1"],
     ])
       expect(relayAllowed(m!, p!), `${m} ${p}`).toBe(false);
   });

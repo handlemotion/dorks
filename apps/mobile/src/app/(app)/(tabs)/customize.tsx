@@ -8,7 +8,7 @@ import { Header } from "@/components/Header";
 import { errorText } from "@/lib/format";
 import { radius, type as size, useColors } from "@/lib/theme";
 
-// Customize: skills (install from a source, update, remove), then MCP servers and connected apps, read only for v1.
+// Plugins: skills (install from a source, update, remove), then MCP servers and connected apps, read only for v1.
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   const c = useColors();

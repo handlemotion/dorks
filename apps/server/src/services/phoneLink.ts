@@ -44,6 +44,10 @@ const ALLOWED: [method: string, path: RegExp][] = [
   ["POST", /^\/api\/skills\/[^/]+\/update$/],
   ["DELETE", /^\/api\/skills\/[^/]+$/],
   ["*", /^\/api\/dorks(\/.*)?$/],
+  // Automations: list them and their runs, switch one on or off, run one now.
+  ["GET", /^\/api\/automations(\/[^/]+(\/runs)?)?$/],
+  ["PATCH", /^\/api\/automations\/[^/]+$/],
+  ["POST", /^\/api\/automations\/[^/]+\/runs$/],
 ];
 /** Under /api/dorks: running commands on this computer, secret values, and the live view of a box stay on the Mac. */
 const DENIED = /^\/api\/dorks\/[^/]+\/(local|inputs|desktop)(\/|$)/;

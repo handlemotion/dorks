@@ -72,7 +72,7 @@ export function Sidebar() {
   const shell = useShell();
   const { setDorkId } = useCurrentChat();
   const client = useOptionalDorksClient();
-  const go = (path: "/" | "/customize" | "/settings") => {
+  const go = (path: "/" | "/customize" | "/automations" | "/settings") => {
     shell.close();
     if (path === "/settings") router.push(path);
     else router.navigate(path);
@@ -89,7 +89,8 @@ export function Sidebar() {
       </View>
       <View style={s.group}>
         {client && <Row icon="square.and.pencil" label="New chat" onPress={() => openChat(null)} />}
-        {client && <Row icon="slider.horizontal.3" label="Customize" onPress={() => go("/customize")} />}
+        {client && <Row icon="square.grid.2x2" label="Plugins" onPress={() => go("/customize")} />}
+        {client && <Row icon="clock" label="Automations" onPress={() => go("/automations")} />}
         <Row icon="gearshape" label="Settings" onPress={() => go("/settings")} />
       </View>
       {client && (
