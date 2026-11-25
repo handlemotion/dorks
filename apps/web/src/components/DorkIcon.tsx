@@ -7,15 +7,7 @@ export type DorkIconState = 'working' | 'unread' | 'awake' | 'asleep' | 'attenti
 const SHAPE_PATH =
   'M180 40c0-22.091-35.817-40-80-40S20 17.909 20 40c0 11.947 10.475 22.67 27.084 30C30.474 77.33 20 88.053 20 100s10.475 22.671 27.084 30C30.474 137.329 20 148.053 20 160c0 22.091 35.817 40 80 40s80-17.909 80-40c0-11.947-10.475-22.671-27.084-30C169.525 122.671 180 111.947 180 100s-10.475-22.67-27.084-30C169.525 62.67 180 51.947 180 40'
 
-/** Awake: the foreground colour (so it follows the theme) at these opacities, light at the top to strong at the bottom. */
-const GREY_STOPS = [
-  ['0%', '0.22'],
-  ['30%', '0.38'],
-  ['60%', '0.55'],
-  ['100%', '0.72'],
-] as const
-
-/** Working: one flat, light grey (the foreground colour at one opacity), no gradient. */
+/** Working and awake: one flat, light grey (the foreground colour at one opacity), no gradient. */
 const FLAT_GREY_STOPS = [
   ['0%', '0.32'],
   ['100%', '0.32'],
@@ -50,11 +42,10 @@ const YELLOW_STOPS = [
 
 const TONE: Partial<Record<DorkIconState, string>> = { asleep: 'text-muted-foreground/70', error: 'text-destructive' }
 
-const GREY = { stops: GREY_STOPS, grey: true, tone: 'text-foreground' }
 const FLAT_GREY = { stops: FLAT_GREY_STOPS, grey: true, tone: 'text-foreground' }
 const PALETTE: Partial<Record<DorkIconState, { stops: readonly (readonly [string, string])[]; grey: boolean; tone: string }>> = {
   working: FLAT_GREY,
-  awake: GREY,
+  awake: FLAT_GREY,
   unread: { stops: BLUE_STOPS, grey: false, tone: '' },
   attention: { stops: YELLOW_STOPS, grey: false, tone: '' },
 }
@@ -62,7 +53,7 @@ const PALETTE: Partial<Record<DorkIconState, { stops: readonly (readonly [string
 /** The gradient for a state; grey stops are opacities of the foreground colour (`grey`), which `tone` sets. */
 function palette(state: DorkIconState, nerd?: boolean) {
   if (nerd && state === 'working') return { stops: GREEN_STOPS, grey: false, tone: '' }
-  return PALETTE[state] ?? { stops: GREY_STOPS, grey: false, tone: TONE[state] ?? '' }
+  return PALETTE[state] ?? { stops: FLAT_GREY_STOPS, grey: false, tone: TONE[state] ?? '' }
 }
 
 /** Asleep: the shape's outline, an inside stroke about 0.9px wide at any size (twice that width, clipped to the shape). */
@@ -109,7 +100,7 @@ export function dorkIconState(state: DorkState | undefined, opts?: { working?: b
  * - `unread`: the cyan → blue → violet gradient, still: the agent finished a turn the owner has not opened yet.
  * - `attention`: yellow → amber gradient with animated flaps when waiting on the owner (computer access, build approval, prompts).
  *   Yellow means only this.
- * - `awake`: a grey gradient (the foreground colour at varying strength), still: the turn is over and read, and the dork waits for the next message before it sleeps.
+ * - `awake`: the working grey, still: the turn is over and read, and the dork waits for the next message before it sleeps.
  * - `asleep`: the shape's outline only, in muted grey, no fill, still.
  * - `error`: the same shape in destructive red, still.
  * A nerd (`nerd`) is green where a session is grey (working); every other state looks the same as any session's.

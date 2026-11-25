@@ -313,8 +313,6 @@ function AgentText({ block }: { block: Extract<AgentBlock, { kind: 'assistant' }
     <HoverActions
       text={block.text}
       sentAt={block.at ? new Date(block.at) : undefined}
-      // Only a final answer keeps a line under it for the time: between tool calls that line read as a gap, so there it is in the gutter.
-      timeBelow={block.final}
       rate={block.final}
       onReply={onReply && (() => onReply({ kind: 'text', text: quoteText(block.text.replace(IMAGE, '')) }))}
     >
@@ -367,9 +365,7 @@ function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => vo
     } else if (block.kind === 'crew') {
       content.push(<CrewCard key={block.id} block={block} />)
     } else if (block.kind === 'notice') {
-      // Right after an answer it sits just under the answer's time line (20px from its text), not a full gap below it.
-      const prev = blocks[i - 1]
-      content.push(<Notice key={block.id} block={block} className={prev?.kind === 'assistant' && prev.final ? '-mt-3' : undefined} />)
+      content.push(<Notice key={block.id} block={block} />)
     }
   }
   return content
