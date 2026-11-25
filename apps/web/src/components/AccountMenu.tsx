@@ -91,7 +91,7 @@ export function AccountMenu({
         <UserAvatar login={login} className="-mx-px" />
         <span className="min-w-0 truncate">{name}</span>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="start" sideOffset={6} className="w-[max(var(--anchor-width),16rem)]">
+      <DropdownMenuContent side="top" align="start" sideOffset={6} className="w-[max(calc(var(--anchor-width)+1.5rem),16rem)]">
         <div className="flex items-center gap-2.5 px-2 pt-1.5 pb-2">
           <UserAvatar login={login} size={28} />
           <div className="flex min-w-0 flex-col">
