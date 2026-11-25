@@ -1,5 +1,33 @@
 # @dorks/desktop
 
+## 0.8.0
+
+### Minor Changes
+
+- [#214](https://github.com/handlemotion/dorks/pull/214) [`462fd15`](https://github.com/handlemotion/dorks/commit/462fd155be956c728419b386a23d63e9dc5c775b) Thanks [@handlemotion](https://github.com/handlemotion)! - A Files tab in Chat details: browse the repositories checked out in a session's sandbox and edit their files in place, with a chooser when the sandbox holds more than one.
+
+- [#199](https://github.com/handlemotion/dorks/pull/199) [`217849e`](https://github.com/handlemotion/dorks/commit/217849e30e69040824791ce9eba8945f19d757b4) Thanks [@handlemotion](https://github.com/handlemotion)! - A stack of pull requests now opens as one tab, with the stack drawn as connected dots under the PR's title. Merging from the top of a stack merges the whole stack in one go, through GitHub's asynchronous merge.
+
+- [#212](https://github.com/handlemotion/dorks/pull/212) [`7865ac6`](https://github.com/handlemotion/dorks/commit/7865ac631f2d9da2cecbdb11e46112dc0c5cd95f) Thanks [@handlemotion](https://github.com/handlemotion)! - Pair the Dorks iPhone app with this Mac from Settings, Phone: scan the code with your phone and it reaches your sessions through the Dorks cloud relay.
+
+- [#209](https://github.com/handlemotion/dorks/pull/209) [`3d4bf0c`](https://github.com/handlemotion/dorks/commit/3d4bf0c53306a3b6a1d3bae8ba3ff552848c6409) Thanks [@handlemotion](https://github.com/handlemotion)! - Automations can now start on Sentry: a new issue, an error spike past a number of events an hour, or a failing uptime or cron monitor. Connect Sentry in Settings, then add a Sentry trigger or start from the "Respond to downtime" template.
+
+- [#205](https://github.com/handlemotion/dorks/pull/205) [`6497d8d`](https://github.com/handlemotion/dorks/commit/6497d8dd4b385b8db50628eb6a4a8fe8372bbc2b) Thanks [@handlemotion](https://github.com/handlemotion)! - When a merged pull request goes live, the agent checks its change on the live site and reports on the Ship card; when a ship fails, the agent opens a fix-forward or revert pull request.
+
+- [#200](https://github.com/handlemotion/dorks/pull/200) [`626dd62`](https://github.com/handlemotion/dorks/commit/626dd6226ea1d84e89180660d9413d028979a8bc) Thanks [@handlemotion](https://github.com/handlemotion)! - After a session's pull request merges, a Ship card follows what the merge set off: the workflows on the base branch, migration steps, other apps' checks such as Cloudflare Pages, and deployments. A failed ship marks the session as needing you.
+
+### Patch Changes
+
+- [#210](https://github.com/handlemotion/dorks/pull/210) [`dc870a9`](https://github.com/handlemotion/dorks/commit/dc870a96ef9babc7ea0c6d7fc38e4ddceaebc2a4) Thanks [@handlemotion](https://github.com/handlemotion)! - Build pages: an agent's proposed change now sits at the top of the build with a Review button and a count beside Builds in the sidebar. Rejecting asks for a reason in a dialog, inputs match the button height, and there is less explanatory text.
+
+- [#211](https://github.com/handlemotion/dorks/pull/211) [`1944509`](https://github.com/handlemotion/dorks/commit/194450965959584b1fd735ce051f3bd016269a2a) Thanks [@handlemotion](https://github.com/handlemotion)! - Repository pickers (new session, a build's Add repository, automations) have a refresh button that reads GitHub again, so a repository you just created shows up. Every session's agent, not only setup sessions, now proposes a fix to its machine's build when it hits a setup problem, guided by a machine-setup skill its tools server ships over MCP 2026-07-28.
+
+- [#206](https://github.com/handlemotion/dorks/pull/206) [`eabd1c9`](https://github.com/handlemotion/dorks/commit/eabd1c95b94cd3722b7ba78035a26f4ce8d5df0a) Thanks [@handlemotion](https://github.com/handlemotion)! - Plugins, Automations and Builds share one layout: search and buttons at the top of a wider column instead of a header bar, and the Plugins sidebar now matches the main sidebar's width. The All / Installed filter and the plugin count are gone. The composer's corners are a little squarer, and its send arrow is longer and centered.
+
+- [#208](https://github.com/handlemotion/dorks/pull/208) [`36ae60b`](https://github.com/handlemotion/dorks/commit/36ae60ba63f311d8b789f5318c6fe0f8d41c89b2) Thanks [@handlemotion](https://github.com/handlemotion)! - Mark a draft pull request ready for review from its tab in Chat details.
+
+- [#202](https://github.com/handlemotion/dorks/pull/202) [`3061a70`](https://github.com/handlemotion/dorks/commit/3061a70202a35fc06feb09423ccda91e26083664) Thanks [@handlemotion](https://github.com/handlemotion)! - The merge button of a branching stack counts only the PRs that merge with the shown one, and a stacked PR already in a merge queue is reported as queued, not merged.
+
 ## 0.7.0
 
 ### Minor Changes
