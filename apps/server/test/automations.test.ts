@@ -261,6 +261,18 @@ describe("automations", () => {
     expect(JSON.parse(first.body).text).toContain("It was due at 08:00 but Dorks was not running then, so it started at 08:25.");
   });
 
+  it("a run late by a day or more says the day it was due", async () => {
+    const s = await setup();
+    s.h.clock.t = utc("2026-11-23T13:00:00"); // Monday 07:00 in Mexico City; the Mac is then off until Tuesday morning
+    const sched = { kind: "schedule", every: "day", time: "08:00", timezone: "America/Mexico_City", repo: "octo/app" };
+    const id = createAutomation(s.h.app, { name: "daily", instructions: "Go.", triggers: [sched] });
+    s.h.clock.t = utc("2026-11-24T13:55:00"); // Tuesday 07:55: Monday's 08:00 was missed, today's has not come yet
+    fireSchedules(s.h.app, id);
+    expect(listRuns(s.h.app, id)[0]).toMatchObject({ status: "started", summary: "Every day at 08:00, started at 07:55: Dorks was not running at 08:00 on Mon 23 Nov" });
+    const first = s.h.app.db.get<{ body: string }>("SELECT body FROM events ORDER BY seq LIMIT 1")!;
+    expect(JSON.parse(first.body).text).toContain("It was due at 08:00 on Mon 23 Nov but Dorks was not running then, so it started at 07:55.");
+  });
+
   it("a run on time does not claim it was late", async () => {
     const s = await setup();
     s.h.clock.t = utc("2026-11-23T08:00:00");
