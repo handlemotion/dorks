@@ -1,5 +1,41 @@
 # @dorks/desktop
 
+## 0.6.0
+
+### Minor Changes
+
+- [#175](https://github.com/handlemotion/dorks/pull/175) [`1c075f2`](https://github.com/handlemotion/dorks/commit/1c075f24ba7c09e3a9305090f7a0d8da0b110e67) Thanks [@handlemotion](https://github.com/handlemotion)! - Added a compact left-edge table of contents in chat threads for user messages. Hovering a row previews the message, and clicking a row jumps straight to it.
+
+- [#184](https://github.com/handlemotion/dorks/pull/184) [`ad174b7`](https://github.com/handlemotion/dorks/commit/ad174b783ea04dac9b9feb642739cbde2d38f952) Thanks [@handlemotion](https://github.com/handlemotion)! - Mermaid code blocks in messages now render as diagrams, in the same rounded island as code blocks. A diagram that fails to parse still shows as code.
+
+- [#180](https://github.com/handlemotion/dorks/pull/180) [`93f8971`](https://github.com/handlemotion/dorks/commit/93f89712b85304a135692a382d6ccf3e83d6ab56) Thanks [@handlemotion](https://github.com/handlemotion)! - Comment on a running preview: pick an element or select text, and the agent hears about it, answers in the thread and resolves it, with bubbles and highlights right on the page. The preview shows at desktop, tablet or phone size, with rulers, and can capture an area into your message.
+
+- [#174](https://github.com/handlemotion/dorks/pull/174) [`c8b215f`](https://github.com/handlemotion/dorks/commit/c8b215f36ba2651b045e4dd0f4e04dfa066ba77f) Thanks [@handlemotion](https://github.com/handlemotion)! - Pick an element in any running preview, not only local ones: hover and click in the preview to send the agent the element, its component and its source file. Previews also load without dev server host settings such as Vite's allowedHosts.
+
+### Patch Changes
+
+- [#179](https://github.com/handlemotion/dorks/pull/179) [`3d8df9a`](https://github.com/handlemotion/dorks/commit/3d8df9a0ad0a11d72014960e9bb0da9becbfef43) Thanks [@handlemotion](https://github.com/handlemotion)! - External links in the macOS desktop app now open in your default browser on a single click instead of requiring Cmd+click or middle-click.
+
+- [#168](https://github.com/handlemotion/dorks/pull/168) [`88b5582`](https://github.com/handlemotion/dorks/commit/88b5582532a94468cdb34b40a68cdab9e84fa253) Thanks [@handlemotion](https://github.com/handlemotion)! - With a crew worker open beside the chat, an image dropped into the window now attaches only to the composer you dropped it on, not to both.
+
+- [#173](https://github.com/handlemotion/dorks/pull/173) [`0f1c3b0`](https://github.com/handlemotion/dorks/commit/0f1c3b0b79278b54b4029d684a794769c9eadce1) Thanks [@handlemotion](https://github.com/handlemotion)! - The sidebar no longer shows the coordinator group (now called Nerds) while the feature is unfinished.
+
+- [#178](https://github.com/handlemotion/dorks/pull/178) [`e08e23d`](https://github.com/handlemotion/dorks/commit/e08e23d7e245c31593bd346a61cc56767588ec52) Thanks [@handlemotion](https://github.com/handlemotion)! - Improved screenshot quality across the agent harness: `screenshot_share` now requires `url` or `path` (no silent 1x desktop fallback), flags JPEG or low-resolution captures, reminds agents to use `deviceScaleFactor: 2` PNGs, and inline chat screenshots serve higher-resolution (`1920px`, quality 92) WebP copies.
+
+- [#182](https://github.com/handlemotion/dorks/pull/182) [`7c80952`](https://github.com/handlemotion/dorks/commit/7c809528f417041ff55bb29fa4c5b55cc61df24a) Thanks [@handlemotion](https://github.com/handlemotion)! - A dork that switched to another branch stays on it when its model, secrets or MCP servers change or its sandbox restarts, instead of being put back on its starting branch.
+
+- [#172](https://github.com/handlemotion/dorks/pull/172) [`b7c81fc`](https://github.com/handlemotion/dorks/commit/b7c81fce487da5fc2dd05359e0a57575e5efe8e7) Thanks [@handlemotion](https://github.com/handlemotion)! - A scheduled automation run that starts late now names the day it was due when that was not today, so a run missed yesterday no longer reads as due later than it started.
+
+- [#171](https://github.com/handlemotion/dorks/pull/171) [`e0936d4`](https://github.com/handlemotion/dorks/commit/e0936d444f4282d9e42f7e6b0b7aa3349b1fa913) Thanks [@handlemotion](https://github.com/handlemotion)! - While an automation has a schedule, Dorks opens at login so scheduled runs fire on time after a restart, and macOS no longer naps the app while it keeps the Mac awake.
+
+- [#181](https://github.com/handlemotion/dorks/pull/181) [`3f091d7`](https://github.com/handlemotion/dorks/commit/3f091d73f254a1c155c1d824b22fb37c36066cb4) Thanks [@handlemotion](https://github.com/handlemotion)! - Every pull request the agent opens or subscribes to now gets its own tab in Chat details, including ones added while the panel was closed or another chat was open.
+
+- [#169](https://github.com/handlemotion/dorks/pull/169) [`45f098b`](https://github.com/handlemotion/dorks/commit/45f098b799946826c29d2284fc13d1e02d163151) Thanks [@handlemotion](https://github.com/handlemotion)! - A scheduled automation run that starts late because Dorks was closed or asleep now says when it was due, and a scheduled run that could not start shows in the history as failed instead of disappearing.
+
+- [#177](https://github.com/handlemotion/dorks/pull/177) [`ce26b5c`](https://github.com/handlemotion/dorks/commit/ce26b5cae8fc90d6bb598c73726fb5df2c116566) Thanks [@handlemotion](https://github.com/handlemotion)! - Stop gate now detects commits pushed to a branch whose pull request was already merged or closed, notifying the agent so it opens a new pull request instead of silently dropping the change.
+
+- [#183](https://github.com/handlemotion/dorks/pull/183) [`5cca79e`](https://github.com/handlemotion/dorks/commit/5cca79e25c03c0267962925889c3a593964c2bf9) Thanks [@handlemotion](https://github.com/handlemotion)! - Reduce layout work in the chat transcript when the message composer changes height.
+
 ## 0.5.2
 
 ### Patch Changes
