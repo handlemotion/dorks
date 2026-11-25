@@ -75,13 +75,11 @@ function OtherBlock({ block }: { block: AgentBlock }) {
         />
       );
     case "build":
-      return (
-        <Line icon="shippingbox" text={`Proposed a change to the machine ${block.buildName}. ${block.approved === null ? "Review it on your Mac." : block.approved ? "Approved." : "Rejected."}`} />
-      );
+      return <Line icon="shippingbox" text={`Machine change: ${block.buildName}${block.approved === null ? "" : block.approved ? " (approved)" : " (rejected)"}`} />;
     case "local":
       return <Line icon="desktopcomputer" text={`Asked to use your Mac: ${block.command ?? block.path ?? block.reason} (${block.status})`} />;
     case "input":
-      return <Line icon="key" text={`Asked for ${block.title}${block.status === "pending" ? ". Answer on your Mac." : ` (${block.status})`}`} />;
+      return <Line icon="key" text={`Asked for ${block.title} (${block.status})`} />;
     case "ship":
       return <Line icon="paperplane" text={`Shipping #${block.ship.number}: ${block.ship.status}`} />;
     case "crew":

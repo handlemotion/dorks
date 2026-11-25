@@ -60,7 +60,7 @@ function SkillRow({ skill, onError }: { skill: SkillView; onError: (e: string | 
     }
   };
   const remove = () =>
-    Alert.alert(`Remove ${skill.name}?`, "Agents stop getting it in new and awake sessions.", [
+    Alert.alert(`Remove ${skill.name}?`, undefined, [
       { text: "Cancel", style: "cancel" },
       { text: "Remove", style: "destructive", onPress: () => void run(() => actions.deleteSkill(skill.name)) },
     ]);
@@ -155,7 +155,7 @@ function InstallSkills() {
           </View>
         </Pressable>
       ))}
-      {found && !found.skills.length && <Empty>No skills in that repository.</Empty>}
+      {found && !found.skills.length && <Empty>No skills found</Empty>}
     </View>
   );
 }
@@ -168,41 +168,32 @@ export default function CustomizeTab() {
   const [error, setError] = useState<string>();
   return (
     <View style={[s.fill, { backgroundColor: c.background }]}>
-      <Header title="Customize" />
+      <Header />
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={s.body} keyboardDismissMode="interactive">
         <Section title="Skills">
-          {skills === undefined ? <ActivityIndicator color={c.muted} /> : skills.length ? skills.map((k) => <SkillRow key={k.name} skill={k} onError={setError} />) : <Empty>No skills yet</Empty>}
+          {skills === undefined ? <ActivityIndicator color={c.muted} /> : skills.map((k) => <SkillRow key={k.name} skill={k} onError={setError} />)}
           {error && <Text style={[s.detail, { color: c.danger }]}>{error}</Text>}
           <InstallSkills />
         </Section>
-        <Section title="MCP servers">
-          {servers === undefined ? (
-            <ActivityIndicator color={c.muted} />
-          ) : servers.length ? (
-            servers.map((m) => (
+        {servers?.length ? (
+          <Section title="MCP servers">
+            {servers.map((m) => (
               <Row
                 key={m.name}
                 title={m.name}
                 detail={m.transport === "http" ? (m.url ?? "") : [m.command, ...m.args].filter(Boolean).join(" ")}
                 right={m.oauth === "signed_out" ? <Text style={[s.detail, { color: c.muted }]}>Signed out</Text> : undefined}
               />
-            ))
-          ) : (
-            <Empty>No MCP servers yet</Empty>
-          )}
-        </Section>
-        <Section title="Connected apps">
-          {composio === undefined ? (
-            <ActivityIndicator color={c.muted} />
-          ) : !composio.connected ? (
-            <Empty>Composio is not connected</Empty>
-          ) : composio.toolkits.length ? (
-            composio.toolkits.map((t) => <Row key={t} title={t} />)
-          ) : (
-            <Empty>No apps signed in yet</Empty>
-          )}
-        </Section>
-        <Text style={[s.detail, { color: c.muted }]}>MCP servers and apps are added on your Mac.</Text>
+            ))}
+          </Section>
+        ) : null}
+        {composio?.connected && composio.toolkits.length ? (
+          <Section title="Connected apps">
+            {composio.toolkits.map((t) => (
+              <Row key={t} title={t} />
+            ))}
+          </Section>
+        ) : null}
       </ScrollView>
     </View>
   );

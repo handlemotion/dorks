@@ -7,6 +7,8 @@ const light = {
   background: "#ffffff",
   /** The sidebar under the sliding app, and filled rows. */
   app: "#f2f2f2",
+  /** A raised card on the page: the merge card. */
+  card: "#f5f5f5",
   text: "#0a0a0a",
   muted: "#737373",
   hairline: "rgba(0,0,0,0.06)",
@@ -16,6 +18,8 @@ const light = {
   userBubbleText: "#0a0a0a",
   brand: "#3b6be8",
   onBrand: "#ffffff",
+  /** The slide-to-merge knob. */
+  merge: "#6670e0",
   danger: "#dc2626",
   open: "#1a7f37",
   merged: "#8250df",
@@ -26,6 +30,7 @@ const light = {
 const dark: typeof light = {
   background: "#0a0a0a",
   app: "#171717",
+  card: "#1f1f1f",
   text: "#fafafa",
   muted: "#a1a1a1",
   hairline: "rgba(255,255,255,0.07)",
@@ -35,6 +40,7 @@ const dark: typeof light = {
   userBubbleText: "#0a0a0a",
   brand: "#3b6be8",
   onBrand: "#ffffff",
+  merge: "#6670e0",
   danger: "#f87171",
   open: "#3fb950",
   merged: "#a371f7",

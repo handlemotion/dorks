@@ -1,6 +1,7 @@
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
+import { Button, Host, Image as UIImage, Menu } from "@expo/ui/swift-ui";
 import { SymbolView } from "expo-symbols";
 import { useState, type ReactNode } from "react";
 import { ActionSheetIOS, ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
@@ -17,8 +18,8 @@ const withImages = (text: string, images: Attachment[]) =>
   [text.trim(), ...images.filter((i) => i.id).map((i) => `![${i.name.replace(/[[\]\n]/g, " ")}](dorks-image:${i.id})`)].filter(Boolean).join("\n\n");
 
 /**
- * The glass composer: `+` (photos), the text, and one round button that sends, or stops while the agent works and nothing is
- * typed. While a turn runs, a tap sends now (steering it, as Enter does on the desktop); a long press offers to queue it instead.
+ * The glass composer: a + menu (photos, and `menu`: repository, model, build), the text, and a round button that sends, or stops
+ * while the agent works and nothing is typed. While a turn runs, a tap sends now (steering it); a long press offers to queue it.
  */
 export function Composer({
   busy,
@@ -26,14 +27,15 @@ export function Composer({
   onQueue,
   onStop,
   above,
-  below,
+  menu,
 }: {
   busy: boolean;
   onSend: (message: string) => Promise<unknown>;
   onQueue?: (message: string) => Promise<unknown>;
   onStop?: () => void;
   above?: ReactNode;
-  below?: ReactNode;
+  /** Native submenus (@expo/ui/swift-ui) after Photos. */
+  menu?: ReactNode;
 }) {
   const c = useColors();
   const { mac, token } = useMacs();
@@ -82,7 +84,7 @@ export function Composer({
 
   const queueMenu = () => {
     if (!onQueue || !ready) return;
-    ActionSheetIOS.showActionSheetWithOptions({ options: ["Queue for after this turn", "Cancel"], cancelButtonIndex: 1 }, (i) => i === 0 && void deliver(onQueue));
+    ActionSheetIOS.showActionSheetWithOptions({ options: ["Queue", "Cancel"], cancelButtonIndex: 1 }, (i) => i === 0 && void deliver(onQueue));
   };
 
   const stop = busy && !ready && onStop;
@@ -101,34 +103,44 @@ export function Composer({
           </View>
         )}
         <View style={s.row}>
-          <Pressable onPress={() => void pick()} accessibilityLabel="Attach photos" hitSlop={6} style={s.side}>
-            <SymbolView name="plus" size={20} tintColor={c.text} />
-          </Pressable>
-          <TextInput value={text} onChangeText={setText} placeholder="Ask anything" placeholderTextColor={c.muted} multiline style={[s.input, { color: c.text }]} />
-          <Pressable
-            onPress={() => (stop ? onStop() : ready && void deliver(onSend))}
-            onLongPress={busy ? queueMenu : undefined}
-            accessibilityLabel={stop ? "Stop" : "Send"}
-            disabled={!stop && !ready}
-            style={[s.send, { backgroundColor: stop || ready ? c.brand : c.fill }]}
-          >
-            {sending ? (
-              <ActivityIndicator size="small" color={c.onBrand} />
-            ) : (
-              <SymbolView name={stop ? "stop.fill" : "arrow.up"} size={stop ? 13 : 16} weight="semibold" tintColor={stop || ready ? c.onBrand : c.muted} />
-            )}
-          </Pressable>
+          <View style={s.side}>
+            <Host matchContents>
+              <Menu label={<UIImage systemName="plus" size={20} color={c.text} />}>
+                <Button label="Photos" systemImage="photo.on.rectangle" onPress={() => void pick()} />
+                {menu}
+              </Menu>
+            </Host>
+          </View>
+          <TextInput
+            value={text}
+            onChangeText={setText}
+            placeholder="Ask anything"
+            placeholderTextColor={c.muted}
+            multiline
+            style={[s.input, { color: c.text, textAlign: text ? "left" : "center" }]}
+          />
+          {stop || ready || sending ? (
+            <Pressable
+              onPress={() => (stop ? onStop() : ready && void deliver(onSend))}
+              onLongPress={busy ? queueMenu : undefined}
+              accessibilityLabel={stop ? "Stop" : "Send"}
+              style={[s.send, { backgroundColor: c.brand }]}
+            >
+              {sending ? <ActivityIndicator size="small" color={c.onBrand} /> : <SymbolView name={stop ? "stop.fill" : "arrow.up"} size={stop ? 13 : 16} weight="semibold" tintColor={c.onBrand} />}
+            </Pressable>
+          ) : (
+            <View style={s.side} />
+          )}
         </View>
       </GlassCapsule>
-      {below}
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  root: { paddingHorizontal: 12, gap: 8 },
-  glass: { borderRadius: 24, paddingHorizontal: 6, paddingVertical: 6 },
-  row: { flexDirection: "row", alignItems: "flex-end", gap: 4 },
+  root: { paddingHorizontal: 16, paddingBottom: 8, gap: 8 },
+  glass: { borderRadius: 26, paddingHorizontal: 8, paddingVertical: 7 },
+  row: { flexDirection: "row", alignItems: "center", gap: 4 },
   side: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
   input: { flex: 1, fontSize: size.message, lineHeight: 21, maxHeight: 160, paddingTop: 8, paddingBottom: 8 },
   send: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },

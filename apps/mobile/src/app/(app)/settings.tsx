@@ -15,7 +15,7 @@ function MacRow({ mac, current, onError }: { mac: Mac; current: boolean; onError
   const c = useColors();
   const { token, select, refresh } = useMacs();
   const unpair = () =>
-    Alert.alert(`Unpair ${mac.name}?`, "This phone stops reaching it until you pair it again.", [
+    Alert.alert(`Unpair ${mac.name}?`, undefined, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Unpair",
@@ -28,7 +28,7 @@ function MacRow({ mac, current, onError }: { mac: Mac; current: boolean; onError
       <View style={[s.dot, { backgroundColor: mac.online ? c.open : c.draft }]} />
       <View style={s.rowText}>
         <Text style={[s.title, { color: c.text }]}>{mac.name}</Text>
-        <Text style={[s.detail, { color: c.muted }]}>{mac.online ? "Online" : `Offline${ago(mac.lastSeenAt) ? `, seen ${ago(mac.lastSeenAt)}` : ""}`}</Text>
+        <Text style={[s.detail, { color: c.muted }]}>{mac.online ? "Online" : (ago(mac.lastSeenAt) ?? "Offline")}</Text>
       </View>
       {current && <SymbolView name="checkmark" size={16} tintColor={c.brand} />}
       <Host matchContents>
@@ -56,14 +56,12 @@ export default function SettingsScreen() {
           {macs?.map((m) => (
             <MacRow key={m.id} mac={m} current={m.id === mac?.id} onError={setError} />
           ))}
-          {macs?.length === 0 && <Text style={[s.detail, { color: c.muted, paddingVertical: 12 }]}>No Mac paired yet</Text>}
         </View>
         {(error ?? loadError) && <Text style={[s.detail, { color: c.danger }]}>{error ?? loadError}</Text>}
         <Pressable onPress={() => router.push("/pair")} style={[s.button, { backgroundColor: c.fill }]}>
           <SymbolView name="qrcode.viewfinder" size={17} tintColor={c.text} />
           <Text style={[s.title, { color: c.text }]}>Pair a Mac</Text>
         </Pressable>
-        <Text style={[s.detail, { color: c.muted }]}>On your Mac, open Dorks, Settings, Phone, and choose Pair a phone.</Text>
       </View>
 
       <View style={s.section}>
