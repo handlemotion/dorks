@@ -1,21 +1,26 @@
-import type { DorkMode, DorkState, SubscriptionView } from '@dorks/shared'
+import type { DorkMode, DorkState, SessionPr, SubscriptionView } from '@dorks/shared'
 import { Link, useRouter, type RegisteredRouter } from '@tanstack/react-router'
 import { move } from '@dnd-kit/helpers'
 import { Accessibility, defaultPreset, KeyboardSensor, PointerActivationConstraints, PointerSensor } from '@dnd-kit/dom'
 import { DragDropProvider, type DragEndEvent, type DragOverEvent, type DragStartEvent } from '@dnd-kit/react'
 import { isSortable, useSortable } from '@dnd-kit/react/sortable'
-import { useState } from 'react'
-import { ArchiveIcon, ChevronDownIcon, ChevronUpIcon, LinkIcon } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { ArchiveIcon, ChevronDownIcon, ChevronUpIcon, LinkIcon, LoaderCircleIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@dorks/ui/context-menu'
 import { DropdownMenuItem } from '@dorks/ui/dropdown-menu'
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@dorks/ui/hover-card'
 import { useStoredOrder } from '../lib/storedOrder'
 import { Tip } from './Tip'
 import { DorkIcon, dorkIconState, type DorkIconState } from './DorkIcon'
 import { SIDEBAR_ROW } from './sidebarChrome'
-import { prStatus } from './PrStatus'
+import { PrIcon, prStatus } from './PrStatus'
+import { STAGE_ICON } from './ShipCard'
 
 export type PrState = SubscriptionView['state']
+
+/** One of a chat's pull requests in the sidebar; `state` is absent until the server has looked at it. */
+export type ChatPr = Omit<SessionPr, 'repo' | 'url' | 'state'> & { url?: string; state?: PrState }
 
 /** What the sidebar shows of a chat (a dork). */
 export type Chat = {
@@ -32,7 +37,8 @@ export type Chat = {
   attention?: boolean
   /** The agent finished a turn the owner has not opened yet: the icon is blue. */
   unread?: boolean
-  pr?: { number: number; state?: PrState }
+  /** The chat's pull requests, oldest first. */
+  prs?: ChatPr[]
   /** A dork (coordinator) shows its emoji instead of the working icon (docs/crew.md). */
   icon?: string
   mode?: DorkMode
@@ -132,9 +138,10 @@ const ICON_LABEL: Record<DorkIconState, string> = { attention: 'Needs attention'
 
 /**
  * A chat row. The leading DorkIcon animates in grey while the chat is working, is blue while a finished turn is unread, yellow
- * while the dork waits on the owner, still grey when awake and a grey outline when asleep; the right edge shows the pull request number, colored by PR state, when the chat has opened one. The row is active
- * (`data-active`, `aria-current`) while its chat is the one in the URL. With `onArchive`, hovering the row swaps the PR number
- * for an archive button, and a right click opens the row's menu.
+ * while the dork waits on the owner, still grey when awake and a grey outline when asleep. The right edge shows the chat's pull
+ * requests (`PrBadge`) and a spinner while a merge is shipping; hovering them lists the PRs and the checks still running. The row is
+ * active (`data-active`, `aria-current`) while its chat is the one in the URL. With `onArchive`, hovering the row shows an archive
+ * button at its edge (the PRs move left of it), and a right click opens the row's menu.
  */
 function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: number; to: ChatRoute; active: boolean; onArchive?: (id: string) => void }) {
   // `data` feeds announcements; the link is the handle so interactive-element filtering allows row drags.
@@ -142,6 +149,20 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
   const router = useRouter()
   const iconState = dorkIconState(chat.state, { working: chat.working, attention: chat.attention, unread: chat.unread })
   const iconLabel = ICON_LABEL[iconState]
+  const prs = chat.prs ?? []
+  const shipping = prs.some((p) => p.ship?.status === 'watching')
+  // Room for the PRs (and the spinner) at the right edge, and for the archive button beside them on hover. Literal, for Tailwind.
+  const pad = !prs.length
+    ? onArchive
+      ? 'group-hover/row:pr-8'
+      : ''
+    : shipping
+      ? onArchive
+        ? 'pr-16 group-hover/row:pr-[5.5rem]'
+        : 'pr-16'
+      : onArchive
+        ? 'pr-12 group-hover/row:pr-[4.5rem]'
+        : 'pr-12'
   const row = (
     <div ref={ref} data-chat-id={chat.id} data-dragging={isDragging || undefined} className="group/row relative flex min-w-0 data-[dragging]:z-30 data-[dragging]:opacity-60">
       <Link
@@ -155,7 +176,7 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
         draggable={false}
         data-working={chat.working || undefined}
         title={chat.title}
-        className={`${SIDEBAR_ROW} ${chat.pr ? 'pr-12' : ''} ${onArchive ? 'group-hover/row:pr-8' : ''}`}
+        className={`${SIDEBAR_ROW} ${pad}`}
       >
         {chat.icon ? (
           <span aria-hidden className="flex size-3.5 shrink-0 items-center justify-center text-[13px] leading-none">
@@ -166,14 +187,7 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
         )}
         <span className="min-w-0 flex-1 truncate">{chat.title}</span>
       </Link>
-      {chat.pr && (
-        <span
-          data-pr={chat.pr.state}
-          className={`pointer-events-none absolute top-1/2 right-2 z-20 -translate-y-1/2 text-xs tabular-nums ${onArchive ? 'group-hover/row:opacity-0' : ''} ${prStatus(chat.pr.state).className}`}
-        >
-          #{chat.pr.number}
-        </span>
-      )}
+      {prs.length > 0 && <PrBadge prs={prs} shipping={shipping} className={onArchive ? 'group-hover/row:right-8' : ''} onClick={() => void router.navigate({ to, search: { dork: chat.id } })} />}
       {onArchive && (
         <Tip label="Archive">
           <button
@@ -209,5 +223,104 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
         </DropdownMenuItem>
       </ContextMenuContent>
     </ContextMenu>
+  )
+}
+
+/** The PR whose colour stands for the chat: an open one first (there is still work in flight), else the newest. */
+export function leadPr(prs: ChatPr[]): ChatPr | undefined {
+  return prs.findLast((p) => p.state === 'open') ?? prs.at(-1)
+}
+
+/**
+ * A chat's pull requests at its row's right edge: `#227` for one, `3` and the PR icon for several, coloured by `leadPr` (open
+ * green, merged violet, closed red), then a spinner while a merge is shipping. Hovering lists every PR with its state, and under a
+ * shipping one the checks its merge set off.
+ */
+function PrBadge({ prs, shipping, className, onClick }: { prs: ChatPr[]; shipping: boolean; className: string; onClick: () => void }) {
+  const lead = leadPr(prs)
+  const status = prStatus(lead?.state)
+  const ref = useRef<HTMLSpanElement>(null)
+  // Beside the sidebar, not over the row: from the badge past the row's end (and the archive button there) and the sidebar's 6px gutter.
+  const pastRow = () => {
+    const badge = ref.current?.getBoundingClientRect()
+    const row = ref.current?.closest('[data-chat-id]')?.getBoundingClientRect()
+    return badge && row ? row.right - badge.right + 14 : 10
+  }
+  const label = `${prs.length === 1 ? `Pull request #${prs[0].number}` : `${prs.length} pull requests`}${shipping ? ', shipping' : ''}`
+  return (
+    <HoverCard>
+      <HoverCardTrigger
+        delay={150}
+        closeDelay={100}
+        render={
+          <span
+            ref={ref}
+            role="button"
+            aria-label={label}
+            data-pr={lead?.state}
+            data-testid="chat-prs"
+            onClick={onClick}
+            className={`absolute top-1/2 right-2 z-20 flex h-6 -translate-y-1/2 cursor-pointer items-center gap-1.5 text-xs tabular-nums ${className}`}
+          />
+        }
+      >
+        {prs.length === 1 ? (
+          <span className={status.className}>#{prs[0].number}</span>
+        ) : (
+          <span className={`flex items-center gap-0.5 ${status.className}`}>
+            {prs.length}
+            <status.Icon aria-hidden className="size-3" />
+          </span>
+        )}
+        {shipping && <LoaderCircleIcon aria-hidden className="size-3 animate-spin text-muted-foreground motion-reduce:animate-none" />}
+      </HoverCardTrigger>
+      <HoverCardContent
+        side="right"
+        align="center"
+        sideOffset={pastRow}
+        data-testid="chat-prs-card"
+        className="w-max max-w-80 min-w-56 rounded-(--control-radius) border border-surface-line bg-surface p-1 text-sm text-foreground ring-0 dark:border-border"
+      >
+        <ul className="flex min-w-0 flex-col">
+          {prs.toReversed().map((pr) => (
+            <li key={pr.url ?? pr.number} className="flex min-w-0 flex-col">
+              <a
+                href={pr.url}
+                target="_blank"
+                rel="noreferrer"
+                className="flex h-7 min-w-0 items-center gap-2 rounded-[4px] px-2 outline-none hover:bg-foreground/[0.05] focus-visible:outline-2 focus-visible:outline-ring"
+              >
+                <PrIcon state={pr.state} className="size-3.5 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">{pr.title ?? `Pull request #${pr.number}`}</span>
+                <span className="shrink-0 pl-2 text-xs text-muted-foreground tabular-nums">#{pr.number}</span>
+              </a>
+              {pr.ship?.status === 'watching' &&
+                pr.ship.stages.map((stage, i) => {
+                  const look = STAGE_ICON[stage.state]
+                  return (
+                    <a
+                      key={i}
+                      href={stage.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      data-stage={stage.state}
+                      className="flex h-6 min-w-0 items-center gap-2 rounded-[4px] pr-2 pl-[30px] text-xs text-muted-foreground outline-none hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                    >
+                      <look.icon aria-label={look.label} className={`size-3 shrink-0 ${look.className}`} />
+                      <span className="min-w-0 truncate">{stage.name}</span>
+                    </a>
+                  )
+                })}
+              {pr.ship?.status === 'watching' && !pr.ship.stages.length && (
+                <p className="flex h-6 min-w-0 items-center gap-2 pr-2 pl-[30px] text-xs text-muted-foreground">
+                  <LoaderCircleIcon aria-hidden className="size-3 shrink-0 animate-spin motion-reduce:animate-none" />
+                  Waiting for checks to start
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
+      </HoverCardContent>
+    </HoverCard>
   )
 }

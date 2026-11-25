@@ -58,5 +58,18 @@ export const shipView = z.object({
 });
 export type ShipView = z.infer<typeof shipView>;
 
+/**
+ * One of a session's pull requests as the sidebar shows it (`prs` on a dork, oldest first): its state, and while the server still
+ * follows what its merge set off, that ship's status and stages.
+ */
+export type SessionPr = {
+  repo: string;
+  number: number;
+  url: string;
+  title?: string;
+  state: "open" | "merged" | "closed";
+  ship?: { status: ShipStatus; stages: Pick<ShipStage, "name" | "state" | "url">[] };
+};
+
 /** How long the agent has to verify a live deployment (`ship_verify`) before the ship stops waiting for it. */
 export const SHIP_VERIFY_MS = 20 * 60_000;

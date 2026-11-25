@@ -129,6 +129,9 @@ export const getShip = (app: App, id: number): Ship | undefined => {
 /** Ships still watched: not ended, and the session is not being deleted (an archived session's ship is still followed). */
 export const openShips = (app: App): Ship[] => app.db.all("SELECT s.* FROM ships s JOIN dorks d ON d.id = s.dork_id WHERE s.ended_at IS NULL AND d.deleting = 0 ORDER BY s.id").map(shipOf);
 
+/** A session's ships the server still follows, oldest first. */
+export const watchedShipsOf = (app: App, dorkId: string): Ship[] => app.db.all("SELECT * FROM ships WHERE dork_id = ? AND ended_at IS NULL ORDER BY id", dorkId).map(shipOf);
+
 /** Whether a pass should read this ship now: every pass while young, then every `SHIP_SLOW_MS`. */
 export const shipDue = (ship: Ship, now: number) => now - ship.startedAt < SHIP_FAST_MS || now - (ship.poll?.readAt ?? 0) >= SHIP_SLOW_MS;
 
@@ -544,7 +547,9 @@ function closeVerify({ agent }: { agent: ShipAgent }, github: ShipStage[], now: 
 function saveShip(app: App, ship: Ship, next: Ship, poll: ShipPoll) {
   update(app.db, "ships", { id: ship.id }, { stages: next.stages, status: next.status, agent: next.agent ?? null, poll, endedAt: next.endedAt ?? null });
   if (JSON.stringify(shipView(ship)) !== JSON.stringify(shipView(next))) append(app, ship.dorkId, { type: "ship", ship: shipView(next) });
-  if (ship.status !== next.status || next.endedAt !== undefined) touchDork(app, ship.dorkId);
+  // The sidebar shows a watched ship's stages as they run (`prs` on the dork): a stage starting or finishing is news for it too.
+  const stagesOf = (s: Ship) => JSON.stringify(s.stages.map((x) => [x.name, x.state]));
+  if (ship.status !== next.status || next.endedAt !== undefined || stagesOf(ship) !== stagesOf(next)) touchDork(app, ship.dorkId);
 }
 
 /** Applies one observation in a transaction. */

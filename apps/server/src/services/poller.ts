@@ -21,7 +21,8 @@ import { githubToken, readSettings } from "./settings";
 import { update } from "../db";
 import { ingestEnv, ingestEvent, type Actor, type PrEvent } from "./githubIngest";
 import { applyShip, getShip, observeShip, openShips, shipDue, type Ship } from "./ships";
-import { endSubscription, getSub, pollable, savePollState, updateSubscription, type PollState, type Subscription } from "./subscriptions";
+import { endedOpen, endSubscription, getSub, pollable, savePollState, updateSubscription, type PollState, type Subscription } from "./subscriptions";
+import { append } from "../lifecycle/dispatch";
 
 // PR autonomy without webhooks: read each subscribed PR with conditional requests (a 304 is free against the rate limit), turn
 // what changed into the PR events services/githubIngest.ts applies. The reads are Effects failing with `GithubError`; the
@@ -30,6 +31,8 @@ import { endSubscription, getSub, pollable, savePollState, updateSubscription, t
 // 10 s: a CI failure or a conflict reaches the agent within seconds. Unchanged reads are 304s, free against the rate limit.
 export const POLL_MS = 10_000;
 export const POLL_AUTH_FAILED_MS = 5 * 60_000;
+/** A PR whose watch ended while it was open (`endedOpen`) is read this often, for its state alone. */
+export const ENDED_STATE_MS = 60_000;
 const NOT_VISIBLE = "PR not found or not accessible to your GitHub token";
 
 const actor = (u: GhUser | null | undefined): Actor => ({ login: u?.login ?? "ghost", bot: u?.type === "Bot" });
@@ -313,12 +316,55 @@ const pollShip = (app: App, token: string, ship: Ship): Effect.Effect<number | u
     ),
   );
 
+/** When each ended-but-open PR was last read, with its ETag. In memory: after a restart each is read once more, which is cheap. */
+const endedReads = new WeakMap<App, Map<number, { at: number; etag?: string }>>();
+
+/**
+ * Reads the state of a PR whose watch ended while it was open, at most every `ENDED_STATE_MS`. A close or merge only updates the
+ * subscription's state (the sidebar's colour) and, for a merge, says so in the transcript: nothing reaches the agent.
+ */
+const pollEndedState = (app: App, token: string, sub: Subscription): Effect.Effect<number | undefined> => {
+  let reads = endedReads.get(app);
+  if (!reads) endedReads.set(app, (reads = new Map()));
+  const last = reads.get(sub.id);
+  if (last && app.now() - last.at < ENDED_STATE_MS) return Effect.succeed(undefined);
+  return getCached(clientOf(app, token), GhPr, `/repos/${sub.repo}/pulls/${sub.number}`, last?.etag).pipe(
+    Effect.map((r) => {
+      reads.set(sub.id, { at: app.now(), etag: r.status === 200 ? r.etag : last?.etag });
+      if (r.status !== 200) return undefined;
+      const state = r.json.merged ? "merged" : r.json.state;
+      if (state === "open") return undefined;
+      app.db.tx(() => {
+        const cur = getSub(app, sub.id);
+        if (cur?.status !== "ended" || cur.state !== "open") return;
+        updateSubscription(app, sub.id, { state });
+        if (state === "merged") append(app, sub.dorkId, { type: "pr_merged", url: sub.url, number: sub.number });
+      });
+      return undefined;
+    }),
+    Effect.catch((e) =>
+      Effect.sync(() => {
+        // Gone or no longer visible: stop asking (until a restart); anything else is tried again next time.
+        reads.set(sub.id, { at: e.status === 404 || e.status === 403 ? Number.MAX_SAFE_INTEGER : app.now(), etag: last?.etag });
+        return stopFor(app, sub, e);
+      }),
+    ),
+    Effect.catchDefect(() =>
+      Effect.sync(() => {
+        console.error("poll failed", sub.repo, sub.number, "unexpected");
+        return undefined;
+      }),
+    ),
+  );
+};
+
 /** One pass over every subscription and ship that needs watching. Answers when to look again, or null when nothing needs polling. */
 export const pollOnceEffect = (app: App): Effect.Effect<number | null> =>
   Effect.gen(function* () {
     const subs = pollable(app);
     const ships = openShips(app);
-    if (!subs.length && !ships.length) return null;
+    const ended = endedOpen(app);
+    if (!subs.length && !ships.length && !ended.length) return null;
     const token = yield* Effect.promise(() => githubToken(app));
     if (!token) return POLL_MS * 2; // subscriptions wait for a token to be set
     yield* ensureLogin(app, token);
@@ -334,7 +380,11 @@ export const pollOnceEffect = (app: App): Effect.Effect<number | null> =>
       const stop = yield* pollShip(app, token, ship);
       if (stop !== undefined) return stop;
     }
-    return POLL_MS;
+    for (const sub of ended) {
+      const stop = yield* pollEndedState(app, token, sub);
+      if (stop !== undefined) return stop;
+    }
+    return subs.length || ships.length ? POLL_MS : ENDED_STATE_MS;
   });
 
 /** The Promise form, for the poll job (lifecycle/jobs.ts). */

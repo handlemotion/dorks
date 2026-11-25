@@ -131,6 +131,22 @@ export const pollable = (app: App): Subscription[] =>
     )
     .map(subOf);
 
+/** How long after its watch ended a PR the session opened is still read for its state (`endedOpen`). */
+export const FOLLOW_ENDED_MS = 14 * 24 * 60 * 60_000;
+
+/**
+ * PRs the session opened whose watch ended while they were still open (the agent unsubscribed): the UI still lists them, so the poller
+ * keeps reading their state, slowly and without telling the agent anything, until they close or merge or two weeks pass.
+ */
+export const endedOpen = (app: App): Subscription[] =>
+  app.db
+    .all(
+      `SELECT s.* FROM pr_subscriptions s JOIN dorks d ON d.id = s.dork_id
+     WHERE s.status = 'ended' AND s.state = 'open' AND s.source = 'auto' AND s.last_event_at > ? AND d.deleting = 0 AND d.archived = 0 ORDER BY s.id`,
+      app.now() - FOLLOW_ENDED_MS,
+    )
+    .map(subOf);
+
 const find = (app: App, dorkId: string, repo: string, number: number): Subscription | undefined => {
   const r = app.db.get("SELECT * FROM pr_subscriptions WHERE dork_id = ? AND repo = ? AND number = ?", dorkId, normalizeRepo(repo), number);
   return r ? subOf(r) : undefined;

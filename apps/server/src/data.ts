@@ -1,4 +1,4 @@
-import type { AgentCommand, AgentModelChoice, ClientEvent, DorkMode, DorkState } from "@dorks/shared";
+import type { AgentCommand, AgentModelChoice, ClientEvent, DorkMode, DorkState, SessionPr } from "@dorks/shared";
 import type { Db, Row } from "./db";
 import { bool, json } from "./db";
 
@@ -203,7 +203,7 @@ export const queuedMessagesOf = (db: Db, dorkId: string): QueuedMessage[] =>
     .all("SELECT id, text, created_at FROM queued_messages WHERE dork_id = ? ORDER BY created_at, rowid", dorkId)
     .map((r) => ({ id: r.id as string, text: r.text as string, createdAt: r.created_at as number }));
 
-export const dorkView = (d: DorkRow, prState?: "open" | "merged" | "closed", needsAttention?: boolean, queue?: QueuedMessage[]) => ({
+export const dorkView = (d: DorkRow, prState?: "open" | "merged" | "closed", needsAttention?: boolean, queue?: QueuedMessage[], prs?: SessionPr[]) => ({
   id: d.id,
   title: d.title,
   repo: d.repo,
@@ -216,6 +216,7 @@ export const dorkView = (d: DorkRow, prState?: "open" | "merged" | "closed", nee
   images: d.images ?? [],
   prUrl: d.prUrl,
   prState,
+  ...(prs?.length ? { prs } : {}),
   ...(needsAttention ? { needsAttention: true } : {}),
   ...(isUnread(d) ? { unread: true } : {}),
   // A single dork's read also carries what its composer offers: queued messages and the agent's commands.
