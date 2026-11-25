@@ -98,7 +98,10 @@ export function PullRequestPanel({
   const refresh = pullRequest?.refresh
   useEffect(() => {
     if (!refresh || !view || view.state !== 'open') return
-    const t = window.setInterval(refresh, 60_000)
+    // Not from a hidden window: each refresh is several GitHub reads, and the live stream refreshes it when the PR changes anyway.
+    const t = window.setInterval(() => {
+      if (document.visibilityState === 'visible') refresh()
+    }, 60_000)
     return () => window.clearInterval(t)
   }, [refresh, view])
 

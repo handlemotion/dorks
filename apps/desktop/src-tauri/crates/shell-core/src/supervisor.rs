@@ -262,6 +262,7 @@ async fn run_one(
                     }
                 } else if ok {
                     failed_checks = 0;
+                    rotate_running_log(&spec.log_file, policy.max_log_bytes);
                 } else {
                     failed_checks += 1;
                     if failed_checks >= policy.health_failures {
@@ -305,6 +306,20 @@ fn rotate_log(path: &Path, max: u64) {
         let mut old = path.as_os_str().to_owned();
         old.push(".1");
         let _ = std::fs::rename(path, old);
+    }
+}
+
+/// The server runs for days, so its log is also kept to size while it runs. The child writes to it through an `O_APPEND` handle,
+/// so the file cannot be renamed away (the child would keep writing to the renamed one): copy it to `<log>.1`, then truncate it;
+/// the child's next write lands at the new end. A line written between the two is lost, which is fine for a log.
+fn rotate_running_log(path: &Path, max: u64) {
+    if !std::fs::metadata(path).is_ok_and(|m| m.len() > max) {
+        return;
+    }
+    let mut old = path.as_os_str().to_owned();
+    old.push(".1");
+    if std::fs::copy(path, &old).is_ok() {
+        let _ = std::fs::OpenOptions::new().write(true).open(path).and_then(|f| f.set_len(0));
     }
 }
 
@@ -357,4 +372,27 @@ fn process_name(pid: u32) -> Option<String> {
     let out = std::process::Command::new("/bin/ps").args(["-p", &pid.to_string(), "-o", "comm="]).output().ok()?;
     let comm = String::from_utf8(out.stdout).ok()?;
     Path::new(comm.trim()).file_name().map(|n| n.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn rotates_a_log_the_child_still_appends_to() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("server.log");
+        // What the child holds: an append-only handle opened before the rotation.
+        let mut child = std::fs::OpenOptions::new().create(true).append(true).open(&log).unwrap();
+        child.write_all(&[b'x'; 2048]).unwrap();
+        rotate_running_log(&log, 4096);
+        assert_eq!(std::fs::metadata(&log).unwrap().len(), 2048, "under the limit: left alone");
+
+        child.write_all(&[b'y'; 4096]).unwrap();
+        rotate_running_log(&log, 4096);
+        assert_eq!(std::fs::metadata(dir.path().join("server.log.1")).unwrap().len(), 6144);
+        child.write_all(b"after\n").unwrap();
+        assert_eq!(std::fs::read(&log).unwrap(), b"after\n", "the child's next line starts the fresh file");
+    }
 }

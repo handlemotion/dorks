@@ -68,6 +68,8 @@ export class EventsFeed implements Store<EventsState> {
   private tailQueued = false;
   private failures = 0;
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
+  /** When the last subscriber left (or the feed was made); undefined while someone watches. The client drops long-idle feeds. */
+  idleSince: number | undefined = Date.now();
 
   private readonly api: Api;
   private readonly dorkId: string;
@@ -90,8 +92,15 @@ export class EventsFeed implements Store<EventsState> {
 
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
+    this.idleSince = undefined;
     if (this.listeners.size === 1) this.requestTail(); // first page, or a catch-up after having been away
-    return () => void this.listeners.delete(listener);
+    return () => {
+      this.listeners.delete(listener);
+      if (this.listeners.size > 0) return;
+      this.idleSince = Date.now();
+      clearTimeout(this.retryTimer);
+      this.retryTimer = undefined;
+    };
   };
 
   /** The live stream says the transcript advanced (or the connection was re-established): catch up. */

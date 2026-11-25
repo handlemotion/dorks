@@ -369,6 +369,8 @@ export async function boatKey(app: App): Promise<string | undefined> {
 }
 // ---------------------------------------------------------------- the GitHub CLI's login (never stored; cached in memory for a minute)
 const GH_TTL_MS = 60_000;
+/** A failed read (logged out, `gh` missing or slow) is remembered briefly: the poller, the watchers and every sandbox ask for the token. */
+const GH_FAIL_TTL_MS = 15_000;
 const ghCache = new WeakMap<App, { at: number; login: GhLogin }>();
 const confirmed = new WeakMap<App, string>();
 
@@ -384,7 +386,7 @@ export function forgetGhLogin(app: App): void {
 export async function githubLogin(app: App): Promise<GhLogin | null> {
   if (!readSettings(app).githubConnected) return null;
   const cached = ghCache.get(app);
-  if (cached && app.now() - cached.at < GH_TTL_MS) return cached.login;
+  if (cached && app.now() - cached.at < ("token" in cached.login ? GH_TTL_MS : GH_FAIL_TTL_MS)) return cached.login;
   const login = await app.ghLogin();
   // The token this process last confirmed. On the first read after a restart it is unknown, and gh may have switched accounts
   // meanwhile, so the remembered login is dropped then too: the poller and the repository list learn it again.
@@ -392,9 +394,8 @@ export async function githubLogin(app: App): Promise<GhLogin | null> {
     update(app.db, "settings", { id: 1 }, { githubLogin: null });
     confirmed.set(app, login.token);
   }
-  // Only a working login is cached: after `gh auth login` the next read picks it up.
-  if ("token" in login) ghCache.set(app, { at: app.now(), login });
-  else ghCache.delete(app);
+  // A failure is cached for less long, so a `gh auth login` is picked up within seconds (connecting calls `forgetGhLogin` at once).
+  ghCache.set(app, { at: app.now(), login });
   return login;
 }
 

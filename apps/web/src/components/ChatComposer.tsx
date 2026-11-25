@@ -125,7 +125,17 @@ function useAttachments(upload: ((file: File) => Promise<string>) | undefined, d
   const setFiles = (next: (current: Pending[]) => Pending[]) => updateDraft(key, next)
   const [attachError, setAttachError] = useState('')
   // Without a draft key nothing outlives the composer.
-  useEffect(() => (draftKey === undefined ? () => setFiles(() => []) : undefined), [key])
+  useEffect(
+    () =>
+      draftKey === undefined
+        ? () =>
+            setFiles((current) => {
+              current.forEach((f) => URL.revokeObjectURL(f.preview))
+              return []
+            })
+        : undefined,
+    [key],
+  )
   const attach = (list: File[]) => {
     if (!upload) return
     const images = list.filter((f) => IMAGE_TYPES.includes(f.type))

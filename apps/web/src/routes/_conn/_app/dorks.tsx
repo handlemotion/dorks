@@ -339,11 +339,14 @@ type DorkView = NonNullable<ReturnType<typeof useDork>>
 type DorksActions = ReturnType<typeof useDorksClient>['actions']
 
 /** Chat details for a session: the agent's work, its pull request, screenshots (newest first), previews and computer. */
-function detailsData(dork: DorkView, blocks: Block[], actions: DorksActions, computer: Pick<NonNullable<ChatDetailsData['computer']>, 'used' | 'fetchUrl' | 'interrupt'>): ChatDetailsData {
+function detailsData(
+  dork: DorkView,
+  work: Pick<ChatDetailsData, 'progress' | 'tasks'>,
+  actions: DorksActions,
+  computer: Pick<NonNullable<ChatDetailsData['computer']>, 'used' | 'fetchUrl' | 'interrupt'>,
+): ChatDetailsData {
   return {
-    // Shared screenshots resolve to their URLs here as they do in the thread, so a progress message still shows its images.
-    progress: progressTurns(resolveSharedImages(blocks, actions.imageUrl).blocks),
-    tasks: latestTasks(blocks),
+    ...work,
     pr: prOf(dork.prUrl, dork.prState),
     artifacts: dork.images
       ?.map((i, n) => ({
@@ -484,7 +487,14 @@ function Thread({ dorkId }: { dorkId: string }) {
   // Each chat's Progress starts on its newest step.
   useEffect(() => progressStore.reset(), [dorkId])
   useMarkRead(dorkId, dork?.unread)
-  const computerUsed = view.blocks.some((b) => b.kind === 'tool' && b.name.startsWith('mcp__computer__'))
+  // Walks of the whole transcript: once per change of it, not on every render (a keystroke in the composer, a clock tick).
+  const computerUsed = useMemo(() => view.blocks.some((b) => b.kind === 'tool' && b.name.startsWith('mcp__computer__')), [view.blocks])
+  const showsWork = detailsOpen && dork?.mode !== 'nerd' // a dork's details are its crew, not Progress
+  const work = useMemo(
+    // Shared screenshots resolve to their URLs here as they do in the thread, so a progress message still shows its images.
+    () => (showsWork ? { progress: progressTurns(resolveSharedImages(view.blocks, actions.imageUrl).blocks), tasks: latestTasks(view.blocks) } : undefined),
+    [showsWork, view.blocks, actions],
+  )
   const fetchDesktopUrl = useCallback((opts: DesktopOptions) => actions.desktopUrl(dorkId, opts), [actions, dorkId])
   const interruptAgent = useCallback(() => actions.interrupt(dorkId), [actions, dorkId])
   const pullRequest = usePullRequestPanel(dorkId, dork)
@@ -510,7 +520,7 @@ function Thread({ dorkId }: { dorkId: string }) {
   ) : (
     <ChatDetails
       sessionId={dorkId}
-      data={{ ...detailsData(dork, view.blocks, actions, { used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent }), pullRequest, subscriptions, usePullRequest: usePr, workspace }}
+      data={{ ...detailsData(dork, work!, actions, { used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent }), pullRequest, subscriptions, usePullRequest: usePr, workspace }}
       onClose={() => setDetailsOpen(false)}
       onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}
       previewSession={previewSession}
