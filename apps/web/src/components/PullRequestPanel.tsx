@@ -68,7 +68,7 @@ export function Stat({ additions, deletions }: { additions: number; deletions: n
 type Section = 'overview' | 'files' | 'checks' | 'comments'
 
 /** One PR of a stack, as the overview lists it: root first, `current` the one shown. */
-export type PrStackEntry = { url: string; number?: number; state?: PrStatusState; draft?: boolean; current: boolean }
+export type PrStackEntry = { url: string; number?: number; title?: string; state?: PrStatusState; draft?: boolean; current: boolean }
 
 export function PullRequestPanel({
   changes,
@@ -192,7 +192,8 @@ function PullRequestView({
           </a>
         </div>
         <h2 className="mt-2 text-lg leading-snug text-pretty">{view.title}</h2>
-        <PrMeta view={view} stack={stack} onOpenPr={onOpenPr} />
+        <PrMeta view={view} />
+        {stack && <StackList stack={stack} onOpenPr={onOpenPr} />}
       </div>
       <Tabs value={section} onValueChange={(v) => setSection(v as Section)} className="min-h-0 flex-1 gap-0">
         <div className="flex shrink-0 items-center gap-0.5 border-b px-(--details-edge) pb-3">
@@ -212,7 +213,7 @@ function PullRequestView({
               Comments {view.comments.length > 0 && <span className="text-muted-foreground tabular-nums">{view.comments.length}</span>}
             </TabsTrigger>
           </TabsList>
-          <PrActions view={view} data={data} onAsk={onAsk} />
+          <PrActions view={view} data={data} stack={stack} onAsk={onAsk} />
         </div>
         <TabsContent value="overview">
           <Overview view={view} />
@@ -319,7 +320,7 @@ const BLOCKER_BUTTON = 'bg-red-600 text-white hover:bg-red-700 dark:bg-red-600 d
  * conflicts", "Update branch", "Fix checks"). Nothing for a draft, a merged or a closed PR: the state above says so. GitHub's
  * reason shows under the title when it refuses.
  */
-function PrActions({ view, data, onAsk }: { view: PullRequestView; data?: PullRequestPanelData; onAsk?: (text: string) => void }) {
+function PrActions({ view, data, stack, onAsk }: { view: PullRequestView; data?: PullRequestPanelData; stack?: PrStackEntry[]; onAsk?: (text: string) => void }) {
   const [method, setMethod] = useMergeMethod(view.mergeMethods)
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState<'merge' | 'update'>()
@@ -342,7 +343,7 @@ function PrActions({ view, data, onAsk }: { view: PullRequestView; data?: PullRe
       setBusy(undefined)
     }
   }
-  const action = nextStep({ view, data, onAsk, method, setMethod, confirming, setConfirming, busy, run })
+  const action = nextStep({ view, data, onAsk, method, setMethod, confirming, setConfirming, busy, run, merging: stackMerge(stack) })
   if (!action && !error && !data?.error) return null
   return (
     <div className="ml-auto flex shrink-0 items-center gap-1.5 pr-[1px]">
@@ -366,10 +367,24 @@ type Step = {
   setConfirming: (c: boolean) => void
   busy?: 'merge' | 'update'
   run: (kind: 'merge' | 'update', f: () => Promise<void>) => Promise<void>
+  merging: StackMerge
+}
+
+/**
+ * What merging the shown PR takes with it. GitHub merges a stacked PR together with every open PR below it, so from the top of a
+ * stack one merge lands the whole stack; from the middle, the PRs up to the shown one.
+ */
+type StackMerge = { count: number; whole: boolean }
+function stackMerge(stack?: PrStackEntry[]): StackMerge {
+  const at = stack?.findIndex((p) => p.current) ?? -1
+  if (!stack || at < 0) return { count: 1, whole: false }
+  const open = (p: PrStackEntry) => p.current || p.state === 'open' || p.state === undefined
+  const count = stack.slice(0, at + 1).filter(open).length
+  return { count, whole: count > 1 && !stack.slice(at + 1).some(open) }
 }
 
 /** The buttons for the PR's next step: unblock it, or merge it (with the confirm). */
-function nextStep({ view, data, onAsk, method, setMethod, confirming, setConfirming, busy, run }: Step): ReactNode {
+function nextStep({ view, data, onAsk, method, setMethod, confirming, setConfirming, busy, run, merging }: Step): ReactNode {
   const { merge, updateBranch } = data ?? {}
   const { checks, baseRef } = view
   if (view.mergeableState === 'dirty')
@@ -407,6 +422,7 @@ function nextStep({ view, data, onAsk, method, setMethod, confirming, setConfirm
         view={view}
         method={method}
         setMethod={setMethod}
+        merging={merging}
         confirming={confirming}
         busy={busy}
         onMerge={() => (confirming ? void run('merge', () => merge(method, view.headSha)) : setConfirming(true))}
@@ -479,6 +495,7 @@ function MergeButton({
   view,
   method,
   setMethod,
+  merging,
   confirming,
   busy,
   onMerge,
@@ -487,6 +504,7 @@ function MergeButton({
   view: PullRequestView
   method: MergeMethod
   setMethod: (m: MergeMethod) => void
+  merging: StackMerge
   confirming: boolean
   busy?: 'merge' | 'update'
   onMerge: () => void
@@ -498,11 +516,11 @@ function MergeButton({
       <Button size="xs" className={`${ACTION_BUTTON} grid rounded-r-none ${MERGE_BUTTON}`} disabled={busy !== undefined} onClick={onMerge}>
         <span className={cell(!confirming)} aria-hidden={confirming}>
           <GitMergeIcon />
-          {METHOD_BUTTON[method]}
+          {merging.count < 2 ? METHOD_BUTTON[method] : merging.whole ? 'Merge stack' : `Merge ${merging.count} PRs`}
         </span>
         <span className={cell(confirming)} aria-hidden={!confirming}>
           {busy === 'merge' ? <LoaderIcon className="animate-spin" /> : <CheckIcon />}
-          Confirm merge
+          {merging.count < 2 ? 'Confirm merge' : `Confirm ${merging.count} merges`}
         </span>
       </Button>
       {confirming ? (
@@ -540,10 +558,10 @@ function MergeButton({
 }
 
 /**
- * One line of who and where under the title, in place of a properties block: the author, base ← head (the head copyable), the
- * stack when there is one, then the size. It wraps at narrow widths; the branch chips truncate.
+ * One line of who and where under the title, in place of a properties block: the author, base ← head (the head copyable), then
+ * the size. It wraps at narrow widths; the branch chips truncate.
  */
-function PrMeta({ view, stack, onOpenPr }: { view: PullRequestView; stack?: PrStackEntry[]; onOpenPr?: (url: string) => void }) {
+function PrMeta({ view }: { view: PullRequestView }) {
   const opened = new Date(view.createdAt)
   const [copied, setCopied] = useState(false)
   useEffect(() => {
@@ -572,11 +590,6 @@ function PrMeta({ view, stack, onOpenPr }: { view: PullRequestView; stack?: PrSt
           </Button>
         </Tip>
       </span>
-      {stack && (
-        <span className="flex min-w-0 items-center gap-1.5">
-          Stack <StackPath stack={stack} onOpenPr={onOpenPr} />
-        </span>
-      )}
       <span className="flex items-center gap-2 tabular-nums">
         {view.changedFiles} {view.changedFiles === 1 ? 'file' : 'files'}
         <Stat additions={view.additions} deletions={view.deletions} />
@@ -610,29 +623,50 @@ function Overview({ view }: { view: PullRequestView }) {
   )
 }
 
-/** A stack, root first: each PR's number in its state's colour, the one shown in full weight; the others open their tab. */
-function StackPath({ stack, onOpenPr }: { stack: PrStackEntry[]; onOpenPr?: (url: string) => void }) {
+/**
+ * The stack this PR is in, root first, as dots on one vertical line: each PR's dot in its state's colour, its number and title; the
+ * one shown is in the foreground, the others are muted rows that bring theirs into this tab.
+ */
+function StackList({ stack, onOpenPr }: { stack: PrStackEntry[]; onOpenPr?: (url: string) => void }) {
   return (
-    <span className="flex min-w-0 flex-wrap items-center gap-x-1 tabular-nums">
-      {stack.map((p, i) => {
-        const { className } = prStatus(p.state, p.draft)
-        const label = p.number ? `#${p.number}` : 'PR'
-        return (
-          <span key={p.url} className="flex items-center gap-1">
-            {i > 0 && <span className="text-muted-foreground">→</span>}
-            {p.current || !onOpenPr ? (
-              <span className={`${className} ${p.current ? 'font-medium' : ''}`} aria-current={p.current || undefined}>
-                {label}
+    <section aria-label="Stack" className="mt-4">
+      <h3 className="mb-1 text-xs font-normal text-muted-foreground">Stack</h3>
+      <ol className="-mx-1.5 flex flex-col">
+        {stack.map((p, i) => {
+          const { className, label: stateLabel } = prStatus(p.state, p.draft)
+          const ref = p.number ? `#${p.number}` : 'PR'
+          const row = (
+            <>
+              <span aria-hidden className="relative flex w-3 shrink-0 justify-center self-stretch">
+                {i > 0 && <span className="absolute top-0 bottom-1/2 w-px bg-foreground/15" />}
+                {i < stack.length - 1 && <span className="absolute top-1/2 bottom-0 w-px bg-foreground/15" />}
+                <span className={`relative my-auto size-2 rounded-full bg-current ${className} ${p.current ? 'ring-2 ring-current/25' : ''}`} />
               </span>
-            ) : (
-              <button type="button" className={`${className} hover:underline`} onClick={() => onOpenPr(p.url)}>
-                {label}
-              </button>
-            )}
-          </span>
-        )
-      })}
-    </span>
+              <span className={`shrink-0 tabular-nums ${p.current ? 'text-foreground' : ''}`}>{ref}</span>
+              <span className={`min-w-0 truncate ${p.current ? 'text-foreground' : ''}`}>{p.title}</span>
+              <span className="sr-only">{stateLabel}</span>
+            </>
+          )
+          return (
+            <li key={p.url}>
+              {p.current || !onOpenPr ? (
+                <div className="flex h-7 items-center gap-2 px-1.5 text-muted-foreground" aria-current={p.current || undefined}>
+                  {row}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="flex h-7 w-full items-center gap-2 rounded-(--control-radius) px-1.5 text-left text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                  onClick={() => onOpenPr(p.url)}
+                >
+                  {row}
+                </button>
+              )}
+            </li>
+          )
+        })}
+      </ol>
+    </section>
   )
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { ActivityIcon, GitPullRequestIcon, LayersIcon, MonitorIcon, PanelLeftIcon, PlusIcon, SearchIcon, XIcon } from 'lucide-react'
 import { Button } from '@dorks/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@dorks/ui/tabs'
@@ -12,7 +12,7 @@ import { PullRequestPanel, TAB_CLASS, type PrStackEntry, type PullRequestPanelDa
 import { PrIcon, type PrStatusState } from './PrStatus'
 import { Artifacts } from './chat-details/Artifacts'
 import { NewTab } from './chat-details/NewTab'
-import { sessionPrs, stackOf } from './chat-details/prStack'
+import { sessionPrs, stackOf, stackRoot } from './chat-details/prStack'
 import { PANEL_LABEL, type ChatDetailsData, type Panel, type TabKey } from './chat-details/types'
 import { useOpenTabs } from './chat-details/useOpenTabs'
 
@@ -76,6 +76,14 @@ export function ChatDetails({
   useEffect(() => {
     if (subscribed) openNewPrs(subscribed.map((s) => s.url))
   }, [subscribed, openNewPrs])
+  // A stack's PRs share one tab, named for the stack, showing whichever of its PRs was opened last; before paint, so three tabs
+  // never flash up for a stack the agent just opened.
+  const { collapse } = tabs
+  const stackKey = prs.map((p) => `${p.url}<${p.parent ?? ''}`).join(' ')
+  useLayoutEffect(() => {
+    collapse((key) => (key.startsWith('pr:') ? stackRoot(prs, key.slice(3)) : undefined))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- prs is rebuilt every render; stackKey is its shape
+  }, [stackKey, tabs.keys, collapse])
   // The local diff's tab becomes the PR once there is one (tabs remembered from before PRs had their own).
   const { keys, replace } = tabs
   useEffect(() => {
@@ -105,6 +113,16 @@ export function ChatDetails({
       const pr = prs.find((p) => p.url === url)
       const number = pr?.number ?? Number(/\/pull\/(\d+)/.exec(url)?.[1])
       const text = number ? `#${number}` : 'Pull request'
+      const stack = stackOf(prs, url)
+      if (stack) {
+        const root = stack[0].number ? `#${stack[0].number}` : ''
+        const name = `Stack ${root}`.trim()
+        return {
+          icon: <PrIcon state={pr?.state} draft={pr?.draft} />,
+          text: <span className="tabular-nums">{name}</span>,
+          title: `${name}: ${stack.map((p) => (p.number ? `#${p.number}` : 'PR')).join(', ')}`,
+        }
+      }
       return { icon: <PrIcon state={pr?.state} draft={pr?.draft} />, text: <span className="tabular-nums">{text}</span>, title: pr?.title ?? text }
     }
     const panel = key as Panel

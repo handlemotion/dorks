@@ -32,7 +32,7 @@ type Limit = { label: string; used: number; note?: string; title?: string }
 function limitsOf(usage: Usage, provider: AgentProvider) {
   const plan = PLANS[provider]
   const model = plan ? usage[plan.key] : undefined
-  const modelLimits: Limit[] = model ? [...(model.session ? [window('Session · 5 hours', model.session)] : []), window(provider === 'claude' ? 'Weekly · all models' : 'Weekly', model.weekly)] : []
+  const modelLimits: Limit[] = model ? [...(model.session ? [limitOf('Session · 5 hours', model.session)] : []), limitOf(provider === 'claude' ? 'Weekly · all models' : 'Weekly', model.weekly)] : []
   const cloud = usage.cloud
   const machine: Limit | undefined =
     cloud?.usedHours !== undefined && cloud.includedHours
@@ -46,7 +46,7 @@ function limitsOf(usage: Usage, provider: AgentProvider) {
   return { plan, modelLimits, cloud, machine }
 }
 
-const window = (label: string, w: UsageWindow): Limit => ({ label, used: w.used, note: resets(w.resetsAt) })
+const limitOf = (label: string, w: UsageWindow): Limit => ({ label, used: w.used, note: resets(w.resetsAt) })
 
 export function UsageMenu({ provider }: { provider: AgentProvider }) {
   const usage = useUsage()
