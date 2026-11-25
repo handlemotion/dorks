@@ -3,7 +3,6 @@ import { useBuilds, useConnection, useDork, useDorkEvents, useDorks, useDorksCli
 import { useState, type ReactNode } from "react";
 import { GlassView } from "expo-glass-effect";
 import { KeyboardAvoidingView, Pressable, StyleSheet, Text, View } from "react-native";
-import { SafeAreaView } from "react-native-screens/experimental";
 import { Composer } from "@/components/Composer";
 import { BuildMenu, ModelMenu, RepoMenu } from "@/components/ComposerMenus";
 import { GlassIconButton } from "@/components/Glass";
@@ -20,12 +19,12 @@ import { type as size, useColors } from "@/lib/theme";
 function Page({ title, right, children }: { title?: string; right?: ReactNode; children: ReactNode }) {
   const c = useColors();
   return (
-    <SafeAreaView edges={{ bottom: true }} style={[s.fill, { backgroundColor: c.background }]}>
+    <View style={[s.fill, { backgroundColor: c.background }]}>
       <Header title={title} right={right} />
       <KeyboardAvoidingView behavior="padding" style={s.fill}>
         {children}
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 

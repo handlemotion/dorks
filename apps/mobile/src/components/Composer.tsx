@@ -138,12 +138,12 @@ export function Composer({
 }
 
 const s = StyleSheet.create({
-  root: { paddingHorizontal: 16, paddingBottom: 8, gap: 8 },
-  glass: { borderRadius: 26, paddingHorizontal: 8, paddingVertical: 7 },
+  root: { paddingHorizontal: 16, paddingBottom: 6, gap: 8 },
+  glass: { borderRadius: 22, paddingHorizontal: 6, paddingVertical: 4 },
   row: { flexDirection: "row", alignItems: "center", gap: 4 },
   side: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
-  input: { flex: 1, fontSize: size.message, lineHeight: 21, maxHeight: 160, paddingTop: 8, paddingBottom: 8 },
-  send: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  input: { flex: 1, fontSize: size.message, lineHeight: 20, maxHeight: 160, paddingTop: 7, paddingBottom: 7 },
+  send: { width: 32, height: 32, borderRadius: 16, marginHorizontal: 2, alignItems: "center", justifyContent: "center" },
   images: { flexDirection: "row", flexWrap: "wrap", gap: 6, padding: 6 },
   thumb: { width: 56, height: 56, borderRadius: radius.control, borderWidth: 1 },
   error: { fontSize: size.small, paddingHorizontal: 8 },
