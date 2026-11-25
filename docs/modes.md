@@ -52,5 +52,6 @@ Its guidance tells it to prefer the sessions it started and never take over anot
 ## App
 
 - The composer's bar starts with the mode menu (`ModeMenu`). A new session remembers the mode picked last; one opened from a repository's
-  `+` is a code session. In chat and nerd mode the repository chooser goes away.
+  `+` is a code session. In chat and nerd mode the repository chooser goes away and the session starts on the owner's default build
+  (`buildId` omitted, so the server's fallback applies, a build without repositories included); a nerd's workers start on its build.
 - The sidebar shows **Nerds** and **Chats** groups (when there are any) above the repositories.

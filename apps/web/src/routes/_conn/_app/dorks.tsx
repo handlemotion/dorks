@@ -289,10 +289,11 @@ function NewDork({
                 await actions.createDork({
                   mode,
                   // Only a code session works in a repository; the others start on the chosen build's machine with none.
-                  ...(mode === 'code' ? { repo: repo.trim() } : {}),
+                  // A chat or a nerd has no repository, so the repository chooser's build does not apply: it starts on the owner's default
+                  // build (the server's fallback when buildId is omitted, a build without repositories included).
+                  ...(mode === 'code' ? { repo: repo.trim(), buildId } : {}),
                   message: withImages(message, images),
                   provider,
-                  buildId,
                   ...(provider === 'claude' ? choice : provider === 'antigravity' && choice.model ? { model: choice.model } : {}),
                 })
               ).id,
