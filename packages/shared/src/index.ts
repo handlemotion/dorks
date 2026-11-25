@@ -15,3 +15,4 @@ export * from "./comments";
 export * from "./mentions";
 export * from "./inputs";
 export * from "./ship";
+export * from "./workspace";

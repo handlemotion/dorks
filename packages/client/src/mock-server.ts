@@ -1,7 +1,7 @@
 // An in-memory stand-in for apps/server's UI listener, implementing the contract in docs/architecture.md: the REST routes, the
 // `/api/live` SSE invalidation stream and a scripted fake agent. It lets the web app and the e2e run with no real server, and it
 // is what this package's own tests talk to. Node-only, and it imports nothing at runtime so `node src/mock-cli.ts` works as is.
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { ClientEvent, CommentAnchor, CommentView, McpServerView, PullRequestView, ShipStage, ShipView, SkillCandidate, SkillView } from "@dorks/shared";
@@ -125,6 +125,14 @@ const MOCK_FILES = [
   "docs/architecture.md",
   "docs/development.md",
 ];
+/** The Files tab's text for a mock file: something plausible per extension. */
+function mockText(path: string): string {
+  if (path.endsWith(".md")) return `# ${path.split("/").pop()!.replace(/\.md$/, "")}\n\nNotes for the mock repository.\n\n- One\n- Two\n`;
+  if (path.endsWith(".json")) return `{\n  "name": "demo",\n  "private": true,\n  "scripts": {\n    "dev": "vite"\n  }\n}\n`;
+  return `// ${path}\nimport { useState } from "react";\n\nexport function Example() {\n  const [count, setCount] = useState(0);\n  return <button onClick={() => setCount(count + 1)}>{count}</button>;\n}\n`;
+}
+const mockSha = (s: string) => createHash("sha256").update(s).digest("hex");
+
 const MOCK_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 /** What a Claude agent reports from the CLI's `initialize` answer. */
 const MOCK_MODELS = [
@@ -773,6 +781,16 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   };
 
   /** `/api/dorks/:id[/sub]`, keyed by `METHOD sub` (`*` for any method). */
+  /** The Files tab's mock checkouts, per dork: its own repository and a second one, edited in memory. */
+  const workspaces = new Map<string, Map<string, Map<string, string>>>();
+  const workspaceFiles = (d: MockDork, root: string) => {
+    if (root !== d.repo && root !== "acme/docs") return undefined;
+    let roots = workspaces.get(d.id);
+    if (!roots) workspaces.set(d.id, (roots = new Map()));
+    let files = roots.get(root);
+    if (!files) roots.set(root, (files = new Map((root === "acme/docs" ? ["README.md", "guides/setup.md", "guides/deploy.md"] : MOCK_FILES).map((p) => [p, mockText(p)]))));
+    return files;
+  };
   const dorkRoutes = new Map<string, (c: Ctx, d: MockDork) => void>([
     ["GET ", ({ res }, d) => json(res, 200, view(d))],
     [
@@ -875,6 +893,52 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         const q = (url.searchParams.get("q") ?? "").toLowerCase();
         const files = MOCK_FILES.filter((p) => p.toLowerCase().includes(q)).sort((a, b) => a.length - b.length);
         json(res, 200, { files, listed: true, truncated: false });
+      },
+    ],
+    [
+      "GET workspace",
+      ({ res }, d) =>
+        json(res, 200, {
+          roots: [...(d.repo ? [{ id: d.repo, name: d.repo, branch: d.branch, primary: true }] : []), { id: "acme/docs", name: "acme/docs", branch: "main", primary: false }],
+        }),
+    ],
+    [
+      "GET workspace/tree",
+      ({ url, res }, d) => {
+        const root = url.searchParams.get("root") ?? "";
+        const files = workspaceFiles(d, root);
+        if (!files) return fail(res, "not_found", "That repository is not in this sandbox.");
+        const status =
+          root === d.repo
+            ? [
+                { path: "apps/web/src/components/ChatComposer.tsx", status: "modified" },
+                { path: "apps/web/src/lib/draft.ts", status: "added" },
+              ]
+            : [];
+        return json(res, 200, { root, paths: [...files.keys()], truncated: false, status });
+      },
+    ],
+    [
+      "GET workspace/file",
+      ({ url, res }, d) => {
+        const root = url.searchParams.get("root") ?? "";
+        const path = url.searchParams.get("path") ?? "";
+        const text = workspaceFiles(d, root)?.get(path);
+        if (text === undefined) return fail(res, "not_found", "That file is not there any more.");
+        return json(res, 200, { root, path, kind: "text", contents: text, sha: mockSha(text), size: Buffer.byteLength(text) });
+      },
+    ],
+    [
+      "PUT workspace/file",
+      ({ body, res }, d) => {
+        const files = workspaceFiles(d, str(body.root) ?? "");
+        const path = str(body.path) ?? "";
+        const text = files?.get(path);
+        if (!files || text === undefined) return fail(res, "not_found", "That file is not there any more.");
+        if (typeof body.contents !== "string") return fail(res, "invalid", "contents must be text");
+        if (body.sha && body.sha !== mockSha(text)) return fail(res, "conflict", "The file changed in the sandbox since you opened it.");
+        files.set(path, body.contents);
+        return json(res, 200, { sha: mockSha(body.contents), size: Buffer.byteLength(body.contents) });
       },
     ],
     [
@@ -1466,7 +1530,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     const automation = automations(method, path, body);
     if (automation) return "error" in automation ? fail(res, automation.error, automation.message) : json(res, automation.status, automation.body);
     const m =
-      /^\/api\/dorks\/([^/]+)(?:\/(local\/[^/]+|inputs\/[^/]+|messages|queue(?:\/[^/]+(?:\/send)?)?|interrupt|desktop|archive|mode|model|codex-model|events|files|pr(?:\/merge|\/update-branch)?|subscriptions(?:\/resume)?|comments(?:\/[^/]+(?:\/replies)?)?))?$/.exec(
+      /^\/api\/dorks\/([^/]+)(?:\/(local\/[^/]+|inputs\/[^/]+|messages|queue(?:\/[^/]+(?:\/send)?)?|interrupt|desktop|archive|mode|model|codex-model|events|files|workspace(?:\/tree|\/file)?|pr(?:\/merge|\/update-branch)?|subscriptions(?:\/resume)?|comments(?:\/[^/]+(?:\/replies)?)?))?$/.exec(
         path,
       );
     if (m) return routeDork(c, m);

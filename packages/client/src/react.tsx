@@ -1,5 +1,15 @@
 import { createContext, useContext, useEffect, useSyncExternalStore, type ReactNode } from "react";
-import { toAppError, type ComposioStatus, type McpServerView, type SkillView, type PullRequestView, type SubscriptionView, type CommentView } from "@dorks/shared";
+import {
+  toAppError,
+  type ComposioStatus,
+  type McpServerView,
+  type SkillView,
+  type PullRequestView,
+  type SubscriptionView,
+  type CommentView,
+  type WorkspaceRoot,
+  type WorkspaceTree,
+} from "@dorks/shared";
 import type { DorksClient, ConnectionState } from "./client.ts";
 import type { EventsState } from "./events.ts";
 import type { QueryState, Store } from "./store.ts";
@@ -143,6 +153,16 @@ export function useAutomationRuns(id: string): AutomationRunView[] | undefined {
 /** The session's pull request, live from GitHub: `data` null when it has none; `error` when GitHub could not be read. */
 export function usePullRequest(dorkId: string, url?: string): QueryState<PullRequestView | null> {
   return useStore(useDorksClient().pullRequest(dorkId, url));
+}
+
+/** The git checkouts in the session's sandbox (the Files tab); `error` while it is asleep or unreachable. */
+export function useWorkspaceRoots(dorkId: string): QueryState<{ roots: WorkspaceRoot[] }> {
+  return useStore(useDorksClient().workspaceRoots(dorkId));
+}
+
+/** One checkout's files and their git status. */
+export function useWorkspaceTree(dorkId: string, root: string): QueryState<WorkspaceTree> {
+  return useStore(useDorksClient().workspaceTree(dorkId, root));
 }
 
 export function useSubscriptions(dorkId: string): SubscriptionView[] | undefined {

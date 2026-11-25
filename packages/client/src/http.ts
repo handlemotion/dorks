@@ -17,6 +17,9 @@ import {
   type SkillResolution,
   type SkillView,
   type SubscriptionView,
+  type WorkspaceFile,
+  type WorkspaceRoot,
+  type WorkspaceTree,
 } from "@dorks/shared";
 import type {
   BoatCheck,
@@ -161,6 +164,13 @@ export function createApi(config: ApiConfig) {
     unsubscribe: (id: string, pr: PrRefInput) => request<object>("DELETE", `${dork(id)}/subscriptions`, pr),
     resumeSubscription: (id: string, pr: PrRefInput) => request<object>("POST", `${dork(id)}/subscriptions/resume`, pr),
     /** The session's files that match `q`, best first, for the composer's `@` menu; `listed` is false until its box has listed them. */
+    /** The Files tab: the git checkouts in the session's sandbox (409 `sleeping` while it is asleep). */
+    workspaceRoots: (id: string) => request<{ roots: WorkspaceRoot[] }>("GET", `${dork(id)}/workspace`),
+    workspaceTree: (id: string, root: string) => request<WorkspaceTree>("GET", `${dork(id)}/workspace/tree`, undefined, { root }),
+    readWorkspaceFile: (id: string, root: string, path: string) => request<WorkspaceFile>("GET", `${dork(id)}/workspace/file`, undefined, { root, path }),
+    /** Saves a file; `sha` is the version it was edited from (409 `conflict` when the sandbox has another). */
+    writeWorkspaceFile: (id: string, root: string, path: string, contents: string, sha?: string) =>
+      request<{ sha: string; size: number }>("PUT", `${dork(id)}/workspace/file`, { root, path, contents, sha }),
     searchFiles: (id: string, q: string, limit = 50) => request<{ files: string[]; listed: boolean; truncated: boolean }>("GET", `${dork(id)}/files`, undefined, { q, limit }),
     listComments: (id: string) => request<CommentView[]>("GET", `${dork(id)}/comments`),
     addComment: (id: string, input: NewComment) => request<{ id: string }>("POST", `${dork(id)}/comments`, input),

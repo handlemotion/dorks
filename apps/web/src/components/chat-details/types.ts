@@ -4,6 +4,7 @@ import type { PreviewServer } from '../PreviewBrowser'
 import type { ProgressTask, ProgressTurn } from '../../lib/progress'
 import type { FileChange, PullRequestPanelData } from '../PullRequestPanel'
 import type { PrStatusState } from '../PrStatus'
+import type { WorkspaceSource } from './Files'
 
 /** A file the agent produced in the chat: a screenshot, a design, a document. */
 export type Artifact = {
@@ -37,12 +38,14 @@ export type ChatDetailsData = {
   computer?: ComputerSource
   /** The pull requests the session has (it opened them, or the agent or the owner subscribed; merged and closed ones too): each gets a tab. */
   subscriptions?: SubscriptionView[]
+  /** The repositories in the session's sandbox, browsed and edited in the Files tab. */
+  workspace?: WorkspaceSource
 }
 
 /** A panel Chat details can show in a tab. */
-export type Panel = 'progress' | 'artifacts' | 'changes' | 'computer'
+export type Panel = 'progress' | 'artifacts' | 'changes' | 'files' | 'computer'
 /** An open tab: a panel, a pull request (by url: a session can hold several) or a New tab. `changes` is the local diff before any PR. */
 export type TabKey = Panel | `pr:${string}` | `new:${string}`
 
-export const PANELS: Panel[] = ['progress', 'artifacts', 'changes', 'computer']
-export const PANEL_LABEL: Record<Panel, string> = { progress: 'Progress', artifacts: 'Artifacts', changes: 'Changes', computer: 'Computer' }
+export const PANELS: Panel[] = ['progress', 'artifacts', 'changes', 'files', 'computer']
+export const PANEL_LABEL: Record<Panel, string> = { progress: 'Progress', artifacts: 'Artifacts', changes: 'Changes', files: 'Files', computer: 'Computer' }

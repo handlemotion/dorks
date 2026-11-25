@@ -3,6 +3,12 @@ import { BridgeSession } from "../src/http/bridgeWs";
 import { updateSettings } from "../src/services/settings";
 import { WsTransport, type Accept, type BridgeSocket, type CommandEntry } from "../../../infra/bridge/src/transport";
 import { ev, harness, type Harness } from "./harness";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Workspace } from "../../../infra/bridge/src/workspace";
+import { readWorkspaceFile, workspaceRoots, workspaceTree, writeWorkspaceFile } from "../src/services/workspace";
 
 // The real bridge transport (infra/bridge) talking to the real session and services, joined by an in-process "socket".
 
@@ -231,6 +237,34 @@ describe("bridge socket: a whole turn through the real transport", () => {
     await until(() => reconnects === 1, "reconnect", 5000);
     await until(() => snaps.length > before, "snapshot after reconnect");
     expect(await t.connect()).toEqual({ afterBridgeSeq: 0 });
+    await t.close();
+  });
+});
+
+describe("bridge socket: the Files tab's calls", () => {
+  it("reads and saves a checkout through the bridge; a stale save is a typed conflict, and a sleeping dork is never asked", async () => {
+    const { h, id, t } = await setup("idle");
+    const work = mkdtempSync(join(tmpdir(), "files-tab-"));
+    const repo = join(work, "acme/web");
+    mkdirSync(join(repo, "src"), { recursive: true });
+    const env = { ...process.env, HOME: work, GIT_CONFIG_NOSYSTEM: "1" };
+    execFileSync("git", ["init", "-q", "-b", "main"], { cwd: repo, env });
+    writeFileSync(join(repo, "src/app.ts"), "export const a = 1\n");
+    const ws = new Workspace({ workDir: work, primary: () => repo, baseEnv: env, runAs: null });
+    t.onCall((op, args) => ws.call(op, args));
+    await t.connect();
+
+    expect(await workspaceRoots(h.app, id)).toEqual({ roots: [{ id: "acme/web", name: "acme/web", branch: "main", primary: true }] });
+    expect((await workspaceTree(h.app, id, "acme/web")).status).toEqual([{ path: "src/app.ts", status: "untracked" }]);
+    const file = await readWorkspaceFile(h.app, id, "acme/web", "src/app.ts");
+    if (file.kind !== "text") throw new Error("expected text");
+    await writeWorkspaceFile(h.app, id, "acme/web", "src/app.ts", "export const a = 2\n", file.sha);
+    expect(readFileSync(join(repo, "src/app.ts"), "utf8")).toBe("export const a = 2\n");
+    await expect(writeWorkspaceFile(h.app, id, "acme/web", "src/app.ts", "stale", file.sha)).rejects.toMatchObject({ error: { code: "conflict" } });
+    await expect(readWorkspaceFile(h.app, id, "acme/web", "../../etc/passwd")).rejects.toMatchObject({ error: { code: "invalid" } });
+
+    h.app.db.run("UPDATE dorks SET state = 'sleeping' WHERE id = ?", id);
+    await expect(workspaceRoots(h.app, id)).rejects.toMatchObject({ error: { code: "sleeping" } });
     await t.close();
   });
 });

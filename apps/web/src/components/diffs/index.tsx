@@ -7,6 +7,7 @@ const load = () => import('./pierre')
 const LazyPatchDiff = lazy(() => load().then((m) => ({ default: m.PatchDiff })))
 const LazyMultiFileDiff = lazy(() => load().then((m) => ({ default: m.MultiFileDiff })))
 const LazyFile = lazy(() => load().then((m) => ({ default: m.File })))
+const LazyFileEditor = lazy(() => load().then((m) => ({ default: m.FileEditor })))
 
 /** Fetches the diff code while the page is idle, so the first diff opened is drawn at once. */
 export function preloadDiffs() {
@@ -27,6 +28,15 @@ export function File({ fallback, ...props }: ComponentProps<typeof PierreFile> &
   return (
     <Suspense fallback={fallback}>
       <LazyFile {...props} />
+    </Suspense>
+  )
+}
+
+/** A file open for editing (Pierre's editor); `fallback` shows until Pierre has loaded. */
+export function FileEditor({ fallback, ...props }: ComponentProps<typeof PierreFile> & { fallback?: ReactNode }) {
+  return (
+    <Suspense fallback={fallback}>
+      <LazyFileEditor {...props} />
     </Suspense>
   )
 }

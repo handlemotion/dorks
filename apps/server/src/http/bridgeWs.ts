@@ -9,6 +9,7 @@ import { crewOp } from "../services/crew";
 import { commentOp } from "../services/comments";
 import { mcpAccessToken } from "../services/mcpOAuth";
 import { skillBundle } from "../services/skills";
+import { registerBridgeCaller } from "../services/workspace";
 import * as bridge from "../services/bridge";
 import { attempt, attemptPromise, BridgeError } from "../services/bridge";
 
@@ -38,6 +39,10 @@ const parseFrame = (raw: string): Effect.Effect<unknown, Hangup> =>
 
 const isAuth = Schema.is(Schema.Struct({ t: Schema.Literal("auth"), dorkId: Schema.String, nonce: Schema.String, proof: Schema.String }));
 /** Anything else after auth is ignored. */
+/** The bridge's answer to a `call` (a request from this side: the Files tab). */
+const isRet = Schema.is(Schema.Struct({ t: Schema.Literal("ret"), id: Schema.Number, ok: Schema.Boolean, result: Schema.optional(Schema.Unknown), error: Schema.optional(Schema.Unknown) }));
+/** The codes a bridge may answer a call with; anything else is `failed`. */
+const CALL_CODES = new Set(["invalid", "not_found", "conflict", "failed"]);
 const isRpc = Schema.is(Schema.Struct({ t: Schema.Literal("rpc"), id: Schema.Number, op: Schema.String, args: Schema.optional(Schema.Unknown) }));
 
 type Args = Record<string, unknown>;
@@ -100,6 +105,9 @@ export class BridgeSession {
   private lastSubs = "";
   private closed = false;
   private authenticating = false;
+  /** Calls sent to the bridge and not answered yet, by id. */
+  private readonly calls = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void; timer: ReturnType<typeof setTimeout> }>();
+  private nextCall = 1;
   /** This side's handshake nonce, sent in `hello`. */
   private readonly nonce = newNonce();
 
@@ -127,6 +135,11 @@ export class BridgeSession {
   close() {
     if (this.closed) return;
     this.closed = true;
+    for (const [id, c] of this.calls) {
+      clearTimeout(c.timer);
+      c.reject(new AppFail({ code: "sleeping", message: "The sandbox disconnected. Try again in a moment." }));
+      this.calls.delete(id);
+    }
     Effect.runFork(Scope.close(this.scope, Exit.void));
   }
 
@@ -173,12 +186,44 @@ export class BridgeSession {
       this.onAuthenticated();
       const off = app.hub.on((c) => this.onChange(c));
       yield* Scope.addFinalizer(this.scope, Effect.sync(off));
+      const withdraw = registerBridgeCaller(app, msg.dorkId, (op, args, timeoutMs) => this.call(op, args, timeoutMs));
+      yield* Scope.addFinalizer(this.scope, Effect.sync(withdraw));
       yield* this.publisher().pipe(Effect.forkIn(this.scope));
     });
   }
 
+  /**
+   * A request to the bridge (`{t: "call", id, op, args}`), answered by its `ret` frame. Rejects with an `AppFail`: the bridge's own
+   * error, `timeout` (a bridge older than calls never answers), or `sleeping` when the socket closes first.
+   */
+  call(op: string, args: Record<string, unknown>, timeoutMs: number): Promise<unknown> {
+    if (this.closed || !this.dorkId) return Promise.reject(new AppFail({ code: "sleeping", message: "The sandbox is not connected yet." }));
+    const id = this.nextCall++;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.calls.delete(id);
+        reject(new AppFail({ code: "timeout", message: "The sandbox did not answer in time." }));
+      }, timeoutMs);
+      this.calls.set(id, { resolve, reject, timer });
+      this.send({ t: "call", id, op, args });
+    });
+  }
+
+  private settle(msg: { id: number; ok: boolean; result?: unknown; error?: unknown }) {
+    const c = this.calls.get(msg.id);
+    if (!c) return;
+    this.calls.delete(msg.id);
+    clearTimeout(c.timer);
+    if (msg.ok) return c.resolve(msg.result);
+    const e = (msg.error ?? {}) as { code?: unknown; message?: unknown };
+    const code = typeof e.code === "string" && CALL_CODES.has(e.code) ? e.code : "failed";
+    const message = typeof e.message === "string" && e.message ? e.message.slice(0, 300) : "The sandbox could not do that.";
+    c.reject(new AppFail({ code, message } as AppError));
+  }
+
   /** Runs one rpc as its own fiber; it starts at once, so rpcs (pushes above all) are applied in arrival order. */
   private request(dorkId: string, msg: unknown, raw: string): Effect.Effect<void> {
+    if (isRet(msg)) return Effect.sync(() => this.settle(msg));
     if (!isRpc(msg)) return Effect.void;
     if (DEBUG) console.error("[bridge ws] <-", dorkId.slice(-6), msg.op, raw.slice(0, 120));
     const op = OPS.get(msg.op);

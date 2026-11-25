@@ -1,6 +1,8 @@
 import type { ComponentProps } from 'react'
 import { File as PierreFile, MultiFileDiff as PierreMultiFileDiff, PatchDiff as PierrePatchDiff, WorkerPoolContextProvider } from '@pierre/diffs/react'
 import DiffsWorker from '@pierre/diffs/worker/worker.js?worker'
+import { EditProvider } from '@pierre/diffs/react'
+import { Editor, type EditorFactory } from '@pierre/diffs/edit'
 
 // Pierre's highlighting off the main thread: a diff paints as plain text at once and its colours follow from a worker, so a PR with
 // dozens of files no longer blocks the page while it is highlighted. Small diffs stay on the main thread (a worker round trip costs
@@ -23,6 +25,18 @@ export function File(props: ComponentProps<typeof PierreFile>) {
     <WorkerPoolContextProvider poolOptions={POOL} highlighterOptions={HIGHLIGHTER}>
       <PierreFile {...props} />
     </WorkerPoolContextProvider>
+  )
+}
+
+/** Pierre's editor for whatever `File` below asks for one (`edit`): plain, with its own find and undo. */
+const createEditor: EditorFactory<undefined, undefined> = (type, options, key) => new Editor(type, options, key)
+
+/** A file open for editing (the Files tab): `File` in an edit session. */
+export function FileEditor(props: ComponentProps<typeof PierreFile>) {
+  return (
+    <EditProvider createEditor={createEditor}>
+      <PierreFile edit {...props} />
+    </EditProvider>
   )
 }
 

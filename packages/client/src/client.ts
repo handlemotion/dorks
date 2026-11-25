@@ -11,6 +11,8 @@ import type {
   PullRequestView,
   SkillView,
   SubscriptionView,
+  WorkspaceRoot,
+  WorkspaceTree,
 } from "@dorks/shared";
 import { EventsFeed } from "./events.ts";
 import { createApi, ApiError, type ApiConfig, type DesktopOptions, type NewComment } from "./http.ts";
@@ -248,6 +250,14 @@ export class DorksClient {
     return this.query<SkillView[]>("skills", () => this.api.listSkills());
   }
 
+  /** The Files tab: the checkouts in the session's sandbox, and one checkout's files. Read again by `actions.refreshWorkspace`. */
+  workspaceRoots(dorkId: string) {
+    return this.query<{ roots: WorkspaceRoot[] }>(`workspace:${dorkId}`, () => this.api.workspaceRoots(dorkId));
+  }
+  workspaceTree(dorkId: string, root: string) {
+    return this.query<WorkspaceTree>(`workspace:${dorkId}:${root}`, () => this.api.workspaceTree(dorkId, root));
+  }
+
   subscriptions(dorkId: string) {
     return this.query<SubscriptionView[]>(`subs:${dorkId}`, () => this.api.listSubscriptions(dorkId));
   }
@@ -359,6 +369,16 @@ export class DorksClient {
     /** Uploads an image for the message being written; resolves with its id. */
     uploadImage: async (image: Blob) => (await this.api.uploadImage(image)).id,
     /** The session's files matching `q`, best first (the composer's `@` menu). */
+    /** Lists the sandbox's checkouts and their files again. */
+    refreshWorkspace: (id: string) => this.invalidate(`workspace:${id}`),
+    readWorkspaceFile: (id: string, root: string, path: string) => this.api.readWorkspaceFile(id, root, path),
+    writeWorkspaceFile: async (id: string, root: string, path: string, contents: string, sha?: string) => {
+      try {
+        return await this.api.writeWorkspaceFile(id, root, path, contents, sha);
+      } finally {
+        this.invalidate(`workspace:${id}`); // its git status changed
+      }
+    },
     searchFiles: async (id: string, q: string) => (await this.api.searchFiles(id, q)).files,
     /** Where a shared screenshot (`dorks-image:<id>` in a message) loads from. The id is the capability: no token in the URL. */
     /** `width`: a smaller copy for showing it small (the server snaps it to a size it keeps; an older server sends the original). */
