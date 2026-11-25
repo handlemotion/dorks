@@ -1,12 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { ArrowLeftIcon, ExternalLinkIcon, MessageCircleIcon, MessageSquarePlusIcon, MessagesSquareIcon, RotateCwIcon, ScanIcon, SquareMousePointerIcon, TextCursorIcon } from 'lucide-react'
+import {
+  ArrowLeftIcon,
+  ExternalLinkIcon,
+  MonitorIcon,
+  SmartphoneIcon,
+  TabletIcon,
+  MessageCircleIcon,
+  MessageSquarePlusIcon,
+  MessagesSquareIcon,
+  RotateCwIcon,
+  ScanIcon,
+  SquareMousePointerIcon,
+  TextCursorIcon,
+} from 'lucide-react'
 import { anchorLine, commentThreads, type CommentView } from '@dorks/shared'
 import type { DorksClient, QueryState, Store } from '@dorks/client'
 import { useOptionalDorksClient } from '@dorks/client/react'
 import { Button, buttonVariants } from '@dorks/ui/button'
 import { CommandIsland, type Chip } from './preview/CommandIsland'
 import type { ThreadActions } from './preview/CommentThread'
-import { PreviewMarks } from './preview/PreviewMarks'
+import { PreviewMarks, useSize } from './preview/PreviewMarks'
 import { useOverlay, type Overlay, type Picked, type PickMode, type Rect } from './preview/useOverlay'
 import { Tip } from './Tip'
 
@@ -92,6 +105,55 @@ async function chipText(c: Chip, upload: (blob: Blob) => Promise<string>) {
       return `The preview ${c.label}${c.port ? ` (port ${c.port})` : ''}: ${c.url}`
   }
 }
+
+/** The fill around the page: a step lighter than the app's grey, so the white tool hover still reads. */
+const BACKDROP = 'bg-[color-mix(in_oklab,var(--app),var(--background)_55%)]'
+/** A tool or size that is on: a light blue. */
+const PRESSED = 'aria-pressed:bg-brand/[0.07] aria-pressed:text-[color-mix(in_oklab,var(--brand),white_30%)] aria-pressed:hover:bg-brand/[0.1]'
+
+/** The sizes a preview can be seen at, each scaled down to fit the panel: a landscape desktop window, a tablet, a phone. */
+const DEVICES = {
+  desktop: { label: 'Desktop (1440 × 900)', icon: MonitorIcon, width: 1440, height: 900 },
+  tablet: { label: 'Tablet (820 × 1180)', icon: TabletIcon, width: 820, height: 1180 },
+  phone: { label: 'Phone (390 × 844)', icon: SmartphoneIcon, width: 390, height: 844 },
+} as const
+type Device = keyof typeof DEVICES
+const DEVICE_KEY = 'dorks.preview.device'
+
+/** The size the owner last chose, remembered across previews. */
+function useDevice(): [Device, (d: Device) => void] {
+  const [device, set] = useState<Device>(() => {
+    try {
+      const saved = localStorage.getItem(DEVICE_KEY)
+      return saved && saved in DEVICES ? (saved as Device) : 'desktop'
+    } catch {
+      return 'desktop'
+    }
+  })
+  return [
+    device,
+    (d) => {
+      set(d)
+      try {
+        localStorage.setItem(DEVICE_KEY, d)
+      } catch {
+        // private mode: it lasts for this view
+      }
+    },
+  ]
+}
+
+/** The page's own size and how much it is scaled to fit `room`, centred in it. */
+function viewport(room: { width: number; height: number }, d: { width: number; height: number }) {
+  if (!room.width || !room.height) return { width: d.width, height: d.height, scale: 1, left: 0, top: 0 }
+  const scale = Math.min(1, room.width / d.width, room.height / d.height)
+  return { width: d.width, height: d.height, scale, left: (room.width - d.width * scale) / 2, top: (room.height - d.height * scale) / 2 }
+}
+
+const scaleRect = (r: Rect, s: number): Rect => ({ x: r.x * s, y: r.y * s, width: r.width * s, height: r.height * s })
+const onScreen = (p: Picked | null, s: number) => p && { ...p, box: scaleRect(p.box, s) }
+/** The overlay's hover box is in the page's pixels; the same-origin picker's is already on screen. */
+const hoverOnScreen = (hover: Box | null, sameOrigin: Box | null, s: number) => (hover ? { ...hover, ...scaleRect(hover, s) } : sameOrigin)
 
 /** A drawn rectangle from two corners. */
 const between = (a: { x: number; y: number }, b: { x: number; y: number }): Rect => ({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(a.x - b.x), height: Math.abs(a.y - b.y) })
@@ -236,14 +298,7 @@ function DrawLayer({ onDrawn }: { onDrawn: (rect: Rect) => void }) {
 function ToolButton({ label, icon, pressed, onClick, count }: { label: string; icon: ReactNode; pressed: boolean; onClick: () => void; count?: number }) {
   return (
     <Tip label={label} side="top">
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        className={`${BAR_BUTTON} w-auto min-w-[30px] gap-1 px-[8px] aria-pressed:bg-brand/10 aria-pressed:text-brand`}
-        aria-label={label}
-        aria-pressed={pressed}
-        onClick={onClick}
-      >
+      <Button variant="ghost" size="icon-sm" className={`${BAR_BUTTON} w-auto min-w-[30px] gap-1 px-[8px] hover:bg-background ${PRESSED}`} aria-label={label} aria-pressed={pressed} onClick={onClick}>
         {icon}
         {count ? <span className="text-xs tabular-nums">{count}</span> : null}
       </Button>
@@ -271,7 +326,21 @@ function HoverOutline({ box }: { box: Box | null }) {
 }
 
 /** The bar over the page: Back (to the artifacts), Reload, the server's name, port and page, and Open in a new tab. */
-function PreviewBar({ server, path, onBack, onReload }: { server: PreviewServer; path: string; onBack: () => void; onReload: () => void }) {
+function PreviewBar({
+  server,
+  path,
+  onBack,
+  onReload,
+  device,
+  onDevice,
+}: {
+  server: PreviewServer
+  path: string
+  onBack: () => void
+  onReload: () => void
+  device: Device
+  onDevice: (d: Device) => void
+}) {
   return (
     <>
       {/* Same rhythm as the tab row above: 30px buttons, icons in line with the tab icons and the hide button (measured: same left and right edges). */}
@@ -291,6 +360,16 @@ function PreviewBar({ server, path, onBack, onReload }: { server: PreviewServer;
           <span className="shrink-0 text-muted-foreground">{server.port ? `:${server.port}` : port(server.url)}</span>
           {path !== '/' && <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">{path}</span>}
         </p>
+        {(Object.keys(DEVICES) as Device[]).map((d) => {
+          const Icon = DEVICES[d].icon
+          return (
+            <Tip key={d} label={DEVICES[d].label}>
+              <Button variant="ghost" size="icon-sm" className={`${BAR_BUTTON} ${PRESSED}`} aria-label={DEVICES[d].label} aria-pressed={device === d} onClick={() => onDevice(d)}>
+                <Icon />
+              </Button>
+            </Tip>
+          )
+        })}
         {!server.html && (
           <Tip label="Open in a new tab">
             <a href={server.url} target="_blank" rel="noreferrer" aria-label="Open in a new tab" className={`${buttonVariants({ variant: 'ghost', size: 'icon-sm' })} ${BAR_BUTTON}`}>
@@ -379,6 +458,9 @@ export function PreviewBrowser({
   const [sameOriginPicking, setSameOriginPicking] = useState(false)
   const frame = useRef<HTMLIFrameElement>(null)
   const stage = useRef<HTMLDivElement>(null)
+  const area = useRef<HTMLDivElement>(null)
+  const [device, setDevice] = useDevice()
+  const view = viewport(useSize(area), DEVICES[device])
 
   // What an element pick is for, the island and its chips, the comment being written, the area being drawn.
   const [intent, setIntent] = useState<'comment' | 'attach'>('comment')
@@ -453,43 +535,52 @@ export function PreviewBrowser({
     setIntent(tool === 'attach' ? 'attach' : 'comment')
     overlay.pick(tool === 'text' ? 'text' : 'element')
   }
+  // The overlay reports positions in the page's own pixels; the page is drawn scaled to fit.
+  const shownOnScreen = useMemo(() => comments.shown.map((t) => ({ ...t, rects: t.rects.map((r) => scaleRect(r, view.scale)) })), [comments.shown, view.scale])
   const names = { owner: settings?.github.login ?? 'You', agent: session?.agent ?? 'Agent' }
 
   return (
     <>
-      <PreviewBar server={server} path={tools ? overlay.path : '/'} onBack={onBack} onReload={() => setReloads((n) => n + 1)} />
-      <div className="relative flex min-h-0 flex-1 flex-col bg-app">
-        <div ref={stage} className="relative mx-2.5 mt-2.5 min-h-0 flex-1 overflow-hidden rounded-[8px] border border-surface-line bg-white dark:border-transparent">
-          <iframe
-            key={`${current}:${reloads}`}
-            ref={frame}
-            src={html ? undefined : current}
-            srcDoc={html}
-            title="Preview"
-            className="size-full bg-white"
-            onLoad={() => {
-              // Ask again in case the overlay's first "ready" came before this listener; a page without it never answers.
-              if (!html) overlay.hello()
-              try {
-                setSameOrigin(!!frame.current?.contentDocument)
-              } catch {
-                setSameOrigin(false)
-              }
-            }}
-          />
-          <PreviewMarks
-            threads={comments.shown}
-            names={names}
-            actions={comments.actions}
-            active={active}
-            setActive={setActive}
-            draft={draft}
-            onDraftSend={(body) => client!.actions.addComment(session!.id, { body, anchor: draft!.anchor, port: server.port ?? 0 })}
-            onDraftClose={() => setDraft(null)}
+      <PreviewBar server={server} path={tools ? overlay.path : '/'} onBack={onBack} onReload={() => setReloads((n) => n + 1)} device={device} onDevice={setDevice} />
+      <div className={`relative flex min-h-0 flex-1 flex-col ${BACKDROP}`}>
+        <div ref={area} className="relative mx-2.5 mt-2.5 min-h-0 flex-1">
+          <div
+            ref={stage}
+            className="absolute overflow-hidden rounded-[8px] border border-surface-line bg-white dark:border-transparent"
+            style={{ left: view.left, top: view.top, width: view.width * view.scale, height: view.height * view.scale }}
           >
-            <HoverOutline box={overlay.hover ?? sameOriginBox} />
-          </PreviewMarks>
-          {drawing && <DrawLayer onDrawn={(rect) => void capture(rect)} />}
+            <iframe
+              key={`${current}:${reloads}`}
+              ref={frame}
+              src={html ? undefined : current}
+              srcDoc={html}
+              title="Preview"
+              className="origin-top-left bg-white"
+              style={{ width: view.width, height: view.height, transform: view.scale === 1 ? undefined : `scale(${view.scale})` }}
+              onLoad={() => {
+                // Ask again in case the overlay's first "ready" came before this listener; a page without it never answers.
+                if (!html) overlay.hello()
+                try {
+                  setSameOrigin(!!frame.current?.contentDocument)
+                } catch {
+                  setSameOrigin(false)
+                }
+              }}
+            />
+            <PreviewMarks
+              threads={shownOnScreen}
+              names={names}
+              actions={comments.actions}
+              active={active}
+              setActive={setActive}
+              draft={onScreen(draft, view.scale)}
+              onDraftSend={(body) => client!.actions.addComment(session!.id, { body, anchor: draft!.anchor, port: server.port ?? 0 })}
+              onDraftClose={() => setDraft(null)}
+            >
+              <HoverOutline box={hoverOnScreen(overlay.hover, sameOriginBox, view.scale)} />
+            </PreviewMarks>
+            {drawing && <DrawLayer onDrawn={(rect) => void capture(scaleRect(rect, 1 / view.scale))} />}
+          </div>
         </div>
         {island && session && (
           <div className="pointer-events-none absolute inset-x-0 bottom-12 flex justify-center px-6">

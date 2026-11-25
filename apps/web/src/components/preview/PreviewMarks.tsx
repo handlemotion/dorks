@@ -43,7 +43,7 @@ function useDismiss(open: boolean, close: () => void) {
   return panel
 }
 
-function useSize(ref: React.RefObject<HTMLElement | null>) {
+export function useSize(ref: React.RefObject<HTMLElement | null>) {
   const [size, setSize] = useState({ width: 0, height: 0 })
   useLayoutEffect(() => {
     const el = ref.current
