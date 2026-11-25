@@ -46,7 +46,7 @@ function parse(raw: string | null): string[] {
 
 /**
  * A user-chosen order for a list of ids, kept in localStorage (the backend has no ordering yet, so it is per browser) and
- * shared live across tabs. Ids not seen before (new chats) go first, as the list arrives newest-first; ids that no longer
+ * shared live across tabs. Ids not seen before (new chats) go first, in the order given (newest created first); ids that no longer
  * exist are ignored. Read during render on the client, so there is no flash of the default order; the server renders it.
  */
 export function useStoredOrder(storageKey: string, ids: string[]) {

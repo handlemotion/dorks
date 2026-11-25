@@ -45,18 +45,21 @@ export function AppSidebar() {
   const builds = useBuilds()
   // A nerd has no repository of its own: it sits with the repository of the build it works on (its first), else in Other.
   const buildRepo = new Map((builds ?? []).map((b) => [b.id, b.repos[0]?.repo ?? '']))
-  const chats: Chat[] = (dorks ?? []).map((d) => ({
-    id: d.id,
-    title: d.title,
-    repo: d.mode === 'nerd' && !d.repo ? (buildRepo.get(d.buildId ?? '') ?? '') : d.repo,
-    working: MOVING.has(d.state),
-    state: d.state,
-    attention: d.needsAttention,
-    unread: d.unread,
-    pr: prOf(d.prUrl, d.prState),
-    mode: d.mode,
-    parentId: d.parentId,
-  }))
+  // Newest first by creation, never by activity: rows stay where they are until the owner drags them (ChatList remembers that order).
+  const chats: Chat[] = (dorks ?? [])
+    .toSorted((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id))
+    .map((d) => ({
+      id: d.id,
+      title: d.title,
+      repo: d.mode === 'nerd' && !d.repo ? (buildRepo.get(d.buildId ?? '') ?? '') : d.repo,
+      working: MOVING.has(d.state),
+      state: d.state,
+      attention: d.needsAttention,
+      unread: d.unread,
+      pr: prOf(d.prUrl, d.prState),
+      mode: d.mode,
+      parentId: d.parentId,
+    }))
   // Agents' changes waiting for the owner: a count beside Builds, so a proposal is found from anywhere.
   const reviews = (builds ?? []).reduce((n, b) => n + b.drafts.filter((d) => d.status === 'submitted').length, 0)
   return (
