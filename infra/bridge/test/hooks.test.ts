@@ -182,12 +182,25 @@ describe("Stop gate", () => {
       expect(closed.reason).toContain("PR #42 is already closed");
     });
 
+    it("does not flag a merged PR when the local branch is behind the PR head (e.g. a collaborator added a commit before merging)", async () => {
+      const w = pushed();
+      const localSha = w.git("rev-parse", "HEAD");
+      // Simulate a collaborator commit on top of localSha that was merged into the PR (both fetched and unfetched).
+      w.commit("collab.txt");
+      const collabSha = w.git("rev-parse", "HEAD");
+      w.git("reset", "--hard", "-q", localSha);
+      expect(await service(w.work, { prStatus: async () => ({ state: "merged", number: 175, headSha: collabSha }) }).stop()).toBeNull();
+      expect(await service(w.work, { prStatus: async () => ({ state: "merged", number: 175, headSha: "0".repeat(40) }) }).stop()).toBeNull();
+    });
+
     it("prefers live GitHub status over a stale cached open subscription, and falls back to open subscriptions when offline", async () => {
       const w = pushed();
-      const oldSha = "0".repeat(40);
+      const mergedSha = w.git("rev-parse", "HEAD");
+      w.commit("after-merge.txt");
+      w.git("push", "-q", "origin", "dork/x");
       const openSub = [{ ...fakeView({ repo: "acme/demo", number: 7 }), headRef: "dork/x" }];
       // Even if the local cache still thinks #7 is open, a live lookup reporting it merged catches the push immediately.
-      const blocked = await service(w.work, { prStatus: async () => ({ state: "merged", number: 7, headSha: oldSha }), subs: openSub }).stop();
+      const blocked = await service(w.work, { prStatus: async () => ({ state: "merged", number: 7, headSha: mergedSha }), subs: openSub }).stop();
       expect(blocked).toMatchObject({ decision: "block" });
       expect(blocked.reason).toContain("PR #7 is already merged");
       // When live lookup is unavailable (null), an open subscription still lets it stop.

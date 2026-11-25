@@ -131,6 +131,19 @@ async function scanRepo(dir: string, o: ScanOptions): Promise<{ done: Finding[];
   return { done, pushed };
 }
 
+/**
+ * True only when `prHeadSha` exists locally and `branchSha` is not an ancestor of it (meaning commits were added beyond the PR's head).
+ * When a collaborator pushed extra commits before merging (fetched or unfetched), this returns false instead of a false positive.
+ */
+async function hasCommitsBeyondPr(dir: string, o: ScanOptions, branchSha: string, prHeadSha: string): Promise<boolean> {
+  if (!branchSha || !prHeadSha || branchSha === prHeadSha) return false;
+  const env = gitEnv(o.env, o.runAs);
+  const known = await runGit(["rev-parse", "--verify", "--quiet", `${prHeadSha}^{commit}`], dir, env, o.runAs, GIT_TIMEOUT_MS);
+  if (known.code !== 0) return false;
+  const ancestor = await runGit(["merge-base", "--is-ancestor", branchSha, prHeadSha], dir, env, o.runAs, GIT_TIMEOUT_MS);
+  return ancestor.code === 1;
+}
+
 /** Everything under the workdir that has not made it to a PR yet, repository by repository, branch by branch. */
 export async function scanWork(o: ScanOptions): Promise<Finding[]> {
   const scans = await Promise.all(findRepos(o.workDir).map((dir) => scanRepo(dir, o)));
@@ -141,8 +154,7 @@ export async function scanWork(o: ScanOptions): Promise<Finding[]> {
         const status = finding.repo ? await o.prStatus(finding.repo, finding.branch) : null;
         if (!status || status.state === "open") return null;
         if (status.state === "none") return finding;
-        // A merged or closed PR whose head matches the branch means nothing new was pushed after it ended.
-        if (!status.headSha || !headSha || status.headSha === headSha) return null;
+        if (!status.headSha || !(await hasCommitsBeyondPr(finding.dir, o, headSha, status.headSha))) return null;
         return {
           ...finding,
           kind: "pr_ended" as const,
