@@ -17,7 +17,6 @@ export function Variables({ build }: { build: BuildView }) {
   return (
     <SettingsSection
       title="Variables"
-      description="Set in every session on this machine. Mark one as needed while building to also give it to the setup script. Secret values are never shown."
       actions={
         <Button size="sm" variant="ghost" onClick={() => setAdding(true)}>
           Add variable

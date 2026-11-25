@@ -109,8 +109,8 @@ export function SettingsRow({ control, className, ...text }: SettingsRowProps) {
   )
 }
 
-/** Every settings input is this one width. */
-export const SETTINGS_INPUT = 'min-w-0 flex-1 @md:w-56 @md:flex-none'
+/** Every settings input is this one size: as tall as the small buttons and selects beside it. */
+export const SETTINGS_INPUT = 'h-8 min-w-0 flex-1 @md:w-56 @md:flex-none'
 
 /** A short text value edited in place; `trailing` is the button that commits it, if the row saves on its own. */
 export function SettingsInputRow({

@@ -2,7 +2,7 @@ import type { BuildView } from '@dorks/client'
 import { useDorksClient } from '@dorks/client/react'
 import { SettingsGroup, SettingsSelectRow, SettingsStatus } from '../settings/kit'
 import { usePending } from '../../lib/pending'
-import { SIZES } from './format'
+import { SIZES, sizeOf } from './format'
 
 export function MachineSize({ build }: { build: BuildView }) {
   const { actions } = useDorksClient()
@@ -12,7 +12,7 @@ export function MachineSize({ build }: { build: BuildView }) {
       <SettingsGroup label="machine">
         <SettingsSelectRow
           label="Size"
-          description="Billed per second while a session runs: $0.018/h small, $0.036/h default, $0.072/h large, $0.20/h extra large (needs Boat’s $100 plan)."
+          description={`${sizeOf(build.machineType).price} while a session runs`}
           value={build.machineType}
           options={SIZES}
           onValueChange={(v) => void run(() => actions.updateBuild(build.id, { machineType: v }))}

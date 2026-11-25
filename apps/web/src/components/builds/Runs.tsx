@@ -14,7 +14,6 @@ export function Runs({ build }: { build: BuildView }) {
   return (
     <SettingsSection
       title="Runs"
-      description="A try runs the setup on a throwaway machine, without saving it and without secrets."
       actions={
         <Button size="sm" variant="ghost" disabled={pending || !!build.activeRun} onClick={() => void run(() => actions.startRun(build.id, 'trial'))}>
           Try the setup
