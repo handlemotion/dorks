@@ -37,6 +37,8 @@ export default function Files({ source }: { source: WorkspaceSource }) {
   const roots = source.useRoots()
   const list = roots.data?.roots
   const [chosen, setChosen] = useState<string>()
+  // Unsaved edits by repository and path, kept here so switching repositories does not drop them.
+  const drafts = useRef(new Map<string, Map<string, Doc>>())
   const { refresh } = source
   useEffect(() => {
     const t = window.setInterval(() => {
@@ -57,7 +59,9 @@ export default function Files({ source }: { source: WorkspaceSource }) {
   }
   if (!list.length) return <EmptyState figure="drawer" title="No repositories yet" description="Repositories cloned into the sandbox show up here." />
   const root = list.find((r) => r.id === chosen) ?? list.find((r) => r.primary) ?? list[0]!
-  return <Workspace key={root.id} source={source} root={root} roots={list} onRoot={setChosen} />
+  let docs = drafts.current.get(root.id)
+  if (!docs) drafts.current.set(root.id, (docs = new Map()))
+  return <Workspace key={root.id} source={source} root={root} roots={list} onRoot={setChosen} docs={docs} />
 }
 
 /** A file open in the editor: the version on disk it came from and the text being edited. */
@@ -67,19 +71,22 @@ type Save = { state: 'idle' } | { state: 'saving' } | { state: 'saved' } | { sta
 
 const failure = (e: unknown): Failure => ({ code: (e as { code?: string })?.code, message: e instanceof Error ? e.message : 'Something went wrong' })
 
-function Workspace({ source, root, roots, onRoot }: { source: WorkspaceSource; root: WorkspaceRoot; roots: WorkspaceRoot[]; onRoot: (id: string) => void }) {
+function Workspace({ source, root, roots, onRoot, docs: kept }: { source: WorkspaceSource; root: WorkspaceRoot; roots: WorkspaceRoot[]; onRoot: (id: string) => void; docs: Map<string, Doc> }) {
   const tree = source.useTree(root.id)
   const [open, setOpen] = useState<Open>()
-  const [save, setSave] = useState<Save>({ state: 'idle' })
+  // Each file's save outcome, by path: a save that ends after another file was opened stays with its own file.
+  const [saves, setSaves] = useState<Record<string, Save>>({})
+  const setSave = (path: string, s: Save) => setSaves((all) => ({ ...all, [path]: s }))
+  const save: Save = (open && saves[open.path]) || { state: 'idle' }
   // Unsaved edits by path, kept when another file is opened so coming back finds them.
-  const docs = useRef(new Map<string, Doc>())
+  const docs = useRef(kept)
   const current = open?.state === 'text' ? open.doc : undefined
   const [, rerender] = useState(0)
   const dirty = !!current && current.draft !== current.file.contents
 
   const load = useCallback(
     async (path: string, fresh = false) => {
-      setSave({ state: 'idle' })
+      setSave(path, { state: 'idle' })
       const kept = !fresh && docs.current.get(path)
       if (kept) return setOpen({ path, state: 'text', doc: kept })
       setOpen({ path, state: 'loading' })
@@ -102,15 +109,15 @@ function Workspace({ source, root, roots, onRoot }: { source: WorkspaceSource; r
     if (!doc || !open) return
     const path = open.path
     const text = doc.draft
-    setSave({ state: 'saving' })
+    setSave(path, { state: 'saving' })
     try {
       const r = await source.write(root.id, path, text, force ? undefined : doc.file.sha)
       doc.file = { ...doc.file, contents: text, sha: r.sha, size: new Blob([text]).size }
-      setSave({ state: 'saved' })
+      setSave(path, { state: 'saved' })
       rerender((n) => n + 1)
     } catch (e) {
       const f = failure(e)
-      setSave(f.code === 'conflict' ? { state: 'conflict' } : { state: 'error', message: f.message })
+      setSave(path, f.code === 'conflict' ? { state: 'conflict' } : { state: 'error', message: f.message })
     }
   }
 
@@ -136,7 +143,7 @@ function Workspace({ source, root, roots, onRoot }: { source: WorkspaceSource; r
                   const was = current.draft !== current.file.contents
                   current.draft = text
                   if (was !== (text !== current.file.contents)) rerender((n) => n + 1)
-                  if (save.state === 'saved') setSave({ state: 'idle' })
+                  if (save.state === 'saved' && open) setSave(open.path, { state: 'idle' })
                 }}
                 onSave={() => void write(false)}
               />

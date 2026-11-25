@@ -268,8 +268,13 @@ export class BridgeSession {
   }
 }
 
-/** A frame for the debug log: a response by id and outcome only (never a configure result), anything else truncated. */
+/**
+ * A frame for the debug log: a response by id and outcome only (never a configure result), a call by id and op only (never a
+ * file's contents, which may hold credentials), anything else truncated.
+ */
 const debugLine = (o: object) => {
-  const f = o as { t?: string; id?: number; ok?: boolean };
-  return f.t === "res" ? JSON.stringify({ t: "res", id: f.id, ok: f.ok }) : JSON.stringify(o).slice(0, 160);
+  const f = o as { t?: string; id?: number; ok?: boolean; op?: string };
+  if (f.t === "res") return JSON.stringify({ t: "res", id: f.id, ok: f.ok });
+  if (f.t === "call") return JSON.stringify({ t: "call", id: f.id, op: f.op });
+  return JSON.stringify(o).slice(0, 160);
 };
