@@ -7,17 +7,17 @@ import { Input } from '@dorks/ui/input'
 import { Textarea } from '@dorks/ui/textarea'
 import { usePending } from '../lib/pending'
 
-/** The emoji a new dork can wear in the sidebar. A short, fixed set: picking one is a glance, not a search. */
-export const DORK_ICONS = ['🛰️', '🧭', '🚀', '🧪', '🛠️', '📦', '🧠', '🐙', '🦊', '🌱', '⚡', '🎯'] as const
+/** The emoji a new nerd can wear in the sidebar. A short, fixed set: picking one is a glance, not a search. */
+export const NERD_ICONS = ['🛰️', '🧭', '🚀', '🧪', '🛠️', '📦', '🧠', '🐙', '🦊', '🌱', '⚡', '🎯'] as const
 
 /**
- * Starts a dork: a coordinator session that plans a long goal and runs worker sessions for it (docs/crew.md). An emoji, an optional
+ * Starts a nerd: a coordinator session that plans a long goal and runs worker sessions for it (docs/crew.md). An emoji, an optional
  * name and the goal; the coordinator needs no repository of its own, it picks one per worker.
  */
-export function NewDorkDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function NewNerdDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { actions } = useDorksClient()
   const navigate = useNavigate()
-  const [icon, setIcon] = useState<string>(DORK_ICONS[0])
+  const [icon, setIcon] = useState<string>(NERD_ICONS[0])
   const [name, setName] = useState('')
   const [goal, setGoal] = useState('')
   const { run, pending, error } = usePending()
@@ -33,8 +33,8 @@ export function NewDorkDialog({ open, onOpenChange }: { open: boolean; onOpenCha
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="gap-5">
         <DialogHeader className="gap-2">
-          <DialogTitle className="text-sm font-medium">New dork</DialogTitle>
-          <DialogDescription className="text-sm leading-5">A dork plans a long goal and runs sessions for it. It doesn't write code itself.</DialogDescription>
+          <DialogTitle className="text-sm font-medium">New nerd</DialogTitle>
+          <DialogDescription className="text-sm leading-5">A nerd plans a long goal and runs sessions for it. It doesn't write code itself.</DialogDescription>
         </DialogHeader>
         <form
           className="flex flex-col gap-4"
@@ -44,7 +44,7 @@ export function NewDorkDialog({ open, onOpenChange }: { open: boolean; onOpenCha
           }}
         >
           <div role="radiogroup" aria-label="Icon" className="grid grid-cols-6 gap-1">
-            {DORK_ICONS.map((e) => (
+            {NERD_ICONS.map((e) => (
               <button
                 key={e}
                 type="button"
@@ -77,7 +77,7 @@ export function NewDorkDialog({ open, onOpenChange }: { open: boolean; onOpenCha
           <DialogFooter>
             <DialogClose render={<Button variant="outline" size="sm" type="button" />}>Cancel</DialogClose>
             <Button size="sm" type="submit" disabled={!goal.trim() || pending}>
-              {pending ? 'Starting…' : 'Start dork'}
+              {pending ? 'Starting…' : 'Start nerd'}
             </Button>
           </DialogFooter>
         </form>

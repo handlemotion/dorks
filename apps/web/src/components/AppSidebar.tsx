@@ -29,7 +29,7 @@ import { ownersOf, useOwnerScope } from './ownerScope'
 import { SIDEBAR_ROW, SIDEBAR_SECTION } from './sidebarChrome'
 import { UpdatePrompt } from './UpdatePrompt'
 import { useRowHover } from './useRowHover'
-import { DORK_ICONS, NewDorkDialog } from './NewDorkDialog'
+import { NERD_ICONS, NewNerdDialog } from './NewNerdDialog'
 
 const PR_NUMBER = /\/pull\/(\d+)/
 
@@ -60,7 +60,7 @@ export function AppSidebar() {
     pr: prOf(d.prUrl, d.prState),
     kind: d.kind,
     parentId: d.parentId,
-    icon: d.kind === 'coordinator' ? (d.icon ?? DORK_ICONS[0]) : undefined,
+    icon: d.kind === 'coordinator' ? (d.icon ?? NERD_ICONS[0]) : undefined,
   }))
   return (
     <AppSidebarView
@@ -196,10 +196,10 @@ export function AppSidebarView({
   const selected = typeof dork === 'string' ? dork : undefined
   // A worker open full screen keeps its dork highlighted: workers have no rows of their own.
   const activeId = chats.find((c) => c.id === selected)?.parentId ?? selected
-  // Dorks (coordinators) get their own group; their workers live inside them, not in the sidebar.
+  // Nerds (coordinators) get their own group; their workers live inside them, not in the sidebar.
   const crews = chats.filter((c) => c.kind === 'coordinator')
   const sessions = chats.filter((c) => c.kind !== 'coordinator' && !c.parentId)
-  const [newDork, setNewDork] = useState(false)
+  const [newNerd, setNewNerd] = useState(false)
   const owners = ownersOf(
     sessions.flatMap((c) => (c.repo ? [c.repo] : [])),
     accounts,
@@ -242,7 +242,7 @@ export function AppSidebarView({
                 </Link>
               ))}
             </nav>
-            <DorksGroup chats={crews} orderKey={`${orderKey}.dorks`} chatTo={chatTo} activeId={activeId} onArchive={onArchive} onNew={() => setNewDork(true)} />
+            {SHOW_NERDS && <NerdsGroup chats={crews} orderKey={`${orderKey}.nerds`} chatTo={chatTo} activeId={activeId} onArchive={onArchive} onNew={() => setNewNerd(true)} />}
             {groups.map(([repo, list]) => {
               const key = repo || 'other'
               const open = !collapsed.has(key)
@@ -272,7 +272,7 @@ export function AppSidebarView({
               )
             })}
           </div>
-          {newDork && <NewDorkDialog open onOpenChange={setNewDork} />}
+          {newNerd && <NewNerdDialog open onOpenChange={setNewNerd} />}
           <div className="flex shrink-0 flex-col gap-2 pt-1.5">
             {usage}
             <Link to="/settings" {...rowLink(pathname === '/settings')}>
@@ -290,11 +290,14 @@ export function AppSidebarView({
 const GROUP_ADD =
   'flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none group-hover/section:opacity-100 hover:bg-foreground/[0.05] hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring [@media(hover:none)]:opacity-100'
 
+/** The Nerds group is not ready yet: hidden from the sidebar until it is. */
+const SHOW_NERDS = false
+
 /**
- * The Dorks group, above the repositories: coordinator sessions (docs/crew.md), each with its emoji. Its `+` opens New dork; with no
- * dorks yet the group holds one row that does the same, so the feature is findable.
+ * The Nerds group, above the repositories: coordinator sessions (docs/crew.md), each with its emoji. Its `+` opens New nerd; with no
+ * nerds yet the group holds one row that does the same, so the feature is findable.
  */
-function DorksGroup({
+function NerdsGroup({
   chats,
   orderKey,
   chatTo,
@@ -310,10 +313,10 @@ function DorksGroup({
   onNew: () => void
 }) {
   return (
-    <nav aria-label="Dorks" className="flex shrink-0 flex-col gap-0.5">
+    <nav aria-label="Nerds" className="flex shrink-0 flex-col gap-0.5">
       <div className={`group/section ${SIDEBAR_SECTION} pr-1`}>
-        <span className="min-w-0 flex-1 truncate">Dorks</span>
-        <button type="button" aria-label="New dork" title="New dork" onClick={onNew} className={GROUP_ADD}>
+        <span className="min-w-0 flex-1 truncate">Nerds</span>
+        <button type="button" aria-label="New nerd" title="New nerd" onClick={onNew} className={GROUP_ADD}>
           <PlusIcon aria-hidden className="size-3.5" />
         </button>
       </div>
@@ -322,7 +325,7 @@ function DorksGroup({
       ) : (
         <button type="button" onClick={onNew} className={`${SIDEBAR_ROW} text-muted-foreground`}>
           <PlusIcon />
-          New dork
+          New nerd
         </button>
       )}
     </nav>
