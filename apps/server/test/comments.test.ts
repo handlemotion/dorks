@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { addComment, commentOp, listComments, replyComment } from "../src/services/comments";
-import { getImage, uploadImage } from "../src/services/bridge";
+import { claimImages, getImage, uploadImage } from "../src/services/bridge";
 import { harness } from "./harness";
 
 // Preview comments (services/comments.ts): the owner's comments reach the agent as one notify turn after the debounce; the agent's
@@ -53,5 +53,22 @@ describe("preview comments", () => {
     expect(text).toContain("the area at 10,400 (300 × 120 px)");
     expect(text).toContain(`![Screenshot of the area](dorks-image:${image})`);
     expect(getImage(h.app, id, image)).not.toBeNull();
+  });
+
+  it("take comments on the session's own images only, and show the agent the image and the spot", () => {
+    const h = harness();
+    const id = h.seed("idle");
+    const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+    const image = uploadImage(h.app, png).id;
+    const onImage = { kind: "image", image, label: "Settings", x: 0.3, y: 0.25 };
+    // Not this session's image (yet): refused, so a comment cannot hand the agent someone else's picture.
+    expect(() => addComment(h.app, id, { body: "Bluer", anchor: onImage, port: undefined })).toThrow();
+    claimImages(h.app, id, `dorks-image:${image}`);
+    addComment(h.app, id, { body: "Bluer", anchor: onImage, port: undefined });
+    h.timer(id, "comments_notify");
+    const text = h.cmds(id).find((c) => c.kind === "notify")!.text;
+    expect(text).toContain(`on the image "Settings" (dorks-image:${image}), the point at 30%, 25% from its top-left corner`);
+    expect(text).toContain(`![The image commented on](dorks-image:${image})`);
+    expect(listComments(h.app, id)[0]!.port).toBeNull();
   });
 });

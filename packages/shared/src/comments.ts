@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 // Preview comments (docs/architecture.md, "Preview comments"): the owner comments on a running preview, on an element or on a
-// passage of text. Dorks stores the threads; the owner's comments reach the agent as one `notify` turn (source "preview"), and the
+// passage of text, or on an image of the session in the lightbox (a point or an area of it). Dorks stores the threads; the owner's comments reach the agent as one `notify` turn (source "preview"), and the
 // agent answers in the thread with the comment_* MCP tools. Anchors come from the preview overlay (infra/bridge/overlay/overlay.ts).
 
 const where = {
@@ -32,6 +32,20 @@ export const commentAnchor = z.discriminatedUnion("kind", [
       .regex(/^[0-9a-f]{32}$/)
       .optional(),
   }),
+  /**
+   * A point or an area of one of the session's images (a screenshot the agent shared, an attachment), opened in the lightbox. Its
+   * place is in fractions of the image's size (0 to 1 from its top-left corner), so it holds at any size; an area adds its size.
+   */
+  z.object({
+    kind: z.literal("image"),
+    image: z.string().regex(/^[0-9a-f]{32}$/),
+    /** The image's caption or name. */
+    label: z.string().max(200),
+    x: z.number().min(0).max(1),
+    y: z.number().min(0).max(1),
+    width: z.number().positive().max(1).optional(),
+    height: z.number().positive().max(1).optional(),
+  }),
 ]);
 export type CommentAnchor = z.infer<typeof commentAnchor>;
 
@@ -49,7 +63,7 @@ export interface CommentView {
   body: string;
   /** Where a thread points (its first comment only). */
   anchor: CommentAnchor | null;
-  /** The preview's dev server port (its first comment only). */
+  /** The preview's dev server port (its first comment only; null on an image). */
   port: number | null;
   resolvedAt: number | null;
   resolvedBy: CommentAuthor | null;
@@ -73,6 +87,11 @@ export function commentThreads(comments: CommentView[], resolved?: boolean): Com
 
 /** One line on where a thread points, for the agent and for mentions: `on /settings, <button> in SubmitButton (src/Button.tsx:12)`. */
 export function anchorLine(a: CommentAnchor): string {
+  if (a.kind === "image") {
+    const pct = (n: number) => `${Math.round(n * 100)}%`;
+    const where = a.width && a.height ? `the area at ${pct(a.x)}, ${pct(a.y)} (${pct(a.width)} × ${pct(a.height)} of it)` : `the point at ${pct(a.x)}, ${pct(a.y)}`;
+    return `on the image "${a.label}" (dorks-image:${a.image}), ${where} from its top-left corner`;
+  }
   if (a.kind === "area") return `on ${a.path || "/"}, the area at ${Math.round(a.rect.x)},${Math.round(a.rect.y)} (${Math.round(a.rect.width)} × ${Math.round(a.rect.height)} px)`;
   const what =
     a.kind === "text"

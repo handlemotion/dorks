@@ -1084,8 +1084,10 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     if (!text) return fail(res, "invalid", "the comment is empty");
     // A light check (this file imports nothing at runtime); the real server parses it with `commentAnchor`.
     const a = body.anchor as CommentAnchor | undefined;
-    if (!a || !["element", "text", "area"].includes(a.kind) || typeof a.selector !== "string" || typeof a.path !== "string") return fail(res, "invalid", "the comment needs an anchor on the page");
-    const c = newComment({ parentId: null, author: "owner", body: text, anchor: a, port: typeof body.port === "number" ? body.port : null });
+    const onImage = a?.kind === "image" && typeof a.image === "string" && typeof a.x === "number" && typeof a.y === "number";
+    if (!a || (!onImage && (!["element", "text", "area"].includes(a.kind) || !("selector" in a) || typeof a.selector !== "string" || typeof a.path !== "string")))
+      return fail(res, "invalid", "the comment needs an anchor on the page");
+    const c = newComment({ parentId: null, author: "owner", body: text, anchor: a, port: !onImage && typeof body.port === "number" ? body.port : null });
     list.push(c);
     broadcast({ t: "comments", dorkId: d.id });
     agentAnswers(d, list, c.id, text);

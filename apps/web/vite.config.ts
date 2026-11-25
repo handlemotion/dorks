@@ -19,6 +19,8 @@ export default defineConfig({
     ? {
         proxy: {
           '/api': { target: `http://127.0.0.1:${mockPort}`, changeOrigin: true },
+          // Shared images (attachments, screenshots) are served outside /api.
+          '/images': { target: `http://127.0.0.1:${mockPort}`, changeOrigin: true },
         },
       }
     : undefined,

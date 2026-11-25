@@ -79,7 +79,7 @@ const noSubscribe = () => () => {}
 const none = () => NONE
 
 /** A client store's data, or undefined without one (no session, or no client: the dev demo). */
-function useMaybe<T>(store: Store<QueryState<T>> | null): T | undefined {
+export function useMaybe<T>(store: Store<QueryState<T>> | null): T | undefined {
   const get: () => { data?: T } = store?.getSnapshot ?? none
   return useSyncExternalStore(store?.subscribe ?? noSubscribe, get, get).data
 }
@@ -134,7 +134,7 @@ const onScreen = (p: Picked | null, s: number) => p && { ...p, box: scaleRect(p.
 const hoverOnScreen = (hover: Box | null, sameOrigin: Box | null, s: number) => (hover ? { ...hover, ...scaleRect(hover, s) } : sameOrigin)
 
 /** How the threads show their authors: the GitHub login and avatar when there is one, the agent's name and mark. */
-function namesOf(login: string | null | undefined, session: PreviewSession | undefined): Names {
+export function namesOf(login: string | null | undefined, session: PreviewSession | undefined): Names {
   return {
     owner: login ?? 'You',
     ...(login ? { ownerImage: `https://github.com/${encodeURIComponent(login)}.png?size=64` } : {}),
@@ -232,7 +232,7 @@ function usePreviewComments(
     setMarks(
       open.flatMap((t) => {
         const a = t.root.anchor
-        if (!a) return []
+        if (!a || a.kind === 'image') return []
         return [{ id: t.root.id, kind: a.kind, path: a.path, selector: a.selector, ...markExtra(a) }]
       }),
     )
@@ -286,7 +286,7 @@ function DrawLayer({ onDrawn }: { onDrawn: (rect: Rect) => void }) {
   )
 }
 
-function ToolButton({ label, icon, pressed, onClick, count }: { label: string; icon: ReactNode; pressed: boolean; onClick: () => void; count?: number }) {
+export function ToolButton({ label, icon, pressed, onClick, count }: { label: string; icon: ReactNode; pressed: boolean; onClick: () => void; count?: number }) {
   return (
     <Tip label={label} side="top">
       <Button
@@ -421,16 +421,16 @@ function PreviewToolbar(props: {
 }
 
 /** The rail the tools sit on, after omni's preview rail: white, a hairline, 2px around 28px tools. */
-function Rail({ children }: { children: ReactNode }) {
+export function Rail({ children, label = 'Preview tools' }: { children: ReactNode; label?: string }) {
   return (
-    <div role="toolbar" aria-label="Preview tools" className="flex items-center gap-0.5 rounded-[8px] border bg-background p-0.5">
+    <div role="toolbar" aria-label={label} className="flex items-center gap-0.5 rounded-[8px] border bg-background p-0.5">
       {children}
     </div>
   )
 }
 
 /** Splits groups of tools: a full-height hairline from rail edge to rail edge. */
-function RailDivider() {
+export function RailDivider() {
   return <span aria-hidden className="mx-0.5 -my-0.5 w-px self-stretch bg-border" />
 }
 

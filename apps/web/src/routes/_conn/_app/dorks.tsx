@@ -1,4 +1,5 @@
 import { CatchBoundary, createFileRoute, Link, useNavigate, useRouterState } from '@tanstack/react-router'
+import { ImageCommentsProvider } from '../../../components/ImageComments'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { DesktopOptions } from '@dorks/client'
 import { isDorkMode, type Block, type DorkMode } from '@dorks/shared'
@@ -346,6 +347,7 @@ function detailsData(dork: DorkView, blocks: Block[], actions: DorksActions, com
     artifacts: dork.images
       ?.map((i, n) => ({
         id: i.id,
+        imageId: i.id,
         name: i.caption ?? `Screenshot ${n + 1}`,
         type: 'Screenshot',
         src: actions.imageUrl(i.id),
@@ -501,6 +503,7 @@ function Thread({ dorkId }: { dorkId: string }) {
       </p>
     )
   const crew = dork.mode === 'nerd'
+  const previewSession = { id: dorkId, agent: AGENT_NAMES[dork.provider], provider: dork.provider }
   const details = !detailsOpen ? undefined : crew ? (
     <CrewDetails dork={dork} onClose={() => setDetailsOpen(false)} onAsk={setText} />
   ) : (
@@ -509,48 +512,50 @@ function Thread({ dorkId }: { dorkId: string }) {
       data={{ ...detailsData(dork, view.blocks, actions, { used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent }), pullRequest, subscriptions, usePullRequest: usePr, workspace }}
       onClose={() => setDetailsOpen(false)}
       onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}
-      previewSession={{ id: dorkId, agent: AGENT_NAMES[dork.provider], provider: dork.provider }}
+      previewSession={previewSession}
       onAsk={setText}
     />
   )
   return (
-    <ChatSplit details={details}>
-      <section className="flex min-w-0 flex-1 flex-col" aria-label="thread" data-state={dork.state} data-mode={dork.mode ?? 'code'}>
-        <PageHeader
-          parent={dork.parentId ? <ParentCrumb id={dork.parentId} /> : undefined}
-          title={crew && dork.icon ? `${dork.icon} ${dork.title}` : dork.title}
-          titleActions={<ArchiveButton archived={dork.archived} disabled={archiving} onClick={() => void runArchive(() => archiveDork(dorkId, !dork.archived))} />}
-          actions={
-            <>
-              <ChatMenu
-                prUrl={dork.prUrl}
-                detailsOpen={detailsOpen}
-                onDelete={async () => {
-                  await actions.deleteDork(dorkId)
-                  await navigate({ to: '/dorks', search: {} })
-                }}
-              />
-              {!detailsOpen && <ShowDetailsButton onClick={() => setDetailsOpen(true)} />}
-            </>
-          }
-        />
-        <CodexModelForm dork={dork} />
-        <SessionChat
-          dork={dork}
-          error={archiveError}
-          draft={draft}
-          // Progress lives in Chat details, which narrow windows and dorks (their details are Sessions) do not show.
-          onOpenSteps={
-            wide && !crew
-              ? (keys) => {
-                  progressStore.show(keys)
-                  setDetailsOpen(true)
-                }
-              : undefined
-          }
-        />
-      </section>
-    </ChatSplit>
+    <ImageCommentsProvider session={previewSession}>
+      <ChatSplit details={details}>
+        <section className="flex min-w-0 flex-1 flex-col" aria-label="thread" data-state={dork.state} data-mode={dork.mode ?? 'code'}>
+          <PageHeader
+            parent={dork.parentId ? <ParentCrumb id={dork.parentId} /> : undefined}
+            title={crew && dork.icon ? `${dork.icon} ${dork.title}` : dork.title}
+            titleActions={<ArchiveButton archived={dork.archived} disabled={archiving} onClick={() => void runArchive(() => archiveDork(dorkId, !dork.archived))} />}
+            actions={
+              <>
+                <ChatMenu
+                  prUrl={dork.prUrl}
+                  detailsOpen={detailsOpen}
+                  onDelete={async () => {
+                    await actions.deleteDork(dorkId)
+                    await navigate({ to: '/dorks', search: {} })
+                  }}
+                />
+                {!detailsOpen && <ShowDetailsButton onClick={() => setDetailsOpen(true)} />}
+              </>
+            }
+          />
+          <CodexModelForm dork={dork} />
+          <SessionChat
+            dork={dork}
+            error={archiveError}
+            draft={draft}
+            // Progress lives in Chat details, which narrow windows and dorks (their details are Sessions) do not show.
+            onOpenSteps={
+              wide && !crew
+                ? (keys) => {
+                    progressStore.show(keys)
+                    setDetailsOpen(true)
+                  }
+                : undefined
+            }
+          />
+        </section>
+      </ChatSplit>
+    </ImageCommentsProvider>
   )
 }
 

@@ -44,7 +44,9 @@ export function NewTab({
   const shownPreviews = previews.filter((s) => match(s.name))
   const shownArtifacts = artifacts.filter((a) => (a.src || a.href) && match(a.name, a.type))
   const shownPanels = PANELS.filter((p) => !hidePanel(p) && match(PANEL_LABEL[p], panelLabel(p)))
-  const images: LightboxImage[] = artifacts.filter((a) => a.src).map((a) => ({ id: a.id, src: a.src!, thumb: a.thumb, alt: a.name, caption: a.name, width: a.width, height: a.height }))
+  const images: LightboxImage[] = artifacts
+    .filter((a) => a.src)
+    .map((a) => ({ id: a.id, src: a.src!, thumb: a.thumb, alt: a.name, caption: a.name, width: a.width, height: a.height, imageId: a.imageId }))
   const totalRows = prs.length + previews.length + artifacts.filter((a) => a.src || a.href).length + PANELS.filter((p) => !hidePanel(p)).length
   const nothing = shownPrs.length + shownPreviews.length + shownArtifacts.length + shownPanels.length === 0
   return (

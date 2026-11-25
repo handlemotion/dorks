@@ -33,13 +33,17 @@ type Entry = { kind: 'user'; block: Extract<Block, { kind: 'user' }> } | { kind:
 const IMAGE = /!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g
 
 /** Every image in the transcript, in reading order: they share one lightbox, so opening one pages through the chat's images. */
-function transcriptImages(blocks: Block[]): LightboxImage[] {
+function transcriptImages(blocks: Block[], refs: Map<string, string>): LightboxImage[] {
   const images: LightboxImage[] = []
   for (const block of blocks) {
     if (block.kind !== 'user' && block.kind !== 'assistant') continue
     let n = 0
     const text = block.kind === 'user' ? parseReply(block.text).body : block.text
-    for (const m of text.matchAll(IMAGE)) images.push({ id: `${block.id}:${n++}`, src: m[2], thumb: sizedImage(m[2], THUMB_WIDTH), alt: m[1] || 'Image', caption: m[1] || undefined })
+    for (const m of text.matchAll(IMAGE)) {
+      // A shared or attached image kept on the server can be commented on by its id.
+      const imageId = /^dorks-image:([0-9a-f]{32})$/.exec(refs.get(m[2]) ?? m[2])?.[1]
+      images.push({ id: `${block.id}:${n++}`, src: m[2], thumb: sizedImage(m[2], THUMB_WIDTH), alt: m[1] || 'Image', caption: m[1] || undefined, ...(imageId ? { imageId } : {}) })
+    }
   }
   return images
 }
@@ -438,7 +442,7 @@ function useStableImages(images: LightboxImage[]): LightboxImage[] {
     prev.current.length === images.length &&
     images.every((i, n) => {
       const p = prev.current[n]
-      return p.id === i.id && p.src === i.src && p.alt === i.alt && p.caption === i.caption
+      return p.id === i.id && p.src === i.src && p.alt === i.alt && p.caption === i.caption && p.imageId === i.imageId
     })
   useLayoutEffect(() => {
     if (!same) prev.current = images
@@ -450,7 +454,7 @@ function useStableImages(images: LightboxImage[]): LightboxImage[] {
 const UserEntry = memo(function UserEntry({ block, imageUrl }: { block: Extract<Block, { kind: 'user' }>; imageUrl?: (id: string) => string }) {
   const { reply: quoted, body } = parseReply(block.text)
   const text = body.replace(IMAGE, '').trim()
-  const own = transcriptImages([block])
+  const own = transcriptImages([block], NO_REFS)
   return (
     // A user message gets 12px more air on each side than the transcript's 24px gap, so turns read apart from the agent's work.
     // `pt-10 -mt-7` is that 12px on top plus 28px of paint room for the hover toolbar above the bubble, which the item would
@@ -532,7 +536,7 @@ export function ChatMessages({
   const onReplySend = useStableHandler(sendHandler)
   const onOpenSteps = useStableHandler(openSteps)
   const { blocks, refs } = resolveSharedImages(raw, imageUrl)
-  const images = useStableImages(transcriptImages(blocks))
+  const images = useStableImages(transcriptImages(blocks, refs))
   const reply = useMemo<ReplyHandlers>(() => ({ onReply, onSend: onReplySend, agent, refOf: (src) => refs.get(src) }), [onReply, onReplySend, agent, refs])
   const messages = entries(blocks).map((entry) =>
     entry.kind === 'user' ? <UserEntry key={entry.block.id} block={entry.block} imageUrl={imageUrl} /> : <AgentEntry key={entry.id} id={entry.id} blocks={entry.blocks} onOpenSteps={onOpenSteps} />,
