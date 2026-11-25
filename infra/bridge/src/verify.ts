@@ -112,11 +112,17 @@ export interface GitCtx {
   runAs: Identity | null;
 }
 
+/**
+ * These reads run beside the agent (the baseline is taken in the background when a turn ends): `git status` would otherwise take
+ * `.git/index.lock` to refresh the index, and the agent's next `git add` or `git commit` would fail on it.
+ */
+export const READ_ONLY = ["--no-optional-locks"];
+
 export async function workState(o: GitCtx): Promise<WorkState> {
   const repos: WorkState = new Map();
   await Promise.all(
     findRepos(o.workDir).map(async (dir) => {
-      const git = (args: string[]) => runGit(args, dir, o.env, o.runAs, GIT_TIMEOUT_MS);
+      const git = (args: string[]) => runGit([...READ_ONLY, ...args], dir, o.env, o.runAs, GIT_TIMEOUT_MS);
       const [head, status, diff] = await Promise.all([git(["rev-parse", "HEAD"]), git(["status", "--porcelain=v1", "--untracked-files=all"]), git(["diff", "HEAD"])]);
       repos.set(dir, { head: head.stdout.trim(), hash: createHash("sha256").update(status.stdout).update("\0").update(diff.stdout).digest("hex") });
     }),
@@ -130,7 +136,7 @@ export async function changedFiles(o: GitCtx, before: WorkState, after: WorkStat
   for (const [dir, now] of after) {
     const was = before.get(dir);
     if (was && was.head === now.head && was.hash === now.hash) continue;
-    const git = (args: string[]) => runGit(args, dir, o.env, o.runAs, GIT_TIMEOUT_MS);
+    const git = (args: string[]) => runGit([...READ_ONLY, ...args], dir, o.env, o.runAs, GIT_TIMEOUT_MS);
     const committed = was?.head && was.head !== now.head ? (await git(["diff", "--name-only", was.head, "HEAD"])).stdout : "";
     const tree = (await git(["status", "--porcelain=v1", "--untracked-files=all"])).stdout
       .split("\n")

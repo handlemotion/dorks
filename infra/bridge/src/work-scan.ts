@@ -98,7 +98,7 @@ interface PushedCandidate {
 async function scanRepo(dir: string, o: ScanOptions): Promise<{ done: Finding[]; pushed: PushedCandidate[] }> {
   const env = gitEnv(o.env, o.runAs);
   const out = async (...args: string[]) => {
-    const r = await runGit(args, dir, env, o.runAs, GIT_TIMEOUT_MS);
+    const r = await runGit(["--no-optional-locks", ...args], dir, env, o.runAs, GIT_TIMEOUT_MS); // never take index.lock from under the agent
     return r.code === 0 ? r.stdout.trim() : null;
   };
   const count = async (range: string) => Number(await out("rev-list", "--count", range)) || 0;
