@@ -40,6 +40,15 @@ export const BAR_BUTTON = "size-[30px] text-muted-foreground hover:bg-foreground
 type Primitives = typeof import('react-grab/primitives')
 type Box = { x: number; y: number; width: number; height: number; radius: string; label: string }
 
+/** The origin of a preview URL, where messages to its overlay go ("*" never: the page could have navigated elsewhere). */
+function origin(url: string) {
+  try {
+    return new URL(url).origin
+  } catch {
+    return 'null'
+  }
+}
+
 /** `http://localhost:5173` reads as `:5173`; a URL with no port keeps its host. */
 export function port(url: string) {
   try {
@@ -57,12 +66,16 @@ export function port(url: string) {
  *
  * The picker uses React Grab's primitives (`react-grab/primitives`, loaded on first use) on the preview's own document: hovering
  * highlights the element under the pointer, clicking hands its context (the same snippet React Grab copies: markup, component and source location) to `onGrab`, and
- * Escape leaves. Reaching into the frame's document needs it to be same-origin, so the picker only shows for a same-origin preview.
+ * Escape leaves. That reaches into the frame's document, so it needs a same-origin page (the dev demo). A real preview is on the box
+ * provider's origin: there the bridge's preview proxy adds an overlay script to the page (infra/bridge/overlay/overlay.ts) that does the
+ * same picking inside the page and talks to this one over postMessage. The picker shows once either is available.
  */
 export function PreviewBrowser({ server, onBack, onGrab }: { server: PreviewServer; onBack: () => void; onGrab?: (snippet: string) => void }) {
   const current = server.url
   const [reloads, setReloads] = useState(0)
   const [sameOrigin, setSameOrigin] = useState(false)
+  /** The page answered as the preview proxy's overlay: picking runs inside it, over postMessage. */
+  const [overlay, setOverlay] = useState(false)
   const [picking, setPicking] = useState(false)
   const [box, setBox] = useState<Box | null>(null)
   const frame = useRef<HTMLIFrameElement>(null)
@@ -75,7 +88,7 @@ export function PreviewBrowser({ server, onBack, onGrab }: { server: PreviewServ
   useEffect(() => {
     const doc = frame.current?.contentDocument
     const g = grab.current
-    if (!picking || !doc || !g) return
+    if (!picking || overlay || !doc || !g) return
     const at = (e: MouseEvent) => doc.elementsFromPoint(e.clientX, e.clientY).find((el) => g.isElementGrabbable(el)) ?? null
     const onMove = (e: MouseEvent) => {
       const el = at(e)
@@ -116,10 +129,35 @@ export function PreviewBrowser({ server, onBack, onGrab }: { server: PreviewServ
       doc.removeEventListener('keydown', onKey)
       window.removeEventListener('keydown', onKey)
     }
-  }, [picking, onGrab])
+  }, [picking, overlay, onGrab])
+
+  // The overlay's side: only messages from this frame's window count, and the page's origin is the one commands go to.
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      const d = e.data as { dorks?: unknown; type?: unknown; box?: Box | null; snippet?: unknown; on?: unknown } | null
+      if (!d || d.dorks !== 'overlay' || !frame.current || e.source !== frame.current.contentWindow) return
+      if (d.type === 'ready') setOverlay(true)
+      else if (d.type === 'hover') setBox(d.box ?? null)
+      else if (d.type === 'picking' && d.on === false) setPicking(false)
+      else if (d.type === 'grab' && typeof d.snippet === 'string') onGrab?.(d.snippet)
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [onGrab])
+  useEffect(() => {
+    if (!overlay) return
+    const target = frame.current?.contentWindow
+    if (!target) return
+    target.postMessage({ dorks: 'host', type: 'pick', on: picking }, origin(current))
+    if (!picking) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setPicking(false)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [overlay, picking, current])
   useEffect(() => {
     setPicking(false)
     setSameOrigin(false)
+    setOverlay(false)
   }, [current, reloads])
   useEffect(() => {
     if (!picking) setBox(null)
@@ -127,7 +165,7 @@ export function PreviewBrowser({ server, onBack, onGrab }: { server: PreviewServ
 
   const startPicking = async () => {
     if (picking) return setPicking(false)
-    grab.current ??= await import('react-grab/primitives')
+    if (!overlay) grab.current ??= await import('react-grab/primitives')
     setPicking(true)
   }
 
@@ -149,7 +187,7 @@ export function PreviewBrowser({ server, onBack, onGrab }: { server: PreviewServ
           <span className="truncate">{server.name}</span>
           <span className="shrink-0 text-muted-foreground">{server.port ? `:${server.port}` : port(server.url)}</span>
         </p>
-        {sameOrigin && (
+        {(sameOrigin || overlay) && (
           <Tip label={picking ? 'Stop selecting (Esc)' : 'Select an element to send to the agent'}>
             <Button
               variant="ghost"
@@ -180,6 +218,8 @@ export function PreviewBrowser({ server, onBack, onGrab }: { server: PreviewServ
           title="Preview"
           className="size-full bg-white"
           onLoad={() => {
+            // Ask again in case the overlay's first "ready" came before this listener; a page without it never answers.
+            if (!html) frame.current?.contentWindow?.postMessage({ dorks: 'host', type: 'hello' }, origin(current))
             try {
               setSameOrigin(!!frame.current?.contentDocument)
             } catch {

@@ -337,6 +337,9 @@ importers:
       esbuild:
         specifier: ^0.28.1
         version: 0.28.1
+      react-grab:
+        specifier: 0.2.0
+        version: 0.2.0(react@19.2.3)
       typescript:
         specifier: ^6.0.2
         version: 6.0.3

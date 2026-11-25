@@ -17,6 +17,7 @@ import { EventPipeline } from "./events";
 import { prepareRepo, prepareWorkDir, SetupError } from "./git";
 import { Outbox } from "./outbox";
 import { previewMethods } from "./previews";
+import { PreviewProxies } from "./preview-proxy";
 import { prLabel } from "./pr-ref";
 import { prLookup } from "./pr-lookup";
 import { PrSubscriptions } from "./prs";
@@ -97,6 +98,7 @@ export class Bridge {
   private readonly t: Transport;
   private readonly log: Log;
   private readonly redactor: Redactor;
+  private readonly previews: PreviewProxies;
 
   constructor(private d: BridgeDeps) {
     this.cfg = d.cfg;
@@ -104,6 +106,7 @@ export class Bridge {
     this.t = d.transport;
     this.log = d.log;
     this.redactor = d.redactor;
+    this.previews = new PreviewProxies(join(this.cfg.stateDir, "previews.json"), this.log);
     this.outbox = new Outbox(this.t, this.log, {
       batchMs: this.cfg.batchMs,
       onFatal: () => this.fatal(),
@@ -157,6 +160,7 @@ export class Bridge {
     }
     await this.rpc.start();
     await this.mcpProxy.start();
+    await this.previews.restore(); // after a resume: the hosted URLs still point at these ports
     await this.handshake(true);
     this.prs.start();
     this.unsubs.push(
@@ -227,12 +231,13 @@ export class Bridge {
     this.prs.stop();
     this.rpc.close();
     this.mcpProxy.close();
+    this.previews.close();
     await this.t.close();
   }
 
   /** The local RPC table (rpc.ts): what the git helper, the `dorks` CLI and the `gh` shim can ask of this process. */
   private rpcMethods() {
-    return { token: this.github.rpc, ...this.prs.methods, ...previewMethods(this.t, this.log, () => this.role), ...this.hooks.methods };
+    return { token: this.github.rpc, ...this.prs.methods, ...previewMethods(this.t, this.log, () => this.role, this.previews, this.cfg.bridgePort), ...this.hooks.methods };
   }
 
   // ------------------------------------------------------------------ commands

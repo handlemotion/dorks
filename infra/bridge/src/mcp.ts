@@ -94,8 +94,9 @@ const TOOLS: Tool[] = [
     description:
       "Open a web server running in this box in the user's Artifacts as a running preview, so they can see and click through it. Call it once the server answers " +
       "(e.g. `curl -sI localhost:3000`), and again after restarting it on another port. Start servers on 0.0.0.0 when you can " +
-      "(`--host 0.0.0.0`); pass `localhost: true` only for one that listens on 127.0.0.1 alone. The page is served from an *.on.boat.dev " +
-      "host: Vite needs `server.allowedHosts: true` (or `.on.boat.dev`). Not for ports 22, 6080, 8090, 8911 or 47984-48010. " +
+      "(`--host 0.0.0.0`); pass `localhost: true` only for one that listens on 127.0.0.1 alone. The page reaches your server through a " +
+      "proxy that makes every request look local (Host localhost:<port>), so no allowedHosts setting is needed; it adds the user's " +
+      "element picker to HTML pages and passes WebSockets (HMR) through. Not for ports 22, 6080, 8090, 8911 or 47984-48010. " +
       "The returned URL is public while the box runs: do not show servers that expose secrets.",
     inputSchema: {
       type: "object",
