@@ -1,4 +1,44 @@
-import { FileIcon, SlashIcon, SparklesIcon } from 'lucide-react'
+import {
+  ActivityIcon,
+  BotIcon,
+  BrainIcon,
+  BugIcon,
+  ChartColumnIcon,
+  CircleHelpIcon,
+  CpuIcon,
+  DownloadIcon,
+  EraserIcon,
+  FileIcon,
+  FilePlusIcon,
+  FoldVerticalIcon,
+  FolderPlusIcon,
+  GaugeIcon,
+  HistoryIcon,
+  ImportIcon,
+  LayersIcon,
+  LightbulbIcon,
+  ListTodoIcon,
+  LockIcon,
+  NotebookTextIcon,
+  PaletteIcon,
+  PencilIcon,
+  PlugIcon,
+  PuzzleIcon,
+  RefreshCwIcon,
+  RepeatIcon,
+  RocketIcon,
+  ScanEyeIcon,
+  SettingsIcon,
+  ShieldCheckIcon,
+  SignalIcon,
+  SparklesIcon,
+  SquareTerminalIcon,
+  StethoscopeIcon,
+  TargetIcon,
+  WebhookIcon,
+  ZapIcon,
+  type LucideIcon,
+} from 'lucide-react'
 import type { AgentCommand } from '@dorks/shared'
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
 import { useDorksClient, useSkills } from '@dorks/client/react'
@@ -93,7 +133,7 @@ function useFileMatches(search: Mentions['searchFiles'], query: string | null) {
       clearTimeout(t)
     }
   }, [search, query])
-  return query === null ? [] : (files?.files ?? [])
+  return { files: query === null ? [] : (files?.files ?? []), settled: query !== null && files?.query === query }
 }
 
 /** A token's identity, so a menu closed with Escape stays closed while the caret is in the same token. */
@@ -138,7 +178,7 @@ export function useComposerMenu({ text, setText, textRef, mentions }: { text: st
   const trigger = offeredTrigger(text, caret, mentions)
   const key = keyOf(trigger)
   const open = !!trigger && key !== dismissed
-  const files = useFileMatches(mentions?.searchFiles, open && trigger?.kind === 'file' ? trigger.query : null)
+  const { files, settled } = useFileMatches(mentions?.searchFiles, open && trigger?.kind === 'file' ? trigger.query : null)
   const skills = useMemo(() => new Set(mentions?.skills ?? []), [mentions?.skills])
 
   const items = useMemo(
@@ -191,7 +231,9 @@ export function useComposerMenu({ text, setText, textRef, mentions }: { text: st
   }
 
   const listId = useId()
-  const menu = open && items.length > 0 ? <ComposerMenuList listRef={listRef} id={listId} items={items} active={current?.value ?? ''} setActive={setActive} pick={pick} /> : null
+  // Shown once there is an answer for what was typed: rows, or No matches (a file search still on its way shows the last rows).
+  const shown = open && (items.length > 0 || trigger?.kind === 'command' || settled)
+  const menu = shown ? <ComposerMenuList listRef={listRef} id={listId} items={items} active={current?.value ?? ''} setActive={setActive} pick={pick} /> : null
   return {
     menu,
     track,
@@ -204,7 +246,57 @@ export function useComposerMenu({ text, setText, textRef, mentions }: { text: st
 }
 
 const ROW = 'h-8 gap-2 rounded-[6px] px-2 py-0 font-normal data-selected:bg-foreground/[0.05] transition-none [&>svg]:size-3.5 [&>svg]:shrink-0 [&>svg]:text-muted-foreground'
-const GROUP_ICON = { Skills: SparklesIcon, Commands: SlashIcon, Files: FileIcon }
+/** Claude Code's built-in commands by what they do; any other command gets a terminal. Skills are all sparkles, files all files. */
+const COMMAND_ICON: Record<string, LucideIcon> = {
+  compact: FoldVerticalIcon,
+  autocompact: FoldVerticalIcon,
+  context: GaugeIcon,
+  init: FilePlusIcon,
+  clear: EraserIcon,
+  model: CpuIcon,
+  effort: SignalIcon,
+  fast: ZapIcon,
+  config: SettingsIcon,
+  mcp: PlugIcon,
+  usage: ChartColumnIcon,
+  cost: ChartColumnIcon,
+  'security-review': ShieldCheckIcon,
+  review: ScanEyeIcon,
+  agents: BotIcon,
+  'list-agents': BotIcon,
+  memory: BrainIcon,
+  rename: PencilIcon,
+  resume: HistoryIcon,
+  loop: RepeatIcon,
+  goal: TargetIcon,
+  debug: BugIcon,
+  doctor: StethoscopeIcon,
+  'skill-doctor': StethoscopeIcon,
+  hooks: WebhookIcon,
+  permissions: LockIcon,
+  'output-style': PaletteIcon,
+  color: PaletteIcon,
+  export: DownloadIcon,
+  import: ImportIcon,
+  help: CircleHelpIcon,
+  status: ActivityIcon,
+  todos: ListTodoIcon,
+  'add-dir': FolderPlusIcon,
+  'reload-plugins': PuzzleIcon,
+  'reload-skills': RefreshCwIcon,
+  batch: LayersIcon,
+  recap: NotebookTextIcon,
+  insights: NotebookTextIcon,
+  advisor: LightbulbIcon,
+  ship: RocketIcon,
+}
+function ItemIcon({ item }: { item: Item }) {
+  const Icon = item.group === 'Files' ? FileIcon : item.group === 'Skills' ? SparklesIcon : (COMMAND_ICON[item.name.slice(1)] ?? SquareTerminalIcon)
+  return <Icon />
+}
+
+/** The dropdown look with the focused composer's border, since the menu belongs to the box being typed in; one height, so it never jumps as it filters. */
+const POPUP = MENU_POPUP_CLASS.replace('border-border', 'border-ring')
 
 /** The menu itself: the app's dropdown look (hairline, soft shadow, 32px rows), titled groups, the active row filled. */
 function ComposerMenuList({
@@ -226,15 +318,15 @@ function ComposerMenuList({
   return (
     // The text keeps focus: a press on the menu must not blur it.
     <div data-testid="composer-menu" className="absolute inset-x-0 bottom-full z-50 mb-2" onMouseDown={(e) => e.preventDefault()}>
-      <Command shouldFilter={false} value={active} onValueChange={setActive} className={`${MENU_POPUP_CLASS} h-auto max-h-80 gap-0 p-0`}>
-        <CommandList ref={listRef} id={id} className="max-h-80 p-1">
+      <Command shouldFilter={false} value={active} onValueChange={setActive} className={`${POPUP} h-72 gap-0 p-0`}>
+        <CommandList ref={listRef} id={id} className="h-full max-h-none p-1">
+          {items.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">No matches</p>}
           {groups.map(([group, list]) => {
-            const Icon = GROUP_ICON[group]
             return (
               <CommandGroup key={group} heading={group} className="p-0 **:[[cmdk-group-heading]]:px-2 **:[[cmdk-group-heading]]:py-1.5 **:[[cmdk-group-heading]]:font-normal">
                 {list.map((item) => (
                   <CommandItem key={item.value} value={item.value} onSelect={() => pick(item)} className={ROW}>
-                    <Icon />
+                    <ItemIcon item={item} />
                     <span className={`shrink-0 truncate ${group === 'Files' ? 'max-w-[60%]' : 'max-w-[45%]'}`}>{item.name}</span>
                     {item.detail && <span className={`min-w-0 flex-1 truncate text-muted-foreground ${group === 'Files' ? 'font-mono text-xs' : ''}`}>{item.detail}</span>}
                   </CommandItem>
