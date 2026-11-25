@@ -133,6 +133,7 @@ const LINE: { [T in ClientEventBody["type"]]?: (e: Extract<ClientEventBody, { ty
   notify: (e) => ({ kind: "notice", text: clip(e.text, 1000) }),
   pr_opened: (e) => ({ kind: "notice", text: `PR opened ${e.url}` }),
   pr_merged: (e) => ({ kind: "notice", text: `PR merged ${e.url}` }),
+  ship: (e) => (e.ship.status === "watching" ? null : { kind: "notice", text: `Ship of ${e.ship.url}: ${e.ship.status}` }),
   error: (e) => ({ kind: "notice", text: `error: ${clip(e.message, 1000)}` }),
   agent_exited: (e) => ({ kind: "notice", text: `agent exited: ${clip(e.message, 500)}` }),
 };

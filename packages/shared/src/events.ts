@@ -2,6 +2,7 @@ import { z } from "zod";
 import { notifyKind, prRef } from "./autonomy";
 import { appError, type AppError } from "./errors";
 import { inputField } from "./inputs";
+import { shipView } from "./ship";
 
 export const dorkState = z.enum(["creating", "working", "idle", "sleeping", "waking", "error"]);
 
@@ -43,6 +44,8 @@ export const clientEvent = z.discriminatedUnion("type", [
   }),
   z.object({ ...base, type: z.literal("pr_opened"), url: z.string(), number: z.number() }),
   z.object({ ...base, type: z.literal("pr_merged"), url: z.string(), number: z.number() }),
+  // After a merge, what the merge commit set off (docs/shipping.md): the whole snapshot each time it changes; the latest per `ship.id` wins.
+  z.object({ ...base, type: z.literal("ship"), ship: shipView }),
   // An autonomy notification was handed to the agent (the transcript's event card). `text` is the human-readable digest, without the envelope.
   // A crew report or note (docs/crew.md): `in` received from `peer`, `out` sent to it. A report is a worker's final answer.
   z.object({

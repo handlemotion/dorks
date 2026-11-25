@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ChevronRightIcon } from 'lucide-react'
 import type { DorkState, TurnOutcome } from '@dorks/shared'
-import { workedFor } from './ChatBlock'
+import { workedFor } from '../lib/duration'
 import { DorkIcon, dorkIconState } from './DorkIcon'
 
 type Live = 'connecting' | 'live' | 'offline' | 'unauthorized'

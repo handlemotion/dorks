@@ -19,6 +19,8 @@ import { hookLine } from '../lib/hooks'
 import { MessageScrollerItem } from '@dorks/ui/message-scroller'
 import { LocalRequestCard } from './LocalRequest'
 import { InputRequestCard } from './InputRequest'
+import { ShipCard } from './ShipCard'
+import { workedFor } from '../lib/duration'
 import { MarkdownCodeBlock } from './CodeBlockCard'
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from '@dorks/ui/trace'
 
@@ -356,6 +358,9 @@ function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => vo
     } else if (block.kind === 'input') {
       // The agent asked for values it uses without reading them (docs/secure-inputs.md): a form while it waits, then one line.
       content.push(<InputRequestCard key={block.id} block={block} />)
+    } else if (block.kind === 'ship') {
+      // What a merged PR set off (docs/shipping.md): CI on the base, migrations, deploys, as the server follows them.
+      content.push(<ShipCard key={block.id} block={block} />)
     } else if (block.kind === 'crew') {
       content.push(<CrewCard key={block.id} block={block} />)
     } else if (block.kind === 'notice') {
@@ -392,15 +397,6 @@ function turns(blocks: AgentBlock[]): { blocks: AgentBlock[]; end?: TurnBlock }[
     } else out[out.length - 1].blocks.push(block)
   }
   return out.filter((t) => t.blocks.length > 0 || t.end?.outcome === 'stopped')
-}
-
-/** "12s", "2m 14s", "1h 3m": how long a turn worked. */
-export function workedFor(ms: number): string {
-  const s = Math.max(0, Math.round(ms / 1000))
-  if (s < 60) return `${s}s`
-  const m = Math.floor(s / 60)
-  if (m < 60) return `${m}m ${s % 60}s`
-  return `${Math.floor(m / 60)}h ${m % 60}m`
 }
 
 /**

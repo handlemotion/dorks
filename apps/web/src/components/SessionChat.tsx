@@ -5,6 +5,7 @@ import { Button } from '@dorks/ui/button'
 import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport } from '@dorks/ui/message-scroller'
 import { AgentStatus } from './AgentStatus'
 import { ChatMessages } from './ChatBlock'
+import { ShipPin } from './ShipCard'
 import { ChatToc } from './ChatToc'
 import { UsageMenu } from './UsageMenu'
 import { useMentions } from './ComposerMenu'
@@ -199,21 +200,23 @@ export function SessionChat({
             <MessageScrollerContent className={`mx-auto w-full max-w-4xl gap-6 pt-6 pb-12 ${compact ? 'px-6' : 'px-10'}`} data-testid="transcript">
               {canLoadMore && <LoadOlder loading={loadingMore} paused={!!eventsError} onLoad={loadMore} />}
               <LocalAccessProvider dorkId={dorkId} agent={agent}>
-                <ChatMessages
-                  blocks={blocks}
-                  imageUrl={actions.imageUrl}
-                  agent={agent}
-                  onOpenSteps={onOpenSteps}
-                  onReply={
-                    canReply
-                      ? (quoted, draft) => {
-                          setReply(quoted)
-                          if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft))
-                        }
-                      : undefined
-                  }
-                  onReplySend={canReply ? (quoted, answer) => run(() => send(withReply(quoted, answer))) : undefined}
-                />
+                <ShipPin blocks={blocks} state={dork.state}>
+                  <ChatMessages
+                    blocks={blocks}
+                    imageUrl={actions.imageUrl}
+                    agent={agent}
+                    onOpenSteps={onOpenSteps}
+                    onReply={
+                      canReply
+                        ? (quoted, draft) => {
+                            setReply(quoted)
+                            if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft))
+                          }
+                        : undefined
+                    }
+                    onReplySend={canReply ? (quoted, answer) => run(() => send(withReply(quoted, answer))) : undefined}
+                  />
+                </ShipPin>
               </LocalAccessProvider>
               {eventsError && (
                 <p role="alert" className="text-sm text-destructive">

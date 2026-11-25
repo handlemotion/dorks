@@ -112,7 +112,9 @@ export const GhPr = Schema.Struct({
   mergeable: Schema.NullOr(Schema.Boolean),
   merged_by: Actor,
   head: Schema.Struct({ ref: Schema.String, sha: Schema.String }),
-  base: Schema.Struct({ ref: Schema.String, sha: Schema.String }),
+  base: Schema.Struct({ ref: Schema.String, sha: Schema.String, repo: Schema.optional(Schema.NullOr(Schema.Struct({ default_branch: Schema.optional(Schema.String) }))) }),
+  merge_commit_sha: Schema.optional(Schema.NullOr(Schema.String)),
+  merged_at: Schema.optional(Schema.NullOr(Schema.String)),
 });
 export type GhPr = typeof GhPr.Type;
 
@@ -149,6 +151,71 @@ export const GhSuites = Schema.Struct({
 });
 
 export const GhViewer = Schema.Struct({ login: Schema.String });
+
+// ---- what a merge commit set off (services/ships.ts)
+const Str = Schema.optional(Schema.NullOr(Schema.String));
+
+export const GhWorkflowRuns = Schema.Struct({
+  workflow_runs: Schema.Array(
+    Schema.Struct({
+      id: Schema.Number,
+      name: Str,
+      event: Schema.String,
+      status: Str,
+      conclusion: Str,
+      html_url: Schema.String,
+      run_started_at: Str,
+      updated_at: Str,
+      workflow_id: Schema.optional(Schema.Number),
+      head_sha: Schema.optional(Schema.String),
+    }),
+  ),
+});
+export type GhWorkflowRun = (typeof GhWorkflowRuns.Type)["workflow_runs"][number];
+
+const Step = Schema.Struct({ name: Schema.String, number: Schema.Number, status: Schema.String, conclusion: Str, started_at: Str, completed_at: Str });
+export const GhJobs = Schema.Struct({
+  jobs: Schema.Array(
+    Schema.Struct({
+      id: Schema.Number,
+      name: Schema.String,
+      status: Schema.String,
+      conclusion: Str,
+      html_url: Str,
+      started_at: Str,
+      completed_at: Str,
+      steps: Schema.optional(Schema.NullOr(Schema.Array(Step))),
+    }),
+  ),
+});
+
+export const GhCheckRuns = Schema.Struct({
+  check_runs: Schema.Array(
+    Schema.Struct({
+      id: Schema.Number,
+      name: Schema.String,
+      status: Schema.String,
+      conclusion: Str,
+      html_url: Str,
+      details_url: Str,
+      started_at: Str,
+      completed_at: Str,
+      app: Schema.optional(Schema.NullOr(Schema.Struct({ slug: Str }))),
+    }),
+  ),
+});
+
+export const GhCombinedStatus = Schema.Struct({
+  statuses: Schema.Array(Schema.Struct({ context: Schema.String, state: Schema.String, target_url: Str, description: Str, created_at: Str, updated_at: Str })),
+});
+
+export const GhDeployments = Schema.Array(Schema.Struct({ id: Schema.Number, sha: Schema.String, environment: Schema.String, created_at: Schema.String }));
+export type GhDeployment = (typeof GhDeployments.Type)[number];
+
+export const GhDeploymentStatuses = Schema.Array(Schema.Struct({ state: Schema.String, environment_url: Str, log_url: Str, target_url: Str, created_at: Str, updated_at: Str }));
+
+/** `ahead` or `identical`: the head of the comparison contains its base. */
+export const GhCompare = Schema.Struct({ status: Schema.String });
 
 /** Check-suite conclusions → what CI means for the PR. `cancelled` (usually superseded by a newer run), `action_required` and `stale` say nothing about the code. */
 export function suiteOutcome(conclusion: string | null): "pass" | "fail" | null {

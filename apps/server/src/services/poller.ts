@@ -20,6 +20,7 @@ import {
 import { githubToken, readSettings } from "./settings";
 import { update } from "../db";
 import { ingestEnv, ingestEvent, type Actor, type PrEvent } from "./githubIngest";
+import { applyShip, getShip, observeShip, openShips, shipDue, type Ship } from "./ships";
 import { endSubscription, getSub, pollable, savePollState, updateSubscription, type PollState, type Subscription } from "./subscriptions";
 
 // PR autonomy without webhooks: read each subscribed PR with conditional requests (a 304 is free against the rate limit), turn
@@ -120,7 +121,15 @@ const observePr = (look: Look): Effect.Effect<PrLook, GithubError> =>
               Effect.map((i) => (i.status === 200 ? i.json.closed_by : null)),
               Effect.orElseSucceed(() => null),
             );
-      events.push({ kind: "pr_closed", merged: state === "merged", sender: actor(by) });
+      events.push({
+        kind: "pr_closed",
+        merged: state === "merged",
+        sender: actor(by),
+        // Only a merge into the default branch ships: a stacked PR merging into its parent's branch is not a release.
+        ...(state === "merged" && pr.merge_commit_sha && (!pr.base.repo?.default_branch || pr.base.ref === pr.base.repo.default_branch)
+          ? { mergeSha: pr.merge_commit_sha, mergedAt: time(pr.merged_at) }
+          : {}),
+      });
       return { done: { events, baseline, poll } };
     } else {
       yield* observePrChanges(look, pr);
@@ -269,7 +278,7 @@ export const ensureLogin = (app: App, token: string) =>
       );
 
 /** When a failed read means stopping the whole pass: rate limited until it lifts, or a bad token. `undefined`: go on. */
-function stopFor(app: App, sub: Subscription, e: GithubError): number | undefined {
+function stopFor(app: App, sub: Pick<Subscription, "repo" | "number">, e: GithubError): number | undefined {
   if (e.retryAt !== undefined) return Math.max(e.retryAt - app.now(), 1_000); // rate limited: stop until it lifts
   if (e.status === 401) return POLL_AUTH_FAILED_MS; // the token is bad: nothing else will work either
   console.error("poll failed", sub.repo, sub.number, e.status ?? e.reason);
@@ -290,11 +299,26 @@ const pollSub = (app: App, token: string, sub: Subscription): Effect.Effect<numb
     ),
   );
 
-/** One pass over every subscription that needs watching. Answers when to look again, or null when nothing needs polling. */
+/** Observes and applies one ship (services/ships.ts), like `pollSub`. */
+const pollShip = (app: App, token: string, ship: Ship): Effect.Effect<number | undefined> =>
+  observeShip(app, token, ship).pipe(
+    Effect.flatMap((obs) => Effect.sync(() => applyShip(app, ship.id, obs))),
+    Effect.as(undefined),
+    Effect.catch((e) => Effect.sync(() => stopFor(app, { repo: ship.repo, number: ship.number }, e))),
+    Effect.catchDefect(() =>
+      Effect.sync(() => {
+        console.error("ship poll failed", ship.repo, ship.number, "unexpected");
+        return undefined;
+      }),
+    ),
+  );
+
+/** One pass over every subscription and ship that needs watching. Answers when to look again, or null when nothing needs polling. */
 export const pollOnceEffect = (app: App): Effect.Effect<number | null> =>
   Effect.gen(function* () {
     const subs = pollable(app);
-    if (!subs.length) return null;
+    const ships = openShips(app);
+    if (!subs.length && !ships.length) return null;
     const token = yield* Effect.promise(() => githubToken(app));
     if (!token) return POLL_MS * 2; // subscriptions wait for a token to be set
     yield* ensureLogin(app, token);
@@ -302,6 +326,12 @@ export const pollOnceEffect = (app: App): Effect.Effect<number | null> =>
       const sub = getSub(app, s.id);
       if (!sub || sub.status === "ended") continue;
       const stop = yield* pollSub(app, token, sub);
+      if (stop !== undefined) return stop;
+    }
+    for (const s of ships) {
+      const ship = getShip(app, s.id);
+      if (!ship || ship.endedAt !== undefined || !shipDue(ship, app.now())) continue;
+      const stop = yield* pollShip(app, token, ship);
       if (stop !== undefined) return stop;
     }
     return POLL_MS;
