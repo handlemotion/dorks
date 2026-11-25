@@ -34,7 +34,7 @@ export const SHIP_QUIET_MS = 5 * 60_000;
 /** The watch ends this long after the merge, whatever is still running (`stalled`). A failed ship is watched until then for re-runs. */
 export const SHIP_MAX_MS = 60 * 60_000;
 const MAX_RUNS = 15;
-const MAX_OTHERS = 15; // other apps' checks, and commit statuses, each: a card is a summary, not the checks tab
+const MAX_OTHERS = 15; // other apps' checks, and commit statuses, each: a card is a summary, not the checks tab (`capRows`)
 const MAX_COMPARES = 3; // per pass: later commits (a deployment's, a replacing run's) whose ancestry is not known yet
 const MAX_CONTAINS = 50; // ancestry answers remembered per ship
 /** Young ships are read every poll pass; after this long, at most every `SHIP_SLOW_MS`, so long deploys cost fewer requests. */
@@ -376,9 +376,12 @@ const readRuns = (look: Look) =>
     if (!runs) return { stages: [...kept("run:"), ...kept("mig:")], jobsRead: old.jobsRead ?? [] };
     const list = runs.workflow_runs
       .filter((r) => !r.event.startsWith("pull_request")) // a rebase merge keeps the PR's commits: its PR runs are not the merge's
-      .toSorted((a, b) => (ms(a.run_started_at) ?? 0) - (ms(b.run_started_at) ?? 0) || a.id - b.id)
-      .slice(0, MAX_RUNS);
-    for (const own of list) {
+      .toSorted((a, b) => (ms(a.run_started_at) ?? 0) - (ms(b.run_started_at) ?? 0) || a.id - b.id);
+    // The cap drops only finished runs: one still running or failed decides the ship.
+    const finished = (r: GhWorkflowRun) => ["passed", "skipped"].includes(runState(r.status, r.conclusion).state);
+    let room = Math.max(0, MAX_RUNS - list.filter((r) => !finished(r)).length);
+    const shown = list.filter((r) => !finished(r) || room-- > 0);
+    for (const own of shown) {
       const r = own.status === "completed" && own.conclusion === "cancelled" ? ((yield* successor(look, own)) ?? own) : own;
       stages.push(runStage(r, own.id, r === own ? undefined : r.head_sha));
       const done = r.status === "completed";
@@ -396,7 +399,7 @@ const readChecks = ({ ship, base, body, kept }: Look) =>
   Effect.gen(function* () {
     const checks = yield* body(GhCheckRuns, `${base}/commits/${ship.sha}/check-runs?per_page=100`);
     const status = yield* body(GhCombinedStatus, `${base}/commits/${ship.sha}/status`);
-    return [...(checks ? checkStages(checks) : kept("check:")), ...(status ? status.statuses.slice(0, MAX_OTHERS).map(statusStage) : kept("status:"))];
+    return [...(checks ? checkStages(checks) : kept("check:")), ...(status ? capRows(status.statuses.map(statusStage)) : kept("status:"))];
   });
 
 /**
@@ -422,14 +425,27 @@ const readDeployments = ({ ship, old, base, body, kept, contains }: Look) =>
     return { stages, followed: Object.fromEntries(byEnv) };
   });
 
+/**
+ * At most `MAX_OTHERS` rows, dropping only finished ones: a check still running or failed always stays, since it decides whether the
+ * ship is done and whether it failed.
+ */
+function capRows(stages: ShipStage[]): ShipStage[] {
+  if (stages.length <= MAX_OTHERS) return stages;
+  const open = stages.filter((s) => s.state !== "passed" && s.state !== "skipped").length;
+  let room = Math.max(0, MAX_OTHERS - open);
+  return stages.filter((s) => (s.state !== "passed" && s.state !== "skipped") || room-- > 0);
+}
+
 function checkStages(checks: typeof GhCheckRuns.Type): ShipStage[] {
   const byName = new Map<string, (typeof checks.check_runs)[number]>();
   for (const c of checks.check_runs) if (c.app?.slug !== "github-actions" && (byName.get(c.name)?.id ?? -1) < c.id) byName.set(c.name, c);
-  return [...byName.values()].slice(0, MAX_OTHERS).map((c) => {
-    const { state, detail } = runState(c.status, c.conclusion);
-    const url = c.details_url || c.html_url;
-    return { id: `check:${c.name}`, kind: "check", name: c.name, state, ...(url ? { url } : {}), ...(detail ? { detail } : {}), ...times(c.started_at, c.completed_at, c.status === "completed") };
-  });
+  return capRows(
+    [...byName.values()].map((c) => {
+      const { state, detail } = runState(c.status, c.conclusion);
+      const url = c.details_url || c.html_url;
+      return { id: `check:${c.name}`, kind: "check", name: c.name, state, ...(url ? { url } : {}), ...(detail ? { detail } : {}), ...times(c.started_at, c.completed_at, c.status === "completed") };
+    }),
+  );
 }
 
 function statusStage(s: (typeof GhCombinedStatus.Type)["statuses"][number]): ShipStage {
@@ -554,12 +570,19 @@ export function shipOp(app: App, dorkId: string, args: Record<string, unknown>):
   if (args.action !== "verify") return fail("invalid", "unknown ship action");
   if (typeof args.ok !== "boolean" || typeof args.note !== "string" || !args.note.trim()) return fail("invalid", "`ok` and a non-empty `note` are required");
   const { ok, note } = args as { ok: boolean; note: string };
+  const pr = typeof args.repo === "string" && typeof args.number === "number" ? { repo: args.repo.toLowerCase(), number: args.number } : null;
   return app.db.tx(() => {
-    const ship = app.db
+    const waiting = app.db
       .all("SELECT * FROM ships WHERE dork_id = ? ORDER BY id DESC", dorkId)
       .map(shipOf)
-      .find((s) => s.agent?.verify?.state === "pending");
-    if (!ship?.agent?.verify) return fail("not_found", "No merged PR of this session is waiting for verification: ship_verify answers a `deployed` notification.");
+      .filter((s) => s.agent?.verify?.state === "pending");
+    const label = (s: Ship) => `${s.repo}#${s.number}`;
+    // Several PRs can wait at once: the agent names the one it checked, and is never guessed for.
+    const matching = pr ? waiting.filter((s) => s.repo.toLowerCase() === pr.repo && s.number === pr.number) : waiting;
+    if (!pr && waiting.length > 1) return fail("invalid", `Several merged PRs wait for a check (${waiting.map(label).join(", ")}): pass \`pr\` to say which one you checked.`);
+    const ship = matching[0];
+    if (!ship?.agent?.verify)
+      return fail("not_found", pr ? `${pr.repo}#${pr.number} is not waiting for a check.` : "No merged PR of this session is waiting for verification: ship_verify answers a `deployed` notification.");
     const now = app.now();
     const verify = { ...ship.agent.verify, state: ok ? ("passed" as const) : ("failed" as const), note: note.trim().slice(0, 300), at: now };
     const agent = { ...ship.agent, verify };

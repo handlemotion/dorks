@@ -285,4 +285,33 @@ describe("ships", () => {
     expect(s.card()!.endedAt).toBeDefined();
     expect(s.card()!.stages.at(-1)).toMatchObject({ kind: "verify", state: "skipped", detail: "Not verified before the watch ended" });
   });
+
+  it("ship_verify records against the PR the agent names when several wait; the row cap never hides an open check", async () => {
+    const s = await setup();
+    await s.merge();
+    s.gh.state.deployments.push({ id: 40, sha: MERGE, environment: "production", created_at: s.iso() });
+    s.gh.state.deploymentStatuses[40] = [{ state: "success", environment_url: "https://hello.example" }];
+    // Twenty finished checks and a twenty-first still running: the running one is kept, so the ship keeps watching.
+    for (let i = 0; i < 20; i++) s.gh.state.checkRuns.push({ id: 100 + i, name: `lint ${i}`, status: "completed", conclusion: "success", details_url: "https://ci.example", app: { slug: "ci" } });
+    s.gh.state.checkRuns.push({ id: 200, name: "slow e2e", status: "in_progress", conclusion: null, details_url: "https://ci.example", app: { slug: "ci" } });
+    await s.tick();
+    const checks = s.card()!.stages.filter((x) => x.kind === "check");
+    expect(checks).toHaveLength(15);
+    expect(checks.at(-1)).toMatchObject({ name: "slow e2e", state: "running" });
+
+    // A second merged PR of the same session waits for its check too.
+    const first = s.h.app.db.get<{ id: number; agent: string }>("SELECT id, agent FROM ships WHERE dork_id = ?", s.id)!;
+    s.h.app.db.run(
+      "INSERT INTO ships (dork_id, repo, number, url, base_ref, sha, status, stages, started_at, agent) VALUES (?, 'octo/hello', 8, 'u', 'main', 'other00', 'watching', '[]', ?, ?)",
+      s.id,
+      s.h.clock.t,
+      first.agent,
+    );
+    expect(() => shipOp(s.h.app, s.id, { action: "verify", ok: true, note: "Checked." })).toThrow(/octo\/hello#8, octo\/hello#7/);
+    shipOp(s.h.app, s.id, { action: "verify", repo: "Octo/Hello", number: 7, ok: false, note: "The toggle does not save." });
+    expect(s.card()!.stages.find((x) => x.kind === "verify")).toMatchObject({ state: "failed", detail: "The toggle does not save." });
+    const second = s.h.app.db.get<{ agent: string }>("SELECT agent FROM ships WHERE number = 8")!;
+    expect(JSON.parse(second.agent).verify.state).toBe("pending");
+    expect(() => shipOp(s.h.app, s.id, { action: "verify", repo: "octo/hello", number: 9, ok: true, note: "x" })).toThrow(/not waiting/);
+  });
 });

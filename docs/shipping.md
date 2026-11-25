@@ -28,7 +28,8 @@ Every poll pass (10 s) for the first 10 minutes, then every 30 s (`shipDue`), fo
 | `GET /deployments?sha=<merge>` and `GET /deployments` (recent) | One `deployment` stage per environment: the newest deployment that **contains** the merge, remembered so it is still followed after newer deployments push it off the recent page. A later commit's deployment counts when `GET /compare/<merge>...<sha>` says `ahead` or `identical` (a deploy that batched several merges); it says `with <sha>`. A branch preview (`diverged`) never counts. Its latest status gives the state and `environment_url` |
 
 Ancestry answers (`GET /compare/<merge>...<sha>`, at most 3 new ones a pass) are remembered per ship. A card lists at most 15
-workflow runs, 15 other apps' checks and 15 commit statuses, and keeps only http(s) links (a status's `javascript:` target is
+workflow runs, 15 other apps' checks and 15 commit statuses, dropping only finished ones (a run or check still running or failed is
+always kept: it decides the ship), and keeps only http(s) links (a status's `javascript:` target is
 dropped): the card and the agent open them. A read that fails (other than a
 rate limit or a rejected token, which stop the pass like the PR poller) keeps what it showed last time. Bodies are kept with their ETags in `ships.poll`, so a 304 rebuilds the same stages.
 
@@ -84,7 +85,8 @@ subscription carries them, so they render as that PR's section):
 - **`deployed`**, once per ship: the first time a deployment stage passes with a live URL while nothing has failed. The agent is told the
   URL and asked to verify **the change it made** there (the page or endpoint the PR changed, with a browser, Playwright or curl, a test
   login from [secure inputs](secure-inputs.md) when it needs one), never to deploy or touch production data, and to report with
-  `ship_verify { ok, note }`. A `verify` stage (`Verify on production`) joins the card as pending, so the ship waits for it; the
+  `ship_verify { pr, ok, note }` (the PR it checked: several merged PRs of one session can wait at once, and the server never
+  guesses which). A `verify` stage (`Verify on production`) joins the card as pending, so the ship waits for it; the
   agent's note becomes its detail. A failed check fails the ship (and the tool's answer asks for a fix-forward or revert PR). With no
   answer after `SHIP_VERIFY_MS` (20 minutes) the stage is skipped (`Not verified in time`) and the ship settles without it; a watch
 that ends (stalled) while it is still open closes it the same way.

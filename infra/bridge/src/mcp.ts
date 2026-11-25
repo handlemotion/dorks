@@ -228,16 +228,18 @@ const TOOLS: Tool[] = [
     inputSchema: {
       type: "object",
       properties: {
+        pr: { ...PR_PARAM, description: "The merged pull request you checked (from the `deployed` notification). " + PR_PARAM.description },
         ok: { type: "boolean", description: "Whether the change works on the live deployment." },
         note: { type: "string", description: "What you checked and what you saw, in one or two sentences." },
       },
-      required: ["ok", "note"],
+      required: ["pr", "ok", "note"],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: false },
     async run(args, sock) {
       if (typeof args.ok !== "boolean" || typeof args.note !== "string" || !args.note.trim()) throw new ToolError("`ok` and a non-empty `note` are required.");
-      const r = await rpcCall<{ text: string }>(sock, "ship", { action: "verify", ok: args.ok, note: args.note });
+      const ref = prArg(args);
+      const r = await rpcCall<{ text: string }>(sock, "ship", { action: "verify", ...ref, ok: args.ok, note: args.note });
       return r.text;
     },
   },
