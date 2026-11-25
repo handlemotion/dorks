@@ -9,6 +9,7 @@ import { describeRpcError, listLine, socketOf } from "./dorks";
 import { parsePrRef, prLabel, samePr } from "./pr-ref";
 import type { ShownPreview } from "./previews";
 import type { ServiceStatus } from "./services";
+import { SKILLS, skillEntry, skillFileByUri } from "./mcp-skills";
 import { rpcCall } from "./rpc";
 
 // `dorks mcp`: the same agent surface as `dorks pr …`, as MCP tools (Model Context Protocol) so the agent calls them as typed tools
@@ -16,13 +17,27 @@ import { rpcCall } from "./rpc";
 // passed as `claude --mcp-config`), speaks newline-delimited JSON-RPC 2.0 to it, and it forwards every call to the running bridge on
 // DORKS_SOCK. Nothing here holds state or a credential; the backend stays the single owner of the truth.
 //
-// Hand-rolled on purpose: the bridge ships as one dependency-light bundle and the server needs four methods (initialize, ping,
-// tools/list, tools/call), so the MCP SDK would only add weight to every box snapshot.
+// Hand-rolled on purpose: the bridge ships as one dependency-light bundle and the server needs a handful of methods, so the MCP SDK would
+// only add weight to every box snapshot.
+//
+// Dual-era (MCP 2026-07-28, "Versioning: Backward Compatibility"): a request carrying `_meta["io.modelcontextprotocol/protocolVersion"]`
+// is served statelessly by the modern revision (`server/discover`, `resultType`, cache hints, the Skills extension's `skills/list` and
+// `skills/get`); an `initialize` handshake gets the legacy revisions, as Codex and older Claude Code speak them. Both eras list the same
+// tools and serve the same skill files as resources.
 
 /** The server name; Claude Code prefixes the tools with it, so the agent sees `mcp__dorks__pr_subscribe`. */
 export const MCP_SERVER_NAME = "dorks";
-/** Versions we can speak. A client asking for another one is answered with the newest, as the spec requires. */
+/** Modern versions: no handshake, every request names its version in `_meta`. Another one is refused with the list (-32022). */
+const MODERN_VERSIONS = ["2026-07-28"];
+/** Legacy versions, negotiated by `initialize`. A client asking for another one is answered with the newest, as those revisions require. */
 const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
+const VERSION_KEY = "io.modelcontextprotocol/protocolVersion";
+const SKILLS_EXTENSION = "io.modelcontextprotocol/skills";
+const SERVER_INFO = { name: MCP_SERVER_NAME, title: "Dorks", version: "0.2.0" };
+/** Modern cache hints. Tools and skills are fixed for the life of this process (a mode switch restarts it), but they are this dork's own. */
+const CACHE = { ttlMs: 60 * 60_000, cacheScope: "private" } as const;
+const UNSUPPORTED_VERSION = -32022;
+const INVALID_PARAMS = -32602;
 
 const PR_PARAM = { type: "string", description: "The pull request: a URL like https://github.com/owner/name/pull/12, or owner/name#12." } as const;
 
@@ -920,6 +935,29 @@ interface Request {
 const ok = (id: Id, result: unknown) => ({ jsonrpc: "2.0", id, result });
 const err = (id: Id, code: number, message: string) => ({ jsonrpc: "2.0", id, error: { code, message } });
 
+/** What the agent reads about this server before it loads any tool: `instructions` in both eras. */
+const INSTRUCTIONS =
+  "Tools for the pull requests you work on in this box, and for showing the user your work. `gh pr create` subscribes you automatically; subscribed PRs wake you with <dorks-event> turns when CI, reviews, comments or conflicts need you. " +
+  "When you need a login, a one-time code or any secret, ask with input_request and use it as {{secret:NAME}} without reading it. " +
+  "When you start a web server the user should see, call preview_show with its port. When you change anything visual, verify it with screenshot_share and put the image it returns in your final answer. " +
+  'The user\'s comments on a running preview arrive as <dorks-event source="preview"> turns: answer them with comment_reply or comment_resolve. ' +
+  "This box starts from a build that every future session shares: when you hit a setup problem in it (a missing tool, a broken or outdated install, a missing variable or service), or the user asks to set something up for future sessions, propose a fix to the owner with the machine-setup skill (skill://machine-setup/SKILL.md) and the machine_ tools. " +
+  "To test a change against a running dev server or service, start it with service_start (service_list shows what this machine has prebuilt). " +
+  "In a crew (a coordinator and its worker dorks), the dork_ tools start, message and follow the other dorks.";
+
+type Reply = { result: Record<string, unknown>; cache?: true } | { error: { code: number; message: string } };
+const failure = (code: number, message: string): Reply => ({ error: { code, message } });
+
+/** A skill's files as `resources/list` entries: its SKILL.md named and described as the skill, the rest by their path in it. */
+const skillResources = (s: (typeof SKILLS)[number]) =>
+  s.files.map((f) => ({
+    uri: f.uri,
+    name: f.uri === s.uri ? s.frontmatter.name : f.uri.slice(`skill://${s.frontmatter.name}/`.length),
+    ...(f.uri === s.uri ? { description: s.frontmatter.description } : {}),
+    mimeType: f.mimeType,
+    size: f.size,
+  }));
+
 export class McpServer {
   private crew: Promise<Crew> | null = null;
   constructor(private env: NodeJS.ProcessEnv) {}
@@ -952,40 +990,69 @@ export class McpServer {
     const isNotification = !("id" in req);
     const id = req.id ?? null;
     const params = req.params && typeof req.params === "object" ? (req.params as Record<string, unknown>) : {};
-    let reply: object;
-    switch (req.method) {
+    const meta = params._meta && typeof params._meta === "object" ? (params._meta as Record<string, unknown>) : {};
+    // The era is per request: a modern client names its version on every one, a legacy one opened with `initialize`.
+    const asked = meta[VERSION_KEY];
+    const modern = asked !== undefined || req.method === "server/discover";
+    if (asked !== undefined && (typeof asked !== "string" || !MODERN_VERSIONS.includes(asked))) {
+      if (isNotification) return null;
+      return { jsonrpc: "2.0", id, error: { code: UNSUPPORTED_VERSION, message: "Unsupported protocol version", data: { supported: MODERN_VERSIONS, requested: asked } } };
+    }
+    const reply = await this.dispatch(req.method, params, modern);
+    if (isNotification) return null;
+    if ("error" in reply) return err(id, reply.error.code, reply.error.message);
+    // Modern results carry `resultType` and the server's identity; list and read results also carry cache hints.
+    if (!modern) return ok(id, reply.result);
+    return ok(id, { ...reply.result, resultType: "complete", _meta: { "io.modelcontextprotocol/serverInfo": SERVER_INFO }, ...(reply.cache ? CACHE : {}) });
+  }
+
+  private async dispatch(method: string, params: Record<string, unknown>, modern: boolean): Promise<Reply> {
+    switch (method) {
+      case "server/discover":
+        return {
+          result: { supportedVersions: MODERN_VERSIONS, capabilities: { tools: {}, resources: {}, extensions: { [SKILLS_EXTENSION]: {} } }, instructions: INSTRUCTIONS },
+          cache: true,
+        };
       case "initialize": {
+        if (modern) return failure(-32601, "initialize is not part of MCP 2026-07-28: send each request with its _meta");
         const asked = params.protocolVersion;
-        reply = ok(id, {
-          protocolVersion: typeof asked === "string" && PROTOCOL_VERSIONS.includes(asked) ? asked : PROTOCOL_VERSIONS[0],
-          capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: MCP_SERVER_NAME, title: "Dorks", version: "0.1.0" },
-          instructions:
-            "Tools for the pull requests you work on in this box, and for showing the user your work. `gh pr create` subscribes you automatically; subscribed PRs wake you with <dorks-event> turns when CI, reviews, comments or conflicts need you. " +
-            "When you need a login, a one-time code or any secret, ask with input_request and use it as {{secret:NAME}} without reading it. " +
-            "When you start a web server the user should see, call preview_show with its port. When you change anything visual, verify it with screenshot_share and put the image it returns in your final answer. " +
-            'The user\'s comments on a running preview arrive as <dorks-event source="preview"> turns: answer them with comment_reply or comment_resolve. ' +
-            "To install tools, set variables or pre-clone repos for future sessions, search for the machine_ tools. " +
-            "To test a change against a running dev server or service, start it with service_start (service_list shows what this machine has prebuilt). " +
-            "In a crew (a coordinator and its worker dorks), the dork_ tools start, message and follow the other dorks.",
-        });
-        break;
+        return {
+          result: {
+            protocolVersion: typeof asked === "string" && PROTOCOL_VERSIONS.includes(asked) ? asked : PROTOCOL_VERSIONS[0],
+            capabilities: { tools: { listChanged: false }, resources: { listChanged: false } },
+            serverInfo: SERVER_INFO,
+            instructions: INSTRUCTIONS,
+          },
+        };
       }
       case "ping":
-        reply = ok(id, {});
-        break;
+        return { result: {} };
       case "tools/list": {
         const { role, mode } = await this.crewInfo();
-        reply = ok(id, { tools: [...modeTools(mode).map(({ run: _run, ...t }) => t), ...crewTools(role)] });
-        break;
+        return { result: { tools: [...modeTools(mode).map(({ run: _run, ...t }) => t), ...crewTools(role)] }, cache: true };
       }
       case "tools/call":
-        reply = ok(id, await this.call(params.name, params.arguments));
-        break;
+        return { result: await this.call(params.name, params.arguments) };
+      // ---- the Skills extension (mcp-skills.ts): each skill file is a resource, in both eras; skills/list and skills/get are modern only.
+      case "resources/list":
+        return { result: { resources: SKILLS.flatMap(skillResources) }, cache: true };
+      case "resources/templates/list":
+        return { result: { resourceTemplates: [] }, cache: true };
+      case "resources/read": {
+        const file = typeof params.uri === "string" ? skillFileByUri(params.uri) : undefined;
+        if (!file) return failure(INVALID_PARAMS, `Unknown resource: ${String(params.uri)}`);
+        return { result: { contents: [{ uri: file.uri, mimeType: file.mimeType, text: file.text }] }, cache: true };
+      }
+      case "skills/list":
+        return modern ? { result: { skills: SKILLS.map(skillEntry) }, cache: true } : failure(-32601, "method not found");
+      case "skills/get": {
+        if (!modern) return failure(-32601, "method not found");
+        const skill = SKILLS.find((s) => s.uri === params.uri);
+        return skill ? { result: { skill: skillEntry(skill) }, cache: true } : failure(INVALID_PARAMS, `Unknown skill: ${String(params.uri)}`);
+      }
       default:
-        reply = err(id, -32601, "method not found");
+        return failure(-32601, "method not found");
     }
-    return isNotification ? null : reply;
   }
 
   private async call(name: unknown, args: unknown) {

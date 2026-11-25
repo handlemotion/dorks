@@ -1,5 +1,8 @@
 import { useState } from 'react'
-import { BoxIcon, ChevronDownIcon, FolderIcon, PlusIcon } from 'lucide-react'
+import { BoxIcon, ChevronDownIcon, FolderIcon, PlusIcon, RefreshCwIcon } from 'lucide-react'
+import { cn } from 'cn'
+import { useDorksClient } from '@dorks/client/react'
+import { Button } from '@dorks/ui/button'
 import { MENU_POPUP_CLASS } from '@dorks/ui/dropdown-menu'
 import { Command, CommandEmpty, CommandGroup, CommandItem, CommandMenuInput, CommandList } from '@dorks/ui/command'
 import { InputGroupButton } from '@dorks/ui/input-group'
@@ -32,6 +35,37 @@ export function environmentOf(builds: EnvironmentBuild[], repo: string): Environ
   const lower = repo.toLowerCase()
   const build = builds.find((b) => b.repos.some((r) => r.toLowerCase() === lower))
   return { buildId: build?.id ?? null, repo: build ? (build.repos.find((r) => r.toLowerCase() === lower) ?? repo) : repo }
+}
+
+/**
+ * Refresh at the end of a repository search row: the list is the GitHub CLI login's repositories, cached briefly by the server, so a
+ * repository made a moment ago shows only after reading GitHub again.
+ */
+export function RefreshRepositories() {
+  const { actions } = useDorksClient()
+  const [busy, setBusy] = useState(false)
+  const refresh = () => {
+    setBusy(true)
+    void actions.refreshGithub().finally(() => setBusy(false))
+  }
+  return (
+    <Button
+      type="button"
+      size="icon-xs"
+      variant="ghost"
+      className="-me-1.5 shrink-0 text-muted-foreground hover:text-foreground"
+      disabled={busy}
+      onClick={refresh}
+      // cmdk's Command handles Enter on any descendant by selecting the highlighted item; keep it to this button's own click.
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.stopPropagation()
+      }}
+      aria-label="Refresh repositories from GitHub"
+      title="Refresh from GitHub"
+    >
+      <RefreshCwIcon className={cn('size-3.5', busy && 'animate-spin')} />
+    </Button>
+  )
 }
 
 /** A build's mark: its repositories' owners stacked, or a box for a build with none. */
@@ -100,10 +134,11 @@ export function EnvironmentPicker({ choice, disabled }: { choice: EnvironmentCho
             value={query}
             onValueChange={setQuery}
             placeholder={builds.length ? 'Search builds and repositories…' : 'Search repositories…'}
+            end={<RefreshRepositories />}
           />
           <CommandList className="max-h-80">
             <CommandEmpty className="px-3 py-3 text-left text-xs text-muted-foreground">
-              {typed ? 'Nothing matches. Type a full owner/repo to use it.' : 'No repositories yet. Type an owner/repo.'}
+              {typed ? 'Nothing matches. Type a full owner/repo to use it, or refresh the list.' : 'No repositories yet. Type an owner/repo.'}
             </CommandEmpty>
             {canUseTyped && (
               <CommandGroup className="p-1">
@@ -161,10 +196,10 @@ export function RepoCommand({ repositories, onPick }: { repositories: string[]; 
   const canUseTyped = REPO.test(typed) && !repositories.some((r) => r.toLowerCase() === q)
   return (
     <Command shouldFilter={false} loop className="rounded-none bg-transparent p-0">
-      <CommandMenuInput aria-label="Search repositories" autoFocus value={query} onValueChange={setQuery} placeholder="Search repositories…" />
+      <CommandMenuInput aria-label="Search repositories" autoFocus value={query} onValueChange={setQuery} placeholder="Search repositories…" end={<RefreshRepositories />} />
       <CommandList className="max-h-72 p-1">
         <CommandEmpty className="px-2 py-3 text-left text-xs text-muted-foreground">
-          {typed ? 'No repositories match. Type a full owner/repo to use it.' : 'No repositories yet. Type an owner/repo.'}
+          {typed ? 'No repositories match. Type a full owner/repo to use it, or refresh the list.' : 'No repositories yet. Type an owner/repo.'}
         </CommandEmpty>
         {canUseTyped && (
           <CommandItem value={`use:${typed}`} onSelect={() => onPick(typed)} className={REPO_ITEM}>

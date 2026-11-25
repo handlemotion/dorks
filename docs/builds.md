@@ -252,13 +252,22 @@ approves → image run → `machine_logs` until it succeeds. Done means the imag
 - Claude Code defers MCP tool schemas by default ([tool search](https://code.claude.com/docs/en/mcp#scale-with-mcp-tool-search)): at
   session start only the tool **names** and the server's `instructions` load; a schema loads when the model searches for it. The bridge
   passes our server with `--mcp-config` and does not mark these tools `anthropic/alwaysLoad`, so they stay deferred.
-- The server `instructions` gain one sentence: "To install tools, set variables or pre-clone repos for future sessions, search for the
-  `machine_` tools." The how-to (the loop, the approval rule, the caps) lives in the tool descriptions, which load only on search.
-- Nothing is added to `guidance.ts` or the SessionStart hook. The cost to a session that never touches a machine: five tool names and one
-  sentence.
-- Not chosen: a skill (its description is in context too, and it would be a second place for the same text), and a hidden tool set that
-  appears after an "activate" call via `list_changed` (`-p` mode refreshes tools on it, but it adds a step and a stateful server for a
-  saving of five names).
+- **Any session, not only setup sessions, proposes fixes.** The server `instructions` carry one sentence: the box starts from a build
+  every future session shares, so a setup problem the agent hits (a missing tool, a broken or outdated install, a missing variable or
+  service) or a request to set something up for later is a proposal through the `machine-setup` skill and the `machine_` tools.
+- **The `machine-setup` skill** (`infra/bridge/src/mcp-skills.ts`) says when a change is worth proposing (and when not), the loop, and
+  the rules (task first, no secret values, one draft, the owner decides). The tool descriptions keep the mechanics. The `dorks` server
+  serves it over the MCP Skills extension (`io.modelcontextprotocol/skills`, SEP-2640): `skills/list` / `skills/get` with a
+  digested manifest, and the file through `resources/read` at `skill://machine-setup/SKILL.md`. A host that loads MCP skills lists it
+  by name and description and loads the body on use. Claude Code 2.1.330 does so behind a staged rollout, so the instructions also name
+  the URI: without native skill loading the agent reads it with `ReadMcpResourceTool` (verified live with `claude -p`).
+- **The server is dual-era** (MCP 2026-07-28): a request with `_meta["io.modelcontextprotocol/protocolVersion"]` is served statelessly
+  (`server/discover`, `resultType`, `ttlMs` / `cacheScope`, `-32022` for another version); `initialize` still negotiates
+  2025-11-25 and earlier for Codex and older clients. Skills need the modern era; legacy clients see the skill file as a resource.
+- Nothing is added to `guidance.ts` or the SessionStart hook. The cost to a session that never touches a machine: five tool names, one
+  sentence and one skill description.
+- Not chosen: a hidden tool set that appears after an "activate" call via `list_changed` (`-p` mode refreshes tools on it, but it adds
+  a step and a stateful server for a saving of five names).
 
 ### Permissions and safety
 
