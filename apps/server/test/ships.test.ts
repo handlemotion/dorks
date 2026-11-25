@@ -60,11 +60,7 @@ function github() {
     if (p === `/commits/${MERGE}/status`) return reply(url, init, { statuses: [] });
     if (p === "/deployments") {
       const sha = url.searchParams.get("sha");
-      return reply(
-        url,
-        init,
-        (sha ? state.deployments.filter((d) => d.sha === sha) : state.deployments).toSorted((a, b) => b.id - a.id),
-      );
+      return reply(url, init, (sha ? state.deployments.filter((d) => d.sha === sha) : state.deployments).toSorted((a, b) => b.id - a.id).slice(0, Number(url.searchParams.get("per_page") ?? 30)));
     }
     const ds = /^\/deployments\/(\d+)\/statuses$/.exec(p);
     if (ds) return reply(url, init, (state.deploymentStatuses[Number(ds[1])] ?? []).toReversed());
@@ -145,6 +141,13 @@ describe("ships", () => {
     await s.tick();
     expect(s.card()!.stages.at(-1)).toMatchObject({ id: "dep:production", state: "running", detail: "with later11" });
     expect(s.card()!.stages.some((x) => x.name.includes("Preview"))).toBe(false);
+
+    // Twenty newer branch previews push it off the recent page: it is still followed until it finishes.
+    for (let i = 0; i < 20; i++) s.gh.state.deployments.push({ id: 100 + i, sha: `pr${i}`, environment: "Preview", created_at: s.iso() });
+    await s.tick();
+    await s.tick(SHIP_SETTLE_MS);
+    expect(s.card()).toMatchObject({ status: "watching" });
+    expect(s.card()!.stages.at(-1)).toMatchObject({ id: "dep:production", state: "running" });
 
     s.gh.state.deploymentStatuses[40].push({ state: "success", environment_url: "https://hello.example" });
     await s.tick();

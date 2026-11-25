@@ -42,6 +42,8 @@ interface ShipPoll {
   jobsRead?: number[];
   /** Commit -> whether it contains the merge commit (a later deployment). */
   contains?: Record<string, boolean>;
+  /** Environment -> the deployment followed there, kept until a newer one that contains the merge replaces it (it may leave the recent page). */
+  deployments?: Record<string, GhDeployment>;
   /** When every stage was last seen finished (cleared while one runs). */
   doneAt?: number;
   /** GitHub's merge time: deployments created before it are not this merge's. */
@@ -275,6 +277,7 @@ export const observeShip = (app: App, token: string, ship: Ship): Effect.Effect<
       bodies,
       jobsRead: runs.jobsRead,
       contains: deployments.contains,
+      deployments: deployments.followed,
       ...(old.mergedAt ? { mergedAt: old.mergedAt } : {}),
       ...(old.doneAt ? { doneAt: old.doneAt } : {}),
     };
@@ -298,7 +301,8 @@ const readRuns = ({ ship, old, base, body, kept }: Look) =>
       // A finished run's jobs were read once after it finished: its migration stages are final.
       const jobs = done && old.jobsRead?.includes(r.id) ? undefined : yield* body(GhJobs, `${base}/actions/runs/${r.id}/jobs?per_page=100`);
       stages.push(...(jobs ? migrationStages(r.id, jobs) : kept(`mig:${r.id}:`)));
-      if (done && (jobs || old.jobsRead?.includes(r.id))) jobsRead.push(r.id);
+      // Final only once every job is seen completed: a failed read answers the last body, which may predate the run's end.
+      if (done && (old.jobsRead?.includes(r.id) || jobs?.jobs.every((j) => j.status === "completed"))) jobsRead.push(r.id);
     }
     return { stages, jobsRead };
   });
@@ -320,7 +324,7 @@ const readDeployments = ({ ship, old, base, body, kept }: Look) =>
     const contains: Record<string, boolean> = { ...old.contains, [ship.sha]: true };
     const exact = yield* body(GhDeployments, `${base}/deployments?sha=${ship.sha}&per_page=20`);
     const recent = yield* body(GhDeployments, `${base}/deployments?per_page=20`);
-    if (!exact && !recent) return { stages: kept("dep:"), contains: old.contains ?? {} };
+    if (!exact && !recent) return { stages: kept("dep:"), contains: old.contains ?? {}, followed: old.deployments ?? {} };
     const since = (old.mergedAt ?? ship.startedAt) - 60_000;
     const later = (recent ?? []).filter((d) => d.sha !== ship.sha && (ms(d.created_at) ?? 0) >= since);
     for (const d of later.filter((x) => contains[x.sha] === undefined).slice(0, MAX_COMPARES)) {
@@ -328,7 +332,8 @@ const readDeployments = ({ ship, old, base, body, kept }: Look) =>
       if (c) contains[d.sha] = c.status === "ahead" || c.status === "identical";
     }
     const byEnv = new Map<string, GhDeployment>();
-    for (const d of [...(exact ?? []), ...later.filter((x) => contains[x.sha])].toSorted((a, b) => b.id - a.id)) if (!byEnv.has(d.environment)) byEnv.set(d.environment, d);
+    const candidates = [...Object.values(old.deployments ?? {}), ...(exact ?? []), ...later.filter((x) => contains[x.sha])];
+    for (const d of candidates.toSorted((a, b) => b.id - a.id)) if (!byEnv.has(d.environment)) byEnv.set(d.environment, d);
     const stages: ShipStage[] = [];
     for (const d of [...byEnv.values()].toSorted((a, b) => a.id - b.id)) {
       const statuses = yield* body(GhDeploymentStatuses, `${base}/deployments/${d.id}/statuses?per_page=1`);
@@ -336,7 +341,7 @@ const readDeployments = ({ ship, old, base, body, kept }: Look) =>
     }
     // Keep the ancestry answers small: only commits still in view.
     const inView = new Set([...(recent ?? []).map((d) => d.sha), ship.sha]);
-    return { stages, contains: Object.fromEntries(Object.entries(contains).filter(([sha]) => inView.has(sha))) };
+    return { stages, contains: Object.fromEntries(Object.entries(contains).filter(([sha]) => inView.has(sha))), followed: Object.fromEntries(byEnv) };
   });
 
 function checkStages(checks: typeof GhCheckRuns.Type): ShipStage[] {
