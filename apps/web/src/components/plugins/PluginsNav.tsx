@@ -10,11 +10,13 @@ import { ConnectorIcon } from './PluginsDialogs'
 
 export type PluginsTab = 'plugins' | 'skills'
 
-export type InstalledItem = { kind: 'connector'; key: string; connector: Connector } | { kind: 'server'; key: string; server: McpServerView } | { kind: 'skill'; key: string; skill: SkillView }
+export type InstalledPlugin = { kind: 'connector'; key: string; connector: Connector } | { kind: 'server'; key: string; server: McpServerView }
+
+export type SelectedItem = InstalledPlugin | { kind: 'skill'; key: string; skill: SkillView }
 
 /**
  * The second navbar column inside the Plugins page: close to the main sidebar's width (280px vs 300px), with no divider under its
- * title bar, top tab links for Plugins and Skills, and an Installed group listing every active connector, custom MCP server and skill.
+ * title bar, top tab links for Plugins and Skills, and an Installed group listing active plugins (connectors and custom MCP servers).
  */
 export function PluginsNav({
   tab,
@@ -25,12 +27,13 @@ export function PluginsNav({
 }: {
   tab: PluginsTab
   selected?: string
-  installed: InstalledItem[]
+  installed: InstalledPlugin[]
   onSelectTab: (tab: PluginsTab) => void
   onSelectInstalled: (key: string) => void
 }) {
   const { open, isMobile } = useSidebar()
   const hover = useRowHover()
+  const skillsActive = tab === 'skills' && (!selected || selected.startsWith('skill:'))
 
   return (
     <aside aria-label="Plugins navigation" className="hidden h-full w-[280px] shrink-0 flex-col border-r border-border bg-background md:flex">
@@ -51,13 +54,7 @@ export function PluginsNav({
               <BlocksIcon />
               <span className="min-w-0 truncate">Plugins</span>
             </button>
-            <button
-              type="button"
-              data-active={!selected && tab === 'skills' ? 'true' : undefined}
-              aria-current={!selected && tab === 'skills' ? 'page' : undefined}
-              onClick={() => onSelectTab('skills')}
-              className={SIDEBAR_ROW}
-            >
+            <button type="button" data-active={skillsActive ? 'true' : undefined} aria-current={skillsActive ? 'page' : undefined} onClick={() => onSelectTab('skills')} className={SIDEBAR_ROW}>
               <BookOpenIcon />
               <span className="min-w-0 truncate">Skills</span>
             </button>
@@ -82,11 +79,8 @@ export function PluginsNav({
                     onClick={() => onSelectInstalled(item.key)}
                     className={SIDEBAR_ROW}
                   >
-                    {item.kind === 'connector' && <ConnectorIcon connector={item.connector} className="size-3.5" />}
-                    {item.kind === 'server' && <ServerIcon className="text-muted-foreground" />}
-                    {item.kind === 'skill' && <BookOpenIcon className="text-muted-foreground" />}
-                    <span className="min-w-0 flex-1 truncate">{item.kind === 'connector' ? item.connector.name : item.kind === 'server' ? item.server.name : item.skill.name}</span>
-                    {item.kind === 'skill' && <span className="shrink-0 text-xs text-muted-foreground/70">Skill</span>}
+                    {item.kind === 'connector' ? <ConnectorIcon connector={item.connector} className="size-3.5" /> : <ServerIcon className="text-muted-foreground" />}
+                    <span className="min-w-0 flex-1 truncate">{item.kind === 'connector' ? item.connector.name : item.server.name}</span>
                   </button>
                 )
               })

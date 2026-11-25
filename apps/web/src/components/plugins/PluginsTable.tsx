@@ -10,7 +10,6 @@ import { CONNECTORS, KINDS, type Connector } from '../connectors'
 import { EmptyState } from '../EmptyState'
 import { SettingsGroup, SettingsSection, SettingsSections, StatusDot } from '../settings/kit'
 import { ConnectorIcon } from './PluginsDialogs'
-import { SKILL_CATALOG, SKILL_GROUPS, type SkillCatalogEntry } from './skillsCatalog'
 
 export type FilterScope = 'all' | 'installed'
 
@@ -22,7 +21,7 @@ const ROW_BUTTON =
   'flex min-h-13 min-w-0 flex-1 cursor-pointer items-center gap-3 py-2.5 ps-4 pe-3 text-start outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-default disabled:opacity-60'
 const MORE_BUTTON = 'me-2 shrink-0 text-muted-foreground hover:text-foreground'
 
-/** Search input, All / Installed filter, and Add button above the settings-kit sections. */
+/** Search input, optional All / Installed filter, and Add button above the settings-kit sections. */
 function SearchBar({
   query,
   onQueryChange,
@@ -35,8 +34,8 @@ function SearchBar({
   query: string
   onQueryChange: (q: string) => void
   placeholder: string
-  scope: FilterScope
-  onScopeChange: (s: FilterScope) => void
+  scope?: FilterScope
+  onScopeChange?: (s: FilterScope) => void
   countLabel: string
   action?: ReactNode
 }) {
@@ -63,14 +62,16 @@ function SearchBar({
           </button>
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-0.5" role="group" aria-label="Filter">
-        <button type="button" data-active={scope === 'all' || undefined} onClick={() => onScopeChange('all')} className={FILTER_BUTTON}>
-          All
-        </button>
-        <button type="button" data-active={scope === 'installed' || undefined} onClick={() => onScopeChange('installed')} className={FILTER_BUTTON}>
-          Installed
-        </button>
-      </div>
+      {scope && onScopeChange && (
+        <div className="flex shrink-0 items-center gap-0.5" role="group" aria-label="Filter">
+          <button type="button" data-active={scope === 'all' || undefined} onClick={() => onScopeChange('all')} className={FILTER_BUTTON}>
+            All
+          </button>
+          <button type="button" data-active={scope === 'installed' || undefined} onClick={() => onScopeChange('installed')} className={FILTER_BUTTON}>
+            Installed
+          </button>
+        </div>
+      )}
       <span className="hidden shrink-0 text-xs text-muted-foreground tabular-nums sm:inline">{countLabel}</span>
       {action && <div className="shrink-0">{action}</div>}
     </div>
@@ -285,28 +286,12 @@ export function PluginsDirectory({
   )
 }
 
-// ---------------------------------------------------------------- Skills directory
+// ---------------------------------------------------------------- Skills (installed only, grouped by source repository)
 
 export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { skills: SkillView[] | undefined; onAddSkill: (source?: string) => void; onInspectInstalled: (key: string) => void }) {
   const { actions } = useDorksClient()
   const [query, setQuery] = useState('')
-  const [scope, setScope] = useState<FilterScope>('all')
-  const [busy, setBusy] = useState<string | null>(null)
   const q = query.trim().toLowerCase()
-
-  const installedByName = useMemo(() => new Map((skills ?? []).map((s) => [s.name, s])), [skills])
-
-  const installQuick = async (entry: SkillCatalogEntry) => {
-    setBusy(entry.name)
-    try {
-      await actions.installSkills(entry.source, [entry.name])
-      toast.success(`Installed ${entry.name}`)
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : `Could not install ${entry.name}`)
-    } finally {
-      setBusy(null)
-    }
-  }
 
   const updateSkill = async (name: string) => {
     try {
@@ -327,49 +312,14 @@ export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { sk
   }
 
   const groups = useMemo(() => {
-    const out: {
-      id: string
-      title: string
-      items: { name: string; description: string; source: string; installed?: SkillView; catalog?: SkillCatalogEntry }[]
-    }[] = []
-
-    const catalogNames = new Set(SKILL_CATALOG.map((c) => c.name))
-    const customInstalled = (skills ?? [])
-      .filter((s) => !catalogNames.has(s.name))
-      .filter((s) => !q || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q) || s.source.repo.toLowerCase().includes(q))
-
-    if (customInstalled.length > 0) {
-      out.push({
-        id: 'custom',
-        title: 'Custom',
-        items: customInstalled.map((s) => ({
-          name: s.name,
-          description: s.description || 'Installed from GitHub',
-          source: s.source.repo,
-          installed: s,
-        })),
-      })
+    const filtered = (skills ?? []).filter((s) => !q || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q) || s.source.repo.toLowerCase().includes(q))
+    const byRepo = new Map<string, SkillView[]>()
+    for (const s of filtered) {
+      const repo = s.source.repo || 'Installed'
+      byRepo.set(repo, [...(byRepo.get(repo) ?? []), s])
     }
-
-    for (const g of SKILL_GROUPS) {
-      const items = SKILL_CATALOG.filter((c) => c.group === g.id)
-        .map((c) => ({
-          name: c.name,
-          description: installedByName.get(c.name)?.description || c.description,
-          source: installedByName.get(c.name)?.source.repo ?? c.source,
-          installed: installedByName.get(c.name),
-          catalog: c,
-        }))
-        .filter((item) => {
-          if (scope === 'installed' && !item.installed) return false
-          if (!q) return true
-          return item.name.toLowerCase().includes(q) || item.description.toLowerCase().includes(q) || item.source.toLowerCase().includes(q) || g.title.toLowerCase().includes(q)
-        })
-      if (items.length > 0) out.push({ id: g.id, title: g.title, items })
-    }
-
-    return out
-  }, [installedByName, q, scope, skills])
+    return [...byRepo.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([repo, items]) => ({ id: repo, title: repo, items }))
+  }, [q, skills])
 
   const total = groups.reduce((n, g) => n + g.items.length, 0)
 
@@ -379,9 +329,7 @@ export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { sk
         <SearchBar
           query={query}
           onQueryChange={setQuery}
-          placeholder="Search skills…"
-          scope={scope}
-          onScopeChange={setScope}
+          placeholder="Search installed skills…"
           countLabel={`${total} ${total === 1 ? 'skill' : 'skills'}`}
           action={
             <Button size="sm" onClick={() => onAddSkill()}>
@@ -395,8 +343,8 @@ export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { sk
           <div className="flex min-h-56 items-center justify-center py-8">
             <EmptyState
               figure="drawer"
-              title={q ? 'No matching skills' : 'No installed skills yet'}
-              description={q ? 'Try another keyword or add any skill from GitHub.' : 'Skills you install reach every session in each sandbox.'}
+              title={q ? 'No matching skills' : 'No skills yet'}
+              description={q ? 'Try another keyword or add a new skill from GitHub.' : 'Skills you add here reach every session, in each sandbox.'}
             >
               {q ? (
                 <Button variant="outline" size="sm" onClick={() => setQuery('')}>
@@ -414,55 +362,36 @@ export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { sk
             {groups.map((g) => (
               <SettingsSection key={g.id} title={g.title} actions={<span className="text-xs text-muted-foreground tabular-nums">{g.items.length}</span>}>
                 <SettingsGroup label={g.title}>
-                  {g.items.map((item) => {
-                    const isBusy = busy === item.name
-                    return (
-                      <div key={item.name} className={ROW_WRAP}>
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => {
-                            if (item.installed) onInspectInstalled(`skill:${item.name}`)
-                            else if (item.catalog) void installQuick(item.catalog)
-                            else onAddSkill()
-                          }}
-                          className={ROW_BUTTON}
-                        >
-                          <span className="flex size-7 shrink-0 items-center justify-center rounded-[6px] bg-foreground/[0.04] text-muted-foreground">
-                            <BookOpenIcon className="size-3.5" />
-                          </span>
-                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                            <span className="truncate font-mono text-xs leading-4 text-foreground">{item.name}</span>
-                            <span className="truncate text-xs leading-4 text-muted-foreground">{item.description}</span>
-                          </span>
-                          <span className="hidden shrink-0 font-mono text-xs text-muted-foreground lg:inline">{item.source}</span>
-                          {item.installed ? (
-                            <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-                              <StatusDot tone="success" />
-                              <span className="hidden sm:inline">Installed</span>
-                            </span>
-                          ) : (
-                            <PlusIcon aria-hidden className="me-1 size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
-                          )}
-                        </button>
-                        {item.installed && (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" aria-label={`Manage ${item.name}`} className={MORE_BUTTON} />}>
-                              <EllipsisIcon className="size-4" />
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="min-w-40">
-                              <DropdownMenuItem onClick={() => onInspectInstalled(`skill:${item.name}`)}>View details</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => void updateSkill(item.name)}>Update</DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem variant="destructive" onClick={() => void removeSkill(item.name)}>
-                                Remove
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
-                      </div>
-                    )
-                  })}
+                  {g.items.map((s) => (
+                    <div key={s.name} className={ROW_WRAP}>
+                      <button type="button" onClick={() => onInspectInstalled(`skill:${s.name}`)} className={ROW_BUTTON}>
+                        <span className="flex size-7 shrink-0 items-center justify-center rounded-[6px] bg-foreground/[0.04] text-muted-foreground">
+                          <BookOpenIcon className="size-3.5" />
+                        </span>
+                        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <span className="truncate font-mono text-xs leading-4 text-foreground">{s.name}</span>
+                          <span className="truncate text-xs leading-4 text-muted-foreground">{s.description || 'Shared across every session in ~/.claude/skills.'}</span>
+                        </span>
+                        <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                          <StatusDot tone="success" />
+                          <span className="hidden sm:inline">Installed</span>
+                        </span>
+                      </button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" aria-label={`Manage ${s.name}`} className={MORE_BUTTON} />}>
+                          <EllipsisIcon className="size-4" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="min-w-40">
+                          <DropdownMenuItem onClick={() => onInspectInstalled(`skill:${s.name}`)}>View details</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => void updateSkill(s.name)}>Update</DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem variant="destructive" onClick={() => void removeSkill(s.name)}>
+                            Remove
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  ))}
                 </SettingsGroup>
               </SettingsSection>
             ))}

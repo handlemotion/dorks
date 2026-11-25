@@ -9,12 +9,12 @@ import { SettingsButtonRow, SettingsGroup, SettingsRow, SettingsSection, Setting
 import { usePending } from '../../lib/pending'
 import { ago } from '../../lib/time'
 import { ConnectorIcon, signInMcp } from './PluginsDialogs'
-import type { InstalledItem } from './PluginsNav'
+import type { SelectedItem } from './PluginsNav'
 
 const kb = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`)
 
-/** Focused settings-kit detail view for an item selected from the Installed group in the second navbar. */
-export function InstalledDetail({ item, onManageConnector, onEditServer, onRemoved }: { item: InstalledItem; onManageConnector: () => void; onEditServer: () => void; onRemoved: () => void }) {
+/** Focused settings-kit detail view for an installed plugin, custom server, or skill. */
+export function InstalledDetail({ item, onManageConnector, onEditServer, onRemoved }: { item: SelectedItem; onManageConnector: () => void; onEditServer: () => void; onRemoved: () => void }) {
   if (item.kind === 'connector') return <ConnectorDetail connector={item.connector} onManage={onManageConnector} onRemoved={onRemoved} />
   if (item.kind === 'server') return <ServerDetail server={item.server} onEdit={onEditServer} onRemoved={onRemoved} />
   return <SkillDetail skill={item.skill} onRemoved={onRemoved} />

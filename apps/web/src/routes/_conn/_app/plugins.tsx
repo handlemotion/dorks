@@ -6,7 +6,7 @@ import { useSidebar } from '@dorks/ui/sidebar'
 import { CONNECTORS, type Connector } from '../../../components/connectors'
 import { InstalledDetail } from '../../../components/plugins/InstalledDetail'
 import { AppDialog, BLANK_DRAFT, ConnectDialog, draftOf, isComposio, isPreset, ServerDialog, type Draft } from '../../../components/plugins/PluginsDialogs'
-import { PluginsNav, type InstalledItem, type PluginsTab } from '../../../components/plugins/PluginsNav'
+import { PluginsNav, type InstalledPlugin, type PluginsTab, type SelectedItem } from '../../../components/plugins/PluginsNav'
 import { PluginsDirectory, SkillsDirectory } from '../../../components/plugins/PluginsTable'
 import { TAB_CLASS } from '../../../components/PullRequestPanel'
 import { AddSkillDialog } from '../../../components/SkillsTab'
@@ -22,14 +22,14 @@ export const Route = createFileRoute('/_conn/_app/plugins')({
   component: PluginsPage,
 })
 
-function itemTitle(item: InstalledItem) {
+function itemTitle(item: SelectedItem) {
   if (item.kind === 'connector') return item.connector.name
   if (item.kind === 'server') return item.server.name
   return item.skill.name
 }
 
 /** Shown only on narrow screens (where PluginsNav is hidden) or as a breadcrumb header for an installed item. */
-function MobileHeader({ tab, selectedItem, onSelectTab }: { tab: PluginsTab; selectedItem?: InstalledItem; onSelectTab: (tab: PluginsTab) => void }) {
+function MobileHeader({ tab, selectedItem, onSelectTab }: { tab: PluginsTab; selectedItem?: SelectedItem; onSelectTab: (tab: PluginsTab) => void }) {
   const { isMobile } = useSidebar()
   const title = selectedItem ? itemTitle(selectedItem) : tab === 'skills' ? 'Skills' : 'Plugins'
   const parent = selectedItem ? (selectedItem.kind === 'skill' ? 'Skills' : 'Plugins') : undefined
@@ -101,20 +101,26 @@ function PluginsPage() {
     else setConnecting(c)
   }
 
-  const installed = useMemo<InstalledItem[]>(() => {
-    const connectors: InstalledItem[] = CONNECTORS.filter(isConnected).map((connector) => ({ kind: 'connector', key: `connector:${connector.id}`, connector }))
-    const custom: InstalledItem[] = customServers.map((server) => ({ kind: 'server', key: `server:${server.name}`, server }))
-    const installedSkills: InstalledItem[] = (skills ?? []).map((skill) => ({ kind: 'skill', key: `skill:${skill.name}`, skill }))
-    return [...connectors, ...custom, ...installedSkills]
-  }, [customServers, isConnected, skills])
+  const installedPlugins = useMemo<InstalledPlugin[]>(() => {
+    const connectors: InstalledPlugin[] = CONNECTORS.filter(isConnected).map((connector) => ({ kind: 'connector', key: `connector:${connector.id}`, connector }))
+    const custom: InstalledPlugin[] = customServers.map((server) => ({ kind: 'server', key: `server:${server.name}`, server }))
+    return [...connectors, ...custom]
+  }, [customServers, isConnected])
 
-  const selectedItem = search.selected ? installed.find((i) => i.key === search.selected) : undefined
+  const selectedItem = useMemo<SelectedItem | undefined>(() => {
+    if (!search.selected) return undefined
+    const plugin = installedPlugins.find((i) => i.key === search.selected)
+    if (plugin) return plugin
+    const skill = skills?.find((s) => `skill:${s.name}` === search.selected)
+    return skill ? { kind: 'skill', key: `skill:${skill.name}`, skill } : undefined
+  }, [installedPlugins, search.selected, skills])
+
   const selectTab = (next: PluginsTab) => void navigate({ search: { tab: next }, replace: true })
   const selectInstalled = (key: string) => void navigate({ search: { tab: key.startsWith('skill:') ? 'skills' : 'plugins', selected: key }, replace: true })
 
   return (
     <div className="flex h-full min-h-0 flex-1 overflow-hidden">
-      <PluginsNav tab={tab} selected={selectedItem?.key} installed={installed} onSelectTab={selectTab} onSelectInstalled={selectInstalled} />
+      <PluginsNav tab={tab} selected={selectedItem?.key} installed={installedPlugins} onSelectTab={selectTab} onSelectInstalled={selectInstalled} />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <MobileHeader tab={tab} selectedItem={selectedItem} onSelectTab={selectTab} />
