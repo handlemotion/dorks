@@ -4,13 +4,16 @@ import { Input } from '@dorks/ui/input'
 
 /**
  * A list page without a header bar (Plugins, Skills, Automations, Builds): one scrolling column, max-w-3xl, that starts with its top rail
- * (search and the page's buttons) instead of a bordered toolbar. The empty band above the rail is the window's drag region.
+ * (search and the page's buttons) under a 24px page title, instead of a bordered toolbar. The empty band above the rail is the window's drag region.
  */
-export function RailPage({ children }: { children: ReactNode }) {
+export function RailPage({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="app-main min-h-0 flex-1 overflow-y-auto">
       <div data-tauri-drag-region className="h-16 shrink-0" />
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 pb-16 sm:px-6">{children}</div>
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 pb-16 sm:px-6">
+        <h1 className="-mb-2 px-0.5 text-2xl leading-8 font-normal! tracking-tight text-foreground">{title}</h1>
+        {children}
+      </div>
     </div>
   )
 }

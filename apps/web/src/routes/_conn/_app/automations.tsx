@@ -102,7 +102,7 @@ function AutomationList() {
   const templates = TEMPLATES.filter((t) => !q || t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q))
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <RailPage>
+      <RailPage title="Automations">
         {!!automations?.length && <PageRail query={query} onQueryChange={setQuery} placeholder="Search automations…" actions={<NewButton variant="default" />} />}
         <SettingsSections>
           {automations?.length === 0 && (
@@ -118,22 +118,20 @@ function AutomationList() {
             </EmptyState>
           )}
           {!!shown?.length && (
-            <SettingsSection title="Automations">
-              <SettingsGroup label="automations">
-                {shown.map((a) => {
-                  const s = status(a)
-                  return (
-                    <Link key={a.id} to="/automations" search={{ automation: a.id }} className={LINK_ROW}>
-                      <StatusDot tone={s.tone} />
-                      <RowText title={a.name} description={a.triggers.map(triggerText).join(' · ')} />
-                      <span className="hidden w-28 shrink-0 text-xs text-muted-foreground md:block">{a.lastRun ? `Ran ${ago(a.lastRun.createdAt)}` : 'No runs yet'}</span>
-                      <span className={cn('w-44 shrink-0 truncate text-end text-xs', TONE_TEXT[s.tone])}>{s.text}</span>
-                      <ChevronRightIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-                    </Link>
-                  )
-                })}
-              </SettingsGroup>
-            </SettingsSection>
+            <SettingsGroup label="automations">
+              {shown.map((a) => {
+                const s = status(a)
+                return (
+                  <Link key={a.id} to="/automations" search={{ automation: a.id }} className={LINK_ROW}>
+                    <StatusDot tone={s.tone} />
+                    <RowText title={a.name} description={a.triggers.map(triggerText).join(' · ')} />
+                    <span className="hidden w-28 shrink-0 text-xs text-muted-foreground md:block">{a.lastRun ? `Ran ${ago(a.lastRun.createdAt)}` : 'No runs yet'}</span>
+                    <span className={cn('w-44 shrink-0 truncate text-end text-xs', TONE_TEXT[s.tone])}>{s.text}</span>
+                    <ChevronRightIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+                  </Link>
+                )
+              })}
+            </SettingsGroup>
           )}
           {automations && templates.length > 0 && <Templates templates={templates} />}
         </SettingsSections>

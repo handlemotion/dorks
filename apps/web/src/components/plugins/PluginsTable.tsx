@@ -87,7 +87,7 @@ export function PluginsDirectory({
   }
 
   return (
-    <RailPage>
+    <RailPage title="Plugins">
       <PageRail
         query={query}
         onQueryChange={setQuery}
@@ -241,7 +241,7 @@ export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { sk
   const total = groups.reduce((n, g) => n + g.items.length, 0)
 
   return (
-    <RailPage>
+    <RailPage title="Skills">
       <PageRail
         query={query}
         onQueryChange={setQuery}
