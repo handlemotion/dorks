@@ -30,7 +30,7 @@ const RELEASES_SHOWN = 3
 const SETTINGS_KEY = SEND_KEY === '⌘' ? '⌘,' : 'Ctrl+,'
 
 /** The owner's GitHub avatar, round (a person, where owners and organizations are 4px squares), or a person glyph without one. */
-export function UserAvatar({ login, size = 16, className }: { login: string | null | undefined; size?: 16 | 28; className?: string }) {
+export function UserAvatar({ login, size = 16, className }: { login: string | null | undefined; size?: 16 | 36; className?: string }) {
   const [failed, setFailed] = useState(false)
   const box = cn('shrink-0 overflow-hidden rounded-full', className)
   if (!login || failed) {
@@ -67,6 +67,7 @@ const TRAILING = 'ms-auto text-muted-foreground!'
  */
 export function AccountMenu({
   login,
+  email,
   version,
   usage,
   releases = RELEASES,
@@ -74,6 +75,8 @@ export function AccountMenu({
 }: {
   /** The GitHub CLI's login; null when GitHub is not connected. */
   login: string | null | undefined
+  /** The Dorks cloud account's email, once signed in to the cloud: shown under the name in place of the version. */
+  email?: string | null
   /** The running app's version (the desktop shell's), when known. */
   version?: string
   usage?: Usage
@@ -92,11 +95,12 @@ export function AccountMenu({
         <span className="min-w-0 truncate">{name}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="start" sideOffset={6} className="w-[max(calc(var(--anchor-width)+1.5rem),16rem)]">
+        {/* The avatar is as tall as the two lines beside it (20px + 16px), so its top and bottom meet theirs. */}
         <div className="flex items-center gap-2.5 px-2 pt-1.5 pb-2">
-          <UserAvatar login={login} size={28} />
+          <UserAvatar login={login} size={36} />
           <div className="flex min-w-0 flex-col">
             <span className="truncate text-sm leading-5">{name}</span>
-            <span className="truncate text-xs leading-4 text-muted-foreground tabular-nums">{version ? `Dorks ${version}` : login ? 'GitHub' : 'GitHub not connected'}</span>
+            <span className="truncate text-xs leading-4 text-muted-foreground tabular-nums">{email ?? (version ? `Dorks ${version}` : login ? 'Signed in with GitHub' : 'GitHub not connected')}</span>
           </div>
         </div>
         <DropdownMenuSeparator />
