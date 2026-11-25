@@ -18,6 +18,7 @@ import { toolStep } from '../lib/progress'
 import { hookLine } from '../lib/hooks'
 import { MessageScrollerItem } from '@dorks/ui/message-scroller'
 import { LocalRequestCard } from './LocalRequest'
+import { InputRequestCard } from './InputRequest'
 import { MarkdownCodeBlock } from './CodeBlockCard'
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from '@dorks/ui/trace'
 
@@ -352,6 +353,9 @@ function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => vo
     } else if (block.kind === 'local') {
       // The agent asked to use the owner's computer (docs/local-access.md): the session's one access card, then a line per command.
       content.push(<LocalRequestCard key={block.id} block={block} />)
+    } else if (block.kind === 'input') {
+      // The agent asked for values it uses without reading them (docs/secure-inputs.md): a form while it waits, then one line.
+      content.push(<InputRequestCard key={block.id} block={block} />)
     } else if (block.kind === 'crew') {
       content.push(<CrewCard key={block.id} block={block} />)
     } else if (block.kind === 'notice') {

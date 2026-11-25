@@ -11,3 +11,4 @@ export * from "./skills";
 export * from "./automations";
 export * from "./bridgeProof";
 export * from "./comments";
+export * from "./inputs";

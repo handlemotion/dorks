@@ -508,4 +508,29 @@ export const MIGRATIONS: string[] = [
   -- on demand. JSON BuildService[]; part of the spec, so the owner approves them like the setup script.
   ALTER TABLE builds ADD COLUMN services TEXT NOT NULL DEFAULT '[]';
   `,
+  `
+  -- Secure inputs (services/inputs.ts, docs/secure-inputs.md): an agent's request for values it uses but never reads, and the values
+  -- the owner gave, encrypted, one per name per session. Events never carry a value.
+  CREATE TABLE input_requests (
+    id TEXT PRIMARY KEY,
+    dork_id TEXT NOT NULL REFERENCES dorks (id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    description TEXT,
+    fields TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'provided', 'dismissed', 'expired')),
+    expires_at INTEGER NOT NULL,
+    decided_at INTEGER,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX input_requests_dork ON input_requests (dork_id, status);
+  CREATE TABLE input_values (
+    dork_id TEXT NOT NULL REFERENCES dorks (id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    value_enc TEXT NOT NULL,
+    request_id TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (dork_id, name)
+  );
+  `,
 ];

@@ -11,6 +11,7 @@ import { AntigravityAgent } from "./antigravity";
 import type { Config } from "./config";
 import { GithubToken, helperCommand } from "./credentials";
 import { McpOAuthProxy, type ProxyRoute } from "./mcp-proxy";
+import { SecretInputs } from "./inputs";
 import { HookService, mcpConfigPath, settingsPath, userMcpServers, writeClaudeMcpConfig, writeClaudeSettings } from "./hooks";
 import { resolveIdentity, type Identity } from "./runas";
 import { EventPipeline } from "./events";
@@ -70,6 +71,8 @@ export class Bridge {
   /** The build's services (services.ts): started on demand by the agent. */
   private services: Services;
   private previewRpc: RpcMethods;
+  /** Secure inputs (docs/secure-inputs.md): the owner's values, in memory only. */
+  private inputs: SecretInputs;
   /** The owner's OAuth MCP servers, behind a loopback proxy that adds a current token (mcp-proxy.ts). */
   private mcpProxy: McpOAuthProxy;
   private runAs: Identity | null;
@@ -131,7 +134,9 @@ export class Bridge {
     this.github = new GithubToken(["github.com", host].filter(Boolean));
     this.prs = new PrSubscriptions(this.t, this.log);
     const env = this.d.baseEnv ?? process.env;
+    this.inputs = new SecretInputs(this.t, this.redactor, this.log);
     this.hooks = new HookService({
+      inputs: this.inputs,
       workDir: this.cfg.workDir,
       stateDir: this.cfg.stateDir,
       env,
@@ -258,7 +263,7 @@ export class Bridge {
 
   /** The local RPC table (rpc.ts): what the git helper, the `dorks` CLI and the `gh` shim can ask of this process. */
   private rpcMethods() {
-    return { token: this.github.rpc, ...this.prs.methods, ...this.previewRpc, ...this.hooks.methods, ...this.services.methods };
+    return { token: this.github.rpc, ...this.prs.methods, ...this.previewRpc, ...this.inputs.methods, ...this.hooks.methods, ...this.services.methods };
   }
 
   // ------------------------------------------------------------------ commands
@@ -401,6 +406,8 @@ export class Bridge {
     this.proxyOAuthServers(cfg.mcpServers ?? []);
     this.redactor.addAll(Object.values(userMcp.env));
     this.github.set(cfg.ghToken);
+    // Values the owner gave earlier in this session (a restart or a wake forgot them): known before the agent runs a tool again.
+    await this.inputs.refresh().catch((e) => this.log("could not fetch the inputs:", errTag(e)));
 
     const provider = cfg.provider ?? "claude";
     const env = childEnv(this.d.baseEnv ?? process.env, cfg.env, this.log, this.runAs);
@@ -509,7 +516,7 @@ export class Bridge {
         const sid = agent.sessionId;
         if (sid) this.lastSessionId = sid;
         this.hooks.activity.ingest(raw); // the turn's tool calls, for the verify gate
-        this.pipeline.ingest(raw);
+        this.pipeline.ingest(this.inputs.scrubDeep(raw)); // a secure input never reaches the transcript
       },
       onExit: ({ code, stderrTail, resumeMissing, pending }: { code: number | null; stderrTail: string; resumeMissing: boolean; pending: string[] }) => {
         if (this.agent === agent) this.agent = null;

@@ -63,11 +63,11 @@ export function useWide() {
  * The chat and, when given and the window is wide, Chat details beside it in a resizable split (react-resizable-panels, through
  * shadcn's Resizable). The split is remembered. The divider is Chat details' own full-height hairline; the handle sits on it.
  */
-const CHAT_WIDTH = 720
+const CHAT_WIDTH = 600
 
 export function ChatSplit({ details, children }: { details?: ReactNode; children: ReactNode }) {
   const wide = useWide()
-  const layout = useDefaultLayout({ id: 'dorks.chat-split.v5', storage: localStorage })
+  const layout = useDefaultLayout({ id: 'dorks.chat-split.v6', storage: localStorage })
   const chat = usePanelRef()
   if (!details || !wide) return <div className="flex min-h-0 min-w-0 flex-1">{children}</div>
   return (
@@ -78,7 +78,7 @@ export function ChatSplit({ details, children }: { details?: ReactNode; children
       defaultLayout={layout.defaultLayout}
       onLayoutChanged={layout.onLayoutChanged}
     >
-      {/* The chat is 720px by default and keeps its width when the window resizes; Chat details takes everything else. */}
+      {/* The chat is 600px by default and keeps its width when the window resizes; Chat details takes everything else. */}
       <ResizablePanel id="chat" panelRef={chat} defaultSize={CHAT_WIDTH} minSize={360} groupResizeBehavior="preserve-pixel-size">
         <div className="flex h-full min-w-0">{children}</div>
       </ResizablePanel>
