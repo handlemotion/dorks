@@ -23,7 +23,8 @@ export interface Transport {
   subscribePr(ref: PrRef, source: "auto" | "agent"): Promise<void>;
   unsubscribePr(ref: PrRef): Promise<void>;
   /** Hosts a port of this box and shows it in the owner's Artifacts as a running preview; resolves with the stored preview. */
-  showPreview(port: number, opts: { title?: string; localhost?: boolean }): Promise<{ port: number; url: string; title?: string }>;
+  /** `via`: the preview proxy's port in front of `port` (src/preview-proxy.ts); the provider hosts that one instead. */
+  showPreview(port: number, opts: { title?: string; localhost?: boolean; via?: number }): Promise<{ port: number; url: string; title?: string }>;
   /** Stores a screenshot (base64 PNG/JPEG/WebP/GIF) for the owner; resolves with its id, which `dorks-image:<id>` names in markdown. */
   shareImage(data: string, caption?: string): Promise<{ id: string; width?: number; height?: number }>;
   /** The agent's machine_* tools (docs/builds.md): one op, `action` picks get, draft, run, logs or submit. Scoped by the server to this dork's build. */
@@ -286,7 +287,7 @@ export class WsTransport implements Transport {
     await this.rpc("unsubscribe_pr", ref);
   };
 
-  showPreview = async (port: number, opts: { title?: string; localhost?: boolean }) => this.rpc<{ port: number; url: string; title?: string }>("show_preview", { port, ...opts });
+  showPreview = async (port: number, opts: { title?: string; localhost?: boolean; via?: number }) => this.rpc<{ port: number; url: string; title?: string }>("show_preview", { port, ...opts });
 
   mcpToken = async (name: string, stale?: string) => this.rpc<{ authorization: string; expiresAt: number | null }>("mcp_token", { name, ...(stale ? { stale } : {}) });
 

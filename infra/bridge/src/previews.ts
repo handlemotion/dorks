@@ -1,15 +1,20 @@
 import type { CrewRole } from "@dorks/shared";
 import { callBackend } from "./prs";
-import type { Log } from "./redact";
+import type { PreviewProxies } from "./preview-proxy";
+import { errTag, type Log } from "./redact";
 import { RpcError, type RpcMethods } from "./rpc";
 import type { Transport } from "./transport";
 
-// `preview.show`: the agent's dev server is up (the `preview_show` MCP tool). The backend hosts the port through the box provider and
-// keeps the URL on the dork, where the owner's Artifacts shows it as a running preview. Nothing is stored here.
+// `preview.show`: the agent's dev server is up (the `preview_show` MCP tool). The bridge puts its preview proxy in front of the port
+// (preview-proxy.ts: the page gets the element picker's overlay and loads in a frame), the backend hosts the proxy's port through the
+// box provider and keeps the URL on the dork, where the owner's Artifacts shows it as a running preview.
 
 export type ShownPreview = { port: number; url: string; title?: string };
 
-export function previewMethods(t: Transport, log: Log, role: () => CrewRole | null = () => null): RpcMethods {
+/** Ports the box provider uses itself (Boat: SSH, the desktop stream, its agents); the server refuses them too. */
+const reserved = (port: number) => [22, 6080, 8090, 8911].includes(port) || (port >= 47984 && port <= 48010);
+
+export function previewMethods(t: Transport, log: Log, role: () => CrewRole | null = () => null, proxies?: PreviewProxies, bridgePort?: number): RpcMethods {
   return {
     // `crew.role`: which crew tools the in-box MCP server lists (docs/crew.md). Answered here from the last configure.
     "crew.role": () => ({ role: role() }),
@@ -23,7 +28,16 @@ export function previewMethods(t: Transport, log: Log, role: () => CrewRole | nu
       const p = (params ?? {}) as { port?: unknown; title?: unknown; localhost?: unknown };
       if (typeof p.port !== "number" || !Number.isInteger(p.port) || p.port < 1 || p.port > 65535) throw new RpcError("invalid", "port must be an integer from 1 to 65535");
       const title = typeof p.title === "string" && p.title.trim() ? p.title.trim() : undefined;
-      return callBackend(t, log, () => t.showPreview(p.port as number, { title, localhost: p.localhost === true }), true);
+      const port = p.port;
+      let via: number | undefined;
+      if (proxies && !reserved(port) && port !== bridgePort) {
+        try {
+          via = await proxies.forTarget(port);
+        } catch (e) {
+          log("preview proxy failed, hosting the port directly:", errTag(e)); // the preview still works, without the picker
+        }
+      }
+      return callBackend(t, log, () => t.showPreview(port, { title, localhost: p.localhost === true, ...(via ? { via } : {}) }), true);
     },
     // `build`: the machine_* MCP tools. The server validates everything and scopes it to this dork's build; this only forwards.
     build: async (params) => {

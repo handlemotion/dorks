@@ -49,7 +49,7 @@ const OPS = new Map<string, Op>([
   ["gh_token", (app, id) => attemptPromise(() => bridge.ghToken(app, id))],
   ["subscribe_pr", (app, id, a) => attempt(() => bridge.subscribePr(app, id, a.repo as string, a.number as number, a.source as "auto" | "agent"))],
   ["unsubscribe_pr", (app, id, a) => attempt(() => bridge.unsubscribePr(app, id, a.repo as string, a.number as number))],
-  ["show_preview", (app, id, a) => attemptPromise(() => bridge.showPreview(app, id, a.port, a.title, a.localhost))],
+  ["show_preview", (app, id, a) => attemptPromise(() => bridge.showPreview(app, id, a.port, a.title, a.localhost, a.via))],
   ["get_image", (app, id, a) => attempt(() => bridge.getImage(app, id, a.id))],
   ["share_image", (app, id, a) => attempt(() => bridge.shareImage(app, id, a.data, a.caption))],
   ["build", (app, id, a) => attemptPromise(() => buildOp(app, id, a))],

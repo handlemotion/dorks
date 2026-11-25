@@ -9,7 +9,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p overlay",
     "test": "vp test run"
   },
   "dependencies": {
@@ -20,6 +20,7 @@
     "@types/node": "^26.6.4",
     "@types/ws": "^8.18.2",
     "esbuild": "^0.28.1",
+    "react-grab": "0.2.0",
     "typescript": "^6.0.2",
     "vite-plus": "catalog:"
   },

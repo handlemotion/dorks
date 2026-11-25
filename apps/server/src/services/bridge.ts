@@ -333,9 +333,15 @@ const reserved = (port: number) => RESERVED_PORTS.has(port) || (port >= 47984 &&
 const MAX_PREVIEWS = 20;
 const MAX_TITLE = 60;
 
-export async function showPreview(app: App, dorkId: string, port: unknown, title: unknown, localhost: unknown): Promise<Preview> {
-  if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) return fail("invalid", "port must be an integer from 1 to 65535");
+/**
+ * `via`: the port of the bridge's preview proxy in front of `port` (infra/bridge/src/preview-proxy.ts). The provider hosts that one, on
+ * loopback (the proxy listens on 127.0.0.1); the preview is still listed under the dev server's `port`. An older bridge sends none.
+ */
+export async function showPreview(app: App, dorkId: string, port: unknown, title: unknown, localhost: unknown, via?: unknown): Promise<Preview> {
+  const isPort = (p: unknown): p is number => typeof p === "number" && Number.isInteger(p) && p >= 1 && p <= 65535;
+  if (!isPort(port)) return fail("invalid", "port must be an integer from 1 to 65535");
   if (reserved(port)) return fail("invalid", `port ${port} is used by the sandbox itself; run the dev server on another port`);
+  if (via !== undefined && (!isPort(via) || reserved(via) || via === port)) return fail("invalid", "via must be a free port of the box");
   const name = typeof title === "string" && title.trim() ? title.trim().slice(0, MAX_TITLE) : undefined;
   const dork = bridgeDork(app, dorkId);
   if (!dork.boxId) return fail("sleeping", "the box is not running");
@@ -343,7 +349,7 @@ export async function showPreview(app: App, dorkId: string, port: unknown, title
   if (!box.hostPort) return fail("not_configured", "this sandbox provider cannot host ports");
   let url: string;
   try {
-    ({ url } = await box.hostPort(dork.boxId, port, { title: name, localhost: localhost === true }));
+    ({ url } = isPort(via) ? await box.hostPort(dork.boxId, via, { title: name, localhost: true }) : await box.hostPort(dork.boxId, port, { title: name, localhost: localhost === true }));
   } catch (e) {
     console.error("host port failed", e instanceof Error ? e.message.slice(0, 200) : "unknown");
     return fail("failed", "could not host the port");
