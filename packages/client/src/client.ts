@@ -30,6 +30,7 @@ import type {
   SnapshotStatus,
   Usage,
   GithubRepos,
+  SentryProjects,
   LocalAccess,
   LocalDecision,
   InputAnswer,
@@ -146,6 +147,7 @@ export class DorksClient {
         this.invalidate("settings");
         this.invalidate("pr"); // a new GitHub login may see a PR the old one could not
         this.invalidate("github-repos");
+        this.invalidate("sentry-projects");
         this.invalidate("secrets");
         this.invalidate("mcp-servers");
         this.invalidate("skills");
@@ -214,6 +216,18 @@ export class DorksClient {
 
   secretNames() {
     return this.query<string[]>("secrets", () => this.api.listSecrets());
+  }
+
+  /** The connected Sentry organization's projects; `error` says why there are none. Refetched when settings change. */
+  sentryProjects() {
+    return this.query<SentryProjects>("sentry-projects", async () => {
+      try {
+        return await this.api.getSentryProjects();
+      } catch (e) {
+        if (e instanceof ApiError && e.code !== "forbidden") return { org: null, projects: [], error: e.message };
+        throw e;
+      }
+    });
   }
 
   /** One of the session's pull requests (`url`; default its latest), live from GitHub; `null` when it has none. Refetched when the poller sees a PR change. */

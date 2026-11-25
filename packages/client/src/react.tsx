@@ -3,7 +3,7 @@ import { toAppError, type ComposioStatus, type McpServerView, type SkillView, ty
 import type { DorksClient, ConnectionState } from "./client.ts";
 import type { EventsState } from "./events.ts";
 import type { QueryState, Store } from "./store.ts";
-import type { AutomationRunView, AutomationView, BuildView, Dork, RunView, Settings, SnapshotStatus, Usage, GithubRepos, LocalAccess } from "./types.ts";
+import type { AutomationRunView, AutomationView, BuildView, Dork, RunView, Settings, SnapshotStatus, Usage, GithubRepos, LocalAccess, SentryProjects } from "./types.ts";
 
 const Ctx = createContext<DorksClient | null>(null);
 
@@ -87,6 +87,11 @@ export function useUsage(): Usage | undefined {
 /** What the GitHub CLI login can see: its user, organizations and repositories; `undefined` while loading. */
 export function useGithubRepos(): GithubRepos | undefined {
   return useStore(useDorksClient().githubRepos()).data;
+}
+
+/** The connected Sentry organization's projects, for Sentry triggers; `undefined` while loading. */
+export function useSentryProjects(): SentryProjects | undefined {
+  return useStore(useDorksClient().sentryProjects()).data;
 }
 
 /** The MCP servers from Customize; `undefined` while loading. */

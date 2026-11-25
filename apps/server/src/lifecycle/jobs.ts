@@ -13,8 +13,9 @@ import { FORGET_JOB, forgetImage, RUN_JOB, runBuildRun } from "../services/build
 import { githubToken, readSettings } from "../services/settings";
 import { getSub } from "../services/subscriptions";
 import { SERVER_COMMENT_MARK } from "../services/githubIngest";
-import { fireSchedules, rearmSchedule, SCHEDULE_JOB, WATCH_JOB } from "../services/automations";
+import { fireSchedules, rearmSchedule, SCHEDULE_JOB, SENTRY_JOB, WATCH_JOB } from "../services/automations";
 import { runWatch } from "../services/automationWatch";
+import { runSentryWatch } from "../services/automationSentry";
 import { boxCreated, boxGone, boxPaused, boxReplaced, boxResumed, opFailed } from "./lifecycle";
 import { patchDork, setTimer } from "./dispatch";
 
@@ -227,6 +228,7 @@ export const isJob = (name: string) =>
   name === "poll" ||
   name === "sweep" ||
   name === WATCH_JOB ||
+  name === SENTRY_JOB ||
   name.startsWith(SCHEDULE_JOB) ||
   name === SNAPSHOT_JOB ||
   name.startsWith(RUN_JOB) ||
@@ -251,6 +253,7 @@ function pick(app: App, owner: string, name: string, payload: any): Effect.Effec
   if (name === "sweep") return sync(() => sweep(app));
   if (name === "poll") return poll(app);
   if (name === WATCH_JOB) return promise(() => runWatch(app));
+  if (name === SENTRY_JOB) return promise(() => runSentryWatch(app));
   // A schedule that failed to run is set again, so one bad pass does not stop it for good.
   if (name.startsWith(SCHEDULE_JOB))
     return sync(() => fireSchedules(app, name.slice(SCHEDULE_JOB.length))).pipe(Effect.tapError(() => sync(() => rearmSchedule(app, name.slice(SCHEDULE_JOB.length)))));

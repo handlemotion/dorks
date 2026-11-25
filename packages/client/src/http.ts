@@ -39,6 +39,7 @@ import type {
   SnapshotStatus,
   Usage,
   GithubRepos,
+  SentryProjects,
 } from "./types.ts";
 
 /** A new comment thread on a running preview: where it points and the preview's port. */
@@ -194,6 +195,7 @@ export function createApi(config: ApiConfig) {
     buildSnapshot: (force = false) => request<SnapshotStatus>("POST", "/api/snapshot/build", force ? { force: true } : {}),
     getUsage: () => request<Usage>("GET", "/api/usage"),
     /** `fresh`: read the GitHub CLI and GitHub again instead of the server's short cache. */
+    getSentryProjects: () => request<SentryProjects>("GET", "/api/sentry/projects"),
     getGithubRepos: (fresh = false) => request<GithubRepos>("GET", fresh ? "/api/github/repos?fresh=1" : "/api/github/repos"),
     listSecrets: () => request<string[]>("GET", "/api/secrets"),
     setSecret: (name: string, value: string) => request<object>("PUT", `/api/secrets/${enc(name)}`, { value }),

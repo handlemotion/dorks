@@ -9,6 +9,7 @@ import {
   type AutomationView,
   type GithubTrigger,
   type ScheduleTrigger,
+  type SentryTrigger,
 } from "@dorks/shared";
 import { AppFail, fail, touch, type App } from "../app";
 import { insert, json, update } from "../db";
@@ -16,6 +17,7 @@ import { cancelTimer, hasTimer, setTimer } from "../lifecycle/dispatch";
 import { nextFire, validTimeZone } from "../lib/schedule";
 import { createDork } from "./dorks";
 import { getBuild } from "./builds";
+import { readSettings } from "./settings";
 
 // Automations (docs/automations.md): instructions an agent runs on a schedule, when something happens in a repository, or when the
 // owner says Run now. A run is an ordinary session started with the instructions and what triggered it; the automation keeps a
@@ -24,6 +26,8 @@ import { getBuild } from "./builds";
 
 export const SCHEDULE_JOB = "automation:";
 export const WATCH_JOB = "automation-watch";
+/** The Sentry watcher (automationSentry.ts). */
+export const SENTRY_JOB = "automation-sentry";
 /** A runaway trigger (or a loop through the agent's own pushes) stops here. */
 export const MAX_RUNS_PER_HOUR = 20;
 /** A pull request's pushes start at most one run per automation in this window; the agent's own pushes would otherwise loop. */
@@ -74,6 +78,7 @@ export const allAutomations = (app: App): AutomationRow[] => app.db.all("SELECT 
 
 const schedules = (a: Pick<AutomationRow, "triggers">) => a.triggers.filter((t): t is ScheduleTrigger => t.kind === "schedule");
 export const githubTriggers = (a: Pick<AutomationRow, "triggers">) => a.triggers.filter((t): t is GithubTrigger => t.kind === "github");
+export const sentryTriggers = (a: Pick<AutomationRow, "triggers">) => a.triggers.filter((t): t is SentryTrigger => t.kind === "sentry");
 
 // ---------------------------------------------------------------- input
 
@@ -86,6 +91,10 @@ function checkInput(app: App, input: unknown, selfId?: string): AutomationSpec {
     if (t.kind === "schedule" && !validTimeZone(t.timezone)) fail("invalid", `Unknown time zone ${t.timezone}.`);
     if (t.kind === "schedule" && !t.branch) delete t.branch;
     if (t.kind === "github") t.authors = [...new Set(t.authors.map((l) => l.trim()).filter(Boolean))];
+    if (t.kind === "sentry") {
+      t.project = t.project.toLowerCase();
+      if (!t.environment) delete t.environment;
+    }
   }
   if (spec.buildId && !getBuild(app, spec.buildId)) fail("not_found", "This build no longer exists.");
   if (!spec.model) spec.effort = null;
@@ -155,6 +164,7 @@ function arm(app: App, a: AutomationRow) {
   if (next === null) cancelTimer(app, "", name);
   else setTimer(app, "", name, Math.max(0, next - app.now()));
   if (a.enabled && githubTriggers(a).length && !hasTimer(app, "", WATCH_JOB)) setTimer(app, "", WATCH_JOB, 1_000);
+  if (a.enabled && sentryTriggers(a).length && !hasTimer(app, "", SENTRY_JOB)) setTimer(app, "", SENTRY_JOB, 1_000);
 }
 
 /**
@@ -232,6 +242,13 @@ export function rearmSchedule(app: App, id: string) {
   });
 }
 
+/** Sentry was connected or changed: the Sentry watcher looks now, not at its next pass. */
+export function kickSentryWatch(app: App) {
+  app.db.tx(() => {
+    if (allAutomations(app).some((a) => a.enabled && sentryTriggers(a).length)) setTimer(app, "", SENTRY_JOB, 1_000);
+  });
+}
+
 /** After a restart: a schedule job lost mid-flight is set again, and the watcher runs if anything needs it. */
 export function recoverAutomations(app: App) {
   app.db.tx(() => {
@@ -239,6 +256,7 @@ export function recoverAutomations(app: App) {
     for (const a of active) if (!hasTimer(app, "", `${SCHEDULE_JOB}${a.id}`)) arm(app, a);
     // Checked on its own: a watcher job that was running when the process died was already claimed, so its timer is gone.
     if (active.some((a) => githubTriggers(a).length) && !hasTimer(app, "", WATCH_JOB)) setTimer(app, "", WATCH_JOB, 1_000);
+    if (active.some((a) => sentryTriggers(a).length) && !hasTimer(app, "", SENTRY_JOB)) setTimer(app, "", SENTRY_JOB, 1_000);
   });
 }
 
@@ -373,11 +391,23 @@ export function automationView(app: App, a: AutomationRow): AutomationView {
     nextRunAt: nextRunAt(a),
     lastRun: last ? runView(app, last) : null,
     recentRuns: app.db.get<{ n: number }>("SELECT count(*) AS n FROM automation_runs WHERE automation_id = ? AND created_at > ?", a.id, app.now() - WEEK_MS)?.n ?? 0,
-    problems: watched.filter((w) => w.error).map((w) => ({ repo: w.repo, message: w.error! })),
+    problems: [...watched.filter((w) => w.error).map((w) => ({ repo: w.repo, message: w.error! })), ...sentryProblems(app, a)],
     publicRepos: watched.filter((w) => w.private === 0).map((w) => w.repo),
     createdAt,
     updatedAt,
   };
+}
+
+/** Why its Sentry triggers cannot watch: Sentry is not connected, or a project cannot be read. */
+function sentryProblems(app: App, a: AutomationRow): { repo: string; message: string }[] {
+  const triggers = sentryTriggers(a);
+  if (!triggers.length) return [];
+  const s = readSettings(app);
+  if (!s.sentryTokenEnc || !s.sentryOrg) return [{ repo: "Sentry", message: "Connect Sentry in Settings, Sentry, so its triggers can watch your projects." }];
+  const keys = [...new Set(triggers.map((t) => `${t.project.toLowerCase()}|${t.environment ?? ""}`))];
+  return app.db
+    .all<{ key: string; error: string | null }>(`SELECT key, error FROM sentry_watch WHERE error IS NOT NULL AND key IN (${keys.map(() => "?").join(", ")})`, ...keys)
+    .map((w) => ({ repo: `${w.key.split("|")[0]} on Sentry`, message: w.error! }));
 }
 
 export const listAutomations = (app: App): AutomationView[] => allAutomations(app).map((a) => automationView(app, a));

@@ -13,6 +13,7 @@ export const localTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZ
 
 const schedule = (every: 'day' | 'weekdays' | 'week', time: string, day = 1): AutomationTrigger => ({ kind: 'schedule', every, day, time, timezone: localTimeZone(), repo: '' })
 const github = (event: 'pr_opened' | 'pr_pushed' | 'pr_merged' | 'issue_opened' | 'comment'): AutomationTrigger => ({ kind: 'github', event, repo: '', authors: [] })
+const sentry = (event: 'sentry_issue' | 'sentry_spike' | 'sentry_monitor', threshold = 100): AutomationTrigger => ({ kind: 'sentry', event, project: '', threshold, repo: '' })
 
 export const TEMPLATES: AutomationTemplate[] = [
   {
@@ -60,6 +61,37 @@ Be specific and technical. Do not push commits to the branch.`,
 2. Try to reproduce it. Note the exact steps and what happens.
 3. Comment on the issue with the likely cause (files and lines), how hard a fix looks, and any question the author must answer.
 4. If the fix is small and clear, open a pull request for it and link it in your comment.`,
+    },
+  },
+  {
+    id: 'sentry-downtime',
+    title: 'Respond to downtime',
+    description: 'When a Sentry uptime or cron monitor fails, or an error floods in, find out what broke and fix it.',
+    input: {
+      name: 'Respond to downtime',
+      triggers: [sentry('sentry_monitor'), sentry('sentry_spike', 500)],
+      instructions: `Sentry says part of the app may be down: a monitor is failing, or one error is flooding in.
+
+1. Open the Sentry issue and read what fails: the monitor's URL and check results, or the error's stack trace and the requests it hits.
+2. Check what changed recently: commits and deploys on the default branch in the last day.
+3. Find the cause in the code or the configuration. If it is an outage outside this repository (a provider, a DNS or certificate problem), say so and stop.
+4. If a fix in this repository is clear, make it, verify it with the tests, and open a pull request marked urgent. If the cause is a recent commit, a revert is fine.
+5. End with a short incident note: what broke, since when, the likely cause, and what you did.`,
+    },
+  },
+  {
+    id: 'sentry-issues',
+    title: 'Fix new Sentry errors',
+    description: 'When Sentry sees a new error, find its cause and open a pull request with a fix.',
+    input: {
+      name: 'Fix new Sentry errors',
+      triggers: [sentry('sentry_issue')],
+      instructions: `Sentry reported a new error in this app.
+
+1. Read the issue: its stack trace, the request or user action, and how often it happens.
+2. Find the code it comes from and reproduce it, with a failing test if you can.
+3. Fix the cause, not the symptom. Run the tests.
+4. Open a pull request that links the Sentry issue and explains the cause. If it is not a bug in this code (bad input, a third-party outage, noise), end with a short note saying why, without opening anything.`,
     },
   },
   {
