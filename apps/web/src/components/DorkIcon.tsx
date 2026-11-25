@@ -1,7 +1,7 @@
 import { useId } from 'react'
 import type { DorkState } from '@dorks/shared'
 
-export type DorkIconState = 'working' | 'awake' | 'asleep' | 'attention' | 'error'
+export type DorkIconState = 'working' | 'unread' | 'awake' | 'asleep' | 'attention' | 'error'
 
 /** The three stacked lobes that form the dork silhouette (200×200 coordinate space). */
 const SHAPE_PATH =
@@ -15,6 +15,15 @@ const GREY_STOPS = [
   ['100%', '0.72'],
 ] as const
 
+/** Unread: a finished turn the owner has not opened yet. */
+const BLUE_STOPS = [
+  ['0%', '#00f0ff'],
+  ['22%', '#08a8ff'],
+  ['48%', '#0e6fff'],
+  ['78%', '#6a62ff'],
+  ['100%', '#8f5bff'],
+] as const
+
 /** A nerd's colour (docs/modes.md): the same mark in green, so the sessions that run other sessions stand apart. */
 const GREEN_STOPS = [
   ['0%', '#b4ff6a'],
@@ -24,6 +33,7 @@ const GREEN_STOPS = [
   ['100%', '#0b8a5f'],
 ] as const
 
+/** Attention: the dork waits on the owner's permission or answer. */
 const YELLOW_STOPS = [
   ['0%', '#fff066'],
   ['24%', '#ffd426'],
@@ -34,10 +44,18 @@ const YELLOW_STOPS = [
 
 const TONE: Partial<Record<DorkIconState, string>> = { asleep: 'text-muted-foreground/70', error: 'text-destructive' }
 
+const GREY = { stops: GREY_STOPS, grey: true, tone: 'text-foreground' }
+const PALETTE: Partial<Record<DorkIconState, { stops: readonly (readonly [string, string])[]; grey: boolean; tone: string }>> = {
+  working: GREY,
+  awake: GREY,
+  unread: { stops: BLUE_STOPS, grey: false, tone: '' },
+  attention: { stops: YELLOW_STOPS, grey: false, tone: '' },
+}
+
 /** The gradient for a state; grey stops are opacities of the foreground colour (`grey`), which `tone` sets. */
 function palette(state: DorkIconState, nerd?: boolean) {
-  if (state !== 'working') return { stops: YELLOW_STOPS, grey: false, tone: TONE[state] ?? '' }
-  return nerd ? { stops: GREEN_STOPS, grey: false, tone: '' } : { stops: GREY_STOPS, grey: true, tone: 'text-foreground' }
+  if (nerd && state === 'working') return { stops: GREEN_STOPS, grey: false, tone: '' }
+  return PALETTE[state] ?? { stops: GREY_STOPS, grey: false, tone: TONE[state] ?? '' }
 }
 
 /** Asleep: the shape's outline, an inside stroke about 1.2px wide at any size (twice that width, clipped to the shape). */
@@ -54,10 +72,14 @@ function DorkOutline({ id, size }: { id: string; size: number }) {
   )
 }
 
-/** Maps a dork's lifecycle state (and connection/attention state when relevant) to the icon's visual state. */
-export function dorkIconState(state: DorkState | undefined, opts?: { working?: boolean; live?: string; attention?: boolean }): DorkIconState {
+/**
+ * Maps a dork's lifecycle state (and connection, attention and unread state when relevant) to the icon's visual state. Attention
+ * comes first, then movement; an unread finished turn shows on an awake or sleeping dork alike.
+ */
+export function dorkIconState(state: DorkState | undefined, opts?: { working?: boolean; live?: string; attention?: boolean; unread?: boolean }): DorkIconState {
   if (opts?.attention) return 'attention'
   if (opts?.live === 'offline' || opts?.live === 'connecting') return 'working'
+  if (opts?.unread && (state === 'idle' || state === 'sleeping')) return 'unread'
   switch (state) {
     case 'creating':
     case 'waking':
@@ -76,13 +98,14 @@ export function dorkIconState(state: DorkState | undefined, opts?: { working?: b
 
 /**
  * The dork status mark: three stacked lobes.
- * - `working`: a grey gradient (the foreground colour at varying strength) with animated flaps and flowing colour. Grey, not
- *   blue, so a working chat does not read as unread.
+ * - `working`: a grey gradient (the foreground colour at varying strength) with animated flaps and flowing colour.
+ * - `unread`: the cyan → blue → violet gradient, still: the agent finished a turn the owner has not opened yet.
  * - `attention`: yellow → amber gradient with animated flaps when waiting on the owner (computer access, build approval, prompts).
- * - `awake`: the yellow → amber gradient, still: the turn is over and the dork waits for the next message before it sleeps.
+ *   Yellow means only this.
+ * - `awake`: the working grey, still: the turn is over and read, and the dork waits for the next message before it sleeps.
  * - `asleep`: the shape's outline only, in muted grey, no fill, still.
  * - `error`: the same shape in destructive red, still.
- * A nerd (`nerd`) is green where a session is grey (working); awake, attention, asleep and error look the same as any session's.
+ * A nerd (`nerd`) is green where a session is grey (working); every other state looks the same as any session's.
  * `still` draws the working colours without motion (the nerd mark in the mode menu).
  */
 export function DorkIcon({
@@ -108,7 +131,7 @@ export function DorkIcon({
   const maskId = `dork-mask-${uid}`
   const gradId = `dork-grad-${uid}`
   const animated = !still && (state === 'working' || state === 'attention')
-  const colored = animated || state === 'awake' || (still && state === 'working')
+  const colored = animated || state === 'awake' || state === 'unread' || (still && state === 'working')
   const { stops, grey, tone } = palette(state, nerd)
 
   return (

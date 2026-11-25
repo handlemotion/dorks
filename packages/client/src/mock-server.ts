@@ -459,7 +459,9 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     d.events.push(e);
     d.lastActivityAt = e.ts;
     if (e.type === "status") {
-      d.state = (body as unknown as { state: Dork["state"] }).state;
+      const state = (body as unknown as { state: Dork["state"] }).state;
+      if (state === "idle" && d.state === "working") d.unread = true; // like apps/server: a finished turn is unread until markRead
+      d.state = state;
       broadcast({ t: "dork", dorkId });
       broadcast({ t: "dorks" });
     }
@@ -824,6 +826,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         const text = str(body.text)?.trim();
         if (!text) return fail(res, "invalid", "text is required");
         if (d.archived) return fail(res, "archived", "This session is archived.");
+        d.unread = false; // writing in a chat reads it
         startTurn(d.id, text);
         return json(res, 200, {});
       },
@@ -860,6 +863,16 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         const dark = body.theme === "dark";
         const page = `<!doctype html><meta charset="utf-8"><body style="margin:0;height:100vh;display:grid;place-items:center;background:${dark ? "#1d1f24" : "#3a6ea5"};color:#fff;font:15px system-ui">Mock desktop</body>`;
         return json(res, 200, { url: `data:text/html;charset=utf-8,${encodeURIComponent(page)}` });
+      },
+    ],
+    [
+      "POST read",
+      ({ res }, d) => {
+        if (d.unread) {
+          d.unread = false;
+          touched(d);
+        }
+        return json(res, 200, {});
       },
     ],
     [

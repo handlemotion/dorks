@@ -155,6 +155,8 @@ export function createApi(config: ApiConfig) {
     /** Uploads an image to attach to a message; the message names it as `![name](dorks-image:<id>)`. */
     uploadImage: (image: Blob) => request<{ id: string }>("POST", "/api/images", image),
     desktopUrl: (id: string, opts: DesktopOptions) => request<{ url: string }>("POST", `${dork(id)}/desktop`, opts),
+    /** The owner read the chat: it stops showing as unread on every device. */
+    markRead: (id: string) => request<object>("POST", `${dork(id)}/read`),
     setArchived: (id: string, archived: boolean) => request<object>("POST", `${dork(id)}/archive`, { archived }),
     /** Claude: `model` null for the agent's default, `effort` null for the model's default, `fast` for fast mode. */
     setMode: (id: string, mode: DorkMode) => request<object>("POST", `${dork(id)}/mode`, { mode }),

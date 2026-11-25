@@ -47,6 +47,8 @@ export interface Dork {
   prState?: "open" | "merged" | "closed";
   /** True when the dork is waiting on the owner (a computer-access prompt, build approval, or other request). Absent on older servers. */
   needsAttention?: boolean;
+  /** The agent finished a turn the owner has not read yet (on any device); `markRead` clears it. Absent on older servers. */
+  unread?: boolean;
   /** Messages the owner queued for when the current turn ends, oldest first. Only on a single dork's read; absent on older servers. */
   queue?: QueuedMessage[];
   /** The slash commands and skills the agent last offered, for the composer's `/` menu. Only on a single dork's read; absent on older servers. */
