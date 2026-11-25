@@ -16,7 +16,9 @@ export type FilterScope = 'all' | 'installed'
 const FILTER_BUTTON =
   'inline-flex h-7 cursor-pointer items-center rounded-[6px] px-2.5 text-xs font-normal text-muted-foreground transition-none outline-none hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring data-[active=true]:bg-foreground/[0.07] data-[active=true]:text-foreground'
 
-const ROW = 'flex min-h-13 w-full min-w-0 cursor-pointer items-center gap-3 py-2.5 ps-4 pe-3 text-start hover:bg-foreground/[0.02]'
+const ROW = 'flex min-h-13 w-full min-w-0 items-center gap-3 py-2.5 ps-4 pe-3 text-start hover:bg-foreground/[0.02]'
+const ROW_MAIN =
+  'flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-[6px] text-start outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-default disabled:opacity-60'
 
 /** Search input and All / Installed filter above the settings-kit sections. */
 function SearchBar({
@@ -146,28 +148,25 @@ export function PluginsDirectory({
                       const s = item.s
                       const where = s.transport === 'http' ? s.url : [s.command, ...s.args].join(' ')
                       return (
-                        <div key={`server:${s.name}`} onClick={() => onInspectInstalled(`server:${s.name}`)} className={ROW}>
-                          <span className="flex size-7 shrink-0 items-center justify-center rounded-[6px] bg-foreground/[0.04] text-muted-foreground">
-                            <ServerIcon className="size-3.5" />
-                          </span>
-                          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                            <span className="truncate font-mono text-xs leading-4 text-foreground">{s.name}</span>
-                            <span className="truncate font-mono text-xs leading-4 text-muted-foreground">{where}</span>
-                          </div>
+                        <div key={`server:${s.name}`} className={ROW}>
+                          <button type="button" onClick={() => onInspectInstalled(`server:${s.name}`)} className={ROW_MAIN}>
+                            <span className="flex size-7 shrink-0 items-center justify-center rounded-[6px] bg-foreground/[0.04] text-muted-foreground">
+                              <ServerIcon className="size-3.5" />
+                            </span>
+                            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                              <span className="truncate font-mono text-xs leading-4 text-foreground">{s.name}</span>
+                              <span className="truncate font-mono text-xs leading-4 text-muted-foreground">{where}</span>
+                            </span>
+                          </button>
                           <span className="hidden shrink-0 text-xs text-muted-foreground md:inline">{s.transport === 'http' ? 'HTTP' : 'Local'}</span>
                           <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
                             <StatusDot tone="success" />
                             <span className="hidden sm:inline">Installed</span>
                           </span>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              onEditServer(s)
-                            }}
-                          >
+                          <Button type="button" variant="ghost" size="sm" onClick={() => onInspectInstalled(`server:${s.name}`)}>
+                            Manage
+                          </Button>
+                          <Button type="button" variant="ghost" size="sm" onClick={() => onEditServer(s)}>
                             Edit
                           </Button>
                         </div>
@@ -177,22 +176,24 @@ export function PluginsDirectory({
                     const { c, connected } = item
                     const loading = !servers || (!!c.toolkit && composioLoading)
                     return (
-                      <div
-                        key={c.id}
-                        onClick={() => {
-                          if (loading) return
-                          if (connected) onInspectInstalled(`connector:${c.id}`)
-                          else onOpenConnector(c)
-                        }}
-                        className={ROW}
-                      >
-                        <span className="flex size-7 shrink-0 items-center justify-center rounded-[6px] bg-foreground/[0.04]">
-                          <ConnectorIcon connector={c} className="size-4" />
-                        </span>
-                        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                          <span className="truncate text-sm leading-4 text-foreground">{c.name}</span>
-                          <span className="truncate text-xs leading-4 text-muted-foreground">{c.description}</span>
-                        </div>
+                      <div key={c.id} className={ROW}>
+                        <button
+                          type="button"
+                          disabled={loading}
+                          onClick={() => {
+                            if (connected) onInspectInstalled(`connector:${c.id}`)
+                            else onOpenConnector(c)
+                          }}
+                          className={ROW_MAIN}
+                        >
+                          <span className="flex size-7 shrink-0 items-center justify-center rounded-[6px] bg-foreground/[0.04]">
+                            <ConnectorIcon connector={c} className="size-4" />
+                          </span>
+                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                            <span className="truncate text-sm leading-4 text-foreground">{c.name}</span>
+                            <span className="truncate text-xs leading-4 text-muted-foreground">{c.description}</span>
+                          </span>
+                        </button>
                         <span className="hidden shrink-0 text-xs text-muted-foreground md:inline">{c.toolkit ? 'OAuth' : 'API key'}</span>
                         {connected ? (
                           <>
@@ -200,30 +201,12 @@ export function PluginsDirectory({
                               <StatusDot tone="success" />
                               <span className="hidden sm:inline">Installed</span>
                             </span>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              disabled={loading}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                onOpenConnector(c)
-                              }}
-                            >
+                            <Button type="button" variant="ghost" size="sm" disabled={loading} onClick={() => onOpenConnector(c)}>
                               Manage
                             </Button>
                           </>
                         ) : (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={loading}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              onOpenConnector(c)
-                            }}
-                          >
+                          <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => onOpenConnector(c)}>
                             Install
                           </Button>
                         )}
@@ -341,21 +324,23 @@ export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { sk
                   {g.items.map((item) => {
                     const isBusy = busy === item.name
                     return (
-                      <div
-                        key={item.name}
-                        onClick={() => {
-                          if (item.installed) onInspectInstalled(`skill:${item.name}`)
-                          else if (item.catalog) onAddSkill(item.catalog.source)
-                        }}
-                        className={ROW}
-                      >
-                        <span className="flex size-7 shrink-0 items-center justify-center rounded-[6px] bg-foreground/[0.04] text-muted-foreground">
-                          <BookOpenIcon className="size-3.5" />
-                        </span>
-                        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                          <span className="truncate font-mono text-xs leading-4 text-foreground">{item.name}</span>
-                          <span className="truncate text-xs leading-4 text-muted-foreground">{item.description}</span>
-                        </div>
+                      <div key={item.name} className={ROW}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (item.installed) onInspectInstalled(`skill:${item.name}`)
+                            else if (item.catalog) onAddSkill(item.catalog.source)
+                          }}
+                          className={ROW_MAIN}
+                        >
+                          <span className="flex size-7 shrink-0 items-center justify-center rounded-[6px] bg-foreground/[0.04] text-muted-foreground">
+                            <BookOpenIcon className="size-3.5" />
+                          </span>
+                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                            <span className="truncate font-mono text-xs leading-4 text-foreground">{item.name}</span>
+                            <span className="truncate text-xs leading-4 text-muted-foreground">{item.description}</span>
+                          </span>
+                        </button>
                         <span className="hidden shrink-0 font-mono text-xs text-muted-foreground lg:inline">{item.source}</span>
                         {item.installed ? (
                           <>
@@ -363,15 +348,7 @@ export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { sk
                               <StatusDot tone="success" />
                               <span className="hidden sm:inline">Installed</span>
                             </span>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                onInspectInstalled(`skill:${item.name}`)
-                              }}
-                            >
+                            <Button type="button" variant="ghost" size="sm" onClick={() => onInspectInstalled(`skill:${item.name}`)}>
                               Manage
                             </Button>
                           </>
@@ -381,8 +358,7 @@ export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { sk
                             variant="outline"
                             size="sm"
                             disabled={isBusy}
-                            onClick={(e) => {
-                              e.stopPropagation()
+                            onClick={() => {
                               if (item.catalog) void installQuick(item.catalog)
                               else onAddSkill()
                             }}
