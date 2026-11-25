@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { BookOpenIcon, SearchIcon, ServerIcon, XIcon } from 'lucide-react'
+import { useMemo, useState, type ReactNode } from 'react'
+import { BookOpenIcon, PlusIcon, SearchIcon, ServerIcon, XIcon } from 'lucide-react'
 import type { McpServerView, SkillView } from '@dorks/client'
 import { useDorksClient } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
@@ -28,6 +28,7 @@ function SearchBar({
   scope,
   onScopeChange,
   countLabel,
+  action,
 }: {
   query: string
   onQueryChange: (q: string) => void
@@ -35,6 +36,7 @@ function SearchBar({
   scope: FilterScope
   onScopeChange: (s: FilterScope) => void
   countLabel: string
+  action?: ReactNode
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -68,6 +70,7 @@ function SearchBar({
         </button>
       </div>
       <span className="hidden shrink-0 text-xs text-muted-foreground tabular-nums sm:inline">{countLabel}</span>
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   )
 }
@@ -79,6 +82,7 @@ export function PluginsDirectory({
   customServers,
   isConnected,
   composioLoading,
+  onAddCustom,
   onOpenConnector,
   onEditServer,
   onInspectInstalled,
@@ -87,6 +91,7 @@ export function PluginsDirectory({
   customServers: McpServerView[]
   isConnected: (c: Connector) => boolean
   composioLoading: boolean
+  onAddCustom: () => void
   onOpenConnector: (c: Connector) => void
   onEditServer: (s: McpServerView) => void
   onInspectInstalled: (key: string) => void
@@ -124,8 +129,21 @@ export function PluginsDirectory({
 
   return (
     <div className="app-main min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 pt-6 pb-16 sm:px-6">
-        <SearchBar query={query} onQueryChange={setQuery} placeholder="Search plugins…" scope={scope} onScopeChange={setScope} countLabel={`${total} ${total === 1 ? 'plugin' : 'plugins'}`} />
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 pt-5 pb-16 sm:px-6">
+        <SearchBar
+          query={query}
+          onQueryChange={setQuery}
+          placeholder="Search plugins…"
+          scope={scope}
+          onScopeChange={setScope}
+          countLabel={`${total} ${total === 1 ? 'plugin' : 'plugins'}`}
+          action={
+            <Button size="sm" onClick={onAddCustom}>
+              <PlusIcon data-icon="inline-start" />
+              Add custom
+            </Button>
+          }
+        />
 
         {total === 0 ? (
           <div className="flex min-h-56 items-center justify-center py-8">
@@ -302,8 +320,21 @@ export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { sk
 
   return (
     <div className="app-main min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 pt-6 pb-16 sm:px-6">
-        <SearchBar query={query} onQueryChange={setQuery} placeholder="Search skills…" scope={scope} onScopeChange={setScope} countLabel={`${total} ${total === 1 ? 'skill' : 'skills'}`} />
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 pt-5 pb-16 sm:px-6">
+        <SearchBar
+          query={query}
+          onQueryChange={setQuery}
+          placeholder="Search skills…"
+          scope={scope}
+          onScopeChange={setScope}
+          countLabel={`${total} ${total === 1 ? 'skill' : 'skills'}`}
+          action={
+            <Button size="sm" onClick={() => onAddSkill()}>
+              <PlusIcon data-icon="inline-start" />
+              Add skill
+            </Button>
+          }
+        />
 
         {total === 0 ? (
           <div className="flex min-h-56 items-center justify-center py-8">

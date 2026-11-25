@@ -1,8 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { ChevronRightIcon, PlusIcon } from 'lucide-react'
+import { ChevronRightIcon } from 'lucide-react'
 import { useComposio, useMcpServers, useSkills } from '@dorks/client/react'
-import { Button } from '@dorks/ui/button'
 import { useSidebar } from '@dorks/ui/sidebar'
 import { CONNECTORS, type Connector } from '../../../components/connectors'
 import { InstalledDetail } from '../../../components/plugins/InstalledDetail'
@@ -29,19 +28,8 @@ function itemTitle(item: InstalledItem) {
   return item.skill.name
 }
 
-function PluginsHeader({
-  tab,
-  selectedItem,
-  onSelectTab,
-  onAddSkill,
-  onAddCustom,
-}: {
-  tab: PluginsTab
-  selectedItem?: InstalledItem
-  onSelectTab: (tab: PluginsTab) => void
-  onAddSkill: () => void
-  onAddCustom: () => void
-}) {
+/** Shown only on narrow screens (where PluginsNav is hidden) or as a breadcrumb header for an installed item. */
+function MobileHeader({ tab, selectedItem, onSelectTab }: { tab: PluginsTab; selectedItem?: InstalledItem; onSelectTab: (tab: PluginsTab) => void }) {
   const { isMobile } = useSidebar()
   const title = selectedItem ? itemTitle(selectedItem) : tab === 'skills' ? 'Skills' : 'Plugins'
   const parent = selectedItem ? (selectedItem.kind === 'skill' ? 'Skills' : 'Plugins') : undefined
@@ -49,7 +37,7 @@ function PluginsHeader({
   return (
     <header
       data-tauri-drag-region
-      className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border pr-3 pl-5"
+      className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border pr-3 pl-5 md:hidden"
       style={isMobile ? { paddingLeft: TITLEBAR_CONTROLS_END } : undefined}
     >
       <div className="flex min-w-0 items-center gap-2">
@@ -65,7 +53,7 @@ function PluginsHeader({
           <h1 className="truncate text-sm font-normal!">{title}</h1>
         </div>
 
-        <div className="ms-1 flex items-center gap-0.5 md:hidden" role="tablist" aria-label="Plugins sections">
+        <div className="ms-1 flex items-center gap-0.5" role="tablist" aria-label="Plugins sections">
           <button
             type="button"
             role="tab"
@@ -88,15 +76,6 @@ function PluginsHeader({
           </button>
         </div>
       </div>
-
-      {!selectedItem && (
-        <div className="flex shrink-0 items-center gap-1.5">
-          <Button size="sm" onClick={tab === 'skills' ? onAddSkill : onAddCustom}>
-            <PlusIcon data-icon="inline-start" />
-            {tab === 'skills' ? 'Add skill' : 'Add custom'}
-          </Button>
-        </div>
-      )}
     </header>
   )
 }
@@ -138,7 +117,7 @@ function PluginsPage() {
       <PluginsNav tab={tab} selected={selectedItem?.key} installed={installed} onSelectTab={selectTab} onSelectInstalled={selectInstalled} />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <PluginsHeader tab={tab} selectedItem={selectedItem} onSelectTab={selectTab} onAddSkill={() => setAddingSkill({})} onAddCustom={() => setDraft(BLANK_DRAFT)} />
+        <MobileHeader tab={tab} selectedItem={selectedItem} onSelectTab={selectTab} />
 
         {selectedItem ? (
           <InstalledDetail
@@ -155,6 +134,7 @@ function PluginsPage() {
             customServers={customServers}
             isConnected={isConnected}
             composioLoading={!composio}
+            onAddCustom={() => setDraft(BLANK_DRAFT)}
             onOpenConnector={openConnector}
             onEditServer={(s) => setDraft(draftOf(s))}
             onInspectInstalled={selectInstalled}
