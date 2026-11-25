@@ -40,7 +40,7 @@ function TabButton({ icon, selected, label, isFocused, ...props }: TabTriggerSlo
       accessibilityState={{ selected: isFocused }}
       style={[s.tab, isFocused && { backgroundColor: c.selected }]}
     >
-      <SymbolView name={isFocused ? selected : icon} size={21} tintColor={isFocused ? c.text : c.muted} />
+      <SymbolView name={isFocused ? selected : icon} size={23} tintColor={isFocused ? c.text : c.muted} />
     </Pressable>
   );
 }
