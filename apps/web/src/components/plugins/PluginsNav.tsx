@@ -13,8 +13,8 @@ export type PluginsTab = 'plugins' | 'skills'
 export type InstalledItem = { kind: 'connector'; key: string; connector: Connector } | { kind: 'server'; key: string; server: McpServerView } | { kind: 'skill'; key: string; skill: SkillView }
 
 /**
- * The second navbar column inside the Plugins page: top tab links for Plugins and Skills, followed by the Installed group listing
- * every active connector, custom MCP server and skill. Uses the same 30px rows and springing hover fill as the app sidebar.
+ * The second navbar column inside the Plugins page: close to the main sidebar's width (280px vs 300px), with no divider under its
+ * title bar, top tab links for Plugins and Skills, and an Installed group listing every active connector, custom MCP server and skill.
  */
 export function PluginsNav({
   tab,
@@ -33,11 +33,11 @@ export function PluginsNav({
   const hover = useRowHover()
 
   return (
-    <aside aria-label="Plugins navigation" className="hidden h-full w-56 shrink-0 flex-col border-r border-border bg-background md:flex">
-      <div data-tauri-drag-region className="flex h-12 shrink-0 items-center border-b border-border pr-3 pl-5" style={!open || isMobile ? { paddingLeft: TITLEBAR_CONTROLS_END } : undefined}>
+    <aside aria-label="Plugins navigation" className="hidden h-full w-[280px] shrink-0 flex-col border-r border-border bg-background md:flex">
+      <div data-tauri-drag-region className="flex h-12 shrink-0 items-center pr-3 pl-3.5" style={!open || isMobile ? { paddingLeft: TITLEBAR_CONTROLS_END } : undefined}>
         <span className="truncate text-sm font-normal text-foreground">Plugins</span>
       </div>
-      <div ref={hover.containerRef} className="relative flex min-h-0 flex-1 flex-col overflow-hidden px-1.5 py-2">
+      <div ref={hover.containerRef} className="relative flex min-h-0 flex-1 flex-col overflow-hidden px-1.5 pb-2">
         <FluidHoverHighlight className="z-0 rounded-[6px] bg-foreground/[0.05]" rect={hover.rect} session={hover.session} />
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto overscroll-y-none">
           <nav aria-label="Browse" className="flex shrink-0 flex-col gap-0.5">

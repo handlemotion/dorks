@@ -1,13 +1,13 @@
-import { useMemo, useState, type ReactNode } from 'react'
-import { BookOpenIcon, ChevronRightIcon, SearchIcon, ServerIcon, XIcon } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { BookOpenIcon, SearchIcon, ServerIcon, XIcon } from 'lucide-react'
 import type { McpServerView, SkillView } from '@dorks/client'
 import { useDorksClient } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
-import { cn } from 'cn'
+import { Input } from '@dorks/ui/input'
 import { toast } from 'sonner'
 import { CONNECTORS, KINDS, type Connector } from '../connectors'
 import { EmptyState } from '../EmptyState'
-import { StatusDot } from '../settings/kit'
+import { SettingsGroup, SettingsSection, SettingsSections, StatusDot } from '../settings/kit'
 import { ConnectorIcon } from './PluginsDialogs'
 import { SKILL_CATALOG, SKILL_GROUPS, type SkillCatalogEntry } from './skillsCatalog'
 
@@ -16,8 +16,10 @@ export type FilterScope = 'all' | 'installed'
 const FILTER_BUTTON =
   'inline-flex h-7 cursor-pointer items-center rounded-[6px] px-2.5 text-xs font-normal text-muted-foreground transition-none outline-none hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring data-[active=true]:bg-foreground/[0.07] data-[active=true]:text-foreground'
 
-/** Full-width 40px search and filter toolbar sitting right below the 48px header. */
-function SearchToolbar({
+const ROW = 'flex min-h-13 w-full min-w-0 cursor-pointer items-center gap-3 py-2.5 ps-4 pe-3 text-start hover:bg-foreground/[0.02]'
+
+/** Search input and All / Installed filter above the settings-kit sections. */
+function SearchBar({
   query,
   onQueryChange,
   placeholder,
@@ -33,26 +35,21 @@ function SearchToolbar({
   countLabel: string
 }) {
   return (
-    <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-5">
-      <SearchIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-      <input
-        type="text"
-        aria-label={placeholder}
-        placeholder={placeholder}
-        value={query}
-        onChange={(e) => onQueryChange(e.target.value)}
-        className="h-full min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-      />
-      {query && (
-        <button
-          type="button"
-          aria-label="Clear search"
-          onClick={() => onQueryChange('')}
-          className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
-        >
-          <XIcon className="size-3.5" />
-        </button>
-      )}
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="relative min-w-0 flex-1">
+        <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input type="text" aria-label={placeholder} placeholder={placeholder} value={query} onChange={(e) => onQueryChange(e.target.value)} className="h-8 bg-surface pr-7 pl-8 text-sm" />
+        {query && (
+          <button
+            type="button"
+            aria-label="Clear search"
+            onClick={() => onQueryChange('')}
+            className="absolute top-1/2 right-1.5 flex size-5 -translate-y-1/2 cursor-pointer items-center justify-center rounded-[6px] text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
+          >
+            <XIcon className="size-3.5" />
+          </button>
+        )}
+      </div>
       <div className="flex shrink-0 items-center gap-0.5" role="group" aria-label="Filter">
         <button type="button" data-active={scope === 'all' || undefined} onClick={() => onScopeChange('all')} className={FILTER_BUTTON}>
           All
@@ -61,33 +58,12 @@ function SearchToolbar({
           Installed
         </button>
       </div>
-      <span className="hidden shrink-0 pl-1 text-xs text-muted-foreground tabular-nums sm:inline">{countLabel}</span>
+      <span className="hidden shrink-0 text-xs text-muted-foreground tabular-nums sm:inline">{countLabel}</span>
     </div>
   )
 }
 
-/** Collapsible group section inside the flat hairline table. */
-function TableGroup({ title, count, collapsed, onToggle, children }: { title: string; count: number; collapsed: boolean; onToggle: () => void; children: ReactNode }) {
-  return (
-    <section aria-label={title}>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={!collapsed}
-        className="flex h-8 w-full cursor-pointer items-center gap-1.5 border-b border-border bg-foreground/[0.02] px-5 text-left outline-none hover:bg-foreground/[0.035] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
-      >
-        <ChevronRightIcon aria-hidden className={cn('size-3 shrink-0 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none', !collapsed && 'rotate-90')} />
-        <span className="text-xs font-medium text-foreground/80">{title}</span>
-        <span className="text-xs text-muted-foreground tabular-nums">{count}</span>
-      </button>
-      {!collapsed && <div role="rowgroup">{children}</div>}
-    </section>
-  )
-}
-
-// ---------------------------------------------------------------- Plugins directory table
-
-const PLUGINS_GRID = 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 md:grid-cols-[minmax(180px,220px)_minmax(0,1fr)_92px_136px]'
+// ---------------------------------------------------------------- Plugins directory
 
 export function PluginsDirectory({
   servers,
@@ -108,16 +84,7 @@ export function PluginsDirectory({
 }) {
   const [query, setQuery] = useState('')
   const [scope, setScope] = useState<FilterScope>('all')
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
   const q = query.trim().toLowerCase()
-
-  const toggleGroup = (id: string) =>
-    setCollapsed((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
 
   const groups = useMemo(() => {
     const out: { id: string; title: string; items: ({ kind: 'connector'; c: Connector; connected: boolean } | { kind: 'server'; s: McpServerView })[] }[] = []
@@ -147,11 +114,12 @@ export function PluginsDirectory({
   const total = groups.reduce((n, g) => n + g.items.length, 0)
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <SearchToolbar query={query} onQueryChange={setQuery} placeholder="Search plugins…" scope={scope} onScopeChange={setScope} countLabel={`${total} ${total === 1 ? 'plugin' : 'plugins'}`} />
-      <div className="min-h-0 flex-1 overflow-y-auto">
+    <div className="app-main min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 pt-6 pb-16 sm:px-6">
+        <SearchBar query={query} onQueryChange={setQuery} placeholder="Search plugins…" scope={scope} onScopeChange={setScope} countLabel={`${total} ${total === 1 ? 'plugin' : 'plugins'}`} />
+
         {total === 0 ? (
-          <div className="flex min-h-64 items-center justify-center px-5 py-12">
+          <div className="flex min-h-56 items-center justify-center py-8">
             <EmptyState
               figure="drawer"
               title={q ? 'No matching plugins' : 'No installed plugins yet'}
@@ -169,49 +137,25 @@ export function PluginsDirectory({
             </EmptyState>
           </div>
         ) : (
-          <div role="table" aria-label="Plugins">
-            <div role="row" className={`sticky top-0 z-10 h-8 border-b border-border bg-background px-5 text-xs text-muted-foreground ${PLUGINS_GRID}`}>
-              <div role="columnheader">Plugin</div>
-              <div role="columnheader" className="hidden md:block">
-                Description
-              </div>
-              <div role="columnheader" className="hidden md:block">
-                Auth
-              </div>
-              <div role="columnheader" className="text-right">
-                Status
-              </div>
-            </div>
+          <SettingsSections>
             {groups.map((g) => (
-              <TableGroup key={g.id} title={g.title} count={g.items.length} collapsed={collapsed.has(g.id)} onToggle={() => toggleGroup(g.id)}>
-                {g.items.map((item) => {
-                  if (item.kind === 'server') {
-                    const s = item.s
-                    const where = s.transport === 'http' ? s.url : [s.command, ...s.args].join(' ')
-                    return (
-                      <div
-                        key={`server:${s.name}`}
-                        role="row"
-                        onClick={() => onInspectInstalled(`server:${s.name}`)}
-                        className={`min-h-12 cursor-pointer border-b border-border px-5 py-2.5 hover:bg-foreground/[0.02] ${PLUGINS_GRID}`}
-                      >
-                        <div role="cell" className="flex min-w-0 items-center gap-3">
+              <SettingsSection key={g.id} title={g.title} actions={<span className="text-xs text-muted-foreground tabular-nums">{g.items.length}</span>}>
+                <SettingsGroup label={g.title}>
+                  {g.items.map((item) => {
+                    if (item.kind === 'server') {
+                      const s = item.s
+                      const where = s.transport === 'http' ? s.url : [s.command, ...s.args].join(' ')
+                      return (
+                        <div key={`server:${s.name}`} onClick={() => onInspectInstalled(`server:${s.name}`)} className={ROW}>
                           <span className="flex size-7 shrink-0 items-center justify-center rounded-[6px] bg-foreground/[0.04] text-muted-foreground">
                             <ServerIcon className="size-3.5" />
                           </span>
-                          <div className="flex min-w-0 flex-col">
-                            <span className="truncate font-mono text-xs text-foreground">{s.name}</span>
-                            <span className="truncate font-mono text-xs text-muted-foreground md:hidden">{where}</span>
+                          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                            <span className="truncate font-mono text-xs leading-4 text-foreground">{s.name}</span>
+                            <span className="truncate font-mono text-xs leading-4 text-muted-foreground">{where}</span>
                           </div>
-                        </div>
-                        <div role="cell" className="hidden min-w-0 truncate font-mono text-xs text-muted-foreground md:block">
-                          {where}
-                        </div>
-                        <div role="cell" className="hidden text-xs text-muted-foreground md:block">
-                          {s.transport === 'http' ? 'HTTP' : 'Local'}
-                        </div>
-                        <div role="cell" className="flex items-center justify-end gap-2">
-                          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <span className="hidden shrink-0 text-xs text-muted-foreground md:inline">{s.transport === 'http' ? 'HTTP' : 'Local'}</span>
+                          <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
                             <StatusDot tone="success" />
                             <span className="hidden sm:inline">Installed</span>
                           </span>
@@ -227,42 +171,32 @@ export function PluginsDirectory({
                             Edit
                           </Button>
                         </div>
-                      </div>
-                    )
-                  }
+                      )
+                    }
 
-                  const { c, connected } = item
-                  const loading = !servers || (!!c.toolkit && composioLoading)
-                  return (
-                    <div
-                      key={c.id}
-                      role="row"
-                      onClick={() => {
-                        if (loading) return
-                        if (connected) onInspectInstalled(`connector:${c.id}`)
-                        else onOpenConnector(c)
-                      }}
-                      className={`min-h-12 cursor-pointer border-b border-border px-5 py-2.5 hover:bg-foreground/[0.02] ${PLUGINS_GRID}`}
-                    >
-                      <div role="cell" className="flex min-w-0 items-center gap-3">
+                    const { c, connected } = item
+                    const loading = !servers || (!!c.toolkit && composioLoading)
+                    return (
+                      <div
+                        key={c.id}
+                        onClick={() => {
+                          if (loading) return
+                          if (connected) onInspectInstalled(`connector:${c.id}`)
+                          else onOpenConnector(c)
+                        }}
+                        className={ROW}
+                      >
                         <span className="flex size-7 shrink-0 items-center justify-center rounded-[6px] bg-foreground/[0.04]">
                           <ConnectorIcon connector={c} className="size-4" />
                         </span>
-                        <div className="flex min-w-0 flex-col">
-                          <span className="truncate text-sm text-foreground">{c.name}</span>
-                          <span className="truncate text-xs text-muted-foreground md:hidden">{c.description}</span>
+                        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <span className="truncate text-sm leading-4 text-foreground">{c.name}</span>
+                          <span className="truncate text-xs leading-4 text-muted-foreground">{c.description}</span>
                         </div>
-                      </div>
-                      <div role="cell" className="hidden min-w-0 truncate text-xs text-muted-foreground md:block">
-                        {c.description}
-                      </div>
-                      <div role="cell" className="hidden text-xs text-muted-foreground md:block">
-                        {c.toolkit ? 'OAuth' : 'API key'}
-                      </div>
-                      <div role="cell" className="flex items-center justify-end gap-2">
+                        <span className="hidden shrink-0 text-xs text-muted-foreground md:inline">{c.toolkit ? 'OAuth' : 'API key'}</span>
                         {connected ? (
                           <>
-                            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
                               <StatusDot tone="success" />
                               <span className="hidden sm:inline">Installed</span>
                             </span>
@@ -294,39 +228,28 @@ export function PluginsDirectory({
                           </Button>
                         )}
                       </div>
-                    </div>
-                  )
-                })}
-              </TableGroup>
+                    )
+                  })}
+                </SettingsGroup>
+              </SettingsSection>
             ))}
-          </div>
+          </SettingsSections>
         )}
       </div>
     </div>
   )
 }
 
-// ---------------------------------------------------------------- Skills directory table
-
-const SKILLS_GRID = 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 md:grid-cols-[minmax(190px,240px)_minmax(0,1fr)_170px_136px]'
+// ---------------------------------------------------------------- Skills directory
 
 export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { skills: SkillView[] | undefined; onAddSkill: (source?: string) => void; onInspectInstalled: (key: string) => void }) {
   const { actions } = useDorksClient()
   const [query, setQuery] = useState('')
   const [scope, setScope] = useState<FilterScope>('all')
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
   const [busy, setBusy] = useState<string | null>(null)
   const q = query.trim().toLowerCase()
 
   const installedByName = useMemo(() => new Map((skills ?? []).map((s) => [s.name, s])), [skills])
-
-  const toggleGroup = (id: string) =>
-    setCollapsed((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
 
   const installQuick = async (entry: SkillCatalogEntry) => {
     setBusy(entry.name)
@@ -388,11 +311,12 @@ export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { sk
   const total = groups.reduce((n, g) => n + g.items.length, 0)
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <SearchToolbar query={query} onQueryChange={setQuery} placeholder="Search skills…" scope={scope} onScopeChange={setScope} countLabel={`${total} ${total === 1 ? 'skill' : 'skills'}`} />
-      <div className="min-h-0 flex-1 overflow-y-auto">
+    <div className="app-main min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 pt-6 pb-16 sm:px-6">
+        <SearchBar query={query} onQueryChange={setQuery} placeholder="Search skills…" scope={scope} onScopeChange={setScope} countLabel={`${total} ${total === 1 ? 'skill' : 'skills'}`} />
+
         {total === 0 ? (
-          <div className="flex min-h-64 items-center justify-center px-5 py-12">
+          <div className="flex min-h-56 items-center justify-center py-8">
             <EmptyState
               figure="drawer"
               title={q ? 'No matching skills' : 'No installed skills yet'}
@@ -410,52 +334,32 @@ export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { sk
             </EmptyState>
           </div>
         ) : (
-          <div role="table" aria-label="Skills">
-            <div role="row" className={`sticky top-0 z-10 h-8 border-b border-border bg-background px-5 text-xs text-muted-foreground ${SKILLS_GRID}`}>
-              <div role="columnheader">Skill</div>
-              <div role="columnheader" className="hidden md:block">
-                Description
-              </div>
-              <div role="columnheader" className="hidden md:block">
-                Source
-              </div>
-              <div role="columnheader" className="text-right">
-                Status
-              </div>
-            </div>
+          <SettingsSections>
             {groups.map((g) => (
-              <TableGroup key={g.id} title={g.title} count={g.items.length} collapsed={collapsed.has(g.id)} onToggle={() => toggleGroup(g.id)}>
-                {g.items.map((item) => {
-                  const isBusy = busy === item.name
-                  return (
-                    <div
-                      key={item.name}
-                      role="row"
-                      onClick={() => {
-                        if (item.installed) onInspectInstalled(`skill:${item.name}`)
-                        else if (item.catalog) onAddSkill(item.catalog.source)
-                      }}
-                      className={`min-h-12 cursor-pointer border-b border-border px-5 py-2.5 hover:bg-foreground/[0.02] ${SKILLS_GRID}`}
-                    >
-                      <div role="cell" className="flex min-w-0 items-center gap-3">
+              <SettingsSection key={g.id} title={g.title} actions={<span className="text-xs text-muted-foreground tabular-nums">{g.items.length}</span>}>
+                <SettingsGroup label={g.title}>
+                  {g.items.map((item) => {
+                    const isBusy = busy === item.name
+                    return (
+                      <div
+                        key={item.name}
+                        onClick={() => {
+                          if (item.installed) onInspectInstalled(`skill:${item.name}`)
+                          else if (item.catalog) onAddSkill(item.catalog.source)
+                        }}
+                        className={ROW}
+                      >
                         <span className="flex size-7 shrink-0 items-center justify-center rounded-[6px] bg-foreground/[0.04] text-muted-foreground">
                           <BookOpenIcon className="size-3.5" />
                         </span>
-                        <div className="flex min-w-0 flex-col">
-                          <span className="truncate font-mono text-xs text-foreground">{item.name}</span>
-                          <span className="truncate text-xs text-muted-foreground md:hidden">{item.description}</span>
+                        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <span className="truncate font-mono text-xs leading-4 text-foreground">{item.name}</span>
+                          <span className="truncate text-xs leading-4 text-muted-foreground">{item.description}</span>
                         </div>
-                      </div>
-                      <div role="cell" className="hidden min-w-0 truncate text-xs text-muted-foreground md:block">
-                        {item.description}
-                      </div>
-                      <div role="cell" className="hidden min-w-0 truncate font-mono text-xs text-muted-foreground md:block">
-                        {item.source}
-                      </div>
-                      <div role="cell" className="flex items-center justify-end gap-2">
+                        <span className="hidden shrink-0 font-mono text-xs text-muted-foreground lg:inline">{item.source}</span>
                         {item.installed ? (
                           <>
-                            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
                               <StatusDot tone="success" />
                               <span className="hidden sm:inline">Installed</span>
                             </span>
@@ -487,12 +391,12 @@ export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { sk
                           </Button>
                         )}
                       </div>
-                    </div>
-                  )
-                })}
-              </TableGroup>
+                    )
+                  })}
+                </SettingsGroup>
+              </SettingsSection>
             ))}
-          </div>
+          </SettingsSections>
         )}
       </div>
     </div>
