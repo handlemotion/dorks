@@ -3,9 +3,9 @@
 // MOCK_CONFIGURED=1 skips the first-run setup.
 import { spawn } from 'node:child_process'
 
-const env = { ...process.env, MOCK_PORT: process.env.MOCK_PORT ?? '4747', MOCK_TOKEN: process.env.MOCK_TOKEN ?? 'mock-owner-token' }
+const env = { ...process.env, MOCK_PORT: process.env.MOCK_PORT ?? '4747', MOCK_TOKEN: process.env.MOCK_TOKEN ?? 'mock-owner-token', MOCK_CONFIGURED: process.env.MOCK_CONFIGURED ?? '1' }
 const mock = spawn('node', ['../../packages/client/src/mock-cli.ts'], { stdio: 'inherit', env })
-const vite = spawn('pnpm', ['exec', 'vp', 'dev', '--port', '3000'], { stdio: 'inherit', env })
+const vite = spawn('pnpm', ['exec', 'vp', 'dev', '--port', '3000', '--host', '0.0.0.0'], { stdio: 'inherit', env })
 console.log(`\nMock server on http://127.0.0.1:${env.MOCK_PORT}. Open:\n  http://localhost:3000/?server=http://127.0.0.1:${env.MOCK_PORT}&token=${env.MOCK_TOKEN}\n`)
 
 const stop = () => {

@@ -20,6 +20,7 @@ import { Route as ConnAppAutomationsRouteImport } from './routes/_conn/_app/auto
 import { Route as ConnAppBuildsRouteImport } from './routes/_conn/_app/builds'
 import { Route as ConnAppCustomizeRouteImport } from './routes/_conn/_app/customize'
 import { Route as ConnAppDorksRouteImport } from './routes/_conn/_app/dorks'
+import { Route as ConnAppPluginsRouteImport } from './routes/_conn/_app/plugins'
 import { Route as ConnSettingsIndexRouteImport } from './routes/_conn/settings/index'
 import { Route as ConnSettingsPageRouteImport } from './routes/_conn/settings/$page'
 
@@ -76,6 +77,11 @@ const ConnAppDorksRoute = ConnAppDorksRouteImport.update({
   path: '/dorks',
   getParentRoute: () => ConnAppRoute,
 } as any)
+const ConnAppPluginsRoute = ConnAppPluginsRouteImport.update({
+  id: '/plugins',
+  path: '/plugins',
+  getParentRoute: () => ConnAppRoute,
+} as any)
 const ConnSettingsIndexRoute = ConnSettingsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -97,6 +103,7 @@ export interface FileRoutesByFullPath {
   '/builds': typeof ConnAppBuildsRoute
   '/customize': typeof ConnAppCustomizeRoute
   '/dorks': typeof ConnAppDorksRoute
+  '/plugins': typeof ConnAppPluginsRoute
   '/settings/$page': typeof ConnSettingsPageRoute
   '/settings/': typeof ConnSettingsIndexRoute
 }
@@ -109,6 +116,7 @@ export interface FileRoutesByTo {
   '/builds': typeof ConnAppBuildsRoute
   '/customize': typeof ConnAppCustomizeRoute
   '/dorks': typeof ConnAppDorksRoute
+  '/plugins': typeof ConnAppPluginsRoute
   '/settings/$page': typeof ConnSettingsPageRoute
   '/settings': typeof ConnSettingsIndexRoute
 }
@@ -125,6 +133,7 @@ export interface FileRoutesById {
   '/_conn/_app/builds': typeof ConnAppBuildsRoute
   '/_conn/_app/customize': typeof ConnAppCustomizeRoute
   '/_conn/_app/dorks': typeof ConnAppDorksRoute
+  '/_conn/_app/plugins': typeof ConnAppPluginsRoute
   '/_conn/settings/$page': typeof ConnSettingsPageRoute
   '/_conn/settings/': typeof ConnSettingsIndexRoute
 }
@@ -140,6 +149,7 @@ export interface FileRouteTypes {
     | '/builds'
     | '/customize'
     | '/dorks'
+    | '/plugins'
     | '/settings/$page'
     | '/settings/'
   fileRoutesByTo: FileRoutesByTo
@@ -152,6 +162,7 @@ export interface FileRouteTypes {
     | '/builds'
     | '/customize'
     | '/dorks'
+    | '/plugins'
     | '/settings/$page'
     | '/settings'
   id:
@@ -167,6 +178,7 @@ export interface FileRouteTypes {
     | '/_conn/_app/builds'
     | '/_conn/_app/customize'
     | '/_conn/_app/dorks'
+    | '/_conn/_app/plugins'
     | '/_conn/settings/$page'
     | '/_conn/settings/'
   fileRoutesById: FileRoutesById
@@ -257,6 +269,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConnAppDorksRouteImport
       parentRoute: typeof ConnAppRoute
     }
+    '/_conn/_app/plugins': {
+      id: '/_conn/_app/plugins'
+      path: '/plugins'
+      fullPath: '/plugins'
+      preLoaderRoute: typeof ConnAppPluginsRouteImport
+      parentRoute: typeof ConnAppRoute
+    }
     '/_conn/settings/': {
       id: '/_conn/settings/'
       path: '/'
@@ -279,6 +298,7 @@ interface ConnAppRouteChildren {
   ConnAppBuildsRoute: typeof ConnAppBuildsRoute
   ConnAppCustomizeRoute: typeof ConnAppCustomizeRoute
   ConnAppDorksRoute: typeof ConnAppDorksRoute
+  ConnAppPluginsRoute: typeof ConnAppPluginsRoute
 }
 
 const ConnAppRouteChildren: ConnAppRouteChildren = {
@@ -286,6 +306,7 @@ const ConnAppRouteChildren: ConnAppRouteChildren = {
   ConnAppBuildsRoute: ConnAppBuildsRoute,
   ConnAppCustomizeRoute: ConnAppCustomizeRoute,
   ConnAppDorksRoute: ConnAppDorksRoute,
+  ConnAppPluginsRoute: ConnAppPluginsRoute,
 }
 
 const ConnAppRouteWithChildren =

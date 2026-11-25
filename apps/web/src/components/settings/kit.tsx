@@ -33,7 +33,7 @@ export function SettingsSection({ title, description, actions, children }: { tit
   )
 }
 
-const GROUP = '@container flex min-w-0 flex-col divide-y divide-border overflow-hidden rounded-[6px] border border-surface-line bg-surface'
+const GROUP = '@container flex min-w-0 flex-col divide-y divide-border overflow-hidden rounded-[6px] border border-border bg-surface dark:border-transparent'
 
 /** A raised column of rows. Pass `onSubmit` to make it a form (its Save button lives in a `SettingsGroupFooter`). */
 export function SettingsGroup({ children, className, onSubmit, label }: { children: ReactNode; className?: string; onSubmit?: () => void; label?: string }) {

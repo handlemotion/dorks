@@ -158,7 +158,7 @@ function OwnerSwitcher({ owners, scope, setScope, onDisconnect }: { owners: stri
 
 /** The app's pages, under New session. */
 const PAGES = [
-  { to: '/customize', label: 'Customize', icon: BlocksIcon },
+  { to: '/plugins', label: 'Plugins', icon: BlocksIcon },
   { to: '/automations', label: 'Automations', icon: WorkflowIcon },
   { to: '/builds', label: 'Builds', icon: BoxIcon },
 ] as const
