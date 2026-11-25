@@ -50,7 +50,6 @@ export default function SignIn() {
     <View style={[s.fill, { backgroundColor: c.background }]}>
       <View style={s.center}>
         <Text style={[s.title, { color: c.text }]}>Dorks</Text>
-        <Text style={[s.detail, { color: c.muted }]}>Your Mac's agents, from your phone.</Text>
       </View>
       <View style={s.actions}>
         <AppleAuthentication.AppleAuthenticationButton

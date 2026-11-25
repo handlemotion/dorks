@@ -25,9 +25,9 @@ export default function PairScreen() {
 
   const claim = async (raw: string, cloudUrl: string | null = null) => {
     if (claimed.current || busy) return;
-    if (!sameCloud(cloudUrl)) return setError("This code was made for another Dorks Cloud.");
+    if (!sameCloud(cloudUrl)) return setError("Code is for another Dorks Cloud");
     const value = normalizeCode(raw);
-    if (value.length < 8) return setError("Codes have 8 letters and digits, like ABCD-2345.");
+    if (value.length < 8) return setError("Code is 8 characters");
     claimed.current = true;
     setBusy(true);
     setError(undefined);
@@ -53,7 +53,6 @@ export default function PairScreen() {
   return (
     <ScrollView style={{ backgroundColor: c.background }} contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
       <Text style={[s.title, { color: c.text }]}>Pair a Mac</Text>
-      <Text style={[s.detail, { color: c.muted }]}>On your Mac, open Dorks, Settings, Phone, and choose Pair a phone. Then scan its code.</Text>
       <View style={[s.camera, { backgroundColor: c.fill }]}>
         {permission?.granted ? (
           <CameraView
@@ -71,11 +70,10 @@ export default function PairScreen() {
           />
         ) : (
           <Pressable onPress={() => void requestPermission()} style={s.allow}>
-            <Text style={[s.detail, { color: c.text }]}>{permission?.canAskAgain === false ? "Allow the camera in the Settings app" : "Allow the camera to scan"}</Text>
+            <Text style={[s.detail, { color: c.text }]}>{permission?.canAskAgain === false ? "Allow camera in Settings" : "Allow camera"}</Text>
           </Pressable>
         )}
       </View>
-      <Text style={[s.detail, { color: c.muted }]}>Or type the code</Text>
       <View style={s.row}>
         <TextInput
           value={code}

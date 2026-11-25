@@ -20,13 +20,13 @@ export function StatusLine({ state, live, blocks }: { state: DorkState; live: Li
   const last = blocks.at(-1);
   const text =
     live === "offline"
-      ? "Your Mac is offline. Dorks needs it awake to answer."
+      ? "Mac offline"
       : live === "unauthorized"
-        ? "Signed out of Dorks Cloud. Sign in again in Settings."
+        ? "Signed out"
         : state === "working"
           ? `${currentStep(blocks) ?? "Working"}${since ? ` · ${workedFor(now - since)}` : ""}`
           : state === "creating"
-            ? "Starting the sandbox"
+            ? "Starting"
             : state === "waking"
               ? "Waking up"
               : state === "error"
