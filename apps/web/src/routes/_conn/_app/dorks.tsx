@@ -375,6 +375,7 @@ function usePullRequestPanel(dorkId: string, dork: { prUrl?: string } | null | u
     refresh,
     merge: async (method, sha) => void (await actions.mergePullRequest(dorkId, method, sha)),
     updateBranch: (sha) => actions.updatePullRequestBranch(dorkId, sha),
+    markReady: () => actions.markPullRequestReady(dorkId),
   }
 }
 
@@ -389,6 +390,7 @@ function useSessionPullRequest(dorkId: string, url: string): PullRequestPanelDat
     refresh,
     merge: async (method, sha) => void (await actions.mergePullRequest(dorkId, method, sha, url)),
     updateBranch: (sha) => actions.updatePullRequestBranch(dorkId, sha, url),
+    markReady: () => actions.markPullRequestReady(dorkId, url),
   }
 }
 

@@ -32,8 +32,10 @@ import type {
   SnapshotStatus,
   Usage,
   GithubRepos,
+  SentryProjects,
   LocalAccess,
   LocalDecision,
+  PhoneStatus,
   InputAnswer,
 } from "./types.ts";
 
@@ -148,11 +150,13 @@ export class DorksClient {
         this.invalidate("settings");
         this.invalidate("pr"); // a new GitHub login may see a PR the old one could not
         this.invalidate("github-repos");
+        this.invalidate("sentry-projects");
         this.invalidate("secrets");
         this.invalidate("mcp-servers");
         this.invalidate("skills");
         this.invalidate("composio");
         this.invalidate("local-access");
+        this.invalidate("phone");
         break;
       case "snapshot":
         this.invalidate("snapshot");
@@ -218,6 +222,18 @@ export class DorksClient {
     return this.query<string[]>("secrets", () => this.api.listSecrets());
   }
 
+  /** The connected Sentry organization's projects; `error` says why there are none. Refetched when settings change. */
+  sentryProjects() {
+    return this.query<SentryProjects>("sentry-projects", async () => {
+      try {
+        return await this.api.getSentryProjects();
+      } catch (e) {
+        if (e instanceof ApiError && e.code !== "forbidden") return { org: null, projects: [], error: e.message };
+        throw e;
+      }
+    });
+  }
+
   /** One of the session's pull requests (`url`; default its latest), live from GitHub; `null` when it has none. Refetched when the poller sees a PR change. */
   pullRequest(dorkId: string, url?: string) {
     return this.query<PullRequestView | null>(url ? `pr:${dorkId}:${url}` : `pr:${dorkId}`, async () => {
@@ -241,6 +257,11 @@ export class DorksClient {
   /** Local access: the switch and the sessions allowed to use this computer (docs/local-access.md). */
   localAccess() {
     return this.query<LocalAccess>("local-access", () => this.api.localAccess());
+  }
+
+  /** The phone link: paired or not, the link's state and a pairing in progress. Refreshed with settings. */
+  phone() {
+    return this.query<PhoneStatus>("phone", () => this.api.phone());
   }
   mcpServers() {
     return this.query<McpServerView[]>("mcp-servers", () => this.api.listMcpServers());
@@ -442,6 +463,14 @@ export class DorksClient {
         this.invalidate(`dork:${id}`);
       }
     },
+    markPullRequestReady: async (id: string, url?: string) => {
+      try {
+        await this.api.markPullRequestReady(id, url);
+      } finally {
+        this.invalidate(`pr:${id}`);
+        this.invalidate(`subs:${id}`);
+      }
+    },
     updatePullRequestBranch: async (id: string, sha?: string, url?: string) => {
       try {
         await this.api.updatePullRequestBranch(id, sha, url);
@@ -542,6 +571,19 @@ export class DorksClient {
       await this.api.setLocalAccess(enabled);
       this.invalidate("local-access");
       this.invalidate("settings"); // turning it off also turns Always allow off
+    },
+    pairPhone: async (name?: string) => {
+      const p = await this.api.pairPhone(name);
+      this.invalidate("phone");
+      return p;
+    },
+    cancelPhonePair: async () => {
+      await this.api.cancelPhonePair();
+      this.invalidate("phone");
+    },
+    unpairPhone: async () => {
+      await this.api.unpairPhone();
+      this.invalidate("phone");
     },
     /** Ends one session's permission to use this computer, or every session's. */
     revokeLocalSessions: async (dorkId?: string) => {

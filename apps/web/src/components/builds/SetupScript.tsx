@@ -17,7 +17,7 @@ export function SetupScript({ build }: { build: BuildView }) {
       title="Setup script"
       description={
         <>
-          Runs once while building, as <code>user</code> with passwordless sudo in <code>/home/user</code>. Stops at the first failing command.
+          Runs once while building, as <code>user</code> with sudo. Stops at the first failure.
         </>
       }
     >
@@ -26,20 +26,27 @@ export function SetupScript({ build }: { build: BuildView }) {
           aria-label="setup script"
           rows={8}
           spellCheck={false}
-          className="max-w-none! min-h-40 rounded-none border-0 bg-app/30 px-4 py-3 font-mono text-xs leading-5 focus-visible:ring-0 dark:bg-app/30"
+          className="max-w-none! min-h-32 rounded-none border-0 bg-transparent px-4 py-3 font-mono text-xs leading-5 md:text-xs focus-visible:ring-0 dark:bg-transparent"
           placeholder="sudo apt-get install -y jq"
           value={text}
           onChange={(e) => setText(e.target.value)}
         />
-        <SettingsGroupFooter
-          action={
-            <Button type="submit" size="sm" variant="outline" disabled={pending || text === build.setupScript}>
-              Save
-            </Button>
-          }
-        >
-          {text !== build.setupScript ? 'Unsaved changes. Saving marks the image out of date until you rebuild.' : 'Saving marks the image out of date until you rebuild.'}
-        </SettingsGroupFooter>
+        {text !== build.setupScript && (
+          <SettingsGroupFooter
+            action={
+              <>
+                <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={() => setText(build.setupScript)}>
+                  Discard
+                </Button>
+                <Button type="submit" size="sm" disabled={pending}>
+                  Save
+                </Button>
+              </>
+            }
+          >
+            Unsaved changes
+          </SettingsGroupFooter>
+        )}
       </SettingsGroup>
       <SettingsStatus error={error} />
     </SettingsSection>

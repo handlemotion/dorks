@@ -6,7 +6,7 @@ import { owned } from "./dorks";
 import { githubToken } from "./settings";
 
 // The session's pull request, read live from GitHub as the GitHub CLI's login (docs/github.md), and the actions Chat details takes
-// on it: merge, and bring the branch up to date. Nothing here is stored; the poller (services/poller.ts) still owns the PR's
+// on it: merge, mark a draft ready, and bring the branch up to date. Nothing here is stored; the poller (services/poller.ts) still owns the PR's
 // lifecycle events, and is nudged after a merge so the transcript shows it at once.
 
 const API = "https://api.github.com";
@@ -323,6 +323,32 @@ function mergeRefused(status: number, message: string | undefined): never {
   if (status === 401) return fail("github_error", "GitHub rejected the GitHub CLI's login. Run `gh auth login` again.");
   if (status === 403 || status === 404) return fail("github_error", message ? `GitHub refused the merge: ${message}` : "The GitHub CLI's login cannot merge into this repository.");
   return fail("github_error", message ? `GitHub refused the merge: ${message}` : `GitHub answered ${status}.`);
+}
+
+/**
+ * `POST /api/dorks/:id/pr/ready`: marks a draft pull request ready for review. REST cannot, so this is GitHub's GraphQL
+ * `markPullRequestReadyForReview` on the PR's node id. A PR that is already ready answers as done.
+ */
+export async function markPullRequestReady(app: App, dorkId: string, url?: unknown): Promise<void> {
+  const { repo, number } = prRef(app, dorkId, url);
+  const token = await tokenOf(app);
+  const pr = obj(await get(app, token, `/repos/${repo}/pulls/${number}`));
+  if (pr.state === "closed" || pr.merged_at) return fail("conflict", "This pull request is no longer open.");
+  if (pr.draft !== true) return;
+  const nodeId = s(pr.node_id);
+  if (!nodeId) return fail("github_error", "GitHub did not say which pull request this is.");
+  const r = await call(app, token, "POST", "/graphql", {
+    query: "mutation($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) { pullRequest { isDraft } } }",
+    variables: { id: nodeId },
+  });
+  const errors = arr(obj(r.json).errors);
+  if (r.status === 200 && !errors.length) {
+    setTimer(app, "", "poll", 0);
+    return;
+  }
+  if (r.status === 401) return fail("github_error", "GitHub rejected the GitHub CLI's login. Run `gh auth login` again.");
+  const message = s(errors[0]?.message).slice(0, 300) || ghMessage(r.json);
+  return fail("github_error", message ? `GitHub refused: ${message}` : `GitHub answered ${r.status}.`);
 }
 
 /** `POST /api/dorks/:id/pr/update-branch`: merges the base branch into the PR's branch (GitHub's "Update branch"). */

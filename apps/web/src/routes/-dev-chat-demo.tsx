@@ -476,6 +476,10 @@ export function Demo() {
       console.info('demo merge', method)
     },
     updateBranch: async () => setDemoPr((p) => ({ ...p, mergeableState: 'clean' })),
+    markReady: async () => {
+      await new Promise((r) => setTimeout(r, 600))
+      setDemoPr((p) => ({ ...p, draft: false, mergeableState: 'clean' }))
+    },
   }
   const demoCurrent = stopped ? {} : currentStep(blocks)
   const openSteps = (keys: string[]) => {

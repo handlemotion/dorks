@@ -574,4 +574,26 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX ships_open ON ships (ended_at);
   `,
+  `
+  -- Sentry for automations (services/automationSentry.ts, docs/automations.md "Sentry"): the owner's Sentry token (encrypted), its
+  -- organization and the API base it lives on (the organization's region, or a self-hosted Sentry), and what the Sentry watcher last
+  -- saw of each watched project and environment (\`key\` is \`<project>|<environment>\`; \`state\` JSON; \`error\` why it could not read it).
+  ALTER TABLE settings ADD COLUMN sentry_token_enc TEXT;
+  ALTER TABLE settings ADD COLUMN sentry_org TEXT;
+  ALTER TABLE settings ADD COLUMN sentry_url TEXT;
+  ALTER TABLE settings ADD COLUMN sentry_api TEXT;
+  CREATE TABLE sentry_watch (
+    key TEXT PRIMARY KEY,
+    state TEXT NOT NULL,
+    error TEXT,
+    updated_at INTEGER NOT NULL
+  );
+  `,
+  `
+  -- The phone link (services/phoneLink.ts, docs/mobile.md): this Mac's id in the cloud relay, its name there, and the Mac token the
+  -- relay gave it when a phone paired (encrypted).
+  ALTER TABLE settings ADD COLUMN cloud_mac_id TEXT;
+  ALTER TABLE settings ADD COLUMN cloud_mac_name TEXT;
+  ALTER TABLE settings ADD COLUMN cloud_mac_token_enc TEXT;
+  `,
 ];

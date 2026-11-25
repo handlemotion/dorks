@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from 'react'
 import { ChevronDownIcon, ClockIcon, FolderIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { cn } from 'cn'
-import type { AutomationTrigger, GithubEvent, GithubTrigger, ScheduleEvery, ScheduleTrigger } from '@dorks/client'
+import type { AutomationTrigger, GithubEvent, GithubTrigger, ScheduleEvery, ScheduleTrigger, SentryEvent, SentryTrigger } from '@dorks/client'
+import { useSentryProjects } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
 import { Command, CommandEmpty, CommandItem, CommandList, CommandMenuInput, CommandSeparator } from '@dorks/ui/command'
 import {
@@ -41,6 +42,11 @@ export const EVENTS: { value: GithubEvent; label: string }[] = [
   { value: 'issue_opened', label: 'Issue opened' },
   { value: 'comment', label: 'Comment' },
 ]
+export const SENTRY_EVENTS: { value: SentryEvent; label: string }[] = [
+  { value: 'sentry_issue', label: 'New issue' },
+  { value: 'sentry_spike', label: 'Error spike' },
+  { value: 'sentry_monitor', label: 'Monitor failing' },
+]
 const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0'))
 
 const CHIP =
@@ -49,6 +55,16 @@ const NEEDED = 'text-amber-700 dark:text-amber-400'
 
 /** The GitHub mark, for event triggers. */
 export const GithubMark = ({ className }: { className?: string }) => <Logo light={githubLight} dark={githubDark} className={cn('size-4 shrink-0', className)} />
+
+/** Sentry's mark, for Sentry triggers. */
+export const SentryMark = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" aria-hidden className={cn('size-4 shrink-0 fill-current text-foreground', className)}>
+    <path d="M13.91 2.505c-.873-1.448-2.972-1.448-3.844 0L6.904 7.92a15.478 15.478 0 0 1 8.53 12.811h-2.221A13.301 13.301 0 0 0 5.784 9.814l-2.926 5.06a7.65 7.65 0 0 1 4.435 5.848H2.194a.365.365 0 0 1-.298-.534l1.413-2.402a5.16 5.16 0 0 0-1.614-.913L.296 19.275a2.182 2.182 0 0 0 .812 2.999 2.24 2.24 0 0 0 1.086.288h6.983a9.322 9.322 0 0 0-3.845-8.318l1.11-1.922a11.47 11.47 0 0 1 4.95 10.24h5.915a17.242 17.242 0 0 0-7.885-15.28l2.244-3.845a.37.37 0 0 1 .504-.13c.255.14 9.75 16.708 9.928 16.9a.365.365 0 0 1-.327.543h-2.287c.029.612.029 1.223 0 1.831h2.297a2.206 2.206 0 0 0 1.922-3.31z" />
+  </svg>
+)
+
+/** The mark for a trigger's kind. */
+export const TriggerMark = ({ kind }: { kind: AutomationTrigger['kind'] }) => (kind === 'schedule' ? <ClockIcon className="size-4" /> : kind === 'sentry' ? <SentryMark /> : <GithubMark />)
 
 /** `GMT+7` for a zone, now. */
 export function zoneLabel(timeZone: string) {
@@ -182,10 +198,14 @@ function TriggerRow({
   const repo = <RepoChip repo={trigger.repo} onChange={(r) => onChange({ ...trigger, repo: r })} repositories={repositories} disabled={disabled} />
   return (
     <div data-slot="settings-row" className="flex min-h-13 items-start gap-3 py-3.5 ps-4 pe-3">
-      <span className="flex h-6 w-4 shrink-0 items-center justify-center text-muted-foreground">{trigger.kind === 'schedule' ? <ClockIcon className="size-4" /> : <GithubMark />}</span>
+      <span className="flex h-6 w-4 shrink-0 items-center justify-center text-muted-foreground">
+        <TriggerMark kind={trigger.kind} />
+      </span>
       <div className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm">
         {trigger.kind === 'schedule' ? (
           <ScheduleSentence trigger={trigger} onChange={onChange} repo={repo} disabled={disabled} />
+        ) : trigger.kind === 'sentry' ? (
+          <SentrySentence trigger={trigger} onChange={onChange} repo={repo} disabled={disabled} />
         ) : (
           <GithubSentence trigger={trigger} onChange={onChange} repo={repo} disabled={disabled} />
         )}
@@ -262,15 +282,111 @@ function GithubSentence({ trigger: t, onChange, repo, disabled }: { trigger: Git
   )
 }
 
+/** A Sentry project of the connected organization, or any slug typed in. */
+function ProjectChip({ project, onChange, disabled }: { project: string; onChange: (project: string) => void; disabled?: boolean }) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const sentry = useSentryProjects()
+  const slugs = sentry?.projects.map((p) => p.slug) ?? []
+  const typed = query.trim().toLowerCase()
+  const matches = slugs.filter((s) => s !== project && (!typed || s.includes(typed))).slice(0, 100)
+  const canUseTyped = /^[a-z0-9][a-z0-9_-]*$/.test(typed) && !slugs.includes(typed) && typed !== project
+  const choose = (value: string) => {
+    onChange(value)
+    setOpen(false)
+  }
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (next) setQuery('')
+      }}
+    >
+      <PopoverTrigger disabled={disabled} aria-label={`Sentry project: ${project || 'Choose project'}`} className={cn(CHIP, !project && NEEDED)}>
+        <span className="truncate">{project || 'Choose project'}</span>
+        <ChevronDownIcon />
+      </PopoverTrigger>
+      <PopoverContent align="start" className={`${MENU_POPUP_CLASS} w-72 gap-0 p-0`}>
+        <Command shouldFilter={false} loop className="rounded-none bg-transparent p-0">
+          <CommandMenuInput aria-label="Search Sentry projects" autoFocus value={query} onValueChange={setQuery} placeholder="Search projects…" />
+          <CommandList className="max-h-72 p-1">
+            <CommandEmpty className="px-2 py-3 text-left text-xs text-muted-foreground">
+              {sentry?.error ?? (typed ? 'No projects match. Type a full slug to use it.' : 'Type a project slug.')}
+            </CommandEmpty>
+            {canUseTyped && (
+              <CommandItem value={`use:${typed}`} onSelect={() => choose(typed)} className={REPO_ITEM}>
+                <PlusIcon className="size-3.5 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate">Use {typed}</span>
+              </CommandItem>
+            )}
+            {project && (!typed || project.includes(typed)) && (
+              <CommandItem value={project} data-checked="true" onSelect={() => choose(project)} className={REPO_ITEM}>
+                <span className="min-w-0 flex-1 truncate">{project}</span>
+              </CommandItem>
+            )}
+            {matches.map((s) => (
+              <CommandItem key={s} value={s} onSelect={() => choose(s)} className={REPO_ITEM}>
+                <span className="min-w-0 flex-1 truncate">{s}</span>
+              </CommandItem>
+            ))}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function SentrySentence({ trigger: t, onChange, repo, disabled }: { trigger: SentryTrigger; onChange: (t: SentryTrigger) => void; repo: ReactNode; disabled?: boolean }) {
+  return (
+    <>
+      <Line>
+        <ChipMenu label="Sentry event" value={t.event} options={SENTRY_EVENTS} onChange={(event) => onChange({ ...t, event })} disabled={disabled} />
+        <Word>in</Word>
+        <ProjectChip project={t.project} onChange={(project) => onChange({ ...t, project })} disabled={disabled} />
+        <input
+          aria-label="Environment"
+          disabled={disabled}
+          placeholder="all environments"
+          spellCheck={false}
+          value={t.environment ?? ''}
+          onChange={(e) => onChange({ ...t, environment: e.target.value.trim() || undefined })}
+          className={cn(CHIP, 'w-36 placeholder:text-muted-foreground')}
+        />
+        {t.event === 'sentry_spike' && (
+          <>
+            <Word>at</Word>
+            <input
+              type="number"
+              aria-label="Events in an hour"
+              min={1}
+              disabled={disabled}
+              value={t.threshold ?? 100}
+              onChange={(e) => onChange({ ...t, threshold: Math.max(1, Math.floor(Number(e.target.value) || 1)) })}
+              className={cn(CHIP, 'w-20 tabular-nums')}
+            />
+            <Word>events an hour</Word>
+          </>
+        )}
+      </Line>
+      <Line>
+        <Word>working in</Word>
+        {repo}
+      </Line>
+    </>
+  )
+}
+
 /** A new trigger of a kind, in the repository the automation already uses. */
-function newTrigger(kind: 'schedule' | GithubEvent, repo: string): AutomationTrigger {
+function newTrigger(kind: 'schedule' | GithubEvent | SentryEvent, repo: string): AutomationTrigger {
   if (kind === 'schedule') return { kind: 'schedule', every: 'day', day: 1, time: '09:00', timezone: localTimeZone(), repo }
-  return { kind: 'github', event: kind, repo, authors: [] }
+  if (kind.startsWith('sentry_')) return { kind: 'sentry', event: kind as SentryEvent, project: '', threshold: 100, repo }
+  return { kind: 'github', event: kind as GithubEvent, repo, authors: [] }
 }
 
 /** The triggers' rows, then Add trigger. */
 export function TriggerList({ triggers, onChange, repositories, disabled }: { triggers: AutomationTrigger[]; onChange: (t: AutomationTrigger[]) => void; repositories: string[]; disabled?: boolean }) {
-  const add = (kind: 'schedule' | GithubEvent) => onChange([...triggers, newTrigger(kind, triggers.at(-1)?.repo ?? '')])
+  const add = (kind: 'schedule' | GithubEvent | SentryEvent) => onChange([...triggers, newTrigger(kind, triggers.at(-1)?.repo ?? '')])
   return (
     <>
       {triggers.map((t, i) => (
@@ -302,6 +418,15 @@ export function TriggerList({ triggers, onChange, repositories, disabled }: { tr
               {EVENTS.map((e) => (
                 <DropdownMenuItem key={e.value} onClick={() => add(e.value)}>
                   <GithubMark />
+                  {e.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Sentry</DropdownMenuLabel>
+              {SENTRY_EVENTS.map((e) => (
+                <DropdownMenuItem key={e.value} onClick={() => add(e.value)}>
+                  <SentryMark />
                   {e.label}
                 </DropdownMenuItem>
               ))}

@@ -48,6 +48,15 @@ export const scheduleTrigger = z.object({
 });
 export type ScheduleTrigger = z.infer<typeof scheduleTrigger>;
 
+/**
+ * What happened in a Sentry project (docs/automations.md, "Sentry"): a new issue, an issue past a number of events in an hour (an error
+ * storm that may mean downtime), or an uptime or cron monitor failing.
+ */
+export const SENTRY_EVENTS = ["sentry_issue", "sentry_spike", "sentry_monitor"] as const;
+export type SentryEvent = (typeof SENTRY_EVENTS)[number];
+export const MAX_SPIKE_THRESHOLD = 1_000_000;
+export const DEFAULT_SPIKE_THRESHOLD = 100;
+
 export const githubTrigger = z.object({
   kind: z.literal("github"),
   event: z.enum(GITHUB_EVENTS),
@@ -57,7 +66,29 @@ export const githubTrigger = z.object({
 });
 export type GithubTrigger = z.infer<typeof githubTrigger>;
 
-export const automationTrigger = z.discriminatedUnion("kind", [scheduleTrigger, githubTrigger]);
+export const sentryTrigger = z.object({
+  kind: z.literal("sentry"),
+  event: z.enum(SENTRY_EVENTS),
+  /** The Sentry project's slug, in the organization saved in Settings. */
+  project: z
+    .string()
+    .trim()
+    .regex(/^[a-z0-9][a-z0-9_-]{0,99}$/i, "Choose a Sentry project for every Sentry trigger."),
+  /** Only this environment (`production`); absent: every environment. */
+  environment: z
+    .string()
+    .trim()
+    .max(64)
+    .regex(/^[^\s/]*$/, "not a valid environment name")
+    .optional(),
+  /** `sentry_spike` only: events in the last hour that make an issue a spike. */
+  threshold: z.number().int().min(1, "A spike needs at least 1 event.").max(MAX_SPIKE_THRESHOLD).default(DEFAULT_SPIKE_THRESHOLD),
+  /** The repository the session starts in: the code behind the project. */
+  repo: repoName,
+});
+export type SentryTrigger = z.infer<typeof sentryTrigger>;
+
+export const automationTrigger = z.discriminatedUnion("kind", [scheduleTrigger, githubTrigger, sentryTrigger]);
 export type AutomationTrigger = z.infer<typeof automationTrigger>;
 
 export const automationInput = z.object({
@@ -74,8 +105,8 @@ export const automationInput = z.object({
 export type AutomationInput = z.input<typeof automationInput>;
 export type AutomationSpec = z.output<typeof automationInput>;
 
-/** How a run started: its schedule, an event in a repository, or the owner's Run now. */
-export type AutomationRunSource = "schedule" | "manual" | GithubEvent;
+/** How a run started: its schedule, an event in a repository or a Sentry project, or the owner's Run now. */
+export type AutomationRunSource = "schedule" | "manual" | GithubEvent | SentryEvent;
 export type AutomationRunStatus = "started" | "failed" | "skipped";
 
 export interface AutomationRunView {
@@ -102,7 +133,7 @@ export interface AutomationView extends AutomationSpec {
   lastRun: AutomationRunView | null;
   /** Runs in the last 7 days. */
   recentRuns: number;
-  /** Repositories its GitHub triggers cannot read, with why. */
+  /** Repositories its GitHub triggers (or Sentry projects its Sentry triggers, as `sentry:<project>`) cannot read, with why. */
   problems: { repo: string; message: string }[];
   /** Public repositories among its GitHub triggers: there, only events by listed people start runs. */
   publicRepos: string[];

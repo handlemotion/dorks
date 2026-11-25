@@ -33,6 +33,9 @@ export function loadSecrets(dataDir: string): Secrets {
   return next;
 }
 
+/** The hosted cloud relay for the iPhone app (docs/mobile.md). */
+export const DEFAULT_CLOUD_URL = "https://dorks-cloud.handle-473.workers.dev";
+
 const port = (v: string | undefined, d: number) => {
   if (v === undefined || v === "") return d;
   const n = Number(v);
@@ -67,5 +70,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     githubEnvToken: env.GH_TOKEN?.trim() || env.GITHUB_TOKEN?.trim() || undefined,
     boatBin: env.DORKS_BOAT_BIN || undefined,
     agyBin: env.DORKS_AGY_BIN || undefined,
+    cloudUrl: env.DORKS_CLOUD_URL ?? DEFAULT_CLOUD_URL,
   };
 }

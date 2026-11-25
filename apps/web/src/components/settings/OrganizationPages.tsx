@@ -115,6 +115,98 @@ export function BoatPage({ settings }: { settings: Settings }) {
   )
 }
 
+/**
+ * Sentry, for automations' Sentry triggers: a personal token (write-only, checked with Sentry on save), the organization, and a
+ * self-hosted Sentry's URL. Disconnect clears the token.
+ */
+export function SentryPage({ settings }: { settings: Settings }) {
+  const { actions } = useDorksClient()
+  const sentry = settings.sentry ?? { connected: false, org: null, url: null }
+  const [token, setToken] = useState('')
+  const [org, setOrg] = useState(sentry.org ?? '')
+  const [url, setUrl] = useState(sentry.url ?? '')
+  const [saved, setSaved] = useState(false)
+  const { run, pending, error } = usePending()
+  return (
+    <SettingsSections>
+      <SettingsSection title="Account" description="Automations watch your Sentry projects with it.">
+        <SettingsGroup
+          label="sentry account"
+          onSubmit={() => {
+            setSaved(false)
+            void run(async () => {
+              await actions.updateSettings({ ...(token.trim() ? { sentryToken: token.trim() } : {}), sentryOrg: org.trim(), sentryUrl: url.trim() })
+              setToken('')
+              setSaved(true)
+            })
+          }}
+        >
+          <SettingsInputRow
+            id="sentry-token"
+            label="Auth token"
+            description={sentry.connected ? 'Saved' : 'Not set'}
+            aria-label="sentry auth token"
+            type="password"
+            autoComplete="off"
+            placeholder={sentry.connected ? 'Replace the token' : 'sntryu_…'}
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+          />
+          <SettingsInputRow
+            id="sentry-org"
+            label="Organization"
+            description="Its slug, as in its Sentry URL"
+            aria-label="sentry organization"
+            autoComplete="off"
+            placeholder="my-company"
+            value={org}
+            onChange={(e) => setOrg(e.target.value)}
+          />
+          <SettingsInputRow
+            id="sentry-url"
+            label="Sentry URL"
+            description="Self-hosted only"
+            aria-label="sentry url"
+            autoComplete="off"
+            placeholder="https://sentry.io"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+          />
+          <SettingsGroupFooter
+            action={
+              <>
+                {sentry.connected && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={pending}
+                    onClick={() =>
+                      void run(async () => {
+                        setSaved(false)
+                        await actions.updateSettings({ sentryToken: '' })
+                        setSaved(true)
+                      })
+                    }
+                  >
+                    Disconnect
+                  </Button>
+                )}
+                <Button type="submit" size="sm" disabled={pending || !org.trim() || (!token.trim() && !sentry.connected)}>
+                  {pending ? 'Saving…' : 'Save'}
+                </Button>
+              </>
+            }
+          >
+            A personal token with org:read, project:read and event:read.
+          </SettingsGroupFooter>
+        </SettingsGroup>
+        <SettingsStatus saved={saved} error={error} />
+      </SettingsSection>
+    </SettingsSections>
+  )
+}
+
 /** What the snapshot in use is: building, failed, ready, out of date or entered by hand. */
 function snapshotState(snap: SnapshotStatus, inUse: string | null): { value: string; tone: 'default' | 'muted' | 'danger' | 'success' } {
   if (snap.state === 'building') return { value: 'Building', tone: 'muted' }

@@ -12,6 +12,10 @@ catalog:
   vite-plus: 1.6.0
 overrides:
   vite@*: "catalog:"
+  # One React for the whole workspace: Expo SDK 58 (apps/mobile) pins 19.3.0, and @dorks/client must see the same copy as each app.
+  react: 19.3.0
+  react-dom: 19.3.0
+  "@types/react": ~19.3.0
 peerDependencyRules:
   allowAny:
     - vite

@@ -72,8 +72,8 @@ function BuildDetails({ build }: { build: BuildView }) {
         }
       />
       <Page>
-        <Overview build={build} />
         <AgentChanges build={build} />
+        <Overview build={build} />
         <Repositories build={build} />
         <SetupScript build={build} />
         <Services build={build} />

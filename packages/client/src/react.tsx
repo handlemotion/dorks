@@ -13,7 +13,7 @@ import {
 import type { DorksClient, ConnectionState } from "./client.ts";
 import type { EventsState } from "./events.ts";
 import type { QueryState, Store } from "./store.ts";
-import type { AutomationRunView, AutomationView, BuildView, Dork, RunView, Settings, SnapshotStatus, Usage, GithubRepos, LocalAccess } from "./types.ts";
+import type { AutomationRunView, AutomationView, BuildView, Dork, RunView, Settings, SnapshotStatus, Usage, GithubRepos, LocalAccess, PhoneStatus, SentryProjects } from "./types.ts";
 
 const Ctx = createContext<DorksClient | null>(null);
 
@@ -99,6 +99,11 @@ export function useGithubRepos(): GithubRepos | undefined {
   return useStore(useDorksClient().githubRepos()).data;
 }
 
+/** The connected Sentry organization's projects, for Sentry triggers; `undefined` while loading. */
+export function useSentryProjects(): SentryProjects | undefined {
+  return useStore(useDorksClient().sentryProjects()).data;
+}
+
 /** The MCP servers from Customize; `undefined` while loading. */
 export function useComposio(): ComposioStatus | undefined {
   return useStore(useDorksClient().composio()).data;
@@ -107,6 +112,11 @@ export function useComposio(): ComposioStatus | undefined {
 /** Local access: the switch and the active permissions; `undefined` while loading. */
 export function useLocalAccess(): LocalAccess | undefined {
   return useStore(useDorksClient().localAccess()).data;
+}
+
+/** The phone link (docs/mobile.md); `undefined` while loading. */
+export function usePhone(): PhoneStatus | undefined {
+  return useStore(useDorksClient().phone()).data;
 }
 
 export function useMcpServers(): McpServerView[] | undefined {

@@ -78,7 +78,7 @@ Allowed for v1 (everything the phone shows):
 - `GET /api/live`, `GET /api/settings`, `GET /api/usage`, `GET /api/github/repos`, `GET /api/builds`, `GET /api/builds/:id`
 - `/api/dorks` and everything under `/api/dorks/:id` **except** `/local/*` (running commands on the Mac), `/inputs/*`
   (secret values would cross the relay) and `/desktop`
-- `POST /api/images`, `GET /api/images/*`
+- `POST /api/images`, `GET /api/images/:id` (served as the Mac's `/images/:id`)
 - Customize: `GET /api/skills`, `POST /api/skills/resolve`, `POST /api/skills`, `POST /api/skills/:name/update`,
   `DELETE /api/skills/:name`, `GET /api/mcp-servers`, `GET /api/composio`
 

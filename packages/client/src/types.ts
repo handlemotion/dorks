@@ -2,7 +2,7 @@ import type { AgentCommand, AgentModelChoice, BuildRepo, BuildService, ClientEve
 
 export type { WorkspaceFile, WorkspaceGitStatus, WorkspaceRoot, WorkspaceTree } from "@dorks/shared";
 export type { MergeMethod, MergeableState, PullRequestSection, PullRequestView, PullRequestFile, PullRequestComment, PullRequestChecks, PullRequestCheck, PullRequestPerson } from "@dorks/shared";
-export type { AutomationInput, AutomationRunView, AutomationTrigger, AutomationView, GithubEvent, GithubTrigger, ScheduleEvery, ScheduleTrigger } from "@dorks/shared";
+export type { AutomationInput, AutomationRunView, AutomationTrigger, AutomationView, GithubEvent, GithubTrigger, ScheduleEvery, ScheduleTrigger, SentryEvent, SentryTrigger } from "@dorks/shared";
 export type {
   BuildView,
   BuildVarView,
@@ -127,6 +127,15 @@ export interface Settings {
   claudeModels?: AgentModelChoice[];
   /** The build new sessions start on; null: the base snapshot. */
   defaultBuildId?: string | null;
+  /** Sentry, for automations' Sentry triggers: connected when a token and organization are saved (the token never leaves the server). */
+  sentry?: { connected: boolean; org: string | null; url: string | null };
+}
+
+/** The connected Sentry organization's projects, for a Sentry trigger; `error` when Sentry is not connected or cannot be read. */
+export interface SentryProjects {
+  org: string | null;
+  projects: { slug: string; name: string; platform: string | null }[];
+  error?: string;
 }
 
 export interface BuildInput {
@@ -169,6 +178,10 @@ export interface SettingsPatch {
   claudeCodeMode?: boolean;
   /** Every session may use this computer without asking. Off: each session asks once again; sessions already allowed stay allowed. */
   localAlwaysAllow?: boolean;
+  /** Sentry's personal token ("" disconnects), organization slug and a self-hosted Sentry's URL ("" for sentry.io). */
+  sentryToken?: string;
+  sentryOrg?: string;
+  sentryUrl?: string;
 }
 
 /**
@@ -199,6 +212,24 @@ export interface LocalSession {
   dorkId: string;
   dorkTitle: string;
   allowedAt: number;
+}
+
+/** The phone link (docs/mobile.md): this Mac paired with the iPhone app through the cloud relay. */
+export interface PhoneStatus {
+  cloudUrl: string | null;
+  paired: boolean;
+  macId: string | null;
+  name: string | null;
+  link: "off" | "connecting" | "online" | "offline";
+  pairing: PhonePairing | null;
+}
+
+export interface PhonePairing {
+  /** Shown as typed on the phone, `ABCD-2345`. */
+  code: string;
+  /** What the QR code holds: `dorks://pair?code=…&cloud=…`. */
+  url: string;
+  expiresAt: number;
 }
 
 export interface LocalAccess {

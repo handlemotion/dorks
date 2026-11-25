@@ -6,6 +6,7 @@ import { refreshAntigravityModels } from "../../services/models";
 import { autoConnectGithub, deleteSecret, secretNames, setSecret, settingsView, updateSettings } from "../../services/settings";
 import { buildIfMissing } from "../../services/snapshot";
 import { forgetUsage } from "../../services/usage";
+import { kickSentryWatch } from "../../services/automations";
 import { body, looseBody, ok, service, serviceAsync } from "../route";
 import { handler, Loose, name, str, type Routes } from "./shared";
 
@@ -38,6 +39,7 @@ export const settingsRoutes: Routes = (api, app) => {
         yield* service((a) => {
           if ("claudeToken" in patch || "antigravityToken" in patch || "boatKey" in patch || "boatOrg" in patch) forgetUsage(a);
           if ("githubConnected" in patch) forgetGithubRepos(a);
+          if ("sentryToken" in patch || "sentryOrg" in patch || "sentryUrl" in patch) kickSentryWatch(a);
           console.error(`settings saved: ${Object.keys(patch).sort().join(", ")}`); // names only, never values
           // A new Boat key starts the base-snapshot build in the background (onboarding has no "Prepare Boat" step), or retries a failed one.
           if (typeof patch.boatKey === "string" && patch.boatKey.trim()) buildIfMissing(a, { retryFailed: true });
