@@ -16,6 +16,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     platforms: ["ios"],
     ios: {
       bundleIdentifier: "build.dorks.ios",
+      icon: { light: "./assets/icon.png", dark: "./assets/icon-dark.png", tinted: "./assets/icon-tinted.png" },
       supportsTablet: false,
       usesAppleSignIn: true,
       config: { usesNonExemptEncryption: false },
@@ -25,6 +26,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       "expo-secure-store",
       "expo-apple-authentication",
       "expo-web-browser",
+      [
+        "expo-splash-screen",
+        { image: "./assets/splash.png", imageWidth: 96, resizeMode: "contain", backgroundColor: "#ffffff", dark: { image: "./assets/splash-dark.png", backgroundColor: "#0a0a0a" } },
+      ],
       ["expo-camera", { cameraPermission: "Dorks uses the camera to scan the pairing code your Mac shows.", microphonePermission: false, recordAudioAndroid: false }],
       ["expo-image-picker", { photosPermission: "Dorks attaches the photos you pick to your messages.", cameraPermission: false, microphonePermission: false }],
       "expo-updates",
