@@ -58,6 +58,8 @@ export interface Config {
   boatBin?: string;
   /** `DORKS_AGY_BIN`: the Antigravity CLI for the Google sign-in; else `agy` on PATH, else one Dorks downloads. */
   agyBin?: string;
+  /** `DORKS_CLOUD_URL`: the cloud relay the iPhone app reaches this server through (docs/mobile.md); unset or empty turns it off. */
+  cloudUrl?: string;
 }
 
 export interface SchedulerLike {

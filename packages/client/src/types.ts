@@ -200,6 +200,24 @@ export interface LocalSession {
   allowedAt: number;
 }
 
+/** The phone link (docs/mobile.md): this Mac paired with the iPhone app through the cloud relay. */
+export interface PhoneStatus {
+  cloudUrl: string | null;
+  paired: boolean;
+  macId: string | null;
+  name: string | null;
+  link: "off" | "connecting" | "online" | "offline";
+  pairing: PhonePairing | null;
+}
+
+export interface PhonePairing {
+  /** Shown as typed on the phone, `ABCD-2345`. */
+  code: string;
+  /** What the QR code holds: `dorks://pair?code=…&cloud=…`. */
+  url: string;
+  expiresAt: number;
+}
+
 export interface LocalAccess {
   enabled: boolean;
   sessions: LocalSession[];
