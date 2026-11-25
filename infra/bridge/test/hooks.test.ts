@@ -44,7 +44,7 @@ function service(work: string, over: Partial<HookDeps> & { subs?: SubscriptionVi
   const logs: string[] = [];
   const p = fakePrs(over.subs === undefined ? [] : over.subs);
   const stateDir = over.stateDir ?? tmp("state-");
-  const svc = new HookService({ workDir: work, stateDir, env: process.env, runAs: null, prs: p.prs, hasPr: async () => null, log: (...a) => void logs.push(a.join(" ")), ...over });
+  const svc = new HookService({ workDir: work, stateDir, env: process.env, runAs: null, prs: p.prs, prStatus: async () => null, log: (...a) => void logs.push(a.join(" ")), ...over });
   const call = (method: string, input: unknown) => svc.methods[method]!(input) as Promise<any>;
   return {
     svc,
@@ -126,10 +126,10 @@ describe("Stop gate", () => {
     w.git("checkout", "-q", "-b", "dork/x");
     w.commit("a.txt");
     w.git("push", "-q", "origin", "dork/x");
-    const hasPr = async () => true;
-    expect(await service(w.work, { hasPr }).stop()).toBeNull();
+    const prStatus = async () => ({ state: "open" as const });
+    expect(await service(w.work, { prStatus }).stop()).toBeNull();
     w.commit("b.txt");
-    expect((await service(w.work, { hasPr }).stop()).reason).toContain("1 commit not pushed to origin/dork/x");
+    expect((await service(w.work, { prStatus }).stop()).reason).toContain("1 commit not pushed to origin/dork/x");
   });
 
   it("skips a branch whose remote branch is gone (merged and cleaned up)", async () => {
@@ -140,10 +140,10 @@ describe("Stop gate", () => {
     w.git("checkout", "-q", "main");
     w.remote.sh(w.remote.bare, "branch", "-q", "-D", "dork/x");
     w.git("fetch", "-q", "--prune", "origin");
-    expect(await service(w.work, { hasPr: async () => false }).stop()).toBeNull();
+    expect(await service(w.work, { prStatus: async () => ({ state: "none" }) }).stop()).toBeNull();
   });
 
-  describe("pushed branches without a PR", () => {
+  describe("pushed branches without an open PR", () => {
     const pushed = () => {
       const w = checkout();
       w.git("checkout", "-q", "-b", "dork/x");
@@ -155,27 +155,43 @@ describe("Stop gate", () => {
     it("blocks when the PR lookup says there is none, naming the repo and branch it asked about", async () => {
       const w = pushed();
       const asked: string[] = [];
-      const r = await service(w.work, { hasPr: async (repo, branch) => (asked.push(`${repo}:${branch}`), false) }).stop();
+      const r = await service(w.work, { prStatus: async (repo, branch) => (asked.push(`${repo}:${branch}`), { state: "none" }) }).stop();
       expect(asked).toEqual(["acme/demo:dork/x"]);
       expect(r.reason).toContain("branch dork/x: pushed to origin/dork/x, no pull request");
     });
 
-    it("lets it stop when a PR exists, or when that cannot be told (no gh, offline)", async () => {
+    it("lets it stop when an open PR exists, or when that cannot be told (no gh, offline)", async () => {
       const w = pushed();
-      expect(await service(w.work, { hasPr: async () => true }).stop()).toBeNull();
-      expect(await service(w.work, { hasPr: async () => null }).stop()).toBeNull();
+      expect(await service(w.work, { prStatus: async () => ({ state: "open" }) }).stop()).toBeNull();
+      expect(await service(w.work, { prStatus: async () => null }).stop()).toBeNull();
     });
 
-    it("answers from the cached subscriptions first (repo compared case-insensitively), without asking GitHub", async () => {
+    it("blocks when new commits were pushed after the branch's PR was already merged or closed", async () => {
       const w = pushed();
-      const hasPr = async () => {
-        throw new Error("should not be asked");
-      };
-      const subs = [{ ...fakeView({ repo: "acme/demo", number: 7 }), headRef: "dork/x" }];
-      expect(await service(w.work, { hasPr, subs }).stop()).toBeNull();
-      // a subscription for another branch does not count
-      const other = [{ ...fakeView({ repo: "acme/demo", number: 8 }), headRef: "dork/y" }];
-      expect(await service(w.work, { hasPr: async () => false, subs: other }).stop()).toMatchObject({ decision: "block" });
+      const mergedSha = w.git("rev-parse", "HEAD");
+      // Same SHA as the merged PR: no new commits pushed after merge, so nothing to flag.
+      expect(await service(w.work, { prStatus: async () => ({ state: "merged", number: 175, headSha: mergedSha }) }).stop()).toBeNull();
+      // New commit pushed after merge: must block and tell the agent it did not go into #175.
+      w.commit("b.txt");
+      w.git("push", "-q", "origin", "dork/x");
+      const merged = await service(w.work, { prStatus: async () => ({ state: "merged", number: 175, headSha: mergedSha }) }).stop();
+      expect(merged.decision).toBe("block");
+      expect(merged.reason).toContain("branch dork/x: pushed to origin/dork/x, but PR #175 is already merged — these commits did not go into it");
+      const closed = await service(w.work, { prStatus: async () => ({ state: "closed", number: 42, headSha: mergedSha }) }).stop();
+      expect(closed.decision).toBe("block");
+      expect(closed.reason).toContain("PR #42 is already closed");
+    });
+
+    it("prefers live GitHub status over a stale cached open subscription, and falls back to open subscriptions when offline", async () => {
+      const w = pushed();
+      const oldSha = "0".repeat(40);
+      const openSub = [{ ...fakeView({ repo: "acme/demo", number: 7 }), headRef: "dork/x" }];
+      // Even if the local cache still thinks #7 is open, a live lookup reporting it merged catches the push immediately.
+      const blocked = await service(w.work, { prStatus: async () => ({ state: "merged", number: 7, headSha: oldSha }), subs: openSub }).stop();
+      expect(blocked).toMatchObject({ decision: "block" });
+      expect(blocked.reason).toContain("PR #7 is already merged");
+      // When live lookup is unavailable (null), an open subscription still lets it stop.
+      expect(await service(w.work, { prStatus: async () => null, subs: openSub }).stop()).toBeNull();
     });
   });
 
@@ -287,7 +303,7 @@ describe("Stop gate", () => {
     w.commit("a.txt");
     w.git("push", "-q", "-u", "origin", "dork/x");
     const s = service(w.work, {
-      hasPr: async () => {
+      prStatus: async () => {
         throw new Error("boom with detail");
       },
     });
@@ -411,8 +427,12 @@ describe("PR lookup through gh", () => {
   }
   const lookup = (gh: string, token: string | null = "ghs_tok") => prLookup({ PATH: process.env.PATH, DORKS_REAL_GH: gh, BRIDGE_SECRET: "never-forwarded" }, "/nonexistent/cli.mjs", () => token);
 
-  it("is true when gh lists a PR; unknown when gh fails, prints garbage, or there is no token or gh", async () => {
-    expect(await lookup(fakeGh('[{"number":5}]').gh)("acme/demo", "b")).toBe(true);
+  it("parses open, merged, closed, and empty PR lists; returns null on failure or bad output", async () => {
+    expect(await lookup(fakeGh('[{"number":5,"state":"OPEN","headRefOid":"aaa"}]').gh)("acme/demo", "b")).toEqual({ state: "open" });
+    expect(await lookup(fakeGh('[{"number":4,"state":"CLOSED","headRefOid":"aaa"},{"number":5,"state":"OPEN","headRefOid":"bbb"}]').gh)("acme/demo", "b")).toEqual({ state: "open" });
+    expect(await lookup(fakeGh('[{"number":175,"state":"MERGED","headRefOid":"e070db1"}]').gh)("acme/demo", "b")).toEqual({ state: "merged", number: 175, headSha: "e070db1" });
+    expect(await lookup(fakeGh('[{"number":42,"state":"CLOSED","headRefOid":"abc"}]').gh)("acme/demo", "b")).toEqual({ state: "closed", number: 42, headSha: "abc" });
+    expect(await lookup(fakeGh("[]").gh)("acme/demo", "b")).toEqual({ state: "none" });
     expect(await lookup(fakeGh("[]", 1).gh)("acme/demo", "b")).toBeNull();
     expect(await lookup(fakeGh("not json").gh)("acme/demo", "b")).toBeNull();
     expect(await lookup(fakeGh("{}").gh)("acme/demo", "b")).toBeNull();

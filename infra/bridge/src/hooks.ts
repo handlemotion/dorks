@@ -8,7 +8,7 @@ import type { PrSubscriptions } from "./prs";
 import { errTag, type Log } from "./redact";
 import type { RpcMethods } from "./rpc";
 import type { Identity } from "./runas";
-import { scanWork, type Finding } from "./work-scan";
+import { scanWork, type BranchPrStatus, type Finding } from "./work-scan";
 
 // The bridge's side of the Claude Code hooks (docs/autonomy.md). Claude runs `dorks hook <event>` (hook-cli.ts), which forwards the hook's
 // JSON input to the `hook.*` methods below and prints what they return:
@@ -120,8 +120,8 @@ export interface HookDeps {
   env: NodeJS.ProcessEnv;
   runAs: Identity | null;
   prs: Pick<PrSubscriptions, "list" | "subscribe" | "unsubscribe">;
-  /** Whether a pull request exists for a pushed branch (see pr-lookup.ts); null when unknown. */
-  hasPr: (repo: string, branch: string) => Promise<boolean | null>;
+  /** Pull request status for a pushed branch (see pr-lookup.ts); null when unknown. */
+  prStatus: (repo: string, branch: string) => Promise<BranchPrStatus | null>;
   log: Log;
 }
 
@@ -171,8 +171,14 @@ export class HookService {
     if (this.turnKinds.includes("ready")) return null;
 
     const subs = (await this.d.prs.list()) ?? [];
-    const hasPr = async (repo: string, branch: string) => subs.some((s) => s.headRef === branch && s.repo.toLowerCase() === repo.toLowerCase()) || this.d.hasPr(repo, branch);
-    const found = await scanWork({ workDir: this.d.workDir, env: this.d.env, runAs: this.d.runAs, hasPr });
+    const prStatus = async (repo: string, branch: string): Promise<BranchPrStatus | null> => {
+      // Check GitHub live first so a PR merged or closed since the last poll is caught immediately.
+      // Fall back to cached open subscriptions only when live lookup is unavailable.
+      const live = await this.d.prStatus(repo, branch);
+      if (live !== null) return live;
+      return subs.some((s) => s.state === "open" && s.headRef === branch && s.repo.toLowerCase() === repo.toLowerCase()) ? { state: "open" } : null;
+    };
+    const found = await scanWork({ workDir: this.d.workDir, env: this.d.env, runAs: this.d.runAs, prStatus });
 
     // A condition is raised once. It is forgotten when it clears, so work that goes unpushed again later is raised again.
     const session = text(input.session_id);
@@ -260,7 +266,7 @@ export function stopReason(found: Finding[]): string {
     "1. Validate locally first. Run the repo's tests, typecheck and lint for what you changed, using the scripts the repo defines (package.json scripts, Makefile, CI config), and fix what fails.",
     "2. Commit what is uncommitted, on a new branch if you are on the default branch (follow the repo's branching rules).",
     "3. Push the branch (`git push -u origin <branch>`).",
-    "4. Open a pull request with `gh pr create` (`gh stack submit` for a stack), or push to the PR it belongs to. That subscribes you to it, so CI results, reviews and conflicts wake you up.",
+    "4. Open a pull request with `gh pr create` (`gh stack submit` for a stack), or push to the PR it belongs to. If a branch's PR is already merged or closed, create a new branch from the latest default branch, cherry-pick your new commits onto it, push, and open a new PR. That subscribes you to it, so CI results, reviews and conflicts wake you up.",
     "5. Skip a change only if the user told you not to open a PR for it, or it is scratch output that does not belong in the repo (then delete it or leave it and say so). Being unsure whether the user wants a PR is not a reason: open it.",
   ].join("\n");
 }
