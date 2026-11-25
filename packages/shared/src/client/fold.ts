@@ -6,7 +6,7 @@ import type { NotifyKind, PrRef } from "../autonomy";
  * event digest handed to the agent, the agent's PR opened or merged, or a PR subscription that changed.
  */
 export type NoticeHook =
-  | { type: "notify"; kinds: NotifyKind[]; prs: PrRef[]; text: string }
+  | { type: "notify"; kinds: NotifyKind[]; prs: PrRef[]; text: string; /** "preview": the owner's comments on a running preview. */ source?: "preview" }
   | { type: "pr_opened" | "pr_merged"; url: string; number: number }
   | { type: "subscription"; repo: string; number: number; status: "active" | "stalled" | "ended"; reason?: string };
 
@@ -121,7 +121,7 @@ const HANDLERS: Handlers = {
     notice(v, e, "info", `PR merged: ${e.url}`, { type: "pr_merged", url: e.url, number: e.number });
   },
   notify(v, e) {
-    notice(v, e, "info", e.text, { type: "notify", kinds: e.kinds, prs: e.prs, text: e.text });
+    notice(v, e, "info", e.text, { type: "notify", kinds: e.kinds, prs: e.prs, text: e.text, ...(e.source ? { source: e.source } : {}) });
   },
   crew(v, e) {
     v.blocks.push({ kind: "crew", id: `c${e.seq}`, direction: e.direction, peer: e.peer, note: e.kind === "note", text: e.text, at: e.ts });

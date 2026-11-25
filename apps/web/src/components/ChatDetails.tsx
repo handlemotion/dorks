@@ -4,7 +4,7 @@ import { Button } from '@dorks/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@dorks/ui/tabs'
 import { ComputerView } from './ComputerView'
 import { preloadDiffs } from './diffs'
-import { BAR_BUTTON, PreviewBrowser, useShownServers } from './PreviewBrowser'
+import { BAR_BUTTON, PreviewBrowser, useShownServers, type PreviewSession } from './PreviewBrowser'
 import { Tip } from './Tip'
 import { ProgressPanel } from './ProgressPanel'
 import { useProgress } from '../lib/progress'
@@ -37,8 +37,10 @@ export function ChatDetails({
   onClose,
   onGrab,
   onAsk,
+  previewSession,
   className,
 }: {
+  /** The session a running preview's comments and messages belong to (absent in the dev demo). */ previewSession?: PreviewSession
   data: ChatDetailsData
   /** Whose open tabs to remember. Without it they last as long as the panel. */ sessionId?: string
   onClose?: () => void
@@ -146,7 +148,7 @@ export function ChatDetails({
         return <ProgressPanel turns={data.progress ?? []} tasks={data.tasks} />
       case 'artifacts':
         return openPreview ? (
-          <PreviewBrowser server={openPreview} onBack={() => setPreview(undefined)} onGrab={onGrab} />
+          <PreviewBrowser server={openPreview} onBack={() => setPreview(undefined)} onGrab={onGrab} session={previewSession} previews={data.previews} />
         ) : (
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
             <Artifacts

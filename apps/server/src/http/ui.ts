@@ -9,6 +9,7 @@ import { dorkRoutes } from "./ui/dorks";
 import { pullRoutes } from "./ui/pulls";
 import { localRoutes } from "./ui/local";
 import { subscriptionRoutes } from "./ui/subscriptions";
+import { commentRoutes } from "./ui/comments";
 import { settingsRoutes } from "./ui/settings";
 import { customizeRoutes } from "./ui/customize";
 import { accountRoutes } from "./ui/accounts";
@@ -50,7 +51,20 @@ export function uiApp(app: App): Hono {
   mountMcp(api, app);
 
   // Registration order is the original single-file order; the auth middleware above covers every /api route below.
-  for (const routes of [dorkRoutes, pullRoutes, localRoutes, subscriptionRoutes, settingsRoutes, customizeRoutes, accountRoutes, buildRoutes, automationRoutes, liveRoutes, simFeedRoutes])
+  for (const routes of [
+    dorkRoutes,
+    pullRoutes,
+    localRoutes,
+    subscriptionRoutes,
+    commentRoutes,
+    settingsRoutes,
+    customizeRoutes,
+    accountRoutes,
+    buildRoutes,
+    automationRoutes,
+    liveRoutes,
+    simFeedRoutes,
+  ])
     routes(api, app);
 
   return api;

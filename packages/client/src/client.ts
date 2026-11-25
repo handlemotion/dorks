@@ -1,6 +1,18 @@
-import type { AutomationInput, AutomationRunView, AutomationView, ComposioStatus, McpServerInput, McpServerView, MergeMethod, PullRequestView, SkillView, SubscriptionView } from "@dorks/shared";
+import type {
+  AutomationInput,
+  AutomationRunView,
+  AutomationView,
+  CommentView,
+  ComposioStatus,
+  McpServerInput,
+  McpServerView,
+  MergeMethod,
+  PullRequestView,
+  SkillView,
+  SubscriptionView,
+} from "@dorks/shared";
 import { EventsFeed } from "./events.ts";
-import { createApi, ApiError, type ApiConfig, type DesktopOptions } from "./http.ts";
+import { createApi, ApiError, type ApiConfig, type DesktopOptions, type NewComment } from "./http.ts";
 import { connectLive, type LiveStatus } from "./live.ts";
 import { Query, type QueryOptions, type Store } from "./store.ts";
 import type {
@@ -121,6 +133,9 @@ export class DorksClient {
       case "events":
         this.feeds.get(m.dorkId)?.requestTail();
         break;
+      case "comments":
+        this.invalidate(`comments:${m.dorkId}`);
+        break;
       case "subscriptions":
         this.invalidate(`subs:${m.dorkId}`);
         this.invalidate(`pr:${m.dorkId}`);
@@ -233,6 +248,11 @@ export class DorksClient {
 
   subscriptions(dorkId: string) {
     return this.query<SubscriptionView[]>(`subs:${dorkId}`, () => this.api.listSubscriptions(dorkId));
+  }
+
+  /** The owner's comment threads on the session's running previews, and the agent's replies (oldest first). */
+  comments(dorkId: string) {
+    return this.query<CommentView[]>(`comments:${dorkId}`, () => this.api.listComments(dorkId));
   }
 
   events(dorkId: string): EventsFeed {
@@ -351,6 +371,24 @@ export class DorksClient {
       await (send ? this.api.sendQueued(id, queuedId) : this.api.removeQueued(id, queuedId));
       this.invalidate(`dork:${id}`);
       if (send) this.events(id).requestTail();
+    },
+    addComment: async (id: string, input: NewComment) => {
+      const r = await this.api.addComment(id, input);
+      this.invalidate(`comments:${id}`);
+      return r.id;
+    },
+    replyComment: async (id: string, commentId: string, body: string) => {
+      await this.api.replyComment(id, commentId, body);
+      this.invalidate(`comments:${id}`);
+    },
+    /** Edits the owner's own comment, or resolves / reopens a thread (its first comment). */
+    changeComment: async (id: string, commentId: string, change: { body?: string; resolved?: boolean }) => {
+      await this.api.changeComment(id, commentId, change);
+      this.invalidate(`comments:${id}`);
+    },
+    deleteComment: async (id: string, commentId: string) => {
+      await this.api.deleteComment(id, commentId);
+      this.invalidate(`comments:${id}`);
     },
     subscribe: async (id: string, pr: PrRefInput) => {
       await this.api.subscribe(id, pr);

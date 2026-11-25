@@ -15,7 +15,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel
 import { InputGroup, InputGroupButton } from '@dorks/ui/input-group'
 import { resolveSharedImages } from '../../../components/ChatBlock'
 import { CrewDetails } from '../../../components/CrewDetails'
-import { SessionChat } from '../../../components/SessionChat'
+import { AGENT_NAMES, SessionChat } from '../../../components/SessionChat'
 import { ChatDetails } from '../../../components/ChatDetails'
 import { ChatSplit, ShowDetailsButton, useDetailsOpen, useWide } from '../../../components/chat-details/layout'
 import type { ChatDetailsData } from '../../../components/chat-details/types'
@@ -446,6 +446,7 @@ function Thread({ dorkId }: { dorkId: string }) {
       data={{ ...detailsData(dork, view.blocks, actions, { used: computerUsed, fetchUrl: fetchDesktopUrl, interrupt: interruptAgent }), pullRequest, subscriptions, usePullRequest: usePr }}
       onClose={() => setDetailsOpen(false)}
       onGrab={(snippet) => setText((t) => (t ? `${t}\n\n` : '') + snippet)}
+      previewSession={{ id: dorkId, agent: AGENT_NAMES[dork.provider] }}
       onAsk={setText}
     />
   )

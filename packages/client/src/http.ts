@@ -5,6 +5,8 @@ import {
   type AutomationInput,
   type AutomationRunView,
   type AutomationView,
+  type CommentAnchor,
+  type CommentView,
   type ComposioStatus,
   type McpOAuthState,
   type McpServerInput,
@@ -36,6 +38,13 @@ import type {
   Usage,
   GithubRepos,
 } from "./types.ts";
+
+/** A new comment thread on a running preview: where it points and the preview's port. */
+export interface NewComment {
+  body: string;
+  anchor: CommentAnchor;
+  port: number;
+}
 
 /**
  * Thrown for every failed call. `data` is the typed AppError, so `toAppError(e)` from @dorks/shared reads it unchanged
@@ -148,6 +157,11 @@ export function createApi(config: ApiConfig) {
     subscribe: (id: string, pr: PrRefInput) => request<object>("POST", `${dork(id)}/subscriptions`, pr),
     unsubscribe: (id: string, pr: PrRefInput) => request<object>("DELETE", `${dork(id)}/subscriptions`, pr),
     resumeSubscription: (id: string, pr: PrRefInput) => request<object>("POST", `${dork(id)}/subscriptions/resume`, pr),
+    listComments: (id: string) => request<CommentView[]>("GET", `${dork(id)}/comments`),
+    addComment: (id: string, input: NewComment) => request<{ id: string }>("POST", `${dork(id)}/comments`, input),
+    replyComment: (id: string, commentId: string, body: string) => request<{ id: string }>("POST", `${dork(id)}/comments/${encodeURIComponent(commentId)}/replies`, { body }),
+    changeComment: (id: string, commentId: string, change: { body?: string; resolved?: boolean }) => request<object>("PATCH", `${dork(id)}/comments/${encodeURIComponent(commentId)}`, change),
+    deleteComment: (id: string, commentId: string) => request<object>("DELETE", `${dork(id)}/comments/${encodeURIComponent(commentId)}`),
     /** The session's pull request, read live from GitHub (404 `not_found` when the session has none). */
     /** One of the session's pull requests by `url` (a PR it opened or follows), else its latest. */
     getPullRequest: (id: string, url?: string) => request<PullRequestView>("GET", `${dork(id)}/pr${url ? `?url=${enc(url)}` : ""}`),

@@ -1,5 +1,6 @@
 import type { NoticeHook } from '@dorks/shared'
 import {
+  MessageSquareTextIcon,
   CircleAlertIcon,
   CircleCheckIcon,
   CircleXIcon,
@@ -72,6 +73,13 @@ const NOTIFY_ICONS: [string, LucideIcon][] = [
 ]
 
 function notifyLine(hook: Extract<NoticeHook, { type: 'notify' }>): HookLine {
+  if (hook.source === 'preview') {
+    // The owner's own comments on the preview: the digest is their words, one comment per paragraph.
+    const comments = hook.text.split('\n\n').filter((t) => t.trim())
+    const first = comments[0]?.split('\n')[0] ?? ''
+    const title = comments.length > 1 ? `${comments.length} comments on the preview` : `Comment on the preview: “${first.length > 80 ? `${first.slice(0, 80)}…` : first}”`
+    return { title, icon: MessageSquareTextIcon }
+  }
   const said = sections(hook.text).flatMap(phrases)
   const prs = hook.prs.map((p) => `#${p.number}`)
   const title = said.length ? said.join('; ') : `Update on ${names(prs) || 'your pull request'}`

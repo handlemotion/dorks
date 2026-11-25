@@ -33,6 +33,8 @@ export interface Transport {
   local(args: Record<string, unknown>): Promise<unknown>;
   /** Crew tools (docs/crew.md): `{tool, args}` from a coordinator's or worker's MCP server, scoped by the server to this dork's crew. */
   crew(args: Record<string, unknown>): Promise<unknown>;
+  /** The comment_* MCP tools: the owner's comments on the running preview (docs/architecture.md, "Preview comments"). */
+  comment(args: Record<string, unknown>): Promise<unknown>;
   /**
    * A current access token for the owner's OAuth MCP server `name` (docs/mcp.md, "OAuth"). `stale` is a token the server just
    * refused, so the backend refreshes even before it expires.
@@ -298,6 +300,7 @@ export class WsTransport implements Transport {
   build = async (args: Record<string, unknown>) => this.rpc<unknown>("build", args);
   local = async (args: Record<string, unknown>) => this.rpc<unknown>("local", args);
   crew = async (args: Record<string, unknown>) => this.rpc<unknown>("crew", args);
+  comment = async (args: Record<string, unknown>) => this.rpc<unknown>("comment", args);
   shareImage = async (data: string, caption?: string) => this.rpc<{ id: string; width?: number; height?: number }>("share_image", { data, caption });
 
   subscribeSubscriptions(onList: (views: unknown) => void, onError: () => void) {

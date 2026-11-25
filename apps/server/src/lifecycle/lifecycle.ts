@@ -3,6 +3,7 @@ import type { App } from "../app";
 import { getDork, runtimeOf } from "../data";
 import { foldInbox } from "../services/notify";
 import { foldCrew } from "../services/crew";
+import { foldComments } from "../services/comments";
 import { expireLocal } from "../services/local";
 import {
   append,
@@ -21,11 +22,20 @@ import {
   setTimer,
 } from "./dispatch";
 
+/** A debounce window closed: everything buffered for the agent becomes one notification. */
+const FOLDS: Record<string, (app: App, dorkId: string) => void> = {
+  notify: foldInbox, // PR events (services/notify.ts)
+  crew_notify: foldCrew, // reports and notes from the dork's crew (docs/crew.md)
+  comments_notify: foldComments, // the owner's comments on a running preview (services/comments.ts)
+};
+
 /** A user-visible timer fired (the scheduler already claimed its row). Runs in one transaction. */
 export function fireTimer(app: App, dorkId: string, name: string) {
   const dork = getDork(app.db, dorkId);
   if (!dork || dork.deleting) return;
   if (expireLocal(app, dorkId, name)) return; // `local:<request id>`: an unanswered request to use the owner's computer
+  const fold = FOLDS[name];
+  if (fold) return fold(app, dorkId);
   const rt = runtimeOf(app.db, dorkId);
   switch (name) {
     case "sleep":
@@ -47,12 +57,6 @@ export function fireTimer(app: App, dorkId: string, name: string) {
       }
       if (isAwake(dork.state)) append(app, dorkId, errorEvent({ code: "timeout", message: "timed out waiting for the sandbox" }));
       dispatch(app, dorkId, { t: "watchdog" });
-      break;
-    case "notify":
-      foldInbox(app, dorkId); // the debounce window closed: everything buffered becomes one notification
-      break;
-    case "crew_notify":
-      foldCrew(app, dorkId); // reports and notes from the dork's crew (docs/crew.md)
       break;
     case "flush":
       finishPause(app, dorkId); // flush timeout (a no-op if the pause was cancelled meanwhile)

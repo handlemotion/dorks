@@ -14,6 +14,7 @@ export type Change =
   | { t: "dork"; dorkId: string }
   | { t: "events"; dorkId: string; seq: number }
   | { t: "subscriptions"; dorkId: string }
+  | { t: "comments"; dorkId: string }
   | { t: "settings" }
   | { t: "snapshot" }
   | { t: "builds" }
