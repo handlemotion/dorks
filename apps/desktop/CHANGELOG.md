@@ -1,5 +1,27 @@
 # @dorks/desktop
 
+## 0.15.0
+
+### Minor Changes
+
+- [#312](https://github.com/handlemotion/dorks/pull/312) [`e5382f8`](https://github.com/handlemotion/dorks/commit/e5382f8cfc200e30008d418ccad5a6b5810e8613) Thanks [@handlemotion](https://github.com/handlemotion)! - Connect Codex with Sign in with ChatGPT: Dorks keeps the sign-in on your computer and gives each Codex sandbox a short-lived access token, so no Boat environment is needed.
+
+- [#308](https://github.com/handlemotion/dorks/pull/308) [`a47c74a`](https://github.com/handlemotion/dorks/commit/a47c74abba13d8dedf4312df19c21ae44a7a92d6) Thanks [@handlemotion](https://github.com/handlemotion)! - Codex sessions (GPT models) now work like Claude's: a message sent mid-turn steers the running turn, the done gates send untested or unshipped work back, PR events wake the agent, and the owner's MCP servers, skills, images and crew roles reach Codex. You can switch a running Codex session's model and effort from the model menu.
+
+- [#314](https://github.com/handlemotion/dorks/pull/314) [`1467015`](https://github.com/handlemotion/dorks/commit/146701546149eb33da4c546f1c7dd2bb07409a57) Thanks [@handlemotion](https://github.com/handlemotion)! - Cloud organizations connect GitHub through the Dorks Agents app: onboarding has a Connect GitHub step, the new-session picker lists the app's repositories (with Add repositories on GitHub), and Settings › Organization shows the linked account. GitHub's round trip brings you back to where you started.
+
+- [#304](https://github.com/handlemotion/dorks/pull/304) [`42170c9`](https://github.com/handlemotion/dorks/commit/42170c933655effda29f1c1737befb9281e16223) Thanks [@handlemotion](https://github.com/handlemotion)! - New sessions can run Local, on your Mac with the Claude Code (or other agent) CLI you already have, in their own git worktree of the repository, instead of in a cloud sandbox: pick Cloud or Local next to the repository in the message box. Cloud stays the default; archiving a local session removes its worktree, and its next message brings it back.
+
+### Patch Changes
+
+- [#311](https://github.com/handlemotion/dorks/pull/311) [`b499907`](https://github.com/handlemotion/dorks/commit/b499907cafeabe28078ea3a5d414e535be8987e5) Thanks [@handlemotion](https://github.com/handlemotion)! - Antigravity's Google sign-in works for a Dorks Cloud or Teams org: the sign-in runs in a cloud sandbox, so after approving, paste the address your browser ends on (the field is open right away).
+
+- [#310](https://github.com/handlemotion/dorks/pull/310) [`82fa10d`](https://github.com/handlemotion/dorks/commit/82fa10db8a009fb226b5ffe9097ca98e8813a2e1) Thanks [@handlemotion](https://github.com/handlemotion)! - Codex sessions list their skills in the `/` menu, and changing the effort while on Codex's default model now takes effect.
+
+- [#309](https://github.com/handlemotion/dorks/pull/309) [`fa10397`](https://github.com/handlemotion/dorks/commit/fa10397702e600a617d467c69e8d34c05d3392d2) Thanks [@handlemotion](https://github.com/handlemotion)! - In a running session the model menu lists every model its agent can switch to, each with the effort it starts at, instead of showing other agents' models greyed out.
+
+- [#307](https://github.com/handlemotion/dorks/pull/307) [`6803372`](https://github.com/handlemotion/dorks/commit/680337229f6c93ab06c2ade6a09a3ac8b0030474) Thanks [@handlemotion](https://github.com/handlemotion)! - Your personal organization is now called "<First name>’s Workspace" (from your name, or your email when you have none) instead of showing your email.
+
 ## 0.14.0
 
 ### Minor Changes

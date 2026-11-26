@@ -54,6 +54,27 @@ export interface CloudPlaces {
   orgs: CloudOrg[];
 }
 
+/** One signed-in session of the account (`GET /v1/me/sessions`, never its token); `current` is this server's own. */
+export interface CloudSession {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  current: boolean;
+}
+
+/** Settings › Account: the account, read fresh from the relay, and where it is signed in. */
+export interface CloudAccountView {
+  user: CloudUser;
+  sessions: CloudSession[];
+}
+
+/** Profile pictures and org logos: what the relay accepts (it checks again, and crops them to a square). */
+export const PICTURE_TYPES = ["image/png", "image/jpeg", "image/webp"] as const;
+export const MAX_PICTURE_BYTES = 2 * 1024 * 1024;
+
 interface Session {
   token: string;
   user: CloudUser;
@@ -339,6 +360,95 @@ export const cloudAccount = {
     if (!/^[\w-]{1,128}$/.test(orgId) || !/^(api|realtime)\/[\w./-]*$/.test(rest) || /(^|\/)\.\.?(\/|$)|\/\//.test(rest)) fail("invalid", "Not an organization path");
     const id = encodeURIComponent(orgId);
     return relay(app, rest.startsWith("realtime/") ? `/v1/realtime/orgs/${id}/${rest.slice("realtime/".length)}` : `/v1/orgs/${id}/${rest}`, req);
+  },
+};
+
+/** A picture for the relay: its type and size checked here first, so a wrong file fails without a round trip. */
+function picture(bytes: Uint8Array, type: string): RequestInit {
+  if (!(PICTURE_TYPES as readonly string[]).includes(type)) fail("invalid", "Choose a PNG, JPEG or WebP picture");
+  if (bytes.length > MAX_PICTURE_BYTES) fail("invalid", "Pictures can be at most 2 MB");
+  if (bytes.length === 0) fail("invalid", "That file is empty");
+  return { method: "POST", headers: { "content-type": type }, body: bytes };
+}
+
+/** One account call; a refusal becomes the relay's own message. */
+async function accountCall(app: App, path: string, init: RequestInit, what: string): Promise<unknown> {
+  const res = await cloudAccount.request(app, path, init);
+  if (!res.ok) await refused(res, what);
+  return readJson(res);
+}
+
+/** Reads the account again and keeps it, so the switcher and attribution show a new name or picture at once. */
+async function refreshUser(app: App): Promise<CloudUser> {
+  const s = await signedIn(app);
+  const res = await call(app, "/api/auth/get-session", { headers: { authorization: `Bearer ${s.token}` } });
+  if (res.status === 401) await expired(app);
+  if (!res.ok) await refused(res, "Dorks Cloud could not read your account");
+  const user = userOf(((await readJson(res)) as { user?: unknown } | null)?.user);
+  if (!user) await expired(app);
+  if (JSON.stringify(user) !== JSON.stringify(s.user)) await saveSession(app, { ...s, user: user! });
+  return user!;
+}
+
+function sessionOf(v: unknown): CloudSession | null {
+  const s = v as Record<string, unknown> | null;
+  const id = str(s?.id);
+  if (!id) return null;
+  return {
+    id,
+    createdAt: str(s?.createdAt) ?? "",
+    updatedAt: str(s?.updatedAt) ?? "",
+    expiresAt: str(s?.expiresAt) ?? "",
+    ipAddress: str(s?.ipAddress),
+    userAgent: str(s?.userAgent),
+    current: s?.current === true,
+  };
+}
+
+/**
+ * Settings › Account (docs/cloud.md): the profile is edited here, in the app, never in a browser page. The name goes to Better Auth's
+ * `update-user`; the picture and org logos are uploaded to the relay (`/v1/me/avatar`, `/v1/orgs/:id/logo`), which crops them to a
+ * square and serves them; sessions are listed and signed out by id (`/v1/me/sessions`), the tokens never leaving the relay.
+ */
+export const cloudProfile = {
+  async view(app: App): Promise<CloudAccountView> {
+    const user = await refreshUser(app);
+    const sessions = list(await accountCall(app, "/v1/me/sessions", {}, "Dorks Cloud could not list your sessions"), sessionOf);
+    return { user, sessions };
+  },
+
+  async rename(app: App, name: string): Promise<CloudUser> {
+    await accountCall(app, "/api/auth/update-user", jsonPost({ name }), "Dorks Cloud could not rename your account");
+    return refreshUser(app);
+  },
+
+  async setAvatar(app: App, bytes: Uint8Array, type: string): Promise<CloudUser> {
+    await accountCall(app, "/v1/me/avatar", picture(bytes, type), "Dorks Cloud did not take the picture");
+    return refreshUser(app);
+  },
+
+  async removeAvatar(app: App): Promise<CloudUser> {
+    await accountCall(app, "/v1/me/avatar", { method: "DELETE" }, "Dorks Cloud could not remove the picture");
+    return refreshUser(app);
+  },
+
+  /** Signs one of the account's other sessions out (a phone, a browser, another Mac). This server's own is Sign out. */
+  async signOutSession(app: App, id: string): Promise<void> {
+    if (!/^[\w-]{1,128}$/.test(id)) fail("invalid", "Not a session");
+    await accountCall(app, `/v1/me/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }, "Dorks Cloud could not sign that session out");
+  },
+
+  async signOutOthers(app: App): Promise<{ signedOut: number }> {
+    const out = (await accountCall(app, "/v1/me/sessions", { method: "DELETE" }, "Dorks Cloud could not sign the other sessions out")) as { signedOut?: unknown } | null;
+    return { signedOut: typeof out?.signedOut === "number" ? out.signedOut : 0 };
+  },
+
+  /** The org's logo (owners and admins; the relay decides). Returns its URL, null once removed. */
+  async setOrgLogo(app: App, orgId: string, bytes: Uint8Array | null, type = ""): Promise<{ logo: string | null }> {
+    if (!/^[\w-]{1,128}$/.test(orgId)) fail("invalid", "Not an organization");
+    const path = `/v1/orgs/${encodeURIComponent(orgId)}/logo`;
+    const out = (await accountCall(app, path, bytes ? picture(bytes, type) : { method: "DELETE" }, "Dorks Cloud did not take the logo")) as { logo?: unknown } | null;
+    return { logo: str(out?.logo) };
   },
 };
 

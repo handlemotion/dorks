@@ -21,6 +21,7 @@ import { cn } from './onboarding/Frame'
 import { SEND_KEY } from './Reply'
 import { SIDEBAR_ROW } from './sidebarChrome'
 import { fullestUsed, UsageSections, usedPercent } from './UsageMenu'
+import { useCloudPlace } from './CloudPlace'
 
 const DOCS_URL = `${REPO_URL}/tree/main/docs`
 const ISSUES_URL = `${REPO_URL}/issues/new`
@@ -29,18 +30,22 @@ const RELEASES_SHOWN = 3
 /** The settings shortcut as the platform writes it. */
 const SETTINGS_KEY = SEND_KEY === '⌘' ? '⌘,' : 'Ctrl+,'
 
-/** The owner's GitHub avatar, round (a person, where owners and organizations are 4px squares), or a person glyph without one. */
-export function UserAvatar({ login, size = 16, className }: { login: string | null | undefined; size?: 16 | 32; className?: string }) {
-  const [failed, setFailed] = useState(false)
+/**
+ * The owner's picture, round (a person, where owners and organizations are 4px squares): their Dorks Cloud picture (`src`) when they
+ * set one, else their GitHub avatar, else a person glyph.
+ */
+export function UserAvatar({ login, src, size = 16, className }: { login: string | null | undefined; src?: string | null; size?: 16 | 32 | 40; className?: string }) {
+  const [failed, setFailed] = useState<string | null>(null)
   const box = cn('shrink-0 overflow-hidden rounded-full', className)
-  if (!login || failed) {
+  if (src && failed !== src) return <img alt="" src={src} width={size} height={size} className={cn(box, 'object-cover')} style={{ width: size, height: size }} onError={() => setFailed(src)} />
+  if (!login || failed === login) {
     return (
       <span aria-hidden style={{ width: size, height: size }} className={cn(box, 'grid place-items-center bg-foreground/10 text-muted-foreground')}>
         <UserRoundIcon style={{ width: size * 0.6, height: size * 0.6 }} />
       </span>
     )
   }
-  return <img alt="" src={`https://github.com/${encodeURIComponent(login)}.png?size=${size * 2}`} width={size} height={size} className={box} onError={() => setFailed(true)} />
+  return <img alt="" src={`https://github.com/${encodeURIComponent(login)}.png?size=${size * 2}`} width={size} height={size} className={box} onError={() => setFailed(login)} />
 }
 
 /** `⌘,` (Ctrl+, elsewhere) opens Settings from anywhere in the app, as in every Mac app. */
@@ -86,21 +91,26 @@ export function AccountMenu({
   useSettingsShortcut()
   const navigate = useNavigate()
   const used = usage && fullestUsed(usage, 'claude')
-  const name = login ?? 'You'
+  // Signed in to Dorks Cloud, the account's picture (Settings › Account) stands for you, and its name without a GitHub login.
+  const cloudUser = useCloudPlace()?.cloud?.user
+  const name = login ?? (cloudUser?.name || 'You')
+  const picture = cloudUser?.image
   const shown = releases.slice(0, RELEASES_SHOWN)
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger aria-label="Account and help" className={`${SIDEBAR_ROW} aria-expanded:bg-foreground/[0.05] aria-expanded:text-foreground`}>
-        <UserAvatar login={login} className="-mx-px" />
+        <UserAvatar login={login} src={picture} className="-mx-px" />
         <span className="min-w-0 truncate">{name}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="start" sideOffset={6} className="w-[max(calc(var(--anchor-width)+1.5rem),16rem)]">
         {/* The avatar sits a little inside the two lines beside it (20px + 16px), so it weighs no more than the text. */}
         <div className="flex items-center gap-2.5 px-2 pt-1.5 pb-2">
-          <UserAvatar login={login} size={32} />
+          <UserAvatar login={login} src={picture} size={32} />
           <div className="flex min-w-0 flex-col">
             <span className="truncate text-sm leading-5">{name}</span>
-            <span className="truncate text-xs leading-4 text-muted-foreground tabular-nums">{email ?? (version ? `Dorks ${version}` : login ? 'Signed in with GitHub' : 'GitHub not connected')}</span>
+            <span className="truncate text-xs leading-4 text-muted-foreground tabular-nums">
+              {email ?? cloudUser?.email ?? (version ? `Dorks ${version}` : login ? 'Signed in with GitHub' : 'GitHub not connected')}
+            </span>
           </div>
         </div>
         <DropdownMenuSeparator />
