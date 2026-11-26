@@ -1,5 +1,35 @@
 # @dorks/desktop
 
+## 0.13.0
+
+### Minor Changes
+
+- [#273](https://github.com/handlemotion/dorks/pull/273) [`6374bd2`](https://github.com/handlemotion/dorks/commit/6374bd2101f37d27aee37ff4be0637b5fede0aa7) Thanks [@handlemotion](https://github.com/handlemotion)! - Teams and Cloud organizations that run in Dorks Cloud now stream their chats live from the cloud, resuming without gaps after a dropped connection.
+
+- [#282](https://github.com/handlemotion/dorks/pull/282) [`c758922`](https://github.com/handlemotion/dorks/commit/c7589229b3a99e5b127c2a1e8f635db226516620) Thanks [@handlemotion](https://github.com/handlemotion)! - Skills: the skills already on your Mac (~/.agents/skills and ~/.claude/skills) now reach every session automatically and follow edits to their folder. Remove one from Dorks only, or from your Mac for every agent.
+
+- [#278](https://github.com/handlemotion/dorks/pull/278) [`1cd82bc`](https://github.com/handlemotion/dorks/commit/1cd82bc3b53105abc205ab0e346c3aeaadfae011) Thanks [@handlemotion](https://github.com/handlemotion)! - Move to cloud: in Settings › Organization, owners and admins of a Teams or Cloud organization that runs on their Mac can move it to Dorks Cloud with its sessions, chats, automations, MCP servers, skills and shared variables.
+
+### Patch Changes
+
+- [#277](https://github.com/handlemotion/dorks/pull/277) [`1e4d712`](https://github.com/handlemotion/dorks/commit/1e4d71208b444e15b805e162414b63df7c1911af) Thanks [@handlemotion](https://github.com/handlemotion)! - Cloud sessions: secure input requests and answers appear in the session's transcript.
+
+- [#275](https://github.com/handlemotion/dorks/pull/275) [`203d4e2`](https://github.com/handlemotion/dorks/commit/203d4e21e69c6e739594180307f5a337f34a026b) Thanks [@handlemotion](https://github.com/handlemotion)! - Cloud sessions: the sandbox's bridge can now talk to s2 and the cloud Worker directly instead of waiting for a server to dial it.
+
+- [#281](https://github.com/handlemotion/dorks/pull/281) [`ca6196e`](https://github.com/handlemotion/dorks/commit/ca6196e2d650f4fb0b70277a0280e1fd0825aac4) Thanks [@handlemotion](https://github.com/handlemotion)! - The chat's message index sits 4px closer to the edge, and a message's hover time no longer lands on it: when the two would overlap, the time shows in the message's toolbar instead.
+
+- [#276](https://github.com/handlemotion/dorks/pull/276) [`49f8d75`](https://github.com/handlemotion/dorks/commit/49f8d75a40ea99bd55c8c122090ab77d4f816b77) Thanks [@handlemotion](https://github.com/handlemotion)! - In Teams and Cloud organizations, a chat's header shows which teammates are looking at it.
+
+- [#266](https://github.com/handlemotion/dorks/pull/266) [`50aee38`](https://github.com/handlemotion/dorks/commit/50aee385742cd364db9361bec03f0f9b8f3b0fe6) Thanks [@handlemotion](https://github.com/handlemotion)! - The composer now sends the effort it shows, and every model starts at the effort its maker recommends (Opus 5.5 at medium). An effort you pick for a model is remembered for your next sessions.
+
+- [#272](https://github.com/handlemotion/dorks/pull/272) [`c723f30`](https://github.com/handlemotion/dorks/commit/c723f309adeeada144b1d66126b78a52a8412d97) Thanks [@handlemotion](https://github.com/handlemotion)! - When an agent is waiting on you (a permission, a question, a secure input) and that request is scrolled out of view, a small Needs action pill floats above the composer; click it to jump to the request. A failed ship no longer marks the session as needing you: the agent is already told to fix it.
+
+- [#271](https://github.com/handlemotion/dorks/pull/271) [`39299bf`](https://github.com/handlemotion/dorks/commit/39299bf086d2a049f2c29e103f066fc135624c28) Thanks [@handlemotion](https://github.com/handlemotion)! - Nerds now hear what happens to their workers' pull requests: a merge or close (including your own), a conflict, or CI stalled for a human arrives as a report, so a nerd no longer waits on a PR that landed long ago.
+
+- [#268](https://github.com/handlemotion/dorks/pull/268) [`4f25316`](https://github.com/handlemotion/dorks/commit/4f25316a0701820349c99c2fac35d1d241d590f1) Thanks [@handlemotion](https://github.com/handlemotion)! - Relayed requests from the phone and teammates can no longer reach local access, secure inputs or the box's desktop by percent-escaping the path.
+
+- [#269](https://github.com/handlemotion/dorks/pull/269) [`e65af1a`](https://github.com/handlemotion/dorks/commit/e65af1a3cc16be2f2360504a3b00d9a9394be880) Thanks [@handlemotion](https://github.com/handlemotion)! - Team admins can no longer turn on "Always allow" for this computer through Settings: local access stays with the computer's owner.
+
 ## 0.12.1
 
 ### Patch Changes

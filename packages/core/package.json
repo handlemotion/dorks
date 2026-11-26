@@ -1,6 +1,6 @@
 {
   "name": "@dorks/core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The runtime-neutral core of the dorks server: the lifecycle reducer, the Boat driver, secret envelopes, bridge auth, schedules, the stream normalizer and the notification renderer. Runs on Node, Bun and Cloudflare Workers.",
   "license": "Apache-2.0",
   "repository": {

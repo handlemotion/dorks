@@ -1,6 +1,6 @@
 {
   "name": "@dorks/bridge",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "The in-box bridge: runs the Claude Code CLI in a sandbox and speaks the dorks bridge protocol over a WebSocket.",
   "bin": {
