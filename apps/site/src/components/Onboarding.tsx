@@ -268,11 +268,13 @@ function Invite({ progress, onNext, onSkip }: StepProps) {
               .filter(Boolean),
           ),
         ].filter((e) => !invited.includes(e));
-        if (!emails.length) return invited.length ? void onNext() : notify("Add an email address, or skip this step.");
+        // Passed once anyone is invited: accepted invitations stop being pending, and the step must stay done then.
+        if (!emails.length) return invited.length ? (markPassed(org.id, "invite"), void onNext()) : notify("Add an email address, or skip this step.");
         const wrong = emails.find((e) => !EMAIL.test(e));
         if (wrong) return notify(`${wrong} isn’t an email address.`);
         void run(async () => {
           for (const e of emails) await invite(org.id, e);
+          markPassed(org.id, "invite");
           await onNext();
         });
       }}

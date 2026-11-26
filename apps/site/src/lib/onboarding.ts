@@ -100,7 +100,9 @@ export async function loadProgress(): Promise<Progress> {
   const orgs = await cloud<Org[]>("/v1/orgs");
   const teams = orgs.filter((o) => !o.personal);
   const saved = read().orgId;
-  const org = teams.find((o) => o.id === saved) ?? teams.find((o) => o.role === "owner") ?? null;
+  // Only a team the visitor owns: a member cannot pay for it, invite to it or set its keys.
+  const owned = teams.filter((o) => o.role === "owner");
+  const org = owned.find((o) => o.id === saved) ?? owned[0] ?? null;
   if (!org) return { org: null, secrets: [], invitations: [], memberOnly: teams.length > 0 };
   const [secrets, invitations] = await Promise.all([
     isPaid(org.plan)
