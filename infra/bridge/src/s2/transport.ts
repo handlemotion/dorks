@@ -353,6 +353,7 @@ export class S2Transport implements Transport {
   unsubscribePr = async (ref: PrRef) => void (await this.rpc("unsubscribe_pr", ref));
   showPreview = (port: number, opts: { title?: string; localhost?: boolean; via?: number }) => this.rpc<{ port: number; url: string; title?: string }>("show_preview", { port, ...opts });
   mcpToken = (name: string, stale?: string) => this.rpc<{ authorization: string; expiresAt: number | null }>("mcp_token", { name, ...(stale ? { stale } : {}) });
+  codexToken = () => this.rpc<{ accessToken: string; accountId: string; planType: string | null }>("codex_token", {});
   skill = async (name: string) => skillBundle.parse(await this.rpc<unknown>("skill", { name }));
   getImage = (id: string) => this.rpc<{ mime: string; data: string } | null>("get_image", { id });
   build = (args: Record<string, unknown>) => this.rpc<unknown>("build", args);

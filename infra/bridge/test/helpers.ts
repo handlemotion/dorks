@@ -167,6 +167,8 @@ export class FakeTransport implements Transport {
     if (!this.subscriptions.some((s) => s.repo === repo && s.number === ref.number)) this.setSubscriptions([...this.subscriptions, fakeView({ ...ref, repo }, source)]);
   };
   mcpToken = async (name: string) => ({ authorization: `Bearer token-for-${name}`, expiresAt: null });
+  codexTokens = 0;
+  codexToken = async () => ({ accessToken: `fresh-access-${++this.codexTokens}`, accountId: "acct_test", planType: "plus" });
   skill = async (name: string) => ({ name, digest: "0".repeat(64), files: [{ path: "SKILL.md", data: Buffer.from(`---\nname: ${name}\ndescription: test\n---\n`).toString("base64") }] });
   showPreview = async (port: number, opts: { title?: string }) => ({ port, url: `https://sim-${port}.example/`, ...(opts.title ? { title: opts.title } : {}) });
   shareImage = async (_data: string) => ({ id: "0".repeat(32) });

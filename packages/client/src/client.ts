@@ -705,6 +705,30 @@ export class DorksClient {
         this.invalidate("settings");
       }
     },
+    /** Starts Codex's ChatGPT sign-in (services/codexSignIn.ts); resolves with its state, including OpenAI's link. */
+    signInCodex: async () => {
+      try {
+        return (await this.api.signInCodex()).codexSignIn;
+      } finally {
+        this.invalidate("settings");
+      }
+    },
+    /** For a browser on another computer: the address the ChatGPT sign-in ended on, finished on the server's computer. */
+    finishCodexSignIn: async (url: string) => {
+      try {
+        return (await this.api.finishCodexSignIn(url)).codexSignIn;
+      } finally {
+        this.invalidate("settings");
+      }
+    },
+    /** Drops Dorks' ChatGPT sign-in for Codex. */
+    signOutCodex: async () => {
+      try {
+        await this.api.signOutCodex();
+      } finally {
+        this.invalidate("settings");
+      }
+    },
     /** Starts the Boat sign-in (services/boatSignIn.ts); resolves with its state, including the browser link to open. */
     signInBoat: async () => {
       try {

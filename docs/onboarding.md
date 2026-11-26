@@ -45,7 +45,7 @@ Studied on Mobbin (web, desktop-class onboarding): Linear, Twenty, Air, Sana.
 |---|---|---|
 | 1 | Intro: heading, a card of what Dorks is, Let's go | any setting exists, or the owner pressed Get started |
 | 2 | Boat API key. Checked against Boat's `GET /limits` before it is saved (by `POST /api/boat/check`, and again by the server on save), so a wrong or expired key, a free trial, a blocked wallet or a wrong organization is reported here; the organization field appears only when Boat refuses one. Saving it queues the base-snapshot build on the server | `boatKey` |
-| 3 | AI: rows for Claude (pasted token), Codex (Boat environment name, checked against Boat's environment list on save) and Grok (Soon, not supported yet). One of them is enough | `claudeToken` or `boatEnvironment` |
+| 3 | AI: rows for Claude (pasted token), Codex (Sign in with ChatGPT, or a Boat environment name checked against Boat's environment list on save), Antigravity and Grok (Soon, not supported yet). One of them is enough | `claudeToken`, the Codex sign-in or `boatEnvironment` |
 | 4 | GitHub: one row, the GitHub CLI login; its dialog says what connecting shares and the `gh auth login` command | `github.configured` |
 
 Then the app opens on the new-session screen (`components/SetupStatus.tsx`), which shows what still stands between the owner and a session:

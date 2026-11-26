@@ -71,6 +71,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     githubEnvToken: env.GH_TOKEN?.trim() || env.GITHUB_TOKEN?.trim() || undefined,
     boatBin: env.DORKS_BOAT_BIN || undefined,
     agyBin: env.DORKS_AGY_BIN || undefined,
+    codexBin: env.DORKS_CODEX_BIN || undefined,
     cloudUrl: env.DORKS_CLOUD_URL ?? DEFAULT_CLOUD_URL,
     cloudJwksUrl: env.DORKS_CLOUD_JWKS_URL || undefined,
     siteUrl: env.DORKS_SITE_URL || DEFAULT_SITE_URL,

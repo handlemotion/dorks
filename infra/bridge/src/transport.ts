@@ -44,6 +44,8 @@ export interface Transport {
    * refused, so the backend refreshes even before it expires.
    */
   mcpToken(name: string, stale?: string): Promise<{ authorization: string; expiresAt: number | null }>;
+  /** A fresh ChatGPT access token for Codex (Dorks' own sign-in, docs/boat.md), after Codex reported the current one refused. */
+  codexToken(): Promise<{ accessToken: string; accountId: string; planType: string | null }>;
   /** One of the owner's skills (docs/skills.md): its files, fetched when `configure` lists a digest this box does not have. */
   skill(name: string): Promise<SkillBundle>;
   /** An image the owner attached to one of this dork's messages, as base64; null when it is not this dork's. */
@@ -331,6 +333,8 @@ export class WsTransport implements Transport {
   showPreview = async (port: number, opts: { title?: string; localhost?: boolean; via?: number }) => this.rpc<{ port: number; url: string; title?: string }>("show_preview", { port, ...opts });
 
   mcpToken = async (name: string, stale?: string) => this.rpc<{ authorization: string; expiresAt: number | null }>("mcp_token", { name, ...(stale ? { stale } : {}) });
+
+  codexToken = async () => this.rpc<{ accessToken: string; accountId: string; planType: string | null }>("codex_token", {});
 
   skill = async (name: string) => skillBundle.parse(await this.rpc<unknown>("skill", { name }));
 

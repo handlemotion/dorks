@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { DesktopOptions } from '@dorks/client'
 import { isDorkMode, type Block, type DorkLocation, type DorkMode } from '@dorks/shared'
 import { ChevronDownIcon, ChevronRightIcon, InfoIcon, MessageSquareIcon } from 'lucide-react'
+import type { Settings } from '@dorks/client'
 import { useBuilds, useDork, useDorkEvents, useDorks, useDorksClient, useGithubRepos, usePullRequest, useSettings, useSubscriptions, useWorkspaceRoots, useWorkspaceTree } from '@dorks/client/react'
 import { ownersOf, useOwnerScope } from '../../../components/ownerScope'
 import { ownerOf } from '../../../components/RepoAvatar'
@@ -77,7 +78,7 @@ function Dorks() {
   return (
     <div className="flex h-full min-h-0 flex-col" data-onboarding={settings ? (ready ? 'complete' : 'preparing') : 'loading'}>
       {!selected && <PageHeader title="New session" />}
-      {settings && ready && !settings.claudeToken && !!settings.boatEnvironment && (
+      {settings && ready && claudeOnlyMissing(settings) && (
         <Notice>
           Add a{' '}
           <Link to="/settings" className="font-medium underline underline-offset-4">
@@ -113,7 +114,7 @@ function Dorks() {
                 disabled={!ready}
                 localReady={!!settings && canCreateLocal(settings)}
                 claudeReady={!!settings?.claudeToken}
-                codexReady={!!settings?.boatEnvironment}
+                codexReady={!!settings?.boatEnvironment || !!settings?.codexAccount}
                 antigravityReady={!!settings?.antigravityReady}
               />
               {settings && (
@@ -206,6 +207,9 @@ function initialEnvironment(builds: EnvironmentBuild[], repositories: string[], 
  * Whether the chosen agent can start (sending stays off until it can, like the server's `missingForSession`), and whether to say so
  * above the box: with no agent at all the setup checklist asks for the token, so only an owner who has Codex and picked Claude.
  */
+/** Another agent is connected but Claude is not: the page suggests adding a Claude token. */
+const claudeOnlyMissing = (s: Settings) => !s.claudeToken && (!!s.boatEnvironment || !!s.codexAccount)
+
 const agentGate = (provider: AgentProvider, claudeReady: boolean, codexReady: boolean, antigravityReady: boolean) => {
   // OpenCode signs in with shared secrets (its provider keys): a missing one shows up in the thread.
   const missing = provider === 'claude' ? !claudeReady : provider === 'codex' ? !codexReady : provider === 'antigravity' ? !antigravityReady : false

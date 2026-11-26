@@ -25,6 +25,7 @@ import {
 import type {
   BoatCheck,
   AntigravitySignIn,
+  CodexSignIn,
   BoatSignIn,
   BuildInput,
   BuildVarInput,
@@ -241,6 +242,9 @@ export function createApi(config: ApiConfig) {
     signInBoat: () => request<{ boatSignIn: BoatSignIn | null }>("POST", "/api/boat/sign-in", {}),
     signInAntigravity: () => request<{ antigravitySignIn: AntigravitySignIn | null }>("POST", "/api/antigravity/sign-in", {}),
     finishAntigravitySignIn: (url: string) => request<{ antigravitySignIn: AntigravitySignIn | null }>("POST", "/api/antigravity/sign-in/finish", { url }),
+    signInCodex: () => request<{ codexSignIn: CodexSignIn | null }>("POST", "/api/codex/sign-in", {}),
+    finishCodexSignIn: (url: string) => request<{ codexSignIn: CodexSignIn | null }>("POST", "/api/codex/sign-in/finish", { url }),
+    signOutCodex: () => request<object>("DELETE", "/api/codex/sign-in"),
     getSnapshot: () => request<SnapshotStatus>("GET", "/api/snapshot"),
     /** Starts the build (idempotent: returns the current status if one is running or the snapshot is current). */
     buildSnapshot: (force = false) => request<SnapshotStatus>("POST", "/api/snapshot/build", force ? { force: true } : {}),

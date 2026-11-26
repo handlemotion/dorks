@@ -153,6 +153,10 @@ export interface Settings {
   antigravityReady?: boolean;
   /** Antigravity's Google sign-in while not signed in; null once it is. */
   antigravitySignIn?: AntigravitySignIn | null;
+  /** The ChatGPT account Dorks' own Codex sign-in uses (kept by the Codex CLI on the server's computer); null when signed out. */
+  codexAccount?: { email: string | null; plan: string | null } | null;
+  /** Codex's ChatGPT sign-in while not signed in; null once it is. */
+  codexSignIn?: CodexSignIn | null;
   /** The models Antigravity offers the signed-in plan (`agy models`), for a new session's menu. */
   antigravityModels?: AgentModelChoice[];
   /** The models the ChatGPT plan offered the last Codex session, for a new session's menu; empty until one has run. */
@@ -265,6 +269,13 @@ export interface AntigravitySignIn {
    * loads here: the address the browser ends on is always pasted (finishAntigravitySignIn).
    */
   remote?: boolean;
+}
+
+/** Codex's ChatGPT sign-in, run by the Codex CLI on the server's computer: `signed_out`, `signing_in` (approve at `url`), `failed`. */
+export interface CodexSignIn {
+  state: "signed_out" | "signing_in" | "failed";
+  url?: string;
+  error?: string;
 }
 
 /** `POST /api/boat/check`: whether Boat accepts a key (and organization) before anything is saved. */

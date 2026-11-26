@@ -18,6 +18,7 @@ import { getDork, openCommands, runtimeOf, type DorkRow, type Preview, type Shar
 import { update } from "../db";
 import { append, bridgeSeen, dispatch, enqueueConfigure, finishPause, patchDork } from "../lifecycle/dispatch";
 import { opFailed } from "../lifecycle/lifecycle";
+import type { CodexAuth } from "../lib/codexCli";
 import { rememberAntigravityModels, rememberCodexModels, rememberModelChoices } from "./models";
 import { antigravityToken, claudeToken, cliSecrets, githubToken } from "./settings";
 import { mcpServerConfigs } from "./mcpServers";
@@ -504,7 +505,10 @@ export const configure = Effect.fnUntraced(function* (app: App, dorkId: string):
 });
 
 /** The tokens and variables the agent runs with. Decryption runs here, never inside a transaction; a failure is a defect. */
-const agentSecrets = Effect.fnUntraced(function* (app: App, dork: DorkRow): Effect.fn.Return<{ gh: string; env: Record<string, string>; mcpServers: McpServerConfig[] }, OnboardingIncomplete> {
+const agentSecrets = Effect.fnUntraced(function* (
+  app: App,
+  dork: DorkRow,
+): Effect.fn.Return<{ gh: string; env: Record<string, string>; mcpServers: McpServerConfig[]; codexAuth: CodexAuth | null }, OnboardingIncomplete> {
   const sim = app.cfg.boxProvider === "sim";
   const claude = dork.provider === "claude" ? yield* Effect.promise(() => claudeToken(app)) : undefined;
   if (dork.provider === "claude" && !claude) return yield* new OnboardingIncomplete({ message: "Claude token not set" });
@@ -517,7 +521,10 @@ const agentSecrets = Effect.fnUntraced(function* (app: App, dork: DorkRow): Effe
   const mcpServers = yield* Effect.promise(() => mcpServerConfigs(app));
   // Antigravity's Google sign-in (services/antigravitySignIn.ts); a shared secret of the same name still works and wins.
   const agy = dork.provider === "antigravity" && !secrets.ANTIGRAVITY_OAUTH_TOKEN ? yield* Effect.promise(() => antigravityToken(app)) : undefined;
-  return { gh, env: { ...secrets, ...buildVars, ...(claude ? { CLAUDE_CODE_OAUTH_TOKEN: claude } : {}), ...(agy ? { ANTIGRAVITY_OAUTH_TOKEN: agy } : {}) }, mcpServers };
+  // Codex with Dorks' own ChatGPT sign-in (services/codexSignIn.ts): a current access token, never the refresh token. Without one, the
+  // sandbox signs in through the Boat environment (lifecycle/jobs.ts).
+  const codexAuth = dork.provider === "codex" ? yield* Effect.promise(() => app.codexCli.tokens().catch(() => null)) : null;
+  return { gh, env: { ...secrets, ...buildVars, ...(claude ? { CLAUDE_CODE_OAUTH_TOKEN: claude } : {}), ...(agy ? { ANTIGRAVITY_OAUTH_TOKEN: agy } : {}) }, mcpServers, codexAuth };
 });
 
 /** The agent's model and effort: Codex's chosen pair, or Claude's model, effort, fast mode and Code Mode when set. */
@@ -540,12 +547,13 @@ function skillsField(app: App) {
 
 const configureFrame = (app: App, dork: DorkRow): Effect.Effect<ToBridge, OnboardingIncomplete> =>
   agentSecrets(app, dork).pipe(
-    Effect.map(({ gh, env, mcpServers }) => ({
+    Effect.map(({ gh, env, mcpServers, codexAuth }) => ({
       t: "configure" as const,
       provider: dork.provider,
       ...modelFields(dork),
       env,
       ghToken: gh,
+      ...(codexAuth ? { codexAuth } : {}),
       ...(mcpServers.length ? { mcpServers } : {}),
       repo: dork.repo ? { fullName: dork.repo, branch: dork.branch } : null,
       resumeSessionId: (dork.provider === "codex" ? dork.codexThreadId : dork.claudeSessionId) ?? null,
@@ -564,6 +572,18 @@ function servicesField(app: App, dork: DorkRow) {
 }
 
 /** The GitHub CLI's current token, for the bridge's refresh path. Same gating as `configure`. */
+/**
+ * A fresh ChatGPT access token for a Codex sandbox whose token was refused (`codex_token`): Codex on this computer refreshes Dorks'
+ * sign-in first. Same gating as `configure`; `not_configured` when Dorks has no ChatGPT sign-in.
+ */
+export async function codexToken(app: App, dorkId: string): Promise<CodexAuth | null> {
+  const dork = getDork(app.db, dorkId);
+  if (!dork || dork.deleting || dork.provider !== "codex") fail("forbidden", "forbidden");
+  if (!mayMintSecrets(dork)) return null;
+  const auth = await app.codexCli.tokens(true).catch(() => null);
+  return auth ?? fail("not_configured", "Codex is not signed in with ChatGPT on this computer.");
+}
+
 export async function ghToken(app: App, dorkId: string): Promise<{ token: string } | null> {
   const dork = getDork(app.db, dorkId);
   if (!dork || dork.deleting) fail("forbidden", "forbidden");

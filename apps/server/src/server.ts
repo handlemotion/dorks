@@ -8,6 +8,7 @@ import { Db } from "./db";
 import { AppEnv } from "./http/route";
 import { getBox, getSnapshotDriver } from "./lib/box";
 import { makeAgyCli } from "./lib/agyCli";
+import { makeCodexCli } from "./lib/codexCli";
 import { findBoat, makeBoatCli } from "./lib/boatCli";
 import { readGhLogin } from "./lib/ghCli";
 import { loadAssets, makeAssets, type SnapshotAssets } from "./snapshot/assets";
@@ -20,6 +21,7 @@ export interface Overrides {
   ghLogin?: App["ghLogin"];
   boatCli?: App["boatCli"];
   agyCli?: App["agyCli"];
+  codexCli?: App["codexCli"];
   getBox?: App["getBox"];
   getSnapshotDriver?: App["getSnapshotDriver"];
   snapshotAssets?: App["snapshotAssets"];
@@ -44,6 +46,7 @@ export function createApp(cfg: Config, o: Overrides = {}): App {
     ghLogin: o.ghLogin ?? (() => readGhLogin(cfg.githubEnvToken)),
     boatCli: o.boatCli ?? makeBoatCli(findBoat(process.env.PATH, cfg.boatBin)),
     agyCli: o.agyCli ?? makeAgyCli({ configured: cfg.agyBin, dataDir: cfg.dataDir }),
+    codexCli: o.codexCli ?? makeCodexCli({ configured: cfg.codexBin, dataDir: cfg.dataDir }),
     getBox: (location) => (o.getBox ?? ((l) => getBox(app, l)))(location),
     getSnapshotDriver: () => (o.getSnapshotDriver ?? (() => getSnapshotDriver(app)))(),
     // Read once per process (about 1 MB). The simulator may run without the bridge bundle built, so it falls back to stand-ins.

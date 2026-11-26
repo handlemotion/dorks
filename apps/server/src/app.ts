@@ -1,4 +1,5 @@
 import type { AgyCli } from "./lib/agyCli";
+import type { CodexCli } from "./lib/codexCli";
 import type { BoatCli } from "./lib/boatCli";
 import type { GhLogin } from "./lib/ghCli";
 import type { AppError, AppErrorCode, DorkLocation } from "@dorks/shared";
@@ -61,6 +62,8 @@ export interface Config {
   boatBin?: string;
   /** `DORKS_AGY_BIN`: the Antigravity CLI for the Google sign-in; else `agy` on PATH, else one Dorks downloads. */
   agyBin?: string;
+  /** `DORKS_CODEX_BIN`: the Codex CLI for Dorks' own ChatGPT sign-in (lib/codexCli.ts). */
+  codexBin?: string;
   /** `DORKS_CLOUD_URL`: the cloud relay the iPhone app reaches this server through (docs/mobile.md); unset or empty turns it off. */
   cloudUrl?: string;
   /** `DORKS_SITE_URL`: the Dorks website, where the browser signs in to Dorks Cloud (docs/mobile.md, "Desktop: Dorks Cloud"). */
@@ -98,6 +101,8 @@ export interface App {
   boatCli: BoatCli;
   /** The Antigravity CLI on this computer (lib/agyCli.ts): the Google sign-in for Antigravity sessions. Tests replace it. */
   agyCli: AgyCli;
+  /** The Codex CLI on this computer (lib/codexCli.ts): Dorks' own ChatGPT sign-in for Codex sessions. Tests replace it. */
+  codexCli: CodexCli;
   /** The box provider for a dork's location (docs/local-dorks.md): the cloud's for the current settings (default), or this computer's. Tests replace it. */
   getBox(location?: DorkLocation): Promise<BoxProvider>;
   /** The provider calls the base-snapshot build makes (services/snapshot.ts). Tests replace it. */
