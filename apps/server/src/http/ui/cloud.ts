@@ -141,7 +141,7 @@ export const cloudRoutes: Routes = (api, app) => {
     on((c) =>
       localOwner(c).pipe(
         Effect.flatMap(() => body(c, OrgId, "Choose the organization")),
-        Effect.flatMap((b) => service((a) => startMove(a, b.orgId))),
+        Effect.flatMap((b) => serviceAsync((a) => startMove(a, b.orgId))),
         Effect.map((v) => c.json(v)),
       ),
     ),
