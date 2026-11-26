@@ -27,7 +27,7 @@ export type Chat = {
   /** Dork id, passed through as the `dork` search param of the chat route. */
   id: string
   title: string
-  /** `owner/name`; the sidebar's owner switcher filters by its owner. */
+  /** `owner/name`; the sidebar groups chats by it. */
   repo?: string
   /** Something is moving in this chat. */
   working: boolean

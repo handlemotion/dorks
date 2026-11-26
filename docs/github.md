@@ -3,7 +3,7 @@
 Dorks acts on GitHub as **your GitHub CLI login**. There is no GitHub App, no webhook, no OAuth flow of its own and no token to paste: `gh` is the one source of truth. The token it yields does two jobs:
 
 1. It goes to each sandbox (over the authenticated bridge socket, in `configure`), so the agent can clone, push and run `gh`.
-2. The server uses it to list your organizations and repositories (the owner switcher and the repository picker) and to watch the PRs a dork is subscribed to ([autonomy](autonomy.md)).
+2. The server uses it to list your organizations and repositories (the repository picker, and the owner filter of the archived sessions) and to watch the PRs a dork is subscribed to ([autonomy](autonomy.md)).
 
 The dork acts as whoever `gh` is signed in as. Commits, PRs and comments carry that account's name.
 
@@ -28,7 +28,7 @@ The server reads the token the way `gh` itself resolves it (`apps/server/src/lib
 
 ## Organizations and repositories
 
-`GET /api/github/repos` lists `/user/orgs`, your 300 most recently pushed repositories (`/user/repos`), and one page of each organization's (`/orgs/{org}/repos`), and reports `auth`: the connection state and any of `repo`, `read:org`, `workflow` the token lacks (from `X-OAuth-Scopes`). The owner switcher shows your user, every organization, and the owners of those repositories.
+`GET /api/github/repos` lists `/user/orgs`, your 300 most recently pushed repositories (`/user/repos`), and one page of each organization's (`/orgs/{org}/repos`), and reports `auth`: the connection state and any of `repo`, `read:org`, `workflow` the token lacks (from `X-OAuth-Scopes`). The archived sessions' owner filter offers your user, every organization, and the owners of the archived sessions' repositories.
 
 An organization can restrict OAuth apps. Until it approves the GitHub CLI, its private repositories are invisible to your `gh` token, in Dorks as in `gh` itself. **Grant access** in Settings, GitHub opens [the GitHub CLI's page in your GitHub settings](https://github.com/settings/connections/applications/178c6fc778ccc68e1d6a), where you grant or request access per organization; then choose **Check again**.
 

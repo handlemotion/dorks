@@ -44,7 +44,7 @@ function Frame({ sidebar }: { sidebar: ReactNode }) {
   const hide = useCallback(() => {
     cancel()
     timer.current = window.setTimeout(function close() {
-      // A menu opened from the sidebar (the owner switcher, a row's context menu) lives in a portal outside it: stay until it closes.
+      // A menu opened from the sidebar (the org switcher, a row's context menu) lives in a portal outside it: stay until it closes.
       if (document.querySelector('[role="menu"]')) timer.current = window.setTimeout(close, PEEK_LINGER)
       else setPeek(false)
     }, PEEK_LINGER)

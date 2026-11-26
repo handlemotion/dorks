@@ -7,6 +7,7 @@ import { ChevronDownIcon, ChevronRightIcon, InfoIcon, MessageSquareIcon } from '
 import { useBuilds, useDork, useDorkEvents, useDorks, useDorksClient, useGithubRepos, usePullRequest, useSettings, useSubscriptions, useWorkspaceRoots, useWorkspaceTree } from '@dorks/client/react'
 import { ownersOf, useOwnerScope } from '../../../components/ownerScope'
 import { ownerOf } from '../../../components/RepoAvatar'
+import { ArchivedOwnerFilter } from '../../../components/ArchivedOwnerFilter'
 import { List } from '../../../components/onboarding/List'
 import { EmptyState } from '../../../components/EmptyState'
 import { BrandCircle } from '../../../components/BrandCircle'
@@ -67,7 +68,6 @@ function Dorks() {
   const navigate = Route.useNavigate()
   const setSelected = (id: string) => void navigate({ search: { dork: id } })
   const [showArchived, setShowArchived] = useState(false)
-  const dorks = useDorks(showArchived)
   const settings = useSettings()
   // First run happens here: the setup checklist under the composer (SetupStatus). The full-page /onboarding flow is kept but no
   // longer opened.
@@ -100,33 +100,7 @@ function Dorks() {
         <div className="relative isolate flex min-h-0 flex-1 flex-col overflow-clip" data-testid="new-session">
           <BrandCircle className="w-[124.54%]" />
           <div className="flex min-h-0 flex-1 flex-col justify-center overflow-y-auto py-12">
-            {showArchived && (
-              <section aria-label="Archived sessions" className="mx-auto flex min-h-0 w-full max-w-[790px] flex-col gap-6 px-5">
-                <h2 className="text-center text-lg font-medium">Archived sessions</h2>
-                {dorks === undefined ? (
-                  <p role="status" className="text-center text-sm text-muted-foreground">
-                    Loading sessions…
-                  </p>
-                ) : dorks.length === 0 ? (
-                  <EmptyState figure="drawer" title="No archived sessions" description="Sessions you archive will show up here." />
-                ) : (
-                  <div className="overflow-y-auto">
-                    <List>
-                      {dorks.map((d) => (
-                        <li key={d.id}>
-                          <button type="button" onClick={() => setSelected(d.id)} className="flex h-12 w-full items-center gap-3 px-4 text-left outline-none hover:bg-muted focus-visible:bg-muted">
-                            <MessageSquareIcon className="size-4 shrink-0 text-muted-foreground" />
-                            <span className="min-w-0 flex-1 truncate">{d.title}</span>
-                            <span className="max-w-[35%] truncate text-xs text-muted-foreground">{d.repo}</span>
-                            <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                          </button>
-                        </li>
-                      ))}
-                    </List>
-                  </div>
-                )}
-              </section>
-            )}
+            {showArchived && <ArchivedSessions onOpen={setSelected} />}
             <div className={`${showArchived ? 'hidden' : 'flex'} mx-auto w-full max-w-[790px] flex-col gap-6`}>
               <h2 className="sr-only">What should we work on?</h2>
               <NewDork
@@ -158,12 +132,61 @@ function Dorks() {
   )
 }
 
-/** The repositories chats used, then everything the GitHub CLI login can see; only the owner in scope's. */
+/**
+ * Show archived: the archived sessions, filtered by GitHub owner (remembered, ownerScope.ts) when they span more than one. The owners
+ * are the archived sessions' own, then the GitHub login's.
+ */
+function ArchivedSessions({ onOpen }: { onOpen: (id: string) => void }) {
+  const dorks = useDorks(true)
+  const github = useGithubRepos()
+  const owners = ownersOf(dorks?.flatMap((d) => (d.repo ? [d.repo] : [])) ?? [], github)
+  const [scope, setScope] = useOwnerScope(owners)
+  const archived = scope ? dorks?.filter((d) => d.repo && ownerOf(d.repo) === scope) : dorks
+  return (
+    <section aria-label="Archived sessions" className="mx-auto flex min-h-0 w-full max-w-[790px] flex-col gap-6 px-5">
+      <div className="flex flex-col items-center gap-2">
+        <h2 className="text-center text-lg font-medium">Archived sessions</h2>
+        <ArchivedOwnerFilter owners={owners} scope={scope} setScope={setScope} />
+      </div>
+      {archived === undefined ? (
+        <p role="status" className="text-center text-sm text-muted-foreground">
+          Loading sessions…
+        </p>
+      ) : archived.length === 0 ? (
+        scope ? (
+          <EmptyState figure="drawer" title={`No archived sessions from ${scope}`}>
+            <Button size="sm" variant="outline" onClick={() => setScope('')}>
+              Show all owners
+            </Button>
+          </EmptyState>
+        ) : (
+          <EmptyState figure="drawer" title="No archived sessions" description="Sessions you archive will show up here." />
+        )
+      ) : (
+        <div className="overflow-y-auto">
+          <List>
+            {archived.map((d) => (
+              <li key={d.id}>
+                <button type="button" onClick={() => onOpen(d.id)} className="flex h-12 w-full items-center gap-3 px-4 text-left outline-none hover:bg-muted focus-visible:bg-muted">
+                  <MessageSquareIcon className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate">{d.title}</span>
+                  <span className="max-w-[35%] truncate text-xs text-muted-foreground">{d.repo}</span>
+                  <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                </button>
+              </li>
+            ))}
+          </List>
+        </div>
+      )}
+    </section>
+  )
+}
+
+/** The repositories chats used, then everything the GitHub CLI login can see (the picker's own search narrows them). */
 function useNewSessionRepos(dorks: { repo: string }[] | undefined): string[] {
   const github = useGithubRepos()
   const recent = [...new Set(dorks?.map((d) => d.repo).filter(Boolean) ?? [])].sort()
-  const [scope] = useOwnerScope(ownersOf(recent, github))
-  return [...new Set([...recent, ...(github?.repos ?? [])])].filter((r) => !scope || ownerOf(r) === scope)
+  return [...new Set([...recent, ...(github?.repos ?? [])])]
 }
 
 /**
