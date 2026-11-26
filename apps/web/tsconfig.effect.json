@@ -1,0 +1,9 @@
+{
+  // The Effect UI code (src/effect, docs/effect-ui-migration.md) needs exactOptionalPropertyTypes, which the React code does not
+  // pass yet, so it is checked on its own as well. `pnpm typecheck` runs both.
+  "extends": "./tsconfig.json",
+  "include": ["src/effect"],
+  "compilerOptions": {
+    "exactOptionalPropertyTypes": true
+  }
+}

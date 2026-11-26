@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { useTheme } from 'next-themes'
+import { lazyIsland } from '../../effect/lazyIsland'
+import type { Theme } from '../../effect/settings/AppearancePage'
 import type { GithubRepos, Settings } from '@dorks/client'
 import { useDorksClient, useGithubRepos } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
@@ -8,29 +10,20 @@ import { usePending } from '../../lib/pending'
 import { AntigravitySignIn } from '../AntigravitySignIn'
 import { useSettingsAccess } from './access'
 import { OwnerAvatar } from '../RepoAvatar'
-import { SettingsButtonRow, SettingsGroup, SettingsGroupBody, SettingsInputRow, SettingsRow, SettingsSection, SettingsSections, SettingsSelectRow, SettingsStatus, SettingsValueRow } from './kit'
+import { SettingsButtonRow, SettingsGroup, SettingsGroupBody, SettingsInputRow, SettingsRow, SettingsSection, SettingsSections, SettingsStatus, SettingsValueRow } from './kit'
 
 // The person's own pages: how the app looks, the AI accounts the agents run on, and the GitHub account they act as. Token fields are
 // write-only: the server only says whether one is stored, and the input is cleared after saving.
 
-const THEMES = [
-  { value: 'system', label: 'System' },
-  { value: 'light', label: 'Light' },
-  { value: 'dark', label: 'Dark' },
-] as const
+const THEMES: readonly Theme[] = ['system', 'light', 'dark']
 
+const AppearancePageIsland = lazyIsland(() => import('../../effect/islands').then((m) => m.AppearancePageIsland))
+
+/** Appearance is drawn by Effect UI (effect/settings/AppearancePage.ts); React keeps the theme (next-themes) and hands it over. */
 export function AppearancePage() {
   const { theme, setTheme } = useTheme()
-  const current = THEMES.find((t) => t.value === theme)?.value ?? 'system'
-  return (
-    <SettingsSections>
-      <SettingsSection title="Theme">
-        <SettingsGroup>
-          <SettingsSelectRow label="Appearance" value={current} options={THEMES} onValueChange={setTheme} />
-        </SettingsGroup>
-      </SettingsSection>
-    </SettingsSections>
-  )
+  const current = THEMES.find((t) => t === theme) ?? 'system'
+  return <AppearancePageIsland props={{ theme: current }} onEvent={(event) => setTheme(event.theme)} />
 }
 
 export function AgentsPage({ settings }: { settings: Settings }) {

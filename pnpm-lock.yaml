@@ -448,6 +448,12 @@ importers:
       '@dorks/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@effect/ui':
+        specifier: https://pkg.pr.new/Effect-TS/ui/@effect/ui@fb618d4
+        version: https://pkg.pr.new/Effect-TS/ui/@effect/ui@fb618d4(effect@4.1.5)
+      '@effect/ui-kit':
+        specifier: https://pkg.pr.new/Effect-TS/ui/@effect/ui-kit@fb618d4
+        version: https://pkg.pr.new/Effect-TS/ui/@effect/ui-kit@fb618d4(@effect/ui@https://pkg.pr.new/Effect-TS/ui/@effect/ui@fb618d4(effect@4.1.5))(effect@4.1.5)
       '@fontsource-variable/geist':
         specifier: ^5.3.0
         version: 5.3.0
@@ -472,6 +478,9 @@ importers:
       '@tanstack/react-router':
         specifier: 1.170.41
         version: 1.170.41(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      effect:
+        specifier: ^4.1.5
+        version: 4.1.5
       lucide-react:
         specifier: 1.65.0
         version: 1.65.0(@types/react@19.3.1)(react@19.3.0)
@@ -1714,6 +1723,19 @@ packages:
   '@edge-runtime/vm@5.0.0':
     resolution: {integrity: sha512-NKBGBSIKUG584qrS1tyxVpX/AKJKQw5HgjYEnPLC0QsTw79JrGn+qUr8CXFb955Iy7GUdiiUv1rJ6JBGvaKb6w==}
     engines: {node: '>=18'}
+
+  '@effect/ui-kit@https://pkg.pr.new/Effect-TS/ui/@effect/ui-kit@fb618d4':
+    resolution: {integrity: sha512-tHkNMwqrxINyAGvPYUgJLOkemb2CvahhnSiq5Nl39J3baQ7ovnYuja7n1x/1HeHBYOZ+MbIQlAIHh7hB/jAohA==, tarball: https://pkg.pr.new/Effect-TS/ui/@effect/ui-kit@fb618d4}
+    version: 0.0.0
+    peerDependencies:
+      '@effect/ui': ^0.0.0
+      effect: ^4.1.4
+
+  '@effect/ui@https://pkg.pr.new/Effect-TS/ui/@effect/ui@fb618d4':
+    resolution: {integrity: sha512-MLbH1H1IJXTcz3dNc5Oiv16ESWphNRwL95tCB+CNl4jf4P2Vp8GVHgtmp13K9d7Mx4HTq+l0dOH71ncZxvPXsA==, tarball: https://pkg.pr.new/Effect-TS/ui/@effect/ui@fb618d4}
+    version: 0.0.0
+    peerDependencies:
+      effect: ^4.1.4
 
   '@emmetio/abbreviation@2.3.3':
     resolution: {integrity: sha512-mgv58UrU3rh4YgbE/TzgLQwJ3pFsHHhCLqY20aJq+9comytTXUDNGG/SMtSeMJdkpxgXSXunBGLD8Boka3JyVA==}
@@ -5443,6 +5465,9 @@ packages:
 
   effect@4.1.2:
     resolution: {integrity: sha512-d3Oah1WyKxFLFh19yWheS5IXIVaITzxZ71JkE1rkUozq/6EcJSU5nPk5bF2QrSygZ3SQoiNQB8TsxFriyMeMaQ==}
+
+  effect@4.1.5:
+    resolution: {integrity: sha512-xyR20KhQI0vg2gD8ILUSQRTTESEYJ0JKdP+QD8J37xbwPTqXRxFM/l0+vUVD9fuSvoYruoTqyt33C4FZv1s4TQ==}
 
   electron-to-chromium@1.5.446:
     resolution: {integrity: sha512-kWlGMPHzuitCKx0O+MbY1ZGvQmP14JtckrnGjD4JsusTxh2cX9wu4bb4rOYZqLSvENjFFrHzlqY8kXhseucR/w==}
@@ -9739,6 +9764,15 @@ snapshots:
       '@edge-runtime/primitives': 6.0.0
     optional: true
 
+  '@effect/ui-kit@https://pkg.pr.new/Effect-TS/ui/@effect/ui-kit@fb618d4(@effect/ui@https://pkg.pr.new/Effect-TS/ui/@effect/ui@fb618d4(effect@4.1.5))(effect@4.1.5)':
+    dependencies:
+      '@effect/ui': https://pkg.pr.new/Effect-TS/ui/@effect/ui@fb618d4(effect@4.1.5)
+      effect: 4.1.5
+
+  '@effect/ui@https://pkg.pr.new/Effect-TS/ui/@effect/ui@fb618d4(effect@4.1.5)':
+    dependencies:
+      effect: 4.1.5
+
   '@emmetio/abbreviation@2.3.3':
     dependencies:
       '@emmetio/scanner': 1.0.4
@@ -13311,6 +13345,8 @@ snapshots:
   ee-first@1.1.1: {}
 
   effect@4.1.2: {}
+
+  effect@4.1.5: {}
 
   electron-to-chromium@1.5.446: {}
 
