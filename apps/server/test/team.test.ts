@@ -79,6 +79,7 @@ describe("team identity on the relay", () => {
     expect((await relay("GET", "/api/secrets", await token())).status).toBe(403);
     expect((await relay("PUT", "/api/settings", await token(), { sleepMinutes: 9 })).status).toBe(403);
     expect((await relay("GET", "/api/secrets", await token({ role: "admin" }))).status).toBe(200);
+    expect((await relay("GET", "/api/secrets", await token({ role: "member,admin" }))).status).toBe(200);
     // Without a token: refused once this server belongs to an organization, today's phone before that.
     expect((await relay("GET", "/api/dorks")).status).toBe(403);
     setOrg(null);

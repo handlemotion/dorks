@@ -75,7 +75,9 @@ export async function memberFromToken(app: App, token: string): Promise<{ ok: tr
     return { ok: false, why: "invalid" };
   }
   const str = (v: unknown) => (typeof v === "string" ? v : "");
-  const role = ROLES.find((r) => r === c.role);
+  // Better Auth may name several roles, comma-separated: the strongest one counts.
+  const named = str(c.role).split(",").map((r) => r.trim());
+  const role = ROLES.find((r) => named.includes(r));
   const plan = PLANS.find((p) => p === c.plan) ?? "free";
   if (!str(c.sub) || !str(c.org) || !role) return { ok: false, why: "invalid" };
   const org = serverOrg(app);
