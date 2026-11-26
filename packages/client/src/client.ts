@@ -779,9 +779,10 @@ export class DorksClient {
       await this.api.cancelPhonePair();
       this.invalidate("phone");
     },
-    cloudSendCode: (email: string) => this.api.cloudSendCode(email),
-    cloudVerify: async (email: string, code: string) => {
-      const s = await this.api.cloudVerify(email, code);
+    cloudStartSignIn: () => this.api.cloudStartSignIn(),
+    /** The `dorks://auth` link's code and state: signs this server in, then everything cloud is read again. */
+    cloudFinishSignIn: async (code: string, state: string) => {
+      const s = await this.api.cloudFinishSignIn(code, state);
       this.invalidate("cloud");
       return s;
     },

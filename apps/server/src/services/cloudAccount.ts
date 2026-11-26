@@ -2,9 +2,11 @@ import { planOf, type PlanId } from "@dorks/shared";
 import { fail, OWNER, touch, type App } from "../app";
 import { aad, decrypt, encrypt } from "@dorks/core/crypto";
 import { update } from "../db";
+import { randomBytes } from "node:crypto";
 
-// The Dorks Cloud account (docs/mobile.md, "Desktop: Dorks Cloud"): the owner signs this server in to the relay with Better Auth's
-// email code, the same account the phone uses. The session token is kept encrypted in settings (`cloud_session_enc`) and never
+// The Dorks Cloud account (docs/mobile.md, "Desktop: Dorks Cloud"): the owner signs this server in to the relay in the browser, with
+// the same account the phone uses. The app opens the site's sign-in with a one-time `state` from here; the site hands back a
+// `dorks://auth?code&state` link, and this server checks the state and redeems the code for a session (`/v1/app-handoff/redeem`). The session token is kept encrypted in settings (`cloud_session_enc`) and never
 // leaves this server: the UI reads the account's places (its Macs, its organizations and the servers Dorks runs for them) through
 // `GET /api/cloud/places` (`/v1/orgs`), and talks to another server through `/api/cloud/servers/:id/api/*`, which this server forwards to the
 // relay's `/v1/macs/:id/api/*` with the session. The relay and the server it reaches decide what that may do.
@@ -58,6 +60,18 @@ interface Session {
 }
 
 const cloudOf = (app: App) => app.cfg.cloudUrl?.replace(/\/+$/, "") || null;
+
+/** How long a browser sign-in may take, from opening the page to the `dorks://auth` link (onboarding included). */
+const HANDOFF_TTL_MS = 30 * 60_000;
+/** Open browser sign-ins (their `state`, by app): in memory, so a restart only means pressing Sign in again. A few at most. */
+const handoffs = new WeakMap<App, Map<string, number>>();
+
+function openHandoffs(app: App): Map<string, number> {
+  let m = handoffs.get(app);
+  if (!m) handoffs.set(app, (m = new Map()));
+  for (const [state, expiresAt] of m) if (expiresAt <= app.now()) m.delete(state);
+  return m;
+}
 
 function needCloud(app: App): string {
   return cloudOf(app) ?? fail("not_configured", "Dorks Cloud is turned off (DORKS_CLOUD_URL is empty)");
@@ -212,20 +226,37 @@ export const cloudAccount = {
     return { cloudUrl, user: cloudUrl ? ((await readSession(app))?.user ?? null) : null };
   },
 
-  /** Emails a six-digit sign-in code (Better Auth `emailOTP`). */
-  async sendCode(app: App, email: string): Promise<void> {
-    const res = await call(app, "/api/auth/email-otp/send-verification-otp", jsonPost({ email, type: "sign-in" }));
-    if (!res.ok) await refused(res, "Dorks Cloud could not send a code");
+  /**
+   * Starts a browser sign-in: the site's sign-in page (then onboarding for a new account) with a fresh one-time `state`, which the
+   * `dorks://auth` link must bring back. The app opens the URL in the default browser.
+   */
+  startSignIn(app: App): { url: string } {
+    needCloud(app);
+    const open = openHandoffs(app);
+    // Only the newest few stay open: an old tab cannot sign this app in long after.
+    for (const state of [...open.keys()].slice(0, Math.max(0, open.size - 4))) open.delete(state);
+    const state = randomBytes(24).toString("base64url");
+    open.set(state, app.now() + HANDOFF_TTL_MS);
+    const site = (app.cfg.siteUrl || "https://dorks.build").replace(/\/+$/, "");
+    const url = new URL(`${site}/login`);
+    url.search = new URLSearchParams({ next: "/onboarding", app: "1", state }).toString();
+    return { url: url.toString() };
   },
 
-  /** Signs in with the emailed code and keeps the session (the bearer plugin's `set-auth-token`, else the body's token). */
-  async verifyCode(app: App, email: string, otp: string): Promise<CloudView> {
-    const res = await call(app, "/api/auth/sign-in/email-otp", jsonPost({ email, otp }));
-    if (!res.ok) await refused(res, "That code did not work");
+  /**
+   * Finishes it with the `dorks://auth` link's `code` and `state`: the state must be one this server opened (used once), and the
+   * relay trades the code for a Better Auth session token (`POST /v1/app-handoff/redeem`), kept encrypted like before.
+   */
+  async finishSignIn(app: App, code: string, state: string): Promise<CloudView> {
+    needCloud(app);
+    const open = openHandoffs(app);
+    if (!open.delete(state)) fail("invalid", "This sign-in link is not from this app, or it expired. Press Sign in again.");
+    const res = await call(app, "/v1/app-handoff/redeem", jsonPost({ code, state }));
+    if (!res.ok) await refused(res, "Dorks Cloud did not accept the sign-in");
     const body = (await readJson(res)) as { token?: unknown; user?: unknown } | null;
-    const token = res.headers.get("set-auth-token") || str(body?.token);
-    const user = userOf(body?.user);
-    if (!token || !user) fail("failed", "Dorks Cloud answered without a session");
+    const token = str(body?.token);
+    if (!token) fail("failed", "Dorks Cloud answered without a session");
+    const user = userOf(body?.user) ?? (await sessionUser(app, token));
     await saveSession(app, { token, user });
     return { cloudUrl: cloudOf(app), user };
   },
@@ -309,6 +340,13 @@ export const cloudAccount = {
     return relay(app, rest.startsWith("realtime/") ? `/v1/realtime/orgs/${id}/${rest.slice("realtime/".length)}` : `/v1/orgs/${id}/${rest}`, req);
   },
 };
+
+/** The account behind a fresh session token (Better Auth `get-session`, with the bearer plugin). */
+async function sessionUser(app: App, token: string): Promise<CloudUser> {
+  const res = await call(app, "/api/auth/get-session", { headers: { authorization: `Bearer ${token}` } });
+  if (!res.ok) await refused(res, "Dorks Cloud did not accept the sign-in");
+  return userOf(((await readJson(res)) as { user?: unknown } | null)?.user) ?? fail("failed", "Dorks Cloud answered without an account");
+}
 
 /** One request to Dorks Cloud as the signed-in account, its answer streamed back. */
 async function relay(app: App, path: string, req: Request): Promise<Response> {

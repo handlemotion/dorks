@@ -218,8 +218,9 @@ export function createApi(config: ApiConfig) {
     unpairPhone: () => request<object>("DELETE", "/api/phone"),
     /** The Dorks Cloud account this server is signed in to (docs/mobile.md, "Desktop: Dorks Cloud"). */
     cloud: () => request<CloudStatus>("GET", "/api/cloud"),
-    cloudSendCode: (email: string) => request<object>("POST", "/api/cloud/sign-in/email", { email }),
-    cloudVerify: (email: string, code: string) => request<CloudStatus>("POST", "/api/cloud/sign-in/verify", { email, code }),
+    /** Starts the browser sign-in: the site's URL (with a one-time state) to open; a `dorks://auth` link brings back the code. */
+    cloudStartSignIn: () => request<{ url: string }>("POST", "/api/cloud/sign-in"),
+    cloudFinishSignIn: (code: string, state: string) => request<CloudStatus>("POST", "/api/cloud/sign-in/finish", { code, state }),
     cloudSignOut: () => request<object>("DELETE", "/api/cloud/session"),
     cloudPlaces: () => request<CloudPlaces>("GET", "/api/cloud/places"),
     /** Move to cloud (docs/move-to-cloud.md): where it stands, and starting it for this Mac's team org. */

@@ -3,7 +3,7 @@ import { uiApp } from "../src/http/ui";
 import type { CloudOrg, CloudPlaces, CloudView } from "../src/services/cloudAccount";
 import { fakeFetch, harness } from "./harness";
 
-// The Dorks Cloud account (services/cloudAccount.ts): this server signs in to the relay with an email code, keeps the session
+// The Dorks Cloud account (services/cloudAccount.ts): this server signs in to the relay through the browser handoff, keeps the session
 // encrypted, lists the account's places and forwards the UI API of another server with the session, never with the owner token.
 
 const CLOUD = "https://relay.test";
@@ -11,11 +11,15 @@ const CLOUD = "https://relay.test";
 describe("cloud account", () => {
   it("signs in, lists places, forwards with the session and forgets an expired one", async () => {
     let live = true;
+    const redeemed: string[] = [];
     const fetch = fakeFetch((url, init) => {
       const auth = new Headers(init?.headers).get("authorization");
-      if (url.pathname === "/api/auth/email-otp/send-verification-otp") return Response.json({ success: true });
-      if (url.pathname === "/api/auth/sign-in/email-otp")
-        return Response.json({ token: "body-token", user: { id: "u1", name: "Ada", email: "ada@example.com" } }, { headers: { "set-auth-token": "sess-secret" } });
+      if (url.pathname === "/v1/app-handoff/redeem") {
+        const b = JSON.parse(init?.body as string) as { code: string; state: string };
+        redeemed.push(b.state);
+        return b.code === "good-code-1" ? Response.json({ token: "sess-secret" }) : Response.json({ message: "That sign-in code expired" }, { status: 400 });
+      }
+      if (url.pathname === "/api/auth/get-session" && auth === "Bearer sess-secret") return Response.json({ session: {}, user: { id: "u1", name: "Ada", email: "ada@example.com" } });
       if (auth !== "Bearer sess-secret" || !live) return Response.json({ error: { message: "unauthorized" } }, { status: 401 });
       if (url.pathname === "/v1/orgs")
         return Response.json([
@@ -55,8 +59,16 @@ describe("cloud account", () => {
 
     expect(await (await call("GET", "/api/cloud")).json()).toEqual({ cloudUrl: CLOUD, user: null });
     expect((await call("GET", "/api/cloud/places")).status).toBe(412);
-    expect((await call("POST", "/api/cloud/sign-in/email", { email: "ada@example.com" })).status).toBe(200);
-    const signed = (await (await call("POST", "/api/cloud/sign-in/verify", { email: "ada@example.com", code: "123 456" })).json()) as CloudView;
+    // The browser sign-in: the site's URL with a one-time state; only that state, once, finishes it.
+    const { url } = (await (await call("POST", "/api/cloud/sign-in")).json()) as { url: string };
+    const opened = new URL(url);
+    expect([opened.origin, opened.pathname, opened.searchParams.get("next"), opened.searchParams.get("app")]).toEqual(["https://dorks.build", "/login", "/onboarding", "1"]);
+    const state = opened.searchParams.get("state")!;
+    expect((await call("POST", "/api/cloud/sign-in/finish", { code: "good-code-1", state: "not-our-state" })).status).toBe(400);
+    expect(redeemed).toEqual([]); // a state this server never opened is not even sent
+    const signed = (await (await call("POST", "/api/cloud/sign-in/finish", { code: "good-code-1", state })).json()) as CloudView;
+    expect(redeemed).toEqual([state]);
+    expect((await call("POST", "/api/cloud/sign-in/finish", { code: "good-code-1", state })).status).toBe(400); // used once
     expect(signed.user).toEqual({ id: "u1", name: "Ada", email: "ada@example.com", image: null });
     const row = h.app.db.get<{ cloud_session_enc: string }>("SELECT cloud_session_enc FROM settings WHERE id = 1")!;
     expect(row.cloud_session_enc).not.toContain("sess-secret");

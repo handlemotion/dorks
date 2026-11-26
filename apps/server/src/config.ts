@@ -35,6 +35,7 @@ export function loadSecrets(dataDir: string): Secrets {
 
 /** The hosted cloud relay for the iPhone app (docs/mobile.md). */
 export const DEFAULT_CLOUD_URL = "https://api.dorks.build";
+export const DEFAULT_SITE_URL = "https://dorks.build";
 
 const port = (v: string | undefined, d: number) => {
   if (v === undefined || v === "") return d;
@@ -72,6 +73,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     agyBin: env.DORKS_AGY_BIN || undefined,
     cloudUrl: env.DORKS_CLOUD_URL ?? DEFAULT_CLOUD_URL,
     cloudJwksUrl: env.DORKS_CLOUD_JWKS_URL || undefined,
+    siteUrl: env.DORKS_SITE_URL || DEFAULT_SITE_URL,
     orgId: env.DORKS_ORG_ID?.trim() || undefined,
   };
 }

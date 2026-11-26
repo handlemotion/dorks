@@ -104,6 +104,7 @@ the UI and refuses everything else:
 |---|---|
 | `dorks://invite/<id>` (a Dorks Cloud invitation email) | `#/invite/<id>`: Join or Decline |
 | `dorks://pair?code=...` (a phone pairing code opened on the Mac) | Settings, Phone |
+| `dorks://auth?code=...&state=...` (the website, after a Dorks Cloud sign-in) | `#/auth`: the local server redeems the code ([mobile](mobile.md), "Desktop: Dorks Cloud") |
 
 The shell keeps the route until the UI takes it (`take_open_route`, called once the UI has loaded, so a link that launched the app is
 not lost) and also sends it as `dorks://open-route` to a UI already open; either way it shows the window. The UI navigates there

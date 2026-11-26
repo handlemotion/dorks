@@ -63,6 +63,8 @@ export interface Config {
   agyBin?: string;
   /** `DORKS_CLOUD_URL`: the cloud relay the iPhone app reaches this server through (docs/mobile.md); unset or empty turns it off. */
   cloudUrl?: string;
+  /** `DORKS_SITE_URL`: the Dorks website, where the browser signs in to Dorks Cloud (docs/mobile.md, "Desktop: Dorks Cloud"). */
+  siteUrl?: string;
   /** `DORKS_CLOUD_JWKS_URL`: the cloud's signing keys for team identity tokens (docs/cloud.md); default `<cloudUrl>/api/auth/jwks`. */
   cloudJwksUrl?: string;
   /** `DORKS_ORG_ID`: the dorks-cloud organization this server belongs to (a server Dorks runs for a Teams or Cloud org); else the one the cloud reports for its pairing. */
