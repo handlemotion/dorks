@@ -1,4 +1,4 @@
-import { ChevronLeft, Mail } from "lucide-react";
+import { Mail } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { DorksMark } from "#/components/DorksMark";
 import { AppleIcon, GoogleIcon } from "#/components/icons";
@@ -59,13 +59,13 @@ function Choose({ invite, providerError, onEmail }: { invite: boolean; providerE
   return (
     <Screen>
       <div className="flex flex-col items-center gap-5 pb-10 text-center">
-        <DorksMark size={44} />
+        <DorksMark size={36} />
         <h1 className="text-[26px] leading-8 font-medium tracking-[-0.02em]">{invite ? "Sign in to join your team" : "Sign in to Dorks"}</h1>
       </div>
       <div className="flex flex-col gap-[18px]">
         {error ? <ErrorText>{error}</ErrorText> : null}
         <div className="flex flex-col gap-2.5">
-          <Button variant="apple" size="lg" disabled={!!pending || methods?.appleWeb !== true} onClick={() => social("apple")}>
+          <Button variant="outline" size="lg" disabled={!!pending || methods?.appleWeb !== true} onClick={() => social("apple")}>
             <Lead>{pending === "apple" ? <Spinner /> : <AppleIcon />}</Lead>
             Continue with Apple
           </Button>
@@ -99,7 +99,7 @@ function EmailStep({ onBack, onSent }: { onBack: () => void; onSent: (email: str
     if (valid && !send.isPending) void send.run(address).then((ok) => ok && onSent(address));
   };
   return (
-    <Page title="Enter your email" detail="We'll send you a 6-digit code to sign in." onBack={onBack}>
+    <Page title="Continue with email" back="Back" onBack={onBack}>
       <form
         className="flex flex-col gap-4"
         onSubmit={(e) => {
@@ -124,8 +124,8 @@ function EmailStep({ onBack, onSent }: { onBack: () => void; onSent: (email: str
           onChange={(e) => setEmail(e.target.value)}
           className="h-12 w-full rounded-full border border-[#e8e8e8] bg-white px-5 text-[15px] text-neutral-950 outline-none placeholder:text-neutral-400 focus:border-[#1d72e8] disabled:opacity-50 dark:border-white/10 dark:bg-[#171717] dark:text-neutral-50 dark:placeholder:text-neutral-500"
         />
-        {send.error ? <ErrorText className="text-left">{send.error}</ErrorText> : null}
-        <Button type="submit" variant="primary" size="lg" disabled={!valid || send.isPending}>
+        {send.error ? <ErrorText>{send.error}</ErrorText> : null}
+        <Button type="submit" variant="inverse" size="lg" disabled={!valid || send.isPending}>
           {send.isPending ? (
             <Lead>
               <Spinner />
@@ -153,15 +153,7 @@ function CodeStep({ email, onBack }: { email: string; onBack: () => void }) {
   };
   const error = resend.error ?? verify.error;
   return (
-    <Page
-      title="Enter code"
-      detail={
-        <>
-          We sent a 6-digit code to <span className="font-medium text-neutral-950 dark:text-neutral-50">{email}</span>
-        </>
-      }
-      onBack={onBack}
-    >
+    <Page title="Enter code" detail={email} back="Use another email" onBack={onBack}>
       <div className="flex flex-col gap-4">
         <CodeBoxes
           value={code}
@@ -175,15 +167,14 @@ function CodeStep({ email, onBack }: { email: string; onBack: () => void }) {
           }}
           onSubmit={() => submit()}
         />
-        {error ? <ErrorText className="text-left">{error}</ErrorText> : null}
-        <div className="flex min-h-9 items-center">
+        {error ? <ErrorText>{error}</ErrorText> : null}
+        <div className="flex min-h-9 items-center justify-center">
           {wait > 0 ? (
             <p className="text-sm text-neutral-400 dark:text-neutral-500">{`Resend code in 00:${String(wait).padStart(2, "0")}`}</p>
           ) : (
             <Button
               variant="quiet"
               size="sm"
-              className="-ml-3.5"
               disabled={resend.isPending}
               onClick={() => {
                 verify.reset();
@@ -199,7 +190,7 @@ function CodeStep({ email, onBack }: { email: string; onBack: () => void }) {
             </Button>
           )}
         </div>
-        <Button variant="primary" size="lg" disabled={code.length < 6 || verify.isPending} onClick={() => submit()}>
+        <Button variant="inverse" size="lg" disabled={code.length < 6 || verify.isPending} onClick={() => submit()}>
           {verify.isPending ? (
             <Lead>
               <Spinner />
@@ -256,7 +247,7 @@ function SignedIn({ user }: { user: User }) {
   return (
     <Screen>
       <div className="flex flex-col items-center gap-5 pb-10 text-center">
-        <DorksMark size={44} />
+        <DorksMark size={36} />
         <div className="flex flex-col gap-2">
           <h1 className="text-[26px] leading-8 font-medium tracking-[-0.02em]">You're signed in</h1>
           <Account user={user} />
@@ -292,19 +283,18 @@ function Invite({ id, next, user }: { id: string; next: string | null; user: Use
   return (
     <Screen>
       <div className="flex flex-col items-center gap-5 pb-10 text-center">
-        <DorksMark size={44} />
+        <DorksMark size={36} />
         <div className="flex flex-col gap-2">
           <h1 className="text-[26px] leading-8 font-medium tracking-[-0.02em]">{state.kind === "joined" ? `You joined ${state.org}` : "Can't join this team"}</h1>
           {state.kind === "failed" ? <p className="text-[15px] leading-[22px] text-neutral-500 dark:text-neutral-400">{state.message}</p> : null}
+          {state.kind === "joined" ? <p className="text-[15px] leading-[22px] text-neutral-500 dark:text-neutral-400">Open Dorks on your Mac and pick {state.org} in the team switcher.</p> : null}
           <Account user={user} />
         </div>
       </div>
       {state.kind === "joined" ? (
+        // No dorks://invite/<id> here: the invitation is accepted now, and the app's /invite/<id> only opens pending ones.
         <div className="flex flex-col gap-2.5">
-          <Button variant="primary" size="lg" nativeButton={false} render={<a href={`dorks://invite/${encodeURIComponent(id)}`} />}>
-            Open in Dorks
-          </Button>
-          <Button variant="outline" size="lg" nativeButton={false} render={<a href={DOWNLOAD_URL} />}>
+          <Button variant="inverse" size="lg" nativeButton={false} render={<a href={DOWNLOAD_URL} />}>
             <Lead>
               <AppleIcon />
             </Lead>
@@ -341,7 +331,7 @@ function Account({ user }: { user: User }) {
 function Downloads() {
   return (
     <div className="flex flex-col gap-2.5">
-      <Button variant="apple" size="lg" nativeButton={false} render={<a href={DOWNLOAD_URL} />}>
+      <Button variant="inverse" size="lg" nativeButton={false} render={<a href={DOWNLOAD_URL} />}>
         <Lead>
           <AppleIcon />
         </Lead>
@@ -363,18 +353,23 @@ function Screen({ children }: { children: ReactNode }) {
   );
 }
 
-/** An email step: back, a heading and a line, then the form. */
-function Page({ title, detail, onBack, children }: { title: string; detail: ReactNode; onBack: () => void; children: ReactNode }) {
+/** An email step, laid out like the first page: the mark and a title centred, the form, then a quiet way back. */
+function Page({ title, detail, back, onBack, children }: { title: string; detail?: ReactNode; back: string; onBack: () => void; children: ReactNode }) {
   return (
     <Screen>
-      <Button variant="quiet" size="icon" aria-label="Back" className="-ml-2.5 mb-3" onClick={onBack}>
-        <ChevronLeft className="size-5 stroke-[1.75]" />
-      </Button>
-      <div className="flex flex-col gap-2 pb-7">
-        <h1 className="text-[28px] leading-[34px] font-medium tracking-[-0.02em]">{title}</h1>
-        <p className="text-base leading-[22px] text-neutral-500 dark:text-neutral-400">{detail}</p>
+      <div className="flex flex-col items-center gap-5 pb-8 text-center">
+        <DorksMark size={36} />
+        <div className="flex flex-col gap-1.5">
+          <h1 className="text-[26px] leading-8 font-medium tracking-[-0.02em]">{title}</h1>
+          {detail ? <p className="text-[15px] leading-[22px] text-neutral-500 dark:text-neutral-400">{detail}</p> : null}
+        </div>
       </div>
       {children}
+      <div className="flex justify-center pt-3">
+        <Button variant="quiet" size="sm" className="text-neutral-500 dark:text-neutral-400" onClick={onBack}>
+          {back}
+        </Button>
+      </div>
     </Screen>
   );
 }
