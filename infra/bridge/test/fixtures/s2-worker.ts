@@ -17,6 +17,8 @@ export class StandInWorker {
   tokens = 0;
   heartbeats = 0;
   configure: Extract<ToBridge, { t: "configure" }> | null = null;
+  /** Answers to the other rpc ops (null when unset). */
+  rpcResult?: (op: string, args: unknown) => unknown;
   /** Fences handed out, oldest first. */
   readonly fences: string[] = [];
   private server?: Server;
@@ -126,7 +128,7 @@ export class StandInWorker {
     }
     this.rpcs.push({ op: args.op, args: args.args });
     if (args.op === "configure") return Response.json({ result: this.configure });
-    return Response.json({ result: null });
+    return Response.json({ result: this.rpcResult?.(args.op, args.args) ?? null });
   };
 
   /** Serves `handle` over HTTP on loopback; resolves with the base URL. */

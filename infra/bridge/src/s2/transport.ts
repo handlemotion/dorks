@@ -74,6 +74,8 @@ export class S2Transport implements Transport {
   private readonly delivered = new Map<string, Command>();
   /** Acks for commands the current tail has not read (yet): sent before a reconnect, acked as soon as the new tail reaches them. */
   private readonly lateAcks = new Set<string>();
+  /** `<requestId>|<type>` of the secure-input events already in the transcript. */
+  private readonly inputNotes = new Set<string>();
   private snapshot: CommandEntry[] = [];
   private readonly commandSubs = new Set<{ on: (c: CommandEntry[]) => void; err: () => void }>();
   private readonly listSubs = new Set<{ on: (v: unknown) => void; err: () => void }>();
@@ -333,7 +335,25 @@ export class S2Transport implements Transport {
   getImage = (id: string) => this.rpc<{ mime: string; data: string } | null>("get_image", { id });
   build = (args: Record<string, unknown>) => this.rpc<unknown>("build", args);
   local = (args: Record<string, unknown>) => this.rpc<unknown>("local", args);
-  input = (args: Record<string, unknown>) => this.rpc<unknown>("input", args);
+  /**
+   * Secure inputs: in a cloud org only the bridge writes the transcript, so the Worker hands back the client event a request or its
+   * answer adds (`input_request`, `input_response`) and the bridge appends it as a note before answering the agent. Several waits
+   * may return the same answer: each event is written once per request id and type. The agent gets the result without it.
+   */
+  input = async (args: Record<string, unknown>) => {
+    const r = await this.rpc<Record<string, unknown> | null>("input", args);
+    const ev = r?.event as { type?: unknown; requestId?: unknown } | undefined;
+    if (!r || !ev || typeof ev.type !== "string" || typeof ev.requestId !== "string") return r;
+    const key = `${ev.requestId}|${ev.type}`;
+    if (!this.inputNotes.has(key)) {
+      const w = this.writer;
+      if (!w || w.error) throw new Error("not connected");
+      await w.note(JSON.stringify([ev]));
+      this.inputNotes.add(key);
+    }
+    const { event: _event, ...rest } = r;
+    return rest;
+  };
   crew = (args: Record<string, unknown>) => this.rpc<unknown>("crew", args);
   comment = (args: Record<string, unknown>) => this.rpc<unknown>("comment", args);
   ship = (args: Record<string, unknown>) => this.rpc<unknown>("ship", args);

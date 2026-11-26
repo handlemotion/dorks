@@ -205,4 +205,28 @@ describe.skipIf(!token || !basin)("a real bridge on real s2", () => {
       }),
     );
   });
+
+  // The secure-input tools on a cloud session: the Worker returns the transcript events, the bridge writes them as notes, once each.
+  it.skipIf(!claudeToken)("writes a secure input's request and answer to the transcript", { timeout: 300_000 }, async () => {
+    const req = { type: "input_request", requestId: "rq-live", title: "Demo key", fields: [{ name: "DEMO_KEY", label: "Demo key" }] };
+    let waits = 0;
+    worker.rpcResult = (op, args) => {
+      if (op !== "input") return null;
+      const a = args as { action: string };
+      if (a.action === "request") return { requestId: "rq-live", status: "pending", event: req };
+      if (a.action === "values") return { values: { DEMO_KEY: "demo-value-123" } };
+      waits++;
+      return { requestId: "rq-live", status: "provided", names: ["DEMO_KEY"], event: { type: "input_response", requestId: "rq-live", status: "provided", names: ["DEMO_KEY"] } };
+    };
+    await worker.sendCommand("msg-0006", {
+      t: "user_message",
+      id: "msg-0006",
+      text: "Ask me for a secret named DEMO_KEY with the input_request tool, wait for it with input_wait, then reply with the word: received",
+    });
+    await waitFor(async () => (await items()).some((i) => i.kind === "command" && i.cid === "msg-0006"), "msg-0006 acked", 60_000);
+    await waitFor(async () => (await items()).filter((i) => i.kind === "note").length >= 2 && waits > 0, "both input events", 180_000);
+    const notes = (await items()).flatMap((i) => (i.kind === "note" ? JSON.parse(i.body) : [])).filter((e: { requestId?: string }) => e.requestId === "rq-live");
+    expect(notes.map((e: { type: string }) => e.type)).toEqual(["input_request", "input_response"]);
+    console.log("s2-live inputs:", JSON.stringify({ waits, notes }));
+  });
 });
