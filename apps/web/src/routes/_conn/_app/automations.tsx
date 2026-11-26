@@ -38,7 +38,9 @@ export const Route = createFileRoute('/_conn/_app/automations')({
 
 function Automations() {
   const { automation, template } = Route.useSearch()
-  if (automation === 'new') return <NewAutomation key={template ?? ''} template={TEMPLATES.find((t) => t.id === template)} />
+  // A new automation is the workspace's: switching workspaces starts the form over in the other one. Templates are code, so Chat has none.
+  const [workspace] = useAppWorkspace()
+  if (automation === 'new') return <NewAutomation key={`${template ?? ''}:${workspace}`} template={workspace === 'chat' ? undefined : TEMPLATES.find((t) => t.id === template)} />
   if (automation) return <AutomationPage key={automation} id={automation} />
   return <AutomationList />
 }
