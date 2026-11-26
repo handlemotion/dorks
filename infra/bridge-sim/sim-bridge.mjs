@@ -343,7 +343,8 @@ async function configure(cid) {
   // The real bridge asks Haiku (or a light Codex model) for this; the sim names the dork after the first few words.
   if (cfg.nameFrom) queue.push({ t: "title", text: `Sim: ${cfg.nameFrom.replace(/\s+/g, " ").trim().split(" ").slice(0, 5).join(" ")}`.slice(0, 120) });
   queue.push(models.frame);
-  if (cfg.provider === "claude" || !cfg.provider) queue.push({ t: "agent_commands", commands: SIM_COMMANDS });
+  // Claude reports its commands and skills; Codex its skills (skills/list).
+  if (cfg.provider === "claude" || cfg.provider === "codex" || !cfg.provider) queue.push({ t: "agent_commands", commands: SIM_COMMANDS });
   if (cfg.repo) queue.push({ t: "files", paths: SIM_FILES, truncated: false });
   simRepo = cfg.repo?.fullName ?? null;
   return void flushNow();
