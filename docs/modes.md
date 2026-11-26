@@ -57,4 +57,4 @@ Its guidance tells it to prefer the sessions it started and never take over anot
 - The title bar switches between two workspaces (`AppWorkspace`, remembered per browser): **Agents** lists the nerds in a group of their
   own, then the code sessions by repository; **Chat** lists the chats. New session starts in the workspace's mode (code in Agents, a chat in Chat; a nerd
   from the Nerds group's `+`, which shows even while there are none), and opening a session of the other workspace switches to it. Builds is an Agents page; Plugins
-  are the same in both. A nerd always wears the dork mark in green, whatever its state.
+  are the same in both. A nerd wears the dork mark in its state's colour, like any session: the Nerds group sets it apart.
