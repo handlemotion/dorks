@@ -67,6 +67,7 @@ export class S2Transport implements Transport {
   /** Control frames already handled: the outbox retries a failed push with the same frame objects. */
   private readonly processed = new WeakSet<object>();
   private stateQueue: StateFrame[] = [];
+  private draining: Promise<void> = Promise.resolve();
   /** Commands handed to the bridge and not acked yet, by the id its ack names. */
   private readonly delivered = new Map<string, Command>();
   /** Acks for commands the current tail has not read (yet): sent before a reconnect, acked as soon as the new tail reaches them. */
@@ -158,7 +159,7 @@ export class S2Transport implements Transport {
       try {
         for await (const cmd of w.commands(ac.signal)) this.onCommand(w, cmd);
       } catch (e) {
-        if (!ac.signal.aborted) this.broken(e);
+        if (!ac.signal.aborted) this.broken(e, w);
       }
     })();
   }
@@ -169,8 +170,8 @@ export class S2Transport implements Transport {
   }
 
   /** The writer or the tail failed for good: a replaced bridge stops; anything else reconnects (a new fence, a new writer). */
-  private broken(e: unknown) {
-    if (this.closed || e instanceof FencedError) return;
+  private broken(e: unknown, w: BridgeWriter | null = this.writer) {
+    if (this.closed || e instanceof FencedError || w !== this.writer) return; // a writer already replaced fails quietly
     this.o.log("s2: session stream failed, reconnecting:", errTag(e));
     this.writer = null;
     this.stopTail();
@@ -191,16 +192,16 @@ export class S2Transport implements Transport {
     if (body?.t === "subscriptions") {
       this.lastList = body.views;
       for (const s of [...this.listSubs]) s.on(this.lastList);
-      return void w.ack(cmd).catch(() => {});
+      return void w.ack(cmd).catch((e) => this.broken(e, w));
     }
     const parsed = commandFrame.safeParse(body);
     if (!parsed.success) {
       this.o.log("s2: skipped a command this bridge does not know");
-      return void w.ack(cmd).catch(() => {});
+      return void w.ack(cmd).catch((e) => this.broken(e, w));
     }
     const frame = parsed.data;
     const id = frame.t === "user_message" || frame.t === "notify" ? frame.id : cmd.cid;
-    if (this.lateAcks.delete(id)) return void w.ack(cmd).catch(() => {});
+    if (this.lateAcks.delete(id)) return void w.ack(cmd).catch((e) => this.broken(e, w));
     if (frame.t === "interrupt") this.norm.interruptRequested = true;
     this.delivered.set(id, cmd);
     this.snapshot = [...this.snapshot, { cid: cmd.cid, frame }];
@@ -217,22 +218,27 @@ export class S2Transport implements Transport {
       const c = (e as { code?: unknown })?.code;
       reply = { id: msg.id, ok: false, error: typeof c === "string" && CALL_CODES.has(c) ? { code: c, message: (e as Error).message } : { code: "failed", message: "The sandbox could not do that." } };
     }
-    await w.ack(cmd, JSON.stringify(reply)).catch(() => {});
+    await w.ack(cmd, JSON.stringify(reply)).catch((e) => this.broken(e, w));
   }
 
   // ---------------------------------------------------------------- Transport
   push = async (frames: FromBridge[]): Promise<PushResult> => {
     const w = this.writer;
-    if (!w || w.error) throw w?.error instanceof FencedError ? w.error : new Error("not connected");
+    if (!w || w.error) {
+      if (w?.error) this.broken(w.error, w); // failed outside a push (a call's answer, an internal ack): reconnect now
+      throw w?.error instanceof FencedError ? w.error : new Error("not connected");
+    }
     const durable: Promise<void>[] = [];
-    const stateBefore = this.stateQueue.length;
+    // State frames wait for the events before them to be durable: a heartbeat's drain must not send them early.
+    const state: StateFrame[] = [];
     const handled: object[] = [];
     for (const f of frames) {
       if (f.t === "event") {
         if (f.bseq <= this.normalizedBseq) continue; // a resend of what is already in the stream
         this.normalizedBseq = f.bseq;
-        const { events, state } = this.norm.line(f.raw);
-        this.stateQueue.push(...state);
+        const line = this.norm.line(f.raw);
+        state.push(...line.state);
+        const events = line.events;
         if (events.length) durable.push(w.append([{ bseq: f.bseq, body: JSON.stringify(events) }]));
         continue;
       }
@@ -249,23 +255,32 @@ export class S2Transport implements Transport {
       }
       const notes = SessionNormalizer.noteFor(f);
       if (notes.length) durable.push(w.note(JSON.stringify(notes)));
-      this.stateQueue.push(f);
+      state.push(f);
     }
     try {
       await Promise.all(durable);
     } catch (e) {
       // Not durable: the outbox retries these frames after the reconnect, so they must be handled again then.
       for (const f of handled) this.processed.delete(f);
-      this.stateQueue.length = Math.min(this.stateQueue.length, stateBefore);
-      this.broken(e);
+      this.broken(e, w);
       throw e;
     }
+    this.stateQueue.push(...state);
     await this.flushState();
     return { ok: true };
   };
 
-  /** Sends the queued state frames (after the events they follow are durable); only the last preview of a batch matters. */
-  private async flushState(always = false) {
+  /**
+   * Sends the queued state frames, one drain at a time (a heartbeat and a push may overlap: each sends and removes only what it
+   * sent). Only the last preview of a batch matters.
+   */
+  private flushState(always = false): Promise<void> {
+    const run = this.draining.catch(() => {}).then(() => this.drainState(always));
+    this.draining = run;
+    return run;
+  }
+
+  private async drainState(always: boolean) {
     if (!this.stateQueue.length && always) return void (await this.worker("state", { frames: [] }));
     while (this.stateQueue.length) {
       const batch = this.stateQueue.slice(0, STATE_BATCH);
