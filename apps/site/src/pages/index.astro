@@ -1,12 +1,17 @@
 ---
 import Base from "../layouts/Base.astro";
+import { Footer } from "../components/Footer";
 import { Hero } from "../components/Hero";
+import { builtRelease } from "../lib/built-release";
+
+const release = await builtRelease();
 ---
 
 <Base
   title="Dorks — The last ADE you'll ever install."
   description="Dorks is the last ADE you'll ever install."
 >
-  <Hero client:load />
+  <Hero client:load release={release} />
   <section class="min-h-screen w-full bg-white" aria-hidden="true"></section>
+  <Footer client:visible release={release} />
 </Base>
