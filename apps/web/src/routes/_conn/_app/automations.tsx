@@ -18,7 +18,7 @@ import { Tip } from '../../../components/Tip'
 import { DAYS, EVENTS, EVERY, GithubMark, SENTRY_EVENTS, SentryMark, TriggerList, TriggerMark } from '../../../components/automations/TriggerEditor'
 import { localTimeZone, TEMPLATES, type AutomationTemplate } from '../../../components/automations/templates'
 import { useAppWorkspace } from '../../../components/appWorkspace'
-import { isTeamOrg, useCloudPlace } from '../../../components/CloudPlace'
+import { isTeamOrg, useCloudPlace, useIsTeamOrg } from '../../../components/CloudPlace'
 import { SettingsFacts, SettingsGroup, SettingsGroupBody, SettingsInputRow, SettingsSection, SettingsSections, SettingsStatus, StatusDot, TONE_TEXT, type Tone } from '../../../components/settings/kit'
 import { usePending } from '../../../lib/pending'
 import { ago, upcoming } from '../../../lib/time'
@@ -43,12 +43,14 @@ function Automations() {
   const [workspace] = useAppWorkspace()
   // Only a team org runs automations: a personal one has no always-on server, and this Mac sleeps or goes offline.
   const place = useCloudPlace()
-  const blocked = !place?.resolving && !isTeamOrg(place?.org)
+  // Existing ones stay reachable so they can be paused or deleted (the server still runs what is enabled), but no new ones.
+  const existing = useAutomations()
+  const blocked = !place?.resolving && !isTeamOrg(place?.org) && existing !== undefined && (existing.length === 0 || automation === 'new')
   const navigate = useNavigate()
   useEffect(() => {
     if (blocked) void navigate({ to: '/dorks', replace: true })
   }, [blocked, navigate])
-  if (place?.resolving || blocked) return null
+  if (place?.resolving || blocked || (!isTeamOrg(place?.org) && existing === undefined)) return null
   if (automation === 'new') return <NewAutomation key={`${template ?? ''}:${workspace}`} template={workspace === 'chat' ? undefined : TEMPLATES.find((t) => t.id === template)} />
   if (automation) return <AutomationPage key={automation} id={automation} />
   return <AutomationList />
@@ -117,26 +119,30 @@ function AutomationList() {
   const [workspace] = useAppWorkspace()
   const chat = workspace === 'chat'
   const automations = useAutomations()?.filter((a) => modeOf(a) === (chat ? 'chat' : 'code'))
+  // A personal org only reaches this page to pause or delete the automations it already has: nothing here creates one.
+  const team = useIsTeamOrg()
   const [query, setQuery] = useState('')
   const q = query.trim().toLowerCase()
   const shown = automations?.filter((a) => !q || a.name.toLowerCase().includes(q) || a.triggers.some((t) => triggerText(t).toLowerCase().includes(q)))
-  const templates = (chat ? [] : TEMPLATES).filter((t) => !q || t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q))
+  const templates = (chat || !team ? [] : TEMPLATES).filter((t) => !q || t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q))
   return (
     <div className="flex h-full min-h-0 flex-col">
       <RailPage title="Automations">
-        {!!automations?.length && <PageRail query={query} onQueryChange={setQuery} placeholder="Search automations…" actions={<NewButton variant="default" />} />}
+        {!!automations?.length && <PageRail query={query} onQueryChange={setQuery} placeholder="Search automations…" actions={team ? <NewButton variant="default" /> : undefined} />}
         <SettingsSections>
           {automations?.length === 0 && (
             <EmptyState
               figure="relay"
               title="No automations yet"
               description={
-                chat
-                  ? 'A chat that starts on a schedule, or when something happens in a repository or in Sentry.'
-                  : 'An agent that runs on a schedule, or when something happens in a repository or in Sentry. Start from a template, or from scratch.'
+                !team
+                  ? 'Automations run in a team, on a server that is always on.'
+                  : chat
+                    ? 'A chat that starts on a schedule, or when something happens in a repository or in Sentry.'
+                    : 'An agent that runs on a schedule, or when something happens in a repository or in Sentry. Start from a template, or from scratch.'
               }
             >
-              <NewButton />
+              {team && <NewButton />}
             </EmptyState>
           )}
           {q && !shown?.length && !templates.length && (

@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from '@tanstack/react-router'
 import { BlocksIcon, BoxIcon, ChevronDownIcon, ChevronRightIcon, ClockFadingIcon, PlusIcon } from 'lucide-react'
 import type { DorkState } from '@dorks/shared'
 import type { Usage } from '@dorks/client'
-import { useBuilds, useDorks, useGithubRepos, useUsage } from '@dorks/client/react'
+import { useAutomations, useBuilds, useDorks, useGithubRepos, useUsage } from '@dorks/client/react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@dorks/ui/collapsible'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@dorks/ui/dropdown-menu'
 import { FluidHoverHighlight } from '@dorks/ui/fluid-hover-highlight'
@@ -62,14 +62,16 @@ export function AppSidebar() {
     }))
   // Agents' changes waiting for the owner: a count beside Builds, so a proposal is found from anywhere.
   // Automations are a team's: a personal org has no server that is always on to run them (this Mac sleeps, goes offline).
+  // Until a personal org's existing ones are deleted, the page stays so they can still be paused or deleted.
   const team = useIsTeamOrg()
+  const existing = (useAutomations()?.length ?? 0) > 0
   const reviews = (builds ?? []).reduce((n, b) => n + b.drafts.filter((d) => d.status === 'submitted').length, 0)
   return (
     <AppSidebarView
       chats={chats}
       accounts={github}
       counts={{ '/builds': reviews }}
-      automations={team}
+      automations={team || existing}
       onDisconnect={disconnect}
       switcher={<OrgSwitcher login={github?.login} />}
       machines={<MachineRow />}
