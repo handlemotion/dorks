@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { ChevronDownIcon, LaptopIcon, LogInIcon, PlusIcon } from 'lucide-react'
+import { ChevronDownIcon, LaptopIcon, LogInIcon, MailIcon, PlusIcon } from 'lucide-react'
 import type { CloudOrg, CloudStatus } from '@dorks/client'
 import { Button } from '@dorks/ui/button'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@dorks/ui/dialog'
@@ -19,7 +19,7 @@ import { Input } from '@dorks/ui/input'
 import { machinesOf } from '../lib/place'
 import { usePending } from '../lib/pending'
 import { UserAvatar } from './AccountMenu'
-import { orgName, useCloudPlace } from './CloudPlace'
+import { orgName, useCloudPlace, useCloudInvitations } from './CloudPlace'
 import { cn } from './onboarding/Frame'
 import { SIDEBAR_ROW } from './sidebarChrome'
 
@@ -63,6 +63,7 @@ export function OrgSwitcher({ login }: { login?: string | null }) {
   const place = useCloudPlace()
   const navigate = useNavigate()
   const [creating, setCreating] = useState(false)
+  const invitations = useCloudInvitations()
   if (!place) return <StaticOrgSwitcher login={login} />
   const { cloud, places, org, personal } = place
   const signedIn = !!cloud?.user
@@ -97,10 +98,19 @@ export function OrgSwitcher({ login }: { login?: string | null }) {
             <>
               <DropdownMenuSeparator />
               {signedIn ? (
-                <DropdownMenuItem onClick={() => setCreating(true)}>
-                  <PlusIcon />
-                  Create organization
-                </DropdownMenuItem>
+                <>
+                  {invitations.length > 0 && (
+                    <DropdownMenuItem onClick={() => void navigate({ to: '/settings/$page', params: { page: 'cloud' } })}>
+                      <MailIcon />
+                      Invitations
+                      <span className="ms-auto text-xs text-muted-foreground tabular-nums">{invitations.length}</span>
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem onClick={() => setCreating(true)}>
+                    <PlusIcon />
+                    Create organization
+                  </DropdownMenuItem>
+                </>
               ) : (
                 <DropdownMenuItem onClick={() => void navigate({ to: '/settings/$page', params: { page: 'cloud' } })}>
                   <LogInIcon />
@@ -128,7 +138,7 @@ function OrgItem({ value, org, cloud, login }: { value: string; org: CloudOrg | 
   )
 }
 
-function CreateOrgDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (open: boolean) => void; onCreated: (id: string) => void }) {
+export function CreateOrgDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (open: boolean) => void; onCreated: (id: string) => void }) {
   const place = useCloudPlace()
   const [name, setName] = useState('')
   const { run, pending, error } = usePending()

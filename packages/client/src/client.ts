@@ -40,6 +40,9 @@ import type {
   PhoneStatus,
   CloudPlaces,
   CloudStatus,
+  CloudOrgAction,
+  CloudOrgDetail,
+  CloudInvitation,
   InputAnswer,
 } from "./types.ts";
 
@@ -378,6 +381,14 @@ export class DorksClient {
   /** The account's organizations and servers (its Macs, its organizations' hosted servers); refreshed with `cloud`. */
   cloudPlaces() {
     return this.query<CloudPlaces>("cloud:places", () => this.api.cloudPlaces());
+  }
+  /** An organization's members and invitations (team management). */
+  cloudOrg(orgId: string) {
+    return this.query<CloudOrgDetail>(`cloud:org:${orgId}`, () => this.api.cloudOrgDetail(orgId));
+  }
+  /** Invitations waiting for the signed-in account. */
+  cloudInvitations() {
+    return this.query<CloudInvitation[]>("cloud:invitations", () => this.api.cloudMyInvitations());
   }
   /** Reads the account's places again (a Mac came online, a teammate added a server). */
   refreshCloudPlaces() {
@@ -720,6 +731,15 @@ export class DorksClient {
       this.invalidate("cloud:places");
       return org;
     },
+    /** A team action (invite, change a role, remove, leave, rename, delete, answer an invitation); everything cloud is read again after. */
+    cloudOrgAction: async (action: CloudOrgAction, body: Record<string, unknown>) => {
+      try {
+        return await this.api.cloudOrgAction(action, body);
+      } finally {
+        this.invalidate("cloud");
+      }
+    },
+    cloudInvitation: (id: string) => this.api.cloudInvitation(id),
     cloudSignOut: async () => {
       await this.api.cloudSignOut();
       this.invalidate("cloud");

@@ -5,7 +5,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { ClientEvent, CommentAnchor, CommentView, McpServerView, PullRequestView, ShipStage, ShipView, SkillCandidate, SkillView } from "@dorks/shared";
-import type { Dork, PhoneStatus, Settings, SnapshotStatus } from "./types.ts";
+import type { Dork, Me, PhoneStatus, Settings, SnapshotStatus } from "./types.ts";
 import { mockAutomations } from "./mock-automations.ts";
 import { mockCloud, type MockCloudPlace } from "./mock-cloud.ts";
 
@@ -32,6 +32,8 @@ export interface MockOptions {
   configured?: boolean;
   /** Milliseconds between the fake agent's steps. */
   tick?: number;
+  /** Who `GET /api/me` says the caller is (docs/cloud.md); the local owner by default. Another place's server answers as a teammate. */
+  me?: Partial<Me>;
   /** Start signed in to the fake Dorks Cloud (mock-cloud.ts). */
   cloudSignedIn?: boolean;
   /** Chats to start with, each running the fake agent's first turn (another place's server, mock-cloud.ts). */
@@ -1418,6 +1420,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     ],
     // The phone link (docs/mobile.md): a pairing the fake phone claims after 8 s.
     ["GET /api/phone", ({ res }) => json(res, 200, phone)],
+    ["GET /api/me", ({ res }) => json(res, 200, { kind: "local", id: null, name: null, email: null, role: "owner", org: null, plan: null, serverOrg: null, ...opts.me } satisfies Me)],
     [
       "POST /api/phone/pair",
       ({ res }) => {
@@ -1646,7 +1649,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     readBody,
     broadcast,
     thisMac: () => ({ id: phone.macId, name: phone.name }),
-    startChild: (seed) => startMockServer({ configured: true, tick, seed }),
+    startChild: (seed, me) => startMockServer({ configured: true, tick, seed, me }),
   });
   const route = async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", "http://mock");

@@ -181,6 +181,22 @@ async function signedIn(app: App): Promise<Session> {
   return (await readSession(app)) ?? fail("not_configured", "Sign in to Dorks Cloud first.");
 }
 
+/** Better Auth's organization endpoints the UI may call through this server, by method. */
+const ORG_ACTIONS: Record<string, "GET" | "POST"> = {
+  "get-full-organization": "GET",
+  "list-user-invitations": "GET",
+  "get-invitation": "GET",
+  "invite-member": "POST",
+  "cancel-invitation": "POST",
+  "accept-invitation": "POST",
+  "reject-invitation": "POST",
+  "update-member-role": "POST",
+  "remove-member": "POST",
+  leave: "POST",
+  update: "POST",
+  delete: "POST",
+};
+
 export const cloudAccount = {
   async view(app: App): Promise<CloudView> {
     const cloudUrl = cloudOf(app);
@@ -241,6 +257,27 @@ export const cloudAccount = {
     const org = orgOf({ ...((await readJson(res)) as object), role: "owner", active: true });
     if (!org) fail("failed", "Dorks Cloud answered without an organization");
     return org;
+  },
+
+  /**
+   * One of Better Auth's organization endpoints (team management, docs/cloud.md), as the signed-in account: members, invitations,
+   * roles, leaving, renaming, deleting. Only the actions below; the relay decides who may do what. Its refusals come back as AppErrors
+   * (`limit` for MEMBER_LIMIT_REACHED), never as a 401, which the UI would read as this server rejecting its owner token.
+   */
+  async orgAction(app: App, action: string, method: string, search: string, body: unknown): Promise<unknown> {
+    const allowed = ORG_ACTIONS[action];
+    if (!allowed || allowed !== method) fail("not_found", "Unknown organization action");
+    const s = await signedIn(app);
+    const init: RequestInit = method === "GET" ? { headers: { authorization: `Bearer ${s.token}` } } : jsonPost(body ?? {}, s.token);
+    const res = await call(app, `/api/auth/organization/${action}${search}`, init);
+    if (res.status === 401) await expired(app);
+    const out = await readJson(res);
+    if (!res.ok) {
+      const b = out as { code?: unknown; message?: unknown } | null;
+      const message = (typeof b?.message === "string" && b.message) || `Dorks Cloud refused (${res.status})`;
+      fail(b?.code === "MEMBER_LIMIT_REACHED" ? "limit" : res.status === 404 ? "not_found" : res.status === 429 ? "rate_limited" : res.status >= 500 ? "failed" : "invalid", message.slice(0, 200));
+    }
+    return out ?? {};
   },
 
   /**

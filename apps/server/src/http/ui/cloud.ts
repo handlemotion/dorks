@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect";
 import { cloudAccount } from "../../services/cloudAccount";
-import { body, ok, serviceAsync } from "../route";
+import { body, looseBody, ok, serviceAsync } from "../route";
 import { handler, type Routes } from "./shared";
 
 const Email = Schema.Struct({ email: Schema.String.check(Schema.isMinLength(3), Schema.isMaxLength(320)) });
@@ -43,6 +43,20 @@ export const cloudRoutes: Routes = (api, app) => {
         Effect.flatMap((b) => serviceAsync((a) => cloudAccount.createOrg(a, b.name.trim()))),
         Effect.map((o) => c.json(o)),
       ),
+    ),
+  );
+  // Team management: Better Auth's organization endpoints as the signed-in account (an allowlist in services/cloudAccount.ts).
+  api.on(
+    ["GET", "POST"],
+    "/api/cloud/auth/organization/:action",
+    on((c) =>
+      Effect.gen(function* () {
+        const method = c.req.method.toUpperCase();
+        const b = method === "POST" ? yield* looseBody(c) : undefined;
+        const search = new URL(c.req.url).search;
+        const out = yield* serviceAsync((a) => cloudAccount.orgAction(a, c.req.param("action") as string, method, search, b));
+        return c.json(out as object);
+      }),
     ),
   );
   // Another server's UI API, through the relay with the stored session (owner token required, like every /api route).

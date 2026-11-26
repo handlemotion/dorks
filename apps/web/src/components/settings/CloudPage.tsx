@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@dorks/ui/button'
 import { usePending } from '../../lib/pending'
-import { orgName, useCloudPlace } from '../CloudPlace'
+import { orgName, useCloudInvitations, useCloudPlace } from '../CloudPlace'
 import { EmptyState } from '../EmptyState'
 import { OrgMark } from '../OrgSwitcher'
 import { SettingsGroup, SettingsInputRow, SettingsRow, SettingsSection, SettingsSections, SettingsStatus, StatusDot } from './kit'
@@ -115,6 +115,7 @@ function SignedIn() {
         </SettingsGroup>
         <SettingsStatus error={error} />
       </SettingsSection>
+      <Invitations />
       {orgs.length > 0 && (
         <SettingsSection title="Organizations" description="Pick one in the sidebar's switcher to work in it.">
           <SettingsGroup>
@@ -158,5 +159,59 @@ function SignedIn() {
         </SettingsSection>
       )}
     </SettingsSections>
+  )
+}
+
+/** Invitations waiting for you (accept, then work in the org), and the code from an invitation email for one that is not listed. */
+function Invitations() {
+  const place = useCloudPlace()!
+  const navigate = useNavigate()
+  const invitations = useCloudInvitations()
+  const [code, setCode] = useState('')
+  const { run, pending, error } = usePending()
+  const answer = (id: string, orgId: string, accept: boolean) =>
+    void run(async () => {
+      await place.home.actions.cloudOrgAction(accept ? 'accept-invitation' : 'reject-invitation', { invitationId: id })
+      if (!accept) return
+      place.chooseOrg(orgId)
+      void navigate({ to: '/dorks', search: {} })
+    })
+  return (
+    <SettingsSection title="Invitations" description={invitations.length ? undefined : 'Invitations to an organization show up here.'}>
+      <SettingsGroup label="invitations">
+        {invitations.map((i) => (
+          <SettingsRow
+            key={i.id}
+            label={i.organizationName ?? 'An organization'}
+            description={`${i.inviterEmail ? `From ${i.inviterEmail}, as` : 'As'} ${i.role}`}
+            control={
+              <>
+                <Button size="sm" variant="outline" disabled={pending} onClick={() => answer(i.id, i.organizationId, false)}>
+                  Decline
+                </Button>
+                <Button size="sm" disabled={pending} onClick={() => answer(i.id, i.organizationId, true)}>
+                  Join
+                </Button>
+              </>
+            }
+          />
+        ))}
+        <SettingsInputRow
+          id="invite-code"
+          label="Invitation code"
+          description="From the invitation email"
+          aria-label="invitation code"
+          autoComplete="off"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          trailing={
+            <Button size="sm" variant="outline" disabled={!code.trim()} onClick={() => void navigate({ to: '/invite/$id', params: { id: code.trim() } })}>
+              Open
+            </Button>
+          }
+        />
+      </SettingsGroup>
+      <SettingsStatus error={error} />
+    </SettingsSection>
   )
 }

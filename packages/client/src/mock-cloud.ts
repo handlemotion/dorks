@@ -2,14 +2,15 @@
 // fake email-code sign-in (any address, any six digits), the account's places (Macs and organizations with their hosted servers),
 // and `/api/cloud/servers/:id/api/*`, answered by a separate in-memory mock server per place, so switching really re-points the app.
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { CloudOrg, CloudServer, CloudStatus, CloudUser } from "./types.ts";
+import type { CloudOrg, CloudServer, CloudStatus, CloudUser, Me } from "./types.ts";
+import { mockTeams } from "./mock-teams.ts";
 
 export interface MockCloudPlace extends CloudServer {
   /** The chats the place's server starts with: what makes it look like someone else's server. */
   seed: { repo: string; message: string; title: string }[];
 }
 
-type MockOrg = Omit<CloudOrg, "servers" | "active"> & { servers: MockCloudPlace[] };
+export type MockOrg = Omit<CloudOrg, "servers" | "active"> & { servers: MockCloudPlace[] };
 
 export interface MockChild {
   url: string;
@@ -92,16 +93,18 @@ export function mockCloud(opts: {
   broadcast: (m: Record<string, unknown>) => void;
   /** This server's own id in the cloud (the phone link's `macId`), listed among the Macs once paired. */
   thisMac: () => { id: string | null; name: string | null };
-  startChild: (seed: MockCloudPlace["seed"]) => Promise<MockChild>;
+  startChild: (seed: MockCloudPlace["seed"], me: Partial<Me>) => Promise<MockChild>;
 }) {
   const { json, fail } = opts;
   const DEMO: CloudUser = { id: "user-1", name: "Ada Lovelace", email: "ada@example.com", image: null };
   let user: CloudUser | null = opts.signedIn ? DEMO : null;
   const children = new Map<string, Promise<MockChild>>();
   const status = (): CloudStatus => ({ cloudUrl: "https://dorks-cloud.example", user });
-  const orgs = [...ORGS];
+  const orgs = ORGS.map((o) => ({ ...o }));
+  const teams = mockTeams({ orgs, me: () => user, json, fail, readBody: opts.readBody });
   const view = (o: MockOrg): CloudOrg => ({
     ...o,
+    role: teams.roleOf(o.id) ?? o.role,
     active: o.personal,
     servers: [
       // This server, once paired (the phone link's macId), is one of the personal org's Macs.
@@ -113,7 +116,19 @@ export function mockCloud(opts: {
   const child = (place: MockCloudPlace) => {
     let c = children.get(place.id);
     if (!c) {
-      c = opts.startChild(place.seed);
+      // It answers `GET /api/me` as you, a teammate with your role in the org that owns it.
+      const owner = orgs.find((o) => o.servers.some((s) => s.id === place.id));
+      const role = ((owner && teams.roleOf(owner.id)) ?? "member") as Me["role"];
+      c = opts.startChild(place.seed, {
+        kind: "member",
+        id: "user-1",
+        name: user?.name ?? null,
+        email: user?.email ?? null,
+        role,
+        org: owner?.id ?? null,
+        plan: owner?.plan === "collab" ? "collab" : "free",
+        serverOrg: owner?.id ?? null,
+      });
       children.set(place.id, c);
     }
     return c;
@@ -165,6 +180,11 @@ export function mockCloud(opts: {
       await forward(req, res, fwd[1]!, fwd[2]!.startsWith("images/") ? `api/${fwd[2]}` : fwd[2]!, search);
       return true;
     }
+    const team = /^\/api\/cloud\/auth\/organization\/([\w-]+)$/.exec(path);
+    if (team) {
+      await teams.route(req, res, method, team[1]!, search);
+      return true;
+    }
     const route = `${method} ${path}`;
     if (route === "GET /api/cloud") json(res, 200, status());
     else if (route === "POST /api/cloud/sign-in/email") await signIn(req, res, false);
@@ -185,6 +205,7 @@ export function mockCloud(opts: {
         const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
         const org: MockOrg = { id: `org-${slug}-${orgs.length}`, name, slug, logo: null, personal: false, plan: "free", role: "owner", servers: [] };
         orgs.push(org);
+        teams.created(org.id);
         json(res, 200, view(org));
       }
     } else return false;

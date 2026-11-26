@@ -42,6 +42,8 @@ describe("cloud account", () => {
             servers: [{ macId: "m1", name: "Ada's MacBook", kind: "mac", online: true, lastSeenAt: "2026-11-01T00:00:00Z" }],
           },
         ]);
+      if (url.pathname === "/api/auth/organization/invite-member") return Response.json({ code: "MEMBER_LIMIT_REACHED", message: "This organization has reached its member limit" }, { status: 403 });
+      if (url.pathname === "/api/auth/organization/get-full-organization") return Response.json({ id: url.searchParams.get("organizationId"), members: [] });
       if (url.pathname === "/api/auth/organization/create") return Response.json({ id: "o2", name: "Friends", slug: "friends-x", logo: null });
       if (url.pathname === "/v1/macs/h1/api/dorks") return Response.json([{ id: "d1" }]);
       return new Response("{}", { status: 404 });
@@ -68,6 +70,13 @@ describe("cloud account", () => {
     expect(places.orgs[0]!.servers[0]!.lastSeenAt).toBe(Date.parse("2026-11-01T00:00:00Z"));
     const created = (await (await call("POST", "/api/cloud/orgs", { name: "Friends" })).json()) as CloudOrg;
     expect(created).toMatchObject({ id: "o2", name: "Friends", personal: false, role: "owner", servers: [] });
+
+    // Team management goes to Better Auth's organization endpoints, an allowlist; its refusals are AppErrors, never a 401.
+    expect(await (await call("GET", "/api/cloud/auth/organization/get-full-organization?organizationId=o1")).json()).toEqual({ id: "o1", members: [] });
+    const limited = await call("POST", "/api/cloud/auth/organization/invite-member", { email: "b@x.test", role: "member", organizationId: "o1" });
+    expect([limited.status, ((await limited.json()) as { error: { code: string } }).error.code]).toEqual([429, "limit"]);
+    expect((await call("POST", "/api/cloud/auth/organization/set-active", {})).status).toBe(404);
+    expect((await call("GET", "/api/cloud/auth/organization/delete")).status).toBe(404);
 
     // Another server's UI API: the relay sees the session, never the owner token; the owner token is still required here.
     const res = await call("GET", "/api/cloud/servers/h1/api/dorks");

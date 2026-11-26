@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react'
-import { createClient, type CloudOrg, type CloudPlaces, type CloudServer, type CloudStatus, type DorksClient, type QueryState, type Store } from '@dorks/client'
+import { createClient, type CloudInvitation, type CloudOrg, type CloudPlaces, type CloudServer, type CloudStatus, type DorksClient, type QueryState, type Store } from '@dorks/client'
 import { useStoreValue } from '@dorks/client/react'
 import { remoteClientConfig, resolveTarget, usePlaceChoice, type Target } from '../lib/place'
 
@@ -74,6 +74,16 @@ export function CloudPlaceProvider({ conn, children }: { conn: { serverUrl: stri
     chooseMachine: (machineId) => setChoice({ orgId: choice.orgId, machineId }),
   }
   return <CTX.Provider value={place}>{children(client, place)}</CTX.Provider>
+}
+
+const NO_INVITES: QueryState<CloudInvitation[]> = { status: 'ready', data: [], error: undefined }
+const noInvites: Store<QueryState<CloudInvitation[]>> = { getSnapshot: () => NO_INVITES, subscribe: () => () => {} }
+
+/** Invitations waiting for the signed-in account (none signed out, or outside the gate). */
+export function useCloudInvitations(): CloudInvitation[] {
+  const place = useCloudPlace()
+  const state = useStoreValue(place?.cloud?.user ? place.home.cloudInvitations() : noInvites)
+  return (state.data ?? []).filter((i) => i.status === 'pending')
 }
 
 /** An org's display name: the personal org is the account's own name ("Personal" when signed out or nameless). */

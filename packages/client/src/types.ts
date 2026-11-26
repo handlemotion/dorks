@@ -291,6 +291,42 @@ export interface CloudOrg {
   servers: CloudServer[];
 }
 
+/** A role in a Dorks Cloud organization; Better Auth may send a comma list, whose strongest counts. */
+export type CloudRole = "owner" | "admin" | "member";
+
+/** A member of an organization (Better Auth `get-full-organization`). */
+export interface CloudMember {
+  id: string;
+  userId: string;
+  role: string;
+  user: { id: string; name: string; email: string; image?: string | null };
+}
+
+/** An invitation: to an org you manage (its pending invitations), or to you (`list-user-invitations`, `get-invitation`). */
+export interface CloudInvitation {
+  id: string;
+  email: string;
+  role: string;
+  status: "pending" | "accepted" | "rejected" | "canceled" | string;
+  organizationId: string;
+  organizationName?: string;
+  inviterEmail?: string;
+  expiresAt: string | number;
+}
+
+/** An organization with its members and invitations (`GET /api/cloud/auth/organization/get-full-organization`). */
+export interface CloudOrgDetail {
+  id: string;
+  name: string;
+  slug: string | null;
+  logo: string | null;
+  members: CloudMember[];
+  invitations: CloudInvitation[];
+}
+
+/** The organization actions the UI posts through its server (Better Auth's `/api/auth/organization/*`). */
+export type CloudOrgAction = "invite-member" | "cancel-invitation" | "accept-invitation" | "reject-invitation" | "update-member-role" | "remove-member" | "leave" | "update" | "delete";
+
 /** `GET /api/cloud/places`: the account's organizations, personal first, with their servers. */
 export interface CloudPlaces {
   orgs: CloudOrg[];
