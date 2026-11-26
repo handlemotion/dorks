@@ -148,4 +148,61 @@ describe.skipIf(!token || !basin)("a real bridge on real s2", () => {
       }),
     );
   });
+
+  // Same session, bridge C still running: a writer that appends without the fence makes the bridge's next append conflict (412
+  // seq_num_mismatch), its writer fails, and it reconnects (a new fence, same process) and retries the batch. The turns must come
+  // out as if nothing happened: the final message named, an interrupted turn `stopped` with no error.
+  it("reconnects when an append fails mid-turn and replays it unchanged (finalMessageId, stopped)", { timeout: 300_000 }, async () => {
+    const bridge = children.at(-1)!;
+    const interloper = async () => (await admin.withKey((await worker.key()) ?? undefined)).append(worker.streams.events, [{ headers: [["k", "probe"]], body: "" }]);
+    const turnCompletes = async () => (await events()).filter((e) => e.type === "turn_complete");
+    const after = async (cid: string) => {
+      const all = await items();
+      const at = all.findIndex((i) => i.kind === "command" && i.cid === cid);
+      return at < 0 ? [] : all.slice(at + 1);
+    };
+
+    const c0 = worker.connects;
+    const done0 = (await turnCompletes()).length;
+    await worker.sendCommand("msg-0004", { t: "user_message", id: "msg-0004", text: "Reply with exactly the word: done" });
+    await waitFor(async () => (await echoes()).includes("msg-0004"), "msg-0004 acked", 60_000);
+    await interloper();
+    await waitFor(async () => (await turnCompletes()).length > done0, "the msg-0004 turn", 120_000);
+    const doneTurn = (await after("msg-0004")).flatMap((i) => (i.kind === "event" ? JSON.parse(i.body) : []));
+    expect(worker.connects).toBe(c0 + 1); // reconnected once, in the same process
+    expect(doneTurn.find((e: { type: string }) => e.type === "turn_complete")).toMatchObject({ outcome: "done", finalMessageId: expect.any(String) });
+
+    const c1 = worker.connects;
+    await worker.sendCommand("msg-0005", { t: "user_message", id: "msg-0005", text: "Count from 1 to 400, one number per line, nothing else." });
+    await waitFor(async () => (await after("msg-0005")).some((i) => i.kind === "event"), "msg-0005 output started", 60_000);
+    await interloper();
+    await worker.sendCommand("int-0005", { t: "interrupt" });
+    await waitFor(async () => (await after("msg-0005")).some((i) => i.kind === "event" && i.body.includes('"turn_complete"')), "the interrupted turn ends", 120_000);
+    const stoppedTurn = (await after("msg-0005")).flatMap((i) => (i.kind === "event" ? JSON.parse(i.body) : []));
+    if (process.env.S2_LIVE_LOGS)
+      console.log(
+        "stopped turn:",
+        JSON.stringify(stoppedTurn.filter((e: { type: string }) => e.type !== "assistant_delta")),
+        JSON.stringify((await after("msg-0005")).map((i) => i.kind + ":" + ("cid" in i ? i.cid : ""))),
+      );
+    expect(worker.connects).toBe(c1 + 1);
+    expect(stoppedTurn.find((e: { type: string }) => e.type === "turn_complete")).toMatchObject({ outcome: "stopped" });
+    expect(stoppedTurn.some((e: { type: string; error?: { code?: string } }) => e.type === "error" && e.error?.code === "turn_failed")).toBe(false);
+
+    expect(bridge.exitCode).toBe(null); // the same process throughout
+    const cids = await echoes();
+    expect(new Set(cids).size).toBe(cids.length);
+    const bseqs = (await worker.rawEvents()).filter((r) => header(r, "k") === "ev").map((r) => Number(header(r, "b")));
+    expect(bseqs.every((b, i) => i === 0 || b > bseqs[i - 1])).toBe(true);
+    console.log(
+      "s2-live reconnect:",
+      JSON.stringify({
+        connects: worker.connects,
+        doneTurn: doneTurn.find((e: { type: string }) => e.type === "turn_complete"),
+        stoppedTurn: stoppedTurn.find((e: { type: string }) => e.type === "turn_complete"),
+        stoppedTurnTypes: [...new Set(stoppedTurn.map((e: { type: string }) => e.type))],
+        echoes: cids.slice(-4),
+      }),
+    );
+  });
 });
