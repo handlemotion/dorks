@@ -1,10 +1,12 @@
-import { createContext, useContext, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
-import { createClient } from '@dorks/client'
+import { createContext, useContext, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { DorksProvider, useAutomations, useConnection, useDorks, useSettingsState } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
 import { Input } from '@dorks/ui/input'
 import { clearConnection, currentConnection, DEFAULT_SERVER, normalizeServerUrl, saveConnection, type Connection } from '../lib/connection'
 import { onRuntimeConfig, setKeepAwake } from '../lib/desktop'
+import type { CloudServer } from '@dorks/client'
+import { CloudPlaceProvider, orgName, useCloudPlace, type CloudPlace } from './CloudPlace'
+import { EmptyState } from './EmptyState'
 
 const DISCONNECT = createContext<(() => void) | null>(null)
 
@@ -56,21 +58,92 @@ export function ConnectionGate({ children }: { children: ReactNode }) {
   )
 }
 
+/**
+ * The home server's client, and the client of the server the picked Dorks Cloud org lands on (CloudPlace.tsx): the same one on this
+ * Mac, another server through this one otherwise. Switching servers remounts the app on the new client.
+ */
 function Connected({ conn, onChange, onReplace, children }: { conn: Connection; onChange: () => void; onReplace: (c: Connection) => void; children: ReactNode }) {
-  const client = useMemo(() => createClient({ baseUrl: conn.serverUrl, token: conn.token }), [conn.serverUrl, conn.token])
   return (
-    <DorksProvider client={client}>
-      <Probe conn={conn} onChange={onChange} onReplace={onReplace}>
-        {children}
-      </Probe>
-    </DorksProvider>
+    <CloudPlaceProvider conn={conn}>
+      {(client, place) => {
+        if (place.resolving) return <Connecting />
+        if (place.target.kind === 'choose') return <ChooseMachine place={place} machines={place.target.machines} />
+        const remote = place.target.kind === 'remote' ? place.target.server : null
+        return (
+          <DorksProvider key={remote?.id ?? 'home'} client={client}>
+            <Probe conn={conn} remote={remote} onChange={onChange} onReplace={onReplace}>
+              {children}
+            </Probe>
+          </DorksProvider>
+        )
+      }}
+    </CloudPlaceProvider>
   )
 }
 
-function Probe({ conn, onChange, onReplace, children }: { conn: Connection; onChange: () => void; onReplace: (c: Connection) => void; children: ReactNode }) {
+function Connecting() {
+  return (
+    <GateScreen>
+      <p role="status" className="text-sm text-muted-foreground">
+        Connecting…
+      </p>
+    </GateScreen>
+  )
+}
+
+/** Where the org cannot pick a server alone: several Macs (or none online), or none at all yet. A way back is always there. */
+function ChooseMachine({ place, machines }: { place: CloudPlace; machines: CloudServer[] }) {
+  const name = orgName(place.org, place.cloud)
+  // At most two buttons: the online Macs first.
+  const shown = machines.toSorted((a, b) => Number(b.online) - Number(a.online)).slice(0, 2)
+  return (
+    <GateScreen>
+      <div className="flex flex-col items-center gap-2">
+        {machines.length === 0 ? (
+          <EmptyState figure="laptop" title={`Nothing runs ${name} yet`} description="Pair a Mac with this organization, or add a hosted server, and it shows up here." />
+        ) : (
+          <EmptyState figure="laptop" title={`Connect to a Mac in ${name}`} description={machines.some((m) => m.online) ? undefined : 'None of its Macs is online. Open Dorks on one of them.'}>
+            {shown.map((m) => (
+              <Button key={m.id} size="sm" variant="outline" disabled={!m.online} onClick={() => place.chooseMachine(m.id)}>
+                Connect to {m.name}
+              </Button>
+            ))}
+          </EmptyState>
+        )}
+        <Button size="sm" variant="ghost" onClick={() => place.chooseOrg(null)}>
+          Back to {orgName(place.personal, place.cloud)}
+        </Button>
+      </div>
+    </GateScreen>
+  )
+}
+
+/** Another server could not be reached (offline, or the cloud refused): say so, and offer the way back to this Mac. */
+function RemoteGate({ server, rejected }: { server: CloudServer; rejected: boolean }) {
+  const place = useCloudPlace()
+  const inPersonal = !place?.org || place.org.personal
+  return (
+    <GateScreen>
+      <GateCard>
+        <GateTitle>Can’t reach {server.name}</GateTitle>
+        <p role="alert">
+          {rejected
+            ? `Dorks Cloud did not let you in to ${server.name}. Ask an admin of the organization, or sign in again in Settings.`
+            : `${server.name} is not answering. It comes back once Dorks runs there again; this page keeps retrying.`}
+        </p>
+        <Button variant="outline" onClick={() => (inPersonal ? place?.chooseMachine(undefined) : place?.chooseOrg(null))}>
+          {inPersonal ? 'Back to this Mac' : `Back to ${orgName(place?.personal ?? null, place?.cloud)}`}
+        </Button>
+      </GateCard>
+    </GateScreen>
+  )
+}
+
+function Probe({ conn, remote, onChange, onReplace, children }: { conn: Connection; remote: CloudServer | null; onChange: () => void; onReplace: (c: Connection) => void; children: ReactNode }) {
   const settings = useSettingsState()
   const connection = useConnection()
   const rejected = connection.unauthorized || settings.error?.code === 'forbidden'
+  if (remote && (rejected || (settings.status === 'error' && !settings.data))) return <RemoteGate server={remote} rejected={rejected} />
   if (rejected) {
     return conn.source === 'stored' ? (
       <ConnectForm initialUrl={conn.serverUrl} error="The server rejected that owner token." onConnect={onReplace} />
@@ -83,14 +156,7 @@ function Probe({ conn, onChange, onReplace, children }: { conn: Connection; onCh
       </GateScreen>
     )
   }
-  if (settings.status === 'loading')
-    return (
-      <GateScreen>
-        <p role="status" className="text-sm text-muted-foreground">
-          Connecting…
-        </p>
-      </GateScreen>
-    )
+  if (settings.status === 'loading') return <Connecting />
   if (settings.status === 'error' && !settings.data) {
     return (
       <GateScreen>
@@ -111,7 +177,8 @@ function Probe({ conn, onChange, onReplace, children }: { conn: Connection; onCh
   }
   return (
     <>
-      <KeepAwake />
+      {/* Only this Mac's own work holds it awake; another server's runs there. */}
+      {!remote && <KeepAwake />}
       {children}
     </>
   )

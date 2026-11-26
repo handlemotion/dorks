@@ -5,8 +5,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { ClientEvent, CommentAnchor, CommentView, McpServerView, PullRequestView, ShipStage, ShipView, SkillCandidate, SkillView } from "@dorks/shared";
-import type { Dork, PhoneStatus, Settings, SnapshotStatus } from "./types.ts";
+import type { Dork, Me, PhoneStatus, Settings, SnapshotStatus } from "./types.ts";
 import { mockAutomations } from "./mock-automations.ts";
+import { mockCloud, type MockCloudPlace } from "./mock-cloud.ts";
 
 /** A new session's mode (docs/modes.md) from its body: `mode`, or the older `kind: "coordinator"` for a nerd; code by default. */
 const modeOf = (body: Record<string, unknown>): "chat" | "code" | "nerd" | undefined =>
@@ -31,6 +32,12 @@ export interface MockOptions {
   configured?: boolean;
   /** Milliseconds between the fake agent's steps. */
   tick?: number;
+  /** Who `GET /api/me` says the caller is (docs/cloud.md); the local owner by default. Another place's server answers as a teammate. */
+  me?: Partial<Me>;
+  /** Start signed in to the fake Dorks Cloud (mock-cloud.ts). */
+  cloudSignedIn?: boolean;
+  /** Chats to start with, each running the fake agent's first turn (another place's server, mock-cloud.ts). */
+  seed?: MockCloudPlace["seed"];
 }
 
 type EventBody = Record<string, unknown> & { type: string };
@@ -1413,6 +1420,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     ],
     // The phone link (docs/mobile.md): a pairing the fake phone claims after 8 s.
     ["GET /api/phone", ({ res }) => json(res, 200, phone)],
+    ["GET /api/me", ({ res }) => json(res, 200, { kind: "local", id: null, name: null, email: null, role: "owner", org: null, plan: null, serverOrg: null, ...opts.me } satisfies Me)],
     [
       "POST /api/phone/pair",
       ({ res }) => {
@@ -1623,13 +1631,26 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     images.set(id, { type: req.headers["content-type"] ?? "image/png", bytes: Buffer.concat(chunks) });
     return json(res, 200, { id });
   };
-  /** The health check and `GET /images/:id` (no token), `POST /api/images` (with it); undefined for any other route. */
-  const routeImages = (req: IncomingMessage, res: ServerResponse, route: string, authorized: boolean) => {
+  /** The health check, `GET /images/:id` and Dorks Cloud's (no token), `POST /api/images` (with it); undefined for any other route. */
+  const routeImages = (req: IncomingMessage, res: ServerResponse, route: string, authorized: boolean, url: URL) => {
+    // Dorks Cloud (mock-cloud.ts): another place's shared images need no token (outside /api like ours, the id is the capability).
+    if (url.pathname.startsWith("/cloud/servers/") || (authorized && url.pathname.startsWith("/api/cloud")))
+      return cloud.route(req, res, route.slice(0, route.indexOf(" ")), url.pathname, url.search).then((found) => found || fail(res, "not_found", "Unknown route."));
     if (route.endsWith(" /api/health")) return json(res, 200, { ok: true }) ?? true;
     if (route.startsWith("GET /images/")) return serveImage(res, route.slice("GET ".length)) ?? true;
     if (route === "POST /api/images" && authorized) return uploadImage(req, res);
     return undefined;
   };
+  // Dorks Cloud (docs/mobile.md, "Desktop: Dorks Cloud"): its places are other mock servers, started the first time they are reached.
+  const cloud = mockCloud({
+    signedIn: opts.cloudSignedIn,
+    json,
+    fail,
+    readBody,
+    broadcast,
+    thisMac: () => ({ id: phone.macId, name: phone.name }),
+    startChild: (seed, me) => startMockServer({ configured: true, tick, seed, me }),
+  });
   const route = async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", "http://mock");
     const path = url.pathname;
@@ -1639,7 +1660,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     res.setHeader("access-control-allow-methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
     if (method === "OPTIONS") return void res.writeHead(204).end();
     const bearer = /^Bearer (.+)$/.exec(req.headers.authorization ?? "")?.[1] ?? url.searchParams.get("access_token");
-    const image = routeImages(req, res, `${method} ${path}`, bearer === token);
+    const image = routeImages(req, res, `${method} ${path}`, bearer === token, url);
     if (image) return image;
     if (bearer !== token) return fail(res, "forbidden", "The owner token was rejected.");
     if (path === "/api/live" && method === "GET") return openLive(req, res);
@@ -1663,6 +1684,11 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     if (cm) return routeComposio(c, cm[1]!, !!cm[2]);
     return routeCustomize(c, path);
   };
+
+  for (const s of opts.seed ?? []) {
+    const id = addDork({ repo: s.repo, message: s.message, title: s.title, provider: "claude" });
+    later(tick, () => startTurn(id, s.message));
+  }
 
   const server: Server = createServer((req, res) => {
     route(req, res).catch(() => {
@@ -1697,6 +1723,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       live.clear();
     },
     async close() {
+      await cloud.close();
       for (const t of timers) clearTimeout(t);
       for (const r of live) r.end();
       server.closeAllConnections();

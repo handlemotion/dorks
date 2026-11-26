@@ -4,11 +4,12 @@ import { FluidHoverHighlight } from '@dorks/ui/fluid-hover-highlight'
 import { Sidebar, useSidebar } from '@dorks/ui/sidebar'
 import { SIDEBAR_ROW, SIDEBAR_SECTION } from '../sidebarChrome'
 import { useRowHover } from '../useRowHover'
-import { PERSONAL_PAGES, SETUP_PAGE, organizationPages, type SettingsPageDef } from './pages'
+import { CLOUD_PAGES, PERSONAL_PAGES, SETUP_PAGE, organizationPages, type SettingsPageDef } from './pages'
+import { pageAccess, useSettingsAccess, type SettingsAccess } from './access'
 
 /**
  * The sidebar while in settings, after Omni's: it takes the app sidebar's place with the same chrome (48px title bar, 30px rows under
- * one springing hover fill), Back to app at the top, Setup, then the pages under Personal and Organization. Moving between settings
+ * one springing hover fill), Back to app at the top, Setup, then the pages under Personal, Dorks Cloud and Server (on another server without what stays on its computer). Moving between settings
  * pages replaces the history entry, so Back to app (and the title bar's Back) returns to where the app was.
  */
 export function SettingsSidebar() {
@@ -16,6 +17,7 @@ export function SettingsSidebar() {
   const hover = useRowHover()
   const router = useRouter()
   const canGoBack = useCanGoBack()
+  const access = useSettingsAccess()
   return (
     <Sidebar collapsible={isMobile ? 'offcanvas' : 'none'} className={isMobile ? undefined : 'h-full w-full'}>
       <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden text-foreground">
@@ -39,14 +41,18 @@ export function SettingsSidebar() {
               </Link>
               <PageLink page={SETUP_PAGE} />
             </nav>
-            <Group label="Personal" pages={PERSONAL_PAGES} />
-            <Group label="Organization" pages={organizationPages()} />
+            <Group label="Personal" pages={visible(PERSONAL_PAGES, access)} />
+            <Group label="Dorks Cloud" pages={CLOUD_PAGES} />
+            <Group label="Server" pages={visible(organizationPages(), access)} />
           </div>
         </div>
       </div>
     </Sidebar>
   )
 }
+
+/** On another server, what never crosses the relay is left out (access.tsx). */
+const visible = (pages: SettingsPageDef[], access: SettingsAccess) => pages.filter((p) => pageAccess(p.remote, access) !== 'hidden')
 
 function Group({ label, pages }: { label: string; pages: SettingsPageDef[] }) {
   return (

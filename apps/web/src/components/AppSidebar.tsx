@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from '@tanstack/react-router'
-import { BlocksIcon, BoxIcon, ChevronDownIcon, ChevronRightIcon, ClockFadingIcon, PlusIcon } from 'lucide-react'
+import { BlocksIcon, BoxIcon, ChevronDownIcon, ChevronRightIcon, ClockFadingIcon, ListFilterIcon, PlusIcon } from 'lucide-react'
 import type { DorkState } from '@dorks/shared'
 import type { Usage } from '@dorks/client'
 import { useBuilds, useDorks, useGithubRepos, useUsage } from '@dorks/client/react'
@@ -19,7 +19,8 @@ import { Logo } from './onboarding/List'
 import { OwnerAvatar, ownerOf } from './RepoAvatar'
 import { ownersOf, useOwnerScope } from './ownerScope'
 import { MODE_ICONS } from './ModeMenu'
-import { SIDEBAR_ROW, SIDEBAR_SECTION } from './sidebarChrome'
+import { MachineRow, OrgSwitcher, StaticOrgSwitcher } from './OrgSwitcher'
+import { SIDEBAR_ICON_BUTTON, SIDEBAR_ROW, SIDEBAR_SECTION } from './sidebarChrome'
 import { HistoryButtons, TITLEBAR_AFTER_TOGGLE } from './WindowControls'
 import { useAppWorkspace, workspaceOf, type AppWorkspace } from './appWorkspace'
 import { UpdatePrompt } from './UpdatePrompt'
@@ -71,6 +72,8 @@ export function AppSidebar() {
       accounts={github}
       counts={{ '/builds': reviews }}
       onDisconnect={disconnect}
+      switcher={<OrgSwitcher login={github?.login} />}
+      machines={<MachineRow />}
       limits={limits}
       version={window.__DORKS__?.version}
       usage={
@@ -119,22 +122,24 @@ function GithubMark() {
 }
 
 /**
- * The header's switcher, the way an organization switcher works: the current owner (a GitHub user or organization) with its avatar,
- * and a menu to scope the sidebar to another owner or to all of them. Changing the server lives in the account menu at the foot.
+ * The GitHub owner filter, beside the org switcher: the org says where you work, this narrows what you see there to one GitHub user
+ * or organization (the sidebar's chats and the new-session repositories alike, see ownerScope.ts). A filter mark, or the owner's
+ * avatar while one is picked. Only when there are two owners or more to tell apart.
  */
-function OwnerSwitcher({ owners, scope, setScope }: { owners: string[]; scope: string; setScope: (scope: string) => void }) {
-  const name = scope || 'All repositories'
+function OwnerFilter({ owners, scope, setScope }: { owners: string[]; scope: string; setScope: (scope: string) => void }) {
+  if (owners.length < 2 && !scope) return null
   return (
     <DropdownMenu modal={false}>
-      <DropdownMenuTrigger aria-label={`Switch owner, currently ${name}`} className={`${SIDEBAR_ROW} text-foreground aria-expanded:bg-foreground/[0.05]`}>
-        {scope ? <OwnerAvatar owner={scope} className="-mx-px" /> : <GithubMark />}
-        <span className="min-w-0 truncate">{name}</span>
-        <ChevronDownIcon aria-hidden className="text-muted-foreground" />
+      <DropdownMenuTrigger
+        aria-label={scope ? `Filter by GitHub owner, currently ${scope}` : 'Filter by GitHub owner'}
+        title={scope ? `Showing ${scope}` : 'Filter by GitHub owner'}
+        className={`relative z-10 flex shrink-0 items-center justify-center outline-none focus-visible:outline-2 focus-visible:outline-ring ${SIDEBAR_ICON_BUTTON}`}
+      >
+        {scope ? <OwnerAvatar owner={scope} size={16} /> : <ListFilterIcon />}
       </DropdownMenuTrigger>
-      {/* A little wider than the sidebar's row, so long organization names fit. */}
-      <DropdownMenuContent align="start" className="w-[calc(var(--anchor-width)+1.5rem)]">
+      <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuGroup>
-          <DropdownMenuLabel>Owners</DropdownMenuLabel>
+          <DropdownMenuLabel>GitHub owner</DropdownMenuLabel>
           <DropdownMenuRadioGroup value={scope} onValueChange={(value) => setScope(value as string)}>
             <DropdownMenuRadioItem value={ALL} closeOnClick>
               <GithubMark />
@@ -195,8 +200,9 @@ const PAGES = [
 ] as const
 
 /**
- * The app's sidebar: a 48px title bar (traffic lights, the toggle, the workspace switcher, back and forward); in Agents the owner
- * switcher, New session and the app's pages, then the nerds, then the code sessions of the owner in scope, grouped by repository (a label per repository, alphabetical, that folds its section shut and remembers it),
+ * The app's sidebar: a 48px title bar (traffic lights, the toggle, the workspace switcher, back and forward); the org switcher (where
+ * you work), in Agents with the GitHub owner filter beside it, the Mac the org is connected to when it has several, New session and the
+ * app's pages, then the nerds, then the code sessions of the owner in scope, grouped by repository (a label per repository, alphabetical, that folds its section shut and remembers it),
  * each group reorderable and remembering its order; the account menu (the owner's avatar) at the foot. Rows are 30px, 2px apart, with one hover fill springing between them; groups are 16px apart. It sits
  * flat on the app fill in a resizable panel (see AppFrame); on phones it is shadcn's sheet.
  */
@@ -212,8 +218,14 @@ export function AppSidebarView({
   version,
   onArchive,
   counts,
+  switcher,
+  machines,
 }: {
   chats: Chat[]
+  /** The org switcher (OrgSwitcher); a static Personal row without one (demos). */
+  switcher?: ReactNode
+  /** Under it, inside an org with several Macs: which one the app is connected to (MachineRow). */
+  machines?: ReactNode
   /** A count beside a page in the nav (Builds: agents' changes to review); nothing when zero. */
   counts?: Partial<Record<(typeof PAGES)[number]['to'], number>>
   /** What the GitHub CLI's login can see (`GET /api/github/repos`): its user and organizations fill the owner switcher. */
@@ -290,7 +302,11 @@ export function AppSidebarView({
           <FluidHoverHighlight className="z-0 rounded-[6px] bg-foreground/[0.05]" rect={hover.rect} session={hover.session} />
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto overscroll-y-none">
             <nav aria-label="App" className="flex shrink-0 flex-col gap-0.5">
-              {workspace === 'agents' && <OwnerSwitcher owners={owners} scope={scope} setScope={setScope} />}
+              <div className="flex min-w-0 items-center gap-0.5">
+                {switcher ?? <StaticOrgSwitcher login={accounts?.login} />}
+                {workspace === 'agents' && <OwnerFilter owners={owners} scope={scope} setScope={setScope} />}
+              </div>
+              {machines}
               {/* A fresh state on every click, so clicking it again while there still counts as a new visit and puts the cursor in the box. */}
               <Link to="/dorks" search={{}} state={(prev) => ({ ...prev, visit: Date.now() })} {...rowLink(pathname === '/dorks' && !activeId)}>
                 {/* The plus is a narrow glyph: drawn at 16px in the 14px column so it reads as wide as the page icons under it. */}

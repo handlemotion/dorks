@@ -38,6 +38,11 @@ import type {
   LocalAccess,
   LocalDecision,
   PhoneStatus,
+  CloudPlaces,
+  CloudStatus,
+  CloudOrgAction,
+  CloudOrgDetail,
+  CloudInvitation,
   InputAnswer,
 } from "./types.ts";
 
@@ -48,6 +53,8 @@ export interface ClientConfig extends ApiConfig {
   olderPageSize?: number;
   /** Delay before retry n of a failed read and before reconnect attempt n of the live stream. */
   retryDelay?: (n: number) => number;
+  /** Where shared images load from (`<imageBaseUrl>/images/:id`); default `baseUrl`. Another server reached through this one serves them elsewhere. */
+  imageBaseUrl?: string;
 }
 
 export interface ConnectionState {
@@ -219,6 +226,7 @@ export class DorksClient {
         this.invalidate("composio");
         this.invalidate("local-access");
         this.invalidate("phone");
+        this.invalidate("cloud");
         break;
       case "snapshot":
         this.invalidate("snapshot");
@@ -365,6 +373,26 @@ export class DorksClient {
   /** The phone link: paired or not, the link's state and a pairing in progress. Refreshed with settings. */
   phone() {
     return this.query<PhoneStatus>("phone", () => this.api.phone());
+  }
+  /** The Dorks Cloud account this server is signed in to. Refreshed with settings. */
+  cloud() {
+    return this.query<CloudStatus>("cloud", () => this.api.cloud());
+  }
+  /** The account's organizations and servers (its Macs, its organizations' hosted servers); refreshed with `cloud`. */
+  cloudPlaces() {
+    return this.query<CloudPlaces>("cloud:places", () => this.api.cloudPlaces());
+  }
+  /** An organization's members and invitations (team management). */
+  cloudOrg(orgId: string) {
+    return this.query<CloudOrgDetail>(`cloud:org:${orgId}`, () => this.api.cloudOrgDetail(orgId));
+  }
+  /** Invitations waiting for the signed-in account. */
+  cloudInvitations() {
+    return this.query<CloudInvitation[]>("cloud:invitations", () => this.api.cloudMyInvitations());
+  }
+  /** Reads the account's places again (a Mac came online, a teammate added a server). */
+  refreshCloudPlaces() {
+    this.invalidate("cloud:places");
   }
   mcpServers() {
     return this.query<McpServerView[]>("mcp-servers", () => this.api.listMcpServers());
@@ -513,7 +541,7 @@ export class DorksClient {
     searchFiles: async (id: string, q: string) => (await this.api.searchFiles(id, q)).files,
     /** Where a shared screenshot (`dorks-image:<id>` in a message) loads from. The id is the capability: no token in the URL. */
     /** `width`: a smaller copy for showing it small (the server snaps it to a size it keeps; an older server sends the original). */
-    imageUrl: (imageId: string, width?: number) => `${this.cfg.baseUrl.replace(/\/+$/, "")}/images/${encodeURIComponent(imageId)}${width ? `?w=${width}` : ""}`,
+    imageUrl: (imageId: string, width?: number) => `${(this.cfg.imageBaseUrl ?? this.cfg.baseUrl).replace(/\/+$/, "")}/images/${encodeURIComponent(imageId)}${width ? `?w=${width}` : ""}`,
     chooseCodexModel: async (id: string, model: string, effort: string) => {
       await this.api.chooseCodexModel(id, model, effort);
       this.invalidate(`dork:${id}`);
@@ -690,6 +718,31 @@ export class DorksClient {
     cancelPhonePair: async () => {
       await this.api.cancelPhonePair();
       this.invalidate("phone");
+    },
+    cloudSendCode: (email: string) => this.api.cloudSendCode(email),
+    cloudVerify: async (email: string, code: string) => {
+      const s = await this.api.cloudVerify(email, code);
+      this.invalidate("cloud");
+      return s;
+    },
+    /** A new team owned by the account; resolves with it once the places list has it. */
+    cloudCreateOrg: async (name: string) => {
+      const org = await this.api.cloudCreateOrg(name);
+      this.invalidate("cloud:places");
+      return org;
+    },
+    /** A team action (invite, change a role, remove, leave, rename, delete, answer an invitation); everything cloud is read again after. */
+    cloudOrgAction: async (action: CloudOrgAction, body: Record<string, unknown>) => {
+      try {
+        return await this.api.cloudOrgAction(action, body);
+      } finally {
+        this.invalidate("cloud");
+      }
+    },
+    cloudInvitation: (id: string) => this.api.cloudInvitation(id),
+    cloudSignOut: async () => {
+      await this.api.cloudSignOut();
+      this.invalidate("cloud");
     },
     unpairPhone: async () => {
       await this.api.unpairPhone();

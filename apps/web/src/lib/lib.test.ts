@@ -1,6 +1,7 @@
 import { expect, it } from 'vite-plus/test'
 import { resolveConnection, STORAGE_TOKEN, STORAGE_URL } from './connection'
 import { externalLinkHref } from './desktop'
+import { resolveTarget } from './place'
 
 const memory = () => {
   const m = new Map<string, string>()
@@ -26,4 +27,29 @@ it('opens external http(s)/mailto links in the browser while keeping in-app hash
   expect(externalLinkHref('/settings', 'http://localhost:3000/settings', '', 'http://localhost:3000')).toBeNull()
   expect(externalLinkHref('/preview', 'http://localhost:3000/preview', '_blank', 'http://localhost:3000')).toBe('http://localhost:3000/preview')
   expect(externalLinkHref('javascript:alert(1)', 'javascript:alert(1)', '_blank', origin)).toBeNull()
+})
+
+// Picking an org must land on the right server: the one that decides whose data the whole app shows.
+it('resolves an org to its hosted server, this Mac, its one Mac, or asks', () => {
+  const mac = (id: string, online = true) => ({ id, name: id, kind: 'mac' as const, online, lastSeenAt: null })
+  const org = (servers: ReturnType<typeof mac>[] | { id: string; name: string; kind: 'hosted'; online: boolean; lastSeenAt: null }[], personal = false) => ({
+    id: 'o',
+    name: 'O',
+    slug: null,
+    logo: null,
+    personal,
+    plan: null,
+    role: 'member',
+    active: false,
+    servers,
+  })
+  const hosted = { id: 'h', name: 'h', kind: 'hosted' as const, online: true, lastSeenAt: null }
+  expect(resolveTarget(org([hosted]), null)).toEqual({ kind: 'remote', server: hosted })
+  expect(resolveTarget(org([mac('me'), mac('mini')], true), 'me')).toEqual({ kind: 'home' })
+  expect(resolveTarget(org([mac('mini')], true), null, 'mini')).toEqual({ kind: 'remote', server: mac('mini') })
+  expect(resolveTarget(org([mac('me'), mac('r')]), 'me')).toEqual({ kind: 'home' })
+  expect(resolveTarget(org([mac('r')]), null)).toEqual({ kind: 'remote', server: mac('r') })
+  expect(resolveTarget(org([mac('r', false)]), null)).toMatchObject({ kind: 'choose', home: false })
+  expect(resolveTarget(org([mac('r'), mac('s')]), null)).toMatchObject({ kind: 'choose', machines: [mac('r'), mac('s')] })
+  expect(resolveTarget(org([]), null)).toEqual({ kind: 'choose', machines: [], home: false })
 })

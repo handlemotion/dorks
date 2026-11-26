@@ -631,4 +631,9 @@ export const MIGRATIONS: string[] = [
   -- delete it (services/comments.ts).
   ALTER TABLE preview_comments ADD COLUMN written_by TEXT;
   `,
+  `
+  -- The Dorks Cloud account this server is signed in to (services/cloudAccount.ts, docs/mobile.md "Desktop: Dorks Cloud"): its
+  -- session token and user, encrypted. The UI reaches the account's other servers through this server with it.
+  ALTER TABLE settings ADD COLUMN cloud_session_enc TEXT;
+  `,
 ];

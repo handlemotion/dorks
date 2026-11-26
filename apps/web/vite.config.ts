@@ -21,6 +21,8 @@ export default defineConfig({
           '/api': { target: `http://127.0.0.1:${mockPort}`, changeOrigin: true },
           // Shared images (attachments, screenshots) are served outside /api.
           '/images': { target: `http://127.0.0.1:${mockPort}`, changeOrigin: true },
+          // Another Dorks Cloud server's images, through the mock (mock-cloud.ts).
+          '/cloud': { target: `http://127.0.0.1:${mockPort}`, changeOrigin: true },
         },
       }
     : undefined,

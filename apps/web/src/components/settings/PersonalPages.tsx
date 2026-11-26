@@ -6,6 +6,7 @@ import { Button } from '@dorks/ui/button'
 import { GH_LOGIN_COMMAND, GH_ORG_ACCESS_URL, githubProblem, missingScopesText, scopeFixCommand } from '../../lib/github'
 import { usePending } from '../../lib/pending'
 import { AntigravitySignIn } from '../AntigravitySignIn'
+import { useSettingsAccess } from './access'
 import { OwnerAvatar } from '../RepoAvatar'
 import { SettingsButtonRow, SettingsGroup, SettingsGroupBody, SettingsInputRow, SettingsRow, SettingsSection, SettingsSections, SettingsSelectRow, SettingsStatus, SettingsValueRow } from './kit'
 
@@ -33,10 +34,12 @@ export function AppearancePage() {
 }
 
 export function AgentsPage({ settings }: { settings: Settings }) {
+  // Sign-ins never cross the relay: on another server, Antigravity's is left out.
+  const { remote } = useSettingsAccess()
   return (
     <SettingsSections>
       <ClaudeSection settings={settings} />
-      <AntigravitySection settings={settings} />
+      {!remote && <AntigravitySection settings={settings} />}
       <CodexSection settings={settings} />
     </SettingsSections>
   )

@@ -1,5 +1,5 @@
 // Runs the mock UI server: `pnpm --filter @dorks/client mock` (Node 24 runs the TypeScript directly).
-// Env: MOCK_PORT (default 4747), MOCK_TOKEN (default "mock-owner-token"), MOCK_CONFIGURED=1 to skip onboarding, MOCK_TICK ms.
+// Env: MOCK_PORT (default 4747), MOCK_TOKEN (default "mock-owner-token"), MOCK_CONFIGURED=1 to skip onboarding, MOCK_TICK ms, MOCK_CLOUD=1 to start signed in to the fake Dorks Cloud.
 import { startMockServer } from "./mock-server.ts";
 
 const server = await startMockServer({
@@ -7,6 +7,7 @@ const server = await startMockServer({
   token: process.env.MOCK_TOKEN ?? "mock-owner-token",
   configured: process.env.MOCK_CONFIGURED === "1",
   tick: process.env.MOCK_TICK ? Number(process.env.MOCK_TICK) : undefined,
+  cloudSignedIn: process.env.MOCK_CLOUD === "1",
 });
 // One JSON line, the same shape as the real server's ready line, so a supervisor can read either.
 console.log(JSON.stringify({ ready: true, ui: server.url, mock: true }));

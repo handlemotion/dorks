@@ -252,6 +252,86 @@ export interface PhoneStatus {
   pairing: PhonePairing | null;
 }
 
+/** The Dorks Cloud account this server is signed in to (`GET /api/cloud`, docs/mobile.md "Desktop: Dorks Cloud"). */
+export interface CloudStatus {
+  /** The relay's origin; null when the cloud is off (`DORKS_CLOUD_URL` empty). */
+  cloudUrl: string | null;
+  user: CloudUser | null;
+}
+
+export interface CloudUser {
+  id: string;
+  name: string;
+  email: string;
+  image: string | null;
+}
+
+/** A server an organization owns: a member's Mac (`mac`), or the organization's always-on server (`hosted`). */
+export interface CloudServer {
+  id: string;
+  name: string;
+  kind: "mac" | "hosted";
+  online: boolean;
+  lastSeenAt: number | null;
+}
+
+/**
+ * A Dorks Cloud organization (`GET /v1/orgs` on the relay). Every account has one `personal` org (named "Personal"); teams are the
+ * others. `plan`: what it pays for (`collab`); `role`: the account's role in it; `servers`: the servers it owns.
+ */
+export interface CloudOrg {
+  id: string;
+  name: string;
+  slug: string | null;
+  logo: string | null;
+  personal: boolean;
+  plan: string | null;
+  role: string | null;
+  active: boolean;
+  servers: CloudServer[];
+}
+
+/** A role in a Dorks Cloud organization; Better Auth may send a comma list, whose strongest counts. */
+export type CloudRole = "owner" | "admin" | "member";
+
+/** A member of an organization (Better Auth `get-full-organization`). */
+export interface CloudMember {
+  id: string;
+  userId: string;
+  role: string;
+  user: { id: string; name: string; email: string; image?: string | null };
+}
+
+/** An invitation: to an org you manage (its pending invitations), or to you (`list-user-invitations`, `get-invitation`). */
+export interface CloudInvitation {
+  id: string;
+  email: string;
+  role: string;
+  status: "pending" | "accepted" | "rejected" | "canceled" | string;
+  organizationId: string;
+  organizationName?: string;
+  inviterEmail?: string;
+  expiresAt: string | number;
+}
+
+/** An organization with its members and invitations (`GET /api/cloud/auth/organization/get-full-organization`). */
+export interface CloudOrgDetail {
+  id: string;
+  name: string;
+  slug: string | null;
+  logo: string | null;
+  members: CloudMember[];
+  invitations: CloudInvitation[];
+}
+
+/** The organization actions the UI posts through its server (Better Auth's `/api/auth/organization/*`). */
+export type CloudOrgAction = "invite-member" | "cancel-invitation" | "accept-invitation" | "reject-invitation" | "update-member-role" | "remove-member" | "leave" | "update" | "delete";
+
+/** `GET /api/cloud/places`: the account's organizations, personal first, with their servers. */
+export interface CloudPlaces {
+  orgs: CloudOrg[];
+}
+
 export interface PhonePairing {
   /** Shown as typed on the phone, `ABCD-2345`. */
   code: string;
