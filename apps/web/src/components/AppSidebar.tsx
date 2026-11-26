@@ -170,7 +170,8 @@ function WorkspaceSwitcher({ workspace, onChange }: { workspace: AppWorkspace; o
         className="flex h-7 min-w-0 shrink items-center gap-0.5 rounded-[6px] px-1.5 text-sm text-muted-foreground outline-none hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring aria-expanded:bg-foreground/[0.05] aria-expanded:text-foreground"
       >
         <span className="min-w-0 truncate">{current.label}</span>
-        <ChevronDownIcon aria-hidden className="size-3 shrink-0" />
+        {/* 1.5px down: centred on the label's lowercase letters, not its line box. */}
+        <ChevronDownIcon aria-hidden className="size-3 shrink-0 translate-y-[1.5px]" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-44">
         <DropdownMenuRadioGroup value={workspace} onValueChange={(value) => onChange(value as AppWorkspace)}>
