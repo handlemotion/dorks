@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@dorks/ui/button'
+import { startCloudSignIn } from '../../lib/cloudSignIn'
 import { usePending } from '../../lib/pending'
 import { orgName, useCloudInvitations, useCloudPlace } from '../CloudPlace'
 import { EmptyState } from '../EmptyState'
 import { OrgMark } from '../OrgSwitcher'
 import { SettingsGroup, SettingsInputRow, SettingsRow, SettingsSection, SettingsSections, SettingsStatus, StatusDot } from './kit'
 
-// Dorks Cloud (docs/mobile.md, "Desktop: Dorks Cloud"): sign this app in with the account the phone uses, by an emailed code. The
+// Dorks Cloud (docs/mobile.md, "Desktop: Dorks Cloud"): sign this app in with the account the phone uses, in the browser. The
 // session is kept by this Mac's server (encrypted), which then lists the account's organizations for the sidebar's switcher and
 // reaches their servers through the relay.
 
@@ -20,63 +21,22 @@ export function CloudPage() {
 
 function SignIn() {
   const place = useCloudPlace()!
-  const [email, setEmail] = useState('')
-  const [code, setCode] = useState('')
-  const [sentTo, setSentTo] = useState<string | null>(null)
+  const [opened, setOpened] = useState(false)
   const { run, pending, error } = usePending()
-  const actions = place.home.actions
   return (
     <SettingsSections>
       <SettingsSection title="Sign in to Dorks Cloud" description="Work in your organizations and on your other Macs from here. Use the account you use on your phone.">
-        {sentTo ? (
-          <SettingsGroup label="Code" onSubmit={() => void run(() => actions.cloudVerify(sentTo, code))}>
-            <SettingsInputRow
-              id="cloud-code"
-              label="Code"
-              description={`Sent to ${sentTo}`}
-              aria-label="sign-in code"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              autoFocus
-              placeholder="123456"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              trailing={
-                <Button type="submit" size="sm" disabled={pending || code.replace(/\s+/g, '').length < 6}>
-                  Sign in
-                </Button>
-              }
-            />
-            <SettingsRow
-              label="No code?"
-              description="It can take a minute. Check your spam folder."
-              control={
-                <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => (setSentTo(null), setCode(''))}>
-                  Use another email
-                </Button>
-              }
-            />
-          </SettingsGroup>
-        ) : (
-          <SettingsGroup label="Email" onSubmit={() => void run(async () => (await actions.cloudSendCode(email.trim()), setSentTo(email.trim())))}>
-            <SettingsInputRow
-              id="cloud-email"
-              label="Email"
-              description="We email you a six-digit code."
-              aria-label="email"
-              type="email"
-              autoComplete="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              trailing={
-                <Button type="submit" size="sm" disabled={pending || !email.includes('@')}>
-                  Send code
-                </Button>
-              }
-            />
-          </SettingsGroup>
-        )}
+        <SettingsGroup>
+          <SettingsRow
+            label="Dorks Cloud account"
+            description={opened ? 'Finish signing in in your browser. This app signs in when you come back.' : 'Sign in or create an account in your browser.'}
+            control={
+              <Button size="sm" variant={opened ? 'outline' : 'default'} disabled={pending} onClick={() => void run(async () => (await startCloudSignIn(place.home), setOpened(true)))}>
+                {opened ? 'Open again' : 'Sign in'}
+              </Button>
+            }
+          />
+        </SettingsGroup>
         <SettingsStatus error={error} />
       </SettingsSection>
     </SettingsSections>

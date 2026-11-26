@@ -162,9 +162,13 @@ The desktop (and the web UI) works in Dorks Cloud **organizations** ([dorks-clou
 every account has a personal org, made at sign-up, and can create or join others to share chats with friends or colleagues. Every
 server belongs to one org: a member's Mac (normally in its owner's personal org) or, on Dorks Teams and Dorks Cloud, the server Dorks runs for the org (`orgRuntime`).
 
-- **Sign-in** is the phone's email code (Better Auth `emailOTP`), started from Settings, **Dorks Cloud**, or the sidebar switcher's
-  *Sign in to Dorks Cloud*. The local server holds the session, encrypted in settings (`cloud_session_enc`), and never hands it to the
-  UI. Pairing a phone is unchanged and separate: the Mac token only opens this Mac's own relay socket.
+- **Sign-in** happens in the browser, started from Settings › Account or the sidebar switcher's *Sign in to Dorks Cloud*; the app
+  has no sign-in form. The local server makes a one-time `state` (in memory, 30 minutes) and the app opens
+  `https://dorks.build/login?next=/onboarding&app=1&state=<state>` (`DORKS_SITE_URL`). After sign-in (and onboarding for a new
+  account) the site gets a one-time code from `POST /v1/app-handoff {state}` and opens `dorks://auth?code=<code>&state=<state>`; the
+  desktop shell opens `#/auth` with both, and the local server checks the state is one it opened (once) and trades the code for a
+  Better Auth session token (`POST /v1/app-handoff/redeem {code, state}`, the account from `/api/auth/get-session` unless the answer
+  names it). The local server holds the session, encrypted in settings (`cloud_session_enc`), and never hands it to the UI. Pairing a phone is unchanged and separate: the Mac token only opens this Mac's own relay socket.
 - **The switcher** (the sidebar's top row) lists orgs only: the personal org first (your name), the others with their logo and plan, then
   *Create organization* (Better Auth `organization/create`). Machines are never entries in it.
 - **Which server an org means** is resolved inside the org (`apps/web/src/lib/place.ts`): the server Dorks runs for it (`kind: "hosted"`) when it has one,
@@ -191,8 +195,8 @@ server belongs to one org: a member's Mac (normally in its owner's personal org)
 | Method and path (local server) | Body | Result |
 |---|---|---|
 | `GET /api/cloud` | | `{cloudUrl, user: {id, name, email, image} \| null}` |
-| `POST /api/cloud/sign-in/email` | `{email}` | `{}`: the relay emails a six-digit code |
-| `POST /api/cloud/sign-in/verify` | `{email, code}` | `{cloudUrl, user}`: signed in, the session stored encrypted |
+| `POST /api/cloud/sign-in` | | `{url}`: the site's sign-in page, with a fresh one-time state, for the browser |
+| `POST /api/cloud/sign-in/finish` | `{code, state}` | `{cloudUrl, user}`: the `dorks://auth` link's code redeemed, the session stored encrypted; `invalid` for a state this server did not open or already used |
 | `DELETE /api/cloud/session` | | `{}`: signed out (here and, best effort, on the relay) |
 | `GET /api/cloud/places` | | `{orgs: {id, name, slug, logo, personal, plan, role, active, servers: {id, name, kind, online, lastSeenAt}[]}[]}`, personal first (the relay's `GET /v1/orgs`; an older relay's `/v1/macs` grouped by org); `not_configured` when signed out or the session ended |
 | `POST /api/cloud/orgs` | `{name}` | the new org, owned by the account |

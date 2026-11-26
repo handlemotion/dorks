@@ -55,8 +55,7 @@ export class CloudImportStandIn {
 
   handle = async (req: Request): Promise<Response> => {
     const p = new URL(req.url).pathname;
-    if (p === "/api/auth/email-otp/send-verification-otp") return Response.json({ success: true });
-    if (p === "/api/auth/sign-in/email-otp") return Response.json({ token: this.token, user: { id: "u1", name: "Ada", email: "ada@example.com" } });
+    if (p === "/v1/app-handoff/redeem") return Response.json({ token: this.token, user: { id: "u1", name: "Ada", email: "ada@example.com" } });
     if (req.headers.get("authorization") !== `Bearer ${this.token}`) return Response.json({ message: "unauthorized" }, { status: 401 });
     if (p === "/v1/orgs" && req.method === "GET") return Response.json(this.orgs());
     return this.imports_(req, p);

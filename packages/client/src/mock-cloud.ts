@@ -1,5 +1,5 @@
 // The mock's stand-in for Dorks Cloud (docs/mobile.md, "Desktop: Dorks Cloud"): the local server's `/api/cloud` routes, with a
-// fake email-code sign-in (any address, any six digits), the account's places (Macs, and organizations with the servers Dorks runs for them),
+// fake browser sign-in (`dorks://auth` with the mock's state and any code), the account's places (Macs, and organizations with the servers Dorks runs for them),
 // and `/api/cloud/servers/:id/api/*`, answered by a separate in-memory mock server per place, so switching really re-points the app.
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { CloudOrg, CloudServer, CloudStatus, CloudUser, Me } from "./types.ts";
@@ -19,6 +19,9 @@ export interface MockChild {
 }
 
 type Json = (res: ServerResponse, status: number, body: unknown) => void;
+
+/** The one sign-in state the mock hands out: `#/auth?code=any&state=mock-state-0001` signs it in. */
+const MOCK_STATE = "mock-state-0001";
 
 /** The account's orgs as `GET /v1/orgs` lists them: the personal one (with a second Mac of the owner's), then two teams. */
 const ORGS: MockOrg[] = [
@@ -182,14 +185,11 @@ export function mockCloud(opts: {
     res.end();
   };
 
-  const signIn = async (req: IncomingMessage, res: ServerResponse, verify: boolean) => {
+  /** The `dorks://auth` link's code and state: any code, the state the mock handed out. */
+  const signIn = async (req: IncomingMessage, res: ServerResponse) => {
     const body = await opts.readBody(req).catch(() => ({}) as Record<string, unknown>);
-    const email = typeof body.email === "string" ? body.email.trim() : "";
-    if (!/^[^@\s]+@[^@\s]+$/.test(email)) return fail(res, "invalid", "Enter your email");
-    if (!verify) return json(res, 200, {});
-    const code = typeof body.code === "string" ? body.code.replace(/\s+/g, "") : "";
-    if (!/^\d{6}$/.test(code)) return fail(res, "invalid", "That code did not work");
-    user = { ...DEMO, email, name: email.split("@")[0]! };
+    if (body.state !== MOCK_STATE || typeof body.code !== "string" || !body.code) return fail(res, "invalid", "This sign-in link is not from this app, or it expired. Press Sign in again.");
+    user = { ...DEMO };
     opts.broadcast({ t: "settings" });
     return json(res, 200, status());
   };
@@ -235,8 +235,8 @@ export function mockCloud(opts: {
     }
     const route = `${method} ${path}`;
     if (route === "GET /api/cloud") json(res, 200, status());
-    else if (route === "POST /api/cloud/sign-in/email") await signIn(req, res, false);
-    else if (route === "POST /api/cloud/sign-in/verify") await signIn(req, res, true);
+    else if (route === "POST /api/cloud/sign-in") json(res, 200, { url: `https://dorks.build/login?next=%2Fonboarding&app=1&state=${MOCK_STATE}` });
+    else if (route === "POST /api/cloud/sign-in/finish") await signIn(req, res);
     else if (route === "DELETE /api/cloud/session") {
       user = null;
       opts.broadcast({ t: "settings" });

@@ -262,7 +262,7 @@ function KeepAwake() {
   return null
 }
 
-/** Opens the routes of `dorks://` links the desktop app receives (an invitation, a pairing code), once the app is usable. */
+/** Opens the routes of `dorks://` links the desktop app receives (an invitation, a pairing code, a cloud sign-in), once the app is usable. */
 function DesktopLinks() {
   const navigate = useNavigate()
   useEffect(
@@ -271,6 +271,10 @@ function DesktopLinks() {
         const invite = /^\/invite\/([\w-]+)$/.exec(route)
         if (invite) void navigate({ to: '/invite/$id', params: { id: invite[1]! } })
         else if (route === '/settings/phone') void navigate({ to: '/settings/$page', params: { page: 'phone' } })
+        else if (route.startsWith('/auth?')) {
+          const q = new URLSearchParams(route.slice('/auth?'.length))
+          void navigate({ to: '/auth', search: { code: q.get('code') ?? undefined, state: q.get('state') ?? undefined } })
+        }
       }),
     [navigate],
   )

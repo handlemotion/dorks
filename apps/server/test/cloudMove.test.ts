@@ -42,6 +42,12 @@ function session(h: ReturnType<typeof harness>, n: number, text: (i: number) => 
   return id;
 }
 
+/** The browser sign-in's handoff: the state this server opened, any code (the stand-in redeems every one). */
+async function signIn(call: (method: string, path: string, body?: unknown) => Response | Promise<Response>) {
+  const { url } = (await (await call("POST", "/api/cloud/sign-in")).json()) as { url: string };
+  await call("POST", "/api/cloud/sign-in/finish", { code: "handoff-code", state: new URL(url).searchParams.get("state") });
+}
+
 const until = async (f: () => boolean) => {
   for (let i = 0; i < 400 && !f(); i++) await new Promise((r) => setTimeout(r, 5));
 };
@@ -57,7 +63,7 @@ describe("move to cloud", () => {
     await setSecret(h.app, "API_KEY", "s3cret-value");
     await putMcpServer(h.app, "linear", { transport: "http", url: "https://mcp.linear.app/mcp", headers: { Authorization: "Bearer lin-456" } });
     const auto = createAutomation(h.app, { name: "daily", instructions: "Check CI.", triggers: [{ kind: "schedule", every: "day", time: "09:00", timezone: "UTC", repo: "octo/app" }] });
-    await call("POST", "/api/cloud/sign-in/verify", { email: "ada@example.com", code: "123456" });
+    await signIn(call);
 
     cloud.dropNextPart = true;
     cloud.loseCommitAnswer = true; // the commit lands but its answer is lost: the Mac must find out, not fail
@@ -88,7 +94,7 @@ describe("move to cloud", () => {
     const { cloud, h, call } = setup();
     const a = session(h, 2, (i) => `t${i}`);
     const auto = createAutomation(h.app, { name: "daily", instructions: "Check CI.", triggers: [{ kind: "schedule", every: "day", time: "09:00", timezone: "UTC", repo: "octo/app" }] });
-    await call("POST", "/api/cloud/sign-in/verify", { email: "ada@example.com", code: "123456" });
+    await signIn(call);
     let release!: () => void;
     cloud.hold = new Promise((r) => (release = r));
     await call("POST", "/api/cloud/move", { orgId: ORG });
@@ -106,7 +112,7 @@ describe("move to cloud", () => {
     const { cloud, h, call } = setup();
     session(h, 1, () => "t");
     const auto = createAutomation(h.app, { name: "daily", instructions: "Check CI.", triggers: [{ kind: "schedule", every: "day", time: "09:00", timezone: "UTC", repo: "octo/app" }] });
-    await call("POST", "/api/cloud/sign-in/verify", { email: "ada@example.com", code: "123456" });
+    await signIn(call);
     await call("POST", "/api/cloud/move", { orgId: ORG });
     await until(() => moveStatus(h.app).phase === "done");
     // As if the process died right after the commit landed: the record still says committing, automations are still on.
@@ -124,7 +130,7 @@ describe("move to cloud", () => {
   it("refuses while a session works", async () => {
     const { h, call } = setup();
     h.seed("working");
-    await call("POST", "/api/cloud/sign-in/verify", { email: "ada@example.com", code: "123456" });
+    await signIn(call);
     const r = await call("POST", "/api/cloud/move", { orgId: ORG });
     expect(r.status).toBe(409);
     expect(JSON.stringify(await r.json())).toMatch(/still working/);
@@ -135,7 +141,7 @@ describe("move to cloud", () => {
     const { cloud, h, call } = setup();
     session(h, 2, (i) => `t${i}`);
     await setSecret(h.app, "API_KEY", "s3cret-value");
-    await call("POST", "/api/cloud/sign-in/verify", { email: "ada@example.com", code: "123456" });
+    await signIn(call);
     const created = (await (
       await cloud.handle(
         new Request(`${CLOUD}/v1/orgs/${ORG}/imports`, {

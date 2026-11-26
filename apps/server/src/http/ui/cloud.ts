@@ -11,9 +11,9 @@ import { handler, type Routes } from "./shared";
 
 const OrgId = Schema.Struct({ orgId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)) });
 const exportRequest = z.object({ orgId: z.string().min(1).max(128).optional(), importId: z.string().min(1).max(128), key: importKey });
-const Email = Schema.Struct({ email: Schema.String.check(Schema.isMinLength(3), Schema.isMaxLength(320)) });
 const OrgName = Schema.Struct({ name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(80)) });
-const Verify = Schema.Struct({ email: Schema.String.check(Schema.isMinLength(3), Schema.isMaxLength(320)), code: Schema.String.check(Schema.isMinLength(4), Schema.isMaxLength(12)) });
+const Token = Schema.String.check(Schema.isMinLength(8), Schema.isMaxLength(256), Schema.isPattern(/^[\w-]+$/));
+const Handoff = Schema.Struct({ code: Token, state: Token });
 
 // ---- the Dorks Cloud account (services/cloudAccount.ts, docs/mobile.md "Desktop: Dorks Cloud"): sign this server in, list the
 // account's places, and reach another server through the relay.
@@ -23,15 +23,16 @@ export const cloudRoutes: Routes = (api, app) => {
     "/api/cloud",
     on((c) => serviceAsync((a) => cloudAccount.view(a)).pipe(Effect.map((v) => c.json(v)))),
   );
+  // Sign-in happens in the browser: this opens it (the site's URL with a one-time state), the `dorks://auth` link finishes it.
   api.post(
-    "/api/cloud/sign-in/email",
-    on((c) => ok(c)(body(c, Email, "Enter your email").pipe(Effect.flatMap((b) => serviceAsync((a) => cloudAccount.sendCode(a, b.email.trim())))))),
+    "/api/cloud/sign-in",
+    on((c) => service((a) => cloudAccount.startSignIn(a)).pipe(Effect.map((v) => c.json(v)))),
   );
   api.post(
-    "/api/cloud/sign-in/verify",
+    "/api/cloud/sign-in/finish",
     on((c) =>
-      body(c, Verify, "Enter the code from the email").pipe(
-        Effect.flatMap((b) => serviceAsync((a) => cloudAccount.verifyCode(a, b.email.trim(), b.code.replace(/\s+/g, "")))),
+      body(c, Handoff, "Open the sign-in link from the browser again").pipe(
+        Effect.flatMap((b) => serviceAsync((a) => cloudAccount.finishSignIn(a, b.code, b.state))),
         Effect.map((v) => c.json(v)),
       ),
     ),

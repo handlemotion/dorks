@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from '@dorks/ui/dropdown-menu'
 import { Input } from '@dorks/ui/input'
+import { startCloudSignIn } from '../lib/cloudSignIn'
 import { machinesOf } from '../lib/place'
 import { usePending } from '../lib/pending'
 import { UserAvatar } from './AccountMenu'
@@ -113,7 +114,13 @@ export function OrgSwitcher({ login }: { login?: string | null }) {
                   </DropdownMenuItem>
                 </>
               ) : (
-                <DropdownMenuItem onClick={() => void navigate({ to: '/settings/$page', params: { page: 'cloud' } })}>
+                <DropdownMenuItem
+                  onClick={() => {
+                    // The browser signs in; Settings › Account says so and offers to open it again.
+                    void startCloudSignIn(place.home).catch(() => {})
+                    void navigate({ to: '/settings/$page', params: { page: 'cloud' } })
+                  }}
+                >
                   <LogInIcon />
                   Sign in to Dorks Cloud
                 </DropdownMenuItem>
