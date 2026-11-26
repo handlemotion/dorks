@@ -1,6 +1,8 @@
 import { ChevronDown } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { Button } from "#/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "#/components/ui/dropdown-menu";
+import { subscribeLenisScroll } from "#/lib/lenis";
 
 const DOWNLOAD_URL = "https://github.com/handlemotion/dorks/releases/latest";
 const RELEASES_URL = "https://github.com/handlemotion/dorks/releases";
@@ -41,9 +43,41 @@ const navItems = [
 ];
 
 export function Hero() {
+  const sectionRef = useRef<HTMLElement>(null);
+  const bgRef = useRef<HTMLImageElement>(null);
+  const copyRef = useRef<HTMLDivElement>(null);
+  const graphicRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const apply = (scroll: number) => {
+      const section = sectionRef.current;
+      if (!section) return;
+
+      const height = section.offsetHeight || window.innerHeight;
+      const progress = Math.min(Math.max(scroll / height, 0), 1);
+
+      if (bgRef.current) {
+        bgRef.current.style.transform = `translate3d(0, ${(progress * 24).toFixed(2)}px, 0)`;
+      }
+      if (copyRef.current) {
+        copyRef.current.style.transform = `translate3d(0, ${(progress * 44).toFixed(2)}px, 0)`;
+        copyRef.current.style.opacity = (1 - progress * 0.72).toFixed(3);
+      }
+      if (graphicRef.current) {
+        graphicRef.current.style.transform = `translate3d(0, ${(-progress * 68).toFixed(2)}px, 0)`;
+      }
+    };
+
+    const unsubscribe = subscribeLenisScroll(apply);
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   return (
-    <section className="relative flex min-h-[90svh] w-full flex-col overflow-hidden bg-[#b7a29e] text-white lg:h-[90svh] lg:min-h-[760px]">
+    <section ref={sectionRef} className="relative flex min-h-[90svh] w-full flex-col overflow-hidden bg-[#b7a29e] text-white lg:h-[90svh] lg:min-h-[760px]">
       <img
+        ref={bgRef}
         src="/hero-bg.webp"
         alt=""
         aria-hidden="true"
@@ -51,7 +85,7 @@ export function Hero() {
         height={941}
         draggable={false}
         fetchPriority="high"
-        className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center select-none [-webkit-user-drag:none]"
+        className="pointer-events-none absolute -inset-y-6 inset-x-0 h-[calc(100%+48px)] w-full object-cover object-center will-change-transform select-none [-webkit-user-drag:none]"
       />
 
       <header className="relative z-20 flex h-16 w-full shrink-0 items-center justify-between px-4 sm:px-6">
@@ -82,7 +116,7 @@ export function Hero() {
       </header>
 
       <main className="relative z-10 mx-auto flex w-full flex-1 flex-col items-center px-5 pt-14 sm:px-12 sm:pt-[56px] lg:px-[clamp(64px,6.6vw,140px)]">
-        <div className="flex w-full max-w-[568px] shrink-0 flex-col items-center gap-9">
+        <div ref={copyRef} className="relative z-0 flex w-full max-w-[568px] shrink-0 flex-col items-center gap-9 will-change-[transform,opacity]">
           <div className="flex w-full flex-col items-center gap-4 text-center">
             <DorksMark size={36} className="text-white" />
             <h1 className="font-serif text-[32px] font-normal leading-[1.3] tracking-normal text-white sm:text-[40px]">
@@ -126,7 +160,7 @@ export function Hero() {
           </div>
         </div>
 
-        <div className="mt-14 flex w-full flex-1 pb-10 sm:mt-[80px] lg:min-h-0 lg:pb-0">
+        <div ref={graphicRef} className="relative z-10 mt-14 flex w-full flex-1 pb-10 will-change-transform sm:mt-[80px] lg:min-h-0 lg:pb-0">
           <img
             src="/hero-app.webp"
             alt="Dorks desktop workspace showing an agent session alongside a merged pull request"

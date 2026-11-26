@@ -42,21 +42,9 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
   <body>
     <slot />
     <script>
-      import Lenis from "lenis";
+      import { getLenis } from "../lib/lenis";
 
-      const prefersReducedMotion = window.matchMedia(
-        "(prefers-reduced-motion: reduce)",
-      ).matches;
-
-      if (!prefersReducedMotion) {
-        const lenis = new Lenis({
-          autoRaf: true,
-        });
-
-        window.addEventListener("pagehide", () => {
-          lenis.destroy();
-        });
-      }
+      getLenis();
     </script>
   </body>
 </html>
