@@ -118,7 +118,7 @@ function EmailStep({ onBack, onSent }: { onBack: () => void; onSent: (email: str
           disabled={send.isPending}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className={cn(FIELD, "h-10 w-full rounded-full px-4 text-sm placeholder:text-neutral-400 dark:placeholder:text-neutral-500")}
+          className={cn(FIELD, "h-11 w-full rounded-full px-4 text-sm placeholder:text-neutral-400 dark:placeholder:text-neutral-500")}
         />
         {send.error ? <ErrorText>{send.error}</ErrorText> : null}
         <Button type="submit" variant="ink" size="lg" disabled={!valid || send.isPending}>
@@ -211,7 +211,7 @@ function CodeBoxes({ value, onChange, onSubmit, invalid, disabled }: { value: st
             aria-hidden="true"
             className={cn(
               FIELD,
-              "flex h-10 flex-1 items-center justify-center rounded-xl text-lg",
+              "flex h-11 flex-1 items-center justify-center rounded-xl text-lg",
               invalid ? "border-[#dc2626] dark:border-[#f87171]" : current ? "border-[#1d72e8] dark:border-[#1d72e8]" : "",
             )}
           >
@@ -316,10 +316,10 @@ function DownloadButton() {
 /** The fill and hairline of every field (the email input, the code boxes): the outline button's. */
 const FIELD = "border border-[#e8e8e8] bg-white text-neutral-950 outline-none focus:border-[#1d72e8] disabled:opacity-50 dark:border-white/10 dark:bg-[#171717] dark:text-neutral-50";
 
-/** The page: content centred on the off-grey plane. */
+/** The page: content centred on white, like the app. */
 function Screen({ children }: { children: ReactNode }) {
   return (
-    <main className="flex min-h-svh w-full items-center justify-center bg-[#fafafa] px-6 py-12 text-neutral-950 dark:bg-[#0a0a0a] dark:text-neutral-50">
+    <main className="flex min-h-svh w-full items-center justify-center bg-white px-6 py-12 text-neutral-950 dark:bg-[#0a0a0a] dark:text-neutral-50">
       <div className="flex w-full max-w-[360px] flex-col items-stretch">{children}</div>
     </main>
   );
@@ -340,8 +340,8 @@ function Layout({ title, sub, children, footer, back }: { title: string; sub?: R
         </div>
       </div>
       {children ? <div className="flex flex-col gap-2.5">{children}</div> : null}
-      {footer ? <p className="pt-[18px] text-center text-xs leading-[17px] text-neutral-400 dark:text-neutral-500">{footer}</p> : null}
-      {back ? <div className="flex justify-center pt-[18px]">{back}</div> : null}
+      {footer ? <p className="pt-6 text-center text-xs leading-[17px] text-neutral-400 dark:text-neutral-500">{footer}</p> : null}
+      {back ? <div className="flex justify-center pt-6">{back}</div> : null}
     </Screen>
   );
 }

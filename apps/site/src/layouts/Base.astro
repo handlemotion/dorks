@@ -12,7 +12,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang="en" class:list={[app && "overscroll-none"]}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -43,7 +43,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <meta property="og:image" content={new URL("/og.jpg", Astro.site)} />
     <meta name="twitter:card" content="summary_large_image" />
   </head>
-  <body>
+  <body class:list={[app && "overscroll-none"]}>
     <slot />
     {
       !app && (

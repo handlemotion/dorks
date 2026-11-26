@@ -28,7 +28,7 @@ const buttonVariants = cva(
         splitEnd: "h-9 w-9 pr-[3px]",
         icon: "size-9",
         "icon-sm": "size-8",
-        lg: "relative h-10 w-full gap-2.5 px-11 text-sm",
+        lg: "relative h-11 w-full gap-2.5 px-11 text-sm",
       },
     },
     defaultVariants: {
