@@ -1,4 +1,4 @@
-import { Mail } from "lucide-react";
+import { ChevronLeft, Mail } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { DorksMark } from "#/components/DorksMark";
 import { AppleIcon, GoogleIcon } from "#/components/icons";
@@ -78,7 +78,7 @@ function Choose({ invite, providerError, onEmail }: { invite: boolean; providerE
       </Button>
       <Button variant="outline" size="lg" disabled={!!pending || methods?.email === false} onClick={onEmail}>
         <Lead>
-          <Mail className="size-[18px] stroke-[1.5]" />
+          <Mail className="size-4 stroke-[1.5]" />
         </Lead>
         Continue with email
       </Button>
@@ -95,7 +95,7 @@ function EmailStep({ onBack, onSent }: { onBack: () => void; onSent: (email: str
     if (valid && !send.isPending) void send.run(address).then((ok) => ok && onSent(address));
   };
   return (
-    <Layout title="Continue with email" footer={<FooterLink onClick={onBack}>Back</FooterLink>}>
+    <Layout title="Continue with email" back={<BackPill onClick={onBack}>Back</BackPill>}>
       <form
         className="contents"
         onSubmit={(e) => {
@@ -118,10 +118,10 @@ function EmailStep({ onBack, onSent }: { onBack: () => void; onSent: (email: str
           disabled={send.isPending}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className={cn(FIELD, "h-12 w-full rounded-full px-5 text-[15px] placeholder:text-neutral-400 dark:placeholder:text-neutral-500")}
+          className={cn(FIELD, "h-10 w-full rounded-full px-4 text-sm placeholder:text-neutral-400 dark:placeholder:text-neutral-500")}
         />
         {send.error ? <ErrorText>{send.error}</ErrorText> : null}
-        <Button type="submit" variant="outline" size="lg" disabled={!valid || send.isPending}>
+        <Button type="submit" variant="ink" size="lg" disabled={!valid || send.isPending}>
           {send.isPending ? (
             <Lead>
               <Spinner />
@@ -153,28 +153,25 @@ function CodeStep({ email, onBack }: { email: string; onBack: () => void }) {
       title="Enter code"
       sub={email}
       footer={
-        <>
-          {wait > 0 ? (
-            <span>{`Resend in 00:${String(wait).padStart(2, "0")}`}</span>
-          ) : (
-            <FooterLink
-              disabled={resend.isPending}
-              onClick={() => {
-                verify.reset();
-                void resend.run().then((ok) => {
-                  if (!ok) return;
-                  setCode("");
-                  setWait(RESEND_AFTER_S);
-                });
-              }}
-            >
-              Resend code
-            </FooterLink>
-          )}
-          {" · "}
-          <FooterLink onClick={onBack}>Use another email</FooterLink>
-        </>
+        wait > 0 ? (
+          <span>{`Resend in 00:${String(wait).padStart(2, "0")}`}</span>
+        ) : (
+          <FooterLink
+            disabled={resend.isPending}
+            onClick={() => {
+              verify.reset();
+              void resend.run().then((ok) => {
+                if (!ok) return;
+                setCode("");
+                setWait(RESEND_AFTER_S);
+              });
+            }}
+          >
+            Resend code
+          </FooterLink>
+        )
       }
+      back={<BackPill onClick={onBack}>Use another email</BackPill>}
     >
       <CodeBoxes
         value={code}
@@ -189,7 +186,7 @@ function CodeStep({ email, onBack }: { email: string; onBack: () => void }) {
         onSubmit={() => submit()}
       />
       {error ? <ErrorText>{error}</ErrorText> : null}
-      <Button variant="outline" size="lg" disabled={code.length < 6 || verify.isPending} onClick={() => submit()}>
+      <Button variant="ink" size="lg" disabled={code.length < 6 || verify.isPending} onClick={() => submit()}>
         {verify.isPending ? (
           <Lead>
             <Spinner />
@@ -214,7 +211,7 @@ function CodeBoxes({ value, onChange, onSubmit, invalid, disabled }: { value: st
             aria-hidden="true"
             className={cn(
               FIELD,
-              "flex h-12 flex-1 items-center justify-center rounded-[14px] text-xl",
+              "flex h-10 flex-1 items-center justify-center rounded-xl text-lg",
               invalid ? "border-[#dc2626] dark:border-[#f87171]" : current ? "border-[#1d72e8] dark:border-[#1d72e8]" : "",
             )}
           >
@@ -330,21 +327,32 @@ function Screen({ children }: { children: ReactNode }) {
 
 /**
  * Every sign-in page, one layout: the mark and the title (and at most one short line), a 10px stack of controls, and one
- * small quiet line under them (the legal line, the way back, the account).
+ * small quiet line under them (the legal line, the resend timer, the account), and a small Back pill on the email steps.
  */
-function Layout({ title, sub, children, footer }: { title: string; sub?: ReactNode; children?: ReactNode; footer?: ReactNode }) {
+function Layout({ title, sub, children, footer, back }: { title: string; sub?: ReactNode; children?: ReactNode; footer?: ReactNode; back?: ReactNode }) {
   return (
     <Screen>
       <div className="flex flex-col items-center gap-5 pb-10 text-center">
-        <DorksMark size={36} />
+        <DorksMark size={32} />
         <div className="flex flex-col gap-1.5">
-          <h1 className="text-[26px] leading-8 font-medium tracking-[-0.02em]">{title}</h1>
+          <h1 className="text-2xl leading-8 font-medium tracking-[-0.02em]">{title}</h1>
           {sub ? <p className="text-sm text-neutral-500 dark:text-neutral-400">{sub}</p> : null}
         </div>
       </div>
       {children ? <div className="flex flex-col gap-2.5">{children}</div> : null}
       {footer ? <p className="pt-[18px] text-center text-xs leading-[17px] text-neutral-400 dark:text-neutral-500">{footer}</p> : null}
+      {back ? <div className="flex justify-center pt-[18px]">{back}</div> : null}
     </Screen>
+  );
+}
+
+/** The way back from an email step: a small outline pill. */
+function BackPill({ children, onClick }: { children: ReactNode; onClick: () => void }) {
+  return (
+    <Button variant="outline" size="sm" className="gap-1 pl-2.5" onClick={onClick}>
+      <ChevronLeft className="size-4 stroke-[1.5]" />
+      {children}
+    </Button>
   );
 }
 
@@ -359,7 +367,7 @@ function FooterLink({ children, onClick, disabled }: { children: ReactNode; onCl
 
 /** The glyph at a button's leading edge, so labels in a stack share one centre line. */
 function Lead({ children }: { children: ReactNode }) {
-  return <span className="absolute top-0 bottom-0 left-5 flex w-[18px] items-center justify-center">{children}</span>;
+  return <span className="absolute top-0 bottom-0 left-4 flex w-4 items-center justify-center">{children}</span>;
 }
 
 function Spinner({ className }: { className?: string }) {
