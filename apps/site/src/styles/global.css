@@ -1,85 +1,46 @@
-/* The app's look (DESIGN.md): one off-white plane, Geist at 400 and 500, hairlines instead of shadows, 6px controls. */
-:root {
-  --app: #f2f2f2;
-  --surface: #ffffff;
-  --fg: #0a0a0a;
-  --muted: #6b6b6b;
-  --line: oklch(0 0 0 / 6%);
-  --brand: #3b6be8;
-  --mark: #0e6fff;
-  --radius: 6px;
-  --max: 1080px;
-  color-scheme: light;
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "lenis/dist/lenis.css";
+
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --app: oklch(0.165 0 0);
-    --surface: oklch(0.205 0 0);
-    --fg: #fafafa;
-    --muted: #a1a1a1;
-    --line: oklch(1 0 0 / 7%);
-    color-scheme: dark;
-  }
-}
-* {
-  box-sizing: border-box;
-}
-html {
-  -webkit-text-size-adjust: 100%;
-}
-body {
-  margin: 0;
-  background: var(--app);
-  color: var(--fg);
-  font-family: "Geist Variable", -apple-system, system-ui, sans-serif;
+
+@font-face {
+  font-family: "Geist Serif";
+  src: url("/fonts/GeistSerif-Regular.woff2") format("woff2");
   font-weight: 400;
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
+  font-style: normal;
+  font-display: swap;
 }
-a {
-  color: inherit;
-  text-decoration: none;
+
+@theme inline {
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-serif: "Geist Serif", Georgia, Cambria, "Times New Roman", serif;
 }
-h1,
-h2,
-h3 {
-  font-weight: 500;
-  margin: 0;
-  letter-spacing: -0.02em;
-}
-p {
-  margin: 0;
-}
-code {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 0.9em;
-}
-.wrap {
-  max-width: var(--max);
-  margin: 0 auto;
-  padding: 0 24px;
-}
-.button {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 36px;
-  padding: 0 14px;
-  border-radius: var(--radius);
-  font-size: 14px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.button.primary {
-  background: var(--brand);
-  color: #fff;
-}
-.button.primary:hover {
-  background: color-mix(in oklch, var(--brand), black 8%);
-}
-.button.secondary {
-  background: var(--surface);
-}
-.button.secondary:hover {
-  background: color-mix(in oklch, var(--surface), var(--fg) 4%);
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    font-family: var(--font-sans);
+  }
+
+  body {
+    margin: 0;
+    background: #ffffff;
+    color: #0a0a0a;
+    font-family: var(--font-sans);
+    font-weight: 400;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background-color: #0e6fff;
+    color: #ffffff;
+  }
 }
