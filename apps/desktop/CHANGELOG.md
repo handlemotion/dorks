@@ -1,5 +1,21 @@
 # @dorks/desktop
 
+## 0.12.1
+
+### Patch Changes
+
+- [#262](https://github.com/handlemotion/dorks/pull/262) [`0f94090`](https://github.com/handlemotion/dorks/commit/0f9409069420408e6b7e9d7f224fe25109bd4db7) Thanks [@handlemotion](https://github.com/handlemotion)! - The GitHub owner filter moved from beside the organization switcher into the archived sessions list, where it narrows archived sessions to one owner.
+
+- [#254](https://github.com/handlemotion/dorks/pull/254) [`df0f4e9`](https://github.com/handlemotion/dorks/commit/df0f4e9db1768d3d1e4640afe90d6f0c2307d76c) Thanks [@handlemotion](https://github.com/handlemotion)! - The desktop app opens dorks:// links: an organization invitation email opens the invitation in Dorks, and a phone pairing link opens Settings › Phone.
+
+- [#260](https://github.com/handlemotion/dorks/pull/260) [`79fd5df`](https://github.com/handlemotion/dorks/commit/79fd5df573504bc4abd6a8fb0c2e28af6b17595d) Thanks [@handlemotion](https://github.com/handlemotion)! - Nerds no longer wear a green mark in the sidebar: their own Nerds group sets them apart, so their mark shows their state like any session.
+
+- [#263](https://github.com/handlemotion/dorks/pull/263) [`f3a6179`](https://github.com/handlemotion/dorks/commit/f3a6179044ea95d309768a3206ab6b620889ae2d) Thanks [@handlemotion](https://github.com/handlemotion)! - A personal organization no longer shows any team UI: no sender names over your messages, no initials on chats, no presence avatars and no members list.
+
+- [#264](https://github.com/handlemotion/dorks/pull/264) [`faf7c0a`](https://github.com/handlemotion/dorks/commit/faf7c0a5cae9503f94ae69300aa8d92055818d87) Thanks [@handlemotion](https://github.com/handlemotion)! - An organization with nothing to run it yet now suggests moving it to Dorks Teams, in the plan names Dorks Cloud uses.
+
+- [#265](https://github.com/handlemotion/dorks/pull/265) [`58abe67`](https://github.com/handlemotion/dorks/commit/58abe673a5f8dd6596968081e60fd068a06d7bd4) Thanks [@handlemotion](https://github.com/handlemotion)! - Secure input forms are simpler: a form asking for one value no longer repeats its title and description on the field, and the agent can link each field to the page where you get it (like Cloudflare's API tokens page).
+
 ## 0.12.0
 
 ### Minor Changes
