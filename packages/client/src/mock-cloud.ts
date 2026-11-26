@@ -28,7 +28,7 @@ const ORGS: MockOrg[] = [
     slug: "personal-ada",
     logo: null,
     personal: true,
-    plan: "free",
+    plan: "local",
     role: "owner",
     servers: [
       {
@@ -47,7 +47,7 @@ const ORGS: MockOrg[] = [
     slug: "handlemotion",
     logo: "https://github.com/handlemotion.png?size=64",
     personal: false,
-    plan: "collab",
+    plan: "cloud",
     role: "admin",
     servers: [
       {
@@ -69,7 +69,7 @@ const ORGS: MockOrg[] = [
     slug: "weekend-hacks",
     logo: null,
     personal: false,
-    plan: "free",
+    plan: "teams",
     role: "member",
     servers: [
       {
@@ -126,7 +126,7 @@ export function mockCloud(opts: {
         email: user?.email ?? null,
         role,
         org: owner?.id ?? null,
-        plan: owner?.plan === "collab" ? "collab" : "free",
+        plan: owner?.plan ?? "local",
         serverOrg: owner?.id ?? null,
       });
       children.set(place.id, c);
@@ -203,7 +203,7 @@ export function mockCloud(opts: {
       else if (!name) fail(res, "invalid", "Name the organization");
       else {
         const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-        const org: MockOrg = { id: `org-${slug}-${orgs.length}`, name, slug, logo: null, personal: false, plan: "free", role: "owner", servers: [] };
+        const org: MockOrg = { id: `org-${slug}-${orgs.length}`, name, slug, logo: null, personal: false, plan: "local", role: "owner", servers: [] };
         orgs.push(org);
         teams.created(org.id);
         json(res, 200, view(org));

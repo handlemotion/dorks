@@ -1,3 +1,4 @@
+import { planOf, type PlanId } from "@dorks/shared";
 import { fail, OWNER, touch, type App } from "../app";
 import { aad, decrypt, encrypt } from "../core/crypto";
 import { update } from "../db";
@@ -33,7 +34,7 @@ export interface CloudServer {
 
 /**
  * A Dorks Cloud organization (Better Auth's organization plugin, `GET /v1/orgs`). Every account has one `personal` org; teams are
- * the others. `plan` is what it pays for (`collab`), `role` the account's role in it, `servers` what it can work on.
+ * the others. `plan` is its plan (`local`, `teams`, `cloud`; the cloud's older `free` and `collab` read as `local` and `teams`), `role` the account's role in it, `servers` what it can work on.
  */
 export interface CloudOrg {
   id: string;
@@ -41,7 +42,7 @@ export interface CloudOrg {
   slug: string | null;
   logo: string | null;
   personal: boolean;
-  plan: string | null;
+  plan: PlanId | null;
   role: string | null;
   active: boolean;
   servers: CloudServer[];
@@ -133,7 +134,7 @@ function orgOf(v: unknown): CloudOrg | null {
     slug: str(o?.slug),
     logo: str(o?.logo),
     personal: o?.personal === true,
-    plan: str(o?.plan),
+    plan: planOf(o?.plan),
     role: str(o?.role),
     active: o?.active === true,
     servers: list(o?.servers, serverOf),

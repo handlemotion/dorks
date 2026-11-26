@@ -8,28 +8,31 @@ Status: in progress. The cloud side lives in `handlemotion/dorks-cloud` (private
 Entitlements belong to a Better Auth **organization** (an org). Every user gets a personal org on sign-up, so a person on their own
 is simply an org with one member.
 
-| Plan | What it is |
-|---|---|
-| **free** | Today's Dorks: the relay to your own Mac(s), one person. You bring your own Boat and Claude. |
-| **collab** | A team on an always-on hosted `apps/server` that Dorks runs for the org. Teammates open the same chats on it and send messages; the agent knows who sent each one. Automations, PR polling and timers run there around the clock (a Mac cannot wake at night). Members, invitations and roles (owner, admin, member). You bring your own Claude. |
+| Plan (id) | Price | What it is |
+|---|---|---|
+| **Dorks Local** (`local`) | Free | Your personal org on your own Mac(s), one person, through the relay. You bring your own Boat and Claude. |
+| **Dorks Teams** (`teams`) | $5/month per org | Realtime collaboration: teammates open the same chats and send messages, and the agent knows who sent each one. Automations run in the cloud (on the Worker) around the clock, where a Mac cannot wake at night. Members, invitations and roles (owner, admin, member). You bring your own Boat key and Claude. |
+| **Dorks Cloud** (`cloud`) | $29/month per org | Dorks Teams, with the Boat sandboxes provided (**cloud credit** on Dorks' own Boat account) instead of your own key. |
 
-**Collab pricing** (the numbers live in one `PLAN_CONFIG` in dorks-cloud's `src/entitlements.ts`):
+The cloud named these `free` and `collab` before. Until it has moved over, `apps/server` and the app read `free` as `local` and
+`collab` as `teams` (`planOf` in `packages/shared/src/plans.ts`), in identity tokens, `GET /v1/orgs` and entitlements alike.
 
-- **One flat price per org**, not per seat: $29/month (a placeholder).
-- **Unlimited members, with a fair-use cap** (50 for now; free has 1). An invitation that would reach it, counting members plus open
-  invitations, gets `403 MEMBER_LIMIT_REACHED`.
-- **200 sandbox hours a month included** (12,000 minutes) on Dorks' own Boat account (**cloud credit**), metered per minute.
-- **A hard stop by default**: when the included hours run out, the org's sandboxes stop until the next period.
-- **Opt-in overage** at 1.5x Boat's price (Boat's default machine is $0.036/h), up to a cap the org's owner sets.
-- **Or your own Boat key**: an org may bring its own Boat key instead of using cloud credit.
+**Pricing** (the numbers live in one `PLAN_CONFIG` in dorks-cloud's `src/entitlements.ts`):
+
+- **One flat price per org**, never per seat.
+- **Unlimited members, with a fair-use cap** on Teams and Cloud (50 for now; Local has 1). An invitation that would reach it, counting
+  members plus open invitations, gets `403 MEMBER_LIMIT_REACHED`.
+- **Dorks Cloud includes 200 sandbox hours a month** (12,000 minutes) of cloud credit, metered per minute, with **a hard stop by
+  default** when they run out (the org's sandboxes stop until the next period) and **opt-in overage** at 1.5x Boat's price (Boat's
+  default machine is $0.036/h), up to a cap the org's owner sets.
 
 `GET /v1/orgs/:orgId/entitlements` (members only) answers
-`{plan: "free"|"collab", memberLimit, members, hostedServer, cloudCredit, includedMinutes, usedMinutes, periodEnd,
+`{plan: "local"|"teams"|"cloud", memberLimit, members, hostedServer, cloudCredit, includedMinutes, usedMinutes, periodEnd,
 overage: {enabled, capCents, spentCents}, maxConcurrentSandboxes}`.
 
 ## Servers belong to orgs
 
-A server is a Mac paired through the relay, or the hosted server of a collab org (`kind: "hosted"`). Either way it belongs to one
+A server is a Mac paired through the relay, or the hosted server of a Teams or Cloud org (`kind: "hosted"`). Either way it belongs to one
 org (`macs.org_id`), and every member of that org sees it in `GET /v1/macs` and can reach it through the relay. Teammates always go
 through the relay: there is no direct connection to a server.
 
@@ -49,7 +52,7 @@ The cloud signs a short-lived JWT for whoever makes a request: Better Auth's `jw
 | `name`, `email` | Who they are, for attribution and for the agent |
 | `org` | The org that owns the target server (not the session's active org) |
 | `role` | Their role in that org: `owner`, `admin` or `member` |
-| `plan` | The org's plan: `free` or `collab` |
+| `plan` | The org's plan: `local`, `teams` or `cloud` (`free` and `collab` read as `local` and `teams`) |
 
 The relay puts it in the `x-dorks-actor` header of every request frame it sends a server ([mobile](mobile.md), "Link protocol").
 `GET /api/auth/token` returns the same token for the session's active org.

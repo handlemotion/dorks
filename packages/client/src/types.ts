@@ -1,4 +1,4 @@
-import type { AgentCommand, AgentModelChoice, BuildRepo, BuildService, ClientEvent, CommentPolicy, DorkMode, DorkState, MachineType, RunView, SessionPr } from "@dorks/shared";
+import type { AgentCommand, PlanId, AgentModelChoice, BuildRepo, BuildService, ClientEvent, CommentPolicy, DorkMode, DorkState, MachineType, RunView, SessionPr } from "@dorks/shared";
 
 export type { WorkspaceFile, WorkspaceGitStatus, WorkspaceRoot, WorkspaceTree } from "@dorks/shared";
 export type { MergeMethod, MergeableState, PullRequestSection, PullRequestView, PullRequestFile, PullRequestComment, PullRequestChecks, PullRequestCheck, PullRequestPerson } from "@dorks/shared";
@@ -45,7 +45,7 @@ export interface Me {
   email: string | null;
   role: "owner" | "admin" | "member";
   org: string | null;
-  plan: "free" | "collab" | null;
+  plan: PlanId | null;
   /** The organization this server belongs to; null before it is part of one. */
   serverOrg: string | null;
 }
@@ -277,7 +277,7 @@ export interface CloudServer {
 
 /**
  * A Dorks Cloud organization (`GET /v1/orgs` on the relay). Every account has one `personal` org (named "Personal"); teams are the
- * others. `plan`: what it pays for (`collab`); `role`: the account's role in it; `servers`: the servers it owns.
+ * others. `plan`: its plan (`local`, `teams`, `cloud`); `role`: the account's role in it; `servers`: the servers it owns.
  */
 export interface CloudOrg {
   id: string;
@@ -285,7 +285,7 @@ export interface CloudOrg {
   slug: string | null;
   logo: string | null;
   personal: boolean;
-  plan: string | null;
+  plan: PlanId | null;
   role: string | null;
   active: boolean;
   servers: CloudServer[];

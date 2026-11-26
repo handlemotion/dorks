@@ -64,8 +64,9 @@ describe("cloud account", () => {
     // Personal first, each org with the servers it owns.
     const places = (await (await call("GET", "/api/cloud/places")).json()) as CloudPlaces;
     expect(places.orgs.map((o) => [o.id, o.personal, o.plan, o.servers.map((s) => `${s.id}:${s.kind}`)])).toEqual([
-      ["p1", true, "free", ["m1:mac"]],
-      ["o1", false, "collab", ["h1:hosted"]],
+      // The relay's older plan names read as the new ones.
+      ["p1", true, "local", ["m1:mac"]],
+      ["o1", false, "teams", ["h1:hosted"]],
     ]);
     expect(places.orgs[0]!.servers[0]!.lastSeenAt).toBe(Date.parse("2026-11-01T00:00:00Z"));
     const created = (await (await call("POST", "/api/cloud/orgs", { name: "Friends" })).json()) as CloudOrg;
