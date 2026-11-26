@@ -18,6 +18,7 @@ import { EventsFeed } from "./events.ts";
 import { createApi, ApiError, type ApiConfig, type DesktopOptions, type NewComment } from "./http.ts";
 import { connectLive, type LiveStatus } from "./live.ts";
 import { connectCloudLive, followSession, type CloudLiveConfig, type SessionCursor } from "./cloud-live.ts";
+import type { ReadGrant } from "./s2.ts";
 import { Query, type QueryOptions, type Store } from "./store.ts";
 import type {
   BuildInput,
@@ -92,7 +93,11 @@ export class DorksClient {
   private readonly feeds = new Map<string, EventsFeed>();
   /** Where each cloud transcript's s2 read stands: following it again resumes there. */
   private readonly cursors = new Map<string, SessionCursor>();
+  /** Each cloud transcript's last read grant, reused while valid when the chat is opened again. */
+  private readonly grants = new Map<string, ReadGrant>();
   private closeLive: (() => void) | undefined;
+  /** A cloud team's presence heartbeat (cloud-live.ts); undefined elsewhere. */
+  private beat: (() => void) | undefined;
   private connection: ConnectionState = { live: "connecting", unauthorized: false };
   private readonly connListeners = new Set<() => void>();
   private readonly qopts: QueryOptions;
@@ -124,15 +129,27 @@ export class DorksClient {
     if (typeof document !== "undefined") document.addEventListener("visibilitychange", this.onVisibility);
     const onStatus = (live: LiveStatus) => this.setConnection({ live, ...(live === "unauthorized" ? { unauthorized: true } : {}) });
     const onMessage = (m: LiveMessage) => this.onLive(m);
-    this.closeLive = this.cfg.cloud
-      ? connectCloudLive({ cloud: this.cfg.cloud, token: this.cfg.token, fetch: this.cfg.fetch, backoff: this.cfg.retryDelay, onStatus, onMessage })
-      : connectLive({ baseUrl: this.cfg.baseUrl, token: this.cfg.token, client: this.clientId, fetch: this.cfg.fetch, backoff: this.cfg.retryDelay, onStatus, onMessage });
+    if (this.cfg.cloud) {
+      const live = connectCloudLive({
+        cloud: this.cfg.cloud,
+        token: this.cfg.token,
+        client: this.clientId,
+        viewing: () => this.viewingDorkId,
+        fetch: this.cfg.fetch,
+        backoff: this.cfg.retryDelay,
+        onStatus,
+        onMessage,
+      });
+      this.beat = live.beat;
+      this.closeLive = live.close;
+    } else this.closeLive = connectLive({ baseUrl: this.cfg.baseUrl, token: this.cfg.token, client: this.clientId, fetch: this.cfg.fetch, backoff: this.cfg.retryDelay, onStatus, onMessage });
   }
 
   close() {
     if (typeof document !== "undefined") document.removeEventListener("visibilitychange", this.onVisibility);
     this.closeLive?.();
     this.closeLive = undefined;
+    this.beat = undefined;
   }
 
   readonly connectionStore: Store<ConnectionState> = {
@@ -173,6 +190,7 @@ export class DorksClient {
       this.feeds.delete(id);
       this.staleFeeds.delete(id);
       this.cursors.delete(id);
+      this.grants.delete(id);
     }
   }
 
@@ -181,6 +199,7 @@ export class DorksClient {
     this.feeds.delete(dorkId);
     this.staleFeeds.delete(dorkId);
     this.cursors.delete(dorkId);
+    this.grants.delete(dorkId);
     for (const key of this.queries.keys()) if (key.split(":")[1] === dorkId) this.queries.delete(key);
   }
 
@@ -199,7 +218,7 @@ export class DorksClient {
   private onLive(m: LiveMessage) {
     switch (m.t) {
       case "hello":
-        this.setPresence(new Map());
+        if (!this.cfg.cloud) this.setPresence(new Map()); // a cloud team's presence has its own stream, which keeps it current
         void this.sendViewing();
         for (const q of this.queries.values()) q.invalidate();
         for (const id of this.feeds.keys()) this.tailFeed(id);
@@ -265,6 +284,7 @@ export class DorksClient {
   }
 
   private async sendViewing() {
+    if (this.cfg.cloud) return this.beat?.();
     try {
       await this.api.setPresence(this.clientId, this.viewingDorkId);
     } catch {
@@ -440,6 +460,7 @@ export class DorksClient {
               backoff: this.cfg.retryDelay,
               dorkId,
               cursor: this.cursors.get(dorkId) ?? null,
+              cached: { get: () => this.grants.get(dorkId), set: (g) => void this.grants.set(dorkId, g) },
               ready: () => feed.requestTail(),
               onEvents: (events, cursor) => {
                 this.cursors.set(dorkId, cursor);
