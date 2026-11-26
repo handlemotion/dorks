@@ -32,7 +32,7 @@ export function NameAndDelete({ build }: { build: BuildView }) {
         <SettingsRow
           label="Delete build"
           control={
-            <Button type="button" size="sm" variant="outline" className="text-destructive" onClick={() => setConfirming(true)}>
+            <Button type="button" size="sm" variant="destructive" onClick={() => setConfirming(true)}>
               Delete
             </Button>
           }

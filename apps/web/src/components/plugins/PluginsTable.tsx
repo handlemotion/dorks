@@ -317,7 +317,7 @@ export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { sk
                           <>
                             <DropdownMenuItem onClick={() => void removeSkill(s.name)}>Remove from Dorks</DropdownMenuItem>
                             <DropdownMenuItem variant="destructive" onClick={() => setRemoving(s)}>
-                              Remove from this computer…
+                              Remove from computer…
                             </DropdownMenuItem>
                           </>
                         ) : (

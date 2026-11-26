@@ -62,9 +62,9 @@ export function RepoDialog({ build, repo, onClose }: { build: BuildView; repo: B
           <DialogFooter>
             <Button
               type="button"
-              variant="ghost"
+              variant="destructive"
               size="sm"
-              className="me-auto text-destructive"
+              className="me-auto"
               disabled={pending}
               aria-label={`remove ${repo.repo}`}
               onClick={() => void save(build.repos.filter((r) => r.repo !== repo.repo))}

@@ -72,7 +72,7 @@ function ConnectorDetail({ connector: c, onManage, onRemoved }: { connector: Con
                 label={`Uninstall ${c.name}`}
                 description="Sessions will no longer have access to its tools."
                 actionLabel="Uninstall"
-                variant="outline"
+                variant="destructive"
                 disabled={pending}
                 onAction={() =>
                   void run(async () => {
@@ -147,7 +147,7 @@ function ServerDetail({ server: s, onEdit, onRemoved }: { server: McpServerView;
                 label={`Remove ${s.name}`}
                 description="Deletes this custom plugin and its stored secrets."
                 actionLabel="Remove"
-                variant="outline"
+                variant="destructive"
                 disabled={pending}
                 onAction={() =>
                   void run(async () => {
@@ -233,7 +233,7 @@ function SkillDetail({ skill: s, onRemoved }: { skill: SkillView; onRemoved: () 
                 label={s.local ? 'Remove from Dorks' : `Remove ${s.name}`}
                 description={s.local ? 'Sessions stop getting it. It stays on this computer for your other agents.' : 'Removes this skill from future sessions.'}
                 actionLabel="Remove"
-                variant="outline"
+                variant={s.local ? 'outline' : 'destructive'}
                 disabled={pending}
                 onAction={() =>
                   void run(async () => {
@@ -248,7 +248,7 @@ function SkillDetail({ skill: s, onRemoved }: { skill: SkillView; onRemoved: () 
                   label="Remove from this computer"
                   description="Deletes its folder, so every agent on this computer loses it too."
                   actionLabel="Remove…"
-                  variant="outline"
+                  variant="destructive"
                   disabled={pending}
                   onAction={() => setRemoving(true)}
                 />
