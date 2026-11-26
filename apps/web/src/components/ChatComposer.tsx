@@ -1,4 +1,4 @@
-import { BoxIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon, ZapIcon } from 'lucide-react'
+import { BoxIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon, ZapIcon } from 'lucide-react'
 import { modelLabel, type AgentModelChoice } from '@dorks/shared'
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type RefObject, type ReactNode } from 'react'
 import { MENU_POPUP_CLASS } from '@dorks/ui/dropdown-menu'
@@ -9,6 +9,8 @@ import claudeLogo from '../assets/providers/claude.svg'
 import antigravityLogo from '../assets/providers/antigravity.svg'
 import codexDark from '../assets/providers/codex_dark.svg'
 import codexLight from '../assets/providers/codex_light.svg'
+import openaiDark from '../assets/providers/openai-dark.svg'
+import openaiLight from '../assets/providers/openai-light.svg'
 import opencodeDark from '../assets/providers/opencode-dark.svg'
 import opencodeLight from '../assets/providers/opencode.svg'
 import { Logo } from './onboarding/List'
@@ -392,12 +394,12 @@ type ModelEntry = { key: string; provider: AgentProvider; model?: string; name: 
  * none before a session starts; one the plan cannot use pauses the session and asks for another.
  */
 const CURATED: ModelEntry[] = [
-  { key: 'claude:opus', provider: 'claude', model: 'opus', name: 'Claude Opus 5.5' },
+  { key: 'claude:opus', provider: 'claude', model: 'opus', effort: 'high', name: 'Claude Opus 5.5' },
   { key: 'codex:gpt-6.2-sol', provider: 'codex', model: 'gpt-6.2-sol', effort: 'high', name: 'GPT Sol 6.2' },
-  { key: 'claude:fable', provider: 'claude', model: 'fable', name: 'Fable 5.2' },
+  { key: 'claude:fable', provider: 'claude', model: 'fable', effort: 'high', name: 'Fable 5.2' },
   { key: 'antigravity:gemini-4-carbon-medium', provider: 'antigravity', model: 'gemini-4-carbon-medium', name: 'Gemini Carbon', detail: 'Medium' },
   { key: 'antigravity:gemini-4-neon-high', provider: 'antigravity', model: 'gemini-4-neon-high', name: 'Gemini Neon', detail: 'High' },
-  { key: 'claude:sonnet', provider: 'claude', model: 'sonnet', name: 'Sonnet 5.5' },
+  { key: 'claude:sonnet', provider: 'claude', model: 'sonnet', effort: 'high', name: 'Sonnet 5.5' },
   { key: 'codex:gpt-6.2-astra', provider: 'codex', model: 'gpt-6.2-astra', effort: 'high', name: 'GPT Astra 6.2' },
 ]
 
@@ -419,9 +421,6 @@ function searchableModels(catalog: Partial<Record<AgentProvider, AgentModelChoic
   return [...CURATED, ...reported.filter((e) => !seen.has(e.key)), ...defaults]
 }
 
-/** The effort segments' labels, short enough for six in a row. */
-const SHORT_EFFORT: Record<string, string> = { default: 'Auto', none: 'None', low: 'Low', medium: 'Med', high: 'High', xhigh: 'XHigh', max: 'Max' }
-
 /** What the agent itself reported, so the trigger is never only what was asked for. */
 function ModelConfirmation({ active }: { active?: { model?: string; effort?: string } }) {
   return (
@@ -438,15 +437,15 @@ function ModelConfirmation({ active }: { active?: { model?: string; effort?: str
   )
 }
 
-/** The chosen model's effort and fast mode, the first two rows above the models (only what the model offers). */
-function ModelSettings({ models, efforts, fastOffered, fast }: { models: ModelPicker; efforts: string[]; fastOffered: boolean; fast: boolean }) {
-  if (!efforts.length && !fastOffered) return null
+/** The chosen model's effort and fast mode, the first two rows above the models (fast mode only where the model offers it). */
+function ModelSettings({ models, effort, fastOffered, fast }: { models: ModelPicker; effort?: EffortChoice; fastOffered: boolean; fast: boolean }) {
+  if (!effort && !fastOffered) return null
   return (
     <div className="flex flex-col border-b border-border p-1">
-      {efforts.length > 0 && <EffortRow efforts={efforts} effort={models.effort} onChange={(next) => models.onChange(models.model, next, fast)} />}
+      {effort && <EffortChooser choice={effort} />}
       {fastOffered && (
         <label className="flex h-8 cursor-pointer items-center gap-2 px-2 text-sm">
-          <ZapIcon className="size-3.5 text-muted-foreground" />
+          <ZapIcon className="size-3.5 fill-current text-muted-foreground" />
           <span className="flex-1">Fast mode</span>
           <Switch size="sm" checked={fast} onCheckedChange={(on) => models.onChange(models.model, models.effort, on)} aria-label="Fast mode" />
         </label>
@@ -455,33 +454,85 @@ function ModelSettings({ models, efforts, fastOffered, fast }: { models: ModelPi
   )
 }
 
-/** Effort as a row of small segments, the agent's default first: the first option above the models. */
-function EffortRow({ efforts, effort, onChange }: { efforts: string[]; effort?: string; onChange: (effort: string | undefined) => void }) {
-  const options = [DEFAULT, ...efforts]
+/** A model's mark: GPT models show ChatGPT's (they run on Codex, but the model is what the menu names), the rest their agent's. */
+function ModelMark({ entry }: { entry: Pick<ModelEntry, 'provider' | 'model'> }) {
+  if (entry.provider === 'codex' && entry.model) return <Logo light={openaiLight} dark={openaiDark} className="size-3.5" />
+  return <ProviderIcon provider={entry.provider} />
+}
+
+const CODEX_EFFORTS = ['low', 'medium', 'high', 'xhigh']
+const GEMINI_EFFORT = /^(.*)-(low|medium|high)$/
+
+/**
+ * The chosen model's efforts and how to change it. Every model has one: Claude's are the ones the model reports, Codex's are its four,
+ * and an Antigravity model's effort is part of its slug (`gemini-4-neon-high`), so changing it picks the family's other slug.
+ */
+function effortChoice(
+  provider: AgentProvider,
+  models: ModelPicker | undefined,
+  choices: AgentModelChoice[],
+  catalog: Partial<Record<AgentProvider, AgentModelChoice[]>>,
+  active?: { effort?: string },
+) {
+  if (!models) return undefined
+  if (provider === 'antigravity') {
+    const m = GEMINI_EFFORT.exec(models.model ?? '')
+    if (!m) return undefined
+    const family = m[1]!
+    const effort = m[2]!
+    const known = new Set([...(catalog.antigravity ?? []), ...choices].map((c) => c.model))
+    const efforts = ['low', 'medium', 'high'].filter((e) => e === effort || known.has(`${family}-${e}`))
+    return { efforts, effort, set: (e: string) => models.onChange(`${family}-${e}`, undefined, false) }
+  }
+  if (provider === 'codex') return { efforts: CODEX_EFFORTS, effort: models.effort ?? 'high', set: (e: string) => models.onChange(models.model, e, false) }
+  const efforts: string[] = [...(choices.find((c) => c.model === (models.model ?? DEFAULT))?.efforts ?? [])]
+  if (!efforts.length) return undefined
+  return { efforts, effort: models.effort ?? active?.effort, set: (e: string) => models.onChange(models.model, e, !!models.fast) }
+}
+type EffortChoice = NonNullable<ReturnType<typeof effortChoice>>
+
+/** Effort as a row naming the current one, with its choices in a menu nested to the side: the first option above the models. */
+function EffortChooser({ choice }: { choice: EffortChoice }) {
+  const [open, setOpen] = useState(false)
+  const { efforts, effort, set } = choice
   return (
-    <div className="flex h-8 items-center gap-2 px-2 text-sm">
-      <span className="text-muted-foreground">
-        <EffortBars level={effort ? barsFor(efforts, effort) : 0} />
-      </span>
-      <span className="flex-1">Effort</span>
-      <div role="radiogroup" aria-label="Effort" className="flex items-center gap-0.5">
-        {options.map((e) => {
-          const on = (effort ?? DEFAULT) === e
-          return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        openOnHover
+        delay={80}
+        className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-[6px] px-2 text-sm outline-none hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05] data-[popup-open]:bg-foreground/[0.05]"
+      >
+        <span className="text-muted-foreground">
+          <EffortBars level={effort ? barsFor(efforts, effort) : 0} />
+        </span>
+        <span className="flex-1 text-left">Effort</span>
+        <span className="text-muted-foreground">{effort ? effortName(effort) : 'Default'}</span>
+        <ChevronRightIcon className="size-3.5 text-muted-foreground" />
+      </PopoverTrigger>
+      <PopoverContent side="right" align="start" sideOffset={6} alignOffset={-4} className={`${MENU_POPUP_CLASS} w-40 gap-0 p-1 ring-0`}>
+        <div role="radiogroup" aria-label="Effort" className="flex flex-col">
+          {efforts.map((e) => (
             <button
               key={e}
               type="button"
               role="radio"
-              aria-checked={on}
-              onClick={() => onChange(e === DEFAULT ? undefined : e)}
-              className={`h-6 rounded-[6px] px-1 text-xs outline-none focus-visible:outline-2 focus-visible:outline-ring ${on ? 'bg-foreground/[0.07] text-foreground' : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground'}`}
+              aria-checked={e === effort}
+              onClick={() => {
+                set(e)
+                setOpen(false)
+              }}
+              className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2 text-left text-sm outline-none hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05]"
             >
-              {SHORT_EFFORT[e] ?? effortName(e)}
+              <span className="text-muted-foreground">
+                <EffortBars level={barsFor(efforts, e)} />
+              </span>
+              <span className="flex-1">{effortName(e)}</span>
+              {e === effort && <CheckIcon className="size-3.5" />}
             </button>
-          )
-        })}
-      </div>
-    </div>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -515,7 +566,7 @@ function ModelMenu({
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const { models, choices, active, label, effort, efforts, fastOffered, fast } = modelMenuState(provider, picker, agentLabel)
+  const { models, choices, active, label, fastOffered, fast } = modelMenuState(provider, picker, agentLabel)
   const enabled: Record<AgentProvider, boolean> = { claude: true, codex: !!codexEnabled, opencode: openCodeEnabled !== false, antigravity: antigravityEnabled !== false }
   const current = models?.model ?? (models ? undefined : null)
   // A session on the agent's default is checked on the model the agent runs (`opus` resolves to the `claude-opus-…` it reported).
@@ -524,6 +575,7 @@ function ModelMenu({
   const isCurrent = (e: ModelEntry) => e.provider === provider && ((e.model ?? undefined) === (current ?? undefined) || resolves(e))
   // Another agent only on a new session; a running Codex session changes its model from the thread.
   const canPick = (e: ModelEntry) => isCurrent(e) || (e.provider === provider ? !!models && !(provider === 'codex' && !isNewSession) : !!setProvider && enabled[e.provider])
+  const effortNow = effortChoice(provider, models, choices, catalog ?? {}, active)
   const selected = CURATED.find(isCurrent)
   const shownLabel = selected ? selected.name : label
   const q = query.trim().toLowerCase()
@@ -535,7 +587,8 @@ function ModelMenu({
     if (provider !== 'claude') return models.onChange(e.model, e.effort, false)
     // An effort the new model does not support falls back to its default; fast mode stays on only where the model offers it.
     const next = choices.find((c) => c.model === e.model)
-    models.onChange(e.model, models.effort && next?.efforts.includes(models.effort as never) ? models.effort : undefined, !!models.fast && !!next?.fast)
+    const supported = (x?: string) => (x && next?.efforts.includes(x as never) ? x : undefined)
+    models.onChange(e.model, supported(e.effort) ?? supported(models.effort), !!models.fast && !!next?.fast)
   }
   return (
     <Popover
@@ -551,30 +604,30 @@ function ModelMenu({
           <InputGroupButton
             size="sm"
             variant="ghost"
-            aria-label={`Model: ${shownLabel}${effort ? `, effort: ${effortName(effort)}` : ''}${fast ? ', fast mode' : ''}`}
+            aria-label={`Model: ${shownLabel}${effortNow?.effort ? `, effort: ${effortName(effortNow.effort)}` : ''}${fast ? ', fast mode' : ''}`}
             className="ml-auto h-7 gap-1.5 px-2 text-[13px] text-muted-foreground hover:text-foreground"
           />
         }
       >
         <span data-testid="model-label">{shownLabel}</span>
-        {effort && efforts.length > 0 && (
+        {effortNow?.effort && (
           <span className="text-muted-foreground">
-            <EffortBars level={barsFor(efforts, effort)} />
+            <EffortBars level={barsFor(effortNow.efforts, effortNow.effort)} />
           </span>
         )}
-        {fast && <ZapIcon className="text-muted-foreground" />}
+        {fast && <ZapIcon className="fill-current text-muted-foreground" />}
         <ChevronDownIcon />
       </PopoverTrigger>
       {/* Styled as the app's dropdown menus (hairline, soft shadow, 32px rows), like the build chooser. */}
       <PopoverContent align="end" className={`${MENU_POPUP_CLASS} w-80 gap-0 p-0 ring-0`}>
         <Command shouldFilter={false} loop className="rounded-none bg-transparent p-0">
           <CommandMenuInput aria-label="Search all models" autoFocus value={query} onValueChange={setQuery} placeholder="Search all models…" />
-          {!q && models && <ModelSettings models={models} efforts={efforts} fastOffered={fastOffered} fast={fast} />}
+          {!q && models && <ModelSettings models={models} effort={effortNow} fastOffered={fastOffered} fast={fast} />}
           <CommandList className="max-h-80 p-1">
             <CommandEmpty className="px-2 py-3 text-left text-xs text-muted-foreground">No models match.</CommandEmpty>
             {entries.map((e) => (
               <CommandItem key={e.key} value={e.key} disabled={!canPick(e)} data-checked={isCurrent(e) ? 'true' : undefined} onSelect={() => pick(e)} className={REPO_ITEM} title={e.model}>
-                <ProviderIcon provider={e.provider} />
+                <ModelMark entry={e} />
                 <span className="min-w-0 flex-1 truncate">
                   {e.name}
                   {e.detail && <span className="ms-1.5 text-muted-foreground">{e.detail}</span>}

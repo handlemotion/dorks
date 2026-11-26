@@ -196,7 +196,10 @@ type Choice = { model?: string; effort?: string; fast?: boolean }
 function newSessionPicker(provider: AgentProvider, settings: ReturnType<typeof useSettings>, choice: Choice, setChoice: (c: Choice) => void): ModelPicker | undefined {
   if (provider === 'claude') {
     const choices = settings?.claudeModels ?? []
-    return { choices, ...choice, model: choice.model ?? preferredModel(choices), onChange: (model, effort, fast) => setChoice({ model, effort, fast }) }
+    const model = choice.model ?? preferredModel(choices)
+    // Every model starts at an effort, not the agent's unnamed default: high where the model offers it.
+    const high = choices.find((c) => c.model === (model ?? 'default'))?.efforts.includes('high' as never)
+    return { choices, ...choice, model, effort: choice.effort ?? (high ? 'high' : undefined), onChange: (model, effort, fast) => setChoice({ model, effort, fast }) }
   }
   // Antigravity's list may not be known yet; a model from the menu's short list is chosen all the same (agy checks it at start).
   if (provider === 'antigravity') return { choices: settings?.antigravityModels ?? [], model: choice.model, onChange: (model) => setChoice({ model }) }
