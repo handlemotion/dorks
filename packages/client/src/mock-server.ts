@@ -98,9 +98,24 @@ interface Ctx {
   res: ServerResponse;
 }
 
+/**
+ * Like apps/server's `needsAttentionOf`, read from the session's events: a request for the owner's computer or a secure input not
+ * answered yet, or a ship that failed and has not ended.
+ */
+const needsAttention = (events: ClientEvent[]): boolean => {
+  const open = new Set<string>();
+  const ships = new Map<number, { status: string; endedAt?: number }>();
+  for (const e of events as (ClientEvent & { requestId?: string; ship?: { id: number; status: string; endedAt?: number } })[]) {
+    if ((e.type === "local_request" || e.type === "input_request") && e.requestId) open.add(e.requestId);
+    else if ((e.type === "local_decision" || e.type === "input_response") && e.requestId) open.delete(e.requestId);
+    else if (e.type === "ship" && e.ship) ships.set(e.ship.id, e.ship);
+  }
+  return open.size > 0 || [...ships.values()].some((s) => s.status === "failed" && s.endedAt === undefined);
+};
+
 const view = (d: MockDork): Dork => {
-  const { events: _events, deleting: _deleting, ...row } = d;
-  return row;
+  const { events, deleting: _deleting, ...row } = d;
+  return needsAttention(events) ? { ...row, needsAttention: true } : row;
 };
 
 /** What the composer's `/` menu offers: the CLI's `initialize` commands, skills marked by where they come from. */
