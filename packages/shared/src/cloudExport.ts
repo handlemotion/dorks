@@ -1,11 +1,13 @@
 import { z } from "zod";
 import { AUTOMATION_MODES, automationTrigger } from "./automations";
 import { commentPolicy } from "./autonomy";
+import { buildRepo, buildService, machineType } from "./builds";
 import { dorkState } from "./events";
 import { DORK_MODES } from "./modes";
 
-// "Move to cloud" (docs/move-to-cloud.md): a team org leaves its owner's Mac for the cloud runtime. The Mac's server exports what
-// the org has (sessions with their transcripts, automations, MCP servers, skills, shared variables, settings) in this format, and
+// "Move to cloud" (docs/move-to-cloud.md): a workspace leaves its owner's Mac for the cloud runtime (a team org that ran on the Mac, the
+// personal workspace once it is on a paid plan, or the personal workspace copied into a paid team). The Mac's server exports what
+// it has (sessions with their transcripts, builds, automations, MCP servers, skills, shared variables, settings) in this format, and
 // uploads it to the cloud's import endpoint, which validates it with these same schemas (dorks-cloud imports @dorks/shared).
 //
 // Secret values never travel in clear: the import endpoint hands out an ECDH P-256 public key per import, and every secret is
@@ -55,8 +57,13 @@ export const exportSession = z.object({
   effort: z.string().max(16).nullable(),
   fast: z.boolean(),
   codeMode: z.boolean(),
-  /** A build of this Mac (docs/builds.md); builds do not move, so the cloud may start such a session on the base machine. */
+  /** The build it starts from (docs/builds.md), one of the manifest's `builds` (or null: the base machine). */
   buildId: z.string().max(64).nullable(),
+  /**
+   * Where it ran on the Mac (docs/local-dorks.md). A local session has no sandbox (`boxId` null): in the cloud its next message starts a
+   * new one from the pushed branch; work never committed and pushed stays on the Mac.
+   */
+  location: z.enum(["cloud", "local"]).default("cloud"),
   parentId: id.nullable(),
   icon: z.string().max(16).nullable(),
   prUrl: z.string().max(500).nullable(),
@@ -128,6 +135,29 @@ export const exportSkill = z.object({
 export const exportImage = z.object({ id: z.string().min(1).max(64), dorkId: id, mime: z.string().max(100), bytes: z.number().int().nonnegative(), createdAt: ms });
 export const exportImageData = z.object({ mime: z.string().max(100), data: b64 });
 
+/** A build variable: the value sealed as `build-var|<build id>|<name>`; null when an agent asked for it and nobody filled it in. */
+export const exportBuildVar = z.object({ name: z.string().min(1).max(64), secret: z.boolean(), buildTime: z.boolean(), value: sealedValue.nullable() });
+
+/**
+ * A build (docs/builds.md): its definition and variables. The image does not move (it is a snapshot in the Mac's Boat account, and a
+ * Dorks Cloud org builds on Dorks' own); `approved` says the owner had approved this exact spec, so the cloud may build it again.
+ */
+export const exportBuild = z.object({
+  id: z.string().min(1).max(64),
+  name: z.string().min(1).max(200),
+  machineType,
+  setupScript: z.string(),
+  repos: z.array(buildRepo),
+  services: z.array(buildService).default([]),
+  approved: z.boolean(),
+  /** It had an image on the Mac: worth building again in the cloud. */
+  hadImage: z.boolean(),
+  vars: z.array(exportBuildVar),
+  createdAt: ms,
+  updatedAt: ms,
+});
+export type ExportBuild = z.infer<typeof exportBuild>;
+
 /** A shared variable (Settings › Shared variables): the value sealed as `variable|<name>`. */
 export const exportVariable = z.object({ name: z.string().min(1).max(128), value: sealedValue });
 
@@ -164,6 +194,9 @@ export const exportManifest = z.object({
   automations: z.array(exportAutomation),
   sessions: z.array(exportSession),
   images: z.array(exportImage),
+  /** Builds, and the one new sessions start on. Absent in an export made before builds moved. */
+  builds: z.array(exportBuild).default([]),
+  defaultBuildId: z.string().max(64).nullable().default(null),
 });
 export type ExportManifest = z.infer<typeof exportManifest>;
 
@@ -194,7 +227,13 @@ export const importCreated = z.object({ importId: id, key: importKey, maxPartByt
 export type ImportCreated = z.infer<typeof importCreated>;
 
 /** `POST …/imports/:id/commit` (200). */
-export const importCommitted = z.object({ runtime: z.literal("cloud"), sessions: z.number().int(), events: z.number().int() });
+export const importCommitted = z.object({
+  runtime: z.literal("cloud"),
+  sessions: z.number().int(),
+  events: z.number().int(),
+  /** The Mac left the org (a team org taken over); false when it stays (the personal workspace, or a copy into another org). */
+  macRemoved: z.boolean().optional(),
+});
 
 // ---------------------------------------------------------------- sealing
 
