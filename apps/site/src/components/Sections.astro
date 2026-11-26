@@ -1,10 +1,32 @@
 ---
 /**
- * The landing page below the hero, from Figma (Dorks, node 47:2). A shell for now: placeholder logo slots and the hero
- * screenshot standing in for the feature shots, to be swapped for real logos and per-feature captures.
+ * The landing page below the hero, from Figma (Dorks, node 47:2). Placeholder logo slots, and the hero capture stands in for
+ * every feature shot until each has its own.
  */
 const LOGO_SLOTS = 5;
-const SHOTS = ["right", "left", "right", "left"] as const;
+
+const FEATURES = [
+  {
+    title: "A box per agent",
+    body: "Every agent gets its own sandbox with your repo, your tools and your services already installed. It can run the app, break things and try again without touching your laptop or another agent's work.",
+    side: "right",
+  },
+  {
+    title: "The context it needs",
+    body: "Agents get woken up when CI fails, a reviewer leaves a comment or the branch conflicts, and they fix it before you get to it. The usual harnesses don't come with any of that, they finish the turn and wait for you.",
+    side: "left",
+  },
+  {
+    title: "Checked after merge",
+    body: "When a PR merges, Dorks follows its checks and deploys and wakes the agent once it's live, so it tests the change on the real URL. If a stage fails it fixes forward or reverts. Next up is mock services that behave like production, so it can test against those before it ever ships.",
+    side: "right",
+  },
+  {
+    title: "Nerds run the crew",
+    body: "A nerd plans the work, starts a worker agent for each piece and follows their pull requests until they land. You talk to one session and it keeps the rest moving.",
+    side: "left",
+  },
+] as const;
 ---
 
 <section aria-labelledby="trusted-heading" class="w-full border-b border-[#eaeaea]">
@@ -25,44 +47,63 @@ const SHOTS = ["right", "left", "right", "left"] as const;
   </ul>
 </section>
 
-<section class="w-full px-6 py-[120px]">
+<section aria-labelledby="why-heading" class="w-full px-6 py-[120px]">
   <div class="mx-auto flex max-w-[450px] flex-col gap-4 text-[17px] leading-[22px] text-black">
-    <p>Intelligence is not the issue anymore.</p>
-    <p>Models have evolved to a point where the quality of an LLM&rsquo;s work relies on the harness and tools you provide it.</p>
+    <h2 id="why-heading" class="mb-2 text-sm text-[#afafaf]">Why we built it</h2>
+    <p>Intelligence isn&rsquo;t the issue anymore.</p>
     <p>
-      At Dorks we&rsquo;re trying to build that harness: agents that run on their own machines, with your repos, your tools and your
-      review loop, so what they hand back is work you can merge.
+      Models are good enough now that the quality of their work comes down to the harness around them, the machine they run on,
+      what they can see and what happens after they open a pull request.
+    </p>
+    <p>
+      Most harnesses stop at the diff. The agent writes the code, opens the PR and moves on, and you&rsquo;re the one who finds out a
+      check failed, a reviewer asked for changes or the deploy broke something.
+    </p>
+    <p>
+      At Dorks we&rsquo;re building the rest of it. Every agent gets its own box, hears about everything that happens to its pull
+      requests and stays on the work after it merges, until it&rsquo;s checked in production.
     </p>
   </div>
 </section>
 
 <section class="w-full px-6 pt-[100px] pb-[60px]">
-  <p class="text-center font-serif text-[32px] leading-[1.3] text-black sm:text-[40px]">
-    Dorks is the last ADE
-    <br />
-    you&rsquo;ll ever install.
-  </p>
+  <h2 class="text-center font-serif text-[32px] leading-[1.3] text-black sm:text-[40px]">
+    Agents that see it through
+    <br class="hidden sm:block" />
+    to production.
+  </h2>
 </section>
 
-<section aria-label="Dorks at work" class="w-full border-y border-[#eaeaea] px-5 sm:px-12 lg:px-[clamp(64px,6.6vw,140px)]">
+<section aria-label="What Dorks gives your agents" class="w-full border-y border-[#eaeaea] px-5 sm:px-12 lg:px-[clamp(64px,6.6vw,140px)]">
   <div class="mx-auto w-full border-x border-[#eaeaea]">
     {
-      SHOTS.map((side) => (
-        <div class="relative h-[260px] overflow-hidden sm:h-auto sm:aspect-[1310/475] border-[#eaeaea] not-last:border-b">
-          <img
-            src="/hero-app.webp"
-            alt=""
-            width={3360}
-            height={2040}
-            loading="lazy"
-            decoding="async"
-            draggable="false"
+      FEATURES.map((feature) => (
+        <article class="relative overflow-hidden border-[#eaeaea] not-last:border-b lg:aspect-[1310/475]">
+          <div
             class:list={[
-              "absolute top-[15.4%] w-full max-w-none rounded-[10px] border border-[#eaeaea] select-none",
-              side === "right" ? "left-[32.4%]" : "right-[32.4%]",
+              "relative z-10 flex max-w-[420px] flex-col gap-2 px-6 pt-10 lg:absolute lg:top-[15.4%] lg:w-[calc(32.4%-96px)] lg:p-0",
+              feature.side === "right" ? "lg:left-12" : "lg:left-[calc(67.6%+48px)]",
             ]}
-          />
-        </div>
+          >
+            <h3 class="text-[17px] leading-[22px] font-medium text-black">{feature.title}</h3>
+            <p class="text-[15px] leading-[22px] text-neutral-500">{feature.body}</p>
+          </div>
+          <div class="relative h-[240px] lg:static lg:h-auto">
+            <img
+              src="/hero-app.webp"
+              alt=""
+              width={3360}
+              height={2040}
+              loading="lazy"
+              decoding="async"
+              draggable="false"
+              class:list={[
+                "absolute top-[15.4%] w-full max-w-none rounded-[10px] border border-[#eaeaea] select-none",
+                feature.side === "right" ? "left-[32.4%]" : "right-[32.4%]",
+              ]}
+            />
+          </div>
+        </article>
       ))
     }
   </div>
