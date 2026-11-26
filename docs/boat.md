@@ -10,7 +10,7 @@ Boat's `default` machine is 4 vCPU and 8 GB RAM at $0.036/hour, billed per secon
 
 1. **Boat account.** Connected with the Boat CLI's login, with nothing to paste (next section). Or, without the CLI, paste a key: create a [Boat API key](https://docs.boat.dev/api-keys/scopes) with the actions Dorks uses: `sandbox.create`, `sandbox.read`, `sandbox.stop`, `sandbox.resume`, `sandbox.delete`, `exec`, `file.write`, `snapshot.read`, `snapshot.write`, and `environment.read` for Codex. Add `account.read` so the app can also check your plan and wallet, and show the plan's included machine time, starts, running sandboxes and wallet in the composer's usage menu. Boat cannot report which actions a key has, so a missing one shows up when it is first used, as `api_key_action_forbidden` (the build names it). Paste the key in the app: before saving it, the server asks Boat's [`GET /limits`](https://docs.boat.dev/api/reference/account/get-boat-limits) with it, so a wrong or expired key, a free trial (`sandboxPlanKey: "trial"`), a blocked wallet (`canStart: false`) or a wrong organization is reported on that step. Without `account.read` it falls back to listing one sandbox, which proves the key but not the plan. Set `boatOrg` only to bill an organization's wallet; use its `team_…` id, because two organizations with the same name are refused as `ambiguous_org`.
 2. **Base snapshot**: built for you in the background as soon as the Boat key is saved (below).
-3. **Agent sign-in**: a Claude token (the default and the recommended agent); a ChatGPT (Codex) environment is optional (below).
+3. **Agent sign-in**: a Claude token (the default agent), a ChatGPT (Codex) environment for GPT models (below), or both.
 4. **GitHub**: your GitHub CLI login ([GitHub](github.md)).
 
 ## Sign in with the Boat CLI
@@ -76,7 +76,7 @@ and `sandbox.delete`, like the base snapshot.
 
 The models are what `agy models` lists for the account (the effort is part of the slug). The done gate, PR subscriptions and the briefing run from the bridge on agy's event stream, the dorks MCP server and yours go in `~/.gemini/config/mcp_config.json`, the crew and final-answer guidance is an always-on rule, and skills are the synced Claude skills folder. Attached images reach agy as a text note: its stream input takes text only.
 
-**ChatGPT (Codex), optional.** Claude Code is the priority and the default for new sessions; Codex only appears as a choice once a Boat ChatGPT environment is configured. Connect ChatGPT once per Boat account, not once per dork:
+**ChatGPT (Codex).** Claude Code is the default for new sessions; Codex (GPT models) appears as a choice once a Boat ChatGPT environment is configured. Connect ChatGPT once per Boat account, not once per dork:
 
 1. In Boat's **Agents & Proxying** page, use a credential profile that contains only your ChatGPT subscription and connect it with the short code. The default profile works while it contains only ChatGPT. Boat does not copy sign-ins when you copy a profile.
 2. Leave the account-wide AI credentials proxy **off**, to avoid its daily and per-request charges.

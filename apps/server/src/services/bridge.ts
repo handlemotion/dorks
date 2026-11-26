@@ -18,7 +18,7 @@ import { getDork, openCommands, runtimeOf, type DorkRow, type Preview, type Shar
 import { update } from "../db";
 import { append, bridgeSeen, dispatch, enqueueConfigure, finishPause, patchDork } from "../lifecycle/dispatch";
 import { opFailed } from "../lifecycle/lifecycle";
-import { rememberAntigravityModels, rememberModelChoices } from "./models";
+import { rememberAntigravityModels, rememberCodexModels, rememberModelChoices } from "./models";
 import { antigravityToken, claudeToken, cliSecrets, githubToken } from "./settings";
 import { mcpServerConfigs } from "./mcpServers";
 import { skillRefs } from "./skills";
@@ -236,11 +236,11 @@ const FRAME_HANDLERS: { [T in FromBridge["t"]]: (b: Batch, f: FrameOf<T>) => voi
     if (fresh.titleSource === "message" && title) patchDork(app, dorkId, { title, titleSource: "auto" });
   },
   agent_models: ({ app, dorkId, dork }, f) => {
-    if (dork.provider === "codex") return;
     patchDork(app, dorkId, { modelChoices: f.models, agentEffort: f.effort ?? undefined });
     // The global caches offer the models to new sessions.
     if (dork.provider === "claude") rememberModelChoices(app, f.models);
     if (dork.provider === "antigravity") rememberAntigravityModels(app, f.models);
+    if (dork.provider === "codex") rememberCodexModels(app, f.models);
   },
   agent_commands: ({ app, dorkId }, f) => patchDork(app, dorkId, { agentCommands: f.commands }),
   files: ({ app, dorkId }, f) => storeFiles(app, dorkId, f.paths, f.truncated),
@@ -282,7 +282,8 @@ function applyEvent(b: Batch, f: FrameOf<"event">) {
   for (const n of b.normalize(f.raw)) {
     if (n.kind === "event") stopped = applyClientEvent(b, n.body, stopped);
     else if (n.kind === "session") {
-      patchDork(b.app, b.dorkId, b.dork.provider === "codex" ? { codexThreadId: n.sessionId } : { claudeSessionId: n.sessionId, ...(n.model ? { agentModel: n.model } : {}) });
+      const model = n.model ? { agentModel: n.model } : {};
+      patchDork(b.app, b.dorkId, b.dork.provider === "codex" ? { codexThreadId: n.sessionId, ...model } : { claudeSessionId: n.sessionId, ...model });
     } else {
       b.flush();
       dispatch(b.app, b.dorkId, { t: n.kind === "idle" ? "turn_idle" : "turn_started" });

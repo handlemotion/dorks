@@ -120,9 +120,16 @@ function LoadOlder({
 
 export const AGENT_NAMES: Record<DorkView['provider'], string> = { claude: 'Claude', codex: 'Codex', opencode: 'OpenCode', antigravity: 'Antigravity' }
 
-/** The model menu for a running session: Claude's models, the ones OpenCode's providers offer, or Antigravity's; Codex has none. */
+/** The model menu for a running session: Claude's models, the ones OpenCode's providers offer, Antigravity's, or the ChatGPT plan's for Codex. */
 export function claudePicker(dork: DorkView, fallback: AgentModelChoice[] | undefined, onChange: ModelPicker['onChange']): ModelPicker | undefined {
-  if (dork.provider === 'codex') return undefined
+  if (dork.provider === 'codex')
+    return {
+      choices: dork.modelChoices ?? [],
+      model: dork.codexModel?.model,
+      effort: dork.codexModel?.effort,
+      active: { model: dork.agentModel, effort: dork.agentEffort },
+      onChange,
+    }
   return {
     choices: dork.modelChoices ?? (dork.provider === 'claude' ? fallback : undefined) ?? [],
     model: dork.model,

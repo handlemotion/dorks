@@ -4,7 +4,7 @@ import { dorkOf, dorkView, eventOf, getDork, isUnread, needsAttentionOf, prState
 import { insert } from "../db";
 import { dispatch, enqueueConfigure, isAwake, MAX_MESSAGE_CHARS, patchDork, patchRuntime, persistUserMessage, setTimer } from "../lifecycle/dispatch";
 import { withoutImages } from "../lib/messageText";
-import { knownModelChoices, validAntigravityModel, validModelChoice, validOpenCodeModel } from "./models";
+import { knownModelChoices, validAntigravityModel, validCodexModel, validModelChoice, validOpenCodeModel } from "./models";
 import { validRepo } from "../lib/repo";
 import { isBoxNotFound, type DesktopOptions } from "@dorks/core/box";
 import { missingForSession } from "./setup";
@@ -125,16 +125,6 @@ function checkMode(input: { mode?: unknown; icon?: unknown }, setup: boolean, pa
   return { mode, icon: typeof input.icon === "string" && input.icon.trim() ? input.icon.trim() : null };
 }
 
-const CODEX_MODEL = /^gpt-[a-z0-9][a-z0-9.-]{0,40}$/i;
-const CODEX_EFFORTS = ["low", "medium", "high", "xhigh"];
-/** A Codex model and effort named when a session starts (`gpt-6.2-sol`, high by default), or none for Codex's own default. */
-function codexStartModel(model: unknown, effort: unknown): { model: string; effort: string } | undefined {
-  if (model === undefined || model === null || model === "") return undefined;
-  if (typeof model !== "string" || !CODEX_MODEL.test(model)) fail("invalid", "not a Codex model");
-  if (effort !== undefined && effort !== null && (typeof effort !== "string" || !CODEX_EFFORTS.includes(effort))) fail("invalid", "not a Codex effort");
-  return { model, effort: (effort as string | null | undefined) ?? "high" };
-}
-
 export function createDork(
   app: App,
   input: {
@@ -176,9 +166,9 @@ export function createDork(
         : provider === "antigravity"
           ? validAntigravityModel(undefined, input.model)
           : { fast: false };
-  // Codex: a model named at the start (the composer's short list); Codex lists none before it runs. One the plan cannot use pauses the
-  // session and asks for another (`chooseCodexModel`), as for the default.
-  const codexModel = provider === "codex" ? codexStartModel(input.model, input.effort) : undefined;
+  // Codex: a model named at the start (the composer's short list, or the plan's list from an earlier session). One the plan cannot use
+  // pauses the session and asks for another (`chooseCodexModel`), as for the default.
+  const codexModel = provider === "codex" ? validCodexModel(undefined, input.model, input.effort) : undefined;
 
   const id = app.uuid();
   const now = app.now();

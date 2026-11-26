@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
@@ -26,6 +26,7 @@ async function setup(
   codexModel?: { model: string; effort: string },
   boatConnected = true,
   nameFrom?: string,
+  frame: Record<string, unknown> = {},
 ) {
   // Boat installs the account's ChatGPT sign-in in each sandbox's ~/.codex; the fake reads auth.json for "connected".
   if (boatConnected) {
@@ -63,7 +64,8 @@ async function setup(
     repo: { fullName: "acme/demo", branch: "agent/codex" },
     resumeSessionId,
     nameFrom,
-  };
+    ...frame,
+  } as typeof transport.configureFrame;
   const logs: string[] = [];
   const bridge = new Bridge({ cfg: loadConfig(host), transport, log: makeLogger("test", redactor, (s) => logs.push(s)), redactor, baseEnv: host, selfCommand: [process.execPath, cli] });
   cleanup.push(bridge);
@@ -71,6 +73,16 @@ async function setup(
   transport.emit([{ cid: "cfg1", frame: { t: "fetch_configure" } }]);
   return { bridge, transport, home, state, report, logs };
 }
+
+/** What the bridge sent the fake app-server, in order (fixtures/fake-codex.mjs `note`). */
+const sent = (report: string): { method: string; [k: string]: unknown }[] =>
+  existsSync(`${report}.log`)
+    ? readFileSync(`${report}.log`, "utf8")
+        .split("\n")
+        .filter(Boolean)
+        .map((l) => JSON.parse(l))
+    : [];
+const inputText = (entry: Record<string, unknown>) => ((entry.input ?? []) as { type: string; text?: string }[]).map((i) => i.text ?? "").join(" ");
 
 describe("Codex through a Boat ChatGPT connection", () => {
   it("streams a GPT-6 Sol turn without API-key billing", async () => {
@@ -131,7 +143,7 @@ describe("Codex through a Boat ChatGPT connection", () => {
     await waitFor(() => s.transport.of("codex_issue")[0], "unavailable model");
     await waitFor(() => s.transport.of("agent_exited")[0], "exit after missing model");
     expect(s.transport.of("ready")).toHaveLength(0);
-    expect(s.transport.of("codex_models")[0].models).toEqual([{ model: "gpt-6.1-sol", efforts: ["high"] }]);
+    expect(s.transport.of("codex_models")[0].models).toEqual([{ model: "gpt-6.1-sol", efforts: ["medium", "high"] }]);
     expect(s.transport.of("codex_issue")[0].message).toContain("No other model or billing method was selected");
     const next = await setup(s.home, s.state, null, { FAKE_CODEX_MODEL_MISSING: "1" }, { model: "gpt-6.1-sol", effort: "high" });
     await waitFor(() => next.transport.of("ready")[0], "chosen model ready");
@@ -171,5 +183,70 @@ describe("Codex through a Boat ChatGPT connection", () => {
     ).toBe(true);
     expect(s.transport.of("agent_exited")).toHaveLength(0);
     expect(JSON.parse(readFileSync(s.report, "utf8")).envKeys).not.toContain("OPENAI_API_KEY");
+  });
+
+  it("steers a running turn with a message sent mid-turn instead of queueing it behind the turn", async () => {
+    const s = await setup(undefined, undefined, null, { FAKE_CODEX_SLOW: "400" });
+    await waitFor(() => s.transport.of("ready")[0], "ready");
+    s.transport.emit([{ cid: "m1", frame: { t: "user_message", id: "m1", text: "fix the bug" } }]);
+    await waitFor(() => sent(s.report).some((e) => e.method === "turn/start"), "first turn");
+    s.transport.emit([{ cid: "m2", frame: { t: "user_message", id: "m2", text: "use the new API" } }]);
+    await waitFor(() => s.transport.of("ack").some((f) => f.id === "m2"), "steer acked");
+    await waitFor(() => JSON.stringify(s.transport.events()).includes("(steered: use the new API)"), "steered answer");
+    expect(sent(s.report).filter((e) => e.method === "turn/start")).toHaveLength(1);
+    expect(sent(s.report).filter((e) => e.method === "turn/steer")).toHaveLength(1);
+  });
+
+  it("starts the thread with the standing instructions, the owner's MCP servers and skills, and briefs its first turn", async () => {
+    const home = tmp("codex-home-");
+    mkdirSync(join(home, ".claude", "skills", "release-notes"), { recursive: true });
+    writeFileSync(join(home, ".claude", "skills", "release-notes", "SKILL.md"), "---\nname: release-notes\ndescription: notes\n---\n");
+    const mcpServers = [
+      { name: "docs", transport: "http", url: "https://mcp.example.com/mcp?key=k-123", headers: { Authorization: "Bearer t-456" } },
+      { name: "local", transport: "stdio", command: "node", args: ["server.js"], env: { API_KEY: "k-789" } },
+    ];
+    const s = await setup(home, undefined, null, {}, undefined, true, undefined, { mcpServers, role: "worker" });
+    await waitFor(() => s.transport.of("ready")[0], "ready");
+    const start = sent(s.report).find((e) => e.method === "thread/start")!;
+    expect(start.developerInstructions).toContain("final answer");
+    expect(start.config).toMatchObject({
+      "mcp_servers.docs": { url: "https://mcp.example.com/mcp?key=k-123", env_http_headers: { Authorization: expect.stringMatching(/^DORKS_MCP_0_H0$/) } },
+      "mcp_servers.local": { command: "node", args: ["server.js"], env: { API_KEY: "k-789" } },
+    });
+    await waitFor(() => s.transport.of("agent_commands")[0], "skills as commands");
+    expect(s.transport.of("agent_commands")[0].commands).toEqual([{ name: "release-notes", description: "skill release-notes" }]);
+    expect(s.transport.of("agent_models")[0]).toMatchObject({ models: [{ model: "gpt-6-sol", name: "GPT-6 Sol", efforts: ["medium", "high"] }], effort: "high" });
+    s.transport.emit([{ cid: "m1", frame: { t: "user_message", id: "m1", text: "/release-notes for v2" } }]);
+    await waitFor(() => sent(s.report).some((e) => e.method === "turn/start"), "turn");
+    const turn = sent(s.report).find((e) => e.method === "turn/start")!;
+    expect(turn.input).toEqual(expect.arrayContaining([expect.objectContaining({ type: "skill", name: "release-notes" })]));
+    expect(inputText(turn)).toContain("How autonomy works here");
+    expect(inputText(turn)).toContain("for v2");
+  });
+
+  it("shows edits and the plan as Claude's tools, declines approvals, and sends an untested change back once", async () => {
+    const s = await setup(undefined, undefined, null, { FAKE_CODEX_EDIT: "1", FAKE_CODEX_VERDICT: "needs_live_test" });
+    await waitFor(() => s.transport.of("ready")[0], "ready");
+    s.transport.emit([{ cid: "m1", frame: { t: "user_message", id: "m1", text: "fix the bug" } }]);
+    await waitFor(() => sent(s.report).filter((e) => e.method === "turn/start").length === 2, "the gate's continuation");
+    await waitFor(() => s.transport.events().filter((e) => (e.raw as { type?: string }).type === "result").length === 2, "both turns end");
+    const [, again] = sent(s.report).filter((e) => e.method === "turn/start");
+    expect(inputText(again!)).toContain("Before you stop: test this change against the real running software");
+    expect(inputText(again!)).toContain("curl /health");
+    // The continuation is not judged again (Claude Code's stop_hook_active): one judge, two turns.
+    expect(sent(s.report).filter((e) => e.method === "side" && e.judging)).toHaveLength(1);
+    expect(sent(s.report).find((e) => e.method === "approval")).toEqual({ method: "approval", decision: "decline" });
+    const normalize = createNormalizer();
+    const tools = s.transport
+      .events()
+      .flatMap((e) => normalize(e.raw))
+      .flatMap((n) => (n.kind === "event" && n.body.type === "tool_use" ? [n.body] : []));
+    expect(tools.find((b) => b.name === "Edit")?.input).toEqual({ file_path: "src/app.ts", old_string: "old", new_string: "new" });
+    expect(tools.find((b) => b.name === "TodoWrite")?.input).toMatchObject({
+      todos: [
+        { content: "Fix the bug", status: "in_progress" },
+        { content: "Test it", status: "pending" },
+      ],
+    });
   });
 });

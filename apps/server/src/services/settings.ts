@@ -1,5 +1,5 @@
 import { commentPolicy as commentPolicySchema, DEFAULT_COMMENT_POLICY, type CommentPolicy } from "@dorks/shared";
-import { knownAntigravityModels, knownModelChoices } from "./models";
+import { knownAntigravityModels, knownCodexModels, knownModelChoices } from "./models";
 import { fail, OWNER, touch, type App } from "../app";
 import { aad, decrypt, encrypt } from "@dorks/core/crypto";
 import { json, update } from "../db";
@@ -87,6 +87,7 @@ export function settingsView(app: App) {
     antigravityReady: !!s.antigravityTokenEnc || secretNames(app).some((n) => ANTIGRAVITY_SECRETS.includes(n)),
     antigravitySignIn: antigravitySignInView(app),
     antigravityModels: knownAntigravityModels(app),
+    codexModels: knownCodexModels(app),
     boatKey: !!s.boatKeyEnc,
     boatOrg: s.boatOrg ?? null,
     boatEnvironment: s.boatEnvironment ?? null,

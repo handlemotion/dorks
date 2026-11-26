@@ -163,8 +163,8 @@ export class Bridge {
       prStatus: prLookup(env, this.self[1], () => this.github.get()),
       services: () => this.services.summary(),
       judge: (prompt) => this.judge(prompt),
-      // Claude only for now (the one agent tested live, AGENTS.md); a crew coordinator writes no code.
-      skipVerify: () => this.provider !== "claude" || this.role === "coordinator" || !MODES[this.mode].autonomy,
+      // The agents with a judge beside them (Haiku for Claude, Codex's lightest model); a crew coordinator writes no code.
+      skipVerify: () => (this.provider !== "claude" && this.provider !== "codex") || this.role === "coordinator" || !MODES[this.mode].autonomy,
       autonomy: () => MODES[this.mode].autonomy,
       brevity: () => this.role === "coordinator",
       log: this.log,
@@ -492,7 +492,7 @@ export class Bridge {
   }
 
   private async syncSkills(provider: string, env: NodeJS.ProcessEnv, skills: readonly SkillRef[] = []) {
-    if (provider === "codex") return; // Codex sessions do not get skills yet; OpenCode and Antigravity read the same skills directory as Claude Code
+    // Every agent reads this one directory: Claude Code's own, Codex's extra skills root, OpenCode's and Antigravity's skills folders.
     await syncSkills({ stateDir: this.cfg.stateDir, configDir: configDirOf(env), runAs: this.runAs, fetch: (n) => this.t.skill(n), log: this.log }, skills);
   }
 
@@ -575,8 +575,8 @@ export class Bridge {
         this.pipeline.control({ t: "agent_exited", code, stderrTail }, true);
       },
     };
-    const stopReason = async (sessionId: string) => {
-      const result = await this.hooks.methods["hook.stop"]({ session_id: sessionId });
+    const stopReason = async (sessionId: string, turn: { stop_hook_active?: boolean; last_assistant_message?: string } = {}) => {
+      const result = await this.hooks.methods["hook.stop"]({ session_id: sessionId, ...turn });
       return result && typeof result === "object" && "reason" in result && typeof result.reason === "string" ? result.reason : null;
     };
     const onReady = () => {
@@ -637,13 +637,22 @@ export class Bridge {
           : this.provider === "codex"
             ? new CodexAgent({
                 ...shared,
+                loadImage: (id) => this.t.getImage(id),
                 model: this.codexModel,
                 mcpCommand: this.self,
                 sock: this.rpc.sockPath,
-                onModels: (models) => this.pipeline.control({ t: "codex_models", models }, true),
-                onIssue: (message) => this.pipeline.control({ t: "codex_issue", message }, true),
+                userMcp: this.userMcp,
+                skillsDir: join(configDirOf(env), "skills"),
+                system: agentSystem(this.role, this.mode),
+                onModels: (models, effort) => this.pipeline.control({ t: "agent_models", models, effort }, true),
+                onUnavailable: (models) => this.pipeline.control({ t: "codex_models", models }, true),
+                onCommands: (commands) => this.pipeline.control({ t: "agent_commands", commands }, true),
+                onIssue,
                 onReady,
-                onTurnFinished: stopReason,
+                onTurnFinished: (sessionId, turn) => stopReason(sessionId, { stop_hook_active: turn.continued, last_assistant_message: turn.lastMessage }),
+                // Its tool calls reach the verify gate from the stream (onRaw): only the PR follow-up is left to run here.
+                onShell: (command, output) => void this.hooks.methods["hook.postToolUse"]({ tool_name: "Bash", tool_input: { command }, tool_response: { stdout: output } }),
+                sessionContext,
               })
             : new Agent({
                 ...shared,
@@ -679,11 +688,15 @@ export class Bridge {
   }
 
   // ------------------------------------------------------------------ verify judge
-  /** One answer from Haiku beside the agent (never in its session, nothing in its transcript), as the dork's title is made. */
+  /** One answer from a small model beside the agent (Haiku, or Codex's lightest model on a side thread; never in its session), as the dork's title is made. */
   private async judge(prompt: string): Promise<string | null> {
-    if (!(this.agent instanceof Agent) || !this.agentCtx) return null;
+    const agent = this.agent;
+    if (!this.agentCtx || !(agent instanceof Agent || agent instanceof CodexAgent)) return null;
     const { env } = this.agentCtx;
-    const reply = claudeOneShot({ bin: this.cfg.claudeBin, env, cwd: this.runAs?.home ?? env.HOME ?? this.cfg.stateDir, runAs: this.runAs, prompt });
+    const reply =
+      agent instanceof CodexAgent
+        ? agent.oneShot(prompt, JUDGE_TIMEOUT_MS)
+        : claudeOneShot({ bin: this.cfg.claudeBin, env, cwd: this.runAs?.home ?? env.HOME ?? this.cfg.stateDir, runAs: this.runAs, prompt });
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([reply, new Promise<null>((r) => (timer = setTimeout(() => r(null), JUDGE_TIMEOUT_MS)))]);

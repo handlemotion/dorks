@@ -136,6 +136,8 @@ export interface Settings {
   antigravitySignIn?: AntigravitySignIn | null;
   /** The models Antigravity offers the signed-in plan (`agy models`), for a new session's menu. */
   antigravityModels?: AgentModelChoice[];
+  /** The models the ChatGPT plan offered the last Codex session, for a new session's menu; empty until one has run. */
+  codexModels?: AgentModelChoice[];
   boatKey: boolean;
   /** `problem`: why GitHub did not connect by itself (the GitHub CLI is missing or signed out). */
   github: { configured: boolean; login?: string | null; problem?: string };

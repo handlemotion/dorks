@@ -54,7 +54,7 @@ Start the server with `GH_TOKEN` set to Doppler's `GITHUB_TOKEN` (GitHub is the 
 
 The product intentionally has few tests. Do not add or run tests by reflex.
 
-- **Claude is the only provider we test for real right now.** Codex is aggressively deprioritized: keep it compiling and its fake-Codex tests passing, but do not spend time on live Codex runs, Codex-only polish or new Codex coverage. Validate live behaviour with Claude (the `CLAUDE_CODE_OAUTH_TOKEN` in Doppler, `dorks` / `dev_live`).
+- **Claude and Codex (GPT models) are the providers we run for real.** Codex has the same autonomy as Claude: steering, the queue, the done gates (verify and ship, judged by Codex's lightest model), PR notifications, ship checks, skills, the owner's MCP servers, images and model switching ([architecture](docs/architecture.md), "Agents"). Validate live behaviour with Claude (the `CLAUDE_CODE_OAUTH_TOKEN` in Doppler, `dorks` / `dev_live`) and with Codex through a Boat ChatGPT environment ([boat](docs/boat.md)). The fake Codex (`infra/bridge/test/fixtures/fake-codex.mjs`) follows the real app-server protocol; `codex app-server generate-ts --out <dir>` prints its types for the pinned CLI.
 
 - **Only real tests on real business logic**: the lifecycle state machine and timers, the Boat driver, the PR poller, crypto, the bridge protocol, the server e2e. Each must be light, high value and able to catch a real bug.
 - **No low-signal tests**: no UI snapshot or screenshot tests, no tests that restate the implementation, no mocks of the thing under test, no tests for markup, styling or copy that will change within a day.

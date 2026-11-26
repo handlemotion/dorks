@@ -232,6 +232,12 @@ const SIM_COMMANDS = [
   { name: "init", description: "Initialize a new CLAUDE.md file with codebase documentation" },
 ];
 const SIM_FILES = ["README.md", "package.json", "AGENTS.md", "src/index.ts", "src/app.tsx", "src/components/Button.tsx", "src/components/Composer.tsx", "src/lib/format.ts", "docs/architecture.md"];
+const SIM_CODEX_MODELS = [
+  { model: "gpt-6-sol", name: "Sim GPT-6 Sol", description: "The thorough one", efforts: ["low", "medium", "high", "xhigh"] },
+  { model: "gpt-6.2-sol", name: "Sim GPT-6.2 Sol", efforts: ["low", "medium", "high", "xhigh"] },
+  { model: "gpt-6-luna", name: "Sim GPT-6 Luna", description: "The quick one", efforts: ["low", "medium"] },
+];
+
 const SIM_MODELS = [
   { model: "default", name: "Default (recommended)", description: "Sim Opus 1", resolved: "sim-opus-1", efforts: SIM_EFFORTS },
   { model: "opus", name: "Sim Opus 1", description: "The thorough one", resolved: "sim-opus-1", efforts: SIM_EFFORTS },
@@ -320,17 +326,23 @@ async function runTurn(text) {
   await flushNow();
 }
 
+/** The model the agent says it runs, and its model list: Codex reports the ChatGPT plan's (`model/list`), Claude its `initialize` list. */
+function agentModels(cfg) {
+  if (cfg.provider === "codex") return { running: cfg.codexModel?.model ?? "gpt-6-sol", frame: { t: "agent_models", models: SIM_CODEX_MODELS, effort: cfg.codexModel?.effort ?? "high" } };
+  return { running: SIM_MODELS.find((m) => m.model === (cfg.model ?? "default"))?.resolved ?? cfg.model, frame: { t: "agent_models", models: SIM_MODELS, effort: cfg.effort ?? null } };
+}
+
 async function configure(cid) {
   const cfg = await client.action("configure");
   if (!cfg) return log("configure refused (the backend recorded why)");
   log("configure: repo", cfg.repo?.fullName ?? "(none)", "branch", cfg.repo?.branch, "resume", cfg.resumeSessionId, "env keys", Object.keys(cfg.env).join(","), "gh token", cfg.ghToken ? "yes" : "no");
   sessionId = cfg.resumeSessionId ?? `sim-session-${Date.now()}`; // a real bridge: `claude --resume <id>` when set
-  const model = SIM_MODELS.find((m) => m.model === (cfg.model ?? "default"))?.resolved ?? cfg.model;
-  ev({ type: "system", subtype: "init", session_id: sessionId, ...(cfg.provider !== "codex" ? { model } : {}) });
+  const models = agentModels(cfg);
+  ev({ type: "system", subtype: "init", session_id: sessionId, model: models.running });
   queue.push({ t: "ack", id: cid }, { t: "ready" });
   // The real bridge asks Haiku (or a light Codex model) for this; the sim names the dork after the first few words.
   if (cfg.nameFrom) queue.push({ t: "title", text: `Sim: ${cfg.nameFrom.replace(/\s+/g, " ").trim().split(" ").slice(0, 5).join(" ")}`.slice(0, 120) });
-  if (cfg.provider !== "codex") queue.push({ t: "agent_models", models: SIM_MODELS, effort: cfg.effort ?? null });
+  queue.push(models.frame);
   if (cfg.provider === "claude" || !cfg.provider) queue.push({ t: "agent_commands", commands: SIM_COMMANDS });
   if (cfg.repo) queue.push({ t: "files", paths: SIM_FILES, truncated: false });
   simRepo = cfg.repo?.fullName ?? null;
