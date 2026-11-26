@@ -34,8 +34,10 @@ export interface SkillView {
   source: SkillSource;
   /** The commit it was downloaded from. */
   sha: string;
-  /** github.com link to the folder at that commit. */
-  url: string;
+  /** github.com link to the folder at that commit; null for a skill from this computer. */
+  url: string | null;
+  /** Added from this computer (docs/skills.md, "From this computer"): its folder, `~/…` in the owner's home. It is read again from there. */
+  local?: string;
   fileCount: number;
   bytes: number;
   installedAt: number;
@@ -51,6 +53,22 @@ export interface SkillCandidate {
   bytes: number;
   /** Already installed under this name (installing replaces it). */
   installed: boolean;
+}
+
+/** A skill found on this computer (`GET /api/skills/local`): in ~/.agents/skills or ~/.claude/skills. */
+export interface LocalSkill {
+  name: string;
+  description: string;
+  /** Its folder, `~/…` in the owner's home. */
+  folder: string;
+  fileCount: number;
+  bytes: number;
+  /** A skill of this name is installed (adding this one replaces it unless it is this folder). */
+  installed: boolean;
+  /** The installed skill of this name is this folder. */
+  added: boolean;
+  /** Too many files or bytes to add (over 1000 files or 8 MB). */
+  tooLarge: boolean;
 }
 
 export interface SkillResolution {

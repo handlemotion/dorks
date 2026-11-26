@@ -202,18 +202,24 @@ function SkillDetail({ skill: s, onRemoved }: { skill: SkillView; onRemoved: () 
                   </>
                 }
               />
-              <SettingsValueRow
-                label="Repository"
-                value={
-                  <a href={s.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-mono text-xs hover:underline">
-                    {s.source.repo}
-                    {s.source.ref ? `#${s.source.ref}` : ''}
-                    <ExternalLinkIcon className="size-3 text-muted-foreground" />
-                  </a>
-                }
-              />
-              {s.source.path && <SettingsValueRow label="Path" value={s.source.path} mono />}
-              <SettingsValueRow label="Commit" value={s.sha.slice(0, 7)} mono />
+              {s.local ? (
+                <SettingsValueRow label="Folder" value={s.local} mono />
+              ) : (
+                <>
+                  <SettingsValueRow
+                    label="Repository"
+                    value={
+                      <a href={s.url ?? undefined} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-mono text-xs hover:underline">
+                        {s.source.repo}
+                        {s.source.ref ? `#${s.source.ref}` : ''}
+                        <ExternalLinkIcon className="size-3 text-muted-foreground" />
+                      </a>
+                    }
+                  />
+                  {s.source.path && <SettingsValueRow label="Path" value={s.source.path} mono />}
+                  <SettingsValueRow label="Commit" value={s.sha.slice(0, 7)} mono />
+                </>
+              )}
               <SettingsValueRow label="Package" value={`${s.fileCount} ${s.fileCount === 1 ? 'file' : 'files'} · ${kb(s.bytes)}`} />
               <SettingsValueRow label="Updated" value={note || ago(s.updatedAt)} tone="muted" />
             </SettingsGroup>

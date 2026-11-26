@@ -14,6 +14,7 @@ import {
   type McpServerView,
   type MergeMethod,
   type PullRequestView,
+  type LocalSkill,
   type SkillResolution,
   type SkillView,
   type SubscriptionView,
@@ -255,6 +256,8 @@ export function createApi(config: ApiConfig) {
     listSkills: () => request<SkillView[]>("GET", "/api/skills"),
     resolveSkills: (source: string) => request<SkillResolution>("POST", "/api/skills/resolve", { source }),
     installSkills: (source: string, skills: string[]) => request<{ installed: string[] }>("POST", "/api/skills", { source, skills }),
+    listLocalSkills: () => request<LocalSkill[]>("GET", "/api/skills/local"),
+    addLocalSkills: (skills: string[]) => request<{ installed: string[] }>("POST", "/api/skills/local", { skills }),
     updateSkill: (name: string) => request<{ updated: boolean }>("POST", `/api/skills/${enc(name)}/update`),
     deleteSkill: (name: string) => request<object>("DELETE", `/api/skills/${enc(name)}`),
     /** A sign-in page for an OAuth server; the browser comes back to this server, so it sends the URL it reaches it at. */

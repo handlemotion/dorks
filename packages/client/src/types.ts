@@ -16,6 +16,7 @@ export type {
   ComposioStatus,
   SkillView,
   SkillCandidate,
+  LocalSkill,
   SkillResolution,
 } from "@dorks/shared";
 

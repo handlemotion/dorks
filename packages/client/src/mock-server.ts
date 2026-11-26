@@ -4,7 +4,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { ClientEvent, CommentAnchor, CommentView, McpServerView, PullRequestView, ShipStage, ShipView, SkillCandidate, SkillView } from "@dorks/shared";
+import type { ClientEvent, CommentAnchor, CommentView, LocalSkill, McpServerView, PullRequestView, ShipStage, ShipView, SkillCandidate, SkillView } from "@dorks/shared";
 import type { Dork, Me, PhoneStatus, Settings, SnapshotStatus } from "./types.ts";
 import { mockAutomations } from "./mock-automations.ts";
 import { mockCloud, type MockCloudPlace, type MockOrgRuntime } from "./mock-cloud.ts";
@@ -342,6 +342,12 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       },
     ],
   ]);
+  /** The skills "on this computer" (~/.agents/skills), for Skills' Found on this computer section. */
+  const localSkills: Omit<LocalSkill, "installed" | "added">[] = [
+    { name: "release-notes", description: "Write release notes from merged pull requests.", folder: "~/.agents/skills/release-notes", fileCount: 2, bytes: 3_120, tooLarge: false },
+    { name: "pdf", description: "Read, fill and merge PDFs.", folder: "~/.agents/skills/pdf", fileCount: 6, bytes: 41_900, tooLarge: false },
+    { name: "team-style", description: "How this team writes code and pull requests.", folder: "~/.claude/skills/team-style", fileCount: 1, bytes: 1_840, tooLarge: false },
+  ];
   /** A loose stand-in for services/skills.ts: `owner/repo` from the pasted text, and a few made-up skills in it. */
   const mockResolve = (source: string) => {
     const m = /([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?(?:[/@#\s]|$)/.exec(source.replace(/https?:\/\/github\.com\//, ""));
@@ -1409,6 +1415,38 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       },
     ],
     ["GET /api/secrets", ({ res }) => json(res, 200, [...secrets.keys()].sort())],
+    [
+      "GET /api/skills/local",
+      ({ res }) =>
+        json(
+          res,
+          200,
+          localSkills.map((l) => ({ ...l, installed: skills.has(l.name), added: skills.get(l.name)?.local === l.folder })),
+        ),
+    ],
+    [
+      "POST /api/skills/local",
+      ({ body, res }) => {
+        const want = Array.isArray(body.skills) ? (body.skills as string[]) : [];
+        const pick = localSkills.filter((l) => want.includes(l.name));
+        if (!pick.length) return fail(res, "invalid", "Choose the skills to add.");
+        for (const l of pick)
+          skills.set(l.name, {
+            name: l.name,
+            description: l.description,
+            source: { repo: "", ref: null, path: "" },
+            sha: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            url: null,
+            local: l.folder,
+            fileCount: l.fileCount,
+            bytes: l.bytes,
+            installedAt: skills.get(l.name)?.installedAt ?? Date.now(),
+            updatedAt: Date.now(),
+          });
+        broadcast({ t: "settings" });
+        return json(res, 200, { installed: pick.map((l) => l.name) });
+      },
+    ],
     [
       "GET /api/skills",
       ({ res }) =>

@@ -640,4 +640,9 @@ export const MIGRATIONS: string[] = [
   -- What an automation's runs start (services/automations.ts, docs/automations.md): code sessions, or chats (the Chat workspace).
   ALTER TABLE automations ADD COLUMN mode TEXT NOT NULL DEFAULT 'code';
   `,
+  `
+  -- A skill added from this computer (services/skills.ts, docs/skills.md "From this computer"): the folder it is read from again, so
+  -- it follows edits there. NULL: from GitHub (\`repo\`, \`ref\`, \`path\`).
+  ALTER TABLE skills ADD COLUMN local_dir TEXT;
+  `,
 ];

@@ -1,3 +1,6 @@
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { Effect } from "effect";
 import { describe, expect, it } from "vite-plus/test";
@@ -5,7 +8,7 @@ import { uiApp } from "../src/http/ui";
 import { findSkills, untar } from "../src/lib/skillRepo";
 import { parseSkillSource } from "../src/lib/skillSource";
 import * as bridge from "../src/services/bridge";
-import { skillBundle } from "../src/services/skills";
+import { addLocalSkills, listLocalSkills, skillBundle, skillRefs, updateSkill } from "../src/services/skills";
 import { updateSettings } from "../src/services/settings";
 import { fakeFetch, harness } from "./harness";
 
@@ -167,5 +170,54 @@ describe("skills from GitHub", () => {
     await installSkills(h.app, { source: "https://github.com/o/r/tree/release@2/skills/pdf" });
     expect(await updateSkill(h.app, "pdf")).toEqual({ updated: false });
     expect(asked.filter((p) => p.includes("/commits/")).every((p) => p.endsWith("release%402"))).toBe(true);
+  });
+});
+
+describe("skills from this computer", () => {
+  it("lists ~/.agents/skills and ~/.claude/skills once each, adds one, and follows edits to its folder", async () => {
+    const home = mkdtempSync(join(tmpdir(), "dorks-skills-"));
+    try {
+      const agents = join(home, ".agents", "skills");
+      const claude = join(home, ".claude", "skills");
+      mkdirSync(join(agents, "release-notes", "scripts"), { recursive: true });
+      writeFileSync(join(agents, "release-notes", "SKILL.md"), md("release-notes", "Write release notes."));
+      writeFileSync(join(agents, "release-notes", "scripts", "run.sh"), "echo hi");
+      chmodSync(join(agents, "release-notes", "scripts", "run.sh"), 0o755);
+      mkdirSync(join(claude, "Team Style"), { recursive: true });
+      writeFileSync(join(claude, "Team Style", "SKILL.md"), md("Team Style", "House style."));
+      mkdirSync(join(claude, "not-a-skill"), { recursive: true });
+      symlinkSync(join(agents, "release-notes"), join(claude, "release-notes")); // what `npx skills add -g` leaves
+      const roots = [agents, claude];
+
+      const h = harness();
+      expect(listLocalSkills(h.app, roots).map((s) => [s.name, s.added])).toEqual([
+        ["release-notes", false],
+        ["team-style", false],
+      ]);
+      expect(addLocalSkills(h.app, { skills: ["release-notes"] }, roots)).toEqual({ installed: ["release-notes"] });
+      expect(listLocalSkills(h.app, roots).find((s) => s.name === "release-notes")?.added).toBe(true);
+
+      const id = h.seed("waking", { provider: "claude", repo: "o/r" });
+      const before = skillRefs(h.app)[0]!.digest;
+      expect(skillBundle(h.app, id, "release-notes").files.find((f) => f.path === "scripts/run.sh")?.exec).toBe(true);
+
+      // An edit on this computer reaches the next session that starts (configure reads the folder again).
+      writeFileSync(join(agents, "release-notes", "SKILL.md"), md("release-notes", "Write release notes from merged PRs."));
+      await h.advance(10_000);
+      expect(skillRefs(h.app)[0]!.digest).not.toBe(before);
+      expect(
+        skillBundle(h.app, id, "release-notes")
+          .files.map((f) => f.path)
+          .sort(),
+      ).toEqual(["SKILL.md", "scripts/run.sh"]);
+      expect(await updateSkill(h.app, "release-notes")).toEqual({ updated: false });
+
+      rmSync(join(agents, "release-notes"), { recursive: true });
+      await expect(updateSkill(h.app, "release-notes")).rejects.toThrow(/no longer a skill folder/);
+      await h.advance(10_000);
+      expect(skillRefs(h.app).map((s) => s.name)).toEqual(["release-notes"]); // a folder that is gone keeps the last copy
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });

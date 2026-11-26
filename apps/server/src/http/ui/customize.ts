@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { composioLink, composioStatus, composioUnlink, connectComposio, disconnectComposio } from "../../services/composio";
 import { signOutMcp, startMcpSignIn } from "../../services/mcpOAuth";
 import { deleteMcpServer, listMcpServers, putMcpServer } from "../../services/mcpServers";
-import { deleteSkill, installSkills, listSkills, resolveSkills, updateSkill } from "../../services/skills";
+import { addLocalSkills, deleteSkill, installSkills, listLocalSkills, listSkills, resolveSkills, updateSkill } from "../../services/skills";
 import { looseBody, ok, service, serviceAsync } from "../route";
 import { handler, name, type Routes } from "./shared";
 
@@ -62,6 +62,20 @@ export const customizeRoutes: Routes = (api, app) => {
     on((c) =>
       looseBody(c).pipe(
         Effect.flatMap((b) => serviceAsync((a) => installSkills(a, b))),
+        Effect.map((v) => c.json(v)),
+      ),
+    ),
+  );
+  // The skills already on this computer (~/.agents/skills, ~/.claude/skills): the local owner only, not a team (services/team.ts)
+  api.get(
+    "/api/skills/local",
+    on((c) => service((a) => c.json(listLocalSkills(a)))),
+  );
+  api.post(
+    "/api/skills/local",
+    on((c) =>
+      looseBody(c).pipe(
+        Effect.flatMap((b) => service((a) => addLocalSkills(a, b))),
         Effect.map((v) => c.json(v)),
       ),
     ),

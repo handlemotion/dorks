@@ -8,6 +8,7 @@ import type {
   McpServerInput,
   McpServerView,
   MergeMethod,
+  LocalSkill,
   PullRequestView,
   SkillView,
   SubscriptionView,
@@ -249,6 +250,7 @@ export class DorksClient {
         this.invalidate("secrets");
         this.invalidate("mcp-servers");
         this.invalidate("skills");
+        this.invalidate("local-skills");
         this.invalidate("composio");
         this.invalidate("local-access");
         this.invalidate("phone");
@@ -435,6 +437,10 @@ export class DorksClient {
   /** The skills from Customize (docs/skills.md), shared by every sandbox. */
   skills() {
     return this.query<SkillView[]>("skills", () => this.api.listSkills());
+  }
+  /** The skills on the server's computer (~/.agents/skills, ~/.claude/skills) that can be added; the local owner only. */
+  localSkills() {
+    return this.query<LocalSkill[]>("local-skills", () => this.api.listLocalSkills());
   }
 
   /** The Files tab: the checkouts in the session's sandbox, and one checkout's files. Read again by `actions.refreshWorkspace`. */
@@ -825,6 +831,12 @@ export class DorksClient {
       this.invalidate("skills");
       return r;
     },
+    addLocalSkills: async (skills: string[]) => {
+      const r = await this.api.addLocalSkills(skills);
+      this.invalidate("skills");
+      this.invalidate("local-skills");
+      return r;
+    },
     updateSkill: async (name: string) => {
       const r = await this.api.updateSkill(name);
       this.invalidate("skills");
@@ -833,6 +845,7 @@ export class DorksClient {
     deleteSkill: async (name: string) => {
       await this.api.deleteSkill(name);
       this.invalidate("skills");
+      this.invalidate("local-skills");
     },
     createBuild: async (input: BuildInput & { name: string }) => {
       const r = await this.api.createBuild(input);

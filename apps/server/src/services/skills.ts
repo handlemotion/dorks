@@ -1,7 +1,8 @@
 import { gunzipSync, gzipSync } from "node:zlib";
-import type { SkillBundle, SkillRef, SkillResolution, SkillView } from "@dorks/shared";
+import type { LocalSkill, SkillBundle, SkillRef, SkillResolution, SkillView } from "@dorks/shared";
 import { AppFail, fail, type App } from "../app";
 import { getDork } from "../data";
+import { listLocalFolders, localSkillRoots, readSkillDir, tildePath } from "../lib/localSkills";
 import { findSkills, MAX_SKILL_BYTES, MAX_SKILL_FILES, MAX_SKILL_PATH, MAX_TARBALL_BYTES, skillDigest, untar, type FoundSkill, type TarFile } from "../lib/skillRepo";
 import { parseSkillSource, SourceError, type ParsedSource } from "../lib/skillSource";
 import { reconfigureAwake } from "./mcpServers";
@@ -10,6 +11,7 @@ import { githubToken } from "./settings";
 // Skills from Customize (docs/skills.md). The owner pastes a GitHub repository or an `npx skills add` command once; this server
 // downloads the repository's tarball, keeps each chosen skill's folder in SQLite, and every sandbox gets it in ~/.claude/skills
 // through the bridge (`configure` lists name and digest, the `skill` rpc returns the files). Nothing is installed per session.
+// Skills already on this computer (~/.agents/skills, ~/.claude/skills) can be added too; those are read again from their folder.
 
 const API = "https://api.github.com";
 const HEADERS = { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "dorks" };
@@ -30,6 +32,7 @@ interface Row {
   files: Uint8Array;
   installed_at: number;
   updated_at: number;
+  local_dir: string | null;
 }
 
 const viewOf = (r: Row): SkillView => ({
@@ -37,18 +40,28 @@ const viewOf = (r: Row): SkillView => ({
   description: r.description,
   source: { repo: r.repo, ref: r.ref, path: r.path },
   sha: r.sha,
-  url: `https://github.com/${r.repo}/tree/${r.sha}${r.path ? `/${r.path}` : ""}`,
+  url: r.local_dir ? null : `https://github.com/${r.repo}/tree/${r.sha}${r.path ? `/${r.path}` : ""}`,
+  ...(r.local_dir ? { local: tildePath(r.local_dir) } : {}),
   fileCount: r.file_count,
   bytes: r.bytes,
   installedAt: r.installed_at,
   updatedAt: r.updated_at,
 });
 
-const LIST = "SELECT name, description, repo, ref, path, sha, digest, file_count, bytes, installed_at, updated_at FROM skills ORDER BY name";
-export const listSkills = (app: App): SkillView[] => app.db.all<Row>(LIST).map(viewOf);
+const LIST = "SELECT name, description, repo, ref, path, sha, digest, file_count, bytes, installed_at, updated_at, local_dir FROM skills ORDER BY name";
+export function listSkills(app: App): SkillView[] {
+  refreshLocalSkills(app, true);
+  return app.db.all<Row>(LIST).map(viewOf);
+}
 
-/** What `configure` carries: each skill's name and digest. The bridge fetches the files of the ones it does not have. */
-export const skillRefs = (app: App): SkillRef[] => app.db.all<{ name: string; digest: string }>("SELECT name, digest FROM skills ORDER BY name");
+/**
+ * What `configure` carries: each skill's name and digest. The bridge fetches the files of the ones it does not have. A skill from
+ * this computer is read again first, so a session that starts or wakes gets its folder as it is now.
+ */
+export function skillRefs(app: App): SkillRef[] {
+  refreshLocalSkills(app, false);
+  return app.db.all<{ name: string; digest: string }>("SELECT name, digest FROM skills ORDER BY name");
+}
 
 /** The bridge's `skill` rpc: one skill's files, for a dork that exists. Skills hold no secrets, so no further gating. */
 export function skillBundle(app: App, dorkId: string, name: unknown): SkillBundle {
@@ -195,13 +208,14 @@ function checkSize(s: FoundSkill) {
 
 const packFiles = (s: FoundSkill) => gzipSync(JSON.stringify(s.files.map((f) => ({ path: f.path, data: Buffer.from(f.data).toString("base64"), ...(f.exec ? { exec: true } : {}) }))));
 
-/** Saves skills and has every awake agent sync (no restart: Claude Code reloads ~/.claude/skills). Runs in the caller's transaction. */
-function save(app: App, r: Pick<Resolved, "repo" | "ref" | "sha">, skills: FoundSkill[]) {
+/** Writes skills (`localDir`: read from that folder on this computer). Runs in the caller's transaction. */
+function store(app: App, r: Pick<Resolved, "repo" | "ref" | "sha">, skills: FoundSkill[], localDir: string | null = null) {
   for (const s of skills) {
     app.db.run(
-      `INSERT INTO skills (name, description, repo, ref, path, sha, digest, file_count, bytes, files, installed_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO skills (name, description, repo, ref, path, sha, digest, file_count, bytes, files, installed_at, updated_at, local_dir) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (name) DO UPDATE SET description = excluded.description, repo = excluded.repo, ref = excluded.ref, path = excluded.path, sha = excluded.sha,
-         digest = excluded.digest, file_count = excluded.file_count, bytes = excluded.bytes, files = excluded.files, updated_at = excluded.updated_at`,
+         digest = excluded.digest, file_count = excluded.file_count, bytes = excluded.bytes, files = excluded.files, updated_at = excluded.updated_at,
+         local_dir = excluded.local_dir`,
       s.name,
       s.description,
       r.repo,
@@ -214,8 +228,14 @@ function save(app: App, r: Pick<Resolved, "repo" | "ref" | "sha">, skills: Found
       packFiles(s),
       app.now(),
       app.now(),
+      localDir,
     );
   }
+}
+
+/** Saves skills and has every awake agent sync (no restart: Claude Code reloads ~/.claude/skills). Runs in the caller's transaction. */
+function save(app: App, r: Pick<Resolved, "repo" | "ref" | "sha">, skills: FoundSkill[], localDir: string | null = null) {
+  store(app, r, skills, localDir);
   reconfigureAwake(app);
   app.db.afterCommit(() => app.hub.emit({ t: "settings" }));
 }
@@ -239,6 +259,7 @@ export async function installSkills(app: App, input: { source?: unknown; skills?
 export async function updateSkill(app: App, name: string): Promise<{ updated: boolean }> {
   const row = app.db.get<Row>("SELECT * FROM skills WHERE name = ?", name);
   if (!row) fail("not_found", "no such skill");
+  if (row.local_dir) return updateLocal(app, row, row.local_dir);
   const [owner, repo] = row.repo.split("/") as [string, string];
   const at = (path: string): ParsedSource => ({ owner, repo, ref: row.ref, path, refPath: null, skills: [] });
   // Its own folder first (a root SKILL.md would hide a nested skill from a whole-repo search), then the repo, for a moved skill.
@@ -260,4 +281,87 @@ export function deleteSkill(app: App, name: string): void {
     reconfigureAwake(app);
     app.db.afterCommit(() => app.hub.emit({ t: "settings" }));
   });
+}
+
+// ---------------------------------------------------------------- this computer
+
+const asLocal = (s: FoundSkill, dir: string) => ({ repo: "", ref: null, sha: skillDigest(s.files), dir });
+
+function updateLocal(app: App, row: Row, dir: string): { updated: boolean } {
+  const f = readSkillDir(dir);
+  if (!f) fail("not_found", `${tildePath(dir)} is no longer a skill folder on this computer.`);
+  if (f.over) fail("invalid", `${row.name} is too large (over ${MAX_SKILL_FILES} files or 8 MB).`);
+  checkSize(f.skill);
+  const l = asLocal(f.skill, dir);
+  if (l.sha === row.digest) return { updated: false };
+  app.db.tx(() => save(app, l, [{ ...f.skill, name: row.name }], dir));
+  return { updated: true };
+}
+
+/** When each app last read its skills' folders: many sessions waking together read them once. */
+const lastRefresh = new WeakMap<App, number>();
+const REFRESH_MS = 5_000;
+
+/**
+ * Reads every skill added from this computer again and saves the ones whose folder changed. A folder that is gone or now too large
+ * keeps the last copy. `reconfigure`: also have awake agents sync (not from inside `configure`, which is sending them already).
+ */
+export function refreshLocalSkills(app: App, reconfigure: boolean): void {
+  const at = lastRefresh.get(app);
+  if (at !== undefined && app.now() - at < REFRESH_MS && app.now() >= at) return;
+  lastRefresh.set(app, app.now());
+  try {
+    const rows = app.db.all<Row>("SELECT * FROM skills WHERE local_dir IS NOT NULL");
+    let changed = false;
+    for (const row of rows) {
+      const f = readSkillDir(row.local_dir!);
+      if (!f || f.over) continue;
+      const l = asLocal(f.skill, row.local_dir!);
+      if (l.sha === row.digest) continue;
+      try {
+        checkSize(f.skill);
+      } catch {
+        continue;
+      }
+      app.db.tx(() => store(app, l, [{ ...f.skill, name: row.name }], row.local_dir));
+      changed = true;
+    }
+    if (changed && reconfigure) app.db.tx(() => reconfigureAwake(app));
+    if (changed) app.db.afterCommit(() => app.hub.emit({ t: "settings" }));
+  } catch (e) {
+    console.warn("skills: reading this computer's skill folders failed", e);
+  }
+}
+
+/** `GET /api/skills/local`: the skills on this computer (~/.agents/skills, ~/.claude/skills), and which are added. */
+export function listLocalSkills(app: App, roots = localSkillRoots()): LocalSkill[] {
+  const rows = new Map(app.db.all<{ name: string; local_dir: string | null }>("SELECT name, local_dir FROM skills").map((r) => [r.name, r.local_dir]));
+  return listLocalFolders(roots).map(({ dir, skill: s, over }) => ({
+    name: s.name,
+    description: s.description,
+    folder: tildePath(dir),
+    fileCount: s.files.length,
+    bytes: s.bytes,
+    installed: rows.has(s.name),
+    added: rows.get(s.name) === dir,
+    tooLarge: over || s.files.length > MAX_SKILL_FILES || s.bytes > MAX_SKILL_BYTES || s.files.some((f) => f.path.length > MAX_SKILL_PATH),
+  }));
+}
+
+/** `POST /api/skills/local`: adds the named skills from this computer; each one is read again from its folder from then on. */
+export function addLocalSkills(app: App, input: { skills?: unknown }, roots = localSkillRoots()): { installed: string[] } {
+  const want = Array.isArray(input.skills) ? input.skills.filter((s): s is string => typeof s === "string") : [];
+  if (!want.length) fail("invalid", "Choose the skills to add.");
+  const found = listLocalFolders(roots);
+  const pick = want.map((n) => found.find((f) => f.skill.name === n) ?? fail("not_found", `No skill named ${n} on this computer.`));
+  for (const f of pick) {
+    if (f.over) fail("invalid", `${f.skill.name} is too large (over ${MAX_SKILL_FILES} files or 8 MB).`);
+    checkSize(f.skill);
+  }
+  app.db.tx(() => {
+    const have = new Set(app.db.all<{ name: string }>("SELECT name FROM skills").map((x) => x.name));
+    if (new Set([...have, ...pick.map((f) => f.skill.name)]).size > MAX_SKILLS) fail("invalid", `at most ${MAX_SKILLS} skills`);
+    for (const f of pick) save(app, asLocal(f.skill, f.dir), [f.skill], f.dir);
+  });
+  return { installed: pick.map((f) => f.skill.name) };
 }

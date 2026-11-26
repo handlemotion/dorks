@@ -3,6 +3,7 @@ import {
   toAppError,
   type ComposioStatus,
   type McpServerView,
+  type LocalSkill,
   type SkillView,
   type PullRequestView,
   type SubscriptionView,
@@ -146,6 +147,11 @@ export function useMcpServers(): McpServerView[] | undefined {
 /** The skills from Customize; `undefined` while loading. */
 export function useSkills(): SkillView[] | undefined {
   return useStore(useDorksClient().skills()).data;
+}
+
+/** The skills on the server's computer that can be added (undefined while loading, and for a teammate, who may not list them). */
+export function useLocalSkills(): LocalSkill[] | undefined {
+  return useStore(useDorksClient().localSkills()).data;
 }
 
 export function useSecretNames(): string[] | undefined {

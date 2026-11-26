@@ -88,10 +88,14 @@ function SkillRow({ skill: s }: { skill: SkillView }) {
       description={
         <span className="block truncate">
           {s.description && <span>{s.description} · </span>}
-          <a href={s.url} target="_blank" rel="noreferrer" className="font-mono hover:text-foreground">
-            {s.source.repo}
-            {s.source.ref ? `#${s.source.ref}` : ''}
-          </a>
+          {s.local ? (
+            <span className="font-mono">{s.local}</span>
+          ) : (
+            <a href={s.url ?? undefined} target="_blank" rel="noreferrer" className="font-mono hover:text-foreground">
+              {s.source.repo}
+              {s.source.ref ? `#${s.source.ref}` : ''}
+            </a>
+          )}
           {note && <span> · {note}</span>}
           {error && <span className="text-destructive"> · {error}</span>}
         </span>
