@@ -1,5 +1,15 @@
 # @dorks/desktop
 
+## 0.14.0
+
+### Minor Changes
+
+- [#298](https://github.com/handlemotion/dorks/pull/298) [`5d9c6ec`](https://github.com/handlemotion/dorks/commit/5d9c6eccbf0cbc8c8ce2c81493f77bfbdb21890b) Thanks [@handlemotion](https://github.com/handlemotion)! - Sign in to Dorks Cloud in your browser: Sign in opens dorks.build, and the app signs in by itself when you come back. The email-code form in Settings is gone.
+
+### Patch Changes
+
+- [#302](https://github.com/handlemotion/dorks/pull/302) [`74c07fe`](https://github.com/handlemotion/dorks/commit/74c07feeef7afb8379c715db3469eef046526bcf) Thanks [@handlemotion](https://github.com/handlemotion)! - Dorks Cloud teams: a session's messages show in the app again, with who wrote them, and so do the cards for secure inputs and machine changes (the agent's draft, your decision, its build).
+
 ## 0.13.1
 
 ### Patch Changes
