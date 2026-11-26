@@ -175,6 +175,16 @@ server belongs to one org: a member's Mac (normally in its owner's personal org)
   forwards it to the relay's `/v1/macs/:id/api/*` with the session and streams the answer back (`/api/live` included). Shared images
   load from `/cloud/servers/:id/images/:imageId`, outside `/api` like `/images/:id` (the image id is the capability). The relay and
   the server reached decide what the request may do (the relay allowlist, and the `x-dorks-actor` identity the relay adds).
+- **Settings on another server** follow your role there (`GET /api/me` through the relay, [cloud](cloud.md) "Roles"): an admin or owner
+  edits what the server allows over the relay (AI accounts, Boat, Sessions, Shared variables, Sentry); a member sees those pages read
+  only; the setup checklist and the snapshot build are read only for everyone; what never crosses the relay (GitHub sign-in, Your
+  computer, Phone, Antigravity's sign-in) is left out. Appearance and Dorks Cloud are this app's and always editable
+  (`apps/web/src/components/settings/access.tsx`).
+- **Teams**: Settings › Organization manages the org you work in now: its members and roles, invitations (admins), name and logo
+  (owners), leave, delete (owners, never the personal org). Collab is one price per org; a fair-use cap limits its members
+  (`MEMBER_LIMIT_REACHED`). Invitations to you show under *Invitations* in the switcher and in Settings › Account; the email's
+  `dorks://invite/<id>` opens `#/invite/<id>` (the desktop shell does not register the `dorks://` scheme yet; until then the code
+  from the email goes in Settings › Account).
 - **The GitHub owner filter** moved from the switcher to a filter button beside it: the org says where you work, the owner filter narrows
   the sidebar's chats and the new session's repositories to one GitHub user or organization there.
 
@@ -186,6 +196,7 @@ server belongs to one org: a member's Mac (normally in its owner's personal org)
 | `DELETE /api/cloud/session` | | `{}`: signed out (here and, best effort, on the relay) |
 | `GET /api/cloud/places` | | `{orgs: {id, name, slug, logo, personal, plan, role, active, servers: {id, name, kind, online, lastSeenAt}[]}[]}`, personal first (the relay's `GET /v1/orgs`; an older relay's `/v1/macs` grouped by org); `not_configured` when signed out or the session ended |
 | `POST /api/cloud/orgs` | `{name}` | the new org, owned by the account |
+| `GET\|POST /api/cloud/auth/organization/:action` | Better Auth's | team management as the signed-in account: `get-full-organization`, `list-user-invitations`, `get-invitation`, `invite-member`, `cancel-invitation`, `accept-invitation`, `reject-invitation`, `update-member-role`, `remove-member`, `leave`, `update`, `delete` (nothing else); a refusal is an AppError (`limit` for `MEMBER_LIMIT_REACHED`) |
 | `* /api/cloud/servers/:id/api/*` | any | that server's UI API through the relay |
 | `GET /cloud/servers/:id/images/:imageId` | | that server's shared image (no owner token) |
 

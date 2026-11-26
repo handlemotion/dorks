@@ -36,14 +36,17 @@ export function pageAccess(policy: RemotePolicy, access: SettingsAccess): PageAc
   return policy === 'edit' && access.admin ? 'full' : 'view'
 }
 
-/** A page shown read-only: one line saying why, then its controls, every one disabled by the fieldset. */
+/**
+ * A page shown read-only: one line saying why, then its controls, disabled by the fieldset (native inputs and buttons) and inert (the
+ * rest, such as base-ui's switches and selects, which a fieldset does not reach).
+ */
 export function ReadOnly({ server, admin, children }: { server: CloudServer; admin: boolean; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-4">
       <p role="note" className="px-4 text-xs text-muted-foreground">
         {admin ? `Shown as ${server.name} has it. Change it on that computer.` : `View only. Admins of the organization can change these on ${server.name}.`}
       </p>
-      <fieldset disabled className="m-0 min-w-0 border-0 p-0">
+      <fieldset disabled inert className="m-0 min-w-0 border-0 p-0">
         {children}
       </fieldset>
     </div>
