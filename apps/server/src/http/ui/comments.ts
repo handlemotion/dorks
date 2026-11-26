@@ -4,6 +4,7 @@ import * as comments from "../../services/comments";
 import { owned } from "../../services/dorks";
 import { looseBody, service } from "../route";
 import { handler, id, type Routes } from "./shared";
+import { byOfRequest } from "../../services/team";
 
 // ---- preview comments (services/comments.ts, docs/architecture.md "Preview comments")
 export const commentRoutes: Routes = (api, app) => {
@@ -20,11 +21,11 @@ export const commentRoutes: Routes = (api, app) => {
   );
   api.post(
     "/api/dorks/:id/comments",
-    on((c) => looseBody(c).pipe(Effect.flatMap((b) => service((a) => c.json(comments.addComment(a, id(c), { body: b.body, anchor: b.anchor, port: b.port })))))),
+    on((c) => looseBody(c).pipe(Effect.flatMap((b) => service((a) => c.json(comments.addComment(a, id(c), { body: b.body, anchor: b.anchor, port: b.port }, byOfRequest(c, a))))))),
   );
   api.post(
     "/api/dorks/:id/comments/:cid/replies",
-    on((c) => looseBody(c).pipe(Effect.flatMap((b) => service((a) => c.json(comments.replyComment(a, id(c), cid(c), b.body)))))),
+    on((c) => looseBody(c).pipe(Effect.flatMap((b) => service((a) => c.json(comments.replyComment(a, id(c), cid(c), b.body, "owner", byOfRequest(c, a))))))),
   );
   api.patch(
     "/api/dorks/:id/comments/:cid",
@@ -32,7 +33,7 @@ export const commentRoutes: Routes = (api, app) => {
       looseBody(c).pipe(
         Effect.flatMap((b) =>
           service((a) => {
-            comments.changeComment(a, id(c), cid(c), { body: b.body, resolved: b.resolved });
+            comments.changeComment(a, id(c), cid(c), { body: b.body, resolved: b.resolved }, "owner", byOfRequest(c, a));
             return c.json({});
           }),
         ),
@@ -43,7 +44,7 @@ export const commentRoutes: Routes = (api, app) => {
     "/api/dorks/:id/comments/:cid",
     on((c) =>
       service((a) => {
-        comments.deleteComment(a, id(c), cid(c));
+        comments.deleteComment(a, id(c), cid(c), byOfRequest(c, a));
         return c.json({});
       }),
     ),

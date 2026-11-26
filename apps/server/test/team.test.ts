@@ -91,6 +91,36 @@ describe("team identity on the relay", () => {
     expect(texts).toEqual(["solo", "[Message from Ada (ada@team.test)]\n\nhi from Ada", "[Message from Olive (olive@team.test)]\n\nnow shared"]);
   });
 
+  it("keeps each person's preview comments theirs to edit and delete", async () => {
+    const { h, token, relay, setOrg } = await setup();
+    setOrg(ORG);
+    const id = h.seed("idle");
+    const anchor = { kind: "element", path: "/", selector: "main", label: "main" };
+    const ada = await token();
+    const grace = await token({ sub: "u_grace", name: "Grace" });
+    const mine = (await relay("POST", `/api/dorks/${id}/comments`, ada, { body: "Bluer", anchor, port: 5173 })).body.id as string;
+    expect((await relay("PATCH", `/api/dorks/${id}/comments/${mine}`, grace, { body: "Greener" })).body.error.code).toBe("forbidden");
+    expect((await relay("DELETE", `/api/dorks/${id}/comments/${mine}`, grace)).body.error.code).toBe("forbidden");
+    expect((await relay("PATCH", `/api/dorks/${id}/comments/${mine}`, ada, { body: "Bluest" })).status).toBe(200);
+    // The local owner's comment (no writer) is not a teammate's either.
+    const ui = uiApp(h.app);
+    const own = (await (
+      await ui.fetch(
+        new Request(`http://127.0.0.1/api/dorks/${id}/comments`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${h.app.cfg.ownerToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ body: "Mine", anchor, port: 5173 }),
+        }),
+      )
+    ).json()) as { id: string };
+    expect((await relay("DELETE", `/api/dorks/${id}/comments/${own.id}`, ada)).body.error.code).toBe("forbidden");
+    const list = (await relay("GET", `/api/dorks/${id}/comments`, ada)).body as { body: string; by?: { name: string } }[];
+    expect(list.map((c) => [c.body, c.by?.name])).toEqual([
+      ["Bluest", "Ada"],
+      ["Mine", undefined],
+    ]);
+  });
+
   it("checks the signature, expiry and organization, and the role", async () => {
     const { token, relay, setOrg, exp } = await setup();
     const stranger = await keypair("k1"); // same key id, another key: a forged token
