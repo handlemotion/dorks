@@ -9,9 +9,9 @@ import { workedFor } from '../lib/duration'
 // the turn ends the session's latest ships are pinned at the end of the chat (`ShipPin`) and their place in the thread shrinks to a line.
 
 /**
- * Cards in the thread (ships, builds, todos) bleed past the text column to the composer's width (`--card-bleed`, set on the
- * transcript), so their outline sits outside the column and what is inside lines up with the thread's text. Outside the transcript
- * they keep the column and a 14px inset.
+ * Cards in the thread (ships, builds, todos) bleed past the text column (`--card-bleed`, set on the transcript) by their inset, so
+ * their outline sits just outside the column, what is inside lines up with the thread's text, and the sides are inset as much as the
+ * top (10px inside the 1px border). Outside the transcript they keep the column and a 14px inset.
  */
 export const CARD_BLEED = '-mx-[var(--card-bleed,0px)] w-[calc(100%+2*var(--card-bleed,0px))] px-[calc(var(--card-bleed,15px)-1px)]'
 
