@@ -1,5 +1,17 @@
 # @dorks/desktop
 
+## 0.11.0
+
+### Minor Changes
+
+- [#239](https://github.com/handlemotion/dorks/pull/239) [`c31371b`](https://github.com/handlemotion/dorks/commit/c31371bf2338d2a95d6f007b7d6a7e5382ee8ec8) Thanks [@handlemotion](https://github.com/handlemotion)! - Builds show in the chat as cards: a machine change the agent proposes comes with a short scrollable diff and turns into the build's live steps once you approve it, and every trial run the agent starts shows its steps too.
+
+- [#236](https://github.com/handlemotion/dorks/pull/236) [`b25f690`](https://github.com/handlemotion/dorks/commit/b25f690409a157732ff55c4ac6ace3eb11cc5e95) Thanks [@handlemotion](https://github.com/handlemotion)! - Right-clicking a chat in the sidebar, a step in Progress or a file in Files now opens a native menu with actions for it (open, copy the link, path, command or output, archive), and the app no longer shows the webview's Reload menu. Dragging across the app no longer paints its rows and labels blue: only messages, code and fields select, like a native app.
+
+### Patch Changes
+
+- [#237](https://github.com/handlemotion/dorks/pull/237) [`3b799fe`](https://github.com/handlemotion/dorks/commit/3b799fe5b3ca726d91c6e7540de79498b1556c73) Thanks [@handlemotion](https://github.com/handlemotion)! - Long chats open, switch and scroll faster: only the newest messages are drawn at first and older ones come in as you scroll up, already loaded. Progress, the image viewer and typing in the composer stay quick in long sessions too.
+
 ## 0.10.0
 
 ### Minor Changes
