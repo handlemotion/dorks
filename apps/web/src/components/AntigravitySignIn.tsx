@@ -49,21 +49,30 @@ export function CliSignIn({
       const state = await start()
       if (state?.state === 'signing_in' && state.url) openExternal(state.url)
     })
-  // The CLI is being fetched (on this computer), or a cloud org's sandbox is starting its sign-in.
-  if (view?.state === 'installing' || (pending && !!view?.remote))
-    return (
-      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <LoaderCircleIcon className="size-3.5 animate-spin" aria-hidden />
-        {view?.remote ? remoteStarting : installing}
-      </span>
-    )
+  if (starting(view, pending)) return <Starting text={view?.remote ? remoteStarting : installing} />
   if (view?.state === 'signing_in' && view.url) return <Waiting url={view.url} finish={finish} remote={!!view.remote} />
+  return <SignInButton label={pending ? 'Opening…' : view?.state === 'failed' ? 'Try again' : label} disabled={pending} onClick={go} error={error ?? view?.error} />
+}
+
+/** The CLI is being fetched (on this computer), or a cloud org's sandbox is starting its sign-in. */
+const starting = (view: SignInState | null | undefined, pending: boolean) => view?.state === 'installing' || (pending && !!view?.remote)
+
+function Starting({ text }: { text: string }) {
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <LoaderCircleIcon className="size-3.5 animate-spin" aria-hidden />
+      {text}
+    </span>
+  )
+}
+
+function SignInButton({ label, disabled, onClick, error }: { label: string; disabled: boolean; onClick: () => void; error?: string }) {
   return (
     <div className="flex flex-col items-start gap-1.5">
-      <Button size="sm" variant="outline" disabled={pending} onClick={go}>
-        {pending ? 'Opening…' : view?.state === 'failed' ? 'Try again' : label}
+      <Button size="sm" variant="outline" disabled={disabled} onClick={onClick}>
+        {label}
       </Button>
-      {(error ?? view?.error) && <span className="text-xs text-destructive">{error ?? view?.error}</span>}
+      {error && <span className="text-xs text-destructive">{error}</span>}
     </div>
   )
 }
