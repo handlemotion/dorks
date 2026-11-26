@@ -1024,7 +1024,8 @@ export function Composer({
             button lines up under attach and the model button under send. */}
         <div className="flex items-center gap-2 px-[9px] pt-2 text-[13px] [--control-radius:6px]">
           <RepositoryControl repo={repo} build={build} environment={environment} disabled={locked} hidden={showRepo === false} needsRepo={needsRepo} local={local} />
-          {location && <LocationMenu choice={location} disabled={locked} />}
+          {/* Not locked by a box that cannot send yet: a cloud session may wait on Boat while a local one can already start. */}
+          {location && <LocationMenu choice={location} disabled={pending} />}
           <ModelMenu
             provider={provider}
             setProvider={setProvider}
