@@ -6,11 +6,15 @@ checks that their account is an owner or admin of the org. The Mac then leaves t
 
 ## What the Mac does (`apps/server/src/services/cloudMove.ts`)
 
-1. Refuses while a session is working (`409 conflict`); pauses every idle one (`sleep_due`) and waits until all are asleep, so no
-   transcript grows while it is copied.
+1. Refuses while a session is working (`409 conflict`), then **freezes** the Mac (`lifecycle/freeze.ts`): until the move ends,
+   no message, notification or automation run may start or wake a session (`409`, its transaction rolled back), so nothing lands
+   on the Mac only after it was copied. Pauses every idle session (`sleep_due`) and waits until all are asleep.
 2. `POST /v1/orgs/:orgId/imports` → an import id and the key secrets are sealed to.
-3. `PUT …/manifest`, then every session's events in parts, then `POST …/commit`.
-4. Turns its own automations off (the cloud runs them now) and records the move (`meta.cloud_move`).
+3. `PUT …/manifest`, every session's events in parts (each at most `maxPartBytes` of UTF-8 JSON), every chat image, then
+   `POST …/commit`. Every phase is recorded in `meta.cloud_move`. A commit whose answer is lost, or a restart mid-commit
+   (`recoverMove` at startup), is reconciled with `GET …/imports/:id` before anything is retried: `committed` finishes the move,
+   `open` retries the commit.
+4. Turns its own automations off (the cloud runs them now), records the move as done and unfreezes.
 
 `GET /api/cloud/move` is the progress the app polls; `POST /api/cloud/move {orgId}` starts it; `POST /api/cloud/export {importId, key}`
 returns the whole export as one file (the same builder), for support and for checking a move by hand. All three are the local
@@ -19,8 +23,8 @@ owner's only: a teammate reaching this server through the relay gets `403`.
 ## The format (`packages/shared/src/cloudExport.ts`)
 
 Zod schemas in `@dorks/shared`, which the cloud imports to validate the same way: `exportManifest` (everything but transcripts),
-`exportEventsPart` (one upload of events), `exportFile` (manifest + `events` by session id; checks every session's events are
-exactly `1..lastSeq`). `format: "dorks-export"`, `version: 1`.
+`exportEventsPart` (one upload of events), `exportFile` (manifest + `events` by session id + `imageData` by image id; checks every session's
+events are exactly `1..lastSeq` and every image has its bytes). `format: "dorks-export"`, `version: 1`.
 
 | Part | Contents | Not included |
 |---|---|---|
@@ -30,6 +34,7 @@ exactly `1..lastSeq`). `format: "dorks-export"`, `version: 1`.
 | `mcpServers` | name, transport, redacted url, command, args, header and env names; `secrets` sealed `{headers, env, url}`; `oauth: true` when it must be signed in again | OAuth tokens |
 | `skills` | source and the stored folder (gzipped JSON, base64) with its digest | |
 | `variables` | shared variables, each value sealed | |
+| `images` | the chats' images (`dorks-image:<id>` in transcripts): id (kept, transcripts name it), session, mime, size; the bytes are uploaded on their own | attachments never claimed by a message |
 | `settings` | sleep minutes, comment policy, Code Mode default, Boat org and environment, Sentry org and URL; `reenter`: which of `claudeToken`, `boatKey`, `sentryToken`, `antigravityToken`, `github` the Mac had, for the cloud to ask again | the credentials themselves |
 
 **Sealing.** No secret travels in clear. The import's key is ECDH P-256 (`alg: "ECDH-ES+HKDF-SHA256+A256GCM"`). The Mac makes one
@@ -48,9 +53,10 @@ Better Auth session (`authorization: Bearer <session>`), the caller an `owner` o
 |---|---|---|
 | `POST /v1/orgs/:orgId/imports` | `importCreate`: `{format, version, source: {kind: "mac", macId}, counts: {sessions, events}}` | `201 importCreated`: `{importId, key: {kid, alg, jwk}, maxPartBytes, expiresAt}`. `409` if the org already runs in the cloud. A plan other than `teams`/`cloud`: `403` |
 | `PUT …/imports/:id/manifest` | `exportManifest` (its `orgId`, `importId` must match) | `200`; may be sent again until the commit |
-| `PUT …/imports/:id/sessions/:sessionId/events` | `exportEventsPart`: `{events}` (≤ `maxPartBytes`, ≤ 5000) | `200 {expectedSeq}`. Seqs already stored are skipped; a gap is `409 {code: "conflict", expectedSeq}` and the Mac resumes there |
+| `PUT …/imports/:id/sessions/:sessionId/events` | `exportEventsPart`: `{events}` (≤ `maxPartBytes`, ≤ 5000) | `200 {expectedSeq}`. Seqs already stored are skipped; a gap is `409 {code: "conflict", expectedSeq}` and the Mac resumes there. A part over `maxPartBytes`: `413` |
+| `PUT …/imports/:id/images/:imageId` | `exportImageData`: `{mime, data}` (base64), for an image the manifest lists | `200`; served afterwards at the org's image URL under the same id |
 | `GET …/imports/:id` | | `{status: "open" \| "committed", sessions: {<id>: {nextSeq}}}` |
-| `POST …/imports/:id/commit` | `{}` | `200 importCommitted`: `{runtime: "cloud", sessions, events}`, after it checked every session has `count` events, opened the secrets, wrote the org (D1 rows, s2 `events` streams in seq order, org secrets, automations with fresh schedules) and **removed the Mac from the org's servers**: with no Mac left, `GET /v1/orgs` lists it without one and the app runs it on the Worker. `409 {missing: [{sessionId, nextSeq}]}` if events are missing |
+| `POST …/imports/:id/commit` | `{}` | `200 importCommitted`: `{runtime: "cloud", sessions, events}`, after it checked every session has `count` events, opened the secrets, wrote the org (D1 rows, s2 `events` streams in seq order, org secrets, automations with fresh schedules) and **removed the Mac from the org's servers**: with no Mac left, `GET /v1/orgs` lists it without one and the app runs it on the Worker. `409 {missing: [{sessionId, nextSeq}], missingImages}` if events or images are missing. Must be idempotent in effect: a commit retried after a lost answer finds the import `committed` (`GET`) |
 
 An import that is never committed changes nothing and expires (`expiresAt`). The reference implementation, in memory, is
 `apps/server/test/fixtures/cloudImport.ts` (the server tests run the move against it).

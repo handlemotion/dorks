@@ -121,6 +121,13 @@ export const exportSkill = z.object({
   updatedAt: ms,
 });
 
+/**
+ * An image in a chat (a screenshot the agent shared, an image attached to a message): transcripts name it `dorks-image:<id>`, so it
+ * keeps its id. The bytes are uploaded on their own (`PUT …/images/:id`, `exportImageData`).
+ */
+export const exportImage = z.object({ id: z.string().min(1).max(64), dorkId: id, mime: z.string().max(100), bytes: z.number().int().nonnegative(), createdAt: ms });
+export const exportImageData = z.object({ mime: z.string().max(100), data: b64 });
+
 /** A shared variable (Settings › Shared variables): the value sealed as `variable|<name>`. */
 export const exportVariable = z.object({ name: z.string().min(1).max(128), value: sealedValue });
 
@@ -156,17 +163,20 @@ export const exportManifest = z.object({
   skills: z.array(exportSkill),
   automations: z.array(exportAutomation),
   sessions: z.array(exportSession),
+  images: z.array(exportImage),
 });
 export type ExportManifest = z.infer<typeof exportManifest>;
 
 /** The whole export as one file (`POST /api/cloud/export`): the manifest plus every session's events, by session id. */
-export const exportFile = exportManifest.extend({ events: z.record(z.string(), z.array(exportEvent)) }).superRefine((f, ctx) => {
+/** The whole export as one file: the manifest, every session's events by session id, and every image's bytes (base64) by image id. */
+export const exportFile = exportManifest.extend({ events: z.record(z.string(), z.array(exportEvent)), imageData: z.record(z.string(), b64) }).superRefine((f, ctx) => {
   for (const s of f.sessions) {
     const evs = f.events[s.id] ?? [];
     const dense = evs.length === s.events.count && evs.every((e, i) => e.seq === i + 1) && (evs.at(-1)?.seq ?? 0) === s.events.lastSeq;
     if (!dense) ctx.addIssue({ code: "custom", path: ["events", s.id], message: `expected ${s.events.count} events numbered 1..${s.events.lastSeq}` });
   }
   for (const k of Object.keys(f.events)) if (!f.sessions.some((s) => s.id === k)) ctx.addIssue({ code: "custom", path: ["events", k], message: "no such session" });
+  for (const i of f.images) if (!(i.id in f.imageData)) ctx.addIssue({ code: "custom", path: ["imageData", i.id], message: "missing image bytes" });
 });
 export type ExportFile = z.infer<typeof exportFile>;
 

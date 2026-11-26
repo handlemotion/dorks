@@ -17,6 +17,7 @@ import { aad, decrypt } from "@dorks/core/crypto";
 import { fail, OWNER, touch, type App } from "../app";
 import { getDork, type DorkRow } from "../data";
 import { dispatch } from "../lifecycle/dispatch";
+import { freeze, unfreeze } from "../lifecycle/freeze";
 import { allAutomations, updateAutomation } from "./automations";
 import { cloudAccount } from "./cloudAccount";
 import { open as openMcp, type McpServerRow } from "./mcpServers";
@@ -47,8 +48,13 @@ const phoneLinkMacId = (app: App) => app.db.get<{ cloud_mac_id: string | null }>
 const IDLE: MoveStatus = { phase: "idle", orgId: null, importId: null, sessions: { done: 0, total: 0 }, events: { done: 0, total: 0 }, error: null, startedAt: null, finishedAt: null };
 const statuses = new WeakMap<App, MoveStatus>();
 const AWAKE = new Set(["working", "creating", "waking"]);
+const RUNNING_PHASES: MovePhase[] = ["pausing", "uploading", "committing"];
+const messageOf = (e: unknown) => ((e as { error?: { message?: string } })?.error?.message ?? (e instanceof Error ? e.message : "The move failed")).slice(0, 300);
 const PAUSE_WAIT_MS = 180_000;
 const MAX_EVENTS_PER_PART = 5000;
+
+/** Tests: forget this process's view, as a restart does (the record in `meta` stays). */
+export const resetMoveStatus = (app: App) => void statuses.delete(app);
 
 export const moveStatus = (app: App): MoveStatus => statuses.get(app) ?? lastMove(app) ?? IDLE;
 
@@ -60,8 +66,34 @@ function lastMove(app: App): MoveStatus | null {
 
 /** Progress is polled (`GET /api/cloud/move`); only the end touches settings, so clients do not refetch everything per part. */
 function set(app: App, patch: Partial<MoveStatus>) {
-  statuses.set(app, { ...moveStatus(app), ...patch });
-  if (patch.phase === "failed" || patch.phase === "done") app.db.tx(() => touch(app, { t: "settings" }));
+  const next = { ...moveStatus(app), ...patch };
+  statuses.set(app, next);
+  if (!patch.phase) return;
+  // Every phase is kept in `meta`: a restart mid-commit must find the import to ask the cloud about (recoverMove).
+  app.db.tx(() => {
+    app.db.run("INSERT INTO meta (key, value) VALUES ('cloud_move', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", JSON.stringify(next));
+    if (patch.phase === "failed" || patch.phase === "done") touch(app, { t: "settings" });
+  });
+  if (patch.phase === "failed" || patch.phase === "done") unfreeze(app);
+}
+
+const MOVING = "This organization is moving to Dorks Cloud. Try again once it has moved.";
+
+/**
+ * After a restart: a move that was uploading is over (failed: start it again); one that was committing may have committed, so the
+ * cloud is asked (`GET …/imports/:id`) before anything else. Until it answers, this Mac stays frozen.
+ */
+export async function recoverMove(app: App) {
+  const last = lastMove(app);
+  if (!last || !RUNNING_PHASES.includes(last.phase)) return;
+  statuses.set(app, last);
+  if (last.phase !== "committing" || !last.orgId || !last.importId) return set(app, { phase: "failed", error: "The move was interrupted. Start it again.", finishedAt: app.now() });
+  freeze(app, MOVING);
+  try {
+    await settleCommit(app, last.orgId, last.importId);
+  } catch (e) {
+    set(app, { phase: "failed", error: messageOf(e), finishedAt: app.now() });
+  }
 }
 
 // ---------------------------------------------------------------- the export
@@ -105,7 +137,7 @@ export function eventsFrom(app: App, dorkId: string, fromSeq: number, maxBytes =
   const out: ExportEvent[] = [];
   let bytes = 0;
   for (const r of app.db.all<{ seq: number; ts: number; body: string }>("SELECT seq, ts, body FROM events WHERE dork_id = ? AND seq >= ? ORDER BY seq LIMIT ?", dorkId, fromSeq, MAX_EVENTS_PER_PART)) {
-    bytes += r.body.length + 40;
+    bytes += Buffer.byteLength(r.body) + 48; // UTF-8, as JSON.stringify sends it, plus the {seq, ts, body} envelope
     if (out.length && bytes > maxBytes) break;
     out.push({ seq: r.seq, ts: r.ts, body: JSON.parse(r.body) as ExportEvent["body"] });
   }
@@ -193,9 +225,23 @@ export async function buildManifest(app: App, ctx: { orgId: string; importId: st
     skills,
     automations,
     sessions: sessionIds(app).map((id) => sessionOf(app, getDork(app.db, id)!)),
+    images: imagesOf(app),
   };
   return exportManifest.parse(manifest); // what the cloud will check, checked here first
 }
+
+/** The chats' images (dorks-image:<id> in the transcripts). Attachments never claimed by a message (no dork) stay behind. */
+const imagesOf = (app: App) =>
+  app.db
+    .all<{ id: string; dork_id: string; mime: string; n: number; created_at: number }>(
+      "SELECT i.id, i.dork_id, i.mime, length(i.bytes) AS n, i.created_at FROM images i JOIN dorks d ON d.id = i.dork_id WHERE d.deleting = 0 ORDER BY i.created_at",
+    )
+    .map((r) => ({ id: r.id, dorkId: r.dork_id, mime: r.mime, bytes: r.n, createdAt: r.created_at }));
+
+const imageData = (app: App, id: string) => {
+  const r = app.db.get<{ mime: string; bytes: Uint8Array }>("SELECT mime, bytes FROM images WHERE id = ?", id)!;
+  return { mime: r.mime, data: Buffer.from(r.bytes).toString("base64") };
+};
 
 /** The whole export as one file (manifest + every session's events), checked against the shared schema. */
 export async function buildExportFile(app: App, ctx: { orgId?: string; importId: string; key: ImportKey }): Promise<ExportFile> {
@@ -212,7 +258,7 @@ export async function buildExportFile(app: App, ctx: { orgId?: string; importId:
     }
     events[s.id] = all;
   }
-  return exportFile.parse({ ...manifest, events });
+  return exportFile.parse({ ...manifest, events, imageData: Object.fromEntries(manifest.images.map((i) => [i.id, imageData(app, i.id).data])) });
 }
 
 // ---------------------------------------------------------------- the move
@@ -220,17 +266,15 @@ export async function buildExportFile(app: App, ctx: { orgId?: string; importId:
 /** Starts the move in the background; `moveStatus` follows it. */
 export function startMove(app: App, orgId: string): MoveStatus {
   const cur = moveStatus(app);
-  if (cur.phase === "pausing" || cur.phase === "uploading" || cur.phase === "committing") fail("conflict", "A move to the cloud is already running");
+  if (RUNNING_PHASES.includes(cur.phase)) fail("conflict", "A move to the cloud is already running");
   if (cur.phase === "done" && cur.orgId === orgId) fail("conflict", "This organization already moved to the cloud");
   const org = serverOrg(app);
   if (org && org !== orgId) fail("invalid", "This computer serves another organization");
   const awake = app.db.all<{ title: string; state: string }>("SELECT title, state FROM dorks WHERE deleting = 0").filter((d) => AWAKE.has(d.state));
   if (awake.length) fail("conflict", `${awake.length === 1 ? "A session is" : `${awake.length} sessions are`} still working. Let them finish or stop them, then move.`);
-  statuses.set(app, { ...IDLE, phase: "pausing", orgId, startedAt: app.now() });
-  void runMove(app, orgId).catch((e) => {
-    const message = (e as { error?: { message?: string } })?.error?.message ?? (e instanceof Error ? e.message : "The move failed");
-    set(app, { phase: "failed", error: message.slice(0, 300), finishedAt: app.now() });
-  });
+  freeze(app, MOVING); // before the pause and the snapshot, held until the move ends
+  set(app, { ...IDLE, phase: "pausing", orgId, startedAt: app.now() });
+  void runMove(app, orgId).catch((e) => set(app, { phase: "failed", error: messageOf(e), finishedAt: app.now() }));
   return moveStatus(app);
 }
 
@@ -256,15 +300,33 @@ async function runMove(app: App, orgId: string) {
     sent += await uploadEvents(app, `${base}/sessions/${encodeURIComponent(s.id)}/events`, s, created, (n) => set(app, { events: { done: sent + n, total } }));
     set(app, { sessions: { done: i + 1, total: sessions.length }, events: { done: sent, total } });
   }
+  for (const img of manifest.images) await cloudCall(app, "PUT", `${base}/images/${encodeURIComponent(img.id)}`, imageData(app, img.id));
   set(app, { phase: "committing" });
-  importCommitted.parse(await cloudCall(app, "POST", `${base}/commit`, {}));
-  for (const a of allAutomations(app)) if (a.enabled) updateAutomation(app, a.id, { enabled: false }); // the cloud runs them now
-  const done: MoveStatus = { ...moveStatus(app), phase: "done", finishedAt: app.now() };
-  app.db.tx(() => {
-    app.db.run("INSERT INTO meta (key, value) VALUES ('cloud_move', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", JSON.stringify(done));
-    touch(app, { t: "settings" });
-  });
-  statuses.set(app, done);
+  await settleCommit(app, orgId, created.importId);
+}
+
+/**
+ * Commits, or finds out whether an earlier attempt did: a commit whose answer was lost (or a restart mid-commit) is reconciled with
+ * `GET …/imports/:id` before anything is retried, since a second import would be refused once the org runs in the cloud.
+ */
+async function settleCommit(app: App, orgId: string, importId: string) {
+  const base = `/v1/orgs/${encodeURIComponent(orgId)}/imports/${encodeURIComponent(importId)}`;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      importCommitted.parse(await cloudCall(app, "POST", `${base}/commit`, {}));
+      return finish(app);
+    } catch (e) {
+      const status = (await cloudCall(app, "GET", base).catch(() => null)) as { status?: string } | null;
+      if (status?.status === "committed") return finish(app);
+      if (status?.status !== "open" || attempt >= 3) throw e; // the import is gone or the cloud keeps failing: the org stays here
+    }
+  }
+}
+
+/** The cloud runs the org now: this Mac's automations go off (so nothing runs twice) and the move is recorded as done. */
+function finish(app: App) {
+  for (const a of allAutomations(app)) if (a.enabled) updateAutomation(app, a.id, { enabled: false });
+  set(app, { phase: "done", finishedAt: app.now() });
 }
 
 /** Every awake-able session goes to sleep (its box pauses), so no transcript grows while it is copied. */
@@ -286,7 +348,7 @@ async function uploadEvents(app: App, path: string, s: ExportSession, created: I
   let from = 1;
   let sent = 0;
   while (from <= s.events.lastSeq) {
-    const events = eventsFrom(app, s.id, from, created.maxPartBytes - 1024);
+    const events = eventsFrom(app, s.id, from, created.maxPartBytes - 64); // the {"events":[…]} wrapper
     if (!events.length) break;
     const r = (await cloudCall(app, "PUT", path, { events }, [409])) as { expectedSeq?: number; message?: string } | null;
     if (typeof r?.expectedSeq !== "number" && r?.message) fail("conflict", r.message.slice(0, 200)); // a 409 that is not about where to resume
@@ -302,9 +364,9 @@ async function uploadEvents(app: App, path: string, s: ExportSession, created: I
 }
 
 /** One call to the import API as the signed-in account; `pass` lists statuses whose JSON body is returned instead of failing. */
-async function cloudCall(app: App, method: string, path: string, body: unknown, pass: number[] = []): Promise<unknown> {
+async function cloudCall(app: App, method: string, path: string, body?: unknown, pass: number[] = []): Promise<unknown> {
   for (let attempt = 1; ; attempt++) {
-    const res = await cloudAccount.request(app, path, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const res = await cloudAccount.request(app, path, method === "GET" ? { method } : { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     const out = (await res.json().catch(() => null)) as { message?: string; code?: string } | null;
     if (res.ok || pass.includes(res.status)) return out;
     if (res.status >= 500 && attempt < 4) {

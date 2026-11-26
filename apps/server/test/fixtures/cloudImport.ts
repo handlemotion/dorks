@@ -1,10 +1,22 @@
-import { exportEventsPart, exportFile, exportManifest, importCreate, newImportKey, openImportSealed, type ExportEvent, type ExportFile, type ExportManifest, type Jwk } from "@dorks/shared";
+import {
+  exportEventsPart,
+  exportFile,
+  exportImageData,
+  exportManifest,
+  importCreate,
+  newImportKey,
+  openImportSealed,
+  type ExportEvent,
+  type ExportFile,
+  type ExportManifest,
+  type Jwk,
+} from "@dorks/shared";
 
 // A reference implementation of the cloud's side of "Move to cloud" (docs/move-to-cloud.md), in memory: Better Auth's email-code
 // sign-in, `GET /v1/orgs` and the import API, validating everything with @dorks/shared's schemas. The server tests use it as a fake
 // fetch; the live check serves it over HTTP to a real dev server. dorks-cloud's Worker implements the same contract on D1 and s2.
 
-type Import = { id: string; orgId: string; privateJwk: Jwk; manifest?: ExportManifest; events: Map<string, ExportEvent[]>; committed: boolean };
+type Import = { id: string; orgId: string; privateJwk: Jwk; manifest?: ExportManifest; events: Map<string, ExportEvent[]>; images: Map<string, string>; committed: boolean };
 
 export class CloudImportStandIn {
   readonly imports = new Map<string, Import>();
@@ -12,6 +24,8 @@ export class CloudImportStandIn {
   opened: { variables: Record<string, string>; mcp: Record<string, unknown> } | null = null;
   /** Stops the next events upload after storing half of it (a dropped connection), to exercise the resume. */
   dropNextPart = false;
+  /** While set, events uploads wait for it (a move held mid-upload). */
+  hold: Promise<void> | null = null;
   maxPartBytes = 64 * 1024;
   runtime: "mac" | "cloud" = "mac";
   readonly token = "standin-session";
@@ -36,7 +50,7 @@ export class CloudImportStandIn {
   /** The committed import as one file, as `POST /api/cloud/export` would have produced it. */
   file(importId: string): ExportFile {
     const imp = this.imports.get(importId)!;
-    return exportFile.parse({ ...imp.manifest!, events: Object.fromEntries([...imp.events]) });
+    return exportFile.parse({ ...imp.manifest!, events: Object.fromEntries([...imp.events]), imageData: Object.fromEntries(imp.images) });
   }
 
   handle = async (req: Request): Promise<Response> => {
@@ -50,21 +64,39 @@ export class CloudImportStandIn {
 
   /** The import API: `/v1/orgs/:orgId/imports[/:id[/manifest|/commit|/sessions/:sid/events]]`. */
   private async imports_(req: Request, p: string): Promise<Response> {
-    const m = /^\/v1\/orgs\/([^/]+)\/imports(?:\/([^/]+)(\/manifest|\/commit|\/sessions\/([^/]+)\/events)?)?$/.exec(p);
+    const m = /^\/v1\/orgs\/([^/]+)\/imports(?:\/([^/]+)(\/manifest|\/commit|\/sessions\/([^/]+)\/events|\/images\/([^/]+))?)?$/.exec(p);
     if (!m) return Response.json({ message: "not found" }, { status: 404 });
     const orgId = decodeURIComponent(m[1]);
     if (orgId !== this.o.orgId) return Response.json({ code: "not_found", message: "No such organization" }, { status: 404 });
     if (this.o.role && !["owner", "admin"].includes(this.o.role)) return Response.json({ code: "forbidden", message: "Only owners and admins can move an organization" }, { status: 403 });
-    const body = req.method === "GET" ? null : await req.json().catch(() => null);
+    const body = await this.bodyOf(req, !!m[4]);
+    if (body instanceof Response) return body;
     if (!m[2] && req.method === "POST") return this.create(orgId, body);
     const imp = this.imports.get(decodeURIComponent(m[2] ?? ""));
     if (!imp) return Response.json({ code: "not_found", message: "No such import" }, { status: 404 });
     if (imp.committed && req.method !== "GET") return Response.json({ code: "conflict", message: "Already committed" }, { status: 409 });
-    if (m[3] === "/manifest" && req.method === "PUT") return this.manifest(imp, body);
-    if (m[4] && req.method === "PUT") return this.events(imp, decodeURIComponent(m[4]), body);
-    if (m[3] === "/commit" && req.method === "POST") return this.commit(imp);
-    if (!m[3] && req.method === "GET") return Response.json(this.status(imp));
+    return this.onImport(req.method, imp, m, body);
+  }
+
+  private onImport(method: string, imp: Import, m: RegExpExecArray, body: unknown): Response | Promise<Response> {
+    if (m[3] === "/manifest" && method === "PUT") return this.manifest(imp, body);
+    if (m[4] && method === "PUT") return this.events(imp, decodeURIComponent(m[4]), body);
+    if (m[5] && method === "PUT") return this.image(imp, decodeURIComponent(m[5]), body);
+    if (m[3] === "/commit" && method === "POST") return this.commit(imp);
+    if (!m[3] && method === "GET") return Response.json(this.status(imp));
     return Response.json({ message: "not found" }, { status: 404 });
+  }
+
+  /** The JSON body; an events part over maxPartBytes (UTF-8) is refused, and waits while `hold` is set. */
+  private async bodyOf(req: Request, eventsPart: boolean): Promise<unknown> {
+    const text = req.method === "GET" ? "" : await req.text();
+    if (eventsPart && new TextEncoder().encode(text).length > this.maxPartBytes) return Response.json({ code: "too_large", message: "Part over maxPartBytes" }, { status: 413 });
+    if (eventsPart && this.hold) await this.hold;
+    try {
+      return text ? JSON.parse(text) : null;
+    } catch {
+      return null; // not JSON: refused by the schemas
+    }
   }
 
   private async create(orgId: string, body: unknown) {
@@ -73,7 +105,7 @@ export class CloudImportStandIn {
     if (this.runtime === "cloud") return Response.json({ code: "conflict", message: "This organization already runs in the cloud" }, { status: 409 });
     const id = `imp_${this.imports.size + 1}`;
     const { key, privateJwk } = await newImportKey(`key-${id}`);
-    this.imports.set(id, { id, orgId, privateJwk, events: new Map(), committed: false });
+    this.imports.set(id, { id, orgId, privateJwk, events: new Map(), images: new Map(), committed: false });
     return Response.json({ importId: id, key, maxPartBytes: this.maxPartBytes, expiresAt: Date.now() + 86_400_000 }, { status: 201 });
   }
 
@@ -109,13 +141,25 @@ export class CloudImportStandIn {
     return Response.json({ expectedSeq: next + keep.length });
   }
 
+  private image(imp: Import, imageId: string, body: unknown) {
+    const meta = imp.manifest?.images.find((i) => i.id === imageId);
+    const r = exportImageData.safeParse(body);
+    if (!meta || !r.success) return Response.json({ code: "invalid", message: "Unknown image, or not {mime, data}" }, { status: 400 });
+    imp.images.set(imageId, r.data.data);
+    return Response.json({ ok: true });
+  }
+
+  /** Fails the next commit's response after it took effect (a lost answer), to exercise the reconcile. */
+  loseCommitAnswer = false;
+
   private async commit(imp: Import) {
     if (!imp.manifest) return Response.json({ code: "invalid", message: "No manifest" }, { status: 400 });
     const missing = imp.manifest.sessions.flatMap((s) => {
       const n = imp.events.get(s.id)?.length ?? 0;
       return n === s.events.count ? [] : [{ sessionId: s.id, nextSeq: n + 1 }];
     });
-    if (missing.length) return Response.json({ code: "conflict", message: "Some events are missing", missing }, { status: 409 });
+    const missingImages = imp.manifest.images.filter((i) => !imp.images.has(i.id)).map((i) => i.id);
+    if (missing.length || missingImages.length) return Response.json({ code: "conflict", message: "Some events or images are missing", missing, missingImages }, { status: 409 });
     const open = await openImportSealed(imp.privateJwk, imp.manifest);
     const variables: Record<string, string> = {};
     for (const v of imp.manifest.variables) variables[v.name] = await open(`variable|${v.name}`, v.value);
@@ -125,6 +169,10 @@ export class CloudImportStandIn {
     imp.committed = true;
     this.runtime = "cloud";
     const events = imp.manifest.sessions.reduce((n, s) => n + s.events.count, 0);
+    if (this.loseCommitAnswer) {
+      this.loseCommitAnswer = false;
+      throw new TypeError("fetch failed (stand-in: the commit's answer was lost)");
+    }
     return Response.json({ runtime: "cloud", sessions: imp.manifest.sessions.length, events });
   }
 }

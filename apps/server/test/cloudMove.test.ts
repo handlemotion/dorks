@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { exportFile } from "@dorks/shared";
 import { uiApp } from "../src/http/ui";
-import { createAutomation, getAutomation } from "../src/services/automations";
+import { createAutomation, getAutomation, updateAutomation } from "../src/services/automations";
 import { moveStatus } from "../src/services/cloudMove";
 import { putMcpServer } from "../src/services/mcpServers";
 import { setSecret } from "../src/services/settings";
@@ -51,25 +51,30 @@ describe("move to cloud", () => {
     const { cloud, h, call } = setup();
     cloud.maxPartBytes = 4096; // several parts per session
     const a = session(h, 40, (i) => `reply ${i} ${"x".repeat(200)}`);
-    const b = session(h, 3, (i) => `short ${i}`);
+    const b = session(h, 12, (i) => `short ${i} — ünïcödé ✓ 日本語 ${"é".repeat(400)}`); // UTF-8 heavier than its JS length
+    const png = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
+    h.app.db.run("INSERT INTO images (id, dork_id, mime, bytes, created_at) VALUES (?, ?, ?, ?, 5)", "img_1", b, "image/png", png);
     await setSecret(h.app, "API_KEY", "s3cret-value");
     await putMcpServer(h.app, "linear", { transport: "http", url: "https://mcp.linear.app/mcp", headers: { Authorization: "Bearer lin-456" } });
     const auto = createAutomation(h.app, { name: "daily", instructions: "Check CI.", triggers: [{ kind: "schedule", every: "day", time: "09:00", timezone: "UTC", repo: "octo/app" }] });
     await call("POST", "/api/cloud/sign-in/verify", { email: "ada@example.com", code: "123456" });
 
     cloud.dropNextPart = true;
+    cloud.loseCommitAnswer = true; // the commit lands but its answer is lost: the Mac must find out, not fail
     expect((await call("POST", "/api/cloud/move", { orgId: ORG })).status).toBe(200);
     await until(() => ["done", "failed"].includes(moveStatus(h.app).phase));
     const st = moveStatus(h.app);
-    expect(st).toMatchObject({ phase: "done", orgId: ORG, sessions: { done: 2, total: 2 }, events: { total: 43 }, error: null });
+    expect(st).toMatchObject({ phase: "done", orgId: ORG, sessions: { done: 2, total: 2 }, events: { total: 52 }, error: null });
 
     const file = exportFile.parse(cloud.file(st.importId!)); // what the cloud stored is a valid, gap-free export
     expect(file.sessions.map((s) => [s.id, s.events.count])).toEqual([
       [a, 40],
-      [b, 3],
+      [b, 12],
     ]);
     expect(file.events[a].map((e) => e.seq)).toEqual(Array.from({ length: 40 }, (_, i) => i + 1));
     expect(file.automations.map((x) => x.name)).toEqual(["daily"]);
+    expect(file.images).toEqual([{ id: "img_1", dorkId: b, mime: "image/png", bytes: png.length, createdAt: 5 }]);
+    expect(Buffer.from(file.imageData.img_1, "base64").equals(png)).toBe(true);
     expect(file.mcpServers[0]).toMatchObject({ name: "linear", headerNames: ["Authorization"], oauth: false });
     expect(JSON.stringify(file)).not.toContain("s3cret-value"); // sealed, never in clear
     expect(JSON.stringify(file)).not.toContain("lin-456");
@@ -77,6 +82,43 @@ describe("move to cloud", () => {
     expect(getAutomation(h.app, auto)?.enabled).toBe(false); // the cloud runs it now
     expect(((await (await call("GET", "/api/cloud/places")).json()) as { orgs: { servers: unknown[] }[] }).orgs[1].servers).toEqual([]); // the org left this Mac
     expect((await call("POST", "/api/cloud/move", { orgId: ORG })).status).toBe(409);
+  });
+
+  it("freezes this Mac while it moves: no message or automation run lands meanwhile", async () => {
+    const { cloud, h, call } = setup();
+    const a = session(h, 2, (i) => `t${i}`);
+    const auto = createAutomation(h.app, { name: "daily", instructions: "Check CI.", triggers: [{ kind: "schedule", every: "day", time: "09:00", timezone: "UTC", repo: "octo/app" }] });
+    await call("POST", "/api/cloud/sign-in/verify", { email: "ada@example.com", code: "123456" });
+    let release!: () => void;
+    cloud.hold = new Promise((r) => (release = r));
+    await call("POST", "/api/cloud/move", { orgId: ORG });
+    await until(() => moveStatus(h.app).phase === "uploading");
+    const msg = await call("POST", `/api/dorks/${a}/messages`, { text: "one more thing" });
+    expect([msg.status, JSON.stringify(await msg.json())]).toEqual([409, expect.stringContaining("moving to Dorks Cloud")]);
+    expect((await call("POST", `/api/automations/${auto}/runs`)).status).not.toBe(201);
+    expect(h.app.db.all("SELECT 1 FROM dorks")).toHaveLength(1);
+    release();
+    await until(() => moveStatus(h.app).phase === "done");
+    expect((await call("POST", `/api/dorks/${a}/messages`, { text: "one more thing" })).status).toBe(200); // free again once it moved
+  });
+
+  it("after a restart mid-commit, asks the cloud and finishes the move it committed", async () => {
+    const { cloud, h, call } = setup();
+    session(h, 1, () => "t");
+    const auto = createAutomation(h.app, { name: "daily", instructions: "Check CI.", triggers: [{ kind: "schedule", every: "day", time: "09:00", timezone: "UTC", repo: "octo/app" }] });
+    await call("POST", "/api/cloud/sign-in/verify", { email: "ada@example.com", code: "123456" });
+    await call("POST", "/api/cloud/move", { orgId: ORG });
+    await until(() => moveStatus(h.app).phase === "done");
+    // As if the process died right after the commit landed: the record still says committing, automations are still on.
+    const importId = moveStatus(h.app).importId;
+    h.app.db.run("UPDATE meta SET value = ? WHERE key = 'cloud_move'", JSON.stringify({ ...moveStatus(h.app), phase: "committing", finishedAt: null }));
+    updateAutomation(h.app, auto, { enabled: true });
+    const h2 = { app: h.app };
+    const { recoverMove, resetMoveStatus } = await import("../src/services/cloudMove");
+    resetMoveStatus(h2.app);
+    await recoverMove(h2.app);
+    expect(moveStatus(h2.app)).toMatchObject({ phase: "done", importId });
+    expect(getAutomation(h2.app, auto)?.enabled).toBe(false);
   });
 
   it("refuses while a session works", async () => {
