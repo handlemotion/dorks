@@ -51,13 +51,14 @@ const openWorker = new Map<string, string>()
  */
 export function CrewDetails({ dork, onClose, onAsk }: { dork: DorkView; onClose?: () => void; onAsk?: (text: string) => void }) {
   const all = useDorks(false)
+  const archived = useDorks(true)
   const workers = (all ?? []).filter((d) => d.parentId === dork.id)
+  // Its PRs come from every session of the crew: the dork's own, each worker's (all of them, not only its latest), archived workers' too.
+  const crew: Worker[] = [...workers, ...(archived ?? []).filter((d) => d.parentId === dork.id), dork]
   const { actions } = useDorksClient()
   const tabs = useOpenTabs<CrewTabKey>(dork.id, CREW_TABS)
-  // One per PR: two workers can hold the same PR (one picked up another's), and it gets one tab.
-  const prs: IndexPr[] = []
-  for (const w of workers) if (w.prUrl && !prs.some((p) => p.url === w.prUrl)) prs.push({ url: w.prUrl, title: w.title, repo: repoOf(w.prUrl), number: prNumber(w.prUrl), state: w.prState, depth: 0 })
-  const workerOf = (url: string) => workers.find((w) => w.prUrl === url)
+  const { prs, ownerOf } = crewPrs(crew)
+  const stateOf = (url: string) => prs.find((p) => p.url === url)?.state
   // Every PR a worker opens gets its tab, once: one the owner closed stays closed, and opens again from a New tab.
   const prKey = prs.map((p) => p.url).join(' ')
   const { openNewPrs } = tabs
@@ -77,10 +78,10 @@ export function CrewDetails({ dork, onClose, onAsk }: { dork: DorkView; onClose?
     if (key.startsWith('new:')) return { icon: <SearchIcon />, text: 'New tab', title: 'New tab' }
     if (key.startsWith('pr:')) {
       const url = key.slice(3)
-      const worker = workerOf(url)
+      const pr = prs.find((p) => p.url === url)
       const number = prNumber(url)
       const text = number ? `#${number}` : 'Pull request'
-      return { icon: <PrIcon state={worker?.prState} />, text: <span className="tabular-nums">{text}</span>, title: worker?.title ?? text }
+      return { icon: <PrIcon state={pr?.state} />, text: <span className="tabular-nums">{text}</span>, title: pr?.title ?? text }
     }
     const panel = key as CrewPanel
     if (panel === 'sessions')
@@ -116,8 +117,8 @@ export function CrewDetails({ dork, onClose, onAsk }: { dork: DorkView; onClose?
       )
     if (key.startsWith('pr:')) {
       const url = key.slice(3)
-      const worker = workerOf(url)
-      // A worker that moved on to another PR, or was archived: the PR's link, without a live read.
+      const worker = ownerOf(url)
+      // A PR no session of the crew lists any more: its link, without a live read.
       if (!worker)
         return (
           <div className="min-h-0 flex-1 overflow-y-auto">
@@ -127,7 +128,11 @@ export function CrewDetails({ dork, onClose, onAsk }: { dork: DorkView; onClose?
       return (
         <WorkerPr
           worker={worker}
+          url={url}
+          state={stateOf(url)}
           onAsk={(text) => {
+            // The dork's own PR: its own composer.
+            if (worker.id === dork.id) return onAsk?.(text)
             // The PR's next step ("Resolve conflicts", "Fix checks") is for the worker that owns it: its composer, opened in place.
             setDraft(worker.id, text)
             setOpen(worker.id)
@@ -324,17 +329,33 @@ function crewArtifacts(dork: DorkView, workers: Worker[], imageUrl: (id: string,
   return { artifacts, previews }
 }
 
-/** A worker's pull request, read live from GitHub as in Chat details, with its merge and branch update. No local changes. Its asks ("Resolve conflicts") go to the worker. */
-function WorkerPr({ worker, onAsk }: { worker: Worker; onAsk: (text: string) => void }) {
+/**
+ * The crew's pull requests, one per PR (two workers can hold the same one, when one picked up another's): every PR each session lists
+ * (its `prs`, else its headline), by repository and number, and the session that owns each (a live worker's over an archived one's).
+ */
+function crewPrs(crew: Worker[]): { prs: IndexPr[]; ownerOf: (url: string) => Worker | undefined } {
+  const byUrl = new Map<string, { pr: IndexPr; owner: Worker }>()
+  for (const s of crew) {
+    const listed = s.prs?.length ? s.prs : s.prUrl ? [{ url: s.prUrl, title: undefined, repo: repoOf(s.prUrl), number: prNumber(s.prUrl), state: s.prState }] : []
+    for (const p of listed) {
+      if (byUrl.has(p.url)) continue
+      const title = p.title ?? (s.prUrl === p.url ? s.title : `Pull request #${p.number ?? prNumber(p.url)}`)
+      byUrl.set(p.url, { pr: { url: p.url, title, repo: p.repo ?? repoOf(p.url), number: p.number ?? prNumber(p.url), state: p.state, depth: 0 }, owner: s })
+    }
+  }
+  const prs = [...byUrl.values()].map((e) => e.pr).sort((a, b) => (a.repo ?? '').localeCompare(b.repo ?? '') || (a.number ?? 0) - (b.number ?? 0))
+  return { prs, ownerOf: (url) => byUrl.get(url)?.owner }
+}
+
+/** A crew session's pull request, read live from GitHub as in Chat details, with its merge and branch update. No local changes. Its asks ("Resolve conflicts") go to that session. */
+function WorkerPr({ worker, url, state, onAsk }: { worker: Worker; url: string; state?: Worker['prState']; onAsk: (text: string) => void }) {
   const { actions } = useDorksClient()
-  const url = worker.prUrl
-  // Read by URL: the worker's headline moves to each PR it opens, and a read cached for its previous one must not show under this tab.
+  // Read by URL: a session can hold several PRs, and its headline moves to each one it opens.
   const pr = usePullRequest(worker.id, url)
   useEffect(() => {
     if (url) actions.refreshPullRequest(worker.id)
   }, [actions, worker.id, url])
   const refresh = useCallback(() => actions.refreshPullRequest(worker.id), [actions, worker.id])
-  if (!url) return null
   const data: PullRequestPanelData = {
     view: pr.data,
     error: pr.error?.message,
@@ -345,7 +366,7 @@ function WorkerPr({ worker, onAsk }: { worker: Worker; onAsk: (text: string) => 
   }
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <PullRequestPanel changes={[]} pr={{ url, number: prNumber(url), state: worker.prState }} pullRequest={data} onAsk={onAsk} />
+      <PullRequestPanel changes={[]} pr={{ url, number: prNumber(url), state }} pullRequest={data} onAsk={onAsk} />
     </div>
   )
 }

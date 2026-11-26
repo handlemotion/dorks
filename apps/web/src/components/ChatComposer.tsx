@@ -1058,11 +1058,11 @@ export function Composer({
             </div>
           </InputGroup>
         </QueueFrame>
-        {/* Compact, shared baseline for the repository and model controls. 9px in (8px plus the box's 1px border), like attach and send, so the repository
-            button lines up under attach and the model button under send. */}
+        {/* Compact, shared baseline for the repository and model controls. 9px in (8px plus the box's 1px border), like attach and send, so the first control
+            (where it runs, then its repository) lines up under attach. */}
         <div className="flex items-center gap-2 px-[9px] pt-2 text-[13px] [--control-radius:6px]">
-          <RepositoryControl repo={repo} build={build} environment={environment} disabled={locked} hidden={showRepo === false} needsRepo={needsRepo} local={local} />
           {location && <LocationMenu choice={location} disabled={locked} />}
+          <RepositoryControl repo={repo} build={build} environment={environment} disabled={locked} hidden={showRepo === false} needsRepo={needsRepo} local={local} />
           <ModelMenu
             provider={provider}
             setProvider={setProvider}
