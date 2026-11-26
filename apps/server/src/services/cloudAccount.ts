@@ -5,7 +5,7 @@ import { update } from "../db";
 
 // The Dorks Cloud account (docs/mobile.md, "Desktop: Dorks Cloud"): the owner signs this server in to the relay with Better Auth's
 // email code, the same account the phone uses. The session token is kept encrypted in settings (`cloud_session_enc`) and never
-// leaves this server: the UI reads the account's places (its Macs, its organizations and their hosted servers) through
+// leaves this server: the UI reads the account's places (its Macs, its organizations and the servers Dorks runs for them) through
 // `GET /api/cloud/places` (`/v1/orgs`), and talks to another server through `/api/cloud/servers/:id/api/*`, which this server forwards to the
 // relay's `/v1/macs/:id/api/*` with the session. The relay and the server it reaches decide what that may do.
 

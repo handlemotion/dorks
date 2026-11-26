@@ -378,7 +378,7 @@ export class DorksClient {
   cloud() {
     return this.query<CloudStatus>("cloud", () => this.api.cloud());
   }
-  /** The account's organizations and servers (its Macs, its organizations' hosted servers); refreshed with `cloud`. */
+  /** The account's organizations and servers (its Macs, and the servers Dorks runs for its Teams and Cloud orgs); refreshed with `cloud`. */
   cloudPlaces() {
     return this.query<CloudPlaces>("cloud:places", () => this.api.cloudPlaces());
   }

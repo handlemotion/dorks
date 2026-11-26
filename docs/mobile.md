@@ -24,7 +24,7 @@ and agents never connect to the phone: the phone reads and writes the Mac's UI A
   only when the person it is for may make it: their `x-dorks-actor` token is checked against the cloud's keys and their role
   ([cloud](cloud.md)). A compromised relay can do no more than a signed-in member could.
 - **Servers belong to orgs.** A Mac pairs into an organization (the user's personal one by default); every member of it sees the
-  Mac in `GET /v1/macs` and reaches it through the relay. A Teams or Cloud org's hosted server is one more entry, `kind: "hosted"`. Plans,
+  Mac in `GET /v1/macs` and reaches it through the relay. The server Dorks runs for a Teams or Cloud org (its `orgRuntime`) is one more entry, `kind: "hosted"`. Plans,
   roles and identity: [cloud](cloud.md).
 - **Separate private repository** for the cloud service (`handlemotion/dorks-cloud`): it holds accounts and deploy config, while
   this repository is public. The protocol between the Mac and the relay is specified here, so either side can change against it.
@@ -160,15 +160,15 @@ Expo SDK 58, Expo Router, iOS 26+ look (Liquid Glass through native components),
 
 The desktop (and the web UI) works in Dorks Cloud **organizations** ([dorks-cloud](https://github.com/handlemotion/dorks-cloud), teams):
 every account has a personal org, made at sign-up, and can create or join others to share chats with friends or colleagues. Every
-server belongs to one org: a member's Mac (normally in its owner's personal org) or the org's always-on hosted server.
+server belongs to one org: a member's Mac (normally in its owner's personal org) or, on Dorks Teams and Dorks Cloud, the server Dorks runs for the org (`orgRuntime`).
 
 - **Sign-in** is the phone's email code (Better Auth `emailOTP`), started from Settings, **Dorks Cloud**, or the sidebar switcher's
   *Sign in to Dorks Cloud*. The local server holds the session, encrypted in settings (`cloud_session_enc`), and never hands it to the
   UI. Pairing a phone is unchanged and separate: the Mac token only opens this Mac's own relay socket.
 - **The switcher** (the sidebar's top row) lists orgs only: the personal org first (your name), the others with their logo and plan, then
   *Create organization* (Better Auth `organization/create`). Machines are never entries in it.
-- **Which server an org means** is resolved inside the org (`apps/web/src/lib/place.ts`): its hosted server when it has one, through the
-  relay; else this Mac when it may (the personal org, or a team this Mac belongs to), with *Connect to* another of the org's Macs as a
+- **Which server an org means** is resolved inside the org (`apps/web/src/lib/place.ts`): the server Dorks runs for it (`kind: "hosted"`) when it has one,
+  through the relay; else this Mac when it may (the personal org, or a team this Mac belongs to), with *Connect to* another of the org's Macs as a
   small row under the switcher when there are several; else the org's one online Mac; else the org asks which Mac to connect to (or
   says nothing runs it yet). The choice is remembered per browser.
 - **Reaching another server**: the UI keeps the owner token of its own server and calls `/api/cloud/servers/:id/api/*` there; the server
@@ -206,8 +206,8 @@ one in-memory mock server per remote server, so switching visibly changes the ch
 ## Dorks Cloud
 
 Plans (Dorks Local, Dorks Teams, Dorks Cloud), teams and roles, identity tokens and what a team server does
-with them: [cloud](cloud.md). A hosted server is the same `apps/server`, dialing the relay like a Mac; the phone cannot tell them
-apart beyond `kind`.
+with them: [cloud](cloud.md). The server Dorks runs for a Teams or Cloud org is the same `apps/server`, dialing the relay like a Mac;
+the phone cannot tell them apart beyond `kind`.
 
 ## Not in v1
 

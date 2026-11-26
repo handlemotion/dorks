@@ -10,35 +10,37 @@ is simply an org with one member.
 
 | Plan (id) | Price | What it is |
 |---|---|---|
-| **Dorks Local** (`local`) | Free | Your personal org on your own Mac(s), one person, through the relay. You bring your own Boat and Claude. |
-| **Dorks Teams** (`teams`) | $5/month per org | Realtime collaboration: teammates open the same chats and send messages, and the agent knows who sent each one. Automations run in the cloud (on the Worker) around the clock, where a Mac cannot wake at night. Members, invitations and roles (owner, admin, member). You bring your own Boat key and Claude. |
-| **Dorks Cloud** (`cloud`) | $29/month per org | Dorks Teams, with the Boat sandboxes provided (**cloud credit** on Dorks' own Boat account) instead of your own key. |
+| **Dorks Local** (`local`) | Free, no subscription | Your personal org on your own Mac(s), one person, through the relay. You bring your own Boat and Claude. |
+| **Dorks Teams** (`teams`) | $5/month per org | The org runs on the dorks-cloud Worker (`orgRuntime`): shared chats in real time (teammates open the same chats and send messages, and the agent knows who sent each one) and automations around the clock, where a Mac cannot wake at night. Members, invitations and roles (owner, admin, member). You bring your own Boat key and Claude. |
+| **Dorks Cloud** (`cloud`) | $29/month per org | Dorks Teams plus `cloudCredit`: Boat sandboxes on Dorks' own Boat account instead of your own key. |
 
-The cloud named these `free` and `collab` before. Until it has moved over, `apps/server` and the app read `free` as `local` and
-`collab` as `teams` (`planOf` in `packages/shared/src/plans.ts`), in identity tokens, `GET /v1/orgs` and entitlements alike.
+The cloud named these `free` and `collab` before (dorks-cloud#20 renamed them, with `hostedServer` becoming `orgRuntime`). `apps/server`
+and the app still read `free` as `local` and `collab` as `teams` (`planOf` in `packages/shared/src/plans.ts`), in identity tokens and
+`GET /v1/orgs` alike, so a cloud on either side of the rename works.
 
 **Pricing** (the numbers live in one `PLAN_CONFIG` in dorks-cloud's `src/entitlements.ts`):
 
 - **One flat price per org**, never per seat.
 - **Unlimited members, with a fair-use cap** on Teams and Cloud (50 for now; Local has 1). An invitation that would reach it, counting
-  members plus open invitations, gets `403 MEMBER_LIMIT_REACHED`.
-- **Dorks Cloud includes 200 sandbox hours a month** (12,000 minutes) of cloud credit, metered per minute, with **a hard stop by
-  default** when they run out (the org's sandboxes stop until the next period) and **opt-in overage** at 1.5x Boat's price (Boat's
-  default machine is $0.036/h), up to a cap the org's owner sets.
+  members plus open invitations, gets `403 MEMBER_LIMIT_REACHED` (on Local: "Dorks Local is for one person…").
+- **Dorks Cloud includes 12,000 sandbox minutes a month** (200 hours) on Dorks' Boat account, at most 3 sandboxes at once. Past the
+  allowance, runs **stop** (`allowance_used`) unless the owner turns on **overage**: minutes at 1.5x Boat's price (0.09¢/minute), up to
+  a monthly cap the owner sets (default $20). Runs on an org's own Boat key are not metered, and Teams never draws on Dorks' credit.
+- **Switching**: Teams to Cloud is immediate and prorated; Cloud to Teams waits for the period's end. Only the org's owner manages billing.
 
 `GET /v1/orgs/:orgId/entitlements` (members only) answers
-`{plan: "local"|"teams"|"cloud", memberLimit, members, hostedServer, cloudCredit, includedMinutes, usedMinutes, periodEnd,
+`{plan: "local"|"teams"|"cloud", memberLimit, members, orgRuntime, cloudCredit, includedMinutes, usedMinutes, periodEnd,
 overage: {enabled, capCents, spentCents}, maxConcurrentSandboxes}`.
 
 ## Servers belong to orgs
 
-A server is a Mac paired through the relay, or the hosted server of a Teams or Cloud org (`kind: "hosted"`). Either way it belongs to one
+A server is a Mac paired through the relay, or the server Dorks runs for a Teams or Cloud org (its `orgRuntime`, `kind: "hosted"`). Either way it belongs to one
 org (`macs.org_id`), and every member of that org sees it in `GET /v1/macs` and can reach it through the relay. Teammates always go
 through the relay: there is no direct connection to a server.
 
 A server learns its org when it pairs (`orgId` in the claimed answer of `POST /v1/pair/poll`) and again each time its link opens
 (`PATCH /v1/mac`, which answers `{macId, name, orgId, kind, pairedBy?}`), so a Mac paired before teams existed picks it up. It keeps it in
-`settings.cloud_org_id`; a hosted server is started with `DORKS_ORG_ID` instead ([env](env.md)). `pairedBy: {id, name, email}` is
+`settings.cloud_org_id`; the server Dorks runs for an org is started with `DORKS_ORG_ID` instead ([env](env.md)). `pairedBy: {id, name, email}` is
 who paired it: the server keeps it (`settings.cloud_owner`) and treats the local owner as that person.
 
 ## Identity

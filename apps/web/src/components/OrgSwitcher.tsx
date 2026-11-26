@@ -182,8 +182,8 @@ export function CreateOrgDialog({ open, onOpenChange, onCreated }: { open: boole
 }
 
 /**
- * Inside an org with no hosted server and more than one Mac to work on: which one the app is connected to, and Connect to another.
- * Nothing for an org with a hosted server or a single Mac.
+ * Inside an org without a server Dorks runs (`kind: "hosted"`) and with more than one Mac to work on: which one the app is connected to, and Connect to another.
+ * Nothing for an org with a server Dorks runs, or a single Mac.
  */
 export function MachineRow() {
   const place = useCloudPlace()
