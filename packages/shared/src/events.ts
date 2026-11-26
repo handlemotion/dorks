@@ -19,7 +19,14 @@ const base = { seq: z.number().int(), dorkId: z.string(), ts: z.number() };
 
 export const clientEvent = z.discriminatedUnion("type", [
   // `from`: a message a coordinator dork sent its worker (docs/crew.md); absent for the owner's own messages.
-  z.object({ ...base, type: z.literal("user_message"), text: z.string(), from: z.object({ id: z.string(), title: z.string() }).optional() }),
+  // `by`: the teammate who sent it on a team server (docs/cloud.md); absent for the local owner's own messages.
+  z.object({
+    ...base,
+    type: z.literal("user_message"),
+    text: z.string(),
+    from: z.object({ id: z.string(), title: z.string() }).optional(),
+    by: z.object({ id: z.string(), name: z.string() }).optional(),
+  }),
   z.object({ ...base, type: z.literal("assistant_delta"), messageId: z.string(), text: z.string() }),
   z.object({ ...base, type: z.literal("assistant_message"), messageId: z.string(), text: z.string() }),
   z.object({

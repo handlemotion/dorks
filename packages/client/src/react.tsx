@@ -13,7 +13,7 @@ import {
 import type { DorksClient, ConnectionState } from "./client.ts";
 import type { EventsState } from "./events.ts";
 import type { QueryState, Store } from "./store.ts";
-import type { AutomationRunView, AutomationView, BuildView, Dork, RunView, Settings, SnapshotStatus, Usage, GithubRepos, LocalAccess, PhoneStatus, SentryProjects } from "./types.ts";
+import type { AutomationRunView, AutomationView, BuildView, Dork, Me, Person, RunView, Settings, SnapshotStatus, Usage, GithubRepos, LocalAccess, PhoneStatus, SentryProjects } from "./types.ts";
 
 const Ctx = createContext<DorksClient | null>(null);
 
@@ -57,6 +57,23 @@ export function useDorks(archived = false): Dork[] | undefined {
 /** `undefined` while loading, `null` when it does not exist. */
 export function useDork(dorkId: string): Dork | null | undefined {
   return useStore(useDorksClient().dork(dorkId)).data;
+}
+
+/** Who this client is to the server (docs/cloud.md); `undefined` while loading or on an older server. */
+export function useMe(): Me | undefined {
+  return useStore(useDorksClient().me()).data;
+}
+
+const NO_VIEWERS: Person[] = [];
+
+/** Tells the server this client shows `dorkId` while mounted, and returns who looks at it now (this client's own person included). */
+export function usePresence(dorkId: string): Person[] {
+  const client = useDorksClient();
+  useEffect(() => {
+    client.viewing(dorkId);
+    return () => client.viewing(null);
+  }, [client, dorkId]);
+  return useStore(client.presenceStore).get(dorkId) ?? NO_VIEWERS;
 }
 
 export function useSettings(): Settings | undefined {

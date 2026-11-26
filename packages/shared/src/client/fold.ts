@@ -16,7 +16,14 @@ export type NoticeHook =
 
 export type Block =
   /** `at`: when it was sent (ms since epoch). */
-  | { kind: "user"; id: string; text: string; at?: number; /** Sent by a coordinator dork (docs/crew.md). */ from?: { id: string; title: string } }
+  | {
+      kind: "user";
+      id: string;
+      text: string;
+      at?: number;
+      /** Sent by a coordinator dork (docs/crew.md). */ from?: { id: string; title: string };
+      /** Sent by a teammate (docs/cloud.md). */ by?: { id: string; name: string };
+    }
   /** `final`: the server named this message the turn's final answer (`turn_complete.finalMessageId`). `at`: when it completed. */
   | { kind: "assistant"; id: string; text: string; streaming: boolean; final?: boolean; at?: number }
   | {
@@ -115,7 +122,7 @@ const findAssistant = (v: DorkView, id: string) => v.blocks.findIndex((b) => b.k
 
 const HANDLERS: Handlers = {
   user_message(v, e) {
-    v.blocks.push({ kind: "user", id: `u${e.seq}`, text: e.text, at: e.ts, ...(e.from ? { from: e.from } : {}) });
+    v.blocks.push({ kind: "user", id: `u${e.seq}`, text: e.text, at: e.ts, ...(e.from ? { from: e.from } : {}), ...(e.by ? { by: e.by } : {}) });
     v.lastOutcome = null;
   },
   assistant_delta(v, e) {

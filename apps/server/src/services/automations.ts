@@ -18,6 +18,7 @@ import { nextFire, validTimeZone } from "../lib/schedule";
 import { createDork } from "./dorks";
 import { getBuild } from "./builds";
 import { readSettings } from "./settings";
+import type { By } from "./team";
 
 // Automations (docs/automations.md): instructions an agent runs on a schedule, when something happens in a repository, or when the
 // owner says Run now. A run is an ordinary session started with the instructions and what triggered it; the automation keeps a
@@ -275,6 +276,8 @@ export interface RunRequest {
   note?: string;
   url?: string;
   number?: number;
+  /** The teammate who ran it by hand (services/team.ts); absent for the local owner and for triggers. */
+  by?: By;
 }
 
 const firstSentence = (s: string) => s.replace(/\s+/g, " ").trim();
@@ -296,6 +299,7 @@ function recordRun(app: App, a: AutomationRow, r: RunRequest, status: Automation
     repo: r.repo,
     number: r.number ?? null,
     dorkId,
+    runBy: r.by ?? null,
     status,
     error,
     createdAt: app.now(),
@@ -330,6 +334,7 @@ export function startRun(app: App, a: AutomationRow, r: RunRequest): string | nu
         provider: "claude",
         ...(a.model ? { model: a.model, effort: a.effort ?? undefined } : {}),
         ...(a.buildId ? { buildId: a.buildId } : {}),
+        ...(r.by ? { by: r.by } : {}),
       });
     } catch (e) {
       if (!(e instanceof AppFail)) throw e;
@@ -341,14 +346,15 @@ export function startRun(app: App, a: AutomationRow, r: RunRequest): string | nu
 }
 
 /** Run now: the first trigger's repository, with the owner as the reason. */
-export function runNow(app: App, id: string): AutomationRunView {
+export function runNow(app: App, id: string, by?: By): AutomationRunView {
   const a = ownAutomation(app, id);
   const t = a.triggers[0];
   if (!t) return fail("invalid", "Add a trigger first: it names the repository.");
   const runId = startRun(app, a, {
     source: "manual",
     repo: t.repo,
-    summary: "Run by you",
+    summary: by ? `Run by ${by.name}` : "Run by you",
+    ...(by ? { by } : {}),
     context: t.kind === "schedule" && t.branch ? `You started this run by hand. Start from the \`${t.branch}\` branch.` : "You started this run by hand, to try it.",
   });
   return runView(app, app.db.get("SELECT * FROM automation_runs WHERE id = ?", runId!)!);
@@ -358,6 +364,7 @@ export function runNow(app: App, id: string): AutomationRunView {
 
 function runView(app: App, r: Record<string, unknown>): AutomationRunView {
   const dorkId = r.dork_id as string | null;
+  const runBy = json<By>(r.run_by);
   const d = dorkId ? app.db.get<{ id: string; title: string; state: string; archived: number }>("SELECT id, title, state, archived FROM dorks WHERE id = ? AND deleting = 0", dorkId) : undefined;
   return {
     id: r.id as string,
@@ -369,6 +376,7 @@ function runView(app: App, r: Record<string, unknown>): AutomationRunView {
     status: r.status as AutomationRunStatus,
     error: (r.error as string | null) ?? null,
     dork: d ? { id: d.id, title: d.title, state: d.state, archived: d.archived === 1 } : null,
+    ...(runBy ? { by: { id: runBy.id, name: runBy.name } } : {}),
     createdAt: r.created_at as number,
   };
 }

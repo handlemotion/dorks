@@ -61,6 +61,8 @@ export interface DorkRow {
   repliedAt?: number;
   /** When the owner last read the chat (opened it or wrote in it). */
   readAt?: number;
+  /** The teammate who started it (services/team.ts); undefined: the local owner, or an automation. */
+  createdBy?: { id: string; name: string };
   lastActivityAt: number;
   createdAt: number;
 }
@@ -132,6 +134,7 @@ export const dorkOf = (r: Row): DorkRow => ({
   deleting: bool(r.deleting),
   repliedAt: u(r.replied_at as number | null),
   readAt: u(r.read_at as number | null),
+  createdBy: json<{ id: string; name: string }>(r.created_by),
   lastActivityAt: r.last_activity_at as number,
   createdAt: r.created_at as number,
 });
@@ -196,12 +199,13 @@ export const isUnread = (d: Pick<DorkRow, "repliedAt" | "readAt">): boolean => d
 
 /** The wire shape of a dork for the UI: no box id, session ids or other internals. */
 /** A message the owner queued for when the agent's current turn ends, oldest first. */
-export type QueuedMessage = { id: string; text: string; createdAt: number };
+export type QueuedMessage = { id: string; text: string; createdAt: number; by?: { id: string; name: string } };
 
 export const queuedMessagesOf = (db: Db, dorkId: string): QueuedMessage[] =>
-  db
-    .all("SELECT id, text, created_at FROM queued_messages WHERE dork_id = ? ORDER BY created_at, rowid", dorkId)
-    .map((r) => ({ id: r.id as string, text: r.text as string, createdAt: r.created_at as number }));
+  db.all("SELECT id, text, created_at, sent_by FROM queued_messages WHERE dork_id = ? ORDER BY created_at, rowid", dorkId).map((r) => {
+    const by = json<{ id: string; name: string }>(r.sent_by);
+    return { id: r.id as string, text: r.text as string, createdAt: r.created_at as number, ...(by ? { by: { id: by.id, name: by.name } } : {}) };
+  });
 
 export const dorkView = (d: DorkRow, prState?: "open" | "merged" | "closed", needsAttention?: boolean, queue?: QueuedMessage[], prs?: SessionPr[]) => ({
   id: d.id,
@@ -233,6 +237,7 @@ export const dorkView = (d: DorkRow, prState?: "open" | "merged" | "closed", nee
   mode: d.mode,
   parentId: d.parentId ?? null,
   icon: d.icon,
+  ...(d.createdBy ? { createdBy: { id: d.createdBy.id, name: d.createdBy.name } } : {}),
   lastActivityAt: d.lastActivityAt,
   createdAt: d.createdAt,
 });

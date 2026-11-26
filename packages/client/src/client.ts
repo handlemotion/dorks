@@ -25,6 +25,8 @@ import type {
   CreateDorkInput,
   Dork,
   LiveMessage,
+  Me,
+  Person,
   PrRefInput,
   RunView,
   Settings,
@@ -80,6 +82,13 @@ export class DorksClient {
   private readonly connListeners = new Set<() => void>();
   private readonly qopts: QueryOptions;
   private lastSweep = Date.now();
+  /** This tab's id for presence (docs/cloud.md): random per client, never stored. */
+  readonly clientId = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
+  /** Who looks at each dork, as the live stream last said; replaced at every `hello`. */
+  private presence = new Map<string, Person[]>();
+  private readonly presenceListeners = new Set<() => void>();
+  /** The dork this client shows, told to the server again after each reconnect. */
+  private viewingDorkId: string | null = null;
   /** Transcripts that advanced while the page was hidden: tailed once it shows again, not on every streamed token. */
   private readonly staleFeeds = new Set<string>();
   private readonly onVisibility = () => {
@@ -101,6 +110,7 @@ export class DorksClient {
     this.closeLive = connectLive({
       baseUrl: this.cfg.baseUrl,
       token: this.cfg.token,
+      client: this.clientId,
       fetch: this.cfg.fetch,
       backoff: this.cfg.retryDelay,
       onStatus: (live) => this.setConnection({ live, ...(live === "unauthorized" ? { unauthorized: true } : {}) }),
@@ -176,6 +186,8 @@ export class DorksClient {
   private onLive(m: LiveMessage) {
     switch (m.t) {
       case "hello":
+        this.setPresence(new Map());
+        void this.sendViewing();
         for (const q of this.queries.values()) q.invalidate();
         for (const id of this.feeds.keys()) this.tailFeed(id);
         break;
@@ -218,6 +230,13 @@ export class DorksClient {
         this.invalidate(`build:${m.buildId}`);
         this.invalidate(`runs:${m.buildId}`);
         break;
+      case "presence": {
+        const next = new Map(this.presence);
+        if (m.viewers.length) next.set(m.dorkId, m.viewers);
+        else next.delete(m.dorkId);
+        this.setPresence(next);
+        break;
+      }
       case "automations":
         this.invalidate("automations");
         this.invalidate("automation");
@@ -226,7 +245,41 @@ export class DorksClient {
     }
   }
 
+  private setPresence(next: Map<string, Person[]>) {
+    this.presence = next;
+    for (const l of [...this.presenceListeners]) l();
+  }
+
+  private async sendViewing() {
+    try {
+      await this.api.setPresence(this.clientId, this.viewingDorkId);
+    } catch {
+      /* an older server, or the dork just went away: presence is best effort */
+    }
+  }
+
+  /** This client now shows `dorkId` (null: none). Teammates see it in the chat's header. */
+  viewing(dorkId: string | null) {
+    if (dorkId === this.viewingDorkId) return;
+    this.viewingDorkId = dorkId;
+    void this.sendViewing();
+  }
+
+  /** Who looks at a dork now (this client's own person included). */
+  readonly presenceStore: Store<Map<string, Person[]>> = {
+    getSnapshot: () => this.presence,
+    subscribe: (l) => {
+      this.presenceListeners.add(l);
+      return () => void this.presenceListeners.delete(l);
+    },
+  };
+
   // ---- reads (stores) ----
+
+  /** Who this client is to the server (docs/cloud.md): the local owner, or a teammate with a role. */
+  me() {
+    return this.query<Me>("me", () => this.api.me());
+  }
 
   dorks(archived = false) {
     return this.query(`dorks:${archived}`, () => this.api.listDorks(archived));

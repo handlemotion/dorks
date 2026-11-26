@@ -7,6 +7,7 @@ import type { SnapshotDriver } from "./core/snapshot";
 import type { SnapshotAssets } from "./snapshot/assets";
 import type { Keyring } from "./core/crypto";
 import type { Db } from "./db";
+import type { JwksVerifier } from "./core/jwt";
 
 /** What changed, for live listeners (SSE clients, bridge sessions). Published after the transaction commits, never on rollback. */
 export type Change =
@@ -20,7 +21,9 @@ export type Change =
   | { t: "builds" }
   | { t: "build"; buildId: string }
   | { t: "automations" }
-  | { t: "commands"; dorkId: string };
+  | { t: "commands"; dorkId: string }
+  /** Who is looking at a dork right now (services/presence.ts): a payload, not an invalidation. */
+  | { t: "presence"; dorkId: string; viewers: { id: string; name: string }[] };
 
 export class Hub {
   private readonly listeners = new Set<(c: Change) => void>();
@@ -60,6 +63,10 @@ export interface Config {
   agyBin?: string;
   /** `DORKS_CLOUD_URL`: the cloud relay the iPhone app reaches this server through (docs/mobile.md); unset or empty turns it off. */
   cloudUrl?: string;
+  /** `DORKS_CLOUD_JWKS_URL`: the cloud's signing keys for team identity tokens (docs/cloud.md); default `<cloudUrl>/api/auth/jwks`. */
+  cloudJwksUrl?: string;
+  /** `DORKS_ORG_ID`: the dorks-cloud organization this server belongs to (a hosted server); else the one the cloud reports for its pairing. */
+  orgId?: string;
 }
 
 export interface SchedulerLike {
@@ -89,6 +96,8 @@ export interface App {
   snapshotAssets(): Promise<SnapshotAssets>;
   /** Waits; tests replace it so polling loops do not take real time. */
   sleep(ms: number): Promise<void>;
+  /** The cloud's JWKS (core/jwt.ts) for team identity tokens; null when no cloud is configured. Tests replace it. */
+  jwks(): JwksVerifier | null;
 }
 
 export const touch = (app: App, c: Change) => app.db.afterCommit(() => app.hub.emit(c));

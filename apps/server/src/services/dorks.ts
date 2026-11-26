@@ -13,6 +13,7 @@ import { defaultBuildId, getBuild } from "./builds";
 import { claimImages } from "./bridge";
 import { endDorkSubscriptions, resetCiAttempts, sessionSubscriptionViews, subscriptionsOfDork } from "./subscriptions";
 import { watchedShipsOf } from "./ships";
+import type { By } from "./team";
 
 export const MAX_TITLE_CHARS = 120;
 export const EVENTS_PAGE_DEFAULT = 50;
@@ -37,9 +38,9 @@ function checkText(text: unknown) {
 export type MessageFrom = { id: string; title: string };
 
 /** Durable outbox row + the event clients see. A thrown error rolls both back (e.g. archived dork). */
-function persistMessage(app: App, dork: DorkRow, text: string, from?: MessageFrom) {
+function persistMessage(app: App, dork: DorkRow, text: string, from?: MessageFrom, by?: By) {
   claimImages(app, dork.id, text);
-  persistUserMessage(app, dork.id, text, from);
+  persistUserMessage(app, dork.id, text, from, by);
 }
 
 export function listDorks(app: App, archived = false): DorkView[] {
@@ -126,7 +127,20 @@ function checkMode(input: { mode?: unknown; icon?: unknown }, setup: boolean, pa
 
 export function createDork(
   app: App,
-  input: { repo?: string; message: string; title?: string; provider?: Provider; model?: unknown; effort?: unknown; fast?: unknown; buildId?: unknown; setup?: unknown; mode?: unknown; icon?: unknown },
+  input: {
+    repo?: string;
+    message: string;
+    title?: string;
+    provider?: Provider;
+    model?: unknown;
+    effort?: unknown;
+    fast?: unknown;
+    buildId?: unknown;
+    setup?: unknown;
+    mode?: unknown;
+    icon?: unknown;
+    /** Set by the route from the request's actor, never from a body. */ by?: By;
+  },
   // Set only by the crew service (services/crew.ts), never from a request body: the coordinator starting this worker.
   parent?: DorkRow,
 ): string {
@@ -172,11 +186,12 @@ export function createDork(
       mode,
       parentId: parent?.id ?? null,
       icon,
+      createdBy: input.by ?? null,
       ...choice,
       codeMode: provider === "claude" && readSettings(app).claudeCodeMode,
     });
     insert(app.db, "dork_runtime", { dorkId: id, bridgeSeq: 0, streamMsgId: "", sleepMinutes: readSettings(app).sleepMinutes, bridgeSeenAt: 0, bridgeLost: false, opGen: 0, pauseRetries: 0 });
-    persistMessage(app, getDork(app.db, id)!, text, parent ? { id: parent.id, title: parent.title } : undefined);
+    persistMessage(app, getDork(app.db, id)!, text, parent ? { id: parent.id, title: parent.title } : undefined, input.by);
     dispatch(app, id, { t: "start" }); // box failures land in `error` via the box job; the row exists either way
     touch(app, { t: "dorks" });
     return id;
@@ -187,12 +202,12 @@ export function createDork(
  * A message for the agent now. While it works the message steers the running turn (Claude reads it at its next tool call);
  * otherwise it starts a turn, waking the dork if it sleeps.
  */
-export function sendMessage(app: App, dorkId: string, text: string, from?: MessageFrom) {
-  app.db.tx(() => deliverNow(app, owned(app, dorkId), checkText(text), from));
+export function sendMessage(app: App, dorkId: string, text: string, from?: MessageFrom, by?: By) {
+  app.db.tx(() => deliverNow(app, owned(app, dorkId), checkText(text), from, by));
 }
 
-function deliverNow(app: App, dork: DorkRow, text: string, from?: MessageFrom) {
-  persistMessage(app, dork, text, from);
+function deliverNow(app: App, dork: DorkRow, text: string, from?: MessageFrom, by?: By) {
+  persistMessage(app, dork, text, from, by);
   const r = dispatch(app, dork.id, { t: "user_message" });
   if (r?.rejected) fail("archived", "dork is archived"); // rolls back the persisted message
   for (const sub of subscriptionsOfDork(app, dork.id)) if (sub.status !== "ended") resetCiAttempts(app, sub, "resumed by your message"); // a human is back: CI gets a fresh budget
@@ -207,19 +222,19 @@ const BUSY = new Set(["creating", "waking", "working"]);
  * first; the machine releases one at every turn boundary (`release_queue`). With no turn running it is sent now. Resolves whether it
  * was queued.
  */
-export function queueMessage(app: App, dorkId: string, text: string): { queued: boolean } {
+export function queueMessage(app: App, dorkId: string, text: string, by?: By): { queued: boolean } {
   return app.db.tx(() => {
     const dork = owned(app, dorkId);
     const t = checkText(text);
     if (dork.archived) fail("archived", "dork is archived");
     if (!BUSY.has(dork.state)) {
-      deliverNow(app, dork, t);
+      deliverNow(app, dork, t, undefined, by);
       return { queued: false };
     }
     const n = app.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM queued_messages WHERE dork_id = ?", dorkId)?.n ?? 0;
     if (n >= MAX_QUEUED_MESSAGES) fail("limit", `at most ${MAX_QUEUED_MESSAGES} messages can wait in the queue`);
     claimImages(app, dorkId, t);
-    app.db.run("INSERT INTO queued_messages (id, dork_id, text, created_at) VALUES (?, ?, ?, ?)", app.uuid(), dorkId, t, app.now());
+    app.db.run("INSERT INTO queued_messages (id, dork_id, text, created_at, sent_by) VALUES (?, ?, ?, ?, ?)", app.uuid(), dorkId, t, app.now(), by ? JSON.stringify(by) : null);
     touch(app, { t: "dork", dorkId });
     return { queued: true };
   });
@@ -229,11 +244,11 @@ export function queueMessage(app: App, dorkId: string, text: string): { queued: 
 export function takeQueued(app: App, dorkId: string, queuedId: string, send: boolean) {
   app.db.tx(() => {
     const dork = owned(app, dorkId);
-    const row = app.db.get<{ text: string }>("SELECT text FROM queued_messages WHERE id = ? AND dork_id = ?", queuedId, dorkId);
+    const row = app.db.get<{ text: string; sent_by: string | null }>("SELECT text, sent_by FROM queued_messages WHERE id = ? AND dork_id = ?", queuedId, dorkId);
     if (!row) fail("not_found", "that message is no longer queued");
     app.db.run("DELETE FROM queued_messages WHERE id = ?", queuedId);
     touch(app, { t: "dork", dorkId });
-    if (send) deliverNow(app, dork, row.text);
+    if (send) deliverNow(app, dork, row.text, undefined, row.sent_by ? (JSON.parse(row.sent_by) as By) : undefined);
   });
 }
 

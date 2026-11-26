@@ -1,6 +1,6 @@
 # iPhone app and the cloud relay
 
-Status: proposed (v1, TestFlight for the owner and a few friends).
+Status: proposed (v1, TestFlight for the owner and a few friends). Teams: [cloud](cloud.md).
 
 Dorks runs on the owner's Mac: the server, its SQLite database and its lifecycle machine live there, and the UI talks to it over
 loopback ([architecture](architecture.md)). The iPhone app is a second UI for that same server. It does not get a server of its own,
@@ -20,8 +20,12 @@ and agents never connect to the phone: the phone reads and writes the Mac's UI A
 - **Same API, same client.** The phone uses `@dorks/client` and `@dorks/shared` unchanged, with the relay's URL as `baseUrl` and
   its session token as `token`. `/api/live` (SSE) streams through the relay. Anything the phone shows means the same thing as on
   the desktop, by construction.
-- **The Mac decides what the phone may do.** The cloud only forwards. The Mac runs each relayed request against its own UI app with the
-  owner token, but only when it is on the relay allowlist below; a compromised relay can do no more than the phone could.
+- **The Mac decides what the phone may do.** The cloud only forwards. The Mac runs each relayed request against its own UI app, but
+  only when the person it is for may make it: their `x-dorks-actor` token is checked against the cloud's keys and their role
+  ([cloud](cloud.md)). A compromised relay can do no more than a signed-in member could.
+- **Servers belong to orgs.** A Mac pairs into an organization (the user's personal one by default); every member of it sees the
+  Mac in `GET /v1/macs` and reaches it through the relay. A collab org's hosted server is one more entry, `kind: "hosted"`. Plans,
+  roles and identity: [cloud](cloud.md).
 - **Separate private repository** for the cloud service (`handlemotion/dorks-cloud`): it holds accounts and deploy config, while
   this repository is public. The protocol between the Mac and the relay is specified here, so either side can change against it.
 - **Sign-in starts from Wok's** (handlemotion/omni `apps/ios`), in Inter: Continue with Google, Sign in with Apple, or Continue
@@ -37,10 +41,11 @@ and agents never connect to the phone: the phone reads and writes the Mac's UI A
 1. Desktop Settings, **Phone**: "Pair a phone" calls the local server's `POST /api/phone/pair`. The server calls the relay's
    `POST /v1/pair/start` with the Mac's name and answers `{code, url, expiresAt}`. The UI shows the code (`ABCD-2345`) and a QR code
    of `url` (`dorks://pair?code=ABCD2345&cloud=<origin>`). Codes last 10 minutes.
-2. The phone, signed in, scans the QR code (or the code is typed) and calls `POST /v1/pair/claim {code}`. The relay records a Mac
-   for that account.
-3. The server polls `POST /v1/pair/poll` every 2 s until it is claimed, receives `{macId, macToken}` once, stores the token
-   encrypted in settings (`cloud_mac_token_enc`) and opens the link. Live: `{t: "settings"}`.
+2. The phone, signed in, scans the QR code (or the code is typed) and calls `POST /v1/pair/claim {code, orgId?}`. The relay records
+   a Mac in that org (without `orgId`: the session's active org, else the personal one); only an owner or admin of it may pair.
+3. The server polls `POST /v1/pair/poll` every 2 s until it is claimed, receives `{macId, macToken, orgId}` once, stores the token
+   encrypted in settings (`cloud_mac_token_enc`) and the org (`cloud_org_id`), and opens the link. Live: `{t: "settings"}`.
+   Each time the link opens it calls `PATCH /v1/mac` (empty body) and keeps the `orgId` it answers.
 4. Unpair from either side: the desktop's `DELETE /api/phone` (calls `DELETE /v1/mac`), or the phone's Macs list
    (`DELETE /v1/macs/:id`). A revoked token closes the link with 4401 and the server forgets it.
 
@@ -62,21 +67,23 @@ and agents never connect to the phone: the phone reads and writes the Mac's UI A
 
 | Direction | Frame | Meaning |
 |---|---|---|
-| relay → Mac | `{t: "req", id, method, path, headers, body?}` | One phone request. `path` includes the query. `headers` carries only `content-type` and `accept` |
+| relay → Mac | `{t: "req", id, method, path, headers, body?}` | One phone request. `path` includes the query (`access_token` stripped). `headers` carries only `content-type`, `accept` and `x-dorks-actor`: the caller's identity token ([cloud](cloud.md), "Identity") |
 | relay → Mac | `{t: "cancel", id}` | The phone went away (an SSE stream closed): abort it |
 | Mac → relay | `{t: "head", id, status, headers}` | Response status and `content-type` |
 | Mac → relay | `{t: "chunk", id, data}` | Part of the body (any number; SSE sends one per message) |
 | Mac → relay | `{t: "end", id}` | The response is complete |
 | either | `{t: "ping"}` / `{t: "pong"}` | Every 25 s; a socket silent for 70 s is dropped |
 
-- The Mac answers a request it refuses with `head` 403 and an `AppError` body (`forbidden`), so the phone sees a normal API error.
+- The Mac answers a request it refuses with `head` 403 and an `AppError` body (`forbidden`, with a message saying why), so the phone
+  sees a normal API error.
 - Limits: 64 requests in flight per Mac, request bodies up to 10 MB (image uploads), 30 s to the first `head` for anything but
   `/api/live`. The relay answers 503 `{error: {code: "offline"}}` while no Mac socket is connected.
 - The Mac reconnects with backoff from 1 s to 30 s. A close with 4401 (token revoked) unpairs it.
 
 ### Relay allowlist (enforced on the Mac)
 
-Allowed for v1 (everything the phone shows):
+A request with `x-dorks-actor` is allowed by the member's role ([cloud](cloud.md), "Roles"). A request without one is today's
+single-owner phone, refused once the server knows its org, and until then allowed only on the v1 list (everything the phone shows):
 
 - `GET /api/live`, `GET /api/settings`, `GET /api/usage`, `GET /api/github/repos`, `GET /api/builds`, `GET /api/builds/:id`
 - `/api/dorks` and everything under `/api/dorks/:id` **except** `/local/*` (running commands on the Mac), `/inputs/*`
@@ -95,18 +102,28 @@ socket (hibernatable WebSockets) and multiplexes phone requests over it.
 
 | Method and path | Auth | Result |
 |---|---|---|
-| `/api/auth/*` | | Better Auth (Apple ID token, Google OAuth, email code (`emailOTP`), `bearer` plugin, `expo` plugin) |
+| `/api/auth/*` | | Better Auth (Apple ID token, Google OAuth, email code (`emailOTP`), `bearer`, `expo`, `organization` and `jwt` plugins) |
+| `GET /api/auth/jwks` | none | The keys identity tokens are signed with (EdDSA, Ed25519) |
+| `GET /api/auth/token` | session | An identity token for the session's active org |
+| `/api/auth/organization/*` | session | Teams: `create`, `invite-member`, `accept-invitation` (only the invited address), `update-member-role`, `remove-member`, `leave`, `set-active`, `delete`, `list-members`. Seats: members plus open invitations up to the plan's `seats` (`403 SEAT_LIMIT_REACHED`) |
+| `GET /v1/orgs` | session | `{id, name, slug, logo, personal, role, active, plan}[]`: my orgs |
+| `GET /v1/orgs/:orgId/entitlements` | session, member | The org's plan ([cloud](cloud.md), "Plans") |
 | `GET /v1/sign-in-methods` | none | `{google, apple, email}`: which sign-in methods are configured |
 | `POST /v1/pair/start` | none | `{pairId, pollToken, code, expiresAt}` (rate limited per IP) |
-| `POST /v1/pair/poll` | `pollToken` | `{status: "pending"}`, or once `{status: "claimed", macId, macToken}`; 404 when expired |
-| `POST /v1/pair/claim` | session | `{macId, name}` |
-| `GET /v1/macs` | session | `{id, name, online, lastSeenAt}[]` |
-| `DELETE /v1/macs/:id` | session | `{}`: revokes the Mac's token, closes its socket |
+| `POST /v1/pair/poll` | `pollToken` | `{status: "pending"}`, or once `{status: "claimed", macId, macToken, orgId}`; 404 when expired |
+| `POST /v1/pair/claim` | session, owner or admin of the org | `{code, orgId?}` → `{macId, name, orgId}` |
+| `GET /v1/macs` | session | `{id, name, online, lastSeenAt, kind: "mac"\|"hosted", orgId, org: {id, name, logo, personal}, role}[]`: the servers of every org I am in, personal first |
+| `DELETE /v1/macs/:id` | session, admin | `{}`: revokes the Mac's token, closes its socket |
+| `PATCH /v1/mac` | Mac token | `{macId, name, orgId, kind}`: which org owns this server (empty body) |
 | `DELETE /v1/mac` | Mac token | `{}`: the Mac unpairs itself |
 | `GET /v1/mac/connect` | Mac token | WebSocket upgrade into the Mac's `MacRelay` |
-| `* /v1/macs/:id/api/*` | session, owner of the Mac | Relayed to the Mac as `/api/*`; the response streams back |
+| `* /v1/macs/:id/api/*` | session, member of the Mac's org | Relayed to the Mac as `/api/*` with the caller's `x-dorks-actor`; the response streams back |
 
-Mac tokens and poll tokens are 32 random bytes, stored as SHA-256 hashes. The phone's own bearer token never reaches the Mac.
+Mac tokens and poll tokens are 32 random bytes, stored as SHA-256 hashes. The phone's own bearer token never reaches the Mac; the
+`x-dorks-actor` token tells it the user's id, name, email, org, role and plan. Deleting an org closes its servers' sockets with 4401.
+
+An invitation email links `dorks://invite/<id>` (and shows the id as a code); the app accepts it with
+`POST /api/auth/organization/accept-invitation {invitationId}`.
 
 Privacy: the relay sees the traffic it forwards (TLS ends at Cloudflare) but stores none of it: no request or response body is
 logged or kept. End-to-end encryption with a key exchanged in the QR code is the follow-up once the shape settles.
@@ -139,20 +156,11 @@ Expo SDK 58, Expo Router, iOS 26+ look (Liquid Glass through native components),
   updates and a native change makes a new build.
 - The app is not part of the desktop release (changesets); it versions on its own.
 
-## Later: Dorks Cloud (paid plan)
+## Dorks Cloud
 
-Today automations only run while the Mac is awake, because the Mac's server owns the scheduler. The fix is not to rewrite the scheduler
-in the Worker (two copies of the lifecycle would drift) but to let the **same server** run somewhere that is always on:
-
-- **Hosted server**: the `apps/server` binary (Bun, SQLite) runs per account in the cloud (a Boat sandbox, Cloudflare Containers
-  or a small VM) and dials the relay exactly like a Mac does. The phone cannot tell the difference: it is just another "Mac" in
-  `/v1/macs`. Automations, PR polling and timers then run around the clock.
-- **What it costs**: the relay alone is close to free per user (one Durable Object, a few D1 rows), so it can stay free. The plan pays
-  for the always-on server and, optionally, sandbox credit through Dorks' own Boat account instead of the user's own key.
-- **Trust change**: a hosted server holds the user's Claude, Boat and GitHub credentials, which the relay never does. It needs its own
-  key handling (per-account encryption keys, no operator access) before it ships.
-- **Mac and cloud together**: one owner, two servers means two databases. v1 of the plan picks one per account (move the Mac's data up
-  once); syncing both is the "Sync later" of [architecture](architecture.md) (the append-only `events` table).
+Plans (free, collab with its hosted server, the cloud credit add-on), teams and roles, identity tokens and what a team server does
+with them: [cloud](cloud.md). A hosted server is the same `apps/server`, dialing the relay like a Mac; the phone cannot tell them
+apart beyond `kind`.
 
 ## Not in v1
 

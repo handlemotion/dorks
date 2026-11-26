@@ -60,6 +60,7 @@ export function AppSidebar() {
       prs: prsOf(d),
       mode: d.mode,
       parentId: d.parentId,
+      createdBy: d.createdBy,
     }))
   // Agents' changes waiting for the owner: a count beside Builds, so a proposal is found from anywhere.
   const reviews = (builds ?? []).reduce((n, b) => n + b.drafts.filter((d) => d.status === 'submitted').length, 0)

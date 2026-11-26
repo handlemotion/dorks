@@ -1,7 +1,8 @@
 import type { ClientEventBody } from "@dorks/shared";
 import { fail, touch, type App } from "../app";
 import { commandOf, getDork, openCommands, runtimeOf, type CommandKind, type CommandRow, type DorkRow } from "../data";
-import { update, insert } from "../db";
+import { update, insert, json } from "../db";
+import { forAgent, type By } from "../services/team";
 import { reduce, type Effect, type Input, type Result } from "../core/machine";
 import { crewObserve } from "../services/crew";
 import { messagePreview } from "../lib/messageText";
@@ -125,19 +126,20 @@ export const patchDork = (app: App, dorkId: string, patch: Record<string, unknow
  * The owner's message: a durable outbox row, the event clients see, and the dork's preview. Images are claimed by the caller.
  * A thrown error rolls all of it back (e.g. an archived dork).
  */
-export function persistUserMessage(app: App, dorkId: string, text: string, from?: { id: string; title: string }) {
-  enqueue(app, dorkId, "user_message", text);
-  append(app, dorkId, { type: "user_message", text, ...(from ? { from } : {}) });
+export function persistUserMessage(app: App, dorkId: string, text: string, from?: { id: string; title: string }, by?: By) {
+  // A teammate's message reaches the agent with who sent it (services/team.ts); the transcript keeps the text as written.
+  enqueue(app, dorkId, "user_message", forAgent(text, by));
+  append(app, dorkId, { type: "user_message", text, ...(from ? { from } : {}), ...(by ? { by: { id: by.id, name: by.name } } : {}) });
   // The owner writing in a chat has read it; a coordinator's message to its worker reads nothing.
   patchDork(app, dorkId, { preview: messagePreview(text), lastActivityAt: app.now(), ...(from ? {} : { readAt: app.now() }) });
 }
 
 /** The oldest queued message goes out: it becomes the next turn's user message. */
 function releaseQueued(app: App, dorkId: string) {
-  const next = app.db.get<{ id: string; text: string }>("SELECT id, text FROM queued_messages WHERE dork_id = ? ORDER BY created_at, rowid LIMIT 1", dorkId);
+  const next = app.db.get<{ id: string; text: string; sent_by: string | null }>("SELECT id, text, sent_by FROM queued_messages WHERE dork_id = ? ORDER BY created_at, rowid LIMIT 1", dorkId);
   if (!next) return;
   app.db.run("DELETE FROM queued_messages WHERE id = ?", next.id);
-  persistUserMessage(app, dorkId, next.text);
+  persistUserMessage(app, dorkId, next.text, undefined, json<By>(next.sent_by));
   // The owner is back, as with a message sent straight away (services/dorks.ts): CI gets a fresh budget.
   for (const sub of subscriptionsOfDork(app, dorkId)) if (sub.status !== "ended") resetCiAttempts(app, sub, "resumed by your message");
 }

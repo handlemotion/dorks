@@ -31,6 +31,7 @@ import type {
   CreateDorkInput,
   Dork,
   EventsPage,
+  Me,
   PrRefInput,
   RunLog,
   RunView,
@@ -158,6 +159,10 @@ export function createApi(config: ApiConfig) {
     desktopUrl: (id: string, opts: DesktopOptions) => request<{ url: string }>("POST", `${dork(id)}/desktop`, opts),
     /** The owner read the chat: it stops showing as unread on every device. */
     markRead: (id: string) => request<object>("POST", `${dork(id)}/read`),
+    /** Who this client is to the server (docs/cloud.md). */
+    me: () => request<Me>("GET", "/api/me"),
+    /** This client (a tab or a phone, `client` its id) now shows `dorkId`; null: no dork. */
+    setPresence: (client: string, dorkId: string | null) => request<object>("POST", "/api/presence", { client, dorkId }),
     setArchived: (id: string, archived: boolean) => request<object>("POST", `${dork(id)}/archive`, { archived }),
     /** Claude: `model` null for the agent's default, `effort` null for the model's default, `fast` for fast mode. */
     setMode: (id: string, mode: DorkMode) => request<object>("POST", `${dork(id)}/mode`, { mode }),

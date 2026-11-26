@@ -5,6 +5,8 @@ export type LiveStatus = "connecting" | "live" | "offline" | "unauthorized";
 export interface LiveOptions {
   baseUrl: string;
   token: string;
+  /** This tab's or phone's id, for presence (docs/cloud.md). */
+  client?: string;
   fetch?: typeof fetch;
   onMessage: (m: LiveMessage) => void;
   onStatus: (s: LiveStatus) => void;
@@ -62,7 +64,10 @@ export function connectLive(opts: LiveOptions): () => void {
     abort = new AbortController();
     opts.onStatus("connecting");
     try {
-      const res = await doFetch(`${base}/api/live`, { headers: { authorization: `Bearer ${opts.token}`, accept: "text/event-stream" }, signal: abort.signal });
+      const res = await doFetch(`${base}/api/live${opts.client ? `?client=${encodeURIComponent(opts.client)}` : ""}`, {
+        headers: { authorization: `Bearer ${opts.token}`, accept: "text/event-stream" },
+        signal: abort.signal,
+      });
       if (res.status === 401) {
         opts.onStatus("unauthorized");
         return; // a wrong token never fixes itself; the app has to ask for a new one

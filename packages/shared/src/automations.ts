@@ -123,6 +123,8 @@ export interface AutomationRunView {
   error: string | null;
   /** The session it started; null when none, or once it was deleted. */
   dork: { id: string; title: string; state: string; archived: boolean } | null;
+  /** The teammate who ran it by hand on a team server (docs/cloud.md); absent for the local owner and for triggers. */
+  by?: { id: string; name: string };
   createdAt: number;
 }
 

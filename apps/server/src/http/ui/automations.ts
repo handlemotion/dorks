@@ -3,6 +3,7 @@ import * as automations from "../../services/automations";
 import { sentryProjects } from "../../services/automationSentry";
 import { looseBody, ok, service, serviceAsync } from "../route";
 import { handler, id, type Routes } from "./shared";
+import { byOfRequest } from "../../services/team";
 
 // ---- automations (docs/automations.md)
 export const automationRoutes: Routes = (api, app) => {
@@ -47,6 +48,6 @@ export const automationRoutes: Routes = (api, app) => {
   );
   api.post(
     "/api/automations/:id/runs",
-    on((c) => service((a) => c.json(automations.runNow(a, id(c)), 201))),
+    on((c) => service((a) => c.json(automations.runNow(a, id(c), byOfRequest(c)), 201))),
   );
 };
