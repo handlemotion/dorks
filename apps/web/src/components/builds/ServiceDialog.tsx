@@ -103,9 +103,9 @@ export function ServiceDialog({ build, service, onClose }: { build: BuildView; s
             {service && (
               <Button
                 type="button"
-                variant="ghost"
+                variant="destructive"
                 size="sm"
-                className="me-auto text-destructive"
+                className="me-auto"
                 disabled={pending}
                 aria-label={`remove ${service.name}`}
                 onClick={() => void save(build.services.filter((s) => s.name !== service.name))}

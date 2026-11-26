@@ -1,7 +1,8 @@
 "use client";
 
 // The app's menu: a fluid hover fill that springs between rows,
-// a hairline and the one soft drop shadow the app allows. 32px rows at the app's 14px.
+// a hairline and the one soft drop shadow the app allows. 32px rows at the app's 14px, one line each:
+// the popup grows to its longest row (at least its trigger, at most the room it has), so a label never wraps.
 
 import * as React from "react";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
@@ -75,7 +76,7 @@ function DropdownMenuContent({
             event.stopPropagation();
           }}
           className={cn(
-            MENU_POPUP_CLASS, "w-(--anchor-width)",
+            MENU_POPUP_CLASS, "w-max min-w-[max(10rem,var(--anchor-width))] max-w-(--available-width)",
             className,
           )}
           {...props}
@@ -136,7 +137,7 @@ function DropdownMenuItem({
       data-inset={inset}
       data-variant={variant}
       className={cn(
-        "group/dropdown-menu-item relative flex h-8 cursor-default items-center gap-2 rounded-[6px] px-2 text-sm leading-5 outline-hidden transition-[background-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] select-none data-[variant=destructive]:text-destructive data-[variant=destructive]:data-highlighted:text-destructive data-[variant=destructive]:*:[svg]:text-destructive data-highlighted:text-foreground data-disabled:opacity-50 data-inset:pl-8 motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 [&_svg]:text-foreground",
+        "group/dropdown-menu-item relative flex h-8 cursor-default items-center gap-2 rounded-[6px] px-2 text-sm leading-5 whitespace-nowrap outline-hidden transition-[background-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] select-none data-[variant=destructive]:text-destructive data-[variant=destructive]:data-highlighted:text-destructive data-[variant=destructive]:*:[svg]:text-destructive data-highlighted:text-foreground data-disabled:opacity-50 data-inset:pl-8 motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 [&_svg]:text-foreground",
         className,
       )}
       {...props}
@@ -156,7 +157,7 @@ function DropdownMenuLinkItem({
       data-slot="dropdown-menu-link-item"
       data-inset={inset}
       className={cn(
-        "relative flex h-8 cursor-default items-center gap-2 rounded-[6px] px-2 text-sm leading-5 outline-hidden transition-[background-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] select-none data-highlighted:text-foreground data-disabled:opacity-50 data-inset:pl-8 motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 [&_svg]:text-foreground",
+        "relative flex h-8 cursor-default items-center gap-2 rounded-[6px] px-2 text-sm leading-5 whitespace-nowrap outline-hidden transition-[background-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] select-none data-highlighted:text-foreground data-disabled:opacity-50 data-inset:pl-8 motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 [&_svg]:text-foreground",
         className,
       )}
       {...props}
@@ -185,7 +186,7 @@ function DropdownMenuSubTrigger({
       data-inset={inset}
       openOnHover={openOnHover}
       className={cn(
-        "relative flex h-8 cursor-default items-center gap-2 rounded-[6px] px-2 text-sm leading-5 outline-hidden select-none data-highlighted:text-foreground data-open:text-foreground data-popup-open:text-foreground data-inset:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 [&_svg]:text-foreground",
+        "relative flex h-8 cursor-default items-center gap-2 rounded-[6px] px-2 text-sm leading-5 whitespace-nowrap outline-hidden select-none data-highlighted:text-foreground data-open:text-foreground data-popup-open:text-foreground data-inset:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 [&_svg]:text-foreground",
         className,
       )}
       {...props}
@@ -231,7 +232,7 @@ function DropdownMenuCheckboxItem({
       data-slot="dropdown-menu-checkbox-item"
       data-inset={inset}
       className={cn(
-        "relative flex h-8 cursor-default items-center gap-2 rounded-[6px] py-0 pr-8 pl-2 text-sm leading-5 outline-hidden transition-[background-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] select-none data-checked:bg-foreground/[0.05] data-highlighted:text-foreground data-disabled:opacity-50 data-inset:pl-8 motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 [&_svg]:text-foreground",
+        "relative flex h-8 cursor-default items-center gap-2 rounded-[6px] py-0 pr-8 pl-2 text-sm leading-5 whitespace-nowrap outline-hidden transition-[background-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] select-none data-checked:bg-foreground/[0.05] data-highlighted:text-foreground data-disabled:opacity-50 data-inset:pl-8 motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 [&_svg]:text-foreground",
         className,
       )}
       checked={checked}
@@ -273,7 +274,7 @@ function DropdownMenuRadioItem({
       data-slot="dropdown-menu-radio-item"
       data-inset={inset}
       className={cn(
-        "relative flex h-8 cursor-default items-center gap-2 rounded-[6px] px-2 py-0 pr-7 text-sm leading-5 outline-hidden transition-[background-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] select-none data-checked:bg-foreground/[0.05] data-highlighted:text-foreground data-disabled:opacity-50 data-inset:pl-8 motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 [&_svg]:text-foreground",
+        "relative flex h-8 cursor-default items-center gap-2 rounded-[6px] px-2 py-0 pr-7 text-sm leading-5 whitespace-nowrap outline-hidden transition-[background-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] select-none data-checked:bg-foreground/[0.05] data-highlighted:text-foreground data-disabled:opacity-50 data-inset:pl-8 motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5 [&_svg]:text-foreground",
         className,
       )}
       {...props}

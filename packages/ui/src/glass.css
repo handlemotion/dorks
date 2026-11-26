@@ -72,6 +72,10 @@ h6 {
   --brand-foreground: #ffffff;
   /* A brand fill under the pointer: the blue multiplied darker, not lightened toward white. */
   --brand-hover: color-mix(in oklab, var(--brand), black 16%);
+  /* The one danger fill (destructive buttons): a bright, saturated red under white text, 4.2:1. */
+  --danger: oklch(0.61 0.255 26);
+  --danger-foreground: #ffffff;
+  --danger-hover: color-mix(in oklab, var(--danger), black 12%);
   /* The brand circle drawn behind onboarding (components/BrandCircle.tsx in the web app). */
   --brand-line: oklch(0 0 0 / 7%);
   /* Buttons, inputs and selects. Pills are the exception and set this to var(--radius-pill) themselves. */
@@ -106,6 +110,10 @@ html:root {
   --brand: #3b6be8;
   --brand-foreground: #ffffff;
   --brand-line: oklch(1 0 0 / 8%);
+  /* The same strong red in dark: --destructive lightens for text, a fill under white text must not. */
+  --danger: oklch(0.61 0.255 26);
+  --danger-foreground: #ffffff;
+  --danger-hover: color-mix(in oklab, var(--danger), black 12%);
   /* Lighter in dark, to read on the dark app. */
   --link: #8aabff;
   --app: oklch(0.165 0 0);
@@ -160,6 +168,9 @@ html.dark [data-app-frame] {
   --color-brand-foreground: var(--brand-foreground);
   --color-brand-hover: var(--brand-hover);
   --color-brand-line: var(--brand-line);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-danger-hover: var(--danger-hover);
   --color-app: var(--app);
   --color-surface: var(--surface);
   --color-surface-line: var(--surface-line);
