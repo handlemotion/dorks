@@ -206,7 +206,7 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
             {chat.icon}
           </span>
         ) : (
-          <DorkIcon size={14} state={iconState} label={iconLabel} nerd={chat.mode === 'nerd'} />
+          <DorkIcon size={14} state={iconState} label={iconLabel} />
         )}
         <span className="min-w-0 flex-1 truncate">{chat.title}</span>
         {starter && <PersonAvatar person={starter} size="xs" />}

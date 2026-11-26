@@ -11,8 +11,8 @@ export interface ModeChoice {
   value: DorkMode
 }
 
-/** A nerd's mark is the dork's own, in its green (DorkIcon), the one it has in the sidebar. */
-const NerdIcon = ({ className }: { className?: string }) => <DorkIcon state="working" nerd still size={14} className={className} />
+/** A nerd's mark is the dork's own (DorkIcon), still. */
+const NerdIcon = ({ className }: { className?: string }) => <DorkIcon state="working" still size={14} className={className} />
 
 export const MODE_ICONS: Record<DorkMode, ComponentType<{ className?: string }>> = { chat: MessageCircleIcon, code: CodeXmlIcon, nerd: NerdIcon }
 

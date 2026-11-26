@@ -83,7 +83,7 @@ one `dork_get` reports as `settled: true`. `lastAnswer` is the final answer of i
 In the app a coordinator is called a **nerd**: New session's mode menu starts one, and the sidebar lists it in the repository group
 of the build it works on. A nerd can also read and leave notes for the owner's other sessions: [modes](modes.md), "Nerd reach".
 
-- **Sidebar:** a nerd is a row in the repository group of the build it works on, with the dork mark in green while it works
+- **Sidebar:** a nerd is a row in the repository group of the build it works on, with the dork mark in its state's colour
   ([modes](modes.md)). New session's mode menu starts one (`POST /api/dorks {mode: "nerd", message}`) and opens it. Workers have no
   rows: they live inside their nerd.
 - **The dork's chat** is a normal chat (`SessionChat`) whose box asks what the dork should do next and shows no repository. Crew reports and
