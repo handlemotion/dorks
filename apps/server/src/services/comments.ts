@@ -162,11 +162,12 @@ export function changeComment(app: App, dorkId: string, id: string, change: { bo
   });
 }
 
-export function deleteComment(app: App, dorkId: string, id: string, who?: By) {
+/** `moderator`: an admin or owner of the team (the local owner too), who may delete anyone's comment; only its author may edit it. */
+export function deleteComment(app: App, dorkId: string, id: string, who?: By, moderator = false) {
   app.db.tx(() => {
     owned(app, dorkId);
     const r = row(app, dorkId, id);
-    if (r.author !== "owner" || writerId(app, r) !== requesterId(who)) fail("forbidden", "only your own comments can be deleted");
+    if (r.author !== "owner" || (!moderator && writerId(app, r) !== requesterId(who))) fail("forbidden", "only your own comments can be deleted");
     app.db.run("DELETE FROM preview_comments WHERE id = ?", id); // a thread's replies go with it (ON DELETE CASCADE)
     touch(app, { t: "comments", dorkId });
   });

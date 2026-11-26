@@ -153,6 +153,9 @@ export function teamAllowed(role: Role, method: string, path: string): boolean {
   return (role === "member" ? MEMBER : ADMIN).some(([rm, re]) => (rm === "*" || rm === m) && re.test(path));
 }
 
+/** Whether an actor moderates the team's content (deletes others' comments): the local owner, and a team's admins and owner. */
+export const moderates = (actor: Actor): boolean => actor.kind !== "member" || actor.member.role !== "member";
+
 /** The answer to `GET /api/me`: who this request is, for the UI. */
 export function meView(app: App, actor: Actor) {
   if (actor.kind === "member") {
