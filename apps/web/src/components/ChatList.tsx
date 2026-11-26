@@ -5,10 +5,8 @@ import { Accessibility, defaultPreset, KeyboardSensor, PointerActivationConstrai
 import { DragDropProvider, type DragEndEvent, type DragOverEvent, type DragStartEvent } from '@dnd-kit/react'
 import { isSortable, useSortable } from '@dnd-kit/react/sortable'
 import { useRef, useState } from 'react'
-import { ArchiveIcon, ChevronDownIcon, ChevronUpIcon, LinkIcon, LoaderCircleIcon } from 'lucide-react'
-import { toast } from 'sonner'
-import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@dorks/ui/context-menu'
-import { DropdownMenuItem } from '@dorks/ui/dropdown-menu'
+import { ArchiveIcon, ChevronDownIcon, ChevronUpIcon, LoaderCircleIcon } from 'lucide-react'
+import { copyText, openContextMenu } from '../lib/contextMenu'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@dorks/ui/hover-card'
 import { useStoredOrder } from '../lib/storedOrder'
 import { Tip } from './Tip'
@@ -98,7 +96,7 @@ export function ChatList({
   to?: ChatRoute
   /** The chat open in the page. */
   activeId?: string
-  /** Archives a chat: the row's hover button and its right-click menu. Without it, neither shows. */
+  /** Archives a chat: the row's hover button and the Archive item of its right-click menu. Without it, neither shows. */
   onArchive?: (id: string) => void
   /** Rows shown before a Show more row (the open chat always shows). Without it, all of them. */
   limit?: number
@@ -141,7 +139,8 @@ const ICON_LABEL: Record<DorkIconState, string> = { attention: 'Needs attention'
  * while the dork waits on the owner, still grey when awake and a grey outline when asleep. The right edge shows the chat's pull
  * requests (`PrBadge`) and a spinner while a merge is shipping; hovering them lists the PRs and the checks still running. The row is
  * active (`data-active`, `aria-current`) while its chat is the one in the URL. With `onArchive`, hovering the row shows an archive
- * button at its edge (the PRs move left of it), and a right click opens the row's menu.
+ * button at its edge (the PRs move left of it). A right click opens the row's menu (natively in the desktop app): Open, Copy link and,
+ * with `onArchive`, Archive.
  */
 function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: number; to: ChatRoute; active: boolean; onArchive?: (id: string) => void }) {
   // `data` feeds announcements; the link is the handle so interactive-element filtering allows row drags.
@@ -163,8 +162,25 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
       : onArchive
         ? 'pr-12 group-hover/row:pr-[4.5rem]'
         : 'pr-12'
-  const row = (
-    <div ref={ref} data-chat-id={chat.id} data-dragging={isDragging || undefined} className="group/row relative flex min-w-0 data-[dragging]:z-30 data-[dragging]:opacity-60">
+  const link = () => {
+    const { href } = router.buildLocation({ to, search: { dork: chat.id } })
+    // `createHref` adds the history's own prefix (the `#` of hash routing).
+    return new URL(router.history.createHref(href), window.location.origin).href
+  }
+  return (
+    <div
+      ref={ref}
+      onContextMenu={(e) =>
+        openContextMenu(e, [
+          { label: 'Open', onSelect: () => void router.navigate({ to, search: { dork: chat.id } }) },
+          { label: 'Copy link', onSelect: () => copyText(link(), 'Link copied') },
+          ...(onArchive ? (['separator', { label: 'Archive', onSelect: () => onArchive(chat.id) }] as const) : []),
+        ])
+      }
+      data-chat-id={chat.id}
+      data-dragging={isDragging || undefined}
+      className="group/row relative flex min-w-0 data-[dragging]:z-30 data-[dragging]:opacity-60"
+    >
       <Link
         ref={handleRef}
         to={to}
@@ -201,28 +217,6 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
         </Tip>
       )}
     </div>
-  )
-  if (!onArchive) return row
-  return (
-    <ContextMenu>
-      <ContextMenuTrigger render={row} />
-      <ContextMenuContent>
-        <DropdownMenuItem onClick={() => onArchive(chat.id)}>
-          <ArchiveIcon />
-          Archive
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => {
-            const { href } = router.buildLocation({ to, search: { dork: chat.id } })
-            // `createHref` adds the history's own prefix (the `#` of hash routing).
-            void navigator.clipboard.writeText(new URL(router.history.createHref(href), window.location.origin).href).then(() => toast('Link copied'))
-          }}
-        >
-          <LinkIcon />
-          Copy link
-        </DropdownMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
   )
 }
 

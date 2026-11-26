@@ -9,6 +9,7 @@ import { ResizablePanel, ResizablePanelGroup } from '@dorks/ui/resizable'
 import { PanelResizeHandle } from '@dorks/ui/panel-resize-handle'
 import { useDefaultLayout, usePanelRef } from 'react-resizable-panels'
 import { EmptyState } from '../EmptyState'
+import { copyText, showContextMenu } from '../../lib/contextMenu'
 import { FileEditor } from '../diffs'
 
 // The Files tab of Chat details: the repositories checked out in the session's sandbox, browsed and edited in place. Pierre's editor
@@ -267,6 +268,7 @@ function EditorBody({ open, onChange, onSave }: { open?: Open; onChange: (text: 
   const { doc } = open
   return (
     <div
+      data-selectable
       className="min-h-full [--diffs-bg:var(--background)] [--diffs-font-family:var(--font-mono)] [--diffs-font-size:12px] [--diffs-line-height:20px]"
       onKeyDownCapture={(e) => {
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
@@ -350,6 +352,23 @@ function Tree({ tree, selected, onOpen }: { tree: Read<WorkspaceTree>; selected?
     initialExpansion: 'closed',
     // The search box would keep its intrinsic width and spill past a narrow panel.
     unsafeCSS: '[data-file-tree-search-container] input { min-width: 0; width: 0; }',
+    // A right click on a row opens its menu (natively in the desktop app) instead of the tree's own one, which would need markup.
+    composition: {
+      contextMenu: {
+        triggerMode: 'right-click',
+        onOpen: (item, context) => {
+          const { onOpen } = latest.current
+          // The tree marks the row as the menu's; ours does not live in the tree, so hand it straight back.
+          queueMicrotask(() => context.close({ restoreFocus: false }))
+          const path = item.path.replace(/\/$/, '')
+          showContextMenu({ x: context.anchorRect.left, y: context.anchorRect.top }, [
+            ...(item.kind === 'file' ? ([{ label: 'Open', onSelect: () => onOpen(path) }, 'separator'] as const) : []),
+            { label: 'Copy path', onSelect: () => copyText(path, 'Path copied') },
+            { label: 'Copy name', onSelect: () => copyText(item.name, 'Name copied') },
+          ])
+        },
+      },
+    },
     onSelectionChange: (paths) => {
       const p = paths[paths.length - 1]
       const { files, onOpen, selected } = latest.current

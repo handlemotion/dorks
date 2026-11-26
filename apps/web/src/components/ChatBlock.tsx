@@ -1,12 +1,11 @@
 import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { BoxIcon, ChevronRightIcon, ImageOffIcon, MessageSquareIcon, UsersIcon, CircleAlertIcon, CircleCheckIcon, CircleStopIcon, ReplyIcon } from 'lucide-react'
+import { BoxIcon, ChevronRightIcon, ImageOffIcon, MessageSquareIcon, UsersIcon, CircleAlertIcon, CircleCheckIcon, CircleStopIcon } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { Button } from '@dorks/ui/button'
 import type { Block } from '@dorks/shared'
 import { Bubble, BubbleContent } from '@dorks/ui/bubble'
 import { Markdown, type MarkdownImageProps } from '@dorks/ui/markdown'
-import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@dorks/ui/context-menu'
-import { DropdownMenuItem } from '@dorks/ui/dropdown-menu'
+import { openContextMenu } from '../lib/contextMenu'
 import { HoverActions } from './message-actions/MessageActions'
 import { REPLY_SOURCE, ReplyContext, ReplyQuote, SelectionReply, useReply, type ReplyHandlers } from './Reply'
 import { parseReply, quoteText } from '../lib/reply'
@@ -89,17 +88,12 @@ function ChatImage(props: { src?: string | Blob; alt?: string; large?: boolean }
   if (!onReply || typeof src !== 'string') return <ChatImageView {...props} />
   // A right click offers Reply, which puts the image in the composer's banner (and, by its id, in front of the agent).
   return (
-    <ContextMenu>
-      <ContextMenuTrigger render={<span className="inline-block max-w-full align-top" />}>
-        <ChatImageView {...props} />
-      </ContextMenuTrigger>
-      <ContextMenuContent>
-        <DropdownMenuItem onClick={() => onReply({ kind: 'image', src, alt: alt || 'Image', ref: src.startsWith('dorks-image:') ? src : refOf?.(src) })}>
-          <ReplyIcon />
-          Reply
-        </DropdownMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
+    <span
+      className="inline-block max-w-full align-top"
+      onContextMenu={(e) => openContextMenu(e, [{ label: 'Reply', onSelect: () => onReply({ kind: 'image', src, alt: alt || 'Image', ref: src.startsWith('dorks-image:') ? src : refOf?.(src) }) }])}
+    >
+      <ChatImageView {...props} />
+    </span>
   )
 }
 
