@@ -16,7 +16,8 @@ import { PageHeader } from '../../../components/PageHeader'
 import { PageRail, RailPage } from '../../../components/PageRail'
 import { Tip } from '../../../components/Tip'
 import { DAYS, EVENTS, EVERY, GithubMark, SENTRY_EVENTS, SentryMark, TriggerList, TriggerMark } from '../../../components/automations/TriggerEditor'
-import { TEMPLATES, type AutomationTemplate } from '../../../components/automations/templates'
+import { localTimeZone, TEMPLATES, type AutomationTemplate } from '../../../components/automations/templates'
+import { useAppWorkspace } from '../../../components/appWorkspace'
 import { SettingsFacts, SettingsGroup, SettingsGroupBody, SettingsInputRow, SettingsSection, SettingsSections, SettingsStatus, StatusDot, TONE_TEXT, type Tone } from '../../../components/settings/kit'
 import { usePending } from '../../../lib/pending'
 import { ago, upcoming } from '../../../lib/time'
@@ -73,7 +74,8 @@ function triggerText(t: AutomationTrigger) {
   if (t.kind === 'sentry')
     return `${label(SENTRY_EVENTS, t.event)}${t.event === 'sentry_spike' ? ` (${t.threshold ?? 100}/h)` : ''} in Sentry ${t.project || 'project'}${t.environment ? ` (${t.environment})` : ''}`
   const when = t.every === 'hour' ? `Every hour at :${t.time.slice(3)}` : t.every === 'week' ? `Every ${DAYS[t.day ?? 1]} at ${t.time}` : `${label(EVERY, t.every)} at ${t.time}`
-  return `${when} in ${t.repo || 'a repository'}`
+  // A chat's schedule names no repository.
+  return t.repo === undefined ? when : `${when} in ${t.repo || 'a repository'}`
 }
 
 /** Where an automation stands, for the list and its page. */
@@ -96,12 +98,18 @@ function NewButton({ variant = 'outline' }: { variant?: 'outline' | 'default' })
   )
 }
 
+/** An automation's mode; an older server sends none for code. */
+const modeOf = (a: { mode?: AutomationView['mode'] }) => a.mode ?? 'code'
+
 function AutomationList() {
-  const automations = useAutomations()
+  // Each workspace has its own automations: code sessions in Agents, chats in Chat. Templates are for code.
+  const [workspace] = useAppWorkspace()
+  const chat = workspace === 'chat'
+  const automations = useAutomations()?.filter((a) => modeOf(a) === (chat ? 'chat' : 'code'))
   const [query, setQuery] = useState('')
   const q = query.trim().toLowerCase()
   const shown = automations?.filter((a) => !q || a.name.toLowerCase().includes(q) || a.triggers.some((t) => triggerText(t).toLowerCase().includes(q)))
-  const templates = TEMPLATES.filter((t) => !q || t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q))
+  const templates = (chat ? [] : TEMPLATES).filter((t) => !q || t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q))
   return (
     <div className="flex h-full min-h-0 flex-col">
       <RailPage title="Automations">
@@ -111,7 +119,11 @@ function AutomationList() {
             <EmptyState
               figure="relay"
               title="No automations yet"
-              description="An agent that runs on a schedule, or when something happens in a repository or in Sentry. Start from a template, or from scratch."
+              description={
+                chat
+                  ? 'A chat that starts on a schedule, or when something happens in a repository or in Sentry.'
+                  : 'An agent that runs on a schedule, or when something happens in a repository or in Sentry. Start from a template, or from scratch.'
+              }
             >
               <NewButton />
             </EmptyState>
@@ -172,6 +184,7 @@ function Templates({ templates }: { templates: AutomationTemplate[] }) {
 type Draft = Required<Omit<AutomationInput, 'enabled' | 'triggers'>> & { triggers: AutomationTrigger[] }
 
 const draftOf = (a: AutomationTemplate['input'] | AutomationView): Draft => ({
+  mode: modeOf(a),
   name: a.name,
   triggers: a.triggers.map((t) => (t.kind === 'github' ? { ...t, authors: t.authors ?? [] } : { ...t })),
   instructions: a.instructions,
@@ -191,7 +204,7 @@ function AutomationForm({ draft, setDraft, overview, disabled }: { draft: Draft;
       {overview}
       <SettingsSection title="Triggers">
         <SettingsGroup label="triggers">
-          <TriggerList triggers={draft.triggers} onChange={(triggers) => set({ triggers })} repositories={repos?.repos ?? []} disabled={disabled} />
+          <TriggerList triggers={draft.triggers} onChange={(triggers) => set({ triggers })} repositories={repos?.repos ?? []} chat={draft.mode === 'chat'} disabled={disabled} />
         </SettingsGroup>
       </SettingsSection>
       <SettingsSection title="Instructions" description="Each run also gets what started it: the pull request, issue, comment or Sentry issue.">
@@ -201,7 +214,7 @@ function AutomationForm({ draft, setDraft, overview, disabled }: { draft: Draft;
             rows={10}
             disabled={disabled}
             className="max-w-none! min-h-56 rounded-none border-0 bg-transparent px-4 py-3 text-sm leading-6 focus-visible:ring-0 dark:bg-transparent"
-            placeholder="Review the pull request and comment with what looks risky."
+            placeholder={draft.mode === 'chat' ? 'Summarize what changed overnight and what needs me today.' : 'Review the pull request and comment with what looks risky.'}
             value={draft.instructions}
             onChange={(e) => set({ instructions: e.target.value })}
           />
@@ -303,8 +316,14 @@ const Crumb = () => (
 function NewAutomation({ template }: { template?: AutomationTemplate }) {
   const { actions } = useDorksClient()
   const navigate = useNavigate()
+  // A new automation is the workspace's: a chat in Chat (starting from a schedule, which needs no repository), else code.
+  const [workspace] = useAppWorkspace()
   const [draft, setDraft] = useState<Draft>(() =>
-    template ? draftOf(template.input) : { name: '', triggers: [{ kind: 'github', event: 'pr_opened', repo: '', authors: [] }], instructions: '', model: null, effort: null, buildId: null },
+    template
+      ? draftOf(template.input)
+      : workspace === 'chat'
+        ? { mode: 'chat', name: '', triggers: [{ kind: 'schedule', every: 'day', day: 1, time: '09:00', timezone: localTimeZone() }], instructions: '', model: null, effort: null, buildId: null }
+        : { mode: 'code', name: '', triggers: [{ kind: 'github', event: 'pr_opened', repo: '', authors: [] }], instructions: '', model: null, effort: null, buildId: null },
   )
   const [enabled, setEnabled] = useState(true)
   const { run, pending, error } = usePending()
@@ -334,7 +353,7 @@ function NewAutomation({ template }: { template?: AutomationTemplate }) {
           overview={
             <div className="flex flex-col gap-2.5">
               <SettingsGroup label="overview">
-                <NameRow value={draft.name} onChange={(name) => setDraft({ ...draft, name })} autoFocus />
+                <NameRow chat={draft.mode === 'chat'} value={draft.name} onChange={(name) => setDraft({ ...draft, name })} autoFocus />
               </SettingsGroup>
               <SettingsStatus error={error} />
             </div>
@@ -433,7 +452,7 @@ function AutomationDetails({ automation: a }: { automation: AutomationView }) {
               <SettingsGroup label="overview">
                 <Facts automation={a} />
                 <Notices automation={a} />
-                <NameRow value={draft.name} onChange={(name) => setDraft({ ...draft, name })} />
+                <NameRow chat={draft.mode === 'chat'} value={draft.name} onChange={(name) => setDraft({ ...draft, name })} />
               </SettingsGroup>
               <SettingsStatus error={save.error} />
             </div>
@@ -456,8 +475,18 @@ function ActiveSwitch({ checked, onChange, disabled }: { checked: boolean; onCha
 }
 
 /** The name, edited in place: a compact input, the same 28px as the trigger choices around it. */
-function NameRow({ value, onChange, autoFocus }: { value: string; onChange: (name: string) => void; autoFocus?: boolean }) {
-  return <SettingsInputRow id="automation-name" label="Name" placeholder="Review pull requests" autoFocus={autoFocus} inputClassName="h-7" value={value} onChange={(e) => onChange(e.target.value)} />
+function NameRow({ value, onChange, autoFocus, chat }: { value: string; onChange: (name: string) => void; autoFocus?: boolean; chat?: boolean }) {
+  return (
+    <SettingsInputRow
+      id="automation-name"
+      label="Name"
+      placeholder={chat ? 'Morning briefing' : 'Review pull requests'}
+      autoFocus={autoFocus}
+      inputClassName="h-7"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  )
 }
 
 /** Where it stands, at a glance. A failed last run reads in Last run, not twice. */

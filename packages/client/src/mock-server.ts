@@ -754,10 +754,10 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
 
   const automations = mockAutomations({
     broadcast: (m) => broadcast(m),
-    startSession: (repo, message, title) => {
+    startSession: (repo, message, title, mode) => {
       const blocked = cannotCreate("claude");
       if (blocked) return { error: blocked };
-      const id = addDork({ repo, message, title, provider: "claude" });
+      const id = addDork({ repo, message, title, mode, provider: "claude" });
       later(tick, () => startTurn(id, message));
       return { id, title };
     },

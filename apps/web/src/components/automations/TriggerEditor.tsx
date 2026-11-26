@@ -190,15 +190,18 @@ function TriggerRow({
   onChange,
   onRemove,
   repositories,
+  chat,
   disabled,
 }: {
   trigger: AutomationTrigger
   onChange: (t: AutomationTrigger) => void
   onRemove?: () => void
   repositories: string[]
+  /** A chat automation's: its schedules and Sentry triggers start a chat, in no repository. */
+  chat?: boolean
   disabled?: boolean
 }) {
-  const repo = <RepoChip repo={trigger.repo} onChange={(r) => onChange({ ...trigger, repo: r })} repositories={repositories} disabled={disabled} />
+  const repo = <RepoChip repo={trigger.repo ?? ''} onChange={(r) => onChange({ ...trigger, repo: r })} repositories={repositories} disabled={disabled} />
   return (
     <div data-slot="settings-row" className="flex min-h-13 items-start gap-3 py-3.5 ps-4 pe-3">
       <span className="flex h-6 w-4 shrink-0 items-center justify-center text-muted-foreground">
@@ -206,9 +209,9 @@ function TriggerRow({
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm">
         {trigger.kind === 'schedule' ? (
-          <ScheduleSentence trigger={trigger} onChange={onChange} repo={repo} disabled={disabled} />
+          <ScheduleSentence trigger={trigger} onChange={onChange} repo={chat ? null : repo} disabled={disabled} />
         ) : trigger.kind === 'sentry' ? (
-          <SentrySentence trigger={trigger} onChange={onChange} repo={repo} disabled={disabled} />
+          <SentrySentence trigger={trigger} onChange={onChange} repo={chat ? null : repo} disabled={disabled} />
         ) : (
           <GithubSentence trigger={trigger} onChange={onChange} repo={repo} disabled={disabled} />
         )}
@@ -255,20 +258,22 @@ function ScheduleSentence({ trigger: t, onChange, repo, disabled }: { trigger: S
           {zoneLabel(t.timezone)}
         </span>
       </Line>
-      <Line>
-        <Word>in</Word>
-        {repo}
-        <Word>from</Word>
-        <input
-          aria-label="Branch"
-          disabled={disabled}
-          placeholder="default branch"
-          spellCheck={false}
-          value={t.branch ?? ''}
-          onChange={(e) => onChange({ ...t, branch: e.target.value || undefined })}
-          className={cn(CHIP, 'w-32 font-mono text-xs placeholder:font-sans placeholder:text-sm placeholder:text-muted-foreground')}
-        />
-      </Line>
+      {repo && (
+        <Line>
+          <Word>in</Word>
+          {repo}
+          <Word>from</Word>
+          <input
+            aria-label="Branch"
+            disabled={disabled}
+            placeholder="default branch"
+            spellCheck={false}
+            value={t.branch ?? ''}
+            onChange={(e) => onChange({ ...t, branch: e.target.value || undefined })}
+            className={cn(CHIP, 'w-32 font-mono text-xs placeholder:font-sans placeholder:text-sm placeholder:text-muted-foreground')}
+          />
+        </Line>
+      )}
     </>
   )
 }
@@ -372,24 +377,40 @@ function SentrySentence({ trigger: t, onChange, repo, disabled }: { trigger: Sen
           </>
         )}
       </Line>
-      <Line>
-        <Word>working in</Word>
-        {repo}
-      </Line>
+      {repo && (
+        <Line>
+          <Word>working in</Word>
+          {repo}
+        </Line>
+      )}
     </>
   )
 }
 
-/** A new trigger of a kind, in the repository the automation already uses. */
-function newTrigger(kind: 'schedule' | GithubEvent | SentryEvent, repo: string): AutomationTrigger {
-  if (kind === 'schedule') return { kind: 'schedule', every: 'day', day: 1, time: '09:00', timezone: localTimeZone(), repo }
-  if (kind.startsWith('sentry_')) return { kind: 'sentry', event: kind as SentryEvent, project: '', threshold: 100, repo }
+/** A new trigger of a kind, in the repository the automation already uses; a chat's schedule or Sentry trigger in none. */
+function newTrigger(kind: 'schedule' | GithubEvent | SentryEvent, repo: string, chat?: boolean): AutomationTrigger {
+  const where = chat ? {} : { repo }
+  if (kind === 'schedule') return { kind: 'schedule', every: 'day', day: 1, time: '09:00', timezone: localTimeZone(), ...where }
+  if (kind.startsWith('sentry_')) return { kind: 'sentry', event: kind as SentryEvent, project: '', threshold: 100, ...where }
   return { kind: 'github', event: kind as GithubEvent, repo, authors: [] }
 }
 
 /** The triggers' rows, then Add trigger. */
-export function TriggerList({ triggers, onChange, repositories, disabled }: { triggers: AutomationTrigger[]; onChange: (t: AutomationTrigger[]) => void; repositories: string[]; disabled?: boolean }) {
-  const add = (kind: 'schedule' | GithubEvent | SentryEvent) => onChange([...triggers, newTrigger(kind, triggers.at(-1)?.repo ?? '')])
+export function TriggerList({
+  triggers,
+  onChange,
+  repositories,
+  chat,
+  disabled,
+}: {
+  triggers: AutomationTrigger[]
+  onChange: (t: AutomationTrigger[]) => void
+  repositories: string[]
+  /** A chat automation: schedules and Sentry triggers name no repository (GitHub triggers still name the one they watch). */
+  chat?: boolean
+  disabled?: boolean
+}) {
+  const add = (kind: 'schedule' | GithubEvent | SentryEvent) => onChange([...triggers, newTrigger(kind, triggers.findLast((t) => t.repo)?.repo ?? '', chat)])
   return (
     <>
       {triggers.map((t, i) => (
@@ -398,6 +419,7 @@ export function TriggerList({ triggers, onChange, repositories, disabled }: { tr
           key={`${i}:${triggers.length}`}
           trigger={t}
           repositories={repositories}
+          chat={chat}
           disabled={disabled}
           onChange={(next) => onChange(triggers.map((x, j) => (j === i ? next : x)))}
           onRemove={triggers.length > 1 ? () => onChange(triggers.filter((_, j) => j !== i)) : undefined}

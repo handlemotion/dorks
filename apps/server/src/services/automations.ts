@@ -54,6 +54,7 @@ export interface AutomationRow extends AutomationSpec {
 
 const rowOf = (r: Record<string, unknown>): AutomationRow => ({
   id: r.id as string,
+  mode: r.mode === "chat" ? "chat" : "code",
   name: r.name as string,
   enabled: r.enabled === 1,
   triggers: json<AutomationTrigger[]>(r.triggers) ?? [],
@@ -90,7 +91,8 @@ function checkInput(app: App, input: unknown, selfId?: string): AutomationSpec {
   const spec = parsed.data;
   for (const t of spec.triggers) {
     if (t.kind === "schedule" && !validTimeZone(t.timezone)) fail("invalid", `Unknown time zone ${t.timezone}.`);
-    if (t.kind === "schedule" && !t.branch) delete t.branch;
+    // A chat starts on no branch: it has no checkout.
+    if (t.kind === "schedule" && (!t.branch || spec.mode === "chat")) delete t.branch;
     if (t.kind === "github") t.authors = [...new Set(t.authors.map((l) => l.trim()).filter(Boolean))];
     if (t.kind === "sentry") {
       t.project = t.project.toLowerCase();
@@ -105,6 +107,7 @@ function checkInput(app: App, input: unknown, selfId?: string): AutomationSpec {
 }
 
 const columns = (s: AutomationSpec) => ({
+  mode: s.mode,
   name: s.name,
   enabled: s.enabled,
   triggers: s.triggers,
@@ -205,7 +208,7 @@ const scheduleRun = (t: ScheduleTrigger, due: number) => ({
   repo: t.repo,
   summary: `${scheduleText(t)}${t.branch ? ` on ${t.branch}` : ""}`,
   // The whole trigger, so two schedules due at once (another branch, another repository) are two runs.
-  key: `schedule:${t.repo}@${t.branch ?? ""}:${t.every}:${t.day}:${t.time}:${t.timezone}:${due}`,
+  key: `schedule:${t.repo ?? ""}@${t.branch ?? ""}:${t.every}:${t.day}:${t.time}:${t.timezone}:${due}`,
 });
 
 /** `08:25` on the wall clock in `tz`. */
@@ -265,7 +268,8 @@ export function recoverAutomations(app: App) {
 
 export interface RunRequest {
   source: AutomationRunSource;
-  repo: string;
+  /** The repository: a code session starts in it; a chat is told about it (a GitHub event's), or has none (its schedule). */
+  repo?: string;
   /** One line for the history. */
   summary: string;
   /** What the agent is told about why it is running, after the instructions. */
@@ -284,7 +288,8 @@ const firstSentence = (s: string) => s.replace(/\s+/g, " ").trim();
 
 /** The session's first message: the owner's instructions, then why this run started. */
 function messageOf(a: AutomationRow, r: RunRequest) {
-  return `${a.instructions.trim()}\n\n---\nThis session was started by the automation "${a.name}" in ${r.repo}. ${r.context}`;
+  const where = !r.repo ? "" : a.mode === "chat" ? ` about the repository ${r.repo}` : ` in ${r.repo}`;
+  return `${a.instructions.trim()}\n\n---\nThis session was started by the automation "${a.name}"${where}. ${r.context}`;
 }
 
 function recordRun(app: App, a: AutomationRow, r: RunRequest, status: AutomationRunStatus, error: string | null, dorkId: string | null): string {
@@ -296,7 +301,7 @@ function recordRun(app: App, a: AutomationRow, r: RunRequest, status: Automation
     eventKey: r.key ?? null,
     summary: (r.note ? `${r.summary}, ${r.note}` : r.summary).slice(0, 300),
     url: r.url ?? null,
-    repo: r.repo,
+    repo: r.repo ?? null,
     number: r.number ?? null,
     dorkId,
     runBy: r.by ?? null,
@@ -328,7 +333,9 @@ export function startRun(app: App, a: AutomationRow, r: RunRequest): string | nu
     let dorkId: string;
     try {
       dorkId = createDork(app, {
-        repo: r.repo,
+        mode: a.mode,
+        // A chat works in no repository: it is told which one the event was in.
+        ...(a.mode === "code" ? { repo: r.repo } : {}),
         message: messageOf(a, r),
         title: `${a.name}: ${firstSentence(r.summary)}`.slice(0, 120),
         provider: "claude",
@@ -345,7 +352,7 @@ export function startRun(app: App, a: AutomationRow, r: RunRequest): string | nu
   });
 }
 
-/** Run now: the first trigger's repository, with the owner as the reason. */
+/** Run now: the first trigger's repository (none for a chat's schedule), with the owner as the reason. */
 export function runNow(app: App, id: string, by?: By): AutomationRunView {
   const a = ownAutomation(app, id);
   const t = a.triggers[0];
