@@ -169,7 +169,7 @@ export function Hero({ release: built }: { release: MacRelease | null }) {
         </div>
       </header>
 
-      <section ref={sectionRef} className="relative flex min-h-[90svh] w-full flex-col overflow-hidden bg-[#b7a29e] text-white lg:h-[90svh] lg:min-h-[760px]">
+      <section ref={sectionRef} className="relative flex min-h-[90svh] w-full flex-col overflow-hidden border-b border-[#eaeaea] bg-[#b7a29e] text-white lg:h-[90svh] lg:min-h-[760px]">
         <img
           ref={bgRef}
           src="/hero-bg.webp"
