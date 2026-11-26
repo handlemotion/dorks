@@ -12,6 +12,12 @@ export interface Config {
   bridgePort: number;
   /** Never logged, never forwarded to the Claude child. */
   bridgeSecret: string;
+  /**
+   * How the bridge reaches its backend. `ws` (default): the owner's server dials this box's bridge port (a Mac, Dorks Local).
+   * `s2`: a cloud org's session; the bridge talks to s2 and to the Worker at `workerUrl`, and listens on nothing (s2/transport.ts).
+   */
+  transport: "ws" | "s2";
+  workerUrl: string | null;
   claudeBin: string;
   /** Appended to the claude argv (space separated). Escape hatch, e.g. `--model sonnet`. */
   claudeExtraArgs: string[];
@@ -70,6 +76,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dorkId,
     bridgePort,
     bridgeSecret,
+    ...transportOf(env),
     claudeBin: env.CLAUDE_BIN || "claude",
     claudeExtraArgs: (env.DORKS_CLAUDE_ARGS ?? "").split(/\s+/).filter(Boolean),
     permissionMode: env.DORKS_PERMISSION_MODE || "bypassPermissions",
@@ -85,6 +92,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     flushInterruptWaitMs: num(env.DORKS_FLUSH_INTERRUPT_WAIT_MS, 5_000),
     flushSyncWaitMs: num(env.DORKS_FLUSH_SYNC_WAIT_MS, 5_000),
   };
+}
+
+/** `DORKS_TRANSPORT=s2` (a cloud org's box) needs the Worker's URL; anything else is the WebSocket transport. */
+function transportOf(env: NodeJS.ProcessEnv): Pick<Config, "transport" | "workerUrl"> {
+  const workerUrl = env.DORKS_WORKER_URL?.replace(/\/+$/, "") || null;
+  if (env.DORKS_TRANSPORT !== "s2") return { transport: "ws", workerUrl };
+  if (!workerUrl?.match(/^https?:\/\//)) throw new Error("DORKS_TRANSPORT=s2 needs DORKS_WORKER_URL (the Worker's base URL)");
+  return { transport: "s2", workerUrl };
 }
 
 /**

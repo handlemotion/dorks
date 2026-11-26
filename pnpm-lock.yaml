@@ -482,6 +482,9 @@ importers:
 
   infra/bridge:
     dependencies:
+      '@dorks/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@dorks/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -489,9 +492,6 @@ importers:
         specifier: ^8.22.2
         version: 8.22.2
     devDependencies:
-      '@dorks/core':
-        specifier: workspace:*
-        version: link:../../packages/core
       '@types/node':
         specifier: ^26.6.4
         version: 26.6.4
