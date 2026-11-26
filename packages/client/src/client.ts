@@ -36,6 +36,7 @@ import type {
   SettingsPatch,
   SnapshotStatus,
   Usage,
+  GithubConnection,
   GithubRepos,
   SentryProjects,
   LocalAccess,
@@ -357,6 +358,11 @@ export class DorksClient {
   /** What the GitHub CLI's login can see (the server caches it briefly). Refetched when settings change. */
   githubRepos() {
     return this.query<GithubRepos>("github-repos", () => this.api.getGithubRepos());
+  }
+
+  /** A cloud org's GitHub connection: the Dorks Agents app's installations (`GET /api/github`, on the Worker only). */
+  githubConnection() {
+    return this.query<GithubConnection>("github-connection", () => this.api.getGithubConnection());
   }
 
   secretNames() {
@@ -685,9 +691,12 @@ export class DorksClient {
     refreshGithub: async () => {
       await this.api.getGithubRepos(true);
       this.invalidate("github-repos");
+      this.invalidate("github-connection");
       this.invalidate("settings");
       this.invalidate("pr");
     },
+    /** A cloud org: GitHub's page to install the Dorks Agents app (or add repositories to it); its round trip ends at `returnTo`. */
+    githubInstallUrl: async (returnTo: string) => (await this.api.githubInstallUrl(returnTo)).url,
     checkBoat: (input: { boatKey?: string; boatOrg?: string }) => this.api.checkBoat(input),
     /** Starts Antigravity's Google sign-in (services/antigravitySignIn.ts); resolves with its state, including Google's link. */
     signInAntigravity: async () => {

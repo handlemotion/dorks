@@ -11,6 +11,9 @@
 /// - `dorks://pair?...` is for the phone to scan; on the Mac it opens Settings, Phone (`/settings/phone`), where pairing lives.
 /// - `dorks://auth?code=<code>&state=<state>` finishes a Dorks Cloud sign-in started in the browser (`/auth?code=...&state=...`): the
 ///   UI hands both to the local server, which checks the state is one it opened and redeems the code.
+/// - `dorks://github?from=<settings|new>&github=connected` ends a cloud org's GitHub App install (Dorks Cloud's callback page opens
+///   it): back to where it started, Settings › Organization (`/settings/organization`) or a new session (`/dorks`). Nothing else
+///   in it is carried; the UI reads the connection again when the window comes to the front.
 pub fn route_for(url: &str) -> Option<String> {
     let rest = strip_scheme(url.trim())?;
     // `dorks://invite/abc?x#y`: the host is the action, the path its argument; the query only matters for a sign-in.
@@ -23,6 +26,7 @@ pub fn route_for(url: &str) -> Option<String> {
     match (action.as_str(), args.as_slice()) {
         ("invite", [id]) if valid_id(id) => Some(format!("/invite/{id}")),
         ("pair", []) => Some("/settings/phone".to_string()),
+        ("github", []) => Some(if query.and_then(|q| param(q, "from")) == Some("settings") { "/settings/organization" } else { "/dorks" }.to_string()),
         ("auth", []) => {
             let (code, state) = (param(query?, "code")?, param(query?, "state")?);
             Some(format!("/auth?code={code}&state={state}"))
@@ -62,6 +66,10 @@ mod tests {
     fn sends_a_pairing_code_to_the_phone_settings() {
         assert_eq!(route_for("dorks://pair?code=ABCD2345&cloud=https%3A%2F%2Fapi.dorks.build").as_deref(), Some("/settings/phone"));
         assert_eq!(route_for("dorks://pair").as_deref(), Some("/settings/phone"));
+        assert_eq!(route_for("dorks://github?from=settings&github=connected&account=acme").as_deref(), Some("/settings/organization"));
+        assert_eq!(route_for("dorks://github?from=new&github=connected").as_deref(), Some("/dorks"));
+        assert_eq!(route_for("dorks://github").as_deref(), Some("/dorks"));
+        assert_eq!(route_for("dorks://github/../settings?from=settings").as_deref(), None);
     }
 
     #[test]

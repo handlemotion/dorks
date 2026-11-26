@@ -5,6 +5,7 @@ import { useDorksClient, useSnapshot } from '@dorks/client/react'
 import type { BoatSignIn, Settings, SnapshotStatus } from '@dorks/client'
 import { Button } from '@dorks/ui/button'
 import { openExternal } from '../lib/desktop'
+import { connectGithub, useCloudGithub, type CloudGithub } from '../lib/githubApp'
 import { stepDone } from '../lib/onboarding'
 import { usePending } from '../lib/pending'
 import { SecretInput } from './onboarding/Frame'
@@ -98,6 +99,7 @@ const SettingsLink = ({ page, children }: { page: string; children: ReactNode })
 function useSteps(settings: Settings, snap: SnapshotStatus | undefined): Step[] | null {
   const { actions } = useDorksClient()
   const build = usePending()
+  const cloudGithub = useCloudGithub()
   const d = stepDone(settings)
   const snapBusy = snap?.state === 'building' || snap?.state === 'failed'
   if (d.boat && d.agents && d.github && d.snapshot && !snapBusy) return null
@@ -113,7 +115,7 @@ function useSteps(settings: Settings, snap: SnapshotStatus | undefined): Step[] 
   const steps: Step[] = [
     d.boat ? { id: 'boat', title: 'Connect Boat', state: 'done' } : boatStep(settings.boatSignIn),
     d.agents ? { id: 'agents', title: 'Connect an agent', state: 'done' } : { id: 'agents', title: 'Connect an agent', state: 'todo', body: <AgentForms settings={settings} /> },
-    d.github ? { id: 'github', title: 'Connect GitHub', state: 'done' } : githubStep(settings),
+    d.github ? { id: 'github', title: 'Connect GitHub', state: 'done' } : cloudGithub ? cloudGithubStep(cloudGithub) : githubStep(settings),
     snapshot,
   ]
   return steps
@@ -180,6 +182,34 @@ const OpenLink = ({ url }: { url: string }) => (
 function githubStep(settings: Settings): Step {
   const problem = settings.github.problem
   return { id: 'github', title: 'Connect GitHub', state: 'todo', detail: problem ?? 'Uses the GitHub CLI’s login: run `gh auth login` in a terminal.', trailing: <GithubCheckButton /> }
+}
+
+/**
+ * A cloud org's GitHub is the Dorks Agents app: an owner or admin installs it from here (GitHub's round trip comes back to the app,
+ * which reads the connection again); a member asks one of them.
+ */
+function cloudGithubStep(github: CloudGithub): Step {
+  const step = { id: 'github', title: 'Connect GitHub', state: 'todo' as const }
+  if (github.connection && !github.connection.configured) return { ...step, detail: 'This Dorks Cloud server has no GitHub app yet.' }
+  if (!github.admin) return { ...step, detail: 'Ask an owner or admin of this organization to connect GitHub.' }
+  return { ...step, detail: 'Install Dorks Agents on GitHub and pick the repositories sessions work in.', trailing: <CloudGithubButton /> }
+}
+
+function CloudGithubButton() {
+  const { actions } = useDorksClient()
+  const { run, pending, error } = usePending()
+  return (
+    <div className="flex shrink-0 items-center gap-2">
+      {error && (
+        <span className="max-w-60 truncate text-xs text-destructive" title={error}>
+          {error}
+        </span>
+      )}
+      <Button size="sm" variant="outline" disabled={pending} onClick={() => void run(() => connectGithub(actions, 'new'))}>
+        {pending ? 'Opening…' : 'Connect'}
+      </Button>
+    </div>
+  )
 }
 
 function GithubCheckButton() {

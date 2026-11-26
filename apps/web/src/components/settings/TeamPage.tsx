@@ -18,6 +18,10 @@ import {
   DropdownMenuTrigger,
 } from '@dorks/ui/dropdown-menu'
 import { usePending } from '../../lib/pending'
+import { openExternal } from '../../lib/desktop'
+import { connectGithub, useCloudGithub } from '../../lib/githubApp'
+import { useDorksClient } from '@dorks/client/react'
+import { OwnerAvatar } from '../RepoAvatar'
 import { isTeamOrg, orgName, useCloudPlace, type CloudPlace } from '../CloudPlace'
 import { EmptyState } from '../EmptyState'
 import { CreateOrgDialog, OrgMark } from '../OrgSwitcher'
@@ -70,6 +74,7 @@ function Team({ place, org }: { place: CloudPlace; org: CloudOrg }) {
       {/* Members, roles, invitations and leaving are team things (isTeamOrg): a personal org has only you. */}
       {!isTeamOrg(org) && <Personal />}
       {showsWhereItRuns(org, serverOrg) && <WhereItRuns place={place} org={org} admin={admin} />}
+      {place.target.kind === 'cloud' && place.target.org.id === org.id && <Github />}
       {isTeamOrg(org) && <Members place={place} org={org} detail={detail} meId={me.id} myRole={role} />}
       {admin && isTeamOrg(org) && <Invite place={place} org={org} detail={detail} />}
       {isTeamOrg(org) && <Leave place={place} org={org} owner={role === 'owner'} />}
@@ -116,6 +121,62 @@ function About({ place, org, owner }: { place: CloudPlace; org: CloudOrg; owner:
         />
       </SettingsGroup>
       <SettingsStatus saved={saved} error={error} />
+    </SettingsSection>
+  )
+}
+
+/**
+ * A cloud org's GitHub: the accounts the Dorks Agents app is installed on (each with GitHub's settings page for it, where repositories
+ * are added), and for an owner or admin, installing it (GitHub's round trip comes back here).
+ */
+function Github() {
+  const github = useCloudGithub()
+  const { actions } = useDorksClient()
+  const { run, pending, error } = usePending()
+  if (!github) return null
+  const installations = github.connection?.installations ?? []
+  const connect = () => void run(() => connectGithub(actions, 'settings'))
+  return (
+    <SettingsSection title="GitHub" description="Sessions work in the repositories the Dorks Agents app can reach.">
+      <SettingsGroup label="github">
+        {installations.map((i) => (
+          <SettingsRow
+            key={i.id}
+            label={
+              <span className="inline-flex items-center gap-2">
+                <OwnerAvatar owner={i.account} />
+                {i.account}
+              </span>
+            }
+            description={`${i.accountType === 'Organization' ? 'Organization' : 'Account'} · ${i.suspended ? 'Suspended on GitHub' : 'Connected'}`}
+            control={
+              i.manageUrl && (
+                <Button size="sm" variant="outline" onClick={() => openExternal(i.manageUrl!)}>
+                  Manage on GitHub
+                </Button>
+              )
+            }
+          />
+        ))}
+        {!installations.length && (
+          <SettingsRow
+            label="Not connected"
+            description={github.connection && !github.connection.configured ? 'This Dorks Cloud server has no GitHub app yet.' : 'Install Dorks Agents on GitHub and pick its repositories.'}
+          />
+        )}
+        {github.admin && github.connection?.configured && (
+          <SettingsGroupFooter
+            action={
+              <Button size="sm" variant={installations.length ? 'outline' : 'default'} disabled={pending} onClick={connect}>
+                {installations.length ? 'Connect another account' : 'Connect GitHub'}
+              </Button>
+            }
+          >
+            Opens GitHub in your browser, then comes back here.
+          </SettingsGroupFooter>
+        )}
+      </SettingsGroup>
+      <SettingsStatus error={error} />
     </SettingsSection>
   )
 }
