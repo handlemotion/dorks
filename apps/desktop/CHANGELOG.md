@@ -1,5 +1,23 @@
 # @dorks/desktop
 
+## 0.13.1
+
+### Patch Changes
+
+- [#292](https://github.com/handlemotion/dorks/pull/292) [`b097eb3`](https://github.com/handlemotion/dorks/commit/b097eb35431847a2c7b871f80eb74a57d5f4a895) Thanks [@handlemotion](https://github.com/handlemotion)! - Scrolling up a long chat keeps your place: reaching the top while older messages load no longer throws you to the start of the chat.
+
+- [#296](https://github.com/handlemotion/dorks/pull/296) [`4f8524f`](https://github.com/handlemotion/dorks/commit/4f8524f711a95033dde84d3021659966e97a686f) Thanks [@handlemotion](https://github.com/handlemotion)! - A new preview comment is just its input box, without a card around it.
+
+- [#286](https://github.com/handlemotion/dorks/pull/286) [`9fc629c`](https://github.com/handlemotion/dorks/commit/9fc629cb9129b6e5522b13b3d2173af8634116a2) Thanks [@handlemotion](https://github.com/handlemotion)! - The Mac download is now named `dorks-v<version>.dmg`, and https://dorks.build/download always gets the latest one.
+
+- [#287](https://github.com/handlemotion/dorks/pull/287) [`6004ca2`](https://github.com/handlemotion/dorks/commit/6004ca2e58060d4b1e8c61f16240ff458989dee5) Thanks [@handlemotion](https://github.com/handlemotion)! - A nerd's details have the same tabs as a chat's: every tab closes, and the + New tab lists the crew's pull requests, Sessions and Artifacts, so a closed PR tab can be opened again.
+
+- [#291](https://github.com/handlemotion/dorks/pull/291) [`5cbe5ce`](https://github.com/handlemotion/dorks/commit/5cbe5ce6c53c750b40f19bd3d38f58f5605d6ff6) Thanks [@handlemotion](https://github.com/handlemotion)! - A personal organization that already has automations keeps its Automations page, so it can still pause or delete them; it cannot create new ones.
+
+- [#290](https://github.com/handlemotion/dorks/pull/290) [`cd4fd4c`](https://github.com/handlemotion/dorks/commit/cd4fd4c08d4e4807f79fca9be89396f3b0237427) Thanks [@handlemotion](https://github.com/handlemotion)! - Automations are now only in team organizations: a personal organization runs on your Mac, which can be asleep or offline when an automation is due, so its Automations page is hidden.
+
+- [#285](https://github.com/handlemotion/dorks/pull/285) [`8f446ca`](https://github.com/handlemotion/dorks/commit/8f446ca4fb6a7b17dfda0f1df48f2332c87ef052) Thanks [@handlemotion](https://github.com/handlemotion)! - Danger buttons are now solid red with white text everywhere, and menu items stay on one line.
+
 ## 0.13.0
 
 ### Minor Changes
