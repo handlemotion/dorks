@@ -150,7 +150,7 @@ export function PreviewMarks(props: {
       {props.draft && (
         <>
           {props.draft.anchor.kind === 'text' ? <div aria-hidden className="absolute border-b-2 border-amber-500 bg-amber-300/40 mix-blend-multiply" style={place(props.draft.box)} /> : null}
-          <div ref={draftPanel} className="pointer-events-auto absolute z-20 rounded-[8px] border bg-background p-1" style={beside(props.draft.box, PANEL, 60, room)}>
+          <div ref={draftPanel} className="pointer-events-auto absolute z-20" style={beside(props.draft.box, PANEL, 60, room)}>
             <NewComment onSend={props.onDraftSend} onClose={props.onDraftClose} />
           </div>
         </>
