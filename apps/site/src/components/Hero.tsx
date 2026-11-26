@@ -43,21 +43,38 @@ const navItems = [
   { label: "Docs", href: "/docs" },
 ];
 
+const blurLayers = [
+  {
+    blur: "backdrop-blur-[2px]",
+    mask: "linear-gradient(to bottom, black 0%, black 58%, transparent 100%)",
+  },
+  {
+    blur: "backdrop-blur-[6px]",
+    mask: "linear-gradient(to bottom, black 0%, black 44%, transparent 82%)",
+  },
+  {
+    blur: "backdrop-blur-[12px]",
+    mask: "linear-gradient(to bottom, black 0%, black 30%, transparent 64%)",
+  },
+  {
+    blur: "backdrop-blur-[20px]",
+    mask: "linear-gradient(to bottom, black 0%, black 16%, transparent 46%)",
+  },
+];
+
 export function Hero() {
   const sectionRef = useRef<HTMLElement>(null);
   const bgRef = useRef<HTMLImageElement>(null);
   const copyRef = useRef<HTMLDivElement>(null);
   const graphicRef = useRef<HTMLDivElement>(null);
-  const [hasContentUnderNav, setHasContentUnderNav] = useState(false);
   const [onLightSurface, setOnLightSurface] = useState(false);
 
   useEffect(() => {
-    const updateNavState = (scroll: number) => {
+    const updateNavState = () => {
       const section = sectionRef.current;
       const graphic = graphicRef.current;
-      const overGraphic = graphic ? graphic.getBoundingClientRect().top <= 64 : false;
-      const pastHero = section ? section.getBoundingClientRect().bottom <= 64 : false;
-      setHasContentUnderNav(scroll > 12);
+      const overGraphic = graphic ? graphic.getBoundingClientRect().top <= 56 : false;
+      const pastHero = section ? section.getBoundingClientRect().bottom <= 56 : false;
       setOnLightSurface(overGraphic || pastHero);
     };
 
@@ -79,13 +96,13 @@ export function Hero() {
         graphicRef.current.style.transform = `translate3d(0, ${(-progress * 68).toFixed(2)}px, 0)`;
       }
 
-      updateNavState(scroll);
+      updateNavState();
     };
 
     const unsubscribe = subscribeLenisScroll(applyParallax);
-    const onNativeScroll = () => updateNavState(window.scrollY);
+    const onNativeScroll = () => updateNavState();
     window.addEventListener("scroll", onNativeScroll, { passive: true });
-    updateNavState(window.scrollY);
+    updateNavState();
 
     return () => {
       unsubscribe();
@@ -107,20 +124,25 @@ export function Hero() {
   return (
     <>
       <header className="fixed inset-x-0 top-0 z-40 flex h-16 w-full items-center justify-between bg-transparent px-4 sm:px-6">
-        <div
-          aria-hidden="true"
-          className={cn(
-            "pointer-events-none absolute inset-x-0 top-0 -bottom-4 backdrop-blur-md transition-opacity duration-200 [mask-image:linear-gradient(to_bottom,black_65%,transparent_100%)] [-webkit-mask-image:linear-gradient(to_bottom,black_65%,transparent_100%)]",
-            hasContentUnderNav ? "opacity-100" : "opacity-0",
-          )}
-        />
+        <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-32">
+          {blurLayers.map((layer) => (
+            <div
+              key={layer.blur}
+              className={cn("absolute inset-0", layer.blur)}
+              style={{
+                maskImage: layer.mask,
+                WebkitMaskImage: layer.mask,
+              }}
+            />
+          ))}
+        </div>
 
         <a
           href="/"
           onClick={handleScrollToTop}
           aria-label="Scroll to top"
           className={cn(
-            "relative z-10 inline-flex size-8 cursor-pointer items-center justify-center rounded-full transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2",
+            "relative z-10 inline-flex size-8 cursor-pointer items-center justify-center rounded-full transition-colors duration-250 ease-out focus-visible:outline-none focus-visible:ring-2",
             onLightSurface ? "text-neutral-950 hover:bg-black/8 focus-visible:ring-black/30" : "text-white hover:bg-black/15 focus-visible:ring-white/75",
           )}
         >
