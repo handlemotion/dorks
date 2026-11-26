@@ -363,7 +363,7 @@ function RepositoryControl({
       </span>
     )
   }
-  // A chat or a nerd works in no repository: no chooser for a new one.
+  // A nerd works in no repository: no chooser for a new one.
   if (environment) return needsRepo ? <EnvironmentPicker choice={environment} disabled={disabled} /> : null
   if (build !== undefined) {
     const name = build ?? 'Base machine'

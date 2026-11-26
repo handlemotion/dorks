@@ -102,7 +102,7 @@ that ends (stalled) while it is still open closes it the same way.
   production is broken. The new PR is an ordinary subscribed PR: when it merges, it gets its own ship.
 
 Nothing is sent for an archived session (or a ship whose subscription was purged): the card still shows the ship, and no verify stage
-waits. Chat mode sessions are not offered `ship_verify` (it is one of the autonomy tools, docs/modes.md).
+waits.
 
 Guardrails: the agent never deploys, rolls back, merges, or changes production data; the instructions and the tool say so. A ship
 fails or verifies once from the agent's side, so a flapping deploy cannot loop it.

@@ -40,7 +40,6 @@ import { usePending } from '../../../lib/pending'
 import { useDraft, useDraftSetter } from '../../../lib/draft'
 import { useArchiveDork } from '../../../lib/archive'
 import { THUMB_WIDTH } from '../../../lib/images'
-import { useAppWorkspace, type AppWorkspace } from '../../../components/appWorkspace'
 
 // The selected dork lives in the `dork` search param (not local state) so the sidebar can highlight it and the URL is shareable.
 export const Route = createFileRoute('/_conn/_app/dorks')({
@@ -65,8 +64,6 @@ function Notice({ children }: { children: React.ReactNode }) {
 function Dorks() {
   // The URL is user-editable, so this is not guaranteed to be a real id: the server answers not_found, which <Thread> shows.
   const { dork: selected, repo: presetRepo, mode: presetMode } = Route.useSearch()
-  // The workspace picks the new session's mode, so switching it starts the composer over in the other one.
-  const [workspace] = useAppWorkspace()
   const navigate = Route.useNavigate()
   const setSelected = (id: string) => void navigate({ search: { dork: id } })
   const [showArchived, setShowArchived] = useState(false)
@@ -106,10 +103,9 @@ function Dorks() {
             <div className={`${showArchived ? 'hidden' : 'flex'} mx-auto w-full max-w-[790px] flex-col gap-6`}>
               <h2 className="sr-only">What should we work on?</h2>
               <NewDork
-                key={`${presetRepo}:${presetMode}:${workspace}`}
+                key={`${presetRepo}:${presetMode}`}
                 initialRepo={presetRepo}
                 initialMode={presetMode}
-                workspace={workspace}
                 onCreated={setSelected}
                 disabled={!ready}
                 localReady={!!settings && canCreateLocal(settings)}
@@ -286,7 +282,6 @@ function AgentNotice({ provider }: { provider: AgentProvider }) {
 function NewDork({
   initialRepo,
   initialMode,
-  workspace,
   onCreated,
   disabled,
   localReady,
@@ -296,7 +291,6 @@ function NewDork({
 }: {
   initialRepo?: string
   initialMode?: DorkMode
-  workspace: AppWorkspace
   onCreated: (id: string) => void
   /** A cloud session cannot start yet (Boat, its snapshot or GitHub is missing). */
   disabled: boolean
@@ -333,7 +327,7 @@ function NewDork({
   const { run, pending, error } = usePending()
   const agent = agentGate(provider, claudeReady, codexReady, antigravityReady)
   const mentions = useMentions(provider)
-  const mode = newSessionMode(initialRepo, initialMode, workspace)
+  const mode = newSessionMode(initialRepo, initialMode)
   const picker = newSessionPicker(provider, settings, choice, setChoice)
   return (
     <div className="[&>div]:max-w-none">
@@ -402,14 +396,9 @@ function useNewSessionLocation() {
   }
 }
 
-/**
- * The new session's mode (docs/modes.md), with no menu of its own: a chat in the Chat workspace, a nerd from the Nerds group's +, else a
- * code session.
- */
-function newSessionMode(initialRepo: string | undefined, preset: DorkMode | undefined, workspace: AppWorkspace): DorkMode {
-  if (initialRepo) return 'code'
-  if (preset) return preset
-  return workspace === 'chat' ? 'chat' : 'code'
+/** The new session's mode (docs/modes.md), with no menu of its own: a nerd from the Nerds group's +, else a code session. */
+function newSessionMode(initialRepo: string | undefined, preset: DorkMode | undefined): DorkMode {
+  return !initialRepo && preset ? preset : 'code'
 }
 
 type DorkView = NonNullable<ReturnType<typeof useDork>>

@@ -1,11 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Link, useLocation, useNavigate } from '@tanstack/react-router'
-import { BlocksIcon, BoxIcon, ChevronDownIcon, ChevronRightIcon, ClockFadingIcon, PlusIcon } from 'lucide-react'
+import { Link, useLocation } from '@tanstack/react-router'
+import { BlocksIcon, BoxIcon, ChevronRightIcon, ClockFadingIcon, PlusIcon } from 'lucide-react'
 import type { DorkState } from '@dorks/shared'
 import type { Usage } from '@dorks/client'
 import { useAutomations, useBuilds, useDorks, useGithubRepos, useUsage } from '@dorks/client/react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@dorks/ui/collapsible'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@dorks/ui/dropdown-menu'
 import { FluidHoverHighlight } from '@dorks/ui/fluid-hover-highlight'
 import { Sidebar, useSidebar } from '@dorks/ui/sidebar'
 import { toast } from 'sonner'
@@ -13,11 +12,9 @@ import { useArchiveDork } from '../lib/archive'
 import { AccountMenu } from './AccountMenu'
 import { useDisconnect } from './ConnectionGate'
 import { ChatList, type Chat, type ChatPr, type ChatRoute, type PrState } from './ChatList'
-import { MODE_ICONS } from './ModeMenu'
 import { MachineRow, OrgSwitcher, StaticOrgSwitcher } from './OrgSwitcher'
 import { SIDEBAR_ROW, SIDEBAR_SECTION } from './sidebarChrome'
 import { HistoryButtons, TITLEBAR_AFTER_TOGGLE } from './WindowControls'
-import { useAppWorkspace, workspaceOf, type AppWorkspace } from './appWorkspace'
 import { useIsTeamOrg } from './CloudPlace'
 import { UpdatePrompt } from './UpdatePrompt'
 import { useRowHover } from './useRowHover'
@@ -115,50 +112,15 @@ function useCollapsedRepos() {
   return [collapsed, toggle] as const
 }
 
-const WORKSPACES: { value: AppWorkspace; label: string; icon: (typeof MODE_ICONS)[keyof typeof MODE_ICONS] }[] = [
-  { value: 'agents', label: 'Agents', icon: MODE_ICONS.code },
-  { value: 'chat', label: 'Chat', icon: MODE_ICONS.chat },
-]
-
-/**
- * The title bar's workspace switcher (`Agents ⌄`): Agents lists code sessions and nerds, Chat lists chats. Switching away from an open
- * session of the other workspace goes to New session, so the page never shows a session the sidebar does not list.
- */
-function WorkspaceSwitcher({ workspace, onChange }: { workspace: AppWorkspace; onChange: (next: AppWorkspace) => void }) {
-  const current = WORKSPACES.find((w) => w.value === workspace) ?? WORKSPACES[0]
-  return (
-    <DropdownMenu modal={false}>
-      <DropdownMenuTrigger
-        aria-label={`Switch workspace, currently ${current.label}`}
-        className="flex h-7 min-w-0 shrink items-center gap-0.5 rounded-[6px] px-1.5 text-sm text-muted-foreground outline-none hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring aria-expanded:bg-foreground/[0.05] aria-expanded:text-foreground"
-      >
-        <span className="min-w-0 truncate">{current.label}</span>
-        {/* 1.5px down: centred on the label's lowercase letters, not its line box. */}
-        <ChevronDownIcon aria-hidden className="size-3 shrink-0 translate-y-[1.5px]" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-44">
-        <DropdownMenuRadioGroup value={workspace} onValueChange={(value) => onChange(value as AppWorkspace)}>
-          {WORKSPACES.map(({ value, label, icon: Icon }) => (
-            <DropdownMenuRadioItem key={value} value={value} closeOnClick>
-              <Icon />
-              <span className="min-w-0 flex-1 truncate">{label}</span>
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
-/** The app's pages, under New session. Builds are machines for code, so Chat has none; Plugins are the same in both workspaces. */
+/** The app's pages, under New session. */
 const PAGES = [
-  { to: '/builds', label: 'Builds', icon: BoxIcon, workspaces: ['agents'] },
-  { to: '/automations', label: 'Automations', icon: ClockFadingIcon, workspaces: ['agents', 'chat'] },
-  { to: '/plugins', label: 'Plugins', icon: BlocksIcon, workspaces: ['agents', 'chat'] },
+  { to: '/builds', label: 'Builds', icon: BoxIcon },
+  { to: '/automations', label: 'Automations', icon: ClockFadingIcon },
+  { to: '/plugins', label: 'Plugins', icon: BlocksIcon },
 ] as const
 
 /**
- * The app's sidebar: a 48px title bar (traffic lights, the toggle, the workspace switcher, back and forward); the org switcher (where
+ * The app's sidebar: a 48px title bar (traffic lights, the toggle, back and forward); the org switcher (where
  * you work), the Mac the org is connected to when it has several, New session and the app's pages, then the nerds, then the code
  * sessions, grouped by repository (a label per repository, alphabetical, that folds its section shut and remembers it),
  * each group reorderable and remembering its order; the account menu (the owner's avatar) at the foot. Rows are 30px, 2px apart, with one hover fill springing between them; groups are 16px apart. It sits
@@ -208,28 +170,10 @@ export function AppSidebarView({
   const selected = typeof dork === 'string' ? dork : undefined
   // A worker open full screen keeps its dork highlighted: workers have no rows of their own.
   const activeId = chats.find((c) => c.id === selected)?.parentId ?? selected
-  // One workspace at a time (docs/modes.md): Chat lists the chats; Agents lists the nerds in their own group, then the code sessions by
-  // repository. A nerd's workers live inside it, not in the sidebar.
-  const [workspace, setWorkspace] = useAppWorkspace()
-  const navigate = useNavigate()
-  const talks = chats.filter((c) => c.mode === 'chat' && !c.parentId)
+  // The nerds in their own group, then the code sessions by repository (docs/modes.md). A nerd's workers live inside it, not in the
+  // sidebar.
   const nerds = chats.filter((c) => c.mode === 'nerd' && !c.parentId)
-  const sessions = chats.filter((c) => c.mode !== 'chat' && c.mode !== 'nerd' && !c.parentId)
-  // Opening a session of the other workspace (a link, a notification) switches to it, so its row is in view.
-  const activeMode = chats.find((c) => c.id === activeId)?.mode
-  const activeKnown = chats.some((c) => c.id === activeId)
-  useEffect(() => {
-    if (activeKnown) setWorkspace(workspaceOf(activeMode))
-  }, [activeKnown, activeMode, setWorkspace])
-  const switchWorkspace = (next: AppWorkspace) => {
-    if (next === workspace) return
-    // Leave the open session first, so the effect above does not switch straight back to its workspace; and drop a new session's
-    // preset (a repository's or the Nerds group's +), which would otherwise outrank the workspace's mode.
-    const { repo, mode } = search as { repo?: unknown; mode?: unknown }
-    const leave = (activeKnown && workspaceOf(activeMode) !== next) || (pathname === '/dorks' && (repo !== undefined || mode !== undefined))
-    if (leave) void navigate({ to: '/dorks', search: {} }).then(() => setWorkspace(next))
-    else setWorkspace(next)
-  }
+  const sessions = chats.filter((c) => c.mode !== 'nerd' && !c.parentId)
   const repos = new Map<string, Chat[]>()
   for (const chat of sessions) {
     const repo = chat.repo ?? ''
@@ -246,10 +190,8 @@ export function AppSidebarView({
     // In a resizable panel on desktop (the frame sizes it), shadcn's sheet on phones.
     <Sidebar collapsible={isMobile ? 'offcanvas' : 'none'} className={isMobile ? undefined : 'h-full w-full'}>
       <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden text-foreground">
-        {/* The title bar: the traffic lights and the floating toggle (AppFrame) sit over its start, then the workspace switcher, and back
-            and forward at its end. */}
+        {/* The title bar: the traffic lights and the floating toggle (AppFrame) sit over its start, back and forward at its end. */}
         <div data-tauri-drag-region className="flex h-12 shrink-0 items-center gap-0.5 pr-1.5" style={{ paddingLeft: isMobile ? 6 : TITLEBAR_AFTER_TOGGLE }}>
-          <WorkspaceSwitcher workspace={workspace} onChange={switchWorkspace} />
           <div data-tauri-drag-region className="h-full min-w-2 flex-1" />
           {!isMobile && <HistoryButtons />}
         </div>
@@ -265,7 +207,7 @@ export function AppSidebarView({
                 <PlusIcon className="-mx-px size-4!" />
                 New session
               </Link>
-              {PAGES.filter((page) => (page.workspaces as readonly AppWorkspace[]).includes(workspace) && (automations || page.to !== '/automations')).map(({ to, label, icon: Icon }) => (
+              {PAGES.filter((page) => automations || page.to !== '/automations').map(({ to, label, icon: Icon }) => (
                 <Link key={to} to={to} {...rowLink(pathname === to)}>
                   <Icon />
                   {label}
@@ -280,35 +222,27 @@ export function AppSidebarView({
                 </Link>
               ))}
             </nav>
-            {workspace === 'chat' ? (
-              <nav aria-label="Chats" className="flex shrink-0 flex-col gap-0.5">
-                <ChatList chats={talks} orderKey={`${orderKey}.chats`} to={chatTo} activeId={activeId} onArchive={onArchive} />
-              </nav>
-            ) : (
-              <>
-                {/* Always shown: its + is where a nerd starts (the composer has no mode menu). */}
-                <Group id="nerds" label="Nerds" add={{ search: { mode: 'nerd' }, label: 'New nerd' }} open={!collapsed.has('nerds')} onOpenChange={(next) => toggle('nerds', next)}>
-                  <ChatList chats={nerds} orderKey={`${orderKey}.nerds`} to={chatTo} activeId={activeId} onArchive={onArchive} />
+            {/* Always shown: its + is where a nerd starts (the composer has no mode menu). */}
+            <Group id="nerds" label="Nerds" add={{ search: { mode: 'nerd' }, label: 'New nerd' }} open={!collapsed.has('nerds')} onOpenChange={(next) => toggle('nerds', next)}>
+              <ChatList chats={nerds} orderKey={`${orderKey}.nerds`} to={chatTo} activeId={activeId} onArchive={onArchive} />
+            </Group>
+            {groups.map(([repo, list]) => {
+              const key = repo || 'other'
+              return (
+                <Group
+                  key={key}
+                  id={key}
+                  label={label(repo)}
+                  title={repo || undefined}
+                  navLabel={repo || 'Other chats'}
+                  add={repo ? { search: { repo }, label: `New session in ${repo}` } : undefined}
+                  open={!collapsed.has(key)}
+                  onOpenChange={(next) => toggle(key, next)}
+                >
+                  <ChatList chats={list} orderKey={`${orderKey}.${key}`} to={chatTo} activeId={activeId} onArchive={onArchive} />
                 </Group>
-                {groups.map(([repo, list]) => {
-                  const key = repo || 'other'
-                  return (
-                    <Group
-                      key={key}
-                      id={key}
-                      label={label(repo)}
-                      title={repo || undefined}
-                      navLabel={repo || 'Other chats'}
-                      add={repo ? { search: { repo }, label: `New session in ${repo}` } : undefined}
-                      open={!collapsed.has(key)}
-                      onOpenChange={(next) => toggle(key, next)}
-                    >
-                      <ChatList chats={list} orderKey={`${orderKey}.${key}`} to={chatTo} activeId={activeId} onArchive={onArchive} />
-                    </Group>
-                  )
-                })}
-              </>
-            )}
+              )
+            })}
           </div>
           <div className="flex shrink-0 flex-col gap-2 pt-1.5">
             {usage}

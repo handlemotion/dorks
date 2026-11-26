@@ -28,10 +28,6 @@ const login = z
   .trim()
   .regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:\[bot\])?$/, "not a GitHub login");
 
-/** What a run starts (docs/automations.md): a code session in the trigger's repository, or a chat, which works in none. */
-export const AUTOMATION_MODES = ["code", "chat"] as const;
-export type AutomationMode = (typeof AUTOMATION_MODES)[number];
-
 export const scheduleTrigger = z.object({
   kind: z.literal("schedule"),
   every: z.enum(SCHEDULE_EVERY),
@@ -41,9 +37,9 @@ export const scheduleTrigger = z.object({
   time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "time must be HH:MM"),
   /** An IANA zone, `Europe/Berlin`. */
   timezone: z.string().min(1).max(64),
-  /** The repository the session starts in; a chat's schedule has none. */
+  /** The repository the session starts in (required: see `automationInput`). */
   repo: repoName.optional(),
-  /** The branch the session starts from; absent: the default branch. Code only. */
+  /** The branch the session starts from; absent: the default branch. */
   branch: z
     .string()
     .trim()
@@ -88,7 +84,7 @@ export const sentryTrigger = z.object({
     .optional(),
   /** `sentry_spike` only: events in the last hour that make an issue a spike. */
   threshold: z.number().int().min(1, "A spike needs at least 1 event.").max(MAX_SPIKE_THRESHOLD).default(DEFAULT_SPIKE_THRESHOLD),
-  /** The repository the session starts in: the code behind the project. A chat's has none. */
+  /** The repository the session starts in: the code behind the project (required: see `automationInput`). */
   repo: repoName.optional(),
 });
 export type SentryTrigger = z.infer<typeof sentryTrigger>;
@@ -98,8 +94,6 @@ export type AutomationTrigger = z.infer<typeof automationTrigger>;
 
 export const automationInput = z
   .object({
-    /** Code sessions (the Agents workspace) or chats (the Chat workspace). GitHub triggers name the repository they watch either way. */
-    mode: z.enum(AUTOMATION_MODES).default("code"),
     name: z.string().trim().min(1, "Name the automation.").max(MAX_AUTOMATION_NAME_CHARS, `Keep the name under ${MAX_AUTOMATION_NAME_CHARS} characters.`),
     enabled: z.boolean().default(true),
     triggers: z.array(automationTrigger).min(1, "Add a trigger.").max(MAX_TRIGGERS, `At most ${MAX_TRIGGERS} triggers.`),
@@ -110,8 +104,8 @@ export const automationInput = z
     /** The build sessions start on; null: the default build, else the base machine. */
     buildId: z.string().max(64).nullable().default(null),
   })
-  // A code session starts in a repository: every trigger names one. A chat's schedules and Sentry triggers need none.
-  .refine((a) => a.mode === "chat" || a.triggers.every((t) => t.repo), { message: "Choose a repository for every trigger.", path: ["triggers"] });
+  // A run is a code session, which starts in a repository: every trigger names one.
+  .refine((a) => a.triggers.every((t) => t.repo), { message: "Choose a repository for every trigger.", path: ["triggers"] });
 export type AutomationInput = z.input<typeof automationInput>;
 export type AutomationSpec = z.output<typeof automationInput>;
 

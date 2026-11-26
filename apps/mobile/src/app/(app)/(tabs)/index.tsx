@@ -51,7 +51,8 @@ function NewChat() {
   const start = async (message: string) => {
     const { id } = await actions.createDork({
       message,
-      ...(chosenRepo ? { repo: chosenRepo, mode: "code" as const } : { mode: "chat" as const }),
+      // No repository: a nerd, which plans and runs code sessions (chat mode is retired, docs/modes.md).
+      ...(chosenRepo ? { repo: chosenRepo, mode: "code" as const } : { mode: "nerd" as const }),
       ...(model.model ? { model: model.model } : {}),
       ...(model.effort ? { effort: model.effort } : {}),
       buildId: chosenBuild || null,

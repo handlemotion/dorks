@@ -1,4 +1,5 @@
 import type { AgentCommand, AgentModelChoice, ClientEvent, DorkLocation, DorkMode, DorkState, SessionPr } from "@dorks/shared";
+import { dorkModeOf } from "@dorks/shared";
 import type { Db, Row } from "./db";
 import { bool, json } from "./db";
 
@@ -50,7 +51,7 @@ export interface DorkRow {
   prUrl?: string;
   /** The build the dork's machine starts from (docs/builds.md); undefined: the base snapshot. */
   buildId?: string;
-  /** chat, code or nerd (docs/modes.md); a nerd plans and delegates to worker dorks (docs/crew.md). */
+  /** code or nerd (docs/modes.md); a nerd plans and delegates to worker dorks (docs/crew.md). */
   mode: DorkMode;
   /** Where it runs (docs/local-dorks.md): a cloud sandbox, or this computer. Fixed for its life. */
   location: DorkLocation;
@@ -130,7 +131,7 @@ export const dorkOf = (r: Row): DorkRow => ({
   images: json(r.images),
   prUrl: u(r.pr_url as string | null),
   buildId: u(r.build_id as string | null),
-  mode: ((r.mode as string | null) ?? "code") as DorkMode,
+  mode: dorkModeOf(r.mode),
   location: r.location === "local" ? "local" : "cloud",
   parentId: u(r.parent_id as string | null),
   icon: u(r.icon as string | null),

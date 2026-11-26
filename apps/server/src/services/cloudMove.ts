@@ -192,7 +192,7 @@ export async function buildManifest(app: App, ctx: { orgId: string; importId: st
   const automations = allAutomations(app).map((a) => ({
     id: a.id,
     name: a.name,
-    mode: a.mode,
+    mode: "code" as const,
     enabled: a.enabled,
     triggers: a.triggers,
     instructions: a.instructions,

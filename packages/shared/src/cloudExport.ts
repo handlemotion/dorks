@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { AUTOMATION_MODES, automationTrigger } from "./automations";
+import { automationTrigger } from "./automations";
 import { commentPolicy } from "./autonomy";
 import { dorkState } from "./events";
-import { DORK_MODES } from "./modes";
+import { DORK_MODES, dorkModeOf } from "./modes";
 
 // "Move to cloud" (docs/move-to-cloud.md): a team org leaves its owner's Mac for the cloud runtime. The Mac's server exports what
 // the org has (sessions with their transcripts, automations, MCP servers, skills, shared variables, settings) in this format, and
@@ -42,7 +42,8 @@ export const exportSession = z.object({
   repo: z.string().max(200),
   branch: z.string().max(300),
   provider: z.enum(["claude", "codex", "opencode", "antigravity"]),
-  mode: z.enum(DORK_MODES),
+  /** An older Mac's retired `chat` session arrives as code. */
+  mode: z.preprocess(dorkModeOf, z.enum(DORK_MODES)),
   /** As it was when exported: the Mac pauses every session first, so this is `sleeping` (or `error`, never awake). */
   state: dorkState,
   archived: z.boolean(),
@@ -77,7 +78,8 @@ export type ExportEvent = z.infer<typeof exportEvent>;
 export const exportAutomation = z.object({
   id,
   name: z.string().max(200),
-  mode: z.enum(AUTOMATION_MODES),
+  /** Every automation starts code sessions; an older Mac's retired `chat` ones arrive as code (and paused, there). */
+  mode: z.preprocess(() => "code", z.literal("code")),
   enabled: z.boolean(),
   triggers: z.array(automationTrigger),
   instructions: z.string(),

@@ -10,7 +10,7 @@ type Answer = { status: number; body: unknown } | { error: "invalid" | "not_foun
 interface Deps {
   broadcast: (m: Record<string, unknown>) => void;
   /** Starts a session the way POST /api/dorks does; returns its id and title, or why it cannot start. */
-  startSession: (repo: string, message: string, title: string, mode: "code" | "chat") => { id: string; title: string } | { error: string };
+  startSession: (repo: string, message: string, title: string) => { id: string; title: string } | { error: string };
 }
 
 const REPO = /^[\w.-]+\/[\w.-]+$/;
@@ -19,9 +19,8 @@ const REPO = /^[\w.-]+\/[\w.-]+$/;
 function check(b: Body): string | null {
   if (typeof b.name !== "string" || !b.name.trim()) return "Name the automation.";
   if (!Array.isArray(b.triggers) || b.triggers.length === 0) return "Add a trigger.";
-  // As the server: a code automation's triggers all name a repository; a chat's only its GitHub ones (the repository they watch).
-  const chat = b.mode === "chat";
-  if ((b.triggers as AutomationTrigger[]).some((t) => (!chat || t?.kind === "github") && !REPO.test(t?.repo ?? ""))) return "Choose a repository for every trigger.";
+  // As the server: every trigger names a repository.
+  if ((b.triggers as AutomationTrigger[]).some((t) => !REPO.test(t?.repo ?? ""))) return "Choose a repository for every trigger.";
   if (typeof b.instructions !== "string" || !b.instructions.trim()) return "Write what the agent should do.";
   return null;
 }
@@ -36,7 +35,6 @@ export function mockAutomations({ broadcast, startSession }: Deps) {
     const enabled = b.enabled !== false;
     const a: AutomationView = {
       id,
-      mode: b.mode === "chat" ? "chat" : "code",
       name: String(b.name).trim(),
       enabled,
       triggers: b.triggers as AutomationTrigger[],
@@ -62,10 +60,9 @@ export function mockAutomations({ broadcast, startSession }: Deps) {
     const t = a.triggers[0];
     if (!t) return { error: "invalid", message: "Add a trigger first: it names the repository." };
     const started = startSession(
-      a.mode === "chat" ? "" : (t.repo ?? ""),
+      t.repo ?? "",
       `${a.instructions}\n\n---\nThis session was started by the automation "${a.name}"${t.repo ? ` in ${t.repo}` : ""}. You started this run by hand, to try it.`,
       `${a.name}: Run by you`,
-      a.mode,
     );
     if ("error" in started) return { error: "invalid", message: started.error };
     const run: AutomationRunView = {

@@ -157,30 +157,32 @@ describe("modes", () => {
     const c = await crew();
     const app = c.h.app;
     const fails = (f: () => unknown) => c.code(Promise.resolve().then(f));
-    const chat = createDork(app, { message: "Help me plan a trip", mode: "chat" });
-    expect(c.h.dork(chat)).toMatchObject({ mode: "chat", repo: "" });
+    const nerd0 = createDork(app, { message: "Plan the launch", mode: "nerd" });
+    expect(c.h.dork(nerd0)).toMatchObject({ mode: "nerd", repo: "" });
     expect(await fails(() => createDork(app, { message: "Fix it", mode: "code" }))).toBe("invalid");
+    // Chat mode is retired.
+    expect(await fails(() => createDork(app, { message: "Help me plan a trip", mode: "chat" }))).toBe("invalid");
     expect(await fails(() => createDork(app, { message: "x", mode: "pirate" }))).toBe("invalid");
 
     const awake = c.h.seed("idle");
     const configures = () => app.db.all("SELECT 1 FROM commands WHERE dork_id = ? AND kind = 'configure' AND acked = 0", awake).length;
     const before = configures();
-    setMode(app, awake, "chat");
-    expect(c.h.dork(awake).mode).toBe("chat");
+    setMode(app, awake, "nerd");
+    expect(c.h.dork(awake).mode).toBe("nerd");
     expect(configures()).toBe(before + 1);
-    setMode(app, awake, "chat"); // no change, no restart
+    setMode(app, awake, "nerd"); // no change, no restart
     expect(configures()).toBe(before + 1);
 
     const nerd = await c.coordinator();
     const w = await c.worker(nerd);
-    expect(await fails(() => setMode(app, nerd, "chat"))).toBe("conflict");
+    expect(await fails(() => setMode(app, nerd, "code"))).toBe("conflict");
     expect(await fails(() => setMode(app, w, "nerd"))).toBe("invalid");
     await c.call({ dorkId: nerd }, "dork_archive", { id: w });
-    setMode(app, nerd, "chat");
-    expect(c.h.dork(nerd).mode).toBe("chat");
-    // A nerd may start a chat worker with no repo, never another nerd.
+    setMode(app, nerd, "code");
+    expect(c.h.dork(nerd).mode).toBe("code");
+    // A nerd starts code workers in a repository, never another nerd.
     const n2 = await c.coordinator();
-    expect(await c.code(c.call({ dorkId: n2 }, "dork_create", { message: "Research flight prices", mode: "chat" }))).toBe("ok");
+    expect(await c.code(c.call({ dorkId: n2 }, "dork_create", { message: "Research flight prices" }))).toBe("invalid");
     expect(await c.code(c.call({ dorkId: n2 }, "dork_create", { message: "x", mode: "nerd" }))).toBe("forbidden");
   });
 });
