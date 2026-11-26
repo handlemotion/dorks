@@ -20,6 +20,9 @@ if (process.env.FAKE_CODEX_REPORT)
 const send = (m) => process.stdout.write(`${JSON.stringify(m)}\n`);
 let turnId = 0;
 let active = false;
+/** Signed in with a token the bridge supplied (`chatgptAuthTokens`), in memory only like the real app-server. */
+let tokenLogin = null;
+let experimental = false;
 let activeTurn = null;
 /** Appends one line to the report's log: what the bridge sent (thread settings, turn input, steers). */
 const note = (entry) => process.env.FAKE_CODEX_REPORT && appendFileSync(`${process.env.FAKE_CODEX_REPORT}.log`, `${JSON.stringify(entry)}\n`);
@@ -58,6 +61,8 @@ function sideTurn(m, reply) {
 }
 
 const steers = [];
+let refreshed = false;
+let afterRefresh = null;
 function playTurn(id, prompt) {
   if (!active) return;
   send({ method: "turn/started", params: { threadId: "thr_fake", turn: { id } } });
@@ -68,6 +73,12 @@ function playTurn(id, prompt) {
 
 function finishTurn(id, prompt) {
   if (!active) return;
+  // The token expired mid-turn: Codex asks its client for a new one (the real app-server does this on a 401).
+  if (process.env.FAKE_CODEX_REFRESH && tokenLogin && !refreshed) {
+    refreshed = true;
+    send({ id: 9001, method: "account/chatgptAuthTokens/refresh", params: { reason: "unauthorized", previousAccountId: "acct_test" } });
+    return void (afterRefresh = () => finishTurn(id, prompt));
+  }
   if (process.env.FAKE_CODEX_EDIT) {
     send({
       method: "turn/plan/updated",
@@ -126,8 +137,18 @@ function startTurn(m, reply) {
 const handlers = {
   // The bridge's answer to the approval request above: recorded, so a test can check it was declined.
   undefined: () => {},
-  initialize: (m, reply) => reply({}),
-  "account/read": (m, reply) => reply({ account: existsSync(auth) ? { type: "chatgpt", planType: "plus" } : null, requiresOpenaiAuth: true }),
+  initialize: (m, reply) => {
+    experimental = m.params.capabilities?.experimentalApi === true;
+    reply({});
+  },
+  "account/login/start": (m, reply) => {
+    if (m.params.type !== "chatgptAuthTokens") return send({ id: m.id, error: { code: -32600, message: "unsupported login" } });
+    if (!experimental) return send({ id: m.id, error: { code: -32600, message: "account/login/start.chatgptAuthTokens requires experimentalApi capability" } });
+    tokenLogin = m.params.accessToken;
+    note({ method: "login", accessToken: m.params.accessToken, accountId: m.params.chatgptAccountId });
+    reply({ type: "chatgptAuthTokens" });
+  },
+  "account/read": (m, reply) => reply({ account: tokenLogin || existsSync(auth) ? { type: "chatgpt", planType: "plus" } : null, requiresOpenaiAuth: true }),
   "model/list": (m, reply) => reply({ data: models(), nextCursor: null }),
   "thread/start": startThread,
   "thread/resume": (m, reply) => (existsSync(thread) ? reply({ thread: { id: "thr_fake" } }) : send({ id: m.id, error: { code: -32602, message: "thread not found" } })),
@@ -162,5 +183,10 @@ const handlers = {
 createInterface({ input: process.stdin }).on("line", (line) => {
   const m = JSON.parse(line);
   if (m.method === undefined && m.result !== undefined && m.id === 1 && m.result.decision) return note({ method: "approval", decision: m.result.decision });
+  if (m.method === undefined && m.id === 9001) {
+    tokenLogin = m.result?.accessToken ?? tokenLogin;
+    note({ method: "refreshed", accessToken: m.result?.accessToken ?? null, error: m.error?.message ?? null });
+    return afterRefresh?.();
+  }
   handlers[m.method]?.(m, (result) => send({ id: m.id, result }));
 });

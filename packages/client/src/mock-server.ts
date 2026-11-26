@@ -402,6 +402,8 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     antigravityModels: [],
     codexModels: [],
     antigravitySignIn: { state: "signed_out" },
+    codexAccount: null,
+    codexSignIn: { state: "signed_out" },
     boatKey: !!opts.configured,
     github: opts.configured ? { configured: true, login: "octocat" } : { configured: false },
     boatSignIn: opts.configured ? null : { state: "signed_out" },
@@ -794,7 +796,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     if (!settings.boatKey || !settings.baseSnapshotId || !settings.github.configured) return "Finish setup (Boat, base snapshot, GitHub) before creating a session.";
     if (provider === "claude" && !settings.claudeToken) return "Add a Claude token first.";
     if (provider === "antigravity" && !settings.antigravityReady) return "Connect Antigravity first: sign in with Google in Settings.";
-    if (provider === "codex" && !settings.boatEnvironment) return "Save a Boat environment for Codex first.";
+    if (provider === "codex" && !settings.boatEnvironment && !settings.codexAccount) return "Connect Codex first: sign in with ChatGPT in Settings.";
     return null;
   };
 
@@ -1372,6 +1374,30 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         }, 3000);
         timers.add(t);
         return json(res, 200, { antigravitySignIn: settings.antigravitySignIn });
+      },
+    ],
+    [
+      // Like apps/server's Codex sign-in: OpenAI's page "approves" a few seconds after its link is handed out.
+      "POST /api/codex/sign-in",
+      ({ res }) => {
+        if (settings.codexAccount) return json(res, 200, { codexSignIn: null });
+        settings.codexSignIn = { state: "signing_in", url: "https://auth.openai.com/oauth/authorize?mock=1" };
+        broadcast({ t: "settings" });
+        const t = setTimeout(() => {
+          timers.delete(t);
+          Object.assign(settings, { codexAccount: { email: "owner@example.com", plan: "plus" }, codexSignIn: null });
+          broadcast({ t: "settings" });
+        }, 3000);
+        timers.add(t);
+        return json(res, 200, { codexSignIn: settings.codexSignIn });
+      },
+    ],
+    [
+      "DELETE /api/codex/sign-in",
+      ({ res }) => {
+        Object.assign(settings, { codexAccount: null, codexSignIn: { state: "signed_out" } });
+        broadcast({ t: "settings" });
+        return json(res, 200, {});
       },
     ],
     [

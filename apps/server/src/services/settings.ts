@@ -7,6 +7,7 @@ import type { GhLogin } from "../lib/ghCli";
 import { organizationApi, SENTRY_URL, SentryError, sentryOrigin, type SentryClient } from "../lib/sentry";
 import { antigravitySignInView, cancelAntigravitySignIn } from "./antigravitySignIn";
 import { boatSignInView, invalidateBoatSignIn } from "./boatSignIn";
+import { codexAccountView, codexSignInView } from "./codexSignIn";
 
 export const MAX_TOKEN_CHARS = 4 * 1024;
 export const MAX_SECRET_BYTES = 16 * 1024;
@@ -94,6 +95,9 @@ export function settingsView(app: App, local: LocalAvailability = { available: f
     antigravitySignIn: antigravitySignInView(app),
     antigravityModels: knownAntigravityModels(app),
     codexModels: knownCodexModels(app),
+    // Dorks' own ChatGPT sign-in for Codex (services/codexSignIn.ts): the account, or the sign-in to offer.
+    codexAccount: codexAccountView(app),
+    codexSignIn: codexSignInView(app),
     boatKey: !!s.boatKeyEnc,
     boatOrg: s.boatOrg ?? null,
     boatEnvironment: s.boatEnvironment ?? null,

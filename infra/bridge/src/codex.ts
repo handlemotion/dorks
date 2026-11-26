@@ -22,7 +22,18 @@ const effortsOf = (model: Json): Effort[] =>
     : [];
 /** `/name rest`: a skill the owner picked from the composer's `/` menu. */
 const SLASH = /^\/([\w.:-]{1,80})(?:\s+([\s\S]*))?$/;
-const REAUTH = "Your Boat ChatGPT connection is no longer available. Reconnect it in Boat Agents & Proxying, then retry.";
+/** Where the sign-in comes from, for the owner's next step: Dorks' own ChatGPT sign-in, or the Boat environment's. */
+const signInHelp = (own: boolean) =>
+  own ? "Sign in with ChatGPT again in Settings (Codex), then send a message to retry." : "Connect ChatGPT in Boat Agents & Proxying, then send a message to retry.";
+
+/** An access token from Dorks' own ChatGPT sign-in, never its refresh token. */
+export interface CodexAuth {
+  accessToken: string;
+  accountId: string;
+  planType: string | null;
+}
+
+const authParams = (a: CodexAuth) => ({ accessToken: a.accessToken, chatgptAccountId: a.accountId, chatgptPlanType: a.planType });
 
 export interface CodexOptions {
   cwd: string;
@@ -38,6 +49,10 @@ export interface CodexOptions {
   skillsDir: string;
   /** The standing instructions (final answer, skills, crew, computer, or a chat's prompt), as the thread's developer instructions. */
   system: string;
+  /** Dorks' own ChatGPT sign-in (configure's `codexAuth`): signs Codex in with this access token instead of the Boat environment's. */
+  auth?: CodexAuth;
+  /** A fresh access token when Codex reports the current one refused (the `codex_token` rpc). */
+  refreshAuth?: () => Promise<CodexAuth>;
   /** Loads an attached image by id (the backend's `get_image`); without it, attachments stay text. */
   loadImage?: (id: string) => Promise<LoadedImage | null>;
   redactor: Redactor;
@@ -185,7 +200,8 @@ function planTodos(plan: unknown): Json {
 }
 
 /**
- * The Codex CLI's app-server (JSON-RPC over stdio), signed in only through the Boat account's ChatGPT environment, speaking the same
+ * The Codex CLI's app-server (JSON-RPC over stdio), signed in with Dorks' own ChatGPT sign-in (an access token the server hands out,
+ * refreshed through it) or, without one, the Boat account's ChatGPT environment, speaking the same
  * transcript shape as the Claude agent. A message sent mid-turn steers it (`turn/steer`), as Claude Code reads one at its next tool
  * call. The autonomy hooks Claude Code runs from its settings run here from the bridge: the done gate when a turn completes, the PR
  * subscription check on every finished command, and the briefing on the first turn after a start, a resume or a compaction.
@@ -263,7 +279,7 @@ export class CodexAgent {
     });
     this.child.on("close", (code) => this.finish(code));
     void this.open().catch(() => {
-      this.o.onIssue("ChatGPT is not available from your Boat account. Connect ChatGPT in Boat Agents & Proxying, then send a message to retry.");
+      this.o.onIssue(`Codex is not signed in to ChatGPT. ${signInHelp(!!this.o.auth)}`);
       this.child.kill();
     });
   }
@@ -302,10 +318,13 @@ export class CodexAgent {
   }
 
   private async open() {
-    await this.request("initialize", { clientInfo: { name: "dorks", title: "Dorks", version: "0.1.0" } });
+    // Signing in with a token we supply (`chatgptAuthTokens`) is part of the app-server's experimental API.
+    await this.request("initialize", { clientInfo: { name: "dorks", title: "Dorks", version: "0.1.0" }, ...(this.o.auth ? { capabilities: { experimentalApi: true } } : {}) });
     await this.write({ method: "initialized", params: {} });
+    // Dorks' own sign-in: the access token only, kept in memory by Codex; it asks for a new one when it is refused (serverRequest).
+    if (this.o.auth) await this.request("account/login/start", { type: "chatgptAuthTokens", ...authParams(this.o.auth) });
     const state = await this.request("account/read", { refreshToken: false });
-    if (obj(obj(state).account).type !== "chatgpt") throw new Error("Boat ChatGPT account is not connected");
+    if (obj(obj(state).account).type !== "chatgpt") throw new Error("ChatGPT account is not connected");
     // The owner's skills, synced for Claude Code, as a second user skills root (Codex keeps its own in ~/.codex/skills).
     if (existsSync(this.o.skillsDir)) await this.request("skills/extraRoots/set", { extraRoots: [this.o.skillsDir] }).catch((e) => this.o.log("codex: could not add the skills:", errTag(e)));
     return this.openThread();
@@ -338,7 +357,7 @@ export class CodexAgent {
       void this.listSkills();
       void this.pump();
     } catch (e) {
-      if ((e as Error).message !== "model unavailable") this.o.onIssue("Codex could not use your Boat ChatGPT connection. Check Boat Agents & Proxying, then retry.");
+      if ((e as Error).message !== "model unavailable") this.o.onIssue(`Codex could not use the ChatGPT sign-in. ${signInHelp(!!this.o.auth)}`);
       this.child.kill();
     }
   }
@@ -428,8 +447,8 @@ export class CodexAgent {
   private notification(method: string, p: Json) {
     switch (method) {
       case "account/updated":
-        if (this.ready && p.authMode !== "chatgpt") {
-          this.o.onIssue(REAUTH);
+        if (this.ready && p.authMode !== "chatgpt" && p.authMode !== "chatgptAuthTokens") {
+          this.o.onIssue(`Codex lost its ChatGPT sign-in. ${signInHelp(!!this.o.auth)}`);
           this.child.kill();
         }
         return;
@@ -459,6 +478,7 @@ export class CodexAgent {
   /** Nobody is here to approve anything (approvals are off, so these should not come): decline, so the turn goes on. */
   private serverRequest(m: Json) {
     const method = text(m.method);
+    if (method === "account/chatgptAuthTokens/refresh") return void this.refreshAuth(m.id);
     const decision =
       method === "item/commandExecution/requestApproval" || method === "item/fileChange/requestApproval"
         ? "decline"
@@ -466,6 +486,19 @@ export class CodexAgent {
           ? "denied"
           : null;
     void this.write(decision ? { id: m.id, result: { decision } } : { id: m.id, error: { code: -32601, message: "Unsupported request: this is an unattended sandbox" } }).catch(() => {});
+  }
+
+  /** Codex's access token was refused: a fresh one from the server (Dorks' sign-in, refreshed on the owner's computer). */
+  private async refreshAuth(id: unknown) {
+    try {
+      if (!this.o.refreshAuth) throw new Error("no sign-in to refresh");
+      const auth = await this.o.refreshAuth();
+      this.o.redactor.add(auth.accessToken);
+      await this.write({ id, result: { accessToken: auth.accessToken, chatgptAccountId: auth.accountId, chatgptPlanType: auth.planType } });
+    } catch (e) {
+      this.o.log("codex: could not refresh the ChatGPT sign-in:", errTag(e));
+      await this.write({ id, error: { code: -32603, message: "The ChatGPT sign-in could not be refreshed" } }).catch(() => {});
+    }
   }
 
   /** A reply to one of our requests. */
@@ -599,7 +632,7 @@ export class CodexAgent {
     try {
       const account = await this.request("account/read", { refreshToken: false });
       if (obj(account.account).type !== "chatgpt") {
-        this.o.onIssue(REAUTH);
+        this.o.onIssue(`Codex lost its ChatGPT sign-in. ${signInHelp(!!this.o.auth)}`);
         this.child.kill();
         return;
       }

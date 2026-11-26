@@ -26,7 +26,7 @@ Code running in a sandbox runs with the agent's privileges and should be treated
 - the GitHub token (it is how the agent pushes and uses `gh`),
 - the Claude token, if you set one,
 - your CLI secrets,
-- for Codex dorks, your ChatGPT sign-in, which Boat installs through the selected environment. Linux permissions inside the box do not protect it from code that can use `sudo`,
+- for Codex dorks, a ChatGPT access token from Dorks' own sign-in (short-lived; the refresh token stays on your computer), or, with a Boat environment instead, the sign-in Boat installs. Linux permissions inside the box do not protect either from code that can use `sudo`,
 - that dork's bridge secret,
 - whatever its desktop shows: code in the box can drive Boat's computer tools and read the screen and Chrome, including pages you sign in to while you have control in the Computer tab.
 

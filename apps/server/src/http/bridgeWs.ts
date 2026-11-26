@@ -55,6 +55,7 @@ const OPS = new Map<string, Op>([
   ["push", (app, id, a) => bridge.pushFrames(app, id, a.frames)],
   ["configure", (app, id) => bridge.configure(app, id)],
   ["gh_token", (app, id) => attemptPromise(() => bridge.ghToken(app, id))],
+  ["codex_token", (app, id) => attemptPromise(() => bridge.codexToken(app, id))],
   ["subscribe_pr", (app, id, a) => attempt(() => bridge.subscribePr(app, id, a.repo as string, a.number as number, a.source as "auto" | "agent"))],
   ["unsubscribe_pr", (app, id, a) => attempt(() => bridge.unsubscribePr(app, id, a.repo as string, a.number as number))],
   ["show_preview", (app, id, a) => attemptPromise(() => bridge.showPreview(app, id, a.port, a.title, a.localhost, a.via))],

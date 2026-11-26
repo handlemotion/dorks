@@ -11,6 +11,7 @@ import { createIssueComment, GithubError, isTransientGithubError } from "../lib/
 import { pollOnce } from "../services/poller";
 import { runBuild, SNAPSHOT_JOB } from "../services/snapshot";
 import { getBuild } from "../services/builds";
+import { codexSignedIn } from "../services/codexSignIn";
 import { FORGET_JOB, forgetImage, RUN_JOB, runBuildRun } from "../services/buildRuns";
 import { githubToken, readSettings } from "../services/settings";
 import { getSub } from "../services/subscriptions";
@@ -63,7 +64,8 @@ export function boxInfo(app: App, dorkId: string): BoxInfo | null {
   const dork = getDork(app.db, dorkId);
   if (!dork) return null;
   const s = readSettings(app);
-  const codexOnBoat = dork.provider === "codex" && app.cfg.boxProvider === "boat" && dork.location === "cloud";
+  // Codex in a Boat sandbox signs in through the Boat environment only when Dorks has no ChatGPT sign-in of its own (services/codexSignIn.ts).
+  const codexOnBoat = dork.provider === "codex" && app.cfg.boxProvider === "boat" && dork.location === "cloud" && !codexSignedIn(app);
   // A dork on a build starts from the build's image (docs/builds.md); before its first image (a setup session), or after the build was
   // deleted, from the base snapshot.
   const build = dork.buildId && dork.location === "cloud" ? getBuild(app, dork.buildId) : undefined;

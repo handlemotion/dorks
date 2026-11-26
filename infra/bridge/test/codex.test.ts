@@ -130,12 +130,12 @@ describe("Codex through a Boat ChatGPT connection", () => {
     expect(init?.raw).toMatchObject({ session_id: "thr_fake" });
   });
 
-  it("never signs in per box: a missing Boat connection reports an issue and exits", async () => {
+  it("without Dorks' sign-in or a Boat connection, reports how to sign in and exits", async () => {
     const s = await setup(undefined, undefined, null, {}, undefined, false);
     await waitFor(() => s.transport.of("codex_issue")[0], "Boat account issue");
     await waitFor(() => s.transport.of("agent_exited")[0], "Boat account exit");
     expect(s.transport.of("ready")).toHaveLength(0);
-    expect(s.transport.of("codex_issue")[0].message).toContain("Boat account");
+    expect(s.transport.of("codex_issue")[0].message).toContain("Boat Agents & Proxying");
   });
 
   it("does not claim readiness if the account cannot use GPT-6 Sol at high effort", async () => {
@@ -248,5 +248,18 @@ describe("Codex through a Boat ChatGPT connection", () => {
         { content: "Test it", status: "pending" },
       ],
     });
+  });
+
+  it("signs Codex in with Dorks' own ChatGPT access token, and answers its refresh through the server", async () => {
+    const codexAuth = { accessToken: "first-access-token", accountId: "acct_test", planType: "plus" };
+    const s = await setup(undefined, undefined, null, { FAKE_CODEX_REFRESH: "1" }, undefined, false, undefined, { codexAuth });
+    await waitFor(() => s.transport.of("ready")[0], "ready on Dorks' sign-in, with no Boat sign-in in the box");
+    expect(sent(s.report).find((e) => e.method === "login")).toEqual({ method: "login", accessToken: "first-access-token", accountId: "acct_test" });
+    s.transport.emit([{ cid: "m1", frame: { t: "user_message", id: "m1", text: "fix tests" } }]);
+    await waitFor(() => s.transport.events().some((e) => (e.raw as { type?: string }).type === "result"), "turn after the refresh");
+    expect(sent(s.report).find((e) => e.method === "refreshed")).toEqual({ method: "refreshed", accessToken: "fresh-access-1", error: null });
+    // The tokens never reach the transcript or the log.
+    expect(JSON.stringify(s.transport.events())).not.toMatch(/first-access-token|fresh-access-1/);
+    expect(s.logs.join(" ")).not.toMatch(/first-access-token|fresh-access-1/);
   });
 });

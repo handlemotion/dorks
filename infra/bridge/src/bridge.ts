@@ -96,6 +96,8 @@ export class Bridge {
   /** The owner's MCP servers as Claude Code config entries, from the last configure (OpenCode translates them into its own config). */
   private userMcp: Record<string, unknown> = {};
   private codexModel: { model: string; effort: string } | undefined;
+  /** Codex's access token from Dorks' own ChatGPT sign-in (configure's `codexAuth`); the latest one, after a refresh. */
+  private codexAuth: { accessToken: string; accountId: string; planType: string | null } | undefined;
   private claudeModel: { model?: string; effort?: string; fast?: boolean; codeMode?: boolean } = {};
   private agentKey = "";
   private lastSessionId: string | null = null;
@@ -482,6 +484,7 @@ export class Bridge {
     this.role = cfg.role ?? null;
     this.mode = cfg.mode ?? "code";
     this.codexModel = cfg.codexModel;
+    this.codexAuth = this.redacted(cfg.codexAuth);
     this.claudeModel = { model: cfg.model, effort: cfg.effort, fast: cfg.fast, codeMode: cfg.codeMode };
     this.startAgent(this.resumableSession(provider, env, cfg.resumeSessionId), []);
     this.pipeline.control({ t: "ack", id: cid });
@@ -507,6 +510,12 @@ export class Bridge {
       this.redactor.addAll(Object.values(s.headers));
     }
     this.mcpProxy.set(proxied);
+  }
+
+  /** Codex's access token, known to the redactor before anything can print it. */
+  private redacted<T extends { accessToken: string } | undefined>(auth: T): T {
+    if (auth) this.redactor.add(auth.accessToken);
+    return auth;
   }
 
   /** Config changed (a new model, say): restart on the same session, but never mid-turn. Messages queue behind this job, so the next one goes to the restarted agent. */
@@ -641,6 +650,8 @@ export class Bridge {
                 ...shared,
                 loadImage: (id) => this.t.getImage(id),
                 model: this.codexModel,
+                auth: this.codexAuth,
+                refreshAuth: async () => (this.codexAuth = await this.t.codexToken()),
                 mcpCommand: this.self,
                 sock: this.rpc.sockPath,
                 userMcp: this.userMcp,

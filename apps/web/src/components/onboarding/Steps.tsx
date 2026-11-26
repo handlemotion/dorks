@@ -17,7 +17,7 @@ import { WELCOMED_KEY } from '../../lib/onboarding'
 import { usePending } from '../../lib/pending'
 import { A, Actions, Body, Card, FIELD, Heading, notify, SecretInput, StepForm, useNotifyError } from './Frame'
 import { ConnectDialog, List, Logo, Row } from './List'
-import { AntigravitySignIn } from '../AntigravitySignIn'
+import { AntigravitySignIn, CodexSignIn } from '../AntigravitySignIn'
 
 export interface StepProps {
   settings: Settings
@@ -125,13 +125,17 @@ type Agent = 'claude' | 'codex' | 'antigravity'
 
 export function AgentSignIn({ settings, onNext }: StepProps) {
   const [open, setOpen] = useState<Agent | null>(null)
-  const configured = settings.claudeToken || !!settings.boatEnvironment || !!settings.antigravityReady
+  const codexReady = !!settings.boatEnvironment || !!settings.codexAccount
+  const configured = settings.claudeToken || codexReady || !!settings.antigravityReady
   const dialog = (agent: Agent) => ({ open: open === agent, onOpenChange: (o: boolean) => setOpen(o ? agent : null) })
   const close = () => setOpen(null)
   // The Google sign-in finishes in the browser: the dialog closes once the saved sign-in comes back on the live stream.
   useEffect(() => {
     if (settings.antigravityToken) setOpen((o) => (o === 'antigravity' ? null : o))
   }, [settings.antigravityToken])
+  useEffect(() => {
+    if (settings.codexAccount) setOpen((o) => (o === 'codex' ? null : o))
+  }, [settings.codexAccount])
   return (
     <>
       <Body>
@@ -139,7 +143,7 @@ export function AgentSignIn({ settings, onNext }: StepProps) {
         <List>
           <Row icon={<Logo light={claudeLogo} />} name="Claude" connected={settings.claudeToken} onOpen={() => setOpen('claude')} />
           {/* svgl pads the OpenAI mark inside its viewBox, so it is scaled to sit at the others' size. */}
-          <Row icon={<Logo light={openaiLight} dark={openaiDark} className="scale-[1.3]" />} name="Codex" connected={!!settings.boatEnvironment} onOpen={() => setOpen('codex')} />
+          <Row icon={<Logo light={openaiLight} dark={openaiDark} className="scale-[1.3]" />} name="Codex" connected={codexReady} onOpen={() => setOpen('codex')} />
           <Row icon={<Logo light={antigravityLogo} className="size-4" />} name="Antigravity" connected={!!settings.antigravityToken} onOpen={() => setOpen('antigravity')} />
           <Row icon={<Logo light={grokLight} dark={grokDark} />} name="Grok" soon />
         </List>
@@ -165,12 +169,14 @@ export function AgentSignIn({ settings, onNext }: StepProps) {
       <ConnectDialog
         {...dialog('codex')}
         title="Connect Codex"
-        description={
-          <>
-            Codex signs in through a Boat environment. Paste its name, and only use it with repos you trust. <A href="https://docs.boat.dev/environments/access">Boat setup</A>
-          </>
-        }
+        description="Sign in with the ChatGPT account that has your plan. Codex on this computer keeps the sign-in; sandboxes only get short-lived access."
       >
+        <div className="pb-2">
+          <CodexSignIn settings={settings} />
+        </div>
+        <p className="pb-2 text-xs text-muted-foreground">
+          Or paste a Boat environment that signs Codex in. <A href="https://docs.boat.dev/environments/access">Boat setup</A>
+        </p>
         <SaveForm label="Boat environment" placeholder="dorks-codex" initial={settings.boatEnvironment ?? ''} save={(value) => ({ boatEnvironment: value })} onSaved={close} />
       </ConnectDialog>
     </>

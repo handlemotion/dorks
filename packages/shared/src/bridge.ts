@@ -66,6 +66,9 @@ export const toBridge = z.discriminatedUnion("t", [
     codeMode: z.boolean().optional(),
     env: z.record(z.string(), z.string()), // CLAUDE_CODE_OAUTH_TOKEN + shared and build variables: passed to the agent child, never written to disk
     ghToken: z.string(),
+    // Codex with Dorks' own ChatGPT sign-in: a current access token (never the refresh token), for `account/login/start`
+    // `chatgptAuthTokens`; the bridge asks for a fresh one with the `codex_token` rpc. Absent: the Boat environment's sign-in.
+    codexAuth: z.object({ accessToken: z.string(), accountId: z.string(), planType: z.string().nullable() }).optional(),
     // null: a session with no starting repo (a machine-setup session, docs/builds.md): the agent starts in the work directory.
     repo: z.object({ fullName: z.string(), branch: z.string() }).nullable(),
     resumeSessionId: z.string().nullable(),

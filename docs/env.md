@@ -18,6 +18,7 @@ All optional.
 | `DORKS_NODE_BIN` | `node` on the owner's login PATH | The Node.js (22 or later) local dorks' bridges run with. |
 | `DORKS_GIT_BASE_URL` | `https://github.com` | Where local dorks clone repositories from (`<base>/<owner>/<name>.git`); development points it at local remotes (`file://…`). |
 | `SIM_HOST_KEY` | none | Required when `BOX_PROVIDER=sim`; guards the `/sim/*` routes. |
+| `DORKS_CODEX_BIN` | none | The Codex CLI for Dorks' own ChatGPT sign-in when there is no `codex` on `PATH` (or in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`). Dorks keeps that sign-in in `<data dir>/codex`, apart from your own `codex login`. See [Boat](boat.md). |
 | `DORKS_AGY_BIN` | none | The Antigravity CLI for the Google sign-in when there is no `agy` on `PATH` (or in `~/.local/bin`); without one, Dorks downloads Google's current build into the data dir, checksum-verified. See [Boat](boat.md). |
 | `DORKS_BOAT_BIN` | none | The Boat CLI to use when there is no `boat` on `PATH` (or in `~/.ascii/bin`). The desktop app sets it to the copy it bundles. See [Boat](boat.md#sign-in-with-the-boat-cli). |
 | `DORKS_CLOUD_URL` | `https://api.dorks.build` | The cloud relay the iPhone app reaches this server through ([mobile](mobile.md)). Empty turns the phone link off. |

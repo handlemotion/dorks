@@ -5,7 +5,7 @@ import { useDorksClient, useGithubRepos } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
 import { GH_LOGIN_COMMAND, GH_ORG_ACCESS_URL, githubProblem, missingScopesText, scopeFixCommand } from '../../lib/github'
 import { usePending } from '../../lib/pending'
-import { AntigravitySignIn } from '../AntigravitySignIn'
+import { AntigravitySignIn, CodexSignIn } from '../AntigravitySignIn'
 import { useSettingsAccess } from './access'
 import { OwnerAvatar } from '../RepoAvatar'
 import { SettingsButtonRow, SettingsGroup, SettingsGroupBody, SettingsInputRow, SettingsRow, SettingsSection, SettingsSections, SettingsSelectRow, SettingsStatus, SettingsValueRow } from './kit'
@@ -40,7 +40,7 @@ export function AgentsPage({ settings }: { settings: Settings }) {
     <SettingsSections>
       <ClaudeSection settings={settings} />
       {!remote && <AntigravitySection settings={settings} />}
-      <CodexSection settings={settings} />
+      <CodexSection settings={settings} remote={!!remote} />
     </SettingsSections>
   )
 }
@@ -106,14 +106,28 @@ function AntigravitySection({ settings }: { settings: Settings }) {
   )
 }
 
-function CodexSection({ settings }: { settings: Settings }) {
+/**
+ * Codex: Dorks' own ChatGPT sign-in (kept by the Codex CLI on the server's computer, services/codexSignIn.ts), or a Boat environment
+ * that signs each sandbox in. The sign-in never crosses the relay, so a remote server shows only the environment.
+ */
+function CodexSection({ settings, remote }: { settings: Settings; remote?: boolean }) {
   const { actions } = useDorksClient()
   const [environment, setEnvironment] = useState(settings.boatEnvironment ?? '')
   const [saved, setSaved] = useState(false)
   const { run, pending, error } = usePending()
   const current = settings.boatEnvironment
   return (
-    <SettingsSection title="Codex" description="Optional. Trusted repositories only.">
+    <SettingsSection title="Codex" description="GPT models through your ChatGPT plan.">
+      {!remote && (
+        <SettingsGroup label="codex sign-in">
+          <SettingsGroupBody>
+            <div className="flex items-center justify-between gap-3">
+              <p>{settings.codexAccount ? `Signed in with ChatGPT${settings.codexAccount.email ? ` as ${settings.codexAccount.email}` : ''}` : 'Not signed in'}</p>
+              <CodexSignIn settings={settings} signOut />
+            </div>
+          </SettingsGroupBody>
+        </SettingsGroup>
+      )}
       <SettingsGroup
         label="codex environment"
         onSubmit={() => {
@@ -127,7 +141,7 @@ function CodexSection({ settings }: { settings: Settings }) {
         <SettingsInputRow
           id="boat-environment"
           label="Boat environment"
-          description={current ? 'Saved' : 'Not set'}
+          description={current ? 'Saved' : settings.codexAccount ? 'Not needed while signed in with ChatGPT' : 'Not set'}
           aria-label="Boat environment"
           value={environment}
           onChange={(e) => setEnvironment(e.target.value)}

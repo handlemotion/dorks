@@ -76,7 +76,11 @@ and `sandbox.delete`, like the base snapshot.
 
 The models are what `agy models` lists for the account (the effort is part of the slug). The done gate, PR subscriptions and the briefing run from the bridge on agy's event stream, the dorks MCP server and yours go in `~/.gemini/config/mcp_config.json`, the crew and final-answer guidance is an always-on rule, and skills are the synced Claude skills folder. Attached images reach agy as a text note: its stream input takes text only.
 
-**ChatGPT (Codex).** Claude Code is the default for new sessions; Codex (GPT models) appears as a choice once a Boat ChatGPT environment is configured. Connect ChatGPT once per Boat account, not once per dork:
+**ChatGPT (Codex).** Claude Code is the default for new sessions; Codex (GPT models) appears as a choice once ChatGPT is connected, in one of two ways.
+
+*Dorks' own sign-in (recommended).* **Sign in with ChatGPT** in Settings or onboarding runs Codex's own browser sign-in on this computer (`codex app-server`, `account/login/start`; `services/codexSignIn.ts`, `lib/codexCli.ts`). It needs the Codex CLI here (`DORKS_CODEX_BIN` to point at one). Codex keeps that sign-in in `<data dir>/codex`, apart from your own `codex login`, so neither rotates the other's refresh token. A sandbox never gets the refresh token: `configure` carries a current access token (`codexAuth`), which the bridge gives Codex with `account/login/start` `chatgptAuthTokens` (kept in memory, never on the box's disk). When Codex reports it refused (`account/chatgptAuthTokens/refresh`), the bridge asks the server (`codex_token`), and Codex on this computer refreshes the sign-in and hands out the new access token. With this sign-in, no Boat environment is needed. A browser on another computer cannot reach the sign-in's `127.0.0.1:1455` redirect: paste the address it ended on (Other computer), as for Antigravity.
+
+*A Boat environment.* Without Dorks' sign-in, Boat installs the sign-in on each sandbox. Connect ChatGPT once per Boat account, not once per dork:
 
 1. In Boat's **Agents & Proxying** page, use a credential profile that contains only your ChatGPT subscription and connect it with the short code. The default profile works while it contains only ChatGPT. Boat does not copy sign-ins when you copy a profile.
 2. Leave the account-wide AI credentials proxy **off**, to avoid its daily and per-request charges.

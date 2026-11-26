@@ -2,6 +2,7 @@ import { Effect, Schema } from "effect";
 import { checkBoat } from "../../services/boatCheck";
 import { finishAntigravitySignIn, startAntigravitySignIn } from "../../services/antigravitySignIn";
 import { startBoatSignIn } from "../../services/boatSignIn";
+import { finishCodexSignIn, signOutCodex, startCodexSignIn } from "../../services/codexSignIn";
 import { githubRepos } from "../../services/githubRepos";
 import { snapshotView, startBuild } from "../../services/snapshot";
 import { getUsage } from "../../services/usage";
@@ -60,6 +61,27 @@ export const accountRoutes: Routes = (api, app) => {
         Effect.map((v) => c.json({ antigravitySignIn: v })),
       ),
     ),
+  );
+
+  // ---- Codex's ChatGPT sign-in, run by the Codex CLI on this computer (services/codexSignIn.ts): returns OpenAI's link; Codex keeps
+  // the sign-in in Dorks' own Codex home when the browser sign-in finishes. `finish` takes the address a browser on another computer
+  // ended on; `DELETE` signs out.
+  api.post(
+    "/api/codex/sign-in",
+    on((c) => serviceAsync(startCodexSignIn).pipe(Effect.map((v) => c.json({ codexSignIn: v })))),
+  );
+  api.post(
+    "/api/codex/sign-in/finish",
+    on((c) =>
+      body(c, Finish, "url must be a string").pipe(
+        Effect.flatMap((b) => serviceAsync((a) => finishCodexSignIn(a, b.url))),
+        Effect.map((v) => c.json({ codexSignIn: v })),
+      ),
+    ),
+  );
+  api.delete(
+    "/api/codex/sign-in",
+    on((c) => serviceAsync(async (a) => signOutCodex(a)).pipe(Effect.map(() => c.json({})))),
   );
 
   // ---- base snapshot ("Prepare Boat")
