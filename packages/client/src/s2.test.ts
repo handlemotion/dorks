@@ -1,5 +1,5 @@
 import { expect, it } from "vite-plus/test";
-import { StreamReader, type SequencedRecord } from "./s2.ts";
+import { Assembler, StreamReader, type SequencedRecord } from "./s2.ts";
 
 // The cloud transcript's one guarantee: whatever drops, the app sees every event once, in order, big ones whole.
 it("reads a session's events across dropped connections: each once, in order, resends skipped, parts joined", async () => {
@@ -59,4 +59,42 @@ it("reads a session's events across dropped connections: each once, in order, re
   }
   expect(got).toEqual([...Array.from({ length: 20 }, (_, i) => `e${i + 1}`), "ABC", "e22"]);
   expect(starts).toEqual([0, 4, 8, 12, 16, 20, 24]); // each reconnect resumes right after the last record read
+});
+
+it("never lets a reader resume past an event whose parts are still arriving", () => {
+  const a = new Assembler();
+  a.push({
+    seq_num: 0,
+    timestamp: 0,
+    headers: [
+      ["k", "ev"],
+      ["b", "1"],
+      ["c", "0"],
+    ],
+    body: "e1",
+  });
+  a.push({
+    seq_num: 1,
+    timestamp: 0,
+    headers: [
+      ["k", "part"],
+      ["b", "2"],
+      ["c", "0"],
+      ["p", "0/2"],
+    ],
+    body: "A",
+  });
+  expect(a.safeSeq).toBe(0);
+  a.push({
+    seq_num: 2,
+    timestamp: 0,
+    headers: [
+      ["k", "part"],
+      ["b", "2"],
+      ["c", "0"],
+      ["p", "1/2"],
+    ],
+    body: "B",
+  });
+  expect(a.safeSeq).toBe(2);
 });

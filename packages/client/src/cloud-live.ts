@@ -288,7 +288,8 @@ export function followSession(
         flush = undefined;
         const events = batch;
         batch = [];
-        cursor = { seq: reader.assembler.lastSeq, bseq: reader.assembler.lastBseq };
+        // Never past an event still being assembled: a new reader starts with no parts, so it must re-read them all.
+        cursor = { seq: reader.assembler.safeSeq, bseq: reader.assembler.lastBseq };
         o.onEvents(events, cursor);
       };
       try {

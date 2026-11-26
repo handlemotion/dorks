@@ -1652,7 +1652,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   /** The health check, `GET /images/:id` and Dorks Cloud's (no token), `POST /api/images` (with it); undefined for any other route. */
   const routeImages = (req: IncomingMessage, res: ServerResponse, route: string, authorized: boolean, url: URL) => {
     // Dorks Cloud (mock-cloud.ts): another place's shared images need no token (outside /api like ours, the id is the capability).
-    if (url.pathname.startsWith("/cloud/servers/") || (authorized && url.pathname.startsWith("/api/cloud")))
+    if (url.pathname.startsWith("/cloud/servers/") || url.pathname.startsWith("/cloud/orgs/") || (authorized && url.pathname.startsWith("/api/cloud")))
       return cloud.route(req, res, route.slice(0, route.indexOf(" ")), url.pathname, url.search).then((found) => found || fail(res, "not_found", "Unknown route."));
     if (route.endsWith(" /api/health")) return json(res, 200, { ok: true }) ?? true;
     if (route.startsWith("GET /images/")) return serveImage(res, route.slice("GET ".length)) ?? true;

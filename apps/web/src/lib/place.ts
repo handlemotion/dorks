@@ -103,5 +103,11 @@ export function remoteClientConfig(home: { serverUrl: string; token: string }, s
 export function cloudOrgClientConfig(home: { serverUrl: string; token: string }, org: Pick<CloudOrg, 'id' | 'personal'>) {
   const base = `${home.serverUrl}/api/cloud/orgs/${encodeURIComponent(org.id)}`
   // Presence is a team's: a personal org has nobody else to show.
-  return { baseUrl: base, token: home.token, cloud: { realtimeUrl: `${base}/realtime`, presence: !org.personal } }
+  return {
+    baseUrl: base,
+    token: home.token,
+    // Shared images load in plain <img> tags (no owner token): through the home server's public `/cloud/orgs/:id/images/:image`.
+    imageBaseUrl: `${home.serverUrl}/cloud/orgs/${encodeURIComponent(org.id)}`,
+    cloud: { realtimeUrl: `${base}/realtime`, presence: !org.personal },
+  }
 }
