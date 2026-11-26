@@ -8,6 +8,7 @@ import { buildIfMissing } from "../../services/snapshot";
 import { forgetUsage } from "../../services/usage";
 import { kickSentryWatch } from "../../services/automations";
 import { actorOf } from "../../services/team";
+import { localAvailabilityOf } from "../../services/localDorks";
 import { fail } from "../../app";
 import { body, looseBody, ok, service, serviceAsync } from "../route";
 import { handler, Loose, name, str, type Routes } from "./shared";
@@ -25,7 +26,7 @@ export const settingsRoutes: Routes = (api, app) => {
         void autoConnectBoat(a);
         void autoConnectGithub(a);
         void refreshAntigravityModels(a); // Antigravity's models for a new session's menu, with the saved sign-in
-        return c.json(settingsView(a));
+        return c.json(settingsView(a, localAvailabilityOf(c, a)));
       }),
     ),
   );
@@ -36,6 +37,7 @@ export const settingsRoutes: Routes = (api, app) => {
         const patch = yield* looseBody(c);
         // Always allow runs commands on this computer: local access stays with the local owner, whatever a teammate's role (docs/cloud.md).
         if (actorOf(c).kind === "member" && "localAlwaysAllow" in patch) yield* service(() => fail("forbidden", "Only this computer's owner can let sessions use it without asking"));
+        if (actorOf(c).kind !== "local" && "defaultLocation" in patch) yield* service(() => fail("forbidden", "Only this computer's owner can choose where its sessions run"));
         // Provider values are checked here, by the server, before anything is saved (GitHub's is checked inside updateSettings).
         yield* serviceAsync((a) => assertBoatAccepts(a, patch));
         yield* serviceAsync((a) => assertCodexEnvironment(a, patch));

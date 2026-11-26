@@ -177,18 +177,51 @@ export interface Plans {
 }
 export const fetchPlans = () => cloud<Plans>("/v1/billing/plans");
 
+export type PaidPlan = "teams" | "cloud";
+
+export interface TrialOffer {
+  eligible: boolean;
+  /** Why not, when not eligible: trial_used or subscribed. */
+  code?: string;
+  message?: string;
+}
+export type Trials = Record<PaidPlan, TrialOffer>;
+
+/** Which trials the visitor may start for this org (each kind once per org, account and card). */
+export const fetchTrials = (orgId: string) => cloud<Trials>(`/v1/billing/orgs/${orgId}/trials`);
+
+/** This page again, for Stripe to come back to: the rest of the query (app, state) kept, an earlier result dropped. */
+const back = (result?: string) => {
+  const u = new URL(window.location.href);
+  u.searchParams.delete("checkout");
+  u.searchParams.delete("trial");
+  if (result) u.searchParams.set("checkout", result);
+  return u.href;
+};
+
 /**
- * Stripe Checkout for the plan's trial (Teams: 14 days; Cloud: no time limit, 10 sandbox hours; both take a card and charge nothing
- * up front). Stripe comes back to this page with ?checkout=success (or cancel), the rest of the query (app, state) kept.
+ * Stripe Checkout for the plan's trial (both take a card and charge nothing up front), or, with trial false, a plain subscription.
+ * - Dorks Cloud's trial (10 sandbox hours, no time limit) is POST /cloud-trial: Checkout in setup mode, which comes back to this
+ *   page with ?trial=started, or ?trial=<code> when the trial was refused.
+ * - Dorks Teams' trial (14 days) and every subscription are POST /checkout, which comes back with ?checkout=success.
+ * Both come back with ?checkout=cancel when the visitor leaves Checkout.
  */
-export async function startCheckout(orgId: string, plan: "teams" | "cloud") {
-  const back = (result: string) => {
-    const u = new URL(window.location.href);
-    u.searchParams.set("checkout", result);
-    return u.href;
-  };
-  const { url } = await cloud<{ url: string }>(`/v1/billing/orgs/${orgId}/checkout`, { body: { plan, trial: true, successUrl: back("success"), cancelUrl: back("cancel") } });
+export async function startCheckout(orgId: string, plan: PaidPlan, trial = true) {
+  const { url } =
+    plan === "cloud" && trial
+      ? await cloud<{ url: string }>(`/v1/billing/orgs/${orgId}/cloud-trial`, { body: { successUrl: back(), cancelUrl: back("cancel") } })
+      : await cloud<{ url: string }>(`/v1/billing/orgs/${orgId}/checkout`, {
+          body: { plan, ...(trial ? { trial: true } : {}), successUrl: back("success"), cancelUrl: back("cancel") },
+        });
+  if (!url) throw new Error("Dorks Cloud did not answer with a Checkout link");
   window.location.assign(url);
+}
+
+/** What ?trial=<code> means when the Cloud trial was refused on the way back from Checkout. */
+export function trialRefusal(code: string): string {
+  if (code === "trial_used") return "Your Dorks Cloud trial could not start: this organization, account or card has already had one. Subscribe to continue.";
+  if (code === "subscribed") return "Your Dorks Cloud trial could not start: this organization already has a subscription. Change its plan in Settings.";
+  return "Your Dorks Cloud trial could not start: the card was not saved. Try again.";
 }
 
 /** After Checkout: the webhook lands a moment later, so wait (up to ~30 s) for the org's plan to turn paid. */

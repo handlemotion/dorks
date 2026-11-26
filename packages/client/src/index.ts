@@ -5,4 +5,5 @@ export { connectCloudLive, followSession, type CloudLiveConfig, type SessionCurs
 export { EventsFeed, type EventsState } from "./events.ts";
 export { Query, type QueryState, type Store } from "./store.ts";
 export * from "./types.ts";
+export { personalWorkspaceName } from "./workspace.ts";
 export { toAppError, type AppError } from "@dorks/shared";

@@ -2,7 +2,10 @@ import { timingSafeEqual } from "node:crypto";
 import type { Context, Hono } from "hono";
 import { Schema } from "effect";
 import type { App } from "../../app";
-import { route } from "../route";
+import { route, service } from "../route";
+import { owned } from "../../services/dorks";
+import { assertMayDrive } from "../../services/localDorks";
+import { actorOf } from "../../services/team";
 
 // What every UI API route module shares. Each module registers its routes on the one Hono app (ui.ts mounts them in order).
 
@@ -25,3 +28,6 @@ export const str = (v: unknown) => v as string;
 
 export const id = (c: Context) => c.req.param("id") as string;
 export const name = (c: Context) => c.req.param("name") as string;
+
+/** A relayed client (the phone, a teammate) may read a local dork but not drive it (services/localDorks.ts). */
+export const drive = (c: Context) => service((a) => assertMayDrive(actorOf(c), owned(a, id(c))));

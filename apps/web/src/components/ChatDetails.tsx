@@ -7,6 +7,7 @@ import { preloadDiffs } from './diffs'
 import { BAR_BUTTON, PreviewBrowser, useShownServers, type PreviewSession } from './PreviewBrowser'
 import { Tip } from './Tip'
 import { EmptyState } from './EmptyState'
+import { HERE } from './LocationMenu'
 import { ProgressPanel } from './ProgressPanel'
 import { useProgress } from '../lib/progress'
 import { PullRequestPanel, TAB_CLASS, type PrStackEntry, type PullRequestPanelData } from './PullRequestPanel'
@@ -197,6 +198,7 @@ export function ChatDetails({
           <EmptyState figure="cabinet" title="No sandbox files here" />
         )
       case 'computer':
+        if (data.local) return <EmptyState figure="laptop" title="No separate computer" description={`This session runs on ${HERE}, so its apps open on your own screen.`} />
         return (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <ComputerView source={data.computer} />

@@ -350,6 +350,7 @@ export function SessionChat({
       <DraftComposer
         repo={dork.repo}
         build={buildName(dork, builds)}
+        local={dork.location === 'local'}
         mode={{ value: modeOf(dork) }}
         placeholder={queueing.placeholder}
         provider={dork.provider ?? 'claude'}

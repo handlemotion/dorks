@@ -3,7 +3,7 @@ import { owned } from "../../services/dorks";
 import { answerInput } from "../../services/inputs";
 import { decideLocal, localAccessView, revokeSessions, setLocalAccess } from "../../services/local";
 import { body, ok, service, serviceAsync } from "../route";
-import { handler, id, Loose, type Routes } from "./shared";
+import { drive, handler, id, Loose, type Routes } from "./shared";
 
 const LocalDecision = Schema.Struct({ decision: Loose });
 const Enabled = Schema.Struct({ enabled: Loose });
@@ -26,6 +26,7 @@ export const localRoutes: Routes = (api, app) => {
     "/api/dorks/:id/inputs/:requestId",
     on((c) =>
       body(c, InputAnswer).pipe(
+        Effect.tap(() => drive(c)),
         Effect.flatMap((b) => serviceAsync((a) => answerInput(a, owned(a, id(c)).id, c.req.param("requestId") as string, b))),
         ok(c),
       ),

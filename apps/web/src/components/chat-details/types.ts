@@ -37,6 +37,8 @@ export type ChatDetailsData = {
   previews?: PreviewServer[]
   /** The agent's own computer, streamed live in the Computer tab. */
   computer?: ComputerSource
+  /** The session runs on the owner's computer (docs/local-dorks.md): it has no screen of its own to stream. */
+  local?: boolean
   /** The pull requests the session has (it opened them, or the agent or the owner subscribed; merged and closed ones too): each gets a tab. */
   subscriptions?: SubscriptionView[]
   /** The repositories in the session's sandbox, browsed and edited in the Files tab. */

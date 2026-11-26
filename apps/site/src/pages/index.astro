@@ -2,6 +2,7 @@
 import Base from "../layouts/Base.astro";
 import { Footer } from "../components/Footer";
 import { Hero } from "../components/Hero";
+import Sections from "../components/Sections.astro";
 import { builtRelease } from "../lib/built-release";
 
 const release = await builtRelease();
@@ -12,6 +13,6 @@ const release = await builtRelease();
   description="Dorks is the last ADE you'll ever install."
 >
   <Hero client:load release={release} />
-  <section class="min-h-screen w-full bg-white" aria-hidden="true"></section>
+  <Sections />
   <Footer client:visible release={release} />
 </Base>

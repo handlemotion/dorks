@@ -9,6 +9,7 @@ export * from "./pullRequest";
 export * from "./mcp";
 export * from "./crew";
 export * from "./modes";
+export * from "./location";
 export * from "./skills";
 export * from "./automations";
 export * from "./bridgeProof";

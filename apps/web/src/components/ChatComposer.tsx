@@ -1,4 +1,4 @@
-import { BoxIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon, ZapIcon } from 'lucide-react'
+import { BoxIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon, FolderIcon, LaptopIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon, ZapIcon } from 'lucide-react'
 import { modelLabel, type AgentModelChoice } from '@dorks/shared'
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type RefObject, type ReactNode } from 'react'
 import { MENU_POPUP_CLASS } from '@dorks/ui/dropdown-menu'
@@ -16,6 +16,7 @@ import opencodeLight from '@dorks/onboarding/assets/providers/opencode.svg'
 import { Logo } from './onboarding/List'
 import { OwnerAvatar, ownerOf, REPO_ITEM } from './RepoAvatar'
 import { EnvironmentPicker, type EnvironmentChoice } from './EnvironmentPicker'
+import { HERE, LocationMenu, type LocationChoice } from './LocationMenu'
 import { MODE_HINTS, type ModeChoice } from './ModeMenu'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@dorks/ui/input-group'
 import { Tip } from './Tip'
@@ -342,6 +343,7 @@ function RepositoryControl({
   disabled,
   hidden,
   needsRepo,
+  local,
 }: {
   repo?: string
   build?: string | null
@@ -349,8 +351,18 @@ function RepositoryControl({
   disabled: boolean
   hidden?: boolean
   needsRepo: boolean
+  local?: boolean
 }) {
   if (hidden) return null
+  // A local session works on this computer, in a worktree of its repository (docs/local-dorks.md): no build, no sandbox.
+  if (local && !environment) {
+    return (
+      <span title={repo ? `On ${HERE}, in a worktree of ${repo}` : `On ${HERE}`} data-testid="chat-local" className="flex h-7 min-w-0 items-center gap-1.5 px-2 text-[13px] text-muted-foreground">
+        <LaptopIcon className="size-3.5 shrink-0" />
+        <span className="max-w-48 truncate">{repo || 'Local'}</span>
+      </span>
+    )
+  }
   // A chat or a nerd works in no repository: no chooser for a new one.
   if (environment) return needsRepo ? <EnvironmentPicker choice={environment} disabled={disabled} /> : null
   if (build !== undefined) {
@@ -769,6 +781,8 @@ export function Composer({
   repo,
   build,
   environment,
+  location,
+  local,
   mode,
   placeholder,
   showRepo,
@@ -805,6 +819,10 @@ export function Composer({
   build?: string | null
   /** The new session form's one chooser: a build (with its repositories) or a repository on the base machine. */
   environment?: EnvironmentChoice
+  /** The new session form's Cloud / Local choice (docs/local-dorks.md), when this client may start local sessions. */
+  location?: LocationChoice
+  /** An existing session that runs on this computer: the bar says so instead of naming a build. */
+  local?: boolean
   /** The session's mode (docs/modes.md), set by the workspace: only code asks for a repository. */
   mode?: ModeChoice
   /** The box's hint (default: the mode's, else asks for a code change). */
@@ -1008,7 +1026,8 @@ export function Composer({
         {/* Compact, shared baseline for the repository and model controls. 9px in (8px plus the box's 1px border), like attach and send, so the repository
             button lines up under attach and the model button under send. */}
         <div className="flex items-center gap-2 px-[9px] pt-2 text-[13px] [--control-radius:6px]">
-          <RepositoryControl repo={repo} build={build} environment={environment} disabled={locked} hidden={showRepo === false} needsRepo={needsRepo} />
+          <RepositoryControl repo={repo} build={build} environment={environment} disabled={locked} hidden={showRepo === false} needsRepo={needsRepo} local={local} />
+          {location && <LocationMenu choice={location} disabled={locked} />}
           <ModelMenu
             provider={provider}
             setProvider={setProvider}

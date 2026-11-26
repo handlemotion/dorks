@@ -1,4 +1,19 @@
-import type { AgentCommand, PlanId, AgentModelChoice, BuildRepo, BuildService, ClientEvent, CommentPolicy, DorkMode, DorkState, MachineType, RunView, SessionPr } from "@dorks/shared";
+import type {
+  AgentCommand,
+  PlanId,
+  AgentModelChoice,
+  BuildRepo,
+  BuildService,
+  ClientEvent,
+  CommentPolicy,
+  DorkLocation,
+  DorkMode,
+  DorkState,
+  LocalAvailability,
+  MachineType,
+  RunView,
+  SessionPr,
+} from "@dorks/shared";
 
 export type { WorkspaceFile, WorkspaceGitStatus, WorkspaceRoot, WorkspaceTree } from "@dorks/shared";
 export type { MergeMethod, MergeableState, PullRequestSection, PullRequestView, PullRequestFile, PullRequestComment, PullRequestChecks, PullRequestCheck, PullRequestPerson } from "@dorks/shared";
@@ -92,6 +107,8 @@ export interface Dork {
   modelChoices?: AgentModelChoice[];
   /** The build its machine starts from (docs/builds.md); null: the base snapshot. Absent on older servers. */
   buildId?: string | null;
+  /** Where it runs (docs/local-dorks.md): a cloud sandbox, or the owner's computer. Absent on older servers: cloud. */
+  location?: DorkLocation;
   /** chat, code or nerd (docs/modes.md); a nerd plans and runs worker dorks instead of coding (docs/crew.md). Absent on older servers: code. */
   mode?: DorkMode;
   /** The coordinator that started this worker; null otherwise. Absent on older servers. */
@@ -123,6 +140,8 @@ export interface CreateDorkInput {
   effort?: string;
   /** Claude: fast mode, for a model that offers it. */
   fast?: boolean;
+  /** cloud (default) or local: on the owner's computer, only when `Settings.local.available` (docs/local-dorks.md). */
+  location?: DorkLocation;
 }
 
 /** Plain values and booleans only: the server never returns a secret. */
@@ -154,6 +173,10 @@ export interface Settings {
   localAlwaysAllow?: boolean;
   /** `boat` or `sim`; absent on older servers. */
   boxProvider?: string;
+  /** Whether this client may start sessions on the server's computer (docs/local-dorks.md); never for a relayed client. Absent on older servers. */
+  local?: LocalAvailability;
+  /** Where the new-session composer starts: its Cloud / Local choice, remembered. Always cloud when `local` is not available. */
+  defaultLocation?: DorkLocation;
   /** The models a Claude agent last reported (empty before any session started); what a new session can choose from. */
   claudeModels?: AgentModelChoice[];
   /** The build new sessions start on; null: the base snapshot. */
@@ -209,6 +232,8 @@ export interface SettingsPatch {
   claudeCodeMode?: boolean;
   /** Every session may use this computer without asking. Off: each session asks once again; sessions already allowed stay allowed. */
   localAlwaysAllow?: boolean;
+  /** Where new sessions start by default (the owner on this computer only). */
+  defaultLocation?: DorkLocation;
   /** Sentry's personal token ("" disconnects), organization slug and a self-hosted Sentry's URL ("" for sentry.io). */
   sentryToken?: string;
   sentryOrg?: string;

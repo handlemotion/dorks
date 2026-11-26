@@ -2,7 +2,7 @@ import { CatchBoundary, createFileRoute, Link, useNavigate, useRouterState } fro
 import { ImageCommentsProvider } from '../../../components/ImageComments'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { DesktopOptions } from '@dorks/client'
-import { isDorkMode, type Block, type DorkMode } from '@dorks/shared'
+import { isDorkMode, type Block, type DorkLocation, type DorkMode } from '@dorks/shared'
 import { ChevronDownIcon, ChevronRightIcon, InfoIcon, MessageSquareIcon } from 'lucide-react'
 import { useBuilds, useDork, useDorkEvents, useDorks, useDorksClient, useGithubRepos, usePullRequest, useSettings, useSubscriptions, useWorkspaceRoots, useWorkspaceTree } from '@dorks/client/react'
 import { ownersOf, useOwnerScope } from '../../../components/ownerScope'
@@ -34,7 +34,7 @@ import { UsageMenu } from '../../../components/UsageMenu'
 import { useMentions } from '../../../components/ComposerMenu'
 import { ArchiveButton, PageHeader } from '../../../components/PageHeader'
 import { SetupStatus } from '../../../components/SetupStatus'
-import { canCreate } from '../../../lib/onboarding'
+import { canCreate, canCreateLocal } from '../../../lib/onboarding'
 import { usePending } from '../../../lib/pending'
 import { useDraft, useDraftSetter } from '../../../lib/draft'
 import { useArchiveDork } from '../../../lib/archive'
@@ -111,6 +111,7 @@ function Dorks() {
                 workspace={workspace}
                 onCreated={setSelected}
                 disabled={!ready}
+                localReady={!!settings && canCreateLocal(settings)}
                 claudeReady={!!settings?.claudeToken}
                 codexReady={!!settings?.boatEnvironment}
                 antigravityReady={!!settings?.antigravityReady}
@@ -284,6 +285,7 @@ function NewDork({
   workspace,
   onCreated,
   disabled,
+  localReady,
   claudeReady,
   codexReady,
   antigravityReady,
@@ -292,7 +294,10 @@ function NewDork({
   initialMode?: DorkMode
   workspace: AppWorkspace
   onCreated: (id: string) => void
+  /** A cloud session cannot start yet (Boat, its snapshot or GitHub is missing). */
   disabled: boolean
+  /** A local session can start: this client may run one on the server's computer, and GitHub is connected. */
+  localReady: boolean
   claudeReady: boolean
   codexReady: boolean
   antigravityReady: boolean
@@ -312,6 +317,8 @@ function NewDork({
   // A picked build that is gone (deleted, or its image removed) falls back like an unpicked one.
   const env = picked && (picked.buildId === null || built.some((b) => b.id === picked.buildId)) ? picked : initialEnvironment(built, repositories, initialRepo, settings?.defaultBuildId)
   const { buildId, repo } = env
+  const location = useNewSessionLocation()
+  const local = location?.value === 'local'
   const [message, setMessage] = useDraft('new')
   const [provider, pickProvider] = useState<AgentProvider>(() => firstReady(claudeReady, codexReady, antigravityReady))
   // A model belongs to its agent: switching agents starts the new one on its default, or on the model picked with it.
@@ -330,13 +337,15 @@ function NewDork({
       <Composer
         text={message}
         setText={setMessage}
-        environment={{ builds: built, repositories, value: env, onChange: setPicked }}
+        // Builds are cloud machines (docs/builds.md): a local session picks only its repository.
+        environment={{ builds: local ? [] : built, repositories, value: local ? { buildId: null, repo } : env, onChange: setPicked }}
+        location={location}
         mode={{ value: mode }}
         provider={provider}
         setProvider={setProvider}
         codexEnabled={codexReady}
         pending={pending}
-        disabled={disabled || agent.missing}
+        disabled={(local ? !localReady : disabled) || agent.missing}
         error={error}
         picker={picker}
         catalog={{ claude: settings?.claudeModels, antigravity: settings?.antigravityModels, codex: settings?.codexModels }}
@@ -355,7 +364,8 @@ function NewDork({
                   // Only a code session works in a repository; the others start on the chosen build's machine with none.
                   // A chat or a nerd has no repository, so the repository chooser's build does not apply: it starts on the owner's default
                   // build (the server's fallback when buildId is omitted, a build without repositories included).
-                  ...(mode === 'code' ? { repo: repo.trim(), buildId } : {}),
+                  ...(mode === 'code' ? { repo: repo.trim(), buildId: local ? null : buildId } : {}),
+                  ...(local ? { location: 'local' as const } : {}),
                   message: withImages(message, images),
                   provider,
                   ...startChoice(provider, picker),
@@ -368,6 +378,24 @@ function NewDork({
       />
     </div>
   )
+}
+
+/**
+ * The new session's Cloud / Local choice (docs/local-dorks.md), only when this client may start local sessions: the owner's remembered
+ * default until they pick, and a pick becomes the new default.
+ */
+function useNewSessionLocation() {
+  const settings = useSettings()
+  const { actions } = useDorksClient()
+  const [picked, setPicked] = useState<DorkLocation>()
+  if (!settings?.local?.available) return undefined
+  return {
+    value: picked ?? settings.defaultLocation ?? 'cloud',
+    onChange: (l: DorkLocation) => {
+      setPicked(l)
+      void actions.updateSettings({ defaultLocation: l }).catch(() => {})
+    },
+  }
 }
 
 /**
@@ -407,6 +435,7 @@ function detailsData(
       .reverse(),
     previews: dork.previews?.map((p) => ({ name: p.title ?? `Port ${p.port}`, url: p.url, port: p.port })),
     computer: { awake: dork.state === 'working' || dork.state === 'idle', working: dork.state === 'working', ...computer },
+    local: dork.location === 'local',
   }
 }
 

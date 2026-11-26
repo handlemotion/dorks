@@ -29,6 +29,11 @@ export interface BoxProvider {
    * token, sent as a cookie. A bearer credential: never store or log it. Idempotent; the box must be running.
    */
   bridgeEndpoint(boxId: string): Promise<BridgeEndpoint>;
+  /**
+   * The dork was archived while its box is paused: let go of what the box keeps for it that can be made again (the local provider
+   * removes the dork's git worktree; its next resume adds it back). Idempotent. Absent when the provider keeps nothing to release.
+   */
+  retire?(boxId: string): Promise<void>;
 }
 
 /** The port the bridge listens on inside a box (its `BRIDGE_PORT`). The local simulator gives each box its own instead. */

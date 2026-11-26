@@ -1,0 +1,121 @@
+---
+/**
+ * The landing page below the hero, from Figma (Dorks, node 47:2). Placeholder logo slots, and the hero capture stands in for
+ * every feature shot until each has its own.
+ */
+const LOGO_SLOTS = 5;
+
+const FEATURES = [
+  {
+    title: "A box per agent",
+    body: "Every agent gets its own sandbox with your repo, tools and services ready, so it can run the app and break things without touching your laptop.",
+    side: "right",
+  },
+  {
+    title: "The context it needs",
+    body: "Agents get woken up when CI fails, a reviewer comments or the branch conflicts, and fix it before you get to it.",
+    side: "left",
+  },
+  {
+    title: "Checked after merge",
+    body: "Once a PR merges, the agent follows the deploy, tests the change live and fixes forward if something fails. Mock services that behave like production are next.",
+    side: "right",
+  },
+  {
+    title: "Nerds run the crew",
+    body: "A nerd plans the work, starts a worker for each piece and follows their PRs until they land.",
+    side: "left",
+  },
+] as const;
+---
+
+<section aria-labelledby="trusted-heading" class="w-full border-b border-[#eaeaea]">
+  <h2 id="trusted-heading" class="flex h-12 items-center justify-center border-b border-[#eaeaea] text-sm text-black">
+    Trusted by the teams at
+  </h2>
+  <ul class="grid grid-cols-2 gap-px bg-[#eaeaea] lg:grid-cols-5">
+    {
+      Array.from({ length: LOGO_SLOTS }, () => (
+        <li class="flex h-[160px] items-center justify-center gap-2 bg-white text-sm text-[#afafaf] last:col-span-2 lg:h-[275px] lg:last:col-span-1">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" />
+          </svg>
+          Put me in
+        </li>
+      ))
+    }
+  </ul>
+</section>
+
+<section aria-labelledby="why-heading" class="w-full px-6 py-[120px]">
+  <div class="mx-auto flex max-w-[450px] flex-col gap-4 text-[17px] leading-[22px] text-black">
+    <h2 id="why-heading" class="mb-2 text-sm text-[#afafaf]">Why we&rsquo;re here</h2>
+    <p>Intelligence isn&rsquo;t the issue anymore.</p>
+    <p>
+      Models are good enough now that the quality of their work comes down to the harness around them, the machine they run on,
+      what they can see and what happens after they open a pull request.
+    </p>
+    <p>
+      Most harnesses stop at the diff. The agent writes the code, opens the PR and moves on, and you&rsquo;re the one who finds out a
+      check failed, a reviewer asked for changes or the deploy broke something.
+    </p>
+    <p>
+      At Dorks we&rsquo;re building the rest of it. Every agent gets its own box, hears about everything that happens to its pull
+      requests and stays on the work after it merges, until it&rsquo;s checked in production.
+    </p>
+  </div>
+</section>
+
+<section class="w-full px-6 pt-[100px] pb-[60px]">
+  <h2 class="text-center font-serif text-[32px] leading-[1.3] text-black sm:text-[40px]">
+    Agents that see it through{" "}
+    <br class="hidden sm:block" />
+    to production.
+  </h2>
+</section>
+
+<section aria-label="What Dorks gives your agents" class="w-full border-y border-[#eaeaea] px-5 sm:px-12 lg:px-[clamp(64px,6.6vw,140px)]">
+  <div class="mx-auto w-full border-x border-[#eaeaea]">
+    {
+      FEATURES.map((feature, index) => (
+        <article class="relative overflow-hidden border-[#eaeaea] not-last:border-b lg:aspect-[1310/475]">
+          <div
+            class:list={[
+              "relative z-10 flex max-w-[420px] flex-col gap-4 px-6 pt-10 lg:absolute lg:top-[15.4%] lg:w-[calc(32.4%-96px)] lg:p-0",
+              feature.side === "right" ? "lg:left-12" : "lg:left-[calc(67.6%+48px)]",
+            ]}
+          >
+            <span class="mb-1 text-sm text-[#afafaf] tabular-nums" aria-hidden="true">
+              {String(index + 1).padStart(2, "0")}
+            </span>
+            <h3 class="text-[17px] leading-[22px] text-black">{feature.title}</h3>
+            <p class="text-[17px] leading-[22px] text-neutral-500">{feature.body}</p>
+          </div>
+          <div class="relative h-[240px] lg:static lg:h-auto">
+            <img
+              src="/hero-app.webp"
+              alt=""
+              width={3360}
+              height={2040}
+              loading="lazy"
+              decoding="async"
+              draggable="false"
+              class:list={[
+                "absolute top-[15.4%] w-full max-w-none rounded-[10px] border border-[#eaeaea] select-none",
+                feature.side === "right" ? "left-[32.4%]" : "right-[32.4%]",
+              ]}
+            />
+          </div>
+        </article>
+      ))
+    }
+  </div>
+</section>
+
+<section class="w-full border-b border-[#eaeaea] px-6 pt-[364px] pb-[60px] max-sm:pt-[200px]">
+  <p class="text-center font-serif text-[32px] leading-[1.3] text-black sm:text-[40px]">
+    Dorks is the last ADE
+    <br />
+    you&rsquo;ll ever install.
+  </p>
+</section>

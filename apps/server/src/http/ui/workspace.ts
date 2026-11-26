@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
 import { readWorkspaceFile, workspaceRoots, workspaceTree, writeWorkspaceFile } from "../../services/workspace";
 import { body, serviceAsync } from "../route";
-import { handler, id, Loose, type Routes } from "./shared";
+import { drive, handler, id, Loose, type Routes } from "./shared";
 
 const Write = Schema.Struct({ root: Loose, path: Loose, contents: Loose, sha: Loose });
 
@@ -28,6 +28,7 @@ export const workspaceRoutes: Routes = (api, app) => {
     "/api/dorks/:id/workspace/file",
     on((c) =>
       body(c, Write).pipe(
+        Effect.tap(() => drive(c)),
         Effect.flatMap((b) => serviceAsync((a) => writeWorkspaceFile(a, id(c), b.root, b.path, b.contents, b.sha))),
         Effect.map(json(c)),
       ),

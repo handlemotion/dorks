@@ -19,8 +19,9 @@ import {
 } from "../../services/dorks";
 import { chooseModel } from "../../services/models";
 import { ApiError, body, intQuery, ok, service, serviceAsync } from "../route";
-import { handler, id, Loose, str, type Routes } from "./shared";
-import { byOfRequest } from "../../services/team";
+import { drive, handler, id, Loose, str, type Routes } from "./shared";
+import { actorOf, byOfRequest } from "../../services/team";
+import { assertLocalReady, locationOf } from "../../services/localDorks";
 
 const CreateDork = Schema.Struct({
   repo: Loose,
@@ -35,6 +36,7 @@ const CreateDork = Schema.Struct({
   mode: Loose,
   kind: Loose,
   icon: Loose,
+  location: Loose,
 });
 const Mode = Schema.Struct({ mode: Loose });
 const Text = Schema.Struct({ text: Loose });
@@ -68,6 +70,9 @@ export const dorkRoutes: Routes = (api, app) => {
     on((c) =>
       Effect.gen(function* () {
         const b = yield* body(c, CreateDork);
+        const location = yield* service(() => locationOf(b.location));
+        // A local session runs the owner's CLIs on this computer: only its owner, here, may start one (docs/local-dorks.md).
+        if (location === "local") yield* serviceAsync((a) => assertLocalReady(a, actorOf(c), typeof b.provider === "string" ? b.provider : "claude"));
         const dorkId = yield* service((a) =>
           createDork(a, {
             repo: b.repo as string | undefined,
@@ -82,6 +87,7 @@ export const dorkRoutes: Routes = (api, app) => {
             // `kind: "coordinator"` is the name a nerd had before modes (docs/modes.md).
             mode: b.mode ?? (b.kind === "coordinator" ? "nerd" : undefined),
             icon: b.icon,
+            location,
             by: byOfRequest(c, a),
           }),
         );
@@ -110,6 +116,7 @@ export const dorkRoutes: Routes = (api, app) => {
     "/api/dorks/:id/messages",
     on((c) =>
       body(c, Text).pipe(
+        Effect.tap(() => drive(c)),
         Effect.flatMap((b) => service((a) => sendMessage(a, id(c), str(b.text), undefined, byOfRequest(c, a)))),
         ok(c),
       ),
@@ -119,6 +126,7 @@ export const dorkRoutes: Routes = (api, app) => {
     "/api/dorks/:id/queue",
     on((c) =>
       body(c, Text).pipe(
+        Effect.tap(() => drive(c)),
         Effect.flatMap((b) => service((a) => queueMessage(a, id(c), str(b.text), byOfRequest(c, a)))),
         Effect.map((r) => c.json(r)),
       ),
@@ -130,7 +138,7 @@ export const dorkRoutes: Routes = (api, app) => {
   );
   api.post(
     "/api/dorks/:id/queue/:qid/send",
-    on((c) => ok(c)(service((a) => takeQueued(a, id(c), c.req.param("qid") ?? "", true)))),
+    on((c) => ok(c)(drive(c).pipe(Effect.flatMap(() => service((a) => takeQueued(a, id(c), c.req.param("qid") ?? "", true)))))),
   );
   api.post(
     "/api/dorks/:id/interrupt",
