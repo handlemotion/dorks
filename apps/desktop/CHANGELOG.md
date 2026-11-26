@@ -1,5 +1,25 @@
 # @dorks/desktop
 
+## 0.10.0
+
+### Minor Changes
+
+- [#228](https://github.com/handlemotion/dorks/pull/228) [`9061dfc`](https://github.com/handlemotion/dorks/commit/9061dfcf92b8036ca74558c64793835806ab5374) Thanks [@handlemotion](https://github.com/handlemotion)! - Your GitHub avatar now sits at the bottom of the sidebar and opens one menu with Settings (⌘,), usage, what's new in the latest releases with a link to the full changelog, the docs, a way to report a problem, and Change server.
+
+- [#234](https://github.com/handlemotion/dorks/pull/234) [`28ece60`](https://github.com/handlemotion/dorks/commit/28ece60d27f6743adeb9a67283b8e0f8bd110190) Thanks [@handlemotion](https://github.com/handlemotion)! - A chat with several pull requests shows their count and icon in the sidebar, with a spinner while a merge ships; hovering lists the PRs and the checks still running. A PR closed or merged after the agent stopped watching it now turns red or violet.
+
+### Patch Changes
+
+- [#232](https://github.com/handlemotion/dorks/pull/232) [`1445522`](https://github.com/handlemotion/dorks/commit/1445522509030ad0796fd05206d3d051040e0bef) Thanks [@handlemotion](https://github.com/handlemotion)! - The show/hide comments button in the image viewer and preview toolbars is now an eye that crosses out when comments are hidden, instead of a speech-bubble icon with a count.
+
+- [#235](https://github.com/handlemotion/dorks/pull/235) [`b32e64b`](https://github.com/handlemotion/dorks/commit/b32e64bbc91da0099edfb1e0fe286aba236b8a1a) Thanks [@handlemotion](https://github.com/handlemotion)! - Session status icons are now flat colours: no more gradients on the working, unread, attention or nerd marks.
+
+- [#227](https://github.com/handlemotion/dorks/pull/227) [`85149a2`](https://github.com/handlemotion/dorks/commit/85149a220336e6e9652a1123cd30c9d7621785cd) Thanks [@handlemotion](https://github.com/handlemotion)! - A dork's icon is now a flat, lighter grey while it works or waits (no gradient), and a sleeping dork's outline is thinner. Message times show only in the left gutter on hover, so a final answer no longer leaves a gap under it, and a message's copy and reply buttons stay up while you move the pointer to them.
+
+- [#229](https://github.com/handlemotion/dorks/pull/229) [`44e1453`](https://github.com/handlemotion/dorks/commit/44e1453a9aef685d6512800aa8a29368bba44f36) Thanks [@handlemotion](https://github.com/handlemotion)! - Dorks uses less memory and CPU when left open for days: chats you have left are released from memory, a hidden window stops following the agent's output until you open it again, and the server log no longer grows without limit.
+
+- [#233](https://github.com/handlemotion/dorks/pull/233) [`c31e034`](https://github.com/handlemotion/dorks/commit/c31e034fb441b45d5570a8359d32751eea0c9910) Thanks [@handlemotion](https://github.com/handlemotion)! - Chats in the sidebar stay in the order they were created (newest first) instead of jumping to the top on activity; drag them to reorder.
+
 ## 0.9.0
 
 ### Minor Changes
