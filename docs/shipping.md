@@ -84,7 +84,7 @@ Archived sessions are still watched (people archive after merging); deleting a s
 ## The agent (v2)
 
 Code: `involveAgent` and `shipOp` in `services/ships.ts`, the `ship_verify` MCP tool (`infra/bridge/src/mcp.ts`), the `deployed` and
-`ship_failed` instructions in `lib/notifyRender.ts`.
+`ship_failed` instructions in `packages/core/src/notifyRender.ts`.
 
 The ship wakes the session's agent at most twice, through the same `<dorks-event>` notifications as CI and reviews (the PR's ended
 subscription carries them, so they render as that PR's section):

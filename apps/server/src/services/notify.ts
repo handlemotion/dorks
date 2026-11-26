@@ -4,7 +4,7 @@ import { getDork } from "../data";
 import { insert, update } from "../db";
 import { append, dispatch, hasTimer, setTimer, userMessagePending } from "../lifecycle/dispatch";
 import { touch } from "../app";
-import { renderNotification, type PrSection } from "../lib/notifyRender";
+import { renderNotification, type PrSection } from "@dorks/core/notifyRender";
 
 export const NOTIFY_DEBOUNCE_MS = 5_000; // events within one window of the first become a single notification (one poll pass's worth)
 

@@ -1,6 +1,6 @@
 import { dorkState, type DorkState } from "@dorks/shared";
 import { describe, expect, it } from "vite-plus/test";
-import { reduce, type Ctx, type Input, type Effect } from "../src/core/machine";
+import { reduce, type Ctx, type Input, type Effect } from "../src/machine";
 
 const STATES = dorkState.options as DorkState[];
 const INPUTS: Input["t"][] = [

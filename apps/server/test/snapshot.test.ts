@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { Change } from "../src/app";
-import { BoatError } from "../src/lib/boat";
+import { BoatError } from "@dorks/core/boat";
 import { readSettings, updateSettings } from "../src/services/settings";
 import { buildLabel, rebuildIfStale, recoverSnapshotBuild, runBuild, snapshotName, snapshotView, startBuild } from "../src/services/snapshot";
 import { hasTimer } from "../src/lifecycle/dispatch";

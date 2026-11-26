@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
 import { fail, type App } from "../app";
-import { checkCodexEnvironment } from "../lib/boat";
-import { decodeOr, makeBoatCall, type BoatCall, type BoatError } from "../lib/boatHttp";
+import { checkCodexEnvironment } from "@dorks/core/boat";
+import { decodeOr, makeBoatCall, type BoatCall, type BoatError } from "@dorks/core/boatHttp";
 import { boatKey, readSettings } from "./settings";
 
 export type BoatCheckStatus = "ok" | "invalid" | "needs_org" | "credit_required" | "unreachable";

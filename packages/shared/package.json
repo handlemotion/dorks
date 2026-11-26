@@ -1,13 +1,36 @@
 {
   "name": "@dorks/shared",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Wire types and schemas shared by the dorks server, clients, bridge and the Dorks Cloud Worker: events, the bridge protocol and its proof, plans, automations.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/handlemotion/dorks.git",
+    "directory": "packages/shared"
+  },
+  "files": [
+    "dist"
+  ],
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": "./src/index.ts"
   },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./package.json": "./package.json"
+    },
+    "access": "public"
+  },
   "scripts": {
+    "build": "vp pack",
     "typecheck": "tsc --noEmit",
-    "test": "vp test run"
+    "test": "vp test run",
+    "prepack": "vp pack"
   },
   "dependencies": {
     "zod": "^4.0.0"

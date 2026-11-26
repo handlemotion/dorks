@@ -1,4 +1,4 @@
-import { BRIDGE_PORT } from "../core/box";
+import { BRIDGE_PORT } from "@dorks/core/box";
 import {
   errorEvent,
   fromBridge,
@@ -13,7 +13,7 @@ import {
 } from "@dorks/shared";
 import { Cause, Data, Effect, Exit } from "effect";
 import { AppFail, fail, touch, type App } from "../app";
-import { createNormalizer } from "../core/normalize";
+import { createNormalizer } from "@dorks/core/normalize";
 import { getDork, openCommands, runtimeOf, type DorkRow, type Preview, type SharedImage } from "../data";
 import { update } from "../db";
 import { append, bridgeSeen, dispatch, enqueueConfigure, finishPause, patchDork } from "../lifecycle/dispatch";

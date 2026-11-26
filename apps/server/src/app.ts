@@ -2,10 +2,10 @@ import type { AgyCli } from "./lib/agyCli";
 import type { BoatCli } from "./lib/boatCli";
 import type { GhLogin } from "./lib/ghCli";
 import type { AppError, AppErrorCode } from "@dorks/shared";
-import type { BoxProvider } from "./core/box";
+import type { BoxProvider } from "@dorks/core/box";
 import type { SnapshotDriver } from "./core/snapshot";
 import type { SnapshotAssets } from "./snapshot/assets";
-import type { Keyring } from "./core/crypto";
+import type { Keyring } from "@dorks/core/crypto";
 import type { Db } from "./db";
 import type { JwksVerifier } from "./core/jwt";
 

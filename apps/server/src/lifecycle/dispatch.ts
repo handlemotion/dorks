@@ -3,7 +3,7 @@ import { fail, touch, type App } from "../app";
 import { commandOf, getDork, openCommands, runtimeOf, type CommandKind, type CommandRow, type DorkRow } from "../data";
 import { update, insert, json } from "../db";
 import { forAgent, speakerFor, type By } from "../services/team";
-import { reduce, type Effect, type Input, type Result } from "../core/machine";
+import { reduce, type Effect, type Input, type Result } from "@dorks/core/machine";
 import { crewObserve } from "../services/crew";
 import { messagePreview } from "../lib/messageText";
 import { resetCiAttempts, subscriptionsOfDork } from "../services/subscriptions";
@@ -13,7 +13,7 @@ import { resetCiAttempts, subscriptionsOfDork } from "../services/subscriptions"
 
 export const WATCHDOG_MS = 3 * 60_000; // waking must reach `ready` (or a lost bridge must return) within this
 /**
- * A new box gets longer: the Boat driver itself waits up to 4 minutes for the create call and 4 more for the box to run (lib/boat.ts),
+ * A new box gets longer: the Boat driver itself waits up to 4 minutes for the create call and 4 more for the box to run (packages/core/src/boat.ts),
  * so a slow but healthy start must not be failed under it. The create job reports its own failures; this is only the backstop.
  */
 export const CREATE_WATCHDOG_MS = 10 * 60_000;

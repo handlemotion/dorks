@@ -78,11 +78,11 @@ Use Boat's native desktop for both halves.
 
 ### What was built
 
-- **Driver** (`apps/server/src/lib/boat.ts`):
+- **Driver** (`packages/core/src/boat.ts`):
   - `desktopUrl(id, {theme})` calls `/desktop`. Boat's browser-only `/browser` stream is not used: the desktop already shows Chrome, it misses every other app, and a second viewer takes it over.
   - It waits out `provisioning` for up to 30 s, then fails with the retryable code `provisioning`.
   - It accepts only `https://` URLs and adds `overlay=0` before the fragment, which hides Boat's viewer chrome.
-  - It is an optional method on the `BoxProvider` seam (`core/box.ts`).
+  - It is an optional method on the `BoxProvider` seam (`packages/core/src/box.ts`).
   - The sim returns the path of a stand-in page (`GET /sim/desktop`). The mock server returns a `data:` page.
 - **UI API**: `POST /api/dorks/:id/desktop` → `{url}` with `Cache-Control: no-store` ([architecture](architecture.md)).
   - Answers `sleeping` unless the dork is `working` or `idle`. It never wakes a dork.

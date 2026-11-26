@@ -5,7 +5,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
 import { Bridge } from "../src/bridge";
 import { loadConfig } from "../src/config";
 import { makeLogger, Redactor } from "../src/redact";
-import { createNormalizer } from "../../../apps/server/src/core/normalize";
+import { createNormalizer } from "@dorks/core/normalize";
 import { builtCli, FakeTransport, makeRemote, tmp, waitFor } from "./helpers";
 
 const fake = fileURLToPath(new URL("./fixtures/fake-agy.mjs", import.meta.url));

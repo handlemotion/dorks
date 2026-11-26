@@ -1,9 +1,9 @@
 import { createServer, type AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
 import type { App } from "../app";
-import { BoxNotFoundError, unconfiguredBox, type BoxProvider } from "../core/box";
+import { BoxNotFoundError, unconfiguredBox, type BoxProvider } from "@dorks/core/box";
 import type { SnapshotDriver } from "../core/snapshot";
-import { boatBox } from "./boat";
+import { boatBox } from "@dorks/core/boat";
 import { boatSnapshotDriver } from "./boatSnapshots";
 import { boatKey, readSettings } from "../services/settings";
 
@@ -17,7 +17,7 @@ export function instanceId(app: App): string {
 }
 
 /**
- * Box seam (core/box.ts). BOX_PROVIDER=boat (default) or sim; the Boat key and organization come from settings, so the user can
+ * Box seam (packages/core/src/box.ts). BOX_PROVIDER=boat (default) or sim; the Boat key and organization come from settings, so the user can
  * change them in the UI. Actions are stateless, so the sim keeps its "remote" state in the sim_boxes table (the same way a real
  * provider holds it remotely).
  */

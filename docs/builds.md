@@ -85,7 +85,7 @@ most worth reviewing. Against them today:
    the agent process's environment.
 3. **Isolation.** Claude dorks are created with `noEnv: true`, so Boat hands them nothing: no Boat GitHub token, no in-sandbox Boat key
    (which can save snapshots of its own sandbox), no agent logins. An environment relies on four toggles and a switch staying right;
-   `checkCodexEnvironment` in `lib/boat.ts` shows what checking that takes.
+   `checkCodexEnvironment` in `packages/core/src/boat.ts` shows what checking that takes.
 4. **One slot.** A sandbox has one environment, and Codex dorks already use it for the ChatGPT sign-in.
 5. **Two sources of truth.** N environments in the owner's Boat dashboard that they could also edit there, plus the `environment.write`
    key action, which the key does not need today.

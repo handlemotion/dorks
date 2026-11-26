@@ -1,6 +1,6 @@
 import { MCP_NAME, RESERVED_MCP_NAMES, type McpOAuthState, type McpServerConfig, type McpServerView } from "@dorks/shared";
 import { fail, OWNER, touch, type App } from "../app";
-import { aad, decrypt, encrypt } from "../core/crypto";
+import { aad, decrypt, encrypt } from "@dorks/core/crypto";
 import { enqueueConfigure, isAwake } from "../lifecycle/dispatch";
 import { asksForOAuth, type OAuthSealed } from "./mcpOAuth";
 

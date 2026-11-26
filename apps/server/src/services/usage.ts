@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect";
 import type { App } from "../app";
-import { decodeOr, makeBoatCall } from "../lib/boatHttp";
+import { decodeOr, makeBoatCall } from "@dorks/core/boatHttp";
 import { antigravityToken, boatKey, claudeToken, readSettings, updateSettings } from "./settings";
 
 /** A rolling limit: `used` is 0..1, `resetsAt` epoch ms. */

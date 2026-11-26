@@ -1,5 +1,5 @@
 import type { App } from "../app";
-import type { BridgeEndpoint } from "../core/box";
+import type { BridgeEndpoint } from "@dorks/core/box";
 import { BridgeSession } from "./bridgeWs";
 
 // The server dials every awake box's bridge (docs/architecture.md, "Bridge protocol"): the owner's machine only makes outbound

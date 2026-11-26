@@ -1,6 +1,6 @@
 import type { DorkState } from "@dorks/shared";
 
-// Pure lifecycle machine: (ctx, input) -> next state + effects. No I/O. `src/lifecycle/dispatch.ts` is the driver.
+// Pure lifecycle machine: (ctx, input) -> next state + effects. No I/O. `apps/server/src/lifecycle/dispatch.ts` is the driver.
 // Every (state, input) pair is handled explicitly; unknown combinations are no-ops, never throws.
 
 export interface Ctx {

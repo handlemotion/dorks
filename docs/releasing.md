@@ -11,6 +11,14 @@ Versions are kept with [Changesets](https://github.com/changesets/changesets). T
 3. **Merge the release PR when you want to ship.** `main` now has a version with no GitHub release, so the workflow calls `desktop-release.yml`: it builds the app, signs and notarizes it, uploads the `.dmg`, the signed updater bundle and `latest.json` to a draft release `desktop-v<version>` with the changelog section as its notes, and then publishes it as the latest release. That takes about 7 minutes (0.4.0: 6 min 40 s from merge to published), less once the Rust build cache is warm.
 4. **Users update.** Within 15 minutes (or on the next launch, or Check for Updates… in the menu bar) installed apps see `latest.json` and show the blue bar; Update installs it and relaunches.
 
+## npm packages
+
+`@dorks/core` (`packages/core`) and `@dorks/shared` (`packages/shared`) are published to npm under the `dorks` org, for the Dorks Cloud Worker (handlemotion/dorks-cloud, which pins exact versions). Everything else in the workspace is private.
+
+- **Versions** go through the same changesets: a PR that changes either package's API or behaviour adds a changeset for it (`pnpm changeset`, pick `@dorks/core` and/or `@dorks/shared`), and the **Release Dorks** PR bumps it with the app. No `major` before 1.0.
+- **Publishing** is by hand, from an up-to-date `main` after the release PR merged, logged in to npm as a member of the `dorks` org: `pnpm publish:packages`. Each package builds itself first (`prepack`: `vp pack` to `dist/`); pnpm swaps `workspace:*` for the real version and the source `exports` for `publishConfig.exports` (`dist/`), so publish with pnpm, never `npm publish`. Versions already on npm are skipped.
+- **Check what would ship:** `pnpm --filter @dorks/core pack --dry-run` (or `npm pack --dry-run` in the package for the file list).
+
 ## When something goes wrong
 
 - **The build failed.** Fix it on `main` (any push re-runs the workflow, and it rebuilds any version without a published release), or run **Desktop release** by hand on `main`. A draft a failed run left behind is deleted first.

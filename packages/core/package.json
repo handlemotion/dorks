@@ -1,0 +1,92 @@
+{
+  "name": "@dorks/core",
+  "version": "0.1.0",
+  "description": "The runtime-neutral core of the dorks server: the lifecycle reducer, the Boat driver, secret envelopes, bridge auth, schedules, the stream normalizer and the notification renderer. Runs on Node, Bun and Cloudflare Workers.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/handlemotion/dorks.git",
+    "directory": "packages/core"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./machine": "./src/machine.ts",
+    "./box": "./src/box.ts",
+    "./boat": "./src/boat.ts",
+    "./boatHttp": "./src/boatHttp.ts",
+    "./crypto": "./src/crypto.ts",
+    "./bridgeAuth": "./src/bridgeAuth.ts",
+    "./schedule": "./src/schedule.ts",
+    "./normalize": "./src/normalize.ts",
+    "./notifyRender": "./src/notifyRender.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./machine": {
+        "types": "./dist/machine.d.ts",
+        "default": "./dist/machine.js"
+      },
+      "./box": {
+        "types": "./dist/box.d.ts",
+        "default": "./dist/box.js"
+      },
+      "./boat": {
+        "types": "./dist/boat.d.ts",
+        "default": "./dist/boat.js"
+      },
+      "./boatHttp": {
+        "types": "./dist/boatHttp.d.ts",
+        "default": "./dist/boatHttp.js"
+      },
+      "./crypto": {
+        "types": "./dist/crypto.d.ts",
+        "default": "./dist/crypto.js"
+      },
+      "./bridgeAuth": {
+        "types": "./dist/bridgeAuth.d.ts",
+        "default": "./dist/bridgeAuth.js"
+      },
+      "./schedule": {
+        "types": "./dist/schedule.d.ts",
+        "default": "./dist/schedule.js"
+      },
+      "./normalize": {
+        "types": "./dist/normalize.d.ts",
+        "default": "./dist/normalize.js"
+      },
+      "./notifyRender": {
+        "types": "./dist/notifyRender.d.ts",
+        "default": "./dist/notifyRender.js"
+      },
+      "./package.json": "./package.json"
+    },
+    "access": "public"
+  },
+  "scripts": {
+    "build": "vp pack",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p test",
+    "test": "vp test run && node scripts/check-workers.mjs",
+    "check:workers": "node scripts/check-workers.mjs",
+    "prepack": "vp pack"
+  },
+  "dependencies": {
+    "@dorks/shared": "workspace:*",
+    "effect": "4.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "esbuild": "^0.28.1",
+    "miniflare": "5.20261123.1-beta",
+    "typescript": "^6.0.2",
+    "vite-plus": "catalog:"
+  }
+}

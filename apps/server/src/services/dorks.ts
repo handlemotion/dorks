@@ -6,7 +6,7 @@ import { dispatch, enqueueConfigure, isAwake, MAX_MESSAGE_CHARS, patchDork, patc
 import { withoutImages } from "../lib/messageText";
 import { knownModelChoices, validAntigravityModel, validModelChoice, validOpenCodeModel } from "./models";
 import { validRepo } from "../lib/repo";
-import { isBoxNotFound, type DesktopOptions } from "../core/box";
+import { isBoxNotFound, type DesktopOptions } from "@dorks/core/box";
 import { missingForSession } from "./setup";
 import { readSettings } from "./settings";
 import { defaultBuildId, getBuild } from "./builds";

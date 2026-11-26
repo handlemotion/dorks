@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Context, Effect, Layer } from "effect";
 import { Hub, type App, type Config } from "./app";
-import { keyringFromKey } from "./core/crypto";
+import { keyringFromKey } from "@dorks/core/crypto";
 import { remoteJwks, type JwksVerifier } from "./core/jwt";
 import { loadConfig } from "./config";
 import { Db } from "./db";

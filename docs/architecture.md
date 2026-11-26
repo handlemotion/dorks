@@ -15,7 +15,7 @@ Convex gave us live queries, a durable scheduler, transactions and a WebSocket t
 - **No local-first sync story.** Convex is the database; there is nothing to replicate to or from a cloud later.
 - **What we actually used is small.** Three live queries, a scheduler used as a timer table, and single-document transactions. SQLite with a single writer gives the same atomicity (`BEGIN IMMEDIATE`), a `timers` table gives durable timers, and a Server-Sent-Events invalidation stream gives live UI updates.
 
-The pure logic carries over unchanged: the lifecycle reducer (`core/machine.ts`), the stream normalizer, AES-GCM envelope, the Boat driver, the bridge HMAC, the notification renderer and the shared wire types in `packages/shared`.
+The pure logic carries over unchanged: the lifecycle reducer (`packages/core/src/machine.ts`), the stream normalizer, AES-GCM envelope, the Boat driver, the bridge HMAC, the notification renderer and the shared wire types in `packages/shared`.
 
 ### Sync later
 
@@ -169,7 +169,7 @@ One stream per client. Messages are `data: <json>\n\n`; a `: ping` comment every
 
 **Where the bridge listens.** In the box the bridge listens on `127.0.0.1:BRIDGE_PORT` (`4748`). The box is created with exactly `DORK_ID`, `BRIDGE_PORT` and `BRIDGE_SECRET` in its environment. Frames are JSON text.
 
-**Endpoint.** `BoxProvider.bridgeEndpoint(boxId)` (`core/box.ts`) gives the URL and headers to dial. For Boat (`lib/boat.ts`) it is `POST /sandboxes/<id>/host` with `{port: 4748, public: false, localhost: true, title: "Dorks bridge"}`; Boat answers a protected URL `https://<sub>-4748.on.boat.dev?_token=…`, and the server dials `wss://<sub>-4748.on.boat.dev/` with `Cookie: _port_auth=<token>`. The token is a bearer credential: never stored or logged. Port 4748 is reserved, so `preview_show` refuses it. The simulator gives each sim box its own loopback port (`sim_boxes.bridge_port`, `bridgePort` in `/sim/boxes`) and the server dials `ws://127.0.0.1:<port>/`.
+**Endpoint.** `BoxProvider.bridgeEndpoint(boxId)` (`packages/core/src/box.ts`) gives the URL and headers to dial. For Boat (`packages/core/src/boat.ts`) it is `POST /sandboxes/<id>/host` with `{port: 4748, public: false, localhost: true, title: "Dorks bridge"}`; Boat answers a protected URL `https://<sub>-4748.on.boat.dev?_token=…`, and the server dials `wss://<sub>-4748.on.boat.dev/` with `Cookie: _port_auth=<token>`. The token is a bearer credential: never stored or logged. Port 4748 is reserved, so `preview_show` refuses it. The simulator gives each sim box its own loopback port (`sim_boxes.bridge_port`, `bridgePort` in `/sim/boxes`) and the server dials `ws://127.0.0.1:<port>/`.
 
 **Links** (`http/bridgeLinks.ts`). Every 500 ms the server reconciles the dorks that have a `box_id`, are not deleting and are `creating`, `waking`, `working` or `idle`, and keeps one socket per dork. A dropped or refused socket is dialed again with backoff from 0.5 s to 10 s; after every 5 failed dials in a row it asks the provider for the endpoint again. A socket silent for 100 s is dropped and redialed (the bridge heartbeats every 30 s). On its side the bridge's listener pings every 30 s and terminates sockets that miss a pong.
 
@@ -273,7 +273,7 @@ applies them. The full design: [builds](builds.md).
 
 ## Lifecycle
 
-`core/machine.ts` is unchanged apart from dropping the GitHub-token-refresh effects. Dispatch applies an input in one transaction: persist the new state, append a `status` event, then run effects (arm/cancel timers, enqueue box jobs, release held notifications, enqueue `interrupt`). Pausing keeps the same intent-with-generation model (`flushing` → `pausing` → `cancelled`). Timers: `sleep`, `watchdog`, `bridge_watch`, `flush`, `notify`, `pause_retry`. Global jobs (owner `''`): `poll`, `sweep`, `snapshot:build`, `orphan:<boxId>`, `build:run:<runId>`, `build:forget:<image>`, `automation:<id>` (an automation's schedules) and `automation-watch` (the repository watcher, [automations](automations.md)).
+`packages/core/src/machine.ts` is unchanged apart from dropping the GitHub-token-refresh effects. Dispatch applies an input in one transaction: persist the new state, append a `status` event, then run effects (arm/cancel timers, enqueue box jobs, release held notifications, enqueue `interrupt`). Pausing keeps the same intent-with-generation model (`flushing` → `pausing` → `cancelled`). Timers: `sleep`, `watchdog`, `bridge_watch`, `flush`, `notify`, `pause_retry`. Global jobs (owner `''`): `poll`, `sweep`, `snapshot:build`, `orphan:<boxId>`, `build:run:<runId>`, `build:forget:<image>`, `automation:<id>` (an automation's schedules) and `automation-watch` (the repository watcher, [automations](automations.md)).
 
 ## GitHub (autonomy)
 
@@ -285,7 +285,7 @@ Identity: the dork acts as whoever owns the token. Events authored by the token'
 
 - UI listener: loopback only, bearer owner token, CORS limited to configured origins.
 - Bridge: the server dials out; nothing on the owner's machine listens for sandboxes. In the box the bridge listens on loopback only, reachable through the provider's protected hosted URL (Boat's per-port token). Authentication is the mutual per-dork HMAC handshake; secrets are returned only over an authenticated socket and never persisted in command rows.
-- At rest: Boat key, Claude token and CLI secrets are AES-GCM encrypted (the GitHub token is not stored: it stays in `gh`) (`core/crypto.ts`, additional data binds each to its purpose); `secrets.json` is mode 600.
+- At rest: Boat key, Claude token and CLI secrets are AES-GCM encrypted (the GitHub token is not stored: it stays in `gh`) (`packages/core/src/crypto.ts`, additional data binds each to its purpose); `secrets.json` is mode 600.
 
 ## Build and test
 
