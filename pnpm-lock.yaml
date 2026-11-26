@@ -177,6 +177,9 @@ overrides:
   react-dom: 19.3.0
   '@types/react': ~19.3.0
 
+patchedDependencies:
+  '@shadcn/react@0.3.1': 4e6eea602e90d310d7cbee361a8a4b9657b20058b44e923e2d7e5aa7b99c74aa
+
 importers:
 
   .:
@@ -534,7 +537,7 @@ importers:
         version: 0.3.0(ai@7.0.166(zod@4.6.6))
       '@shadcn/react':
         specifier: 0.3.1
-        version: 0.3.1(@types/react@19.3.1)(react@19.3.0)
+        version: 0.3.1(patch_hash=4e6eea602e90d310d7cbee361a8a4b9657b20058b44e923e2d7e5aa7b99c74aa)(@types/react@19.3.1)(react@19.3.0)
       ai:
         specifier: ^7.0.166
         version: 7.0.166(zod@4.6.6)
@@ -8792,7 +8795,7 @@ snapshots:
     optionalDependencies:
       ai: 7.0.166(zod@4.6.6)
 
-  '@shadcn/react@0.3.1(@types/react@19.3.1)(react@19.3.0)':
+  '@shadcn/react@0.3.1(patch_hash=4e6eea602e90d310d7cbee361a8a4b9657b20058b44e923e2d7e5aa7b99c74aa)(@types/react@19.3.1)(react@19.3.0)':
     optionalDependencies:
       '@types/react': 19.3.1
       react: 19.3.0

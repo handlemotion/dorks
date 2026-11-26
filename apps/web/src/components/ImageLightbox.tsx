@@ -255,9 +255,11 @@ function ThumbnailColumn({ images, index, label }: { images: LightboxImage[]; in
             aria-label={image.alt}
             className="relative block size-14 shrink-0 cursor-pointer rounded-(--control-radius) bg-app outline-none before:pointer-events-none before:absolute before:-inset-1 before:rounded-[10px] before:border-2 before:border-transparent focus-visible:outline-2 focus-visible:outline-ring data-active:before:border-brand"
           >
+            {/* Lazy: a long chat's column holds every image it has, and only the ones in view need decoding when the viewer opens. */}
             <img
               src={image.thumb ?? image.src}
               alt=""
+              loading="lazy"
               decoding="async"
               draggable={false}
               className="block size-full rounded-(--control-radius) object-cover outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"

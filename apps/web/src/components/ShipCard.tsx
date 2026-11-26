@@ -1,4 +1,4 @@
-import { createContext, Fragment, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, Fragment, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { CircleCheckIcon, CircleDashedIcon, CircleIcon, CircleMinusIcon, CircleXIcon, ExternalLinkIcon, LoaderCircleIcon, RocketIcon } from 'lucide-react'
 import type { Block, ShipStage, ShipStageState, ShipView } from '@dorks/shared'
 import { Trace, TraceIcon, TraceLine, TraceTitle } from '@dorks/ui/trace'
@@ -38,17 +38,21 @@ const ShipsContext = createContext<ShipsInThread>({ groups: new Map() })
  * turn ends it moves to the end of the chat, whole, and its place in the thread shrinks to a line.
  */
 export function ShipPin({ blocks, state, children }: { blocks: Block[]; state: string; children: ReactNode }) {
-  const groups = shipGroups(blocks)
-  const pinned = pinnedGroup(blocks, groups.at(-1), state)
-  const anchor = pinned?.at(-1)
-  const after = anchor ? blocks.slice(blocks.indexOf(anchor) + 1).some((b) => b.kind !== 'turn') : false
-  // Tucked under the answer when the answer is the last thing above it; under a notice ("PR #7 merged") it keeps the notices' 12px rhythm.
-  const above = blocks.filter((b) => b.kind !== 'turn' && !pinned?.includes(b as ShipBlock)).at(-1)?.kind
-  const tuck = above === 'assistant' ? 'answer' : above === 'notice' ? 'notice' : undefined
-  const value: ShipsInThread = {
-    groups: new Map(groups.flatMap((g) => g.map((b) => [b.ship.id, g.map((x) => x.ship)] as const))),
-    pinned: anchor ? { id: anchor.ship.id, line: after } : undefined,
-  }
+  // Once per transcript: a new context value on every render made React look through the whole thread for its ship cards.
+  const { value, pinned, anchor, tuck } = useMemo(() => {
+    const groups = shipGroups(blocks)
+    const pinned = pinnedGroup(blocks, groups.at(-1), state)
+    const anchor = pinned?.at(-1)
+    const after = anchor ? blocks.slice(blocks.indexOf(anchor) + 1).some((b) => b.kind !== 'turn') : false
+    // Tucked under the answer when the answer is the last thing above it; under a notice ("PR #7 merged") it keeps the notices' 12px rhythm.
+    const above = blocks.filter((b) => b.kind !== 'turn' && !pinned?.includes(b as ShipBlock)).at(-1)?.kind
+    const tuck: 'answer' | 'notice' | undefined = above === 'assistant' ? 'answer' : above === 'notice' ? 'notice' : undefined
+    const value: ShipsInThread = {
+      groups: new Map(groups.flatMap((g) => g.map((b) => [b.ship.id, g.map((x) => x.ship)] as const))),
+      pinned: anchor ? { id: anchor.ship.id, line: after } : undefined,
+    }
+    return { value, pinned, anchor, tuck }
+  }, [blocks, state])
   return (
     <ShipsContext.Provider value={value}>
       {children}

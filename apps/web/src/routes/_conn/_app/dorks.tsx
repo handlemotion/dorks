@@ -33,7 +33,7 @@ import { ArchiveButton, PageHeader } from '../../../components/PageHeader'
 import { SetupStatus } from '../../../components/SetupStatus'
 import { canCreate } from '../../../lib/onboarding'
 import { usePending } from '../../../lib/pending'
-import { useDraft } from '../../../lib/draft'
+import { useDraft, useDraftSetter } from '../../../lib/draft'
 import { useArchiveDork } from '../../../lib/archive'
 import { THUMB_WIDTH } from '../../../lib/images'
 
@@ -338,12 +338,22 @@ function useNewSessionMode(initialRepo: string | undefined) {
 type DorkView = NonNullable<ReturnType<typeof useDork>>
 type DorksActions = ReturnType<typeof useDorksClient>['actions']
 
+/**
+ * Progress and the to-do list, worked out once per transcript: the page redraws on every keystroke in the composer and every live
+ * update, and both walk the whole transcript.
+ */
+const workOf = new WeakMap<Block[], Pick<ChatDetailsData, 'progress' | 'tasks'>>()
+function sessionWork(blocks: Block[], actions: DorksActions): Pick<ChatDetailsData, 'progress' | 'tasks'> {
+  let work = workOf.get(blocks)
+  // Shared screenshots resolve to their URLs here as they do in the thread, so a progress message still shows its images.
+  if (!work) workOf.set(blocks, (work = { progress: progressTurns(resolveSharedImages(blocks, actions.imageUrl).blocks), tasks: latestTasks(blocks) }))
+  return work
+}
+
 /** Chat details for a session: the agent's work, its pull request, screenshots (newest first), previews and computer. */
 function detailsData(dork: DorkView, blocks: Block[], actions: DorksActions, computer: Pick<NonNullable<ChatDetailsData['computer']>, 'used' | 'fetchUrl' | 'interrupt'>): ChatDetailsData {
   return {
-    // Shared screenshots resolve to their URLs here as they do in the thread, so a progress message still shows its images.
-    progress: progressTurns(resolveSharedImages(blocks, actions.imageUrl).blocks),
-    tasks: latestTasks(blocks),
+    ...sessionWork(blocks, actions),
     pr: prOf(dork.prUrl, dork.prState),
     artifacts: dork.images
       ?.map((i, n) => ({
@@ -479,8 +489,7 @@ function Thread({ dorkId }: { dorkId: string }) {
   const [detailsOpen, setDetailsOpen] = useDetailsOpen()
   const wide = useWide()
   // One draft for the composer and everything on the page that writes into it (Ask for…, picked elements).
-  const draft = useDraft(dorkId)
-  const setText = draft[1]
+  const setText = useDraftSetter(dorkId)
   // Each chat's Progress starts on its newest step.
   useEffect(() => progressStore.reset(), [dorkId])
   useMarkRead(dorkId, dork?.unread)
@@ -543,7 +552,6 @@ function Thread({ dorkId }: { dorkId: string }) {
           <SessionChat
             dork={dork}
             error={archiveError}
-            draft={draft}
             // Progress lives in Chat details, which narrow windows and dorks (their details are Sessions) do not show.
             onOpenSteps={
               wide && !crew

@@ -32,3 +32,5 @@ minimumReleaseAgeExclude:
   - "@voidzero-dev/vite-plus-win32-arm64-msvc@1.6.0"
   - "@voidzero-dev/vite-plus-win32-x64-msvc@1.6.0"
   - vite-plus@1.6.0
+patchedDependencies:
+  "@shadcn/react@0.3.1": patches/@shadcn__react@0.3.1.patch

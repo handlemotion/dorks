@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
+import type { Block } from '@dorks/shared'
 import type { AgentModelChoice, DorkMode } from '@dorks/shared'
 import { useConnection, useDork, useDorkEvents, useDorksClient, useSettings } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
@@ -14,7 +15,7 @@ import { LocalAccessProvider } from './LocalRequest'
 import type { ModeChoice } from './ModeMenu'
 import { QueuedMessages } from './QueuedMessages'
 import { SEND_KEY } from './Reply'
-import { useDraft } from '../lib/draft'
+import { getDraft, useDraft, useDraftSetter } from '../lib/draft'
 import { usePending } from '../lib/pending'
 import { withReply, type Reply } from '../lib/reply'
 import { currentStep, stepLabel } from '../lib/progress'
@@ -54,17 +55,24 @@ function useQueueControls(dork: DorkView, canReply: boolean, sendWith: SendWith)
   }
 }
 
+/** Keys that scroll a focused transcript. */
+const SCROLL_KEYS = new Set(['ArrowUp', 'PageUp', 'Home', ' '])
+
 /**
- * The top of a transcript with older messages: they load on their own once the reader scrolls within a couple of screens of it, so
- * scrolling up rarely meets the end (the scroller keeps the view in place as they come in). The button stays for the keyboard.
+ * The top of a transcript with older messages: they come in on their own once the reader scrolls within a couple of screens of it, so
+ * scrolling up rarely meets the end (the scroller keeps the view in place as they come in). Only the reader's own scrolling (wheel,
+ * touch, keys) brings them, or a transcript too short to scroll: opening a chat renders only its newest messages, and a jump (the
+ * message index) lands where it aimed instead of being pushed away by what loads above it. The button stays for the keyboard.
  */
 function LoadOlder({
   loading,
   paused,
+  shown,
   onLoad,
 }: {
   loading: boolean
   /** A read failed: no automatic loads until the feed's own retry succeeds (the button still works). */ paused: boolean
+  /** How many blocks are drawn: the sentinel is looked at again after each step up, even when it never left the margin. */ shown: number
   onLoad: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -72,31 +80,35 @@ function LoadOlder({
   useEffect(() => {
     load.current = onLoad
   })
-  // Armed once the reader heads up (or when there is nothing to scroll): opening a chat renders only its newest page.
-  const [armed, setArmed] = useState(false)
-  useEffect(() => {
-    const viewport = ref.current?.closest<HTMLElement>('[data-slot="message-scroller-viewport"]')
-    if (armed || !viewport) return
-    if (viewport.scrollHeight <= viewport.clientHeight) return setArmed(true)
-    let last = viewport.scrollTop
-    const onScroll = () => {
-      if (viewport.scrollTop < last) setArmed(true)
-      last = viewport.scrollTop
-    }
-    viewport.addEventListener('scroll', onScroll, { passive: true })
-    return () => viewport.removeEventListener('scroll', onScroll)
-  }, [armed])
-  // Observed afresh after each page: a sentinel still in range after one page comes in loads the next, without another scroll.
+  // When the reader last scrolled by hand; kept across steps, which each observe the sentinel afresh.
+  const intent = useRef(0)
   useEffect(() => {
     const node = ref.current
-    if (!armed || loading || paused || !node) return
-    const observer = new IntersectionObserver((seen) => seen.some((e) => e.isIntersecting) && load.current(), {
-      root: node.closest('[data-slot="message-scroller-viewport"]'),
-      rootMargin: '1600px 0px 0px 0px',
-    })
+    const viewport = node?.closest<HTMLElement>('[data-slot="message-scroller-viewport"]')
+    if (loading || paused || !node || !viewport) return
+    let near = false
+    const reading = () => viewport.scrollHeight <= viewport.clientHeight || performance.now() - intent.current < 1500
+    const maybeLoad = () => near && reading() && load.current()
+    const onIntent = (e: Event) => {
+      if (e instanceof KeyboardEvent && !SCROLL_KEYS.has(e.key)) return
+      intent.current = performance.now()
+      maybeLoad()
+    }
+    const observer = new IntersectionObserver(
+      (seen) => {
+        near = seen.some((e) => e.isIntersecting)
+        maybeLoad()
+      },
+      { root: viewport, rootMargin: '1600px 0px 0px 0px' },
+    )
     observer.observe(node)
-    return () => observer.disconnect()
-  }, [armed, loading, paused])
+    const events = ['wheel', 'touchmove', 'keydown'] as const
+    for (const name of events) viewport.addEventListener(name, onIntent, { passive: true })
+    return () => {
+      observer.disconnect()
+      for (const name of events) viewport.removeEventListener(name, onIntent)
+    }
+  }, [loading, paused, shown])
   return (
     <div ref={ref} className="text-center">
       <Button variant="outline" size="sm" onClick={onLoad} disabled={loading}>
@@ -121,11 +133,66 @@ export function claudePicker(dork: DorkView, fallback: AgentModelChoice[] | unde
   }
 }
 
+/** Blocks drawn when a chat opens (cut at a user message when one is near), and how many more each step up adds. */
+const WINDOW = 60
+const WINDOW_STEP = 120
+
+/** Where a window of at least `size` blocks ending at `end` starts: at the user message that opens its oldest turn, if one comes within another `size`. */
+function windowStart(blocks: Block[], end: number, size: number): number {
+  const min = end - size
+  if (min <= 0) return 0
+  for (let i = min; i >= Math.max(0, min - size); i--) if (blocks[i].kind === 'user') return i
+  return min
+}
+
+/**
+ * The part of the transcript that is drawn. Mounting a message is the dear part (markdown, highlighted code, images), so a chat opens
+ * with only its newest blocks, and older ones are drawn a step at a time as the reader scrolls up to them: from memory first, then
+ * from the server. The next page is fetched ahead, while the chat is idle and again as the last step from memory is drawn, so scrolling
+ * up rarely waits on it. The window is pinned by its first block, so new messages at the end never push the oldest drawn one out from
+ * under the reader.
+ */
+function useTranscriptWindow(blocks: Block[], canLoadMore: boolean, loadMore: () => void) {
+  const [first, setFirst] = useState<string>()
+  const load = useRef(loadMore)
+  useEffect(() => {
+    load.current = loadMore
+  })
+  const pinned = first === undefined ? -1 : blocks.findIndex((b) => b.id === first)
+  const from = pinned >= 0 ? pinned : windowStart(blocks, blocks.length, WINDOW)
+  const startId = blocks[from]?.id
+  useEffect(() => {
+    if (pinned < 0 && startId && !startId.startsWith('pending-')) setFirst(startId)
+  }, [pinned, startId])
+  // Nothing older in memory: fetch the next page once the chat is idle, so the first step up is drawn at once.
+  useEffect(() => {
+    if (from > 0 || !canLoadMore) return
+    const idle = window.requestIdleCallback ?? ((fn: () => void) => window.setTimeout(fn, 300))
+    const cancel = window.cancelIdleCallback ?? window.clearTimeout
+    const handle = idle(() => load.current())
+    return () => cancel(handle)
+  }, [from, canLoadMore])
+  const showOlder = () => {
+    if (from === 0) return loadMore()
+    const next = windowStart(blocks, from, WINDOW_STEP)
+    setFirst(blocks[next].id)
+    // The last step from memory: fetch the next page now, so it is there when the reader gets to it.
+    if (next === 0 && canLoadMore) loadMore()
+  }
+  return { from, hasOlder: from > 0 || canLoadMore, showOlder }
+}
+
 /** The error that put the Dork in error is said once, in red on the status line, not as its own row above it. */
 function splitProblem<B extends { kind: string }>(all: B[], state: string | undefined): { blocks: B[]; problem?: string } {
   const last = all.at(-1) as (B & { level?: string; text?: string }) | undefined
   if (state !== 'error' || last?.kind !== 'notice' || last.level !== 'error') return { blocks: all }
   return { blocks: all.slice(0, -1), problem: last.text }
+}
+
+/** The composer, reading its draft: subscribed here, so a keystroke redraws the composer alone. */
+function DraftComposer({ draftKey, ...props }: Omit<ComponentProps<typeof Composer>, 'text' | 'setText'> & { draftKey: string }) {
+  const [text, setText] = useDraft(draftKey)
+  return <Composer {...props} draftKey={draftKey} text={text} setText={setText} />
 }
 
 /**
@@ -137,15 +204,9 @@ export function SessionChat({
   dork,
   compact,
   error: extraError,
-  draft,
   onOpenSteps,
 }: {
   dork: DorkView
-  /**
-   * The composer's text when the page also writes into it (Chat details' "Ask for…" actions, a picked element): one draft, owned by the
-   * page. Without it the chat keeps its own (a worker in a dork's panel).
-   */
-  draft?: [string, Dispatch<SetStateAction<string>>]
   compact?: boolean
   /** Another action's failure to show over the composer (archive, the page's own controls). */
   error?: string
@@ -158,8 +219,9 @@ export function SessionChat({
   const dorkId = dork.id
   const { actions } = useDorksClient()
   const { view, canLoadMore, loadingMore, loadMore, error: eventsError, send } = useDorkEvents(dorkId)
-  const own = useDraft(dorkId)
-  const [text, setText] = draft ?? own
+  // The composer's text is the session's draft (`lib/draft`), which the page also writes into (Chat details' "Ask for…" actions, a
+  // picked element). Only the composer reads it as it changes: a keystroke does not redraw the transcript.
+  const setText = useDraftSetter(dorkId)
   const [reply, setReply] = useState<Reply>()
   const { run, pending, error } = usePending()
   const stop = usePending()
@@ -173,7 +235,7 @@ export function SessionChat({
   /** Sends the composer's text (and reply) one way or the other; puts both back if the server refuses. */
   const sendWith: SendWith = (deliver: (message: string) => Promise<unknown>) => (images: Parameters<typeof withImages>[1]) =>
     run(async () => {
-      const sent = text
+      const sent = getDraft(dorkId)
       const quoted = reply
       setText('')
       setReply(undefined)
@@ -191,6 +253,8 @@ export function SessionChat({
     Boolean(dork.needsAttention) ||
     view.blocks.some((b) => (b.kind === 'local' && b.status === 'pending') || (b.kind === 'input' && b.status === 'pending') || (b.kind === 'build' && b.approved === null))
   const { blocks, problem } = splitProblem(view.blocks, dork.state)
+  const transcript = useTranscriptWindow(blocks, canLoadMore, loadMore)
+  const shown = useMemo(() => (transcript.from > 0 ? blocks.slice(transcript.from) : blocks), [blocks, transcript.from])
   return (
     <>
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
@@ -198,11 +262,12 @@ export function SessionChat({
           {/* No fade at the bottom edge: the published viewport masks it with scroll-fade-b; the last line stays fully drawn above the composer. */}
           <MessageScrollerViewport aria-label="Session transcript" className="mask-none! [scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
             <MessageScrollerContent className={`mx-auto w-full max-w-4xl gap-6 pt-6 pb-12 ${compact ? 'px-6' : 'px-10'}`} data-testid="transcript">
-              {canLoadMore && <LoadOlder loading={loadingMore} paused={!!eventsError} onLoad={loadMore} />}
+              {transcript.hasOlder && <LoadOlder loading={loadingMore && transcript.from === 0} paused={!!eventsError} shown={shown.length} onLoad={transcript.showOlder} />}
               <LocalAccessProvider dorkId={dorkId} agent={agent}>
                 <ShipPin blocks={blocks} state={dork.state}>
                   <ChatMessages
-                    blocks={blocks}
+                    blocks={shown}
+                    all={blocks}
                     imageUrl={actions.imageUrl}
                     agent={agent}
                     onOpenSteps={onOpenSteps}
@@ -237,13 +302,11 @@ export function SessionChat({
               </div>
             </MessageScrollerContent>
           </MessageScrollerViewport>
-          <ChatToc blocks={blocks} hidden={compact} />
+          <ChatToc blocks={shown} hidden={compact} />
           <MessageScrollerButton />
         </MessageScroller>
       </MessageScrollerProvider>
-      <Composer
-        text={text}
-        setText={setText}
+      <DraftComposer
         repo={dork.repo}
         mode={sessionMode(dork, (mode) => void modeSwitch.run(() => actions.setMode(dorkId, mode)))}
         placeholder={queueing.placeholder}

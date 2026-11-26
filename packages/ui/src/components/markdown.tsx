@@ -5,35 +5,20 @@ import { cn } from "cn"
 import { escapeHtml } from "@pierre/words/html"
 import { defaultUrlTransform, Markdown as Words, type Components, type PluginConfig, type ReactiveIslands } from "@pierre/words/react"
 
-import { useHighlightedCode } from "#hooks/use-highlighted-code"
-import { CodeBlock, CodeBlockActions, CodeBlockContent, CodeBlockCopyButton, CodeBlockHeader, CodeBlockLine, CodeBlockTitle } from "#ui/code-block"
-
 /** A fenced code block: its code (no trailing newline), the fence's language (`""` when it has none), and whether the fence is still open. */
 type MarkdownCodeBlockProps = { code: string; language: string; incomplete: boolean }
 /** A markdown image, its source as written (not checked: the component decides what it can load). */
 type MarkdownImageProps = { src: string; alt: string }
 
-function MarkdownCodeBlock({ code, language, incomplete }: MarkdownCodeBlockProps) {
-  const lines = useHighlightedCode(code, language)
+// Shiki is most of this component's weight and only draws the default code block: it loads with the first fence that uses it, so a
+// caller that brings its own code block (the app's Pierre-drawn ones) never loads it.
+const ShikiCodeBlock = React.lazy(() => import("./markdown-code-block"))
 
-  // The ring is inset: the markdown container clips overflow, which cut an outer ring to its top edge. No line numbers, as in the
-  // published Markdown example, so the code starts on the title's edge. Its own 16px above and below: the container's space-y-4
-  // only spaces top-level blocks, so a fence inside a list item sat flush against the text around it (the margins collapse with
-  // space-y-4 at the top level, and the container's first/last-child rules still zero them at its edges).
+function MarkdownCodeBlock(props: MarkdownCodeBlockProps) {
   return (
-    <CodeBlock className="my-4 bg-background ring-inset">
-      <CodeBlockHeader>
-        <CodeBlockTitle>{language || "text"}</CodeBlockTitle>
-        <CodeBlockActions>
-          <CodeBlockCopyButton value={code} disabled={incomplete} />
-        </CodeBlockActions>
-      </CodeBlockHeader>
-      <CodeBlockContent>
-        {lines.map((line, index) => (
-          <CodeBlockLine key={index}>{line}</CodeBlockLine>
-        ))}
-      </CodeBlockContent>
-    </CodeBlock>
+    <React.Suspense fallback={<pre className="my-4 overflow-x-auto rounded-lg bg-background p-4 font-mono text-sm">{props.code}</pre>}>
+      <ShikiCodeBlock {...props} />
+    </React.Suspense>
   )
 }
 
