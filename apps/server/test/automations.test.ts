@@ -304,6 +304,18 @@ describe("automations", () => {
     expect(s.dorks().map((d) => d.title)).toEqual(["both: Every day at 09:00 on main", "both: Every day at 09:00 on release"]);
   });
 
+  it("a chat automation's schedule needs no repository and starts a chat; a code automation's still needs one", async () => {
+    const s = await setup();
+    const daily = { kind: "schedule", every: "day", time: "09:00", timezone: "UTC", branch: "dev" };
+    expect(() => createAutomation(s.h.app, { name: "code", instructions: "Go.", triggers: [daily] })).toThrow(/Choose a repository/);
+    s.h.clock.t = utc("2026-11-23T08:00:00");
+    const id = createAutomation(s.h.app, { mode: "chat", name: "digest", instructions: "Summarize the news.", triggers: [daily] });
+    s.h.clock.t = utc("2026-11-23T09:00:00");
+    fireSchedules(s.h.app, id);
+    expect(s.h.app.db.all("SELECT title, repo, mode FROM dorks")).toEqual([{ title: "digest: Every day at 09:00", repo: "", mode: "chat" }]); // a chat has no branch either
+    expect(listRuns(s.h.app, id)[0]).toMatchObject({ status: "started", repo: null });
+  });
+
   it("stops at the hourly cap and records why; Run now shows a refusal instead", async () => {
     const s = await setup();
     const id = createAutomation(s.h.app, { name: "loop", instructions: "Go.", triggers: [{ kind: "schedule", every: "hour", time: "00:00", timezone: "UTC", repo: "octo/app" }] });

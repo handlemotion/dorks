@@ -636,4 +636,8 @@ export const MIGRATIONS: string[] = [
   -- session token and user, encrypted. The UI reaches the account's other servers through this server with it.
   ALTER TABLE settings ADD COLUMN cloud_session_enc TEXT;
   `,
+  `
+  -- What an automation's runs start (services/automations.ts, docs/automations.md): code sessions, or chats (the Chat workspace).
+  ALTER TABLE automations ADD COLUMN mode TEXT NOT NULL DEFAULT 'code';
+  `,
 ];

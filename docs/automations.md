@@ -9,9 +9,17 @@ trouble (a new error, an error storm, a failing uptime or cron monitor). Every r
 an ordinary session (a dork) with the instructions, then a short note on what started it. Nothing about the session is special: it shows
 in the sidebar, sleeps, wakes, opens pull requests and is archived like any other.
 
+## Code and chat
+
+An automation belongs to a workspace (`mode`, docs/modes.md): **code** (the Agents workspace, the default) starts a code session in the
+trigger's repository; **chat** (the Chat workspace) starts a chat, which works in no repository. A chat automation has the same triggers:
+its schedules and Sentry triggers name no repository and a schedule no branch, while a GitHub trigger still names the repository it
+watches, and the chat is told which repository the event was in. Each workspace's Automations page lists only its own; templates are for
+code.
+
 ## Triggers
 
-An automation has one to ten triggers; any of them starts a run. Each names the repository the session starts in.
+An automation has one to ten triggers; any of them starts a run. In a code automation each names the repository the session starts in.
 
 | Trigger | Fires | The agent is told |
 |---|---|---|
