@@ -82,7 +82,8 @@ function Frame({ sidebar }: { sidebar: ReactNode }) {
       {/* The title bar controls float over the frame's top-left corner, after the traffic lights, so opening or closing the sidebar never
           moves them; the sidebar's top bar and, while it is hidden, the page header leave room for them. */}
       <div className="pointer-events-none absolute top-0 left-0 z-20 flex h-12 items-center *:pointer-events-auto" style={{ paddingLeft: TITLEBAR_START }}>
-        <WindowControls onToggleEnter={show} onToggleLeave={hide} />
+        {/* Back and forward float here only while no sidebar shows them: an open or peeking sidebar has them in its own title bar. */}
+        <WindowControls history={isMobile || (!open && !shown)} onToggleEnter={show} onToggleLeave={hide} />
       </div>
     </>
   )

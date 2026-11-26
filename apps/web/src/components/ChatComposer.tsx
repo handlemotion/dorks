@@ -1,4 +1,4 @@
-import { ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon, ZapIcon } from 'lucide-react'
+import { BoxIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon, ZapIcon } from 'lucide-react'
 import { modelLabel, type AgentModelChoice } from '@dorks/shared'
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type RefObject, type ReactNode } from 'react'
 import {
@@ -23,7 +23,7 @@ import opencodeLight from '../assets/providers/opencode.svg'
 import { Logo } from './onboarding/List'
 import { OwnerAvatar, ownerOf } from './RepoAvatar'
 import { EnvironmentPicker, type EnvironmentChoice } from './EnvironmentPicker'
-import { MODE_HINTS, ModeMenu, type ModeChoice } from './ModeMenu'
+import { MODE_HINTS, type ModeChoice } from './ModeMenu'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@dorks/ui/input-group'
 import { Tip } from './Tip'
 import { ImageLightbox, ImageTrigger } from './ImageLightbox'
@@ -329,12 +329,35 @@ const modeOf = (mode: ModeChoice | undefined, placeholder?: string) => ({
   hint: placeholder ?? MODE_HINTS[mode?.value ?? 'code'],
 })
 
-/** Where the session runs: the environment chooser for a new session, else its repository. */
-
-function RepositoryControl({ repo, environment, disabled, hidden, needsRepo }: { repo?: string; environment?: EnvironmentChoice; disabled: boolean; hidden?: boolean; needsRepo: boolean }) {
-  // A chat or a nerd works in no repository: no chooser, and an existing session shows one only if it has it.
-  if (hidden || (!needsRepo && (environment || !repo))) return null
-  if (environment) return <EnvironmentPicker choice={environment} disabled={disabled} />
+/** Where the session runs: the environment chooser for a new session, else its build (or, without one known, its repository). */
+function RepositoryControl({
+  repo,
+  build,
+  environment,
+  disabled,
+  hidden,
+  needsRepo,
+}: {
+  repo?: string
+  build?: string | null
+  environment?: EnvironmentChoice
+  disabled: boolean
+  hidden?: boolean
+  needsRepo: boolean
+}) {
+  if (hidden) return null
+  // A chat or a nerd works in no repository: no chooser for a new one.
+  if (environment) return needsRepo ? <EnvironmentPicker choice={environment} disabled={disabled} /> : null
+  if (build !== undefined) {
+    const name = build ?? 'Base machine'
+    return (
+      <span title={repo ? `${name}, ${repo}` : name} data-testid="chat-build" className="flex h-7 min-w-0 items-center gap-1.5 px-2 text-[13px] text-muted-foreground">
+        <BoxIcon className="size-3.5 shrink-0" />
+        <span className="max-w-48 truncate">{name}</span>
+      </span>
+    )
+  }
+  if (!needsRepo && !repo) return null
   if (repo === undefined) return null
   return (
     <span title={repo} data-testid="chat-repository" className="flex h-7 min-w-0 items-center gap-1.5 px-2 text-[13px] text-muted-foreground">
@@ -730,6 +753,7 @@ export function Composer({
   disabled,
   error,
   repo,
+  build,
   environment,
   mode,
   placeholder,
@@ -762,9 +786,11 @@ export function Composer({
   disabled?: boolean
   error: string
   repo?: string
+  /** An existing session's build, shown in the bar: its name, or null on the base machine. Undefined: unknown, the repository shows. */
+  build?: string | null
   /** The new session form's one chooser: a build (with its repositories) or a repository on the base machine. */
   environment?: EnvironmentChoice
-  /** The session's mode (docs/modes.md): the bar's first menu. Only code asks for a repository. */
+  /** The session's mode (docs/modes.md), set by the workspace: only code asks for a repository. */
   mode?: ModeChoice
   /** The box's hint (default: the mode's, else asks for a code change). */
   placeholder?: string
@@ -964,8 +990,7 @@ export function Composer({
         {/* Compact, shared baseline for the repository and model controls. 9px in (8px plus the box's 1px border), like attach and send, so the repository
             button lines up under attach and the model button under send. */}
         <div className="flex items-center gap-2 px-[9px] pt-2 text-[13px] [--control-radius:6px]">
-          <ModeMenu mode={mode} disabled={locked} />
-          <RepositoryControl repo={repo} environment={environment} disabled={locked} hidden={showRepo === false} needsRepo={needsRepo} />
+          <RepositoryControl repo={repo} build={build} environment={environment} disabled={locked} hidden={showRepo === false} needsRepo={needsRepo} />
           <ModelMenu
             provider={provider}
             setProvider={setProvider}

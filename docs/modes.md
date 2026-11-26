@@ -51,9 +51,10 @@ Its guidance tells it to prefer the sessions it started and never take over anot
 
 ## App
 
-- The composer's bar starts with the mode menu (`ModeMenu`). A new session remembers the mode picked last; one opened from a repository's
-  `+` is a code session. In chat and nerd mode the repository chooser goes away and the session starts on the owner's default build
-  (`buildId` omitted, so the server's fallback applies, a build without repositories included); a nerd's workers start on its build.
-- The sidebar starts with a **Chats** group (the first five, then Show more) above the repository groups. A nerd sits in the
-  repository group of the build it works on (its first repository), not in a group of its own, and wears the dork mark in green
-  while it works.
+- There is no mode menu: where a session starts sets its mode (below). In chat and nerd mode the repository chooser goes away and the
+  session starts on the owner's default build (`buildId` omitted, so the server's fallback applies, a build without repositories
+  included); a nerd's workers start on its build. An open session's bar names its build (or the base machine), not its repository.
+- The title bar switches between two workspaces (`AppWorkspace`, remembered per browser): **Agents** lists the nerds in a group of their
+  own, then the code sessions by repository; **Chat** lists the chats. New session starts in the workspace's mode (code in Agents, a chat in Chat; a nerd
+  from the Nerds group's `+`, which shows even while there are none), and opening a session of the other workspace switches to it. Builds is an Agents page; Plugins
+  are the same in both. A nerd always wears the dork mark in green, whatever its state.

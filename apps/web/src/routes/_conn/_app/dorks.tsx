@@ -36,13 +36,15 @@ import { usePending } from '../../../lib/pending'
 import { useDraft, useDraftSetter } from '../../../lib/draft'
 import { useArchiveDork } from '../../../lib/archive'
 import { THUMB_WIDTH } from '../../../lib/images'
+import { useAppWorkspace, type AppWorkspace } from '../../../components/appWorkspace'
 
 // The selected dork lives in the `dork` search param (not local state) so the sidebar can highlight it and the URL is shareable.
 export const Route = createFileRoute('/_conn/_app/dorks')({
-  // `repo` preselects the new session's repository (the sidebar's + beside a repository group).
-  validateSearch: (s: Record<string, unknown>): { dork?: string; repo?: string } => ({
+  // `repo` preselects the new session's repository (the sidebar's + beside a repository group); `mode` its mode (the Nerds group's +).
+  validateSearch: (s: Record<string, unknown>): { dork?: string; repo?: string; mode?: DorkMode } => ({
     ...(typeof s.dork === 'string' ? { dork: s.dork } : {}),
     ...(typeof s.repo === 'string' ? { repo: s.repo } : {}),
+    ...(isDorkMode(s.mode) ? { mode: s.mode } : {}),
   }),
   component: Dorks,
 })
@@ -58,7 +60,9 @@ function Notice({ children }: { children: React.ReactNode }) {
 
 function Dorks() {
   // The URL is user-editable, so this is not guaranteed to be a real id: the server answers not_found, which <Thread> shows.
-  const { dork: selected, repo: presetRepo } = Route.useSearch()
+  const { dork: selected, repo: presetRepo, mode: presetMode } = Route.useSearch()
+  // The workspace picks the new session's mode, so switching it starts the composer over in the other one.
+  const [workspace] = useAppWorkspace()
   const navigate = Route.useNavigate()
   const setSelected = (id: string) => void navigate({ search: { dork: id } })
   const [showArchived, setShowArchived] = useState(false)
@@ -125,8 +129,10 @@ function Dorks() {
             <div className={`${showArchived ? 'hidden' : 'flex'} mx-auto w-full max-w-[790px] flex-col gap-6`}>
               <h2 className="sr-only">What should we work on?</h2>
               <NewDork
-                key={presetRepo}
+                key={`${presetRepo}:${presetMode}:${workspace}`}
                 initialRepo={presetRepo}
+                initialMode={presetMode}
+                workspace={workspace}
                 onCreated={setSelected}
                 disabled={!ready}
                 claudeReady={!!settings?.claudeToken}
@@ -225,6 +231,8 @@ function AgentNotice({ provider }: { provider: AgentProvider }) {
 
 function NewDork({
   initialRepo,
+  initialMode,
+  workspace,
   onCreated,
   disabled,
   claudeReady,
@@ -232,6 +240,8 @@ function NewDork({
   antigravityReady,
 }: {
   initialRepo?: string
+  initialMode?: DorkMode
+  workspace: AppWorkspace
   onCreated: (id: string) => void
   disabled: boolean
   claudeReady: boolean
@@ -263,8 +273,7 @@ function NewDork({
   const { run, pending, error } = usePending()
   const agent = agentGate(provider, claudeReady, codexReady, antigravityReady)
   const mentions = useMentions(provider)
-  // A session opened from a repository's + is a code session; otherwise the mode picked last time.
-  const [mode, setMode] = useNewSessionMode(initialRepo)
+  const mode = newSessionMode(initialRepo, initialMode, workspace)
   return (
     <div className="[&>div]:max-w-none">
       {agent.notice && <AgentNotice provider={provider} />}
@@ -272,7 +281,7 @@ function NewDork({
         text={message}
         setText={setMessage}
         environment={{ builds: built, repositories, value: env, onChange: setPicked }}
-        mode={{ value: mode, onChange: setMode }}
+        mode={{ value: mode }}
         provider={provider}
         setProvider={setProvider}
         codexEnabled={codexReady}
@@ -310,29 +319,14 @@ function NewDork({
   )
 }
 
-const MODE_KEY = 'dorks.new-session-mode'
-
-/** The new session's mode (docs/modes.md): code from a repository's +, else the one picked last, remembered per browser. */
-function useNewSessionMode(initialRepo: string | undefined) {
-  const [picked, setPicked] = useState<DorkMode>(() => {
-    try {
-      const saved = localStorage.getItem(MODE_KEY)
-      return isDorkMode(saved) ? saved : 'code'
-    } catch {
-      return 'code'
-    }
-  })
-  const [fromRepo, setFromRepo] = useState(!!initialRepo)
-  const pick = (m: DorkMode) => {
-    setPicked(m)
-    setFromRepo(false)
-    try {
-      localStorage.setItem(MODE_KEY, m)
-    } catch {
-      // Not remembered.
-    }
-  }
-  return [fromRepo ? 'code' : picked, pick] as const
+/**
+ * The new session's mode (docs/modes.md), with no menu of its own: a chat in the Chat workspace, a nerd from the Nerds group's +, else a
+ * code session.
+ */
+function newSessionMode(initialRepo: string | undefined, preset: DorkMode | undefined, workspace: AppWorkspace): DorkMode {
+  if (initialRepo) return 'code'
+  if (preset) return preset
+  return workspace === 'chat' ? 'chat' : 'code'
 }
 
 type DorkView = NonNullable<ReturnType<typeof useDork>>
