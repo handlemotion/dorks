@@ -15,8 +15,8 @@ export const SIDEBAR_ROW = [
 /** A group's label: 28px, the small size, muted. */
 export const SIDEBAR_SECTION = 'flex h-7 min-w-0 shrink-0 items-center px-2 text-xs text-muted-foreground'
 
-/** The sidebar's icon buttons (the collapse toggle): the app's 30px bar button with a 14px icon, filled only on hover. */
-export const SIDEBAR_ICON_BUTTON = 'size-[30px] rounded-[6px] text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground aria-expanded:bg-foreground/[0.05] [&_svg]:size-3.5!'
+/** The title bar's icon buttons (the toggle, back and forward): 28px square, as tall as the workspace switcher, with a 14px icon, filled only on hover. */
+export const SIDEBAR_ICON_BUTTON = 'size-7 rounded-[6px] text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground aria-expanded:bg-foreground/[0.05] [&_svg]:size-3.5!'
 
 /** The main sidebar's default width in px; second navbar columns (Plugins) match it. */
 export const SIDEBAR_WIDTH = 300

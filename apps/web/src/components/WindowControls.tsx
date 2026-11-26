@@ -44,8 +44,8 @@ export function HistoryButtons() {
 /** Left padding that clears the traffic lights, and never less than the sidebar's 6px inset. */
 export const TITLEBAR_START = 'max(6px, var(--titlebar-inset-left, 0px))'
 
-/** Where the sidebar's title bar starts its own controls: after the floating toggle (30px) and a 4px gap. */
-export const TITLEBAR_AFTER_TOGGLE = `calc(${TITLEBAR_START} + 30px + 4px)`
+/** Where the sidebar's title bar starts its own controls: after the floating toggle (28px) and the controls' 2px gap. */
+export const TITLEBAR_AFTER_TOGGLE = `calc(${TITLEBAR_START} + 28px + 2px)`
 
-/** Where a page header's title starts while the sidebar is hidden: after the controls (three 30px buttons, 2px apart) and an 8px gap. */
-export const TITLEBAR_CONTROLS_END = `calc(${TITLEBAR_START} + 94px + 8px)`
+/** Where a page header's title starts while the sidebar is hidden: after the controls (three 28px buttons, 2px apart) and an 8px gap. */
+export const TITLEBAR_CONTROLS_END = `calc(${TITLEBAR_START} + 88px + 8px)`
