@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Context, Effect, Layer } from "effect";
 import { Hub, type App, type Config } from "./app";
 import { keyringFromKey } from "./core/crypto";
+import { remoteJwks, type JwksVerifier } from "./core/jwt";
 import { loadConfig } from "./config";
 import { Db } from "./db";
 import { AppEnv } from "./http/route";
@@ -23,11 +24,15 @@ export interface Overrides {
   getSnapshotDriver?: App["getSnapshotDriver"];
   snapshotAssets?: App["snapshotAssets"];
   sleep?: App["sleep"];
+  jwks?: App["jwks"];
 }
 
 /** Wires the pieces. Everything a test needs to control (clock, network, sandbox provider, database) is an override. */
 export function createApp(cfg: Config, o: Overrides = {}): App {
   let assets: Promise<SnapshotAssets> | undefined;
+  let jwks: JwksVerifier | null | undefined;
+  const cloud = cfg.cloudUrl?.replace(/\/+$/, "") ?? "";
+  const jwksUrl = cfg.cloudJwksUrl || (cloud ? `${cloud}/api/auth/jwks` : "");
   const app: App = {
     db: o.db ?? new Db(`${cfg.dataDir}/dorks.db`),
     cfg,
@@ -50,6 +55,7 @@ export function createApp(cfg: Config, o: Overrides = {}): App {
         throw e;
       })),
     sleep: o.sleep ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms))),
+    jwks: o.jwks ?? (() => (jwks ??= jwksUrl ? remoteJwks(jwksUrl, { issuer: cloud, fetch: app.fetch, now: app.now }) : null)),
   };
   return app;
 }

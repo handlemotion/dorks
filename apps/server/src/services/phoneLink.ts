@@ -2,6 +2,7 @@ import { hostname } from "node:os";
 import { fail, OWNER, touch, type App } from "../app";
 import { aad, decrypt, encrypt } from "../core/crypto";
 import { update } from "../db";
+import { FAILURE_MESSAGE, memberFromToken, runAs, serverOrg, teamAllowed, type Actor } from "./team";
 
 // The phone link (docs/mobile.md): the iPhone app reaches this server through the cloud relay. The server dials out to the relay
 // (like the bridge links, it opens no port), and runs each relayed request against its own UI API with the owner token, but only
@@ -13,6 +14,25 @@ const SILENT_MS = 70_000;
 const BACKOFF_START_MS = 1_000;
 const BACKOFF_MAX_MS = 30_000;
 const MAX_IN_FLIGHT = 64;
+/**
+ * What the cloud says of this server (docs/mobile.md, `PATCH /v1/mac`): the organization that owns it, and who paired it (the local
+ * owner's name and id for attribution, services/team.ts). A field the cloud does not send is kept as it was.
+ */
+function saveMac(app: App, r: { orgId?: unknown; pairedBy?: unknown }) {
+  const patch: Record<string, unknown> = {};
+  if (typeof r.orgId === "string" && r.orgId) patch.cloudOrgId = r.orgId;
+  const p = r.pairedBy as { id?: unknown; name?: unknown; email?: unknown } | undefined;
+  if (p && typeof p.id === "string" && p.id)
+    patch.cloudOwner = { id: p.id, name: typeof p.name === "string" ? p.name.slice(0, 80) : "", ...(typeof p.email === "string" ? { email: p.email.slice(0, 200) } : {}) };
+  const was = app.db.get<{ cloud_org_id: string | null; cloud_owner: string | null }>("SELECT cloud_org_id, cloud_owner FROM settings WHERE id = 1");
+  const same = (patch.cloudOrgId ?? was?.cloud_org_id) === was?.cloud_org_id && (patch.cloudOwner ? JSON.stringify(patch.cloudOwner) : was?.cloud_owner) === was?.cloud_owner;
+  if (same) return;
+  app.db.tx(() => {
+    update(app.db, "settings", { id: 1 }, patch);
+    touch(app, { t: "settings" });
+  });
+}
+
 /** The relay closes a socket whose Mac token was revoked with this code: the pairing is over. */
 const REVOKED = 4401;
 
@@ -76,19 +96,29 @@ export type Dial = (url: string, headers: Record<string, string>) => Socket;
 const defaultDial: Dial = (url, headers) => new WebSocket(url, { headers } as unknown as string[]) as unknown as Socket;
 
 const b64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64");
-const forbidden = JSON.stringify({ error: { code: "forbidden", message: "Not available from the phone" } });
+const refusal = (message: string) => JSON.stringify({ error: { code: "forbidden", message } });
+
+/**
+ * Who a relayed request is (services/team.ts): the member its `x-dorks-actor` token names, checked against the cloud's keys and this
+ * server's organization; with no token, the single owner's phone of docs/mobile.md, only while this server has no organization.
+ */
+async function relayActor(app: App, f: ReqFrame): Promise<{ actor: Actor } | { refuse: string }> {
+  const token = f.headers?.["x-dorks-actor"];
+  if (typeof token === "string" && token) {
+    const r = await memberFromToken(app, token);
+    return r.ok ? { actor: r.actor } : { refuse: FAILURE_MESSAGE[r.why] };
+  }
+  if (serverOrg(app)) return { refuse: "Sign in again: this server needs to know who you are." };
+  return { actor: { kind: "phone" } };
+}
+
+const allowedFor = (actor: Actor, method: string, path: string) => (actor.kind === "member" ? teamAllowed(actor.member.role, method, path) : relayAllowed(method, path));
 
 /**
  * Runs one relayed request against the UI API and streams the answer as frames. Exported for tests: `handle` is the UI app's fetch.
  */
-export async function serveRelayed(app: App, handle: (r: Request) => Response | Promise<Response>, f: ReqFrame, send: (o: object) => void, signal: AbortSignal) {
-  const url = new URL(f.path, "http://relay.local");
-  const method = f.method.toUpperCase();
-  if (!url.pathname.startsWith("/api/") || !relayAllowed(method, url.pathname)) {
-    send({ t: "head", id: f.id, status: 403, headers: { "content-type": "application/json" } });
-    send({ t: "chunk", id: f.id, data: b64(new TextEncoder().encode(forbidden)) });
-    return send({ t: "end", id: f.id });
-  }
+/** The request a relayed frame becomes against the UI API: the owner token, the frame's content type and accept, its body. */
+function innerRequest(app: App, f: ReqFrame, url: URL, method: string, signal: AbortSignal): Request {
   const headers: Record<string, string> = { authorization: `Bearer ${app.cfg.ownerToken}` };
   for (const k of ["content-type", "accept"]) {
     const v = f.headers?.[k];
@@ -97,7 +127,26 @@ export async function serveRelayed(app: App, handle: (r: Request) => Response | 
   const body = f.body && method !== "GET" && method !== "HEAD" ? Buffer.from(f.body, "base64") : undefined;
   // Images are served outside /api (an <img> cannot send the owner token); the relay only forwards /api, so map them back.
   const path = method === "GET" && /^\/api\/images\/[^/]+$/.test(url.pathname) ? url.pathname.slice(4) : url.pathname;
-  const res = await handle(new Request(`http://127.0.0.1${path}${url.search}`, { method, headers, body, signal }));
+  return new Request(`http://127.0.0.1${path}${url.search}`, { method, headers, body, signal });
+}
+
+/** The actor a relayed frame may run as, or why it may not. */
+async function admit(app: App, f: ReqFrame, method: string, pathname: string): Promise<{ actor: Actor } | { refuse: string }> {
+  const who = await relayActor(app, f);
+  if ("refuse" in who) return who;
+  return pathname.startsWith("/api/") && allowedFor(who.actor, method, pathname) ? who : { refuse: "Not available from here" };
+}
+
+export async function serveRelayed(app: App, handle: (r: Request) => Response | Promise<Response>, f: ReqFrame, send: (o: object) => void, signal: AbortSignal) {
+  const url = new URL(f.path, "http://relay.local");
+  const method = f.method.toUpperCase();
+  const who = await admit(app, f, method, url.pathname);
+  if ("refuse" in who) {
+    send({ t: "head", id: f.id, status: 403, headers: { "content-type": "application/json" } });
+    send({ t: "chunk", id: f.id, data: b64(new TextEncoder().encode(refusal(who.refuse))) });
+    return send({ t: "end", id: f.id });
+  }
+  const res = await handle(runAs(who.actor, innerRequest(app, f, url, method, signal)));
   const ct = res.headers.get("content-type");
   send({ t: "head", id: f.id, status: res.status, headers: ct ? { "content-type": ct } : {} });
   if (res.body) {
@@ -150,9 +199,9 @@ async function readPaired(app: App): Promise<Paired | null> {
   }
 }
 
-function savePaired(app: App, p: { macId: string; name: string; tokenEnc: string } | null) {
+function savePaired(app: App, p: { macId: string; name: string; tokenEnc: string; orgId?: string | null } | null) {
   app.db.tx(() => {
-    update(app.db, "settings", { id: 1 }, { cloudMacId: p?.macId ?? null, cloudMacName: p?.name ?? null, cloudMacTokenEnc: p?.tokenEnc ?? null });
+    update(app.db, "settings", { id: 1 }, { cloudMacId: p?.macId ?? null, cloudMacName: p?.name ?? null, cloudMacTokenEnc: p?.tokenEnc ?? null, cloudOrgId: p?.orgId ?? null, cloudOwner: null });
     touch(app, { t: "settings" });
   });
 }
@@ -225,6 +274,18 @@ export function startPhoneLink(app: App, handle: (r: Request) => Response | Prom
       .finally(() => inFlight.delete(key));
   };
 
+  /** Each time the link opens: which organization owns this server now (a Mac paired before teams learns it here). */
+  async function learnOrg() {
+    const p = paired;
+    if (!p || !cloud) return;
+    try {
+      const res = await app.fetch(`${cloud}/v1/mac`, { method: "PATCH", headers: { authorization: `Bearer ${p.token}`, "content-type": "application/json" }, body: "{}" });
+      if (res.ok && paired === p) saveMac(app, (await res.json()) as { orgId?: unknown; pairedBy?: unknown });
+    } catch {
+      /* an older relay, or unreachable for now: the next open asks again */
+    }
+  }
+
   function connect() {
     if (stopped || !paired || !cloud) return;
     drop();
@@ -238,6 +299,7 @@ export function startPhoneLink(app: App, handle: (r: Request) => Response | Prom
     ws = sock;
     sock.onopen = () => {
       failures = 0;
+      void learnOrg();
       lastSeen = app.now();
       setState("online");
       pinger = setInterval(() => {
@@ -279,13 +341,13 @@ export function startPhoneLink(app: App, handle: (r: Request) => Response | Prom
       const res = await app.fetch(`${cloud}/v1/pair/poll`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pairId: p.pairId, pollToken: p.pollToken }) });
       if (pairing !== p) return;
       if (res.status === 404) return cancelPair();
-      const r = (await res.json()) as { status: string; macId?: string; macToken?: string };
+      const r = (await res.json()) as { status: string; macId?: string; macToken?: string; orgId?: string };
       if (r.status === "claimed" && r.macId && r.macToken) {
         const name = macName();
         const tokenEnc = (await encrypt(app.ring, r.macToken, aad.cloudMacToken(OWNER))).value;
         // Reading the body and encrypting both yield: a Cancel or a newer pairing meanwhile wins over this answer.
         if (pairing !== p || stopped) return;
-        savePaired(app, { macId: r.macId, name, tokenEnc });
+        savePaired(app, { macId: r.macId, name, tokenEnc, orgId: typeof r.orgId === "string" ? r.orgId : null });
         paired = { macId: r.macId, name, token: r.macToken };
         pairing = null;
         failures = 0;

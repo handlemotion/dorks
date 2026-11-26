@@ -8,6 +8,7 @@ import { Markdown, type MarkdownImageProps } from '@dorks/ui/markdown'
 import { openContextMenu } from '../lib/contextMenu'
 import { HoverActions } from './message-actions/MessageActions'
 import { BuildDraftCard, BuildRunCard } from './BuildCards'
+import { SenderName } from './Teammates'
 import { REPLY_SOURCE, ReplyContext, ReplyQuote, SelectionReply, useReply, type ReplyHandlers } from './Reply'
 import { parseReply, quoteText } from '../lib/reply'
 import { ImageLightbox, ImageTrigger, useLightboxImages, type LightboxImage } from './ImageLightbox'
@@ -489,6 +490,8 @@ const UserEntry = memo(function UserEntry({ block, imageUrl }: { block: Extract<
     <MessageScrollerItem messageId={block.id} className="-mt-7 pt-10 pb-3">
       <Message align="end">
         <MessageContent className="items-end">
+          {/* Who sent it, on a team server (docs/cloud.md): nothing for your own messages. */}
+          <SenderName by={block.by} />
           {quoted && <ReplyQuote reply={quoted.kind === 'image' && quoted.ref ? { ...quoted, src: resolveRef(quoted.ref, imageUrl) } : quoted} />}
           {own.length > 0 && (
             <div className="flex flex-wrap justify-end gap-2">

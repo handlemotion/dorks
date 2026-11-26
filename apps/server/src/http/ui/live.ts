@@ -2,11 +2,16 @@ import { streamSSE } from "hono/streaming";
 import type { Change } from "../../app";
 import { errBody } from "../route";
 import { safeEqual, type Routes } from "./shared";
+import { allPresence, openStream, validClient } from "../../services/presence";
+import { actorOf } from "../../services/team";
 
 // ---- live updates (Server-Sent Events): invalidations, not payloads
 export const liveRoutes: Routes = (api, app) => {
   api.get("/api/live", (c) =>
     streamSSE(c, async (stream) => {
+      // `?client=<id>`: this tab or phone, for presence (services/presence.ts). Without one the stream still works, unseen.
+      const client = c.req.query("client");
+      const leave = validClient(client) ? openStream(app, actorOf(c), client) : undefined;
       const send = (o: object) => stream.writeSSE({ data: JSON.stringify(o) });
       let alive = true;
       // Every change is an invalidation, so a burst of the same one (a streaming answer, a dork patched field by field) is sent
@@ -31,15 +36,17 @@ export const liveRoutes: Routes = (api, app) => {
       };
       const off = app.hub.on((ch: Change) => {
         if (!alive || ch.t === "commands") return;
-        pending.set(ch.t === "events" ? `events:${ch.dorkId}` : JSON.stringify(ch), ch);
+        pending.set(ch.t === "events" ? `events:${ch.dorkId}` : ch.t === "presence" ? `presence:${ch.dorkId}` : JSON.stringify(ch), ch);
         flushTimer ??= setTimeout(() => void flush().catch(() => {}), 50);
       });
       stream.onAbort(() => {
         alive = false;
         off();
+        leave?.();
         clearTimeout(flushTimer);
       });
       await send({ t: "hello", now: app.now() });
+      for (const p of allPresence(app)) await send({ t: "presence", ...p });
       while (alive) {
         await stream.sleep(20_000);
         if (alive) await stream.write(": ping\n\n");

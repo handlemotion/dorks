@@ -26,6 +26,28 @@ export interface QueuedMessage {
   id: string;
   text: string;
   createdAt: number;
+  /** The teammate who queued it on a team server (docs/cloud.md); absent for the local owner. */
+  by?: Person;
+}
+
+/** A teammate, as the server names them in attribution and presence (docs/cloud.md). */
+export interface Person {
+  id: string;
+  name: string;
+}
+
+/** Who this client is to the server (`GET /api/me`): the local owner, the single-owner phone, or a member of the server's team. */
+export interface Me {
+  kind: "local" | "phone" | "member";
+  /** The member's dorks-cloud user id; null for the local owner. */
+  id: string | null;
+  name: string | null;
+  email: string | null;
+  role: "owner" | "admin" | "member";
+  org: string | null;
+  plan: "free" | "collab" | null;
+  /** The organization this server belongs to; null before it is part of one. */
+  serverOrg: string | null;
 }
 
 /** The client-visible dork row. Box ids, session ids and secrets are never returned by the server. */
@@ -75,6 +97,8 @@ export interface Dork {
   parentId?: string | null;
   /** A coordinator's emoji. */
   icon?: string;
+  /** The teammate who started it on a team server (docs/cloud.md); absent for the local owner, automations and older servers. */
+  createdBy?: Person;
   lastActivityAt: number;
   createdAt: number;
 }
@@ -295,7 +319,9 @@ export type LiveMessage =
   | { t: "snapshot" }
   | { t: "builds" }
   | { t: "build"; buildId: string }
-  | { t: "automations" };
+  | { t: "automations" }
+  /** Who is looking at a dork now (docs/cloud.md, "Presence"); sent after `hello` for every dork with viewers, then on each change. */
+  | { t: "presence"; dorkId: string; viewers: Person[] };
 
 export interface PrRefInput {
   repo: string;

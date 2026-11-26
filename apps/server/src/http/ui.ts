@@ -19,6 +19,7 @@ import { buildRoutes } from "./ui/builds";
 import { automationRoutes } from "./ui/automations";
 import { liveRoutes, simFeedRoutes } from "./ui/live";
 import { phoneRoutes } from "./ui/phone";
+import { teamRoutes } from "./ui/team";
 
 /** The loopback API the UI talks to (docs/architecture.md, "UI API"). Owner-token bearer auth on everything except /api/health. */
 export function uiApp(app: App): Hono {
@@ -68,6 +69,7 @@ export function uiApp(app: App): Hono {
     buildRoutes,
     automationRoutes,
     phoneRoutes,
+    teamRoutes,
     liveRoutes,
     simFeedRoutes,
   ])

@@ -27,6 +27,7 @@ import { useMarkRead } from '../../../lib/markRead'
 import { environmentOf, type Environment, type EnvironmentBuild } from '../../../components/EnvironmentPicker'
 import { withImages, Composer, preferredModel, type AgentProvider, type ModelPicker } from '../../../components/ChatComposer'
 import { ChatMenu } from '../../../components/ChatMenu'
+import { PresenceAvatars } from '../../../components/Teammates'
 import { UsageMenu } from '../../../components/UsageMenu'
 import { useMentions } from '../../../components/ComposerMenu'
 import { ArchiveButton, PageHeader } from '../../../components/PageHeader'
@@ -530,6 +531,7 @@ function Thread({ dorkId }: { dorkId: string }) {
             titleActions={<ArchiveButton archived={dork.archived} disabled={archiving} onClick={() => void runArchive(() => archiveDork(dorkId, !dork.archived))} />}
             actions={
               <>
+                <PresenceAvatars dorkId={dorkId} />
                 <ChatMenu
                   prUrl={dork.prUrl}
                   detailsOpen={detailsOpen}

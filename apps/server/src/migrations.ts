@@ -612,4 +612,18 @@ export const MIGRATIONS: string[] = [
   -- build that follows the owner approving its draft. NULL: an owner's run, shown on the Builds page only.
   ALTER TABLE build_runs ADD COLUMN dork_id TEXT;
   `,
+  `
+  -- Teams (services/team.ts, docs/cloud.md): the dorks-cloud organization this server belongs to, and who did what. \`created_by\`,
+  -- \`sent_by\`, \`run_by\`: JSON {id, name, email?} of the teammate who started the session, queued the message or ran the automation; NULL for the
+  -- local owner, and for what a schedule or an event started.
+  ALTER TABLE settings ADD COLUMN cloud_org_id TEXT;
+  ALTER TABLE dorks ADD COLUMN created_by TEXT;
+  ALTER TABLE queued_messages ADD COLUMN sent_by TEXT;
+  ALTER TABLE automation_runs ADD COLUMN run_by TEXT;
+  `,
+  `
+  -- Who paired this server, as the cloud names them (\`PATCH /v1/mac\` pairedBy, JSON {id, name, email?}): the local owner in
+  -- attribution and presence (services/team.ts).
+  ALTER TABLE settings ADD COLUMN cloud_owner TEXT;
+  `,
 ];

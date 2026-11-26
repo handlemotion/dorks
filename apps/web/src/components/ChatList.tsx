@@ -14,6 +14,8 @@ import { DorkIcon, dorkIconState, type DorkIconState } from './DorkIcon'
 import { SIDEBAR_ROW } from './sidebarChrome'
 import { PrIcon, prStatus } from './PrStatus'
 import { STAGE_ICON } from './ShipCard'
+import { PersonAvatar, selfId, useOptionalMe } from './Teammates'
+import type { Person } from '@dorks/client'
 
 export type PrState = SubscriptionView['state']
 
@@ -42,6 +44,8 @@ export type Chat = {
   mode?: DorkMode
   /** A worker's coordinator: workers live inside their dork, not in the sidebar. */
   parentId?: string | null
+  /** The teammate who started it, on a team server (docs/cloud.md). */
+  createdBy?: Person
 }
 
 type RoutesByPath = RegisteredRouter['routesByPath']
@@ -148,6 +152,9 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
   const router = useRouter()
   const iconState = dorkIconState(chat.state, { working: chat.working, attention: chat.attention, unread: chat.unread })
   const iconLabel = ICON_LABEL[iconState]
+  const me = useOptionalMe()
+  // Someone else started it (a teammate, docs/cloud.md): their initials end the title.
+  const starter = chat.createdBy && chat.createdBy.id !== selfId(me) ? chat.createdBy : undefined
   const prs = chat.prs ?? []
   const shipping = prs.some((p) => p.ship?.status === 'watching')
   // Room for the PRs (and the spinner) at the right edge, and for the archive button beside them on hover. Literal, for Tailwind.
@@ -191,7 +198,7 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
         role="link"
         draggable={false}
         data-working={chat.working || undefined}
-        title={chat.title}
+        title={starter ? `${chat.title} · started by ${starter.name}` : chat.title}
         className={`${SIDEBAR_ROW} ${pad}`}
       >
         {chat.icon ? (
@@ -202,6 +209,7 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
           <DorkIcon size={14} state={iconState} label={iconLabel} nerd={chat.mode === 'nerd'} />
         )}
         <span className="min-w-0 flex-1 truncate">{chat.title}</span>
+        {starter && <PersonAvatar person={starter} size="xs" />}
       </Link>
       {prs.length > 0 && <PrBadge prs={prs} shipping={shipping} className={onArchive ? 'group-hover/row:right-8' : ''} onClick={() => void router.navigate({ to, search: { dork: chat.id } })} />}
       {onArchive && (
