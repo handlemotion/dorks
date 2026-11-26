@@ -93,7 +93,8 @@ of the build it works on. A nerd can also read and leave notes for the owner's o
   notes are folded lines in the transcript ("Report from …") that open on the whole text.
 - **Dork details** (`CrewDetails`) replace Chat details: **Sessions** (its workers: state, title, repository, PR), **Artifacts** (the
   screenshots and previews of the dork and every worker) and one tab per worker pull request, the PR view alone (a dork has no local
-  changes).
+  changes). The tabs work as Chat details' do (`useOpenTabs`, remembered per dork): each closes, "+" opens a New tab that indexes the
+  crew's PRs, Sessions and Artifacts, so a closed PR comes back from there. No Files or Computer: a dork has neither.
 - **A worker opens in place**, inside Sessions: a full-width bar (its state and title; open full screen, stop, archive, close) over its
   chat, which the owner can talk in.
 - **Full screen** is the worker's own page with its own Chat details. The header starts with a crumb back to the dork, and the sidebar
