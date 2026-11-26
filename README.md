@@ -48,7 +48,7 @@ Real sandboxes need nothing extra on your machine: the server dials each sandbox
 
 ## Quickstart from the app
 
-On a Mac with Apple silicon (M1 or later): download the `.dmg` from the [latest release](https://github.com/handlemotion/dorks/releases/latest), drag Dorks to Applications, open it, and follow the setup screen. It updates itself from then on. Building the app yourself: [docs/desktop.md](docs/desktop.md).
+On a Mac with Apple silicon (M1 or later): [download Dorks](https://dorks.build/download), drag Dorks to Applications, open it, and follow the setup screen. It updates itself from then on. Building the app yourself: [docs/desktop.md](docs/desktop.md).
 
 ## Develop
 
