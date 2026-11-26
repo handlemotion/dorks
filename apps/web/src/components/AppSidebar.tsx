@@ -167,7 +167,7 @@ function WorkspaceSwitcher({ workspace, onChange }: { workspace: AppWorkspace; o
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger
         aria-label={`Switch workspace, currently ${current.label}`}
-        className="flex h-[30px] min-w-0 shrink items-center gap-1 rounded-[6px] px-2 text-sm text-muted-foreground outline-none hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring aria-expanded:bg-foreground/[0.05] aria-expanded:text-foreground"
+        className="flex h-6 min-w-0 shrink items-center gap-0.5 rounded-[6px] px-1.5 text-sm text-muted-foreground outline-none hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring aria-expanded:bg-foreground/[0.05] aria-expanded:text-foreground"
       >
         <span className="min-w-0 truncate">{current.label}</span>
         <ChevronDownIcon aria-hidden className="size-3 shrink-0" />
