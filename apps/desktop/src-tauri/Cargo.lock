@@ -841,7 +841,7 @@ dependencies = [
 
 [[package]]
 name = "dorks-desktop"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "dorks-shell-core",
  "objc2",
