@@ -27,7 +27,7 @@ import { instanceId } from "../lib/box";
 import { append, dispatch, enqueue } from "../lifecycle/dispatch";
 import { getDork } from "../data";
 import { readSettings, MAX_SECRET_BYTES } from "./settings";
-import { runViewOf, type RunRow } from "./buildRuns";
+import { announce, runViewOf, type RunRow } from "./buildRuns";
 
 // Builds (docs/builds.md): named machine setups. A build's image is a Boat saved snapshot layered on the base snapshot; the run that
 // makes it lives in buildRuns.ts. This file owns the definition, its variables, and agents' drafts.
@@ -266,7 +266,10 @@ export function updateBuild(app: App, buildId: string, input: Record<string, unk
 export function deleteBuild(app: App, buildId: string) {
   app.db.tx(() => {
     const b = ownBuild(app, buildId);
+    const active = app.db.all<{ id: string }>("SELECT id FROM build_runs WHERE build_id = ? AND status IN ('queued', 'running')", buildId);
     app.db.run("UPDATE build_runs SET status = 'cancelled', finished_at = ? WHERE build_id = ? AND status IN ('queued', 'running')", app.now(), buildId);
+    // The chat cards of those runs say they stopped, before the rows go with the build (nothing can update them after).
+    for (const r of active) announce(app, r.id);
     app.db.run("DELETE FROM builds WHERE id = ?", buildId);
     app.db.run("UPDATE settings SET default_build_id = NULL WHERE id = 1 AND default_build_id = ?", buildId);
     if (b.image) app.db.run("INSERT OR REPLACE INTO timers (owner, name, due_at, payload) VALUES ('', ?, ?, ?)", `build:forget:${b.image}`, app.now(), JSON.stringify({ image: b.image, attempt: 0 }));

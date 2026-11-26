@@ -247,7 +247,7 @@ local RPC method, `build`, that forwards it. No secret ever crosses the socket.
 **In the chat** the build shows as cards, so the owner follows it without opening the Builds page
 (`apps/web/src/components/BuildCards.tsx`): the submitted change (the agent's note, a short scrollable diff of the setup script and one
 row per repository, service, variable or size it changes, taken when it submitted, because the build is the draft once approved), and
-each run of the session as a card of its steps (the agent's `machine_run` calls). Approving turns the change's own card into the image
+an image build the agent starts as a card of its steps (a trial stays its `machine_run` tool row). Approving turns the change's own card into the image
 build's steps (the client folds that `build_run` into the approved `build` block), with an animated switch.
 The server appends a `build_run` event at each step of a run with a `dork_id` (`announce` in `services/buildRuns.ts`); an owner's own
 runs show on the Builds page only.

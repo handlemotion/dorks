@@ -330,8 +330,8 @@ function toolRun(blocks: AgentBlock[], start: number): ToolBlock[] {
  */
 const OWN_ROW_TOOLS = /^mcp__dorks__(local_run|local_read|local_wait|input_request|input_wait)$/
 
-/** Machine calls whose card says it (`BuildDraftCard`, `BuildRunCard`): hidden from the tool line once they worked and the card is there. */
-const CARD_TOOLS: Record<string, AgentBlock['kind']> = { mcp__dorks__machine_submit: 'build', mcp__dorks__machine_run: 'buildRun' }
+/** Machine calls whose card says it (`BuildDraftCard`): hidden from the tool line once they worked and the card is there. */
+const CARD_TOOLS: Record<string, AgentBlock['kind']> = { mcp__dorks__machine_submit: 'build' }
 
 function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => void): ReactNode[] {
   const content: ReactNode[] = []
@@ -355,7 +355,8 @@ function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => vo
       // A machine change the agent submitted, with a short diff; then each build run of the session as a card of its steps.
       content.push(<BuildDraftCard key={block.id} block={block} />)
     } else if (block.kind === 'buildRun') {
-      content.push(<BuildRunCard key={block.id} block={block} />)
+      // An image build the agent started itself (a rebuild of the approved machine); a trial is only its tool row, "Used machine run".
+      if (block.run.kind === 'image') content.push(<BuildRunCard key={block.id} block={block} />)
     } else if (block.kind === 'local') {
       // The agent asked to use the owner's computer (docs/local-access.md): the session's one access card, then a line per command.
       content.push(<LocalRequestCard key={block.id} block={block} />)

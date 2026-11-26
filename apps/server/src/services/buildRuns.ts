@@ -116,7 +116,7 @@ const announced = new WeakMap<App, Map<string, string>>();
  * Shows the run's state in its session's chat (a `build_run` event; the card updates in place). Call after every change to a run, in
  * its transaction. Nothing for an owner's own run, or once the session is gone.
  */
-function announce(app: App, runId: string) {
+export function announce(app: App, runId: string) {
   const r = getRun(app, runId);
   if (!r?.dork_id) return;
   const dork = getDork(app.db, r.dork_id);

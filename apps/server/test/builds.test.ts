@@ -190,7 +190,11 @@ describe("agents", () => {
     await h.settle();
 
     submitDraft(h.app, dork, "doppler for secrets");
+    // A run still going when its build is deleted: its chat card ends cancelled, not stuck on running.
+    const live = startRunForDork(h.app, dork, "trial");
     rejectDraft(h.app, id, draft.id, "not now");
+    const last = h.events(dork).findLast((e) => e.body.type === "build_run" && e.body.run.id === live.id)?.body;
+    expect(last).toMatchObject({ run: { status: "cancelled" } });
     expect(getBuild(h.app, id)).toBeUndefined();
     expect(h.app.db.get<{ build_id: string | null }>("SELECT build_id FROM dorks WHERE id = ?", dork)!.build_id).toBeNull();
     expect(h.cmds(dork).some((c) => c.kind === "user_message" && c.text?.includes("back on the base machine"))).toBe(true);

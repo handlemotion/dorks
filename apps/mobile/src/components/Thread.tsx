@@ -62,6 +62,13 @@ function ToolLine({ tools }: { tools: ToolBlock[] }) {
   );
 }
 
+/** An image build the agent started; a trial is only its tool row. */
+function RunLine({ run }: { run: Extract<AgentBlock, { kind: "buildRun" }>["run"] }) {
+  const c = useColors();
+  if (run.kind === "trial") return null;
+  return <Line icon="hammer" text={`Building the machine ${run.buildName}: ${run.status}`} color={run.status === "failed" ? c.danger : undefined} />;
+}
+
 /** Everything but the user's messages and the agent's words, as one line each. */
 function OtherBlock({ block }: { block: AgentBlock }) {
   const c = useColors();
@@ -77,13 +84,7 @@ function OtherBlock({ block }: { block: AgentBlock }) {
     case "build":
       return <Line icon="shippingbox" text={`Machine change: ${block.buildName}${block.approved === null ? "" : block.approved ? " (approved)" : " (rejected)"}`} />;
     case "buildRun":
-      return (
-        <Line
-          icon="hammer"
-          text={`${block.run.kind === "image" ? "Building the image" : "Trial run"} of ${block.run.buildName}: ${block.run.status}`}
-          color={block.run.status === "failed" ? c.danger : undefined}
-        />
-      );
+      return <RunLine run={block.run} />;
     case "local":
       return <Line icon="desktopcomputer" text={`Asked to use your Mac: ${block.command ?? block.path ?? block.reason} (${block.status})`} />;
     case "input":
