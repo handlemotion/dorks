@@ -10,6 +10,9 @@ import { formatSize, RELEASES_URL, type MacRelease } from "#/lib/release";
 import { cn } from "#/lib/utils";
 import { DOWNLOAD_URL, DownloadDetails, downloadTitle, useMacRelease } from "./Download";
 
+/** A barely-there float: up a hair and a touch larger on hover, settles back and slightly in on press. */
+const FLOAT = { whileHover: { scale: 1.006, y: -1 }, whileTap: { scale: 0.992, y: 0 } };
+
 const GITHUB_URL = "https://github.com/handlemotion/dorks";
 const LOGIN_URL = "https://app.dorks.build";
 
@@ -189,9 +192,9 @@ export function Hero({ release: built }: { release: MacRelease | null }) {
               </h1>
             </div>
 
-            <div className="flex flex-col items-center gap-6">
+            <div className="flex flex-col items-center gap-5">
               <div className="flex flex-wrap items-center justify-center gap-2.5">
-                <PressScale asChild>
+                <PressScale asChild {...FLOAT}>
                   <div className="inline-flex h-9 items-center rounded-full bg-white outline-2 outline-offset-2 outline-transparent transition-[outline-color] duration-150 has-[:focus-visible]:outline-white/80">
                     <Button variant="splitPrimary" size="splitMain" nativeButton={false} title={downloadTitle(release)} render={<a href={DOWNLOAD_URL} />}>
                       <AppleIcon className="-mt-0.5" />
@@ -220,7 +223,7 @@ export function Hero({ release: built }: { release: MacRelease | null }) {
                   </div>
                 </PressScale>
 
-                <PressScale asChild>
+                <PressScale asChild {...FLOAT}>
                   <Button variant="glass" size="default" nativeButton={false} render={<a href={LOGIN_URL} />}>
                     Log In
                   </Button>
