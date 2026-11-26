@@ -14,7 +14,7 @@ import { PrIcon, type PrStatusState } from './PrStatus'
 import { Artifacts } from './chat-details/Artifacts'
 import { NewTab } from './chat-details/NewTab'
 import { sessionPrs, stackOf, stackRoot } from './chat-details/prStack'
-import { PANEL_LABEL, type ChatDetailsData, type Panel, type TabKey } from './chat-details/types'
+import { PANEL_LABEL, PANELS, type ChatDetailsData, type Panel, type TabKey } from './chat-details/types'
 import { useOpenTabs } from './chat-details/useOpenTabs'
 
 const PANEL_ICON: Record<Panel, ReactNode> = { progress: <ActivityIcon />, artifacts: <LayersIcon />, changes: <GitPullRequestIcon />, files: <FolderTreeIcon />, computer: <MonitorIcon /> }
@@ -140,7 +140,7 @@ export function ChatDetails({
           prs={prs}
           artifacts={data.artifacts ?? []}
           previews={data.previews ?? []}
-          hidePanel={(p) => p === 'changes' && prs.length > 0}
+          panels={PANELS.filter((p) => !(p === 'changes' && prs.length > 0))}
           panelLabel={(p) => PANEL_LABEL[p]}
           panelIcon={(p) => PANEL_ICON[p]}
           onOpen={(target) => tabs.replace(key, target)}

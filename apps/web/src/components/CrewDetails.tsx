@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useDork, useDorks, useDorksClient, usePullRequest } from '@dorks/client/react'
-import { ArchiveIcon, LayersIcon, Maximize2Icon, PanelLeftIcon, SquareIcon, UsersIcon, XIcon } from 'lucide-react'
+import { ArchiveIcon, LayersIcon, Maximize2Icon, PanelLeftIcon, PlusIcon, SearchIcon, SquareIcon, UsersIcon, XIcon } from 'lucide-react'
 import { Button } from '@dorks/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@dorks/ui/tabs'
+import { Tabs, TabsContent, TabsList } from '@dorks/ui/tabs'
 import { toast } from 'sonner'
 import { Artifacts } from './chat-details/Artifacts'
+import { NewTab } from './chat-details/NewTab'
+import type { IndexPr } from './chat-details/prStack'
 import type { Artifact } from './chat-details/types'
+import { useOpenTabs, type TabsConfig } from './chat-details/useOpenTabs'
 import { EmptyState } from './EmptyState'
 import { DorkIcon, dorkIconState } from './DorkIcon'
 import { BAR_BUTTON, PreviewBrowser, type PreviewServer } from './PreviewBrowser'
 import { PrIcon, prStatus } from './PrStatus'
-import { PullRequestPanel, TAB_CLASS, type PullRequestPanelData } from './PullRequestPanel'
+import { PullRequestPanel, type PullRequestPanelData } from './PullRequestPanel'
 import { OpenTab } from './ChatDetails'
 import { SessionChat, type DorkView } from './SessionChat'
 import { Tip } from './Tip'
@@ -19,79 +22,155 @@ import { setDraft } from '../lib/draft'
 import { THUMB_WIDTH } from '../lib/images'
 
 type Worker = NonNullable<ReturnType<typeof useDorks>>[number]
-type TabKey = 'sessions' | 'artifacts' | `pr:${string}`
+type CrewPanel = 'sessions' | 'artifacts'
+/** An open tab: a panel, a worker's pull request (by url) or a New tab, as in Chat details. */
+type CrewTabKey = CrewPanel | `pr:${string}` | `new:${string}`
+
+const CREW_PANELS: CrewPanel[] = ['sessions', 'artifacts']
+const CREW_LABEL: Record<CrewPanel, string> = { sessions: 'Sessions', artifacts: 'Artifacts' }
+const CREW_ICON: Record<CrewPanel, ReactNode> = { sessions: <UsersIcon />, artifacts: <LayersIcon /> }
+/** A dork opens its details on Sessions and Artifacts; each worker's PR gets its tab as it opens. Remembered per dork. */
+const CREW_TABS: TabsConfig<CrewTabKey> = {
+  storageKey: 'dorks.crew-details-tabs.',
+  panels: CREW_PANELS,
+  initial: () => ({ keys: ['sessions', 'artifacts'], selected: 'sessions' }),
+}
 
 const STATE_LABEL: Record<string, string> = { creating: 'Starting', working: 'Working', waking: 'Waking', idle: 'Done', sleeping: 'Asleep', error: 'Failed' }
 const prNumber = (url: string) => Number(/\/pull\/(\d+)/.exec(url)?.[1]) || undefined
-
-/** The PR tabs the owner closed, by dork: their URLs, kept in localStorage. A worker's next PR has a new URL, so it opens a tab again. */
-const CLOSED_KEY = 'dorks.crew-closed-prs.'
-function readClosed(dorkId: string): Set<string> {
-  try {
-    const v: unknown = JSON.parse(localStorage.getItem(CLOSED_KEY + dorkId) ?? '[]')
-    return new Set(Array.isArray(v) ? v.filter((u): u is string => typeof u === 'string') : [])
-  } catch {
-    return new Set()
-  }
-}
-function useClosedPrs(dorkId: string): [Set<string>, (url: string) => void] {
-  const [closed, setClosed] = useState(() => readClosed(dorkId))
-  useEffect(() => setClosed(readClosed(dorkId)), [dorkId])
-  const close = (url: string) =>
-    setClosed((prev) => {
-      const next = new Set(prev).add(url)
-      try {
-        localStorage.setItem(CLOSED_KEY + dorkId, JSON.stringify([...next]))
-      } catch {
-        // Storage full or disabled: closed for as long as the app runs.
-      }
-      return next
-    })
-  return [closed, close]
-}
+const repoOf = (url: string) => /github\.com\/([^/]+\/[^/]+)\/pull\//.exec(url)?.[1]
 
 /** A dork's open worker, remembered per dork for the page's life (switching tabs or chats keeps it). */
 const openWorker = new Map<string, string>()
 
 /**
- * A dork's details (docs/crew.md): what its crew is doing, instead of one session's work. Tabs, browser-like as in Chat details but
- * fixed: Sessions (its workers; one opens in place, with its own chat), Artifacts (everything the crew produced) and one tab per pull
- * request a worker opened, the PR view alone (no local changes: a dork writes no code). Same 40px bar and 6px tabs as Chat details.
+ * A dork's details (docs/crew.md): what its crew is doing, instead of one session's work. Tabs work as in Chat details (each closable,
+ * "+" for a New tab, an index that reopens any of them), over the crew's own panels: Sessions (its workers; one opens in place, with
+ * its own chat), Artifacts (everything the crew produced) and one tab per pull request a worker opened, the PR view alone (no local
+ * changes: a dork writes no code). No Files or Computer: those are a coding session's. Same 48px bar and 6px tabs as Chat details.
  */
 export function CrewDetails({ dork, onClose, onAsk }: { dork: DorkView; onClose?: () => void; onAsk?: (text: string) => void }) {
   const all = useDorks(false)
   const workers = (all ?? []).filter((d) => d.parentId === dork.id)
-  const [closedPrs, closePr] = useClosedPrs(dork.id)
-  const prs = workers.flatMap((w) => (w.prUrl && !closedPrs.has(w.prUrl) ? [{ worker: w, url: w.prUrl }] : []))
-  const [tab, setTab] = useState<TabKey>('sessions')
+  const { actions } = useDorksClient()
+  const tabs = useOpenTabs<CrewTabKey>(dork.id, CREW_TABS)
+  // One per PR: two workers can hold the same PR (one picked up another's), and it gets one tab.
+  const prs: IndexPr[] = []
+  for (const w of workers) if (w.prUrl && !prs.some((p) => p.url === w.prUrl)) prs.push({ url: w.prUrl, title: w.title, repo: repoOf(w.prUrl), number: prNumber(w.prUrl), state: w.prState, depth: 0 })
+  const workerOf = (url: string) => workers.find((w) => w.prUrl === url)
+  // Every PR a worker opens gets its tab, once: one the owner closed stays closed, and opens again from a New tab.
+  const prKey = prs.map((p) => p.url).join(' ')
+  const { openNewPrs } = tabs
+  useEffect(() => {
+    if (all !== undefined) openNewPrs(prKey ? prKey.split(' ') : [])
+  }, [all, prKey, openNewPrs])
   const [open, setOpenState] = useState<string | undefined>(() => openWorker.get(dork.id))
   const setOpen = (id: string | undefined) => {
     if (id) openWorker.set(dork.id, id)
     else openWorker.delete(dork.id)
     setOpenState(id)
   }
-  // A PR tab whose worker went away (archived) or that was closed falls back to Sessions.
-  const selected: TabKey = tab.startsWith('pr:') && !prs.some((p) => `pr:${p.worker.id}` === tab) ? 'sessions' : tab
+  const [preview, setPreview] = useState<string>()
+  const { artifacts, previews } = crewArtifacts(dork, workers, actions.imageUrl)
+
+  const label = (key: CrewTabKey): { icon: ReactNode; text: ReactNode; title: string } => {
+    if (key.startsWith('new:')) return { icon: <SearchIcon />, text: 'New tab', title: 'New tab' }
+    if (key.startsWith('pr:')) {
+      const url = key.slice(3)
+      const worker = workerOf(url)
+      const number = prNumber(url)
+      const text = number ? `#${number}` : 'Pull request'
+      return { icon: <PrIcon state={worker?.prState} />, text: <span className="tabular-nums">{text}</span>, title: worker?.title ?? text }
+    }
+    const panel = key as CrewPanel
+    if (panel === 'sessions')
+      return {
+        icon: CREW_ICON.sessions,
+        text: (
+          <>
+            Sessions
+            {workers.length > 0 && <span className="ml-1.5 text-muted-foreground tabular-nums">{workers.length}</span>}
+          </>
+        ),
+        title: 'Sessions',
+      }
+    return { icon: CREW_ICON[panel], text: CREW_LABEL[panel], title: CREW_LABEL[panel] }
+  }
+
+  const panel = (key: CrewTabKey) => {
+    if (key.startsWith('new:'))
+      return (
+        <NewTab
+          prs={prs}
+          artifacts={artifacts}
+          previews={previews}
+          panels={CREW_PANELS}
+          panelLabel={(p) => CREW_LABEL[p]}
+          panelIcon={(p) => CREW_ICON[p]}
+          onOpen={(target) => tabs.replace(key, target)}
+          onOpenPreview={(s) => {
+            setPreview(s.url)
+            tabs.replace(key, 'artifacts')
+          }}
+        />
+      )
+    if (key.startsWith('pr:')) {
+      const url = key.slice(3)
+      const worker = workerOf(url)
+      // A worker that moved on to another PR, or was archived: the PR's link, without a live read.
+      if (!worker)
+        return (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <PullRequestPanel changes={[]} pr={{ url, number: prNumber(url) }} />
+          </div>
+        )
+      return (
+        <WorkerPr
+          worker={worker}
+          onAsk={(text) => {
+            // The PR's next step ("Resolve conflicts", "Fix checks") is for the worker that owns it: its composer, opened in place.
+            setDraft(worker.id, text)
+            setOpen(worker.id)
+            tabs.open('sessions')
+          }}
+        />
+      )
+    }
+    if (key === 'artifacts') {
+      const shown = previews.find((p) => p.url === preview)
+      if (shown) return <PreviewBrowser server={shown} onBack={() => setPreview(undefined)} />
+      return (
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <Artifacts artifacts={artifacts} changes={[]} previews={previews} onOpenChanges={() => {}} onOpenPreview={(s) => setPreview(s.url)} />
+        </div>
+      )
+    }
+    return open && workers.some((w) => w.id === open) ? (
+      <WorkerPanel id={open} dork={dork} onClose={() => setOpen(undefined)} />
+    ) : (
+      <Sessions workers={workers} loading={all === undefined} onOpen={setOpen} onAsk={onAsk} />
+    )
+  }
+
   return (
     <aside aria-label="Dork details" data-details-panel className="flex h-full min-h-0 min-w-0 flex-col border-l border-border [--details-edge:10px] [--details-text:18px]">
-      <Tabs value={selected} onValueChange={(v) => setTab(v as TabKey)} className="min-h-0 min-w-0 flex-1 gap-0">
+      <Tabs value={tabs.selected} onValueChange={(v) => tabs.select(v as CrewTabKey)} className="min-h-0 min-w-0 flex-1 gap-0">
         {/* 48px, matching PageHeader and ChatDetails: labels sit on the chat title's 24px line and the bottom hairline meets the chat header's. */}
         <div data-tauri-drag-region className="flex h-12 min-w-0 shrink-0 items-center gap-0.5 border-b border-border px-(--details-edge)">
           <TabsList className="h-7! min-w-0 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none]">
-            <TabsTrigger value="sessions" className={TAB_CLASS}>
-              <UsersIcon />
-              Sessions
-              {workers.length > 0 && <span className="text-muted-foreground tabular-nums">{workers.length}</span>}
-            </TabsTrigger>
-            <TabsTrigger value="artifacts" className={TAB_CLASS}>
-              <LayersIcon />
-              Artifacts
-            </TabsTrigger>
-            {prs.map(({ worker, url }) => (
-              <OpenTab key={worker.id} value={`pr:${worker.id}`} icon={<PrIcon state={worker.prState} />} title={worker.title} onClose={() => closePr(url)}>
-                <span className="tabular-nums">#{prNumber(url)}</span>
-              </OpenTab>
-            ))}
+            {tabs.keys.map((key) => {
+              const { icon, text, title } = label(key)
+              return (
+                <OpenTab key={key} value={key} icon={icon} title={title} onClose={() => tabs.close(key)}>
+                  {text}
+                </OpenTab>
+              )
+            })}
+            <Tip label="New tab">
+              <Button variant="ghost" size="icon-sm" className={`shrink-0 ${BAR_BUTTON} size-7!`} aria-label="New tab" onClick={tabs.add}>
+                <PlusIcon />
+              </Button>
+            </Tip>
           </TabsList>
           {onClose && (
             <Tip label="Hide dork details">
@@ -101,27 +180,9 @@ export function CrewDetails({ dork, onClose, onAsk }: { dork: DorkView; onClose?
             </Tip>
           )}
         </div>
-        <TabsContent value="sessions" className="flex min-h-0 flex-col">
-          {open && workers.some((w) => w.id === open) ? (
-            <WorkerPanel id={open} dork={dork} onClose={() => setOpen(undefined)} />
-          ) : (
-            <Sessions workers={workers} loading={all === undefined} onOpen={setOpen} onAsk={onAsk} />
-          )}
-        </TabsContent>
-        <TabsContent value="artifacts" className="flex min-h-0 flex-col">
-          <CrewArtifacts dork={dork} workers={workers} />
-        </TabsContent>
-        {prs.map(({ worker }) => (
-          <TabsContent key={worker.id} value={`pr:${worker.id}`} className="flex min-h-0 flex-col">
-            <WorkerPr
-              worker={worker}
-              onAsk={(text) => {
-                // The PR's next step ("Resolve conflicts", "Fix checks") is for the worker that owns it: its composer, opened in place.
-                setDraft(worker.id, text)
-                setOpen(worker.id)
-                setTab('sessions')
-              }}
-            />
+        {tabs.keys.map((key) => (
+          <TabsContent key={key} value={key} className="flex min-h-0 flex-col">
+            {panel(key)}
           </TabsContent>
         ))}
       </Tabs>
@@ -244,29 +305,22 @@ function BarAction({ label, onClick, children }: { label: string; onClick: () =>
 }
 
 /** Everything the crew produced: the dork's and each worker's screenshots and running previews, named by the session they came from. */
-function CrewArtifacts({ dork, workers }: { dork: DorkView; workers: Worker[] }) {
-  const { actions } = useDorksClient()
-  const [preview, setPreview] = useState<string>()
+function crewArtifacts(dork: DorkView, workers: Worker[], imageUrl: (id: string, width?: number) => string): { artifacts: Artifact[]; previews: PreviewServer[] } {
   const sessions = [dork, ...workers]
   const artifacts: Artifact[] = sessions.flatMap((s) =>
     (s.images ?? []).map((i, n) => ({
       id: i.id,
+      imageId: i.id,
       name: `${s.title} · ${i.caption ?? `Screenshot ${n + 1}`}`,
       type: 'Screenshot',
-      src: actions.imageUrl(i.id),
-      thumb: actions.imageUrl(i.id, THUMB_WIDTH),
+      src: imageUrl(i.id),
+      thumb: imageUrl(i.id, THUMB_WIDTH),
       width: i.width,
       height: i.height,
     })),
   )
   const previews: PreviewServer[] = sessions.flatMap((s) => (s.previews ?? []).map((p) => ({ name: `${s.title} · ${p.title ?? `Port ${p.port}`}`, url: p.url, port: p.port })))
-  const open = previews.find((p) => p.url === preview)
-  if (open) return <PreviewBrowser server={open} onBack={() => setPreview(undefined)} />
-  return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <Artifacts artifacts={artifacts} changes={[]} previews={previews} onOpenChanges={() => {}} onOpenPreview={(s) => setPreview(s.url)} />
-    </div>
-  )
+  return { artifacts, previews }
 }
 
 /** A worker's pull request, read live from GitHub as in Chat details, with its merge and branch update. No local changes. Its asks ("Resolve conflicts") go to the worker. */

@@ -7,7 +7,7 @@ import { port, type PreviewServer } from '../PreviewBrowser'
 import { Stat } from '../PullRequestPanel'
 import { PrIcon } from '../PrStatus'
 import type { IndexPr } from './prStack'
-import { PANEL_LABEL, PANELS, type Artifact, type Panel, type TabKey } from './types'
+import type { Artifact } from './types'
 
 /** A 30px row in the New tab: an icon and a label, the hover fill of the bar's buttons. */
 const INDEX_ROW =
@@ -17,11 +17,11 @@ const INDEX_ROW =
  * A New tab: an index of what the session holds. A search box filters the pull requests, artifacts and panels below by name; each
  * opens in this tab's place. Sections with nothing in them are left out.
  */
-export function NewTab({
+export function NewTab<P extends string>({
   prs,
   artifacts,
   previews,
-  hidePanel,
+  panels,
   panelLabel,
   panelIcon,
   onOpen,
@@ -30,10 +30,10 @@ export function NewTab({
   prs: IndexPr[]
   artifacts: Artifact[]
   previews: PreviewServer[]
-  /** Panels another section already lists (the local diff, once the PRs have their own rows). */ hidePanel: (p: Panel) => boolean
-  panelLabel: (p: Panel) => string
-  panelIcon: (p: Panel) => ReactNode
-  onOpen: (target: TabKey) => void
+  /** The panels to list under Tools (without those another section already lists, such as the local diff once PRs have rows). */ panels: P[]
+  panelLabel: (p: P) => string
+  panelIcon: (p: P) => ReactNode
+  onOpen: (target: P | `pr:${string}`) => void
   onOpenPreview: (server: PreviewServer) => void
 }) {
   const [query, setQuery] = useState('')
@@ -43,11 +43,11 @@ export function NewTab({
   const shownPrs = prs.filter((p) => match(p.title, p.repo, p.number ? `#${p.number}` : undefined))
   const shownPreviews = previews.filter((s) => match(s.name))
   const shownArtifacts = artifacts.filter((a) => (a.src || a.href) && match(a.name, a.type))
-  const shownPanels = PANELS.filter((p) => !hidePanel(p) && match(PANEL_LABEL[p], panelLabel(p)))
+  const shownPanels = panels.filter((p) => match(panelLabel(p)))
   const images: LightboxImage[] = artifacts
     .filter((a) => a.src)
     .map((a) => ({ id: a.id, src: a.src!, thumb: a.thumb, alt: a.name, caption: a.name, width: a.width, height: a.height, imageId: a.imageId }))
-  const totalRows = prs.length + previews.length + artifacts.filter((a) => a.src || a.href).length + PANELS.filter((p) => !hidePanel(p)).length
+  const totalRows = prs.length + previews.length + artifacts.filter((a) => a.src || a.href).length + panels.length
   const nothing = shownPrs.length + shownPreviews.length + shownArtifacts.length + shownPanels.length === 0
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
