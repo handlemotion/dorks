@@ -35,8 +35,8 @@ function GitHubIcon({ className }: { className?: string }) {
 }
 
 const navItems = [
-  { label: "Cloud", href: "/docs/cloud" },
-  { label: "Pricing", href: "/docs/pricing" },
+  { label: "Cloud", href: "#cloud" },
+  { label: "Pricing", href: "#pricing" },
   { label: "Docs", href: "/docs" },
 ];
 
