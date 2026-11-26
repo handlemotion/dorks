@@ -173,6 +173,7 @@ function orgOf(v: unknown): CloudOrg | null {
     role: str(o?.role),
     active: o?.active === true,
     servers: list(o?.servers, serverOf),
+    ...(o?.runtime === "cloud" || o?.runtime === "mac" ? { runtime: o.runtime } : {}),
   };
 }
 
