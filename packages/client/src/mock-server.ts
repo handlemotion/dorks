@@ -4,7 +4,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { ClientEvent, CommentAnchor, CommentView, LocalSkill, McpServerView, PullRequestView, ShipStage, ShipView, SkillCandidate, SkillView } from "@dorks/shared";
+import type { AgentModelChoice, ClientEvent, CommentAnchor, CommentView, LocalSkill, McpServerView, PullRequestView, ShipStage, ShipView, SkillCandidate, SkillView } from "@dorks/shared";
 import type { Dork, Me, PhoneStatus, Settings, SnapshotStatus } from "./types.ts";
 import { mockAutomations } from "./mock-automations.ts";
 import { mockCloud, type MockCloudPlace, type MockOrgRuntime } from "./mock-cloud.ts";
@@ -400,6 +400,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     antigravityReady: false,
     // What `agy models` lists for a Google AI plan (apps/server's refreshAntigravityModels), shown once signed in.
     antigravityModels: [],
+    codexModels: [],
     antigravitySignIn: { state: "signed_out" },
     boatKey: !!opts.configured,
     github: opts.configured ? { configured: true, login: "octocat" } : { configured: false },
@@ -781,6 +782,12 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     ["gemini-3.8-flash-medium", "Gemini 3.8 Flash (Medium)"],
     ["claude-opus-5-5-high", "Claude Opus 5.5 (High)"],
   ].map(([model, name]) => ({ model: model!, name: name!, efforts: [] }));
+  /** What a ChatGPT plan lists through Codex's `model/list`. */
+  const MOCK_CODEX_MODELS: AgentModelChoice[] = [
+    { model: "gpt-6.2-sol", name: "GPT-6.2 Sol", efforts: ["low", "medium", "high", "xhigh"] },
+    { model: "gpt-6.2-astra", name: "GPT-6.2 Astra", efforts: ["low", "medium", "high"] },
+    { model: "gpt-6-luna", name: "GPT-6 Luna", efforts: ["low", "medium"] },
+  ];
 
   /** Why a new session cannot start yet, or null when it can. */
   const cannotCreate = (provider: Dork["provider"]): string | null => {
@@ -848,7 +855,13 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
           }
         : provider === "antigravity"
           ? { model: str(body.model), modelChoices: MOCK_AGY_MODELS }
-          : {}),
+          : provider === "codex"
+            ? {
+                ...(str(body.model) ? { codexModel: { model: str(body.model)!, effort: str(body.effort) ?? "high" } } : {}),
+                agentModel: str(body.model) ?? "gpt-6-sol",
+                modelChoices: MOCK_CODEX_MODELS,
+              }
+            : {}),
     });
     append(id, { type: "status", state: "creating" });
     broadcast({ t: "dorks" });
@@ -874,9 +887,19 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     return json(res, 200, { events: page, hasMore: older.length > limit });
   };
 
+  /** Codex's pair: one the mock ChatGPT plan lists, kept as the session's `codexModel`. */
+  const setCodexModel = (model: string | undefined, effort: string | undefined, res: ServerResponse, d: MockDork) => {
+    const choice = MOCK_CODEX_MODELS.find((c) => c.model === model);
+    if (model && (!choice || (effort && !choice.efforts.includes(effort as never)))) return fail(res, "invalid", "not offered by this ChatGPT plan");
+    Object.assign(d, { codexModel: model ? { model, effort: effort ?? "high" } : undefined, agentModel: model ?? "gpt-6-sol", agentEffort: effort ?? "high" });
+    broadcast({ t: "dork", dorkId: d.id });
+    return json(res, 200, {});
+  };
+
   const setModel = ({ body, res }: Ctx, d: MockDork) => {
     const model = str(body.model) || undefined;
     const effort = str(body.effort) || undefined;
+    if (d.provider === "codex") return setCodexModel(model, effort, res, d);
     const fast = body.fast === true;
     const choice = MOCK_MODELS.find((c) => c.model === (model ?? "default"));
     if ((model || effort || fast) && (!choice || (effort && !choice.efforts.includes(effort as never)) || (fast && !choice.fast))) return fail(res, "invalid", "not offered by the agent");

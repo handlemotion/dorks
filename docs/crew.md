@@ -115,5 +115,4 @@ The token is the owner token (`<data dir>/secrets.json`, or `dev-owner-token` un
 - A shared task list (agent teams). The coordinator keeps its plan in its own turns for now.
 - Structured output schemas on `dork_create`.
 - The MCP Tasks extension for `dork_wait`.
-- Codex: a Codex coordinator or worker gets the crew tools but not the role guidance (Claude only, like the rest of the live testing).
   the transcript shows crew reports and notes.

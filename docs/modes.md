@@ -14,7 +14,8 @@ is offered. One table (`packages/shared/src/modes.ts`) declares what each mode c
 | The owner's MCP servers and skills | Yes | Yes | Yes |
 | Model | The owner's choice, as in every mode | | |
 
-Other agents (OpenCode, Antigravity) get the chat prompt as their system prompt in a chat; Codex gets no mode-specific instructions.
+Other agents get the chat prompt as their system prompt in a chat: OpenCode as its system prompt, Antigravity as an always-on rule,
+Codex as the thread's developer instructions.
 
 ## Choices
 

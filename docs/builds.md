@@ -279,8 +279,8 @@ approves → image run → `machine_logs` until it succeeds. Done means the imag
 
 ### Permissions and safety
 
-- **Scope**: own build only, resolved server-side. Codex dorks get the same tools for free (the bridge already registers the `dorks`
-  server with Codex), but only Claude is tested live (AGENTS.md).
+- **Scope**: own build only, resolved server-side. Codex dorks get the same tools (the bridge registers the `dorks` server with
+  Codex too).
 - **No secret values**: tools never return one and never accept one. Logs are redacted. Trial runs have no secrets to leak.
 - **What you review is what you approve**: a submitted draft is frozen (`machine_draft` refuses) until the owner decides, and approval
   names the version the owner saw (`reviewed`), checked again inside the transaction that applies it.

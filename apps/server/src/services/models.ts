@@ -12,6 +12,8 @@ import { owned } from "./dorks";
 const CACHE_KEY = "claude_model_choices";
 /** Antigravity's list: `agy models` for the saved sign-in (refreshAntigravityModels), or what a running Antigravity dork reported. */
 const ANTIGRAVITY_KEY = "antigravity_model_choices";
+/** Codex's list: what a running Codex dork's ChatGPT plan reported (`model/list`). */
+const CODEX_KEY = "codex_model_choices";
 
 export function rememberModelChoices(app: App, models: AgentModelChoice[], key = CACHE_KEY) {
   if (!models.length) return;
@@ -23,10 +25,15 @@ export function rememberModelChoices(app: App, models: AgentModelChoice[], key =
 }
 
 export const rememberAntigravityModels = (app: App, models: AgentModelChoice[]) => rememberModelChoices(app, models, ANTIGRAVITY_KEY);
+export const rememberCodexModels = (app: App, models: AgentModelChoice[]) => rememberModelChoices(app, models, CODEX_KEY);
 
 /** The models Antigravity offers the signed-in plan, for a new session's menu; empty until agy has listed them once. */
-export function knownAntigravityModels(app: App): AgentModelChoice[] {
-  const raw = app.db.get<{ value: string }>("SELECT value FROM meta WHERE key = ?", ANTIGRAVITY_KEY)?.value;
+export const knownAntigravityModels = (app: App) => storedChoices(app, ANTIGRAVITY_KEY);
+/** The models the ChatGPT plan offered the last Codex session, for a new session's menu; empty until one has run. */
+export const knownCodexModels = (app: App) => storedChoices(app, CODEX_KEY);
+
+function storedChoices(app: App, key: string): AgentModelChoice[] {
+  const raw = app.db.get<{ value: string }>("SELECT value FROM meta WHERE key = ?", key)?.value;
   try {
     const parsed = z.array(agentModelChoice).safeParse(raw ? JSON.parse(raw) : []);
     return parsed.success ? parsed.data : [];
@@ -132,6 +139,30 @@ export function validAntigravityModel(choices: AgentModelChoice[] | undefined, m
   return { model, fast: false };
 }
 
+const CODEX_MODEL = /^[a-zA-Z0-9._-]{1,64}$/;
+const CODEX_EFFORTS = ["none", "low", "medium", "high", "xhigh", "max"] as const;
+
+/**
+ * A Codex model and effort: one the plan offered when the dork has reported its list (`choices`), any well-formed one before that
+ * (the bridge pauses a session on one the plan lacks and lists the ones it has). Empty means Codex's default (GPT-6 Sol at high).
+ */
+export function validCodexModel(choices: AgentModelChoice[] | undefined, model: unknown, effort: unknown): { model: string; effort: string } | undefined {
+  if (model === undefined || model === null || model === "") return undefined;
+  if (typeof model !== "string" || !CODEX_MODEL.test(model)) fail("invalid", "not a Codex model");
+  if (effort !== undefined && effort !== null && (typeof effort !== "string" || !(CODEX_EFFORTS as readonly string[]).includes(effort))) fail("invalid", "not a Codex effort");
+  const choice = choices?.find((c) => c.model === model);
+  if (choices?.length && !choice) fail("invalid", `${model} is not offered by this ChatGPT plan`);
+  return { model, effort: codexEffort(choice, effort as string | null | undefined) };
+}
+
+/** The effort asked for, if the model has it; none asked: high, or the model's highest when it lacks high. */
+function codexEffort(choice: AgentModelChoice | undefined, effort: string | null | undefined): string {
+  const efforts: string[] = choice?.efforts ?? [];
+  const e = effort || (!efforts.length || efforts.includes("high") ? "high" : efforts.at(-1)!);
+  if (efforts.length && !efforts.includes(e)) fail("invalid", `${choice!.name} does not support ${e} effort`);
+  return e;
+}
+
 const choicesFor = (app: App, dork: DorkRow) => (dork.modelChoices?.length ? dork.modelChoices : knownModelChoices(app));
 
 /**
@@ -143,7 +174,7 @@ export function chooseModel(app: App, dorkId: string, model: unknown, effort: un
   app.db.tx(() => {
     const dork = owned(app, dorkId);
     if (dork.archived) fail("archived", "dork is archived");
-    if (dork.provider === "codex") fail("invalid", "choose a Codex model from the thread");
+    if (dork.provider === "codex") return chooseCodex(app, dork, model, effort);
     const next: { model?: string; effort?: string; fast: boolean } =
       dork.provider === "opencode"
         ? validOpenCodeModel(dork.modelChoices, model)
@@ -159,4 +190,15 @@ export function chooseModel(app: App, dorkId: string, model: unknown, effort: un
       enqueueConfigure(app, dorkId);
     }
   });
+}
+
+/** Codex's pair, kept as the session's `codexModel`: the bridge restarts Codex on the same thread with it once the turn ends. */
+function chooseCodex(app: App, dork: DorkRow, model: unknown, effort: unknown) {
+  const next = validCodexModel(dork.modelChoices, model, effort);
+  if (next?.model === dork.codexModel?.model && next?.effort === dork.codexModel?.effort) return;
+  patchDork(app, dork.id, { codexModel: next, agentModel: undefined, agentEffort: undefined });
+  if (isAwake(dork.state)) {
+    app.db.run("DELETE FROM commands WHERE dork_id = ? AND kind = 'configure' AND acked = 0", dork.id);
+    enqueueConfigure(app, dork.id);
+  }
 }

@@ -94,5 +94,4 @@ Local dorks run code on the owner's computer, so:
 - Builds and machine-setup sessions (they are cloud images); Codex's Boat ChatGPT environment (a local Codex uses the CLI's own login,
   untested); the Computer tab; "Move to cloud" for a local dork.
 - Uncommitted work does not survive an archive; committed work does.
-- Codex and the other agents get the local PATH but not `LOCAL_GUIDANCE` (Claude only for now).
 - The onboarding checklist still asks for Boat even if the owner only wants local sessions.

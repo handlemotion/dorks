@@ -231,10 +231,14 @@ function newSessionPicker(provider: AgentProvider, settings: ReturnType<typeof u
   }
   // Antigravity's list may not be known yet; a model from the menu's short list is chosen all the same (agy checks it at start).
   if (provider === 'antigravity') return { choices: settings?.antigravityModels ?? [], model: choice.model, onChange: (model) => setChoice({ model }) }
-  // Codex lists its models only once a session runs: the menu's short list names them. With none picked, the short list's first.
+  // Codex lists its models once a session has run (the plan's list is then remembered); before that the menu's short list names them.
+  // With none picked, the short list's first.
   if (provider === 'codex') {
+    const choices = settings?.codexModels ?? []
     const model = choice.model ?? CODEX_PREFERRED
-    return { choices: [], model, effort: choice.effort ?? startingEffort('codex', model, ['low', 'medium', 'high', 'xhigh']), onChange: (model, effort) => setChoice({ model, effort }) }
+    const listed = choices.find((c) => c.model === model)?.efforts
+    const efforts: string[] = listed?.length ? [...listed] : ['low', 'medium', 'high', 'xhigh']
+    return { choices, model, effort: choice.effort ?? startingEffort('codex', model, efforts), onChange: (model, effort) => setChoice({ model, effort }) }
   }
   return undefined
 }
@@ -344,7 +348,7 @@ function NewDork({
         disabled={(local ? !localReady : disabled) || agent.missing}
         error={error}
         picker={picker}
-        catalog={{ claude: settings?.claudeModels, antigravity: settings?.antigravityModels }}
+        catalog={{ claude: settings?.claudeModels, antigravity: settings?.antigravityModels, codex: settings?.codexModels }}
         upload={actions.uploadImage}
         draftKey="new"
         usage={<UsageMenu provider={provider} />}

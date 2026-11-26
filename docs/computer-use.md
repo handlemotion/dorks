@@ -88,7 +88,7 @@ Use Boat's native desktop for both halves.
   - Answers `sleeping` unless the dork is `working` or `idle`. It never wakes a dork.
   - Never stores or logs the URL.
 - **Bridge** (`infra/bridge/src/claude.ts`):
-  - Boat's own `computer` server is used as is.
+  - Boat's own `computer` server is used as is. Boat registers it for both agents: in `~/.claude.json` for Claude Code and in `~/.codex/config.toml` for Codex.
   - When `/opt/ascii/cua-driver/cua-driver` exists, the CLI gets one `--append-system-prompt` paragraph. It says the desktop exists, that the owner watches it, and to use it to check what the agent builds.
 - **Web** (`apps/web/src/components/ComputerView.tsx`):
   - The Computer tab shows the screen at its own 16:9, floating in the panel with 24px around it, and a bar with Take over, Reload and Open in a window.
@@ -125,7 +125,6 @@ the message is sent, and handed to Claude as image blocks (the bridge loads them
   - Use `--type small` sandboxes for checks that build nothing.
 - **Previews through Boat's hosted ports**: done. The agent's `preview_show` tool hosts a port and Artifacts shows it as a running preview; see [Boat](boat.md#hosted-ports).
 - **Recordings as artifacts**: the driver's `start_recording` and `stop_recording`, or `ascii-record-desktop`, saved per turn into Artifacts.
-- **Codex**: give the Codex CLI the same MCP server. Deprioritized, per AGENTS.md.
 
 ## Consequences
 

@@ -64,5 +64,6 @@ do not get it until the owner signs in. The sign-in runs on the dorks server, in
 
 Composio stays for apps that only sign in with OAuth and have no MCP server of their own.
 
-Names are lowercase (`^[a-z][a-z0-9_-]{0,31}$`); `dorks` and `computer` (Boat's computer-use server) are reserved. Codex sessions do
-not get these servers yet.
+Names are lowercase (`^[a-z][a-z0-9_-]{0,31}$`); `dorks` and `computer` (Boat's computer-use server) are reserved. Codex sessions get
+the same servers as per-thread config overrides on `thread/start` (`mcp_servers.<name>`, over Codex's stdin, never argv or a file); a
+header that is one `${DORKS_MCP_…}` reference stays a reference through `env_http_headers` (`infra/bridge/src/codex.ts`, `codexMcpConfig`).

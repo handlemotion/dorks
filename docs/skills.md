@@ -73,4 +73,5 @@ user asks for a skill in this session only it runs `npx -y skills add <source> -
 as long as the sandbox. The bridge only touches folders it wrote, so a session's own skill stays, and wins over a shared one of the same
 name.
 
-Codex sessions do not get skills yet.
+Codex sessions get the same skills: the bridge syncs the folder for them too and adds it as a Codex skills root
+(`skills/extraRoots/set`). Codex's skills fill the composer's `/` menu, and a message that starts with `/<skill>` invokes it.

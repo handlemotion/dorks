@@ -414,8 +414,9 @@ type ModelEntry = { key: string; provider: AgentProvider; model?: string; name: 
 
 /**
  * The menu's short list, in this order: the owner's pick across the agents. Everything else (older Claude models, every Antigravity and
- * OpenCode model the agent reported, each agent's default) is one search away. Codex's models are named here because Codex lists
- * none before a session starts; one the plan cannot use pauses the session and asks for another.
+ * OpenCode model the agent reported, the ChatGPT plan's Codex models, each agent's default) is one search away. Two Codex models are
+ * named here for a first session, before any Codex session has listed the plan's; one the plan cannot use pauses the session and asks
+ * for another.
  */
 const CURATED: ModelEntry[] = [
   { key: 'claude:opus', provider: 'claude', model: 'opus', name: 'Claude Opus 5.5' },
@@ -583,10 +584,12 @@ function effortChoice(
     }
   }
   if (provider === 'codex') {
-    // A session on Codex's own default (no model named) runs it at high, the bridge's default.
-    const effort = models.effort ?? (models.model ? startingEffort('codex', models.model, CODEX_EFFORTS) : 'high')
+    // The efforts the plan lists for the model once Codex has reported them; a session on Codex's own default runs it at high.
+    const listed = choices.find((c) => c.model === models.model)?.efforts
+    const efforts: string[] = listed?.length ? [...listed] : CODEX_EFFORTS
+    const effort = models.effort ?? (models.model ? startingEffort('codex', models.model, efforts) : 'high')
     return {
-      efforts: CODEX_EFFORTS,
+      efforts,
       effort,
       set: (e: string) => {
         if (models.model) rememberEffort('codex', models.model, e)
@@ -694,7 +697,7 @@ function ModelMenu({
   const resolves = (e: ModelEntry) => !!runs && !current && choices.find((c) => c.model === e.model)?.resolved === runs
   const isCurrent = (e: ModelEntry) => e.provider === provider && ((e.model ?? undefined) === (current ?? undefined) || resolves(e))
   // Another agent only on a new session; a running Codex session changes its model from the thread.
-  const canPick = (e: ModelEntry) => isCurrent(e) || (e.provider === provider ? !!models && !(provider === 'codex' && !isNewSession) : !!setProvider && enabled[e.provider])
+  const canPick = (e: ModelEntry) => isCurrent(e) || (e.provider === provider ? !!models : !!setProvider && enabled[e.provider])
   const effortNow = effortChoice(provider, models, choices, catalog ?? {}, active)
   const short = curated(geminiKnown(provider, choices, catalog))
   const selected = short.find(isCurrent)
