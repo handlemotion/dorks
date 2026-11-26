@@ -1,0 +1,126 @@
+import { useEffect, useState } from 'react'
+import type { CloudMoveStatus, CloudOrg } from '@dorks/client'
+import { useStoreValue } from '@dorks/client/react'
+import { Button } from '@dorks/ui/button'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@dorks/ui/dialog'
+import { Progress } from '@dorks/ui/progress'
+import { usePending } from '../../lib/pending'
+import { runsOnWorker } from '../../lib/place'
+import { isTeamOrg, type CloudPlace } from '../CloudPlace'
+import { SettingsGroup, SettingsRow, SettingsSection, SettingsStatus, SettingsValueRow } from './kit'
+
+// Settings › Organization › Where it runs: a Teams or Cloud org that runs on this Mac can move to Dorks Cloud (docs/move-to-cloud.md).
+// This Mac pauses its sessions and uploads them with their transcripts, automations, MCP servers, skills, shared variables and
+// settings; the cloud takes the org over and this Mac leaves it. Owners and admins only (the cloud checks too).
+
+const RUNNING: CloudMoveStatus['phase'][] = ['pausing', 'uploading', 'committing']
+
+/** Whether the section shows at all: a team on a paid plan that this Mac serves (its server's org), or one the Worker runs. */
+export function showsWhereItRuns(org: CloudOrg, serverOrg: string | null | undefined) {
+  return isTeamOrg(org) && (org.plan === 'teams' || org.plan === 'cloud') && (runsOnWorker(org) || serverOrg === org.id)
+}
+
+export function WhereItRuns({ place, org, admin }: { place: CloudPlace; org: CloudOrg; admin: boolean }) {
+  const status = useStoreValue(place.home.cloudMove()).data
+  const [confirming, setConfirming] = useState(false)
+  const { run, pending, error } = usePending()
+  const mine = status?.orgId === org.id ? status : undefined
+  const running = !!mine && RUNNING.includes(mine.phase)
+  // Progress is polled while a move runs; when it ends, the org list is read again: without this Mac in it, the app follows the org to the cloud.
+  useEffect(() => {
+    if (!running) return
+    const t = setInterval(() => place.home.refreshCloudMove(), 1000)
+    return () => clearInterval(t)
+  }, [running, place.home])
+  useEffect(() => {
+    if (mine?.phase === 'done') place.home.refreshCloudPlaces()
+  }, [mine?.phase, place.home])
+
+  return (
+    <SettingsSection title="Where it runs">
+      <SettingsGroup label="where it runs">
+        <WhereRow place={place} org={org} admin={admin} mine={mine} running={running} pending={pending} onMove={() => setConfirming(true)} />
+      </SettingsGroup>
+      <SettingsStatus error={error ?? (mine?.phase === 'failed' ? (mine.error ?? 'The move failed.') : undefined)} />
+      <MoveDialog
+        org={org}
+        open={confirming}
+        onOpenChange={setConfirming}
+        pending={pending}
+        onConfirm={() =>
+          void run(async () => {
+            await place.home.actions.cloudStartMove(org.id)
+            setConfirming(false)
+          })
+        }
+      />
+    </SettingsSection>
+  )
+}
+
+/** Where the org runs now: Dorks Cloud, a move in progress, or this Mac (with the button). */
+function WhereRow(p: { place: CloudPlace; org: CloudOrg; admin: boolean; mine: CloudMoveStatus | undefined; running: boolean; pending: boolean; onMove: () => void }) {
+  const { org, mine } = p
+  if (runsOnWorker(org) || mine?.phase === 'done')
+    return (
+      <SettingsValueRow
+        label="Dorks Cloud"
+        description={
+          mine?.phase === 'done' ? `Moved from this Mac with ${count(mine.sessions.total, 'session')}. This Mac keeps a paused copy.` : 'Sessions run in cloud sandboxes, also when your Mac is off.'
+        }
+        value="Running"
+        tone="success"
+      />
+    )
+  if (p.running && mine) return <SettingsRow label={phaseLabel(mine)} description="Keep this Mac on until it finishes." control={<MoveProgress status={mine} />} />
+  const mac = org.servers.find((s) => s.kind === 'mac' && s.id === p.place.thisMacId)
+  return (
+    <SettingsRow
+      label={`On ${mac?.name || 'this Mac'}`}
+      description={p.admin ? 'Sessions run while this Mac is on. Move to Dorks Cloud to keep them running when it is off.' : 'Owners and admins can move it to Dorks Cloud.'}
+      control={
+        p.admin && (
+          <Button size="sm" variant="outline" disabled={p.pending} onClick={p.onMove}>
+            {mine?.phase === 'failed' ? 'Try again' : 'Move to cloud'}
+          </Button>
+        )
+      }
+    />
+  )
+}
+
+function MoveDialog(p: { org: CloudOrg; open: boolean; onOpenChange: (o: boolean) => void; pending: boolean; onConfirm: () => void }) {
+  return (
+    <Dialog open={p.open} onOpenChange={p.onOpenChange}>
+      <DialogContent>
+        <DialogHeader className="gap-2">
+          <DialogTitle className="text-sm font-medium">Move {p.org.name} to Dorks Cloud?</DialogTitle>
+          <DialogDescription className="text-sm leading-5">
+            Its sessions pause, then they move with their chats, automations, MCP servers, skills, shared variables and settings. Afterwards it runs in the cloud for everyone in it, and this Mac keeps
+            a paused copy. Sign-ins (Claude, Boat, Sentry) are entered again in the cloud.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <DialogClose render={<Button variant="outline" size="sm" />}>Cancel</DialogClose>
+          <Button size="sm" disabled={p.pending} onClick={p.onConfirm}>
+            Move to cloud
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function MoveProgress({ status }: { status: CloudMoveStatus }) {
+  const { done, total } = status.events
+  const value = status.phase === 'committing' ? 100 : total ? Math.round((done / total) * 100) : 0
+  return <Progress value={value} aria-label="move progress" className="w-40 [&_[data-slot=progress-track]]:h-1.5" />
+}
+
+const count = (n: number, what: string) => `${n} ${what}${n === 1 ? '' : 's'}`
+
+function phaseLabel(s: CloudMoveStatus) {
+  if (s.phase === 'pausing') return 'Pausing sessions…'
+  if (s.phase === 'committing') return 'Switching to Dorks Cloud…'
+  return `Uploading ${Math.min(s.sessions.done + 1, s.sessions.total)} of ${count(s.sessions.total, 'session')}…`
+}

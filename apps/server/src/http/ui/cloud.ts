@@ -1,8 +1,16 @@
 import { Effect, Schema } from "effect";
 import { cloudAccount } from "../../services/cloudAccount";
-import { body, looseBody, ok, serviceAsync } from "../route";
+import { body, looseBody, ok, service, serviceAsync } from "../route";
+import { buildExportFile, moveStatus, startMove } from "../../services/cloudMove";
+import { actorOf } from "../../services/team";
+import { fail } from "../../app";
+import { importKey } from "@dorks/shared";
+import { z } from "zod";
+import type { Context } from "hono";
 import { handler, type Routes } from "./shared";
 
+const OrgId = Schema.Struct({ orgId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)) });
+const exportRequest = z.object({ orgId: z.string().min(1).max(128).optional(), importId: z.string().min(1).max(128), key: importKey });
 const Email = Schema.Struct({ email: Schema.String.check(Schema.isMinLength(3), Schema.isMaxLength(320)) });
 const OrgName = Schema.Struct({ name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(80)) });
 const Verify = Schema.Struct({ email: Schema.String.check(Schema.isMinLength(3), Schema.isMaxLength(320)), code: Schema.String.check(Schema.isMinLength(4), Schema.isMaxLength(12)) });
@@ -57,6 +65,39 @@ export const cloudRoutes: Routes = (api, app) => {
         const out = yield* serviceAsync((a) => cloudAccount.orgAction(a, c.req.param("action") as string, method, search, b));
         return c.json(out as object);
       }),
+    ),
+  );
+  // Move to cloud (services/cloudMove.ts, docs/move-to-cloud.md): only this computer's owner, never a teammate through the relay; the
+  // cloud then checks that their account is an owner or admin of the org.
+  const localOwner = (c: Context) =>
+    service((): void => {
+      if (actorOf(c).kind === "member") fail("forbidden", "Only this computer's owner can move it to the cloud");
+    });
+  api.get(
+    "/api/cloud/move",
+    on((c) => service((a) => moveStatus(a)).pipe(Effect.map((v) => c.json(v)))),
+  );
+  api.post(
+    "/api/cloud/move",
+    on((c) =>
+      localOwner(c).pipe(
+        Effect.flatMap(() => body(c, OrgId, "Choose the organization")),
+        Effect.flatMap((b) => service((a) => startMove(a, b.orgId))),
+        Effect.map((v) => c.json(v)),
+      ),
+    ),
+  );
+  api.post(
+    "/api/cloud/export",
+    on((c) =>
+      localOwner(c).pipe(
+        Effect.flatMap(() => looseBody(c)),
+        Effect.flatMap((b) => {
+          const req = exportRequest.safeParse(b);
+          return req.success ? serviceAsync((a) => buildExportFile(a, req.data)) : service(() => fail("invalid", "Send {importId, key} from the import endpoint"));
+        }),
+        Effect.map((f) => c.json(f)),
+      ),
     ),
   );
   // Another server's UI API, through the relay with the stored session (owner token required, like every /api route).

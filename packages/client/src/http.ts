@@ -45,6 +45,7 @@ import type {
   CloudOrgDetail,
   CloudInvitation,
   CloudPlaces,
+  CloudMoveStatus,
   CloudStatus,
   InputAnswer,
   SettingsPatch,
@@ -220,6 +221,9 @@ export function createApi(config: ApiConfig) {
     cloudVerify: (email: string, code: string) => request<CloudStatus>("POST", "/api/cloud/sign-in/verify", { email, code }),
     cloudSignOut: () => request<object>("DELETE", "/api/cloud/session"),
     cloudPlaces: () => request<CloudPlaces>("GET", "/api/cloud/places"),
+    /** Move to cloud (docs/move-to-cloud.md): where it stands, and starting it for this Mac's team org. */
+    cloudMove: () => request<CloudMoveStatus>("GET", "/api/cloud/move"),
+    cloudStartMove: (orgId: string) => request<CloudMoveStatus>("POST", "/api/cloud/move", { orgId }),
     cloudCreateOrg: (name: string) => request<CloudOrg>("POST", "/api/cloud/orgs", { name }),
     /** Team management, Better Auth's organization endpoints through this server (docs/mobile.md, "Desktop: Dorks Cloud"). */
     cloudOrgDetail: (organizationId: string) => request<CloudOrgDetail>("GET", "/api/cloud/auth/organization/get-full-organization", undefined, { organizationId }),

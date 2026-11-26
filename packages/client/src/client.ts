@@ -41,6 +41,7 @@ import type {
   LocalDecision,
   PhoneStatus,
   CloudPlaces,
+  CloudMoveStatus,
   CloudStatus,
   CloudOrgAction,
   CloudOrgDetail,
@@ -252,6 +253,7 @@ export class DorksClient {
         this.invalidate("local-access");
         this.invalidate("phone");
         this.invalidate("cloud");
+        this.invalidate("cloud-move");
         break;
       case "snapshot":
         this.invalidate("snapshot");
@@ -415,6 +417,13 @@ export class DorksClient {
   /** Invitations waiting for the signed-in account. */
   cloudInvitations() {
     return this.query<CloudInvitation[]>("cloud:invitations", () => this.api.cloudMyInvitations());
+  }
+  /** This Mac's move of its team org to the cloud; the Organization page polls it while one runs. */
+  cloudMove() {
+    return this.query<CloudMoveStatus>("cloud-move", () => this.api.cloudMove());
+  }
+  refreshCloudMove() {
+    this.invalidate("cloud-move");
   }
   /** Reads the account's places again (a Mac came online, a teammate added a server). */
   refreshCloudPlaces() {
@@ -785,6 +794,14 @@ export class DorksClient {
       }
     },
     cloudInvitation: (id: string) => this.api.cloudInvitation(id),
+    /** Starts moving this Mac's team org to the cloud; follow it with `cloudMove()`. */
+    cloudStartMove: async (orgId: string) => {
+      try {
+        return await this.api.cloudStartMove(orgId);
+      } finally {
+        this.invalidate("cloud-move");
+      }
+    },
     cloudSignOut: async () => {
       await this.api.cloudSignOut();
       this.invalidate("cloud");
