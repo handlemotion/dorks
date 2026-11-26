@@ -68,6 +68,9 @@ export class EventsFeed implements Store<EventsState> {
   private tailQueued = false;
   private failures = 0;
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Starts pushing this transcript's events (a cloud org's s2 stream) while someone watches; returns how to stop. */
+  private readonly follow: ((feed: EventsFeed) => () => void) | undefined;
+  private unfollow: (() => void) | undefined;
   /** When the last subscriber left (or the feed was made); undefined while someone watches. The client drops long-idle feeds. */
   idleSince: number | undefined = Date.now();
 
@@ -79,7 +82,8 @@ export class EventsFeed implements Store<EventsState> {
   private readonly onUnauthorized: () => void;
   private readonly retryDelay: (n: number) => number;
 
-  constructor(api: Api, dorkId: string, pageSize: number, onUnauthorized: () => void, retryDelay: (n: number) => number, olderPageSize = pageSize) {
+  constructor(api: Api, dorkId: string, pageSize: number, onUnauthorized: () => void, retryDelay: (n: number) => number, olderPageSize = pageSize, follow?: (feed: EventsFeed) => () => void) {
+    this.follow = follow;
     this.api = api;
     this.dorkId = dorkId;
     this.pageSize = pageSize;
@@ -93,11 +97,17 @@ export class EventsFeed implements Store<EventsState> {
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     this.idleSince = undefined;
-    if (this.listeners.size === 1) this.requestTail(); // first page, or a catch-up after having been away
+    if (this.listeners.size === 1) {
+      // First page, or a catch-up after having been away; a followed transcript asks for it itself, once its stream is placed.
+      if (this.follow) this.unfollow = this.follow(this);
+      else this.requestTail();
+    }
     return () => {
       this.listeners.delete(listener);
       if (this.listeners.size > 0) return;
       this.idleSince = Date.now();
+      this.unfollow?.();
+      this.unfollow = undefined;
       clearTimeout(this.retryTimer);
       this.retryTimer = undefined;
     };
@@ -110,6 +120,15 @@ export class EventsFeed implements Store<EventsState> {
     this.enqueue(async () => {
       this.tailQueued = false;
       await this.tail();
+    });
+  }
+
+  /** Events pushed by the live stream (rows as `GET /events` serves them): folded in turn with the reads, after any read in flight. */
+  ingest(events: ClientEvent[]) {
+    if (!events.length) return;
+    this.enqueue(async () => {
+      this.upsert(events);
+      this.publish();
     });
   }
 

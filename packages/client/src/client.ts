@@ -17,6 +17,7 @@ import type {
 import { EventsFeed } from "./events.ts";
 import { createApi, ApiError, type ApiConfig, type DesktopOptions, type NewComment } from "./http.ts";
 import { connectLive, type LiveStatus } from "./live.ts";
+import { connectCloudLive, followSession, type CloudLiveConfig, type SessionCursor } from "./cloud-live.ts";
 import { Query, type QueryOptions, type Store } from "./store.ts";
 import type {
   BuildInput,
@@ -55,6 +56,11 @@ export interface ClientConfig extends ApiConfig {
   retryDelay?: (n: number) => number;
   /** Where shared images load from (`<imageBaseUrl>/images/:id`); default `baseUrl`. Another server reached through this one serves them elsewhere. */
   imageBaseUrl?: string;
+  /**
+   * A Dorks Cloud org (Teams or Cloud plan) served by the Worker: live updates come from s2 (cloud-live.ts) instead of `/api/live`,
+   * and an open transcript receives its events from its session's stream. REST is the same.
+   */
+  cloud?: CloudLiveConfig;
 }
 
 export interface ConnectionState {
@@ -75,7 +81,7 @@ const SWEEP_EVERY_MS = 60_000;
 const pageHidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
 
 /**
- * Everything the UI reads and writes, over loopback HTTP + the `/api/live` SSE stream. Framework-agnostic: each read is a
+ * Everything the UI reads and writes, over loopback HTTP + the `/api/live` SSE stream (for a cloud org, s2 streams: cloud-live.ts). Framework-agnostic: each read is a
  * `Store` (the `useSyncExternalStore` contract), so React hooks in ./react.tsx are thin and other UIs can use it directly.
  * Live messages are only invalidations; the data always comes from a plain HTTP read.
  */
@@ -84,6 +90,8 @@ export class DorksClient {
   private readonly cfg: ClientConfig;
   private readonly queries = new Map<string, Query<unknown>>();
   private readonly feeds = new Map<string, EventsFeed>();
+  /** Where each cloud transcript's s2 read stands: following it again resumes there. */
+  private readonly cursors = new Map<string, SessionCursor>();
   private closeLive: (() => void) | undefined;
   private connection: ConnectionState = { live: "connecting", unauthorized: false };
   private readonly connListeners = new Set<() => void>();
@@ -114,15 +122,11 @@ export class DorksClient {
   start() {
     if (this.closeLive) return;
     if (typeof document !== "undefined") document.addEventListener("visibilitychange", this.onVisibility);
-    this.closeLive = connectLive({
-      baseUrl: this.cfg.baseUrl,
-      token: this.cfg.token,
-      client: this.clientId,
-      fetch: this.cfg.fetch,
-      backoff: this.cfg.retryDelay,
-      onStatus: (live) => this.setConnection({ live, ...(live === "unauthorized" ? { unauthorized: true } : {}) }),
-      onMessage: (m) => this.onLive(m),
-    });
+    const onStatus = (live: LiveStatus) => this.setConnection({ live, ...(live === "unauthorized" ? { unauthorized: true } : {}) });
+    const onMessage = (m: LiveMessage) => this.onLive(m);
+    this.closeLive = this.cfg.cloud
+      ? connectCloudLive({ cloud: this.cfg.cloud, token: this.cfg.token, fetch: this.cfg.fetch, backoff: this.cfg.retryDelay, onStatus, onMessage })
+      : connectLive({ baseUrl: this.cfg.baseUrl, token: this.cfg.token, client: this.clientId, fetch: this.cfg.fetch, backoff: this.cfg.retryDelay, onStatus, onMessage });
   }
 
   close() {
@@ -168,6 +172,7 @@ export class DorksClient {
       if (!old(f.idleSince)) continue;
       this.feeds.delete(id);
       this.staleFeeds.delete(id);
+      this.cursors.delete(id);
     }
   }
 
@@ -175,6 +180,7 @@ export class DorksClient {
   private forget(dorkId: string) {
     this.feeds.delete(dorkId);
     this.staleFeeds.delete(dorkId);
+    this.cursors.delete(dorkId);
     for (const key of this.queries.keys()) if (key.split(":")[1] === dorkId) this.queries.delete(key);
   }
 
@@ -424,7 +430,25 @@ export class DorksClient {
     let f = this.feeds.get(dorkId);
     if (!f) {
       const pageSize = this.cfg.pageSize ?? 40;
-      f = new EventsFeed(this.api, dorkId, pageSize, this.qopts.onUnauthorized, this.qopts.retryDelay, this.cfg.olderPageSize ?? Math.max(pageSize, 150));
+      const cloud = this.cfg.cloud;
+      const follow = cloud
+        ? (feed: EventsFeed) =>
+            followSession({
+              cloud,
+              token: this.cfg.token,
+              fetch: this.cfg.fetch,
+              backoff: this.cfg.retryDelay,
+              dorkId,
+              cursor: this.cursors.get(dorkId) ?? null,
+              ready: () => feed.requestTail(),
+              onEvents: (events, cursor) => {
+                this.cursors.set(dorkId, cursor);
+                feed.ingest(events);
+              },
+              onUnauthorized: this.qopts.onUnauthorized,
+            })
+        : undefined;
+      f = new EventsFeed(this.api, dorkId, pageSize, this.qopts.onUnauthorized, this.qopts.retryDelay, this.cfg.olderPageSize ?? Math.max(pageSize, 150), follow);
       this.feeds.set(dorkId, f);
     }
     return f;

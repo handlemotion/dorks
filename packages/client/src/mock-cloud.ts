@@ -85,8 +85,23 @@ const ORGS: MockOrg[] = [
   },
 ];
 
+/**
+ * A team the Worker runs (Teams plan, no Macs): its UI API is one more mock server, and its realtime routes (the s2 read tokens)
+ * go to a real dorks-cloud Worker as one of the org's members, so its live updates come from real s2 (docs/architecture.md, "Live
+ * updates for cloud orgs"). `orgId` is the org's id on that Worker.
+ */
+export interface MockOrgRuntime {
+  url: string;
+  /** A member's Better Auth bearer token on that Worker. */
+  token: string;
+  orgId: string;
+  name?: string;
+  seed?: MockCloudPlace["seed"];
+}
+
 export function mockCloud(opts: {
   signedIn?: boolean;
+  orgRuntime?: MockOrgRuntime;
   json: Json;
   fail: (res: ServerResponse, code: string, message: string) => void;
   readBody: (req: IncomingMessage) => Promise<Record<string, unknown>>;
@@ -100,7 +115,12 @@ export function mockCloud(opts: {
   let user: CloudUser | null = opts.signedIn ? DEMO : null;
   const children = new Map<string, Promise<MockChild>>();
   const status = (): CloudStatus => ({ cloudUrl: "https://dorks-cloud.example", user });
+  const runtime = opts.orgRuntime;
   const orgs = ORGS.map((o) => ({ ...o }));
+  if (runtime) orgs.push({ id: runtime.orgId, name: runtime.name ?? "Cloud team", slug: "cloud-team", logo: null, personal: false, plan: "teams", role: "member", servers: [] });
+  const runtimePlace: MockCloudPlace | null = runtime
+    ? { id: `runtime-${runtime.orgId}`, name: runtime.name ?? "Cloud team", kind: "hosted", online: true, lastSeenAt: null, seed: runtime.seed ?? [] }
+    : null;
   const teams = mockTeams({ orgs, me: () => user, json, fail, readBody: opts.readBody });
   const view = (o: MockOrg): CloudOrg => ({
     ...o,
@@ -112,12 +132,12 @@ export function mockCloud(opts: {
       ...o.servers.map(({ seed: _seed, ...s }) => ({ ...s, lastSeenAt: s.online ? Date.now() : Date.now() - 3 * 86_400_000 })),
     ],
   });
-  const findPlace = (id: string) => orgs.flatMap((o) => o.servers).find((s) => s.id === id);
+  const findPlace = (id: string) => (runtimePlace?.id === id ? runtimePlace : orgs.flatMap((o) => o.servers).find((s) => s.id === id));
   const child = (place: MockCloudPlace) => {
     let c = children.get(place.id);
     if (!c) {
       // It answers `GET /api/me` as you, a teammate with your role in the org that owns it.
-      const owner = orgs.find((o) => o.servers.some((s) => s.id === place.id));
+      const owner = place === runtimePlace ? orgs.find((o) => o.id === runtime?.orgId) : orgs.find((o) => o.servers.some((s) => s.id === place.id));
       const role = ((owner && teams.roleOf(owner.id)) ?? "member") as Me["role"];
       c = opts.startChild(place.seed, {
         kind: "member",
@@ -173,8 +193,34 @@ export function mockCloud(opts: {
     return json(res, 200, status());
   };
 
+  /** The Worker-run org's realtime routes, as the member (what the home server's `/api/cloud/orgs/:id/realtime/*` does). */
+  const realtime = async (req: IncomingMessage, res: ServerResponse, rest: string) => {
+    if (!runtime) return fail(res, "not_found", "No such organization.");
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(chunk as Buffer);
+    const up = await fetch(`${runtime.url}/v1/realtime/orgs/${encodeURIComponent(runtime.orgId)}/${rest}`, {
+      method: req.method,
+      headers: { authorization: `Bearer ${runtime.token}`, "content-type": "application/json" },
+      body: chunks.length ? Buffer.concat(chunks) : undefined,
+    }).catch(() => null);
+    if (!up) return fail(res, "failed", "Dorks Cloud did not answer.");
+    res.writeHead(up.status, { "content-type": up.headers.get("content-type") ?? "application/json" });
+    res.end(Buffer.from(await up.arrayBuffer()));
+  };
+
+  /** The Worker-run org's UI API (its own mock server) and realtime routes; false for any other path. */
+  const orgRoute = async (req: IncomingMessage, res: ServerResponse, path: string, search: string) => {
+    const org = /^\/api\/cloud\/orgs\/([\w-]+)\/((api|realtime)\/.*)$/.exec(path);
+    if (!org || !runtime || org[1] !== runtime.orgId) return false;
+    if (!user) fail(res, "not_configured", "Sign in to Dorks Cloud first.");
+    else if (org[3] === "realtime") await realtime(req, res, org[2]!.slice("realtime/".length));
+    else await forward(req, res, runtimePlace!.id, org[2]!, search);
+    return true;
+  };
+
   /** Answers a cloud route; false for anything else. */
   const route = async (req: IncomingMessage, res: ServerResponse, method: string, path: string, search: string): Promise<boolean> => {
+    if (await orgRoute(req, res, path, search)) return true;
     const fwd = /^\/api\/cloud\/servers\/([\w-]+)\/(api\/.*)$/.exec(path) ?? (method === "GET" ? /^\/cloud\/servers\/([\w-]+)\/(images\/[\w-]+)$/.exec(path) : null);
     if (fwd) {
       await forward(req, res, fwd[1]!, fwd[2]!.startsWith("images/") ? `api/${fwd[2]}` : fwd[2]!, search);

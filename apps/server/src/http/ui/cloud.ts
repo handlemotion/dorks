@@ -67,6 +67,14 @@ export const cloudRoutes: Routes = (api, app) => {
       return serviceAsync((a) => cloudAccount.forward(a, c.req.param("id") as string, c.req.path.slice(prefix.length), c.req.raw));
     }),
   );
+  // An org the Worker runs (Teams, Cloud): its UI API and the realtime routes that issue its s2 read tokens.
+  api.all(
+    "/api/cloud/orgs/:id/*",
+    on((c) => {
+      const prefix = `/api/cloud/orgs/${c.req.param("id")}/`;
+      return serviceAsync((a) => cloudAccount.forwardOrg(a, c.req.param("id") as string, c.req.path.slice(prefix.length), c.req.raw));
+    }),
+  );
   // Its shared images, outside /api like this server's own `/images/:id`: an <img> cannot send the owner token, and the
   // 128-bit image id is the capability. Only image reads are forwarded this way.
   api.get(
