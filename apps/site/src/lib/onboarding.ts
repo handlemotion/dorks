@@ -39,8 +39,6 @@ export interface GithubInstallation {
   account: string;
   accountType: string | null;
   suspended: boolean;
-  /** GitHub's settings page for the installation, where its owner adds repositories. */
-  manageUrl?: string;
 }
 
 export interface Progress {
