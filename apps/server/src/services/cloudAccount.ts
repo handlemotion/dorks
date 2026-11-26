@@ -199,6 +199,14 @@ const ORG_ACTIONS: Record<string, "GET" | "POST"> = {
 };
 
 export const cloudAccount = {
+  /** One request to Dorks Cloud as the signed-in account (the import API of services/cloudMove.ts). An ended session fails here. */
+  async request(app: App, path: string, init: RequestInit): Promise<Response> {
+    const s = await signedIn(app);
+    const res = await call(app, path, { ...init, headers: { ...(init.headers as Record<string, string>), authorization: `Bearer ${s.token}` } });
+    if (res.status === 401) await expired(app);
+    return res;
+  },
+
   async view(app: App): Promise<CloudView> {
     const cloudUrl = cloudOf(app);
     return { cloudUrl, user: cloudUrl ? ((await readSession(app))?.user ?? null) : null };

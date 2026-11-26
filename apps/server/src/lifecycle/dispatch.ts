@@ -1,5 +1,6 @@
 import type { ClientEventBody } from "@dorks/shared";
 import { fail, touch, type App } from "../app";
+import { assertNotFrozen } from "./freeze";
 import { commandOf, getDork, openCommands, runtimeOf, type CommandKind, type CommandRow, type DorkRow } from "../data";
 import { update, insert, json } from "../db";
 import { forAgent, speakerFor, type By } from "../services/team";
@@ -147,6 +148,8 @@ function releaseQueued(app: App, dorkId: string) {
 // ---------------------------------------------------------------- machine driver
 /** Apply an input: persist the new state, then run effects. All of it in the caller's transaction. */
 export function dispatch(app: App, dorkId: string, input: Input): Result | null {
+  // A move to the cloud copies this Mac's sessions: nothing may start or wake one meanwhile (lifecycle/freeze.ts).
+  if (input.t === "start" || input.t === "user_message" || input.t === "notify") assertNotFrozen(app);
   const dork = getDork(app.db, dorkId);
   if (!dork || dork.deleting) return null;
   const before = machineCtx(app, dork);

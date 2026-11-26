@@ -11,6 +11,7 @@ import { pollable } from "../services/subscriptions";
 import { AppEnv } from "../http/route";
 import { autoConnectBoat } from "../services/boatSignIn";
 import { autoConnectGithub } from "../services/settings";
+import { recoverMove } from "../services/cloudMove";
 
 interface TimerRow {
   owner: string;
@@ -69,6 +70,7 @@ export class Scheduler implements SchedulerLike {
     recoverBuildRuns(app); // likewise for build runs (docs/builds.md)
     recoverAutomations(app); // schedules, and the repository watcher (docs/automations.md)
     recoverLocal(app); // a command that was running on the owner's computer is reported as lost (docs/local-access.md)
+    void recoverMove(app); // a move to the cloud cut off mid-commit asks the cloud whether it committed (docs/move-to-cloud.md)
     void autoConnectBoat(app); // a Boat key from the Boat CLI's login, when none is saved (services/boatSignIn.ts)
     void autoConnectGithub(app); // likewise GitHub, from the GitHub CLI's
   }

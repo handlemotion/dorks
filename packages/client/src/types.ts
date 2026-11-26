@@ -324,6 +324,18 @@ export interface CloudOrgDetail {
   invitations: CloudInvitation[];
 }
 
+/** `GET /api/cloud/move`: this Mac's move of its team org to the cloud (docs/move-to-cloud.md), in progress or the last one. */
+export interface CloudMoveStatus {
+  phase: "idle" | "pausing" | "uploading" | "committing" | "done" | "failed";
+  orgId: string | null;
+  importId: string | null;
+  sessions: { done: number; total: number };
+  events: { done: number; total: number };
+  error: string | null;
+  startedAt: number | null;
+  finishedAt: number | null;
+}
+
 /** The organization actions the UI posts through its server (Better Auth's `/api/auth/organization/*`). */
 export type CloudOrgAction = "invite-member" | "cancel-invitation" | "accept-invitation" | "reject-invitation" | "update-member-role" | "remove-member" | "leave" | "update" | "delete";
 
