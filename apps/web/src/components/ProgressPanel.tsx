@@ -402,8 +402,11 @@ function stepMenu(step: ProgressStep, onShow?: () => void): ContextMenuItem[] {
   const kind = toolStep(block.name, block.status).kind
   const input = stepInputText(block)
   if (kind === 'command') items.push({ label: 'Copy command', onSelect: () => copyText(input ?? block.summary) })
-  else if (kind === 'read' || kind === 'edit') items.push({ label: 'Copy path', onSelect: () => copyText(block.summary) })
-  else if (input) items.push({ label: 'Copy input', onSelect: () => copyText(input) })
+  else if (kind === 'read' || kind === 'edit') {
+    // The summary is cut at 200 characters; the tool's own input has the whole path (older events may lack it).
+    const path = [block.input?.file_path, block.input?.path].find((p): p is string => typeof p === 'string' && !!p) ?? block.summary
+    items.push({ label: 'Copy path', onSelect: () => copyText(path) })
+  } else if (input) items.push({ label: 'Copy input', onSelect: () => copyText(input) })
   if (block.preview) items.push({ label: 'Copy output', onSelect: () => copyText(block.preview!) })
   return items
 }
