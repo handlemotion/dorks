@@ -11,9 +11,9 @@ const buttonVariants = cva(
         solidDark: "bg-neutral-950 text-white hover:bg-neutral-800 active:bg-neutral-700",
         glass: "bg-[#c5b6b7]/85 text-white backdrop-blur-md hover:bg-[#c5b6b7] active:bg-[#b8a7a8]",
         nav: "bg-transparent text-white hover:bg-black/15 active:bg-black/20",
-        /** Always filled, lighter on hover: the header's Download button over the photo. */
-        navFill: "bg-white/15 text-white hover:bg-white/25 active:bg-white/30",
-        navFillLight: "bg-black/8 text-neutral-900 hover:bg-black/5 active:bg-black/12",
+        /** Always filled (the nav buttons' hover fill), darker on hover: the header's Download button. */
+        navFill: "bg-black/15 text-white hover:bg-black/25 active:bg-black/30",
+        navFillLight: "bg-black/8 text-neutral-900 hover:bg-black/14 active:bg-black/18",
         navLight: "bg-transparent text-neutral-800 hover:bg-black/8 hover:text-black active:bg-black/14",
         splitPrimary: "rounded-none rounded-l-full border-0 bg-white text-black hover:bg-[#f4f4f5] active:bg-[#e9e9ec] focus-visible:ring-0 focus-visible:ring-offset-0",
         splitTrigger:
