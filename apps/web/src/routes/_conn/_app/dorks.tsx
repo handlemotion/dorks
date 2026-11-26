@@ -2,7 +2,7 @@ import { CatchBoundary, createFileRoute, Link, useNavigate, useRouterState } fro
 import { ImageCommentsProvider } from '../../../components/ImageComments'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { DesktopOptions } from '@dorks/client'
-import { isDorkMode, type Block, type DorkLocation, type DorkMode } from '@dorks/shared'
+import { isDorkLocation, isDorkMode, type Block, type DorkLocation, type DorkMode } from '@dorks/shared'
 import { ChevronDownIcon, ChevronRightIcon, InfoIcon, MessageSquareIcon } from 'lucide-react'
 import type { Settings } from '@dorks/client'
 import { useBuilds, useDork, useDorkEvents, useDorks, useDorksClient, useGithubRepos, usePullRequest, useSettings, useSubscriptions, useWorkspaceRoots, useWorkspaceTree } from '@dorks/client/react'
@@ -44,10 +44,12 @@ import { useAppWorkspace, type AppWorkspace } from '../../../components/appWorks
 
 // The selected dork lives in the `dork` search param (not local state) so the sidebar can highlight it and the URL is shareable.
 export const Route = createFileRoute('/_conn/_app/dorks')({
-  // `repo` preselects the new session's repository (the sidebar's + beside a repository group); `mode` its mode (the Nerds group's +).
-  validateSearch: (s: Record<string, unknown>): { dork?: string; repo?: string; mode?: DorkMode } => ({
+  // `repo` preselects the new session's repository and `location` where it runs (the sidebar's + beside a repository group); `mode` its
+  // mode (the Nerds group's +).
+  validateSearch: (s: Record<string, unknown>): { dork?: string; repo?: string; location?: DorkLocation; mode?: DorkMode } => ({
     ...(typeof s.dork === 'string' ? { dork: s.dork } : {}),
     ...(typeof s.repo === 'string' ? { repo: s.repo } : {}),
+    ...(isDorkLocation(s.location) ? { location: s.location } : {}),
     ...(isDorkMode(s.mode) ? { mode: s.mode } : {}),
   }),
   component: Dorks,
@@ -64,7 +66,7 @@ function Notice({ children }: { children: React.ReactNode }) {
 
 function Dorks() {
   // The URL is user-editable, so this is not guaranteed to be a real id: the server answers not_found, which <Thread> shows.
-  const { dork: selected, repo: presetRepo, mode: presetMode } = Route.useSearch()
+  const { dork: selected, repo: presetRepo, location: presetLocation, mode: presetMode } = Route.useSearch()
   // The workspace picks the new session's mode, so switching it starts the composer over in the other one.
   const [workspace] = useAppWorkspace()
   const navigate = Route.useNavigate()
@@ -106,8 +108,9 @@ function Dorks() {
             <div className={`${showArchived ? 'hidden' : 'flex'} mx-auto w-full max-w-[790px] flex-col gap-6`}>
               <h2 className="sr-only">What should we work on?</h2>
               <NewDork
-                key={`${presetRepo}:${presetMode}:${workspace}`}
+                key={`${presetRepo}:${presetLocation}:${presetMode}:${workspace}`}
                 initialRepo={presetRepo}
+                initialLocation={presetLocation}
                 initialMode={presetMode}
                 workspace={workspace}
                 onCreated={setSelected}
@@ -285,6 +288,7 @@ function AgentNotice({ provider }: { provider: AgentProvider }) {
 
 function NewDork({
   initialRepo,
+  initialLocation,
   initialMode,
   workspace,
   onCreated,
@@ -295,6 +299,8 @@ function NewDork({
   antigravityReady,
 }: {
   initialRepo?: string
+  /** Where the session runs, preset by a repository group's + (a local group starts a local session); else the owner's default. */
+  initialLocation?: DorkLocation
   initialMode?: DorkMode
   workspace: AppWorkspace
   onCreated: (id: string) => void
@@ -321,7 +327,7 @@ function NewDork({
   // A picked build that is gone (deleted, or its image removed) falls back like an unpicked one.
   const env = picked && (picked.buildId === null || built.some((b) => b.id === picked.buildId)) ? picked : initialEnvironment(built, repositories, initialRepo, settings?.defaultBuildId)
   const { buildId, repo } = env
-  const location = useNewSessionLocation()
+  const location = useNewSessionLocation(initialLocation)
   const local = location?.value === 'local'
   const [message, setMessage] = useDraft('new')
   const [provider, pickProvider] = useState<AgentProvider>(() => firstReady(claudeReady, codexReady, antigravityReady))
@@ -386,15 +392,15 @@ function NewDork({
 
 /**
  * The new session's Cloud / Local choice (docs/local-dorks.md), only when this client may start local sessions: the owner's remembered
- * default until they pick, and a pick becomes the new default.
+ * default (or the location a repository group's + preset) until they pick, and a pick becomes the new default.
  */
-function useNewSessionLocation() {
+function useNewSessionLocation(preset?: DorkLocation) {
   const settings = useSettings()
   const { actions } = useDorksClient()
   const [picked, setPicked] = useState<DorkLocation>()
   if (!settings?.local?.available) return undefined
   return {
-    value: picked ?? settings.defaultLocation ?? 'cloud',
+    value: picked ?? preset ?? settings.defaultLocation ?? 'cloud',
     onChange: (l: DorkLocation) => {
       setPicked(l)
       void actions.updateSettings({ defaultLocation: l }).catch(() => {})
