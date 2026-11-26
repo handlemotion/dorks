@@ -54,12 +54,21 @@ export function CloudPlaceProvider({ conn, children }: { conn: { serverUrl: stri
 
   const orgs = placesState.data?.orgs
   const personal = orgs?.find((o) => o.personal) ?? null
-  const org = signedIn && choice.orgId ? (orgs?.find((o) => o.id === choice.orgId) ?? null) : null
+  // Signed in, the org is the one picked, else the personal one (also when the picked one is gone: you left it, it was deleted).
+  const org = signedIn ? ((choice.orgId ? orgs?.find((o) => o.id === choice.orgId) : undefined) ?? personal) : null
   // An older server has no /api/cloud: it answers an error, and the app stays on it.
   const resolving = !!choice.orgId && ((cloudState.status === 'loading' && !cloud) || (signedIn && !orgs && placesState.status === 'loading'))
   const target: Target = org ? resolveTarget(org, thisMacId, choice.machineId) : { kind: 'home' }
   const remoteId = target.kind === 'remote' ? target.server.id : null
   const client = useMemo(() => (remoteId ? createClient(remoteClientConfig(conn, remoteId)) : home), [home, remoteId, conn])
+  // The home server's live stream is what tells the app its cloud session changed (signed out, expired: `{t: "settings"}`). While
+  // the app shows another server, or asks which Mac to connect to, no DorksProvider runs it, so it runs here.
+  const homeShown = target.kind === 'home' && !resolving
+  useEffect(() => {
+    if (homeShown) return
+    home.start()
+    return () => home.close()
+  }, [home, homeShown])
 
   const place: CloudPlace = {
     home,
@@ -71,7 +80,7 @@ export function CloudPlaceProvider({ conn, children }: { conn: { serverUrl: stri
     target,
     resolving,
     chooseOrg: (orgId) => setChoice({ orgId: orgId ?? personal?.id ?? null }),
-    chooseMachine: (machineId) => setChoice({ orgId: choice.orgId, machineId }),
+    chooseMachine: (machineId) => setChoice({ orgId: org?.id ?? choice.orgId, machineId }),
   }
   return <CTX.Provider value={place}>{children(client, place)}</CTX.Provider>
 }
