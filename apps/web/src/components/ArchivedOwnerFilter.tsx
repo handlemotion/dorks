@@ -1,8 +1,8 @@
 import { ChevronDownIcon } from 'lucide-react'
 import { Button } from '@dorks/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@dorks/ui/dropdown-menu'
-import githubDark from '../assets/providers/github-dark.svg'
-import githubLight from '../assets/providers/github-light.svg'
+import githubDark from '@dorks/onboarding/assets/providers/github-dark.svg'
+import githubLight from '@dorks/onboarding/assets/providers/github-light.svg'
 import { Logo } from './onboarding/List'
 import { OwnerAvatar } from './RepoAvatar'
 

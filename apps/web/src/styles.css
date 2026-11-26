@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import '@dorks/ui/styles.css';
 @source "../../../packages/ui/src";
+@source "../../../packages/onboarding/src";
 
 /* The design tokens, radius scale, dark mode and glass surfaces all come from @dorks/ui (a shadcn preset, see its README). */
 

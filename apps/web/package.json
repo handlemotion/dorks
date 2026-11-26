@@ -20,6 +20,7 @@
     "@dnd-kit/helpers": "^0.5.0",
     "@dnd-kit/react": "^0.5.0",
     "@dorks/client": "workspace:*",
+    "@dorks/onboarding": "workspace:*",
     "@dorks/shared": "workspace:*",
     "@dorks/ui": "workspace:*",
     "@fontsource-variable/geist": "^5.3.0",
