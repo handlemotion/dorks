@@ -57,36 +57,32 @@ function Choose({ invite, providerError, onEmail }: { invite: boolean; providerE
     });
   };
   return (
-    <Screen>
-      <div className="flex flex-col items-center gap-5 pb-10 text-center">
-        <DorksMark size={36} />
-        <h1 className="text-[26px] leading-8 font-medium tracking-[-0.02em]">{invite ? "Sign in to join your team" : "Sign in to Dorks"}</h1>
-      </div>
-      <div className="flex flex-col gap-[18px]">
-        {error ? <ErrorText>{error}</ErrorText> : null}
-        <div className="flex flex-col gap-2.5">
-          <Button variant="outline" size="lg" disabled={!!pending || methods?.appleWeb !== true} onClick={() => social("apple")}>
-            <Lead>{pending === "apple" ? <Spinner /> : <AppleIcon />}</Lead>
-            Continue with Apple
-          </Button>
-          <Button variant="outline" size="lg" disabled={!!pending || methods?.google !== true} onClick={() => social("google")}>
-            <Lead>{pending === "google" ? <Spinner /> : <GoogleIcon />}</Lead>
-            Continue with Google
-          </Button>
-          <Button variant="outline" size="lg" disabled={!!pending || methods?.email === false} onClick={onEmail}>
-            <Lead>
-              <Mail className="size-[18px] stroke-[1.5]" />
-            </Lead>
-            Continue with email
-          </Button>
-        </div>
-        <p className="text-center text-xs leading-[17px] text-neutral-400 dark:text-neutral-500">
+    <Layout
+      title={invite ? "Sign in to join your team" : "Sign in to Dorks"}
+      footer={
+        <>
           By continuing, you agree to our
           <br />
           Terms of Service and Privacy Policy.
-        </p>
-      </div>
-    </Screen>
+        </>
+      }
+    >
+      {error ? <ErrorText>{error}</ErrorText> : null}
+      <Button variant="outline" size="lg" disabled={!!pending || methods?.appleWeb !== true} onClick={() => social("apple")}>
+        <Lead>{pending === "apple" ? <Spinner /> : <AppleIcon />}</Lead>
+        Continue with Apple
+      </Button>
+      <Button variant="outline" size="lg" disabled={!!pending || methods?.google !== true} onClick={() => social("google")}>
+        <Lead>{pending === "google" ? <Spinner /> : <GoogleIcon />}</Lead>
+        Continue with Google
+      </Button>
+      <Button variant="outline" size="lg" disabled={!!pending || methods?.email === false} onClick={onEmail}>
+        <Lead>
+          <Mail className="size-[18px] stroke-[1.5]" />
+        </Lead>
+        Continue with email
+      </Button>
+    </Layout>
   );
 }
 
@@ -99,9 +95,9 @@ function EmailStep({ onBack, onSent }: { onBack: () => void; onSent: (email: str
     if (valid && !send.isPending) void send.run(address).then((ok) => ok && onSent(address));
   };
   return (
-    <Page title="Continue with email" back="Back" onBack={onBack}>
+    <Layout title="Continue with email" footer={<FooterLink onClick={onBack}>Back</FooterLink>}>
       <form
-        className="flex flex-col gap-2.5"
+        className="contents"
         onSubmit={(e) => {
           e.preventDefault();
           submit();
@@ -122,10 +118,10 @@ function EmailStep({ onBack, onSent }: { onBack: () => void; onSent: (email: str
           disabled={send.isPending}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="h-12 w-full rounded-full border border-[#e8e8e8] bg-white px-5 text-[15px] text-neutral-950 outline-none placeholder:text-neutral-400 focus:border-[#1d72e8] disabled:opacity-50 dark:border-white/10 dark:bg-[#171717] dark:text-neutral-50 dark:placeholder:text-neutral-500"
+          className={cn(FIELD, "h-12 w-full rounded-full px-5 text-[15px] placeholder:text-neutral-400 dark:placeholder:text-neutral-500")}
         />
         {send.error ? <ErrorText>{send.error}</ErrorText> : null}
-        <Button type="submit" variant="inverse" size="lg" disabled={!valid || send.isPending}>
+        <Button type="submit" variant="outline" size="lg" disabled={!valid || send.isPending}>
           {send.isPending ? (
             <Lead>
               <Spinner />
@@ -134,7 +130,7 @@ function EmailStep({ onBack, onSent }: { onBack: () => void; onSent: (email: str
           Continue
         </Button>
       </form>
-    </Page>
+    </Layout>
   );
 }
 
@@ -153,28 +149,15 @@ function CodeStep({ email, onBack }: { email: string; onBack: () => void }) {
   };
   const error = resend.error ?? verify.error;
   return (
-    <Page title="Enter code" detail={email} back="Use another email" onBack={onBack}>
-      <div className="flex flex-col gap-2.5">
-        <CodeBoxes
-          value={code}
-          invalid={!!verify.error && code.length === 6}
-          disabled={verify.isPending}
-          onChange={(digits) => {
-            setCode(digits);
-            verify.reset();
-            resend.reset();
-            if (digits.length === 6) submit(digits);
-          }}
-          onSubmit={() => submit()}
-        />
-        {error ? <ErrorText>{error}</ErrorText> : null}
-        <div className="flex min-h-9 items-center justify-center">
+    <Layout
+      title="Enter code"
+      sub={email}
+      footer={
+        <>
           {wait > 0 ? (
-            <p className="text-sm text-neutral-400 dark:text-neutral-500">{`Resend code in 00:${String(wait).padStart(2, "0")}`}</p>
+            <span>{`Resend in 00:${String(wait).padStart(2, "0")}`}</span>
           ) : (
-            <Button
-              variant="quiet"
-              size="sm"
+            <FooterLink
               disabled={resend.isPending}
               onClick={() => {
                 verify.reset();
@@ -185,21 +168,36 @@ function CodeStep({ email, onBack }: { email: string; onBack: () => void }) {
                 });
               }}
             >
-              {resend.isPending ? <Spinner /> : null}
               Resend code
-            </Button>
+            </FooterLink>
           )}
-        </div>
-        <Button variant="inverse" size="lg" disabled={code.length < 6 || verify.isPending} onClick={() => submit()}>
-          {verify.isPending ? (
-            <Lead>
-              <Spinner />
-            </Lead>
-          ) : null}
-          Continue
-        </Button>
-      </div>
-    </Page>
+          {" · "}
+          <FooterLink onClick={onBack}>Use another email</FooterLink>
+        </>
+      }
+    >
+      <CodeBoxes
+        value={code}
+        invalid={!!verify.error && code.length === 6}
+        disabled={verify.isPending}
+        onChange={(digits) => {
+          setCode(digits);
+          verify.reset();
+          resend.reset();
+          if (digits.length === 6) submit(digits);
+        }}
+        onSubmit={() => submit()}
+      />
+      {error ? <ErrorText>{error}</ErrorText> : null}
+      <Button variant="outline" size="lg" disabled={code.length < 6 || verify.isPending} onClick={() => submit()}>
+        {verify.isPending ? (
+          <Lead>
+            <Spinner />
+          </Lead>
+        ) : null}
+        Continue
+      </Button>
+    </Layout>
   );
 }
 
@@ -207,7 +205,7 @@ function CodeStep({ email, onBack }: { email: string; onBack: () => void }) {
 function CodeBoxes({ value, onChange, onSubmit, invalid, disabled }: { value: string; onChange: (digits: string) => void; onSubmit: () => void; invalid?: boolean; disabled?: boolean }) {
   const [focused, setFocused] = useState(true);
   return (
-    <div className="relative flex gap-2">
+    <div className="relative flex gap-2.5">
       {Array.from({ length: 6 }, (_, i) => {
         const current = focused && (i === value.length || (i === 5 && value.length === 6));
         return (
@@ -215,8 +213,9 @@ function CodeBoxes({ value, onChange, onSubmit, invalid, disabled }: { value: st
             key={i}
             aria-hidden="true"
             className={cn(
-              "flex h-14 flex-1 items-center justify-center rounded-[14px] border bg-white text-2xl font-medium dark:bg-[#171717]",
-              invalid ? "border-[#dc2626] dark:border-[#f87171]" : current ? "border-[#1d72e8]" : "border-[#e8e8e8] dark:border-white/10",
+              FIELD,
+              "flex h-12 flex-1 items-center justify-center rounded-[14px] text-xl font-medium",
+              invalid ? "border-[#dc2626] dark:border-[#f87171]" : current ? "border-[#1d72e8] dark:border-[#1d72e8]" : "",
             )}
           >
             {value[i] ?? ""}
@@ -245,16 +244,12 @@ type User = { id: string; name: string; email: string };
 
 function SignedIn({ user }: { user: User }) {
   return (
-    <Screen>
-      <div className="flex flex-col items-center gap-5 pb-10 text-center">
-        <DorksMark size={36} />
-        <div className="flex flex-col gap-2">
-          <h1 className="text-[26px] leading-8 font-medium tracking-[-0.02em]">You're signed in</h1>
-          <Account user={user} />
-        </div>
-      </div>
-      <Downloads />
-    </Screen>
+    <Layout title="You're signed in" footer={<Account user={user} />}>
+      <DownloadButton />
+      <Button variant="outline" size="lg" nativeButton={false} render={<a href="/docs/quickstart" />}>
+        Get started
+      </Button>
+    </Layout>
   );
 }
 
@@ -277,71 +272,52 @@ function Invite({ id, next, user }: { id: string; next: string | null; user: Use
   if (state.kind === "joining")
     return (
       <Screen>
-        <Spinner className="size-5 text-neutral-400" />
+        <Spinner className="size-5 self-center text-neutral-400" />
       </Screen>
     );
-  return (
-    <Screen>
-      <div className="flex flex-col items-center gap-5 pb-10 text-center">
-        <DorksMark size={36} />
-        <div className="flex flex-col gap-2">
-          <h1 className="text-[26px] leading-8 font-medium tracking-[-0.02em]">{state.kind === "joined" ? `You joined ${state.org}` : "Can't join this team"}</h1>
-          {state.kind === "failed" ? <p className="text-[15px] leading-[22px] text-neutral-500 dark:text-neutral-400">{state.message}</p> : null}
-          <Account user={user} />
-        </div>
-      </div>
-      {state.kind === "joined" ? (
-        // No dorks://invite/<id> here: the invitation is accepted now, and the app's /invite/<id> only opens pending ones.
-        <div className="flex flex-col gap-2.5">
-          <Button variant="inverse" size="lg" nativeButton={false} render={<a href={DOWNLOAD_URL} />}>
-            <Lead>
-              <AppleIcon />
-            </Lead>
-            Download for Mac
-          </Button>
-        </div>
-      ) : null}
-    </Screen>
+  // No dorks://invite/<id> once joined: the invitation is accepted now, and the app's /invite/<id> only opens pending ones.
+  return state.kind === "joined" ? (
+    <Layout title={`You joined ${state.org}`} footer={<Account user={user} />}>
+      <DownloadButton />
+    </Layout>
+  ) : (
+    <Layout title="Can't join this team" sub={state.message} footer={<Account user={user} />} />
   );
 }
 
-/** Which account this is, and a way out of it: one quiet line. */
+/** Which account this is, and a way out of it. */
 function Account({ user }: { user: User }) {
   const [out, setOut] = useState(false);
   return (
-    <p className="text-sm text-neutral-500 dark:text-neutral-400">
+    <>
       {user.email}
       {" · "}
-      <button
-        type="button"
+      <FooterLink
         disabled={out}
         onClick={() => {
           setOut(true);
           void authClient.signOut().finally(() => window.location.reload());
         }}
-        className="cursor-pointer hover:text-neutral-950 disabled:opacity-50 dark:hover:text-neutral-50"
       >
         Sign out
-      </button>
-    </p>
+      </FooterLink>
+    </>
   );
 }
 
-function Downloads() {
+function DownloadButton() {
   return (
-    <div className="flex flex-col gap-2.5">
-      <Button variant="inverse" size="lg" nativeButton={false} render={<a href={DOWNLOAD_URL} />}>
-        <Lead>
-          <AppleIcon />
-        </Lead>
-        Download for Mac
-      </Button>
-      <Button variant="outline" size="lg" nativeButton={false} render={<a href="/docs/quickstart" />}>
-        Get started
-      </Button>
-    </div>
+    <Button variant="outline" size="lg" nativeButton={false} render={<a href={DOWNLOAD_URL} />}>
+      <Lead>
+        <AppleIcon />
+      </Lead>
+      Download for Mac
+    </Button>
   );
 }
+
+/** The fill and hairline of every field (the email input, the code boxes): the outline button's. */
+const FIELD = "border border-[#e8e8e8] bg-white text-neutral-950 outline-none focus:border-[#1d72e8] disabled:opacity-50 dark:border-white/10 dark:bg-[#171717] dark:text-neutral-50";
 
 /** The page: content centred on the off-grey plane. */
 function Screen({ children }: { children: ReactNode }) {
@@ -352,24 +328,32 @@ function Screen({ children }: { children: ReactNode }) {
   );
 }
 
-/** An email step, laid out like the first page: the mark and a title centred, the form, then a quiet way back. */
-function Page({ title, detail, back, onBack, children }: { title: string; detail?: ReactNode; back: string; onBack: () => void; children: ReactNode }) {
+/**
+ * Every sign-in page, one layout: the mark and the title (and at most one short line), a 10px stack of controls, and one
+ * small quiet line under them (the legal line, the way back, the account).
+ */
+function Layout({ title, sub, children, footer }: { title: string; sub?: ReactNode; children?: ReactNode; footer?: ReactNode }) {
   return (
     <Screen>
-      <div className="flex flex-col items-center gap-5 pb-8 text-center">
+      <div className="flex flex-col items-center gap-5 pb-10 text-center">
         <DorksMark size={36} />
         <div className="flex flex-col gap-1.5">
           <h1 className="text-[26px] leading-8 font-medium tracking-[-0.02em]">{title}</h1>
-          {detail ? <p className="text-[15px] leading-[22px] text-neutral-500 dark:text-neutral-400">{detail}</p> : null}
+          {sub ? <p className="text-sm text-neutral-500 dark:text-neutral-400">{sub}</p> : null}
         </div>
       </div>
-      {children}
-      <div className="flex justify-center pt-3">
-        <Button variant="quiet" size="sm" className="text-neutral-500 dark:text-neutral-400" onClick={onBack}>
-          {back}
-        </Button>
-      </div>
+      {children ? <div className="flex flex-col gap-2.5">{children}</div> : null}
+      {footer ? <p className="pt-[18px] text-center text-xs leading-[17px] text-neutral-400 dark:text-neutral-500">{footer}</p> : null}
     </Screen>
+  );
+}
+
+/** A link-styled action in the footer line. */
+function FooterLink({ children, onClick, disabled }: { children: ReactNode; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button type="button" disabled={disabled} onClick={onClick} className="cursor-pointer text-neutral-500 hover:text-neutral-950 disabled:opacity-50 dark:text-neutral-400 dark:hover:text-neutral-50">
+      {children}
+    </button>
   );
 }
 

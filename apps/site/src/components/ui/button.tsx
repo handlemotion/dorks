@@ -16,13 +16,9 @@ const buttonVariants = cva(
         splitTrigger:
           "rounded-none rounded-r-full border-l border-[#f0f0f0] bg-white text-black hover:bg-[#f4f4f5] active:bg-[#e9e9ec] data-[popup-open]:bg-[#f0f0f2] focus-visible:ring-inset focus-visible:ring-black/25",
         ghost: "bg-transparent text-neutral-900 hover:bg-neutral-100 active:bg-neutral-200/70",
-        // Sign-in: an outline on the page's surface (the methods), the ink colour for a step's one action (black, white in dark), text only.
-        inverse:
-          "bg-black text-white hover:bg-neutral-800 active:bg-neutral-700 focus-visible:ring-[#3b6be8]/60 focus-visible:ring-offset-0 dark:bg-white dark:text-black dark:hover:bg-neutral-200 dark:active:bg-neutral-300",
+        // Sign-in (/login, /invite): every action is this one outline on the page's surface.
         outline:
           "border-[#e8e8e8] bg-white text-neutral-950 hover:bg-neutral-50 active:bg-neutral-100 focus-visible:ring-[#3b6be8]/60 focus-visible:ring-offset-0 dark:border-white/10 dark:bg-[#171717] dark:text-neutral-50 dark:hover:bg-[#1f1f1f] dark:active:bg-[#262626]",
-        quiet:
-          "bg-transparent text-neutral-950 hover:bg-black/5 active:bg-black/8 focus-visible:ring-[#3b6be8]/60 focus-visible:ring-offset-0 dark:text-neutral-50 dark:hover:bg-white/8 dark:active:bg-white/12",
       },
       size: {
         default: "h-9 gap-2.5 px-3.5",
