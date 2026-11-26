@@ -14,7 +14,7 @@ import {
 import { AppFail, fail, touch, type App } from "../app";
 import { insert, json, update } from "../db";
 import { cancelTimer, hasTimer, setTimer } from "../lifecycle/dispatch";
-import { nextFire, validTimeZone } from "../lib/schedule";
+import { nextFire, validTimeZone } from "@dorks/core/schedule";
 import { createDork } from "./dorks";
 import { getBuild } from "./builds";
 import { readSettings } from "./settings";

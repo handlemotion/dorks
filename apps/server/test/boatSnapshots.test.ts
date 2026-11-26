@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vite-plus/test";
-import { BoatError } from "../src/lib/boat";
+import { BoatError } from "@dorks/core/boat";
 import { boatBuildFailureMessage, boatSnapshotDriver } from "../src/lib/boatSnapshots";
 import { loadAssets, makeAssets } from "../src/snapshot/assets";
 

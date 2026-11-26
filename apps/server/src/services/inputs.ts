@@ -1,6 +1,6 @@
 import { inputField, MAX_INPUT_FIELDS, MAX_INPUT_VALUE, secretRef, type InputField } from "@dorks/shared";
 import { fail, OWNER, touch, type App } from "../app";
-import { aad, decrypt, encrypt } from "../core/crypto";
+import { aad, decrypt, encrypt } from "@dorks/core/crypto";
 import { getDork } from "../data";
 import { insert, update } from "../db";
 import { append, cancelTimer, setTimer } from "../lifecycle/dispatch";

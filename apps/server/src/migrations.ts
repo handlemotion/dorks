@@ -2,7 +2,7 @@
 // Strings, not .sql files, so the compiled sidecar needs no files next to it.
 export const MIGRATIONS: string[] = [
   `
-  -- Singleton: global settings. Token columns hold AES-GCM envelopes (core/crypto.ts); nothing here is ever returned to a client.
+  -- Singleton: global settings. Token columns hold AES-GCM envelopes (packages/core/src/crypto.ts); nothing here is ever returned to a client.
   CREATE TABLE settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     sleep_minutes REAL NOT NULL DEFAULT 5,

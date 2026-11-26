@@ -1,6 +1,6 @@
 # Boat sandboxes
 
-[Boat](https://boat.dev) is the only sandbox provider. Every dork is one Boat sandbox in **your** Boat account, created from a base snapshot the app builds for you in one click. Dorks never sees your Claude or ChatGPT password: Claude uses a token you paste, and ChatGPT is signed in by Boat itself. The driver is `apps/server/src/lib/boat.ts`.
+[Boat](https://boat.dev) is the only sandbox provider. Every dork is one Boat sandbox in **your** Boat account, created from a base snapshot the app builds for you in one click. Dorks never sees your Claude or ChatGPT password: Claude uses a token you paste, and ChatGPT is signed in by Boat itself. The driver is `packages/core/src/boat.ts`.
 
 ## Cost
 

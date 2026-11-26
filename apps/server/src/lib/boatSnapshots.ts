@@ -23,7 +23,7 @@ import {
   retryWhile,
   sandboxPath,
   type BoatOptions,
-} from "./boatHttp";
+} from "@dorks/core/boatHttp";
 
 // Boat API calls the base-snapshot build needs. Sources (https://docs.boat.dev):
 //   POST /sandboxes, GET /sandboxes, GET|DELETE /sandboxes/{id}      api/reference/sandboxes/*

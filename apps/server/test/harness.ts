@@ -2,10 +2,10 @@ import type { ClientEvent, DorkState } from "@dorks/shared";
 
 import type { App, Config } from "../src/app";
 import type { BoatCli } from "../src/lib/boatCli";
-import { BoxNotFoundError, type BoxProvider } from "../src/core/box";
+import { BoxNotFoundError, type BoxProvider } from "@dorks/core/box";
 import { getDork, openCommands, runtimeOf, type CommandKind } from "../src/data";
 import { Db, insert } from "../src/db";
-import { bridgeSecret } from "../src/lib/bridgeAuth";
+import { bridgeSecret } from "@dorks/core/bridgeAuth";
 import { dispatch, enqueue, hasTimer } from "../src/lifecycle/dispatch";
 import { fireTimer } from "../src/lifecycle/lifecycle";
 import { Scheduler } from "../src/lifecycle/scheduler";

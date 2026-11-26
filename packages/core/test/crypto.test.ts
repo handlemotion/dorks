@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { aad, decrypt, encrypt, type Keyring } from "../src/core/crypto";
+import { aad, decrypt, encrypt, type Keyring } from "../src/crypto";
 
 const k = (n: number) => btoa(String.fromCharCode(...new Uint8Array(32).fill(n)));
 const ring: Keyring = { current: 1, keys: { 1: k(1) } };

@@ -1,6 +1,6 @@
 import type { ComposioStatus } from "@dorks/shared";
 import { AppFail, fail, OWNER, type App } from "../app";
-import { aad, decrypt } from "../core/crypto";
+import { aad, decrypt } from "@dorks/core/crypto";
 import { deleteMcpServer, putMcpServer } from "./mcpServers";
 
 // Composio (docs/mcp.md): the apps that only sign in with OAuth (Figma, Slack, Gmail…) reach agents through one Composio MCP server.

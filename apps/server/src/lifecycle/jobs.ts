@@ -1,10 +1,10 @@
 import { Data, Effect } from "effect";
 import type { App } from "../app";
-import { BRIDGE_PORT, isBoxNotFound, type BoxProvider } from "../core/box";
+import { BRIDGE_PORT, isBoxNotFound, type BoxProvider } from "@dorks/core/box";
 import { getDork } from "../data";
-import { BoatError } from "../lib/boat";
-import { isBoatStatus, isNetworkError } from "../lib/boatHttp";
-import { bridgeSecret } from "../lib/bridgeAuth";
+import { BoatError } from "@dorks/core/boat";
+import { isBoatStatus, isNetworkError } from "@dorks/core/boatHttp";
+import { bridgeSecret } from "@dorks/core/bridgeAuth";
 import { createIssueComment, GithubError, isTransientGithubError } from "../lib/github";
 import { pollOnce } from "../services/poller";
 import { runBuild, SNAPSHOT_JOB } from "../services/snapshot";

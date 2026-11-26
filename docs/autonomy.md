@@ -57,11 +57,11 @@ Tables (`src/migrations.ts`):
 - `pr_subscriptions`: one row per dork, repo and PR number, with url, title, head and base refs, head SHA, `source`, `status`, `ci`, `review`, `mergeable`, `ciFixAttempts`, and the poller's bookkeeping (ETags, review and comment cursors). It maps to `subscriptionView`. `repo` is stored lowercase.
   - A new subscription is hydrated by the poller on its first read (title, refs, SHA, state, mergeable). A PR the token cannot see (404) ends the subscription, and so does one that is already closed or merged.
   - Only a human (`source: "user"`) resubscribing resets `ciFixAttempts`; an agent reviving an ended subscription keeps the budget.
-- `inbox`: the debounce buffer. `enqueueNotification` (`src/services/notify.ts`) inserts a row and arms the per-dork `notify` timer (5 s, from the first event, not sliding). When it fires, the pending rows are folded into one `notify` command and one `notify` transcript card (`src/lib/notifyRender.ts` renders the envelope). Delivered rows are swept after a day.
+- `inbox`: the debounce buffer. `enqueueNotification` (`src/services/notify.ts`) inserts a row and arms the per-dork `notify` timer (5 s, from the first event, not sliding). When it fires, the pending rows are folded into one `notify` command and one `notify` transcript card (`packages/core/src/notifyRender.ts` renders the envelope). Delivered rows are swept after a day.
 - `settings.comment_policy` and `settings.github_login` (looked up when the token is saved).
 - `commands.kind` includes `notify`.
 
-Lifecycle machine (`apps/server/src/core/machine.ts`), input `notify`, by state:
+Lifecycle machine (`packages/core/src/machine.ts`), input `notify`, by state:
 
 | State | Effect |
 |---|---|

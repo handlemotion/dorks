@@ -1,7 +1,7 @@
 # Automations
 
 Status: **implemented**. Code: `apps/server/src/services/automations.ts` (definitions, schedules, runs), `automationWatch.ts` (the
-repository watcher), `automationSentry.ts` and `lib/sentry.ts` (the Sentry watcher), `lib/schedule.ts` (time zones), `apps/web/src/routes/_conn/_app/automations.tsx` (the pages),
+repository watcher), `automationSentry.ts` and `lib/sentry.ts` (the Sentry watcher), `packages/core/src/schedule.ts` (time zones), `apps/web/src/routes/_conn/_app/automations.tsx` (the pages),
 `apps/web/src/components/automations/` (the trigger editor and templates). Wire types: `packages/shared/src/automations.ts`.
 
 An **automation** is instructions an agent runs on its own: on a schedule, when something happens in a repository, or when Sentry sees
@@ -42,7 +42,7 @@ build not built) is shown where the owner clicked; a refused automatic run is re
 
 ## Schedules
 
-One `automation:<id>` job per active automation with a schedule, due at its next time (`lib/schedule.ts` `nextFire`). The automation
+One `automation:<id>` job per active automation with a schedule, due at its next time (`packages/core/src/schedule.ts` `nextFire`). The automation
 keeps `sched_from`, the time its schedules were last evaluated from; when the job runs, every schedule whose next time after `sched_from`
 has passed starts one run, then `sched_from` moves to now and the job is set for the next time. So a time missed while the app was closed
 runs once when it is back, never once per missed time. A run that starts more than 5 minutes after its time says so, in the history (`Every weekday at 08:00, started at 08:25: Dorks was not running at 08:00`) and to the agent; the scheduler looks at least once a minute, so only a closed or sleeping app makes a run that late. A schedule pass that throws records each run it owed as failed, with the reason, before setting the next time, so a missed time is never dropped without a trace. The server runs on the owner's Mac, so a schedule fires only while it is awake: the desktop app holds off idle sleep while an active automation has a schedule, and opens at login so a reboot does not leave it closed ([desktop](desktop.md), "Keep awake" and "Open at login"); a closed lid or the `never` setting still lets it sleep, and the run then starts on wake. Saving the automation evaluates from the moment of the save.

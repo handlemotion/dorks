@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { afterEach, describe, expect, it } from "vite-plus/test";
-import { BoxNotFoundError } from "../src/core/box";
-import { boatBox, BoatError, desktopUrl, type BoatCall, type BoatOptions } from "../src/lib/boat";
+import { BoxNotFoundError } from "../src/box";
+import { boatBox, BoatError, desktopUrl, type BoatCall, type BoatOptions } from "../src/boat";
 
 const KEY = "boat_secret_test";
 const NAME = "dork-123";

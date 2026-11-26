@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vite-plus/test";
 import { uiApp } from "../src/http/ui";
 import { githubToken, updateSettings } from "../src/services/settings";
-import { bridgeSecret } from "../src/lib/bridgeAuth";
+import { bridgeSecret } from "@dorks/core/bridgeAuth";
 import { fakeFetch, harness, type Harness } from "./harness";
 
 // The UI API (docs/architecture.md) through the real router, services and SQLite.

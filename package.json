@@ -14,7 +14,8 @@
     "fmt": "vp fmt",
     "e2e": "node scripts/e2e.mjs",
     "changeset": "changeset",
-    "release:version": "changeset version && node apps/desktop/scripts/sync-version.mjs"
+    "release:version": "changeset version && node apps/desktop/scripts/sync-version.mjs",
+    "publish:packages": "pnpm -r --filter ./packages/core --filter ./packages/shared publish --access public"
   },
   "devDependencies": {
     "@changesets/changelog-github": "1.0.1",

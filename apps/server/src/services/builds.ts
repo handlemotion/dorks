@@ -21,7 +21,7 @@ import {
 } from "@dorks/shared";
 import { z } from "zod";
 import { fail, touch, type App } from "../app";
-import { decrypt, encrypt } from "../core/crypto";
+import { decrypt, encrypt } from "@dorks/core/crypto";
 import { insert, json, update } from "../db";
 import { instanceId } from "../lib/box";
 import { append, dispatch, enqueue } from "../lifecycle/dispatch";

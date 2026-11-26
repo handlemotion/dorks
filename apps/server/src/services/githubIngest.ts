@@ -1,7 +1,7 @@
 import { CI_FIX_MAX_ATTEMPTS, DEFAULT_COMMENT_POLICY, type CommentPolicy, type NotifyKind } from "@dorks/shared";
 import type { App } from "../app";
 import { append, setTimer } from "../lifecycle/dispatch";
-import { MAX_SUMMARY_CHARS } from "../lib/notifyRender";
+import { MAX_SUMMARY_CHARS } from "@dorks/core/notifyRender";
 import { enqueueNotification } from "./notify";
 import { startShip } from "./ships";
 import { endSubscription, getSub, resetCiAttempts, updateSubscription, type Subscription } from "./subscriptions";

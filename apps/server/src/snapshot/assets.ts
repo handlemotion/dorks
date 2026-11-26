@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 // What goes into the base snapshot: the bridge bundle (infra/bridge) and the installer script (infra/snapshot/boat-install.sh).
 // The compiled sidecar embeds both (./embedded.bun.ts, resolved when `bun build --compile` runs); from source they are read from
 // the repository. `bundleId` identifies the installer only: a box replaces an outdated bridge with this server's when it starts
-// (lib/boat.ts, `refreshBridge`), so a new bridge alone does not make the snapshot stale; a new installer (other CLIs or versions) does.
+// (packages/core/src/boat.ts, `refreshBridge`), so a new bridge alone does not make the snapshot stale; a new installer (other CLIs or versions) does.
 
 export interface SnapshotAssets {
   bridge: Uint8Array;

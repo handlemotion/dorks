@@ -1,7 +1,7 @@
 import { checkProof, isNonce, newNonce, proof, type AppError } from "@dorks/shared";
 import { Cause, Data, Effect, Exit, Fiber, Latch, Queue, Schema, Scope } from "effect";
 import { AppFail, type App, type Change } from "../app";
-import { bridgeSecret } from "../lib/bridgeAuth";
+import { bridgeSecret } from "@dorks/core/bridgeAuth";
 import { buildOp } from "../services/buildAgent";
 import { localOp } from "../services/local";
 import { inputOp } from "../services/inputs";

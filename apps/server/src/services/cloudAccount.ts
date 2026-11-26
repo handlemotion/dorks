@@ -1,6 +1,6 @@
 import { planOf, type PlanId } from "@dorks/shared";
 import { fail, OWNER, touch, type App } from "../app";
-import { aad, decrypt, encrypt } from "../core/crypto";
+import { aad, decrypt, encrypt } from "@dorks/core/crypto";
 import { update } from "../db";
 
 // The Dorks Cloud account (docs/mobile.md, "Desktop: Dorks Cloud"): the owner signs this server in to the relay with Better Auth's

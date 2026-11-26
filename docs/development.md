@@ -14,8 +14,9 @@ Dorks is a local-first app. Read [docs/architecture.md](architecture.md) first: 
 | `apps/mobile` | The iPhone app (Expo), a second UI for the Mac's server through the cloud relay ([mobile](mobile.md)). |
 | `apps/site` | `dorks.build`: the marketing site (Astro, static) and the edge Worker `dorks-site` that serves it and `/docs` ([site notes](../apps/site/AGENTS.md)). The relay is `dorks-cloud` on `api.dorks.build`, in its own repository. |
 | `apps/docs` | The public docs (Mintlify) at `dorks.build/docs`, deployed from `main` by `.github/workflows/mintlify.yml`. This `docs/` folder stays the internal contract. |
+| `packages/core` | The server's runtime-neutral core, published as `@dorks/core` for the Dorks Cloud Worker: lifecycle reducer, Boat driver, secret envelopes, bridge auth, schedules, stream normalizer, notification renderer. WebCrypto and `fetch` only; its `test` runs it in workerd. |
 | `packages/client` | Typed client, live stream and React hooks for the UI API, plus an in-memory mock server. |
-| `packages/shared` | Wire types shared by the server, bridge and clients (zod). |
+| `packages/shared` | Wire types shared by the server, bridge and clients (zod), published as `@dorks/shared`. |
 | `packages/ui` | shadcn-style components used by the web app. |
 | `infra/bridge` | The agent bridge that runs inside each Boat sandbox. |
 | `infra/snapshot` | Installer for the Boat base snapshot. |
@@ -72,8 +73,8 @@ The server is moving to [Effect](https://effect.website) (v4). New server code i
   (`apps/server/src/http/route.ts`): it decodes its body with `Schema`, calls services through `AppEnv`, and fails with a typed
   `ApiError` that becomes the `{ error: { code, message } }` answer. A service's `AppFail` maps to `ApiError`; anything else is a
   defect, logged and answered with a generic 500.
-- **Boat driver** (`lib/boatHttp.ts`, `lib/boat.ts`, `lib/boatSnapshots.ts`): one `BoatError`, schema-decoded responses, and shared
-  `pollUntil` / `retryWhile` loops. The drivers keep their Promise interfaces (`core/box.ts`, `core/snapshot.ts`) by running the
+- **Boat driver** (`packages/core/src/boatHttp.ts`, `packages/core/src/boat.ts`, `apps/server/src/lib/boatSnapshots.ts`): one `BoatError`, schema-decoded responses, and shared
+  `pollUntil` / `retryWhile` loops. The drivers keep their Promise interfaces (`packages/core/src/box.ts`, `apps/server/src/core/snapshot.ts`) by running the
   effects at that edge.
 - **GitHub client and PR poller** (`lib/github.ts`, `services/poller.ts`): one `GithubError` with a `reason` (`rate_limited`,
   `not_visible`, `auth`, `http`, `network`, `timeout`, `invalid_response`) and schema-decoded responses. `pollOnce` and

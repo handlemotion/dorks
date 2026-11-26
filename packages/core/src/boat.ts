@@ -1,5 +1,5 @@
 import { Effect, Option, Schema } from "effect";
-import { BoxNotFoundError, BRIDGE_PORT, type BoxProvider, type DesktopOptions, type HostPortOptions } from "../core/box";
+import { BoxNotFoundError, BRIDGE_PORT, type BoxProvider, type DesktopOptions, type HostPortOptions } from "./box";
 import {
   BoatError,
   BOX_ID,
@@ -70,7 +70,7 @@ export const checkCodexEnvironment = (call: BoatCall, org: string | undefined, n
     if (!passesOnlyItsProfile(selected)) return yield* new BoatError("boat: selected environment must disable other credentials and use a named AI credential profile");
   });
 
-/** The Boat sandbox provider (core/box.ts). Each method is an Effect run at the Promise edge the lifecycle expects. */
+/** The Boat sandbox provider (box.ts). Each method is an Effect run at the Promise edge the lifecycle expects. */
 export function boatBox(opts: BoatOptions): BoxProvider {
   if (!opts.scope) throw new BoatError("boat: a scope is required");
   const pause = pauseWith(opts.sleep);

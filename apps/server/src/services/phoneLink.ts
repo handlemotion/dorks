@@ -1,6 +1,6 @@
 import { hostname } from "node:os";
 import { fail, OWNER, touch, type App } from "../app";
-import { aad, decrypt, encrypt } from "../core/crypto";
+import { aad, decrypt, encrypt } from "@dorks/core/crypto";
 import { update } from "../db";
 import { FAILURE_MESSAGE, memberFromToken, routedPath, runAs, serverOrg, teamAllowed, type Actor } from "./team";
 

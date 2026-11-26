@@ -1,7 +1,7 @@
 import { Clock, Data, Effect, Option, Schema } from "effect";
 
 // The Boat HTTP client, in Effect: one typed error (`BoatError`), schema-decoded responses, and the poll and retry loops the
-// sandbox and snapshot drivers share. The drivers expose Promise interfaces (core/box.ts, core/snapshot.ts) by running these
+// sandbox and snapshot drivers share. The drivers expose Promise interfaces (box.ts here, core/snapshot.ts in apps/server) by running these
 // effects at their edge, so the lifecycle code that calls them is unchanged.
 
 export const DEFAULT_BASE_URL = "https://boat.dev/api/v1";

@@ -1,5 +1,5 @@
 // Thin seam over sandbox providers. The Dork lifecycle depends only on this, so provider API details
-// stay in their own files under apps/server/src/lib.
+// stay in their own files (boat.ts here; the simulator in apps/server).
 export interface BoxProvider {
   /** Must be idempotent on `name`: a retry after a crash returns the box it already made instead of leaking a second. */
   createFromSnapshot(

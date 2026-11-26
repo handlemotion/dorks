@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { nextFire } from "../src/lib/schedule";
+import { nextFire } from "@dorks/core/schedule";
 import { createAutomation, fireSchedules, listRuns, MAX_RUNS_PER_HOUR, rearmSchedule, runNow, updateAutomation } from "../src/services/automations";
 import { watchOnce } from "../src/services/automationWatch";
 import { updateSettings } from "../src/services/settings";

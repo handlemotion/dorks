@@ -1,7 +1,7 @@
 import { commentPolicy as commentPolicySchema, DEFAULT_COMMENT_POLICY, type CommentPolicy } from "@dorks/shared";
 import { knownAntigravityModels, knownModelChoices } from "./models";
 import { fail, OWNER, touch, type App } from "../app";
-import { aad, decrypt, encrypt } from "../core/crypto";
+import { aad, decrypt, encrypt } from "@dorks/core/crypto";
 import { json, update } from "../db";
 import type { GhLogin } from "../lib/ghCli";
 import { organizationApi, SENTRY_URL, SentryError, sentryOrigin, type SentryClient } from "../lib/sentry";
