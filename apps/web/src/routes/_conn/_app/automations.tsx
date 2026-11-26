@@ -114,6 +114,14 @@ function NewButton({ variant = 'outline' }: { variant?: 'outline' | 'default' })
 /** An automation's mode; an older server sends none for code. */
 const modeOf = (a: { mode?: AutomationView['mode'] }) => a.mode ?? 'code'
 
+/** The empty list's line: a personal org is told why it can't add one (no action), a team what one is. */
+function emptyText(team: boolean, chat: boolean) {
+  if (!team) return 'Automations run in a team, on a server that is always on.'
+  return chat
+    ? 'A chat that starts on a schedule, or when something happens in a repository or in Sentry.'
+    : 'An agent that runs on a schedule, or when something happens in a repository or in Sentry. Start from a template, or from scratch.'
+}
+
 function AutomationList() {
   // Each workspace has its own automations: code sessions in Agents, chats in Chat. Templates are for code.
   const [workspace] = useAppWorkspace()
@@ -131,17 +139,7 @@ function AutomationList() {
         {!!automations?.length && <PageRail query={query} onQueryChange={setQuery} placeholder="Search automations…" actions={team ? <NewButton variant="default" /> : undefined} />}
         <SettingsSections>
           {automations?.length === 0 && (
-            <EmptyState
-              figure="relay"
-              title="No automations yet"
-              description={
-                !team
-                  ? 'Automations run in a team, on a server that is always on.'
-                  : chat
-                    ? 'A chat that starts on a schedule, or when something happens in a repository or in Sentry.'
-                    : 'An agent that runs on a schedule, or when something happens in a repository or in Sentry. Start from a template, or from scratch.'
-              }
-            >
+            <EmptyState figure="relay" title="No automations yet" description={emptyText(team, chat)}>
               {team && <NewButton />}
             </EmptyState>
           )}
