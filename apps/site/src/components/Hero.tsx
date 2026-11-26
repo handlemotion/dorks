@@ -42,7 +42,7 @@ const navItems = [
 
 export function Hero() {
   return (
-    <section className="relative flex min-h-screen w-full flex-col overflow-hidden bg-[#b7a29e] text-white lg:h-svh lg:min-h-[820px]">
+    <section className="relative flex min-h-[90svh] w-full flex-col overflow-hidden bg-[#b7a29e] text-white lg:h-[90svh] lg:min-h-[760px]">
       <img
         src="/hero-bg.webp"
         alt=""
