@@ -270,14 +270,7 @@ export function SessionChat({
                     imageUrl={actions.imageUrl}
                     agent={agent}
                     onOpenSteps={onOpenSteps}
-                    onReply={
-                      canReply
-                        ? (quoted, draft) => {
-                            setReply(quoted)
-                            if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft))
-                          }
-                        : undefined
-                    }
+                    onReply={canReply ? (quoted, draft) => setReply(draft ? { ...quoted, note: draft } : quoted) : undefined}
                     onReplySend={canReply ? (quoted, answer) => run(() => send(withReply(quoted, answer))) : undefined}
                   />
                 </ShipPin>

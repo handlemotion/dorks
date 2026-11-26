@@ -36,7 +36,8 @@ export const SEND_KEY = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.te
 /**
  * Selecting text in the agent's messages offers a small Reply button on the selection; nothing takes focus, so the selection stays
  * the browser's own and can still be changed. Pressing Reply opens a compact box there: the passage, quoted on one line, and a field
- * for the answer. Enter (or the arrow) attaches the passage to the composer as a reply, with anything typed as the composer's text;
+ * for the answer. Enter (or the arrow) attaches the passage to the composer as a reply, with anything typed riding inside the reply as
+ * its note (the banner stays the one-line quote; the composer's box stays empty, and the reply can be sent as it is);
  * ⌘ Enter (Ctrl Enter) sends it right away. The arrow's tooltip says so. The passage stays highlighted (CSS Custom Highlight) while
  * the box is open, since focusing the field clears the real selection.
  */

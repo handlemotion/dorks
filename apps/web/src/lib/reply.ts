@@ -10,10 +10,14 @@
  * An image is quoted as `![alt](dorks-image:<id>)`, which the bridge already hands to Claude as an image. The chat parses the quote
  * back out and shows it above the bubble.
  */
-export type Reply =
+export type Reply = (
   | { kind: 'text'; text: string }
   /** `src` is what the chat shows; `ref` is the `dorks-image:<id>` the agent can load, when the image has one. */
   | { kind: 'image'; src: string; alt: string; ref?: string }
+) & {
+  /** What the owner wrote in the selection's box: it rides with the reply (shown in its banner), so the composer stays free. */
+  note?: string
+}
 
 const TEXT_HEADER = '> Replying to this part of your message:'
 const IMAGE_HEADER = '> Replying to this image:'
@@ -32,7 +36,7 @@ export function quoteText(text: string): string {
 
 const escapeAlt = (alt: string) => alt.replace(/[[\]\n]/g, ' ').trim() || 'Image'
 
-/** The message as sent: the reply's quote, a blank line, then what the owner wrote. */
+/** The message as sent: the reply's quote, a blank line, then what the owner wrote (the reply's note, then the composer's text). */
 export function withReply(reply: Reply | undefined, message: string): string {
   if (!reply) return message
   const quote =
@@ -40,7 +44,7 @@ export function withReply(reply: Reply | undefined, message: string): string {
       ? [TEXT_HEADER, ...reply.text.split('\n').map((line) => (line ? `> ${line}` : '>'))]
       : // Only an image the agent can load is quoted as one; anything else (a data URL, a link) is named by its caption.
         [IMAGE_HEADER, reply.ref ? `> ![${escapeAlt(reply.alt)}](${reply.ref})` : `> ${escapeAlt(reply.alt)}`]
-  return [quote.join('\n'), message.trim()].filter(Boolean).join('\n\n')
+  return [quote.join('\n'), reply.note?.trim(), message.trim()].filter(Boolean).join('\n\n')
 }
 
 /** Splits a sent message into its reply (if it starts with one) and the rest. */

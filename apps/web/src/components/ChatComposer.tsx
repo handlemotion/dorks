@@ -1,27 +1,20 @@
-import { BoxIcon, ChevronDownIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon, ZapIcon } from 'lucide-react'
+import { BoxIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon, FolderIcon, LoaderCircleIcon, PlusIcon, SquareIcon, XIcon, ZapIcon } from 'lucide-react'
 import { modelLabel, type AgentModelChoice } from '@dorks/shared'
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type RefObject, type ReactNode } from 'react'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from '@dorks/ui/dropdown-menu'
+import { MENU_POPUP_CLASS } from '@dorks/ui/dropdown-menu'
+import { Command, CommandEmpty, CommandGroup, CommandItem, CommandMenuInput, CommandList } from '@dorks/ui/command'
+import { Popover, PopoverContent, PopoverTrigger } from '@dorks/ui/popover'
+import { Switch } from '@dorks/ui/switch'
 import claudeLogo from '../assets/providers/claude.svg'
 import antigravityLogo from '../assets/providers/antigravity.svg'
 import codexDark from '../assets/providers/codex_dark.svg'
 import codexLight from '../assets/providers/codex_light.svg'
+import openaiDark from '../assets/providers/openai-dark.svg'
+import openaiLight from '../assets/providers/openai-light.svg'
 import opencodeDark from '../assets/providers/opencode-dark.svg'
 import opencodeLight from '../assets/providers/opencode.svg'
 import { Logo } from './onboarding/List'
-import { OwnerAvatar, ownerOf } from './RepoAvatar'
+import { OwnerAvatar, ownerOf, REPO_ITEM } from './RepoAvatar'
 import { EnvironmentPicker, type EnvironmentChoice } from './EnvironmentPicker'
 import { MODE_HINTS, type ModeChoice } from './ModeMenu'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@dorks/ui/input-group'
@@ -369,9 +362,15 @@ function RepositoryControl({
 
 const effortName = (effort: string) => EFFORT_NAMES[effort] ?? effort
 
-/** What the model menu shows: the model picker (Claude, OpenCode and Antigravity), the trigger's label, and the efforts the chosen model has. */
+/** Something to send: text, an image, or a reply with a note (the note is what the owner wrote). */
+const hasMessage = (text: string, images: number, reply?: Reply) => text.trim().length > 0 || images > 0 || !!reply?.note?.trim()
+
+/** The model menu is locked while sending; a box locked because the chosen agent is not connected keeps it, so another is a click away. */
+const menuLocked = (pending: boolean, disabled: boolean | undefined, canSwitch: boolean) => pending || (!!disabled && !canSwitch)
+
+/** What the model menu shows: the model picker (Claude, Codex, OpenCode and Antigravity), the trigger's label, and the efforts the chosen model has. */
 function modelMenuState(provider: AgentProvider, picker: ModelPicker | undefined, agentLabel: string | undefined) {
-  const models = provider !== 'codex' ? picker : undefined
+  const models = picker
   const choices = models?.choices ?? []
   // The trigger names the model the agent confirmed when it has, else the one chosen (or what the default resolves to).
   const active = models?.active?.model ? models.active : undefined
@@ -386,285 +385,177 @@ function modelMenuState(provider: AgentProvider, picker: ModelPicker | undefined
   return { models, choices, active, label, effort, efforts, fastOffered, fast }
 }
 
-/** Claude's group: the models the agent reported, or Claude Code as a single choice. */
-function ClaudeModels({
-  models,
-  choices,
-  provider,
-  setProvider,
-  label,
-}: {
-  models?: ModelPicker
-  choices: AgentModelChoice[]
-  provider: AgentProvider
-  setProvider?: (provider: AgentProvider) => void
-  label: string
-}) {
-  if (provider === 'claude' && models && choices.length > 0) {
-    // The CLI lists each family's current model by its alias (`opus`) and pinned older versions by full id (`claude-opus-4-8`):
-    // the current ones up front, the rest (and never the one chosen) one level down.
-    const chosen = models.model ?? DEFAULT
-    // Dorks defaults to Opus, so the CLI's own `default` (whatever it resolves to) is listed only while a session still uses it.
-    const offered = choices.filter((c) => c.model !== DEFAULT || chosen === DEFAULT || !choices.some((o) => o.model === PREFERRED))
-    const latest = offered.filter((c) => !c.model.startsWith('claude-') || c.model === chosen)
-    const older = offered.filter((c) => !latest.includes(c))
-    return (
-      <DropdownMenuRadioGroup
-        value={models.model ?? DEFAULT}
-        onValueChange={(value) => {
-          const next = choices.find((c) => c.model === value)
-          // An effort the new model does not support falls back to its default; fast mode stays on only where the model offers it.
-          models.onChange(value === DEFAULT ? undefined : value, models.effort && next?.efforts.includes(models.effort as never) ? models.effort : undefined, !!models.fast && !!next?.fast)
-        }}
-      >
-        {latest.map((c) => (
-          <ModelItem key={c.model} choice={c} choices={choices} />
-        ))}
-        {older.length > 0 && (
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <ProviderIcon provider="claude" />
-              <span className="flex-1">Older models</span>
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-44">
-              {older.map((c) => (
-                <ModelItem key={c.model} choice={c} choices={choices} />
-              ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-        )}
-      </DropdownMenuRadioGroup>
-    )
-  }
-  return (
-    <DropdownMenuRadioGroup value={provider} onValueChange={() => setProvider?.('claude')}>
-      <DropdownMenuRadioItem value="claude" closeOnClick disabled={provider !== 'claude' && !setProvider}>
-        <ProviderIcon provider="claude" />
-        {provider === 'claude' ? label : AGENT_NAMES.claude}
-      </DropdownMenuRadioItem>
-    </DropdownMenuRadioGroup>
-  )
-}
+/** A model in the menu: an agent and one of its models (none: the agent's own default), with an optional effort it starts at. */
+type ModelEntry = { key: string; provider: AgentProvider; model?: string; name: string; detail?: string; effort?: string }
 
 /**
- * OpenCode's group: every `provider/model` its configured providers offered the running session, by provider, or OpenCode as a
- * single choice (a new session starts on OpenCode's default model; the list arrives once its sandbox is up).
+ * The menu's short list, in this order: the owner's pick across the agents. Everything else (older Claude models, every Antigravity and
+ * OpenCode model the agent reported, each agent's default) is one search away. Codex's models are named here because Codex lists
+ * none before a session starts; one the plan cannot use pauses the session and asks for another.
  */
-function OpenCodeModels({
-  models,
-  provider,
-  setProvider,
-  enabled,
-  label,
-}: {
-  models?: ModelPicker
-  provider: AgentProvider
-  setProvider?: (provider: AgentProvider) => void
-  enabled?: boolean
-  label: string
-}) {
-  const choices = provider === 'opencode' ? (models?.choices ?? []) : []
-  if (models && choices.length > 0) {
-    const groups = new Map<string, AgentModelChoice[]>()
-    for (const c of choices) {
-      const group = c.model.slice(0, c.model.indexOf('/'))
-      groups.set(group, [...(groups.get(group) ?? []), c])
-    }
-    return (
-      <DropdownMenuRadioGroup value={models.model ?? DEFAULT} onValueChange={(value) => models.onChange(value === DEFAULT ? undefined : value, undefined, false)}>
-        <DropdownMenuRadioItem value={DEFAULT} closeOnClick>
-          <ProviderIcon provider="opencode" />
-          Default
-        </DropdownMenuRadioItem>
-        {[...groups].map(([group, items]) => (
-          <DropdownMenuSub key={group}>
-            <DropdownMenuSubTrigger>
-              <ProviderIcon provider="opencode" />
-              <span className="flex-1 truncate">{group}</span>
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="max-h-80 w-56 overflow-y-auto">
-              {items.map((c) => (
-                <DropdownMenuRadioItem key={c.model} value={c.model} closeOnClick title={c.model}>
-                  <span className="min-w-0 truncate">{c.name}</span>
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-        ))}
-      </DropdownMenuRadioGroup>
-    )
-  }
-  return (
-    <DropdownMenuRadioGroup value={provider} onValueChange={() => setProvider?.('opencode')}>
-      <DropdownMenuRadioItem value="opencode" closeOnClick disabled={provider !== 'opencode' && (!setProvider || !enabled)}>
-        <ProviderIcon provider="opencode" />
-        {provider === 'opencode' ? label : AGENT_NAMES.opencode}
-      </DropdownMenuRadioItem>
-    </DropdownMenuRadioGroup>
-  )
+const CURATED: ModelEntry[] = [
+  { key: 'claude:opus', provider: 'claude', model: 'opus', effort: 'high', name: 'Claude Opus 5.5' },
+  { key: 'codex:gpt-6.2-sol', provider: 'codex', model: 'gpt-6.2-sol', effort: 'high', name: 'GPT Sol 6.2' },
+  { key: 'claude:fable', provider: 'claude', model: 'fable', effort: 'high', name: 'Fable 5.2' },
+  { key: 'antigravity:gemini-4-carbon-medium', provider: 'antigravity', model: 'gemini-4-carbon-medium', name: 'Gemini Carbon', detail: 'Medium' },
+  { key: 'antigravity:gemini-4-neon-high', provider: 'antigravity', model: 'gemini-4-neon-high', name: 'Gemini Neon', detail: 'High' },
+  { key: 'claude:sonnet', provider: 'claude', model: 'sonnet', effort: 'high', name: 'Sonnet 5.5' },
+  { key: 'codex:gpt-6.2-astra', provider: 'codex', model: 'gpt-6.2-astra', effort: 'high', name: 'GPT Astra 6.2' },
+]
+
+/** Antigravity's names carry their effort in brackets ("Gemini 4 Neon (High)"): the name, and the effort in grey. */
+function splitDetail(name: string): { name: string; detail?: string } {
+  const m = /^(.*?)\s*\(([^)]*)\)\s*$/.exec(name)
+  return m ? { name: m[1]!, detail: m[2] } : { name }
 }
 
-/**
- * Antigravity's group: the models `agy models` listed for the running session, by family ("Gemini 4 Neon", its efforts inside), or
- * Antigravity as a single choice (a new session starts on agy's default model; the list arrives once its sandbox is up).
- */
-function AntigravityModels({
-  models,
-  provider,
-  setProvider,
-  enabled,
-  label,
-}: {
-  models?: ModelPicker
-  provider: AgentProvider
-  setProvider?: (provider: AgentProvider) => void
-  enabled?: boolean
-  label: string
-}) {
-  const choices = provider === 'antigravity' ? (models?.choices ?? []) : []
-  if (models && choices.length > 0) {
-    const groups = new Map<string, AgentModelChoice[]>()
-    for (const c of choices) {
-      const family = c.name.replace(/\s*\([^)]*\)\s*$/, '') || c.model
-      groups.set(family, [...(groups.get(family) ?? []), c])
-    }
-    return (
-      <DropdownMenuRadioGroup value={models.model ?? DEFAULT} onValueChange={(value) => models.onChange(value === DEFAULT ? undefined : value, undefined, false)}>
-        <DropdownMenuRadioItem value={DEFAULT} closeOnClick>
-          <ProviderIcon provider="antigravity" />
-          Default
-        </DropdownMenuRadioItem>
-        {[...groups].map(([family, items]) =>
-          items.length === 1 ? (
-            <DropdownMenuRadioItem key={family} value={items[0]!.model} closeOnClick title={items[0]!.model}>
-              <ProviderIcon provider="antigravity" />
-              <span className="min-w-0 truncate">{items[0]!.name}</span>
-            </DropdownMenuRadioItem>
-          ) : (
-            <DropdownMenuSub key={family}>
-              <DropdownMenuSubTrigger>
-                <ProviderIcon provider="antigravity" />
-                <span className="flex-1 truncate">{family}</span>
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="max-h-80 w-56 overflow-y-auto">
-                {items.map((c) => (
-                  <DropdownMenuRadioItem key={c.model} value={c.model} closeOnClick title={c.model}>
-                    <span className="min-w-0 truncate">{c.name}</span>
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-          ),
-        )}
-      </DropdownMenuRadioGroup>
-    )
-  }
-  return (
-    <DropdownMenuRadioGroup value={provider} onValueChange={() => setProvider?.('antigravity')}>
-      <DropdownMenuRadioItem value="antigravity" closeOnClick disabled={provider !== 'antigravity' && (!setProvider || !enabled)}>
-        <ProviderIcon provider="antigravity" />
-        {provider === 'antigravity' ? label : AGENT_NAMES.antigravity}
-      </DropdownMenuRadioItem>
-    </DropdownMenuRadioGroup>
+/** What the search finds beyond the short list: the models each agent reported (the session's own, and the lists known ahead), and each agent's own default. */
+function searchableModels(catalog: Partial<Record<AgentProvider, AgentModelChoice[]>>): ModelEntry[] {
+  const reported = (Object.entries(catalog) as [AgentProvider, AgentModelChoice[] | undefined][]).flatMap(([provider, choices]) =>
+    (choices ?? [])
+      .filter((c) => c.model !== DEFAULT)
+      .map((c): ModelEntry => ({ key: `${provider}:${c.model}`, provider, model: c.model, ...(provider === 'claude' ? { name: modelLabel(c) } : splitDetail(c.name || c.model)) })),
   )
-}
-
-/** One Claude model. The default names the model it stands for in grey ("Default  Opus 5.5"), so it never truncates. */
-function ModelItem({ choice: c, choices }: { choice: AgentModelChoice; choices: AgentModelChoice[] }) {
-  const stands = c.model === DEFAULT ? modelName(choices, c.model) : undefined
-  return (
-    <DropdownMenuRadioItem value={c.model} closeOnClick title={c.description}>
-      <ProviderIcon provider="claude" />
-      <span className="min-w-0 truncate">{c.model === DEFAULT ? 'Default' : modelLabel(c)}</span>
-      {stands && stands !== c.name && <span className="min-w-0 truncate text-muted-foreground">{stands}</span>}
-    </DropdownMenuRadioItem>
-  )
-}
-
-/** A submenu row: its name, then the current value in grey before the chevron. */
-function SubRow({ icon, name, value }: { icon: ReactNode; name: string; value: string }) {
-  return (
-    <>
-      {icon}
-      <span className="flex-1">{name}</span>
-      <span className="text-muted-foreground">{value}</span>
-    </>
-  )
-}
-
-/** The chosen model's efforts (the agent's default first) and fast mode, each in its own submenu so the menu stays short. */
-function ModelOptions({ models, efforts, fastOffered, fast }: { models: ModelPicker; efforts: string[]; fastOffered: boolean; fast: boolean }) {
-  if (!efforts.length && !fastOffered) return null
-  const effort = models.effort
-  return (
-    <>
-      <DropdownMenuSeparator />
-      <DropdownMenuGroup>
-        {efforts.length > 0 && (
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <SubRow icon={<EffortBars level={effort ? barsFor(efforts, effort) : 0} />} name="Effort" value={effort ? effortName(effort) : 'Default'} />
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-40">
-              <DropdownMenuRadioGroup value={effort ?? DEFAULT} onValueChange={(value) => models.onChange(models.model, value === DEFAULT ? undefined : value, fast)}>
-                <DropdownMenuRadioItem value={DEFAULT} closeOnClick>
-                  <EffortBars level={0} />
-                  Default
-                </DropdownMenuRadioItem>
-                {efforts.map((e) => (
-                  <DropdownMenuRadioItem key={e} value={e} closeOnClick>
-                    <EffortBars level={barsFor(efforts, e)} />
-                    {effortName(e)}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-        )}
-        {fastOffered && (
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <SubRow icon={<ZapIcon />} name="Fast mode" value={fast ? 'On' : 'Off'} />
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-32">
-              <DropdownMenuRadioGroup value={fast ? 'on' : 'off'} onValueChange={(value) => models.onChange(models.model, models.effort, value === 'on')}>
-                <DropdownMenuRadioItem value="on" closeOnClick>
-                  On
-                </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="off" closeOnClick>
-                  Off
-                </DropdownMenuRadioItem>
-              </DropdownMenuRadioGroup>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-        )}
-      </DropdownMenuGroup>
-    </>
-  )
+  const defaults = (Object.keys(AGENT_NAMES) as AgentProvider[]).map((p): ModelEntry => ({ key: `${p}:`, provider: p, name: AGENT_NAMES[p], detail: 'Default model' }))
+  const seen = new Set(CURATED.map((e) => e.key))
+  return [...CURATED, ...reported.filter((e) => !seen.has(e.key)), ...defaults]
 }
 
 /** What the agent itself reported, so the trigger is never only what was asked for. */
 function ModelConfirmation({ active }: { active?: { model?: string; effort?: string } }) {
   return (
-    <>
-      <DropdownMenuSeparator />
-      <DropdownMenuGroup>
-        <DropdownMenuLabel className="font-normal text-muted-foreground" data-testid="model-confirmation">
-          {active ? (
-            <span>
-              Running <span className="font-mono">{active.model}</span>
-              {active.effort ? ` at ${effortName(active.effort).toLowerCase()} effort` : ''}.
-            </span>
-          ) : (
-            'Applies from your next message.'
-          )}
-        </DropdownMenuLabel>
-      </DropdownMenuGroup>
-    </>
+    <p className="px-3 pt-1 pb-2.5 text-xs text-muted-foreground" data-testid="model-confirmation">
+      {active ? (
+        <>
+          Running <span className="font-mono">{active.model}</span>
+          {active.effort ? ` at ${effortName(active.effort).toLowerCase()} effort` : ''}.
+        </>
+      ) : (
+        'Applies from your next message.'
+      )}
+    </p>
   )
 }
 
-/** One menu for the agent, Claude's model and the effort. */
+/** The list's title: "Models" over the short list; search results go untitled. */
+const modelsHeading = (query: string) => (query ? undefined : 'Models')
+
+/** A group's small title, as the build chooser's ("Builds", "Base machine"): groups are told apart by these, not by dividers. */
+const MENU_HEADING = 'px-2 py-1.5 text-xs font-medium text-muted-foreground'
+
+/**
+ * The chosen model's effort and fast mode, the first two rows above the models. Fast mode is Claude's: shown for every Claude model,
+ * switched off and greyed where the model does not offer it.
+ */
+function ModelSettings({ models, effort, fastShown, fastOffered, fast }: { models: ModelPicker; effort?: EffortChoice; fastShown: boolean; fastOffered: boolean; fast: boolean }) {
+  if (!effort && !fastShown) return null
+  return (
+    <div className="flex flex-col p-1">
+      <p className={MENU_HEADING}>Options</p>
+      {effort && <EffortChooser choice={effort} />}
+      {fastShown && (
+        <label className={`flex h-8 items-center gap-2 px-2 text-sm ${fastOffered ? 'cursor-pointer' : 'text-muted-foreground'}`} title={fastOffered ? undefined : 'This model has no fast mode'}>
+          <ZapIcon className="size-3.5 fill-current text-muted-foreground" />
+          <span className="flex-1">Fast mode</span>
+          <Switch size="sm" checked={fast} disabled={!fastOffered} onCheckedChange={(on) => models.onChange(models.model, models.effort, on)} aria-label="Fast mode" />
+        </label>
+      )}
+    </div>
+  )
+}
+
+/** A model's mark: GPT models show ChatGPT's (they run on Codex, but the model is what the menu names), the rest their agent's. */
+function ModelMark({ entry }: { entry: Pick<ModelEntry, 'provider' | 'model'> }) {
+  // ChatGPT's mark fills about two thirds of its square: scaled up to look the size of the others (as onboarding does).
+  if (entry.provider === 'codex' && entry.model) return <Logo light={openaiLight} dark={openaiDark} className="size-3.5 scale-[1.3]" />
+  return <ProviderIcon provider={entry.provider} />
+}
+
+const CODEX_EFFORTS = ['low', 'medium', 'high', 'xhigh']
+const GEMINI_EFFORT = /^(.*)-(low|medium|high)$/
+
+/**
+ * The chosen model's efforts and how to change it. Every model has one: Claude's are the ones the model reports, Codex's are its four,
+ * and an Antigravity model's effort is part of its slug (`gemini-4-neon-high`), so changing it picks the family's other slug.
+ */
+function effortChoice(
+  provider: AgentProvider,
+  models: ModelPicker | undefined,
+  choices: AgentModelChoice[],
+  catalog: Partial<Record<AgentProvider, AgentModelChoice[]>>,
+  active?: { effort?: string },
+) {
+  if (!models) return undefined
+  if (provider === 'antigravity') {
+    const m = GEMINI_EFFORT.exec(models.model ?? '')
+    if (!m) return undefined
+    const family = m[1]!
+    const effort = m[2]!
+    const known = new Set([...(catalog.antigravity ?? []), ...choices].map((c) => c.model))
+    const efforts = ['low', 'medium', 'high'].filter((e) => e === effort || known.has(`${family}-${e}`))
+    return { efforts, effort, set: (e: string) => models.onChange(`${family}-${e}`, undefined, false) }
+  }
+  if (provider === 'codex') return { efforts: CODEX_EFFORTS, effort: models.effort ?? 'high', set: (e: string) => models.onChange(models.model, e, false) }
+  const efforts: string[] = [...(choices.find((c) => c.model === (models.model ?? DEFAULT))?.efforts ?? [])]
+  if (!efforts.length) return undefined
+  return { efforts, effort: models.effort ?? active?.effort, set: (e: string) => models.onChange(models.model, e, !!models.fast) }
+}
+type EffortChoice = NonNullable<ReturnType<typeof effortChoice>>
+
+/**
+ * The effort menu lies 2px over the model menu's edge. It is placed from the Effort row, which sits 5px inside that edge (the menu's
+ * 1px hairline and 4px padding), so it is offset 3px from the row.
+ */
+/** Effort as a row naming the current one, with its choices in a menu nested to the side: the first option above the models. */
+function EffortChooser({ choice }: { choice: EffortChoice }) {
+  const [open, setOpen] = useState(false)
+  const { efforts, effort, set } = choice
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        openOnHover
+        delay={80}
+        className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-[6px] px-2 text-sm outline-none hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05] data-[popup-open]:bg-foreground/[0.05]"
+      >
+        <span className="text-muted-foreground">
+          <EffortBars level={effort ? barsFor(efforts, effort) : 0} />
+        </span>
+        <span className="flex-1 text-left">Effort</span>
+        <span className="text-muted-foreground">{effort ? effortName(effort) : 'Default'}</span>
+        <ChevronRightIcon className="size-3.5 text-muted-foreground" />
+      </PopoverTrigger>
+      <PopoverContent side="right" align="start" sideOffset={3} alignOffset={-4} className={`${MENU_POPUP_CLASS} w-40 gap-0 p-1 ring-0`}>
+        <div role="radiogroup" aria-label="Effort" className="flex flex-col">
+          {efforts.map((e) => (
+            <button
+              key={e}
+              type="button"
+              role="radio"
+              aria-checked={e === effort}
+              onClick={() => {
+                set(e)
+                setOpen(false)
+              }}
+              className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2 text-left text-sm outline-none hover:bg-foreground/[0.05] focus-visible:bg-foreground/[0.05]"
+            >
+              <span className="text-muted-foreground">
+                <EffortBars level={barsFor(efforts, e)} />
+              </span>
+              <span className="flex-1">{effortName(e)}</span>
+              {e === effort && <CheckIcon className="size-3.5" />}
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/**
+ * One searchable menu for the agent and its model, styled like the build chooser: a search over every model, then (without a query)
+ * effort and fast mode for the chosen model, then the short list (`CURATED`). Picking another agent's model switches the agent; a
+ * running session keeps its agent, so those are greyed out.
+ */
 function ModelMenu({
   provider,
   setProvider,
@@ -674,67 +565,97 @@ function ModelMenu({
   picker,
   agentLabel,
   isNewSession,
+  catalog,
   disabled,
 }: {
   provider: AgentProvider
-  setProvider?: (provider: AgentProvider) => void
+  setProvider?: (provider: AgentProvider, choice?: { model?: string; effort?: string }) => void
   codexEnabled?: boolean
   openCodeEnabled?: boolean
   antigravityEnabled?: boolean
   picker?: ModelPicker
   agentLabel?: string
   isNewSession: boolean
+  catalog?: Partial<Record<AgentProvider, AgentModelChoice[]>>
   disabled: boolean
 }) {
-  const { models, choices, active, label, effort, efforts, fastOffered, fast } = modelMenuState(provider, picker, agentLabel)
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const { models, choices, active, label, fastOffered, fast } = modelMenuState(provider, picker, agentLabel)
+  const enabled: Record<AgentProvider, boolean> = { claude: true, codex: !!codexEnabled, opencode: openCodeEnabled !== false, antigravity: antigravityEnabled !== false }
+  const current = models?.model ?? (models ? undefined : null)
+  // A session on the agent's default is checked on the model the agent runs (`opus` resolves to the `claude-opus-…` it reported).
+  const runs = active?.model ?? choices.find((c) => c.model === DEFAULT)?.resolved
+  const resolves = (e: ModelEntry) => !!runs && !current && choices.find((c) => c.model === e.model)?.resolved === runs
+  const isCurrent = (e: ModelEntry) => e.provider === provider && ((e.model ?? undefined) === (current ?? undefined) || resolves(e))
+  // Another agent only on a new session; a running Codex session changes its model from the thread.
+  const canPick = (e: ModelEntry) => isCurrent(e) || (e.provider === provider ? !!models && !(provider === 'codex' && !isNewSession) : !!setProvider && enabled[e.provider])
+  const effortNow = effortChoice(provider, models, choices, catalog ?? {}, active)
+  const selected = CURATED.find(isCurrent)
+  const shownLabel = selected ? selected.name : label
+  const q = query.trim().toLowerCase()
+  const entries = q ? searchableModels({ ...catalog, [provider]: choices }).filter((e) => `${AGENT_NAMES[e.provider]} ${e.name} ${e.detail ?? ''} ${e.model ?? ''}`.toLowerCase().includes(q)) : CURATED
+  const pick = (e: ModelEntry) => {
+    setOpen(false)
+    if (e.provider !== provider) return setProvider?.(e.provider, e.model ? { model: e.model, effort: e.effort } : {})
+    if (!models) return
+    if (provider !== 'claude') return models.onChange(e.model, e.effort, false)
+    // An effort the new model does not support falls back to its default; fast mode stays on only where the model offers it.
+    const next = choices.find((c) => c.model === e.model)
+    const supported = (x?: string) => (x && next?.efforts.includes(x as never) ? x : undefined)
+    models.onChange(e.model, supported(e.effort) ?? supported(models.effort), !!models.fast && !!next?.fast)
+  }
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (next) setQuery('')
+      }}
+    >
+      <PopoverTrigger
         disabled={disabled}
         render={
           <InputGroupButton
             size="sm"
             variant="ghost"
-            aria-label={`Model: ${label}${effort ? `, effort: ${effortName(effort)}` : ''}${fast ? ', fast mode' : ''}`}
+            aria-label={`Model: ${shownLabel}${effortNow?.effort ? `, effort: ${effortName(effortNow.effort)}` : ''}${fast ? ', fast mode' : ''}`}
             className="ml-auto h-7 gap-1.5 px-2 text-[13px] text-muted-foreground hover:text-foreground"
           />
         }
       >
-        <span data-testid="model-label">{label}</span>
-        {effort && efforts.length > 0 && (
+        <span data-testid="model-label">{shownLabel}</span>
+        {effortNow?.effort && (
           <span className="text-muted-foreground">
-            <EffortBars level={barsFor(efforts, effort)} />
+            <EffortBars level={barsFor(effortNow.efforts, effortNow.effort)} />
           </span>
         )}
-        {fast && <ZapIcon className="text-muted-foreground" />}
+        {fast && <ZapIcon className="fill-current text-muted-foreground" />}
         <ChevronDownIcon />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>{AGENT_NAMES.claude}</DropdownMenuLabel>
-          <ClaudeModels models={models} choices={choices} provider={provider} setProvider={setProvider} label={label} />
-        </DropdownMenuGroup>
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>{AGENT_NAMES.codex}</DropdownMenuLabel>
-          <DropdownMenuRadioGroup value={provider} onValueChange={() => setProvider?.('codex')}>
-            <DropdownMenuRadioItem value="codex" closeOnClick disabled={provider !== 'codex' && (!setProvider || !codexEnabled)}>
-              <ProviderIcon provider="codex" />
-              {provider === 'codex' ? label : AGENT_NAMES.codex}
-            </DropdownMenuRadioItem>
-          </DropdownMenuRadioGroup>
-        </DropdownMenuGroup>
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>{AGENT_NAMES.opencode}</DropdownMenuLabel>
-          <OpenCodeModels models={models} provider={provider} setProvider={setProvider} enabled={openCodeEnabled !== false} label={label} />
-        </DropdownMenuGroup>
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>{AGENT_NAMES.antigravity}</DropdownMenuLabel>
-          <AntigravityModels models={models} provider={provider} setProvider={setProvider} enabled={antigravityEnabled !== false} label={label} />
-        </DropdownMenuGroup>
-        {models && <ModelOptions models={models} efforts={efforts} fastOffered={fastOffered} fast={fast} />}
-        {models && !isNewSession && <ModelConfirmation active={active} />}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </PopoverTrigger>
+      {/* Styled as the app's dropdown menus (hairline, soft shadow, 32px rows), like the build chooser. */}
+      <PopoverContent align="end" className={`${MENU_POPUP_CLASS} w-80 gap-0 p-0 ring-0`}>
+        <Command shouldFilter={false} loop className="rounded-none bg-transparent p-0">
+          <CommandMenuInput aria-label="Search all models" autoFocus value={query} onValueChange={setQuery} placeholder="Search all models…" />
+          {!q && models && <ModelSettings models={models} effort={effortNow} fastShown={provider === 'claude'} fastOffered={fastOffered} fast={fast} />}
+          <CommandList className="max-h-80">
+            <CommandEmpty className="px-3 py-3 text-left text-xs text-muted-foreground">No models match.</CommandEmpty>
+            <CommandGroup heading={modelsHeading(q)} className="p-1 **:[[cmdk-group-heading]]:px-2 **:[[cmdk-group-heading]]:py-1.5">
+              {entries.map((e) => (
+                <CommandItem key={e.key} value={e.key} disabled={!canPick(e)} data-checked={isCurrent(e) ? 'true' : undefined} onSelect={() => pick(e)} className={REPO_ITEM} title={e.model}>
+                  <ModelMark entry={e} />
+                  <span className="min-w-0 flex-1 truncate">
+                    {e.name}
+                    {e.detail && <span className="ms-1.5 text-muted-foreground">{e.detail}</span>}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+          {models && !isNewSession && <ModelConfirmation active={active} />}
+        </Command>
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -768,6 +689,7 @@ export function Composer({
   queued,
   status,
   picker,
+  catalog,
   agentLabel,
   upload,
   reply,
@@ -798,7 +720,10 @@ export function Composer({
   showRepo?: boolean
   provider?: AgentProvider
   /** Without it the agent is fixed (a running session): the menu shows it but only the effort can change. */
-  setProvider?: (provider: AgentProvider) => void
+  /** Models known before a session runs, by agent (the owner's Claude and Antigravity lists): the model menu's search finds them. */
+  catalog?: Partial<Record<AgentProvider, AgentModelChoice[]>>
+  /** Switches the agent, optionally straight to one of its models (a model of another agent picked from the menu). */
+  setProvider?: (provider: AgentProvider, choice?: { model?: string; effort?: string }) => void
   /** Codex only shows up as a choice when a Boat ChatGPT environment is configured. Claude Code is the default. */
   codexEnabled?: boolean
   /** OpenCode needs no sign-in of its own: its provider keys (`OPENCODE_API_KEY`, `DEEPSEEK_API_KEY`...) are shared secrets. */
@@ -852,7 +777,7 @@ export function Composer({
     textRef.current?.focus()
   }, [focusKey, disabled])
   useTypeToFocus(textRef, !!typeToFocus && !disabled)
-  const hasContent = text.trim().length > 0 || ready.length > 0
+  const hasContent = hasMessage(text, ready.length, reply)
   const { needsRepo, hint } = modeOf(mode, placeholder)
   const canSend = hasContent && !uploading && !locked && (!environment || !needsRepo || !!environment.value.repo.trim())
   const submit = async (handler = onSubmit) => {
@@ -1000,7 +925,8 @@ export function Composer({
             picker={picker}
             agentLabel={agentLabel}
             isNewSession={isNewSession}
-            disabled={locked}
+            catalog={catalog}
+            disabled={menuLocked(pending, disabled, !!setProvider)}
           />
           {usage}
         </div>

@@ -268,13 +268,16 @@ html.dark {
   --sidebar-border: var(--border);
 }
 
-/* Toasts: a brand-blue fill with white text, 8px corners, even 12px padding around a 16px icon and a 20px line, and a small bare close at
-   the right. Sonner's own rules are `[data-sonner-toast][data-styled]`; the leading `html` outranks them without !important. Its drop
-   shadow is switched off like every other one. */
+/* Toasts: a brand-blue fill with white text, 8px corners, 8px padding (14px before the 16px icon) around a 28px row, everything on one
+   centred line: icon, a 20px title, an action as a white button, and a small bare close at the right. The font's letters sit low in
+   their line box, so the title and the button's label are lifted 1px to sit level with the icon. Sonner's own rules are
+   `[data-sonner-toast][data-styled]`; the leading `html` outranks them without !important. Its drop shadow is switched off like every
+   other one. */
 html [data-sonner-toast][data-styled="true"] {
-  padding: 12px 44px 12px 14px;
+  padding: 8px 42px 8px 14px;
+  min-height: 44px;
   gap: 10px;
-  align-items: flex-start;
+  align-items: center;
   border: 0;
   border-radius: 8px;
   background: var(--brand);
@@ -285,7 +288,35 @@ html [data-sonner-toast][data-styled="true"] {
   box-shadow: none; /* ui-rules: allow */
 }
 html [data-sonner-toast][data-styled="true"] [data-icon] {
-  margin: 2px 0 0;
+  margin: 0;
+  align-self: flex-start;
+  /* Level with the title's 20px line (2px) inside the row's 28px (another 4px). */
+  margin-top: 6px;
+}
+html [data-sonner-toast][data-styled="true"] [data-content] {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
+}
+html [data-sonner-toast][data-styled="true"] [data-title] {
+  transform: translateY(-1px);
+}
+/* The action: a small white button with brand text, the app's 6px control radius, at the row's end before the close. */
+html [data-sonner-toast][data-styled="true"] [data-button] {
+  height: 28px;
+  margin: 0;
+  padding: 0 12px 1px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--brand-foreground);
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  transition: background-color 150ms ease-out;
+}
+html [data-sonner-toast][data-styled="true"] [data-button]:hover {
+  background: color-mix(in oklab, var(--brand-foreground) 88%, var(--brand));
 }
 html [data-sonner-toast][data-styled="true"] [data-title] {
   line-height: 20px;
@@ -296,6 +327,7 @@ html [data-sonner-toast][data-styled="true"] [data-description] {
 }
 html [data-sonner-toast][data-styled="true"] [data-close-button] {
   transition: background-color 150ms ease-out;
+  /* Centred on the first row (8px padding, 28px row). */
   top: 10px;
   right: 10px;
   left: auto;
