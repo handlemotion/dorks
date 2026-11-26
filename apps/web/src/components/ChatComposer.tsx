@@ -502,6 +502,43 @@ function searchableModels(catalog: Partial<Record<AgentProvider, AgentModelChoic
   return [...short, ...reported.filter((e) => !seen.has(e.key)), ...defaults]
 }
 
+/**
+ * The menu's rows for a query. A running session keeps its agent (`own`): it offers every model that agent can switch to, not the
+ * other agents' greyed out, and searches only those.
+ */
+function menuEntries(o: {
+  provider: AgentProvider
+  setProvider?: unknown
+  models?: ModelPicker
+  choices: AgentModelChoice[]
+  short: ModelEntry[]
+  catalog: Partial<Record<AgentProvider, AgentModelChoice[]>>
+  q: string
+}) {
+  const own = !o.setProvider && !!o.models
+  const listed = own ? ownModels(o.provider, o.choices, o.short, o.catalog) : o.short
+  const pool = own ? listed : searchableModels({ ...o.catalog, [o.provider]: o.choices }, o.short)
+  const entries = o.q ? pool.filter((e) => `${AGENT_NAMES[e.provider]} ${e.name} ${e.detail ?? ''} ${e.model ?? ''}`.toLowerCase().includes(o.q)) : listed
+  return { own, entries, search: own ? `Search ${AGENT_NAMES[o.provider]} models` : 'Search all models' }
+}
+
+/**
+ * A running session's own models: every one its agent reported, each with the effort it starts at in grey (Antigravity's is in its
+ * name), then the agent's default. Before the agent has reported any, the short list's models of that agent.
+ */
+function ownModels(provider: AgentProvider, choices: AgentModelChoice[], short: ModelEntry[], catalog: Partial<Record<AgentProvider, AgentModelChoice[]>>): ModelEntry[] {
+  const reported = choices.filter((c) => c.model !== DEFAULT)
+  if (!reported.length) return short.filter((e) => e.provider === provider)
+  const all = { ...catalog, [provider]: choices }
+  const entries = reported.map((c): ModelEntry => {
+    const base: ModelEntry = { key: `${provider}:${c.model}`, provider, model: c.model, ...(provider === 'claude' ? { name: modelLabel(c) } : splitDetail(c.name || c.model)) }
+    if (provider === 'antigravity' || provider === 'opencode') return base
+    const effort = provider === 'codex' ? startingEffort('codex', c.model, c.efforts.length ? [...c.efforts] : CODEX_EFFORTS) : effortFor(base, all)
+    return effort ? { ...base, detail: effortName(effort) } : base
+  })
+  return [...entries, { key: `${provider}:`, provider, name: AGENT_NAMES[provider], detail: 'Default model' }]
+}
+
 /** What the agent itself reported, so the trigger is never only what was asked for. */
 function ModelConfirmation({ active }: { active?: { model?: string; effort?: string } }) {
   return (
@@ -703,9 +740,7 @@ function ModelMenu({
   const selected = short.find(isCurrent)
   const shownLabel = selected ? selected.name : label
   const q = query.trim().toLowerCase()
-  const entries = q
-    ? searchableModels({ ...catalog, [provider]: choices }, short).filter((e) => `${AGENT_NAMES[e.provider]} ${e.name} ${e.detail ?? ''} ${e.model ?? ''}`.toLowerCase().includes(q))
-    : short
+  const { own, entries, search } = menuEntries({ provider, setProvider, models, choices, short, catalog: catalog ?? {}, q })
   const pick = (e: ModelEntry) => {
     setOpen(false)
     pickModel(e, { provider, setProvider, models, choices, catalog: catalog ?? {}, searched: !!q })
@@ -741,7 +776,7 @@ function ModelMenu({
       {/* Styled as the app's dropdown menus (hairline, soft shadow, 32px rows), like the build chooser. */}
       <PopoverContent align="end" className={`${MENU_POPUP_CLASS} w-80 gap-0 p-0 ring-0`}>
         <Command shouldFilter={false} loop className="rounded-none bg-transparent p-0">
-          <CommandMenuInput aria-label="Search all models" autoFocus value={query} onValueChange={setQuery} placeholder="Search all models…" />
+          <CommandMenuInput aria-label={search} autoFocus value={query} onValueChange={setQuery} placeholder={`${search}…`} />
           {!q && models && <ModelSettings models={models} effort={effortNow} fastShown={provider === 'claude'} fastOffered={fastOffered} fast={fast} />}
           <CommandList className="max-h-80">
             <CommandEmpty className="px-3 py-3 text-left text-xs text-muted-foreground">No models match.</CommandEmpty>
