@@ -20,7 +20,7 @@ const NIGHT_OWLS: MockOrg = {
   slug: "night-owls",
   logo: null,
   personal: false,
-  plan: "collab",
+  plan: "teams",
   role: "member",
   servers: [
     {

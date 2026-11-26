@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { ChevronDownIcon, LaptopIcon, LogInIcon, MailIcon, PlusIcon } from 'lucide-react'
 import type { CloudOrg, CloudStatus } from '@dorks/client'
+import { PLAN_NAMES, type PlanId } from '@dorks/shared'
 import { Button } from '@dorks/ui/button'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@dorks/ui/dialog'
 import {
@@ -25,8 +26,8 @@ import { SIDEBAR_ROW } from './sidebarChrome'
 
 const PERSONAL = 'personal'
 
-/** `collab` -> `Collab`. */
-const planLabel = (plan: string | null) => (plan ? plan.charAt(0).toUpperCase() + plan.slice(1) : null)
+/** The plan, short, beside an org in the switcher: `Dorks Teams` -> `Teams`. */
+const planLabel = (plan: PlanId | null) => (plan ? PLAN_NAMES[plan].replace(/^Dorks /, '') : null)
 
 /**
  * An org's mark, 16px: the personal org is you (your GitHub avatar, round like the account menu's); a team is its logo, or its

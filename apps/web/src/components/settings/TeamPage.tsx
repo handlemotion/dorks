@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { ChevronDownIcon } from 'lucide-react'
 import type { CloudMember, CloudOrg, CloudOrgDetail } from '@dorks/client'
 import { useStoreValue } from '@dorks/client/react'
+import { PLAN_NAMES, PLAN_SUMMARIES } from '@dorks/shared'
 import { Button } from '@dorks/ui/button'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@dorks/ui/dialog'
 import {
@@ -76,7 +77,9 @@ function About({ place, org, owner }: { place: CloudPlace; org: CloudOrg; owner:
   const [logo, setLogo] = useState(org.logo ?? '')
   const [saved, setSaved] = useState(false)
   const { run, pending, error } = usePending()
-  const plan = org.personal ? 'Personal' : org.plan === 'collab' ? 'Collab, one price for the organization' : (org.plan ?? 'Free')
+  // The plan and what it gives; the personal org is always yours, on Dorks Local unless it pays for more.
+  const id = org.plan ?? 'local'
+  const plan = `${org.personal ? 'Personal, ' : ''}${PLAN_NAMES[id]}. ${PLAN_SUMMARIES[id]}`
   if (!owner || org.personal)
     return (
       <SettingsSection title="Organization">
@@ -220,7 +223,7 @@ function Invite({ place, org, detail }: { place: CloudPlace; org: CloudOrg; deta
   const cancel = usePending()
   const pendingInvites = (detail?.invitations ?? []).filter((i) => i.status === 'pending')
   return (
-    <SettingsSection title="Invite" description="They get an email with a link and a code. Collab is one price for the organization; a fair-use limit caps its members.">
+    <SettingsSection title="Invite" description="They get an email with a link and a code. A plan is one price for the organization; a fair-use limit caps its members.">
       <SettingsGroup
         label="invite"
         onSubmit={() => {

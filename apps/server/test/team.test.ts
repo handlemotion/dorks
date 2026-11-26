@@ -207,7 +207,7 @@ describe("team identity on the relay", () => {
 describe("presence", () => {
   it("shows who views a dork while their stream is open", async () => {
     const { h } = await setup();
-    const ada = { kind: "member" as const, member: { id: "u_ada", name: "Ada", email: "", org: ORG, role: "member" as const, plan: "collab" as const } };
+    const ada = { kind: "member" as const, member: { id: "u_ada", name: "Ada", email: "", org: ORG, role: "member" as const, plan: "teams" as const } };
     const seen: unknown[] = [];
     h.app.hub.on((c) => void (c.t === "presence" && seen.push(c)));
     const close = openStream(h.app, ada, "tab-aaaaaaaa");

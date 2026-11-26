@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { planOf, type PlanId } from "@dorks/shared";
 import type { App } from "../app";
 
 // Who is asking (docs/cloud.md, "This server"). The local owner holds the owner token on loopback and may do anything. Everyone else
@@ -9,9 +10,8 @@ import type { App } from "../app";
 // while this server has no organization yet, and only what the phone allowlist allows.
 
 export type Role = "owner" | "admin" | "member";
-export type Plan = "free" | "collab";
+export type Plan = PlanId;
 const ROLES: readonly Role[] = ["owner", "admin", "member"];
-const PLANS: readonly Plan[] = ["free", "collab"];
 
 /** A person in the organization, as their token names them. */
 export interface Member {
@@ -97,7 +97,8 @@ export async function memberFromToken(app: App, token: string): Promise<{ ok: tr
     .split(",")
     .map((r) => r.trim());
   const role = ROLES.find((r) => named.includes(r));
-  const plan = PLANS.find((p) => p === c.plan) ?? "free";
+  // The cloud's older names (free, collab) read as the new ones (local, teams) until it has moved over.
+  const plan = planOf(c.plan) ?? "local";
   if (!str(c.sub) || !str(c.org) || !role) return { ok: false, why: "invalid" };
   const org = serverOrg(app);
   if (!org) return { ok: false, why: "no_org" };

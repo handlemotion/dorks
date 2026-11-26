@@ -24,7 +24,7 @@ and agents never connect to the phone: the phone reads and writes the Mac's UI A
   only when the person it is for may make it: their `x-dorks-actor` token is checked against the cloud's keys and their role
   ([cloud](cloud.md)). A compromised relay can do no more than a signed-in member could.
 - **Servers belong to orgs.** A Mac pairs into an organization (the user's personal one by default); every member of it sees the
-  Mac in `GET /v1/macs` and reaches it through the relay. A collab org's hosted server is one more entry, `kind: "hosted"`. Plans,
+  Mac in `GET /v1/macs` and reaches it through the relay. A Teams or Cloud org's hosted server is one more entry, `kind: "hosted"`. Plans,
   roles and identity: [cloud](cloud.md).
 - **Separate private repository** for the cloud service (`handlemotion/dorks-cloud`): it holds accounts and deploy config, while
   this repository is public. The protocol between the Mac and the relay is specified here, so either side can change against it.
@@ -105,7 +105,7 @@ socket (hibernatable WebSockets) and multiplexes phone requests over it.
 | `/api/auth/*` | | Better Auth (Apple ID token, Google OAuth, email code (`emailOTP`), `bearer`, `expo`, `organization` and `jwt` plugins) |
 | `GET /api/auth/jwks` | none | The keys identity tokens are signed with (EdDSA, Ed25519) |
 | `GET /api/auth/token` | session | An identity token for the session's active org |
-| `/api/auth/organization/*` | session | Teams: `create`, `invite-member`, `accept-invitation` (only the invited address), `update-member-role`, `remove-member`, `leave`, `set-active`, `delete`, `list-members`. Members plus open invitations up to the plan's `memberLimit` (`403 MEMBER_LIMIT_REACHED`; a fair-use cap on collab) |
+| `/api/auth/organization/*` | session | Teams: `create`, `invite-member`, `accept-invitation` (only the invited address), `update-member-role`, `remove-member`, `leave`, `set-active`, `delete`, `list-members`. Members plus open invitations up to the plan's `memberLimit` (`403 MEMBER_LIMIT_REACHED`; a fair-use cap on Teams and Cloud) |
 | `GET /v1/orgs` | session | `{id, name, slug, logo, personal, role, active, plan}[]`: my orgs |
 | `GET /v1/orgs/:orgId/entitlements` | session, member | The org's plan ([cloud](cloud.md), "Plans") |
 | `GET /v1/sign-in-methods` | none | `{google, apple, email}`: which sign-in methods are configured |
@@ -181,7 +181,7 @@ server belongs to one org: a member's Mac (normally in its owner's personal org)
   computer, Phone, Antigravity's sign-in) is left out. Appearance and Dorks Cloud are this app's and always editable
   (`apps/web/src/components/settings/access.tsx`).
 - **Teams**: Settings › Organization manages the org you work in now: its members and roles, invitations (admins), name and logo
-  (owners), leave, delete (owners, never the personal org). Collab is one price per org; a fair-use cap limits its members
+  (owners), leave, delete (owners, never the personal org). A plan is one price per org; a fair-use cap limits its members
   (`MEMBER_LIMIT_REACHED`). Invitations to you show under *Invitations* in the switcher and in Settings › Account; the email's
   `dorks://invite/<id>` opens `#/invite/<id>` (the desktop shell does not register the `dorks://` scheme yet; until then the code
   from the email goes in Settings › Account).
@@ -205,7 +205,7 @@ one in-memory mock server per remote server, so switching visibly changes the ch
 
 ## Dorks Cloud
 
-Plans (free, collab with its hosted server, the cloud credit add-on), teams and roles, identity tokens and what a team server does
+Plans (Dorks Local, Dorks Teams, Dorks Cloud), teams and roles, identity tokens and what a team server does
 with them: [cloud](cloud.md). A hosted server is the same `apps/server`, dialing the relay like a Mac; the phone cannot tell them
 apart beyond `kind`.
 
