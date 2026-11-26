@@ -1,0 +1,14 @@
+---
+title: "Builds"
+description: "Named machines with your tools, variables and repositories ready at boot."
+---
+
+Every session starts from the base machine. A **build** layers your setup on top: tools to install, environment variables, and repositories cloned in advance, each with an optional setup script. A session on a build is ready the moment it boots.
+
+- **Setup runs once**, when the build is built, and is saved as an image in your Boat account. Sessions wake from their own disk.
+- **Variables** reach the sandbox over its authenticated socket, never baked into the image. Mark one *needed while building* when the setup script reads it.
+- **Pick a default build** so every new session starts on it, or choose one per session in the composer.
+
+## Let an agent set it up
+
+Open **Set up a machine** from a build's page. The agent installs what you ask in a throwaway machine, tries the setup, and submits a draft. Agents can only edit drafts: you review the change and approve it before an image is saved or a secret reaches a script.

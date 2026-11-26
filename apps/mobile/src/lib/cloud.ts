@@ -1,4 +1,4 @@
-import { CLOUD_URL } from "./config";
+import { CLOUD_URL, LEGACY_CLOUD_URL } from "./config";
 
 /** A Mac paired with this account (`GET /v1/macs`). */
 export interface Mac {
@@ -44,4 +44,7 @@ export function parsePairUrl(data: string): { code: string; cloud: string | null
 }
 
 /** Whether a pairing code was made by the relay this app talks to (a QR code from another one cannot be claimed here). */
-export const sameCloud = (cloudUrl: string | null) => !cloudUrl || cloudUrl.replace(/\/+$/, "") === CLOUD_URL;
+export const sameCloud = (cloudUrl: string | null) => {
+  const url = cloudUrl?.replace(/\/+$/, "");
+  return !url || url === CLOUD_URL || (url === LEGACY_CLOUD_URL && CLOUD_URL === "https://api.dorks.build");
+};

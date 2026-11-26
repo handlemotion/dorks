@@ -1,0 +1,32 @@
+---
+title: "Sessions"
+description: "One chat, one sandbox, one agent."
+---
+
+A session (a *dork*) is a chat with an agent that has a cloud machine of its own. It shows in the sidebar under its repository.
+
+## Lifecycle
+
+| State | Meaning |
+| --- | --- |
+| Creating | The sandbox is booting from your base machine or a [build](/builds). |
+| Working | The agent is on a turn. |
+| Idle | The turn ended; the sandbox is still up. |
+| Sleeping | Idle long enough (Settings, sleep minutes): the sandbox is paused and costs nothing. |
+| Waking | A message, a CI failure or a review comment arrived; the sandbox resumes from its own disk. |
+
+Waking is automatic. Anything that needs the agent wakes it, so you never manage machines by hand.
+
+## Modes
+
+- **Code** (the default): works in a repository and opens pull requests.
+- **Chat**: no repository; for questions, research and one-off scripts.
+- **Nerd**: a coordinator that plans the work and starts worker sessions for the pieces, then follows their pull requests.
+
+## What the agent can use
+
+- The repository, `git`, `gh` and whatever your build installs.
+- A desktop with Chrome. Open the **Computer** tab to watch it live and take over.
+- **Previews**: when the agent starts a dev server and shows it, it opens in **Artifacts**. You can comment on an element, a passage or an area, and the agent answers in place.
+- **Your computer**, if you allow it: a session can ask to run one command on your Mac (for something that only exists there). You allow it once per session, or always.
+- **Secure inputs**: when the agent needs a login or a code, it asks and uses the value without ever reading it.

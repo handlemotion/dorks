@@ -1,0 +1,23 @@
+{
+  "name": "@dorks/site",
+  "private": true,
+  "description": "dorks.build: the marketing site (Astro, static) and the edge Worker that serves it and proxies /docs to Mintlify.",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "pnpm build && wrangler dev",
+    "typecheck": "astro check && tsc --noEmit -p tsconfig.worker.json",
+    "deploy": "pnpm build && wrangler deploy"
+  },
+  "dependencies": {
+    "@fontsource-variable/geist": "^5.3.0",
+    "astro": "^7.4.13"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.12",
+    "@cloudflare/workers-types": "^5.20261101.0",
+    "typescript": "^6.0.2",
+    "wrangler": "^4.168.0"
+  }
+}

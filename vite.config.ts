@@ -2,11 +2,11 @@ import { defineConfig } from "vite-plus";
 
 // Shared lint and format settings for the whole workspace (`vp check`, `vp lint`, `vp fmt` run from the root).
 export default defineConfig({
-  // House style: 200 columns everywhere; Markdown (hand-wrapped prose) is left alone; the web app and @dorks/ui without semicolons (web also with single quotes).
+  // House style: 200 columns everywhere; Markdown and MDX (hand-wrapped prose) are left alone; the web app and @dorks/ui without semicolons (web also with single quotes).
   // The shadcn / AI Elements files in packages/ui are installed by the shadcn CLI and overwritten on every update, so they stay as published.
   fmt: {
     printWidth: 200,
-    ignorePatterns: ["**/*.md", "packages/ui/src/components/ui/**", "packages/ui/src/components/ai-elements/**", "**/*.gen.ts", "**/dist/**"],
+    ignorePatterns: ["**/*.md", "**/*.mdx", "packages/ui/src/components/ui/**", "packages/ui/src/components/ai-elements/**", "**/*.gen.ts", "**/dist/**"],
     overrides: [
       { files: ["apps/web/**"], options: { singleQuote: true, semi: false } },
       { files: ["packages/ui/**"], options: { semi: false } },

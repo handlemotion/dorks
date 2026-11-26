@@ -17,7 +17,7 @@ All optional.
 | `SIM_HOST_KEY` | none | Required when `BOX_PROVIDER=sim`; guards the `/sim/*` routes. |
 | `DORKS_AGY_BIN` | none | The Antigravity CLI for the Google sign-in when there is no `agy` on `PATH` (or in `~/.local/bin`); without one, Dorks downloads Google's current build into the data dir, checksum-verified. See [Boat](boat.md). |
 | `DORKS_BOAT_BIN` | none | The Boat CLI to use when there is no `boat` on `PATH` (or in `~/.ascii/bin`). The desktop app sets it to the copy it bundles. See [Boat](boat.md#sign-in-with-the-boat-cli). |
-| `DORKS_CLOUD_URL` | `https://dorks-cloud.handle-473.workers.dev` | The cloud relay the iPhone app reaches this server through ([mobile](mobile.md)). Empty turns the phone link off. |
+| `DORKS_CLOUD_URL` | `https://api.dorks.build` | The cloud relay the iPhone app reaches this server through ([mobile](mobile.md)). Empty turns the phone link off. |
 | `GH_TOKEN`, then `GITHUB_TOKEN` | none (the GitHub CLI's login) | Secret. Overrides the GitHub CLI's login, the way `gh` itself resolves them, for development and the e2e. GitHub must still be connected (`githubConnected`). The desktop app never passes them. See [GitHub](github.md). |
 
 `secrets.json` holds three keys, generated on first run: `bridgeSecretKey` (the per-dork bridge secret is `HMAC-SHA256(bridgeSecretKey, "bridge|" + dorkId)`), `encryptionKey` (AES-GCM, 32 bytes, base64) and `ownerToken`. Back it up together with `dorks.db`: without `encryptionKey` the stored tokens cannot be decrypted.
@@ -57,7 +57,7 @@ Read at build time; `EXPO_PUBLIC_*` values ship inside the app, so never put a s
 
 | Variable | Purpose |
 |---|---|
-| `EXPO_PUBLIC_CLOUD_URL` | The relay's origin (default `https://dorks-cloud.handle-473.workers.dev`). |
+| `EXPO_PUBLIC_CLOUD_URL` | The relay's origin (default `https://api.dorks.build`). |
 | `EXPO_PUBLIC_DEV_PASSWORD` | `1` adds an email and password sign-in, for the simulator. Never set it for a TestFlight build. |
 | `EAS_PROJECT_ID` | The EAS project (or `extra.eas.projectId`); turns on EAS Update. |
 

@@ -1,0 +1,17 @@
+---
+title: "Run from source"
+description: "The server and UI from the repository."
+---
+
+Needs Node 24, pnpm (`corepack enable`) and [Bun](https://bun.sh).
+
+```bash
+git clone https://github.com/handlemotion/dorks
+cd dorks
+pnpm install
+pnpm dev
+```
+
+`pnpm dev` runs the real server with simulated sandboxes and the web UI, and prints the URL to open. You can create and drive sessions without a Boat account. `pnpm dev:mock` serves the UI against an in-memory mock server.
+
+The environment variables are listed in [docs/env.md](https://github.com/handlemotion/dorks/blob/main/docs/env.md), and the architecture in [docs/architecture.md](https://github.com/handlemotion/dorks/blob/main/docs/architecture.md).

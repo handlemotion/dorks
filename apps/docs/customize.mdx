@@ -1,0 +1,18 @@
+---
+title: "Skills and MCP servers"
+description: "Give every agent the same skills and tools, once."
+---
+
+## Skills
+
+Paste what a skill's README gives you (`npx skills add owner/repo`, a GitHub link or a folder in a repo) in **Customize, Skills**. Dorks keeps the files and every sandbox, now and later, gets them. **Update** pulls the skill again from its repository.
+
+## MCP servers
+
+Add servers in **Customize** and every Claude agent gets their tools:
+
+- **Connectors**: one-key cards for popular servers (Sentry, Linear, Notion, Stripe, Supabase, Context7, Exa and more).
+- **Apps through Composio**: Slack, Gmail, Figma, Google Drive and others that only sign in with OAuth. Save a Composio key once, then sign each app in.
+- **Custom**: any remote (HTTP) server, with headers or an OAuth sign-in, or a local `stdio` command run in the sandbox.
+
+Changes reach awake agents once their current turn ends.

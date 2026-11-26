@@ -53,7 +53,7 @@ and agents never connect to the phone: the phone reads and writes the Mac's UI A
 | `DELETE /api/phone/pair` | | `{}`: cancels a pairing in progress |
 | `DELETE /api/phone` | | `{}`: unpairs this Mac and closes the link |
 
-`DORKS_CLOUD_URL` (default the hosted relay, `https://dorks-cloud.handle-473.workers.dev`; empty turns the feature off) is the relay's origin ([env](env.md)).
+`DORKS_CLOUD_URL` (default the hosted relay, `https://api.dorks.build`; empty turns the feature off) is the relay's origin ([env](env.md)).
 
 ## Link protocol (WebSocket, dialed by the Mac)
 

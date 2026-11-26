@@ -12,7 +12,8 @@ Dorks is a local-first app. Read [docs/architecture.md](architecture.md) first: 
 | `apps/web` | The UI, a static React SPA. |
 | `apps/desktop` | Tauri 2 macOS shell that supervises the server. |
 | `apps/mobile` | The iPhone app (Expo), a second UI for the Mac's server through the cloud relay ([mobile](mobile.md)). |
-| `apps/mobile` | The iPhone app (Expo), a second UI for the Mac's server through the cloud relay: [mobile](mobile.md). |
+| `apps/site` | `dorks.build`: the marketing site (Astro, static) and the edge Worker `dorks-site` that serves it and `/docs` ([site notes](../apps/site/AGENTS.md)). The relay is `dorks-cloud` on `api.dorks.build`, in its own repository. |
+| `apps/docs` | The public docs (Mintlify) at `dorks.build/docs`, deployed from `main` by `.github/workflows/mintlify.yml`. This `docs/` folder stays the internal contract. |
 | `packages/client` | Typed client, live stream and React hooks for the UI API, plus an in-memory mock server. |
 | `packages/shared` | Wire types shared by the server, bridge and clients (zod). |
 | `packages/ui` | shadcn-style components used by the web app. |
