@@ -24,6 +24,7 @@ import { ReplyBanner, SEND_KEY } from './Reply'
 import { useComposerMenu, type Mentions } from './ComposerMenu'
 import { addDropZone, dropZoneFor } from '../lib/fileDrop'
 import type { Reply } from '../lib/reply'
+import { rememberEffort, startingEffort } from '../lib/effort'
 
 export type AgentProvider = 'codex' | 'claude' | 'opencode' | 'antigravity'
 
@@ -57,8 +58,19 @@ const DEFAULT = 'default'
 export const PREFERRED = 'opus'
 /** Opus when the agent offers it; otherwise nothing, the CLI's own default. */
 export const preferredModel = (choices: readonly AgentModelChoice[]) => (choices.some((c) => c.model === PREFERRED) ? PREFERRED : undefined)
-/** An effort among the model's as one to three bars. */
-const barsFor = (efforts: string[], effort: string) => Math.max(1, Math.ceil(((efforts.indexOf(effort) + 1) / efforts.length) * 3))
+/** Codex's model when a new session names none: the short list's first GPT (Codex lists its models only once a session runs). */
+export const CODEX_PREFERRED = 'gpt-6.2-sol'
+/** The effort a Claude model starts at (`startingEffort`), from the efforts and resolved id the agent reported for it. */
+export const claudeStartingEffort = (choices: readonly AgentModelChoice[], model: string | undefined) => {
+  const c = choices.find((x) => x.model === (model ?? DEFAULT))
+  return startingEffort('claude', model ?? DEFAULT, c?.efforts ?? [], c?.resolved)
+}
+/**
+ * An effort as one to three bars, by its name, so medium and high never draw alike (five levels spread over three bars did): low and
+ * below one, medium two, high and above three. The menu names the exact level.
+ */
+const BARS: Record<string, number> = { none: 1, minimal: 1, low: 1, medium: 2, high: 3, xhigh: 3, max: 3 }
+const barsFor = (_efforts: string[], effort: string) => BARS[effort] ?? 2
 
 /**
  * The Claude model menu's state. `choices` are the models the agent itself reported (the CLI's own list, never one kept here);
@@ -385,8 +397,8 @@ function modelMenuState(provider: AgentProvider, picker: ModelPicker | undefined
   return { models, choices, active, label, effort, efforts, fastOffered, fast }
 }
 
-/** A model in the menu: an agent and one of its models (none: the agent's own default), with an optional effort it starts at. */
-type ModelEntry = { key: string; provider: AgentProvider; model?: string; name: string; detail?: string; effort?: string }
+/** A model in the menu: an agent and one of its models (none: the agent's own default). The effort it starts at is `startingEffort`'s. */
+type ModelEntry = { key: string; provider: AgentProvider; model?: string; name: string; detail?: string }
 
 /**
  * The menu's short list, in this order: the owner's pick across the agents. Everything else (older Claude models, every Antigravity and
@@ -394,14 +406,70 @@ type ModelEntry = { key: string; provider: AgentProvider; model?: string; name: 
  * none before a session starts; one the plan cannot use pauses the session and asks for another.
  */
 const CURATED: ModelEntry[] = [
-  { key: 'claude:opus', provider: 'claude', model: 'opus', effort: 'high', name: 'Claude Opus 5.5' },
-  { key: 'codex:gpt-6.2-sol', provider: 'codex', model: 'gpt-6.2-sol', effort: 'high', name: 'GPT Sol 6.2' },
-  { key: 'claude:fable', provider: 'claude', model: 'fable', effort: 'high', name: 'Fable 5.2' },
-  { key: 'antigravity:gemini-4-carbon-medium', provider: 'antigravity', model: 'gemini-4-carbon-medium', name: 'Gemini Carbon', detail: 'Medium' },
-  { key: 'antigravity:gemini-4-neon-high', provider: 'antigravity', model: 'gemini-4-neon-high', name: 'Gemini Neon', detail: 'High' },
-  { key: 'claude:sonnet', provider: 'claude', model: 'sonnet', effort: 'high', name: 'Sonnet 5.5' },
-  { key: 'codex:gpt-6.2-astra', provider: 'codex', model: 'gpt-6.2-astra', effort: 'high', name: 'GPT Astra 6.2' },
+  { key: 'claude:opus', provider: 'claude', model: 'opus', name: 'Claude Opus 5.5' },
+  { key: 'codex:gpt-6.2-sol', provider: 'codex', model: 'gpt-6.2-sol', name: 'GPT Sol 6.2' },
+  { key: 'claude:fable', provider: 'claude', model: 'fable', name: 'Fable 5.2' },
+  // Antigravity's effort is part of the slug: these name the family, and `curated` fills in the effort it starts at.
+  { key: 'antigravity:gemini-4-carbon', provider: 'antigravity', model: 'gemini-4-carbon', name: 'Gemini Carbon' },
+  { key: 'antigravity:gemini-4-neon', provider: 'antigravity', model: 'gemini-4-neon', name: 'Gemini Neon' },
+  { key: 'claude:sonnet', provider: 'claude', model: 'sonnet', name: 'Sonnet 5.5' },
+  { key: 'codex:gpt-6.2-astra', provider: 'codex', model: 'gpt-6.2-astra', name: 'GPT Astra 6.2' },
 ]
+
+/**
+ * Switches to a model from the menu. Every model starts at its own effort (the owner's last pick for it, or the recommended one),
+ * never the previous model's; fast mode stays on only where the new model offers it.
+ */
+function pickModel(
+  e: ModelEntry,
+  ctx: {
+    provider: AgentProvider
+    setProvider?: (provider: AgentProvider, choice?: { model?: string; effort?: string }) => void
+    models?: ModelPicker
+    choices: AgentModelChoice[]
+    catalog: Partial<Record<AgentProvider, AgentModelChoice[]>>
+    searched: boolean
+  },
+) {
+  const { provider, models, choices } = ctx
+  // A Gemini slug found by search and picked by its effort (`gemini-4-neon-high`) is that family's effort from now on.
+  const gemini = ctx.searched && e.provider === 'antigravity' ? GEMINI_EFFORT.exec(e.model ?? '') : null
+  if (gemini) rememberEffort('antigravity', gemini[1], gemini[2]!)
+  const effort = effortFor(e, { ...ctx.catalog, [provider]: choices })
+  if (e.provider !== provider) return ctx.setProvider?.(e.provider, e.model ? { model: e.model, effort } : {})
+  if (!models) return
+  if (provider !== 'claude') return models.onChange(e.model, effort, false)
+  const next = choices.find((c) => c.model === (e.model ?? DEFAULT))
+  models.onChange(e.model, effort, !!models.fast && !!next?.fast)
+}
+
+/** An Antigravity family's efforts: the ones its slugs in the list carry, or all of them before agy has listed any. */
+function geminiEfforts(family: string, known: readonly AgentModelChoice[]): string[] {
+  const listed = GEMINI_LEVELS.filter((e) => known.some((c) => c.model === `${family}-${e}`))
+  return listed.length ? listed : ['low', 'medium', 'high']
+}
+
+/** The Antigravity models known: the list agy gave, and a running Antigravity session's own. */
+const geminiKnown = (provider: AgentProvider, choices: AgentModelChoice[], catalog?: Partial<Record<AgentProvider, AgentModelChoice[]>>) => [
+  ...(catalog?.antigravity ?? []),
+  ...(provider === 'antigravity' ? choices : []),
+]
+
+/** The short list with each Antigravity family on the slug for the effort it starts at, named in grey beside it. */
+function curated(known: readonly AgentModelChoice[]): ModelEntry[] {
+  return CURATED.map((e) => {
+    if (e.provider !== 'antigravity' || !e.model) return e
+    const effort = startingEffort('antigravity', e.model, geminiEfforts(e.model, known)) ?? 'medium'
+    return { ...e, key: `antigravity:${e.model}-${effort}`, model: `${e.model}-${effort}`, detail: effortName(effort) }
+  })
+}
+
+/** The effort a model picked from the menu starts at, so the trigger and what is sent agree from the first message. */
+function effortFor(e: ModelEntry, catalog: Partial<Record<AgentProvider, AgentModelChoice[]>>): string | undefined {
+  if (e.provider === 'claude') return claudeStartingEffort(catalog.claude ?? [], e.model)
+  if (e.provider === 'codex') return e.model ? startingEffort('codex', e.model, CODEX_EFFORTS) : undefined
+  return undefined
+}
 
 /** Antigravity's names carry their effort in brackets ("Gemini 4 Neon (High)"): the name, and the effort in grey. */
 function splitDetail(name: string): { name: string; detail?: string } {
@@ -410,15 +478,15 @@ function splitDetail(name: string): { name: string; detail?: string } {
 }
 
 /** What the search finds beyond the short list: the models each agent reported (the session's own, and the lists known ahead), and each agent's own default. */
-function searchableModels(catalog: Partial<Record<AgentProvider, AgentModelChoice[]>>): ModelEntry[] {
+function searchableModels(catalog: Partial<Record<AgentProvider, AgentModelChoice[]>>, short: ModelEntry[]): ModelEntry[] {
   const reported = (Object.entries(catalog) as [AgentProvider, AgentModelChoice[] | undefined][]).flatMap(([provider, choices]) =>
     (choices ?? [])
       .filter((c) => c.model !== DEFAULT)
       .map((c): ModelEntry => ({ key: `${provider}:${c.model}`, provider, model: c.model, ...(provider === 'claude' ? { name: modelLabel(c) } : splitDetail(c.name || c.model)) })),
   )
   const defaults = (Object.keys(AGENT_NAMES) as AgentProvider[]).map((p): ModelEntry => ({ key: `${p}:`, provider: p, name: AGENT_NAMES[p], detail: 'Default model' }))
-  const seen = new Set(CURATED.map((e) => e.key))
-  return [...CURATED, ...reported.filter((e) => !seen.has(e.key)), ...defaults]
+  const seen = new Set(short.map((e) => e.key))
+  return [...short, ...reported.filter((e) => !seen.has(e.key)), ...defaults]
 }
 
 /** What the agent itself reported, so the trigger is never only what was asked for. */
@@ -472,7 +540,8 @@ function ModelMark({ entry }: { entry: Pick<ModelEntry, 'provider' | 'model'> })
 }
 
 const CODEX_EFFORTS = ['low', 'medium', 'high', 'xhigh']
-const GEMINI_EFFORT = /^(.*)-(low|medium|high)$/
+const GEMINI_LEVELS = ['low', 'medium', 'high', 'xhigh']
+const GEMINI_EFFORT = /^(.*)-(low|medium|high|xhigh)$/
 
 /**
  * The chosen model's efforts and how to change it. Every model has one: Claude's are the ones the model reports, Codex's are its four,
@@ -491,14 +560,38 @@ function effortChoice(
     if (!m) return undefined
     const family = m[1]!
     const effort = m[2]!
-    const known = new Set([...(catalog.antigravity ?? []), ...choices].map((c) => c.model))
-    const efforts = ['low', 'medium', 'high'].filter((e) => e === effort || known.has(`${family}-${e}`))
-    return { efforts, effort, set: (e: string) => models.onChange(`${family}-${e}`, undefined, false) }
+    const efforts = [...new Set([...geminiEfforts(family, [...(catalog.antigravity ?? []), ...choices]), effort])].sort((a, b) => GEMINI_LEVELS.indexOf(a) - GEMINI_LEVELS.indexOf(b))
+    return {
+      efforts,
+      effort,
+      set: (e: string) => {
+        rememberEffort('antigravity', family, e)
+        models.onChange(`${family}-${e}`, undefined, false)
+      },
+    }
   }
-  if (provider === 'codex') return { efforts: CODEX_EFFORTS, effort: models.effort ?? 'high', set: (e: string) => models.onChange(models.model, e, false) }
+  if (provider === 'codex') {
+    // A session on Codex's own default (no model named) runs it at high, the bridge's default.
+    const effort = models.effort ?? (models.model ? startingEffort('codex', models.model, CODEX_EFFORTS) : 'high')
+    return {
+      efforts: CODEX_EFFORTS,
+      effort,
+      set: (e: string) => {
+        if (models.model) rememberEffort('codex', models.model, e)
+        models.onChange(models.model, e, false)
+      },
+    }
+  }
   const efforts: string[] = [...(choices.find((c) => c.model === (models.model ?? DEFAULT))?.efforts ?? [])]
   if (!efforts.length) return undefined
-  return { efforts, effort: models.effort ?? active?.effort, set: (e: string) => models.onChange(models.model, e, !!models.fast) }
+  return {
+    efforts,
+    effort: models.effort ?? active?.effort,
+    set: (e: string) => {
+      rememberEffort('claude', models.model ?? DEFAULT, e)
+      models.onChange(models.model, e, !!models.fast)
+    },
+  }
 }
 type EffortChoice = NonNullable<ReturnType<typeof effortChoice>>
 
@@ -591,19 +684,16 @@ function ModelMenu({
   // Another agent only on a new session; a running Codex session changes its model from the thread.
   const canPick = (e: ModelEntry) => isCurrent(e) || (e.provider === provider ? !!models && !(provider === 'codex' && !isNewSession) : !!setProvider && enabled[e.provider])
   const effortNow = effortChoice(provider, models, choices, catalog ?? {}, active)
-  const selected = CURATED.find(isCurrent)
+  const short = curated(geminiKnown(provider, choices, catalog))
+  const selected = short.find(isCurrent)
   const shownLabel = selected ? selected.name : label
   const q = query.trim().toLowerCase()
-  const entries = q ? searchableModels({ ...catalog, [provider]: choices }).filter((e) => `${AGENT_NAMES[e.provider]} ${e.name} ${e.detail ?? ''} ${e.model ?? ''}`.toLowerCase().includes(q)) : CURATED
+  const entries = q
+    ? searchableModels({ ...catalog, [provider]: choices }, short).filter((e) => `${AGENT_NAMES[e.provider]} ${e.name} ${e.detail ?? ''} ${e.model ?? ''}`.toLowerCase().includes(q))
+    : short
   const pick = (e: ModelEntry) => {
     setOpen(false)
-    if (e.provider !== provider) return setProvider?.(e.provider, e.model ? { model: e.model, effort: e.effort } : {})
-    if (!models) return
-    if (provider !== 'claude') return models.onChange(e.model, e.effort, false)
-    // An effort the new model does not support falls back to its default; fast mode stays on only where the model offers it.
-    const next = choices.find((c) => c.model === e.model)
-    const supported = (x?: string) => (x && next?.efforts.includes(x as never) ? x : undefined)
-    models.onChange(e.model, supported(e.effort) ?? supported(models.effort), !!models.fast && !!next?.fast)
+    pickModel(e, { provider, setProvider, models, choices, catalog: catalog ?? {}, searched: !!q })
   }
   return (
     <Popover

@@ -26,7 +26,8 @@ import type { PullRequestPanelData } from '../../../components/PullRequestPanel'
 import { latestTasks, progressStore, progressTurns } from '../../../lib/progress'
 import { useMarkRead } from '../../../lib/markRead'
 import { environmentOf, type Environment, type EnvironmentBuild } from '../../../components/EnvironmentPicker'
-import { withImages, Composer, preferredModel, type AgentProvider, type ModelPicker } from '../../../components/ChatComposer'
+import { withImages, Composer, claudeStartingEffort, CODEX_PREFERRED, preferredModel, type AgentProvider, type ModelPicker } from '../../../components/ChatComposer'
+import { startingEffort } from '../../../lib/effort'
 import { ChatMenu } from '../../../components/ChatMenu'
 import { PresenceAvatars } from '../../../components/Teammates'
 import { UsageMenu } from '../../../components/UsageMenu'
@@ -216,20 +217,34 @@ type Choice = { model?: string; effort?: string; fast?: boolean }
 /**
  * The new session's model menu: Claude's models (what its agent last reported), or Antigravity's (what `agy models` listed for the
  * signed-in plan, on the server). OpenCode's are known once its sandbox is up: it starts on its default and changes from the thread.
+ * The model and effort it shows are exactly what the first message sends: every model starts at an effort (`startingEffort`), never
+ * the agent's unnamed default.
  */
 function newSessionPicker(provider: AgentProvider, settings: ReturnType<typeof useSettings>, choice: Choice, setChoice: (c: Choice) => void): ModelPicker | undefined {
   if (provider === 'claude') {
     const choices = settings?.claudeModels ?? []
     const model = choice.model ?? preferredModel(choices)
-    // Every model starts at an effort, not the agent's unnamed default: high where the model offers it.
-    const high = choices.find((c) => c.model === (model ?? 'default'))?.efforts.includes('high' as never)
-    return { choices, ...choice, model, effort: choice.effort ?? (high ? 'high' : undefined), onChange: (model, effort, fast) => setChoice({ model, effort, fast }) }
+    const efforts = choices.find((c) => c.model === (model ?? 'default'))?.efforts ?? []
+    const effort = choice.effort && efforts.includes(choice.effort as never) ? choice.effort : claudeStartingEffort(choices, model)
+    return { choices, ...choice, model, effort, onChange: (model, effort, fast) => setChoice({ model, effort, fast }) }
   }
   // Antigravity's list may not be known yet; a model from the menu's short list is chosen all the same (agy checks it at start).
   if (provider === 'antigravity') return { choices: settings?.antigravityModels ?? [], model: choice.model, onChange: (model) => setChoice({ model }) }
-  // Codex lists its models only once a session runs: the menu's short list names them, with the effort they start at.
-  if (provider === 'codex') return { choices: [], model: choice.model, effort: choice.effort, onChange: (model, effort) => setChoice({ model, effort }) }
+  // Codex lists its models only once a session runs: the menu's short list names them. With none picked, the short list's first.
+  if (provider === 'codex') {
+    const model = choice.model ?? CODEX_PREFERRED
+    return { choices: [], model, effort: choice.effort ?? startingEffort('codex', model, ['low', 'medium', 'high', 'xhigh']), onChange: (model, effort) => setChoice({ model, effort }) }
+  }
   return undefined
+}
+
+/** What the first message sends for the model: the picker's own values, so it never differs from what the menu showed. */
+function startChoice(provider: AgentProvider, picker: ModelPicker | undefined): Choice {
+  if (!picker) return {}
+  if (provider === 'claude') return { model: picker.model, effort: picker.effort, fast: picker.fast }
+  if (provider === 'codex') return picker.model ? { model: picker.model, effort: picker.effort } : {}
+  if (provider === 'antigravity') return picker.model ? { model: picker.model } : {}
+  return {}
 }
 
 /** The agent a new session starts on: Claude when it is connected, else the one that is. */
@@ -304,6 +319,7 @@ function NewDork({
   const agent = agentGate(provider, claudeReady, codexReady, antigravityReady)
   const mentions = useMentions(provider)
   const mode = newSessionMode(initialRepo, initialMode, workspace)
+  const picker = newSessionPicker(provider, settings, choice, setChoice)
   return (
     <div className="[&>div]:max-w-none">
       {agent.notice && <AgentNotice provider={provider} />}
@@ -318,7 +334,7 @@ function NewDork({
         pending={pending}
         disabled={disabled || agent.missing}
         error={error}
-        picker={newSessionPicker(provider, settings, choice, setChoice)}
+        picker={picker}
         catalog={{ claude: settings?.claudeModels, antigravity: settings?.antigravityModels }}
         upload={actions.uploadImage}
         draftKey="new"
@@ -338,13 +354,7 @@ function NewDork({
                   ...(mode === 'code' ? { repo: repo.trim(), buildId } : {}),
                   message: withImages(message, images),
                   provider,
-                  ...(provider === 'claude'
-                    ? choice
-                    : provider === 'antigravity' && choice.model
-                      ? { model: choice.model }
-                      : provider === 'codex' && choice.model
-                        ? { model: choice.model, effort: choice.effort }
-                        : {}),
+                  ...startChoice(provider, picker),
                 })
               ).id,
             )
