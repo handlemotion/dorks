@@ -3,7 +3,8 @@ import { DorksProvider, useAutomations, useConnection, useDorks, useSettingsStat
 import { Button } from '@dorks/ui/button'
 import { Input } from '@dorks/ui/input'
 import { clearConnection, currentConnection, DEFAULT_SERVER, normalizeServerUrl, saveConnection, type Connection } from '../lib/connection'
-import { onRuntimeConfig, setKeepAwake } from '../lib/desktop'
+import { useNavigate } from '@tanstack/react-router'
+import { onOpenRoute, onRuntimeConfig, setKeepAwake } from '../lib/desktop'
 import type { CloudServer } from '@dorks/client'
 import { CloudPlaceProvider, orgName, useCloudPlace, type CloudPlace } from './CloudPlace'
 import { EmptyState } from './EmptyState'
@@ -179,6 +180,7 @@ function Probe({ conn, remote, onChange, onReplace, children }: { conn: Connecti
     <>
       {/* Only this Mac's own work holds it awake; another server's runs there. */}
       {!remote && <KeepAwake />}
+      <DesktopLinks />
       {children}
     </>
   )
@@ -235,6 +237,21 @@ function KeepAwake() {
     // `scheduled` also makes the app open at login: the server runs only while the app does.
     setKeepAwake(active, scheduled)
   }, [active, scheduled])
+  return null
+}
+
+/** Opens the routes of `dorks://` links the desktop app receives (an invitation, a pairing code), once the app is usable. */
+function DesktopLinks() {
+  const navigate = useNavigate()
+  useEffect(
+    () =>
+      onOpenRoute((route) => {
+        const invite = /^\/invite\/([\w-]+)$/.exec(route)
+        if (invite) void navigate({ to: '/invite/$id', params: { id: invite[1]! } })
+        else if (route === '/settings/phone') void navigate({ to: '/settings/$page', params: { page: 'phone' } })
+      }),
+    [navigate],
+  )
   return null
 }
 

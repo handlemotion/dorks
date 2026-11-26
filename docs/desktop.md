@@ -94,6 +94,21 @@ The shell remembers the last mode and the app-mode frame (`windowMode`, `windowF
 
 Launch the binary directly (`DORKS_WINDOW_NOFOCUS=1 Dorks.app/Contents/MacOS/dorks-desktop`) or with `open -g`; never `open -a` or an activating AppleScript. Quit with `tell application "Dorks" to quit`, which does not activate the app. Judging the translucency itself (how the glass looks over what is behind it) needs a look at the real screen; do that by hand.
 
+## Links
+
+The app opens `dorks://` links (`tauri-plugin-deep-link`; the scheme is registered in the app bundle from `tauri.conf.json`, so it
+works once the built app is in Applications, not under `pnpm dev:desktop`). `shell-core`'s `deep_link::route_for` maps each URL to a route of
+the UI and refuses everything else:
+
+| Link | Opens |
+|---|---|
+| `dorks://invite/<id>` (a Dorks Cloud invitation email) | `#/invite/<id>`: Join or Decline |
+| `dorks://pair?code=...` (a phone pairing code opened on the Mac) | Settings, Phone |
+
+The shell keeps the route until the UI takes it (`take_open_route`, called once the UI has loaded, so a link that launched the app is
+not lost) and also sends it as `dorks://open-route` to a UI already open; either way it shows the window. The UI navigates there
+(`onOpenRoute` in `apps/web/src/lib/desktop.ts`).
+
 ## Develop
 
 Needs Rust ([rustup](https://rustup.rs)), Xcode command line tools and [Bun](https://bun.sh) (it compiles the server).

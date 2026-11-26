@@ -65,6 +65,8 @@ pub struct AppState {
     pub chrome: Mutex<ChromeInfo>,
     /// Bumped on every move/resize; the debounced save only runs if it is still the latest.
     pub frame_gen: AtomicU64,
+    /// The UI route of a `dorks://` link the UI has not taken yet (`deep_link.rs`).
+    pub open_route: Mutex<Option<String>>,
 }
 
 impl AppState {
@@ -82,6 +84,7 @@ impl AppState {
             quitting: AtomicBool::new(false),
             chrome: Mutex::new(ChromeInfo::new(WindowMode::default().spec(), Effect::None, WindowTheme::default())),
             frame_gen: AtomicU64::new(0),
+            open_route: Mutex::new(None),
         }
     }
 

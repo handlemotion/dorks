@@ -97,6 +97,39 @@ export function setWindowTheme(theme: 'light' | 'dark') {
   if (isDesktop()) void invoke('set_window_theme', { theme }).catch(() => {})
 }
 
+let launchRoute: Promise<string | null> | undefined
+let launchHandled = false
+
+/**
+ * `dorks://` links the desktop app was opened with (an invitation, a pairing code; docs/desktop.md "Links"), as UI routes
+ * (`/invite/<id>`, `/settings/phone`): the one that launched the app (taken once), then each one that arrives. Returns an
+ * unsubscribe; a no-op in a browser and in a shell that predates links.
+ */
+export function onOpenRoute(handler: (route: string) => void): () => void {
+  if (!isDesktop()) return () => {}
+  let closed = false
+  let off: (() => void) | undefined
+  // The launch link is taken from the shell once per page, and handled once, by whichever subscriber is still there when it
+  // arrives (a remount, or React's double mount in development, must neither lose it nor open it twice).
+  launchRoute ??= invoke<string | null>('take_open_route').catch(() => null)
+  void launchRoute.then((route) => {
+    if (closed || !route || launchHandled) return
+    launchHandled = true
+    handler(route)
+  })
+  void window.__TAURI__?.event
+    ?.listen<string>('dorks://open-route', (e) => {
+      // Taken here too, so it is not handled a second time after a reload.
+      void invoke('take_open_route').catch(() => {})
+      handler(e.payload)
+    })
+    .then((u) => (closed ? u() : (off = u)))
+  return () => {
+    closed = true
+    off?.()
+  }
+}
+
 /** Calls `handler` when the shell publishes a changed config (for example after the window chrome changed). Returns an unsubscribe. */
 export function onRuntimeConfig(handler: () => void): () => void {
   const listen = window.__TAURI__?.event?.listen
