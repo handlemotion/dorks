@@ -32,18 +32,32 @@ type Entry = { kind: 'user'; block: Extract<Block, { kind: 'user' }> } | { kind:
 /** Markdown images (`![alt](src)`), the way agents and users put images in a message. */
 const IMAGE = /!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g
 
+/** Each block's images, found once per block (and per server's refs): the transcript's list is rebuilt on every update. */
+const blockImages = new WeakMap<Map<string, string>, WeakMap<Block, LightboxImage[]>>()
+
 /** Every image in the transcript, in reading order: they share one lightbox, so opening one pages through the chat's images. */
 function transcriptImages(blocks: Block[], refs: Map<string, string>): LightboxImage[] {
+  let cache = blockImages.get(refs)
+  if (!cache) blockImages.set(refs, (cache = new WeakMap()))
   const images: LightboxImage[] = []
   for (const block of blocks) {
     if (block.kind !== 'user' && block.kind !== 'assistant') continue
-    let n = 0
-    const text = block.kind === 'user' ? parseReply(block.text).body : block.text
-    for (const m of text.matchAll(IMAGE)) {
-      // A shared or attached image kept on the server can be commented on by its id.
-      const imageId = /^dorks-image:([0-9a-f]{32})$/.exec(refs.get(m[2]) ?? m[2])?.[1]
-      images.push({ id: `${block.id}:${n++}`, src: m[2], thumb: sizedImage(m[2], THUMB_WIDTH), alt: m[1] || 'Image', caption: m[1] || undefined, ...(imageId ? { imageId } : {}) })
-    }
+    let own = cache.get(block)
+    if (!own) cache.set(block, (own = imagesIn(block, refs)))
+    for (const image of own) images.push(image)
+  }
+  return images
+}
+
+function imagesIn(block: Extract<Block, { kind: 'user' | 'assistant' }>, refs: Map<string, string>): LightboxImage[] {
+  const images: LightboxImage[] = []
+  let n = 0
+  const text = block.kind === 'user' ? parseReply(block.text).body : block.text
+  if (!text.includes('![')) return images
+  for (const m of text.matchAll(IMAGE)) {
+    // A shared or attached image kept on the server can be commented on by its id.
+    const imageId = /^dorks-image:([0-9a-f]{32})$/.exec(refs.get(m[2]) ?? m[2])?.[1]
+    images.push({ id: `${block.id}:${n++}`, src: m[2], thumb: sizedImage(m[2], THUMB_WIDTH), alt: m[1] || 'Image', caption: m[1] || undefined, ...(imageId ? { imageId } : {}) })
   }
   return images
 }
@@ -164,7 +178,12 @@ export function AgentMarkdown({ children, className, streaming }: { children: st
   )
 }
 
-function entries(blocks: Block[]): Entry[] {
+/**
+ * The transcript as user messages and the agent's work between them. A drawn window (`blocks`, the newest part of `all`) can start
+ * part way through a turn: that turn is keyed by its first block in `all`, so drawing more of it later does not redraw it from scratch
+ * (nor lose the reader's place).
+ */
+function entries(blocks: Block[], all: Block[]): Entry[] {
   const result: Entry[] = []
   for (const block of blocks) {
     if (block.kind === 'user') {
@@ -174,6 +193,12 @@ function entries(blocks: Block[]): Entry[] {
       if (last?.kind === 'agent') last.blocks.push(block)
       else result.push({ kind: 'agent', id: block.id, blocks: [block] })
     }
+  }
+  const head = result[0]
+  if (head?.kind === 'agent' && all.length > blocks.length) {
+    let i = all.findIndex((b) => b.id === head.id)
+    while (i > 0 && all[i - 1].kind !== 'user') i--
+    if (i >= 0) head.id = all[i].id
   }
   return result
 }
@@ -531,6 +556,7 @@ const AgentEntry = memo(
  */
 export function ChatMessages({
   blocks: raw,
+  all = raw,
   imageUrl,
   onReply: replyHandler,
   onReplySend: sendHandler,
@@ -538,6 +564,11 @@ export function ChatMessages({
   onOpenSteps: openSteps,
 }: {
   blocks: Block[]
+  /**
+   * The whole transcript when `blocks` is only its newest part (the drawn window): the lightbox pages through all of its images and
+   * a to-do card finds its list in it.
+   */
+  all?: Block[]
   /** Resolves a shared screenshot's id to its URL. */
   imageUrl?: (id: string) => string
   onReply?: ReplyHandlers['onReply']
@@ -553,19 +584,20 @@ export function ChatMessages({
   const onOpenSteps = useStableHandler(openSteps)
   // The transcript changes far less often than this renders (the composer, the status clock): walk it only when it changed.
   const { blocks, refs } = useMemo(() => resolveSharedImages(raw, imageUrl), [raw, imageUrl])
-  const images = useStableImages(useMemo(() => transcriptImages(blocks, refs), [blocks, refs]))
-  const snapshots = useMemo(() => taskSnapshots(blocks), [blocks])
+  const everything = useMemo(() => (all === raw ? blocks : resolveSharedImages(all, imageUrl).blocks), [all, raw, blocks, imageUrl])
+  const images = useStableImages(useMemo(() => transcriptImages(everything, refs), [everything, refs]))
+  const snapshots = useMemo(() => taskSnapshots(all), [all])
   const reply = useMemo<ReplyHandlers>(() => ({ onReply, onSend: onReplySend, agent, refOf: (src) => refs.get(src) }), [onReply, onReplySend, agent, refs])
   const messages = useMemo(
     () =>
-      entries(blocks).map((entry) =>
+      entries(blocks, all).map((entry) =>
         entry.kind === 'user' ? (
           <UserEntry key={entry.block.id} block={entry.block} imageUrl={imageUrl} />
         ) : (
           <AgentEntry key={entry.id} id={entry.id} blocks={entry.blocks} onOpenSteps={onOpenSteps} />
         ),
       ),
-    [blocks, imageUrl, onOpenSteps],
+    [blocks, all, imageUrl, onOpenSteps],
   )
   return (
     <ReplyContext.Provider value={reply}>

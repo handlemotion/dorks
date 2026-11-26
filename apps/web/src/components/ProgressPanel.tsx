@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -125,16 +125,23 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
   const { selectedKey, highlighted, reveal } = useProgress()
   // Turns the owner folded: their message stays, the steps under it hide (and the arrows skip them).
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
-  const setFolded = (key: string, fold: boolean) =>
-    setCollapsed((prev) => {
-      if (prev.has(key) === fold) return prev
-      const next = new Set(prev)
-      if (fold) next.add(key)
-      else next.delete(key)
-      return next
-    })
+  const setFolded = useCallback(
+    (key: string, fold: boolean) =>
+      setCollapsed((prev) => {
+        if (prev.has(key) === fold) return prev
+        const next = new Set(prev)
+        if (fold) next.add(key)
+        else next.delete(key)
+        return next
+      }),
+    [],
+  )
   const turnOf = (stepKey: string | null | undefined) => (stepKey ? turns.find((t) => t.steps.some((s) => s.key === stepKey))?.key : undefined)
-  const shown = turns.map((turn) => ({ ...turn, steps: query.trim() ? turn.steps.filter((s) => matchesFilter(s.block, query)) : turn.steps })).filter((t) => t.steps.length > 0)
+  // Unfiltered, the turns are the ones given (not copies), so a turn's group redraws only when that turn changed.
+  const shown = useMemo(
+    () => (query.trim() ? turns.map((turn) => ({ ...turn, steps: turn.steps.filter((s) => matchesFilter(s.block, query)) })) : turns).filter((t) => t.steps.length > 0),
+    [turns, query],
+  )
   const visible = shown.flatMap((t) => (collapsed.has(t.key) ? [] : t.steps))
   const count = turns.reduce((n, t) => n + t.steps.length, 0)
   const selectedIndex = visible.findIndex((s) => s.key === selectedKey)
@@ -201,6 +208,20 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
             .join(' ')
         : `${q.trim()} ${term}`.trim(),
     )
+
+  // A step in the list was clicked. Stable, so a turn's group redraws only when its own steps change.
+  const latestSelect = useRef<(key: string) => void>(() => {})
+  latestSelect.current = (key: string) => {
+    clicked.current = key !== selectedKey
+    // Opening the detail lays the list out again, which drops its scroll: put it back once that settles.
+    const el = scroller.current
+    const top = el?.scrollTop ?? 0
+    select(key)
+    if (el && !selected) requestAnimationFrame(() => requestAnimationFrame(() => (el.scrollTop = top)))
+  }
+  const selectStep = useCallback((key: string) => latestSelect.current(key), [])
+  const selectedTurn = turnOf(selectedKey)
+  const stepsWindow = useStepsWindow(shown, selectedTurn, scroller)
 
   if (count === 0) return <EmptyState figure="stack" title="No steps yet" description="Each tool the agent uses in this chat shows here, under the message it answered." />
   return (
@@ -282,62 +303,26 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
               const el = e.currentTarget
               atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
             }}
-            className="h-full overflow-y-auto pb-2 outline-none"
+            className="h-full overflow-y-auto pb-2 outline-none [overflow-anchor:none]"
           >
             {shown.length === 0 ? (
               <p className="px-(--details-text) py-3 text-sm text-muted-foreground">No steps match.</p>
             ) : (
-              shown.map((turn) => {
-                const folded = collapsed.has(turn.key)
-                return (
-                  <div key={turn.key} role="group" data-turn-key={turn.key} aria-label={turn.prompt ?? 'Steps'}>
-                    {/* Pinned while its steps scroll under it, so the message they answer stays in view. A click folds its steps away. */}
-                    <button
-                      type="button"
-                      aria-expanded={!folded}
-                      title={turn.prompt ?? undefined}
-                      onClick={() => setFolded(turn.key, !folded)}
-                      onContextMenu={(e) =>
-                        openContextMenu(e, [
-                          { label: folded ? 'Expand' : 'Collapse', onSelect: () => setFolded(turn.key, !folded) },
-                          ...(turn.prompt ? (['separator', { label: 'Copy message', onSelect: () => copyText(turn.prompt!) }] as const) : []),
-                        ])
-                      }
-                      className="group/turn sticky top-0 z-10 flex h-8 w-full items-center gap-2 bg-background px-(--details-text) pb-1 text-left text-sm text-foreground outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
-                    >
-                      <TurnIcon turn={turn} />
-                      <span className="min-w-0 flex-1 truncate">{turn.prompt ?? 'Without a message'}</span>
-                      {folded && <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{turn.steps.length === 1 ? '1 step' : `${turn.steps.length} steps`}</span>}
-                      <ChevronDownIcon
-                        aria-hidden
-                        className={`size-3.5 shrink-0 text-muted-foreground transition-[rotate,opacity] duration-150 motion-reduce:transition-none ${folded ? '-rotate-90' : 'opacity-0 group-hover/turn:opacity-100 group-focus-visible/turn:opacity-100'}`}
-                      />
-                    </button>
-                    {/* The steps hang off a hairline under the prompt's icon. */}
-                    {!folded && (
-                      <div className="ml-[calc(var(--details-text)+6.5px)] border-l">
-                        {turn.steps.map((step) => (
-                          <StepRow
-                            key={step.key}
-                            step={step}
-                            now={now}
-                            selected={step.key === selectedKey}
-                            highlighted={highlighted.includes(step.key)}
-                            onSelect={() => {
-                              clicked.current = step.key !== selectedKey
-                              // Opening the detail lays the list out again, which drops its scroll: put it back once that settles.
-                              const el = scroller.current
-                              const top = el?.scrollTop ?? 0
-                              select(step.key)
-                              if (el && !selected) requestAnimationFrame(() => requestAnimationFrame(() => (el.scrollTop = top)))
-                            }}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )
-              })
+              <>
+                {stepsWindow.start > 0 && <EarlierSteps root={scroller} start={stepsWindow.start} onShow={stepsWindow.showEarlier} />}
+                {stepsWindow.drawn.map((turn) => (
+                  <TurnGroup
+                    key={turn.key}
+                    turn={turn}
+                    folded={collapsed.has(turn.key)}
+                    now={now}
+                    selectedKey={turn.key === selectedTurn ? selectedKey : null}
+                    highlighted={highlighted}
+                    onFold={setFolded}
+                    onSelect={selectStep}
+                  />
+                ))}
+              </>
             )}
           </div>
         </ResizablePanel>
@@ -416,6 +401,113 @@ function stepMenu(step: ProgressStep, onShow?: () => void): ContextMenuItem[] {
  * Selected, it takes a fill and a brand mark on the hairline it hangs from; highlighted (one of the steps the thread pointed at), the
  * mark and the hover's lighter fill.
  */
+/** Turns drawn when Progress opens (the newest), and how many more each step up adds. */
+const STEPS_WINDOW = 40
+
+/**
+ * The turns Progress draws: the newest `STEPS_WINDOW`, more as the list is scrolled up, and always back to the selected step's turn (a
+ * tool line in the thread can ask for any step). A long session has thousands of steps, and drawing them all made opening the tab
+ * (and every update while it was open) slow. When earlier turns come in above, the list keeps its place.
+ */
+function useStepsWindow(shown: readonly ProgressTurn[], selectedTurn: string | undefined, scroller: RefObject<HTMLDivElement | null>) {
+  const [limit, setLimit] = useState(STEPS_WINDOW)
+  const selectedAt = selectedTurn ? shown.findIndex((t) => t.key === selectedTurn) : -1
+  const fit = selectedAt >= 0 ? Math.max(limit, shown.length - selectedAt) : limit
+  // Widened for a selected step: stays wide, so the rows above do not vanish once it is deselected.
+  useEffect(() => {
+    if (fit > limit) setLimit(fit)
+  }, [fit, limit])
+  const start = Math.max(0, shown.length - fit)
+  const before = useRef<{ height: number; top: number } | null>(null)
+  useLayoutEffect(() => {
+    const el = scroller.current
+    const was = before.current
+    before.current = null
+    if (el && was) el.scrollTop = was.top + (el.scrollHeight - was.height)
+  }, [start, scroller])
+  const showEarlier = useCallback(() => {
+    const el = scroller.current
+    if (el) before.current = { height: el.scrollHeight, top: el.scrollTop }
+    setLimit((n) => n + STEPS_WINDOW)
+  }, [scroller])
+  return { start, drawn: start > 0 ? shown.slice(start) : shown, showEarlier }
+}
+
+/** The top of a list with earlier turns not drawn: they come in on their own as it nears the top. The button is there for the keyboard. */
+function EarlierSteps({ root, start, onShow }: { root: RefObject<HTMLDivElement | null>; start: number; onShow: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  // Observed afresh after each step up: still in range once it came in, it asks for the next.
+  useEffect(() => {
+    const node = ref.current
+    if (!node || !root.current) return
+    const observer = new IntersectionObserver((seen) => seen.some((e) => e.isIntersecting) && onShow(), { root: root.current, rootMargin: '600px 0px 0px 0px' })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [root, start, onShow])
+  return (
+    <div ref={ref} className="px-(--details-text) py-1.5">
+      <Button variant="ghost" size="sm" onClick={onShow} className="text-muted-foreground">
+        Show earlier steps
+      </Button>
+    </div>
+  )
+}
+
+/** One turn: its pinned prompt (a click folds its steps away) and its steps. Redrawn only when its turn, fold, selection or time changes. */
+const TurnGroup = memo(function TurnGroup({
+  turn,
+  folded,
+  now,
+  selectedKey,
+  highlighted,
+  onFold,
+  onSelect,
+}: {
+  turn: ProgressTurn
+  folded: boolean
+  now: number
+  /** The selected step, when it is in this turn. */
+  selectedKey: string | null
+  highlighted: readonly string[]
+  onFold: (key: string, fold: boolean) => void
+  onSelect: (key: string) => void
+}) {
+  return (
+    <div role="group" data-turn-key={turn.key} aria-label={turn.prompt ?? 'Steps'}>
+      {/* Pinned while its steps scroll under it, so the message they answer stays in view. A click folds its steps away. */}
+      <button
+        type="button"
+        aria-expanded={!folded}
+        title={turn.prompt ?? undefined}
+        onClick={() => onFold(turn.key, !folded)}
+        onContextMenu={(e) =>
+          openContextMenu(e, [
+            { label: folded ? 'Expand' : 'Collapse', onSelect: () => onFold(turn.key, !folded) },
+            ...(turn.prompt ? (['separator', { label: 'Copy message', onSelect: () => copyText(turn.prompt!) }] as const) : []),
+          ])
+        }
+        className="group/turn sticky top-0 z-10 flex h-8 w-full items-center gap-2 bg-background px-(--details-text) pb-1 text-left text-sm text-foreground outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+      >
+        <TurnIcon turn={turn} />
+        <span className="min-w-0 flex-1 truncate">{turn.prompt ?? 'Without a message'}</span>
+        {folded && <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{turn.steps.length === 1 ? '1 step' : `${turn.steps.length} steps`}</span>}
+        <ChevronDownIcon
+          aria-hidden
+          className={`size-3.5 shrink-0 text-muted-foreground transition-[rotate,opacity] duration-150 motion-reduce:transition-none ${folded ? '-rotate-90' : 'opacity-0 group-hover/turn:opacity-100 group-focus-visible/turn:opacity-100'}`}
+        />
+      </button>
+      {/* The steps hang off a hairline under the prompt's icon. */}
+      {!folded && (
+        <div className="ml-[calc(var(--details-text)+6.5px)] border-l">
+          {turn.steps.map((step) => (
+            <StepRow key={step.key} step={step} now={now} selected={step.key === selectedKey} highlighted={highlighted.includes(step.key)} onSelect={() => onSelect(step.key)} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+})
+
 function StepRow({ step, now, selected, highlighted, onSelect }: { step: ProgressStep; now: number; selected: boolean; highlighted: boolean; onSelect: () => void }) {
   const kind = stepKind(step.block)
   const Icon = kind === 'message' ? MessageSquareTextIcon : TOOL_KIND_ICONS[kind]

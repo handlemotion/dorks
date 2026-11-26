@@ -33,7 +33,7 @@ import { ArchiveButton, PageHeader } from '../../../components/PageHeader'
 import { SetupStatus } from '../../../components/SetupStatus'
 import { canCreate } from '../../../lib/onboarding'
 import { usePending } from '../../../lib/pending'
-import { useDraft } from '../../../lib/draft'
+import { useDraft, useDraftSetter } from '../../../lib/draft'
 import { useArchiveDork } from '../../../lib/archive'
 import { THUMB_WIDTH } from '../../../lib/images'
 
@@ -482,8 +482,7 @@ function Thread({ dorkId }: { dorkId: string }) {
   const [detailsOpen, setDetailsOpen] = useDetailsOpen()
   const wide = useWide()
   // One draft for the composer and everything on the page that writes into it (Ask for…, picked elements).
-  const draft = useDraft(dorkId)
-  const setText = draft[1]
+  const setText = useDraftSetter(dorkId)
   // Each chat's Progress starts on its newest step.
   useEffect(() => progressStore.reset(), [dorkId])
   useMarkRead(dorkId, dork?.unread)
@@ -553,7 +552,6 @@ function Thread({ dorkId }: { dorkId: string }) {
           <SessionChat
             dork={dork}
             error={archiveError}
-            draft={draft}
             // Progress lives in Chat details, which narrow windows and dorks (their details are Sessions) do not show.
             onOpenSteps={
               wide && !crew
