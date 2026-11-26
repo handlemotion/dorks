@@ -18,6 +18,7 @@ import { Tip } from '../../../components/Tip'
 import { DAYS, EVENTS, EVERY, GithubMark, SENTRY_EVENTS, SentryMark, TriggerList, TriggerMark } from '../../../components/automations/TriggerEditor'
 import { localTimeZone, TEMPLATES, type AutomationTemplate } from '../../../components/automations/templates'
 import { useAppWorkspace } from '../../../components/appWorkspace'
+import { isTeamOrg, useCloudPlace } from '../../../components/CloudPlace'
 import { SettingsFacts, SettingsGroup, SettingsGroupBody, SettingsInputRow, SettingsSection, SettingsSections, SettingsStatus, StatusDot, TONE_TEXT, type Tone } from '../../../components/settings/kit'
 import { usePending } from '../../../lib/pending'
 import { ago, upcoming } from '../../../lib/time'
@@ -40,6 +41,14 @@ function Automations() {
   const { automation, template } = Route.useSearch()
   // A new automation is the workspace's: switching workspaces starts the form over in the other one. Templates are code, so Chat has none.
   const [workspace] = useAppWorkspace()
+  // Only a team org runs automations: a personal one has no always-on server, and this Mac sleeps or goes offline.
+  const place = useCloudPlace()
+  const blocked = !place?.resolving && !isTeamOrg(place?.org)
+  const navigate = useNavigate()
+  useEffect(() => {
+    if (blocked) void navigate({ to: '/dorks', replace: true })
+  }, [blocked, navigate])
+  if (place?.resolving || blocked) return null
   if (automation === 'new') return <NewAutomation key={`${template ?? ''}:${workspace}`} template={workspace === 'chat' ? undefined : TEMPLATES.find((t) => t.id === template)} />
   if (automation) return <AutomationPage key={automation} id={automation} />
   return <AutomationList />

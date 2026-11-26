@@ -18,6 +18,7 @@ import { MachineRow, OrgSwitcher, StaticOrgSwitcher } from './OrgSwitcher'
 import { SIDEBAR_ROW, SIDEBAR_SECTION } from './sidebarChrome'
 import { HistoryButtons, TITLEBAR_AFTER_TOGGLE } from './WindowControls'
 import { useAppWorkspace, workspaceOf, type AppWorkspace } from './appWorkspace'
+import { useIsTeamOrg } from './CloudPlace'
 import { UpdatePrompt } from './UpdatePrompt'
 import { useRowHover } from './useRowHover'
 
@@ -60,12 +61,15 @@ export function AppSidebar() {
       createdBy: d.createdBy,
     }))
   // Agents' changes waiting for the owner: a count beside Builds, so a proposal is found from anywhere.
+  // Automations are a team's: a personal org has no server that is always on to run them (this Mac sleeps, goes offline).
+  const team = useIsTeamOrg()
   const reviews = (builds ?? []).reduce((n, b) => n + b.drafts.filter((d) => d.status === 'submitted').length, 0)
   return (
     <AppSidebarView
       chats={chats}
       accounts={github}
       counts={{ '/builds': reviews }}
+      automations={team}
       onDisconnect={disconnect}
       switcher={<OrgSwitcher login={github?.login} />}
       machines={<MachineRow />}
@@ -172,8 +176,11 @@ export function AppSidebarView({
   counts,
   switcher,
   machines,
+  automations = true,
 }: {
   chats: Chat[]
+  /** Whether the nav lists Automations: only a team org runs them (a personal org has no always-on server). */
+  automations?: boolean
   /** The org switcher (OrgSwitcher); a static Personal row without one (demos). */
   switcher?: ReactNode
   /** Under it, inside an org with several Macs: which one the app is connected to (MachineRow). */
@@ -256,7 +263,7 @@ export function AppSidebarView({
                 <PlusIcon className="-mx-px size-4!" />
                 New session
               </Link>
-              {PAGES.filter((page) => (page.workspaces as readonly AppWorkspace[]).includes(workspace)).map(({ to, label, icon: Icon }) => (
+              {PAGES.filter((page) => (page.workspaces as readonly AppWorkspace[]).includes(workspace) && (automations || page.to !== '/automations')).map(({ to, label, icon: Icon }) => (
                 <Link key={to} to={to} {...rowLink(pathname === to)}>
                   <Icon />
                   {label}
