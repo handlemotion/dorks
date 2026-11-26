@@ -31,6 +31,25 @@
   body {
     @apply bg-background font-sans text-foreground antialiased;
   }
+
+  /* Like a native app, the chrome (rows, tabs, bars, labels) is not text: a drag or a shift-click never paints it blue. What you read
+     and copy stays selectable: fields, messages and other markdown, code, and anything marked `data-selectable` (a step's detail, the
+     file editor). WebKit needs the prefix, and text fields must opt back in or they cannot be edited there. */
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  input,
+  textarea,
+  [contenteditable]:not([contenteditable='false']),
+  pre,
+  code,
+  [data-slot='markdown'],
+  [data-slot='bubble-content'],
+  [data-selectable] {
+    -webkit-user-select: text;
+    user-select: text;
+  }
 }
 
 /* MessageActions (components/message-actions), ported from aicss's Message Actions. Keyframes, durations and easings are aicss's, unchanged. */
@@ -109,7 +128,7 @@
 }
 
 /* DorkIcon (components/DorkIcon.tsx): while working, four flaps cycle smoothly upward — the top flap scales down and disappears
-   while a new flap scales in underneath, and the cyan-blue-violet gradient drifts gently inside the silhouette. */
+   while a new flap scales in underneath in one flat colour. */
 .dork-flap {
   transform-origin: 100px 100px;
 }
@@ -162,16 +181,6 @@
   }
 }
 
-@keyframes dork-gradient-drift {
-  0%,
-  100% {
-    transform: translateY(-20px);
-  }
-  50% {
-    transform: translateY(20px);
-  }
-}
-
 @media (prefers-reduced-motion: no-preference) {
   .status-shimmer {
     --shimmer-base: var(--muted-foreground);
@@ -194,9 +203,6 @@
   }
   .dork-flap-4 {
     animation: dork-flap-cycle 6.4s linear -4.8s infinite;
-  }
-  .dork-gradient-drift {
-    animation: dork-gradient-drift 4s ease-in-out infinite;
   }
 }
 

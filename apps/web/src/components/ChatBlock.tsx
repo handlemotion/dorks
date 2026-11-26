@@ -1,12 +1,11 @@
 import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { BoxIcon, ChevronRightIcon, ImageOffIcon, MessageSquareIcon, UsersIcon, CircleAlertIcon, CircleCheckIcon, CircleStopIcon, ReplyIcon } from 'lucide-react'
+import { BoxIcon, ChevronRightIcon, ImageOffIcon, MessageSquareIcon, UsersIcon, CircleAlertIcon, CircleCheckIcon, CircleStopIcon } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { Button } from '@dorks/ui/button'
 import type { Block } from '@dorks/shared'
 import { Bubble, BubbleContent } from '@dorks/ui/bubble'
 import { Markdown, type MarkdownImageProps } from '@dorks/ui/markdown'
-import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@dorks/ui/context-menu'
-import { DropdownMenuItem } from '@dorks/ui/dropdown-menu'
+import { openContextMenu } from '../lib/contextMenu'
 import { HoverActions } from './message-actions/MessageActions'
 import { REPLY_SOURCE, ReplyContext, ReplyQuote, SelectionReply, useReply, type ReplyHandlers } from './Reply'
 import { parseReply, quoteText } from '../lib/reply'
@@ -103,17 +102,12 @@ function ChatImage(props: { src?: string | Blob; alt?: string; large?: boolean }
   if (!onReply || typeof src !== 'string') return <ChatImageView {...props} />
   // A right click offers Reply, which puts the image in the composer's banner (and, by its id, in front of the agent).
   return (
-    <ContextMenu>
-      <ContextMenuTrigger render={<span className="inline-block max-w-full align-top" />}>
-        <ChatImageView {...props} />
-      </ContextMenuTrigger>
-      <ContextMenuContent>
-        <DropdownMenuItem onClick={() => onReply({ kind: 'image', src, alt: alt || 'Image', ref: src.startsWith('dorks-image:') ? src : refOf?.(src) })}>
-          <ReplyIcon />
-          Reply
-        </DropdownMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
+    <span
+      className="inline-block max-w-full align-top"
+      onContextMenu={(e) => openContextMenu(e, [{ label: 'Reply', onSelect: () => onReply({ kind: 'image', src, alt: alt || 'Image', ref: src.startsWith('dorks-image:') ? src : refOf?.(src) }) }])}
+    >
+      <ChatImageView {...props} />
+    </span>
   )
 }
 
@@ -338,8 +332,6 @@ function AgentText({ block }: { block: Extract<AgentBlock, { kind: 'assistant' }
     <HoverActions
       text={block.text}
       sentAt={block.at ? new Date(block.at) : undefined}
-      // Only a final answer keeps a line under it for the time: between tool calls that line read as a gap, so there it is in the gutter.
-      timeBelow={block.final}
       rate={block.final}
       onReply={onReply && (() => onReply({ kind: 'text', text: quoteText(block.text.replace(IMAGE, '')) }))}
     >
@@ -392,9 +384,7 @@ function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => vo
     } else if (block.kind === 'crew') {
       content.push(<CrewCard key={block.id} block={block} />)
     } else if (block.kind === 'notice') {
-      // Right after an answer it sits just under the answer's time line (20px from its text), not a full gap below it.
-      const prev = blocks[i - 1]
-      content.push(<Notice key={block.id} block={block} className={prev?.kind === 'assistant' && prev.final ? '-mt-3' : undefined} />)
+      content.push(<Notice key={block.id} block={block} />)
     }
   }
   return content
@@ -592,13 +582,22 @@ export function ChatMessages({
   const onReply = useStableHandler(replyHandler)
   const onReplySend = useStableHandler(sendHandler)
   const onOpenSteps = useStableHandler(openSteps)
-  const { blocks, refs } = resolveSharedImages(raw, imageUrl)
-  const everything = all === raw ? blocks : resolveSharedImages(all, imageUrl).blocks
-  const images = useStableImages(transcriptImages(everything, refs))
+  // The transcript changes far less often than this renders (the composer, the status clock): walk it only when it changed.
+  const { blocks, refs } = useMemo(() => resolveSharedImages(raw, imageUrl), [raw, imageUrl])
+  const everything = useMemo(() => (all === raw ? blocks : resolveSharedImages(all, imageUrl).blocks), [all, raw, blocks, imageUrl])
+  const images = useStableImages(useMemo(() => transcriptImages(everything, refs), [everything, refs]))
   const snapshots = useMemo(() => taskSnapshots(all), [all])
   const reply = useMemo<ReplyHandlers>(() => ({ onReply, onSend: onReplySend, agent, refOf: (src) => refs.get(src) }), [onReply, onReplySend, agent, refs])
-  const messages = entries(blocks, all).map((entry) =>
-    entry.kind === 'user' ? <UserEntry key={entry.block.id} block={entry.block} imageUrl={imageUrl} /> : <AgentEntry key={entry.id} id={entry.id} blocks={entry.blocks} onOpenSteps={onOpenSteps} />,
+  const messages = useMemo(
+    () =>
+      entries(blocks, all).map((entry) =>
+        entry.kind === 'user' ? (
+          <UserEntry key={entry.block.id} block={entry.block} imageUrl={imageUrl} />
+        ) : (
+          <AgentEntry key={entry.id} id={entry.id} blocks={entry.blocks} onOpenSteps={onOpenSteps} />
+        ),
+      ),
+    [blocks, all, imageUrl, onOpenSteps],
   )
   return (
     <ReplyContext.Provider value={reply}>

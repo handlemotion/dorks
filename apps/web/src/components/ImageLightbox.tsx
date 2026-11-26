@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { ChevronLeftIcon, ChevronRightIcon, MessageSquarePlusIcon, MessagesSquareIcon, XIcon } from 'lucide-react'
+import { ChevronLeftIcon, ChevronRightIcon, EyeIcon, EyeOffIcon, MessageSquarePlusIcon, XIcon } from 'lucide-react'
 import * as Lightbox from '@ramka/react/lightbox'
 import type { CommentThread } from '@dorks/shared'
 import { PreviewMarks } from './preview/PreviewMarks'
@@ -205,14 +205,7 @@ function Toolbar(props: { multiple: boolean; comments: number | null; commenting
             <>
               <RailDivider />
               <ToolButton label="Comment on the image" icon={<MessageSquarePlusIcon />} pressed={props.commenting} onClick={props.onComment} />
-              <ToolButton
-                label={props.showComments ? 'Hide comments' : 'Show comments'}
-                icon={<MessagesSquareIcon />}
-                pressed={props.showComments && props.comments > 0}
-                onClick={props.onShowComments}
-                count={props.comments}
-                className="w-11! justify-start"
-              />
+              <ToolButton label={props.showComments ? 'Hide comments' : 'Show comments'} icon={props.showComments ? <EyeIcon /> : <EyeOffIcon />} onClick={props.onShowComments} />
             </>
           )}
         </Rail>

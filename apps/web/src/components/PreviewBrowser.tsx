@@ -5,8 +5,9 @@ import {
   MonitorIcon,
   SmartphoneIcon,
   TabletIcon,
+  EyeIcon,
+  EyeOffIcon,
   MessageSquarePlusIcon,
-  MessagesSquareIcon,
   RotateCwIcon,
   RulerIcon,
   SquareDashedIcon,
@@ -286,7 +287,7 @@ function DrawLayer({ onDrawn }: { onDrawn: (rect: Rect) => void }) {
   )
 }
 
-export function ToolButton({ label, icon, pressed, onClick, count, className = '' }: { label: string; icon: ReactNode; pressed: boolean; onClick: () => void; count?: number; className?: string }) {
+export function ToolButton({ label, icon, pressed, onClick, className = '' }: { label: string; icon: ReactNode; pressed?: boolean; onClick: () => void; className?: string }) {
   return (
     <Tip label={label} side="top">
       <Button
@@ -298,7 +299,6 @@ export function ToolButton({ label, icon, pressed, onClick, count, className = '
         onClick={onClick}
       >
         {icon}
-        {count ? <span className="text-xs tabular-nums">{count}</span> : null}
       </Button>
     </Tip>
   )
@@ -380,7 +380,7 @@ function PreviewBar({
   )
 }
 
-/** The bar under the page: the tools, then Show comments. Only a page with the overlay has them all. */
+/** The bar under the page: the tools, then the eye that shows or hides the comments. Only a page with the overlay has them all. */
 function PreviewToolbar(props: {
   /** `overlay`: every tool; `same-origin`: only the picker (the dev demo); `loading`: the page has not answered yet. */
   mode: 'overlay' | 'same-origin' | 'loading' | 'none'
@@ -391,7 +391,6 @@ function PreviewToolbar(props: {
   onShowComments: () => void
   rulers: boolean
   onRulers: () => void
-  openCount: number
 }) {
   const session = props.mode === 'overlay' ? props.session : undefined
   if (props.mode === 'loading') return <span className="text-xs text-muted-foreground">Comments and tools appear once the page loads.</span>
@@ -409,13 +408,7 @@ function PreviewToolbar(props: {
       <ToolButton label="Comment on an area" icon={<SquareDashedIcon />} pressed={props.active === 'capture'} onClick={() => props.onTool('capture')} />
       <ToolButton label={props.rulers ? 'Hide rulers' : 'Rulers'} icon={<RulerIcon />} pressed={props.rulers} onClick={props.onRulers} />
       <RailDivider />
-      <ToolButton
-        label={props.showComments ? 'Hide comments' : 'Show comments'}
-        icon={<MessagesSquareIcon />}
-        pressed={props.showComments && props.openCount > 0}
-        onClick={props.onShowComments}
-        count={props.openCount}
-      />
+      <ToolButton label={props.showComments ? 'Hide comments' : 'Show comments'} icon={props.showComments ? <EyeIcon /> : <EyeOffIcon />} onClick={props.onShowComments} />
     </Rail>
   )
 }
@@ -595,7 +588,6 @@ export function PreviewBrowser({ server, onBack, onGrab, session }: { server: Pr
             onShowComments={() => setShowComments((s) => !s)}
             rulers={rulers}
             onRulers={() => setRulers((r) => !r)}
-            openCount={comments.open.length}
           />
         </div>
         {problem && (

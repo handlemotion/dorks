@@ -1,16 +1,18 @@
 import { router } from "expo-router";
 import { SymbolView } from "expo-symbols";
 import { useRef, useState, type ReactNode } from "react";
-import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View, type TextInputInstance } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Pressable, StyleSheet, Text, TextInput, View, type TextInputInstance } from "react-native";
+import { KeyboardStickyView } from "react-native-keyboard-controller";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { fonts, useColors } from "@/lib/theme";
 
 /** A sign-in step pushed over the first page (swipe back or the chevron): a heading and a line at the top, the input, and the action pinned above the keyboard. */
 export function SignInPage({ title, detail, children, footer }: { title: string; detail?: ReactNode; children: ReactNode; footer: ReactNode }) {
   const c = useColors();
+  const insets = useSafeAreaInsets();
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: c.welcome }]} edges={["top", "bottom"]}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.body}>
+      <View style={styles.body}>
         <Pressable accessibilityRole="button" accessibilityLabel="Back" hitSlop={12} onPress={() => router.back()} style={styles.back}>
           <SymbolView name="chevron.left" size={20} tintColor={c.text} weight="medium" />
         </Pressable>
@@ -25,8 +27,11 @@ export function SignInPage({ title, detail, children, footer }: { title: string;
           ) : null}
         </View>
         <View style={styles.content}>{children}</View>
-        <View style={styles.footer}>{footer}</View>
-      </KeyboardAvoidingView>
+        {/* Rides on the keyboard frame by frame; the home-indicator inset it no longer needs becomes its lift, so it floats 16pt above. */}
+        <KeyboardStickyView offset={{ closed: 0, opened: insets.bottom }} style={styles.footer}>
+          {footer}
+        </KeyboardStickyView>
+      </View>
     </SafeAreaView>
   );
 }

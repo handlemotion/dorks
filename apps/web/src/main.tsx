@@ -10,9 +10,11 @@ import { ThemeSync } from './components/ThemeSync'
 import { getRouter } from './router'
 import { TooltipProvider } from '@dorks/ui/tooltip'
 import { installDesktopLinkHandler } from './lib/desktop'
+import { ContextMenuHost, installDesktopContextMenu } from './lib/contextMenu'
 
 // The page is opaque (--app), even when the desktop shell gives the window a native material: nothing shows through.
 installDesktopLinkHandler()
+installDesktopContextMenu()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -24,6 +26,7 @@ createRoot(document.getElementById('root')!).render(
       {/* Names of icon-only actions (components/Tip.tsx): after a short rest, then instant while moving between them. */}
       <TooltipProvider delay={400}>
         <RouterProvider router={getRouter()} />
+        <ContextMenuHost />
       </TooltipProvider>
     </ThemeProvider>
   </StrictMode>,

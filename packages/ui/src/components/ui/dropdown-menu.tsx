@@ -37,6 +37,7 @@ function DropdownMenuTrigger({ ...props }: MenuPrimitive.Trigger.Props) {
 }
 
 function DropdownMenuContent({
+  anchor,
   align = "start",
   alignOffset = 0,
   collisionAvoidance,
@@ -48,7 +49,7 @@ function DropdownMenuContent({
 }: MenuPrimitive.Popup.Props &
   Pick<
     MenuPrimitive.Positioner.Props,
-    "align" | "alignOffset" | "collisionAvoidance" | "side" | "sideOffset"
+    "anchor" | "align" | "alignOffset" | "collisionAvoidance" | "side" | "sideOffset"
   >) {
   const hover = useFluidHoverList({
     itemSelector: MENU_ITEM_SELECTOR,
@@ -59,6 +60,7 @@ function DropdownMenuContent({
     <MenuPrimitive.Portal>
       <MenuPrimitive.Positioner
         className="isolate z-50 outline-none"
+        anchor={anchor}
         align={align}
         alignOffset={alignOffset}
         collisionAvoidance={collisionAvoidance}

@@ -1,4 +1,4 @@
-import { isDorkMode, MAX_LIVE_WORKERS, MODES, type ClientEvent, type DorkMode } from "@dorks/shared";
+import { isDorkMode, MAX_LIVE_WORKERS, MODES, type ClientEvent, type DorkMode, type SessionPr } from "@dorks/shared";
 import { fail, touch, type App } from "../app";
 import { dorkOf, dorkView, eventOf, getDork, isUnread, needsAttentionOf, prStateOf, queuedMessagesOf, type DorkRow, type DorkView, type Provider } from "../data";
 import { insert } from "../db";
@@ -11,7 +11,8 @@ import { missingForSession } from "./setup";
 import { readSettings } from "./settings";
 import { defaultBuildId, getBuild } from "./builds";
 import { claimImages } from "./bridge";
-import { endDorkSubscriptions, resetCiAttempts, subscriptionsOfDork } from "./subscriptions";
+import { endDorkSubscriptions, resetCiAttempts, sessionSubscriptionViews, subscriptionsOfDork } from "./subscriptions";
+import { watchedShipsOf } from "./ships";
 
 export const MAX_TITLE_CHARS = 120;
 export const EVENTS_PAGE_DEFAULT = 50;
@@ -44,13 +45,29 @@ function persistMessage(app: App, dork: DorkRow, text: string, from?: MessageFro
 export function listDorks(app: App, archived = false): DorkView[] {
   return app.db.all("SELECT * FROM dorks WHERE archived = ? AND deleting = 0 ORDER BY last_activity_at DESC LIMIT 200", archived ? 1 : 0).map((r) => {
     const d = dorkOf(r);
-    return dorkView(d, prStateOf(app.db, d), needsAttentionOf(app.db, d.id));
+    return dorkView(d, prStateOf(app.db, d), needsAttentionOf(app.db, d.id), undefined, sessionPrsOf(app, d.id));
+  });
+}
+
+/** The session's pull requests as the sidebar shows them: the ones the UI lists, each with what its merge set off while that is followed. */
+function sessionPrsOf(app: App, dorkId: string): SessionPr[] {
+  const ships = watchedShipsOf(app, dorkId);
+  return sessionSubscriptionViews(app, dorkId).map((s) => {
+    const ship = ships.findLast((x) => x.repo === s.repo && x.number === s.number);
+    return {
+      repo: s.repo,
+      number: s.number,
+      url: s.url,
+      ...(s.title ? { title: s.title } : {}),
+      state: s.state,
+      ...(ship ? { ship: { status: ship.status, stages: ship.stages.map(({ name, state, url }) => ({ name, state, ...(url ? { url } : {}) })) } } : {}),
+    };
   });
 }
 
 export function getDorkView(app: App, dorkId: string): DorkView | null {
   const d = getDork(app.db, dorkId);
-  return d && !d.deleting ? dorkView(d, prStateOf(app.db, d), needsAttentionOf(app.db, d.id), queuedMessagesOf(app.db, d.id)) : null;
+  return d && !d.deleting ? dorkView(d, prStateOf(app.db, d), needsAttentionOf(app.db, d.id), queuedMessagesOf(app.db, d.id), sessionPrsOf(app, d.id)) : null;
 }
 
 /**

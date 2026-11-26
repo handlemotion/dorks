@@ -60,6 +60,7 @@ export function RunLog({ buildId, run }: { buildId: string; run: RunView }) {
       <div
         ref={box}
         aria-label="run log"
+        data-selectable
         className="min-h-64 flex-1 overflow-auto py-2.5 font-mono text-xs leading-5"
         onScroll={(e) => {
           const el = e.currentTarget

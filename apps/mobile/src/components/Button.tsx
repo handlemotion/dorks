@@ -1,14 +1,14 @@
 import { useEffect, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View, type PressableProps } from "react-native";
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withTiming } from "react-native-reanimated";
-import { fonts, useColors } from "@/lib/theme";
+import { fonts, useColors, useIsDark } from "@/lib/theme";
 
 const GLYPH = { sm: 15, field: 18 };
 
 export interface ButtonProps extends Omit<PressableProps, "children"> {
   label: string;
-  /** `primary` filled brand, `outline` bordered on the canvas, `quiet` text only (a secondary action in place). */
-  intent?: "primary" | "outline" | "quiet";
+  /** `primary` filled brand, `outline` bordered on the canvas, `quiet` text only (a secondary action in place), `apple` Sign in with Apple's black fill (white in dark). */
+  intent?: "primary" | "outline" | "quiet" | "apple";
   size?: "sm" | "md" | "lg";
   /** A glyph before the label, drawn at `size` in `color`. */
   icon?: (glyph: { size: number; color: string }) => ReactNode;
@@ -16,18 +16,27 @@ export interface ButtonProps extends Omit<PressableProps, "children"> {
   isPending?: boolean;
 }
 
+/** Each intent's ink and fill. Apple's is black with white ink, inverted in dark mode (Sign in with Apple's own colours). */
+function look(intent: NonNullable<ButtonProps["intent"]>, c: ReturnType<typeof useColors>, dark: boolean) {
+  const apple = dark ? "#ffffff" : "#000000";
+  switch (intent) {
+    case "primary":
+      return { ink: "#ffffff", fill: { backgroundColor: c.primaryButton, borderWidth: 1, borderColor: c.primary } };
+    case "outline":
+      return { ink: c.text, fill: { backgroundColor: c.surface, borderWidth: 1, borderColor: c.border } };
+    case "apple":
+      return { ink: dark ? "#000000" : "#ffffff", fill: { backgroundColor: apple, borderWidth: 1, borderColor: apple } };
+    default:
+      return { ink: c.text, fill: styles.quiet };
+  }
+}
+
 /** A labelled action (Wok's iOS button): the label centred, a glyph or the pending spinner at the leading edge. Squeezes to 0.97 while pressed. */
 export function Button({ label, intent = "primary", size = "md", isPending, disabled, icon, style, ...props }: ButtonProps) {
   const c = useColors();
-  const primary = intent === "primary";
-  const ink = primary ? "#ffffff" : c.text;
+  const dark = useIsDark();
+  const { ink, fill } = look(intent, c, dark);
   const glyph = size === "sm" ? GLYPH.sm : GLYPH.field;
-  const fill =
-    intent === "primary"
-      ? { backgroundColor: c.primaryButton, borderWidth: 1, borderColor: c.primary }
-      : intent === "outline"
-        ? { backgroundColor: c.surface, borderWidth: 1, borderColor: c.border }
-        : styles.quiet;
   const quiet = intent === "quiet";
   return (
     <Pressable

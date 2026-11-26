@@ -1,28 +1,20 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useLocation } from '@tanstack/react-router'
-import { BlocksIcon, BoxIcon, ChevronDownIcon, ChevronRightIcon, PlusIcon, ServerIcon, SettingsIcon, WorkflowIcon } from 'lucide-react'
+import { BlocksIcon, BoxIcon, ChevronDownIcon, ChevronRightIcon, PlusIcon, WorkflowIcon } from 'lucide-react'
 import type { DorkState } from '@dorks/shared'
-import { useBuilds, useDorks, useGithubRepos } from '@dorks/client/react'
+import type { Usage } from '@dorks/client'
+import { useBuilds, useDorks, useGithubRepos, useUsage } from '@dorks/client/react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@dorks/ui/collapsible'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@dorks/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@dorks/ui/dropdown-menu'
 import { FluidHoverHighlight } from '@dorks/ui/fluid-hover-highlight'
 import { Sidebar, useSidebar } from '@dorks/ui/sidebar'
 import githubDark from '../assets/providers/github-dark.svg'
 import githubLight from '../assets/providers/github-light.svg'
 import { toast } from 'sonner'
 import { useArchiveDork } from '../lib/archive'
+import { AccountMenu } from './AccountMenu'
 import { useDisconnect } from './ConnectionGate'
-import { ChatList, type Chat, type ChatRoute, type PrState } from './ChatList'
+import { ChatList, type Chat, type ChatPr, type ChatRoute, type PrState } from './ChatList'
 import { Logo } from './onboarding/List'
 import { OwnerAvatar, ownerOf } from './RepoAvatar'
 import { ownersOf, useOwnerScope } from './ownerScope'
@@ -35,10 +27,11 @@ const PR_NUMBER = /\/pull\/(\d+)/
 /** The name of an `owner/name` repository. */
 const nameOf = (repo: string) => repo.slice(repo.indexOf('/') + 1)
 
-/** Pull request number from the stored PR url, and its state as the server last saw it. */
-function prOf(prUrl: string | undefined, state: PrState | undefined): Chat['pr'] {
-  const n = prUrl && PR_NUMBER.exec(prUrl)?.[1]
-  return n ? { number: Number(n), state } : undefined
+/** The session's pull requests; from an older server, which only names its latest, that one alone. */
+function prsOf(d: { prs?: ChatPr[]; prUrl?: string; prState?: PrState }): ChatPr[] {
+  if (d.prs?.length) return d.prs
+  const n = d.prUrl && PR_NUMBER.exec(d.prUrl)?.[1]
+  return n ? [{ number: Number(n), url: d.prUrl, state: d.prState }] : []
 }
 
 /** Dork states in which something is moving. Everything else (idle, sleeping, error) is shown as still. */
@@ -48,22 +41,26 @@ export function AppSidebar() {
   const dorks = useDorks(false)
   const disconnect = useDisconnect()
   const github = useGithubRepos()
+  const limits = useUsage()
   const archive = useArchiveDork()
   const builds = useBuilds()
   // A nerd has no repository of its own: it sits with the repository of the build it works on (its first), else in Other.
   const buildRepo = new Map((builds ?? []).map((b) => [b.id, b.repos[0]?.repo ?? '']))
-  const chats: Chat[] = (dorks ?? []).map((d) => ({
-    id: d.id,
-    title: d.title,
-    repo: d.mode === 'nerd' && !d.repo ? (buildRepo.get(d.buildId ?? '') ?? '') : d.repo,
-    working: MOVING.has(d.state),
-    state: d.state,
-    attention: d.needsAttention,
-    unread: d.unread,
-    pr: prOf(d.prUrl, d.prState),
-    mode: d.mode,
-    parentId: d.parentId,
-  }))
+  // Newest first by creation, never by activity: rows stay where they are until the owner drags them (ChatList remembers that order).
+  const chats: Chat[] = (dorks ?? [])
+    .toSorted((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id))
+    .map((d) => ({
+      id: d.id,
+      title: d.title,
+      repo: d.mode === 'nerd' && !d.repo ? (buildRepo.get(d.buildId ?? '') ?? '') : d.repo,
+      working: MOVING.has(d.state),
+      state: d.state,
+      attention: d.needsAttention,
+      unread: d.unread,
+      prs: prsOf(d),
+      mode: d.mode,
+      parentId: d.parentId,
+    }))
   // Agents' changes waiting for the owner: a count beside Builds, so a proposal is found from anywhere.
   const reviews = (builds ?? []).reduce((n, b) => n + b.drafts.filter((d) => d.status === 'submitted').length, 0)
   return (
@@ -72,6 +69,8 @@ export function AppSidebar() {
       accounts={github}
       counts={{ '/builds': reviews }}
       onDisconnect={disconnect}
+      limits={limits}
+      version={window.__DORKS__?.version}
       usage={
         <>
           <UpdatePrompt />
@@ -122,9 +121,9 @@ function GithubMark() {
 
 /**
  * The header's switcher, the way an organization switcher works: the current owner (a GitHub user or organization) with its avatar,
- * and a menu to scope the sidebar to another owner or to all of them. Below that, the connection: change the server.
+ * and a menu to scope the sidebar to another owner or to all of them. Changing the server lives in the account menu at the foot.
  */
-function OwnerSwitcher({ owners, scope, setScope, onDisconnect }: { owners: string[]; scope: string; setScope: (scope: string) => void; onDisconnect?: (() => void) | null }) {
+function OwnerSwitcher({ owners, scope, setScope }: { owners: string[]; scope: string; setScope: (scope: string) => void }) {
   const name = scope || 'All repositories'
   return (
     <DropdownMenu modal={false}>
@@ -150,15 +149,6 @@ function OwnerSwitcher({ owners, scope, setScope, onDisconnect }: { owners: stri
             ))}
           </DropdownMenuRadioGroup>
         </DropdownMenuGroup>
-        {onDisconnect && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={onDisconnect}>
-              <ServerIcon />
-              Change server
-            </DropdownMenuItem>
-          </>
-        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -175,10 +165,10 @@ const PAGES = [
  * The app's sidebar: a 48px title bar (traffic lights, the toggle, back and forward); the owner switcher with New session and the
  * app's pages; then the chats of
  * the owner in scope, grouped by repository (a label per repository, alphabetical, that folds its section shut and remembers it),
- * each group reorderable and remembering its order; Settings at the foot. Rows are 30px, 2px apart, with one hover fill springing between them; groups are 16px apart. It sits
+ * each group reorderable and remembering its order; the account menu (the owner's avatar) at the foot. Rows are 30px, 2px apart, with one hover fill springing between them; groups are 16px apart. It sits
  * flat on the app fill in a resizable panel (see AppFrame); on phones it is shadcn's sheet.
  */
-/** The sidebar from props alone. `usage` is the slot above Settings: the live update prompt and `<UsageBar />` in the app, static data (or nothing) in demos. */
+/** The sidebar from props alone. `usage` is the slot above the account menu: the live update prompt in the app, static data (or nothing) in demos. */
 export function AppSidebarView({
   chats,
   accounts,
@@ -186,6 +176,8 @@ export function AppSidebarView({
   orderKey = 'dorks.chat-order',
   chatTo,
   usage,
+  limits,
+  version,
   onArchive,
   counts,
 }: {
@@ -198,6 +190,10 @@ export function AppSidebarView({
   orderKey?: string
   chatTo?: ChatRoute
   usage?: ReactNode
+  /** The agents' and Boat's usage, for the account menu's Usage. */
+  limits?: Usage
+  /** The running app's version (the desktop shell's), shown in the account menu. */
+  version?: string
   /** Archives a chat from its row (hover button, right-click menu). */
   onArchive?: (id: string) => void
 }) {
@@ -239,7 +235,7 @@ export function AppSidebarView({
           <FluidHoverHighlight className="z-0 rounded-[6px] bg-foreground/[0.05]" rect={hover.rect} session={hover.session} />
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto overscroll-y-none">
             <nav aria-label="App" className="flex shrink-0 flex-col gap-0.5">
-              <OwnerSwitcher owners={owners} scope={scope} setScope={setScope} onDisconnect={onDisconnect} />
+              <OwnerSwitcher owners={owners} scope={scope} setScope={setScope} />
               {/* A fresh state on every click, so clicking it again while there still counts as a new visit and puts the cursor in the box. */}
               <Link to="/dorks" search={{}} state={(prev) => ({ ...prev, visit: Date.now() })} {...rowLink(pathname === '/dorks' && !activeId)}>
                 {/* The plus is a narrow glyph: drawn at 16px in the 14px column so it reads as wide as the page icons under it. */}
@@ -300,10 +296,7 @@ export function AppSidebarView({
           </div>
           <div className="flex shrink-0 flex-col gap-2 pt-1.5">
             {usage}
-            <Link to="/settings" {...rowLink(pathname === '/settings')}>
-              <SettingsIcon />
-              Settings
-            </Link>
+            <AccountMenu login={accounts?.login} version={version} usage={limits} onDisconnect={onDisconnect} />
           </div>
         </div>
       </div>

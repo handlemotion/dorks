@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 import { append } from "../src/lifecycle/dispatch";
 import { AGENT_COMMENT_GRACE_MS } from "../src/services/githubIngest";
-import { pollOnce, POLL_MS } from "../src/services/poller";
+import { listDorks } from "../src/services/dorks";
+import { ENDED_STATE_MS, pollOnce, POLL_MS } from "../src/services/poller";
 import { updateSettings } from "../src/services/settings";
 import * as subs from "../src/services/subscriptions";
 import { fakeFetch, harness, NOW } from "./harness";
@@ -68,12 +69,12 @@ function github() {
   return { state, fetch: f };
 }
 
-async function setup() {
+async function setup(source: "auto" | "agent" = "agent") {
   const gh = github();
   const h = harness({ fetch: gh.fetch, ghToken: gh.state.token });
   const id = h.seed("idle");
   await updateSettings(h.app, { githubConnected: true });
-  h.app.db.tx(() => subs.subscribe(h.app, h.dork(id), "octo/hello", 7, "agent"));
+  h.app.db.tx(() => subs.subscribe(h.app, h.dork(id), "octo/hello", 7, source));
   const sub = () => subs.subscriptionsOfDork(h.app, id)[0];
   const inbox = () => h.app.db.all<{ kind: string; summary: string }>("SELECT kind, summary FROM inbox WHERE dork_id = ? ORDER BY id", id);
   const tick = async () => {
@@ -241,6 +242,33 @@ describe("poller", () => {
       expect(s.sub()).toMatchObject({ status: "ended", state: "closed" });
       expect(s.inbox().map((r) => r.summary)).toEqual(inbox);
     }
+  });
+
+  it("a PR the session opened and stopped watching still turns closed for the UI, quietly", async () => {
+    const s = await setup("auto"); // `gh pr create`
+    await pollOnce(s.h.app);
+    s.h.app.db.tx(() => subs.unsubscribe(s.h.app, s.id, "octo/hello", 7));
+    expect(await s.tick()).toBe(ENDED_STATE_MS); // only the state is still read, slowly
+    s.gh.state.pr.state = "closed";
+    s.h.clock.t += ENDED_STATE_MS;
+    await pollOnce(s.h.app);
+    expect(s.sub()).toMatchObject({ status: "ended", state: "closed" });
+    expect(await pollOnce(s.h.app)).toBeNull(); // closed: nothing left to read
+    expect(s.inbox()).toEqual([]);
+    expect(listDorks(s.h.app).find((d) => d.id === s.id)?.prs).toEqual([expect.objectContaining({ number: 7, state: "closed" })]);
+  });
+
+  it("a rate limit on a stopped-watching PR is waited out, not taken as gone", async () => {
+    const s = await setup("auto");
+    await pollOnce(s.h.app);
+    s.h.app.db.tx(() => subs.unsubscribe(s.h.app, s.id, "octo/hello", 7));
+    s.gh.state.rateLimitedUntil = NOW + 2 * ENDED_STATE_MS;
+    expect(await s.tick()).toBeGreaterThan(ENDED_STATE_MS); // backs off until the limit lifts
+    s.gh.state.rateLimitedUntil = 0;
+    s.gh.state.pr.state = "closed";
+    s.h.clock.t += 2 * ENDED_STATE_MS;
+    await pollOnce(s.h.app);
+    expect(s.sub()).toMatchObject({ status: "ended", state: "closed" });
   });
 
   it("a PR that is already merged when first seen just ends", async () => {

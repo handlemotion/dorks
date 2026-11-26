@@ -157,10 +157,43 @@ const demoBlocks: Block[] = [
 ]
 
 const chats = [
-  { id: 'preview', title: 'Fix flaky bridge reconnect after wake', repo: 'acme/demo', working: true, state: 'working' as const, pr: { number: 142 } },
-  { id: 'two', title: 'Add dark mode toggle', repo: 'acme/web', working: false, state: 'idle' as const, pr: { number: 138 } },
-  { id: 'three', title: 'Upgrade to Node 24', repo: 'vercel/next.js', working: false, state: 'sleeping' as const },
-  { id: 'four', title: 'Document the bridge protocol', repo: 'acme/demo', working: true, state: 'working' as const, attention: true },
+  { id: 'preview', title: 'Fix flaky bridge reconnect after wake', repo: 'acme/demo', working: true, state: 'working' as const, prs: [{ number: 142, state: 'open' as const }] },
+  {
+    id: 'two',
+    title: 'Add dark mode toggle',
+    repo: 'acme/web',
+    working: false,
+    state: 'idle' as const,
+    prs: [
+      { number: 136, url: 'https://github.com/acme/web/pull/136', title: 'Theme tokens for dark surfaces', state: 'merged' as const },
+      { number: 137, url: 'https://github.com/acme/web/pull/137', title: 'Dark mode toggle in settings', state: 'closed' as const },
+      { number: 138, url: 'https://github.com/acme/web/pull/138', title: 'Dark mode toggle, take two', state: 'open' as const },
+    ],
+  },
+  {
+    id: 'three',
+    title: 'Upgrade to Node 24',
+    repo: 'vercel/next.js',
+    working: false,
+    state: 'sleeping' as const,
+    prs: [
+      {
+        number: 227,
+        url: 'https://github.com/vercel/next.js/pull/227',
+        title: 'Upgrade to Node 24',
+        state: 'merged' as const,
+        ship: {
+          status: 'watching' as const,
+          stages: [
+            { name: 'CI', state: 'passed' as const },
+            { name: 'Release', state: 'passed' as const },
+            { name: 'Desktop', state: 'running' as const },
+          ],
+        },
+      },
+    ],
+  },
+  { id: 'four', title: 'Document the bridge protocol', repo: 'acme/demo', working: true, state: 'working' as const, attention: true, prs: [{ number: 101, state: 'closed' as const }] },
 ]
 
 /** Sample `git diff` output for the Changes tab. */

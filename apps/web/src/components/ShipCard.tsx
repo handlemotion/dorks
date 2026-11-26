@@ -76,7 +76,7 @@ function pinnedGroup(blocks: Block[], group: ShipBlock[] | undefined, state: str
 }
 
 /** Line icons while a stage waits or runs, filled ones once it passed (green) or failed (red). One table, so the set can be swapped. */
-const STAGE_ICON: Record<ShipStageState, { icon: typeof CircleIcon; className: string; label: string }> = {
+export const STAGE_ICON: Record<ShipStageState, { icon: typeof CircleIcon; className: string; label: string }> = {
   pending: { icon: CircleDashedIcon, className: 'text-muted-foreground', label: 'Waiting' },
   running: { icon: LoaderCircleIcon, className: 'animate-spin text-muted-foreground motion-reduce:animate-none', label: 'Running' },
   // The stroke takes the card's fill, so the check and the x read as cut out of a filled circle.

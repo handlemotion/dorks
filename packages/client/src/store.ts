@@ -31,6 +31,8 @@ export class Query<T> implements Store<QueryState<T>> {
   private dirty = false;
   private failures = 0;
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
+  /** When the last subscriber left (or the query was made); undefined while someone watches. The client drops long-idle queries. */
+  idleSince: number | undefined = Date.now();
 
   private readonly fetcher: () => Promise<T>;
   private readonly opts: QueryOptions;
@@ -44,10 +46,13 @@ export class Query<T> implements Store<QueryState<T>> {
 
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
+    this.idleSince = undefined;
     if (this.listeners.size === 1) void this.refresh();
     return () => {
       this.listeners.delete(listener);
-      if (this.listeners.size === 0 && this.retryTimer) {
+      if (this.listeners.size > 0) return;
+      this.idleSince = Date.now();
+      if (this.retryTimer) {
         clearTimeout(this.retryTimer);
         this.retryTimer = undefined;
       }

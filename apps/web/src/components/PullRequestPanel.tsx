@@ -98,7 +98,10 @@ export function PullRequestPanel({
   const refresh = pullRequest?.refresh
   useEffect(() => {
     if (!refresh || !view || view.state !== 'open') return
-    const t = window.setInterval(refresh, 60_000)
+    // Not from a hidden window: each refresh is several GitHub reads, and the live stream refreshes it when the PR changes anyway.
+    const t = window.setInterval(() => {
+      if (document.visibilityState === 'visible') refresh()
+    }, 60_000)
     return () => window.clearInterval(t)
   }, [refresh, view])
 
@@ -875,6 +878,7 @@ function LazyPatch({ patch, wrap }: { patch: string; wrap: boolean }) {
   return (
     <PatchDiff
       patch={patch}
+      data-selectable
       className="block border-t [--diffs-bg:var(--background)] [--diffs-font-size:12px] [--diffs-line-height:20px] [--diffs-font-family:var(--font-mono)] [--diffs-header-font-family:var(--font-sans)]"
       options={{ diffStyle: 'unified', disableFileHeader: true, overflow: wrap ? 'wrap' : 'scroll', themeType: resolvedTheme === 'dark' ? 'dark' : 'light' }}
     />
