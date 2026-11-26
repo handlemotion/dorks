@@ -42,7 +42,7 @@ const navItems = [
 
 export function Hero() {
   return (
-    <section className="relative flex min-h-screen w-full flex-col overflow-hidden bg-[#b7a29e] text-white lg:h-screen lg:min-h-[820px] lg:max-h-[960px]">
+    <section className="relative flex min-h-screen w-full flex-col overflow-hidden bg-[#b7a29e] text-white lg:h-svh lg:min-h-[820px]">
       <img
         src="/hero-bg.webp"
         alt=""
@@ -71,7 +71,7 @@ export function Hero() {
         </nav>
 
         <div className="flex items-center gap-2.5">
-          <Button variant="glass" size="icon-sm" aria-label="GitHub" nativeButton={false} render={<a href={GITHUB_URL} target="_blank" rel="noreferrer" />}>
+          <Button variant="nav" size="icon-sm" aria-label="GitHub" nativeButton={false} render={<a href={GITHUB_URL} target="_blank" rel="noreferrer" />}>
             <GitHubIcon />
           </Button>
           <Button variant="solid" size="sm" nativeButton={false} render={<a href={LOGIN_URL} />}>
@@ -80,8 +80,8 @@ export function Hero() {
         </div>
       </header>
 
-      <main className="relative z-10 mx-auto flex w-full max-w-[1512px] flex-1 flex-col items-center px-5 pt-14 sm:px-12 sm:pt-[56px] lg:px-[100px]">
-        <div className="flex w-full max-w-[568px] flex-col items-center gap-9">
+      <main className="relative z-10 mx-auto flex w-full flex-1 flex-col items-center px-5 pt-14 sm:px-12 sm:pt-[56px] lg:px-[clamp(64px,6.6vw,140px)]">
+        <div className="flex w-full max-w-[568px] shrink-0 flex-col items-center gap-9">
           <div className="flex w-full flex-col items-center gap-4 text-center">
             <DorksMark size={36} className="text-white" />
             <h1 className="font-serif text-[32px] font-normal leading-[1.3] tracking-normal text-white sm:text-[40px]">
@@ -125,13 +125,13 @@ export function Hero() {
           </div>
         </div>
 
-        <div className="mt-14 w-full max-w-[1312px] flex-1 pb-10 sm:mt-[80px] lg:pb-0">
+        <div className="mt-14 flex w-full flex-1 pb-10 sm:mt-[80px] lg:min-h-0 lg:pb-0">
           <img
             src="/hero-app.webp"
             alt="Dorks desktop workspace showing an agent session alongside a merged pull request"
             width={3360}
             height={2040}
-            className="block w-full rounded-[10px] object-cover object-top lg:rounded-b-none"
+            className="block h-auto w-full rounded-[10px] object-cover object-top lg:min-h-full lg:rounded-b-none"
           />
         </div>
       </main>

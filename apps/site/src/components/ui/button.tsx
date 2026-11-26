@@ -3,13 +3,13 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "#/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex shrink-0 cursor-pointer items-center justify-center rounded-full border border-transparent text-sm font-normal leading-[1.3] whitespace-nowrap transition-[background-color,color,opacity,transform] duration-150 outline-none select-none focus-visible:ring-2 focus-visible:ring-white/75 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  "inline-flex shrink-0 cursor-pointer items-center justify-center rounded-full border border-transparent text-sm font-normal leading-[1.3] whitespace-nowrap transition-[background-color,color,opacity,transform,backdrop-filter] duration-150 outline-none select-none focus-visible:ring-2 focus-visible:ring-white/75 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     variants: {
       variant: {
         solid: "bg-white text-black hover:bg-white/90 active:bg-white/80",
         glass: "bg-[#c5b6b7]/85 text-white backdrop-blur-md hover:bg-[#c5b6b7] active:bg-[#b8a7a8]",
-        nav: "bg-transparent text-white/90 hover:bg-white/15 hover:text-white active:bg-white/20",
+        nav: "bg-transparent text-white hover:bg-[#c5b6b7]/85 hover:backdrop-blur-md active:bg-[#c5b6b7]",
         splitPrimary: "rounded-none rounded-l-full bg-white text-black hover:bg-[#f4f4f5] active:scale-100 active:bg-[#e9e9ec] focus-visible:ring-inset focus-visible:ring-black/25",
         splitTrigger:
           "rounded-none rounded-r-full border-l border-[#f0f0f0] bg-white text-black hover:bg-[#f4f4f5] active:scale-100 active:bg-[#e9e9ec] data-[popup-open]:bg-[#f0f0f2] focus-visible:ring-inset focus-visible:ring-black/25",
