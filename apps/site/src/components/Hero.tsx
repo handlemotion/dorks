@@ -1,5 +1,7 @@
 import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { DorksMark } from "#/components/DorksMark";
+import { AppleIcon } from "#/components/icons";
 import { Button } from "#/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "#/components/ui/dropdown-menu";
 import { getLenis, subscribeLenisScroll } from "#/lib/lenis";
@@ -9,25 +11,6 @@ import { DOWNLOAD_URL, DownloadDetails, downloadTitle, useMacRelease } from "./D
 
 const GITHUB_URL = "https://github.com/handlemotion/dorks";
 const LOGIN_URL = "https://app.dorks.build";
-
-function DorksMark({ size = 24, className }: { size?: number; className?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 200 200" fill="none" aria-hidden="true" className={className}>
-      <path
-        d="M180 40c0-22.091-35.817-40-80-40S20 17.909 20 40c0 11.947 10.475 22.67 27.084 30C30.474 77.33 20 88.053 20 100s10.475 22.671 27.084 30C30.474 137.329 20 148.053 20 160c0 22.091 35.817 40 80 40s80-17.909 80-40c0-11.947-10.475-22.671-27.084-30C169.525 122.671 180 111.947 180 100s-10.475-22.67-27.084-30C169.525 62.67 180 51.947 180 40"
-        fill="currentColor"
-      />
-    </svg>
-  );
-}
-
-function AppleIcon({ className }: { className?: string }) {
-  return (
-    <svg width="14" height="16" viewBox="0 0 14 17" fill="currentColor" aria-hidden="true" className={className}>
-      <path d="M11.66 8.95c-.02-1.88 1.54-2.79 1.61-2.83-.88-1.29-2.25-1.46-2.73-1.48-1.15-.12-2.27.69-2.86.69-.6 0-1.5-.67-2.47-.65-1.26.02-2.43.74-3.08 1.87-1.33 2.3-.34 5.7.94 7.56.63.91 1.38 1.93 2.36 1.89.95-.04 1.31-.61 2.46-.61 1.14 0 1.47.61 2.46.59 1.02-.02 1.66-.92 2.28-1.84.73-1.05 1.02-2.08 1.04-2.13-.02-.01-1.99-.76-2.01-3.06ZM9.79 3.43c.52-.64.88-1.52.78-2.41-.76.03-1.69.51-2.23 1.14-.48.55-.91 1.46-.8 2.32.85.07 1.72-.43 2.25-1.05Z" />
-    </svg>
-  );
-}
 
 function GitHubIcon({ className }: { className?: string }) {
   return (

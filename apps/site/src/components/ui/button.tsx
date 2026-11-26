@@ -16,6 +16,10 @@ const buttonVariants = cva(
         splitTrigger:
           "rounded-none rounded-r-full border-0 border-l border-l-[#f0f0f0] bg-white text-black hover:bg-[#f4f4f5] active:bg-[#e9e9ec] data-[popup-open]:bg-[#f0f0f2] focus-visible:ring-inset focus-visible:ring-black/25",
         ghost: "bg-transparent text-neutral-900 hover:bg-neutral-100 active:bg-neutral-200/70",
+        // Sign-in (/login, /invite): the methods and links are this outline on the page's surface; a step's Continue is ink.
+        outline:
+          "border-[#e8e8e8] bg-white text-neutral-950 hover:bg-neutral-50 active:bg-neutral-100 focus-visible:ring-[#3b6be8]/60 focus-visible:ring-offset-0 dark:border-white/10 dark:bg-[#171717] dark:text-neutral-50 dark:hover:bg-[#1f1f1f] dark:active:bg-[#262626]",
+        ink: "bg-neutral-950 text-white hover:bg-neutral-800 active:bg-neutral-700 focus-visible:ring-[#3b6be8]/60 focus-visible:ring-offset-0 dark:bg-white dark:text-neutral-950 dark:hover:bg-neutral-200 dark:active:bg-neutral-300",
       },
       size: {
         default: "h-9 gap-2.5 px-3.5",
@@ -24,6 +28,7 @@ const buttonVariants = cva(
         splitEnd: "h-9 w-9 pr-[3px]",
         icon: "size-9",
         "icon-sm": "size-8",
+        lg: "relative h-11 w-full gap-2.5 px-11 text-sm",
       },
     },
     defaultVariants: {

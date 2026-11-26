@@ -1,0 +1,9 @@
+---
+// /invite/<id>: the Worker (src/worker.ts) and the dev server (astro.config.mjs) serve this page for every invitation id.
+import Base from "../layouts/Base.astro";
+import { Invite } from "../components/Invite";
+---
+
+<Base title="Join your team on Dorks" description="Accept an invitation to a team on Dorks." app>
+  <Invite client:only="react" />
+</Base>

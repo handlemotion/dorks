@@ -8,12 +8,14 @@ interface Env {
 }
 
 const APEX = "dorks.build";
-/** Mintlify at a subpath needs its own asset and API paths too (mintlify.com/docs/deploy/cloudflare). */
+/** /invite/<id> is one static page (src/pages/invite.astro) that reads the id from the address. */
+const INVITE_PATH = /^\/invite\/[^/]+\/?$/;
 /** /download (the latest .dmg), /download/<version> (that one's), /download.json (the latest, for the site's buttons). */
 const DOWNLOAD_PATH = /^\/download(?:\.json|\/[^/]*)?\/?$/;
 /** How long a lookup of GitHub's latest release is reused. Unauthenticated GitHub API calls are rate limited per IP. */
 const LATEST_TTL = 300;
 const VERSION_TTL = 86_400;
+/** Mintlify at a subpath needs its own asset and API paths too (mintlify.com/docs/deploy/cloudflare). */
 const DOCS_PATH = /^\/(?:docs(?:\/|$)|_mintlify\/|mintlify-assets\/)/;
 
 export default {
@@ -25,6 +27,7 @@ export default {
     }
     if (DOWNLOAD_PATH.test(url.pathname)) return download(request, url, env, ctx);
     if (DOCS_PATH.test(url.pathname)) return docs(request, url, env);
+    if (INVITE_PATH.test(url.pathname)) return env.ASSETS.fetch(new Request(new URL("/invite/", url), request));
     return env.ASSETS.fetch(request);
   },
 } satisfies ExportedHandler<Env>;
