@@ -1,4 +1,4 @@
-import type { DorkMode, DorkState, SessionPr, SubscriptionView } from '@dorks/shared'
+import type { DorkLocation, DorkMode, DorkState, SessionPr, SubscriptionView } from '@dorks/shared'
 import { Link, useRouter, type RegisteredRouter } from '@tanstack/react-router'
 import { move } from '@dnd-kit/helpers'
 import { Accessibility, defaultPreset, KeyboardSensor, PointerActivationConstraints, PointerSensor } from '@dnd-kit/dom'
@@ -29,6 +29,8 @@ export type Chat = {
   title: string
   /** `owner/name`; the sidebar groups chats by it. */
   repo?: string
+  /** Where it runs: a repository's local sessions are a section of their own (docs/local-dorks.md). Absent: cloud. */
+  location?: DorkLocation
   /** Something is moving in this chat. */
   working: boolean
   /** Lifecycle state of the dork, used to distinguish working (animated grey), awake (still grey) and asleep (grey outline). */
