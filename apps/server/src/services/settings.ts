@@ -1,4 +1,4 @@
-import { commentPolicy as commentPolicySchema, DEFAULT_COMMENT_POLICY, type CommentPolicy } from "@dorks/shared";
+import { commentPolicy as commentPolicySchema, DEFAULT_COMMENT_POLICY, isDorkLocation, type CommentPolicy, type DorkLocation, type LocalAvailability } from "@dorks/shared";
 import { knownAntigravityModels, knownModelChoices } from "./models";
 import { fail, OWNER, touch, type App } from "../app";
 import { aad, decrypt, encrypt } from "@dorks/core/crypto";
@@ -36,6 +36,8 @@ export interface Settings {
   claudeCodeMode: boolean;
   /** Every session may use the owner's computer without asking (docs/local-access.md). */
   localAlwaysAllow: boolean;
+  /** Where the new-session composer starts (docs/local-dorks.md): its Cloud / Local switch's remembered choice. */
+  defaultLocation: DorkLocation;
   /** Sentry, for automations' Sentry triggers (docs/automations.md, "Sentry"): the owner's token, its organization, a self-hosted URL. */
   sentryTokenEnc?: string;
   sentryOrg?: string;
@@ -64,6 +66,7 @@ export function readSettings(app: App): Settings {
     commentPolicy: json(r.comment_policy),
     claudeCodeMode: !!r.claude_code_mode,
     localAlwaysAllow: !!r.local_always_allow,
+    defaultLocation: r.default_location === "local" ? "local" : "cloud",
     sentryTokenEnc: n(r.sentry_token_enc as string | null),
     sentryOrg: n(r.sentry_org as string | null),
     sentryUrl: n(r.sentry_url as string | null),
@@ -77,8 +80,11 @@ const githubProblemOf = (app: App, s: Settings) => {
   return problem ? { problem } : {};
 };
 
-/** Booleans and plain values only: ciphertext and tokens never leave the server. */
-export function settingsView(app: App) {
+/**
+ * Booleans and plain values only: ciphertext and tokens never leave the server. `local` is whether the asking client may start local
+ * dorks (services/localDorks.ts); without one, as for a relayed client, it may not.
+ */
+export function settingsView(app: App, local: LocalAvailability = { available: false }) {
   const s = readSettings(app);
   return {
     claudeToken: !!s.claudeTokenEnc,
@@ -97,6 +103,9 @@ export function settingsView(app: App) {
     commentPolicy: s.commentPolicy ?? DEFAULT_COMMENT_POLICY,
     claudeCodeMode: s.claudeCodeMode,
     localAlwaysAllow: s.localAlwaysAllow,
+    local,
+    // A client that cannot start local dorks starts every session in the cloud, whatever the owner picked on their computer.
+    defaultLocation: local.available ? s.defaultLocation : "cloud",
     sentry: { connected: !!(s.sentryTokenEnc && s.sentryOrg), org: s.sentryOrg ?? null, url: s.sentryUrl ?? null },
     boxProvider: app.cfg.boxProvider,
     claudeModels: knownModelChoices(app),
@@ -125,6 +134,8 @@ export interface SettingsPatch {
   claudeCodeMode?: unknown;
   /** Sessions use the owner's computer without asking; off, each session asks once again (those already allowed stay allowed). */
   localAlwaysAllow?: unknown;
+  /** Where new sessions start by default: `cloud` or `local` (docs/local-dorks.md). */
+  defaultLocation?: unknown;
   /** Sentry's token ("" disconnects), organization slug and, for a self-hosted Sentry, its URL ("" for sentry.io). Checked with Sentry first. */
   sentryToken?: unknown;
   sentryOrg?: unknown;
@@ -186,6 +197,15 @@ const flagOf = (v: unknown, name: string) => {
   return v;
 };
 
+/** The owner's plain preferences a patch sets: Code Mode, Always allow, where new sessions start. */
+function preferenceFields(patch: SettingsPatch): Record<string, unknown> {
+  const row: Record<string, unknown> = {};
+  if (patch.claudeCodeMode !== undefined) row.claudeCodeMode = flagOf(patch.claudeCodeMode, "claudeCodeMode");
+  if (patch.localAlwaysAllow !== undefined) row.localAlwaysAllow = flagOf(patch.localAlwaysAllow, "localAlwaysAllow");
+  if (patch.defaultLocation !== undefined) row.defaultLocation = isDorkLocation(patch.defaultLocation) ? patch.defaultLocation : fail("invalid", "defaultLocation must be cloud or local");
+  return row;
+}
+
 const sleepMinutesOf = (v: unknown) => {
   // NaN slips through Math.min/max and would corrupt every timer computed from it.
   if (typeof v !== "number" || !Number.isFinite(v)) fail("invalid", "minutes must be a finite number");
@@ -225,8 +245,7 @@ export async function updateSettings(app: App, patch: SettingsPatch, opts: { fro
   if (patch.baseSnapshotId !== undefined) row.baseSnapshotId = text(patch.baseSnapshotId, "snapshot", 200) || null;
   if (patch.sleepMinutes !== undefined) row.sleepMinutes = sleepMinutesOf(patch.sleepMinutes);
   if (patch.commentPolicy !== undefined) row.commentPolicy = commentPolicyOf(patch.commentPolicy);
-  if (patch.claudeCodeMode !== undefined) row.claudeCodeMode = flagOf(patch.claudeCodeMode, "claudeCodeMode");
-  if (patch.localAlwaysAllow !== undefined) row.localAlwaysAllow = flagOf(patch.localAlwaysAllow, "localAlwaysAllow");
+  Object.assign(row, preferenceFields(patch));
   Object.assign(row, await sentryConnection(app, patch, before));
   if (!Object.keys(row).length) return;
   if (opts.unless?.()) throw new StaleSignIn("superseded");

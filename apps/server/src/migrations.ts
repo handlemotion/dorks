@@ -651,4 +651,18 @@ export const MIGRATIONS: string[] = [
     hidden_at INTEGER NOT NULL
   );
   `,
+  `
+  -- Local dorks (docs/local-dorks.md): where a dork runs, \`cloud\` (a Boat sandbox) or \`local\` (the owner's computer); the box provider
+  -- is picked from it. The new-session composer's remembered choice. The local provider's boxes (lib/localBox.ts): one per local dork,
+  -- its bridge's loopback port and whether it should be running (its process is a child of this server, started again after a restart).
+  ALTER TABLE dorks ADD COLUMN location TEXT NOT NULL DEFAULT 'cloud';
+  ALTER TABLE settings ADD COLUMN default_location TEXT NOT NULL DEFAULT 'cloud';
+  CREATE TABLE local_boxes (
+    name TEXT PRIMARY KEY,
+    dork_id TEXT NOT NULL,
+    bridge_port INTEGER NOT NULL,
+    running INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  `,
 ];

@@ -1,4 +1,4 @@
-import { isDorkMode, MAX_LIVE_WORKERS, MODES, type ClientEvent, type DorkMode, type SessionPr } from "@dorks/shared";
+import { isDorkMode, MAX_LIVE_WORKERS, MODES, type ClientEvent, type DorkLocation, type DorkMode, type SessionPr } from "@dorks/shared";
 import { fail, touch, type App } from "../app";
 import { dorkOf, dorkView, eventOf, getDork, isUnread, needsAttentionOf, prStateOf, queuedMessagesOf, type DorkRow, type DorkView, type Provider } from "../data";
 import { insert } from "../db";
@@ -97,6 +97,16 @@ function checkRepo(input: unknown, setup: boolean): string {
   return repo as string;
 }
 
+/**
+ * Where the session runs (docs/local-dorks.md) and, in the cloud, the build it starts from. A worker runs where its coordinator does
+ * (docs/crew.md), so a local nerd's crew is local too. Builds are cloud machines: a local session works on this computer as it is.
+ */
+function placeOf(app: App, input: { location?: DorkLocation; buildId?: unknown }, setup: boolean, parent?: DorkRow): { location: DorkLocation; buildId: string | null } {
+  const location: DorkLocation = parent?.location ?? input.location ?? "cloud";
+  if (location === "local" && setup) fail("invalid", "A machine-setup session runs in the cloud.");
+  return { location, buildId: location === "local" ? null : checkBuild(app, input.buildId, setup) };
+}
+
 /** The build the session starts from, or null for the base machine. */
 function checkBuild(app: App, input: unknown, setup: boolean): string | null {
   if (input !== undefined && input !== null && typeof input !== "string") fail("invalid", "buildId must be a string");
@@ -149,6 +159,8 @@ export function createDork(
     setup?: unknown;
     mode?: unknown;
     icon?: unknown;
+    /** cloud (default) or local (docs/local-dorks.md); the route checks the actor may ask for local before it calls this. */
+    location?: DorkLocation;
     /** Set by the route from the request's actor, never from a body. */ by?: By;
   },
   // Set only by the crew service (services/crew.ts), never from a request body: the coordinator starting this worker.
@@ -158,12 +170,12 @@ export function createDork(
   const setup = input.setup === true;
   if (provider !== "claude" && provider !== "codex" && provider !== "opencode" && provider !== "antigravity") fail("invalid", "provider must be claude, codex, opencode or antigravity");
   const { mode, icon } = checkMode(input, setup, parent);
+  const { location, buildId } = placeOf(app, input, setup, parent);
   // Only a code session works in a repository; a chat or a nerd starts in an empty work directory (one may still be named).
   const repo = checkRepo(input.repo, setup || !MODES[mode].needsRepo);
-  const buildId = checkBuild(app, input.buildId, setup);
   if (title !== undefined && (typeof title !== "string" || title.trim().length > MAX_TITLE_CHARS)) fail("invalid", "title too long");
   const text = checkText(message);
-  const missing = missingForSession(app, provider);
+  const missing = missingForSession(app, provider, location);
   if (missing) fail("onboarding_incomplete", missing);
   // A Claude session with no model chosen starts on Opus (the current one, by its alias) when the agent offers it, not the CLI's default.
   const choices = provider === "claude" ? knownModelChoices(app) : [];
@@ -197,6 +209,7 @@ export function createDork(
       deleting: false,
       buildId,
       mode,
+      location,
       parentId: parent?.id ?? null,
       icon,
       createdBy: input.by ?? null,
@@ -285,7 +298,8 @@ export async function desktopUrl(app: App, dorkId: string, opts: DesktopOptions)
   const dork = owned(app, dorkId);
   if (dork.archived) return fail("archived", "dork is archived");
   if (!dork.boxId || (dork.state !== "working" && dork.state !== "idle")) return fail("sleeping", "The computer is asleep. It wakes with your next message.");
-  const box = await app.getBox();
+  if (dork.location === "local") return fail("not_configured", "A local session has no computer of its own: it works on this one.");
+  const box = await app.getBox(dork.location);
   if (!box.desktopUrl) return fail("not_configured", "This sandbox provider has no desktop");
   try {
     return await box.desktopUrl(dork.boxId, opts);
@@ -311,7 +325,8 @@ export function setArchived(app: App, dorkId: string, archived: boolean) {
   app.db.tx(() => {
     const dork = owned(app, dorkId);
     if (!archived && dork.archived && dork.parentId) checkWorkerRoom(app, dork.parentId); // the same cap as dork_create, from the UI or MCP
-    dispatch(app, dorkId, { t: archived ? "archive" : "unarchive" });
+    if (archived) archive(app, dork);
+    else dispatch(app, dorkId, { t: "unarchive" });
     if (archived) archiveWorkers(app, dork);
   });
 }
@@ -324,7 +339,16 @@ export function checkWorkerRoom(app: App, coordinatorId: string) {
 
 /** Stopping a coordinator stops its crew (docs/crew.md): its live workers are archived with it. Unarchiving brings back only the coordinator. */
 function archiveWorkers(app: App, dork: DorkRow) {
-  for (const w of app.db.all<{ id: string }>("SELECT id FROM dorks WHERE parent_id = ? AND archived = 0 AND deleting = 0", dork.id)) dispatch(app, w.id, { t: "archive" });
+  for (const w of app.db.all<{ id: string }>("SELECT id FROM dorks WHERE parent_id = ? AND archived = 0 AND deleting = 0", dork.id)) archive(app, getDork(app.db, w.id)!);
+}
+
+/**
+ * Archives one dork. An awake box is paused by it (the machine's pause_box); a box that already sleeps lets go of what it keeps
+ * that can be made again (a local dork's worktree, docs/local-dorks.md), and its next wake makes it again.
+ */
+function archive(app: App, dork: DorkRow) {
+  dispatch(app, dork.id, { t: "archive" });
+  if (!dork.archived && dork.boxId && dork.state === "sleeping") setTimer(app, dork.id, "box:retire", 0);
 }
 
 /**

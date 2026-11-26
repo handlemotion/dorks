@@ -5,7 +5,7 @@ import { execFile } from "node:child_process";
 import { dirname, join } from "node:path";
 import { Agent, BOAT_COMPUTER_DRIVER, childEnv, COMPUTER_PROMPT, computerArgs, configDirOf, crewArgs, findTranscripts } from "./claude";
 import { CodexAgent } from "./codex";
-import { CHAT_SYSTEM_PROMPT, COORDINATOR_GUIDANCE, FINAL_ANSWER_GUIDANCE, SKILLS_GUIDANCE, WORKER_GUIDANCE } from "./guidance";
+import { CHAT_SYSTEM_PROMPT, COORDINATOR_GUIDANCE, FINAL_ANSWER_GUIDANCE, LOCAL_GUIDANCE, SKILLS_GUIDANCE, WORKER_GUIDANCE } from "./guidance";
 import { OpenCodeAgent } from "./opencode";
 import { AntigravityAgent } from "./antigravity";
 import type { Config } from "./config";
@@ -650,7 +650,8 @@ export class Bridge {
                 loadImage: (id) => this.t.getImage(id),
                 bin: this.cfg.claudeBin,
                 permissionMode: this.cfg.permissionMode,
-                extraArgs: [...computerArgs(), ...crewArgs(this.role), ...this.cfg.claudeExtraArgs],
+                // A local dork has no sandbox desktop, and its own words about where it runs (guidance.ts, LOCAL_GUIDANCE).
+                extraArgs: [...(this.cfg.local ? [] : computerArgs()), ...crewArgs(this.role), ...(this.cfg.local ? ["--append-system-prompt", LOCAL_GUIDANCE] : []), ...this.cfg.claudeExtraArgs],
                 model: this.claudeModel.model,
                 effort: this.claudeModel.effort,
                 onCommands: (commands) => this.pipeline.control({ t: "agent_commands", commands }, true),

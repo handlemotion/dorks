@@ -1,5 +1,6 @@
 import type { App } from "../app";
 import type { BridgeEndpoint } from "@dorks/core/box";
+import type { DorkLocation } from "@dorks/shared";
 import { BridgeSession } from "./bridgeWs";
 
 // The server dials every awake box's bridge (docs/architecture.md, "Bridge protocol"): the owner's machine only makes outbound
@@ -30,6 +31,8 @@ const defaultDial: Dial = (url, headers) => new WebSocket(url, { headers } as un
 
 type Link = {
   boxId: string;
+  /** The dork's location picks the provider that knows the box (docs/local-dorks.md). */
+  location: DorkLocation;
   ws?: Socket;
   session?: BridgeSession;
   endpoint?: BridgeEndpoint;
@@ -65,7 +68,7 @@ export function startBridgeLinks(app: App, dial: Dial = defaultDial): { stop(): 
   const connect = async (dorkId: string, link: Link) => {
     if (link.ended) return;
     try {
-      link.endpoint ??= await (await app.getBox()).bridgeEndpoint(link.boxId);
+      link.endpoint ??= await (await app.getBox(link.location)).bridgeEndpoint(link.boxId);
     } catch {
       return again(dorkId, link); // the box is not up yet, or the provider is unreachable
     }
@@ -100,19 +103,23 @@ export function startBridgeLinks(app: App, dial: Dial = defaultDial): { stop(): 
   };
 
   const reconcile = () => {
-    let rows: { id: string; box_id: string }[];
+    let rows: { id: string; box_id: string; location: string }[];
     try {
-      rows = app.db.all<{ id: string; box_id: string }>(`SELECT id, box_id FROM dorks WHERE box_id IS NOT NULL AND deleting = 0 AND state IN (${AWAKE.map(() => "?").join(", ")})`, ...AWAKE);
+      rows = app.db.all<{ id: string; box_id: string; location: string }>(
+        `SELECT id, box_id, location FROM dorks WHERE box_id IS NOT NULL AND deleting = 0 AND state IN (${AWAKE.map(() => "?").join(", ")})`,
+        ...AWAKE,
+      );
     } catch {
       return; // the database is closing
     }
     const want = new Map(rows.map((r) => [r.id, r.box_id]));
+    const where = new Map(rows.map((r) => [r.id, (r.location === "local" ? "local" : "cloud") as DorkLocation]));
     for (const [id, link] of links) if (want.get(id) !== link.boxId) end(id, link);
     const now = app.now();
     for (const [id, boxId] of want) {
       const link = links.get(id);
       if (!link) {
-        const fresh: Link = { boxId, failures: 0, lastSeen: now, ended: false };
+        const fresh: Link = { boxId, location: where.get(id) ?? "cloud", failures: 0, lastSeen: now, ended: false };
         links.set(id, fresh);
         void connect(id, fresh);
       } else if (link.ws && now - link.lastSeen > SILENT_MS) {

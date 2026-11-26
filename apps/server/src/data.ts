@@ -1,4 +1,4 @@
-import type { AgentCommand, AgentModelChoice, ClientEvent, DorkMode, DorkState, SessionPr } from "@dorks/shared";
+import type { AgentCommand, AgentModelChoice, ClientEvent, DorkLocation, DorkMode, DorkState, SessionPr } from "@dorks/shared";
 import type { Db, Row } from "./db";
 import { bool, json } from "./db";
 
@@ -52,6 +52,8 @@ export interface DorkRow {
   buildId?: string;
   /** chat, code or nerd (docs/modes.md); a nerd plans and delegates to worker dorks (docs/crew.md). */
   mode: DorkMode;
+  /** Where it runs (docs/local-dorks.md): a cloud sandbox, or this computer. Fixed for its life. */
+  location: DorkLocation;
   /** The coordinator that started this worker. */
   parentId?: string;
   /** An emoji the owner picked for a coordinator. */
@@ -129,6 +131,7 @@ export const dorkOf = (r: Row): DorkRow => ({
   prUrl: u(r.pr_url as string | null),
   buildId: u(r.build_id as string | null),
   mode: ((r.mode as string | null) ?? "code") as DorkMode,
+  location: r.location === "local" ? "local" : "cloud",
   parentId: u(r.parent_id as string | null),
   icon: u(r.icon as string | null),
   deleting: bool(r.deleting),
@@ -234,6 +237,7 @@ export const dorkView = (d: DorkRow, prState?: "open" | "merged" | "closed", nee
   modelChoices: d.modelChoices,
   buildId: d.buildId ?? null,
   mode: d.mode,
+  location: d.location,
   parentId: d.parentId ?? null,
   icon: d.icon,
   ...(d.createdBy ? { createdBy: { id: d.createdBy.id, name: d.createdBy.name } } : {}),

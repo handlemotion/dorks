@@ -348,7 +348,7 @@ export async function showPreview(app: App, dorkId: string, port: unknown, title
   const name = typeof title === "string" && title.trim() ? title.trim().slice(0, MAX_TITLE) : undefined;
   const dork = bridgeDork(app, dorkId);
   if (!dork.boxId) return fail("sleeping", "the box is not running");
-  const box = await app.getBox();
+  const box = await app.getBox(dork.location);
   if (!box.hostPort) return fail("not_configured", "this sandbox provider cannot host ports");
   let url: string;
   try {

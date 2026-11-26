@@ -1,11 +1,12 @@
-import { createServer, type AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
+import type { DorkLocation } from "@dorks/shared";
 import type { App } from "../app";
 import { BoxNotFoundError, unconfiguredBox, type BoxProvider } from "@dorks/core/box";
 import type { SnapshotDriver } from "../core/snapshot";
 import { boatBox } from "@dorks/core/boat";
 import { boatSnapshotDriver } from "./boatSnapshots";
 import { boatKey, readSettings } from "../services/settings";
+import { freePort, localBox } from "./localBox";
 
 /** A per-installation id: scopes the labels of Boat sandboxes so two Dorks installs on one Boat account never adopt each other's boxes. */
 export function instanceId(app: App): string {
@@ -17,11 +18,13 @@ export function instanceId(app: App): string {
 }
 
 /**
- * Box seam (packages/core/src/box.ts). BOX_PROVIDER=boat (default) or sim; the Boat key and organization come from settings, so the user can
- * change them in the UI. Actions are stateless, so the sim keeps its "remote" state in the sim_boxes table (the same way a real
- * provider holds it remotely).
+ * Box seam (packages/core/src/box.ts), per dork location. A local dork's box is this computer's (lib/localBox.ts, docs/local-dorks.md),
+ * whatever BOX_PROVIDER says. A cloud dork's is BOX_PROVIDER's: boat (default) or sim; the Boat key and organization come from
+ * settings, so the user can change them in the UI. Actions are stateless, so the sim keeps its "remote" state in the sim_boxes table
+ * (the same way a real provider holds it remotely).
  */
-export async function getBox(app: App): Promise<BoxProvider> {
+export async function getBox(app: App, location: DorkLocation = "cloud"): Promise<BoxProvider> {
+  if (location === "local") return localBox(app);
   if (app.cfg.boxProvider === "sim") return simBox(app);
   const apiKey = await boatKey(app);
   if (!apiKey) return unconfiguredBox("Boat API key not set");
@@ -120,17 +123,6 @@ function simSnapshotDriver(stepMs: number): SnapshotDriver {
 // takes a little longer than that: otherwise a pause followed at once by a wake would never look "down" to the host, and the old
 // bridge process (still connected) would be handed the next message and then killed with it.
 const simLatency = () => new Promise((r) => setTimeout(r, Number(process.env.SIM_LATENCY_MS ?? 700)));
-
-/** A loopback port nothing listens on right now, for a simulated box's bridge. */
-const freePort = () =>
-  new Promise<number>((resolve, reject) => {
-    const srv = createServer();
-    srv.once("error", reject);
-    srv.listen(0, "127.0.0.1", () => {
-      const { port } = srv.address() as AddressInfo;
-      srv.close(() => resolve(port));
-    });
-  });
 
 function simBox(app: App): BoxProvider {
   const { db } = app;

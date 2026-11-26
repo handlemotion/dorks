@@ -1,6 +1,8 @@
 import { Data, Effect } from "effect";
 import type { App } from "../app";
 import { BRIDGE_PORT, isBoxNotFound, type BoxProvider } from "@dorks/core/box";
+import type { DorkLocation } from "@dorks/shared";
+import { isLocalBox } from "../lib/localBox";
 import { getDork } from "../data";
 import { BoatError } from "@dorks/core/boat";
 import { isBoatStatus, isNetworkError } from "@dorks/core/boatHttp";
@@ -45,6 +47,8 @@ const safe = (e: unknown, what: string) => {
 
 export interface BoxInfo {
   boxId: string | null;
+  /** Which provider holds the box (docs/local-dorks.md). */
+  location: DorkLocation;
   deleting: boolean;
   snapshotId: string;
   sleepMinutes: number;
@@ -59,12 +63,13 @@ export function boxInfo(app: App, dorkId: string): BoxInfo | null {
   const dork = getDork(app.db, dorkId);
   if (!dork) return null;
   const s = readSettings(app);
-  const codexOnBoat = dork.provider === "codex" && app.cfg.boxProvider === "boat";
+  const codexOnBoat = dork.provider === "codex" && app.cfg.boxProvider === "boat" && dork.location === "cloud";
   // A dork on a build starts from the build's image (docs/builds.md); before its first image (a setup session), or after the build was
   // deleted, from the base snapshot.
-  const build = dork.buildId ? getBuild(app, dork.buildId) : undefined;
+  const build = dork.buildId && dork.location === "cloud" ? getBuild(app, dork.buildId) : undefined;
   return {
     boxId: dork.boxId ?? null,
+    location: dork.location,
     deleting: dork.deleting,
     snapshotId: build?.image ?? s.baseSnapshotId ?? app.cfg.baseSnapshotId ?? "",
     sleepMinutes: s.sleepMinutes,
@@ -81,8 +86,10 @@ export class JobStepError extends Data.TaggedError("JobStepError")<{ readonly ca
 const promise = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (cause) => new JobStepError({ cause }) });
 /** A synchronous step (database reads and writes) that may throw. */
 const sync = <A>(f: () => A) => Effect.try({ try: f, catch: (cause) => new JobStepError({ cause }) });
-/** A call on the sandbox provider for the current settings. */
-const onBox = <A>(app: App, f: (box: BoxProvider) => Promise<A>) => promise(async () => f(await app.getBox()));
+/** A call on the box provider of a location: the cloud's for the current settings, or this computer's. */
+const onBox = <A>(app: App, location: DorkLocation, f: (box: BoxProvider) => Promise<A>) => promise(async () => f(await app.getBox(location)));
+/** A box id names its provider when nothing else does (an orphan): local boxes are `local-<dork id>`. */
+const locationOfBox = (boxId: string): DorkLocation => (isLocalBox(boxId) ? "local" : "cloud");
 const settle = (app: App, fn: () => void) => sync(() => app.db.tx(fn));
 
 /** A box job's failure becomes `op_failed` with generic text; if even that cannot be recorded, the step error escapes. */
@@ -93,6 +100,7 @@ const orOpFailed =
 
 /** Why a box cannot be created right now, in words the user can act on; undefined when it can. */
 const createBlocker = (info: BoxInfo) => {
+  if (info.location === "local") return undefined; // this computer needs no snapshot or Boat environment
   if (!info.snapshotId) return "No base snapshot configured";
   if (info.requiresBoatEnvironment && !info.boatEnvironment) return "Set your Boat ChatGPT environment in Settings";
   return undefined;
@@ -103,7 +111,7 @@ const boxCreate = (app: App, dorkId: string, gen: number, replace?: string) =>
     // A box that would not wake goes first: left in place, the provider would adopt it again for this name. Only once it is deleted
     // does the dork forget it; a failed delete fails the create, and the dork still owns the box.
     if (replace) {
-      yield* onBox(app, (box) => box.delete(replace));
+      yield* onBox(app, locationOfBox(replace), (box) => box.delete(replace));
       yield* settle(app, () => boxReplaced(app, dorkId, replace));
     }
     const info = yield* sync(() => boxInfo(app, dorkId));
@@ -113,7 +121,7 @@ const boxCreate = (app: App, dorkId: string, gen: number, replace?: string) =>
     // Only the bridge's identity goes in the create-time env; user secrets arrive over the bridge's configure call. The server
     // dials the bridge on BRIDGE_PORT once the box is up (http/bridgeLinks.ts).
     const secret = yield* promise(() => bridgeSecret(app.cfg.bridgeSecretKey, dorkId));
-    const box = yield* onBox(app, (p) =>
+    const box = yield* onBox(app, info.location, (p) =>
       p.createFromSnapshot(info.snapshotId, {
         name: dorkId,
         initCommand: "dorks-bridge",
@@ -130,7 +138,7 @@ const boxCreate = (app: App, dorkId: string, gen: number, replace?: string) =>
 
 /** Deletes a box that no dork row points at. Provider deletes are idempotent; failures retry with backoff so it cannot leak silently. */
 export const deleteOrphan = (app: App, boxId: string, attempt: number): Effect.Effect<void, JobStepError> =>
-  onBox(app, (box) => box.delete(boxId)).pipe(
+  onBox(app, locationOfBox(boxId), (box) => box.delete(boxId)).pipe(
     Effect.catch((e) =>
       sync(() => {
         safe(e.cause, "delete_orphan_box");
@@ -147,7 +155,7 @@ const boxResume = (app: App, dorkId: string, gen: number) =>
     if (!boxId) return yield* new JobStepError({ cause: new Error("no box") });
     // The provider no longer has this box (deleted out of band, retention expired). Forget the id so the machine's
     // `error` + !hasBox path recreates it from the snapshot on the next message, instead of failing resume forever.
-    const gone = yield* onBox(app, (box) => box.resume(boxId)).pipe(
+    const gone = yield* onBox(app, info.location, (box) => box.resume(boxId)).pipe(
       Effect.as(false),
       Effect.catchIf(
         (e) => isBoxNotFound(e.cause),
@@ -163,7 +171,7 @@ const boxPause = (app: App, dorkId: string, gen: number) =>
   Effect.gen(function* () {
     const info = yield* sync(() => boxInfo(app, dorkId));
     const boxId = info?.boxId;
-    if (boxId) yield* onBox(app, (box) => box.pause(boxId));
+    if (boxId) yield* onBox(app, info.location, (box) => box.pause(boxId));
     yield* settle(app, () => boxPaused(app, dorkId, gen));
   }).pipe(orOpFailed(app, dorkId, "pause_box", gen));
 
@@ -173,7 +181,7 @@ const boxDestroy = (app: App, dorkId: string) =>
     if (!info) return;
     // Delete the box first; wipe rows only if that worked, so a failed delete can be retried by calling remove again.
     const boxId = info.boxId;
-    const deleted = yield* (boxId ? onBox(app, (box) => box.delete(boxId)) : Effect.void).pipe(
+    const deleted = yield* (boxId ? onBox(app, info.location, (box) => box.delete(boxId)) : Effect.void).pipe(
       Effect.as(true),
       Effect.catch((e) => {
         safe(e.cause, "delete_box");
@@ -187,6 +195,18 @@ const boxDestroy = (app: App, dorkId: string) =>
       patchDork(app, dorkId, {});
     });
   });
+
+/**
+ * The dork was archived while its box sleeps (services/dorks.ts, setArchived): the provider lets go of what it can make again (a local
+ * dork's worktree). An awake dork's archive pauses its box instead, and the pause does the same. A failure is logged, never shown.
+ */
+const boxRetire = (app: App, dorkId: string) =>
+  Effect.gen(function* () {
+    const info = yield* sync(() => boxInfo(app, dorkId));
+    const boxId = info?.boxId;
+    if (!info || !boxId || info.deleting) return;
+    yield* onBox(app, info.location, (box) => box.retire?.(boxId) ?? Promise.resolve());
+  }).pipe(Effect.catch((e) => sync(() => void safe(e.cause, "retire_box"))));
 
 const STALL_TEXT = (runUrl: string) =>
   `CI is still failing after the agent's automatic fix attempts, so it has stopped. A human needs to take a look.\n\nFailing run: ${runUrl}\n\n${SERVER_COMMENT_MARK}`;
@@ -245,6 +265,7 @@ function pick(app: App, owner: string, name: string, payload: any): Effect.Effec
   if (name.startsWith("box:resume")) return boxResume(app, owner, payload.gen);
   if (name.startsWith("box:pause")) return boxPause(app, owner, payload.gen);
   if (name === "box:destroy") return boxDestroy(app, owner);
+  if (name === "box:retire") return boxRetire(app, owner);
   if (name.startsWith("orphan:")) return deleteOrphan(app, payload.boxId, payload.attempt);
   if (name.startsWith("stall:")) return stallComment(app, payload.subscriptionId, payload.runUrl, payload.attempt ?? 0, name, owner);
   if (name === SNAPSHOT_JOB) return promise(() => runBuild(app, payload.attempt));
