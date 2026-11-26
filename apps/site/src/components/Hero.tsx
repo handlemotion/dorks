@@ -1,8 +1,9 @@
 import { ChevronDown } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "#/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "#/components/ui/dropdown-menu";
-import { subscribeLenisScroll } from "#/lib/lenis";
+import { getLenis, subscribeLenisScroll } from "#/lib/lenis";
+import { cn } from "#/lib/utils";
 
 const DOWNLOAD_URL = "https://github.com/handlemotion/dorks/releases/latest";
 const RELEASES_URL = "https://github.com/handlemotion/dorks/releases";
@@ -47,9 +48,18 @@ export function Hero() {
   const bgRef = useRef<HTMLImageElement>(null);
   const copyRef = useRef<HTMLDivElement>(null);
   const graphicRef = useRef<HTMLDivElement>(null);
+  const [onLightSurface, setOnLightSurface] = useState(false);
 
   useEffect(() => {
-    const apply = (scroll: number) => {
+    const updateSurface = () => {
+      const section = sectionRef.current;
+      const graphic = graphicRef.current;
+      const overGraphic = graphic ? graphic.getBoundingClientRect().top <= 64 : false;
+      const pastHero = section ? section.getBoundingClientRect().bottom <= 64 : false;
+      setOnLightSurface(overGraphic || pastHero);
+    };
+
+    const applyParallax = (scroll: number) => {
       const section = sectionRef.current;
       if (!section) return;
 
@@ -66,111 +76,140 @@ export function Hero() {
       if (graphicRef.current) {
         graphicRef.current.style.transform = `translate3d(0, ${(-progress * 68).toFixed(2)}px, 0)`;
       }
+
+      updateSurface();
     };
 
-    const unsubscribe = subscribeLenisScroll(apply);
+    const unsubscribe = subscribeLenisScroll(applyParallax);
+    const onNativeScroll = () => updateSurface();
+    window.addEventListener("scroll", onNativeScroll, { passive: true });
+    updateSurface();
+
     return () => {
       unsubscribe();
+      window.removeEventListener("scroll", onNativeScroll);
     };
   }, []);
 
-  return (
-    <section ref={sectionRef} className="relative flex min-h-[90svh] w-full flex-col overflow-hidden bg-[#b7a29e] text-white lg:h-[90svh] lg:min-h-[760px]">
-      <img
-        ref={bgRef}
-        src="/hero-bg.webp"
-        alt=""
-        aria-hidden="true"
-        width={1672}
-        height={941}
-        draggable={false}
-        fetchPriority="high"
-        className="pointer-events-none absolute -inset-y-6 inset-x-0 h-[calc(100%+48px)] w-full object-cover object-center will-change-transform select-none [-webkit-user-drag:none]"
-      />
+  const handleScrollToTop = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (window.location.pathname !== "/") return;
+    event.preventDefault();
+    const lenis = getLenis();
+    if (lenis) {
+      lenis.scrollTo(0);
+    } else {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
 
-      <header className="relative z-20 flex h-16 w-full shrink-0 items-center justify-between px-4 sm:px-6">
+  return (
+    <>
+      <header
+        className={cn(
+          "fixed inset-x-0 top-0 z-40 flex h-16 w-full items-center justify-between border-b px-4 transition-colors duration-200 sm:px-6",
+          onLightSurface ? "border-black/6 bg-white/85 backdrop-blur-md" : "border-transparent bg-transparent",
+        )}
+      >
         <a
           href="/"
-          aria-label="Dorks home"
-          className="inline-flex size-8 items-center justify-center rounded-full text-white transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/75"
+          onClick={handleScrollToTop}
+          aria-label="Scroll to top"
+          className={cn(
+            "inline-flex size-8 cursor-pointer items-center justify-center rounded-full transition-[opacity,color] duration-200 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2",
+            onLightSurface ? "text-neutral-950 focus-visible:ring-black/30" : "text-white focus-visible:ring-white/75",
+          )}
         >
           <DorksMark size={24} />
         </a>
 
         <nav aria-label="Primary" className="hidden items-center gap-2.5 sm:absolute sm:left-1/2 sm:flex sm:-translate-x-1/2">
           {navItems.map((item) => (
-            <Button key={item.label} variant="nav" size="default" nativeButton={false} render={<a href={item.href} />}>
+            <Button key={item.label} variant={onLightSurface ? "navLight" : "nav"} size="default" nativeButton={false} render={<a href={item.href} />}>
               {item.label}
             </Button>
           ))}
         </nav>
 
         <div className="flex items-center gap-2.5">
-          <Button variant="nav" size="icon-sm" aria-label="GitHub" nativeButton={false} render={<a href={GITHUB_URL} target="_blank" rel="noreferrer" />}>
+          <Button variant={onLightSurface ? "navLight" : "nav"} size="icon-sm" aria-label="GitHub" nativeButton={false} render={<a href={GITHUB_URL} target="_blank" rel="noreferrer" />}>
             <GitHubIcon />
           </Button>
-          <Button variant="solid" size="sm" nativeButton={false} render={<a href={LOGIN_URL} />}>
+          <Button variant={onLightSurface ? "solidDark" : "solid"} size="sm" nativeButton={false} render={<a href={LOGIN_URL} />}>
             Log In
           </Button>
         </div>
       </header>
 
-      <main className="relative z-10 mx-auto flex w-full flex-1 flex-col items-center px-5 pt-14 sm:px-12 sm:pt-[56px] lg:px-[clamp(64px,6.6vw,140px)]">
-        <div ref={copyRef} className="relative z-0 flex w-full max-w-[568px] shrink-0 flex-col items-center gap-9 will-change-[transform,opacity]">
-          <div className="flex w-full flex-col items-center gap-4 text-center">
-            <DorksMark size={36} className="text-white" />
-            <h1 className="font-serif text-[32px] font-normal leading-[1.3] tracking-normal text-white sm:text-[40px]">
-              Dorks is the last ADE
-              <br />
-              you&rsquo;ll ever install.
-            </h1>
-          </div>
+      <section ref={sectionRef} className="relative flex min-h-[90svh] w-full flex-col overflow-hidden bg-[#b7a29e] text-white lg:h-[90svh] lg:min-h-[760px]">
+        <img
+          ref={bgRef}
+          src="/hero-bg.webp"
+          alt=""
+          aria-hidden="true"
+          width={1672}
+          height={941}
+          draggable={false}
+          fetchPriority="high"
+          className="pointer-events-none absolute -inset-y-6 inset-x-0 h-[calc(100%+48px)] w-full object-cover object-center will-change-transform select-none [-webkit-user-drag:none]"
+        />
 
-          <div className="flex flex-wrap items-center justify-center gap-2.5">
-            <div className="inline-flex h-9 items-center rounded-full bg-white">
-              <Button variant="splitPrimary" size="splitMain" nativeButton={false} render={<a href={DOWNLOAD_URL} />}>
-                <AppleIcon className="-mt-0.5" />
-                <span>Download for Mac</span>
-              </Button>
-
-              <DropdownMenu>
-                <DropdownMenuTrigger render={<Button variant="splitTrigger" size="splitEnd" aria-label="More download options" />}>
-                  <ChevronDown className="size-3.5 stroke-[1.75]" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" sideOffset={8}>
-                  <DropdownMenuItem render={<a href={DOWNLOAD_URL} />}>
-                    <span>Apple Silicon (.dmg)</span>
-                    <span className="text-xs text-neutral-400">macOS</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem render={<a href={RELEASES_URL} target="_blank" rel="noreferrer" />}>
-                    <span>All releases</span>
-                    <span className="text-xs text-neutral-400">GitHub</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem render={<a href="/docs/quickstart" />}>
-                    <span>Quickstart guide</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+        <main className="relative z-10 mx-auto flex w-full flex-1 flex-col items-center px-5 pt-28 sm:px-12 sm:pt-[120px] lg:px-[clamp(64px,6.6vw,140px)]">
+          <div ref={copyRef} className="relative z-0 flex w-full max-w-[568px] shrink-0 flex-col items-center gap-9 will-change-[transform,opacity]">
+            <div className="flex w-full flex-col items-center gap-4 text-center">
+              <DorksMark size={36} className="text-white" />
+              <h1 className="font-serif text-[32px] font-normal leading-[1.3] tracking-normal text-white sm:text-[40px]">
+                Dorks is the last ADE
+                <br />
+                you&rsquo;ll ever install.
+              </h1>
             </div>
 
-            <Button variant="glass" size="default" nativeButton={false} render={<a href={LOGIN_URL} />}>
-              Log In
-            </Button>
-          </div>
-        </div>
+            <div className="flex flex-wrap items-center justify-center gap-2.5">
+              <div className="inline-flex h-9 items-center rounded-full bg-white">
+                <Button variant="splitPrimary" size="splitMain" nativeButton={false} render={<a href={DOWNLOAD_URL} />}>
+                  <AppleIcon className="-mt-0.5" />
+                  <span>Download for Mac</span>
+                </Button>
 
-        <div ref={graphicRef} className="relative z-10 mt-14 flex w-full flex-1 pb-10 will-change-transform sm:mt-[80px] lg:min-h-0 lg:pb-0">
-          <img
-            src="/hero-app.webp"
-            alt="Dorks desktop workspace showing an agent session alongside a merged pull request"
-            width={3360}
-            height={2040}
-            draggable={false}
-            className="block h-auto w-full rounded-[10px] object-cover object-top select-none [-webkit-user-drag:none] lg:min-h-full lg:rounded-b-none"
-          />
-        </div>
-      </main>
-    </section>
+                <DropdownMenu>
+                  <DropdownMenuTrigger render={<Button variant="splitTrigger" size="splitEnd" aria-label="More download options" />}>
+                    <ChevronDown className="size-3.5 stroke-[1.75]" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" sideOffset={8}>
+                    <DropdownMenuItem render={<a href={DOWNLOAD_URL} />}>
+                      <span>Apple Silicon (.dmg)</span>
+                      <span className="text-xs text-neutral-400">macOS</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem render={<a href={RELEASES_URL} target="_blank" rel="noreferrer" />}>
+                      <span>All releases</span>
+                      <span className="text-xs text-neutral-400">GitHub</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem render={<a href="/docs/quickstart" />}>
+                      <span>Quickstart guide</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+
+              <Button variant="glass" size="default" nativeButton={false} render={<a href={LOGIN_URL} />}>
+                Log In
+              </Button>
+            </div>
+          </div>
+
+          <div ref={graphicRef} className="relative z-10 mt-14 flex w-full flex-1 pb-10 will-change-transform sm:mt-[80px] lg:min-h-0 lg:pb-0">
+            <img
+              src="/hero-app.webp"
+              alt="Dorks desktop workspace showing an agent session alongside a merged pull request"
+              width={3360}
+              height={2040}
+              draggable={false}
+              className="block h-auto w-full rounded-[10px] object-cover object-top select-none [-webkit-user-drag:none] lg:min-h-full lg:rounded-b-none"
+            />
+          </div>
+        </main>
+      </section>
+    </>
   );
 }
