@@ -92,7 +92,9 @@ export function PullRequestPanel({
   onOpenPr?: (url: string) => void
   onAsk?: (text: string) => void
 }) {
-  const view = pullRequest?.view
+  // Only the PR this panel is for: a read cached for another PR (the session's headline moved on) is not shown as this one.
+  const live = pullRequest?.view
+  const view = live && (!pr?.url || live.url.toLowerCase() === pr.url.toLowerCase()) ? live : undefined
   // A minute clock for "Merged 5m ago"; a refresh every minute while the panel is open (the poller's updates refresh it sooner).
   const now = useNow()
   const refresh = pullRequest?.refresh
