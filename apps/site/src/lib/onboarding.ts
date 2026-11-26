@@ -174,20 +174,42 @@ export async function invite(orgId: string, email: string) {
 
 export interface Plans {
   plans: Record<Plan, { name: string; monthlyCents: number; includedMinutes: number; maxConcurrentSandboxes: number }>;
+  /** What each trial gives: Teams a number of days through Checkout, Cloud sandbox minutes after a card on file (no charge). */
+  trials?: { teams: { kind: "teams_days"; days: number }; cloud: { kind: "cloud_hours"; minutes: number } };
 }
 export const fetchPlans = () => cloud<Plans>("/v1/billing/plans");
 
+export interface Trials {
+  teams: { eligible: boolean; code?: string; message?: string };
+  cloud: { eligible: boolean; code?: string; message?: string };
+}
+/** Whether this org (and this account) may still start each trial. */
+export const fetchTrials = (orgId: string) => cloud<Trials>(`/v1/billing/orgs/${orgId}/trials`);
+
+/** The org's running trial (entitlements), for the plan step once it is on one. */
+export type Trial =
+  | { kind: "teams_days"; endsAt: number | null }
+  /** At minutesLeft 0 it stays here while the org's plan falls back to fallbackPlan. */
+  | { kind: "cloud_hours"; minutes: number; usedMinutes: number; minutesLeft: number; fallbackPlan?: "local" | "teams" };
+export const fetchTrial = (orgId: string) => cloud<{ trial: Trial | null }>(`/v1/orgs/${orgId}/entitlements`).then((e) => e.trial ?? null);
+
 /**
- * Stripe Checkout for the plan's trial (Teams: 14 days; Cloud: no time limit, 10 sandbox hours; both take a card and charge nothing
- * up front). Stripe comes back to this page with ?checkout=success (or cancel), the rest of the query (app, state) kept.
+ * Stripe Checkout for the plan, and its trial when `trial`: Teams' Checkout carries the 14-day trial; the Cloud trial is its
+ * own setup-mode Checkout (a card on file, no charge) that comes back with ?trial=started (or ?trial=<code>). Both come back to
+ * this page with ?checkout=success (or cancel), the rest of the query (app, state) kept.
  */
-export async function startCheckout(orgId: string, plan: "teams" | "cloud") {
+export async function startCheckout(orgId: string, plan: "teams" | "cloud", trial: boolean) {
   const back = (result: string) => {
     const u = new URL(window.location.href);
     u.searchParams.set("checkout", result);
+    u.searchParams.delete("trial");
     return u.href;
   };
-  const { url } = await cloud<{ url: string }>(`/v1/billing/orgs/${orgId}/checkout`, { body: { plan, trial: true, successUrl: back("success"), cancelUrl: back("cancel") } });
+  const urls = { successUrl: back("success"), cancelUrl: back("cancel") };
+  const { url } =
+    trial && plan === "cloud"
+      ? await cloud<{ url: string }>(`/v1/billing/orgs/${orgId}/cloud-trial`, { body: urls })
+      : await cloud<{ url: string }>(`/v1/billing/orgs/${orgId}/checkout`, { body: { plan, ...(trial ? { trial: true } : {}), ...urls } });
   window.location.assign(url);
 }
 

@@ -14,6 +14,8 @@ import {
   appHandoffLink,
   appHandoffState,
   fetchPlans,
+  fetchTrial,
+  fetchTrials,
   firstOpenStep,
   invite,
   isPaid,
@@ -25,6 +27,8 @@ import {
   STEPS,
   waitForPlan,
   type Plans,
+  type Trial,
+  type Trials,
   type Progress,
   type StepId,
 } from "#/lib/onboarding";
@@ -71,8 +75,11 @@ function Flow({ params, email }: { params: URLSearchParams; email: string }) {
       if (params.get("checkout") && p.org) {
         const url = new URL(window.location.href);
         url.searchParams.delete("checkout");
+        url.searchParams.delete("trial");
         history.replaceState(null, "", url);
-        if (params.get("checkout") === "success" && !isPaid(p.org.plan)) {
+        // A refused trial (?trial=<code>) has nothing to wait for: the plan step says why.
+        const refused = !!params.get("trial") && params.get("trial") !== "started";
+        if (params.get("checkout") === "success" && !refused && !isPaid(p.org.plan)) {
           await waitForPlan(p.org.id);
           p = await refresh();
         }
@@ -156,50 +163,88 @@ function Workspace({ progress, onNext, onSkip }: StepProps) {
 
 // ---- 2. Plan ------------------------------------------------------------------------------------------------------------------
 
-const PLAN_COPY: Record<"teams" | "cloud", { trial: string; after: (price: string) => string; points: string[] }> = {
-  teams: {
-    trial: "14-day free trial",
-    after: (price) => `Free for 14 days, then ${price}/month.`,
-    points: ["Shared chats and automations", "Up to 50 people", "Sandboxes on your own Boat key"],
-  },
-  cloud: {
-    trial: "Free for 10 sandbox hours",
-    after: (price) => `No charge until you’ve used 10 sandbox hours, then ${price}/month.`,
-    points: ["Everything in Teams", "200 sandbox hours a month, 3 at once", "No Boat account needed"],
-  },
+const PLAN_POINTS: Record<"teams" | "cloud", string[]> = {
+  teams: ["Shared chats and automations", "Up to 50 people", "Sandboxes on your own Boat key"],
+  cloud: ["Everything in Teams", "200 sandbox hours a month, 3 at once", "No Boat account needed"],
 };
 
 const dollars = (cents: number) => `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}`;
+const hours = (minutes: number) => `${Math.round((minutes / 60) * 10) / 10}`;
+
+/** What the trial gives, from GET /v1/billing/plans' trials (14 days, 600 minutes today). */
+function trialCopy(id: "teams" | "cloud", plans: Plans | undefined, price: string) {
+  const days = plans?.trials?.teams.days ?? 14;
+  const h = hours(plans?.trials?.cloud.minutes ?? 600);
+  return id === "teams"
+    ? { badge: `${days}-day free trial`, button: `Start ${days}-day free trial`, after: `Free for ${days} days, then ${price}/month. Card required.` }
+    : { badge: `${h} free sandbox hours`, button: `Try with ${h} free hours`, after: `${h} sandbox hours free, with no time limit. Card required, no charge until you subscribe at ${price}/month.` };
+}
+
+/** The query the page was opened with, before Flow tidies the address bar (Stripe's return: ?checkout=, ?trial=). */
+const OPENED_WITH = new URLSearchParams(window.location.search);
 
 function PlanStep({ progress, onNext, onSkip }: StepProps) {
   const org = progress.org!;
   const current = org.plan;
   const [plans, setPlans] = useState<Plans>();
+  const [trials, setTrials] = useState<Trials>();
+  const [trial, setTrial] = useState<Trial | null>();
   const [choice, setChoice] = useState<"teams" | "cloud">(current === "teams" ? "teams" : "cloud");
   const { run, pending } = usePending();
-  const cancelled = useRef(new URLSearchParams(window.location.search).get("checkout") === "cancel");
+  // The query this page opened with: Flow drops ?checkout and ?trial from the address bar before this step mounts.
+  const returned = useRef(OPENED_WITH);
   useEffect(() => {
     fetchPlans().then(setPlans, () => setPlans(undefined));
-    if (cancelled.current) notify("Checkout was cancelled. Pick a plan to start your trial.");
-  }, []);
-  if (isPaid(current))
+    // The running (or used-up) trial, and whether each trial may still start: a Teams team may still take the Cloud trial.
+    fetchTrial(org.id).then(setTrial, () => setTrial(null));
+    fetchTrials(org.id).then(setTrials, () => setTrials(undefined));
+    const q = returned.current;
+    if (q.get("checkout") === "cancel") notify("Checkout was cancelled. Pick a plan to continue.");
+    else if (q.get("trial") && q.get("trial") !== "started") notify("That trial couldn’t start: this card, team or account already had one.");
+  }, [org.id, current]);
+  const priceOf = (id: "teams" | "cloud") => (plans ? dollars(plans.plans[id].monthlyCents) : id === "teams" ? "$5" : "$29");
+  const nameOf = (id: "teams" | "cloud") => plans?.plans[id].name ?? (id === "cloud" ? "Dorks Cloud" : "Dorks Teams");
+  const cloudHours = hours(plans?.trials?.cloud.minutes ?? 600);
+  // A Cloud trial whose hours are used stays visible (minutesLeft 0) while the plan falls back to Teams or Local.
+  const cloudUsed = trial?.kind === "cloud_hours" && trial.minutesLeft <= 0;
+  if (isPaid(current)) {
+    const onTrial = (trial?.kind === "teams_days" && current === "teams") || (trial?.kind === "cloud_hours" && current === "cloud" && !cloudUsed);
+    const left =
+      trial?.kind === "teams_days" && current === "teams" && trial.endsAt
+        ? `Your free trial runs until ${new Date(trial.endsAt).toLocaleDateString(undefined, { month: "long", day: "numeric" })}.`
+        : trial?.kind === "cloud_hours" && current === "cloud" && !cloudUsed
+          ? `${hours(trial.minutesLeft)} of ${hours(trial.minutes)} free sandbox hours left.`
+          : cloudUsed
+            ? `Your ${hours(trial.minutes)} free Dorks Cloud hours are used, so ${org.name} is back on ${nameOf(current)}.`
+            : null;
+    const tryCloud = current === "teams" && trials?.cloud.eligible === true;
     return (
       <>
         <Body>
-          <Heading title={`${org.name} is on ${plans?.plans[current].name ?? (current === "cloud" ? "Dorks Cloud" : "Dorks Teams")}`}>Change plans or billing any time in Settings.</Heading>
+          <Heading title={`${org.name} is on ${nameOf(current)}${onTrial ? " (trial)" : ""}`}>
+            {left ? `${left} Change plans or billing any time in Settings.` : "Change plans or billing any time in Settings."}
+          </Heading>
         </Body>
         <Actions onClick={() => void onNext()}>Continue</Actions>
+        {tryCloud && <Skip onClick={() => void run(() => startCheckout(org.id, "cloud", true))}>{pending ? "Opening Checkout…" : `Try Dorks Cloud with ${cloudHours} free hours`}</Skip>}
       </>
     );
+  }
+  const eligible = (id: "teams" | "cloud") => trials?.[id].eligible === true;
+  const anyTrial = eligible("teams") || eligible("cloud");
+  const chosen = trialCopy(choice, plans, priceOf(choice));
   return (
-    <StepForm onSubmit={() => void run(() => startCheckout(org.id, choice))}>
+    <StepForm onSubmit={() => void run(() => startCheckout(org.id, choice, eligible(choice)))}>
       <Body>
-        <Heading title="Start your free trial">Pick a plan for {org.name}. Both take a card and charge nothing today. Cancel any time.</Heading>
+        <Heading title={anyTrial ? "Start your free trial" : "Choose a plan"}>
+          {cloudUsed
+            ? `Your ${cloudHours} free Dorks Cloud hours are used. Pick a plan for ${org.name} to keep going.`
+            : anyTrial
+              ? `Pick a plan for ${org.name}. Trials take a card and charge nothing today.`
+              : `Pick a plan for ${org.name}. Cancel any time.`}
+        </Heading>
         <div role="radiogroup" aria-label="plan" className="grid grid-cols-2 gap-3">
           {(["teams", "cloud"] as const).map((id) => {
-            const plan = plans?.plans[id];
-            const price = plan ? dollars(plan.monthlyCents) : id === "teams" ? "$5" : "$29";
-            const copy = PLAN_COPY[id];
             const selected = choice === id;
             return (
               <Card
@@ -213,9 +258,9 @@ function PlanStep({ progress, onNext, onSkip }: StepProps) {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex flex-col gap-1">
-                    <span className="font-medium">{plan?.name ?? (id === "teams" ? "Dorks Teams" : "Dorks Cloud")}</span>
+                    <span className="font-medium">{nameOf(id)}</span>
                     <span className="text-muted-foreground">
-                      <span className="text-foreground">{price}</span>/month
+                      <span className="text-foreground">{priceOf(id)}</span>/month
                     </span>
                   </div>
                   <span
@@ -225,9 +270,9 @@ function PlanStep({ progress, onNext, onSkip }: StepProps) {
                     {selected && <CheckIcon className="size-3" strokeWidth={3} />}
                   </span>
                 </div>
-                <span className="w-fit rounded-full bg-brand/10 px-2 py-0.5 text-xs text-brand">{copy.trial}</span>
+                {eligible(id) && <span className="w-fit rounded-full bg-brand/10 px-2 py-0.5 text-xs text-brand">{trialCopy(id, plans, priceOf(id)).badge}</span>}
                 <ul className="flex flex-col gap-2 text-muted-foreground">
-                  {copy.points.map((p) => (
+                  {PLAN_POINTS[id].map((p) => (
                     <li key={p} className="flex gap-2">
                       <CheckIcon className="mt-px size-3.5 shrink-0 text-foreground" aria-hidden />
                       {p}
@@ -238,10 +283,10 @@ function PlanStep({ progress, onNext, onSkip }: StepProps) {
             );
           })}
         </div>
-        <p className="text-center text-xs text-muted-foreground">{PLAN_COPY[choice].after(plans ? dollars(plans.plans[choice].monthlyCents) : choice === "teams" ? "$5" : "$29")}</p>
+        <p className="text-center text-xs text-muted-foreground">{eligible(choice) ? chosen.after : `${priceOf(choice)}/month. Cancel any time.`}</p>
       </Body>
-      <Actions type="submit" disabled={pending}>
-        {pending ? "Opening Checkout…" : "Start free trial"}
+      <Actions type="submit" disabled={pending || !trials}>
+        {pending ? "Opening Checkout…" : eligible(choice) ? chosen.button : `Subscribe to ${nameOf(choice)}`}
       </Actions>
       <Skip onClick={() => onSkip("done")}>Not now</Skip>
     </StepForm>
