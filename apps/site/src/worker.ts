@@ -30,6 +30,8 @@ async function docs(request: Request, url: URL, env: Env): Promise<Response> {
   const upstream = new URL(url);
   upstream.protocol = "https:";
   upstream.hostname = env.DOCS_HOST;
+  // A local preview's port (wrangler dev) must not reach Mintlify.
+  upstream.port = "";
   // Mintlify serves the docs' home page at /docs/index; /docs itself is a 404 there.
   if (upstream.pathname === "/docs") upstream.pathname = "/docs/index";
   const proxied = new Request(upstream, request);
