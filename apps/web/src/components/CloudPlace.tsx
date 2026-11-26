@@ -26,12 +26,13 @@ export interface CloudPlace {
   chooseMachine(machineId: string | undefined): void
 }
 
-const cloudOrgOf = (target: Target) => (target.kind === 'cloud' ? target.org.id : null)
+const cloudOrgOf = (target: Target) => (target.kind === 'cloud' ? target.org : null)
+const orgKey = (org: CloudOrg | null) => org && `${org.id}:${org.personal}`
 
 /** The client of another server (through this one), or of an org the Worker runs; null for this Mac's own. */
-function placeClient(conn: { serverUrl: string; token: string }, remoteId: string | null, cloudOrgId: string | null) {
+function placeClient(conn: { serverUrl: string; token: string }, remoteId: string | null, cloudOrg: CloudOrg | null) {
   if (remoteId) return createClient(remoteClientConfig(conn, remoteId))
-  if (cloudOrgId) return createClient(cloudOrgClientConfig(conn, cloudOrgId))
+  if (cloudOrg) return createClient(cloudOrgClientConfig(conn, cloudOrg))
   return null
 }
 
@@ -69,8 +70,11 @@ export function CloudPlaceProvider({ conn, children }: { conn: { serverUrl: stri
   const resolving = !!choice.orgId && ((cloudState.status === 'loading' && !cloud) || (signedIn && !orgs && placesState.status === 'loading'))
   const target: Target = org ? resolveTarget(org, thisMacId, choice.machineId) : { kind: 'home' }
   const remoteId = target.kind === 'remote' ? target.server.id : null
-  const cloudOrgId = cloudOrgOf(target)
-  const client = useMemo(() => placeClient(conn, remoteId, cloudOrgId) ?? home, [home, remoteId, cloudOrgId, conn])
+  const cloudOrg = cloudOrgOf(target)
+  // Keyed by the org's id and team-ness: the places poll hands a new object every 30 s for the same org.
+  const cloudKey = orgKey(cloudOrg)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const client = useMemo(() => placeClient(conn, remoteId, cloudOrg) ?? home, [home, remoteId, cloudKey, conn])
   // The home server's live stream is what tells the app its cloud session changed (signed out, expired: `{t: "settings"}`). While
   // the app shows another server, or asks which Mac to connect to, no DorksProvider runs it, so it runs here.
   const homeShown = target.kind === 'home' && !resolving

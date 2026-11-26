@@ -92,8 +92,9 @@ const ORGS: MockOrg[] = [
  */
 export interface MockOrgRuntime {
   url: string;
-  /** A member's Better Auth bearer token on that Worker. */
+  /** A member's Better Auth bearer token on that Worker, and their user id there (what `/api/me` answers, so presence knows you). */
   token: string;
+  userId?: string;
   orgId: string;
   name?: string;
   seed?: MockCloudPlace["seed"];
@@ -141,7 +142,7 @@ export function mockCloud(opts: {
       const role = ((owner && teams.roleOf(owner.id)) ?? "member") as Me["role"];
       c = opts.startChild(place.seed, {
         kind: "member",
-        id: "user-1",
+        id: (place === runtimePlace && runtime?.userId) || "user-1",
         name: user?.name ?? null,
         email: user?.email ?? null,
         role,
