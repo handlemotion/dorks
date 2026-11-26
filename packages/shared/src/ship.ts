@@ -68,6 +68,8 @@ export type SessionPr = {
   url: string;
   title?: string;
   state: "open" | "merged" | "closed";
+  /** Open and GitHub says it no longer merges cleanly into its base (merge conflicts). */
+  conflict?: true;
   ship?: { status: ShipStatus; stages: Pick<ShipStage, "name" | "state" | "url">[] };
 };
 

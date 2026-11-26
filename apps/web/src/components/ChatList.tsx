@@ -5,7 +5,7 @@ import { Accessibility, defaultPreset, KeyboardSensor, PointerActivationConstrai
 import { DragDropProvider, type DragEndEvent, type DragOverEvent, type DragStartEvent } from '@dnd-kit/react'
 import { isSortable, useSortable } from '@dnd-kit/react/sortable'
 import { useRef, useState } from 'react'
-import { ArchiveIcon, ChevronDownIcon, ChevronUpIcon, LoaderCircleIcon } from 'lucide-react'
+import { ArchiveIcon, ChevronDownIcon, ChevronUpIcon, GitCompareArrowsIcon, LoaderCircleIcon } from 'lucide-react'
 import { copyText, openContextMenu } from '../lib/contextMenu'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@dorks/ui/hover-card'
 import { useStoredOrder } from '../lib/storedOrder'
@@ -157,12 +157,13 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
   const starter = team && chat.createdBy && !isSelf(chat.createdBy.id) ? chat.createdBy : undefined
   const prs = chat.prs ?? []
   const shipping = prs.some((p) => p.ship?.status === 'watching')
-  // Room for the PRs (and the spinner) at the right edge, and for the archive button beside them on hover. Literal, for Tailwind.
+  const conflict = prs.some((p) => p.state === 'open' && p.conflict)
+  // Room for the PRs (and the conflict mark or the spinner) at the right edge, and for the archive button beside them on hover. Literal, for Tailwind.
   const pad = !prs.length
     ? onArchive
       ? 'group-hover/row:pr-8'
       : ''
-    : shipping
+    : shipping || conflict
       ? onArchive
         ? 'pr-16 group-hover/row:pr-[5.5rem]'
         : 'pr-16'
@@ -211,7 +212,9 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
         <span className="min-w-0 flex-1 truncate">{chat.title}</span>
         {starter && <PersonAvatar person={starter} size="xs" />}
       </Link>
-      {prs.length > 0 && <PrBadge prs={prs} shipping={shipping} className={onArchive ? 'group-hover/row:right-8' : ''} onClick={() => void router.navigate({ to, search: { dork: chat.id } })} />}
+      {prs.length > 0 && (
+        <PrBadge prs={prs} shipping={shipping} conflict={conflict} className={onArchive ? 'group-hover/row:right-8' : ''} onClick={() => void router.navigate({ to, search: { dork: chat.id } })} />
+      )}
       {onArchive && (
         <Tip label="Archive">
           <button
@@ -235,10 +238,10 @@ export function leadPr(prs: ChatPr[]): ChatPr | undefined {
 
 /**
  * A chat's pull requests at its row's right edge: `#227` for one, `3` and the PR icon for several, coloured by `leadPr` (open
- * green, merged violet, closed red), then a spinner while a merge is shipping. Hovering lists every PR with its state, and under a
- * shipping one the checks its merge set off.
+ * green, merged violet, closed red), led by a red conflict mark while an open one has merge conflicts, then a spinner while a merge
+ * is shipping. Hovering lists every PR with its state, a conflicting one marked, and under a shipping one the checks its merge set off.
  */
-function PrBadge({ prs, shipping, className, onClick }: { prs: ChatPr[]; shipping: boolean; className: string; onClick: () => void }) {
+function PrBadge({ prs, shipping, conflict, className, onClick }: { prs: ChatPr[]; shipping: boolean; conflict: boolean; className: string; onClick: () => void }) {
   const lead = leadPr(prs)
   const status = prStatus(lead?.state)
   const ref = useRef<HTMLSpanElement>(null)
@@ -248,7 +251,7 @@ function PrBadge({ prs, shipping, className, onClick }: { prs: ChatPr[]; shippin
     const row = ref.current?.closest('[data-chat-id]')?.getBoundingClientRect()
     return badge && row ? row.right - badge.right + 14 : 10
   }
-  const label = `${prs.length === 1 ? `Pull request #${prs[0].number}` : `${prs.length} pull requests`}${shipping ? ', shipping' : ''}`
+  const label = `${prs.length === 1 ? `Pull request #${prs[0].number}` : `${prs.length} pull requests`}${conflict ? ', merge conflicts' : ''}${shipping ? ', shipping' : ''}`
   return (
     <HoverCard>
       <HoverCardTrigger
@@ -260,12 +263,14 @@ function PrBadge({ prs, shipping, className, onClick }: { prs: ChatPr[]; shippin
             role="button"
             aria-label={label}
             data-pr={lead?.state}
+            data-conflict={conflict || undefined}
             data-testid="chat-prs"
             onClick={onClick}
             className={`absolute top-1/2 right-2 z-20 flex h-6 -translate-y-1/2 cursor-pointer items-center gap-1.5 text-xs tabular-nums ${className}`}
           />
         }
       >
+        {conflict && <GitCompareArrowsIcon aria-hidden className="size-3 text-red-600 dark:text-red-400" />}
         {prs.length === 1 ? (
           <span className={status.className}>#{prs[0].number}</span>
         ) : (
@@ -294,6 +299,11 @@ function PrBadge({ prs, shipping, className, onClick }: { prs: ChatPr[]; shippin
               >
                 <PrIcon state={pr.state} className="size-3.5 shrink-0" />
                 <span className="min-w-0 flex-1 truncate">{pr.title ?? `Pull request #${pr.number}`}</span>
+                {pr.state === 'open' && pr.conflict && (
+                  <Tip label="Merge conflicts">
+                    <GitCompareArrowsIcon aria-label="Merge conflicts" className="size-3.5 shrink-0 text-red-600 dark:text-red-400" />
+                  </Tip>
+                )}
                 <span className="shrink-0 pl-2 text-xs text-muted-foreground tabular-nums">#{pr.number}</span>
               </a>
               {pr.ship?.status === 'watching' &&
