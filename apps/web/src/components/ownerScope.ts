@@ -30,8 +30,8 @@ const subscribe = (l: () => void) => {
 }
 
 /**
- * The GitHub owner the app is scoped to ('' for all), remembered per browser and shared by the sidebar's owner filter (beside the org switcher) and the new-session
- * repository picker. A scope that names no known owner falls back to all.
+ * The GitHub owner the archived sessions list is filtered to ('' for all), remembered per browser (ArchivedOwnerFilter). A scope that
+ * names no owner of the list falls back to all.
  */
 export function useOwnerScope(owners: readonly string[]): [string, (owner: string) => void] {
   const scope = useSyncExternalStore(subscribe, () => current)

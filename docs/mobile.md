@@ -185,8 +185,8 @@ server belongs to one org: a member's Mac (normally in its owner's personal org)
   (`MEMBER_LIMIT_REACHED`). Invitations to you show under *Invitations* in the switcher and in Settings › Account; the email's
   `dorks://invite/<id>` opens `#/invite/<id>` (the desktop shell does not register the `dorks://` scheme yet; until then the code
   from the email goes in Settings › Account).
-- **The GitHub owner filter** moved from the switcher to a filter button beside it: the org says where you work, the owner filter narrows
-  the sidebar's chats and the new session's repositories to one GitHub user or organization there.
+- **The GitHub owner filter** lives in the archived sessions list (Show archived on New session): it narrows that list to one GitHub
+  user or organization. The sidebar and the new session's repository picker are not filtered by owner.
 
 | Method and path (local server) | Body | Result |
 |---|---|---|
