@@ -156,6 +156,42 @@ Expo SDK 58, Expo Router, iOS 26+ look (Liquid Glass through native components),
   updates and a native change makes a new build.
 - The app is not part of the desktop release (changesets); it versions on its own.
 
+## Desktop: Dorks Cloud
+
+The desktop (and the web UI) works in Dorks Cloud **organizations** ([dorks-cloud](https://github.com/handlemotion/dorks-cloud), teams):
+every account has a personal org, made at sign-up, and can create or join others to share chats with friends or colleagues. Every
+server belongs to one org: a member's Mac (normally in its owner's personal org) or the org's always-on hosted server.
+
+- **Sign-in** is the phone's email code (Better Auth `emailOTP`), started from Settings, **Dorks Cloud**, or the sidebar switcher's
+  *Sign in to Dorks Cloud*. The local server holds the session, encrypted in settings (`cloud_session_enc`), and never hands it to the
+  UI. Pairing a phone is unchanged and separate: the Mac token only opens this Mac's own relay socket.
+- **The switcher** (the sidebar's top row) lists orgs only: the personal org first (your name), the others with their logo and plan, then
+  *Create organization* (Better Auth `organization/create`). Machines are never entries in it.
+- **Which server an org means** is resolved inside the org (`apps/web/src/lib/place.ts`): its hosted server when it has one, through the
+  relay; else this Mac when it may (the personal org, or a team this Mac belongs to), with *Connect to* another of the org's Macs as a
+  small row under the switcher when there are several; else the org's one online Mac; else the org asks which Mac to connect to (or
+  says nothing runs it yet). The choice is remembered per browser.
+- **Reaching another server**: the UI keeps the owner token of its own server and calls `/api/cloud/servers/:id/api/*` there; the server
+  forwards it to the relay's `/v1/macs/:id/api/*` with the session and streams the answer back (`/api/live` included). Shared images
+  load from `/cloud/servers/:id/images/:imageId`, outside `/api` like `/images/:id` (the image id is the capability). The relay and
+  the server reached decide what the request may do (the relay allowlist, and the `x-dorks-actor` identity the relay adds).
+- **The GitHub owner filter** moved from the switcher to a filter button beside it: the org says where you work, the owner filter narrows
+  the sidebar's chats and the new session's repositories to one GitHub user or organization there.
+
+| Method and path (local server) | Body | Result |
+|---|---|---|
+| `GET /api/cloud` | | `{cloudUrl, user: {id, name, email, image} \| null}` |
+| `POST /api/cloud/sign-in/email` | `{email}` | `{}`: the relay emails a six-digit code |
+| `POST /api/cloud/sign-in/verify` | `{email, code}` | `{cloudUrl, user}`: signed in, the session stored encrypted |
+| `DELETE /api/cloud/session` | | `{}`: signed out (here and, best effort, on the relay) |
+| `GET /api/cloud/places` | | `{orgs: {id, name, slug, logo, personal, plan, role, active, servers: {id, name, kind, online, lastSeenAt}[]}[]}`, personal first (the relay's `GET /v1/orgs`; an older relay's `/v1/macs` grouped by org); `not_configured` when signed out or the session ended |
+| `POST /api/cloud/orgs` | `{name}` | the new org, owned by the account |
+| `* /api/cloud/servers/:id/api/*` | any | that server's UI API through the relay |
+| `GET /cloud/servers/:id/images/:imageId` | | that server's shared image (no owner token) |
+
+`pnpm dev:mock` has the same routes with a fake account (any email, any six digits; `MOCK_CLOUD=1` starts signed in), three orgs and
+one in-memory mock server per remote server, so switching visibly changes the chats.
+
 ## Dorks Cloud
 
 Plans (free, collab with its hosted server, the cloud credit add-on), teams and roles, identity tokens and what a team server does

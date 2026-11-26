@@ -252,6 +252,50 @@ export interface PhoneStatus {
   pairing: PhonePairing | null;
 }
 
+/** The Dorks Cloud account this server is signed in to (`GET /api/cloud`, docs/mobile.md "Desktop: Dorks Cloud"). */
+export interface CloudStatus {
+  /** The relay's origin; null when the cloud is off (`DORKS_CLOUD_URL` empty). */
+  cloudUrl: string | null;
+  user: CloudUser | null;
+}
+
+export interface CloudUser {
+  id: string;
+  name: string;
+  email: string;
+  image: string | null;
+}
+
+/** A server an organization owns: a member's Mac (`mac`), or the organization's always-on server (`hosted`). */
+export interface CloudServer {
+  id: string;
+  name: string;
+  kind: "mac" | "hosted";
+  online: boolean;
+  lastSeenAt: number | null;
+}
+
+/**
+ * A Dorks Cloud organization (`GET /v1/orgs` on the relay). Every account has one `personal` org (named "Personal"); teams are the
+ * others. `plan`: what it pays for (`collab`); `role`: the account's role in it; `servers`: the servers it owns.
+ */
+export interface CloudOrg {
+  id: string;
+  name: string;
+  slug: string | null;
+  logo: string | null;
+  personal: boolean;
+  plan: string | null;
+  role: string | null;
+  active: boolean;
+  servers: CloudServer[];
+}
+
+/** `GET /api/cloud/places`: the account's organizations, personal first, with their servers. */
+export interface CloudPlaces {
+  orgs: CloudOrg[];
+}
+
 export interface PhonePairing {
   /** Shown as typed on the phone, `ABCD-2345`. */
   code: string;

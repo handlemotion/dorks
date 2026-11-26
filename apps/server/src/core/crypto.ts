@@ -50,6 +50,8 @@ export const aad = {
   mcpServer: (userId: string, name: string) => `${userId}|mcp_server|${name}`,
   /** The Mac token the cloud relay gave this server when a phone paired with it (services/phoneLink.ts). */
   cloudMacToken: (userId: string) => `${userId}|cloud_mac_token`,
+  /** The Dorks Cloud account's session (services/cloudAccount.ts): its Better Auth token and who it is. */
+  cloudSession: (userId: string) => `${userId}|cloud_session`,
   /** A value the owner gave one session's agent through a secure input (services/inputs.ts). */
   input: (userId: string, dorkId: string, name: string) => `${userId}|input|${dorkId}|${name}`,
 };

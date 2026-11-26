@@ -39,6 +39,9 @@ export function useDorksClient(): DorksClient {
 
 const useStore = <S,>(store: Store<S>): S => useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 
+/** Any store's current value, for a client other than the provider's (the app's home server while it shows another one). */
+export const useStoreValue = useStore;
+
 /** Live connection state: stream status and whether the owner token was rejected. */
 export function useConnection(): ConnectionState {
   return useStore(useDorksClient().connectionStore);

@@ -30,7 +30,7 @@ const subscribe = (l: () => void) => {
 }
 
 /**
- * The GitHub owner the app is scoped to ('' for all), remembered per browser and shared by the sidebar's switcher and the new-session
+ * The GitHub owner the app is scoped to ('' for all), remembered per browser and shared by the sidebar's owner filter (beside the org switcher) and the new-session
  * repository picker. A scope that names no known owner falls back to all.
  */
 export function useOwnerScope(owners: readonly string[]): [string, (owner: string) => void] {
