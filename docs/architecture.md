@@ -165,6 +165,15 @@ One stream per client. Messages are `data: <json>\n\n`; a `: ping` comment every
 
 `packages/client` wraps this (`useDorks`, `useDork`, `useDorkEvents`, `useSettings`), replacing `@dorks/convex/client` and `convex/react`.
 
+### Live updates for cloud orgs (s2)
+
+A Teams or Cloud org with no Mac in it runs on the dorks-cloud Worker, which holds no stream open (handlemotion/dorks-cloud `docs/realtime.md`). The app picks it in `apps/web/src/lib/place.ts` (`runsOnWorker`) and points the client at `<home>/api/cloud/orgs/:id`: the home server forwards `api/*` to the Worker's `/v1/orgs/:id/api/*` (REST, unchanged) and `realtime/*` to `/v1/realtime/orgs/:id/*`. With `cloud` set, `@dorks/client` (`cloud-live.ts`, `s2.ts`) reads s2 instead of `/api/live`:
+
+- **Org feed** (`POST realtime/live-token`): the same messages as `/api/live`, a local `hello` when the read opens and again after a failure.
+- **An open transcript** (`POST realtime/sessions/:id/read-token`): the session's `events` stream carries the `ClientEvent`s themselves. The first follow checks the tail, reads the newest page over REST, then reads s2 from that tail; later follows resume after the last record seen. Reads resume after every drop from the last `seq_num`, reconnect before the 10-minute token expires and at least every 10 minutes with a fresh token, send the stream's `s2-encryption-key`, and join events split into parts.
+
+`pnpm dev:mock` lists such an org when `MOCK_ORG_RUNTIME` names a dorks-cloud Worker, an org on it and a member's token (`packages/client/src/mock-cloud.ts`).
+
 ## Bridge protocol (WebSocket, dialed by the server)
 
 **Where the bridge listens.** In the box the bridge listens on `127.0.0.1:BRIDGE_PORT` (`4748`). The box is created with exactly `DORK_ID`, `BRIDGE_PORT` and `BRIDGE_SECRET` in its environment. Frames are JSON text.

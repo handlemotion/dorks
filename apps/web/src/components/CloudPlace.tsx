@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react'
 import { createClient, type CloudInvitation, type CloudOrg, type CloudPlaces, type CloudServer, type CloudStatus, type DorksClient, type QueryState, type Store } from '@dorks/client'
 import { useStoreValue } from '@dorks/client/react'
-import { remoteClientConfig, resolveTarget, usePlaceChoice, type Target } from '../lib/place'
+import { cloudOrgClientConfig, remoteClientConfig, resolveTarget, usePlaceChoice, type Target } from '../lib/place'
 
 /**
  * Dorks Cloud places (docs/mobile.md, "Desktop: Dorks Cloud"): the account's orgs, read from the home server (the one the app was
@@ -24,6 +24,15 @@ export interface CloudPlace {
   chooseOrg(orgId: string | null): void
   /** A Mac inside the org; undefined for the org's default (this Mac when it may). */
   chooseMachine(machineId: string | undefined): void
+}
+
+const cloudOrgOf = (target: Target) => (target.kind === 'cloud' ? target.org.id : null)
+
+/** The client of another server (through this one), or of an org the Worker runs; null for this Mac's own. */
+function placeClient(conn: { serverUrl: string; token: string }, remoteId: string | null, cloudOrgId: string | null) {
+  if (remoteId) return createClient(remoteClientConfig(conn, remoteId))
+  if (cloudOrgId) return createClient(cloudOrgClientConfig(conn, cloudOrgId))
+  return null
 }
 
 const CTX = createContext<CloudPlace | null>(null)
@@ -60,7 +69,8 @@ export function CloudPlaceProvider({ conn, children }: { conn: { serverUrl: stri
   const resolving = !!choice.orgId && ((cloudState.status === 'loading' && !cloud) || (signedIn && !orgs && placesState.status === 'loading'))
   const target: Target = org ? resolveTarget(org, thisMacId, choice.machineId) : { kind: 'home' }
   const remoteId = target.kind === 'remote' ? target.server.id : null
-  const client = useMemo(() => (remoteId ? createClient(remoteClientConfig(conn, remoteId)) : home), [home, remoteId, conn])
+  const cloudOrgId = cloudOrgOf(target)
+  const client = useMemo(() => placeClient(conn, remoteId, cloudOrgId) ?? home, [home, remoteId, cloudOrgId, conn])
   // The home server's live stream is what tells the app its cloud session changed (signed out, expired: `{t: "settings"}`). While
   // the app shows another server, or asks which Mac to connect to, no DorksProvider runs it, so it runs here.
   const homeShown = target.kind === 'home' && !resolving

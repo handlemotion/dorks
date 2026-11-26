@@ -287,26 +287,42 @@ export const cloudAccount = {
    */
   async forward(app: App, serverId: string, rest: string, req: Request): Promise<Response> {
     if (!/^[\w-]{1,128}$/.test(serverId) || !/^api\/[\w./-]*$/.test(rest) || /(^|\/)\.\.?(\/|$)|\/\//.test(rest)) fail("invalid", "Not a server path");
-    const s = await signedIn(app);
-    const url = new URL(req.url);
-    const headers: Record<string, string> = { authorization: `Bearer ${s.token}` };
-    for (const k of ["content-type", "accept"]) {
-      const v = req.headers.get(k);
-      if (v) headers[k] = v;
-    }
-    const method = req.method.toUpperCase();
-    const body = method === "GET" || method === "HEAD" ? undefined : await req.arrayBuffer();
-    let res: Response;
-    try {
-      res = await app.fetch(`${needCloud(app)}/v1/macs/${encodeURIComponent(serverId)}/${rest}${url.search}`, { method, headers, body, signal: req.signal });
-    } catch {
-      fail("failed", "Cannot reach Dorks Cloud. Check your connection and try again.");
-    }
-    const out = new Headers();
-    for (const k of ["content-type", "cache-control"]) {
-      const v = res.headers.get(k);
-      if (v) out.set(k, v);
-    }
-    return new Response(res.body, { status: res.status, headers: out });
+    return relay(app, `/v1/macs/${encodeURIComponent(serverId)}/${rest}`, req);
+  },
+
+  /**
+   * Forwards one request for an org the Worker runs (Teams, Cloud; docs/architecture.md, "Live updates for cloud orgs"): its UI API
+   * (`api/...` to `/v1/orgs/:id/api/...`) or its realtime routes, which issue the s2 read tokens (`realtime/...` to
+   * `/v1/realtime/orgs/:id/...`). Anything else, or a path that tries to climb out, is refused.
+   */
+  async forwardOrg(app: App, orgId: string, rest: string, req: Request): Promise<Response> {
+    if (!/^[\w-]{1,128}$/.test(orgId) || !/^(api|realtime)\/[\w./-]*$/.test(rest) || /(^|\/)\.\.?(\/|$)|\/\//.test(rest)) fail("invalid", "Not an organization path");
+    const id = encodeURIComponent(orgId);
+    return relay(app, rest.startsWith("realtime/") ? `/v1/realtime/orgs/${id}/${rest.slice("realtime/".length)}` : `/v1/orgs/${id}/${rest}`, req);
   },
 };
+
+/** One request to Dorks Cloud as the signed-in account, its answer streamed back. */
+async function relay(app: App, path: string, req: Request): Promise<Response> {
+  const s = await signedIn(app);
+  const url = new URL(req.url);
+  const headers: Record<string, string> = { authorization: `Bearer ${s.token}` };
+  for (const k of ["content-type", "accept"]) {
+    const v = req.headers.get(k);
+    if (v) headers[k] = v;
+  }
+  const method = req.method.toUpperCase();
+  const body = method === "GET" || method === "HEAD" ? undefined : await req.arrayBuffer();
+  let res: Response;
+  try {
+    res = await app.fetch(`${needCloud(app)}${path}${url.search}`, { method, headers, body, signal: req.signal });
+  } catch {
+    fail("failed", "Cannot reach Dorks Cloud. Check your connection and try again.");
+  }
+  const out = new Headers();
+  for (const k of ["content-type", "cache-control"]) {
+    const v = res.headers.get(k);
+    if (v) out.set(k, v);
+  }
+  return new Response(res.body, { status: res.status, headers: out });
+}

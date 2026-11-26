@@ -6,11 +6,12 @@ import type { CloudOrg, CloudServer } from '@dorks/client'
  * it runs on. The switcher picks the org; the server behind it is resolved here, never listed in the switcher:
  *
  * - an org with a hosted server: that server, through the relay;
+ * - a Teams or Cloud org with no Mac in it: the org runtime (the dorks-cloud Worker), its live updates read from s2;
  * - the personal org (or a team this Mac belongs to): this Mac, the local server, unless another of its Macs was picked inside it;
  * - a team with one Mac and no hosted server: that Mac, through the relay;
  * - otherwise (several Macs, or none): the org asks which to connect to.
  */
-export type Target = { kind: 'home' } | { kind: 'remote'; server: CloudServer } | { kind: 'choose'; machines: CloudServer[]; home: boolean }
+export type Target = { kind: 'home' } | { kind: 'cloud'; org: CloudOrg } | { kind: 'remote'; server: CloudServer } | { kind: 'choose'; machines: CloudServer[]; home: boolean }
 
 /** What the owner picked, remembered per home server: `orgId` null is this Mac with no cloud org (signed out). */
 export interface PlaceChoice {
@@ -23,6 +24,7 @@ export interface PlaceChoice {
 export function resolveTarget(org: CloudOrg, thisMacId: string | null, machineId?: string): Target {
   const hosted = org.servers.find((s) => s.kind === 'hosted')
   if (hosted) return { kind: 'remote', server: hosted }
+  if (runsOnWorker(org)) return { kind: 'cloud', org }
   const machines = org.servers.filter((s) => s.kind === 'mac' && s.id !== thisMacId)
   const home = org.personal || (!!thisMacId && org.servers.some((s) => s.id === thisMacId))
   const picked = machines.find((m) => m.id === machineId)
@@ -31,6 +33,12 @@ export function resolveTarget(org: CloudOrg, thisMacId: string | null, machineId
   if (machines.length === 1 && machines[0]!.online) return { kind: 'remote', server: machines[0]! }
   return { kind: 'choose', machines, home }
 }
+
+/**
+ * A Teams or Cloud org runs on the Worker (its `orgRuntime`), not on a server of its own; one that still has Macs runs on them
+ * until it moves to the cloud. The personal org stays on this Mac.
+ */
+export const runsOnWorker = (org: CloudOrg) => !org.personal && (org.plan === 'teams' || org.plan === 'cloud') && !org.servers.some((s) => s.kind === 'mac')
 
 /** The Macs an org can switch between inside it (this one first when it may), for the sidebar's Connect to menu. */
 export function machinesOf(org: CloudOrg, thisMacId: string | null): { home: boolean; machines: CloudServer[] } {
@@ -89,4 +97,10 @@ export function usePlaceChoice(home: string): [PlaceChoice, (c: PlaceChoice) => 
 export function remoteClientConfig(home: { serverUrl: string; token: string }, serverId: string) {
   const id = encodeURIComponent(serverId)
   return { baseUrl: `${home.serverUrl}/api/cloud/servers/${id}`, token: home.token, imageBaseUrl: `${home.serverUrl}/cloud/servers/${id}` }
+}
+
+/** A Worker-run org's UI API and its realtime routes (read tokens for s2), through the home server's `/api/cloud/orgs/:id`. */
+export function cloudOrgClientConfig(home: { serverUrl: string; token: string }, orgId: string) {
+  const base = `${home.serverUrl}/api/cloud/orgs/${encodeURIComponent(orgId)}`
+  return { baseUrl: base, token: home.token, cloud: { realtimeUrl: `${base}/realtime` } }
 }

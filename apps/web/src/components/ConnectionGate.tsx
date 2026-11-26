@@ -76,7 +76,7 @@ function Connected({ conn, onChange, onReplace, children }: { conn: Connection; 
         if (place.target.kind === 'choose' && choosing) return <ChooseMachine place={place} machines={place.target.machines} />
         const remote = place.target.kind === 'remote' ? place.target.server : null
         return (
-          <DorksProvider key={remote?.id ?? 'home'} client={client}>
+          <DorksProvider key={remote?.id ?? (place.target.kind === 'cloud' ? `org:${place.target.org.id}` : 'home')} client={client}>
             <Probe conn={conn} remote={remote} onChange={onChange} onReplace={onReplace}>
               {children}
             </Probe>
