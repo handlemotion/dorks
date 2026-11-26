@@ -2,7 +2,7 @@ import { hostname } from "node:os";
 import { fail, OWNER, touch, type App } from "../app";
 import { aad, decrypt, encrypt } from "../core/crypto";
 import { update } from "../db";
-import { FAILURE_MESSAGE, memberFromToken, runAs, serverOrg, teamAllowed, type Actor } from "./team";
+import { FAILURE_MESSAGE, memberFromToken, routedPath, runAs, serverOrg, teamAllowed, type Actor } from "./team";
 
 // The phone link (docs/mobile.md): the iPhone app reaches this server through the cloud relay. The server dials out to the relay
 // (like the bridge links, it opens no port), and runs each relayed request against its own UI API with the owner token, but only
@@ -73,8 +73,9 @@ const ALLOWED: [method: string, path: RegExp][] = [
 const DENIED = /^\/api\/dorks\/[^/]+\/(local|inputs|desktop)(\/|$)/;
 
 /** Whether a relayed request may run. `path` is the pathname alone; encoded slashes and dots are refused outright. */
-export function relayAllowed(method: string, path: string): boolean {
-  if (/%2f|%2e|%5c|\/\/|\/\.\.?(\/|$)/i.test(path) || DENIED.test(path)) return false;
+export function relayAllowed(method: string, raw: string): boolean {
+  const path = routedPath(raw);
+  if (path === null || DENIED.test(path)) return false;
   return ALLOWED.some(([m, re]) => (m === "*" || m === method) && re.test(path));
 }
 
