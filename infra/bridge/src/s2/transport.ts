@@ -199,6 +199,7 @@ export class S2Transport implements Transport {
       /* not JSON: skipped below */
     }
     if (body?.t === "call") return void this.answerCall(w, cmd, body);
+    if (body?.t === "note") return void this.writeNote(w, cmd, body);
     if (body?.t === "subscriptions") {
       this.lastList = body.views;
       for (const s of [...this.listSubs]) s.on(this.lastList);
@@ -216,6 +217,21 @@ export class S2Transport implements Transport {
     this.delivered.set(id, cmd);
     this.snapshot = [...this.snapshot, { cid: cmd.cid, frame }];
     for (const s of [...this.commandSubs]) s.on(this.snapshot);
+  }
+
+  /**
+   * Cards the Worker adds to the transcript (build drafts, decisions and runs: `{t: "note", events}`): only the bridge writes it, so
+   * it appends them as a "note" record, as it does its secure-input cards, then acks. A failed append leaves the command unacked:
+   * the next writer gets it again. The Worker derives the command id from the card, so a card sent twice is one command.
+   */
+  private async writeNote(w: BridgeWriter, cmd: Command, msg: { events?: unknown }) {
+    const events = Array.isArray(msg.events) ? msg.events.filter((e) => !!e && typeof e === "object" && typeof (e as { type?: unknown }).type === "string").slice(0, 50) : [];
+    try {
+      if (events.length) await w.note(JSON.stringify(events));
+      await w.ack(cmd);
+    } catch (e) {
+      this.broken(e, w);
+    }
   }
 
   private async answerCall(w: BridgeWriter, cmd: Command, msg: { id?: unknown; op?: unknown; args?: unknown }) {

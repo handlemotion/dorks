@@ -3,7 +3,8 @@
 // SSE from `seq_num = last seen + 1` with a short-lived read-only token, reconnecting after any drop, before the token expires and at
 // least every `maxConnectionMs` with a fresh grant, so nothing is lost or repeated. Runtime-neutral: fetch + ReadableStream only.
 //
-// Records of a session's `events` stream carry headers `k` ("ev" one event, "part" a slice of a big one, "cmd" a command echo),
+// Records of a session's `events` stream carry headers `k` ("ev" one agent line's client events, "part" a slice of a big one, "note"
+// client events the bridge adds itself (secure-input and build cards), "cmd" a command echo, "ret" a Files-tab call's answer),
 // `b` (the bridge's sequence number, its dedupe key), `c` (its command cursor) and, for parts, `p` = "<i>/<n>". Bodies are UTF-8
 // JSON. Records s2 writes itself (fence, trim) are command records: one header with an empty name.
 
@@ -32,7 +33,12 @@ export class S2Error extends Error {
 const isCommandRecord = (r: SequencedRecord) => r.headers?.length === 1 && r.headers[0]![0] === "";
 const header = (r: SequencedRecord, name: string) => r.headers?.find(([k]) => k === name)?.[1];
 
-export type SessionItem = { kind: "event"; seq: number; bseq: number; body: string; timestamp: number } | { kind: "command"; seq: number; cid: string; body: string; timestamp: number };
+export type SessionItem =
+  | { kind: "event"; seq: number; bseq: number; body: string; timestamp: number }
+  /** Events the bridge adds itself (secure-input and build cards): not agent lines, so outside the bseq dedupe. */
+  | { kind: "note"; seq: number; body: string; timestamp: number }
+  /** `by`: who sent it (a member's id, "worker" for the Worker's own messages to the agent, "automation", ...). */
+  | { kind: "command"; seq: number; cid: string; by?: string; body: string; timestamp: number };
 
 /** A record of an org live stream (the feed), as `raw` readers yield it. */
 export type RawItem = { kind: "record"; seq: number; timestamp: number; body: string };
@@ -58,7 +64,8 @@ export class Assembler {
     if (isCommandRecord(r)) return [];
     const k = header(r, "k");
     const b = Number(header(r, "b") ?? NaN);
-    if (k === "cmd") return [{ kind: "command", seq: r.seq_num, cid: header(r, "id") ?? "", body: r.body ?? "", timestamp: r.timestamp }];
+    if (k === "cmd") return [{ kind: "command", seq: r.seq_num, cid: header(r, "id") ?? "", by: header(r, "by"), body: r.body ?? "", timestamp: r.timestamp }];
+    if (k === "note") return [{ kind: "note", seq: r.seq_num, body: r.body ?? "", timestamp: r.timestamp }];
     if (!Number.isFinite(b) || b <= this.lastBseq) return [];
     if (k === "ev") {
       this.parts = null;
