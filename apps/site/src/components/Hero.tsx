@@ -177,7 +177,7 @@ export function Hero({ release: built }: { release: MacRelease | null }) {
         />
 
         <main className="relative z-10 mx-auto flex w-full flex-1 flex-col items-center px-5 pt-28 sm:px-12 sm:pt-[120px] lg:px-[clamp(64px,6.6vw,140px)]">
-          <div ref={copyRef} className="relative z-0 flex w-full max-w-[568px] shrink-0 flex-col items-center gap-7 will-change-[transform,opacity]">
+          <div ref={copyRef} className="relative z-0 flex w-full max-w-[568px] shrink-0 flex-col items-center gap-8 will-change-[transform,opacity]">
             <div className="flex w-full flex-col items-center gap-4 text-center">
               <DorksMark size={36} className="text-white" />
               <h1 className="font-serif text-[32px] font-normal leading-[1.3] tracking-normal text-white sm:text-[40px]">
@@ -220,7 +220,7 @@ export function Hero({ release: built }: { release: MacRelease | null }) {
                   Log In
                 </Button>
               </div>
-              <DownloadDetails release={release} short className="text-white/90" />
+              <DownloadDetails release={release} short className="text-sm text-white/90" />
             </div>
           </div>
 
