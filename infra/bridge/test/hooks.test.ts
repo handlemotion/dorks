@@ -59,6 +59,26 @@ function service(work: string, over: Partial<HookDeps> & { subs?: SubscriptionVi
 }
 
 describe("Stop gate", () => {
+  it("sends a nerd's wall of text back to be cut, once; a short answer, or a worker's long one, stops", async () => {
+    const w = checkout();
+    const wall = [
+      "Migration 0003 is now live on the production database. I ran it on your Mac from the teams PR's branch, using your wrangler login.",
+      "Before the run, wrangler listed 0003 as the only pending migration; afterwards it reported no migrations to apply. So the database step",
+      "is done, but #7 isn't merged yet. **One gap until #7 merges:** the old code is still live. Anyone who signs up in the meantime won't",
+      "get a personal org, and any Mac paired in the meantime won't belong to one.",
+    ].join(" ");
+    const short = "0003 is live in production; #7 still has to merge.\n\nNeeds you:\n- the collab seat price\n- the cloud-credit markup";
+    const nerd = service(w.work, { brevity: () => true });
+    const blocked = await nerd.stop({ last_assistant_message: wall });
+    expect(blocked.decision).toBe("block");
+    expect(blocked.reason).toContain("too long");
+    expect(await nerd.stop({ last_assistant_message: wall, stop_hook_active: true })).toBeNull();
+    expect(await nerd.stop({ last_assistant_message: short })).toBeNull();
+    const list = "Status:\n" + Array.from({ length: 9 }, (_, i) => `- item ${i}`).join("\n");
+    expect((await nerd.stop({ last_assistant_message: list })).reason).toContain("9 list or table rows");
+    expect(await service(w.work).stop({ last_assistant_message: wall })).toBeNull();
+  });
+
   it("lets a clean repo stop, without output", async () => {
     const w = checkout();
     expect(await service(w.work).stop()).toBeNull();
