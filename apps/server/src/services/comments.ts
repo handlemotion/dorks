@@ -5,6 +5,7 @@ import { insert, update } from "../db";
 import { append, dispatch, hasTimer, setTimer, userMessagePending } from "../lifecycle/dispatch";
 import { claimImages } from "./bridge";
 import { owned } from "./dorks";
+import { localOwner, type By } from "./team";
 
 // Preview comments (docs/architecture.md, "Preview comments"). The owner comments on a running preview; each comment of theirs waits
 // (notified = 0) for the `comments_notify` timer, which folds everything waiting into one `notify` turn, as PR notifications and crew
@@ -24,7 +25,13 @@ type Row = {
   resolved_by: CommentAuthor | null;
   created_at: number;
   edited_at: number | null;
+  written_by: string | null;
 };
+
+/** Who wrote a person's comment (services/team.ts): its `written_by`, else (older rows, the local owner) the local owner. */
+const writerId = (app: App, r: Row) => (r.written_by ? (JSON.parse(r.written_by) as By).id : (localOwner(app)?.id ?? "owner"));
+/** The id a request writes as: a teammate's, else the local owner's. */
+const requesterId = (by?: By) => by?.id ?? "owner";
 
 function view(r: Row): CommentView {
   let anchor: CommentAnchor | null = null;
@@ -43,6 +50,7 @@ function view(r: Row): CommentView {
     resolvedBy: r.resolved_by,
     createdAt: r.created_at,
     editedAt: r.edited_at,
+    ...(r.written_by ? { by: (({ id, name }: By) => ({ id, name }))(JSON.parse(r.written_by) as By) } : {}),
   };
 }
 
@@ -75,7 +83,7 @@ function queue(app: App, dorkId: string) {
 
 // ---------------------------------------------------------------- the owner (UI API)
 
-export function addComment(app: App, dorkId: string, input: { body: unknown; anchor: unknown; port: unknown }): { id: string } {
+export function addComment(app: App, dorkId: string, input: { body: unknown; anchor: unknown; port: unknown }, by?: By): { id: string } {
   return app.db.tx(() => {
     const dork = owned(app, dorkId);
     if (dork.archived) fail("archived", "this session is archived");
@@ -91,21 +99,41 @@ export function addComment(app: App, dorkId: string, input: { body: unknown; anc
     const id = app.uuid();
     // An area's screenshot was uploaded like an attachment: the comment makes it this dork's, so the agent can load it.
     if (anchor.kind === "area" && anchor.image) claimImages(app, dorkId, `dorks-image:${anchor.image}`);
-    insert(app.db, "preview_comments", { id, dorkId, parentId: null, author: "owner", body: text(input.body), anchor: JSON.stringify(anchor), port, notified: false, createdAt: app.now() });
+    insert(app.db, "preview_comments", {
+      id,
+      dorkId,
+      parentId: null,
+      author: "owner",
+      body: text(input.body),
+      anchor: JSON.stringify(anchor),
+      port,
+      notified: false,
+      createdAt: app.now(),
+      writtenBy: by ?? null,
+    });
     queue(app, dorkId);
     touch(app, { t: "comments", dorkId });
     return { id };
   });
 }
 
-export function replyComment(app: App, dorkId: string, parentId: string, body: unknown, author: CommentAuthor = "owner"): { id: string } {
+export function replyComment(app: App, dorkId: string, parentId: string, body: unknown, author: CommentAuthor = "owner", by?: By): { id: string } {
   return app.db.tx(() => {
     owned(app, dorkId);
     const parent = row(app, dorkId, parentId);
     if (parent.parent_id) fail("invalid", "reply to the thread's first comment");
     room(app, dorkId);
     const id = app.uuid();
-    insert(app.db, "preview_comments", { id, dorkId, parentId: parent.id, author, body: text(body), notified: author !== "owner", createdAt: app.now() });
+    insert(app.db, "preview_comments", {
+      id,
+      dorkId,
+      parentId: parent.id,
+      author,
+      body: text(body),
+      notified: author !== "owner",
+      createdAt: app.now(),
+      writtenBy: author === "owner" ? (by ?? null) : null,
+    });
     if (author === "owner") {
       // Writing in a resolved thread opens it again.
       if (parent.resolved_at) update(app.db, "preview_comments", { id: parent.id }, { resolvedAt: null, resolvedBy: null });
@@ -116,12 +144,13 @@ export function replyComment(app: App, dorkId: string, parentId: string, body: u
   });
 }
 
-export function changeComment(app: App, dorkId: string, id: string, change: { body?: unknown; resolved?: unknown }, by: CommentAuthor = "owner") {
+export function changeComment(app: App, dorkId: string, id: string, change: { body?: unknown; resolved?: unknown }, by: CommentAuthor = "owner", who?: By) {
   app.db.tx(() => {
     owned(app, dorkId);
     const r = row(app, dorkId, id);
     if (change.body !== undefined) {
-      if (r.author !== by) fail("forbidden", "only its author can edit a comment");
+      // A person's comment is theirs alone on a team server (docs/cloud.md): the same author kind and the same person.
+      if (r.author !== by || (by === "owner" && writerId(app, r) !== requesterId(who))) fail("forbidden", "only its author can edit a comment");
       update(app.db, "preview_comments", { id }, { body: text(change.body), editedAt: app.now() });
     }
     if (change.resolved !== undefined) {
@@ -133,11 +162,11 @@ export function changeComment(app: App, dorkId: string, id: string, change: { bo
   });
 }
 
-export function deleteComment(app: App, dorkId: string, id: string) {
+export function deleteComment(app: App, dorkId: string, id: string, who?: By) {
   app.db.tx(() => {
     owned(app, dorkId);
     const r = row(app, dorkId, id);
-    if (r.author !== "owner") fail("forbidden", "only your own comments can be deleted");
+    if (r.author !== "owner" || writerId(app, r) !== requesterId(who)) fail("forbidden", "only your own comments can be deleted");
     app.db.run("DELETE FROM preview_comments WHERE id = ?", id); // a thread's replies go with it (ON DELETE CASCADE)
     touch(app, { t: "comments", dorkId });
   });

@@ -626,4 +626,9 @@ export const MIGRATIONS: string[] = [
   -- attribution and presence (services/team.ts).
   ALTER TABLE settings ADD COLUMN cloud_owner TEXT;
   `,
+  `
+  -- Who wrote a person's preview comment on a team server (JSON {id, name, email?}); NULL: the local owner. Only they may edit or
+  -- delete it (services/comments.ts).
+  ALTER TABLE preview_comments ADD COLUMN written_by TEXT;
+  `,
 ];
