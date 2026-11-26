@@ -519,9 +519,9 @@ const UserEntry = memo(function UserEntry({ block, imageUrl }: { block: Extract<
 const AgentEntry = memo(
   function AgentEntry({ id, blocks, onOpenSteps }: { id: string; blocks: AgentBlock[]; onOpenSteps?: (keys: string[]) => void }) {
     return (
-      // `-mt-7 pt-7 -ml-10 pl-10`: paint room for a first message's hover toolbar and for the times in the left gutter, without
-      // moving the layout.
-      <MessageScrollerItem messageId={id} className="-mt-7 -ml-10 pt-7 pl-10">
+      // `-mt-7 pt-7 -ml-10 pl-10`: paint room for a first message's hover toolbar and for the times in the left gutter, and on the right
+      // for cards that bleed past the column (`CARD_BLEED`), without moving the layout.
+      <MessageScrollerItem messageId={id} className="-mt-7 -mr-[var(--card-bleed,0px)] -ml-10 pt-7 pr-[var(--card-bleed,0px)] pl-10">
         <Message {...{ [REPLY_SOURCE]: '' }}>
           <MessageContent className="gap-3">
             {turns(blocks).map((turn, i) => (
