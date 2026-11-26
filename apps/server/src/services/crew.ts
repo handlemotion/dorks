@@ -348,21 +348,47 @@ export function crewRole(app: App, d: DorkRow): "coordinator" | "worker" | undef
 // ---------------------------------------------------------------- reports and notes (delivered like autonomy notifications)
 
 /**
- * Called by `append` for every event a dork's transcript gets. A worker's turn end (with its final answer) or a failed sandbox becomes
- * a report for its coordinator. Runs inside the caller's transaction.
+ * Called by `append` for every event a dork's transcript gets. A worker's turn end (with its final answer), a failed sandbox, and what
+ * happens to its pull requests become reports for its coordinator. Runs inside the caller's transaction.
  */
 export function crewObserve(app: App, dorkId: string, body: ClientEventBody) {
-  if (body.type !== "turn_complete" && !(body.type === "status" && body.state === "error")) return;
+  if (!CREW_REPORTED.has(body.type)) return;
   const d = getDork(app.db, dorkId);
   if (!d?.parentId || d.deleting) return;
   const parent = getDork(app.db, d.parentId);
   if (!parent || parent.deleting || parent.archived) return;
-  let text: string;
-  if (body.type === "turn_complete") {
-    const a = lastAnswer(app, dorkId);
-    text = `Its turn ended: ${body.outcome ?? "done"}.${d.prUrl ? ` PR: ${d.prUrl}` : ""}\nFinal answer:\n${a?.text ?? "(none)"}${a?.truncated ? "\n[truncated: dork_get has it all]" : ""}`;
-  } else text = "Its sandbox stopped with an error. dork_read shows what happened; send it a message to retry.";
-  queueCrew(app, parent, d, "report", text);
+  const text = crewReportOf(app, d, body);
+  if (text !== undefined) queueCrew(app, parent, d, "report", text);
+}
+
+/**
+ * What a coordinator hears about an event of a worker's transcript, or undefined. Besides turn ends, a worker's PR outcomes reach it
+ * straight from the poller: a merge or close by the owner wakes nobody on the worker's side (it is the token's own login), and a
+ * stall or a conflict may take a while to surface as a turn end, so without these a nerd keeps waiting on a PR that landed long ago.
+ */
+const CREW_REPORTED = new Set<ClientEventBody["type"]>(["turn_complete", "status", "pr_merged", "subscription", "notify"]);
+
+function crewReportOf(app: App, d: DorkRow, body: ClientEventBody): string | undefined {
+  const pr = (repo: string, n: number) => `${repo}#${n}`;
+  switch (body.type) {
+    case "turn_complete": {
+      const a = lastAnswer(app, d.id);
+      return `Its turn ended: ${body.outcome ?? "done"}.${d.prUrl ? ` PR: ${d.prUrl}` : ""}\nFinal answer:\n${a?.text ?? "(none)"}${a?.truncated ? "\n[truncated: dork_get has it all]" : ""}`;
+    }
+    case "status":
+      return body.state === "error" ? "Its sandbox stopped with an error. dork_read shows what happened; send it a message to retry." : undefined;
+    case "pr_merged":
+      return `GitHub: its PR ${body.url} was merged.`;
+    case "subscription":
+      if (body.status === "stalled") return `GitHub: CI on its PR ${pr(body.repo, body.number)} still fails after its fix attempts; it stopped trying and a human is needed.`;
+      if (body.status === "ended" && body.reason === "closed") return `GitHub: its PR ${pr(body.repo, body.number)} was closed without merging.`;
+      return undefined;
+    case "notify":
+      if (body.source || !body.kinds.includes("conflict")) return undefined;
+      return `GitHub: ${body.prs.map((p) => pr(p.repo, p.number)).join(", ")} no longer merges cleanly; the worker was told to resolve it.`;
+    default:
+      return undefined;
+  }
 }
 
 function queueCrew(app: App, to: DorkRow, from: DorkRow, kind: "report" | "note", text: string) {

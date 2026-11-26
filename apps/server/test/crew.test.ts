@@ -4,6 +4,8 @@ import { update } from "../src/db";
 import { uiApp } from "../src/http/ui";
 import { crewCall, type Caller } from "../src/services/crew";
 import { createDork, setMode } from "../src/services/dorks";
+import { ingestEnv, ingestEvent } from "../src/services/githubIngest";
+import { subscribe } from "../src/services/subscriptions";
 import { updateSettings } from "../src/services/settings";
 import { harness } from "./harness";
 
@@ -128,6 +130,20 @@ describe("reports", () => {
     // What the coordinator (and the owner over MCP) reads back.
     const got = (await c.call({ dorkId: a }, "dork_get", { id: w })) as { dork: { lastAnswer?: { outcome: string; text: string } } };
     expect(got.dork.lastAnswer).toMatchObject({ outcome: "done", text: "Opened https://github.com/acme/app/pull/7; tests pass." });
+
+    // What happens to a worker's PR reaches its coordinator too, even a merge by the owner, which wakes nobody on the worker's side.
+    c.h.timer(a, "crew_notify");
+    const sub = c.h.app.db.tx(() => subscribe(c.h.app, c.h.dork(w), "acme/app", 7, "auto"));
+    const env = ingestEnv(c.h.app, "owner", undefined);
+    c.h.app.db.tx(() => ingestEvent(c.h.app, sub.id, { kind: "pr_closed", merged: true, sender: { login: "owner", bot: false } }, env));
+    expect(c.h.hasTimer(w, "notify")).toBe(false);
+    c.h.timer(a, "crew_notify");
+    expect(
+      c.h
+        .cmds(a)
+        .filter((x) => x.kind === "notify")
+        .at(-1)?.text,
+    ).toContain("its PR https://github.com/acme/app/pull/7 was merged");
 
     // A plain dork's turn end goes nowhere.
     const plain = c.h.seed("working");
