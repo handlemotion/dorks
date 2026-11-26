@@ -65,7 +65,7 @@ Read at build time; `EXPO_PUBLIC_*` values ship inside the app, so never put a s
 
 ## In-sandbox bridge (`infra/bridge`)
 
-Set by the server when it creates the sandbox: `DORK_ID`, `BRIDGE_PORT` (the loopback port the bridge listens on, `4748`) and `BRIDGE_SECRET`. Tuning variables are listed in [infra/bridge/README.md](../infra/bridge/README.md). The `screenshot_share` tool also reads Playwright's own `PLAYWRIGHT_BROWSERS_PATH` (default `~/.cache/ms-playwright`, `~/Library/Caches/ms-playwright` on macOS) to find a Chromium when no Chrome is installed.
+Set by the server when it creates the sandbox: `DORK_ID`, `BRIDGE_PORT` (the loopback port the bridge listens on, `4748`) and `BRIDGE_SECRET`. A cloud org's sandbox instead gets `DORKS_TRANSPORT=s2` and `DORKS_WORKER_URL` (the Worker's base URL): the bridge then reaches s2 and the Worker itself and listens on no port ([architecture](architecture.md), "Cloud sessions"). Tuning variables are listed in [infra/bridge/README.md](../infra/bridge/README.md). The `screenshot_share` tool also reads Playwright's own `PLAYWRIGHT_BROWSERS_PATH` (default `~/.cache/ms-playwright`, `~/Library/Caches/ms-playwright` on macOS) to find a Chromium when no Chrome is installed.
 
 ## Adding a variable
 

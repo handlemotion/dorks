@@ -18,6 +18,26 @@ export async function proof(secret: string, label: ProofLabel, theirs: string, m
   return hex(await crypto.subtle.sign("HMAC", key, enc.encode(`${label}|${theirs}|${mine}`)));
 }
 
+/**
+ * The bridge's proof on an HTTPS call to the cloud Worker (S2Transport, docs/architecture.md "Cloud sessions"): the same HMAC, over
+ * the call's time and a digest of its method, path and body, so a captured request cannot be replayed with another body or
+ * after `HTTP_PROOF_SKEW_MS`. Sent as `authorization: DorksBridge <ts>.<proof>`.
+ */
+export async function httpProof(secret: string, req: { method: string; path: string; body: string; ts: number }): Promise<string> {
+  return proof(secret, "bridge", String(req.ts), await requestDigest(req));
+}
+
+export const HTTP_PROOF_SKEW_MS = 60_000;
+
+/** The Worker's side of `httpProof`: whether `authorization` proves the secret for this request, within the allowed clock skew. */
+export async function checkHttpProof(secret: string, authorization: string | null, req: { method: string; path: string; body: string }, now = Date.now()): Promise<boolean> {
+  const m = /^DorksBridge (\d{1,16})\.([0-9a-f]{64})$/.exec(authorization ?? "");
+  if (!m || Math.abs(now - Number(m[1])) > HTTP_PROOF_SKEW_MS) return false;
+  return checkProof(secret, "bridge", m[1], await requestDigest(req), m[2]);
+}
+
+const requestDigest = async (req: { method: string; path: string; body: string }) => `${req.method.toUpperCase()} ${req.path} ${hex(await crypto.subtle.digest("SHA-256", enc.encode(req.body)))}`;
+
 /** Constant-time check of a presented proof. */
 export async function checkProof(secret: string, label: ProofLabel, theirs: string, mine: string, presented: unknown): Promise<boolean> {
   if (typeof presented !== "string" || !/^[0-9a-f]{64}$/.test(presented)) return false;
