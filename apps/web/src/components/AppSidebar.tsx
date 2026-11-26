@@ -14,7 +14,7 @@ import { toast } from 'sonner'
 import { useArchiveDork } from '../lib/archive'
 import { AccountMenu } from './AccountMenu'
 import { useDisconnect } from './ConnectionGate'
-import { ChatList, type Chat, type ChatRoute, type PrState } from './ChatList'
+import { ChatList, type Chat, type ChatPr, type ChatRoute, type PrState } from './ChatList'
 import { Logo } from './onboarding/List'
 import { OwnerAvatar, ownerOf } from './RepoAvatar'
 import { ownersOf, useOwnerScope } from './ownerScope'
@@ -27,10 +27,11 @@ const PR_NUMBER = /\/pull\/(\d+)/
 /** The name of an `owner/name` repository. */
 const nameOf = (repo: string) => repo.slice(repo.indexOf('/') + 1)
 
-/** Pull request number from the stored PR url, and its state as the server last saw it. */
-function prOf(prUrl: string | undefined, state: PrState | undefined): Chat['pr'] {
-  const n = prUrl && PR_NUMBER.exec(prUrl)?.[1]
-  return n ? { number: Number(n), state } : undefined
+/** The session's pull requests; from an older server, which only names its latest, that one alone. */
+function prsOf(d: { prs?: ChatPr[]; prUrl?: string; prState?: PrState }): ChatPr[] {
+  if (d.prs?.length) return d.prs
+  const n = d.prUrl && PR_NUMBER.exec(d.prUrl)?.[1]
+  return n ? [{ number: Number(n), url: d.prUrl, state: d.prState }] : []
 }
 
 /** Dork states in which something is moving. Everything else (idle, sleeping, error) is shown as still. */
@@ -56,7 +57,7 @@ export function AppSidebar() {
       state: d.state,
       attention: d.needsAttention,
       unread: d.unread,
-      pr: prOf(d.prUrl, d.prState),
+      prs: prsOf(d),
       mode: d.mode,
       parentId: d.parentId,
     }))

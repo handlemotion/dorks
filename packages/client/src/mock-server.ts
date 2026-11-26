@@ -156,6 +156,24 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     const list = prs.get(dorkId) ?? [];
     return typeof url === "string" && url ? list.find((p) => p.url === url) : list.at(-1);
   };
+  /** The latest ship of each merged PR, by session and PR url, while it is followed. */
+  const watched = new Map<string, ShipView>();
+  /** Like apps/server: every PR of the session on the dork (`prs`), a followed ship's stages with it. */
+  const syncPrs = (dorkId: string) => {
+    const d = dorks.get(dorkId);
+    if (!d) return;
+    d.prs = (prs.get(dorkId) ?? []).map((p) => {
+      const ship = watched.get(`${dorkId} ${p.url}`);
+      return {
+        repo: p.repo,
+        number: p.number,
+        url: p.url,
+        title: p.title,
+        state: p.state,
+        ...(ship ? { ship: { status: ship.status, stages: ship.stages.map(({ name, state, url }) => ({ name, state, url })) } } : {}),
+      };
+    });
+  };
   const secrets = new Map<string, string>();
   const now = Date.now();
   const mcpServers = new Map<string, McpServerView>([
@@ -445,11 +463,16 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       },
     ];
     append(dorkId, { type: "ship", ship: structuredClone(ship) });
+    watched.set(`${dorkId} ${pr.url}`, ship);
     steps.forEach((step, i) =>
       later(2500 * (i + 1), () => {
         if (!dorks.has(dorkId)) return;
         step(Date.now());
         append(dorkId, { type: "ship", ship: structuredClone(ship) });
+        if (ship.endedAt !== undefined || ship.status === "failed") watched.delete(`${dorkId} ${pr.url}`);
+        syncPrs(dorkId);
+        broadcast({ t: "dork", dorkId });
+        broadcast({ t: "dorks" });
       }),
     );
   };
@@ -601,6 +624,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         append(dorkId, { type: "pr_opened", url: pr.url, number });
         d.prUrl = pr.url;
         d.prState = "open";
+        syncPrs(dorkId);
         broadcast({ t: "dork", dorkId });
         broadcast({ t: "dorks" });
         broadcast({ t: "subscriptions", dorkId });
@@ -990,6 +1014,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         simulateShip(d.id, pr);
         broadcast({ t: "subscriptions", dorkId: d.id });
         if (pr.url === d.prUrl) d.prState = "merged";
+        syncPrs(d.id);
         // GitHub retargets PRs stacked on the merged branch to its base.
         for (const child of prs.get(d.id) ?? []) if (child.state === "open" && child.baseRef === pr.headRef) child.baseRef = pr.baseRef;
         broadcast({ t: "dork", dorkId: d.id });

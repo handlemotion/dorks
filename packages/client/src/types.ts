@@ -1,4 +1,4 @@
-import type { AgentCommand, AgentModelChoice, BuildRepo, BuildService, ClientEvent, CommentPolicy, DorkMode, DorkState, MachineType, RunView } from "@dorks/shared";
+import type { AgentCommand, AgentModelChoice, BuildRepo, BuildService, ClientEvent, CommentPolicy, DorkMode, DorkState, MachineType, RunView, SessionPr } from "@dorks/shared";
 
 export type { WorkspaceFile, WorkspaceGitStatus, WorkspaceRoot, WorkspaceTree } from "@dorks/shared";
 export type { MergeMethod, MergeableState, PullRequestSection, PullRequestView, PullRequestFile, PullRequestComment, PullRequestChecks, PullRequestCheck, PullRequestPerson } from "@dorks/shared";
@@ -45,6 +45,8 @@ export interface Dork {
   prUrl?: string;
   /** The PR's state as the server's poller last saw it; absent before its first look and on older servers. */
   prState?: "open" | "merged" | "closed";
+  /** Every pull request of the session the UI lists, oldest first, with the checks a merge set off while they run. Absent when none, and on older servers. */
+  prs?: SessionPr[];
   /** True when the dork is waiting on the owner (a computer-access prompt, build approval, or other request). Absent on older servers. */
   needsAttention?: boolean;
   /** The agent finished a turn the owner has not read yet (on any device); `markRead` clears it. Absent on older servers. */
