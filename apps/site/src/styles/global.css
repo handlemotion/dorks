@@ -38,4 +38,9 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+
+  ::selection {
+    background-color: #0e6fff;
+    color: #ffffff;
+  }
 }

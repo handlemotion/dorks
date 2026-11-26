@@ -49,8 +49,9 @@ export function Hero() {
         aria-hidden="true"
         width={1672}
         height={941}
+        draggable={false}
         fetchPriority="high"
-        className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center select-none"
+        className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center select-none [-webkit-user-drag:none]"
       />
 
       <header className="relative z-20 flex h-16 w-full shrink-0 items-center justify-between px-4 sm:px-6">
@@ -131,7 +132,8 @@ export function Hero() {
             alt="Dorks desktop workspace showing an agent session alongside a merged pull request"
             width={3360}
             height={2040}
-            className="block h-auto w-full rounded-[10px] object-cover object-top lg:min-h-full lg:rounded-b-none"
+            draggable={false}
+            className="block h-auto w-full rounded-[10px] object-cover object-top select-none [-webkit-user-drag:none] lg:min-h-full lg:rounded-b-none"
           />
         </div>
       </main>
