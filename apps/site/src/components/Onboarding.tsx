@@ -14,6 +14,7 @@ import {
   appHandoffLink,
   appHandoffState,
   fetchPlans,
+  fetchTrials,
   firstOpenStep,
   invite,
   isPaid,
@@ -23,10 +24,13 @@ import {
   setSecret,
   startCheckout,
   STEPS,
+  trialRefusal,
   waitForPlan,
+  type PaidPlan,
   type Plans,
   type Progress,
   type StepId,
+  type Trials,
 } from "#/lib/onboarding";
 
 /**
@@ -57,7 +61,12 @@ type View = StepId | "done";
 function Flow({ params, email }: { params: URLSearchParams; email: string }) {
   const [progress, setProgress] = useState<Progress>();
   const [view, setView] = useState<View>();
-  const [confirming, setConfirming] = useState(params.get("checkout") === "success");
+  const [confirming, setConfirming] = useState(params.get("checkout") === "success" || params.get("trial") === "started");
+  // Back from the Cloud trial's Checkout with ?trial=<code>: why it did not start, shown on the plan step.
+  const [refused] = useState(() => {
+    const trial = params.get("trial");
+    return trial && trial !== "started" ? trialRefusal(trial) : "";
+  });
   const [failed, setFailed] = useState("");
   const refresh = async () => {
     const p = await loadProgress();
@@ -67,12 +76,13 @@ function Flow({ params, email }: { params: URLSearchParams; email: string }) {
   useEffect(() => {
     (async () => {
       let p = await refresh();
-      // Back from Stripe: the plan turns paid once the webhook lands.
-      if (params.get("checkout") && p.org) {
+      // Back from Stripe: the plan turns paid once the webhook (Teams) or the trial's return (Cloud) lands.
+      if ((params.get("checkout") || params.get("trial")) && p.org) {
         const url = new URL(window.location.href);
         url.searchParams.delete("checkout");
+        url.searchParams.delete("trial");
         history.replaceState(null, "", url);
-        if (params.get("checkout") === "success" && !isPaid(p.org.plan)) {
+        if ((params.get("checkout") === "success" || params.get("trial") === "started") && !isPaid(p.org.plan)) {
           await waitForPlan(p.org.id);
           p = await refresh();
         }
@@ -111,7 +121,7 @@ function Flow({ params, email }: { params: URLSearchParams; email: string }) {
       onBack={index > 0 ? () => goto(STEPS[index - 1]!) : undefined}
     >
       {view === "workspace" && <Workspace {...props} />}
-      {view === "plan" && <PlanStep {...props} />}
+      {view === "plan" && <PlanStep {...props} refused={refused} />}
       {view === "invite" && <Invite {...props} />}
       {view === "boat" && <Boat {...props} />}
       {view === "agents" && <Agents {...props} />}
@@ -171,17 +181,28 @@ const PLAN_COPY: Record<"teams" | "cloud", { trial: string; after: (price: strin
 
 const dollars = (cents: number) => `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}`;
 
-function PlanStep({ progress, onNext, onSkip }: StepProps) {
+function PlanStep({ progress, onNext, onSkip, refused }: StepProps & { refused: string }) {
   const org = progress.org!;
   const current = org.plan;
   const [plans, setPlans] = useState<Plans>();
-  const [choice, setChoice] = useState<"teams" | "cloud">(current === "teams" ? "teams" : "cloud");
+  const [trials, setTrials] = useState<Trials>();
+  const [choice, setChoice] = useState<PaidPlan>(current === "teams" ? "teams" : "cloud");
+  // A refused call stays on the page (the toast alone is easy to miss): the relay's own message.
+  const [error, setError] = useState(refused);
   const { run, pending } = usePending();
   const cancelled = useRef(new URLSearchParams(window.location.search).get("checkout") === "cancel");
   useEffect(() => {
     fetchPlans().then(setPlans, () => setPlans(undefined));
+    fetchTrials(org.id).then(
+      (t) => {
+        setTrials(t);
+        // Only the trials this org and account may still start; the choice moves to one that is offered.
+        setChoice((c) => (t[c].eligible ? c : (planOffer(t).offered[0] ?? c)));
+      },
+      (e: Error) => setError(e.message),
+    );
     if (cancelled.current) notify("Checkout was cancelled. Pick a plan to start your trial.");
-  }, []);
+  }, [org.id]);
   if (isPaid(current))
     return (
       <>
@@ -191,62 +212,98 @@ function PlanStep({ progress, onNext, onSkip }: StepProps) {
         <Actions onClick={() => void onNext()}>Continue</Actions>
       </>
     );
+  const { offered, anyTrial } = planOffer(trials);
   return (
-    <StepForm onSubmit={() => void run(() => startCheckout(org.id, choice))}>
+    <StepForm
+      onSubmit={() =>
+        void run(async () => {
+          setError("");
+          try {
+            await startCheckout(org.id, choice, anyTrial);
+          } catch (e) {
+            setError(e instanceof Error ? e.message : String(e));
+            throw e;
+          }
+        })
+      }
+    >
       <Body>
-        <Heading title="Start your free trial">Pick a plan for {org.name}. Both take a card and charge nothing today. Cancel any time.</Heading>
-        <div role="radiogroup" aria-label="plan" className="grid grid-cols-2 gap-3">
-          {(["teams", "cloud"] as const).map((id) => {
-            const plan = plans?.plans[id];
-            const price = plan ? dollars(plan.monthlyCents) : id === "teams" ? "$5" : "$29";
-            const copy = PLAN_COPY[id];
-            const selected = choice === id;
-            return (
-              <Card
-                key={id}
-                role="radio"
-                aria-checked={selected}
-                tabIndex={0}
-                onClick={() => setChoice(id)}
-                onKeyDown={(e) => (e.key === " " || e.key === "Enter") && (e.preventDefault(), setChoice(id))}
-                className={cn("flex cursor-pointer flex-col gap-4 p-4 outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/30", selected && "border-brand dark:border-brand")}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex flex-col gap-1">
-                    <span className="font-medium">{plan?.name ?? (id === "teams" ? "Dorks Teams" : "Dorks Cloud")}</span>
-                    <span className="text-muted-foreground">
-                      <span className="text-foreground">{price}</span>/month
-                    </span>
-                  </div>
-                  <span
-                    aria-hidden
-                    className={cn("flex size-4 shrink-0 items-center justify-center rounded-full border", selected ? "border-brand bg-brand text-brand-foreground" : "border-foreground/20")}
-                  >
-                    {selected && <CheckIcon className="size-3" strokeWidth={3} />}
-                  </span>
-                </div>
-                <span className="w-fit rounded-full bg-brand/10 px-2 py-0.5 text-xs text-brand">{copy.trial}</span>
-                <ul className="flex flex-col gap-2 text-muted-foreground">
-                  {copy.points.map((p) => (
-                    <li key={p} className="flex gap-2">
-                      <CheckIcon className="mt-px size-3.5 shrink-0 text-foreground" aria-hidden />
-                      {p}
-                    </li>
-                  ))}
-                </ul>
-              </Card>
-            );
-          })}
+        <PlanHeading org={org.name} trials={trials} offered={offered.length} anyTrial={anyTrial} />
+        <div role="radiogroup" aria-label="plan" className={cn("grid gap-3", offered.length > 1 && "grid-cols-2")}>
+          {offered.map((id) => (
+            <PlanCard key={id} id={id} plans={plans} selected={choice === id} trial={anyTrial} onSelect={() => setChoice(id)} />
+          ))}
         </div>
-        <p className="text-center text-xs text-muted-foreground">{PLAN_COPY[choice].after(plans ? dollars(plans.plans[choice].monthlyCents) : choice === "teams" ? "$5" : "$29")}</p>
+        {anyTrial && <p className="text-center text-xs text-muted-foreground">{PLAN_COPY[choice].after(priceOf(plans, choice))}</p>}
+        {error && (
+          <p role="alert" className="text-center text-sm text-destructive">
+            {error}
+          </p>
+        )}
       </Body>
-      <Actions type="submit" disabled={pending}>
-        {pending ? "Opening Checkout…" : "Start free trial"}
+      <Actions type="submit" disabled={pending || !trials}>
+        {pending ? "Opening Checkout…" : anyTrial ? "Start free trial" : "Subscribe"}
       </Actions>
       <Skip onClick={() => onSkip("done")}>Not now</Skip>
     </StepForm>
   );
 }
+
+/** The plans whose trial may still start; with none left, both plans, to subscribe without a trial. */
+function planOffer(trials: Trials | undefined): { offered: readonly PaidPlan[]; anyTrial: boolean } {
+  const both = ["teams", "cloud"] as const;
+  const eligible = both.filter((id) => trials?.[id].eligible);
+  if (trials && eligible.length === 0) return { offered: both, anyTrial: false };
+  return { offered: trials ? eligible : both, anyTrial: true };
+}
+
+function PlanHeading({ org, trials, offered, anyTrial }: { org: string; trials?: Trials; offered: number; anyTrial: boolean }) {
+  if (!anyTrial) return <Heading title="Pick a plan">{trials?.cloud.message ?? trials?.teams.message ?? `Pick a plan for ${org}.`}</Heading>;
+  return (
+    <Heading title="Start your free trial">
+      Pick a plan for {org}. {offered > 1 ? "Both take a card and charge" : "It takes a card and charges"} nothing today. Cancel any time.
+    </Heading>
+  );
+}
+
+/** One plan to pick, as a radio card; its trial badge only while a trial is on offer. */
+function PlanCard({ id, plans, selected, trial, onSelect }: { id: PaidPlan; plans?: Plans; selected: boolean; trial: boolean; onSelect: () => void }) {
+  const plan = plans?.plans[id];
+  const copy = PLAN_COPY[id];
+  return (
+    <Card
+      role="radio"
+      aria-checked={selected}
+      tabIndex={0}
+      onClick={() => onSelect()}
+      onKeyDown={(e) => (e.key === " " || e.key === "Enter") && (e.preventDefault(), onSelect())}
+      className={cn("flex cursor-pointer flex-col gap-4 p-4 outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/30", selected && "border-brand dark:border-brand")}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex flex-col gap-1">
+          <span className="font-medium">{plan?.name ?? (id === "teams" ? "Dorks Teams" : "Dorks Cloud")}</span>
+          <span className="text-muted-foreground">
+            <span className="text-foreground">{priceOf(plans, id)}</span>/month
+          </span>
+        </div>
+        <span aria-hidden className={cn("flex size-4 shrink-0 items-center justify-center rounded-full border", selected ? "border-brand bg-brand text-brand-foreground" : "border-foreground/20")}>
+          {selected && <CheckIcon className="size-3" strokeWidth={3} />}
+        </span>
+      </div>
+      {trial && <span className="w-fit rounded-full bg-brand/10 px-2 py-0.5 text-xs text-brand">{copy.trial}</span>}
+      <ul className="flex flex-col gap-2 text-muted-foreground">
+        {copy.points.map((p) => (
+          <li key={p} className="flex gap-2">
+            <CheckIcon className="mt-px size-3.5 shrink-0 text-foreground" aria-hidden />
+            {p}
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+const priceOf = (plans: Plans | undefined, id: PaidPlan) => (plans ? dollars(plans.plans[id].monthlyCents) : id === "teams" ? "$5" : "$29");
 
 // ---- 3. Invite ----------------------------------------------------------------------------------------------------------------
 
