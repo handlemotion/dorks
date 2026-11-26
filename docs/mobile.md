@@ -105,7 +105,7 @@ socket (hibernatable WebSockets) and multiplexes phone requests over it.
 | `/api/auth/*` | | Better Auth (Apple ID token, Google OAuth, email code (`emailOTP`), `bearer`, `expo`, `organization` and `jwt` plugins) |
 | `GET /api/auth/jwks` | none | The keys identity tokens are signed with (EdDSA, Ed25519) |
 | `GET /api/auth/token` | session | An identity token for the session's active org |
-| `/api/auth/organization/*` | session | Teams: `create`, `invite-member`, `accept-invitation` (only the invited address), `update-member-role`, `remove-member`, `leave`, `set-active`, `delete`, `list-members`. Seats: members plus open invitations up to the plan's `seats` (`403 SEAT_LIMIT_REACHED`) |
+| `/api/auth/organization/*` | session | Teams: `create`, `invite-member`, `accept-invitation` (only the invited address), `update-member-role`, `remove-member`, `leave`, `set-active`, `delete`, `list-members`. Members plus open invitations up to the plan's `memberLimit` (`403 MEMBER_LIMIT_REACHED`; a fair-use cap on collab) |
 | `GET /v1/orgs` | session | `{id, name, slug, logo, personal, role, active, plan}[]`: my orgs |
 | `GET /v1/orgs/:orgId/entitlements` | session, member | The org's plan ([cloud](cloud.md), "Plans") |
 | `GET /v1/sign-in-methods` | none | `{google, apple, email}`: which sign-in methods are configured |
