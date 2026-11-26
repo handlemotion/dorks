@@ -34,6 +34,9 @@ describe("relay allowlist", () => {
       ["PUT", "/api/mcp-servers/x"],
       ["POST", "/api/dorks/d1/%2e%2e/%2e%2e/settings"],
       ["GET", "/api/dorks//../secrets"],
+      ["POST", "/api/dorks/d1/loc%61l/r1"], // the router decodes escapes: this is /local
+      ["POST", "/api/dorks/d1/%69nputs/r1"],
+      ["POST", "/api/dorks/d1/desktop%"], // malformed escape
       ["POST", "/mcp"],
       ["POST", "/api/automations"],
       ["DELETE", "/api/automations/a1"],
@@ -110,6 +113,7 @@ describe("phone link", () => {
     r.sock!.frame({ t: "req", id: "2", method: "GET", path: "/api/secrets" });
     r.sock!.frame({ t: "req", id: "3", method: "GET", path: "/api/live" });
     r.sock!.frame({ t: "req", id: "4", method: "GET", path: "/api/images/0123456789abcdef0123456789abcdef" });
+    r.sock!.frame({ t: "req", id: "5", method: "POST", path: "/api/dorks/d1/loc%61l/r1", body: btoa('{"decision":"always"}') });
     await until(() => r.sent.some((s) => s.id === "4" && s.t === "end"));
     expect(JSON.parse(body(r.sent, "4")).error.code).toBe("not_found"); // reached /images/:id, which knows no such image
     await until(() => r.sent.some((s) => s.id === "1" && s.t === "end") && r.sent.some((s) => s.id === "2" && s.t === "end"));
@@ -117,6 +121,8 @@ describe("phone link", () => {
     expect(JSON.parse(body(r.sent, "1"))).toEqual([]);
     expect(r.sent.find((s) => s.id === "2" && s.t === "head")?.status).toBe(403);
     expect(JSON.parse(body(r.sent, "2")).error.code).toBe("forbidden");
+    await until(() => r.sent.some((s) => s.id === "5" && s.t === "end"));
+    expect(r.sent.find((s) => s.id === "5" && s.t === "head")?.status).toBe(403); // escaped, it is still /local
 
     // /api/live stays open and streams; a cancel ends it without an "end" frame.
     await until(() => body(r.sent, "3").includes('"t":"hello"'));

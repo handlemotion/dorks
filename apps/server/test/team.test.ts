@@ -194,6 +194,9 @@ describe("team identity on the relay", () => {
         ["PUT", "/api/local-access"],
         ["POST", "/api/phone/pair"],
         ["POST", "/api/dorks/d1/%2e%2e/%2e%2e/settings"],
+        ["POST", "/api/dorks/d1/loc%61l/r1"], // the router decodes escapes: this is /local
+        ["POST", "/api/dorks/d1/%69nputs/r1"],
+        ["PUT", "/api/loc%61l-access"],
         ["POST", "/mcp"],
       ])
         expect(teamAllowed(role, m!, p!), `${role} ${m} ${p}`).toBe(false);

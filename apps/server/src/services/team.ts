@@ -121,6 +121,21 @@ type Rule = [method: string, path: RegExp];
 const NEVER = /^\/api\/dorks\/[^/]+\/(local|inputs|desktop)(\/|$)/;
 const SNEAKY = /%2f|%2e|%5c|\/\/|\/\.\.?(\/|$)/i;
 
+/**
+ * The path a relayed request is routed by, or null when it may not run: the router decodes percent-escapes (`loc%61l` reaches
+ * `/local`), so the rules match the decoded path. Encoded slashes and dots, `//`, dot segments and malformed escapes are refused.
+ */
+export function routedPath(path: string): string | null {
+  if (SNEAKY.test(path)) return null;
+  let decoded: string;
+  try {
+    decoded = decodeURI(path);
+  } catch {
+    return null;
+  }
+  return SNEAKY.test(decoded) ? null : decoded;
+}
+
 /** A member: use dorks (create, chat, merge their PRs), and view everything the app shows. */
 const MEMBER: Rule[] = [
   ["GET", /^\/api\/(live|me|settings|usage|github\/repos|builds|skills|mcp-servers|composio|automations)$/],
@@ -148,8 +163,9 @@ const ADMIN: Rule[] = [
 ];
 
 /** Whether a member with `role` may make this request. Never: local access, secret values, MCP server definitions, sign-ins, pairing. */
-export function teamAllowed(role: Role, method: string, path: string): boolean {
-  if (SNEAKY.test(path) || NEVER.test(path)) return false;
+export function teamAllowed(role: Role, method: string, raw: string): boolean {
+  const path = routedPath(raw);
+  if (path === null || NEVER.test(path)) return false;
   const m = method.toUpperCase();
   return (role === "member" ? MEMBER : ADMIN).some(([rm, re]) => (rm === "*" || rm === m) && re.test(path));
 }
