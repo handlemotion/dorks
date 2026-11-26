@@ -2,7 +2,7 @@ import type { ClientEventBody } from "@dorks/shared";
 import { fail, touch, type App } from "../app";
 import { commandOf, getDork, openCommands, runtimeOf, type CommandKind, type CommandRow, type DorkRow } from "../data";
 import { update, insert, json } from "../db";
-import { forAgent, type By } from "../services/team";
+import { forAgent, speakerFor, type By } from "../services/team";
 import { reduce, type Effect, type Input, type Result } from "../core/machine";
 import { crewObserve } from "../services/crew";
 import { messagePreview } from "../lib/messageText";
@@ -128,7 +128,7 @@ export const patchDork = (app: App, dorkId: string, patch: Record<string, unknow
  */
 export function persistUserMessage(app: App, dorkId: string, text: string, from?: { id: string; title: string }, by?: By) {
   // A teammate's message reaches the agent with who sent it (services/team.ts); the transcript keeps the text as written.
-  enqueue(app, dorkId, "user_message", forAgent(text, by));
+  enqueue(app, dorkId, "user_message", forAgent(text, speakerFor(app, dorkId, by)));
   append(app, dorkId, { type: "user_message", text, ...(from ? { from } : {}), ...(by ? { by: { id: by.id, name: by.name } } : {}) });
   // The owner writing in a chat has read it; a coordinator's message to its worker reads nothing.
   patchDork(app, dorkId, { preview: messagePreview(text), lastActivityAt: app.now(), ...(from ? {} : { readAt: app.now() }) });

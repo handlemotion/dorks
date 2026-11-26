@@ -82,7 +82,7 @@ export const dorkRoutes: Routes = (api, app) => {
             // `kind: "coordinator"` is the name a nerd had before modes (docs/modes.md).
             mode: b.mode ?? (b.kind === "coordinator" ? "nerd" : undefined),
             icon: b.icon,
-            by: byOfRequest(c),
+            by: byOfRequest(c, a),
           }),
         );
         return c.json({ id: dorkId }, 201);
@@ -110,7 +110,7 @@ export const dorkRoutes: Routes = (api, app) => {
     "/api/dorks/:id/messages",
     on((c) =>
       body(c, Text).pipe(
-        Effect.flatMap((b) => service((a) => sendMessage(a, id(c), str(b.text), undefined, byOfRequest(c)))),
+        Effect.flatMap((b) => service((a) => sendMessage(a, id(c), str(b.text), undefined, byOfRequest(c, a)))),
         ok(c),
       ),
     ),
@@ -119,7 +119,7 @@ export const dorkRoutes: Routes = (api, app) => {
     "/api/dorks/:id/queue",
     on((c) =>
       body(c, Text).pipe(
-        Effect.flatMap((b) => service((a) => queueMessage(a, id(c), str(b.text), byOfRequest(c)))),
+        Effect.flatMap((b) => service((a) => queueMessage(a, id(c), str(b.text), byOfRequest(c, a)))),
         Effect.map((r) => c.json(r)),
       ),
     ),

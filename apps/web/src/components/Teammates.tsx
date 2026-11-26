@@ -16,8 +16,8 @@ export function useOptionalMe(): Me | undefined {
   return useSyncExternalStore(store?.subscribe ?? noop, store ? () => store.getSnapshot().data : none, store ? () => store.getSnapshot().data : none)
 }
 
-/** The id this client has in attribution and presence: a teammate's user id, or "owner" for the local owner. */
-export const selfId = (me: Me | undefined) => (me?.kind === 'member' ? me.id : 'owner')
+/** The id this client has in attribution and presence: its cloud user id (the local owner's once the cloud named them), else "owner". */
+export const selfId = (me: Me | undefined) => me?.id ?? 'owner'
 
 /** Up to two initials of a name. */
 export const initials = (name: string) =>

@@ -65,6 +65,32 @@ describe("team identity on the relay", () => {
     expect((await relay("GET", "/api/me", await token())).body).toMatchObject({ kind: "member", id: "u_ada", role: "member", serverOrg: ORG });
   });
 
+  it("names the local owner as the cloud does, and tells the agent only once the chat is shared", async () => {
+    const { h, token, relay, setOrg } = await setup();
+    setOrg(ORG);
+    h.app.db.run("UPDATE settings SET cloud_owner = ? WHERE id = 1", JSON.stringify({ id: "u_owner", name: "Olive", email: "olive@team.test" }));
+    const ui = uiApp(h.app);
+    const local = (text: string) =>
+      ui.fetch(
+        new Request(`http://127.0.0.1/api/dorks/${id}/messages`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${h.app.cfg.ownerToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ text }),
+        }),
+      );
+    const id = h.seed("idle");
+    expect((await local("solo")).status).toBe(200);
+    expect((await relay("POST", `/api/dorks/${id}/messages`, await token(), { text: "hi from Ada" })).status).toBe(200);
+    expect((await local("now shared")).status).toBe(200);
+    const users = h
+      .events(id)
+      .filter((e) => e.body.type === "user_message")
+      .map((e) => e.body as { text: string; by?: { id: string } });
+    expect(users.map((u) => u.by?.id)).toEqual(["u_owner", "u_ada", "u_owner"]);
+    const texts = h.app.db.all<{ text: string }>("SELECT text FROM commands WHERE dork_id = ? AND kind = 'user_message' ORDER BY id", id).map((r) => r.text);
+    expect(texts).toEqual(["solo", "[Message from Ada (ada@team.test)]\n\nhi from Ada", "[Message from Olive (olive@team.test)]\n\nnow shared"]);
+  });
+
   it("checks the signature, expiry and organization, and the role", async () => {
     const { token, relay, setOrg, exp } = await setup();
     const stranger = await keypair("k1"); // same key id, another key: a forged token

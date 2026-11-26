@@ -621,4 +621,9 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE queued_messages ADD COLUMN sent_by TEXT;
   ALTER TABLE automation_runs ADD COLUMN run_by TEXT;
   `,
+  `
+  -- Who paired this server, as the cloud names them (\`PATCH /v1/mac\` pairedBy, JSON {id, name, email?}): the local owner in
+  -- attribution and presence (services/team.ts).
+  ALTER TABLE settings ADD COLUMN cloud_owner TEXT;
+  `,
 ];

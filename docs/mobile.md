@@ -45,7 +45,7 @@ and agents never connect to the phone: the phone reads and writes the Mac's UI A
    a Mac in that org (without `orgId`: the session's active org, else the personal one); only an owner or admin of it may pair.
 3. The server polls `POST /v1/pair/poll` every 2 s until it is claimed, receives `{macId, macToken, orgId}` once, stores the token
    encrypted in settings (`cloud_mac_token_enc`) and the org (`cloud_org_id`), and opens the link. Live: `{t: "settings"}`.
-   Each time the link opens it calls `PATCH /v1/mac` (empty body) and keeps the `orgId` it answers.
+   Each time the link opens it calls `PATCH /v1/mac` (empty body) and keeps the `orgId` and `pairedBy` it answers.
 4. Unpair from either side: the desktop's `DELETE /api/phone` (calls `DELETE /v1/mac`), or the phone's Macs list
    (`DELETE /v1/macs/:id`). A revoked token closes the link with 4401 and the server forgets it.
 
@@ -114,7 +114,7 @@ socket (hibernatable WebSockets) and multiplexes phone requests over it.
 | `POST /v1/pair/claim` | session, owner or admin of the org | `{code, orgId?}` → `{macId, name, orgId}` |
 | `GET /v1/macs` | session | `{id, name, online, lastSeenAt, kind: "mac"\|"hosted", orgId, org: {id, name, logo, personal}, role}[]`: the servers of every org I am in, personal first |
 | `DELETE /v1/macs/:id` | session, admin | `{}`: revokes the Mac's token, closes its socket |
-| `PATCH /v1/mac` | Mac token | `{macId, name, orgId, kind}`: which org owns this server (empty body) |
+| `PATCH /v1/mac` | Mac token | `{macId, name, orgId, kind, pairedBy?: {id, name, email}}`: which org owns this server and who paired it (empty body) |
 | `DELETE /v1/mac` | Mac token | `{}`: the Mac unpairs itself |
 | `GET /v1/mac/connect` | Mac token | WebSocket upgrade into the Mac's `MacRelay` |
 | `* /v1/macs/:id/api/*` | session, member of the Mac's org | Relayed to the Mac as `/api/*` with the caller's `x-dorks-actor`; the response streams back |

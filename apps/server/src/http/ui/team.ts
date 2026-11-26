@@ -12,7 +12,7 @@ export const teamRoutes: Routes = (api, app) => {
   const on = handler(app);
   api.get(
     "/api/me",
-    on((c) => service((a) => c.json({ ...meView(actorOf(c)), serverOrg: serverOrg(a) }))),
+    on((c) => service((a) => c.json({ ...meView(a, actorOf(c)), serverOrg: serverOrg(a) }))),
   );
   api.post(
     "/api/presence",

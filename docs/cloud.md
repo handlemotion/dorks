@@ -26,8 +26,9 @@ org (`macs.org_id`), and every member of that org sees it in `GET /v1/macs` and 
 through the relay: there is no direct connection to a server.
 
 A server learns its org when it pairs (`orgId` in the claimed answer of `POST /v1/pair/poll`) and again each time its link opens
-(`PATCH /v1/mac`, which answers `{macId, name, orgId, kind}`), so a Mac paired before teams existed picks it up. It keeps it in
-`settings.cloud_org_id`; a hosted server is started with `DORKS_ORG_ID` instead ([env](env.md)).
+(`PATCH /v1/mac`, which answers `{macId, name, orgId, kind, pairedBy?}`), so a Mac paired before teams existed picks it up. It keeps it in
+`settings.cloud_org_id`; a hosted server is started with `DORKS_ORG_ID` instead ([env](env.md)). `pairedBy: {id, name, email}` is
+who paired it: the server keeps it (`settings.cloud_owner`) and treats the local owner as that person.
 
 ## Identity
 
@@ -50,6 +51,8 @@ The relay puts it in the `x-dorks-actor` header of every request frame it sends 
 `services/team.ts` decides who a request is (its **actor**), `core/jwt.ts` checks tokens, `services/presence.ts` keeps presence.
 
 - **The local owner** holds the owner token on loopback (the desktop app, the web app, `pnpm dev`) and may do anything, as before.
+  Once the cloud named them (`pairedBy`), their messages, chats, presence and `GET /api/me` carry that user's id and name, so
+  teammates see a real name and the owner's own phone (the same user id) sees their messages as theirs. Before that they are "Owner".
 - **A relayed request with `x-dorks-actor`** is a teammate. The server verifies the token itself: the signature against the cloud's
   JWKS (cached; fetched again every 10 minutes, or when a token names an unknown key id, at most every 30 s, which covers a rotation),
   `exp` and `nbf` (30 s of skew), `iss` and `aud`, and `org` against its own org. It never trusts the relay: a forged or replayed
@@ -76,14 +79,15 @@ routes. Secret values never leave the server, as before.
 
 ### Attribution and the agent
 
-Everything a teammate does is stored with who did it, as `{id, name}` (the local owner, a schedule and an event store nothing):
+Everything a teammate does is stored with who did it, as `{id, name}` (the local owner only once the cloud named them; a schedule and an event store nothing):
 
 - **Messages**: the `user_message` event carries `by`; a queued message keeps it (`queued_messages.sent_by`) until it goes out.
 - **Sessions**: `dorks.created_by`, `createdBy` on the dork.
 - **Automation runs**: a run started by hand carries `by` (`automation_runs.run_by`), and the session it starts is created by them.
 
-The agent is told who wrote each teammate's message: the text it receives starts with `[Message from Ada Lovelace (ada@team.test)]`
-and a blank line, so in a shared chat it can address people and knows who asked for what. The transcript keeps the message as
+The agent is told who wrote each message in a shared chat: the text it receives starts with
+`[Message from Ada Lovelace (ada@team.test)]` and a blank line, so it can address people and knows who asked for what. A teammate's
+message always says so; the local owner's does once someone else has written in that chat (a solo owner's agent sees nothing new). The transcript keeps the message as
 written, with `by` beside it.
 
 The web app names the sender over a user bubble that is not yours (a message without `by` on a team server is the owner's), shows
@@ -94,10 +98,10 @@ the initials of whoever started a chat at the end of its sidebar row, and shows 
 In memory only. A client (a tab, a phone) opens `/api/live?client=<id>` (8 to 64 letters, digits, `-` or `_`) and says which dork
 it shows with `POST /api/presence {client, dorkId | null}`. It counts while its live stream is open, or for a minute after it posted
 when it has none. Every live stream gets `{t: "presence", dorkId, viewers: [{id, name}]}` right after `hello` for each dork with
-viewers, then whenever a dork's viewers change. The local owner shows as `{id: "owner", name: "Owner"}`. A person's client ids are
+viewers, then whenever a dork's viewers change. The local owner shows by their cloud id and name, else as `{id: "owner", name: "Owner"}`. A person's client ids are
 kept under their own id, so nobody can move another person's presence.
 
 ### `GET /api/me`
 
-`{kind: "local"|"phone"|"member", id, name, email, role, org, plan, serverOrg}`: who this request is (`id` null for the local owner)
+`{kind: "local"|"phone"|"member", id, name, email, role, org, plan, serverOrg}`: who this request is (the local owner's cloud id and name once known, else null)
 and the org the server belongs to.

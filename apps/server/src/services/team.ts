@@ -35,8 +35,25 @@ export const LOCAL: Actor = { kind: "local" };
 /** Who did something, as stored with it (a message, a dork, an automation run). Absent for the local owner. */
 export type By = { id: string; name: string; email?: string };
 
-export const byOf = (actor: Actor): By | undefined =>
-  actor.kind === "member" ? { id: actor.member.id, name: actor.member.name || actor.member.email || "Someone", ...(actor.member.email ? { email: actor.member.email } : {}) } : undefined;
+export const byOf = (app: App, actor: Actor): By | undefined =>
+  actor.kind === "member" ? { id: actor.member.id, name: actor.member.name || actor.member.email || "Someone", ...(actor.member.email ? { email: actor.member.email } : {}) } : localOwner(app);
+
+/**
+ * The local owner as the cloud knows them: who paired this server (`pairedBy` from `PATCH /v1/mac`), so teammates see their name
+ * and their messages carry their user id. Undefined before the cloud said (then they show as "Owner").
+ */
+export function localOwner(app: App): By | undefined {
+  const raw = app.db.get<{ cloud_owner: string | null }>("SELECT cloud_owner FROM settings WHERE id = 1")?.cloud_owner;
+  if (!raw) return undefined;
+  try {
+    const o = JSON.parse(raw) as { id?: unknown; name?: unknown; email?: unknown };
+    if (typeof o.id !== "string" || !o.id) return undefined;
+    const email = typeof o.email === "string" ? o.email : "";
+    return { id: o.id, name: (typeof o.name === "string" && o.name) || email || "Owner", ...(email ? { email } : {}) };
+  } catch {
+    return undefined;
+  }
+}
 
 // ---- the actor of a request. The relay path runs the request against the UI app with the owner token and register who
 // it is for here, keyed by the Request object itself: nothing a client sends can name an actor.
@@ -50,7 +67,7 @@ export function runAs(actor: Actor, req: Request): Request {
 export const actorOf = (c: Context): Actor => actors.get(c.req.raw) ?? LOCAL;
 
 /** The actor's attribution, for a route. */
-export const byOfRequest = (c: Context): By | undefined => byOf(actorOf(c));
+export const byOfRequest = (c: Context, app: App): By | undefined => byOf(app, actorOf(c));
 
 // ---- the server's organization
 
@@ -76,7 +93,9 @@ export async function memberFromToken(app: App, token: string): Promise<{ ok: tr
   }
   const str = (v: unknown) => (typeof v === "string" ? v : "");
   // Better Auth may name several roles, comma-separated: the strongest one counts.
-  const named = str(c.role).split(",").map((r) => r.trim());
+  const named = str(c.role)
+    .split(",")
+    .map((r) => r.trim());
   const role = ROLES.find((r) => named.includes(r));
   const plan = PLANS.find((p) => p === c.plan) ?? "free";
   if (!str(c.sub) || !str(c.org) || !role) return { ok: false, why: "invalid" };
@@ -135,12 +154,31 @@ export function teamAllowed(role: Role, method: string, path: string): boolean {
 }
 
 /** The answer to `GET /api/me`: who this request is, for the UI. */
-export function meView(actor: Actor) {
+export function meView(app: App, actor: Actor) {
   if (actor.kind === "member") {
     const { id, name, email, role, org, plan } = actor.member;
     return { kind: "member" as const, id, name, email, role, org, plan };
   }
-  return { kind: actor.kind, id: null, name: null, email: null, role: "owner" as const, org: null, plan: null };
+  const owner = localOwner(app);
+  return { kind: actor.kind, id: owner?.id ?? null, name: owner?.name ?? null, email: owner?.email ?? null, role: "owner" as const, org: null, plan: null };
+}
+
+/** Whether a chat has a message from someone other than `id`: then it is shared, and the agent hears who writes. */
+function sharedChat(app: App, dorkId: string, id: string): boolean {
+  return !!app.db.get(
+    "SELECT 1 AS one FROM events WHERE dork_id = ? AND json_extract(body, '$.type') = 'user_message' AND json_extract(body, '$.by.id') IS NOT NULL AND json_extract(body, '$.by.id') != ? LIMIT 1",
+    dorkId,
+    id,
+  );
+}
+
+/**
+ * Whom the agent is told wrote a message: a teammate always; the local owner only in a chat someone else has written in (a solo
+ * owner's agent hears nothing new).
+ */
+export function speakerFor(app: App, dorkId: string, by?: By): By | undefined {
+  if (!by) return undefined;
+  return by.id !== localOwner(app)?.id || sharedChat(app, dorkId, by.id) ? by : undefined;
 }
 
 /**

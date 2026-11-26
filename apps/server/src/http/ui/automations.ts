@@ -48,6 +48,6 @@ export const automationRoutes: Routes = (api, app) => {
   );
   api.post(
     "/api/automations/:id/runs",
-    on((c) => service((a) => c.json(automations.runNow(a, id(c), byOfRequest(c)), 201))),
+    on((c) => service((a) => c.json(automations.runNow(a, id(c), byOfRequest(c, a)), 201))),
   );
 };

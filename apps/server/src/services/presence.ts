@@ -1,5 +1,5 @@
 import type { App } from "../app";
-import type { Actor } from "./team";
+import { localOwner, type Actor } from "./team";
 
 // Live presence (docs/cloud.md, "Presence"): who is looking at which dork right now. In memory only: a restart forgets it, and the
 // clients tell it again. Each browser tab or phone is a client with its own id; it opens the live stream with `?client=<id>` and says
@@ -26,8 +26,12 @@ const entries = (app: App) => {
   return m;
 };
 
-/** How an actor shows in presence. The local owner (and the single-owner phone) is "Owner". */
-export const viewerOf = (actor: Actor): Viewer => (actor.kind === "member" ? { id: actor.member.id, name: actor.member.name || actor.member.email || "Someone" } : { id: "owner", name: "Owner" });
+/** How an actor shows in presence. The local owner (and the single-owner phone) by the name the cloud gave, else "Owner". */
+export function viewerOf(app: App, actor: Actor): Viewer {
+  if (actor.kind === "member") return { id: actor.member.id, name: actor.member.name || actor.member.email || "Someone" };
+  const owner = localOwner(app);
+  return owner ? { id: owner.id, name: owner.name } : { id: "owner", name: "Owner" };
+}
 
 export const validClient = (client: unknown): client is string => typeof client === "string" && CLIENT.test(client);
 
@@ -67,7 +71,7 @@ function prune(app: App) {
 /** A client's live stream opened; the returned function closes it (the client left when it was its last stream). */
 export function openStream(app: App, actor: Actor, client: string): () => void {
   prune(app);
-  const viewer = viewerOf(actor);
+  const viewer = viewerOf(app, actor);
   const k = keyOf(viewer, client);
   const e = entries(app).get(k) ?? { viewer, dorkId: null, streams: 0, seenAt: app.now() };
   e.streams++;
@@ -83,7 +87,7 @@ export function openStream(app: App, actor: Actor, client: string): () => void {
 /** The client now shows `dorkId` (null: no dork). */
 export function setViewing(app: App, actor: Actor, client: string, dorkId: string | null) {
   prune(app);
-  const viewer = viewerOf(actor);
+  const viewer = viewerOf(app, actor);
   const k = keyOf(viewer, client);
   const e = entries(app).get(k) ?? { viewer, dorkId: null, streams: 0, seenAt: app.now() };
   const was = e.dorkId;

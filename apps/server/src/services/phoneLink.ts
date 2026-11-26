@@ -14,13 +14,21 @@ const SILENT_MS = 70_000;
 const BACKOFF_START_MS = 1_000;
 const BACKOFF_MAX_MS = 30_000;
 const MAX_IN_FLIGHT = 64;
-/** The organization the cloud says owns this server (docs/mobile.md, `PATCH /v1/mac`); kept when the cloud does not say. */
-function saveOrg(app: App, orgId: unknown) {
-  if (typeof orgId !== "string" || !orgId) return;
-  const was = app.db.get<{ cloud_org_id: string | null }>("SELECT cloud_org_id FROM settings WHERE id = 1")?.cloud_org_id;
-  if (was === orgId) return;
+/**
+ * What the cloud says of this server (docs/mobile.md, `PATCH /v1/mac`): the organization that owns it, and who paired it (the local
+ * owner's name and id for attribution, services/team.ts). A field the cloud does not send is kept as it was.
+ */
+function saveMac(app: App, r: { orgId?: unknown; pairedBy?: unknown }) {
+  const patch: Record<string, unknown> = {};
+  if (typeof r.orgId === "string" && r.orgId) patch.cloudOrgId = r.orgId;
+  const p = r.pairedBy as { id?: unknown; name?: unknown; email?: unknown } | undefined;
+  if (p && typeof p.id === "string" && p.id)
+    patch.cloudOwner = { id: p.id, name: typeof p.name === "string" ? p.name.slice(0, 80) : "", ...(typeof p.email === "string" ? { email: p.email.slice(0, 200) } : {}) };
+  const was = app.db.get<{ cloud_org_id: string | null; cloud_owner: string | null }>("SELECT cloud_org_id, cloud_owner FROM settings WHERE id = 1");
+  const same = (patch.cloudOrgId ?? was?.cloud_org_id) === was?.cloud_org_id && (patch.cloudOwner ? JSON.stringify(patch.cloudOwner) : was?.cloud_owner) === was?.cloud_owner;
+  if (same) return;
   app.db.tx(() => {
-    update(app.db, "settings", { id: 1 }, { cloudOrgId: orgId });
+    update(app.db, "settings", { id: 1 }, patch);
     touch(app, { t: "settings" });
   });
 }
@@ -193,7 +201,7 @@ async function readPaired(app: App): Promise<Paired | null> {
 
 function savePaired(app: App, p: { macId: string; name: string; tokenEnc: string; orgId?: string | null } | null) {
   app.db.tx(() => {
-    update(app.db, "settings", { id: 1 }, { cloudMacId: p?.macId ?? null, cloudMacName: p?.name ?? null, cloudMacTokenEnc: p?.tokenEnc ?? null, cloudOrgId: p?.orgId ?? null });
+    update(app.db, "settings", { id: 1 }, { cloudMacId: p?.macId ?? null, cloudMacName: p?.name ?? null, cloudMacTokenEnc: p?.tokenEnc ?? null, cloudOrgId: p?.orgId ?? null, cloudOwner: null });
     touch(app, { t: "settings" });
   });
 }
@@ -272,7 +280,7 @@ export function startPhoneLink(app: App, handle: (r: Request) => Response | Prom
     if (!p || !cloud) return;
     try {
       const res = await app.fetch(`${cloud}/v1/mac`, { method: "PATCH", headers: { authorization: `Bearer ${p.token}`, "content-type": "application/json" }, body: "{}" });
-      if (res.ok && paired === p) saveOrg(app, ((await res.json()) as { orgId?: unknown }).orgId);
+      if (res.ok && paired === p) saveMac(app, (await res.json()) as { orgId?: unknown; pairedBy?: unknown });
     } catch {
       /* an older relay, or unreachable for now: the next open asks again */
     }
