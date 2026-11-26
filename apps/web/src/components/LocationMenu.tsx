@@ -44,7 +44,7 @@ export function LocationMenu({ choice, disabled }: { choice: LocationChoice; dis
           {(['cloud', 'local'] as const).map((l) => {
             const ItemIcon = LOCATION_ICONS[l]
             return (
-              <DropdownMenuRadioItem key={l} value={l}>
+              <DropdownMenuRadioItem key={l} value={l} closeOnClick>
                 <ItemIcon />
                 <span>{NAMES[l]}</span>
                 <span className="text-muted-foreground">{DETAILS[l]}</span>
