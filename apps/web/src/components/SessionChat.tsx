@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type RefObject } from 'react'
 import type { Block } from '@dorks/shared'
 import type { AgentModelChoice } from '@dorks/shared'
 import { useBuilds, useConnection, useDork, useDorkEvents, useDorksClient, useSettings } from '@dorks/client/react'
@@ -186,6 +186,33 @@ function useTranscriptWindow(blocks: Block[], canLoadMore: boolean, loadMore: ()
   return { from, hasOlder: from > 0 || canLoadMore, showOlder, reveal }
 }
 
+/**
+ * Keeps the reader's place while older blocks are drawn above it: the message at the top of the view stays where it was. The browser's
+ * own scroll anchoring does this, except at the very top of the scroller (scrollTop 0), which is where a fast scroll up lands; there
+ * every step up would leave the view at the top of what was just drawn, and the next step at the top of that, all the way up.
+ */
+function useKeepPlace(viewport: RefObject<HTMLDivElement | null>, from: number) {
+  const place = useRef<{ id: string; top: number }>(undefined)
+  useLayoutEffect(() => {
+    const kept = place.current
+    place.current = undefined
+    const el = viewport.current
+    if (!kept || !el) return
+    const item = el.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(kept.id)}"]`)
+    if (item) el.scrollTop += item.getBoundingClientRect().top - kept.top
+  }, [viewport, from])
+  /** Notes the message at the top of the view, before a step up draws more above it. */
+  return () => {
+    const el = viewport.current
+    if (!el) return
+    const edge = el.getBoundingClientRect().top
+    for (const item of el.querySelectorAll<HTMLElement>('[data-message-id]')) {
+      const box = item.getBoundingClientRect()
+      if (box.bottom > edge && item.dataset.messageId) return void (place.current = { id: item.dataset.messageId, top: box.top })
+    }
+  }
+}
+
 /** The error that put the Dork in error is said once, in red on the status line, not as its own row above it. */
 function splitProblem<B extends { kind: string }>(all: B[], state: string | undefined): { blocks: B[]; problem?: string } {
   const last = all.at(-1) as (B & { level?: string; text?: string }) | undefined
@@ -262,6 +289,12 @@ export function SessionChat({
   // The Needs action pill: what the agent waits on, and a jump to it (drawing it first when it is above the drawn window).
   const viewport = useRef<HTMLDivElement>(null)
   const attention = useAttention(viewport, needsAttention, blocks, shown, transcript.reveal)
+  const keepPlace = useKeepPlace(viewport, transcript.from)
+  const showOlder = () => {
+    // A step from memory draws above at once; a fetch only adds to memory, drawing nothing.
+    if (transcript.from > 0) keepPlace()
+    transcript.showOlder()
+  }
   return (
     <>
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
@@ -269,7 +302,7 @@ export function SessionChat({
           {/* No fade at the bottom edge: the published viewport masks it with scroll-fade-b; the last line stays fully drawn above the composer. */}
           <MessageScrollerViewport ref={viewport} aria-label="Session transcript" className="mask-none! [scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
             <MessageScrollerContent className={`mx-auto w-full max-w-4xl gap-6 pt-6 pb-12 ${compact ? 'px-6' : 'px-10'} [--card-bleed:11px]`} data-testid="transcript">
-              {transcript.hasOlder && <LoadOlder loading={loadingMore && transcript.from === 0} paused={!!eventsError} shown={shown.length} onLoad={transcript.showOlder} />}
+              {transcript.hasOlder && <LoadOlder loading={loadingMore && transcript.from === 0} paused={!!eventsError} shown={shown.length} onLoad={showOlder} />}
               <LocalAccessProvider dorkId={dorkId} agent={agent}>
                 <ShipPin blocks={blocks} state={dork.state}>
                   <ChatMessages
