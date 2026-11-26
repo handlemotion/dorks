@@ -187,7 +187,10 @@ export interface Trials {
 export const fetchTrials = (orgId: string) => cloud<Trials>(`/v1/billing/orgs/${orgId}/trials`);
 
 /** The org's running trial (entitlements), for the plan step once it is on one. */
-export type Trial = { kind: "teams_days"; endsAt: number | null } | { kind: "cloud_hours"; minutes: number; usedMinutes: number; minutesLeft: number };
+export type Trial =
+  | { kind: "teams_days"; endsAt: number | null }
+  /** At minutesLeft 0 it stays here while the org's plan falls back to fallbackPlan. */
+  | { kind: "cloud_hours"; minutes: number; usedMinutes: number; minutesLeft: number; fallbackPlan?: "local" | "teams" };
 export const fetchTrial = (orgId: string) => cloud<{ trial: Trial | null }>(`/v1/orgs/${orgId}/entitlements`).then((e) => e.trial ?? null);
 
 /**

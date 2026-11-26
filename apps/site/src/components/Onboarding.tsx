@@ -195,29 +195,38 @@ function PlanStep({ progress, onNext, onSkip }: StepProps) {
   const returned = useRef(OPENED_WITH);
   useEffect(() => {
     fetchPlans().then(setPlans, () => setPlans(undefined));
-    if (isPaid(current)) fetchTrial(org.id).then(setTrial, () => setTrial(null));
-    else fetchTrials(org.id).then(setTrials, () => setTrials(undefined));
+    // The running (or used-up) trial, and whether each trial may still start: a Teams team may still take the Cloud trial.
+    fetchTrial(org.id).then(setTrial, () => setTrial(null));
+    fetchTrials(org.id).then(setTrials, () => setTrials(undefined));
     const q = returned.current;
     if (q.get("checkout") === "cancel") notify("Checkout was cancelled. Pick a plan to continue.");
     else if (q.get("trial") && q.get("trial") !== "started") notify("That trial couldn’t start: this card, team or account already had one.");
   }, [org.id, current]);
   const priceOf = (id: "teams" | "cloud") => (plans ? dollars(plans.plans[id].monthlyCents) : id === "teams" ? "$5" : "$29");
   const nameOf = (id: "teams" | "cloud") => plans?.plans[id].name ?? (id === "cloud" ? "Dorks Cloud" : "Dorks Teams");
+  const cloudHours = hours(plans?.trials?.cloud.minutes ?? 600);
+  // A Cloud trial whose hours are used stays visible (minutesLeft 0) while the plan falls back to Teams or Local.
+  const cloudUsed = trial?.kind === "cloud_hours" && trial.minutesLeft <= 0;
   if (isPaid(current)) {
+    const onTrial = (trial?.kind === "teams_days" && current === "teams") || (trial?.kind === "cloud_hours" && current === "cloud" && !cloudUsed);
     const left =
-      trial?.kind === "teams_days" && trial.endsAt
+      trial?.kind === "teams_days" && current === "teams" && trial.endsAt
         ? `Your free trial runs until ${new Date(trial.endsAt).toLocaleDateString(undefined, { month: "long", day: "numeric" })}.`
-        : trial?.kind === "cloud_hours"
+        : trial?.kind === "cloud_hours" && current === "cloud" && !cloudUsed
           ? `${hours(trial.minutesLeft)} of ${hours(trial.minutes)} free sandbox hours left.`
-          : null;
+          : cloudUsed
+            ? `Your ${hours(trial.minutes)} free Dorks Cloud hours are used, so ${org.name} is back on ${nameOf(current)}.`
+            : null;
+    const tryCloud = current === "teams" && trials?.cloud.eligible === true;
     return (
       <>
         <Body>
-          <Heading title={`${org.name} is on ${nameOf(current)}${trial ? " (trial)" : ""}`}>
+          <Heading title={`${org.name} is on ${nameOf(current)}${onTrial ? " (trial)" : ""}`}>
             {left ? `${left} Change plans or billing any time in Settings.` : "Change plans or billing any time in Settings."}
           </Heading>
         </Body>
         <Actions onClick={() => void onNext()}>Continue</Actions>
+        {tryCloud && <Skip onClick={() => void run(() => startCheckout(org.id, "cloud", true))}>{pending ? "Opening Checkout…" : `Try Dorks Cloud with ${cloudHours} free hours`}</Skip>}
       </>
     );
   }
@@ -228,7 +237,11 @@ function PlanStep({ progress, onNext, onSkip }: StepProps) {
     <StepForm onSubmit={() => void run(() => startCheckout(org.id, choice, eligible(choice)))}>
       <Body>
         <Heading title={anyTrial ? "Start your free trial" : "Choose a plan"}>
-          {anyTrial ? `Pick a plan for ${org.name}. Trials take a card and charge nothing today.` : `Pick a plan for ${org.name}. Cancel any time.`}
+          {cloudUsed
+            ? `Your ${cloudHours} free Dorks Cloud hours are used. Pick a plan for ${org.name} to keep going.`
+            : anyTrial
+              ? `Pick a plan for ${org.name}. Trials take a card and charge nothing today.`
+              : `Pick a plan for ${org.name}. Cancel any time.`}
         </Heading>
         <div role="radiogroup" aria-label="plan" className="grid grid-cols-2 gap-3">
           {(["teams", "cloud"] as const).map((id) => {
