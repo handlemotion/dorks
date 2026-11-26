@@ -13,6 +13,7 @@ import { authClient } from "#/lib/cloud";
 import {
   appHandoffLink,
   appHandoffState,
+  connectGithub,
   fetchPlans,
   fetchTrials,
   firstOpenStep,
@@ -32,6 +33,7 @@ import {
   type StepId,
   type Trials,
 } from "#/lib/onboarding";
+import { ConnectGithubStep } from "#/components/OnboardingGithub";
 
 /**
  * dorks.build/onboarding: a new Dorks Cloud team, step by step, with the desktop app's onboarding pieces (@dorks/onboarding) on the
@@ -76,6 +78,14 @@ function Flow({ params, email }: { params: URLSearchParams; email: string }) {
   useEffect(() => {
     (async () => {
       let p = await refresh();
+      // Back from GitHub (the Dorks Agents install, then its authorize page): linked, the step is done and setup opens at the next one.
+      if (params.get("github")) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("github");
+        url.searchParams.delete("account");
+        history.replaceState(null, "", url);
+        if (params.get("github") !== "connected") notify("GitHub didn’t connect. Try again, or skip this step.");
+      }
       // Back from Stripe: the plan turns paid once the webhook (Teams) or the trial's return (Cloud) lands.
       if ((params.get("checkout") || params.get("trial")) && p.org) {
         const url = new URL(window.location.href);
@@ -121,6 +131,7 @@ function Flow({ params, email }: { params: URLSearchParams; email: string }) {
       onBack={index > 0 ? () => goto(STEPS[index - 1]!) : undefined}
     >
       {view === "workspace" && <Workspace {...props} />}
+      {view === "github" && <ConnectGithubStep {...props} connect={connectGithub} />}
       {view === "plan" && <PlanStep {...props} refused={refused} />}
       {view === "invite" && <Invite {...props} />}
       {view === "boat" && <Boat {...props} />}
@@ -129,7 +140,7 @@ function Flow({ params, email }: { params: URLSearchParams; email: string }) {
   );
 }
 
-interface StepProps {
+export interface StepProps {
   progress: Progress;
   onNext: () => Promise<void>;
   /** Past this step without saving anything; the workspace and plan steps skip the rest of setup. */

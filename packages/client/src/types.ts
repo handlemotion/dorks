@@ -484,6 +484,16 @@ export interface GithubRepos {
   };
 }
 
+/**
+ * `GET /api/github` (cloud orgs only, on the dorks-cloud Worker): the Dorks Agents GitHub App's installations linked to the org.
+ * `configured` is false when the Worker has no App; `manageUrl` is GitHub's settings page for an installation (add repositories).
+ */
+export interface GithubConnection {
+  configured: boolean;
+  app: string | null;
+  installations: { id: number; account: string; accountType: string | null; suspended: boolean; manageUrl?: string }[];
+}
+
 /** `GET /api/usage`: a part is missing when its credential is not set or its source failed. `used` is 0..1, times are epoch ms. */
 export interface UsageWindow {
   used: number;

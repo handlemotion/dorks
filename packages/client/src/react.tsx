@@ -14,7 +14,23 @@ import {
 import type { DorksClient, ConnectionState } from "./client.ts";
 import type { EventsState } from "./events.ts";
 import type { QueryState, Store } from "./store.ts";
-import type { AutomationRunView, AutomationView, BuildView, Dork, Me, Person, RunView, Settings, SnapshotStatus, Usage, GithubRepos, LocalAccess, PhoneStatus, SentryProjects } from "./types.ts";
+import type {
+  AutomationRunView,
+  AutomationView,
+  BuildView,
+  Dork,
+  Me,
+  Person,
+  RunView,
+  Settings,
+  SnapshotStatus,
+  Usage,
+  GithubRepos,
+  LocalAccess,
+  PhoneStatus,
+  SentryProjects,
+  GithubConnection,
+} from "./types.ts";
 
 const Ctx = createContext<DorksClient | null>(null);
 
@@ -116,6 +132,16 @@ export function useUsage(): Usage | undefined {
 }
 
 /** What the GitHub CLI login can see: its user, organizations and repositories; `undefined` while loading. */
+const IDLE_STATE: QueryState<never> = { status: "ready", data: undefined, error: undefined };
+const IDLE_STORE: Store<QueryState<never>> = { getSnapshot: () => IDLE_STATE, subscribe: () => () => {} };
+
+/** A cloud org's GitHub connection (only the Worker answers `/api/github`: pass `enabled` false elsewhere). */
+export function useGithubConnection(enabled = true): QueryState<GithubConnection> | undefined {
+  const client = useDorksClient();
+  const state = useStore(enabled ? client.githubConnection() : IDLE_STORE);
+  return enabled ? (state as QueryState<GithubConnection>) : undefined;
+}
+
 export function useGithubRepos(): GithubRepos | undefined {
   return useStore(useDorksClient().githubRepos()).data;
 }

@@ -53,6 +53,7 @@ import type {
   SettingsPatch,
   SnapshotStatus,
   Usage,
+  GithubConnection,
   GithubRepos,
   SentryProjects,
 } from "./types.ts";
@@ -251,6 +252,9 @@ export function createApi(config: ApiConfig) {
     getUsage: () => request<Usage>("GET", "/api/usage"),
     /** `fresh`: read the GitHub CLI and GitHub again instead of the server's short cache. */
     getSentryProjects: () => request<SentryProjects>("GET", "/api/sentry/projects"),
+    /** Cloud orgs: the Dorks Agents app's installations linked to the org, and the install link (`returnTo`: where GitHub's round trip ends). */
+    getGithubConnection: () => request<GithubConnection>("GET", "/api/github"),
+    githubInstallUrl: (returnTo: string) => request<{ url: string }>("POST", "/api/github/install", { returnTo }),
     getGithubRepos: (fresh = false) => request<GithubRepos>("GET", fresh ? "/api/github/repos?fresh=1" : "/api/github/repos"),
     listSecrets: () => request<string[]>("GET", "/api/secrets"),
     setSecret: (name: string, value: string) => request<object>("PUT", `/api/secrets/${enc(name)}`, { value }),

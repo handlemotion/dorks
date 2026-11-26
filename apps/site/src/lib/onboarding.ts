@@ -6,13 +6,14 @@ import { authClient, CLOUD_URL } from "#/lib/cloud";
  * browser resumes at the first step still open. The only things kept in this browser are the steps the visitor passed without
  * saving anything (skipped, or read the included-sandboxes note), per org.
  */
-export type StepId = "workspace" | "plan" | "invite" | "boat" | "agents";
+export type StepId = "workspace" | "github" | "plan" | "invite" | "boat" | "agents";
 
 /**
- * A team needs a plan before anything else can be saved to it: org secrets (the Boat key, the Claude token) answer 403 plan_required
- * on Dorks Local, and Local's member limit is 1, so an invitation would be refused. So the plan comes right after the name.
+ * GitHub comes right after the name: installing the Dorks Agents app (and picking its repositories) needs no plan. Everything after
+ * it does: org secrets (the Boat key, the Claude token) answer 403 plan_required on Dorks Local, and Local's member limit is 1, so an
+ * invitation would be refused. So the plan comes next.
  */
-export const STEPS: readonly StepId[] = ["workspace", "plan", "invite", "boat", "agents"];
+export const STEPS: readonly StepId[] = ["workspace", "github", "plan", "invite", "boat", "agents"];
 
 export type Plan = "local" | "teams" | "cloud";
 export const isPaid = (plan: Plan | undefined) => plan === "teams" || plan === "cloud";
@@ -32,8 +33,20 @@ export interface Invitation {
   status: string;
 }
 
+/** A GitHub account the Dorks Agents app is installed on and linked to the org (`GET /v1/orgs/:id/github`). */
+export interface GithubInstallation {
+  id: number;
+  account: string;
+  accountType: string | null;
+  suspended: boolean;
+  /** GitHub's settings page for the installation, where its owner adds repositories. */
+  manageUrl?: string;
+}
+
 export interface Progress {
   org: Org | null;
+  /** The org's linked installations; `configured` is false when the relay has no GitHub App (the step is then passed). */
+  github: { configured: boolean; installations: GithubInstallation[] };
   /** Names of the org's secrets (never values). */
   secrets: string[];
   invitations: Invitation[];
@@ -103,8 +116,10 @@ export async function loadProgress(): Promise<Progress> {
   // Only a team the visitor owns: a member cannot pay for it, invite to it or set its keys.
   const owned = teams.filter((o) => o.role === "owner");
   const org = owned.find((o) => o.id === saved) ?? owned[0] ?? null;
-  if (!org) return { org: null, secrets: [], invitations: [], memberOnly: teams.length > 0 };
-  const [secrets, invitations] = await Promise.all([
+  const noGithub = { configured: false, installations: [] };
+  if (!org) return { org: null, github: noGithub, secrets: [], invitations: [], memberOnly: teams.length > 0 };
+  const [github, secrets, invitations] = await Promise.all([
+    cloud<Progress["github"]>(`/v1/orgs/${org.id}/github`).catch(() => noGithub),
     isPaid(org.plan)
       ? cloud<{ secrets: { name: string }[] }>(`/v1/orgs/${org.id}/runtime/secrets`).then(
           (r) => r.secrets.map((s) => s.name),
@@ -116,7 +131,7 @@ export async function loadProgress(): Promise<Progress> {
       () => [],
     ),
   ]);
-  return { org, secrets, invitations, memberOnly: false };
+  return { org, github, secrets, invitations, memberOnly: false };
 }
 
 /** Whether each step needs nothing more. */
@@ -125,6 +140,7 @@ export function stepDone(p: Progress): Record<StepId, boolean> {
   const has = (name: string) => p.secrets.includes(name);
   return {
     workspace: !!p.org,
+    github: passed.has("github") || !p.github.configured || p.github.installations.length > 0,
     plan: isPaid(p.org?.plan),
     invite: passed.has("invite") || p.invitations.length > 0,
     // Dorks Cloud brings its own sandboxes; the step only says so once.
@@ -163,6 +179,18 @@ export async function saveWorkspace(name: string, existing: Org | null): Promise
   const r = await authClient.organization.create({ name, slug });
   if (r.error || !r.data) throw new Error(r.error?.message || "Could not create the workspace");
   rememberOrg(r.data.id);
+}
+
+/**
+ * GitHub's page to install the Dorks Agents app for the org (or add repositories to it). Its round trip (install, authorize) comes back
+ * to this page with ?github=connected, or ?github=error; the rest of the query (app, state) is kept.
+ */
+export async function connectGithub(orgId: string) {
+  const u = new URL(window.location.href);
+  for (const k of ["github", "account", "checkout", "trial"]) u.searchParams.delete(k);
+  const { url } = await cloud<{ url: string }>(`/v1/orgs/${orgId}/github/install`, { body: { returnTo: u.href } });
+  if (!url) throw new Error("Dorks Cloud did not answer with a GitHub link");
+  window.location.assign(url);
 }
 
 export const setSecret = (orgId: string, name: string, value: string) => cloud(`/v1/orgs/${orgId}/runtime/secrets/${name}`, { method: "PUT", body: { value } });
