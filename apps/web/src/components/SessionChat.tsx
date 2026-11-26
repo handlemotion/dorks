@@ -3,8 +3,9 @@ import type { Block } from '@dorks/shared'
 import type { AgentModelChoice } from '@dorks/shared'
 import { useBuilds, useConnection, useDork, useDorkEvents, useDorksClient, useSettings } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
-import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport } from '@dorks/ui/message-scroller'
+import { MessageScroller, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport } from '@dorks/ui/message-scroller'
 import { AgentStatus } from './AgentStatus'
+import { AttentionPill, useAttention } from './AttentionPill'
 import { ChatMessages } from './ChatBlock'
 import { ShipPin } from './ShipCard'
 import { ChatToc } from './ChatToc'
@@ -178,7 +179,11 @@ function useTranscriptWindow(blocks: Block[], canLoadMore: boolean, loadMore: ()
     // The last step from memory: fetch the next page now, so it is there when the reader gets to it.
     if (next === 0 && canLoadMore) loadMore()
   }
-  return { from, hasOlder: from > 0 || canLoadMore, showOlder }
+  /** Draws the transcript down from a little above block `index`, so it can be scrolled to. */
+  const reveal = (index: number) => {
+    if (index < from) setFirst(blocks[windowStart(blocks, index, 20)].id)
+  }
+  return { from, hasOlder: from > 0 || canLoadMore, showOlder, reveal }
 }
 
 /** The error that put the Dork in error is said once, in red on the status line, not as its own row above it. */
@@ -254,12 +259,15 @@ export function SessionChat({
   const { blocks, problem } = splitProblem(view.blocks, dork.state)
   const transcript = useTranscriptWindow(blocks, canLoadMore, loadMore)
   const shown = useMemo(() => (transcript.from > 0 ? blocks.slice(transcript.from) : blocks), [blocks, transcript.from])
+  // The Needs action pill: what the agent waits on, and a jump to it (drawing it first when it is above the drawn window).
+  const viewport = useRef<HTMLDivElement>(null)
+  const attention = useAttention(viewport, needsAttention, blocks, shown, transcript.reveal)
   return (
     <>
       <MessageScrollerProvider autoScroll defaultScrollPosition="end">
         <MessageScroller>
           {/* No fade at the bottom edge: the published viewport masks it with scroll-fade-b; the last line stays fully drawn above the composer. */}
-          <MessageScrollerViewport aria-label="Session transcript" className="mask-none! [scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
+          <MessageScrollerViewport ref={viewport} aria-label="Session transcript" className="mask-none! [scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
             <MessageScrollerContent className={`mx-auto w-full max-w-4xl gap-6 pt-6 pb-12 ${compact ? 'px-6' : 'px-10'} [--card-bleed:11px]`} data-testid="transcript">
               {transcript.hasOlder && <LoadOlder loading={loadingMore && transcript.from === 0} paused={!!eventsError} shown={shown.length} onLoad={transcript.showOlder} />}
               <LocalAccessProvider dorkId={dorkId} agent={agent}>
@@ -295,7 +303,8 @@ export function SessionChat({
             </MessageScrollerContent>
           </MessageScrollerViewport>
           <ChatToc blocks={shown} hidden={compact} />
-          <MessageScrollerButton />
+          {/* The scroll-to-end button, and the Needs action pill under it while the agent waits on something out of view. */}
+          <AttentionPill viewport={viewport} id={attention.id} revision={shown} onJump={attention.jump} />
         </MessageScroller>
       </MessageScrollerProvider>
       <DraftComposer

@@ -15,7 +15,8 @@ const GREY: Fill = { color: 'currentColor', opacity: 0.32, tone: 'text-foregroun
 /** Unread: a finished turn the owner has not opened yet. */
 const BLUE: Fill = { color: '#0e6fff', tone: '' }
 /** Attention: the dork waits on the owner's permission or answer. */
-const YELLOW: Fill = { color: '#ffb000', tone: '' }
+export const ATTENTION_COLOR = '#ffb000'
+const YELLOW: Fill = { color: ATTENTION_COLOR, tone: '' }
 
 const TONE: Partial<Record<DorkIconState, string>> = { asleep: 'text-muted-foreground/70', error: 'text-destructive' }
 const FILL: Partial<Record<DorkIconState, Fill>> = { working: GREY, awake: GREY, unread: BLUE, attention: YELLOW }
