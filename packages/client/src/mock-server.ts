@@ -192,6 +192,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         url: p.url,
         title: p.title,
         state: p.state,
+        ...(p.state === "open" && p.mergeableState === "dirty" ? { conflict: true as const } : {}),
         ...(ship ? { ship: { status: ship.status, stages: ship.stages.map(({ name, state, url }) => ({ name, state, url })) } } : {}),
       };
     });
@@ -684,6 +685,8 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         const pr = mockPullRequest(d.repo, number, list.length ? prompt.slice(0, 60) : d.title);
         const parent = list.at(-1);
         if (parent && /\bstack/i.test(prompt)) pr.baseRef = parent.headRef;
+        // "conflict" opens it with merge conflicts against its base.
+        if (/\bconflict/i.test(prompt)) Object.assign(pr, { mergeable: false, mergeableState: "dirty" });
         prs.set(dorkId, [...list, pr]);
         append(dorkId, { type: "pr_opened", url: pr.url, number });
         d.prUrl = pr.url;

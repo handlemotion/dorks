@@ -158,8 +158,8 @@ export function updateSubscription(app: App, id: number, patch: Partial<Omit<Sub
   const dorkId = app.db.get<{ dork_id: string }>("SELECT dork_id FROM pr_subscriptions WHERE id = ?", id)?.dork_id;
   if (!dorkId) return;
   touch(app, { t: "subscriptions", dorkId });
-  if (patch.state) {
-    // The session's own PR shows its state in the sidebar and the chat (`prState` on the dork).
+  if (patch.state || "mergeable" in patch) {
+    // The session's own PR shows its state (and merge conflicts) in the sidebar and the chat (`prState` on the dork).
     touch(app, { t: "dork", dorkId });
     touch(app, { t: "dorks" });
   }
