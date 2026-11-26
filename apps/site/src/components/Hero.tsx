@@ -162,11 +162,11 @@ export function Hero({ release: built }: { release: MacRelease | null }) {
           <Button variant={onLightSurface ? "navLight" : "nav"} size="icon-sm" aria-label="GitHub" nativeButton={false} render={<a href={GITHUB_URL} target="_blank" rel="noreferrer" />}>
             <GitHubIcon />
           </Button>
-          <Button variant={onLightSurface ? "navLight" : "nav"} size="sm" nativeButton={false} title={downloadTitle(release)} render={<a href={DOWNLOAD_URL} />}>
+          <Button variant={onLightSurface ? "navLight" : "nav"} size="sm" className="sm:max-md:hidden" nativeButton={false} title={downloadTitle(release)} render={<a href={DOWNLOAD_URL} />}>
             <AppleIcon className="-mt-0.5" />
             <span>Download</span>
             {release ? (
-              <span className="hidden tabular-nums opacity-70 md:inline">
+              <span className="hidden tabular-nums opacity-70 xl:inline">
                 v{release.version} · {formatSize(release.size)}
               </span>
             ) : null}
