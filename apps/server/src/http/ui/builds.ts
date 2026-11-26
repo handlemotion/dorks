@@ -94,9 +94,10 @@ export const buildRoutes: Routes = (api, app) => {
     on((c) =>
       Effect.gen(function* () {
         const b = yield* body(c, Approve);
-        const { missing } = yield* serviceAsync((a) => builds.approveDraft(a, id(c), draftId(c), b.reviewed));
+        const { missing, dorkId } = yield* serviceAsync((a) => builds.approveDraft(a, id(c), draftId(c), b.reviewed));
         // Build right away unless the owner said not to, or a value the setup needs is still missing (the owner fills it in, then builds).
-        const run = b.run !== false && !missing.length ? yield* service((a) => runs.startRun(a, id(c), { kind: "image", by: "owner" })) : null;
+        // The build shows as a card in the chat of the session that proposed it.
+        const run = b.run !== false && !missing.length ? yield* service((a) => runs.startRun(a, id(c), { kind: "image", by: "owner", dorkId })) : null;
         return c.json({ run, missing });
       }),
     ),

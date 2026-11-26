@@ -142,6 +142,10 @@ describe("agents", () => {
     const image = startRunForDork(h.app, dork, "image");
     expect(JSON.parse(run(h, image.id).spec).setupScript).toBe("echo base");
     await h.settle();
+    // Each run is a card in the agent's chat, updated as it moves: the trial's last word is that it succeeded at the end of the setup.
+    const runs = h.events(dork).flatMap((e) => (e.body.type === "build_run" ? [e.body.run] : []));
+    expect(runs.filter((r) => r.id === trial.id).map((r) => r.status)).toEqual(expect.arrayContaining(["queued", "running", "succeeded"]));
+    expect(runs.findLast((r) => r.id === image.id)).toMatchObject({ kind: "image", status: "succeeded", buildName: "web" });
 
     // A submitted draft is frozen, and approval names the version the owner reviewed: a changed draft is never approved unseen.
     const seen = submitDraft(h.app, dork, "adds ripgrep");
@@ -149,7 +153,14 @@ describe("agents", () => {
     await expect(approveDraft(h.app, id, seen.id, seen.updatedAt - 1)).rejects.toMatchObject({ error: { code: "conflict" } });
 
     const draft = seen;
-    expect(h.events(dork).map((e) => e.body.type)).toContain("build_draft");
+    // The chat card keeps the diff as submitted, since the build becomes the draft once approved.
+    const card = h.events(dork).find((e) => e.body.type === "build_draft")?.body;
+    expect(card).toMatchObject({
+      changes: {
+        script: { added: 1, removed: 1, lines: [{ kind: "-", text: "echo base" }, { kind: "+", text: "sudo apt-get install -y ripgrep" }] },
+        vars: [{ name: "API_KEY", what: "Added", secret: true }],
+      },
+    });
     const { missing } = await approveDraft(h.app, id, draft.id, draft.updatedAt);
     expect(missing).toEqual([]);
     expect(getBuild(h.app, id)!.setupScript).toBe("sudo apt-get install -y ripgrep");

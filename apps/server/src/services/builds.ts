@@ -2,6 +2,7 @@ import { createHash, createHmac } from "node:crypto";
 import {
   buildRepo,
   buildService,
+  draftChangesOf,
   draftVar,
   machineType as machineTypeSchema,
   MAX_BUILD_NAME_CHARS,
@@ -546,7 +547,15 @@ export function submitDraft(app: App, dorkId: string, note: unknown): DraftView 
     if (!d || d.status !== "editing") return fail("invalid", "There is no draft to submit. Write one with machine_draft first.");
     const text = typeof note === "string" ? note.trim() : "";
     update(app.db, "build_drafts", { id: d.id }, { status: "submitted", note: text || null, updatedAt: app.now() });
-    append(app, dorkId, { type: "build_draft", draftId: d.id, buildId: b.id, buildName: b.name, ...(text ? { note: text } : {}) });
+    // The chat card keeps what the draft changes as submitted: once approved the build is the draft, and a diff against it is empty.
+    const spec = JSON.parse(d.spec) as BuildSpec;
+    const changes = draftChangesOf(
+      b,
+      { ...spec, services: servicesOf(spec) },
+      JSON.parse(d.vars) as DraftVar[],
+      varsOf(app, b.id).map((v) => v.name),
+    );
+    append(app, dorkId, { type: "build_draft", draftId: d.id, buildId: b.id, buildName: b.name, ...(text ? { note: text } : {}), changes });
     touch(app, { t: "build", buildId: b.id });
     touch(app, { t: "builds" });
     touch(app, { t: "dorks" });
@@ -581,7 +590,7 @@ function decide(app: App, d: DraftRow, buildName: string, approved: boolean, rea
  * The owner approves a draft: its spec and variable changes become the build's (approved, since the owner chose it). New secret or
  * empty variables appear for the owner to fill in. Returns whether an image run can start now (no build-time value is missing).
  */
-export async function approveDraft(app: App, buildId: string, draftId: string, reviewed: unknown): Promise<{ missing: string[] }> {
+export async function approveDraft(app: App, buildId: string, draftId: string, reviewed: unknown): Promise<{ missing: string[]; dorkId: string }> {
   const d0 = ownDraft(app, buildId, draftId);
   if (d0.status !== "submitted") fail("conflict", "The agent has not submitted this draft yet.");
   // The owner approves the version they saw (DraftView.updatedAt), never whatever the row holds by the time the request lands.
@@ -620,7 +629,7 @@ export async function approveDraft(app: App, buildId: string, draftId: string, r
     const missing = varsOf(app, buildId)
       .filter((v) => v.buildTime && !v.valueEnc)
       .map((v) => v.name);
-    return { missing };
+    return { missing, dorkId: d.dork_id };
   });
 }
 

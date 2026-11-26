@@ -2,6 +2,8 @@ import type { DorkState, ClientEvent, LocalKind, TurnOutcome } from "../events";
 import type { NotifyKind, PrRef } from "../autonomy";
 import type { InputField } from "../inputs";
 import type { ShipView } from "../ship";
+import type { ChatRun } from "../builds";
+import type { DraftChanges } from "../buildDiff";
 
 /**
  * What an autonomy notice came from (docs/autonomy.md), kept so clients can label it by what happened and give it its own icon: a PR
@@ -32,7 +34,21 @@ export type Block =
   /** A crew report or note (docs/crew.md): a worker's final answer reaching its dork, or a note between them. */
   | { kind: "crew"; id: string; direction: "in" | "out"; peer: { id: string; title: string }; note: boolean; text: string; at: number }
   /** The agent submitted a draft of its machine for approval (docs/builds.md). `approved` is null until the owner decides. */
-  | { kind: "build"; id: string; draftId: string; buildId: string | null; buildName: string; note?: string; approved: boolean | null; reason?: string }
+  | {
+      kind: "build";
+      id: string;
+      draftId: string;
+      buildId: string | null;
+      buildName: string;
+      note?: string;
+      /** What the draft changes, as submitted; absent on drafts submitted before the server kept it. */
+      changes?: DraftChanges;
+      approved: boolean | null;
+      reason?: string;
+      at?: number;
+    }
+  /** A build run of this session (docs/builds.md): kept at the place of its first event and updated in place, like a ship. */
+  | { kind: "buildRun"; id: string; run: ChatRun; at: number }
   /**
    * The agent asked to use the owner's computer (docs/local-access.md). `status` moves from `pending` to `denied` or `expired`, or to
    * `allowed` and then `done` / `failed` once the command ran or the file was read.
@@ -158,7 +174,12 @@ const HANDLERS: Handlers = {
     });
   },
   build_draft(v, e) {
-    v.blocks.push({ kind: "build", id: `b${e.seq}`, draftId: e.draftId, buildId: e.buildId, buildName: e.buildName, note: e.note, approved: null });
+    v.blocks.push({ kind: "build", id: `b${e.seq}`, draftId: e.draftId, buildId: e.buildId, buildName: e.buildName, note: e.note, changes: e.changes, approved: null, at: e.ts });
+  },
+  build_run(v, e) {
+    const i = v.blocks.findIndex((b) => b.kind === "buildRun" && b.run.id === e.run.id);
+    if (i >= 0) v.blocks[i] = { ...(v.blocks[i] as Extract<Block, { kind: "buildRun" }>), run: e.run };
+    else v.blocks.push({ kind: "buildRun", id: `r${e.seq}`, run: e.run, at: e.ts });
   },
   build_decision(v, e) {
     // A session can submit the same draft again after a decision: the decision belongs to the latest card still waiting.

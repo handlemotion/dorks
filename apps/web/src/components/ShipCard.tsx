@@ -128,7 +128,7 @@ function stageRows(ships: ShipView[]): { key: string; stage: ShipStage; pr?: str
 }
 
 /** Ticks once a second while `on`, for the elapsed times of what is still running. */
-function useNow(on: boolean) {
+export function useNow(on: boolean) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     if (!on) return

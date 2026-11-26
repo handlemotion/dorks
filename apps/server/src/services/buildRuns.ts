@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
 import { Cause, Data, Effect, Exit, Fiber } from "effect";
-import type { BuildSpec, DraftVar, RunKind, RunStatus, RunStep, RunView } from "@dorks/shared";
+import type { BuildSpec, ChatRun, DraftVar, RunKind, RunStatus, RunStep, RunView } from "@dorks/shared";
 import { fail, touch, type App } from "../app";
 import { snapshotOps, type SnapshotOps } from "../core/snapshot";
 import { insert, update } from "../db";
 import { boatBuildFailureMessage } from "../lib/boatSnapshots";
 import { instanceId } from "../lib/box";
-import { hasTimer, setTimer } from "../lifecycle/dispatch";
+import { append, hasTimer, setTimer } from "../lifecycle/dispatch";
+import { getDork } from "../data";
 import { baseKey, buildVarValues, dorkBuild, draftView, getBuild, hashSpec, imageName, isProposal, ownBuild, secretValues, servicesOf, specOf, varsDigest, varsOf, type BuildRow } from "./builds";
 import { boatKey, githubToken, readSettings } from "./settings";
 
@@ -87,6 +88,7 @@ export interface RunRow {
   started_at: number | null;
   finished_at: number | null;
   created_at: number;
+  dork_id: string | null;
 }
 
 export const runViewOf = (r: RunRow): RunView => ({
@@ -107,6 +109,39 @@ export const runViewOf = (r: RunRow): RunView => ({
 
 const getRun = (app: App, id: string) => app.db.get<RunRow>("SELECT * FROM build_runs WHERE id = ?", id);
 
+/** What each run's chat card last showed, so a step reported twice (the setup's process id) appends nothing. */
+const announced = new WeakMap<App, Map<string, string>>();
+
+/**
+ * Shows the run's state in its session's chat (a `build_run` event; the card updates in place). Call after every change to a run, in
+ * its transaction. Nothing for an owner's own run, or once the session is gone.
+ */
+function announce(app: App, runId: string) {
+  const r = getRun(app, runId);
+  if (!r?.dork_id) return;
+  const dork = getDork(app.db, r.dork_id);
+  if (!dork || dork.deleting) return;
+  const run: ChatRun = {
+    id: r.id,
+    buildId: r.build_id,
+    buildName: getBuild(app, r.build_id)?.name ?? "",
+    kind: r.kind,
+    status: r.status,
+    step: r.step,
+    error: r.error,
+    createdAt: r.created_at,
+    startedAt: r.started_at,
+    finishedAt: r.finished_at,
+  };
+  const seen = announced.get(app) ?? new Map<string, string>();
+  announced.set(app, seen);
+  const key = JSON.stringify(run);
+  if (seen.get(runId) === key) return;
+  seen.set(runId, key);
+  if (r.status !== "queued" && r.status !== "running") app.db.afterCommit(() => seen.delete(runId));
+  append(app, r.dork_id, { type: "build_run", run });
+}
+
 /** Failures whose message is already written for the person (or agent) reading it. */
 class RunError extends Data.TaggedError("RunError")<{ readonly message: string }> {}
 /** A newer attempt (or a cancel) took the run over: this attempt stops without writing anything. */
@@ -123,6 +158,8 @@ export interface StartOpts {
   by: string;
   /** Agent trials run the dork's draft when it has one. */
   draftOf?: string;
+  /** The session whose chat shows the run; an agent's own runs default to its dork. */
+  dorkId?: string;
 }
 
 /** Queues a run. Synchronous: one transaction. Throws `conflict` while this build has a run in progress. */
@@ -130,6 +167,7 @@ export function startRun(app: App, buildId: string, o: StartOpts): RunView {
   const s = readSettings(app);
   if (app.cfg.boxProvider === "boat" && !s.boatKeyEnc) fail("not_configured", "Add your Boat API key first.");
   if (!(s.baseSnapshotId ?? app.cfg.baseSnapshotId)) fail("not_configured", "Boat is still being prepared: wait for the base snapshot first.");
+  const dorkId = o.dorkId ?? (o.by.startsWith("dork:") ? o.by.slice("dork:".length) : null);
   return app.db.tx(() => {
     const b = ownBuild(app, buildId);
     if (app.db.get("SELECT 1 FROM build_runs WHERE build_id = ? AND status IN ('queued', 'running')", buildId)) fail("conflict", "This build is already running. Wait for it, or cancel it.");
@@ -168,6 +206,7 @@ export function startRun(app: App, buildId: string, o: StartOpts): RunView {
       spec: draftVars ? { ...spec, draftVars } : spec,
       specHash: hashSpec(spec),
       startedBy: o.by,
+      dorkId,
       status: "queued",
       attempt: 1,
       log: "",
@@ -175,6 +214,7 @@ export function startRun(app: App, buildId: string, o: StartOpts): RunView {
       createdAt: app.now(),
     });
     setTimer(app, "", `${RUN_JOB}${id}`, 0, { attempt: 1 });
+    announce(app, id);
     touch(app, { t: "build", buildId });
     touch(app, { t: "builds" });
     return runViewOf(getRun(app, id)!);
@@ -188,6 +228,7 @@ export function cancelRun(app: App, buildId: string, runId: string) {
     if (!r || r.build_id !== buildId) return fail("not_found", "This run no longer exists.");
     if (r.status !== "queued" && r.status !== "running") return false;
     update(app.db, "build_runs", { id: runId }, { status: "cancelled", finishedAt: app.now(), error: "Cancelled." });
+    announce(app, runId);
     touch(app, { t: "build", buildId });
     touch(app, { t: "builds" });
     return true;
@@ -202,6 +243,7 @@ export function recoverBuildRuns(app: App) {
     if (hasTimer(app, "", `${RUN_JOB}${r.id}`)) continue;
     app.db.tx(() => {
       update(app.db, "build_runs", { id: r.id }, { attempt: r.attempt + 1, status: "queued" });
+      announce(app, r.id);
       setTimer(app, "", `${RUN_JOB}${r.id}`, 0, { attempt: r.attempt + 1 });
     });
   }
@@ -244,6 +286,7 @@ const progress = (app: App, runId: string, attempt: number, step: RunStep, patch
       const r = getRun(app, runId);
       if (!r || r.status !== "running" || r.attempt !== attempt) return false;
       update(app.db, "build_runs", { id: runId }, { step, ...patch });
+      announce(app, runId);
       touch(app, { t: "build", buildId: r.build_id });
       return true;
     });
@@ -299,6 +342,7 @@ export const buildRunJob = (app: App, runId: string, attempt: number): Effect.Ef
     if (!build) return Effect.void;
     app.db.tx(() => {
       update(app.db, "build_runs", { id: runId }, { status: "running", step: "prepare", startedAt: app.now(), error: null });
+      announce(app, runId);
       touch(app, { t: "build", buildId: build.id });
       touch(app, { t: "builds" });
     });
@@ -517,6 +561,7 @@ const finishRun = ({ app, runId, attempt, build }: Run, apply: () => void) =>
       const r = getRun(app, runId);
       if (!r || r.status !== "running" || r.attempt !== attempt) return false;
       apply();
+      announce(app, runId);
       touch(app, { t: "build", buildId: build.id });
       touch(app, { t: "builds" });
       return true;
@@ -536,6 +581,7 @@ function recordFailure({ app, runId, attempt, r0 }: Run, cause: Cause.Cause<unkn
       const r = getRun(app, runId);
       if (!r || r.attempt !== attempt || r.status !== "running") return;
       update(app.db, "build_runs", { id: runId }, { status: "failed", error: message, finishedAt: app.now() });
+      announce(app, runId);
       touch(app, { t: "build", buildId: r.build_id });
       touch(app, { t: "builds" });
     });

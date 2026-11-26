@@ -244,6 +244,13 @@ local RPC method, `build`, that forwards it. No secret ever crosses the socket.
 | `machine_logs` | A run's status and its redacted log: `tail` lines (default 200), or lines containing `grep` (a plain substring: a regular expression from the agent would run on the server), 64 KB at most. `wait` (up to 120 s) polls in short calls until the run ends, so the agent waits without a sleep loop. |
 | `machine_submit` | Submits the draft with a `note` for the owner's approval: a card in the chat and on the build's page. The decision comes back as a turn. |
 
+**In the chat** the build shows as cards, so the owner follows it without opening the Builds page
+(`apps/web/src/components/BuildCards.tsx`): the submitted change (the agent's note, a short scrollable diff of the setup script and one
+row per repository, service, variable or size it changes, taken when it submitted, because the build is the draft once approved), and
+each run of the session as a card of its steps: the agent's `machine_run` calls and the image build that approving the change starts.
+The server appends a `build_run` event at each step of a run with a `dork_id` (`announce` in `services/buildRuns.ts`); an owner's own
+runs show on the Builds page only.
+
 The intended loop: try in its own box → `machine_draft` → `machine_run` (trial) → `machine_logs` → fix → … → `machine_submit` → owner
 approves → image run → `machine_logs` until it succeeds. Done means the image run succeeded, which the tool descriptions say.
 
