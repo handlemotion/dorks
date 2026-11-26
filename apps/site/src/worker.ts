@@ -7,6 +7,8 @@ interface Env {
 
 const APEX = "dorks.build";
 /** Mintlify at a subpath needs its own asset and API paths too (mintlify.com/docs/deploy/cloudflare). */
+/** /invite/<id> is one static page (src/pages/invite.astro) that reads the id from the address. */
+const INVITE_PATH = /^\/invite\/[^/]+\/?$/;
 const DOCS_PATH = /^\/(?:docs(?:\/|$)|_mintlify\/|mintlify-assets\/)/;
 
 export default {
@@ -17,6 +19,7 @@ export default {
       return Response.redirect(url.toString(), 301);
     }
     if (DOCS_PATH.test(url.pathname)) return docs(request, url, env);
+    if (INVITE_PATH.test(url.pathname)) return env.ASSETS.fetch(new Request(new URL("/invite/", url), request));
     return env.ASSETS.fetch(request);
   },
 } satisfies ExportedHandler<Env>;

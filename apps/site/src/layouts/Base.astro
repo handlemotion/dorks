@@ -4,8 +4,10 @@ import "../styles/global.css";
 interface Props {
   title: string;
   description: string;
+  /** Pages behind a sign-in (login, invites): out of search results, no smooth scrolling. */
+  app?: boolean;
 }
-const { title, description } = Astro.props;
+const { title, description, app = false } = Astro.props;
 const canonical = new URL(Astro.url.pathname, Astro.site);
 ---
 
@@ -16,6 +18,8 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
+    {app && <meta name="robots" content="noindex" />}
+    {app && <meta name="color-scheme" content="light dark" />}
     <link rel="canonical" href={canonical} />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link
@@ -41,10 +45,14 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
   </head>
   <body>
     <slot />
-    <script>
-      import { getLenis } from "../lib/lenis";
+    {
+      !app && (
+        <script>
+          import { getLenis } from "../lib/lenis";
 
-      getLenis();
-    </script>
+          getLenis();
+        </script>
+      )
+    }
   </body>
 </html>

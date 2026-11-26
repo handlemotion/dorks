@@ -1,0 +1,8 @@
+---
+import Base from "../layouts/Base.astro";
+import { SignIn } from "../components/SignIn";
+---
+
+<Base title="Sign in to Dorks" description="Sign in to Dorks Cloud." app>
+  <SignIn client:only="react" />
+</Base>
