@@ -60,6 +60,8 @@ export interface CommentView {
   /** The thread's first comment; null for that first comment itself. */
   parentId: string | null;
   author: CommentAuthor;
+  /** The teammate who wrote it on a team server (docs/cloud.md); absent for the local owner and the agent. */
+  by?: { id: string; name: string };
   body: string;
   /** Where a thread points (its first comment only). */
   anchor: CommentAnchor | null;
