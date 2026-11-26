@@ -101,7 +101,7 @@ function EmailStep({ onBack, onSent }: { onBack: () => void; onSent: (email: str
   return (
     <Page title="Continue with email" back="Back" onBack={onBack}>
       <form
-        className="flex flex-col gap-4"
+        className="flex flex-col gap-2.5"
         onSubmit={(e) => {
           e.preventDefault();
           submit();
@@ -154,7 +154,7 @@ function CodeStep({ email, onBack }: { email: string; onBack: () => void }) {
   const error = resend.error ?? verify.error;
   return (
     <Page title="Enter code" detail={email} back="Use another email" onBack={onBack}>
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2.5">
         <CodeBoxes
           value={code}
           invalid={!!verify.error && code.length === 6}
