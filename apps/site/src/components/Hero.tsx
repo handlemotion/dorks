@@ -14,7 +14,8 @@ import { DOWNLOAD_URL, DownloadDetails, downloadTitle, useMacRelease } from "./D
 const FLOAT = { whileHover: { scale: 1.006, y: -1 }, whileTap: { scale: 0.992, y: 0 } };
 
 const GITHUB_URL = "https://github.com/handlemotion/dorks";
-const LOGIN_URL = "https://app.dorks.build";
+/** Dorks Cloud sign-in on this site (src/components/SignIn.tsx); there is no hosted app. */
+const LOGIN_URL = "/login";
 
 function GitHubIcon({ className }: { className?: string }) {
   return (
