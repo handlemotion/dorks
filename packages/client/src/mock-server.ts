@@ -100,17 +100,15 @@ interface Ctx {
 
 /**
  * Like apps/server's `needsAttentionOf`, read from the session's events: a request for the owner's computer or a secure input not
- * answered yet, or a ship that failed and has not ended.
+ * answered yet. A failed ship is left to the agent.
  */
 const needsAttention = (events: ClientEvent[]): boolean => {
   const open = new Set<string>();
-  const ships = new Map<number, { status: string; endedAt?: number }>();
-  for (const e of events as (ClientEvent & { requestId?: string; ship?: { id: number; status: string; endedAt?: number } })[]) {
+  for (const e of events as (ClientEvent & { requestId?: string })[]) {
     if ((e.type === "local_request" || e.type === "input_request") && e.requestId) open.add(e.requestId);
     else if ((e.type === "local_decision" || e.type === "input_response") && e.requestId) open.delete(e.requestId);
-    else if (e.type === "ship" && e.ship) ships.set(e.ship.id, e.ship);
   }
-  return open.size > 0 || [...ships.values()].some((s) => s.status === "failed" && s.endedAt === undefined);
+  return open.size > 0;
 };
 
 const view = (d: MockDork): Dork => {

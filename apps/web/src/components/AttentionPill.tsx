@@ -4,37 +4,17 @@ import { MessageScrollerButton } from '@dorks/ui/message-scroller'
 import { ATTENTION_COLOR } from './DorkIcon'
 
 /**
- * What the session waits on the owner for, the oldest first: a pending request for the owner's computer or for secure input, a
- * submitted machine change, or a ship that failed while the server still follows it (the server's `needsAttentionOf`).
+ * What the session waits on the owner for, the oldest first: a pending request for the owner's computer or for secure input, or a
+ * submitted machine change (the server's `needsAttentionOf`).
  */
 export function attentionBlock(blocks: Block[]): Block | undefined {
-  return blocks.find(
-    (b) =>
-      (b.kind === 'local' && b.status === 'pending') ||
-      (b.kind === 'input' && b.status === 'pending') ||
-      (b.kind === 'build' && b.approved === null) ||
-      (b.kind === 'ship' && b.ship.status === 'failed' && b.ship.endedAt === undefined),
-  )
+  return blocks.find((b) => (b.kind === 'local' && b.status === 'pending') || (b.kind === 'input' && b.status === 'pending') || (b.kind === 'build' && b.approved === null))
 }
 
-const drawn = (el: Element) => el.getBoundingClientRect().height > 0
-
-/**
- * The card drawn for a block (`data-block-id`, see `Waiting` in ChatBlock). A ship's card is drawn under the last ship of its group, or
- * pinned at the end, so a failed ship that is not the last one is found at the next drawn ship card.
- */
+/** The card drawn for a block (`data-block-id`, see `Waiting` in ChatBlock), once it is drawn. */
 export function attentionElement(viewport: HTMLElement, id: string): HTMLElement | undefined {
-  const all = [...viewport.querySelectorAll<HTMLElement>('[data-block-id]')]
-  // A pinned ship's panel (with its stages) wins over the one-line summary left in the thread.
-  const pinned = all.find((el) => el.dataset.blockId === id && el.dataset.pinned !== undefined && drawn(el))
-  if (pinned) return pinned
-  const at = all.findIndex((el) => el.dataset.blockId === id)
-  if (at < 0) return undefined
-  if (drawn(all[at])) return all[at]
-  if (all[at].dataset.ship === undefined) return undefined
-  const next = all.slice(at + 1).find((el) => el.dataset.ship !== undefined && drawn(el))
-  // The group's card under its last ship may be only a summary when the group is pinned: go to the pinned panel then.
-  return (next && all.find((el) => el.dataset.blockId === next.dataset.blockId && el.dataset.pinned !== undefined && drawn(el))) ?? next
+  const el = viewport.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(id)}"]`)
+  return el && el.getBoundingClientRect().height > 0 ? el : undefined
 }
 
 /** Scrolls the transcript so the card sits in the middle of the view. */

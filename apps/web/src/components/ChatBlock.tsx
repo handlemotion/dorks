@@ -403,11 +403,7 @@ function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => vo
       )
     } else if (block.kind === 'ship') {
       // What a merged PR set off (docs/shipping.md): CI on the base, migrations, deploys, as the server follows them.
-      content.push(
-        <Waiting key={block.id} id={block.id} ship>
-          <ShipCard block={block} />
-        </Waiting>,
-      )
+      content.push(<ShipCard key={block.id} block={block} />)
     } else if (block.kind === 'crew') {
       content.push(<CrewCard key={block.id} block={block} />)
     } else if (block.kind === 'notice') {
@@ -418,9 +414,9 @@ function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => vo
 }
 
 /** A card that can be what the agent waits on the owner for: tagged, so the Needs action pill (`AttentionPill`) can find it. */
-function Waiting({ id, ship, children }: { id: string; ship?: boolean; children: ReactNode }) {
+function Waiting({ id, children }: { id: string; children: ReactNode }) {
   return (
-    <div data-block-id={id} data-ship={ship || undefined} className="min-w-0">
+    <div data-block-id={id} className="min-w-0">
       {children}
     </div>
   )

@@ -63,11 +63,7 @@ export function ShipPin({ blocks, state, children }: { blocks: Block[]; state: s
   return (
     <ShipsContext.Provider value={value}>
       {children}
-      {pinned && anchor && (
-        <div data-block-id={anchor.id} data-ship data-pinned className="min-w-0">
-          <ShipCard block={anchor} pinned tuck={tuck} />
-        </div>
-      )}
+      {pinned && anchor && <ShipCard block={anchor} pinned tuck={tuck} />}
     </ShipsContext.Provider>
   )
 }
