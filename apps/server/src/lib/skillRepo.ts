@@ -12,7 +12,8 @@ export interface TarFile {
 }
 
 export const MAX_TARBALL_BYTES = 64 * 1024 * 1024;
-const MAX_UNPACKED_BYTES = 256 * 1024 * 1024;
+/** 128 MiB: the most Cloudflare Workers' zlib accepts as maxOutputLength (dorks-cloud runs this to install a cloud org's skills). */
+const MAX_UNPACKED_BYTES = 128 * 1024 * 1024;
 export const MAX_SKILL_FILES = 1000;
 export const MAX_SKILL_BYTES = 8 * 1024 * 1024;
 /** A file's path in its skill folder; the bridge's schema refuses longer ones (`skillFile` in @dorks/shared). */
