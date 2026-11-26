@@ -11,7 +11,7 @@ import { cn } from "#/lib/utils";
 import { DOWNLOAD_URL, DownloadDetails, downloadTitle, useMacRelease } from "./Download";
 
 /** A barely-there float: up a hair and a touch larger on hover, settles back and slightly in on press. */
-const FLOAT = { whileHover: { scale: 1.015, y: -1.5 }, whileTap: { scale: 0.985, y: 0 } };
+const FLOAT = { whileHover: { scale: 1.006, y: -1 }, whileTap: { scale: 0.992, y: 0 } };
 
 const GITHUB_URL = "https://github.com/handlemotion/dorks";
 const LOGIN_URL = "https://app.dorks.build";
