@@ -92,9 +92,29 @@ export const draftVar = z.object({
 });
 export type DraftVar = z.infer<typeof draftVar>;
 
+export const RUN_STEPS = ["prepare", "create", "start", "clone", "setup", "scan", "save", "finish"] as const;
 export type RunKind = "image" | "trial";
 export type RunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
-export type RunStep = "prepare" | "create" | "start" | "clone" | "setup" | "scan" | "save" | "finish";
+export type RunStep = (typeof RUN_STEPS)[number];
+
+/**
+ * A build run as the chat of the session it belongs to sees it (docs/builds.md): the agent's own runs (`machine_run`) and the image
+ * build that follows the owner approving its draft. The server appends it again at every step, and the chat's card updates in place.
+ */
+export const chatRun = z.object({
+  id: z.string(),
+  buildId: z.string(),
+  buildName: z.string(),
+  kind: z.enum(["image", "trial"]),
+  status: z.enum(["queued", "running", "succeeded", "failed", "cancelled"]),
+  step: z.enum(RUN_STEPS).nullable(),
+  /** Written for a person; for a failed setup it ends with the last lines of output. */
+  error: z.string().nullable(),
+  createdAt: z.number(),
+  startedAt: z.number().nullable(),
+  finishedAt: z.number().nullable(),
+});
+export type ChatRun = z.infer<typeof chatRun>;
 
 export interface RunView {
   id: string;

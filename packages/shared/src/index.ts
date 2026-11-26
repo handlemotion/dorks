@@ -4,6 +4,7 @@ export * from "./bridge";
 export * from "./autonomy";
 export * from "./errors";
 export * from "./builds";
+export * from "./buildDiff";
 export * from "./pullRequest";
 export * from "./mcp";
 export * from "./crew";

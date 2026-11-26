@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Block } from '@dorks/shared'
+import { draftChangesOf, type Block } from '@dorks/shared'
 import type { Usage } from '@dorks/client'
 import { Button } from '@dorks/ui/button'
 import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport } from '@dorks/ui/message-scroller'
@@ -139,6 +139,48 @@ const demoBlocks: Block[] = [
   { kind: 'tool', id: 'tw1', name: 'Write', summary: 'infra/bridge/test/wake.test.ts', status: 'ok' },
   { kind: 'tool', id: 'tu2', name: 'TaskUpdate', summary: '1', status: 'ok', input: { taskId: '1', status: 'completed' }, preview: 'Updated task #1 status' },
   { kind: 'tool', id: 'tu3', name: 'TaskUpdate', summary: '2', status: 'ok', input: { taskId: '2', status: 'in_progress' }, preview: 'Updated task #2 status' },
+  { kind: 'assistant', id: 'ab1', text: 'The bridge tests need Node 24 on the machine. I’ll try it in a fresh machine first.', streaming: false, at: Date.now() - 20 * 60_000 },
+  { kind: 'tool', id: 'mr1', name: 'mcp__dorks__machine_run', summary: 'trial', status: 'ok', input: { kind: 'trial' }, preview: 'Started a trial run (run-1).' },
+  { kind: 'tool', id: 'ms1', name: 'mcp__dorks__machine_submit', summary: '', status: 'ok', preview: 'Submitted.' },
+  {
+    kind: 'build',
+    id: 'b1',
+    draftId: 'd1',
+    buildId: 'b1',
+    buildName: 'acme demo',
+    note: 'Node 24 and pnpm for the bridge, a warm typecheck, and the web app as a preview service.',
+    approved: true,
+    at: Date.now() - 17 * 60_000,
+    run: {
+      id: 'run-2',
+      buildId: 'b1',
+      buildName: 'acme demo',
+      kind: 'image',
+      status: 'running',
+      step: 'setup',
+      error: null,
+      createdAt: Date.now() - 4 * 60_000,
+      startedAt: Date.now() - 4 * 60_000,
+      finishedAt: null,
+    },
+    changes: draftChangesOf(
+      {
+        machineType: 'default',
+        setupScript: 'set -e\ncurl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -\nsudo apt-get install -y nodejs\ncorepack enable\ncd ~/work/acme/demo\npnpm install\npnpm typecheck\n',
+        repos: [],
+        services: [],
+      },
+      {
+        machineType: 'large',
+        setupScript:
+          'set -e\ncurl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -\nsudo apt-get install -y nodejs\ncorepack enable\ncurl -Ls https://cli.doppler.com/install.sh | sudo sh\ncd ~/work/acme/demo\npnpm install --frozen-lockfile\npnpm rebuild better-sqlite3\ncp apps/dashboard/.env.example apps/dashboard/.env\npnpm db:migrate:local\npnpm typecheck\n',
+        repos: [{ repo: 'acme/demo' }],
+        services: [{ name: 'web', command: 'pnpm dev', port: 5173, preview: true }],
+      },
+      [{ name: 'DOPPLER_TOKEN', secret: true, buildTime: false, why: 'the API worker' }],
+      [],
+    ),
+  },
   {
     kind: 'tool',
     id: 't3',

@@ -25,7 +25,7 @@ export function TodoCard({ id }: { id: string }) {
     <section
       aria-label={`To-dos, ${done} of ${tasks.length} done`}
       data-testid="todos"
-      className="flex w-full min-w-0 flex-col gap-1.5 rounded-[6px] border border-surface-line bg-surface px-3.5 pt-2.5 pb-2.5"
+      className="my-1.5 flex w-full min-w-0 flex-col gap-1.5 rounded-[6px] border border-surface-line bg-surface px-3.5 pt-2.5 pb-2.5"
     >
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <span>To-dos</span>

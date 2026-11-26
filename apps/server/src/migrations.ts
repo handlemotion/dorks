@@ -607,4 +607,9 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE dorks ADD COLUMN replied_at INTEGER;
   ALTER TABLE dorks ADD COLUMN read_at INTEGER;
   `,
+  `
+  -- The session whose chat shows a build run as a card (services/buildRuns.ts, docs/builds.md): the agent's own runs, and the image
+  -- build that follows the owner approving its draft. NULL: an owner's run, shown on the Builds page only.
+  ALTER TABLE build_runs ADD COLUMN dork_id TEXT;
+  `,
 ];

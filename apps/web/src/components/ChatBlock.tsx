@@ -7,6 +7,7 @@ import { Bubble, BubbleContent } from '@dorks/ui/bubble'
 import { Markdown, type MarkdownImageProps } from '@dorks/ui/markdown'
 import { openContextMenu } from '../lib/contextMenu'
 import { HoverActions } from './message-actions/MessageActions'
+import { BuildDraftCard, BuildRunCard } from './BuildCards'
 import { REPLY_SOURCE, ReplyContext, ReplyQuote, SelectionReply, useReply, type ReplyHandlers } from './Reply'
 import { parseReply, quoteText } from '../lib/reply'
 import { ImageLightbox, ImageTrigger, useLightboxImages, type LightboxImage } from './ImageLightbox'
@@ -354,8 +355,13 @@ function toolRun(blocks: AgentBlock[], start: number): ToolBlock[] {
  */
 const OWN_ROW_TOOLS = /^mcp__dorks__(local_run|local_read|local_wait|input_request|input_wait)$/
 
+/** Machine calls whose card says it (`BuildDraftCard`): hidden from the tool line once they worked and the card is there. */
+const CARD_TOOLS: Record<string, AgentBlock['kind']> = { mcp__dorks__machine_submit: 'build' }
+
 function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => void): ReactNode[] {
   const content: ReactNode[] = []
+  const cards = new Set(blocks.map((b) => b.kind))
+  const hasCard = (t: ToolBlock) => t.status === 'ok' && CARD_TOOLS[t.name] !== undefined && cards.has(CARD_TOOLS[t.name])
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
     if (block.kind === 'tool') {
@@ -363,7 +369,7 @@ function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => vo
       i += run.length - 1
       // A run of to-do calls is one card, in place, showing the list as they left it; any other run of calls is one line, without the
       // calls that have their own row (`OWN_ROW_TOOLS`).
-      const tools = run.filter((t) => !OWN_ROW_TOOLS.test(t.name))
+      const tools = run.filter((t) => !OWN_ROW_TOOLS.test(t.name) && !hasCard(t))
       if (isTodoTool(block.name)) content.push(<TodoCard key={block.id} id={block.id} />)
       else if (tools.length) content.push(<ToolLine key={block.id} tools={tools} onOpen={onOpenSteps} />)
     } else if (block.kind === 'assistant') {
@@ -371,7 +377,11 @@ function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => vo
       // fell on a line of its own, and the status line below already says the agent is working.
       content.push(<AgentText key={block.id} block={block} />)
     } else if (block.kind === 'build') {
-      content.push(<BuildDraft key={block.id} block={block} />)
+      // A machine change the agent submitted, with a short diff; then each build run of the session as a card of its steps.
+      content.push(<BuildDraftCard key={block.id} block={block} />)
+    } else if (block.kind === 'buildRun') {
+      // An image build the agent started itself (a rebuild of the approved machine); a trial is only its tool row, "Used machine run".
+      if (block.run.kind === 'image') content.push(<BuildRunCard key={block.id} block={block} />)
     } else if (block.kind === 'local') {
       // The agent asked to use the owner's computer (docs/local-access.md): the session's one access card, then a line per command.
       content.push(<LocalRequestCard key={block.id} block={block} />)
@@ -388,31 +398,6 @@ function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => vo
     }
   }
   return content
-}
-
-/** The agent asked the owner to approve a change to its machine (docs/builds.md). The diff and the decision live on the build's page. */
-function BuildDraft({ block }: { block: Extract<AgentBlock, { kind: 'build' }> }) {
-  const state = block.approved === null ? 'Waiting for you' : block.approved ? 'Approved' : `Rejected${block.reason ? `: ${block.reason}` : ''}`
-  return (
-    <Trace role="status" data-testid="build-draft">
-      <TraceLine>
-        <TraceIcon>
-          <BoxIcon />
-        </TraceIcon>
-        <TraceTitle>
-          Proposed a change to the machine {block.buildName}. {state}.
-        </TraceTitle>
-      </TraceLine>
-      {block.note && <p className="pl-6 text-sm text-muted-foreground">{block.note}</p>}
-      {block.buildId && block.approved === null && (
-        <div className="pt-2 pl-6">
-          <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/builds" search={{ build: block.buildId }} />}>
-            Review the change
-          </Button>
-        </div>
-      )}
-    </Trace>
-  )
 }
 
 /** A notice; an autonomy event (a PR comment, CI, the agent's PR opened) says what happened in a few words, with the digest on hover. */

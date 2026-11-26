@@ -3,6 +3,8 @@ import { notifyKind, prRef } from "./autonomy";
 import { appError, type AppError } from "./errors";
 import { inputField } from "./inputs";
 import { shipView } from "./ship";
+import { chatRun } from "./builds";
+import { draftChanges } from "./buildDiff";
 
 export const dorkState = z.enum(["creating", "working", "idle", "sleeping", "waking", "error"]);
 
@@ -61,8 +63,19 @@ export const clientEvent = z.discriminatedUnion("type", [
   // A PR subscription changed (subscribed, ended, or stalled after CI_FIX_MAX_ATTEMPTS).
   z.object({ ...base, type: z.literal("subscription"), repo: z.string(), number: z.number(), status: z.enum(["active", "stalled", "ended"]), reason: z.string().optional() }),
   // Builds (docs/builds.md): the agent submitted a draft of its machine for the owner's approval, and the owner's answer.
-  z.object({ ...base, type: z.literal("build_draft"), draftId: z.string(), buildId: z.string().nullable(), buildName: z.string(), note: z.string().optional() }),
+  // `changes`: what the draft changes against the build, taken at submission (absent on drafts submitted before it existed).
+  z.object({
+    ...base,
+    type: z.literal("build_draft"),
+    draftId: z.string(),
+    buildId: z.string().nullable(),
+    buildName: z.string(),
+    note: z.string().optional(),
+    changes: draftChanges.optional(),
+  }),
   z.object({ ...base, type: z.literal("build_decision"), draftId: z.string(), buildId: z.string().nullable(), buildName: z.string(), approved: z.boolean(), reason: z.string().optional() }),
+  // A build run this session started, or the image build its approved draft set off: appended again as it moves, one card in the chat.
+  z.object({ ...base, type: z.literal("build_run"), run: chatRun }),
   // Local access (docs/local-access.md): the agent asked to run a command or read a file on the owner's own computer, the owner's
   // answer (asked once per session, or covered by an earlier answer), and what came back.
   z.object({

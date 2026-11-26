@@ -132,7 +132,7 @@ function stageRows(ships: ShipView[]): { key: string; stage: ShipStage; pr?: str
 }
 
 /** Ticks once a second while `on`, for the elapsed times of what is still running. */
-function useNow(on: boolean) {
+export function useNow(on: boolean) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     if (!on) return
@@ -195,9 +195,9 @@ function ShipPanel({ ships, tuck }: { ships: ShipView[]; tuck?: 'answer' | 'noti
       data-testid="ship"
       data-status={status}
       // pb-1.5: the last 28px row already leaves 4px under its text, so the card's text sits as far from its bottom edge as from its top.
-      // Pinned right under the last answer, it belongs to it: it takes back most of the thread's gap (the answer keeps its time line).
-      // Under a notice it sits 12px down, as the notices do from each other.
-      className={`flex w-full min-w-0 flex-col gap-2 rounded-[6px] border border-surface-line bg-surface px-3.5 pt-2.5 pb-1.5 ${tuck === 'answer' ? '-mt-5' : tuck === 'notice' ? '-mt-3' : ''}`}
+      // Pinned right under the last answer it keeps 18px from it, as cards in a turn keep from text (the thread's 24px less a step); under
+      // a notice it sits 12px down, as the notices do from each other. In the thread it takes the cards' 6px either side.
+      className={`flex w-full min-w-0 flex-col gap-2 rounded-[6px] border border-surface-line bg-surface px-3.5 pt-2.5 pb-1.5 ${tuck === 'answer' ? '-mt-1.5' : tuck === 'notice' ? '-mt-3' : 'my-1.5'}`}
     >
       <p className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
         <span className={`min-w-0 truncate ${bad ? 'text-destructive' : ''}`}>{headline(ships)}</span>
