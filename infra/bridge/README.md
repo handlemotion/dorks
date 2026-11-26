@@ -60,6 +60,8 @@ cannot be bound the bridge exits 1.
 |---|---|---|
 | `CLAUDE_BIN` | `claude` | The CLI binary. Tests point it at `test/fixtures/fake-claude.mjs`. |
 | `CLAUDE_RUN_AS` | _(unset)_ | Unprivileged user to run Claude (and the git clone/checkout) as, via `setpriv`. The bridge must be root. Sets the child's `HOME`/`USER` to that user's. |
+| `DORKS_TRANSPORT` | `ws` | `s2` for a cloud org's box: the bridge talks to s2 and the Worker and listens on no port ([architecture](../../docs/architecture.md), "Cloud sessions"). `BRIDGE_PORT` is then unused. |
+| `DORKS_WORKER_URL` | _(none)_ | The Worker's base URL; required with `DORKS_TRANSPORT=s2`. |
 | `DORKS_PERMISSION_MODE` | `bypassPermissions` | Passed to `--permission-mode`. See "Permission mode". |
 | `DORKS_CLAUDE_ARGS` | _(none)_ | Extra argv for the CLI, whitespace-separated (e.g. `--model sonnet`). |
 | `DORKS_WORKDIR` | `~/work` | Repos are cloned to `<workdir>/<owner>/<repo>`. |
