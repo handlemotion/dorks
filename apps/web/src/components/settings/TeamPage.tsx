@@ -26,7 +26,7 @@ import { isTeamOrg, orgName, useCloudPlace, type CloudPlace } from '../CloudPlac
 import { EmptyState } from '../EmptyState'
 import { CreateOrgDialog, OrgMark } from '../OrgSwitcher'
 import { isAdminRole } from './access'
-import { showsWhereItRuns, WhereItRuns } from './MoveToCloud'
+import { moveTargets, MoveIntoTeam, showsWhereItRuns, WhereItRuns } from './MoveToCloud'
 import { SettingsGroup, SettingsGroupFooter, SettingsInputRow, SettingsRow, SettingsSection, SettingsSections, SettingsSelectRow, SettingsStatus } from './kit'
 
 // Settings › Organization: the Dorks Cloud org you work in now (the sidebar switcher's), through Better Auth's organization endpoints
@@ -68,12 +68,14 @@ function Team({ place, org }: { place: CloudPlace; org: CloudOrg }) {
   const me = place.cloud!.user!
   const role = strongest(org.role)
   const admin = isAdminRole(role)
+  const targets = moveTargets(place, org, serverOrg)
   return (
     <SettingsSections>
       <About place={place} org={org} owner={role === 'owner'} />
       {/* Members, roles, invitations and leaving are team things (isTeamOrg): a personal org has only you. */}
       {!isTeamOrg(org) && <Personal />}
       {showsWhereItRuns(org, serverOrg) && <WhereItRuns place={place} org={org} admin={admin} />}
+      {targets.length > 0 && <MoveIntoTeam place={place} targets={targets} />}
       {place.target.kind === 'cloud' && place.target.org.id === org.id && <Github />}
       {isTeamOrg(org) && <Members place={place} org={org} detail={detail} meId={me.id} myRole={role} />}
       {admin && isTeamOrg(org) && <Invite place={place} org={org} detail={detail} />}

@@ -1,8 +1,24 @@
 # Move to cloud
 
-A team org (Dorks Teams or Dorks Cloud) that runs on its owner's Mac can move to the cloud runtime (handlemotion/dorks-cloud
-`docs/org-runtime.md`, phase 9). Settings › Organization › Where it runs › **Move to cloud**: the Mac's owner starts it; the cloud
-checks that their account is an owner or admin of the org. The Mac then leaves the org and keeps a paused local copy.
+A paid workspace (Dorks Teams or Dorks Cloud) runs on the cloud runtime (handlemotion/dorks-cloud `docs/org-runtime.md`), never on a
+Mac. Dorks Local (free) is the personal workspace on the owner's Mac. What a Mac holds moves to the cloud in one of two ways:
+
+- **Take-over**: a paid org this Mac still serves (a team paired before it paid, or the personal workspace once it upgrades) moves as
+  a whole. The app starts it on its own the first time an owner or admin opens that org on this Mac (`apps/web/src/components/AutoMove.tsx`);
+  Settings › Organization › Where it runs › **Move to cloud** retries it. A team's Mac then leaves the org; the personal workspace keeps
+  its Mac. Either way the Mac keeps a paused local copy, and the relay lists the org with `runtime: "cloud"`, which the app follows
+  (`runsOnWorker`, `apps/web/src/lib/place.ts`).
+- **Copy into a team**: from the free personal workspace, Settings › Organization › **Move to a team** copies everything into a paid team
+  the account owns or administers, also one that already runs in the cloud. Names the team already has (shared variables, MCP servers,
+  skills) are kept as they are there. The personal workspace stays on this Mac; the moved sessions are archived here (the flag only:
+  their sandboxes are the cloud's to resume).
+
+The Mac's owner starts either; the cloud checks that their account is an owner or admin of the target org.
+
+What moves: sessions with their transcripts and images, **builds** (definition and variables; the image is rebuilt in the cloud for a
+build the owner had approved), automations (on their builds), MCP servers, skills, shared variables and settings. A **local** session
+([local dorks](local-dorks.md)) moves without its worktree: in the cloud its next message starts a sandbox from the pushed branch, so work
+that was never committed and pushed stays on the Mac.
 
 ## What the Mac does (`apps/server/src/services/cloudMove.ts`)
 
@@ -35,6 +51,7 @@ events are exactly `1..lastSeq` and every image has its bytes). `format: "dorks-
 | `skills` | source and the stored folder (gzipped JSON, base64) with its digest | |
 | `variables` | shared variables, each value sealed | |
 | `images` | the chats' images (`dorks-image:<id>` in transcripts): id (kept, transcripts name it), session, mime, size; the bytes are uploaded on their own | attachments never claimed by a message |
+| `builds` | each build's name, machine size, setup script, repos, services, `approved` (the owner approved this spec), `hadImage`, and its variables (`secret`, `buildTime`, the value sealed as `build-var\|<build>\|<name>`, null when nobody filled it in); `defaultBuildId` | the image (a snapshot in this Mac's Boat account), runs, drafts |
 | `settings` | sleep minutes, comment policy, Code Mode default, Boat org and environment, Sentry org and URL; `reenter`: which of `claudeToken`, `boatKey`, `sentryToken`, `antigravityToken`, `github` the Mac had, for the cloud to ask again | the credentials themselves |
 
 **Sealing.** No secret travels in clear. The import's key is ECDH P-256 (`alg: "ECDH-ES+HKDF-SHA256+A256GCM"`). The Mac makes one
