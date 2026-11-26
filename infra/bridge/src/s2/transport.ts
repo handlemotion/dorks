@@ -67,6 +67,8 @@ export class S2Transport implements Transport {
   /** Control frames already handled: the outbox retries a failed push with the same frame objects. */
   private readonly processed = new WeakSet<object>();
   private stateQueue: StateFrame[] = [];
+  /** Normalized agent lines not known to be in the stream yet, by bseq (normalize.ts is stateful: a replay reuses these). */
+  private readonly normalized = new Map<number, ReturnType<SessionNormalizer["line"]>>();
   private draining: Promise<void> = Promise.resolve();
   /** Commands handed to the bridge and not acked yet, by the id its ack names. */
   private readonly delivered = new Map<string, Command>();
@@ -229,46 +231,66 @@ export class S2Transport implements Transport {
       throw w?.error instanceof FencedError ? w.error : new Error("not connected");
     }
     const durable: Promise<void>[] = [];
-    // State frames wait for the events before them to be durable: a heartbeat's drain must not send them early.
-    const state: StateFrame[] = [];
+    // State frames wait for the events before them to be durable: a heartbeat's drain must not send them early. Each entry
+    // remembers the agent line it came from (none for control frames), so a partial failure keeps what was committed.
+    const state: { bseq?: number; frame: StateFrame }[] = [];
     const handled: object[] = [];
+    const lines: number[] = [];
     for (const f of frames) {
       if (f.t === "event") {
         if (f.bseq <= this.normalizedBseq) continue; // a resend of what is already in the stream
         this.normalizedBseq = f.bseq;
-        const line = this.norm.line(f.raw);
-        state.push(...line.state);
-        const events = line.events;
-        if (events.length) durable.push(w.append([{ bseq: f.bseq, body: JSON.stringify(events) }]));
+        lines.push(f.bseq);
+        this.appendLine(w, f.bseq, f.raw, state, durable);
         continue;
       }
       if (this.processed.has(f)) continue;
       this.processed.add(f);
       handled.push(f);
-      if (f.t === "ack") {
-        const cmd = this.delivered.get(f.id);
-        if (cmd) {
-          this.delivered.delete(f.id);
-          this.snapshot = this.snapshot.filter((e) => e.cid !== cmd.cid);
-          durable.push(w.ack(cmd));
-        } else this.lateAcks.add(f.id); // delivered by an earlier tail: acked when this one reads it again
-      }
+      if (f.t === "ack") this.ackFrame(w, f.id, durable);
       const notes = SessionNormalizer.noteFor(f);
       if (notes.length) durable.push(w.note(JSON.stringify(notes)));
-      state.push(f);
+      state.push({ frame: f });
     }
     try {
       await Promise.all(durable);
     } catch (e) {
-      // Not durable: the outbox retries these frames after the reconnect, so they must be handled again then.
-      for (const f of handled) this.processed.delete(f);
-      this.broken(e, w);
+      // Not durable: the outbox retries these frames after the reconnect, so they must be handled again then. What the lines
+      // already in the stream implied is kept (a resend skips them); the others replay from `normalized`, unchanged.
+      this.pushFailed(e, w, handled, state, lines);
       throw e;
     }
-    this.stateQueue.push(...state);
+    for (const b of lines) this.normalized.delete(b);
+    this.stateQueue.push(...state.map((s) => s.frame));
     await this.flushState();
     return { ok: true };
   };
+
+  /**
+   * One agent line, normalized once: a line whose append failed is replayed after the reconnect with the output it had (the
+   * normalizer's turn state moved on when it was first seen), not normalized again.
+   */
+  private appendLine(w: BridgeWriter, bseq: number, raw: unknown, state: { bseq?: number; frame: StateFrame }[], durable: Promise<void>[]) {
+    const line = this.normalized.get(bseq) ?? this.norm.line(raw);
+    this.normalized.set(bseq, line);
+    for (const frame of line.state) state.push({ bseq, frame });
+    if (line.events.length) durable.push(w.append([{ bseq, body: JSON.stringify(line.events) }]));
+  }
+
+  private pushFailed(e: unknown, w: BridgeWriter, handled: object[], state: { bseq?: number; frame: StateFrame }[], lines: number[]) {
+    for (const f of handled) this.processed.delete(f);
+    for (const s of state) if (s.bseq !== undefined && s.bseq <= w.lastBseq) this.stateQueue.push(s.frame);
+    for (const b of lines) if (b <= w.lastBseq) this.normalized.delete(b);
+    this.broken(e, w);
+  }
+
+  private ackFrame(w: BridgeWriter, id: string, durable: Promise<void>[]) {
+    const cmd = this.delivered.get(id);
+    if (!cmd) return void this.lateAcks.add(id); // delivered by an earlier tail: acked when this one reads it again
+    this.delivered.delete(id);
+    this.snapshot = this.snapshot.filter((e) => e.cid !== cmd.cid);
+    durable.push(w.ack(cmd));
+  }
 
   /**
    * Sends the queued state frames, one drain at a time (a heartbeat and a push may overlap: each sends and removes only what it

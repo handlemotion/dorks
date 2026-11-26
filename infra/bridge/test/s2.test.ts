@@ -22,7 +22,14 @@ function setup() {
   const admin = new S2({ token: ROOT, basin: "basin", accountUrl: ACCOUNT_URL, basinUrl: BASIN_URL, fetch: fake.fetch });
   const worker = new StandInWorker({ admin, org: "org1", session: "sess1", secret: SECRET, kek: "k".repeat(32) });
   const bridge = () => {
-    const t = new S2Transport({ dorkId: "sess1", secret: SECRET, workerUrl: "http://worker.test", log: () => {}, fetch: (u, i) => worker.handle(new Request(u, i)), s2Fetch: fake.fetch });
+    const t = new S2Transport({
+      dorkId: "sess1",
+      secret: SECRET,
+      workerUrl: "http://worker.test",
+      log: () => {},
+      fetch: (u, i) => worker.handle(new Request(u, i)),
+      s2Fetch: (u, i) => fake.fetch(u, i),
+    });
     transports.push(t);
     const seen: CommandEntry[][] = [];
     t.subscribeCommands(
@@ -87,6 +94,33 @@ describe("S2Transport", () => {
     const items = (await worker.transcript()).filter((i) => i.kind === "event");
     expect(items).toHaveLength(1);
     expect((await worker.rawEvents()).filter((r) => r.headers?.[0]?.[1] === "ev")).toHaveLength(1);
+  });
+
+  it("keeps a failed push's normalization for the replay: the final message is still named, state is not lost", async () => {
+    const { fake, worker, bridge } = setup();
+    const a = bridge();
+    await a.t.connect();
+    const frames = [
+      ev(1, { type: "system", subtype: "init", session_id: "s-9" }),
+      ev(2, { type: "assistant", message: { id: "m1", content: [{ type: "text", text: "answer" }] } }),
+      ev(3, { type: "result", duration_ms: 7 }),
+    ];
+    const realFetch = fake.fetch;
+    let appends = 0;
+    // The first append lands, the second is refused for good: the writer fails, the transport reconnects.
+    const failing = async (u: RequestInfo | URL, i?: RequestInit) =>
+      i?.method === "POST" && String(u).includes("/records") && ++appends === 2 ? new Response(JSON.stringify({ code: "invalid" }), { status: 422 }) : realFetch(u, i);
+    (fake as { fetch: typeof fetch }).fetch = failing as typeof fetch;
+    await expect(a.t.push(frames)).rejects.toBeTruthy();
+    (fake as { fetch: typeof fetch }).fetch = realFetch;
+    await a.t.connect();
+    await a.t.push(frames); // the outbox's retry
+    const bodies = (await worker.transcript()).flatMap((i) => (i.kind === "event" ? JSON.parse(i.body) : []));
+    expect(bodies).toEqual([
+      { type: "assistant_message", messageId: "m1", text: "answer" },
+      { type: "turn_complete", durationMs: 7, outcome: "done", finalMessageId: "m1" },
+    ]);
+    expect(worker.state.map((f) => f.t)).toEqual(["session", "preview"]);
   });
 
   it("names the turn's final message and reports turn boundaries to the Worker", async () => {
