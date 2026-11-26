@@ -260,6 +260,11 @@ export interface AntigravitySignIn {
   state: "signed_out" | "installing" | "signing_in" | "failed";
   url?: string;
   error?: string;
+  /**
+   * The sign-in runs away from this browser (a cloud org: agy signs in inside a Boat sandbox), so Google's localhost redirect never
+   * loads here: the address the browser ends on is always pasted (finishAntigravitySignIn).
+   */
+  remote?: boolean;
 }
 
 /** `POST /api/boat/check`: whether Boat accepts a key (and organization) before anything is saved. */
