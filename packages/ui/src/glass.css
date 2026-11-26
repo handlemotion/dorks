@@ -72,8 +72,8 @@ h6 {
   --brand-foreground: #ffffff;
   /* A brand fill under the pointer: the blue multiplied darker, not lightened toward white. */
   --brand-hover: color-mix(in oklab, var(--brand), black 16%);
-  /* The one danger fill (destructive buttons): a strong red under white text, 4.6:1. */
-  --danger: oklch(0.577 0.245 27.325);
+  /* The one danger fill (destructive buttons): a bright, saturated red under white text, 4.2:1. */
+  --danger: oklch(0.61 0.255 26);
   --danger-foreground: #ffffff;
   --danger-hover: color-mix(in oklab, var(--danger), black 12%);
   /* The brand circle drawn behind onboarding (components/BrandCircle.tsx in the web app). */
@@ -111,7 +111,7 @@ html:root {
   --brand-foreground: #ffffff;
   --brand-line: oklch(1 0 0 / 8%);
   /* The same strong red in dark: --destructive lightens for text, a fill under white text must not. */
-  --danger: oklch(0.577 0.245 27.325);
+  --danger: oklch(0.61 0.255 26);
   --danger-foreground: #ffffff;
   --danger-hover: color-mix(in oklab, var(--danger), black 12%);
   /* Lighter in dark, to read on the dark app. */
