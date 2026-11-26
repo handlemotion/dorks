@@ -852,7 +852,8 @@ export function Composer({
     textRef.current?.focus()
   }, [focusKey, disabled])
   useTypeToFocus(textRef, !!typeToFocus && !disabled)
-  const hasContent = text.trim().length > 0 || ready.length > 0
+  // A reply with a note is a message on its own: the note is what the owner wrote.
+  const hasContent = text.trim().length > 0 || ready.length > 0 || !!reply?.note?.trim()
   const { needsRepo, hint } = modeOf(mode, placeholder)
   const canSend = hasContent && !uploading && !locked && (!environment || !needsRepo || !!environment.value.repo.trim())
   const submit = async (handler = onSubmit) => {

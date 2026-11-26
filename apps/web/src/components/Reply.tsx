@@ -36,7 +36,8 @@ export const SEND_KEY = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.te
 /**
  * Selecting text in the agent's messages offers a small Reply button on the selection; nothing takes focus, so the selection stays
  * the browser's own and can still be changed. Pressing Reply opens a compact box there: the passage, quoted on one line, and a field
- * for the answer. Enter (or the arrow) attaches the passage to the composer as a reply, with anything typed as the composer's text;
+ * for the answer. Enter (or the arrow) attaches the passage to the composer as a reply, with anything typed as the reply's note (shown
+ * in its banner; the composer's box stays empty, and the reply can be sent as it is);
  * ⌘ Enter (Ctrl Enter) sends it right away. The arrow's tooltip says so. The passage stays highlighted (CSS Custom Highlight) while
  * the box is open, since focusing the field clears the real selection.
  */
@@ -232,8 +233,17 @@ function ReplyLine({ reply, className = '' }: { reply: Reply; className?: string
 /** The composer's banner: what the next message replies to, and an X to drop it. */
 export function ReplyBanner({ reply, onClear }: { reply: Reply; onClear: () => void }) {
   return (
-    <div data-testid="composer-reply" className="flex h-8 w-full min-w-0 items-center gap-1 rounded-[7px] bg-foreground/[0.04] pr-1 pl-2.5 text-[13px] text-muted-foreground">
-      <ReplyLine reply={reply} className="flex-1" />
+    <div data-testid="composer-reply" className="flex min-h-8 w-full min-w-0 items-start gap-1 rounded-[7px] bg-foreground/[0.04] py-1 pr-1 pl-2.5 text-[13px] text-muted-foreground">
+      {/* The passage on one line, then the owner's note under it: the note is part of the reply, sent with it. */}
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-[3px]">
+        <ReplyLine reply={reply} />
+        {/* Under the passage's text, past the reply icon (14px and an 8px gap). */}
+        {reply.note && (
+          <p data-testid="composer-reply-note" className="line-clamp-3 pl-[22px] whitespace-pre-wrap text-foreground">
+            {reply.note}
+          </p>
+        )}
+      </div>
       <Tip label="Remove reply">
         <InputGroupButton
           size="icon-xs"
