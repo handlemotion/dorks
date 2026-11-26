@@ -123,6 +123,48 @@ describe("S2Transport", () => {
     expect(worker.state.map((f) => f.t)).toEqual(["session", "preview"]);
   });
 
+  it("writes a secure input's request and its answer to the transcript once each", async () => {
+    const { worker, bridge } = setup();
+    const req = { type: "input_request", requestId: "rq-1", title: "Key", fields: [{ name: "API_KEY", label: "API key" }] };
+    const res = { type: "input_response", requestId: "rq-1", status: "provided", names: ["API_KEY"] };
+    worker.rpcResult = (op, args) =>
+      op !== "input"
+        ? null
+        : (args as { action: string }).action === "request"
+          ? { requestId: "rq-1", status: "pending", event: req }
+          : { requestId: "rq-1", status: "provided", names: ["API_KEY"], event: res };
+    const a = bridge();
+    await a.t.connect();
+    expect(await a.t.input({ action: "request", title: "Key", fields: [] })).toEqual({ requestId: "rq-1", status: "pending" });
+    await a.t.input({ action: "wait", requestId: "rq-1" });
+    await a.t.input({ action: "wait", requestId: "rq-1" }); // a second wait returns the same answer
+    const notes = (await worker.transcript()).flatMap((i) => (i.kind === "note" ? JSON.parse(i.body) : []));
+    expect(notes).toEqual([req, res]);
+  });
+
+  it("keeps a secure input's event through a failed append and writes it after the reconnect", async () => {
+    const { fake, worker, bridge } = setup();
+    const req = { type: "input_request", requestId: "rq-2", title: "Key", fields: [] };
+    worker.rpcResult = (op) => (op === "input" ? { requestId: "rq-2", status: "pending", event: req } : null);
+    const a = bridge();
+    a.t.onReconnect(() => void a.t.connect()); // what the bridge's handshake does
+    await a.t.connect();
+    const realFetch = fake.fetch;
+    let failed = false;
+    (fake as { fetch: typeof fetch }).fetch = (async (u: RequestInfo | URL, i?: RequestInit) => {
+      if (!failed && i?.method === "POST" && String(u).includes("/records")) {
+        failed = true;
+        return new Response(JSON.stringify({ code: "invalid" }), { status: 422 });
+      }
+      return realFetch(u, i);
+    }) as typeof fetch;
+    expect(await a.t.input({ action: "request", title: "Key", fields: [] })).toEqual({ requestId: "rq-2", status: "pending" });
+    expect(failed).toBe(true);
+    expect(worker.connects).toBe(2);
+    const notes = (await worker.transcript()).flatMap((i) => (i.kind === "note" ? JSON.parse(i.body) : []));
+    expect(notes).toEqual([req]);
+  });
+
   it("names the turn's final message and reports turn boundaries to the Worker", async () => {
     const { worker, bridge } = setup();
     const a = bridge();

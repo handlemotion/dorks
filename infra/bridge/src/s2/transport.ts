@@ -30,6 +30,8 @@ const RPC_TIMEOUT_MS = 60_000;
 const RENEW_BEFORE_MS = 5 * 60_000;
 const CALL_CODES = new Set(["invalid", "not_found", "conflict"]);
 const STATE_BATCH = 100;
+/** How long (in 1 s tries) an input call waits for a writer to come back before it fails; the event stays pending either way. */
+const INPUT_NOTE_ATTEMPTS = 60;
 
 export type BridgeGrant = {
   basin: string;
@@ -74,6 +76,11 @@ export class S2Transport implements Transport {
   private readonly delivered = new Map<string, Command>();
   /** Acks for commands the current tail has not read (yet): sent before a reconnect, acked as soon as the new tail reaches them. */
   private readonly lateAcks = new Set<string>();
+  /** `<requestId>|<type>` of the secure-input events already in the transcript. */
+  private readonly inputNotes = new Set<string>();
+  /** Secure-input events the Worker returned that are not in the transcript yet (a failed append): written after the reconnect. */
+  private readonly pendingInputNotes = new Map<string, object>();
+  private readonly inputNoteWrites = new Map<string, Promise<void>>();
   private snapshot: CommandEntry[] = [];
   private readonly commandSubs = new Set<{ on: (c: CommandEntry[]) => void; err: () => void }>();
   private readonly listSubs = new Set<{ on: (v: unknown) => void; err: () => void }>();
@@ -129,6 +136,7 @@ export class S2Transport implements Transport {
     this.snapshot = [];
     this.scheduleRenew(g.tokenExpiresAt);
     this.startTail(w);
+    for (const [key, ev] of this.pendingInputNotes) void this.inputNote(key, ev).catch(() => {});
     this.o.log("s2: connected; events at", w.nextSeq, "bseq", w.lastBseq, "commands from", w.cursor);
     return { afterBridgeSeq: w.lastBseq };
   };
@@ -333,7 +341,49 @@ export class S2Transport implements Transport {
   getImage = (id: string) => this.rpc<{ mime: string; data: string } | null>("get_image", { id });
   build = (args: Record<string, unknown>) => this.rpc<unknown>("build", args);
   local = (args: Record<string, unknown>) => this.rpc<unknown>("local", args);
-  input = (args: Record<string, unknown>) => this.rpc<unknown>("input", args);
+  /**
+   * Secure inputs: in a cloud org only the bridge writes the transcript, so the Worker hands back the client event a request or its
+   * answer adds (`input_request`, `input_response`) and the bridge appends it as a note before answering the agent. Several waits
+   * may return the same answer: each event is written once per request id and type. The agent gets the result without it.
+   */
+  input = async (args: Record<string, unknown>) => {
+    const r = await this.rpc<Record<string, unknown> | null>("input", args);
+    const ev = r?.event as { type?: unknown; requestId?: unknown } | undefined;
+    if (!r || !ev || typeof ev.type !== "string" || typeof ev.requestId !== "string") return r;
+    await this.inputNote(`${ev.requestId}|${ev.type}`, ev);
+    const { event: _event, ...rest } = r;
+    return rest;
+  };
+
+  /**
+   * Writes one secure-input event, once. The Worker has already recorded the request, so a failed append is not the end of it: the
+   * event waits in `pendingInputNotes` through the reconnect and is written by the new writer (also replayed by `connect`).
+   */
+  private inputNote(key: string, ev: object): Promise<void> {
+    if (this.inputNotes.has(key)) return Promise.resolve();
+    this.pendingInputNotes.set(key, ev);
+    const inFlight = this.inputNoteWrites.get(key);
+    if (inFlight) return inFlight;
+    const p = (async () => {
+      for (let attempt = 0; ; attempt++) {
+        const w = this.writer;
+        if (w && !w.error) {
+          try {
+            await w.note(JSON.stringify([ev]));
+            this.pendingInputNotes.delete(key);
+            this.inputNotes.add(key);
+            return;
+          } catch (e) {
+            this.broken(e, w);
+          }
+        } else if (w?.error) this.broken(w.error, w);
+        if (this.closed || attempt >= INPUT_NOTE_ATTEMPTS) throw new Error("not connected");
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    })().finally(() => this.inputNoteWrites.delete(key));
+    this.inputNoteWrites.set(key, p);
+    return p;
+  }
   crew = (args: Record<string, unknown>) => this.rpc<unknown>("crew", args);
   comment = (args: Record<string, unknown>) => this.rpc<unknown>("comment", args);
   ship = (args: Record<string, unknown>) => this.rpc<unknown>("ship", args);
