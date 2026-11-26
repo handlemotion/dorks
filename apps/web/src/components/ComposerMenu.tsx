@@ -59,28 +59,32 @@ export interface Mentions {
 
 /**
  * What a Claude or Codex session's composer offers: the commands (Codex: skills) its agent reported, else the owner's installed skills
- * until it has, and its repository's files. Other agents get the files only. Without `dorkId` (a new session) there are no files yet.
+ * until it has, and its repository's files. Other agents get the files only. A new session (`repo`, no `dorkId`) searches the
+ * repository it will start in.
  */
-export function useMentions(provider: string, dorkId?: string, commands?: AgentCommand[]): Mentions {
+export function useMentions(provider: string, where: { dorkId: string } | { repo?: string }, commands?: AgentCommand[]): Mentions {
   const { actions } = useDorksClient()
   const installed = useSkills()
-  const searchFiles = useCallback((q: string) => actions.searchFiles(dorkId!, q), [actions, dorkId])
+  const dorkId = 'dorkId' in where ? where.dorkId : undefined
+  const repo = 'repo' in where ? where.repo : undefined
+  const searchFiles = useCallback((q: string) => (dorkId ? actions.searchFiles(dorkId, q) : actions.searchRepoFiles(repo!, q)), [actions, dorkId, repo])
   return useMemo(() => {
     const skills = (installed ?? []).map((s) => s.name)
     const offered = commands?.length ? commands : (installed ?? []).map((s) => ({ name: s.name, description: s.description }))
-    return { ...(provider === 'claude' || provider === 'codex' ? { commands: offered, skills } : {}), ...(dorkId ? { searchFiles } : {}) }
-  }, [provider, dorkId, commands, installed, searchFiles])
+    return { ...(provider === 'claude' || provider === 'codex' ? { commands: offered, skills } : {}), ...(dorkId || repo ? { searchFiles } : {}) }
+  }, [provider, dorkId, repo, commands, installed, searchFiles])
 }
 
-type Trigger = { kind: 'command' | 'file'; start: number; query: string }
+/** `inline`: a `/` after the first word, where only skills apply (a command runs only as the message's first word). */
+type Trigger = { kind: 'command' | 'file'; start: number; query: string; inline?: boolean }
 
-/** The `/` or `@` token the caret is in, if any: `/` only as the message's first word (where the agent runs it), `@` anywhere. */
+/** The `/` or `@` token the caret is in, if any: `/` as the message's first word offers commands and skills, later skills only; `@` anywhere. */
 export function triggerAt(text: string, caret: number): Trigger | null {
   let start = caret
   while (start > 0 && !/\s/.test(text[start - 1]!)) start--
   const token = text.slice(start, caret)
   if (token.startsWith('@')) return { kind: 'file', start, query: token.slice(1) }
-  if (token.startsWith('/') && !text.slice(0, start).trim() && !token.slice(1).includes('/')) return { kind: 'command', start, query: token.slice(1) }
+  if (token.startsWith('/') && !token.slice(1).includes('/')) return { kind: 'command', start, query: token.slice(1), ...(text.slice(0, start).trim() ? { inline: true } : {}) }
   return null
 }
 
@@ -109,11 +113,12 @@ const fileItems = (files: string[]): Item[] =>
     return { value: `file:${p}`, insert: `@${p}`, group: 'Files', name: p.slice(slash + 1), detail: slash > 0 ? p.slice(0, slash) : '' }
   })
 
-/** Skills first, then the other commands. */
-function commandItems(commands: AgentCommand[], query: string, skills: Set<string>): Item[] {
+/** Skills first, then the other commands (none `inline`). */
+function commandItems(commands: AgentCommand[], query: string, skills: Set<string>, inline = false): Item[] {
   const matched = matchCommands(commands, query).slice(0, 100)
   const toItem = (c: AgentCommand, group: Item['group']): Item => ({ value: `cmd:${c.name}`, insert: `/${c.name}`, group, name: `/${c.name}`, detail: describe(c) })
-  return [...matched.filter((c) => isSkill(c, skills)).map((c) => toItem(c, 'Skills')), ...matched.filter((c) => !isSkill(c, skills)).map((c) => toItem(c, 'Commands'))]
+  const commandsToo = inline ? [] : matched.filter((c) => !isSkill(c, skills)).map((c) => toItem(c, 'Commands'))
+  return [...matched.filter((c) => isSkill(c, skills)).map((c) => toItem(c, 'Skills')), ...commandsToo]
 }
 
 /** The files matching the query, fetched as it changes; the previous answer stays shown until the next one lands. */
@@ -134,6 +139,15 @@ function useFileMatches(search: Mentions['searchFiles'], query: string | null) {
     }
   }, [search, query])
   return { files: query === null ? [] : (files?.files ?? []), settled: query !== null && files?.query === query }
+}
+
+/**
+ * Whether an open menu shows: rows, or No matches once there is an answer. A file search still on its way shows the last rows; a `/`
+ * mid-message with no skill to match stays quiet, as it is more likely a path or an `and/or` than a skill.
+ */
+function menuShown(trigger: Trigger | null, rows: number, settled: boolean) {
+  if (rows > 0) return true
+  return trigger?.kind === 'command' ? !trigger.inline : settled
 }
 
 /** A token's identity, so a menu closed with Escape stays closed while the caret is in the same token. */
@@ -182,8 +196,8 @@ export function useComposerMenu({ text, setText, textRef, mentions }: { text: st
   const skills = useMemo(() => new Set(mentions?.skills ?? []), [mentions?.skills])
 
   const items = useMemo(
-    () => (open && trigger ? (trigger.kind === 'file' ? fileItems(files) : commandItems(mentions?.commands ?? [], trigger.query, skills)) : []),
-    [open, trigger?.kind, trigger?.query, files, mentions?.commands, skills],
+    () => (open && trigger ? (trigger.kind === 'file' ? fileItems(files) : commandItems(mentions?.commands ?? [], trigger.query, skills, trigger.inline)) : []),
+    [open, trigger?.kind, trigger?.query, trigger?.inline, files, mentions?.commands, skills],
   )
 
   // The first row is active whenever the list changes under it.
@@ -217,7 +231,7 @@ export function useComposerMenu({ text, setText, textRef, mentions }: { text: st
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): boolean => {
-    if (!open || e.nativeEvent.isComposing) return false
+    if (!shown || e.nativeEvent.isComposing) return false
     const action = keyAction(e)
     if (!action || (action !== 'close' && !items.length)) return false
     e.preventDefault()
@@ -231,8 +245,7 @@ export function useComposerMenu({ text, setText, textRef, mentions }: { text: st
   }
 
   const listId = useId()
-  // Shown once there is an answer for what was typed: rows, or No matches (a file search still on its way shows the last rows).
-  const shown = open && (items.length > 0 || trigger?.kind === 'command' || settled)
+  const shown = open && menuShown(trigger, items.length, settled)
   const menu = shown ? <ComposerMenuList listRef={listRef} id={listId} items={items} active={current?.value ?? ''} setActive={setActive} pick={pick} /> : null
   return {
     menu,

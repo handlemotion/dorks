@@ -1437,6 +1437,14 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
           : fail(res, "not_configured", "Connect Sentry in Settings first."),
     ],
     [
+      "GET /api/repo-files",
+      ({ url, res }) => {
+        const q = (url.searchParams.get("q") ?? "").toLowerCase();
+        const files = MOCK_FILES.filter((p) => p.toLowerCase().includes(q)).sort((a, b) => a.length - b.length);
+        json(res, 200, { files, listed: true, truncated: false });
+      },
+    ],
+    [
       "GET /api/github/repos",
       ({ res }) =>
         json(

@@ -332,8 +332,9 @@ function NewDork({
   }
   const { run, pending, error } = usePending()
   const agent = agentGate(provider, claudeReady, codexReady, antigravityReady)
-  const mentions = useMentions(provider)
   const mode = newSessionMode(initialRepo, initialMode, workspace)
+  // Only a code session starts in its repository, so only its `@` menu has files to offer.
+  const mentions = useMentions(provider, { repo: mode === 'code' ? repo || undefined : undefined })
   const picker = newSessionPicker(provider, settings, choice, setChoice)
   return (
     <div className="[&>div]:max-w-none">
