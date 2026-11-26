@@ -250,6 +250,7 @@ export function followSession(
 ): () => void {
   let cursor = o.cursor;
   let readied = false;
+  let retried = false;
   const ready = () => {
     if (readied) return;
     readied = true;
@@ -263,8 +264,10 @@ export function followSession(
   return supervise(
     o,
     async (signal) => {
-      // Only a follow's first grant may come from the cache: a later ask means s2 refused it or it is due for renewal.
-      const kept = o.cached?.get();
+      // Only the first grant of a follow's first run may come from the cache: a later ask, or a run retried after a failure
+      // (a refused tail check included), means that grant may be revoked, so the Worker is asked again.
+      const kept = retried ? undefined : o.cached?.get();
+      retried = true;
       let first: ReadGrant | null = kept && kept.expiresAt - Date.now() > 60_000 ? kept : null;
       if (!cursor) {
         first ??= await grant();
