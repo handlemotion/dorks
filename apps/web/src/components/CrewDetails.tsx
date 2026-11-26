@@ -272,8 +272,9 @@ function CrewArtifacts({ dork, workers }: { dork: DorkView; workers: Worker[] })
 /** A worker's pull request, read live from GitHub as in Chat details, with its merge and branch update. No local changes. Its asks ("Resolve conflicts") go to the worker. */
 function WorkerPr({ worker, onAsk }: { worker: Worker; onAsk: (text: string) => void }) {
   const { actions } = useDorksClient()
-  const pr = usePullRequest(worker.id)
   const url = worker.prUrl
+  // Read by URL: the worker's headline moves to each PR it opens, and a read cached for its previous one must not show under this tab.
+  const pr = usePullRequest(worker.id, url)
   useEffect(() => {
     if (url) actions.refreshPullRequest(worker.id)
   }, [actions, worker.id, url])
@@ -283,9 +284,9 @@ function WorkerPr({ worker, onAsk }: { worker: Worker; onAsk: (text: string) => 
     view: pr.data,
     error: pr.error?.message,
     refresh,
-    merge: async (method, sha) => void (await actions.mergePullRequest(worker.id, method, sha)),
-    updateBranch: (sha) => actions.updatePullRequestBranch(worker.id, sha),
-    markReady: () => actions.markPullRequestReady(worker.id),
+    merge: async (method, sha) => void (await actions.mergePullRequest(worker.id, method, sha, url)),
+    updateBranch: (sha) => actions.updatePullRequestBranch(worker.id, sha, url),
+    markReady: () => actions.markPullRequestReady(worker.id, url),
   }
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">

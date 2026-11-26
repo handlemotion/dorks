@@ -364,7 +364,8 @@ function detailsData(
 function usePullRequestPanel(dorkId: string, dork: { prUrl?: string } | null | undefined): PullRequestPanelData | undefined {
   const { actions } = useDorksClient()
   const prUrl = dork?.prUrl
-  const pr = usePullRequest(dorkId)
+  // Read by URL, so a read cached for the session's previous PR never shows as its new one.
+  const pr = usePullRequest(dorkId, prUrl)
   // The agent just opened (or moved to) a pull request: read it now rather than at the next poller change.
   useEffect(() => {
     if (prUrl) actions.refreshPullRequest(dorkId)
@@ -375,9 +376,9 @@ function usePullRequestPanel(dorkId: string, dork: { prUrl?: string } | null | u
     view: pr.data,
     error: pr.error?.message,
     refresh,
-    merge: async (method, sha) => void (await actions.mergePullRequest(dorkId, method, sha)),
-    updateBranch: (sha) => actions.updatePullRequestBranch(dorkId, sha),
-    markReady: () => actions.markPullRequestReady(dorkId),
+    merge: async (method, sha) => void (await actions.mergePullRequest(dorkId, method, sha, prUrl)),
+    updateBranch: (sha) => actions.updatePullRequestBranch(dorkId, sha, prUrl),
+    markReady: () => actions.markPullRequestReady(dorkId, prUrl),
   }
 }
 
