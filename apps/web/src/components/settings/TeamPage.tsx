@@ -18,7 +18,7 @@ import {
   DropdownMenuTrigger,
 } from '@dorks/ui/dropdown-menu'
 import { usePending } from '../../lib/pending'
-import { orgName, useCloudPlace, type CloudPlace } from '../CloudPlace'
+import { isTeamOrg, orgName, useCloudPlace, type CloudPlace } from '../CloudPlace'
 import { EmptyState } from '../EmptyState'
 import { CreateOrgDialog, OrgMark } from '../OrgSwitcher'
 import { isAdminRole } from './access'
@@ -64,10 +64,11 @@ function Team({ place, org }: { place: CloudPlace; org: CloudOrg }) {
   return (
     <SettingsSections>
       <About place={place} org={org} owner={role === 'owner'} />
-      {org.personal && <Personal />}
-      <Members place={place} org={org} detail={detail} meId={me.id} myRole={role} />
-      {admin && !org.personal && <Invite place={place} org={org} detail={detail} />}
-      {!org.personal && <Leave place={place} org={org} owner={role === 'owner'} />}
+      {/* Members, roles, invitations and leaving are team things (isTeamOrg): a personal org has only you. */}
+      {!isTeamOrg(org) && <Personal />}
+      {isTeamOrg(org) && <Members place={place} org={org} detail={detail} meId={me.id} myRole={role} />}
+      {admin && isTeamOrg(org) && <Invite place={place} org={org} detail={detail} />}
+      {isTeamOrg(org) && <Leave place={place} org={org} owner={role === 'owner'} />}
     </SettingsSections>
   )
 }

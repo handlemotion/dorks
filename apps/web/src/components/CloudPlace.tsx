@@ -96,6 +96,15 @@ export function useCloudInvitations(): CloudInvitation[] {
 }
 
 /** An org's display name: the personal org is the account's own name ("Personal" when signed out or nameless). */
+/**
+ * Whether an org is a team: the one rule for every collaboration surface (attribution, initials, presence, members and roles,
+ * invitations). A personal org has one person, and this Mac with no cloud org (null) has no one else either, so none of it shows.
+ */
+export const isTeamOrg = (org: CloudOrg | null | undefined): org is CloudOrg => !!org && !org.personal
+
+/** Whether the org in use is a team (`isTeamOrg`); false outside the connection gate (design demos). */
+export const useIsTeamOrg = () => isTeamOrg(useCloudPlace()?.org)
+
 export const orgName = (org: CloudOrg | null, cloud: CloudStatus | undefined) => (!org || org.personal ? cloud?.user?.name || 'Personal' : org.name)
 
 /** The server the app shows, when it is not this one. */

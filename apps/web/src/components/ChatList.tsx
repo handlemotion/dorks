@@ -14,7 +14,7 @@ import { DorkIcon, dorkIconState, type DorkIconState } from './DorkIcon'
 import { SIDEBAR_ROW } from './sidebarChrome'
 import { PrIcon, prStatus } from './PrStatus'
 import { STAGE_ICON } from './ShipCard'
-import { PersonAvatar, selfId, useOptionalMe } from './Teammates'
+import { PersonAvatar, useTeamView } from './Teammates'
 import type { Person } from '@dorks/client'
 
 export type PrState = SubscriptionView['state']
@@ -152,9 +152,9 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
   const router = useRouter()
   const iconState = dorkIconState(chat.state, { working: chat.working, attention: chat.attention, unread: chat.unread })
   const iconLabel = ICON_LABEL[iconState]
-  const me = useOptionalMe()
+  const { team, isSelf } = useTeamView()
   // Someone else started it (a teammate, docs/cloud.md): their initials end the title.
-  const starter = chat.createdBy && chat.createdBy.id !== selfId(me) ? chat.createdBy : undefined
+  const starter = team && chat.createdBy && !isSelf(chat.createdBy.id) ? chat.createdBy : undefined
   const prs = chat.prs ?? []
   const shipping = prs.some((p) => p.ship?.status === 'watching')
   // Room for the PRs (and the spinner) at the right edge, and for the archive button beside them on hover. Literal, for Tailwind.
