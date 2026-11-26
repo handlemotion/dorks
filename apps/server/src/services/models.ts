@@ -140,6 +140,8 @@ export function validAntigravityModel(choices: AgentModelChoice[] | undefined, m
 }
 
 const CODEX_MODEL = /^[a-zA-Z0-9._-]{1,64}$/;
+/** What the bridge runs when no Codex model is named (infra/bridge/src/codex.ts). */
+const CODEX_DEFAULT_MODEL = "gpt-6-sol";
 const CODEX_EFFORTS = ["none", "low", "medium", "high", "xhigh", "max"] as const;
 
 /**
@@ -194,7 +196,9 @@ export function chooseModel(app: App, dorkId: string, model: unknown, effort: un
 
 /** Codex's pair, kept as the session's `codexModel`: the bridge restarts Codex on the same thread with it once the turn ends. */
 function chooseCodex(app: App, dork: DorkRow, model: unknown, effort: unknown) {
-  const next = validCodexModel(dork.modelChoices, model, effort);
+  // An effort on Codex's default model names the model that default runs (the one Codex confirmed, else its default), so it is kept.
+  const named = model || (effort ? (dork.codexModel?.model ?? dork.agentModel ?? CODEX_DEFAULT_MODEL) : model);
+  const next = validCodexModel(dork.modelChoices, named, effort);
   if (next?.model === dork.codexModel?.model && next?.effort === dork.codexModel?.effort) return;
   patchDork(app, dork.id, { codexModel: next, agentModel: undefined, agentEffort: undefined });
   if (isAwake(dork.state)) {

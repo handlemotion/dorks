@@ -264,6 +264,11 @@ export interface AntigravitySignIn {
   state: "signed_out" | "installing" | "signing_in" | "failed";
   url?: string;
   error?: string;
+  /**
+   * The sign-in runs away from this browser (a cloud org: agy signs in inside a Boat sandbox), so Google's localhost redirect never
+   * loads here: the address the browser ends on is always pasted (finishAntigravitySignIn).
+   */
+  remote?: boolean;
 }
 
 /** Codex's ChatGPT sign-in, run by the Codex CLI on the server's computer: `signed_out`, `signing_in` (approve at `url`), `failed`. */

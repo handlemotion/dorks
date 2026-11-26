@@ -8,18 +8,20 @@ import { openExternal } from '../lib/desktop'
 import { usePending } from '../lib/pending'
 
 /** A sign-in the server runs with an agent's own CLI on its computer: its state and the link to approve. */
-type SignInState = { state: 'signed_out' | 'installing' | 'signing_in' | 'failed'; url?: string; error?: string }
+type SignInState = { state: 'signed_out' | 'installing' | 'signing_in' | 'failed'; url?: string; error?: string; remote?: boolean }
 
 /**
  * One-button sign-in run by an agent's CLI on the server's computer (Antigravity's Google sign-in, Codex's ChatGPT one): the server
  * hands back the provider's page, which opens in the browser. A browser on another computer cannot reach the CLI's localhost
- * redirect, so the address it ended on can be pasted here instead. Signed in, it offers Sign out where `onSignOut` is set.
+ * redirect, so the address it ended on can be pasted here instead; a sign-in run in a sandbox for a cloud org (`remote`, dorks-cloud
+ * src/runtime/antigravity.ts) opens that paste at once. Signed in, it offers Sign out where `onSignOut` is set.
  */
 export function CliSignIn({
   signedIn,
   view,
   label,
   installing = 'Getting the CLI…',
+  remoteStarting = 'Starting the sign-in…',
   start,
   finish,
   onSignOut,
@@ -28,6 +30,8 @@ export function CliSignIn({
   view?: SignInState | null
   label: string
   installing?: string
+  /** What shows while a cloud org's sandbox starts the sign-in. */
+  remoteStarting?: string
   start: () => Promise<SignInState | null | undefined>
   finish: (url: string) => Promise<unknown>
   onSignOut?: () => Promise<unknown>
@@ -45,14 +49,15 @@ export function CliSignIn({
       const state = await start()
       if (state?.state === 'signing_in' && state.url) openExternal(state.url)
     })
-  if (view?.state === 'installing')
+  // The CLI is being fetched (on this computer), or a cloud org's sandbox is starting its sign-in.
+  if (view?.state === 'installing' || (pending && !!view?.remote))
     return (
       <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <LoaderCircleIcon className="size-3.5 animate-spin" aria-hidden />
-        {installing}
+        {view?.remote ? remoteStarting : installing}
       </span>
     )
-  if (view?.state === 'signing_in' && view.url) return <Waiting url={view.url} finish={finish} />
+  if (view?.state === 'signing_in' && view.url) return <Waiting url={view.url} finish={finish} remote={!!view.remote} />
   return (
     <div className="flex flex-col items-start gap-1.5">
       <Button size="sm" variant="outline" disabled={pending} onClick={go}>
@@ -72,6 +77,7 @@ export function AntigravitySignIn({ settings, signOut }: { settings: Settings; s
       view={settings.antigravitySignIn}
       label="Sign in with Google"
       installing="Getting the Antigravity CLI…"
+      remoteStarting="Starting the Google sign-in…"
       start={actions.signInAntigravity}
       finish={actions.finishAntigravitySignIn}
       onSignOut={signOut ? () => actions.updateSettings({ antigravityToken: '' }) : undefined}
@@ -95,9 +101,9 @@ export function CodexSignIn({ settings, signOut }: { settings: Settings; signOut
 }
 
 /** Approving in the browser: the link again, and the paste for a browser on another computer. */
-function Waiting({ url, finish }: { url: string; finish: (url: string) => Promise<unknown> }) {
+function Waiting({ url, finish, remote }: { url: string; finish: (url: string) => Promise<unknown>; remote: boolean }) {
   const [address, setAddress] = useState('')
-  const [elsewhere, setElsewhere] = useState(false)
+  const [elsewhere, setElsewhere] = useState(remote)
   const { run, pending, error } = usePending()
   return (
     <div className="flex flex-col gap-1.5">
@@ -115,6 +121,7 @@ function Waiting({ url, finish }: { url: string; finish: (url: string) => Promis
           </Button>
         )}
       </div>
+      {remote && <span className="text-xs text-muted-foreground">After you approve, the browser shows a page that can’t load. Paste its address here.</span>}
       {elsewhere && (
         <form
           className="flex items-center gap-2"

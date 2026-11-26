@@ -58,8 +58,8 @@ export interface Mentions {
 }
 
 /**
- * What a Claude session's composer offers: the commands its agent reported (else the owner's installed skills, until it has) and its
- * repository's files. Other agents get the files only. Without `dorkId` (a new session) there are no files yet.
+ * What a Claude or Codex session's composer offers: the commands (Codex: skills) its agent reported, else the owner's installed skills
+ * until it has, and its repository's files. Other agents get the files only. Without `dorkId` (a new session) there are no files yet.
  */
 export function useMentions(provider: string, dorkId?: string, commands?: AgentCommand[]): Mentions {
   const { actions } = useDorksClient()
@@ -68,7 +68,7 @@ export function useMentions(provider: string, dorkId?: string, commands?: AgentC
   return useMemo(() => {
     const skills = (installed ?? []).map((s) => s.name)
     const offered = commands?.length ? commands : (installed ?? []).map((s) => ({ name: s.name, description: s.description }))
-    return { ...(provider === 'claude' ? { commands: offered, skills } : {}), ...(dorkId ? { searchFiles } : {}) }
+    return { ...(provider === 'claude' || provider === 'codex' ? { commands: offered, skills } : {}), ...(dorkId ? { searchFiles } : {}) }
   }, [provider, dorkId, commands, installed, searchFiles])
 }
 
