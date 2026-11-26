@@ -543,22 +543,38 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     });
   };
 
-  /** The fake agent's `input_request` (docs/secure-inputs.md): a login form; `then` continues the turn once the owner answered. */
-  const askInput = (dorkId: string, then: () => void) => {
+  /**
+   * The fake agent's `input_request` (docs/secure-inputs.md): a login form, or one API token; `then` continues the turn once the owner
+   * answered.
+   */
+  const askInput = (dorkId: string, token: boolean, then: () => void) => {
     const requestId = `input-${randomUUID().slice(0, 8)}`;
-    append(dorkId, {
-      type: "input_request",
-      requestId,
-      title: "Page login",
-      description: "Sign in to the account that manages this page. Posts go out as the page.",
-      fields: [
-        { name: "page_login", label: "Email or phone", kind: "email" },
-        { name: "page_password", label: "Password", kind: "secret" },
-      ],
-    });
+    const ask = token
+      ? {
+          title: "Cloudflare API token",
+          description: "To deploy the preview Worker.",
+          fields: [
+            {
+              name: "cf_token",
+              label: "API token",
+              kind: "secret" as const,
+              description: "Needs Workers Scripts:Edit",
+              url: "https://dash.cloudflare.com/profile/api-tokens",
+            },
+          ],
+        }
+      : {
+          title: "Page login",
+          description: "Sign in to the account that manages this page. Posts go out as the page.",
+          fields: [
+            { name: "page_login", label: "Email or phone", kind: "email" as const },
+            { name: "page_password", label: "Password", kind: "secret" as const, url: "https://www.facebook.com/login/identify" },
+          ],
+        };
+    append(dorkId, { type: "input_request", requestId, ...ask });
     inputWaiting.set(requestId, {
       dorkId,
-      names: ["page_login", "page_password"],
+      names: ask.fields.map((f) => f.name),
       answer: (names) => {
         inputWaiting.delete(requestId);
         append(dorkId, names ? { type: "input_response", requestId, status: "provided", names } : { type: "input_response", requestId, status: "dismissed" });
@@ -569,13 +585,13 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
 
   /**
    * The fake agent: a turn of tool calls and a streamed answer, ending idle. A prompt that mentions "computer" first asks to use it;
-   * one that mentions "login" first asks for one (a secure input).
+   * one that mentions "login" or "token" first asks for one (a secure input).
    */
   const runTurn = (dorkId: string, prompt: string, localDone = false): void => {
     const d = dorks.get(dorkId);
     if (!d) return;
-    if (!localDone && /\blogin\b/i.test(prompt)) {
-      later(tick, () => askInput(dorkId, () => runTurn(dorkId, prompt, true)));
+    if (!localDone && /\b(login|token)\b/i.test(prompt)) {
+      later(tick, () => askInput(dorkId, !/\blogin\b/i.test(prompt), () => runTurn(dorkId, prompt, true)));
       return;
     }
     if (!localDone && /\bcomputer\b/i.test(prompt)) {

@@ -11,9 +11,11 @@ another agent is refused with a message saying so.
 
 1. The agent calls `input_request {title, description?, fields}` (dorks MCP server, `infra/bridge/src/mcp.ts`). Each field has a `name`
    (what goes in `{{secret:NAME}}`), a `label`, a `kind` (`text`, `email`, `secret`: masked with a show button, `otp`: a one-time
-   code), and optionally a `description` and `optional: true`. At most 8 fields.
+   code), and optionally a `description` (a few words, the input's placeholder), a `url` (https: the page that has it, e.g. the provider's
+   API tokens page, shown as a link by its host) and `optional: true`. At most 8 fields.
 2. The server (`apps/server/src/services/inputs.ts`) stores an `input_requests` row and appends an `input_request` event. The chat shows a
-   form (`apps/web/src/components/InputRequest.tsx`): Continue, Dismiss, and "Claude can use these but never sees them".
+   form (`apps/web/src/components/InputRequest.tsx`): the title and description once, then each field (a lone field shows no label of its
+   own: the title names it) with its hint as the placeholder and its link under the input; Continue, Dismiss, and "Claude can use these but never sees them".
 3. The tool waits (bridge op `input`, `action: "wait"`, polled in 8 s steps for up to 5 minutes; `input_wait` continues). An unanswered
    request expires after 30 minutes (a durable `input:<id>` timer). One request at a time per session.
 4. The owner submits: `POST /api/dorks/:id/inputs/:requestId {values}` (or `{dismiss: true}`). Each value is encrypted (AES-GCM, additional

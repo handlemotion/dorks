@@ -54,7 +54,11 @@ function parseFields(v: unknown): InputField[] {
   if (v.length > MAX_INPUT_FIELDS) fail("invalid", `At most ${MAX_INPUT_FIELDS} fields in one request.`);
   const fields = v.map((f, i) => {
     const p = inputField.safeParse(f);
-    if (!p.success) return fail("invalid", `fields[${i}] needs a name (a letter, then letters, digits or _), a label and a kind (text, email, secret or otp).`);
+    if (!p.success)
+      return fail(
+        "invalid",
+        `fields[${i}] needs a name (a letter, then letters, digits or _), a label and a kind (text, email, secret or otp); a description is at most 200 characters and a url is https.`,
+      );
     return p.data;
   });
   if (new Set(fields.map((f) => f.name)).size !== fields.length) fail("invalid", "Field names must be unique.");
