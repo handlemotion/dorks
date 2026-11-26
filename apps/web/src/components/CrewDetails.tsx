@@ -310,7 +310,8 @@ function crewArtifacts(dork: DorkView, workers: Worker[], imageUrl: (id: string,
   const artifacts: Artifact[] = sessions.flatMap((s) =>
     (s.images ?? []).map((i, n) => ({
       id: i.id,
-      imageId: i.id,
+      // Comments are the session's own: only the dork's screenshots take them here (a worker's do on its own page).
+      ...(s.id === dork.id ? { imageId: i.id } : {}),
       name: `${s.title} · ${i.caption ?? `Screenshot ${n + 1}`}`,
       type: 'Screenshot',
       src: imageUrl(i.id),
