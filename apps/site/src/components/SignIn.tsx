@@ -287,7 +287,6 @@ function Invite({ id, next, user }: { id: string; next: string | null; user: Use
         <div className="flex flex-col gap-2">
           <h1 className="text-[26px] leading-8 font-medium tracking-[-0.02em]">{state.kind === "joined" ? `You joined ${state.org}` : "Can't join this team"}</h1>
           {state.kind === "failed" ? <p className="text-[15px] leading-[22px] text-neutral-500 dark:text-neutral-400">{state.message}</p> : null}
-          {state.kind === "joined" ? <p className="text-[15px] leading-[22px] text-neutral-500 dark:text-neutral-400">Open Dorks on your Mac and pick {state.org} in the team switcher.</p> : null}
           <Account user={user} />
         </div>
       </div>
@@ -306,13 +305,13 @@ function Invite({ id, next, user }: { id: string; next: string | null; user: Use
   );
 }
 
-/** Which account this is, and a way out of it. */
+/** Which account this is, and a way out of it: one quiet line. */
 function Account({ user }: { user: User }) {
   const [out, setOut] = useState(false);
-  const shown = user.name && user.name !== user.email ? `${user.name} (${user.email})` : user.email;
   return (
-    <p className="text-[15px] leading-[22px] text-neutral-500 dark:text-neutral-400">
-      Signed in as <span className="font-medium text-neutral-950 dark:text-neutral-50">{shown}</span>.{" "}
+    <p className="text-sm text-neutral-500 dark:text-neutral-400">
+      {user.email}
+      {" · "}
       <button
         type="button"
         disabled={out}
@@ -320,7 +319,7 @@ function Account({ user }: { user: User }) {
           setOut(true);
           void authClient.signOut().finally(() => window.location.reload());
         }}
-        className="cursor-pointer underline decoration-neutral-300 underline-offset-4 hover:text-neutral-950 disabled:opacity-50 dark:decoration-neutral-600 dark:hover:text-neutral-50"
+        className="cursor-pointer hover:text-neutral-950 disabled:opacity-50 dark:hover:text-neutral-50"
       >
         Sign out
       </button>
