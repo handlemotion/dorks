@@ -24,6 +24,7 @@ sandbox, repo, branch and PRs), follows them, and reports to the owner. Together
 | At most 8 live (not archived) workers per coordinator, 30 crew notes per sender per hour | Server-side limits, not prompt rules (runaway fan-out and ping-pong loops are the documented failure modes) |
 | Archiving or deleting a coordinator archives its workers, and an archived coordinator or worker can only read, stop and archive (a late tool call cannot start, wake or restore a dork) | Stopping a parent stops its children |
 | The worker's final answer is its report | `turn_complete.finalMessageId` already names it; guidance tells workers to make it a report (outcome, PR, verification, blockers) |
+| A worker's PR outcomes reach its coordinator straight from the poller | A merge or close by the token's own login (usually the owner) wakes no one on the worker's side, so no turn ends and no report follows; without this a nerd waits on a PR that merged long ago |
 
 ## Data
 
@@ -63,7 +64,9 @@ one `dork_get` reports as `settled: true`. `lastAnswer` is the final answer of i
 
 - `apps/server/src/services/crew.ts`: `crewCall(app, caller, tool, args)`, where `caller` is `{owner: true}` or `{dorkId}`. Every
   lookup goes through `scoped()`, which refuses (`not_found`) a dork outside the caller's crew. Reports: `append` hands each
-  `turn_complete` and each `status: error` of a worker to `crewObserve`, which queues a report for its coordinator.
+  `turn_complete` and each `status: error` of a worker to `crewObserve`, which queues a report for its coordinator. It does the same for a worker's PR outcomes from [autonomy](autonomy.md): `pr_merged`,
+  a subscription that stalls or ends as `closed`, and a `notify` carrying a `conflict` (the worker is told to fix it; the report says so).
+  CI failures, reviews and comments stay with the worker, whose turn end reports how it handled them.
 - External MCP: `apps/server/src/http/mcp.ts`, Streamable HTTP on `POST /mcp` of the UI listener. Plain JSON responses, no SSE.
   Answers both the 2026-07-28 stateless shape (`server/discover`, version in `_meta` / `MCP-Protocol-Version`) and the legacy
   `initialize` handshake (no session id is minted). `GET`/`DELETE` are 405. Auth is the owner bearer token (the UI API's); a browser
