@@ -1,0 +1,17 @@
+---
+import Base from "../layouts/Base.astro";
+import Mark from "../components/Mark.astro";
+---
+
+<Base title="Not found · Dorks" description="This page doesn't exist.">
+  <main class="nf">
+    <Mark size={28} />
+    <h1>Page not found</h1>
+    <a class="button secondary" href="/">Go to dorks.build</a>
+  </main>
+</Base>
+
+<style>
+  .nf { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
+  .nf h1 { font-size: 20px; }
+</style>

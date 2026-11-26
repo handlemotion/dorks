@@ -1,0 +1,38 @@
+---
+title: "Introduction"
+description: "Run Claude Code in your own cloud sandboxes, one chat per task, and let it carry each pull request to merge."
+---
+
+Dorks is a desktop app for coding agents. Each task gets a chat and its own [Boat](https://boat.dev) sandbox: a Linux machine in the cloud with a desktop, Chrome, `git` and `gh`. The agent (Claude Code first, Codex optional) works there, opens pull requests and keeps working on them (CI failures, review comments, merge conflicts) until they merge.
+
+Your sandboxes run in your Boat account, with your Claude sign-in and your GitHub login. Nothing is hosted for you: the app runs a small server on your Mac, which dials out to each sandbox. Your Mac opens no inbound port.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Install the app, connect Boat, Claude and GitHub, start a session.
+  </Card>
+  <Card title="Sessions" icon="message" href="/sessions">
+    How a session works, sleeps, wakes and what its sandbox can do.
+  </Card>
+  <Card title="Pull requests" icon="code-pull-request" href="/pull-requests">
+    The agent keeps its PRs green, answers reviews and follows the merge to production.
+  </Card>
+  <Card title="Builds" icon="hammer" href="/builds">
+    Machines with your tools and repositories ready before the agent starts.
+  </Card>
+</CardGroup>
+
+## How it fits together
+
+```text
+ Dorks.app (your Mac)                          Boat cloud
+ ┌──────────────────────────────┐             ┌──────────────────────────┐
+ │ UI ──HTTP──▶ dorks-server    │──── wss ───▶│ sandbox (one per session)│
+ │   SQLite, timers, Boat,      │  dials out  │   dorks-bridge ▶ claude  │
+ │   GitHub poller              │             │   git, gh, Chrome        │
+ └──────────────────────────────┘             └──────────────────────────┘
+```
+
+- **Server**: one local process with a SQLite database. It creates, sleeps and wakes sandboxes, and polls GitHub for what happens on the agent's pull requests.
+- **Bridge**: runs in each sandbox and drives the agent. The server connects out to it through Boat's hosted URL for that box.
+- **App**: the desktop shell starts the server, keeps your Mac awake while agents work and updates itself.

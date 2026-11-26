@@ -1,0 +1,17 @@
+---
+title: "Security"
+description: "What runs where, and what a sandbox can read."
+---
+
+Dorks is a single-owner app. The server runs on your Mac and listens only on `127.0.0.1`, behind an owner token. It dials out to sandboxes; nothing dials in.
+
+- **At rest**: your Boat key, Claude token and CLI secrets are encrypted (AES-GCM) in the app's database. The GitHub token is never stored: it's read from the GitHub CLI when needed.
+- **To a sandbox**: secrets travel only over that sandbox's socket, after both sides prove a per-session secret. They are never in the sandbox's creation environment.
+
+## What a sandbox can read
+
+Code in a sandbox runs with the agent's privileges, so treat it as able to read everything that session was given: your GitHub login's token, the Claude token, your CLI secrets and whatever its desktop shows. Use Dorks on repositories you trust, and consider a dedicated GitHub account for agents.
+
+Previews the agent shows are public URLs until the sandbox stops. Don't show a server that exposes secrets.
+
+Report a vulnerability privately through GitHub's **Security** tab on [handlemotion/dorks](https://github.com/handlemotion/dorks).

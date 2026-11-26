@@ -1,0 +1,13 @@
+---
+title: "iPhone app"
+description: "Your sessions on your phone, through your Mac."
+---
+
+The iPhone app is a second screen for the server on your Mac. It shows your chats, lets you start and steer sessions, see pull requests and slide to merge, and manage skills and automations.
+
+## Pairing
+
+1. On the Mac: **Settings, Phone, Pair a phone**. A QR code appears.
+2. On the phone: sign in (Apple, Google or an email code), then scan it.
+
+The phone reaches the Mac through **Dorks Cloud** (`api.dorks.build`), a small relay. Your Mac dials the relay; the relay forwards the phone's requests and stores none of them. The Mac decides what the phone may do: settings, secrets and access to your computer never cross the relay.

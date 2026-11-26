@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // The edge for dorks.build: the Astro site as static assets, /docs proxied to Mintlify. The relay (dorks-cloud) is api.dorks.build.
+  "name": "dorks-site",
+  "account_id": "473fbe436e39d8f3d33b6bb09afd3dd7",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-11-20",
+  "routes": [
+    { "pattern": "dorks.build", "custom_domain": true },
+    { "pattern": "www.dorks.build", "custom_domain": true },
+  ],
+  "workers_dev": false,
+  "preview_urls": false,
+  // The Worker runs first on every request: www redirects and /docs are its; everything else is env.ASSETS.
+  "assets": { "directory": "./dist", "binding": "ASSETS", "run_worker_first": true, "not_found_handling": "404-page" },
+  "vars": {
+    // The Mintlify site behind /docs.
+    "DOCS_HOST": "dorks.mintlify.site",
+    // "true" once Mintlify serves the site under the /docs base path (its custom domain dorks.build/docs); until then /docs redirects to DOCS_HOST.
+    "DOCS_PROXY": "false",
+  },
+  "observability": { "enabled": true },
+}

@@ -34,7 +34,7 @@ export function loadSecrets(dataDir: string): Secrets {
 }
 
 /** The hosted cloud relay for the iPhone app (docs/mobile.md). */
-export const DEFAULT_CLOUD_URL = "https://dorks-cloud.handle-473.workers.dev";
+export const DEFAULT_CLOUD_URL = "https://api.dorks.build";
 
 const port = (v: string | undefined, d: number) => {
   if (v === undefined || v === "") return d;

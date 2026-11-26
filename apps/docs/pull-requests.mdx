@@ -1,0 +1,22 @@
+---
+title: "Pull requests"
+description: "The agent carries each PR from opened to shipped."
+---
+
+A session doesn't stop at "task done". It opens pull requests, subscribes to them and keeps working until each one is merged or closed.
+
+## What wakes the agent
+
+- **CI fails.** The agent reproduces the failure, runs the checks locally and pushes a fix. After two failed fixes in a row it stops and leaves a comment asking for a human.
+- **A review or comment** from someone your comment policy allows (everyone by default, or an allowlist of logins, bots included).
+- **A merge conflict** or a stacked PR whose base moved: it rebases and fixes it.
+
+When a PR is green and approved, the agent posts a short standby note and goes to sleep. **It never merges.** You merge from the PR tab (squash, merge or rebase, pinned to the commit you reviewed), or on GitHub.
+
+## Shipping
+
+A merged PR isn't a shipped one. After a merge to the default branch, the chat shows a **Ship** card that follows the merge commit: workflow runs, migrations, other apps' checks (Vercel, Cloudflare, Netlify…) and deployments. When the deploy finishes, the agent checks the change on the live URL. If the ship fails, it opens a fix-forward or revert PR.
+
+## Subscribing to other PRs
+
+Any session can follow a PR it didn't open: subscribe from the chat, and the agent treats it like its own.

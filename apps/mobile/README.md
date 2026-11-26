@@ -49,5 +49,5 @@ build. The app versions on its own, outside the desktop's changesets.
 
 | Variable | Purpose |
 |---|---|
-| `EXPO_PUBLIC_CLOUD_URL` | The relay's origin. Default `https://dorks-cloud.handle-473.workers.dev`. |
+| `EXPO_PUBLIC_CLOUD_URL` | The relay's origin. Default `https://api.dorks.build`. |
 | `EAS_PROJECT_ID` | The EAS project; turns on EAS Update (`updates.url`). |

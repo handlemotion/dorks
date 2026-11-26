@@ -1,0 +1,26 @@
+---
+title: "Quickstart"
+description: "From download to your first pull request."
+---
+
+<Steps>
+  <Step title="Install the app">
+    On a Mac with Apple silicon, download the `.dmg` from the [latest release](https://github.com/handlemotion/dorks/releases/latest), drag **Dorks** to Applications and open it. It updates itself from then on.
+  </Step>
+  <Step title="Connect Boat">
+    Paste a [Boat](https://boat.dev) API key. Saving it prepares the base machine every session starts from; that takes about a minute. Sandboxes bill to your Boat account while they are awake, and sleep when idle.
+  </Step>
+  <Step title="Sign in to Claude">
+    Paste a Claude Code token (`claude setup-token`). It is stored encrypted on your Mac and reaches a sandbox only over that sandbox's authenticated socket.
+  </Step>
+  <Step title="Connect GitHub">
+    Dorks uses your GitHub CLI login. Run `gh auth login` once if you haven't. The agent pushes, comments and opens pull requests as that login, so you can sign `gh` in as a dedicated account that only reaches the repositories agents should touch.
+  </Step>
+  <Step title="Start a session">
+    Pick a repository and describe the task. The sandbox boots, the agent clones the repo and starts working. You can steer it at any time; a message sent while it works reaches it at its next step.
+  </Step>
+</Steps>
+
+<Tip>
+  When the agent opens a pull request it subscribes to it. You'll see CI, reviews and the merge in the chat, and the agent fixes what fails. It never merges by itself.
+</Tip>

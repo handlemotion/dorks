@@ -1,0 +1,15 @@
+---
+title: "Automations"
+description: "Instructions an agent runs on a schedule or when something happens."
+---
+
+An automation is a prompt plus one or more triggers. Each run starts an ordinary session, so it sleeps, wakes and opens pull requests like any other.
+
+| Trigger | Fires when |
+| --- | --- |
+| Schedule | Every hour, day, weekday or week at a time in your time zone |
+| Pull request opened, pushed or merged | Something happens on a PR in the repository |
+| Issue opened, comment | A new issue or conversation comment (optionally from certain authors) |
+| Sentry issue, spike, monitor | A new error, an error storm, or a failing uptime or cron monitor |
+
+**Run now** runs it once by hand. Automations run while the app is running; a scheduled time missed while your Mac was off runs once when it's back.
