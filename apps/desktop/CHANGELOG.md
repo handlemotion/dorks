@@ -1,5 +1,37 @@
 # @dorks/desktop
 
+## 0.12.0
+
+### Minor Changes
+
+- [#246](https://github.com/handlemotion/dorks/pull/246) [`5df5d71`](https://github.com/handlemotion/dorks/commit/5df5d71b525a0987b8516b6abbc1f8eb46638041) Thanks [@handlemotion](https://github.com/handlemotion)! - The sidebar's top switcher now lists your Dorks Cloud organizations: sign in from Settings with an emailed code, create an organization, and switch the whole app to its server (your other Macs or an organization's hosted server). The GitHub owner filter moved to a button beside it.
+
+- [#245](https://github.com/handlemotion/dorks/pull/245) [`25a36e6`](https://github.com/handlemotion/dorks/commit/25a36e6ce7d5e3917fee6d291e7188f0a0c6248a) Thanks [@handlemotion](https://github.com/handlemotion)! - Shared chats for teams: a teammate's messages show who sent them and the agent is told who wrote each one, chats show who started them, and the chat header shows who else is looking. Teammates reaching your server through the Dorks cloud are checked against their team role.
+
+### Patch Changes
+
+- [#247](https://github.com/handlemotion/dorks/pull/247) [`ceebc17`](https://github.com/handlemotion/dorks/commit/ceebc17b5daebe133f8b25b5f1443f17cbd4909d) Thanks [@handlemotion](https://github.com/handlemotion)! - Chat has its own automations: on a schedule, a GitHub event or a Sentry issue, they start a chat instead of a code session, and a schedule needs no repository.
+
+- [#255](https://github.com/handlemotion/dorks/pull/255) [`8133d4f`](https://github.com/handlemotion/dorks/commit/8133d4f3b6fb403c9854c8247da9b5409731605b) Thanks [@handlemotion](https://github.com/handlemotion)! - Signed in to Dorks Cloud with no organization picked, the app now works in your personal organization (so its other Macs can be connected to), and an ended Dorks Cloud session is noticed while another server is shown.
+
+- [#252](https://github.com/handlemotion/dorks/pull/252) [`92988d3`](https://github.com/handlemotion/dorks/commit/92988d3764d595c1e4f346c8ea37736f3f504199) Thanks [@handlemotion](https://github.com/handlemotion)! - A nerd's pull request tabs now show their next step, like "Resolve conflicts" on a conflicting PR, which asks the worker that opened it. PR tabs in a nerd's details can be closed.
+
+- [#259](https://github.com/handlemotion/dorks/pull/259) [`f6d657c`](https://github.com/handlemotion/dorks/commit/f6d657caf2907223af0d244f01d33052cab14acf) Thanks [@handlemotion](https://github.com/handlemotion)! - Nerds keep their messages short: at most four lines and one small list, and a longer one is sent back to be cut before you see it.
+
+- [#258](https://github.com/handlemotion/dorks/pull/258) [`035b131`](https://github.com/handlemotion/dorks/commit/035b13166aa60a8de3448afe07c9f655e90333f4) Thanks [@handlemotion](https://github.com/handlemotion)! - Plans now carry their names in the app: Dorks Local, Dorks Teams and Dorks Cloud, in the organization switcher and Settings › Organization.
+
+- [#257](https://github.com/handlemotion/dorks/pull/257) [`6e16b96`](https://github.com/handlemotion/dorks/commit/6e16b96b7ae4e1915054e055eebe66ad8f7564a1) Thanks [@handlemotion](https://github.com/handlemotion)! - A pull request tab no longer shows the session's previous pull request after it opens a new one.
+
+- [#240](https://github.com/handlemotion/dorks/pull/240) [`b6ebdfc`](https://github.com/handlemotion/dorks/commit/b6ebdfc465f643af2b0de785a6910109ea108229) Thanks [@handlemotion](https://github.com/handlemotion)! - Pairing a phone now goes through api.dorks.build, Dorks Cloud's own address.
+
+- [#250](https://github.com/handlemotion/dorks/pull/250) [`fc263ba`](https://github.com/handlemotion/dorks/commit/fc263ba6e46529ccad616b284cd12f63c4197fbe) Thanks [@handlemotion](https://github.com/handlemotion)! - What you type when replying to a passage now rides with the reply instead of filling the composer, and a reply with a note sends on its own. The model menu is a short list across Claude, GPT and Gemini with search over every model, effort and fast mode on top. Toasts are tidier.
+
+- [#248](https://github.com/handlemotion/dorks/pull/248) [`7567ea9`](https://github.com/handlemotion/dorks/commit/7567ea9446204f53905a65f15cbda410d00ad608) Thanks [@handlemotion](https://github.com/handlemotion)! - On a team server, only the person who wrote a preview comment can edit it; they, the team's admins and the owner can delete it.
+
+- [#243](https://github.com/handlemotion/dorks/pull/243) [`68dc5cd`](https://github.com/handlemotion/dorks/commit/68dc5cd45595287c1df1cb2ce12465ec369b7ec7) Thanks [@handlemotion](https://github.com/handlemotion)! - Ship, build and todo cards in the chat reach a little past the text column, so what's inside them lines up with the thread. The avatar in the account menu is a little smaller.
+
+- [#244](https://github.com/handlemotion/dorks/pull/244) [`48178da`](https://github.com/handlemotion/dorks/commit/48178da8061094749c3522c785e878adb1d266ff) Thanks [@handlemotion](https://github.com/handlemotion)! - The title bar switches between two workspaces, Agents (code sessions and nerds) and Chat, instead of listing chats and code together. Nerds have their own group in the sidebar and are always green; the composer drops its mode menu and names the session's build.
+
 ## 0.11.0
 
 ### Minor Changes
