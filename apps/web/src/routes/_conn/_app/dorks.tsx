@@ -273,7 +273,7 @@ function NewDork({
   const { run, pending, error } = usePending()
   const agent = agentGate(provider, claudeReady, codexReady, antigravityReady)
   const mentions = useMentions(provider)
-  const [mode, setMode] = useNewSessionMode(initialRepo, initialMode, workspace)
+  const mode = newSessionMode(initialRepo, initialMode, workspace)
   return (
     <div className="[&>div]:max-w-none">
       {agent.notice && <AgentNotice provider={provider} />}
@@ -281,7 +281,7 @@ function NewDork({
         text={message}
         setText={setMessage}
         environment={{ builds: built, repositories, value: env, onChange: setPicked }}
-        mode={{ value: mode, onChange: setMode }}
+        mode={{ value: mode }}
         provider={provider}
         setProvider={setProvider}
         codexEnabled={codexReady}
@@ -319,32 +319,14 @@ function NewDork({
   )
 }
 
-const MODE_KEY = 'dorks.new-session-mode'
-
 /**
- * The new session's mode (docs/modes.md): code from a repository's +, a nerd from the Nerds group's +, a chat in the Chat workspace;
- * otherwise in Agents the one of code and nerd picked last, remembered per browser. The composer's mode menu still offers all three.
+ * The new session's mode (docs/modes.md), with no menu of its own: a chat in the Chat workspace, a nerd from the Nerds group's +, else a
+ * code session.
  */
-function useNewSessionMode(initialRepo: string | undefined, preset: DorkMode | undefined, workspace: AppWorkspace) {
-  const [mode, setMode] = useState<DorkMode>(() => {
-    if (initialRepo) return 'code'
-    if (preset) return preset
-    if (workspace === 'chat') return 'chat'
-    try {
-      return localStorage.getItem(MODE_KEY) === 'nerd' ? 'nerd' : 'code'
-    } catch {
-      return 'code'
-    }
-  })
-  const pick = (m: DorkMode) => {
-    setMode(m)
-    try {
-      localStorage.setItem(MODE_KEY, m)
-    } catch {
-      // Not remembered.
-    }
-  }
-  return [mode, pick] as const
+function newSessionMode(initialRepo: string | undefined, preset: DorkMode | undefined, workspace: AppWorkspace): DorkMode {
+  if (initialRepo) return 'code'
+  if (preset) return preset
+  return workspace === 'chat' ? 'chat' : 'code'
 }
 
 type DorkView = NonNullable<ReturnType<typeof useDork>>

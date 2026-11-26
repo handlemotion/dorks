@@ -317,11 +317,10 @@ export function AppSidebarView({
               </nav>
             ) : (
               <>
-                {nerds.length > 0 && (
-                  <Group id="nerds" label="Nerds" add={{ search: { mode: 'nerd' }, label: 'New nerd' }} open={!collapsed.has('nerds')} onOpenChange={(next) => toggle('nerds', next)}>
-                    <ChatList chats={nerds} orderKey={`${orderKey}.nerds`} to={chatTo} activeId={activeId} onArchive={onArchive} />
-                  </Group>
-                )}
+                {/* Always shown: its + is where a nerd starts (the composer has no mode menu). */}
+                <Group id="nerds" label="Nerds" add={{ search: { mode: 'nerd' }, label: 'New nerd' }} open={!collapsed.has('nerds')} onOpenChange={(next) => toggle('nerds', next)}>
+                  <ChatList chats={nerds} orderKey={`${orderKey}.nerds`} to={chatTo} activeId={activeId} onArchive={onArchive} />
+                </Group>
                 {groups.map(([repo, list]) => {
                   const key = repo || 'other'
                   return (

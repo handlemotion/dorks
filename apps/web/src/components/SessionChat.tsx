@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
 import type { Block } from '@dorks/shared'
-import type { AgentModelChoice, DorkMode } from '@dorks/shared'
-import { useConnection, useDork, useDorkEvents, useDorksClient, useSettings } from '@dorks/client/react'
+import type { AgentModelChoice } from '@dorks/shared'
+import { useBuilds, useConnection, useDork, useDorkEvents, useDorksClient, useSettings } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
 import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport } from '@dorks/ui/message-scroller'
 import { AgentStatus } from './AgentStatus'
@@ -12,7 +12,6 @@ import { UsageMenu } from './UsageMenu'
 import { useMentions } from './ComposerMenu'
 import { Composer, withImages, type AttachedImage, type ModelPicker } from './ChatComposer'
 import { LocalAccessProvider } from './LocalRequest'
-import type { ModeChoice } from './ModeMenu'
 import { QueuedMessages } from './QueuedMessages'
 import { SEND_KEY } from './Reply'
 import { getDraft, useDraft, useDraftSetter } from '../lib/draft'
@@ -22,11 +21,11 @@ import { currentStep, stepLabel } from '../lib/progress'
 
 export type DorkView = NonNullable<ReturnType<typeof useDork>>
 
-/** The session's mode menu (docs/modes.md): a worker keeps the mode its nerd gave it; anything else switches, and the agent restarts with it once its turn ends. */
-const sessionMode = (dork: DorkView, change: (mode: DorkMode) => void): ModeChoice => ({
-  value: dork.mode ?? 'code',
-  ...(dork.parentId ? { lockedReason: 'A worker keeps the mode its nerd gave it' } : { onChange: change }),
-})
+/** A session's mode; an older server sends none for code. */
+const modeOf = (dork: DorkView) => dork.mode ?? 'code'
+
+/** The build a session runs on, for the composer's bar: its name, null on the base machine, undefined while the builds load. */
+const buildName = (dork: DorkView, builds: { id: string; name: string }[] | undefined) => (dork.buildId ? builds?.find((b) => b.id === dork.buildId)?.name : null)
 
 type SendWith = (deliver: (message: string) => Promise<unknown>) => (images: AttachedImage[]) => Promise<boolean>
 
@@ -226,8 +225,8 @@ export function SessionChat({
   const { run, pending, error } = usePending()
   const stop = usePending()
   const modelSwitch = usePending()
-  const modeSwitch = usePending()
   const settings = useSettings()
+  const builds = useBuilds()
   const { live } = useConnection()
   const agent = AGENT_NAMES[dork.provider]
   const mentions = useMentions(dork.provider, dorkId, dork.commands)
@@ -308,12 +307,13 @@ export function SessionChat({
       </MessageScrollerProvider>
       <DraftComposer
         repo={dork.repo}
-        mode={sessionMode(dork, (mode) => void modeSwitch.run(() => actions.setMode(dorkId, mode)))}
+        build={buildName(dork, builds)}
+        mode={{ value: modeOf(dork) }}
         placeholder={queueing.placeholder}
         provider={dork.provider ?? 'claude'}
         pending={pending}
         disabled={dork.archived}
-        error={[error, stop.error, queueing.error, extraError, modelSwitch.error, modeSwitch.error].find(Boolean) ?? ''}
+        error={[error, stop.error, queueing.error, extraError, modelSwitch.error].find(Boolean) ?? ''}
         agentLabel={dork.codexModel?.model}
         picker={claudePicker(dork, settings?.claudeModels, (model, effort, fast) => void modelSwitch.run(() => actions.chooseModel(dorkId, model ?? null, effort ?? null, fast)))}
         upload={actions.uploadImage}
