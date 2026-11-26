@@ -231,6 +231,40 @@ export interface SessionCursor {
   bseq: number;
 }
 
+/** Events per record in a session's numbering: the Worker's REST page (dorks-cloud src/runtime/events.ts) numbers them the same. */
+export const SEQ_PER_RECORD = 1000;
+
+/**
+ * One record's client events, as transcript rows. The bridge writes each agent line's events, and each card it adds (a "note"), as
+ * one record whose body is a JSON array of event bodies; an event's seq is the record's s2 seq_num * 1000 + its index there, its ts
+ * the record's timestamp. A body that is one object is one event.
+ */
+export function sessionEvents(dorkId: string, seq: number, timestamp: number, body: string): ClientEvent[] {
+  let v: unknown;
+  try {
+    v = JSON.parse(body);
+  } catch {
+    return [];
+  }
+  return (Array.isArray(v) ? v : [v])
+    .slice(0, SEQ_PER_RECORD)
+    .filter((e): e is Record<string, unknown> => !!e && typeof e === "object" && typeof (e as { type?: unknown }).type === "string")
+    .map((e, i) => ({ ...e, seq: seq * SEQ_PER_RECORD + i, dorkId, ts: timestamp }) as unknown as ClientEvent);
+}
+
+/** The user_message a command echo stands for (a `user_message` CommandFrame), as its transcript row; none for other commands. */
+export function messageEvents(dorkId: string, seq: number, timestamp: number, body: string): ClientEvent[] {
+  let f: { t?: unknown; text?: unknown; by?: { id?: unknown; name?: unknown } };
+  try {
+    f = JSON.parse(body);
+  } catch {
+    return [];
+  }
+  if (f?.t !== "user_message" || typeof f.text !== "string") return [];
+  const by = f.by && typeof f.by.id === "string" ? { id: f.by.id, name: typeof f.by.name === "string" ? f.by.name : "" } : undefined;
+  return sessionEvents(dorkId, seq, timestamp, JSON.stringify([{ type: "user_message", text: f.text, ...(by ? { by } : {}) }]));
+}
+
 /**
  * Follows one session's `events` stream into the transcript. The first follow checks the stream's tail, then calls `ready` (the
  * transcript reads its newest page over REST), then reads from that tail, so nothing appended between the two is missed. Later
@@ -297,12 +331,12 @@ export function followSession(
       };
       try {
         for await (const item of reader.items(signal)) {
-          if (item.kind !== "event") continue; // command echoes: the bridge writes the user's message as an event too
-          try {
-            batch.push(JSON.parse(item.body) as ClientEvent);
-          } catch {
-            continue;
-          }
+          // A person's message is its command's echo (the bridge writes no event for it); other echoes, and the Worker's own messages
+          // to the agent (by "worker": a build decision), are not transcript events.
+          const events =
+            item.kind === "command" ? (item.by === "worker" ? [] : messageEvents(o.dorkId, item.seq, item.timestamp, item.body)) : sessionEvents(o.dorkId, item.seq, item.timestamp, item.body);
+          if (!events.length) continue;
+          batch.push(...events);
           // One s2 batch arrives as a burst of items: hand it over once.
           flush ??= setTimeout(emit, 0);
         }
