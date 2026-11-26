@@ -20,6 +20,9 @@ const cn = (...names: (string | false | null | undefined)[]) => names.filter(Boo
 
 type Vote = 'up' | 'down' | null
 
+/** The time's gutter left of a message, `w-10`. */
+const GUTTER = 40
+
 // Built once: a formatter is costly to make, and every message in a long transcript formats its time.
 const ABSOLUTE = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
 const CLOCK = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
@@ -43,9 +46,12 @@ export function MessageActions({
   onCopy,
   onVote,
   onReply,
+  lead,
 }: {
   /** What Copy puts on the clipboard. */
   text: string
+  /** Shown before the buttons: the message's time, when the left gutter is the chat TOC's. */
+  lead?: ReactNode
   /** Show Good / Bad response (the agent's final answers). */
   rate?: boolean
   onCopy?: (text: string) => void
@@ -88,6 +94,7 @@ export function MessageActions({
 
   return (
     <div data-testid="message-actions" className="relative inline-flex items-center gap-0.5 rounded-(--control-radius) border border-border bg-surface p-px">
+      {lead && <span className="flex items-center pr-0.5 pl-1.5">{lead}</span>}
       {rate && (
         <>
           <Tip label="Good response">
@@ -172,6 +179,15 @@ export function HoverActions({
   /** Moves the time down to the message's first line (a bubble's padding). */
   timeClassName?: string
 }) {
+  // The gutter left of the message is the chat TOC's when the two overlap (a narrow pane): the time then moves into the toolbar.
+  // Measured when the message is hovered or focused, the only times the time shows.
+  const [timeInBar, setTimeInBar] = useState(false)
+  const place = (el: HTMLElement) => {
+    if (!sentAt) return
+    const toc = el.closest('[data-slot="message-scroller-viewport"]')?.parentElement?.querySelector<HTMLElement>(':scope > [data-chat-toc]')
+    const box = toc?.getBoundingClientRect()
+    setTimeInBar(!!box && box.width > 0 && el.getBoundingClientRect().left - GUTTER < box.right)
+  }
   const time = sentAt && (
     <Tip label={formatAbsolute(sentAt)}>
       <time dateTime={sentAt.toISOString()} className="cursor-default text-xs whitespace-nowrap text-muted-foreground tabular-nums">
@@ -180,8 +196,8 @@ export function HoverActions({
     </Tip>
   )
   return (
-    <div data-testid="hover-actions" className={cn('group/msg relative min-w-0', className)}>
-      {time && (
+    <div data-testid="hover-actions" className={cn('group/msg relative min-w-0', className)} onPointerEnter={(e) => place(e.currentTarget)} onFocus={(e) => place(e.currentTarget)}>
+      {time && !timeInBar && (
         <span
           className={cn(
             'absolute top-0 right-full flex h-[1lh] w-10 items-center justify-center opacity-0 transition-opacity duration-150 ease-out group-focus-within/msg:opacity-100 group-hover/msg:opacity-100 motion-reduce:transition-none',
@@ -196,7 +212,7 @@ export function HoverActions({
           the toolbar on any path without leaving the message. `pb-1`, not a margin, so the 4px gap is part of the rail too. Pointer
           events only while shown, so it never takes hover from the message above. */}
       <div className="pointer-events-none absolute right-0 bottom-full -left-10 z-10 flex justify-end pb-1 opacity-0 transition-opacity duration-150 ease-out group-focus-within/msg:pointer-events-auto group-focus-within/msg:opacity-100 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100 motion-reduce:transition-none">
-        <MessageActions {...actions} />
+        <MessageActions {...actions} lead={timeInBar && time} />
       </div>
     </div>
   )
