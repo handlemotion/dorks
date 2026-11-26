@@ -26,6 +26,7 @@ import { ResizablePanel, ResizablePanelGroup } from '@dorks/ui/resizable'
 import { usePanelRef } from 'react-resizable-panels'
 import { PanelResizeHandle } from '@dorks/ui/panel-resize-handle'
 import { Skeleton } from '@dorks/ui/skeleton'
+import { copyText, openContextMenu, type ContextMenuItem } from '../lib/contextMenu'
 import {
   matchesFilter,
   progressStore,
@@ -296,6 +297,12 @@ export function ProgressPanel({ turns, tasks = [] }: { turns: readonly ProgressT
                       aria-expanded={!folded}
                       title={turn.prompt ?? undefined}
                       onClick={() => setFolded(turn.key, !folded)}
+                      onContextMenu={(e) =>
+                        openContextMenu(e, [
+                          { label: folded ? 'Expand' : 'Collapse', onSelect: () => setFolded(turn.key, !folded) },
+                          ...(turn.prompt ? (['separator', { label: 'Copy message', onSelect: () => copyText(turn.prompt!) }] as const) : []),
+                        ])
+                      }
                       className="group/turn sticky top-0 z-10 flex h-8 w-full items-center gap-2 bg-background px-(--details-text) pb-1 text-left text-sm text-foreground outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
                     >
                       <TurnIcon turn={turn} />
@@ -387,6 +394,20 @@ function stepTitle(step: ProgressStep) {
   return kind === 'plan' ? verb : `${verb} ${block.summary}`
 }
 
+/** A step's right-click menu: open its detail, then copy what it ran, read or said, and what it returned. */
+function stepMenu(step: ProgressStep, onShow?: () => void): ContextMenuItem[] {
+  const { block } = step
+  const items: ContextMenuItem[] = onShow ? [{ label: 'Show details', onSelect: onShow }, 'separator'] : []
+  if (block.kind === 'assistant') return [...items, { label: 'Copy message', onSelect: () => copyText(block.text) }]
+  const kind = toolStep(block.name, block.status).kind
+  const input = stepInputText(block)
+  if (kind === 'command') items.push({ label: 'Copy command', onSelect: () => copyText(input ?? block.summary) })
+  else if (kind === 'read' || kind === 'edit') items.push({ label: 'Copy path', onSelect: () => copyText(block.summary) })
+  else if (input) items.push({ label: 'Copy input', onSelect: () => copyText(input) })
+  if (block.preview) items.push({ label: 'Copy output', onSelect: () => copyText(block.preview!) })
+  return items
+}
+
 /**
  * One step: icon, its line, a status dot (brand when it ran, red when it failed, pulsing while it runs) and how long ago it ran.
  * Selected, it takes a fill and a brand mark on the hairline it hangs from; highlighted (one of the steps the thread pointed at), the
@@ -404,6 +425,7 @@ function StepRow({ step, now, selected, highlighted, onSelect }: { step: Progres
       aria-selected={selected}
       data-step-key={step.key}
       onClick={onSelect}
+      onContextMenu={(e) => openContextMenu(e, stepMenu(step, selected ? undefined : onSelect))}
       data-highlighted={highlighted || undefined}
       className={`relative flex h-6 w-full min-w-0 cursor-default items-center gap-2 pr-(--details-text) pl-3 text-left ${selected ? 'bg-foreground/[0.07] text-foreground' : highlighted ? 'bg-foreground/[0.04] text-foreground' : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground'}`}
     >
@@ -589,6 +611,7 @@ const EditDiff = memo(function EditDiff({ path, before, after, themeType }: { pa
     <MultiFileDiff
       oldFile={oldFile}
       newFile={newFile}
+      data-selectable
       className="block [--diffs-bg:var(--background)] [--diffs-font-family:var(--font-mono)] [--diffs-font-size:12px] [--diffs-header-font-family:var(--font-sans)] [--diffs-line-height:20px]"
       options={options}
     />

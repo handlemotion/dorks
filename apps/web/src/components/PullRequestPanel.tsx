@@ -878,6 +878,7 @@ function LazyPatch({ patch, wrap }: { patch: string; wrap: boolean }) {
   return (
     <PatchDiff
       patch={patch}
+      data-selectable
       className="block border-t [--diffs-bg:var(--background)] [--diffs-font-size:12px] [--diffs-line-height:20px] [--diffs-font-family:var(--font-mono)] [--diffs-header-font-family:var(--font-sans)]"
       options={{ diffStyle: 'unified', disableFileHeader: true, overflow: wrap ? 'wrap' : 'scroll', themeType: resolvedTheme === 'dark' ? 'dark' : 'light' }}
     />
