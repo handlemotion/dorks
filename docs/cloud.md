@@ -11,13 +11,21 @@ is simply an org with one member.
 | Plan | What it is |
 |---|---|
 | **free** | Today's Dorks: the relay to your own Mac(s), one person. You bring your own Boat and Claude. |
-| **collab** | A team: members, invitations and roles (owner, admin, member), and an always-on hosted `apps/server` that Dorks runs for the org. Teammates open the same chats on it and send messages; the agent knows who sent each one. Automations, PR polling and timers run there around the clock (a Mac cannot wake at night). Priced per seat; you still bring your own Boat and Claude. |
+| **collab** | A team on an always-on hosted `apps/server` that Dorks runs for the org. Teammates open the same chats on it and send messages; the agent knows who sent each one. Automations, PR polling and timers run there around the clock (a Mac cannot wake at night). Members, invitations and roles (owner, admin, member). You bring your own Claude. |
 
-**Cloud credit** is an add-on, not a plan: sandbox minutes on Dorks' own Boat account instead of your key, billed per minute at a
-markup over Boat's price.
+**Collab pricing** (the numbers live in one `PLAN_CONFIG` in dorks-cloud's `src/entitlements.ts`):
+
+- **One flat price per org**, not per seat: $29/month (a placeholder).
+- **Unlimited members, with a fair-use cap** (50 for now; free has 1). An invitation that would reach it, counting members plus open
+  invitations, gets `403 MEMBER_LIMIT_REACHED`.
+- **200 sandbox hours a month included** (12,000 minutes) on Dorks' own Boat account (**cloud credit**), metered per minute.
+- **A hard stop by default**: when the included hours run out, the org's sandboxes stop until the next period.
+- **Opt-in overage** at 1.5x Boat's price (Boat's default machine is $0.036/h), up to a cap the org's owner sets.
+- **Or your own Boat key**: an org may bring its own Boat key instead of using cloud credit.
 
 `GET /v1/orgs/:orgId/entitlements` (members only) answers
-`{plan: "free"|"collab", seats, seatsUsed, hostedServer, cloudCredit, includedMinutes, usedMinutes, periodEnd, overage}`.
+`{plan: "free"|"collab", memberLimit, members, hostedServer, cloudCredit, includedMinutes, usedMinutes, periodEnd,
+overage: {enabled, capCents, spentCents}, maxConcurrentSandboxes}`.
 
 ## Servers belong to orgs
 
