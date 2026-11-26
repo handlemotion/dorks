@@ -48,6 +48,8 @@ import type {
   CloudPlaces,
   CloudMoveStatus,
   CloudStatus,
+  CloudAccount,
+  CloudUser,
   InputAnswer,
   SettingsPatch,
   SnapshotStatus,
@@ -222,6 +224,15 @@ export function createApi(config: ApiConfig) {
     cloudStartSignIn: () => request<{ url: string }>("POST", "/api/cloud/sign-in"),
     cloudFinishSignIn: (code: string, state: string) => request<CloudStatus>("POST", "/api/cloud/sign-in/finish", { code, state }),
     cloudSignOut: () => request<object>("DELETE", "/api/cloud/session"),
+    /** Settings › Account: the profile and sessions; the picture is a PNG, JPEG or WebP of at most 2 MB, cropped square by the cloud. */
+    cloudAccount: () => request<CloudAccount>("GET", "/api/cloud/account"),
+    cloudRename: (name: string) => request<CloudUser>("PATCH", "/api/cloud/account", { name }),
+    cloudSetAvatar: (image: Blob) => request<CloudUser>("PUT", "/api/cloud/account/avatar", image),
+    cloudRemoveAvatar: () => request<CloudUser>("DELETE", "/api/cloud/account/avatar"),
+    cloudSignOutSession: (id: string) => request<object>("DELETE", `/api/cloud/account/sessions/${encodeURIComponent(id)}`),
+    cloudSignOutOthers: () => request<{ signedOut: number }>("DELETE", "/api/cloud/account/sessions"),
+    /** An org's logo (owners and admins), same rules as the picture; null removes it. */
+    cloudSetOrgLogo: (orgId: string, image: Blob | null) => request<{ logo: string | null }>(image ? "PUT" : "DELETE", `/api/cloud/orgs/${encodeURIComponent(orgId)}/logo`, image ?? undefined),
     cloudPlaces: () => request<CloudPlaces>("GET", "/api/cloud/places"),
     /** Move to cloud (docs/move-to-cloud.md): where it stands, and starting it for this Mac's team org. */
     cloudMove: () => request<CloudMoveStatus>("GET", "/api/cloud/move"),

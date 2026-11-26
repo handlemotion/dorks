@@ -23,6 +23,8 @@ import { EmptyState } from '../EmptyState'
 import { CreateOrgDialog, OrgMark } from '../OrgSwitcher'
 import { isAdminRole } from './access'
 import { showsWhereItRuns, WhereItRuns } from './MoveToCloud'
+import { PictureRow } from './PictureRow'
+import { PersonAvatar } from '../Teammates'
 import { SettingsGroup, SettingsGroupFooter, SettingsInputRow, SettingsRow, SettingsSection, SettingsSections, SettingsSelectRow, SettingsStatus } from './kit'
 
 // Settings › Organization: the Dorks Cloud org you work in now (the sidebar switcher's), through Better Auth's organization endpoints
@@ -79,7 +81,6 @@ function Team({ place, org }: { place: CloudPlace; org: CloudOrg }) {
 
 function About({ place, org, owner }: { place: CloudPlace; org: CloudOrg; owner: boolean }) {
   const [name, setName] = useState(org.name)
-  const [logo, setLogo] = useState(org.logo ?? '')
   const [saved, setSaved] = useState(false)
   const { run, pending, error } = usePending()
   // The plan and what it gives; the personal org is always yours, on Dorks Local unless it pays for more.
@@ -100,16 +101,23 @@ function About({ place, org, owner }: { place: CloudPlace; org: CloudOrg; owner:
         onSubmit={() => {
           setSaved(false)
           void run(async () => {
-            await place.home.actions.cloudOrgAction('update', { organizationId: org.id, data: { name: name.trim(), logo: logo.trim() } })
+            await place.home.actions.cloudOrgAction('update', { organizationId: org.id, data: { name: name.trim() } })
             setSaved(true)
           })
         }}
       >
+        <PictureRow
+          label="Logo"
+          shape="square"
+          image={org.logo}
+          fallback={org.name.trim().charAt(0).toUpperCase() || '·'}
+          onUpload={(p) => place.home.actions.cloudSetOrgLogo(org.id, p)}
+          onRemove={() => place.home.actions.cloudSetOrgLogo(org.id, null)}
+        />
         <SettingsInputRow id="org-name" label="Name" aria-label="organization name" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
-        <SettingsInputRow id="org-logo" label="Logo" description="An image URL" aria-label="organization logo" placeholder="https://…" value={logo} onChange={(e) => setLogo(e.target.value)} />
         <SettingsGroupFooter
           action={
-            <Button type="submit" size="sm" disabled={pending || !name.trim() || (name.trim() === org.name && logo.trim() === (org.logo ?? ''))}>
+            <Button type="submit" size="sm" disabled={pending || !name.trim() || name.trim() === org.name}>
               Save
             </Button>
           }
@@ -170,7 +178,12 @@ function Members({ place, org, detail, meId, myRole }: { place: CloudPlace; org:
         {members.map((m) => (
           <SettingsRow
             key={m.id}
-            label={m.userId === meId ? `${m.user.name || m.user.email} (you)` : m.user.name || m.user.email}
+            label={
+              <span className="inline-flex items-center gap-2">
+                <PersonAvatar person={{ id: m.userId, name: m.user.name || m.user.email }} size="xs" />
+                {m.userId === meId ? `${m.user.name || m.user.email} (you)` : m.user.name || m.user.email}
+              </span>
+            }
             description={m.user.email}
             control={
               canManage(m) ? (

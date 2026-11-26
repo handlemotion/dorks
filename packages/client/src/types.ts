@@ -347,6 +347,23 @@ export interface CloudInvitation {
   expiresAt: string | number;
 }
 
+/** One signed-in session of the Dorks Cloud account (`GET /api/cloud/account`); `current` is this server's own. */
+export interface CloudSession {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  current: boolean;
+}
+
+/** Settings › Account: the account, read fresh, and where it is signed in (`GET /api/cloud/account`). */
+export interface CloudAccount {
+  user: CloudUser;
+  sessions: CloudSession[];
+}
+
 /** An organization with its members and invitations (`GET /api/cloud/auth/organization/get-full-organization`). */
 export interface CloudOrgDetail {
   id: string;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { uiApp } from "../src/http/ui";
-import type { CloudOrg, CloudPlaces, CloudView } from "../src/services/cloudAccount";
+import type { CloudAccountView, CloudOrg, CloudPlaces, CloudView } from "../src/services/cloudAccount";
 import { fakeFetch, harness } from "./harness";
 
 // The Dorks Cloud account (services/cloudAccount.ts): this server signs in to the relay through the browser handoff, keeps the session
@@ -104,5 +104,90 @@ describe("cloud account", () => {
     live = false;
     expect((await call("GET", "/api/cloud/places")).status).toBe(412);
     expect(((await (await call("GET", "/api/cloud")).json()) as CloudView).user).toBeNull();
+  });
+
+  it("edits the profile and the org logo, and lists and signs out sessions, without ever sending a session token to the UI", async () => {
+    let user = { id: "u1", name: "Ada", email: "ada@example.com", image: null as string | null };
+    let sessions = [
+      { id: "s-this", createdAt: "2026-11-01T00:00:00Z", updatedAt: "2026-11-26T00:00:00Z", expiresAt: "2026-12-26T00:00:00Z", ipAddress: null, userAgent: "Bun/1.3", current: true },
+      {
+        id: "s-phone",
+        createdAt: "2026-11-02T00:00:00Z",
+        updatedAt: "2026-11-25T00:00:00Z",
+        expiresAt: "2026-12-25T00:00:00Z",
+        ipAddress: "1.2.3.4",
+        userAgent: "Dorks/1 CFNetwork",
+        current: false,
+        token: "never-shown",
+      },
+    ];
+    const uploads: { path: string; type: string | null; bytes: number }[] = [];
+    const upload = (path: string, init: RequestInit | undefined) => uploads.push({ path, type: new Headers(init?.headers).get("content-type"), bytes: (init?.body as Uint8Array).length });
+    // The relay's routes, by method and path.
+    const routes: Record<string, (init: RequestInit | undefined) => Response> = {
+      "GET /api/auth/get-session": () => Response.json({ session: {}, user }),
+      "POST /api/auth/update-user": (init) => ((user = { ...user, ...(JSON.parse(init?.body as string) as { name: string }) }), Response.json({ status: true })),
+      "POST /v1/me/avatar": (init) => (upload("/v1/me/avatar", init), (user = { ...user, image: "https://relay.test/v1/images/u/u1/a.webp" }), Response.json({ image: user.image })),
+      "DELETE /v1/me/avatar": () => ((user = { ...user, image: null }), Response.json({ image: null })),
+      "GET /v1/me/sessions": () => Response.json(sessions),
+      "DELETE /v1/me/sessions/s-phone": () => ((sessions = sessions.filter((s) => s.id !== "s-phone")), Response.json({})),
+      "DELETE /v1/me/sessions": () => Response.json({ signedOut: 0 }),
+      "POST /v1/orgs/o1/logo": (init) => (upload("/v1/orgs/o1/logo", init), Response.json({ logo: "https://relay.test/v1/images/o/o1/l.webp" })),
+      "POST /v1/orgs/o2/logo": () => Response.json({ error: { code: "forbidden", message: "Only an owner or admin can change the logo" } }, { status: 403 }),
+    };
+    const fetch = fakeFetch((url, init) => {
+      if (url.pathname === "/v1/app-handoff/redeem") return Response.json({ token: "sess-secret", user });
+      if (new Headers(init?.headers).get("authorization") !== "Bearer sess-secret") return Response.json({ error: { message: "unauthorized" } }, { status: 401 });
+      return routes[`${init?.method ?? "GET"} ${url.pathname}`]?.(init) ?? new Response("{}", { status: 404 });
+    });
+    const h = harness({ fetch, config: { cloudUrl: CLOUD } });
+    const ui = uiApp(h.app);
+    const call = (method: string, path: string, body?: unknown, type = "application/json") =>
+      ui.fetch(
+        new Request(`http://127.0.0.1${path}`, {
+          method,
+          headers: { authorization: `Bearer ${h.app.cfg.ownerToken}`, "content-type": type },
+          body: body === undefined ? undefined : body instanceof Uint8Array ? body : JSON.stringify(body),
+        }),
+      );
+
+    expect((await call("GET", "/api/cloud/account")).status).toBe(412); // signed out
+    const { url } = (await (await call("POST", "/api/cloud/sign-in")).json()) as { url: string };
+    await call("POST", "/api/cloud/sign-in/finish", { code: "good-code-1", state: new URL(url).searchParams.get("state") });
+
+    // The account and its sessions, never their tokens.
+    const view = (await (await call("GET", "/api/cloud/account")).json()) as CloudAccountView;
+    expect(view.user.name).toBe("Ada");
+    expect(view.sessions.map((s) => [s.id, s.current])).toEqual([
+      ["s-this", true],
+      ["s-phone", false],
+    ]);
+    expect(JSON.stringify(view)).not.toContain("never-shown");
+
+    // Renaming updates the kept account, so the switcher and attribution read the new name at once.
+    expect(((await (await call("PATCH", "/api/cloud/account", { name: "  Ada King " })).json()) as { name: string }).name).toBe("Ada King");
+    expect(((await (await call("GET", "/api/cloud")).json()) as CloudView).user?.name).toBe("Ada King");
+    expect((await call("PATCH", "/api/cloud/account", { name: "" })).status).toBe(400);
+
+    // The picture: the bytes go to the relay as they are, with their type; a wrong type or a big file never leaves this server.
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+    const set = (await (await call("PUT", "/api/cloud/account/avatar", png, "image/png")).json()) as { image: string };
+    expect(set.image).toBe("https://relay.test/v1/images/u/u1/a.webp");
+    expect(((await (await call("GET", "/api/cloud")).json()) as CloudView).user?.image).toBe(set.image);
+    expect((await call("PUT", "/api/cloud/account/avatar", png, "image/gif")).status).toBe(400);
+    expect((await call("PUT", "/api/cloud/account/avatar", new Uint8Array(2 * 1024 * 1024 + 1), "image/png")).status).toBe(400);
+    expect(uploads).toEqual([{ path: "/v1/me/avatar", type: "image/png", bytes: png.length }]);
+    expect(((await (await call("DELETE", "/api/cloud/account/avatar")).json()) as { image: string | null }).image).toBeNull();
+
+    // Sessions: one signed out by id; ids that are not ids are refused here.
+    expect((await call("DELETE", "/api/cloud/account/sessions/s-phone")).status).toBe(200);
+    expect(((await (await call("GET", "/api/cloud/account")).json()) as CloudAccountView).sessions.map((s) => s.id)).toEqual(["s-this"]);
+    expect((await call("DELETE", "/api/cloud/account/sessions/a%2Fb")).status).toBe(400);
+    expect(await (await call("DELETE", "/api/cloud/account/sessions")).json()).toEqual({ signedOut: 0 });
+
+    // The org logo; the relay decides who may (its refusal comes back as an AppError, not a 401).
+    expect(await (await call("PUT", "/api/cloud/orgs/o1/logo", png, "image/webp")).json()).toEqual({ logo: "https://relay.test/v1/images/o/o1/l.webp" });
+    const refused = await call("PUT", "/api/cloud/orgs/o2/logo", png, "image/png");
+    expect([refused.status, ((await refused.json()) as { error: { message: string } }).error.message]).toEqual([400, "Only an owner or admin can change the logo"]);
   });
 });
