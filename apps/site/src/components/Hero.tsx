@@ -48,14 +48,16 @@ export function Hero() {
   const bgRef = useRef<HTMLImageElement>(null);
   const copyRef = useRef<HTMLDivElement>(null);
   const graphicRef = useRef<HTMLDivElement>(null);
+  const [hasContentUnderNav, setHasContentUnderNav] = useState(false);
   const [onLightSurface, setOnLightSurface] = useState(false);
 
   useEffect(() => {
-    const updateSurface = () => {
+    const updateNavState = (scroll: number) => {
       const section = sectionRef.current;
       const graphic = graphicRef.current;
       const overGraphic = graphic ? graphic.getBoundingClientRect().top <= 64 : false;
       const pastHero = section ? section.getBoundingClientRect().bottom <= 64 : false;
+      setHasContentUnderNav(scroll > 12);
       setOnLightSurface(overGraphic || pastHero);
     };
 
@@ -77,13 +79,13 @@ export function Hero() {
         graphicRef.current.style.transform = `translate3d(0, ${(-progress * 68).toFixed(2)}px, 0)`;
       }
 
-      updateSurface();
+      updateNavState(scroll);
     };
 
     const unsubscribe = subscribeLenisScroll(applyParallax);
-    const onNativeScroll = () => updateSurface();
+    const onNativeScroll = () => updateNavState(window.scrollY);
     window.addEventListener("scroll", onNativeScroll, { passive: true });
-    updateSurface();
+    updateNavState(window.scrollY);
 
     return () => {
       unsubscribe();
@@ -104,25 +106,28 @@ export function Hero() {
 
   return (
     <>
-      <header
-        className={cn(
-          "fixed inset-x-0 top-0 z-40 flex h-16 w-full items-center justify-between border-b px-4 transition-colors duration-200 sm:px-6",
-          onLightSurface ? "border-black/6 bg-white/85 backdrop-blur-md" : "border-transparent bg-transparent",
-        )}
-      >
+      <header className="fixed inset-x-0 top-0 z-40 flex h-16 w-full items-center justify-between bg-transparent px-4 sm:px-6">
+        <div
+          aria-hidden="true"
+          className={cn(
+            "pointer-events-none absolute inset-x-0 top-0 -bottom-4 backdrop-blur-md transition-opacity duration-200 [mask-image:linear-gradient(to_bottom,black_65%,transparent_100%)] [-webkit-mask-image:linear-gradient(to_bottom,black_65%,transparent_100%)]",
+            hasContentUnderNav ? "opacity-100" : "opacity-0",
+          )}
+        />
+
         <a
           href="/"
           onClick={handleScrollToTop}
           aria-label="Scroll to top"
           className={cn(
-            "inline-flex size-8 cursor-pointer items-center justify-center rounded-full transition-[opacity,color] duration-200 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2",
-            onLightSurface ? "text-neutral-950 focus-visible:ring-black/30" : "text-white focus-visible:ring-white/75",
+            "relative z-10 inline-flex size-8 cursor-pointer items-center justify-center rounded-full transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2",
+            onLightSurface ? "text-neutral-950 hover:bg-black/8 focus-visible:ring-black/30" : "text-white hover:bg-black/15 focus-visible:ring-white/75",
           )}
         >
-          <DorksMark size={24} />
+          <DorksMark size={24} className="pointer-events-none" />
         </a>
 
-        <nav aria-label="Primary" className="hidden items-center gap-2.5 sm:absolute sm:left-1/2 sm:flex sm:-translate-x-1/2">
+        <nav aria-label="Primary" className="relative z-10 hidden items-center gap-2.5 sm:absolute sm:left-1/2 sm:flex sm:-translate-x-1/2">
           {navItems.map((item) => (
             <Button key={item.label} variant={onLightSurface ? "navLight" : "nav"} size="default" nativeButton={false} render={<a href={item.href} />}>
               {item.label}
@@ -130,7 +135,7 @@ export function Hero() {
           ))}
         </nav>
 
-        <div className="flex items-center gap-2.5">
+        <div className="relative z-10 flex items-center gap-2.5">
           <Button variant={onLightSurface ? "navLight" : "nav"} size="icon-sm" aria-label="GitHub" nativeButton={false} render={<a href={GITHUB_URL} target="_blank" rel="noreferrer" />}>
             <GitHubIcon />
           </Button>
