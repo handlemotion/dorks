@@ -111,7 +111,7 @@ function ChooseMachine({ place, machines }: { place: CloudPlace; machines: Cloud
       <DesktopLinks />
       <div className="flex w-full max-w-sm flex-col items-center gap-4">
         {machines.length === 0 ? (
-          <EmptyState figure="laptop" title={`Nothing runs ${name} yet`} description="Pair a Mac with this organization, or add a hosted server, and it shows up here." />
+          <EmptyState figure="laptop" title={`Nothing runs ${name} yet`} description="Pair a Mac with this organization, or move it to Dorks Teams for a server Dorks runs, and it shows up here." />
         ) : (
           <EmptyState figure="laptop" title={`Connect to a Mac in ${name}`} description={machines.some((m) => m.online) ? undefined : 'None of its Macs is online. Open Dorks on one of them.'} />
         )}

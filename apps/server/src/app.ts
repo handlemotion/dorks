@@ -65,7 +65,7 @@ export interface Config {
   cloudUrl?: string;
   /** `DORKS_CLOUD_JWKS_URL`: the cloud's signing keys for team identity tokens (docs/cloud.md); default `<cloudUrl>/api/auth/jwks`. */
   cloudJwksUrl?: string;
-  /** `DORKS_ORG_ID`: the dorks-cloud organization this server belongs to (a hosted server); else the one the cloud reports for its pairing. */
+  /** `DORKS_ORG_ID`: the dorks-cloud organization this server belongs to (a server Dorks runs for a Teams or Cloud org); else the one the cloud reports for its pairing. */
   orgId?: string;
 }
 

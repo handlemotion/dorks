@@ -13,7 +13,7 @@ type Seat = { userId: string; role: string; name: string; email: string };
 const person = (userId: string, name: string, email: string, role: string): Seat => ({ userId, name, email, role });
 const RODRIGO = (role: string) => person("user-rodrigo", "Rodrigo Alves", "rodrigo@example.com", role);
 
-/** Night owls invites you; accepting adds it, with its hosted server. */
+/** Night owls invites you; accepting adds it, with the server Dorks runs for it. */
 const NIGHT_OWLS: MockOrg = {
   id: "org-night-owls",
   name: "Night owls",

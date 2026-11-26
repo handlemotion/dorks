@@ -1,5 +1,5 @@
 // The mock's stand-in for Dorks Cloud (docs/mobile.md, "Desktop: Dorks Cloud"): the local server's `/api/cloud` routes, with a
-// fake email-code sign-in (any address, any six digits), the account's places (Macs and organizations with their hosted servers),
+// fake email-code sign-in (any address, any six digits), the account's places (Macs, and organizations with the servers Dorks runs for them),
 // and `/api/cloud/servers/:id/api/*`, answered by a separate in-memory mock server per place, so switching really re-points the app.
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { CloudOrg, CloudServer, CloudStatus, CloudUser, Me } from "./types.ts";
