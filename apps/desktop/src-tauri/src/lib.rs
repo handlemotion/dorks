@@ -2,6 +2,7 @@
 
 mod boot;
 mod commands;
+mod deep_link;
 mod login;
 mod state;
 mod tray;
@@ -33,7 +34,8 @@ pub fn quit(app: &AppHandle) {
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| boot::show_main(app)))
-        .plugin(tauri_plugin_opener::init());
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_deep_link::init());
     #[cfg(feature = "updater")]
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
 
@@ -55,6 +57,7 @@ pub fn run() {
             commands::update_status,
             commands::check_for_update,
             commands::install_update,
+            commands::take_open_route,
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -63,6 +66,7 @@ pub fn run() {
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
             tray::build(app.handle())?;
+            deep_link::start(app.handle());
             updater::start_background_checks(app.handle());
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {

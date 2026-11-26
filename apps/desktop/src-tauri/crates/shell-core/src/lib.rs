@@ -3,6 +3,7 @@
 //! The shell supervises one sidecar, `dorks-server`, and talks to it only through the contract in [`contract`].
 
 pub mod contract;
+pub mod deep_link;
 pub mod health;
 pub mod login;
 pub mod navigation;

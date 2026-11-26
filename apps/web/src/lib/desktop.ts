@@ -97,6 +97,50 @@ export function setWindowTheme(theme: 'light' | 'dark') {
   if (isDesktop()) void invoke('set_window_theme', { theme }).catch(() => {})
 }
 
+/** A link's route not handled yet, and the listeners mounted now (the newest handles it). */
+let unhandled: string | null = null
+const routeListeners: ((route: string) => void)[] = []
+
+function deliver() {
+  const handler = routeListeners.at(-1)
+  if (!unhandled || !handler) return
+  const route = unhandled
+  unhandled = null
+  handler(route)
+}
+
+/** Takes the shell's pending route (a link that came while nothing listened) into `unhandled`, then hands it on. */
+function drainShell() {
+  void invoke<string | null>('take_open_route')
+    .then((route) => {
+      if (route) unhandled = route
+      deliver()
+    })
+    .catch(() => {})
+}
+
+/**
+ * `dorks://` links the desktop app receives (an invitation, a pairing code; docs/desktop.md "Links"), as UI routes (`/invite/<id>`,
+ * `/settings/phone`). Each subscription first asks the shell for a link that arrived while nothing listened (the one that launched
+ * the app, or one that came during a gate screen), then follows new ones. A route is handled once, by the newest listener mounted
+ * when it is ready, so a remount (or React's double mount in development) neither loses it nor opens it twice. Returns an
+ * unsubscribe; a no-op in a browser and in a shell that predates links.
+ */
+export function onOpenRoute(handler: (route: string) => void): () => void {
+  if (!isDesktop()) return () => {}
+  routeListeners.push(handler)
+  let off: (() => void) | undefined
+  let closed = false
+  drainShell()
+  void window.__TAURI__?.event?.listen<string>('dorks://open-route', () => drainShell()).then((u) => (closed ? u() : (off = u)))
+  return () => {
+    closed = true
+    off?.()
+    const i = routeListeners.lastIndexOf(handler)
+    if (i >= 0) routeListeners.splice(i, 1)
+  }
+}
+
 /** Calls `handler` when the shell publishes a changed config (for example after the window chrome changed). Returns an unsubscribe. */
 export function onRuntimeConfig(handler: () => void): () => void {
   const listen = window.__TAURI__?.event?.listen

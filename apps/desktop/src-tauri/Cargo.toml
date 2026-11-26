@@ -31,6 +31,8 @@ dorks-shell-core = { path = "crates/shell-core" }
 tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2"
+# `dorks://` links (invitations, pairing codes): registers the scheme from tauri.conf.json and hands the app each URL (src/deep_link.rs).
+tauri-plugin-deep-link = "2"
 tauri-plugin-updater = { version = "2", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

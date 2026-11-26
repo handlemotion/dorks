@@ -119,3 +119,10 @@ pub async fn check_for_update(app: AppHandle) -> Result<UpdateStatus, String> {
 pub async fn install_update(app: AppHandle) -> Result<(), String> {
     updater::install(&app).await
 }
+
+/// The UI route of the last `dorks://` link (see `deep_link.rs`), once: the UI asks when it has loaded, so a link that launched the
+/// app is not lost before anything listened for `dorks://open-route`.
+#[tauri::command]
+pub fn take_open_route(state: tauri::State<'_, crate::state::AppState>) -> Option<String> {
+    state.open_route.lock().unwrap().take()
+}
