@@ -67,6 +67,8 @@ export interface Config {
   cloudJwksUrl?: string;
   /** `DORKS_ORG_ID`: the dorks-cloud organization this server belongs to (a server Dorks runs for a Teams or Cloud org); else the one the cloud reports for its pairing. */
   orgId?: string;
+  /** The folders skills on this computer are adopted from (docs/skills.md, "From this computer"); default the owner's ~/.agents/skills and ~/.claude/skills. Tests set none. */
+  localSkillRoots?: string[];
 }
 
 export interface SchedulerLike {

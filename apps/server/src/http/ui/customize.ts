@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { composioLink, composioStatus, composioUnlink, connectComposio, disconnectComposio } from "../../services/composio";
 import { signOutMcp, startMcpSignIn } from "../../services/mcpOAuth";
 import { deleteMcpServer, listMcpServers, putMcpServer } from "../../services/mcpServers";
-import { addLocalSkills, deleteSkill, installSkills, listLocalSkills, listSkills, resolveSkills, updateSkill } from "../../services/skills";
+import { addLocalSkills, deleteSkill, installSkills, listLocalSkills, listSkills, removeSkillFromComputer, resolveSkills, updateSkill } from "../../services/skills";
 import { looseBody, ok, service, serviceAsync } from "../route";
 import { handler, name, type Routes } from "./shared";
 
@@ -66,7 +66,8 @@ export const customizeRoutes: Routes = (api, app) => {
       ),
     ),
   );
-  // The skills already on this computer (~/.agents/skills, ~/.claude/skills): the local owner only, not a team (services/team.ts)
+  // The skills on this computer (~/.agents/skills, ~/.claude/skills) that sessions do not have, adding one back, and removing one
+  // from this computer: the local owner only, not a team (services/team.ts)
   api.get(
     "/api/skills/local",
     on((c) => service((a) => c.json(listLocalSkills(a)))),
@@ -79,6 +80,10 @@ export const customizeRoutes: Routes = (api, app) => {
         Effect.map((v) => c.json(v)),
       ),
     ),
+  );
+  api.delete(
+    "/api/skills/:name/computer",
+    on((c) => ok(c)(service((a) => removeSkillFromComputer(a, name(c))))),
   );
   api.post(
     "/api/skills/:name/update",

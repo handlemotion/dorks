@@ -438,7 +438,7 @@ export class DorksClient {
   skills() {
     return this.query<SkillView[]>("skills", () => this.api.listSkills());
   }
-  /** The skills on the server's computer (~/.agents/skills, ~/.claude/skills) that can be added; the local owner only. */
+  /** The skills on the server's computer (~/.agents/skills, ~/.claude/skills) that sessions do not have; the local owner only. */
   localSkills() {
     return this.query<LocalSkill[]>("local-skills", () => this.api.listLocalSkills());
   }
@@ -844,6 +844,12 @@ export class DorksClient {
     },
     deleteSkill: async (name: string) => {
       await this.api.deleteSkill(name);
+      this.invalidate("skills");
+      this.invalidate("local-skills");
+    },
+    /** A skill from this computer: deletes its folder and every agent's link to it, not only Dorks' copy. */
+    removeSkillFromComputer: async (name: string) => {
+      await this.api.removeSkillFromComputer(name);
       this.invalidate("skills");
       this.invalidate("local-skills");
     },

@@ -1,10 +1,10 @@
-import { readdirSync, readFileSync, realpathSync, statSync, type Stats } from "node:fs";
+import { lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, unlinkSync, type Stats } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { findSkills, MAX_SKILL_BYTES, MAX_SKILL_FILES, type FoundSkill, type TarFile } from "./skillRepo";
 
 // Skills already on this computer (docs/skills.md, "From this computer"): the folders `npx skills add -g` and Claude Code keep in
-// the owner's home. The server runs on the owner's Mac, so it reads them straight from disk.
+// the owner's home. The server runs on the owner's Mac, so it reads them straight from disk and adopts them.
 
 /** Where skills live on this computer, first wins on a name: `npx skills`' global folder, then Claude Code's own. */
 export const localSkillRoots = (home = homedir()): string[] => [join(home, ".agents", "skills"), join(home, ".claude", "skills")];
@@ -28,6 +28,8 @@ export interface LocalFolder {
   skill: FoundSkill;
   /** More than a skill may hold (files or bytes): listed, but refused on import. */
   over: boolean;
+  /** A file or folder in it could not be read: not saved, so a half-read folder never replaces a whole copy. */
+  incomplete: boolean;
 }
 
 /** One skill folder read from disk: its own SKILL.md and everything beside it (symlinks followed, each folder once), or null. */
@@ -38,11 +40,13 @@ export function readSkillDir(dir: string): LocalFolder | null {
   const seen = new Set<string>();
   let bytes = 0;
   let over = false;
+  let incomplete = false;
   const walk = (abs: string, rel: string) => {
     let real: string;
     try {
       real = realpathSync(abs);
     } catch {
+      incomplete = true;
       return;
     }
     if (seen.has(real)) return;
@@ -51,6 +55,7 @@ export function readSkillDir(dir: string): LocalFolder | null {
     try {
       names = readdirSync(abs).sort();
     } catch {
+      incomplete = true;
       return;
     }
     for (const name of names) {
@@ -69,14 +74,14 @@ export function readSkillDir(dir: string): LocalFolder | null {
           files.push({ path: r, data: readFileSync(p), exec: (s.mode & 0o111) !== 0 });
           bytes += s.size;
         } catch {
-          // unreadable: left out
+          incomplete = true;
         }
       }
     }
   };
   walk(dir, "");
   const skill = findSkills(files, "", basename(dir)).find((s) => s.path === "");
-  return skill ? { dir, skill, over } : null;
+  return skill ? { dir, skill, over, incomplete } : null;
 }
 
 /** Every skill in `roots`, by name (the first root that has a name wins; a folder linked from both counts once). */
@@ -109,4 +114,59 @@ export function listLocalFolders(roots: string[]): LocalFolder[] {
     }
   }
   return out.sort((a, b) => a.skill.name.localeCompare(b.skill.name));
+}
+
+/** Other agents' global skill folders `npx skills add -g` links into: removing a skill from this computer unlinks it there too. */
+const agentSkillDirs = (home = homedir()): string[] =>
+  [".codex/skills", ".cursor/skills", ".gemini/skills", ".copilot/skills", ".config/opencode/skills", ".config/opencode/skill", ".windsurf/skills", ".codeium/windsurf/skills"].map((d) =>
+    join(home, d),
+  );
+
+const realOrNull = (p: string): string | null => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Removes a skill from this computer, for every agent: each entry in `roots` (and other agents' skill folders) that is it or links
+ * to it. A real folder is deleted only inside `roots`; a skill whose folder lives elsewhere (a repository) only loses its links.
+ */
+export function removeSkillFolder(dir: string, roots: string[], home = homedir()): void {
+  const target = realOrNull(dir);
+  if (!target) return;
+  const rootReals = roots.map(realOrNull).filter((r): r is string => !!r);
+  const inRoot = rootReals.some((r) => dirname(target) === r);
+  for (const root of [...roots, ...agentSkillDirs(home)]) {
+    let entries: string[];
+    try {
+      entries = readdirSync(root);
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      const p = join(root, e);
+      let st: Stats;
+      try {
+        st = lstatSync(p);
+      } catch {
+        continue;
+      }
+      if (st.isSymbolicLink()) {
+        if (realOrNull(p) === target || resolve(dirname(p), readlinkSync(p)) === target) unlinkSync(p);
+      } else if (st.isDirectory() && inRoot && realOrNull(p) === target) rmSync(p, { recursive: true, force: true });
+    }
+  }
+}
+
+/** Whether a skill folder is gone for good (as opposed to unreadable for a moment). */
+export function folderGone(dir: string): boolean {
+  try {
+    statSync(join(dir, "SKILL.md"));
+    return false;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "ENOENT" || (e as NodeJS.ErrnoException).code === "ENOTDIR";
+  }
 }

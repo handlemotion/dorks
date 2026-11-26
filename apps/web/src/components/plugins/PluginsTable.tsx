@@ -10,6 +10,7 @@ import { EmptyState } from '../EmptyState'
 import { PageRail, RailPage } from '../PageRail'
 import { SettingsGroup, SettingsSection, SettingsSections, StatusDot } from '../settings/kit'
 import { ConnectorIcon } from './PluginsDialogs'
+import { RemoveFromComputerDialog } from './RemoveSkillDialog'
 
 const ROW_WRAP = 'group flex min-h-13 w-full min-w-0 items-center hover:bg-foreground/[0.02]'
 const ROW_BUTTON =
@@ -225,12 +226,13 @@ export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { sk
   const removeSkill = async (name: string) => {
     try {
       await actions.deleteSkill(name)
-      toast.success(`Removed ${name}`)
+      toast.success(skills?.find((s) => s.name === name)?.local ? `Removed ${name} from Dorks` : `Removed ${name}`)
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : `Could not remove ${name}`)
     }
   }
 
+  const [removing, setRemoving] = useState<SkillView | null>(null)
   const local = useLocalSkills()
   const found = useMemo(() => (local ?? []).filter((l) => !l.added && (!q || l.name.toLowerCase().includes(q) || l.description.toLowerCase().includes(q))), [local, q])
 
@@ -311,9 +313,18 @@ export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { sk
                         <DropdownMenuItem onClick={() => onInspectInstalled(`skill:${s.name}`)}>View details</DropdownMenuItem>
                         <DropdownMenuItem onClick={() => void updateSkill(s.name)}>Update</DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem variant="destructive" onClick={() => void removeSkill(s.name)}>
-                          Remove
-                        </DropdownMenuItem>
+                        {s.local ? (
+                          <>
+                            <DropdownMenuItem onClick={() => void removeSkill(s.name)}>Remove from Dorks</DropdownMenuItem>
+                            <DropdownMenuItem variant="destructive" onClick={() => setRemoving(s)}>
+                              Remove from this computer…
+                            </DropdownMenuItem>
+                          </>
+                        ) : (
+                          <DropdownMenuItem variant="destructive" onClick={() => void removeSkill(s.name)}>
+                            Remove
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -324,41 +335,28 @@ export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { sk
           {found.length > 0 && <FoundOnComputer found={found} />}
         </SettingsSections>
       )}
+      {removing && <RemoveFromComputerDialog skill={removing} onClose={() => setRemoving(null)} />}
     </RailPage>
   )
 }
 
-/**
- * The skills in this computer's ~/.agents/skills and ~/.claude/skills that are not added yet. Adding one copies it to every sandbox,
- * and it is read again from its folder whenever a session starts or this page opens.
- */
+/** Skills on this computer that sessions do not have: removed from Dorks, a name a GitHub skill has, or too large. */
 function FoundOnComputer({ found }: { found: LocalSkill[] }) {
   const { actions } = useDorksClient()
   const [busy, setBusy] = useState(false)
-  const addable = found.filter((l) => !l.tooLarge)
-  const add = async (names: string[]) => {
+  const add = async (name: string) => {
     setBusy(true)
     try {
-      const { installed } = await actions.addLocalSkills(names)
-      toast.success(installed.length === 1 ? `Added ${installed[0]}` : `Added ${installed.length} skills`)
+      await actions.addLocalSkills([name])
+      toast.success(`Added ${name}`)
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Could not add the skills')
+      toast.error(e instanceof Error ? e.message : `Could not add ${name}`)
     } finally {
       setBusy(false)
     }
   }
   return (
-    <SettingsSection
-      title="Found on this computer"
-      description="In ~/.agents/skills and ~/.claude/skills. Added skills reach every session and follow edits to their folder."
-      actions={
-        addable.length > 1 && (
-          <Button variant="outline" size="sm" disabled={busy} onClick={() => void add(addable.map((l) => l.name))}>
-            Add all
-          </Button>
-        )
-      }
-    >
+    <SettingsSection title="Found on this computer">
       <SettingsGroup label="skills on this computer">
         {found.map((l) => (
           <div key={l.name} className={ROW_WRAP}>
@@ -374,7 +372,7 @@ function FoundOnComputer({ found }: { found: LocalSkill[] }) {
                 </span>
               </span>
             </div>
-            <Button type="button" variant="outline" size="sm" className="me-3 shrink-0" aria-label={`add ${l.name}`} disabled={busy || l.tooLarge} onClick={() => void add([l.name])}>
+            <Button type="button" variant="outline" size="sm" className="me-3 shrink-0" aria-label={`add ${l.name}`} disabled={busy || l.tooLarge} onClick={() => void add(l.name)}>
               Add
             </Button>
           </div>

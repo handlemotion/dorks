@@ -21,7 +21,7 @@ The field takes what READMEs and skills.sh hand out (`apps/server/src/lib/skillS
 | `https://github.com/owner/repo[/tree/<ref>/<path>]`, a `/blob/…/SKILL.md` link, `git@github.com:owner/repo.git`, `git clone <url>`, `/plugin marketplace add owner/repo` | the same |
 
 Flags that only matter to the CLI (`-g`, `-y`, `-a claude-code`, `--copy`) are ignored. GitHub only for now: GitLab, well-known URLs and
-local folders are refused with a plain reason (skills already on this computer are added from [their own list](#from-this-computer)).
+local folders are refused with a plain reason (skills already on this computer are [adopted on their own](#from-this-computer)).
 
 1. `POST /api/skills/resolve` resolves the ref to a commit (`GET /repos/{repo}/commits/{ref|HEAD}`; a `/tree/` URL tries the shortest ref
    first, since a branch may contain `/`), downloads the commit's tarball (64 MB cap) as the GitHub CLI's login when connected, so
@@ -36,18 +36,24 @@ local folders are refused with a plain reason (skills already on this computer a
 ## From this computer
 
 Skills people already use on their Mac live in `~/.agents/skills` (where `npx skills add -g` puts them, linking each into
-`~/.claude/skills`) and `~/.claude/skills` (Claude Code's own). The server runs on that Mac, so it reads them from disk
-(`apps/server/src/lib/localSkills.ts`):
+`~/.claude/skills` and other agents' folders) and `~/.claude/skills` (Claude Code's own). The server runs on that Mac, so it
+**adopts them**: every skill there reaches every session with nothing to click (`apps/server/src/lib/localSkills.ts`,
+`syncLocalSkills` in `services/skills.ts`).
 
-- `GET /api/skills/local` lists every folder with a `SKILL.md` in those two, `~/.agents/skills` first. A folder linked from both
-  counts once (by real path), and a name counts once. Symlinks are followed (each folder once), `node_modules`, `.git` and
-  `.DS_Store` skipped, the same limits as GitHub apply. **Skills, Found on this computer** shows the ones not added yet.
-- `POST /api/skills/local {skills}` adds them: the same `skills` row, with `local_dir` set to the folder (`repo` empty, `sha` the
-  digest). A GitHub install of the same name replaces it, and the other way round.
-- An added skill follows its folder: it is read again when `configure` is built (a session starts or wakes), when Skills is opened,
-  and on **Update**. A change is saved under a new digest, so the bridge fetches it. Reads are at most every 5 s. A folder that is gone
-  or now too large keeps the last copy; Update says so.
-- Only the local owner may list or add them; a team's admins and members may not (`services/team.ts`).
+- Every folder with a `SKILL.md` in those two counts, `~/.agents/skills` first. A folder linked from both counts once (by real
+  path), and so does a name. Symlinks are followed (each folder once). `node_modules`, `.git` and `.DS_Store` are skipped, and the
+  same limits as GitHub apply. Each one is a `skills` row with `local_dir` set (`repo` is empty and `sha` is the digest).
+- The folders are read again when `configure` is built (a session starts or wakes), when Skills is opened, and on **Update**, at
+  most every 5 s. A new folder is adopted, a changed one saved under a new digest, and a deleted one dropped; then every awake agent
+  syncs. A folder that is too large, or has a file that cannot be read, keeps its last copy. A GitHub skill of the same name wins.
+- **Remove from Dorks** (`DELETE /api/skills/:name`) leaves the folder alone and records it in `hidden_local_skills`, so it is not
+  adopted again. **Skills, Found on this computer** (`GET /api/skills/local`) lists the ones sessions lack (removed, a name taken,
+  too large), each with **Add** (`POST /api/skills/local {skills}`).
+- **Remove from this computer** (`DELETE /api/skills/:name/computer`, after a confirmation) removes it for every agent: every link
+  to it in the two folders and in other agents' (`~/.codex/skills`, `~/.cursor/skills`, …) goes. The folder itself is deleted only
+  when it sits directly in one of the two folders, so a skill linked from a repository loses its links but keeps its source.
+- Only the local owner may list, add back or remove from the computer; a team's admins and members may not (`services/team.ts`).
+  Tests set `localSkillRoots: []` in the config.
 
 ## Reaching the sandboxes
 

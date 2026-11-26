@@ -260,6 +260,7 @@ export function createApi(config: ApiConfig) {
     addLocalSkills: (skills: string[]) => request<{ installed: string[] }>("POST", "/api/skills/local", { skills }),
     updateSkill: (name: string) => request<{ updated: boolean }>("POST", `/api/skills/${enc(name)}/update`),
     deleteSkill: (name: string) => request<object>("DELETE", `/api/skills/${enc(name)}`),
+    removeSkillFromComputer: (name: string) => request<object>("DELETE", `/api/skills/${enc(name)}/computer`),
     /** A sign-in page for an OAuth server; the browser comes back to this server, so it sends the URL it reaches it at. */
     mcpSignIn: (name: string) => request<{ url: string }>("POST", `/api/mcp-servers/${enc(name)}/oauth`, { base: new URL(base || "/", globalThis.location?.href).origin }),
     mcpSignOut: (name: string) => request<object>("DELETE", `/api/mcp-servers/${enc(name)}/oauth`),

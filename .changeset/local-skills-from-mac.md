@@ -3,4 +3,4 @@
 "@dorks/shared": minor
 ---
 
-Skills: the skills already on your Mac (~/.agents/skills and ~/.claude/skills) show up under Found on this computer; add them to every session in one click, and they follow edits to their folder.
+Skills: the skills already on your Mac (~/.agents/skills and ~/.claude/skills) now reach every session automatically and follow edits to their folder. Remove one from Dorks only, or from your Mac for every agent.

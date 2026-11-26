@@ -348,6 +348,20 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     { name: "pdf", description: "Read, fill and merge PDFs.", folder: "~/.agents/skills/pdf", fileCount: 6, bytes: 41_900, tooLarge: false },
     { name: "team-style", description: "How this team writes code and pull requests.", folder: "~/.claude/skills/team-style", fileCount: 1, bytes: 1_840, tooLarge: false },
   ];
+  const localView = (l: Omit<LocalSkill, "installed" | "added">): SkillView => ({
+    name: l.name,
+    description: l.description,
+    source: { repo: "", ref: null, path: "" },
+    sha: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    url: null,
+    local: l.folder,
+    fileCount: l.fileCount,
+    bytes: l.bytes,
+    installedAt: Date.now(),
+    updatedAt: Date.now(),
+  });
+  // Adopted like the server does: every local skill whose name is free.
+  for (const l of localSkills) if (!skills.has(l.name)) skills.set(l.name, localView(l));
   /** A loose stand-in for services/skills.ts: `owner/repo` from the pasted text, and a few made-up skills in it. */
   const mockResolve = (source: string) => {
     const m = /([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?(?:[/@#\s]|$)/.exec(source.replace(/https?:\/\/github\.com\//, ""));
@@ -1421,7 +1435,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         json(
           res,
           200,
-          localSkills.map((l) => ({ ...l, installed: skills.has(l.name), added: skills.get(l.name)?.local === l.folder })),
+          localSkills.filter((l) => skills.get(l.name)?.local !== l.folder).map((l) => ({ ...l, installed: skills.has(l.name), added: false })),
         ),
     ],
     [
@@ -1430,19 +1444,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         const want = Array.isArray(body.skills) ? (body.skills as string[]) : [];
         const pick = localSkills.filter((l) => want.includes(l.name));
         if (!pick.length) return fail(res, "invalid", "Choose the skills to add.");
-        for (const l of pick)
-          skills.set(l.name, {
-            name: l.name,
-            description: l.description,
-            source: { repo: "", ref: null, path: "" },
-            sha: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-            url: null,
-            local: l.folder,
-            fileCount: l.fileCount,
-            bytes: l.bytes,
-            installedAt: skills.get(l.name)?.installedAt ?? Date.now(),
-            updatedAt: Date.now(),
-          });
+        for (const l of pick) skills.set(l.name, localView(l));
         broadcast({ t: "settings" });
         return json(res, 200, { installed: pick.map((l) => l.name) });
       },
@@ -1648,6 +1650,18 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   const routeCustomize = (c: Ctx, path: string) => {
     const mo = /^\/api\/mcp-servers\/([^/]+)\/oauth$/.exec(path);
     if (mo) return routeMcpOAuth(c, decodeURIComponent(mo[1]!));
+    const sc = /^\/api\/skills\/([^/]+)\/computer$/.exec(path);
+    if (sc && c.method === "DELETE") {
+      const name = decodeURIComponent(sc[1]!);
+      if (!skills.get(name)?.local) return fail(c.res, "invalid", `${name} is not from this computer.`);
+      skills.delete(name);
+      localSkills.splice(
+        localSkills.findIndex((l) => l.name === name),
+        1,
+      );
+      broadcast({ t: "settings" });
+      return json(c.res, 200, {});
+    }
     const sk = /^\/api\/skills\/([^/]+)(\/update)?$/.exec(path);
     if (sk) return routeSkill(c, decodeURIComponent(sk[1]!), !!sk[2]);
     const mm = /^\/api\/mcp-servers\/([^/]+)$/.exec(path);

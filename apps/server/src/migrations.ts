@@ -644,5 +644,11 @@ export const MIGRATIONS: string[] = [
   -- A skill added from this computer (services/skills.ts, docs/skills.md "From this computer"): the folder it is read from again, so
   -- it follows edits there. NULL: from GitHub (\`repo\`, \`ref\`, \`path\`).
   ALTER TABLE skills ADD COLUMN local_dir TEXT;
+  -- Skill folders on this computer the owner removed from Dorks only: never adopted again until added back.
+  CREATE TABLE hidden_local_skills (
+    dir TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    hidden_at INTEGER NOT NULL
+  );
   `,
 ];

@@ -9,6 +9,7 @@ import { SettingsButtonRow, SettingsGroup, SettingsSection, SettingsSections, Se
 import { usePending } from '../../lib/pending'
 import { ago } from '../../lib/time'
 import { ConnectorIcon, signInMcp } from './PluginsDialogs'
+import { RemoveFromComputerDialog } from './RemoveSkillDialog'
 import type { SelectedItem } from './PluginsNav'
 
 const kb = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`)
@@ -169,6 +170,7 @@ function SkillDetail({ skill: s, onRemoved }: { skill: SkillView; onRemoved: () 
   const { actions } = useDorksClient()
   const { run, pending, error } = usePending()
   const [note, setNote] = useState('')
+  const [removing, setRemoving] = useState(false)
   return (
     <div className="app-main min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-2xl px-4 pt-6 pb-16 sm:px-6">
@@ -228,20 +230,31 @@ function SkillDetail({ skill: s, onRemoved }: { skill: SkillView; onRemoved: () 
           <SettingsSection title="Remove">
             <SettingsGroup label={`remove ${s.name}`}>
               <SettingsButtonRow
-                label={`Remove ${s.name}`}
-                description="Removes this skill from future sessions."
+                label={s.local ? 'Remove from Dorks' : `Remove ${s.name}`}
+                description={s.local ? 'Sessions stop getting it. It stays on this computer for your other agents.' : 'Removes this skill from future sessions.'}
                 actionLabel="Remove"
                 variant="outline"
                 disabled={pending}
                 onAction={() =>
                   void run(async () => {
                     await actions.deleteSkill(s.name)
-                    toast.success(`Removed ${s.name}`)
+                    toast.success(s.local ? `Removed ${s.name} from Dorks` : `Removed ${s.name}`)
                     onRemoved()
                   })
                 }
               />
+              {s.local && (
+                <SettingsButtonRow
+                  label="Remove from this computer"
+                  description="Deletes its folder, so every agent on this computer loses it too."
+                  actionLabel="Remove…"
+                  variant="outline"
+                  disabled={pending}
+                  onAction={() => setRemoving(true)}
+                />
+              )}
             </SettingsGroup>
+            {removing && <RemoveFromComputerDialog skill={s} onClose={() => setRemoving(false)} onRemoved={onRemoved} />}
             <SettingsStatus error={error} />
           </SettingsSection>
         </SettingsSections>
