@@ -2,6 +2,7 @@ import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { DorksMark } from "#/components/DorksMark";
 import { AppleIcon } from "#/components/icons";
+import { Button as PressScale } from "#/components/animate-ui/primitives/buttons/button";
 import { Button } from "#/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "#/components/ui/dropdown-menu";
 import { getLenis, subscribeLenisScroll } from "#/lib/lenis";
@@ -77,7 +78,7 @@ export function Hero({ release: built }: { release: MacRelease | null }) {
         copyRef.current.style.opacity = (1 - progress * 0.72).toFixed(3);
       }
       if (graphicRef.current) {
-        graphicRef.current.style.transform = `translate3d(0, ${(-progress * 68).toFixed(2)}px, 0)`;
+        graphicRef.current.style.transform = `translate3d(0, ${(-progress * 104).toFixed(2)}px, 0)`;
       }
 
       updateNavState();
@@ -124,6 +125,7 @@ export function Hero({ release: built }: { release: MacRelease | null }) {
         <a
           href="/"
           onClick={handleScrollToTop}
+          draggable={false}
           aria-label="Scroll to top"
           className={cn(
             "dorks-mark-hover relative z-10 inline-flex size-8 cursor-pointer items-center justify-center rounded-full transition-colors duration-250 ease-out focus-visible:outline-none focus-visible:ring-2",
@@ -187,38 +189,42 @@ export function Hero({ release: built }: { release: MacRelease | null }) {
               </h1>
             </div>
 
-            <div className="flex flex-col items-center gap-4">
+            <div className="flex flex-col items-center gap-6">
               <div className="flex flex-wrap items-center justify-center gap-2.5">
-                <div className="inline-flex h-9 items-center rounded-full bg-white outline-2 outline-offset-2 outline-transparent transition-[outline-color] duration-150 has-[:focus-visible]:outline-white/80">
-                  <Button variant="splitPrimary" size="splitMain" nativeButton={false} title={downloadTitle(release)} render={<a href={DOWNLOAD_URL} />}>
-                    <AppleIcon className="-mt-0.5" />
-                    <span>Download for Mac</span>
+                <PressScale asChild>
+                  <div className="inline-flex h-9 items-center rounded-full bg-white outline-2 outline-offset-2 outline-transparent transition-[outline-color] duration-150 has-[:focus-visible]:outline-white/80">
+                    <Button variant="splitPrimary" size="splitMain" nativeButton={false} title={downloadTitle(release)} render={<a href={DOWNLOAD_URL} />}>
+                      <AppleIcon className="-mt-0.5" />
+                      <span>Download for Mac</span>
+                    </Button>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger render={<Button variant="splitTrigger" size="splitEnd" aria-label="More download options" />}>
+                        <ChevronDown className="size-3.5 stroke-[1.75]" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" sideOffset={8}>
+                        <DropdownMenuItem render={<a href={DOWNLOAD_URL} />}>
+                          <span>Apple silicon (.dmg)</span>
+                          <span className="text-xs text-neutral-400 tabular-nums">{release ? formatSize(release.size) : "macOS"}</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem render={<a href={RELEASES_URL} target="_blank" rel="noreferrer" />}>
+                          <span>All releases</span>
+                          <span className="text-xs text-neutral-400">GitHub</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem render={<a href="/docs/quickstart" />}>
+                          <span>Quickstart guide</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </PressScale>
+
+                <PressScale asChild>
+                  <Button variant="glass" size="default" nativeButton={false} render={<a href={LOGIN_URL} />}>
+                    Log In
                   </Button>
-
-                  <DropdownMenu>
-                    <DropdownMenuTrigger render={<Button variant="splitTrigger" size="splitEnd" aria-label="More download options" />}>
-                      <ChevronDown className="size-3.5 stroke-[1.75]" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" sideOffset={8}>
-                      <DropdownMenuItem render={<a href={DOWNLOAD_URL} />}>
-                        <span>Apple silicon (.dmg)</span>
-                        <span className="text-xs text-neutral-400 tabular-nums">{release ? formatSize(release.size) : "macOS"}</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem render={<a href={RELEASES_URL} target="_blank" rel="noreferrer" />}>
-                        <span>All releases</span>
-                        <span className="text-xs text-neutral-400">GitHub</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem render={<a href="/docs/quickstart" />}>
-                        <span>Quickstart guide</span>
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-
-                <Button variant="glass" size="default" nativeButton={false} render={<a href={LOGIN_URL} />}>
-                  Log In
-                </Button>
+                </PressScale>
               </div>
               <DownloadDetails release={release} short className="text-sm text-white/90" />
             </div>
