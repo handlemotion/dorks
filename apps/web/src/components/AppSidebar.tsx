@@ -249,8 +249,11 @@ export function AppSidebarView({
   }, [activeKnown, activeMode, setWorkspace])
   const switchWorkspace = (next: AppWorkspace) => {
     if (next === workspace) return
-    // Leave the open session first, so the effect above does not switch straight back to its workspace.
-    if (activeKnown && workspaceOf(activeMode) !== next) void navigate({ to: '/dorks', search: {} }).then(() => setWorkspace(next))
+    // Leave the open session first, so the effect above does not switch straight back to its workspace; and drop a new session's
+    // preset (a repository's or the Nerds group's +), which would otherwise outrank the workspace's mode.
+    const { repo, mode } = search as { repo?: unknown; mode?: unknown }
+    const leave = (activeKnown && workspaceOf(activeMode) !== next) || (pathname === '/dorks' && (repo !== undefined || mode !== undefined))
+    if (leave) void navigate({ to: '/dorks', search: {} }).then(() => setWorkspace(next))
     else setWorkspace(next)
   }
   const owners = ownersOf(
