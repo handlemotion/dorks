@@ -8,6 +8,13 @@ import { workedFor } from '../lib/duration'
 // deployments, as the server follows them. A card on the surface fill. While the agent works it sits where the merge happened; once
 // the turn ends the session's latest ships are pinned at the end of the chat (`ShipPin`) and their place in the thread shrinks to a line.
 
+/**
+ * Cards in the thread (ships, builds, todos) bleed past the text column (`--card-bleed`, set on the transcript) by their inset, so
+ * their outline sits just outside the column, what is inside lines up with the thread's text, and the sides are inset as much as the
+ * top (10px inside the 1px border). Outside the transcript they keep the column and a 14px inset.
+ */
+export const CARD_BLEED = '-mx-[var(--card-bleed,0px)] w-[calc(100%+2*var(--card-bleed,0px))] px-[calc(var(--card-bleed,15px)-1px)]'
+
 type ShipBlock = Extract<Block, { kind: 'ship' }>
 
 /**
@@ -197,7 +204,7 @@ function ShipPanel({ ships, tuck }: { ships: ShipView[]; tuck?: 'answer' | 'noti
       // pb-1.5: the last 28px row already leaves 4px under its text, so the card's text sits as far from its bottom edge as from its top.
       // Pinned right under the last answer it keeps 18px from it, as cards in a turn keep from text (the thread's 24px less a step); under
       // a notice it sits 12px down, as the notices do from each other. In the thread it takes the cards' 6px either side.
-      className={`flex w-full min-w-0 flex-col gap-2 rounded-[6px] border border-surface-line bg-surface px-3.5 pt-2.5 pb-1.5 ${tuck === 'answer' ? '-mt-1.5' : tuck === 'notice' ? '-mt-3' : 'my-1.5'}`}
+      className={`${CARD_BLEED} flex min-w-0 flex-col gap-2 rounded-[6px] border border-surface-line bg-surface pt-2.5 pb-1.5 ${tuck === 'answer' ? '-mt-1.5' : tuck === 'notice' ? '-mt-3' : 'my-1.5'}`}
     >
       <p className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
         <span className={`min-w-0 truncate ${bad ? 'text-destructive' : ''}`}>{headline(ships)}</span>

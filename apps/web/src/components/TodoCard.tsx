@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react'
+import { CARD_BLEED } from './ShipCard'
 import { CircleArrowRightIcon, CircleCheckIcon, CircleDashedIcon, type LucideIcon } from 'lucide-react'
 import type { ProgressTask } from '../lib/progress'
 
@@ -25,7 +26,7 @@ export function TodoCard({ id }: { id: string }) {
     <section
       aria-label={`To-dos, ${done} of ${tasks.length} done`}
       data-testid="todos"
-      className="my-1.5 flex w-full min-w-0 flex-col gap-1.5 rounded-[6px] border border-surface-line bg-surface px-3.5 pt-2.5 pb-2.5"
+      className={`${CARD_BLEED} my-1.5 flex min-w-0 flex-col gap-1.5 rounded-[6px] border border-surface-line bg-surface pt-2.5 pb-2.5`}
     >
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <span>To-dos</span>

@@ -261,7 +261,7 @@ export function SessionChat({
         <MessageScroller>
           {/* No fade at the bottom edge: the published viewport masks it with scroll-fade-b; the last line stays fully drawn above the composer. */}
           <MessageScrollerViewport aria-label="Session transcript" className="mask-none! [scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
-            <MessageScrollerContent className={`mx-auto w-full max-w-4xl gap-6 pt-6 pb-12 ${compact ? 'px-6' : 'px-10'}`} data-testid="transcript">
+            <MessageScrollerContent className={`mx-auto w-full max-w-4xl gap-6 pt-6 pb-12 ${compact ? 'px-6' : 'px-10'} [--card-bleed:11px]`} data-testid="transcript">
               {transcript.hasOlder && <LoadOlder loading={loadingMore && transcript.from === 0} paused={!!eventsError} shown={shown.length} onLoad={transcript.showOlder} />}
               <LocalAccessProvider dorkId={dorkId} agent={agent}>
                 <ShipPin blocks={blocks} state={dork.state}>
