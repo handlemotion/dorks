@@ -124,6 +124,16 @@ function checkMode(input: { mode?: unknown; icon?: unknown }, setup: boolean, pa
   return { mode, icon: typeof input.icon === "string" && input.icon.trim() ? input.icon.trim() : null };
 }
 
+const CODEX_MODEL = /^gpt-[a-z0-9][a-z0-9.-]{0,40}$/i;
+const CODEX_EFFORTS = ["low", "medium", "high", "xhigh"];
+/** A Codex model and effort named when a session starts (`gpt-6.2-sol`, high by default), or none for Codex's own default. */
+function codexStartModel(model: unknown, effort: unknown): { model: string; effort: string } | undefined {
+  if (model === undefined || model === null || model === "") return undefined;
+  if (typeof model !== "string" || !CODEX_MODEL.test(model)) fail("invalid", "not a Codex model");
+  if (effort !== undefined && effort !== null && (typeof effort !== "string" || !CODEX_EFFORTS.includes(effort))) fail("invalid", "not a Codex effort");
+  return { model, effort: (effort as string | null | undefined) ?? "high" };
+}
+
 export function createDork(
   app: App,
   input: { repo?: string; message: string; title?: string; provider?: Provider; model?: unknown; effort?: unknown; fast?: unknown; buildId?: unknown; setup?: unknown; mode?: unknown; icon?: unknown },
@@ -152,6 +162,9 @@ export function createDork(
         : provider === "antigravity"
           ? validAntigravityModel(undefined, input.model)
           : { fast: false };
+  // Codex: a model named at the start (the composer's short list); Codex lists none before it runs. One the plan cannot use pauses the
+  // session and asks for another (`chooseCodexModel`), as for the default.
+  const codexModel = provider === "codex" ? codexStartModel(input.model, input.effort) : undefined;
 
   const id = app.uuid();
   const now = app.now();
@@ -173,6 +186,7 @@ export function createDork(
       parentId: parent?.id ?? null,
       icon,
       ...choice,
+      ...(codexModel ? { codexModel } : {}),
       codeMode: provider === "claude" && readSettings(app).claudeCodeMode,
     });
     insert(app.db, "dork_runtime", { dorkId: id, bridgeSeq: 0, streamMsgId: "", sleepMinutes: readSettings(app).sleepMinutes, bridgeSeenAt: 0, bridgeLost: false, opGen: 0, pauseRetries: 0 });

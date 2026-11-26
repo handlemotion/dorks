@@ -80,7 +80,7 @@ IDs are UUID strings. Times are epoch milliseconds.
 |---|---|---|
 | `GET /api/dorks` | `?archived=true` | `Dork[]`, newest activity first, at most 200 |
 | `GET /api/dorks/:id` | | `Dork` or 404 |
-| `POST /api/dorks` | `{repo, message, title?, provider?, model?, effort?, buildId?, setup?, mode?, icon?}` (only `mode: "code"`, the default, needs `repo`, [modes](modes.md); `provider` defaults to `claude`; Codex needs a configured Boat environment; Claude's `model`/`effort` must be in `settings.claudeModels`; `buildId` defaults to `settings.defaultBuildId`, and needs a built image unless `setup: true`, a machine-setup session that also needs no `repo`: [builds](builds.md)) | `{id}` |
+| `POST /api/dorks` | `{repo, message, title?, provider?, model?, effort?, buildId?, setup?, mode?, icon?}` (only `mode: "code"`, the default, needs `repo`, [modes](modes.md); `provider` defaults to `claude`; Codex needs a configured Boat environment; Claude's `model`/`effort` must be in `settings.claudeModels`; Codex's `model` is a `gpt-…` id with an optional `effort` (`low` to `xhigh`, default `high`), stored as the session's `codexModel`; `buildId` defaults to `settings.defaultBuildId`, and needs a built image unless `setup: true`, a machine-setup session that also needs no `repo`: [builds](builds.md)) | `{id}` |
 | `PATCH /api/dorks/:id` | `{title}` | `{}` |
 | `DELETE /api/dorks/:id` | | `{}` (box is destroyed in the background, then rows are purged) |
 | `POST /api/dorks/:id/messages` | `{text}` | `{}`. While the agent works the message steers the running turn (Claude reads it at its next tool call); otherwise it starts a turn |

@@ -198,7 +198,10 @@ function newSessionPicker(provider: AgentProvider, settings: ReturnType<typeof u
     const choices = settings?.claudeModels ?? []
     return { choices, ...choice, model: choice.model ?? preferredModel(choices), onChange: (model, effort, fast) => setChoice({ model, effort, fast }) }
   }
-  if (provider === 'antigravity' && settings?.antigravityModels?.length) return { choices: settings.antigravityModels, model: choice.model, onChange: (model) => setChoice({ model }) }
+  // Antigravity's list may not be known yet; a model from the menu's short list is chosen all the same (agy checks it at start).
+  if (provider === 'antigravity') return { choices: settings?.antigravityModels ?? [], model: choice.model, onChange: (model) => setChoice({ model }) }
+  // Codex lists its models only once a session runs: the menu's short list names them, with the effort they start at.
+  if (provider === 'codex') return { choices: [], model: choice.model, effort: choice.effort, onChange: (model, effort) => setChoice({ model, effort }) }
   return undefined
 }
 
@@ -265,9 +268,9 @@ function NewDork({
   const { buildId, repo } = env
   const [message, setMessage] = useDraft('new')
   const [provider, pickProvider] = useState<AgentProvider>(() => firstReady(claudeReady, codexReady, antigravityReady))
-  // A model belongs to its agent: switching agents starts the new one on its default.
-  const setProvider = (p: AgentProvider) => {
-    if (p !== provider) setChoice({})
+  // A model belongs to its agent: switching agents starts the new one on its default, or on the model picked with it.
+  const setProvider = (p: AgentProvider, next?: Choice) => {
+    if (p !== provider || next) setChoice(next ?? {})
     pickProvider(p)
   }
   const { run, pending, error } = usePending()
@@ -289,6 +292,7 @@ function NewDork({
         disabled={disabled || agent.missing}
         error={error}
         picker={newSessionPicker(provider, settings, choice, setChoice)}
+        catalog={{ claude: settings?.claudeModels, antigravity: settings?.antigravityModels }}
         upload={actions.uploadImage}
         draftKey="new"
         usage={<UsageMenu provider={provider} />}
@@ -307,7 +311,13 @@ function NewDork({
                   ...(mode === 'code' ? { repo: repo.trim(), buildId } : {}),
                   message: withImages(message, images),
                   provider,
-                  ...(provider === 'claude' ? choice : provider === 'antigravity' && choice.model ? { model: choice.model } : {}),
+                  ...(provider === 'claude'
+                    ? choice
+                    : provider === 'antigravity' && choice.model
+                      ? { model: choice.model }
+                      : provider === 'codex' && choice.model
+                        ? { model: choice.model, effort: choice.effort }
+                        : {}),
                 })
               ).id,
             )

@@ -268,13 +268,15 @@ html.dark {
   --sidebar-border: var(--border);
 }
 
-/* Toasts: a brand-blue fill with white text, 8px corners, even 12px padding around a 16px icon and a 20px line, and a small bare close at
-   the right. Sonner's own rules are `[data-sonner-toast][data-styled]`; the leading `html` outranks them without !important. Its drop
-   shadow is switched off like every other one. */
+/* Toasts: a brand-blue fill with white text, 8px corners, 8px padding (12px before the 16px icon) around a 24px row, everything on one
+   centred line: icon, a 20px title, an action as a small white button, and a small bare close at the right. Sonner's own rules are
+   `[data-sonner-toast][data-styled]`; the leading `html` outranks them without !important. Its drop shadow is switched off like every
+   other one. */
 html [data-sonner-toast][data-styled="true"] {
-  padding: 12px 44px 12px 14px;
-  gap: 10px;
-  align-items: flex-start;
+  padding: 8px 40px 8px 12px;
+  min-height: 40px;
+  gap: 8px;
+  align-items: center;
   border: 0;
   border-radius: 8px;
   background: var(--brand);
@@ -285,7 +287,32 @@ html [data-sonner-toast][data-styled="true"] {
   box-shadow: none; /* ui-rules: allow */
 }
 html [data-sonner-toast][data-styled="true"] [data-icon] {
-  margin: 2px 0 0;
+  margin: 0;
+  align-self: flex-start;
+  /* Level with the title's 20px line (2px) inside the row's 24px (another 2px). */
+  margin-top: 4px;
+}
+html [data-sonner-toast][data-styled="true"] [data-content] {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+}
+/* The action: a small white button with brand text, the app's 6px control radius, at the row's end before the close. */
+html [data-sonner-toast][data-styled="true"] [data-button] {
+  height: 24px;
+  margin: 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--brand-foreground);
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  transition: background-color 150ms ease-out;
+}
+html [data-sonner-toast][data-styled="true"] [data-button]:hover {
+  background: color-mix(in oklab, var(--brand-foreground) 88%, var(--brand));
 }
 html [data-sonner-toast][data-styled="true"] [data-title] {
   line-height: 20px;
@@ -296,8 +323,9 @@ html [data-sonner-toast][data-styled="true"] [data-description] {
 }
 html [data-sonner-toast][data-styled="true"] [data-close-button] {
   transition: background-color 150ms ease-out;
-  top: 10px;
-  right: 10px;
+  /* Centred on the first row (8px padding, 24px row). */
+  top: 8px;
+  right: 8px;
   left: auto;
   width: 24px;
   height: 24px;
