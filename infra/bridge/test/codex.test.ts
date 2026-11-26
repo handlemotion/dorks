@@ -224,6 +224,18 @@ describe("Codex through a Boat ChatGPT connection", () => {
     expect(inputText(turn)).toContain("for v2");
   });
 
+  it("invokes a skill named later in the first message, sent before the skills were listed", async () => {
+    const home = tmp("codex-home-");
+    mkdirSync(join(home, ".claude", "skills", "writing"), { recursive: true });
+    writeFileSync(join(home, ".claude", "skills", "writing", "SKILL.md"), "---\nname: writing\ndescription: prose\n---\n");
+    const s = await setup(home, undefined, null, {}, undefined, true);
+    s.transport.emit([{ cid: "m1", frame: { t: "user_message", id: "m1", text: "remove this and use the /writing skill to improve the copy" } }]);
+    await waitFor(() => sent(s.report).some((e) => e.method === "turn/start"), "turn");
+    const turn = sent(s.report).find((e) => e.method === "turn/start")!;
+    expect(turn.input).toEqual(expect.arrayContaining([expect.objectContaining({ type: "skill", name: "writing" })]));
+    expect(inputText(turn)).toContain("use the /writing skill to improve the copy");
+  });
+
   it("shows edits and the plan as Claude's tools, declines approvals, and sends an untested change back once", async () => {
     const s = await setup(undefined, undefined, null, { FAKE_CODEX_EDIT: "1", FAKE_CODEX_VERDICT: "needs_live_test" });
     await waitFor(() => s.transport.of("ready")[0], "ready");

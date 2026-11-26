@@ -619,6 +619,8 @@ export class DorksClient {
       }
     },
     searchFiles: async (id: string, q: string) => (await this.api.searchFiles(id, q)).files,
+    /** A repository's files matching `q`, for a session not started yet. */
+    searchRepoFiles: async (repo: string, q: string) => (await this.api.searchRepoFiles(repo, q)).files,
     /** Where a shared screenshot (`dorks-image:<id>` in a message) loads from. The id is the capability: no token in the URL. */
     /** `width`: a smaller copy for showing it small (the server snaps it to a size it keeps; an older server sends the original). */
     imageUrl: (imageId: string, width?: number) => `${(this.cfg.imageBaseUrl ?? this.cfg.baseUrl).replace(/\/+$/, "")}/images/${encodeURIComponent(imageId)}${width ? `?w=${width}` : ""}`,
