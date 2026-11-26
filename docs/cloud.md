@@ -71,7 +71,7 @@ Enforced by the server on every relayed request, whatever the relay allowed (`te
 | Role | May |
 |---|---|
 | member | Use dorks: create them, chat, queue, stop, merge their PRs, comments, files. View settings, usage, repos, builds, automations and their runs, skills, MCP servers, connected apps. Upload images. `GET /api/me`, `POST /api/presence`. |
-| admin, owner | Everything a member may, plus settings writes, secret **names** (and setting or deleting a secret), automations (create, edit, delete, run now, Sentry projects), builds (every route) and skills (install, update, remove). |
+| admin, owner | Everything a member may, plus settings writes, secret **names** (and setting or deleting a secret), automations (create, edit, delete, run now, Sentry projects), builds (every route) and skills (install, update, remove). Deleting anyone's preview comment (moderation); editing one stays with its author. |
 
 Never, for any role: local access (`/api/dorks/:id/local/*`, `/api/local-access`), secure inputs (`/api/dorks/:id/inputs/*`), the
 box's live desktop, MCP server definitions, sign-ins (Boat, Antigravity, the snapshot build), phone pairing, `/mcp` and the sim
