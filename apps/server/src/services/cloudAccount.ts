@@ -332,11 +332,15 @@ export const cloudAccount = {
   /**
    * Forwards one request for an org the Worker runs (Teams, Cloud; docs/architecture.md, "Live updates for cloud orgs"): its UI API
    * (`api/...` to `/v1/orgs/:id/api/...`) or its realtime routes, which issue the s2 read tokens (`realtime/...` to
-   * `/v1/realtime/orgs/:id/...`). Anything else, or a path that tries to climb out, is refused.
+   * `/v1/realtime/orgs/:id/...`). Also its plan, for any org of the account: `entitlements` (GET, `/v1/orgs/:id/entitlements`), and
+   * the browser pages that change it, `billing/portal` and `billing/checkout` (POST, `/v1/billing/orgs/:id/...`, answering `{url}`).
+   * Anything else, or a path that tries to climb out, is refused.
    */
   async forwardOrg(app: App, orgId: string, rest: string, req: Request): Promise<Response> {
-    if (!/^[\w-]{1,128}$/.test(orgId) || !/^(api|realtime)\/[\w./-]*$/.test(rest) || /(^|\/)\.\.?(\/|$)|\/\//.test(rest)) fail("invalid", "Not an organization path");
     const id = encodeURIComponent(orgId);
+    if (/^[\w-]{1,128}$/.test(orgId) && req.method === "GET" && rest === "entitlements") return relay(app, `/v1/orgs/${id}/entitlements`, req);
+    if (/^[\w-]{1,128}$/.test(orgId) && req.method === "POST" && /^billing\/(portal|checkout)$/.test(rest)) return relay(app, `/v1/billing/orgs/${id}/${rest.slice("billing/".length)}`, req);
+    if (!/^[\w-]{1,128}$/.test(orgId) || !/^(api|realtime)\/[\w./-]*$/.test(rest) || /(^|\/)\.\.?(\/|$)|\/\//.test(rest)) fail("invalid", "Not an organization path");
     return relay(app, rest.startsWith("realtime/") ? `/v1/realtime/orgs/${id}/${rest.slice("realtime/".length)}` : `/v1/orgs/${id}/${rest}`, req);
   },
 };

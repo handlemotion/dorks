@@ -7,7 +7,7 @@ import type { AddressInfo } from "node:net";
 import type { AgentModelChoice, ClientEvent, CommentAnchor, CommentView, LocalSkill, McpServerView, PullRequestView, ShipStage, ShipView, SkillCandidate, SkillView } from "@dorks/shared";
 import type { Dork, Me, PhoneStatus, Settings, SnapshotStatus } from "./types.ts";
 import { mockAutomations } from "./mock-automations.ts";
-import { mockCloud, type MockCloudPlace, type MockOrgRuntime } from "./mock-cloud.ts";
+import { mockCloud, type MockCloudPlace, type MockCloudPlan, type MockOrgRuntime } from "./mock-cloud.ts";
 
 /** A new session's mode (docs/modes.md) from its body: `mode`, or the older `kind: "coordinator"` for a nerd; code by default. */
 const modeOf = (body: Record<string, unknown>): "chat" | "code" | "nerd" | undefined =>
@@ -36,6 +36,8 @@ export interface MockOptions {
   me?: Partial<Me>;
   /** Start signed in to the fake Dorks Cloud (mock-cloud.ts). */
   cloudSignedIn?: boolean;
+  /** The fake Dorks Cloud org's billing state (mock-cloud.ts). */
+  cloudPlan?: MockCloudPlan;
   /** Chats to start with, each running the fake agent's first turn (another place's server, mock-cloud.ts). */
   seed?: MockCloudPlace["seed"];
   /** A team the Worker runs, live from real s2 (mock-cloud.ts). */
@@ -1786,6 +1788,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   // Dorks Cloud (docs/mobile.md, "Desktop: Dorks Cloud"): its places are other mock servers, started the first time they are reached.
   const cloud = mockCloud({
     signedIn: opts.cloudSignedIn,
+    cloudPlan: opts.cloudPlan,
     orgRuntime: opts.orgRuntime,
     json,
     fail,

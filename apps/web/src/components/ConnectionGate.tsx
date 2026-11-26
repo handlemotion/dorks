@@ -8,6 +8,7 @@ import { onOpenRoute, onRuntimeConfig, setKeepAwake } from '../lib/desktop'
 import type { CloudServer } from '@dorks/client'
 import { CloudPlaceProvider, orgName, useCloudPlace, type CloudPlace } from './CloudPlace'
 import { EmptyState } from './EmptyState'
+import { useCloudPlan } from './CloudPlanIndicator'
 
 const DISCONNECT = createContext<(() => void) | null>(null)
 
@@ -103,6 +104,9 @@ const CLOUD_PAGE = /^\/(settings\/(cloud|organization)|invite\/[\w-]+)$/
 
 function ChooseMachine({ place, machines }: { place: CloudPlace; machines: CloudServer[] }) {
   const navigate = useNavigate()
+  // A Cloud trial used up puts the org back on Local, with nothing to run it: say why, and offer to subscribe.
+  const plan = useCloudPlan()
+  const usedUp = plan?.view.trial && plan.view.state === 'used_up' ? plan : null
   const name = orgName(place.org, place.cloud)
   // Every Mac of the org, online ones first; an offline one is listed but cannot be picked.
   const listed = machines.toSorted((a, b) => Number(b.online) - Number(a.online))
@@ -110,7 +114,19 @@ function ChooseMachine({ place, machines }: { place: CloudPlace; machines: Cloud
     <GateScreen>
       <DesktopLinks />
       <div className="flex w-full max-w-sm flex-col items-center gap-4">
-        {machines.length === 0 ? (
+        {machines.length === 0 && usedUp ? (
+          <EmptyState
+            figure="laptop"
+            title="Your Dorks Cloud trial hours are used up"
+            description={usedUp.canManage ? 'Subscribe to Dorks Cloud to keep running sessions here.' : "Ask the team's owner to subscribe to Dorks Cloud to keep running sessions here."}
+          >
+            {usedUp.canManage && (
+              <Button size="sm" variant="outline" onClick={usedUp.onSubscribe}>
+                Subscribe
+              </Button>
+            )}
+          </EmptyState>
+        ) : machines.length === 0 ? (
           <EmptyState figure="laptop" title={`Nothing runs ${name} yet`} description="Pair a Mac with this organization, or move it to Dorks Teams for a server Dorks runs, and it shows up here." />
         ) : (
           <EmptyState figure="laptop" title={`Connect to a Mac in ${name}`} description={machines.some((m) => m.online) ? undefined : 'None of its Macs is online. Open Dorks on one of them.'} />

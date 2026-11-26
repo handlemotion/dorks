@@ -388,6 +388,28 @@ export interface CloudPlaces {
   orgs: CloudOrg[];
 }
 
+/** A Dorks Cloud trial (dorks-cloud src/entitlements.ts): Teams for some days, or Cloud for some sandbox minutes in all. */
+export type CloudTrial = { kind: "teams_days"; endsAt: number | null } | { kind: "cloud_hours"; minutes: number; usedMinutes: number; minutesLeft: number; fallbackPlan: "local" | "teams" };
+
+/**
+ * `GET /api/cloud/orgs/:id/entitlements`: what the org's plan allows, from Dorks Cloud. On the Cloud trial `includedMinutes` is the
+ * trial's minutes left; `periodEnd` (epoch ms) is null without a subscription; overage is opt-in, never past `capCents`.
+ */
+export interface CloudEntitlements {
+  plan: PlanId;
+  memberLimit: number;
+  members: number;
+  orgRuntime: boolean;
+  /** Sandboxes on Dorks' Boat account (Cloud); Teams brings its own Boat key. */
+  cloudCredit: boolean;
+  includedMinutes: number;
+  usedMinutes: number;
+  periodEnd: number | null;
+  overage: { enabled: boolean; capCents: number; spentCents: number };
+  maxConcurrentSandboxes: number;
+  trial: CloudTrial | null;
+}
+
 export interface PhonePairing {
   /** Shown as typed on the phone, `ABCD-2345`. */
   code: string;

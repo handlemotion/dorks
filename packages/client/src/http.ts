@@ -47,6 +47,7 @@ import type {
   CloudOrgDetail,
   CloudInvitation,
   CloudPlaces,
+  CloudEntitlements,
   CloudMoveStatus,
   CloudStatus,
   InputAnswer,
@@ -225,6 +226,11 @@ export function createApi(config: ApiConfig) {
     cloudFinishSignIn: (code: string, state: string) => request<CloudStatus>("POST", "/api/cloud/sign-in/finish", { code, state }),
     cloudSignOut: () => request<object>("DELETE", "/api/cloud/session"),
     cloudPlaces: () => request<CloudPlaces>("GET", "/api/cloud/places"),
+    /** An org's plan and its limits, from Dorks Cloud. */
+    cloudEntitlements: (orgId: string) => request<CloudEntitlements>("GET", `/api/cloud/orgs/${encodeURIComponent(orgId)}/entitlements`),
+    /** A Stripe page for the org, to open in the browser: the customer portal, or Checkout for a plan (owner only). */
+    cloudBillingPortal: (orgId: string) => request<{ url: string }>("POST", `/api/cloud/orgs/${encodeURIComponent(orgId)}/billing/portal`, {}),
+    cloudCheckout: (orgId: string, plan: "teams" | "cloud") => request<{ url: string }>("POST", `/api/cloud/orgs/${encodeURIComponent(orgId)}/billing/checkout`, { plan }),
     /** Move to cloud (docs/move-to-cloud.md): where it stands, and starting it for this Mac's team org. */
     cloudMove: () => request<CloudMoveStatus>("GET", "/api/cloud/move"),
     cloudStartMove: (orgId: string) => request<CloudMoveStatus>("POST", "/api/cloud/move", { orgId }),

@@ -26,7 +26,7 @@ const PLANS: Partial<Record<AgentProvider, { key: 'claude' | 'google'; name: str
 const BOAT_USAGE = 'https://boat.dev/dashboard'
 
 /** One limit as shown: a label, when it resets, and the share used. */
-type Limit = { label: string; used: number; note?: string; title?: string }
+export type Limit = { label: string; used: number; note?: string; title?: string; /** Red before 90% (a warning the caller decided). */ warn?: boolean }
 
 /** The provider's model limits, then Boat's included machine time: the first sets the ring, the fullest of them really. */
 function limitsOf(usage: Usage, provider: AgentProvider) {
@@ -133,7 +133,7 @@ export function UsageSections({ usage, provider }: { usage: Usage; provider: Age
 }
 
 /** A titled group with a link to the provider's usage page on the web (opened in the browser); a full-width hairline above every group but the first. */
-function Section({ title, href, divided, children }: { title: string; href?: string; divided?: boolean; children: React.ReactNode }) {
+export function Section({ title, href, divided, children }: { title: string; href?: string; divided?: boolean; children: React.ReactNode }) {
   return (
     <section aria-label={title} className={`flex flex-col gap-3 px-3.5 pt-3 pb-3.5 ${divided ? 'border-t border-border' : ''}`}>
       <div className="flex items-center justify-between gap-2">
@@ -157,7 +157,7 @@ function Section({ title, href, divided, children }: { title: string; href?: str
 }
 
 /** A limit: label, then its reset and share used, over a brand-blue bar of the share used (red from 90%). */
-function Bar({ limit }: { limit: Limit }) {
+export function Bar({ limit }: { limit: Limit }) {
   const used = clamp(limit.used)
   return (
     <div title={limit.title} className="flex flex-col gap-1.5">
@@ -176,13 +176,13 @@ function Bar({ limit }: { limit: Limit }) {
         aria-valuenow={Math.round(used * 100)}
         className="h-1 overflow-hidden rounded-full bg-foreground/[0.08]"
       >
-        <div className={`h-full rounded-full ${used >= 0.9 ? 'bg-destructive' : 'bg-brand'}`} style={{ width: `${used * 100}%` }} />
+        <div className={`h-full rounded-full ${used >= 0.9 || limit.warn ? 'bg-destructive' : 'bg-brand'}`} style={{ width: `${used * 100}%` }} />
       </div>
     </div>
   )
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+export function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
       <span className="truncate">{label}</span>
@@ -192,7 +192,7 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 /** A 16px progress ring: a faint track and a brand-blue arc of the share used, from 12 o'clock clockwise (red from 90%). */
-function Ring({ used }: { used: number }) {
+export function Ring({ used, warn }: { used: number; warn?: boolean }) {
   const r = 6
   const c = 2 * Math.PI * r
   const u = clamp(used)
@@ -200,7 +200,16 @@ function Ring({ used }: { used: number }) {
     <svg viewBox="0 0 16 16" aria-hidden className="size-4 -rotate-90">
       <circle cx={8} cy={8} r={r} fill="none" strokeWidth={2} className="stroke-foreground/15" />
       {u > 0 && (
-        <circle cx={8} cy={8} r={r} fill="none" strokeWidth={2} strokeLinecap="round" strokeDasharray={`${Math.max(u * c, 0.01)} ${c}`} className={u >= 0.9 ? 'stroke-destructive' : 'stroke-brand'} />
+        <circle
+          cx={8}
+          cy={8}
+          r={r}
+          fill="none"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeDasharray={`${Math.max(u * c, 0.01)} ${c}`}
+          className={u >= 0.9 || warn ? 'stroke-destructive' : 'stroke-brand'}
+        />
       )}
     </svg>
   )
