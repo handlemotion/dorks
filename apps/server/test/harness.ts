@@ -25,6 +25,7 @@ export const testConfig = (over: Partial<Config> = {}): Config => ({
   boxProvider: "boat",
   uiOrigins: ["http://localhost:3000"],
   baseSnapshotId: "snap-1",
+  localSkillRoots: [],
   ...over,
 });
 

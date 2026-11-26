@@ -1,3 +1,6 @@
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { Effect } from "effect";
 import { describe, expect, it } from "vite-plus/test";
@@ -5,7 +8,7 @@ import { uiApp } from "../src/http/ui";
 import { findSkills, untar } from "../src/lib/skillRepo";
 import { parseSkillSource } from "../src/lib/skillSource";
 import * as bridge from "../src/services/bridge";
-import { skillBundle } from "../src/services/skills";
+import { addLocalSkills, deleteSkill, listLocalSkills, removeSkillFromComputer, skillBundle, skillRefs, updateSkill } from "../src/services/skills";
 import { updateSettings } from "../src/services/settings";
 import { fakeFetch, harness } from "./harness";
 
@@ -167,5 +170,77 @@ describe("skills from GitHub", () => {
     await installSkills(h.app, { source: "https://github.com/o/r/tree/release@2/skills/pdf" });
     expect(await updateSkill(h.app, "pdf")).toEqual({ updated: false });
     expect(asked.filter((p) => p.includes("/commits/")).every((p) => p.endsWith("release%402"))).toBe(true);
+  });
+});
+
+describe("skills from this computer", () => {
+  it("adopts ~/.agents/skills and ~/.claude/skills, follows their folders, and removes from Dorks or from the computer", async () => {
+    const home = mkdtempSync(join(tmpdir(), "dorks-skills-"));
+    try {
+      const agents = join(home, ".agents", "skills");
+      const claude = join(home, ".claude", "skills");
+      const codex = join(home, ".codex", "skills");
+      mkdirSync(join(agents, "release-notes", "scripts"), { recursive: true });
+      writeFileSync(join(agents, "release-notes", "SKILL.md"), md("release-notes", "Write release notes."));
+      writeFileSync(join(agents, "release-notes", "scripts", "run.sh"), "echo hi");
+      chmodSync(join(agents, "release-notes", "scripts", "run.sh"), 0o755);
+      mkdirSync(join(claude, "Team Style"), { recursive: true });
+      writeFileSync(join(claude, "Team Style", "SKILL.md"), md("Team Style", "House style."));
+      mkdirSync(join(claude, "not-a-skill"), { recursive: true });
+      mkdirSync(codex, { recursive: true });
+      symlinkSync(join(agents, "release-notes"), join(claude, "release-notes")); // what `npx skills add -g` leaves
+      symlinkSync(join(agents, "release-notes"), join(codex, "release-notes"));
+
+      const h = harness({ config: { localSkillRoots: [agents, claude] } });
+      const step = () => h.advance(10_000);
+      const names = () => skillRefs(h.app).map((s) => s.name);
+      // Adopted without asking; the folder linked from both counts once.
+      expect(names()).toEqual(["release-notes", "team-style"]);
+      expect(listLocalSkills(h.app)).toEqual([]);
+
+      const id = h.seed("waking", { provider: "claude", repo: "o/r" });
+      expect(skillBundle(h.app, id, "release-notes").files.find((f) => f.path === "scripts/run.sh")?.exec).toBe(true);
+
+      // An edit reaches the next session that starts.
+      const before = skillRefs(h.app)[0]!.digest;
+      writeFileSync(join(agents, "release-notes", "SKILL.md"), md("release-notes", "Write release notes from merged PRs."));
+      await step();
+      const edited = skillRefs(h.app)[0]!.digest;
+      expect(edited).not.toBe(before);
+      expect(await updateSkill(h.app, "release-notes")).toEqual({ updated: false });
+
+      // A file that cannot be read keeps the whole last copy, and Update says why.
+      if (process.getuid?.() !== 0) {
+        writeFileSync(join(agents, "release-notes", "SKILL.md"), md("release-notes", "Half read."));
+        chmodSync(join(agents, "release-notes", "scripts"), 0o000);
+        try {
+          await step();
+          expect(skillRefs(h.app)[0]!.digest).toBe(edited);
+          await expect(updateSkill(h.app, "release-notes")).rejects.toThrow(/could not be read/);
+        } finally {
+          chmodSync(join(agents, "release-notes", "scripts"), 0o755);
+        }
+      }
+
+      // Remove from Dorks: stays on the computer, listed to add back, never adopted again until then.
+      deleteSkill(h.app, "team-style");
+      await step();
+      expect(names()).toEqual(["release-notes"]);
+      expect(listLocalSkills(h.app).map((s) => s.name)).toEqual(["team-style"]);
+      expect(addLocalSkills(h.app, { skills: ["team-style"] })).toEqual({ installed: ["team-style"] });
+      expect(names()).toEqual(["release-notes", "team-style"]);
+
+      // Remove from this computer: the folder and every agent's link go, and so does the skill.
+      removeSkillFromComputer(h.app, "release-notes");
+      expect([existsSync(join(agents, "release-notes")), existsSync(join(claude, "release-notes")), existsSync(join(codex, "release-notes"))]).toEqual([false, false, false]);
+      expect(names()).toEqual(["team-style"]);
+
+      // A folder deleted outside Dorks drops out too.
+      rmSync(join(claude, "Team Style"), { recursive: true });
+      await step();
+      expect(names()).toEqual([]);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });
