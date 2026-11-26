@@ -1,6 +1,6 @@
 {
   "name": "@dorks/shared",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Wire types and schemas shared by the dorks server, clients, bridge and the Dorks Cloud Worker: events, the bridge protocol and its proof, plans, automations.",
   "license": "Apache-2.0",
   "repository": {
