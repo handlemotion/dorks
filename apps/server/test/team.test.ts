@@ -121,6 +121,32 @@ describe("team identity on the relay", () => {
     ]);
   });
 
+  it("lets admins and the owner delete anyone's comment, but only its author edit it", async () => {
+    const { h, token, relay, setOrg } = await setup();
+    setOrg(ORG);
+    const id = h.seed("idle");
+    const anchor = { kind: "element", path: "/", selector: "main", label: "main" };
+    const ada = await token();
+    const admin = await token({ sub: "u_grace", name: "Grace", role: "admin" });
+    const add = async (body: string) => (await relay("POST", `/api/dorks/${id}/comments`, ada, { body, anchor, port: 5173 })).body.id as string;
+    const first = await add("One");
+    const second = await add("Two");
+    expect((await relay("PATCH", `/api/dorks/${id}/comments/${first}`, admin, { body: "Edited" })).body.error.code).toBe("forbidden");
+    expect((await relay("DELETE", `/api/dorks/${id}/comments/${first}`, admin)).status).toBe(200);
+    // The local owner moderates too.
+    const owner = (method: string, body?: object) =>
+      uiApp(h.app).fetch(
+        new Request(`http://127.0.0.1/api/dorks/${id}/comments/${second}`, {
+          method,
+          headers: { authorization: `Bearer ${h.app.cfg.ownerToken}`, "content-type": "application/json" },
+          ...(body ? { body: JSON.stringify(body) } : {}),
+        }),
+      );
+    expect(((await (await owner("PATCH", { body: "Edited" })).json()) as { error: { code: string } }).error.code).toBe("forbidden");
+    expect((await owner("DELETE")).status).toBe(200);
+    expect((await relay("GET", `/api/dorks/${id}/comments`, ada)).body).toEqual([]);
+  });
+
   it("checks the signature, expiry and organization, and the role", async () => {
     const { token, relay, setOrg, exp } = await setup();
     const stranger = await keypair("k1"); // same key id, another key: a forged token

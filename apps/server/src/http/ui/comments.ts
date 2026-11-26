@@ -4,7 +4,7 @@ import * as comments from "../../services/comments";
 import { owned } from "../../services/dorks";
 import { looseBody, service } from "../route";
 import { handler, id, type Routes } from "./shared";
-import { byOfRequest } from "../../services/team";
+import { actorOf, byOfRequest, moderates } from "../../services/team";
 
 // ---- preview comments (services/comments.ts, docs/architecture.md "Preview comments")
 export const commentRoutes: Routes = (api, app) => {
@@ -44,7 +44,7 @@ export const commentRoutes: Routes = (api, app) => {
     "/api/dorks/:id/comments/:cid",
     on((c) =>
       service((a) => {
-        comments.deleteComment(a, id(c), cid(c), byOfRequest(c, a));
+        comments.deleteComment(a, id(c), cid(c), byOfRequest(c, a), moderates(actorOf(c)));
         return c.json({});
       }),
     ),
