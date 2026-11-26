@@ -214,7 +214,7 @@ function CodeBoxes({ value, onChange, onSubmit, invalid, disabled }: { value: st
             aria-hidden="true"
             className={cn(
               FIELD,
-              "flex h-12 flex-1 items-center justify-center rounded-[14px] text-xl font-medium",
+              "flex h-12 flex-1 items-center justify-center rounded-[14px] text-xl",
               invalid ? "border-[#dc2626] dark:border-[#f87171]" : current ? "border-[#1d72e8] dark:border-[#1d72e8]" : "",
             )}
           >

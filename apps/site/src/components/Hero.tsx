@@ -5,10 +5,10 @@ import { AppleIcon } from "#/components/icons";
 import { Button } from "#/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "#/components/ui/dropdown-menu";
 import { getLenis, subscribeLenisScroll } from "#/lib/lenis";
+import { formatSize, RELEASES_URL, type MacRelease } from "#/lib/release";
 import { cn } from "#/lib/utils";
+import { DOWNLOAD_URL, DownloadDetails, downloadTitle, useMacRelease } from "./Download";
 
-const DOWNLOAD_URL = "https://github.com/handlemotion/dorks/releases/latest";
-const RELEASES_URL = "https://github.com/handlemotion/dorks/releases";
 const GITHUB_URL = "https://github.com/handlemotion/dorks";
 const LOGIN_URL = "https://app.dorks.build";
 
@@ -45,7 +45,8 @@ const blurLayers = [
   },
 ];
 
-export function Hero() {
+export function Hero({ release: built }: { release: MacRelease | null }) {
+  const release = useMacRelease(built);
   const sectionRef = useRef<HTMLElement>(null);
   const bgRef = useRef<HTMLImageElement>(null);
   const copyRef = useRef<HTMLDivElement>(null);
@@ -144,6 +145,15 @@ export function Hero() {
           <Button variant={onLightSurface ? "navLight" : "nav"} size="icon-sm" aria-label="GitHub" nativeButton={false} render={<a href={GITHUB_URL} target="_blank" rel="noreferrer" />}>
             <GitHubIcon />
           </Button>
+          <Button variant={onLightSurface ? "navLight" : "nav"} size="sm" className="sm:max-md:hidden" nativeButton={false} title={downloadTitle(release)} render={<a href={DOWNLOAD_URL} />}>
+            <AppleIcon className="-mt-0.5" />
+            <span>Download</span>
+            {release ? (
+              <span className="hidden tabular-nums opacity-70 xl:inline">
+                v{release.version} · {formatSize(release.size)}
+              </span>
+            ) : null}
+          </Button>
           <Button variant={onLightSurface ? "solidDark" : "solid"} size="sm" nativeButton={false} render={<a href={LOGIN_URL} />}>
             Log In
           </Button>
@@ -174,37 +184,40 @@ export function Hero() {
               </h1>
             </div>
 
-            <div className="flex flex-wrap items-center justify-center gap-2.5">
-              <div className="inline-flex h-9 items-center rounded-full bg-white">
-                <Button variant="splitPrimary" size="splitMain" nativeButton={false} render={<a href={DOWNLOAD_URL} />}>
-                  <AppleIcon className="-mt-0.5" />
-                  <span>Download for Mac</span>
+            <div className="flex flex-col items-center gap-3">
+              <div className="flex flex-wrap items-center justify-center gap-2.5">
+                <div className="inline-flex h-9 items-center rounded-full bg-white">
+                  <Button variant="splitPrimary" size="splitMain" nativeButton={false} title={downloadTitle(release)} render={<a href={DOWNLOAD_URL} />}>
+                    <AppleIcon className="-mt-0.5" />
+                    <span>Download for Mac</span>
+                  </Button>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger render={<Button variant="splitTrigger" size="splitEnd" aria-label="More download options" />}>
+                      <ChevronDown className="size-3.5 stroke-[1.75]" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" sideOffset={8}>
+                      <DropdownMenuItem render={<a href={DOWNLOAD_URL} />}>
+                        <span>Apple silicon (.dmg)</span>
+                        <span className="text-xs text-neutral-400 tabular-nums">{release ? formatSize(release.size) : "macOS"}</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem render={<a href={RELEASES_URL} target="_blank" rel="noreferrer" />}>
+                        <span>All releases</span>
+                        <span className="text-xs text-neutral-400">GitHub</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem render={<a href="/docs/quickstart" />}>
+                        <span>Quickstart guide</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                <Button variant="glass" size="default" nativeButton={false} render={<a href={LOGIN_URL} />}>
+                  Log In
                 </Button>
-
-                <DropdownMenu>
-                  <DropdownMenuTrigger render={<Button variant="splitTrigger" size="splitEnd" aria-label="More download options" />}>
-                    <ChevronDown className="size-3.5 stroke-[1.75]" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" sideOffset={8}>
-                    <DropdownMenuItem render={<a href={DOWNLOAD_URL} />}>
-                      <span>Apple Silicon (.dmg)</span>
-                      <span className="text-xs text-neutral-400">macOS</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem render={<a href={RELEASES_URL} target="_blank" rel="noreferrer" />}>
-                      <span>All releases</span>
-                      <span className="text-xs text-neutral-400">GitHub</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem render={<a href="/docs/quickstart" />}>
-                      <span>Quickstart guide</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
               </div>
-
-              <Button variant="glass" size="default" nativeButton={false} render={<a href={LOGIN_URL} />}>
-                Log In
-              </Button>
+              <DownloadDetails release={release} className="text-white/90" />
             </div>
           </div>
 

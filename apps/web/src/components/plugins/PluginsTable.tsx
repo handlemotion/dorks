@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { BookOpenIcon, EllipsisIcon, PlusIcon, ServerIcon } from 'lucide-react'
-import type { McpServerView, SkillView } from '@dorks/client'
-import { useDorksClient } from '@dorks/client/react'
+import { BookOpenIcon, EllipsisIcon, LaptopIcon, PlusIcon, ServerIcon } from 'lucide-react'
+import type { LocalSkill, McpServerView, SkillView } from '@dorks/client'
+import { useDorksClient, useLocalSkills } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@dorks/ui/dropdown-menu'
 import { toast } from 'sonner'
@@ -10,6 +10,7 @@ import { EmptyState } from '../EmptyState'
 import { PageRail, RailPage } from '../PageRail'
 import { SettingsGroup, SettingsSection, SettingsSections, StatusDot } from '../settings/kit'
 import { ConnectorIcon } from './PluginsDialogs'
+import { RemoveFromComputerDialog } from './RemoveSkillDialog'
 
 const ROW_WRAP = 'group flex min-h-13 w-full min-w-0 items-center hover:bg-foreground/[0.02]'
 const ROW_BUTTON =
@@ -203,7 +204,10 @@ export function PluginsDirectory({
   )
 }
 
-// ---------------------------------------------------------------- Skills (installed only, grouped by source repository)
+// ---------------------------------------------------------------- Skills (installed, grouped by source repository; then the ones found on this computer)
+
+/** Where an installed skill came from, as its group's title. */
+const LOCAL_GROUP = 'This computer'
 
 export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { skills: SkillView[] | undefined; onAddSkill: (source?: string) => void; onInspectInstalled: (key: string) => void }) {
   const { actions } = useDorksClient()
@@ -222,20 +226,26 @@ export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { sk
   const removeSkill = async (name: string) => {
     try {
       await actions.deleteSkill(name)
-      toast.success(`Removed ${name}`)
+      toast.success(skills?.find((s) => s.name === name)?.local ? `Removed ${name} from Dorks` : `Removed ${name}`)
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : `Could not remove ${name}`)
     }
   }
 
+  const [removing, setRemoving] = useState<SkillView | null>(null)
+  const local = useLocalSkills()
+  const found = useMemo(() => (local ?? []).filter((l) => !l.added && (!q || l.name.toLowerCase().includes(q) || l.description.toLowerCase().includes(q))), [local, q])
+
   const groups = useMemo(() => {
-    const filtered = (skills ?? []).filter((s) => !q || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q) || s.source.repo.toLowerCase().includes(q))
+    const filtered = (skills ?? []).filter(
+      (s) => !q || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q) || s.source.repo.toLowerCase().includes(q) || !!s.local?.toLowerCase().includes(q),
+    )
     const byRepo = new Map<string, SkillView[]>()
     for (const s of filtered) {
-      const repo = s.source.repo || 'Installed'
+      const repo = s.local ? LOCAL_GROUP : s.source.repo || 'Installed'
       byRepo.set(repo, [...(byRepo.get(repo) ?? []), s])
     }
-    return [...byRepo.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([repo, items]) => ({ id: repo, title: repo, items }))
+    return [...byRepo.entries()].sort(([a], [b]) => (a === LOCAL_GROUP ? -1 : b === LOCAL_GROUP ? 1 : a.localeCompare(b))).map(([repo, items]) => ({ id: repo, title: repo, items }))
   }, [q, skills])
 
   const total = groups.reduce((n, g) => n + g.items.length, 0)
@@ -254,7 +264,11 @@ export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { sk
         }
       />
 
-      {total === 0 ? (
+      {total === 0 && found.length > 0 ? (
+        <SettingsSections>
+          <FoundOnComputer found={found} />
+        </SettingsSections>
+      ) : total === 0 ? (
         <div className="flex min-h-56 items-center justify-center py-8">
           <EmptyState
             figure="drawer"
@@ -299,9 +313,18 @@ export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { sk
                         <DropdownMenuItem onClick={() => onInspectInstalled(`skill:${s.name}`)}>View details</DropdownMenuItem>
                         <DropdownMenuItem onClick={() => void updateSkill(s.name)}>Update</DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem variant="destructive" onClick={() => void removeSkill(s.name)}>
-                          Remove
-                        </DropdownMenuItem>
+                        {s.local ? (
+                          <>
+                            <DropdownMenuItem onClick={() => void removeSkill(s.name)}>Remove from Dorks</DropdownMenuItem>
+                            <DropdownMenuItem variant="destructive" onClick={() => setRemoving(s)}>
+                              Remove from this computer…
+                            </DropdownMenuItem>
+                          </>
+                        ) : (
+                          <DropdownMenuItem variant="destructive" onClick={() => void removeSkill(s.name)}>
+                            Remove
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -309,8 +332,52 @@ export function SkillsDirectory({ skills, onAddSkill, onInspectInstalled }: { sk
               </SettingsGroup>
             </SettingsSection>
           ))}
+          {found.length > 0 && <FoundOnComputer found={found} />}
         </SettingsSections>
       )}
+      {removing && <RemoveFromComputerDialog skill={removing} onClose={() => setRemoving(null)} />}
     </RailPage>
+  )
+}
+
+/** Skills on this computer that sessions do not have: removed from Dorks, a name a GitHub skill has, or too large. */
+function FoundOnComputer({ found }: { found: LocalSkill[] }) {
+  const { actions } = useDorksClient()
+  const [busy, setBusy] = useState(false)
+  const add = async (name: string) => {
+    setBusy(true)
+    try {
+      await actions.addLocalSkills([name])
+      toast.success(`Added ${name}`)
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : `Could not add ${name}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <SettingsSection title="Found on this computer">
+      <SettingsGroup label="skills on this computer">
+        {found.map((l) => (
+          <div key={l.name} className={ROW_WRAP}>
+            <div className="flex min-h-13 min-w-0 flex-1 items-center gap-3 py-2.5 ps-4 pe-3">
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-[6px] bg-foreground/[0.04] text-muted-foreground">
+                <LaptopIcon className="size-3.5" />
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="truncate font-mono text-xs leading-4 text-foreground">{l.name}</span>
+                <span className="truncate text-xs leading-4 text-muted-foreground">
+                  {l.tooLarge ? 'Too large to add (over 1000 files or 8 MB)' : l.description || l.folder}
+                  {l.installed && !l.tooLarge ? ' · replaces the installed one' : ''}
+                </span>
+              </span>
+            </div>
+            <Button type="button" variant="outline" size="sm" className="me-3 shrink-0" aria-label={`add ${l.name}`} disabled={busy || l.tooLarge} onClick={() => void add(l.name)}>
+              Add
+            </Button>
+          </div>
+        ))}
+      </SettingsGroup>
+    </SettingsSection>
   )
 }

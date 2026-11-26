@@ -2,7 +2,9 @@ name: Desktop release
 
 # Builds the macOS app for Apple silicon (aarch64; no Intel build for now), signs it with a Developer ID certificate,
 # notarizes it with Apple and publishes the GitHub release `desktop-v<version>` with the .dmg, the signed updater bundle and
-# latest.json. Installed apps read latest.json from the latest release (docs/desktop.md, "Updates").
+# latest.json. Installed apps read latest.json from the latest release (docs/desktop.md, "Updates"). Assets are named
+# dorks-v<version>.dmg, dorks-v<version>.app.tar.gz(.sig); latest.json points at those names, and dorks.build/download
+# redirects to the .dmg (apps/site/src/worker.ts).
 #
 # Normally called by release.yml when a merged release PR puts a new version on main (docs/releasing.md). Run it by hand
 # to retry the current version's release, or with `unsigned` for a test build in a draft pre-release.
@@ -156,6 +158,8 @@ jobs:
           releaseCommitish: ${{ github.sha }}
           releaseDraft: true # published below, once every asset is up
           uploadUpdaterJson: true
+          # One Apple silicon build, so no arch in the name. latest.json is written from the same names.
+          releaseAssetNamePattern: dorks-v[version][ext]
           args: --target aarch64-apple-darwin --config src-tauri/tauri.release.conf.json --features updater
 
       - name: Publish the release
@@ -179,4 +183,5 @@ jobs:
           releaseName: ${{ format('Dorks test build {0}', github.run_number) }}
           releaseDraft: true
           prerelease: true
+          releaseAssetNamePattern: dorks-v[version][ext]
           args: --target aarch64-apple-darwin
