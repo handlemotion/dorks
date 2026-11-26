@@ -192,7 +192,7 @@ export function Hero({ release: built }: { release: MacRelease | null }) {
               </h1>
             </div>
 
-            <div className="flex flex-col items-center gap-6">
+            <div className="flex flex-col items-center gap-5">
               <div className="flex flex-wrap items-center justify-center gap-2.5">
                 <PressScale asChild {...FLOAT}>
                   <div className="inline-flex h-9 items-center rounded-full bg-white outline-2 outline-offset-2 outline-transparent transition-[outline-color] duration-150 has-[:focus-visible]:outline-white/80">
