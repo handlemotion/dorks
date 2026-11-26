@@ -5,7 +5,7 @@ import { cn } from 'cn'
 import type { Block, ChatRun, DraftChanges, RunStep } from '@dorks/shared'
 import { Button } from '@dorks/ui/button'
 import { workedFor } from '../lib/duration'
-import { STAGE_ICON, useNow } from './ShipCard'
+import { CARD_BLEED, STAGE_ICON, useNow } from './ShipCard'
 import { sizeOf, STEP_NAMES } from './builds/format'
 
 // Builds in the thread (docs/builds.md), cards on the surface fill like the to-dos and the ship card, told apart by the icon heading
@@ -17,7 +17,7 @@ type DraftBlock = Extract<Block, { kind: 'build' }>
 type RunBlock = Extract<Block, { kind: 'buildRun' }>
 
 // my-1.5: a card sits 18px from the text around it in a turn (12px gap plus 6px), so it never reads as part of a paragraph.
-const CARD = 'my-1.5 flex w-full min-w-0 flex-col gap-2 rounded-[6px] border border-surface-line bg-surface px-3.5 pt-2.5'
+const CARD = `${CARD_BLEED} my-1.5 flex min-w-0 flex-col gap-2 rounded-[6px] border border-surface-line bg-surface pt-2.5`
 
 /** The card's first line: what it is, then its state on the right. */
 function Header({ icon: Icon, title, children }: { icon: typeof BoxIcon; title: string; children?: ReactNode }) {
