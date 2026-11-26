@@ -220,9 +220,53 @@ export function mockCloud(opts: {
     return true;
   };
 
+  /** The mock's sessions of the account (Settings › Account): this computer and a phone, until it is signed out. */
+  let sessions = [
+    { id: "mock-this", createdAt: "2026-11-01T09:00:00Z", updatedAt: new Date().toISOString(), expiresAt: "2026-12-31T00:00:00Z", ipAddress: null, userAgent: "Bun/1.3", current: true },
+    {
+      id: "mock-phone",
+      createdAt: "2026-11-02T09:00:00Z",
+      updatedAt: "2026-11-20T18:00:00Z",
+      expiresAt: "2026-12-31T00:00:00Z",
+      ipAddress: "192.0.2.10",
+      userAgent: "Dorks/1 CFNetwork Darwin",
+      current: false,
+    },
+  ];
+  /** A picture upload, kept as a data URL (the real cloud crops it and serves it from R2). */
+  const picture = async (req: IncomingMessage) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(chunk as Buffer);
+    return `data:${req.headers["content-type"] ?? "image/png"};base64,${Buffer.concat(chunks).toString("base64")}`;
+  };
+  /** The profile routes (services/cloudAccount.ts cloudProfile); false for anything else. */
+  const accountRoute = async (req: IncomingMessage, res: ServerResponse, method: string, path: string): Promise<boolean> => {
+    const logo = /^\/api\/cloud\/orgs\/([\w-]+)\/logo$/.exec(path);
+    if (!logo && !path.startsWith("/api/cloud/account")) return false;
+    if (!user) return (fail(res, "not_configured", "Sign in to Dorks Cloud first."), true);
+    const changed = (body: unknown) => (opts.broadcast({ t: "settings" }), json(res, 200, body));
+    const r = `${method} ${logo ? "/api/cloud/orgs/:id/logo" : path}`;
+    if (r === "GET /api/cloud/account") json(res, 200, { user, sessions });
+    else if (r === "PATCH /api/cloud/account") {
+      const body = await opts.readBody(req).catch(() => ({}) as Record<string, unknown>);
+      if (typeof body.name !== "string" || !body.name.trim()) fail(res, "invalid", "Enter a name");
+      else changed((user = { ...user, name: body.name.trim() }));
+    } else if (r === "PUT /api/cloud/account/avatar") changed((user = { ...user, image: await picture(req) }));
+    else if (r === "DELETE /api/cloud/account/avatar") changed((user = { ...user, image: null }));
+    else if (r === "DELETE /api/cloud/account/sessions") (json(res, 200, { signedOut: sessions.length - 1 }), (sessions = sessions.filter((s) => s.current)));
+    else if (method === "DELETE" && path.startsWith("/api/cloud/account/sessions/")) (json(res, 200, {}), (sessions = sessions.filter((s) => s.id !== path.split("/").pop())));
+    else if (logo) {
+      const org = orgs.find((o) => o.id === logo[1]);
+      if (!org) fail(res, "not_found", "No such organization");
+      else changed({ logo: (org.logo = method === "PUT" ? await picture(req) : null) });
+    } else fail(res, "not_found", "Not found");
+    return true;
+  };
+
   /** Answers a cloud route; false for anything else. */
   const route = async (req: IncomingMessage, res: ServerResponse, method: string, path: string, search: string): Promise<boolean> => {
     if (await orgRoute(req, res, path, search)) return true;
+    if (await accountRoute(req, res, method, path)) return true;
     const fwd = /^\/api\/cloud\/servers\/([\w-]+)\/(api\/.*)$/.exec(path) ?? (method === "GET" ? /^\/cloud\/servers\/([\w-]+)\/(images\/[\w-]+)$/.exec(path) : null);
     if (fwd) {
       await forward(req, res, fwd[1]!, fwd[2]!.startsWith("images/") ? `api/${fwd[2]}` : fwd[2]!, search);

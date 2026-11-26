@@ -45,6 +45,7 @@ import type {
   CloudPlaces,
   CloudMoveStatus,
   CloudStatus,
+  CloudAccount,
   CloudOrgAction,
   CloudOrgDetail,
   CloudInvitation,
@@ -212,6 +213,15 @@ export class DorksClient {
     if (!feed) return;
     if (pageHidden()) this.staleFeeds.add(dorkId);
     else feed.requestTail();
+  }
+
+  /** A cloud change, then everything cloud read again (also when it fails: the relay may have taken part of it). */
+  private async cloudThen<T>(f: () => Promise<T>): Promise<T> {
+    try {
+      return await f();
+    } finally {
+      this.invalidate("cloud");
+    }
   }
 
   private invalidate(prefix: string) {
@@ -417,6 +427,10 @@ export class DorksClient {
   /** The account's organizations and servers (its Macs, and the servers Dorks runs for its Teams and Cloud orgs); refreshed with `cloud`. */
   cloudPlaces() {
     return this.query<CloudPlaces>("cloud:places", () => this.api.cloudPlaces());
+  }
+  /** Settings › Account: the account read fresh from the cloud, and its sessions; refreshed with `cloud`. */
+  cloudAccount() {
+    return this.query<CloudAccount>("cloud:account", () => this.api.cloudAccount());
   }
   /** An organization's members and invitations (team management). */
   cloudOrg(orgId: string) {
@@ -846,6 +860,13 @@ export class DorksClient {
       await this.api.cloudSignOut();
       this.invalidate("cloud");
     },
+    /** Profile edits (Settings › Account); everything cloud is read again after, so the switcher and attribution follow. */
+    cloudRename: (name: string) => this.cloudThen(() => this.api.cloudRename(name)),
+    cloudSetAvatar: (image: Blob) => this.cloudThen(() => this.api.cloudSetAvatar(image)),
+    cloudRemoveAvatar: () => this.cloudThen(() => this.api.cloudRemoveAvatar()),
+    cloudSignOutSession: (id: string) => this.cloudThen(() => this.api.cloudSignOutSession(id)),
+    cloudSignOutOthers: () => this.cloudThen(() => this.api.cloudSignOutOthers()),
+    cloudSetOrgLogo: (orgId: string, image: Blob | null) => this.cloudThen(() => this.api.cloudSetOrgLogo(orgId, image)),
     unpairPhone: async () => {
       await this.api.unpairPhone();
       this.invalidate("phone");
