@@ -75,7 +75,8 @@ one `dork_get` reports as `settled: true`. `lastAnswer` is the final answer of i
 
 - `infra/bridge/src/mcp.ts` lists the crew tools for the role (`crew.role` RPC) and forwards calls as RPC `crew`, which the bridge
   forwards to the server op. `dork_wait` repeats 8 s waits until its timeout.
-- `guidance.ts`: `COORDINATOR_GUIDANCE` and `WORKER_GUIDANCE`.
+- `guidance.ts`: `COORDINATOR_GUIDANCE` and `WORKER_GUIDANCE`. A nerd writes to the owner in at most 4 short lines plus one small
+  list or table; the Stop hook (`hooks.ts`, `brevityReason`) sends a coordinator's final answer over that budget back once to be cut.
 
 ## Web
 

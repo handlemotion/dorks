@@ -166,6 +166,7 @@ export class Bridge {
       // Claude only for now (the one agent tested live, AGENTS.md); a crew coordinator writes no code.
       skipVerify: () => this.provider !== "claude" || this.role === "coordinator" || !MODES[this.mode].autonomy,
       autonomy: () => MODES[this.mode].autonomy,
+      brevity: () => this.role === "coordinator",
       log: this.log,
     });
     this.previewRpc = previewMethods(this.t, this.log, () => ({ role: this.role, mode: this.mode }), this.previews, this.cfg.bridgePort);

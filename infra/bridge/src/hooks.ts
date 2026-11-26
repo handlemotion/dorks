@@ -5,6 +5,7 @@ import { shellQuote } from "./credentials";
 import { HOOK_EVENTS, type HookEvent } from "./hook-cli";
 import { findPrUrls, prLabel, samePr, toRef } from "./pr-ref";
 import type { PrSubscriptions } from "./prs";
+import { brevityReason } from "./guidance";
 import { errTag, type Log } from "./redact";
 import type { RpcMethods } from "./rpc";
 import type { Identity } from "./runas";
@@ -137,6 +138,8 @@ export interface HookDeps {
   skipVerify?: () => boolean;
   /** Secure inputs (docs/secure-inputs.md): filled into tool inputs, redacted from tool outputs. */
   inputs?: Pick<SecretInputs, "preToolUse" | "postToolUse">;
+  /** Hold the final answer to the nerd's brevity budget (guidance.ts, `brevityReason`): a crew coordinator. */
+  brevity?: () => boolean;
   /** Coding autonomy is on for this session's mode (docs/modes.md): off for a chat, which ships nothing. Default: on. */
   autonomy?: () => boolean;
   log: Log;
@@ -198,8 +201,10 @@ export class HookService {
     if (this.d.autonomy?.() === false) return this.allow();
     // Claude Code is already continuing because an earlier Stop hook blocked: never block twice in a row.
     if (input.stop_hook_active === true) return this.allow();
+    // A nerd's answer over its budget is sent back to be cut (once: the rewrite stops through stop_hook_active).
+    const tooLong = this.d.brevity?.() ? brevityReason(text(input.last_assistant_message)) : null;
     // The turn answering a `ready` notification is "post a standby note", not "ship something".
-    if (this.turnKinds.includes("ready")) return this.allow();
+    if (this.turnKinds.includes("ready")) return tooLong ? this.block("brevity", tooLong) : this.allow();
 
     const verifying = this.verify(text(input.last_assistant_message)).catch((e) => {
       this.d.log("hook stop: verify gate failed:", errTag(e));
@@ -223,11 +228,16 @@ export class HookService {
     const fresh = found.filter((f) => !raised.has(conditionKey(f)));
     this.saveRaised(session, [...raised].filter((k) => present.has(k)).concat(fresh.map(conditionKey)));
     const verify = await verifying;
-    if (!fresh.length && !verify) return this.allow();
+    if (!fresh.length && !verify && !tooLong) return this.allow();
 
-    this.d.log("hook stop: blocked for", [...(verify ? ["verify"] : []), ...new Set(fresh.map((f) => f.kind))].join(","));
-    // Test first, then ship: one block carries both, since the continuation it starts is never blocked again.
-    return { decision: "block", reason: [verify, fresh.length ? stopReason(fresh) : null].filter(Boolean).join("\n\n") };
+    // Test first, then ship, then cut: one block carries all, since the continuation it starts is never blocked again.
+    const kinds = [...(verify ? ["verify"] : []), ...new Set(fresh.map((f) => f.kind)), ...(tooLong ? ["brevity"] : [])].join(",");
+    return this.block(kinds, [verify, fresh.length ? stopReason(fresh) : null, tooLong].filter(Boolean).join("\n\n"));
+  }
+
+  private block(kinds: string, reason: string): HookOutput {
+    this.d.log("hook stop: blocked for", kinds);
+    return { decision: "block", reason };
   }
 
   /** The stop goes through: the next turn is judged on its own. */

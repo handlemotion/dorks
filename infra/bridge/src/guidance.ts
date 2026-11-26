@@ -46,14 +46,51 @@ export const COORDINATOR_GUIDANCE = [
   "that arrive together come in one turn. Do not poll with dork_list or dork_wait in a loop. Use dork_send to answer or redirect a worker,",
   "dork_read or dork_get for detail, dork_stop to stop one going wrong, dork_archive when one is done. Check claims against the PR before",
   "trusting them. Sequence dependent tasks: start the next only when what it needs has landed or is in a PR it can build on.",
-  "Workers never merge PRs unless the user asked. Your final answer to the user is the status of the whole goal: what is done (PR links),",
-  "what is in progress, what failed and what needs the user.",
+  "Workers never merge PRs unless the user asked.",
   // Reach beyond the crew (docs/modes.md): the owner asked for nerds that can talk to their other chats, without taking them over.
   "You can also see the user's other sessions (dork_list with `all: true`), read them (dork_get, dork_read) and leave one a note (dork_send),",
   "which it reads at its next turn boundary as information, not as the user's instruction. Prefer the sessions you started: never take over",
   "or redirect another session's task unless the user asked you to; to get work done, start your own worker. Use notes to hand over",
   "something a session needs or to ask it a question.",
+  // Brevity (the owner's rule): nerd messages were walls of text. This overrides the final-answer guidance above, and the Stop hook
+  // (hooks.ts, `brevityReason`) sends back a final answer over the budget.
+  "How you write to the user, every message, overriding the final-answer guidance above: be extremely brief. At most 4 short lines of prose,",
+  "then at most one small list (up to 5 items, one line each) or one small table. Nothing more. Say only what changed and what needs the user;",
+  "link PRs instead of explaining them. No headings, no bold labels on paragraphs, no recap of what you said before, no retelling a worker's",
+  "report, no describing what workers are about to do or the options they weigh. The user reads worker detail in their sessions and asks",
+  "when they want more. A message over this budget is sent back to you to cut.",
 ].join(" ");
+
+/** The nerd's budget (COORDINATOR_GUIDANCE): prose words (about 4 lines in the chat), list or table rows, words per row. */
+export const BREVITY = { proseWords: 80, items: 6, itemWords: 28 } as const;
+
+const words = (s: string) => s.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+
+/**
+ * Null when a coordinator's message fits its budget, else what to tell it. Prose is every line that is not a list item, a table row or
+ * inside a code block (a code block is allowed as the one element and not counted).
+ */
+export function brevityReason(message: string): string | null {
+  const lines = message
+    .replace(/```[\s\S]*?(```|$)/g, "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const isItem = (l: string) => /^([-*+]|\d+[.)])\s/.test(l) || l.startsWith("|");
+  const items = lines.filter(isItem).filter((l) => !/^\|[\s|:-]+\|?$/.test(l));
+  const prose = words(lines.filter((l) => !isItem(l)).join(" "));
+  const longest = Math.max(0, ...items.map(words));
+  const over = [
+    prose > BREVITY.proseWords && `${prose} words of prose (budget ${BREVITY.proseWords}, about 4 lines)`,
+    items.length > BREVITY.items && `${items.length} list or table rows (budget ${BREVITY.items})`,
+    longest > BREVITY.itemWords && `a row of ${longest} words (budget ${BREVITY.itemWords}, one line)`,
+  ].filter(Boolean);
+  if (!over.length) return null;
+  return (
+    `Your message is too long for the user: ${over.join(", ")}. Rewrite it as your final message, much shorter: at most 4 short lines, ` +
+    "then at most one small list or table. Keep only what changed and what needs the user; drop the recap, the explanations and the detail."
+  );
+}
 
 /** A worker in a crew (docs/crew.md): a normal coding dork whose user is a coordinator dork. */
 export const WORKER_GUIDANCE = [
