@@ -253,7 +253,7 @@ export function ChatDetails({
  * An open tab: the same 28px box selected or not (nothing moves), a grey fill when selected, a lighter one on hover. On hover (or
  * keyboard focus) its icon gives way to an X in the same spot that closes it; a middle click closes it too.
  */
-function OpenTab({ value, icon, title, onClose, children }: { value: TabKey; icon: ReactNode; title: string; onClose: () => void; children: ReactNode }) {
+export function OpenTab({ value, icon, title, onClose, children }: { value: string; icon: ReactNode; title: string; onClose: () => void; children: ReactNode }) {
   return (
     <div className="group/tab relative flex-none">
       <TabsTrigger

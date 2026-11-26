@@ -12,8 +12,10 @@ import { DorkIcon, dorkIconState } from './DorkIcon'
 import { BAR_BUTTON, PreviewBrowser, type PreviewServer } from './PreviewBrowser'
 import { PrIcon, prStatus } from './PrStatus'
 import { PullRequestPanel, TAB_CLASS, type PullRequestPanelData } from './PullRequestPanel'
+import { OpenTab } from './ChatDetails'
 import { SessionChat, type DorkView } from './SessionChat'
 import { Tip } from './Tip'
+import { setDraft } from '../lib/draft'
 import { THUMB_WIDTH } from '../lib/images'
 
 type Worker = NonNullable<ReturnType<typeof useDorks>>[number]
@@ -21,6 +23,32 @@ type TabKey = 'sessions' | 'artifacts' | `pr:${string}`
 
 const STATE_LABEL: Record<string, string> = { creating: 'Starting', working: 'Working', waking: 'Waking', idle: 'Done', sleeping: 'Asleep', error: 'Failed' }
 const prNumber = (url: string) => Number(/\/pull\/(\d+)/.exec(url)?.[1]) || undefined
+
+/** The PR tabs the owner closed, by dork: their URLs, kept in localStorage. A worker's next PR has a new URL, so it opens a tab again. */
+const CLOSED_KEY = 'dorks.crew-closed-prs.'
+function readClosed(dorkId: string): Set<string> {
+  try {
+    const v: unknown = JSON.parse(localStorage.getItem(CLOSED_KEY + dorkId) ?? '[]')
+    return new Set(Array.isArray(v) ? v.filter((u): u is string => typeof u === 'string') : [])
+  } catch {
+    return new Set()
+  }
+}
+function useClosedPrs(dorkId: string): [Set<string>, (url: string) => void] {
+  const [closed, setClosed] = useState(() => readClosed(dorkId))
+  useEffect(() => setClosed(readClosed(dorkId)), [dorkId])
+  const close = (url: string) =>
+    setClosed((prev) => {
+      const next = new Set(prev).add(url)
+      try {
+        localStorage.setItem(CLOSED_KEY + dorkId, JSON.stringify([...next]))
+      } catch {
+        // Storage full or disabled: closed for as long as the app runs.
+      }
+      return next
+    })
+  return [closed, close]
+}
 
 /** A dork's open worker, remembered per dork for the page's life (switching tabs or chats keeps it). */
 const openWorker = new Map<string, string>()
@@ -33,7 +61,8 @@ const openWorker = new Map<string, string>()
 export function CrewDetails({ dork, onClose, onAsk }: { dork: DorkView; onClose?: () => void; onAsk?: (text: string) => void }) {
   const all = useDorks(false)
   const workers = (all ?? []).filter((d) => d.parentId === dork.id)
-  const prs = workers.flatMap((w) => (w.prUrl ? [{ worker: w, url: w.prUrl }] : []))
+  const [closedPrs, closePr] = useClosedPrs(dork.id)
+  const prs = workers.flatMap((w) => (w.prUrl && !closedPrs.has(w.prUrl) ? [{ worker: w, url: w.prUrl }] : []))
   const [tab, setTab] = useState<TabKey>('sessions')
   const [open, setOpenState] = useState<string | undefined>(() => openWorker.get(dork.id))
   const setOpen = (id: string | undefined) => {
@@ -41,7 +70,7 @@ export function CrewDetails({ dork, onClose, onAsk }: { dork: DorkView; onClose?
     else openWorker.delete(dork.id)
     setOpenState(id)
   }
-  // A PR tab whose worker went away (archived) falls back to Sessions.
+  // A PR tab whose worker went away (archived) or that was closed falls back to Sessions.
   const selected: TabKey = tab.startsWith('pr:') && !prs.some((p) => `pr:${p.worker.id}` === tab) ? 'sessions' : tab
   return (
     <aside aria-label="Dork details" data-details-panel className="flex h-full min-h-0 min-w-0 flex-col border-l border-border [--details-edge:10px] [--details-text:18px]">
@@ -59,10 +88,9 @@ export function CrewDetails({ dork, onClose, onAsk }: { dork: DorkView; onClose?
               Artifacts
             </TabsTrigger>
             {prs.map(({ worker, url }) => (
-              <TabsTrigger key={worker.id} value={`pr:${worker.id}`} className={TAB_CLASS} title={worker.title}>
-                <PrIcon state={worker.prState} />
+              <OpenTab key={worker.id} value={`pr:${worker.id}`} icon={<PrIcon state={worker.prState} />} title={worker.title} onClose={() => closePr(url)}>
                 <span className="tabular-nums">#{prNumber(url)}</span>
-              </TabsTrigger>
+              </OpenTab>
             ))}
           </TabsList>
           {onClose && (
@@ -85,7 +113,15 @@ export function CrewDetails({ dork, onClose, onAsk }: { dork: DorkView; onClose?
         </TabsContent>
         {prs.map(({ worker }) => (
           <TabsContent key={worker.id} value={`pr:${worker.id}`} className="flex min-h-0 flex-col">
-            <WorkerPr worker={worker} />
+            <WorkerPr
+              worker={worker}
+              onAsk={(text) => {
+                // The PR's next step ("Resolve conflicts", "Fix checks") is for the worker that owns it: its composer, opened in place.
+                setDraft(worker.id, text)
+                setOpen(worker.id)
+                setTab('sessions')
+              }}
+            />
           </TabsContent>
         ))}
       </Tabs>
@@ -233,8 +269,8 @@ function CrewArtifacts({ dork, workers }: { dork: DorkView; workers: Worker[] })
   )
 }
 
-/** A worker's pull request, read live from GitHub as in Chat details, with its merge and branch update. No local changes. */
-function WorkerPr({ worker }: { worker: Worker }) {
+/** A worker's pull request, read live from GitHub as in Chat details, with its merge and branch update. No local changes. Its asks ("Resolve conflicts") go to the worker. */
+function WorkerPr({ worker, onAsk }: { worker: Worker; onAsk: (text: string) => void }) {
   const { actions } = useDorksClient()
   const pr = usePullRequest(worker.id)
   const url = worker.prUrl
@@ -253,7 +289,7 @@ function WorkerPr({ worker }: { worker: Worker }) {
   }
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <PullRequestPanel changes={[]} pr={{ url, number: prNumber(url), state: worker.prState }} pullRequest={data} />
+      <PullRequestPanel changes={[]} pr={{ url, number: prNumber(url), state: worker.prState }} pullRequest={data} onAsk={onAsk} />
     </div>
   )
 }
