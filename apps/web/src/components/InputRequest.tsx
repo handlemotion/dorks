@@ -70,7 +70,7 @@ function InputForm({ block }: { block: InputBlock }) {
           <Button size="sm" type="submit" disabled={pending || !ready}>
             Continue
           </Button>
-          <Button size="sm" type="button" variant="ghost" disabled={pending} onClick={dismiss}>
+          <Button size="sm" type="button" variant="outline" disabled={pending} onClick={dismiss}>
             Dismiss
           </Button>
           <p className="ml-auto flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
@@ -98,11 +98,10 @@ const hostOf = (url: string) => {
   }
 }
 
-// One field: the card's title names it, so the field shows no label of its own. Several: a label each. Under the input, one quiet
-// line: the agent's hint (where to find it) and a link to the page that has it.
+// One field: the card's title names it, so the field shows no label of its own. Several: a label each. The agent's hint is the
+// input's placeholder, and under the input, apart from it, a link to the page that has the value.
 function FieldInput({ field, labelled, value, disabled, onChange }: { field: InputField; labelled: boolean; value: string; disabled: boolean; onChange: (v: string) => void }) {
   const id = useId()
-  const hintId = useId()
   const [shown, setShown] = useState(false)
   const masked = field.kind === 'secret' && !shown
   const host = field.url ? hostOf(field.url) : null
@@ -119,7 +118,8 @@ function FieldInput({ field, labelled, value, disabled, onChange }: { field: Inp
           id={id}
           name={field.name}
           aria-label={labelled ? undefined : field.label}
-          aria-describedby={field.description ? hintId : undefined}
+          placeholder={field.description}
+          title={field.description}
           type={field.kind === 'email' ? 'email' : masked ? 'password' : 'text'}
           inputMode={field.kind === 'otp' ? 'numeric' : undefined}
           autoComplete={autoComplete(field)}
@@ -147,20 +147,17 @@ function FieldInput({ field, labelled, value, disabled, onChange }: { field: Inp
           </InputGroupAddon>
         )}
       </InputGroup>
-      {(field.description || host) && (
-        <div className="flex min-w-0 items-baseline gap-3 text-xs text-muted-foreground">
-          {field.description && (
-            <p id={hintId} className="min-w-0 flex-1">
-              {field.description}
-            </p>
-          )}
-          {host && (
-            <a href={field.url} target="_blank" rel="noreferrer" className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-foreground hover:underline">
-              {host}
-              <ArrowUpRightIcon aria-hidden className="size-3" />
-            </a>
-          )}
-        </div>
+      {host && (
+        <a
+          href={field.url}
+          target="_blank"
+          rel="noreferrer"
+          title={field.url}
+          className="mt-1 inline-flex w-fit items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground hover:underline"
+        >
+          {host}
+          <ArrowUpRightIcon aria-hidden className="size-3" />
+        </a>
       )}
     </div>
   )

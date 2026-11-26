@@ -558,7 +558,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
               name: "cf_token",
               label: "API token",
               kind: "secret" as const,
-              description: "Profile > API Tokens, with Workers Scripts:Edit.",
+              description: "Needs Workers Scripts:Edit",
               url: "https://dash.cloudflare.com/profile/api-tokens",
             },
           ],

@@ -452,7 +452,7 @@ const TOOLS: Tool[] = [
               name: { type: "string", description: "What you write in {{secret:NAME}}: a letter, then letters, digits or _ (e.g. stripe_password)." },
               label: { type: "string", description: 'The label the user sees, e.g. "Email or phone". A form with one field shows the title instead.' },
               kind: { type: "string", enum: ["text", "email", "secret", "otp"], description: "secret: masked (passwords, keys); otp: a one-time code; email; text." },
-              description: { type: "string", description: 'Optional: a few words on where to find it or what it needs, e.g. "Profile > API tokens, with Zone:Edit".' },
+              description: { type: "string", description: 'Optional: a few words shown as the empty input\'s placeholder, e.g. "Needs Zone:Edit" or "6 digits".' },
               url: {
                 type: "string",
                 description: "Optional: the https page where the user gets this value (e.g. the provider's API tokens page), shown as a link. Add it whenever you know it.",
