@@ -92,8 +92,9 @@ const ORGS: MockOrg[] = [
  */
 export interface MockOrgRuntime {
   url: string;
-  /** A member's Better Auth bearer token on that Worker. */
+  /** A member's Better Auth bearer token on that Worker, and their user id there (what `/api/me` answers, so presence knows you). */
   token: string;
+  userId?: string;
   orgId: string;
   name?: string;
   seed?: MockCloudPlace["seed"];
@@ -141,7 +142,7 @@ export function mockCloud(opts: {
       const role = ((owner && teams.roleOf(owner.id)) ?? "member") as Me["role"];
       c = opts.startChild(place.seed, {
         kind: "member",
-        id: "user-1",
+        id: (place === runtimePlace && runtime?.userId) || "user-1",
         name: user?.name ?? null,
         email: user?.email ?? null,
         role,
@@ -210,7 +211,8 @@ export function mockCloud(opts: {
 
   /** The Worker-run org's UI API (its own mock server) and realtime routes; false for any other path. */
   const orgRoute = async (req: IncomingMessage, res: ServerResponse, path: string, search: string) => {
-    const org = /^\/api\/cloud\/orgs\/([\w-]+)\/((api|realtime)\/.*)$/.exec(path);
+    const image = req.method === "GET" ? /^\/cloud\/orgs\/([\w-]+)\/images\/([\w-]+)$/.exec(path) : null;
+    const org = image ? [path, image[1], `api/images/${image[2]}`, "api"] : /^\/api\/cloud\/orgs\/([\w-]+)\/((api|realtime)\/.*)$/.exec(path);
     if (!org || !runtime || org[1] !== runtime.orgId) return false;
     if (!user) fail(res, "not_configured", "Sign in to Dorks Cloud first.");
     else if (org[3] === "realtime") await realtime(req, res, org[2]!.slice("realtime/".length));

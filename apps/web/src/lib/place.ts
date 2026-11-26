@@ -100,7 +100,14 @@ export function remoteClientConfig(home: { serverUrl: string; token: string }, s
 }
 
 /** A Worker-run org's UI API and its realtime routes (read tokens for s2), through the home server's `/api/cloud/orgs/:id`. */
-export function cloudOrgClientConfig(home: { serverUrl: string; token: string }, orgId: string) {
-  const base = `${home.serverUrl}/api/cloud/orgs/${encodeURIComponent(orgId)}`
-  return { baseUrl: base, token: home.token, cloud: { realtimeUrl: `${base}/realtime` } }
+export function cloudOrgClientConfig(home: { serverUrl: string; token: string }, org: Pick<CloudOrg, 'id' | 'personal'>) {
+  const base = `${home.serverUrl}/api/cloud/orgs/${encodeURIComponent(org.id)}`
+  // Presence is a team's: a personal org has nobody else to show.
+  return {
+    baseUrl: base,
+    token: home.token,
+    // Shared images load in plain <img> tags (no owner token): through the home server's public `/cloud/orgs/:id/images/:image`.
+    imageBaseUrl: `${home.serverUrl}/cloud/orgs/${encodeURIComponent(org.id)}`,
+    cloud: { realtimeUrl: `${base}/realtime`, presence: !org.personal },
+  }
 }

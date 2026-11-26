@@ -45,7 +45,12 @@ export type RawItem = { kind: "record"; seq: number; timestamp: number; body: st
 export class Assembler {
   lastSeq = -1;
   lastBseq = 0;
-  private parts: { bseq: number; n: number; got: string[] } | null = null;
+  private parts: { bseq: number; n: number; got: string[]; seq: number } | null = null;
+
+  /** The last seq_num a new reader may resume after without losing anything: before an event whose parts are still arriving. */
+  get safeSeq() {
+    return this.parts ? this.parts.seq - 1 : this.lastSeq;
+  }
 
   push(r: SequencedRecord): SessionItem[] {
     if (r.seq_num <= this.lastSeq) return [];
@@ -69,7 +74,7 @@ export class Assembler {
 
   private part(r: SequencedRecord, b: number): SessionItem[] {
     const [i, n] = (header(r, "p") ?? "").split("/").map(Number) as [number, number];
-    if (i === 0 || !this.parts || this.parts.bseq !== b) this.parts = i === 0 ? { bseq: b, n, got: [] } : null;
+    if (i === 0 || !this.parts || this.parts.bseq !== b) this.parts = i === 0 ? { bseq: b, n, got: [], seq: r.seq_num } : null;
     if (!this.parts || this.parts.got.length !== i) return []; // a gap: wait for the resend from part 0
     this.parts.got.push(r.body ?? "");
     if (this.parts.got.length < n) return [];
@@ -158,6 +163,7 @@ export class StreamReader {
       if (!grant || grant.expiresAt - Date.now() < refreshBefore) {
         grant = await this.opts.grant();
         this.stats.grants++;
+        if (signal?.aborted) return; // stopped while the grant was on its way: open nothing
       }
       const conn = (this.conn = new AbortController());
       const onAbort = () => conn.abort(signal?.reason);

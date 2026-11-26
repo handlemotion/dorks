@@ -6,13 +6,15 @@
 import type { ClientEvent } from "@dorks/shared";
 import { checkTail, StreamReader, type ReadGrant } from "./s2.ts";
 import type { LiveStatus } from "./live.ts";
-import type { LiveMessage } from "./types.ts";
+import type { LiveMessage, Person } from "./types.ts";
 
 export interface CloudLiveConfig {
   /** The Worker's realtime routes for the org, through the home server: `<home>/api/cloud/orgs/:org/realtime`. */
   realtimeUrl: string;
   /** Reconnect every read with a fresh token at least this often (default 10 min: the Worker re-checks membership each time). */
   maxConnectionMs?: number;
+  /** A team: show who looks at each chat (the org's `live/presence` stream) and say which one this client shows. */
+  presence?: boolean;
 }
 
 interface Common {
@@ -63,11 +65,41 @@ function supervise(o: Common, run: (signal: AbortSignal) => Promise<void>, onFai
   return () => abort.abort();
 }
 
+type LiveGrant = { token: string; expiresAt: number; urls: { feed: string; presence: string }; encryptionKey?: string | null };
+
+/** The org's live token, shared by the feed and presence reads that open together (one token issuance, not two). */
+function liveGrants(o: Common): () => Promise<LiveGrant> {
+  let last: { at: number; grant: Promise<LiveGrant> } | undefined;
+  return () => {
+    if (!last || Date.now() - last.at > 5000) last = { at: Date.now(), grant: post<LiveGrant>(o, "/live-token") };
+    const g = last.grant;
+    g.catch(() => (last = undefined));
+    return g;
+  };
+}
+
 /**
  * The org feed, in place of `/api/live`: a `hello` when the read opens (and again after a failure), then each invalidation the
  * org runtime publishes. Returns a function that closes it.
  */
-export function connectCloudLive(o: Common & { onMessage: (m: LiveMessage) => void; onStatus: (s: LiveStatus) => void }): () => void {
+export function connectCloudLive(o: Common & { onMessage: (m: LiveMessage) => void; onStatus: (s: LiveStatus) => void; client?: string; viewing?: () => string | null }): {
+  close: () => void;
+  /** Tells teammates which chat this client shows now (and every 30 s while open). */
+  beat: () => void;
+} {
+  const grants = liveGrants(o);
+  const feed = followFeed(o, grants);
+  const presence = o.cloud.presence && o.client ? followPresence({ ...o, client: o.client, viewing: o.viewing ?? (() => null) }, grants) : undefined;
+  return {
+    close: () => {
+      feed();
+      presence?.close();
+    },
+    beat: () => presence?.beat(),
+  };
+}
+
+function followFeed(o: Common & { onMessage: (m: LiveMessage) => void; onStatus: (s: LiveStatus) => void }, grants: () => Promise<LiveGrant>): () => void {
   let lastSeq = -1;
   let hello = true;
   o.onStatus("connecting");
@@ -82,7 +114,7 @@ export function connectCloudLive(o: Common & { onMessage: (m: LiveMessage) => vo
         maxConnectionMs: o.cloud.maxConnectionMs,
         fetch: o.fetch,
         grant: async () => {
-          const g = await post<{ token: string; expiresAt: number; urls: { feed: string }; encryptionKey?: string | null }>(o, "/live-token");
+          const g = await grants();
           return { token: g.token, url: g.urls.feed, expiresAt: g.expiresAt, encryptionKey: g.encryptionKey };
         },
         onConnect: () => {
@@ -109,6 +141,90 @@ export function connectCloudLive(o: Common & { onMessage: (m: LiveMessage) => vo
   );
 }
 
+/** A client counts as looking at a chat this long after its last heartbeat (it beats every 30 s). */
+const PRESENCE_TTL_MS = 60_000;
+const BEAT_MS = 30_000;
+
+/**
+ * Presence for a team org: each client posts a heartbeat (`{sessionId, client}`; the Worker adds `by` and `name`) when it opens
+ * a chat and every 30 s; everyone reads the org's `live/presence` stream from a minute back and counts a person as viewing a chat
+ * while their newest heartbeat from some client names it and is under a minute old. Emits `{t: "presence"}` as `/api/live` does.
+ */
+function followPresence(o: Common & { onMessage: (m: LiveMessage) => void; client: string; viewing: () => string | null }, grants: () => Promise<LiveGrant>) {
+  /** The newest heartbeat of each client (`by|client`), at s2's clock. */
+  const beats = new Map<string, { id: string; name: string; sessionId: string | null; ts: number }>();
+  /** How far this clock runs ahead of s2's, at most (the smallest receive time minus record time seen). */
+  let skew = Number.POSITIVE_INFINITY;
+  let shown = new Map<string, string>();
+  const recompute = () => {
+    const now = Date.now() - (Number.isFinite(skew) ? skew : 0);
+    const by = new Map<string, Map<string, Person>>();
+    for (const [key, b] of beats) {
+      if (now - b.ts > PRESENCE_TTL_MS) beats.delete(key);
+      else if (b.sessionId) {
+        const people = by.get(b.sessionId) ?? new Map<string, Person>();
+        people.set(b.id, { id: b.id, name: b.name });
+        by.set(b.sessionId, people);
+      }
+    }
+    const next = new Map([...by].map(([dorkId, people]) => [dorkId, JSON.stringify([...people.values()].sort((a, b) => a.id.localeCompare(b.id)))]));
+    for (const dorkId of new Set([...shown.keys(), ...next.keys()])) {
+      const viewers = next.get(dorkId);
+      if (viewers !== shown.get(dorkId)) o.onMessage({ t: "presence", dorkId, viewers: viewers ? (JSON.parse(viewers) as Person[]) : [] });
+    }
+    shown = next;
+  };
+  const beat = () => {
+    const f = o.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
+    void f(`${o.cloud.realtimeUrl.replace(/\/+$/, "")}/presence`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${o.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ sessionId: o.viewing(), client: o.client }),
+    }).catch(() => {}); // best effort, like /api/presence
+  };
+  const timers = [setInterval(beat, BEAT_MS), setInterval(recompute, 10_000)];
+  let lastSeq = -1;
+  const stop = supervise(
+    o,
+    async (signal) => {
+      const reader = new StreamReader({
+        raw: true,
+        afterSeq: lastSeq,
+        fromTimestamp: Date.now() - PRESENCE_TTL_MS - 60_000, // a minute back, plus room for clock skew
+        maxConnectionMs: o.cloud.maxConnectionMs,
+        fetch: o.fetch,
+        grant: async () => {
+          const g = await grants();
+          return { token: g.token, url: g.urls.presence, expiresAt: g.expiresAt, encryptionKey: g.encryptionKey };
+        },
+      });
+      for await (const item of reader.items(signal)) {
+        lastSeq = reader.lastSeq;
+        if (item.kind !== "record") continue;
+        try {
+          const b = JSON.parse(item.body) as { by?: unknown; name?: unknown; sessionId?: unknown; client?: unknown };
+          if (typeof b.by !== "string") continue;
+          skew = Math.min(skew, Date.now() - item.timestamp);
+          const key = `${b.by}|${typeof b.client === "string" ? b.client : ""}`;
+          if ((beats.get(key)?.ts ?? -1) > item.timestamp) continue;
+          beats.set(key, { id: b.by, name: typeof b.name === "string" && b.name ? b.name : "Teammate", sessionId: typeof b.sessionId === "string" ? b.sessionId : null, ts: item.timestamp });
+        } catch {
+          continue;
+        }
+        recompute();
+      }
+    },
+    () => {},
+  );
+  return {
+    beat,
+    close: () => {
+      for (const t of timers) clearInterval(t);
+      stop();
+    },
+  };
+}
+
 /** Where a session's read stands, kept across follows: the next one resumes after it. */
 export interface SessionCursor {
   seq: number;
@@ -122,22 +238,39 @@ export interface SessionCursor {
  * keeps one. Returns a function that stops it.
  */
 export function followSession(
-  o: Common & { dorkId: string; cursor: SessionCursor | null; ready: () => void; onEvents: (events: ClientEvent[], cursor: SessionCursor) => void; onUnauthorized: () => void },
+  o: Common & {
+    dorkId: string;
+    cursor: SessionCursor | null;
+    /** A read grant kept from an earlier follow of this session: reused while valid, so reopening a chat issues no new token. */
+    cached?: { get: () => ReadGrant | undefined; set: (g: ReadGrant) => void };
+    ready: () => void;
+    onEvents: (events: ClientEvent[], cursor: SessionCursor) => void;
+    onUnauthorized: () => void;
+  },
 ): () => void {
   let cursor = o.cursor;
   let readied = false;
+  let retried = false;
   const ready = () => {
     if (readied) return;
     readied = true;
     o.ready();
   };
-  const grant = () => post<ReadGrant>(o, `/sessions/${encodeURIComponent(o.dorkId)}/read-token`);
+  const grant = async () => {
+    const g = await post<ReadGrant>(o, `/sessions/${encodeURIComponent(o.dorkId)}/read-token`);
+    o.cached?.set(g);
+    return g;
+  };
   return supervise(
     o,
     async (signal) => {
-      let first: ReadGrant | null = null;
+      // Only the first grant of a follow's first run may come from the cache: a later ask, or a run retried after a failure
+      // (a refused tail check included), means that grant may be revoked, so the Worker is asked again.
+      const kept = retried ? undefined : o.cached?.get();
+      retried = true;
+      let first: ReadGrant | null = kept && kept.expiresAt - Date.now() > 60_000 ? kept : null;
       if (!cursor) {
-        first = await grant();
+        first ??= await grant();
         cursor = { seq: (await checkTail(first, o.fetch)) - 1, bseq: 0 };
       }
       ready();
@@ -158,7 +291,8 @@ export function followSession(
         flush = undefined;
         const events = batch;
         batch = [];
-        cursor = { seq: reader.assembler.lastSeq, bseq: reader.assembler.lastBseq };
+        // Never past an event still being assembled: a new reader starts with no parts, so it must re-read them all.
+        cursor = { seq: reader.assembler.safeSeq, bseq: reader.assembler.lastBseq };
         o.onEvents(events, cursor);
       };
       try {
