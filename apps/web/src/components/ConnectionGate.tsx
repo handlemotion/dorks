@@ -3,7 +3,7 @@ import { DorksProvider, useAutomations, useConnection, useDorks, useSettingsStat
 import { Button } from '@dorks/ui/button'
 import { Input } from '@dorks/ui/input'
 import { clearConnection, currentConnection, DEFAULT_SERVER, normalizeServerUrl, saveConnection, type Connection } from '../lib/connection'
-import { useNavigate } from '@tanstack/react-router'
+import { useLocation, useNavigate } from '@tanstack/react-router'
 import { onOpenRoute, onRuntimeConfig, setKeepAwake } from '../lib/desktop'
 import type { CloudServer } from '@dorks/client'
 import { CloudPlaceProvider, orgName, useCloudPlace, type CloudPlace } from './CloudPlace'
@@ -64,11 +64,16 @@ export function ConnectionGate({ children }: { children: ReactNode }) {
  * Mac, another server through this one otherwise. Switching servers remounts the app on the new client.
  */
 function Connected({ conn, onChange, onReplace, children }: { conn: Connection; onChange: () => void; onReplace: (c: Connection) => void; children: ReactNode }) {
+  const { pathname } = useLocation()
+  const cloudPage = CLOUD_PAGE.test(pathname)
   return (
     <CloudPlaceProvider conn={conn}>
       {(client, place) => {
         if (place.resolving) return <Connecting />
-        if (place.target.kind === 'choose') return <ChooseMachine place={place} machines={place.target.machines} />
+        // An org that cannot pick a server alone still has its Dorks Cloud pages (Account, Organization, an invitation): they run
+        // on this Mac's server, which holds the account, so an owner can invite, rename or delete an org with nothing in it yet.
+        const choosing = place.target.kind === 'choose' && !cloudPage
+        if (place.target.kind === 'choose' && choosing) return <ChooseMachine place={place} machines={place.target.machines} />
         const remote = place.target.kind === 'remote' ? place.target.server : null
         return (
           <DorksProvider key={remote?.id ?? 'home'} client={client}>
@@ -93,27 +98,44 @@ function Connecting() {
 }
 
 /** Where the org cannot pick a server alone: several Macs (or none online), or none at all yet. A way back is always there. */
+/** The Dorks Cloud pages, which work without a server in the org (they run on this Mac's). */
+const CLOUD_PAGE = /^\/(settings\/(cloud|organization)|invite\/[\w-]+)$/
+
 function ChooseMachine({ place, machines }: { place: CloudPlace; machines: CloudServer[] }) {
+  const navigate = useNavigate()
   const name = orgName(place.org, place.cloud)
-  // At most two buttons: the online Macs first.
-  const shown = machines.toSorted((a, b) => Number(b.online) - Number(a.online)).slice(0, 2)
+  // Every Mac of the org, online ones first; an offline one is listed but cannot be picked.
+  const listed = machines.toSorted((a, b) => Number(b.online) - Number(a.online))
   return (
     <GateScreen>
-      <div className="flex flex-col items-center gap-2">
+      <DesktopLinks />
+      <div className="flex w-full max-w-sm flex-col items-center gap-4">
         {machines.length === 0 ? (
           <EmptyState figure="laptop" title={`Nothing runs ${name} yet`} description="Pair a Mac with this organization, or add a hosted server, and it shows up here." />
         ) : (
-          <EmptyState figure="laptop" title={`Connect to a Mac in ${name}`} description={machines.some((m) => m.online) ? undefined : 'None of its Macs is online. Open Dorks on one of them.'}>
-            {shown.map((m) => (
-              <Button key={m.id} size="sm" variant="outline" disabled={!m.online} onClick={() => place.chooseMachine(m.id)}>
-                Connect to {m.name}
-              </Button>
-            ))}
-          </EmptyState>
+          <EmptyState figure="laptop" title={`Connect to a Mac in ${name}`} description={machines.some((m) => m.online) ? undefined : 'None of its Macs is online. Open Dorks on one of them.'} />
         )}
-        <Button size="sm" variant="ghost" onClick={() => place.chooseOrg(null)}>
-          Back to {orgName(place.personal, place.cloud)}
-        </Button>
+        {listed.length > 0 && (
+          <ul aria-label={`Macs in ${name}`} className="flex w-full flex-col divide-y divide-border overflow-hidden rounded-[6px] border border-border bg-surface text-sm dark:border-transparent">
+            {listed.map((m) => (
+              <li key={m.id} className="flex items-center gap-3 py-2 ps-4 pe-2">
+                <span className="min-w-0 flex-1 truncate">{m.name}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">{m.online ? 'Online' : 'Offline'}</span>
+                <Button size="sm" variant="outline" disabled={!m.online} onClick={() => place.chooseMachine(m.id)} aria-label={`Connect to ${m.name}`}>
+                  Connect
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="flex items-center gap-1">
+          <Button size="sm" variant="ghost" onClick={() => void navigate({ to: '/settings/$page', params: { page: 'organization' } })}>
+            Organization settings
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => place.chooseOrg(null)}>
+            Back to {orgName(place.personal, place.cloud)}
+          </Button>
+        </div>
       </div>
     </GateScreen>
   )
