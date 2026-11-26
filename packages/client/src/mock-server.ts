@@ -100,9 +100,22 @@ interface Ctx {
   res: ServerResponse;
 }
 
+/**
+ * Like apps/server's `needsAttentionOf`, read from the session's events: a request for the owner's computer or a secure input not
+ * answered yet. A failed ship is left to the agent.
+ */
+const needsAttention = (events: ClientEvent[]): boolean => {
+  const open = new Set<string>();
+  for (const e of events as (ClientEvent & { requestId?: string })[]) {
+    if ((e.type === "local_request" || e.type === "input_request") && e.requestId) open.add(e.requestId);
+    else if ((e.type === "local_decision" || e.type === "input_response") && e.requestId) open.delete(e.requestId);
+  }
+  return open.size > 0;
+};
+
 const view = (d: MockDork): Dork => {
-  const { events: _events, deleting: _deleting, ...row } = d;
-  return row;
+  const { events, deleting: _deleting, ...row } = d;
+  return needsAttention(events) ? { ...row, needsAttention: true } : row;
 };
 
 /** What the composer's `/` menu offers: the CLI's `initialize` commands, skills marked by where they come from. */

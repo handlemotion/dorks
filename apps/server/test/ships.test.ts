@@ -183,14 +183,14 @@ describe("ships", () => {
     expect(await pollOnce(s.h.app)).toBeNull(); // nothing is left to watch
   });
 
-  it("a failure shows at once and asks for the owner until a re-run passes; a merge that starts nothing ends quiet", async () => {
+  it("a failure shows at once, is left to the agent (not the owner), and a re-run can still pass; a merge that starts nothing ends quiet", async () => {
     const s = await setup();
     await s.merge();
     s.gh.state.runs.push(s.run({ id: 1, name: "Deploy", status: "completed", conclusion: "failure" }));
     await s.tick();
     expect(s.card()).toMatchObject({ status: "failed", stages: [{ name: "Deploy", state: "failed" }] });
-    expect(needsAttentionOf(s.h.app.db, s.id)).toBe(true);
-    expect(dorkView(s.h.dork(s.id), undefined, needsAttentionOf(s.h.app.db, s.id)).needsAttention).toBe(true);
+    expect(needsAttentionOf(s.h.app.db, s.id)).toBe(false); // the agent gets ship_failed and fixes forward
+    expect(dorkView(s.h.dork(s.id), undefined, needsAttentionOf(s.h.app.db, s.id)).needsAttention).toBeUndefined();
     await s.tick(SHIP_SETTLE_MS * 2);
     expect(s.card()!.endedAt).toBeUndefined(); // still watched: a re-run on the same commit can turn it around
 

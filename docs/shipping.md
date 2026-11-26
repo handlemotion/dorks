@@ -41,7 +41,7 @@ rate limit or a rejected token, which stop the pass like the PR poller) keeps wh
 |---|---|---|
 | `watching` | Something is pending or running, or everything finished less than `SHIP_SETTLE_MS` (1 min) ago: a deploy workflow that CI starts appears in that gap | no |
 | `shipped` | Everything finished, nothing failed, and the settle minute passed | yes |
-| `failed` | A stage failed. Shown at once; the session's row asks for the owner (`needsAttention`) while the ship is watched. A re-run on the same commit can still turn it to `shipped` | at `SHIP_MAX_MS` |
+| `failed` | A stage failed. Shown at once; the agent is woken (`ship_failed`) to fix forward or revert, so the session does not ask for the owner (`needsAttention`). A re-run on the same commit can still turn it to `shipped` | at `SHIP_MAX_MS` |
 | `stalled` | Still running `SHIP_MAX_MS` (1 h) after the merge | yes |
 | `quiet` | Nothing at all on the merge commit after `SHIP_QUIET_MS` (5 min) | yes |
 

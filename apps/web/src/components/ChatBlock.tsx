@@ -379,16 +379,28 @@ function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => vo
       content.push(<AgentText key={block.id} block={block} />)
     } else if (block.kind === 'build') {
       // A machine change the agent submitted, with a short diff; then each build run of the session as a card of its steps.
-      content.push(<BuildDraftCard key={block.id} block={block} />)
+      content.push(
+        <Waiting key={block.id} id={block.id}>
+          <BuildDraftCard block={block} />
+        </Waiting>,
+      )
     } else if (block.kind === 'buildRun') {
       // An image build the agent started itself (a rebuild of the approved machine); a trial is only its tool row, "Used machine run".
       if (block.run.kind === 'image') content.push(<BuildRunCard key={block.id} block={block} />)
     } else if (block.kind === 'local') {
       // The agent asked to use the owner's computer (docs/local-access.md): the session's one access card, then a line per command.
-      content.push(<LocalRequestCard key={block.id} block={block} />)
+      content.push(
+        <Waiting key={block.id} id={block.id}>
+          <LocalRequestCard block={block} />
+        </Waiting>,
+      )
     } else if (block.kind === 'input') {
       // The agent asked for values it uses without reading them (docs/secure-inputs.md): a form while it waits, then one line.
-      content.push(<InputRequestCard key={block.id} block={block} />)
+      content.push(
+        <Waiting key={block.id} id={block.id}>
+          <InputRequestCard block={block} />
+        </Waiting>,
+      )
     } else if (block.kind === 'ship') {
       // What a merged PR set off (docs/shipping.md): CI on the base, migrations, deploys, as the server follows them.
       content.push(<ShipCard key={block.id} block={block} />)
@@ -399,6 +411,15 @@ function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => vo
     }
   }
   return content
+}
+
+/** A card that can be what the agent waits on the owner for: tagged, so the Needs action pill (`AttentionPill`) can find it. */
+function Waiting({ id, children }: { id: string; children: ReactNode }) {
+  return (
+    <div data-block-id={id} className="min-w-0">
+      {children}
+    </div>
+  )
 }
 
 /** A notice; an autonomy event (a PR comment, CI, the agent's PR opened) says what happened in a few words, with the digest on hover. */
