@@ -44,3 +44,77 @@
     color: #ffffff;
   }
 }
+
+/* The nav's Dorks mark (DorksMark flapsOnHover): on hover, the app's working animation, copied exactly from apps/web/src/styles.css
+   (DorkIcon): four flaps cycling upward, 6.4s per cycle, staggered by a quarter. The still mark otherwise, and always with reduced motion. */
+.dorks-mark-flaps {
+  display: none;
+}
+.dork-flap {
+  transform-origin: 100px 100px;
+}
+.dork-flap-1 {
+  transform: translateY(-60px);
+}
+.dork-flap-2 {
+  transform: translateY(0px);
+}
+.dork-flap-3 {
+  transform: translateY(60px);
+}
+.dork-flap-4 {
+  opacity: 0;
+  transform: translateY(92px) scale(0);
+}
+@keyframes dork-flap-cycle {
+  0% {
+    opacity: 0;
+    transform: translateY(92px) scale(0);
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  8% {
+    opacity: 1;
+  }
+  25% {
+    opacity: 1;
+    transform: translateY(60px) scale(1);
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(0px) scale(1);
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  75% {
+    opacity: 1;
+    transform: translateY(-60px) scale(1);
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  92% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-92px) scale(0);
+  }
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .dorks-mark-hover:hover .dorks-mark-still {
+    display: none;
+  }
+  .dorks-mark-hover:hover .dorks-mark-flaps {
+    display: inline;
+  }
+  .dorks-mark-hover:hover .dork-flap-1 {
+    animation: dork-flap-cycle 6.4s linear 0s infinite;
+  }
+  .dorks-mark-hover:hover .dork-flap-2 {
+    animation: dork-flap-cycle 6.4s linear -1.6s infinite;
+  }
+  .dorks-mark-hover:hover .dork-flap-3 {
+    animation: dork-flap-cycle 6.4s linear -3.2s infinite;
+  }
+  .dorks-mark-hover:hover .dork-flap-4 {
+    animation: dork-flap-cycle 6.4s linear -4.8s infinite;
+  }
+}

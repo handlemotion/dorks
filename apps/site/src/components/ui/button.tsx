@@ -11,10 +11,13 @@ const buttonVariants = cva(
         solidDark: "bg-neutral-950 text-white hover:bg-neutral-800 active:bg-neutral-700",
         glass: "bg-[#c5b6b7]/85 text-white backdrop-blur-md hover:bg-[#c5b6b7] active:bg-[#b8a7a8]",
         nav: "bg-transparent text-white hover:bg-black/15 active:bg-black/20",
+        /** Always filled (the nav buttons' hover fill), darker on hover: the header's Download button. */
+        navFill: "bg-black/15 text-white hover:bg-black/25 active:bg-black/30",
+        navFillLight: "bg-black/8 text-neutral-900 hover:bg-black/14 active:bg-black/18",
         navLight: "bg-transparent text-neutral-800 hover:bg-black/8 hover:text-black active:bg-black/14",
-        splitPrimary: "rounded-none rounded-l-full border-0 bg-white text-black hover:bg-[#f4f4f5] active:bg-[#e9e9ec] focus-visible:ring-inset focus-visible:ring-black/25",
+        splitPrimary: "rounded-none rounded-l-full border-0 bg-white text-black hover:bg-[#f4f4f5] active:bg-[#e9e9ec] focus-visible:ring-0 focus-visible:ring-offset-0",
         splitTrigger:
-          "rounded-none rounded-r-full border-0 border-l border-l-[#f0f0f0] bg-white text-black hover:bg-[#f4f4f5] active:bg-[#e9e9ec] data-[popup-open]:bg-[#f0f0f2] focus-visible:ring-inset focus-visible:ring-black/25",
+          "rounded-none rounded-r-full border-0 border-l border-l-[#f0f0f0] bg-white text-black hover:bg-[#f4f4f5] active:bg-[#e9e9ec] data-[popup-open]:bg-[#f0f0f2] focus-visible:ring-0 focus-visible:ring-offset-0",
         ghost: "bg-transparent text-neutral-900 hover:bg-neutral-100 active:bg-neutral-200/70",
         // Sign-in (/login, /invite): the methods and links are this outline on the page's surface; a step's Continue is ink.
         outline:
@@ -24,6 +27,7 @@ const buttonVariants = cva(
       size: {
         default: "h-9 gap-2.5 px-3.5",
         sm: "h-8 gap-2 px-3.5",
+        compact: "h-8 gap-1.5 px-2.5",
         splitMain: "h-9 gap-2.5 pl-3.5 pr-3",
         splitEnd: "h-9 w-9 pr-[3px]",
         icon: "size-9",

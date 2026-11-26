@@ -33,9 +33,9 @@ export function releaseLabel(release: MacRelease | null): string | null {
   return release ? `v${release.version} · ${formatSize(release.size)}` : null;
 }
 
-/** The line under a download button: version, size and what it runs on. */
-export function DownloadDetails({ release, className }: { release: MacRelease | null; className?: string }) {
-  const label = releaseLabel(release);
+/** The line under a download button: version, size and what it runs on; `short` leaves out the size. */
+export function DownloadDetails({ release, short, className }: { release: MacRelease | null; short?: boolean; className?: string }) {
+  const label = short ? (release ? `v${release.version}` : null) : releaseLabel(release);
   return (
     <p className={cn("text-[13px] leading-[1.4]", className)}>
       {label ? <span className="tabular-nums">{label} · </span> : null}
