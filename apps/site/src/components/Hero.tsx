@@ -126,16 +126,16 @@ export function Hero({ release: built }: { release: MacRelease | null }) {
           onClick={handleScrollToTop}
           aria-label="Scroll to top"
           className={cn(
-            "relative z-10 inline-flex size-8 cursor-pointer items-center justify-center rounded-full transition-colors duration-250 ease-out focus-visible:outline-none focus-visible:ring-2",
-            onLightSurface ? "text-neutral-950 hover:bg-black/8 focus-visible:ring-black/30" : "text-white hover:bg-black/15 focus-visible:ring-white/75",
+            "dorks-mark-hover relative z-10 inline-flex size-8 cursor-pointer items-center justify-center rounded-full transition-colors duration-250 ease-out focus-visible:outline-none focus-visible:ring-2",
+            onLightSurface ? "text-neutral-950 focus-visible:ring-black/30" : "text-white focus-visible:ring-white/75",
           )}
         >
-          <DorksMark size={24} className="pointer-events-none" />
+          <DorksMark size={24} flapsOnHover className="pointer-events-none" />
         </a>
 
         <nav aria-label="Primary" className="relative z-10 hidden items-center gap-2.5 sm:absolute sm:left-1/2 sm:flex sm:-translate-x-1/2">
           {navItems.map((item) => (
-            <Button key={item.label} variant={onLightSurface ? "navLight" : "nav"} size="default" nativeButton={false} render={<a href={item.href} />}>
+            <Button key={item.label} variant={onLightSurface ? "navLight" : "nav"} size="sm" nativeButton={false} render={<a href={item.href} />}>
               {item.label}
             </Button>
           ))}
@@ -145,14 +145,17 @@ export function Hero({ release: built }: { release: MacRelease | null }) {
           <Button variant={onLightSurface ? "navLight" : "nav"} size="icon-sm" aria-label="GitHub" nativeButton={false} render={<a href={GITHUB_URL} target="_blank" rel="noreferrer" />}>
             <GitHubIcon />
           </Button>
-          <Button variant={onLightSurface ? "navLight" : "nav"} size="sm" className="sm:max-md:hidden" nativeButton={false} title={downloadTitle(release)} render={<a href={DOWNLOAD_URL} />}>
+          <Button
+            variant={onLightSurface ? "navFillLight" : "navFill"}
+            size="compact"
+            className="sm:max-md:hidden"
+            nativeButton={false}
+            title={downloadTitle(release)}
+            render={<a href={DOWNLOAD_URL} />}
+          >
             <AppleIcon className="-mt-0.5" />
             <span>Download</span>
-            {release ? (
-              <span className="hidden tabular-nums opacity-70 xl:inline">
-                v{release.version} · {formatSize(release.size)}
-              </span>
-            ) : null}
+            {release ? <span className="hidden tabular-nums opacity-70 xl:inline">v{release.version}</span> : null}
           </Button>
           <Button variant={onLightSurface ? "solidDark" : "solid"} size="sm" nativeButton={false} render={<a href={LOGIN_URL} />}>
             Log In
@@ -174,7 +177,7 @@ export function Hero({ release: built }: { release: MacRelease | null }) {
         />
 
         <main className="relative z-10 mx-auto flex w-full flex-1 flex-col items-center px-5 pt-28 sm:px-12 sm:pt-[120px] lg:px-[clamp(64px,6.6vw,140px)]">
-          <div ref={copyRef} className="relative z-0 flex w-full max-w-[568px] shrink-0 flex-col items-center gap-9 will-change-[transform,opacity]">
+          <div ref={copyRef} className="relative z-0 flex w-full max-w-[568px] shrink-0 flex-col items-center gap-7 will-change-[transform,opacity]">
             <div className="flex w-full flex-col items-center gap-4 text-center">
               <DorksMark size={36} className="text-white" />
               <h1 className="font-serif text-[32px] font-normal leading-[1.3] tracking-normal text-white sm:text-[40px]">
@@ -184,9 +187,9 @@ export function Hero({ release: built }: { release: MacRelease | null }) {
               </h1>
             </div>
 
-            <div className="flex flex-col items-center gap-3">
+            <div className="flex flex-col items-center gap-4">
               <div className="flex flex-wrap items-center justify-center gap-2.5">
-                <div className="inline-flex h-9 items-center rounded-full bg-white">
+                <div className="inline-flex h-9 items-center rounded-full bg-white outline-2 outline-offset-2 outline-transparent transition-[outline-color] duration-150 has-[:focus-visible]:outline-white/80">
                   <Button variant="splitPrimary" size="splitMain" nativeButton={false} title={downloadTitle(release)} render={<a href={DOWNLOAD_URL} />}>
                     <AppleIcon className="-mt-0.5" />
                     <span>Download for Mac</span>
@@ -217,7 +220,7 @@ export function Hero({ release: built }: { release: MacRelease | null }) {
                   Log In
                 </Button>
               </div>
-              <DownloadDetails release={release} className="text-white/90" />
+              <DownloadDetails release={release} short className="text-white/90" />
             </div>
           </div>
 

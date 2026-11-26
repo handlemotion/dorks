@@ -6,6 +6,8 @@ export const REPO = "handlemotion/dorks";
 export const RELEASES_URL = `https://github.com/${REPO}/releases`;
 /** Shown under every download button. Keep in step with tauri.conf.json (minimumSystemVersion) and the release target. */
 export const REQUIREMENTS = "macOS 12 or later · Apple silicon";
+/** The hero's one short line: "v0.13.0 · macOS 12+". */
+export const SHORT_REQUIREMENTS = "macOS 12+";
 
 export interface MacRelease {
   version: string;
