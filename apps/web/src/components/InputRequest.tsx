@@ -1,5 +1,5 @@
 import { useContext, useId, useState } from 'react'
-import { EyeIcon, EyeOffIcon, KeyRoundIcon, LockIcon, TimerOffIcon, XIcon } from 'lucide-react'
+import { ArrowUpRightIcon, EyeIcon, EyeOffIcon, KeyRoundIcon, LockIcon, TimerOffIcon, XIcon } from 'lucide-react'
 import type { Block, InputField } from '@dorks/shared'
 import { useDorksClient } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
@@ -63,7 +63,7 @@ function InputForm({ block }: { block: InputBlock }) {
         {block.description && <p className="text-sm text-muted-foreground">{block.description}</p>}
       </div>
       {block.fields.map((f) => (
-        <FieldInput key={f.name} field={f} value={values[f.name] ?? ''} disabled={pending || !ctx} onChange={(v) => setValues((s) => ({ ...s, [f.name]: v }))} />
+        <FieldInput key={f.name} field={f} labelled={block.fields.length > 1} value={values[f.name] ?? ''} disabled={pending || !ctx} onChange={(v) => setValues((s) => ({ ...s, [f.name]: v }))} />
       ))}
       {ctx && (
         <div className="flex flex-wrap items-center gap-2">
@@ -88,26 +88,38 @@ function InputForm({ block }: { block: InputBlock }) {
   )
 }
 
-function FieldInput({ field, value, disabled, onChange }: { field: InputField; value: string; disabled: boolean; onChange: (v: string) => void }) {
+/** The link's text: the host it goes to, so the owner sees where before they click. Null for anything but https. */
+const hostOf = (url: string) => {
+  try {
+    const u = new URL(url)
+    return u.protocol === 'https:' ? u.hostname.replace(/^www\./, '') : null
+  } catch {
+    return null
+  }
+}
+
+// One field: the card's title names it, so the field shows no label of its own. Several: a label each. Under the input, one quiet
+// line: the agent's hint (where to find it) and a link to the page that has it.
+function FieldInput({ field, labelled, value, disabled, onChange }: { field: InputField; labelled: boolean; value: string; disabled: boolean; onChange: (v: string) => void }) {
   const id = useId()
+  const hintId = useId()
   const [shown, setShown] = useState(false)
   const masked = field.kind === 'secret' && !shown
+  const host = field.url ? hostOf(field.url) : null
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
-      <label htmlFor={id} className="text-sm text-foreground">
-        {field.label}
-        {!field.optional && (
-          <span aria-hidden className="text-muted-foreground">
-            {' '}
-            *
-          </span>
-        )}
-      </label>
-      {field.description && <p className="-mt-1 text-xs text-muted-foreground">{field.description}</p>}
+      {labelled && (
+        <label htmlFor={id} className="text-sm text-foreground">
+          {field.label}
+          {field.optional && <span className="text-muted-foreground"> (optional)</span>}
+        </label>
+      )}
       <InputGroup className="h-8 rounded-(--control-radius) border-input bg-background">
         <InputGroupInput
           id={id}
           name={field.name}
+          aria-label={labelled ? undefined : field.label}
+          aria-describedby={field.description ? hintId : undefined}
           type={field.kind === 'email' ? 'email' : masked ? 'password' : 'text'}
           inputMode={field.kind === 'otp' ? 'numeric' : undefined}
           autoComplete={autoComplete(field)}
@@ -135,6 +147,21 @@ function FieldInput({ field, value, disabled, onChange }: { field: InputField; v
           </InputGroupAddon>
         )}
       </InputGroup>
+      {(field.description || host) && (
+        <div className="flex min-w-0 items-baseline gap-3 text-xs text-muted-foreground">
+          {field.description && (
+            <p id={hintId} className="min-w-0 flex-1">
+              {field.description}
+            </p>
+          )}
+          {host && (
+            <a href={field.url} target="_blank" rel="noreferrer" className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-foreground hover:underline">
+              {host}
+              <ArrowUpRightIcon aria-hidden className="size-3" />
+            </a>
+          )}
+        </div>
+      )}
     </div>
   )
 }

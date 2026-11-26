@@ -17,8 +17,15 @@ export const inputField = z.object({
   name: z.string().regex(INPUT_NAME),
   label: z.string().min(1).max(80),
   kind: inputFieldKind,
-  /** Shown under the label, e.g. "The 6-digit code from your authenticator app". */
+  /** A short hint under the field, e.g. "Dashboard > API tokens, with Zone:Edit". */
   description: z.string().max(200).optional(),
+  /** The page where the owner gets the value (e.g. the provider's API tokens page), shown as a link by its host. https only. */
+  url: z
+    .string()
+    .max(500)
+    .url()
+    .refine((u) => u.startsWith("https://"), "url must be https")
+    .optional(),
   optional: z.boolean().optional(),
 });
 export type InputField = z.infer<typeof inputField>;
