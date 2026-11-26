@@ -204,6 +204,19 @@ The bridge closes a socket that has not finished the handshake within 10 s and t
 | `comment` | `{action: "list" \| "reply" \| "resolve", id?, body?, all?}` | The comment_* MCP tools ("Preview comments"): `list` answers `{text}`, the open threads (all with `all`) as the agent reads them; `reply` and `resolve` write as the agent. Errors `invalid`, `not_found` |
 | `ship` | `{action: "verify", repo, number, ok, note}` | `{text}`. The agent's `ship_verify` MCP tool: its check of a merged PR's live deployment, recorded on the session's ship that waits for one ([shipping](shipping.md), "The agent"). Errors `invalid`, `not_found` (no ship waiting) |
 
+### Cloud sessions (`S2Transport`)
+
+A box of a cloud org (Teams, Cloud) runs the same bridge with `DORKS_TRANSPORT=s2` and `DORKS_WORKER_URL`: nothing dials it, and it listens on no port. It appends the session's transcript to s2 and tails its commands there, and calls the stateless Worker (handlemotion/dorks-cloud, `docs/org-runtime.md` and `docs/realtime.md`) over HTTPS for the rest (`infra/bridge/src/s2/`). Every call is `POST <worker>/v1/bridge/<dorkId>/<op>` with `authorization: DorksBridge <ts>.<proof>`, `proof = HMAC-SHA256(secret, "bridge|" + ts + "|" + METHOD + " " + path + " " + sha256hex(body))` (`httpProof`/`checkHttpProof` in `packages/shared/src/bridgeProof.ts`, 60 s of clock skew). Refusals are AppError bodies; `forbidden` stops the bridge, `sleeping` exits it.
+
+| op | body | answer |
+|---|---|---|
+| `connect` | `{}` | `{basin, basinUrl?, streams: {events, commands}, token, tokenExpiresAt, fence, encryptionKey}`: fences `events` with a fresh token (the previous bridge's appends then get 412 and it exits), issues an s2 token for the session's prefix (append, read, check-tail; 1 h) and appends a `fetch_configure` command, as the server's `connect` queues one. The bridge's `afterBridgeSeq` is the last bseq in the stream |
+| `token` | `{}` | `{token, expiresAt}`: a fresh s2 token, asked for 5 minutes before expiry and whenever s2 refuses one |
+| `state` | `{frames}` | `{}`. The `push` frames other than events (`ready`, `ack`, `agent_exited`, `flushed`, `title`, `agent_models`, ...) plus what the server derives from the stream: `{t: "session", sessionId, model?}`, `turn_started`, `turn_idle`, `{t: "preview", text}`. Sent after the events before them are durable. `{frames: []}` is the heartbeat |
+| `rpc` | `{op, args}` | `{result}`: the ops and shapes of the table above (`configure`, `gh_token`, `subscribe_pr`, `skill`, ...) |
+
+The bridge normalizes the agent's lines into client events itself (`@dorks/core/normalize`, plus the turn's `finalMessageId` and `stopped` as `services/bridge.ts` stamps them) and appends them as s2 records in the layout of dorks-cloud's `src/realtime/records.ts` (fenced, `match_seq_num`, exactly once; `infra/bridge/src/s2/records.ts` documents the headers). A `commands` record's id is the cid (for messages also the frame's `id`) and its body a `CommandFrame`, `{t: "call", id, op, args}` (answered by a `ret` record in `events`) or `{t: "subscriptions", views}`. The bridge acks a command by appending its echo to `events`, the commit point; acks may come out of order, so every record carries the cursor (`c`, the first unacked command) and the cids acked past it (`a`). A restarted bridge delivers again what was not acked and skips duplicate cids. `pnpm --filter @dorks/bridge test s2` covers this against an in-memory s2; `test/s2-live.test.ts` runs the built bridge on a real s2 basin with real Claude, including two `kill -9`s.
+
 ### Mentions
 
 The composer offers a menu above the box (`apps/web/src/components/ComposerMenu.tsx`): `/` as a message's first word lists the agent's skills and commands, `@` after a space (or at the start) searches the repository's files. Picking one writes `/name ` or `@path ` into the text; nothing else changes about the message, and the agent reads both as it would in a terminal.
