@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Link, useLocation } from '@tanstack/react-router'
-import { BlocksIcon, BoxIcon, ChevronDownIcon, ChevronRightIcon, PlusIcon, WorkflowIcon } from 'lucide-react'
+import { Link, useLocation, useNavigate } from '@tanstack/react-router'
+import { BlocksIcon, BoxIcon, ChevronDownIcon, ChevronRightIcon, ClockFadingIcon, PlusIcon } from 'lucide-react'
 import type { DorkState } from '@dorks/shared'
 import type { Usage } from '@dorks/client'
 import { useBuilds, useDorks, useGithubRepos, useUsage } from '@dorks/client/react'
@@ -18,7 +18,10 @@ import { ChatList, type Chat, type ChatPr, type ChatRoute, type PrState } from '
 import { Logo } from './onboarding/List'
 import { OwnerAvatar, ownerOf } from './RepoAvatar'
 import { ownersOf, useOwnerScope } from './ownerScope'
+import { MODE_ICONS } from './ModeMenu'
 import { SIDEBAR_ROW, SIDEBAR_SECTION } from './sidebarChrome'
+import { HistoryButtons, TITLEBAR_AFTER_TOGGLE } from './WindowControls'
+import { useAppWorkspace, workspaceOf, type AppWorkspace } from './appWorkspace'
 import { UpdatePrompt } from './UpdatePrompt'
 import { useRowHover } from './useRowHover'
 
@@ -44,15 +47,13 @@ export function AppSidebar() {
   const limits = useUsage()
   const archive = useArchiveDork()
   const builds = useBuilds()
-  // A nerd has no repository of its own: it sits with the repository of the build it works on (its first), else in Other.
-  const buildRepo = new Map((builds ?? []).map((b) => [b.id, b.repos[0]?.repo ?? '']))
   // Newest first by creation, never by activity: rows stay where they are until the owner drags them (ChatList remembers that order).
   const chats: Chat[] = (dorks ?? [])
     .toSorted((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id))
     .map((d) => ({
       id: d.id,
       title: d.title,
-      repo: d.mode === 'nerd' && !d.repo ? (buildRepo.get(d.buildId ?? '') ?? '') : d.repo,
+      repo: d.repo,
       working: MOVING.has(d.state),
       state: d.state,
       attention: d.needsAttention,
@@ -80,9 +81,6 @@ export function AppSidebar() {
     />
   )
 }
-
-/** Chats shown before Show more, so the repository groups stay in view under them. */
-const CHATS_SHOWN = 5
 
 const ALL = ''
 
@@ -154,17 +152,50 @@ function OwnerSwitcher({ owners, scope, setScope }: { owners: string[]; scope: s
   )
 }
 
-/** The app's pages, under New session. */
+const WORKSPACES: { value: AppWorkspace; label: string; icon: (typeof MODE_ICONS)[keyof typeof MODE_ICONS] }[] = [
+  { value: 'agents', label: 'Agents', icon: MODE_ICONS.code },
+  { value: 'chat', label: 'Chat', icon: MODE_ICONS.chat },
+]
+
+/**
+ * The title bar's workspace switcher (`Agents ⌄`): Agents lists code sessions and nerds, Chat lists chats. Switching away from an open
+ * session of the other workspace goes to New session, so the page never shows a session the sidebar does not list.
+ */
+function WorkspaceSwitcher({ workspace, onChange }: { workspace: AppWorkspace; onChange: (next: AppWorkspace) => void }) {
+  const current = WORKSPACES.find((w) => w.value === workspace) ?? WORKSPACES[0]
+  return (
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger
+        aria-label={`Switch workspace, currently ${current.label}`}
+        className="flex h-[30px] min-w-0 shrink items-center gap-1 rounded-[6px] px-2 text-sm text-muted-foreground outline-none hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring aria-expanded:bg-foreground/[0.05] aria-expanded:text-foreground"
+      >
+        <span className="min-w-0 truncate">{current.label}</span>
+        <ChevronDownIcon aria-hidden className="size-3 shrink-0" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-44">
+        <DropdownMenuRadioGroup value={workspace} onValueChange={(value) => onChange(value as AppWorkspace)}>
+          {WORKSPACES.map(({ value, label, icon: Icon }) => (
+            <DropdownMenuRadioItem key={value} value={value} closeOnClick>
+              <Icon />
+              <span className="min-w-0 flex-1 truncate">{label}</span>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+/** The app's pages, under New session. Builds are machines for code, so Chat has none; Plugins are the same in both workspaces. */
 const PAGES = [
-  { to: '/plugins', label: 'Plugins', icon: BlocksIcon },
-  { to: '/automations', label: 'Automations', icon: WorkflowIcon },
-  { to: '/builds', label: 'Builds', icon: BoxIcon },
+  { to: '/builds', label: 'Builds', icon: BoxIcon, workspaces: ['agents'] },
+  { to: '/automations', label: 'Automations', icon: ClockFadingIcon, workspaces: ['agents', 'chat'] },
+  { to: '/plugins', label: 'Plugins', icon: BlocksIcon, workspaces: ['agents', 'chat'] },
 ] as const
 
 /**
- * The app's sidebar: a 48px title bar (traffic lights, the toggle, back and forward); the owner switcher with New session and the
- * app's pages; then the chats of
- * the owner in scope, grouped by repository (a label per repository, alphabetical, that folds its section shut and remembers it),
+ * The app's sidebar: a 48px title bar (traffic lights, the toggle, the workspace switcher, back and forward); in Agents the owner
+ * switcher, New session and the app's pages, then the nerds, then the code sessions of the owner in scope, grouped by repository (a label per repository, alphabetical, that folds its section shut and remembers it),
  * each group reorderable and remembering its order; the account menu (the owner's avatar) at the foot. Rows are 30px, 2px apart, with one hover fill springing between them; groups are 16px apart. It sits
  * flat on the app fill in a resizable panel (see AppFrame); on phones it is shadcn's sheet.
  */
@@ -203,10 +234,25 @@ export function AppSidebarView({
   const selected = typeof dork === 'string' ? dork : undefined
   // A worker open full screen keeps its dork highlighted: workers have no rows of their own.
   const activeId = chats.find((c) => c.id === selected)?.parentId ?? selected
-  // Chats (docs/modes.md) come first in their own group; nerds sit in the repository groups with the sessions of their build. A nerd's
-  // workers live inside it, not in the sidebar.
+  // One workspace at a time (docs/modes.md): Chat lists the chats; Agents lists the nerds in their own group, then the code sessions by
+  // repository. A nerd's workers live inside it, not in the sidebar.
+  const [workspace, setWorkspace] = useAppWorkspace()
+  const navigate = useNavigate()
   const talks = chats.filter((c) => c.mode === 'chat' && !c.parentId)
-  const sessions = chats.filter((c) => c.mode !== 'chat' && !c.parentId)
+  const nerds = chats.filter((c) => c.mode === 'nerd' && !c.parentId)
+  const sessions = chats.filter((c) => c.mode !== 'chat' && c.mode !== 'nerd' && !c.parentId)
+  // Opening a session of the other workspace (a link, a notification) switches to it, so its row is in view.
+  const activeMode = chats.find((c) => c.id === activeId)?.mode
+  const activeKnown = chats.some((c) => c.id === activeId)
+  useEffect(() => {
+    if (activeKnown) setWorkspace(workspaceOf(activeMode))
+  }, [activeKnown, activeMode, setWorkspace])
+  const switchWorkspace = (next: AppWorkspace) => {
+    if (next === workspace) return
+    // Leave the open session first, so the effect above does not switch straight back to its workspace.
+    if (activeKnown && workspaceOf(activeMode) !== next) void navigate({ to: '/dorks', search: {} }).then(() => setWorkspace(next))
+    else setWorkspace(next)
+  }
   const owners = ownersOf(
     sessions.flatMap((c) => (c.repo ? [c.repo] : [])),
     accounts,
@@ -229,20 +275,25 @@ export function AppSidebarView({
     // In a resizable panel on desktop (the frame sizes it), shadcn's sheet on phones.
     <Sidebar collapsible={isMobile ? 'offcanvas' : 'none'} className={isMobile ? undefined : 'h-full w-full'}>
       <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden text-foreground">
-        {/* The title bar: the traffic lights and the floating controls (AppFrame) sit over it. Nothing else lives up here. */}
-        <div data-tauri-drag-region className="h-12 shrink-0" />
+        {/* The title bar: the traffic lights and the floating toggle (AppFrame) sit over its start, then the workspace switcher, and back
+            and forward at its end. */}
+        <div data-tauri-drag-region className="flex h-12 shrink-0 items-center gap-0.5 pr-1.5" style={{ paddingLeft: isMobile ? 6 : TITLEBAR_AFTER_TOGGLE }}>
+          <WorkspaceSwitcher workspace={workspace} onChange={switchWorkspace} />
+          <div data-tauri-drag-region className="h-full min-w-2 flex-1" />
+          {!isMobile && <HistoryButtons />}
+        </div>
         <div ref={hover.containerRef} className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-1.5 pb-1.5">
           <FluidHoverHighlight className="z-0 rounded-[6px] bg-foreground/[0.05]" rect={hover.rect} session={hover.session} />
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto overscroll-y-none">
             <nav aria-label="App" className="flex shrink-0 flex-col gap-0.5">
-              <OwnerSwitcher owners={owners} scope={scope} setScope={setScope} />
+              {workspace === 'agents' && <OwnerSwitcher owners={owners} scope={scope} setScope={setScope} />}
               {/* A fresh state on every click, so clicking it again while there still counts as a new visit and puts the cursor in the box. */}
               <Link to="/dorks" search={{}} state={(prev) => ({ ...prev, visit: Date.now() })} {...rowLink(pathname === '/dorks' && !activeId)}>
                 {/* The plus is a narrow glyph: drawn at 16px in the 14px column so it reads as wide as the page icons under it. */}
                 <PlusIcon className="-mx-px size-4!" />
                 New session
               </Link>
-              {PAGES.map(({ to, label, icon: Icon }) => (
+              {PAGES.filter((page) => (page.workspaces as readonly AppWorkspace[]).includes(workspace)).map(({ to, label, icon: Icon }) => (
                 <Link key={to} to={to} {...rowLink(pathname === to)}>
                   <Icon />
                   {label}
@@ -257,42 +308,36 @@ export function AppSidebarView({
                 </Link>
               ))}
             </nav>
-            {talks.length > 0 && (
+            {workspace === 'chat' ? (
               <nav aria-label="Chats" className="flex shrink-0 flex-col gap-0.5">
-                <div className={`${SIDEBAR_SECTION} pr-1`}>
-                  <span className="min-w-0 flex-1 truncate">Chats</span>
-                </div>
-                <ChatList chats={talks} orderKey={`${orderKey}.chats`} to={chatTo} activeId={activeId} onArchive={onArchive} limit={CHATS_SHOWN} />
+                <ChatList chats={talks} orderKey={`${orderKey}.chats`} to={chatTo} activeId={activeId} onArchive={onArchive} />
               </nav>
+            ) : (
+              <>
+                {nerds.length > 0 && (
+                  <Group id="nerds" label="Nerds" add={{ search: { mode: 'nerd' }, label: 'New nerd' }} open={!collapsed.has('nerds')} onOpenChange={(next) => toggle('nerds', next)}>
+                    <ChatList chats={nerds} orderKey={`${orderKey}.nerds`} to={chatTo} activeId={activeId} onArchive={onArchive} />
+                  </Group>
+                )}
+                {groups.map(([repo, list]) => {
+                  const key = repo || 'other'
+                  return (
+                    <Group
+                      key={key}
+                      id={key}
+                      label={label(repo)}
+                      title={repo || undefined}
+                      navLabel={repo || 'Other chats'}
+                      add={repo ? { search: { repo }, label: `New session in ${repo}` } : undefined}
+                      open={!collapsed.has(key)}
+                      onOpenChange={(next) => toggle(key, next)}
+                    >
+                      <ChatList chats={list} orderKey={`${orderKey}.${key}`} to={chatTo} activeId={activeId} onArchive={onArchive} />
+                    </Group>
+                  )
+                })}
+              </>
             )}
-            {groups.map(([repo, list]) => {
-              const key = repo || 'other'
-              const open = !collapsed.has(key)
-              return (
-                <Collapsible key={key} open={open} onOpenChange={(next) => toggle(key, next)} render={<nav aria-label={repo || 'Other chats'} className="flex shrink-0 flex-col gap-0.5" />}>
-                  <div className={`group/section ${SIDEBAR_SECTION} pr-1 pl-0`} title={repo || undefined}>
-                    <CollapsibleTrigger className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-[6px] pl-2 text-left outline-none hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring">
-                      <span className="min-w-0 truncate">{label(repo)}</span>
-                      <ChevronRightIcon aria-hidden className={`size-3 shrink-0 transition-transform duration-150 motion-reduce:transition-none ${open ? 'rotate-90' : ''}`} />
-                    </CollapsibleTrigger>
-                    {repo && (
-                      <Link
-                        to="/dorks"
-                        search={{ repo }}
-                        aria-label={`New session in ${repo}`}
-                        title={`New session in ${repo}`}
-                        className="flex size-5 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none group-hover/section:opacity-100 hover:bg-foreground/[0.05] hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring [@media(hover:none)]:opacity-100"
-                      >
-                        <PlusIcon aria-hidden className="size-3.5" />
-                      </Link>
-                    )}
-                  </div>
-                  <CollapsibleContent className="flex flex-col gap-0.5">
-                    <ChatList chats={list} orderKey={`${orderKey}.${key}`} to={chatTo} activeId={activeId} onArchive={onArchive} />
-                  </CollapsibleContent>
-                </Collapsible>
-              )
-            })}
           </div>
           <div className="flex shrink-0 flex-col gap-2 pt-1.5">
             {usage}
@@ -301,5 +346,52 @@ export function AppSidebarView({
         </div>
       </div>
     </Sidebar>
+  )
+}
+
+/**
+ * A group of rows under a label that folds it shut (remembered), with a + on hover that starts a session for the group (a repository's,
+ * or a nerd).
+ */
+function Group({
+  id,
+  label,
+  title,
+  navLabel,
+  add,
+  open,
+  onOpenChange,
+  children,
+}: {
+  id: string
+  label: string
+  title?: string
+  navLabel?: string
+  add?: { search: { repo?: string; mode?: 'nerd' }; label: string }
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  children: ReactNode
+}) {
+  return (
+    <Collapsible data-group={id} open={open} onOpenChange={onOpenChange} render={<nav aria-label={navLabel ?? label} className="flex shrink-0 flex-col gap-0.5" />}>
+      <div className={`group/section ${SIDEBAR_SECTION} pr-1 pl-0`} title={title}>
+        <CollapsibleTrigger className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-[6px] pl-2 text-left outline-none hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring">
+          <span className="min-w-0 truncate">{label}</span>
+          <ChevronRightIcon aria-hidden className={`size-3 shrink-0 transition-transform duration-150 motion-reduce:transition-none ${open ? 'rotate-90' : ''}`} />
+        </CollapsibleTrigger>
+        {add && (
+          <Link
+            to="/dorks"
+            search={add.search}
+            aria-label={add.label}
+            title={add.label}
+            className="flex size-5 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 outline-none group-hover/section:opacity-100 hover:bg-foreground/[0.05] hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring [@media(hover:none)]:opacity-100"
+          >
+            <PlusIcon aria-hidden className="size-3.5" />
+          </Link>
+        )}
+      </div>
+      <CollapsibleContent className="flex flex-col gap-0.5">{children}</CollapsibleContent>
+    </Collapsible>
   )
 }

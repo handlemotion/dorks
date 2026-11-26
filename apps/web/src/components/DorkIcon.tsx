@@ -14,7 +14,7 @@ type Fill = { color: string; opacity?: number; tone: string }
 const GREY: Fill = { color: 'currentColor', opacity: 0.32, tone: 'text-foreground' }
 /** Unread: a finished turn the owner has not opened yet. */
 const BLUE: Fill = { color: '#0e6fff', tone: '' }
-/** A nerd's colour (docs/modes.md): the same mark in green, so the sessions that run other sessions stand apart. */
+/** A nerd's colour (docs/modes.md): the same mark in green in every state, so the sessions that run other sessions stand apart. */
 const GREEN: Fill = { color: '#1fcc7a', tone: '' }
 /** Attention: the dork waits on the owner's permission or answer. */
 const YELLOW: Fill = { color: '#ffb000', tone: '' }
@@ -23,7 +23,7 @@ const TONE: Partial<Record<DorkIconState, string>> = { asleep: 'text-muted-foreg
 const FILL: Partial<Record<DorkIconState, Fill>> = { working: GREY, awake: GREY, unread: BLUE, attention: YELLOW }
 
 function fill(state: DorkIconState, nerd?: boolean): Fill {
-  if (nerd && state === 'working') return GREEN
+  if (nerd) return GREEN
   return FILL[state] ?? { color: 'currentColor', tone: TONE[state] ?? '' }
 }
 
@@ -74,7 +74,7 @@ export function dorkIconState(state: DorkState | undefined, opts?: { working?: b
  * - `awake`: the working grey, still: the turn is over and read, and the dork waits for the next message before it sleeps.
  * - `asleep`: the shape's outline only, in muted grey, no fill, still.
  * - `error`: the same shape in destructive red, still.
- * A nerd (`nerd`) is green where a session is grey (working); every other state looks the same as any session's.
+ * A nerd (`nerd`) is always green: the same fill, flaps or outline as any session's state, in green instead of its colour.
  * `still` draws the working colours without motion (the nerd mark in the mode menu).
  */
 export function DorkIcon({
@@ -86,7 +86,7 @@ export function DorkIcon({
   still,
 }: {
   state: DorkIconState
-  /** A nerd session (docs/modes.md): green instead of the working grey. */
+  /** A nerd session (docs/modes.md): green in every state. */
   nerd?: boolean
   /** No motion: the working colours as a still mark. */
   still?: boolean
@@ -112,6 +112,7 @@ export function DorkIcon({
       role={label ? 'img' : undefined}
       aria-label={label}
       aria-hidden={label ? undefined : true}
+      style={nerd ? { color: GREEN.color } : undefined}
       className={`shrink-0 ${tone} ${className ?? ''}`}
     >
       {animated ? (
