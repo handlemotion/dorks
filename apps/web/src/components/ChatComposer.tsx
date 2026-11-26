@@ -2,7 +2,7 @@ import { BoxIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon, FolderIcon, Load
 import { modelLabel, type AgentModelChoice } from '@dorks/shared'
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type RefObject, type ReactNode } from 'react'
 import { MENU_POPUP_CLASS } from '@dorks/ui/dropdown-menu'
-import { Command, CommandEmpty, CommandItem, CommandMenuInput, CommandList } from '@dorks/ui/command'
+import { Command, CommandEmpty, CommandGroup, CommandItem, CommandMenuInput, CommandList } from '@dorks/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@dorks/ui/popover'
 import { Switch } from '@dorks/ui/switch'
 import claudeLogo from '../assets/providers/claude.svg'
@@ -424,7 +424,7 @@ function searchableModels(catalog: Partial<Record<AgentProvider, AgentModelChoic
 /** What the agent itself reported, so the trigger is never only what was asked for. */
 function ModelConfirmation({ active }: { active?: { model?: string; effort?: string } }) {
   return (
-    <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground" data-testid="model-confirmation">
+    <p className="px-3 pt-1 pb-2.5 text-xs text-muted-foreground" data-testid="model-confirmation">
       {active ? (
         <>
           Running <span className="font-mono">{active.model}</span>
@@ -437,17 +437,27 @@ function ModelConfirmation({ active }: { active?: { model?: string; effort?: str
   )
 }
 
-/** The chosen model's effort and fast mode, the first two rows above the models (fast mode only where the model offers it). */
-function ModelSettings({ models, effort, fastOffered, fast }: { models: ModelPicker; effort?: EffortChoice; fastOffered: boolean; fast: boolean }) {
-  if (!effort && !fastOffered) return null
+/** The list's title: "Models" over the short list; search results go untitled. */
+const modelsHeading = (query: string) => (query ? undefined : 'Models')
+
+/** A group's small title, as the build chooser's ("Builds", "Base machine"): groups are told apart by these, not by dividers. */
+const MENU_HEADING = 'px-2 py-1.5 text-xs font-medium text-muted-foreground'
+
+/**
+ * The chosen model's effort and fast mode, the first two rows above the models. Fast mode is Claude's: shown for every Claude model,
+ * switched off and greyed where the model does not offer it.
+ */
+function ModelSettings({ models, effort, fastShown, fastOffered, fast }: { models: ModelPicker; effort?: EffortChoice; fastShown: boolean; fastOffered: boolean; fast: boolean }) {
+  if (!effort && !fastShown) return null
   return (
-    <div className="flex flex-col border-b border-border p-1">
+    <div className="flex flex-col p-1">
+      <p className={MENU_HEADING}>Options</p>
       {effort && <EffortChooser choice={effort} />}
-      {fastOffered && (
-        <label className="flex h-8 cursor-pointer items-center gap-2 px-2 text-sm">
+      {fastShown && (
+        <label className={`flex h-8 items-center gap-2 px-2 text-sm ${fastOffered ? 'cursor-pointer' : 'text-muted-foreground'}`} title={fastOffered ? undefined : 'This model has no fast mode'}>
           <ZapIcon className="size-3.5 fill-current text-muted-foreground" />
           <span className="flex-1">Fast mode</span>
-          <Switch size="sm" checked={fast} onCheckedChange={(on) => models.onChange(models.model, models.effort, on)} aria-label="Fast mode" />
+          <Switch size="sm" checked={fast} disabled={!fastOffered} onCheckedChange={(on) => models.onChange(models.model, models.effort, on)} aria-label="Fast mode" />
         </label>
       )}
     </div>
@@ -456,7 +466,8 @@ function ModelSettings({ models, effort, fastOffered, fast }: { models: ModelPic
 
 /** A model's mark: GPT models show ChatGPT's (they run on Codex, but the model is what the menu names), the rest their agent's. */
 function ModelMark({ entry }: { entry: Pick<ModelEntry, 'provider' | 'model'> }) {
-  if (entry.provider === 'codex' && entry.model) return <Logo light={openaiLight} dark={openaiDark} className="size-3.5" />
+  // ChatGPT's mark fills about two thirds of its square: scaled up to look the size of the others (as onboarding does).
+  if (entry.provider === 'codex' && entry.model) return <Logo light={openaiLight} dark={openaiDark} className="size-3.5 scale-[1.3]" />
   return <ProviderIcon provider={entry.provider} />
 }
 
@@ -491,6 +502,10 @@ function effortChoice(
 }
 type EffortChoice = NonNullable<ReturnType<typeof effortChoice>>
 
+/**
+ * The effort menu lies 2px over the model menu's edge. It is placed from the Effort row, which sits 5px inside that edge (the menu's
+ * 1px hairline and 4px padding), so it is offset 3px from the row.
+ */
 /** Effort as a row naming the current one, with its choices in a menu nested to the side: the first option above the models. */
 function EffortChooser({ choice }: { choice: EffortChoice }) {
   const [open, setOpen] = useState(false)
@@ -509,7 +524,7 @@ function EffortChooser({ choice }: { choice: EffortChoice }) {
         <span className="text-muted-foreground">{effort ? effortName(effort) : 'Default'}</span>
         <ChevronRightIcon className="size-3.5 text-muted-foreground" />
       </PopoverTrigger>
-      <PopoverContent side="right" align="start" sideOffset={6} alignOffset={-4} className={`${MENU_POPUP_CLASS} w-40 gap-0 p-1 ring-0`}>
+      <PopoverContent side="right" align="start" sideOffset={3} alignOffset={-4} className={`${MENU_POPUP_CLASS} w-40 gap-0 p-1 ring-0`}>
         <div role="radiogroup" aria-label="Effort" className="flex flex-col">
           {efforts.map((e) => (
             <button
@@ -622,18 +637,20 @@ function ModelMenu({
       <PopoverContent align="end" className={`${MENU_POPUP_CLASS} w-80 gap-0 p-0 ring-0`}>
         <Command shouldFilter={false} loop className="rounded-none bg-transparent p-0">
           <CommandMenuInput aria-label="Search all models" autoFocus value={query} onValueChange={setQuery} placeholder="Search all models…" />
-          {!q && models && <ModelSettings models={models} effort={effortNow} fastOffered={fastOffered} fast={fast} />}
-          <CommandList className="max-h-80 p-1">
-            <CommandEmpty className="px-2 py-3 text-left text-xs text-muted-foreground">No models match.</CommandEmpty>
-            {entries.map((e) => (
-              <CommandItem key={e.key} value={e.key} disabled={!canPick(e)} data-checked={isCurrent(e) ? 'true' : undefined} onSelect={() => pick(e)} className={REPO_ITEM} title={e.model}>
-                <ModelMark entry={e} />
-                <span className="min-w-0 flex-1 truncate">
-                  {e.name}
-                  {e.detail && <span className="ms-1.5 text-muted-foreground">{e.detail}</span>}
-                </span>
-              </CommandItem>
-            ))}
+          {!q && models && <ModelSettings models={models} effort={effortNow} fastShown={provider === 'claude'} fastOffered={fastOffered} fast={fast} />}
+          <CommandList className="max-h-80">
+            <CommandEmpty className="px-3 py-3 text-left text-xs text-muted-foreground">No models match.</CommandEmpty>
+            <CommandGroup heading={modelsHeading(q)} className="p-1 **:[[cmdk-group-heading]]:px-2 **:[[cmdk-group-heading]]:py-1.5">
+              {entries.map((e) => (
+                <CommandItem key={e.key} value={e.key} disabled={!canPick(e)} data-checked={isCurrent(e) ? 'true' : undefined} onSelect={() => pick(e)} className={REPO_ITEM} title={e.model}>
+                  <ModelMark entry={e} />
+                  <span className="min-w-0 flex-1 truncate">
+                    {e.name}
+                    {e.detail && <span className="ms-1.5 text-muted-foreground">{e.detail}</span>}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
           </CommandList>
           {models && !isNewSession && <ModelConfirmation active={active} />}
         </Command>
