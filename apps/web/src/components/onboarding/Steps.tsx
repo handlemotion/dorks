@@ -4,18 +4,18 @@ import type { Settings } from '@dorks/client'
 import { Button } from '@dorks/ui/button'
 import { DialogClose, DialogFooter } from '@dorks/ui/dialog'
 import { Input } from '@dorks/ui/input'
-import claudeLogo from '../../assets/providers/claude.svg'
-import githubDark from '../../assets/providers/github-dark.svg'
-import githubLight from '../../assets/providers/github-light.svg'
-import grokDark from '../../assets/providers/grok-dark.svg'
-import grokLight from '../../assets/providers/grok-light.svg'
-import antigravityLogo from '../../assets/providers/antigravity.svg'
-import openaiDark from '../../assets/providers/openai-dark.svg'
-import openaiLight from '../../assets/providers/openai-light.svg'
+import claudeLogo from '@dorks/onboarding/assets/providers/claude.svg'
+import githubDark from '@dorks/onboarding/assets/providers/github-dark.svg'
+import githubLight from '@dorks/onboarding/assets/providers/github-light.svg'
+import grokDark from '@dorks/onboarding/assets/providers/grok-dark.svg'
+import grokLight from '@dorks/onboarding/assets/providers/grok-light.svg'
+import antigravityLogo from '@dorks/onboarding/assets/providers/antigravity.svg'
+import openaiDark from '@dorks/onboarding/assets/providers/openai-dark.svg'
+import openaiLight from '@dorks/onboarding/assets/providers/openai-light.svg'
 import { BoatCheckError, saveBoat } from '../../lib/boat'
 import { WELCOMED_KEY } from '../../lib/onboarding'
 import { usePending } from '../../lib/pending'
-import { A, Actions, Body, Card, Heading, notify, SecretInput, StepForm, useNotifyError } from './Frame'
+import { A, Actions, Body, Card, FIELD, Heading, notify, SecretInput, StepForm, useNotifyError } from './Frame'
 import { ConnectDialog, List, Logo, Row } from './List'
 import { AntigravitySignIn } from '../AntigravitySignIn'
 
@@ -23,10 +23,6 @@ export interface StepProps {
   settings: Settings
   onNext: () => void
 }
-
-// Fields on these steps are 40px (lg), like the step buttons. Elsewhere in the app inputs stay at the default 36px. On the app fill a
-// field is a white surface with the same hairline as the cards (white on #f2f2f2 is under 1.15:1).
-const FIELD = 'h-10 border-surface-line bg-surface'
 
 // ---- 1. Intro ------------------------------------------------------------------------------------------------------------
 

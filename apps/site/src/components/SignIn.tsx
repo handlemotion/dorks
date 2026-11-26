@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { DorksMark } from "#/components/DorksMark";
 import { AppleIcon, GoogleIcon } from "#/components/icons";
 import { Button } from "#/components/ui/button";
-import { authClient, fetchSignInMethods, safeNext, sendEmailOtp, signInSocial, verifyEmailOtp, type SignInMethods } from "#/lib/cloud";
+import { appNext, authClient, fetchSignInMethods, safeNext, sendEmailOtp, signInSocial, verifyEmailOtp, type SignInMethods } from "#/lib/cloud";
 import { cn } from "#/lib/utils";
 
 const DOWNLOAD_URL = "https://github.com/handlemotion/dorks/releases/latest";
@@ -19,7 +19,7 @@ export function SignIn({ invitationId }: { invitationId?: string }) {
   const session = authClient.useSession();
   const [step, setStep] = useState<Step>({ kind: "choose" });
   const [params] = useState(() => new URLSearchParams(window.location.search));
-  const next = safeNext(params.get("next"));
+  const next = appNext(params) ?? safeNext(params.get("next"));
   const user = session.data?.user;
 
   useEffect(() => {

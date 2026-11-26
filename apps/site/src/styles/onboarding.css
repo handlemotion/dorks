@@ -1,0 +1,20 @@
+/* /onboarding only: the desktop app's tokens and components (@dorks/ui, @dorks/onboarding), on the site's page. */
+@import "tailwindcss";
+@import "@dorks/ui/styles.css";
+@source "../../../../packages/ui/src";
+@source "../../../../packages/onboarding/src";
+@source "../components/Onboarding.tsx";
+
+@theme inline {
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}
+
+/* The site's sign-in look (/login, PR #284): a white page and round 44px step controls. Cards and dialogs keep the app's 6px. */
+.site-onboarding {
+  --app: #ffffff;
+  --step-control: 2.75rem;
+  --step-field-radius: var(--radius-pill);
+}
+.dark .site-onboarding {
+  --app: #0a0a0a;
+}

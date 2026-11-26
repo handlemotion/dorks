@@ -38,6 +38,19 @@ export function safeNext(raw: string | null): string | null {
   return allowed.has(url.origin) ? url.href : null;
 }
 
+/**
+ * The desktop's sign-in (`/login?next=/onboarding&app=1&state=<nonce>`): signed in, go to onboarding (`next`, or /onboarding),
+ * carrying app and state, so it can end by handing the session back to the app through dorks://auth.
+ */
+export function appNext(params: URLSearchParams): string | null {
+  if (params.get("app") !== "1" || !params.get("state")) return null;
+  const next = new URL(safeNext(params.get("next")) ?? "/onboarding", window.location.origin);
+  if (next.origin !== window.location.origin) next.href = new URL("/onboarding", window.location.origin).href;
+  next.searchParams.set("app", "1");
+  next.searchParams.set("state", params.get("state")!);
+  return next.href;
+}
+
 const OTP_ERRORS: Record<string, string> = {
   INVALID_OTP: "That code isn't right.",
   OTP_EXPIRED: "That code has expired. Resend a new one.",

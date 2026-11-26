@@ -1,0 +1,20 @@
+---
+// /onboarding: a new Dorks Cloud team, in the browser (src/components/Onboarding.tsx). The desktop app's onboarding pieces
+// (@dorks/onboarding on @dorks/ui) draw it, so it takes the app's tokens (src/styles/onboarding.css) on the site's white page.
+import Base from "../layouts/Base.astro";
+import { Onboarding } from "../components/Onboarding";
+import "../styles/onboarding.css";
+---
+
+<Base title="Set up Dorks Cloud" description="Set up your team on Dorks Cloud." app>
+  <script is:inline>
+    // @dorks/ui's dark tokens follow a .dark class; the site follows the system.
+    (() => {
+      const q = matchMedia("(prefers-color-scheme: dark)");
+      const set = () => document.documentElement.classList.toggle("dark", q.matches);
+      set();
+      q.addEventListener("change", set);
+    })();
+  </script>
+  <Onboarding client:only="react" />
+</Base>
