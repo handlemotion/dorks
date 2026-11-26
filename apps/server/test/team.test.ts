@@ -65,6 +65,21 @@ describe("team identity on the relay", () => {
     expect((await relay("GET", "/api/me", await token())).body).toMatchObject({ kind: "member", id: "u_ada", role: "member", serverOrg: ORG });
   });
 
+  it("keeps local dorks on the owner's computer: a relayed client may read one, never start or drive one", async () => {
+    const { h, token, relay, setOrg } = await setup();
+    setOrg(ORG);
+    const id = h.seed("idle");
+    h.app.db.run("UPDATE dorks SET location = 'local' WHERE id = ?", id);
+    const actor = await token({ role: "admin" });
+    expect((await relay("GET", `/api/dorks/${id}`, actor)).body).toMatchObject({ id, location: "local" });
+    expect((await relay("POST", `/api/dorks/${id}/messages`, actor, { text: "rm -rf ~" })).status).toBe(401);
+    expect((await relay("POST", `/api/dorks/${id}/queue`, actor, { text: "later" })).status).toBe(401);
+    expect(h.events(id).some((e) => e.body.type === "user_message")).toBe(false);
+    expect((await relay("POST", "/api/dorks", actor, { repo: "acme/demo", message: "hi", location: "local" })).status).toBe(401);
+    expect((await relay("GET", "/api/settings", actor)).body).toMatchObject({ local: { available: false }, defaultLocation: "cloud" });
+    expect((await relay("PUT", "/api/settings", actor, { defaultLocation: "local" })).status).toBe(401);
+  });
+
   it("names the local owner as the cloud does, and tells the agent only once the chat is shared", async () => {
     const { h, token, relay, setOrg } = await setup();
     setOrg(ORG);

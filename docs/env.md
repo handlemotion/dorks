@@ -13,7 +13,10 @@ All optional.
 | `DORKS_OWNER_TOKEN` | generated | Bearer token for the UI API. When unset, one is generated into `secrets.json` on first run. |
 | `DORKS_UI_ORIGINS` | `tauri://localhost`, `http://tauri.localhost`, `http://localhost:3000`, `http://127.0.0.1:3000` | Comma-separated browser origins allowed by CORS. |
 | `BASE_SNAPSHOT_ID` | none | Default Boat base snapshot. The `baseSnapshotId` setting wins when set. |
-| `BOX_PROVIDER` | `boat` | `boat`, or `sim` for the local simulator and tests. |
+| `BOX_PROVIDER` | `boat` | The cloud provider: `boat`, or `sim` for the local simulator and tests. Local dorks always run on this computer ([local dorks](local-dorks.md)). |
+| `DORKS_LOCAL` | on | `0` turns local dorks off. A server with `DORKS_ORG_ID` never offers them. |
+| `DORKS_NODE_BIN` | `node` on the owner's login PATH | The Node.js (22 or later) local dorks' bridges run with. |
+| `DORKS_GIT_BASE_URL` | `https://github.com` | Where local dorks clone repositories from (`<base>/<owner>/<name>.git`); development points it at local remotes (`file://…`). |
 | `SIM_HOST_KEY` | none | Required when `BOX_PROVIDER=sim`; guards the `/sim/*` routes. |
 | `DORKS_AGY_BIN` | none | The Antigravity CLI for the Google sign-in when there is no `agy` on `PATH` (or in `~/.local/bin`); without one, Dorks downloads Google's current build into the data dir, checksum-verified. See [Boat](boat.md). |
 | `DORKS_BOAT_BIN` | none | The Boat CLI to use when there is no `boat` on `PATH` (or in `~/.ascii/bin`). The desktop app sets it to the copy it bundles. See [Boat](boat.md#sign-in-with-the-boat-cli). |
@@ -38,6 +41,7 @@ On start the server prints one JSON line, for example `{"ready":true,"ui":"http:
 | `githubConnected` | Act as the GitHub CLI's login. See [GitHub](github.md). |
 | `sleepMinutes` | Idle minutes before a sandbox is paused (default 5). |
 | `commentPolicy` | Whose PR comments wake a dork: `all`, or an allowlist of logins. |
+| `defaultLocation` | Where new sessions start: `cloud` (default) or `local`, the composer's remembered Cloud / Local choice. Only the owner on this computer can change it. |
 | Secrets (`PUT /api/secrets/:name`) | Environment variables exported inside every sandbox (for example a deploy token). Names match `^[A-Z][A-Z0-9_]{0,63}$`, values are at most 16 KB, and they are never shown again. |
 
 Token settings are write-only: reads return booleans, and an empty string clears one.
@@ -66,7 +70,7 @@ Read at build time; `EXPO_PUBLIC_*` values ship inside the app, so never put a s
 
 ## In-sandbox bridge (`infra/bridge`)
 
-Set by the server when it creates the sandbox: `DORK_ID`, `BRIDGE_PORT` (the loopback port the bridge listens on, `4748`) and `BRIDGE_SECRET`. A cloud org's sandbox instead gets `DORKS_TRANSPORT=s2` and `DORKS_WORKER_URL` (the Worker's base URL): the bridge then reaches s2 and the Worker itself and listens on no port ([architecture](architecture.md), "Cloud sessions"). Tuning variables are listed in [infra/bridge/README.md](../infra/bridge/README.md). The `screenshot_share` tool also reads Playwright's own `PLAYWRIGHT_BROWSERS_PATH` (default `~/.cache/ms-playwright`, `~/Library/Caches/ms-playwright` on macOS) to find a Chromium when no Chrome is installed.
+Set by the server when it creates the sandbox: `DORK_ID`, `BRIDGE_PORT` (the loopback port the bridge listens on, `4748`) and `BRIDGE_SECRET`. A local dork's bridge also gets `DORKS_LOCAL_BOX=1` (its agent is told it runs on the owner's computer) and `DORKS_PARENT_PID` (it exits when the server does), with `BRIDGE_SECRET_FILE` instead of `BRIDGE_SECRET` ([local dorks](local-dorks.md)). A cloud org's sandbox instead gets `DORKS_TRANSPORT=s2` and `DORKS_WORKER_URL` (the Worker's base URL): the bridge then reaches s2 and the Worker itself and listens on no port ([architecture](architecture.md), "Cloud sessions"). Tuning variables are listed in [infra/bridge/README.md](../infra/bridge/README.md). The `screenshot_share` tool also reads Playwright's own `PLAYWRIGHT_BROWSERS_PATH` (default `~/.cache/ms-playwright`, `~/Library/Caches/ms-playwright` on macOS) to find a Chromium when no Chrome is installed.
 
 ## Adding a variable
 

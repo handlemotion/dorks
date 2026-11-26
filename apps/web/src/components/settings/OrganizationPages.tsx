@@ -7,6 +7,7 @@ import { Input } from '@dorks/ui/input'
 import { Switch } from '@dorks/ui/switch'
 import { Textarea } from '@dorks/ui/textarea'
 import { EmptyState } from '../EmptyState'
+import { HERE } from '../LocationMenu'
 import { saveBoat } from '../../lib/boat'
 import { STEPS, stepDone } from '../../lib/onboarding'
 import { usePending } from '../../lib/pending'
@@ -376,6 +377,7 @@ export function SessionsPage({ settings }: { settings: Settings }) {
   return (
     <SettingsSections>
       <SleepSection current={settings.sleepMinutes} />
+      {settings.local?.available && <LocationSection local={settings.defaultLocation === 'local'} />}
       <CodeModeSection on={settings.claudeCodeMode ?? true} />
       <CommentPolicySection settings={settings} />
     </SettingsSections>
@@ -417,6 +419,25 @@ function SleepSection({ current }: { current: number }) {
         />
       </SettingsGroup>
       <SettingsStatus saved={saved} error={error} />
+    </SettingsSection>
+  )
+}
+
+/** Where new sessions start (docs/local-dorks.md): the composer's Cloud / Local choice, remembered; each session can still pick. */
+function LocationSection({ local }: { local: boolean }) {
+  const { actions } = useDorksClient()
+  const { run, pending, error } = usePending()
+  return (
+    <SettingsSection title="Where sessions run">
+      <SettingsGroup>
+        <SettingsRow
+          label={`Start on ${HERE}`}
+          htmlFor="default-local"
+          description="New sessions start Local: the agent runs your own CLIs here, unsandboxed, in a worktree of the repository. The message box can switch each one to Cloud."
+          control={<Switch id="default-local" checked={local} disabled={pending} onCheckedChange={(v) => void run(() => actions.updateSettings({ defaultLocation: v ? 'local' : 'cloud' }))} />}
+        />
+      </SettingsGroup>
+      <SettingsStatus saved={false} error={error} />
     </SettingsSection>
   )
 }

@@ -18,6 +18,8 @@ export interface Config {
    */
   transport: "ws" | "s2";
   workerUrl: string | null;
+  /** `DORKS_LOCAL_BOX=1`: a local dork's bridge, run by the owner's server on their own computer (docs/local-dorks.md). */
+  local: boolean;
   claudeBin: string;
   /** Appended to the claude argv (space separated). Escape hatch, e.g. `--model sonnet`. */
   claudeExtraArgs: string[];
@@ -77,6 +79,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     bridgePort,
     bridgeSecret,
     ...transportOf(env),
+    local: env.DORKS_LOCAL_BOX === "1",
     claudeBin: env.CLAUDE_BIN || "claude",
     claudeExtraArgs: (env.DORKS_CLAUDE_ARGS ?? "").split(/\s+/).filter(Boolean),
     permissionMode: env.DORKS_PERMISSION_MODE || "bypassPermissions",

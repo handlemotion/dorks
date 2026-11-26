@@ -62,6 +62,8 @@ cannot be bound the bridge exits 1.
 | `CLAUDE_RUN_AS` | _(unset)_ | Unprivileged user to run Claude (and the git clone/checkout) as, via `setpriv`. The bridge must be root. Sets the child's `HOME`/`USER` to that user's. |
 | `DORKS_TRANSPORT` | `ws` | `s2` for a cloud org's box: the bridge talks to s2 and the Worker and listens on no port ([architecture](../../docs/architecture.md), "Cloud sessions"). `BRIDGE_PORT` is then unused. |
 | `DORKS_WORKER_URL` | _(none)_ | The Worker's base URL; required with `DORKS_TRANSPORT=s2`. |
+| `DORKS_LOCAL_BOX` | _(unset)_ | `1` for a local dork's bridge, run by the owner's server on their own computer: no sandbox desktop, and the agent is told where it runs ([local dorks](../../docs/local-dorks.md)). |
+| `DORKS_PARENT_PID` | _(unset)_ | Exit within 2 s of this process (the server that started a local bridge) disappearing. |
 | `DORKS_PERMISSION_MODE` | `bypassPermissions` | Passed to `--permission-mode`. See "Permission mode". |
 | `DORKS_CLAUDE_ARGS` | _(none)_ | Extra argv for the CLI, whitespace-separated (e.g. `--model sonnet`). |
 | `DORKS_WORKDIR` | `~/work` | Repos are cloned to `<workdir>/<owner>/<repo>`. |

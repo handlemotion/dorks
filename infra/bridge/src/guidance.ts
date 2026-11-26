@@ -22,6 +22,18 @@ export const FINAL_ANSWER_GUIDANCE = [
   "never for credentials.",
 ].join(" ");
 
+/**
+ * A local dork (docs/local-dorks.md, `DORKS_LOCAL_BOX=1`): the bridge runs on the owner's own computer, so what the guidance above says about
+ * a cloud sandbox does not hold. Appended last, so it wins.
+ */
+export const LOCAL_GUIDANCE = [
+  "Where you run, overriding anything above about a cloud sandbox: you run directly on the user's own computer, as the user, with no sandbox,",
+  "in a git worktree of the repository that Dorks keeps for this session (your working directory). There is no separate desktop or Computer tab,",
+  "and you do not need `local_run` or `local_read`: you are already on that computer. Stay inside your worktree: do not change, delete or read",
+  "the user's other files, settings, keys or repositories unless they ask you to, never run destructive commands outside it, and do not",
+  "install software system-wide without asking. A dev server you start is at http://localhost:<port> for the user too.",
+].join(" ");
+
 /** Claude only (docs/skills.md): the owner's skills are shared by every session, and a session can add its own. */
 export const SKILLS_GUIDANCE = [
   "The user's skills from dorks Customize are in ~/.claude/skills, shared by every session and kept in sync by dorks: do not edit or remove them.",

@@ -411,6 +411,9 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     commentPolicy: { mode: "all" },
     claudeCodeMode: true,
     localAlwaysAllow: false,
+    // The mock stands in for the owner's own server: local sessions are offered (docs/local-dorks.md).
+    local: { available: true },
+    defaultLocation: "cloud",
     sentry: { connected: false, org: null, url: null },
     claudeModels: MOCK_MODELS,
   };
@@ -823,6 +826,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       id,
       title: str(body.title) || message.slice(0, 48),
       mode: modeOf(body) ?? "code",
+      location: parent?.location ?? (body.location === "local" ? "local" : "cloud"),
       parentId: parent?.id ?? null,
       ...(str(body.icon) ? { icon: str(body.icon) } : {}),
       repo,
@@ -1286,9 +1290,15 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       settings.sleepMinutes = body.sleepMinutes;
     }
     if (body.commentPolicy) settings.commentPolicy = body.commentPolicy as Settings["commentPolicy"];
+    savePreferences(body);
+    return saveSentry(body);
+  };
+
+  /** The owner's plain preferences in a settings PUT: Code Mode, Always allow, where new sessions start. */
+  const savePreferences = (body: Record<string, unknown>) => {
     if (typeof body.claudeCodeMode === "boolean") settings.claudeCodeMode = body.claudeCodeMode;
     if (typeof body.localAlwaysAllow === "boolean") settings.localAlwaysAllow = body.localAlwaysAllow;
-    return saveSentry(body);
+    if (body.defaultLocation === "cloud" || body.defaultLocation === "local") settings.defaultLocation = body.defaultLocation;
   };
 
   /** Sentry's fields of a settings PUT. Like apps/server, which checks a Sentry token with Sentry before saving it. */

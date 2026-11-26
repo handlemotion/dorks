@@ -1,7 +1,7 @@
 import type { AgyCli } from "./lib/agyCli";
 import type { BoatCli } from "./lib/boatCli";
 import type { GhLogin } from "./lib/ghCli";
-import type { AppError, AppErrorCode } from "@dorks/shared";
+import type { AppError, AppErrorCode, DorkLocation } from "@dorks/shared";
 import type { BoxProvider } from "@dorks/core/box";
 import type { SnapshotDriver } from "./core/snapshot";
 import type { SnapshotAssets } from "./snapshot/assets";
@@ -69,6 +69,12 @@ export interface Config {
   cloudJwksUrl?: string;
   /** `DORKS_ORG_ID`: the dorks-cloud organization this server belongs to (a server Dorks runs for a Teams or Cloud org); else the one the cloud reports for its pairing. */
   orgId?: string;
+  /** `DORKS_LOCAL`: `0` turns local dorks off (docs/local-dorks.md); on by default where the server runs on the owner's computer. */
+  localDorks?: boolean;
+  /** `DORKS_NODE_BIN`: the Node.js local bridges run with; else `node` on the owner's login PATH. */
+  localNodeBin?: string;
+  /** `DORKS_GIT_BASE_URL`: where local dorks clone repositories from (default https://github.com); development points it at local remotes. */
+  localGitBaseUrl?: string;
   /** The folders skills on this computer are adopted from (docs/skills.md, "From this computer"); default the owner's ~/.agents/skills and ~/.claude/skills. Tests set none. */
   localSkillRoots?: string[];
 }
@@ -92,8 +98,8 @@ export interface App {
   boatCli: BoatCli;
   /** The Antigravity CLI on this computer (lib/agyCli.ts): the Google sign-in for Antigravity sessions. Tests replace it. */
   agyCli: AgyCli;
-  /** The sandbox provider for the current settings. Tests replace it. */
-  getBox(): Promise<BoxProvider>;
+  /** The box provider for a dork's location (docs/local-dorks.md): the cloud's for the current settings (default), or this computer's. Tests replace it. */
+  getBox(location?: DorkLocation): Promise<BoxProvider>;
   /** The provider calls the base-snapshot build makes (services/snapshot.ts). Tests replace it. */
   getSnapshotDriver(): Promise<SnapshotDriver>;
   /** What the base snapshot is built from: the bridge bundle and the installer. Tests replace it. */
