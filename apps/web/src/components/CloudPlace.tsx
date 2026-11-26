@@ -1,5 +1,16 @@
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react'
-import { createClient, type CloudInvitation, type CloudOrg, type CloudPlaces, type CloudServer, type CloudStatus, type DorksClient, type QueryState, type Store } from '@dorks/client'
+import {
+  createClient,
+  type CloudInvitation,
+  type CloudOrg,
+  type CloudPlaces,
+  type CloudServer,
+  type CloudStatus,
+  type DorksClient,
+  type QueryState,
+  type Store,
+  personalWorkspaceName,
+} from '@dorks/client'
 import { useStoreValue } from '@dorks/client/react'
 import { cloudOrgClientConfig, remoteClientConfig, resolveTarget, usePlaceChoice, type Target } from '../lib/place'
 
@@ -109,7 +120,6 @@ export function useCloudInvitations(): CloudInvitation[] {
   return (state.data ?? []).filter((i) => i.status === 'pending')
 }
 
-/** An org's display name: the personal org is the account's own name ("Personal" when signed out or nameless). */
 /**
  * Whether an org is a team: the one rule for every collaboration surface (attribution, initials, presence, members and roles,
  * invitations). A personal org has one person, and this Mac with no cloud org (null) has no one else either, so none of it shows.
@@ -119,7 +129,8 @@ export const isTeamOrg = (org: CloudOrg | null | undefined): org is CloudOrg => 
 /** Whether the org in use is a team (`isTeamOrg`); false outside the connection gate (design demos). */
 export const useIsTeamOrg = () => isTeamOrg(useCloudPlace()?.org)
 
-export const orgName = (org: CloudOrg | null, cloud: CloudStatus | undefined) => (!org || org.personal ? cloud?.user?.name || 'Personal' : org.name)
+/** An org's display name: the personal org is the account's workspace ("Rodrigo’s Workspace"; "Personal" when signed out). */
+export const orgName = (org: CloudOrg | null, cloud: CloudStatus | undefined) => (!org || org.personal ? (personalWorkspaceName(cloud?.user) ?? 'Personal') : org.name)
 
 /** The server the app shows, when it is not this one. */
 export const remoteServer = (place: CloudPlace | null): CloudServer | null => (place?.target.kind === 'remote' ? place.target.server : null)
