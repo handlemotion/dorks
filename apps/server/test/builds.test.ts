@@ -157,7 +157,14 @@ describe("agents", () => {
     const card = h.events(dork).find((e) => e.body.type === "build_draft")?.body;
     expect(card).toMatchObject({
       changes: {
-        script: { added: 1, removed: 1, lines: [{ kind: "-", text: "echo base" }, { kind: "+", text: "sudo apt-get install -y ripgrep" }] },
+        script: {
+          added: 1,
+          removed: 1,
+          lines: [
+            { kind: "-", text: "echo base" },
+            { kind: "+", text: "sudo apt-get install -y ripgrep" },
+          ],
+        },
         vars: [{ name: "API_KEY", what: "Added", secret: true }],
       },
     });

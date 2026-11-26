@@ -46,6 +46,8 @@ export type Block =
       approved: boolean | null;
       reason?: string;
       at?: number;
+      /** The image build approving it started: the card turns into its steps. */
+      run?: ChatRun;
     }
   /** A build run of this session (docs/builds.md): kept at the place of its first event and updated in place, like a ship. */
   | { kind: "buildRun"; id: string; run: ChatRun; at: number }
@@ -177,6 +179,13 @@ const HANDLERS: Handlers = {
     v.blocks.push({ kind: "build", id: `b${e.seq}`, draftId: e.draftId, buildId: e.buildId, buildName: e.buildName, note: e.note, changes: e.changes, approved: null, at: e.ts });
   },
   build_run(v, e) {
+    // The image build that approving a change set off becomes that change's card (its steps replace the diff); any other run is a card
+    // of its own, kept where it started.
+    const draft = v.blocks.findIndex((b) => b.kind === "build" && (b.run?.id === e.run.id || (!b.run && b.approved === true && e.run.kind === "image" && b.buildId === e.run.buildId)));
+    if (draft >= 0) {
+      v.blocks[draft] = { ...(v.blocks[draft] as Extract<Block, { kind: "build" }>), run: e.run };
+      return;
+    }
     const i = v.blocks.findIndex((b) => b.kind === "buildRun" && b.run.id === e.run.id);
     if (i >= 0) v.blocks[i] = { ...(v.blocks[i] as Extract<Block, { kind: "buildRun" }>), run: e.run };
     else v.blocks.push({ kind: "buildRun", id: `r${e.seq}`, run: e.run, at: e.ts });

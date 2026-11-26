@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import { BoxIcon, HammerIcon } from 'lucide-react'
 import { cn } from 'cn'
@@ -16,7 +16,8 @@ import { sizeOf, STEP_NAMES } from './builds/format'
 type DraftBlock = Extract<Block, { kind: 'build' }>
 type RunBlock = Extract<Block, { kind: 'buildRun' }>
 
-const CARD = 'flex w-full min-w-0 flex-col gap-2 rounded-[6px] border border-surface-line bg-surface px-3.5 pt-2.5'
+// my-1.5: a card sits 18px from the text around it in a turn (12px gap plus 6px), so it never reads as part of a paragraph.
+const CARD = 'my-1.5 flex w-full min-w-0 flex-col gap-2 rounded-[6px] border border-surface-line bg-surface px-3.5 pt-2.5'
 
 /** The card's first line: what it is, then its state on the right. */
 function Header({ icon: Icon, title, children }: { icon: typeof BoxIcon; title: string; children?: ReactNode }) {
@@ -31,28 +32,81 @@ function Header({ icon: Icon, title, children }: { icon: typeof BoxIcon; title: 
 
 const Sep = () => <span aria-hidden>·</span>
 
-/** The agent asked the owner to approve a change to its machine: its note, what it changes, and the decision. */
+/**
+ * The agent asked the owner to approve a change to its machine. While it waits: the note, a short diff and Review the change. Once
+ * approved, the image build that the approval started takes the diff's place, its steps live (an animated switch), so the change and
+ * the build are one card.
+ */
 export function BuildDraftCard({ block }: { block: DraftBlock }) {
   const waiting = block.approved === null
   const state = waiting ? 'Waiting for you' : block.approved ? 'Approved' : 'Rejected'
-  const c = block.changes
+  const run = block.approved ? block.run : undefined
   return (
-    <section role="status" aria-label={`Machine change to ${block.buildName}: ${state}`} data-testid="build-draft" data-state={state} className={cn(CARD, 'pb-3')}>
-      <Header icon={BoxIcon} title={`Machine change · ${block.buildName}`}>
-        <span className={cn(block.approved === true && 'text-emerald-700 dark:text-emerald-400', block.approved === false && 'text-destructive', waiting && 'text-foreground')}>{state}</span>
+    <section
+      role={run?.status === 'failed' ? 'alert' : 'status'}
+      aria-label={`Machine change to ${block.buildName}: ${run ? RUN_STATE[run.status] : state}`}
+      data-testid="build-draft"
+      data-state={state}
+      data-run={run?.status}
+      className={cn(CARD, run ? 'pb-1.5' : 'pb-3')}
+    >
+      <Header icon={BoxIcon} title={`${run ? 'Building the machine' : 'Machine change'} · ${block.buildName}`}>
+        {run ? (
+          <RunMeta run={run} />
+        ) : (
+          <span className={cn(block.approved === true && 'text-emerald-700 dark:text-emerald-400', block.approved === false && 'text-destructive', waiting && 'text-foreground')}>{state}</span>
+        )}
       </Header>
       {block.note && <p className="text-sm leading-5 text-foreground">{block.note}</p>}
       {block.approved === false && block.reason && <p className="text-sm leading-5 text-muted-foreground">{block.reason}</p>}
+      <AutoHeight>
+        {run ? (
+          <div key="steps" className="animate-in duration-300 fade-in slide-in-from-bottom-1 motion-reduce:animate-none">
+            <RunSteps run={run} />
+          </div>
+        ) : (
+          <ChangeBody key="change" block={block} />
+        )}
+      </AutoHeight>
+    </section>
+  )
+}
+
+/** What the change does, and the way to review it while it waits. */
+function ChangeBody({ block }: { block: DraftBlock }) {
+  const c = block.changes
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
       {c?.script && <ScriptDiff script={c.script} />}
       {c && <ChangeRows changes={c} />}
-      {block.buildId && waiting && (
+      {block.buildId && block.approved === null && (
         <div>
           <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/builds" search={{ build: block.buildId }} />}>
             Review the change
           </Button>
         </div>
       )}
-    </section>
+    </div>
+  )
+}
+
+/** Eases its height to its content's, so a card that changes what it shows grows or shrinks instead of jumping. */
+function AutoHeight({ children }: { children: ReactNode }) {
+  const inner = useRef<HTMLDivElement>(null)
+  const [height, setHeight] = useState<number>()
+  useLayoutEffect(() => {
+    const el = inner.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setHeight(el.offsetHeight))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  return (
+    <div style={{ height }} className="overflow-hidden transition-[height] duration-300 ease-out motion-reduce:transition-none">
+      <div ref={inner} className="flow-root">
+        {children}
+      </div>
+    </div>
   )
 }
 
@@ -75,31 +129,34 @@ function stepStates(run: ChatRun, steps: RunStep[]): StepState[] {
 
 const RUN_STATE: Record<ChatRun['status'], string> = { queued: 'Waiting to start', running: 'Running', succeeded: 'Succeeded', failed: 'Failed', cancelled: 'Cancelled' }
 
-/** A build run of this session, its steps updating as the server reports them; the log is on the Builds page. */
-export function BuildRunCard({ block }: { block: RunBlock }) {
-  const { run } = block
+/** A run's state, how long it took and the link to its log, for a card's header. */
+function RunMeta({ run }: { run: ChatRun }) {
   const live = run.status === 'queued' || run.status === 'running'
   const now = useNow(live)
+  const took = run.startedAt ? workedFor((run.finishedAt ?? now) - run.startedAt) : undefined
+  return (
+    <>
+      <span className={cn(run.status === 'failed' && 'text-destructive', run.status === 'succeeded' && 'text-emerald-700 dark:text-emerald-400')}>{RUN_STATE[run.status]}</span>
+      {took && (
+        <>
+          <Sep />
+          <span>{took}</span>
+        </>
+      )}
+      <Sep />
+      <Link to="/builds" search={{ build: run.buildId, run: run.id }} className="hover:text-foreground">
+        Log
+      </Link>
+    </>
+  )
+}
+
+/** A run's steps as they stand, and its error once it failed. */
+function RunSteps({ run }: { run: ChatRun }) {
   const steps = run.kind === 'image' ? IMAGE_STEPS : TRIAL_STEPS
   const states = stepStates(run, steps)
-  const took = run.startedAt ? workedFor((run.finishedAt ?? now) - run.startedAt) : undefined
-  const title = `${run.kind === 'image' ? 'Building the image' : 'Trial run'} · ${run.buildName}`
-  const bad = run.status === 'failed'
   return (
-    <section role={bad ? 'alert' : 'status'} aria-label={`${title}: ${RUN_STATE[run.status]}`} data-testid="build-run" data-status={run.status} className={cn(CARD, 'pb-1.5')}>
-      <Header icon={HammerIcon} title={title}>
-        <span className={cn(bad && 'text-destructive', run.status === 'succeeded' && 'text-emerald-700 dark:text-emerald-400')}>{RUN_STATE[run.status]}</span>
-        {took && (
-          <>
-            <Sep />
-            <span>{took}</span>
-          </>
-        )}
-        <Sep />
-        <Link to="/builds" search={{ build: run.buildId, run: run.id }} className="hover:text-foreground">
-          Log
-        </Link>
-      </Header>
+    <>
       <ol aria-label="steps" className="flex min-w-0 flex-col">
         {steps.map((step, i) => {
           const look = STAGE_ICON[states[i]]
@@ -113,11 +170,25 @@ export function BuildRunCard({ block }: { block: RunBlock }) {
           )
         })}
       </ol>
-      {bad && run.error && (
-        <pre data-selectable className="mb-2 max-h-32 overflow-auto rounded-[4px] bg-destructive/[0.05] px-2.5 py-1.5 font-mono text-xs leading-5 whitespace-pre-wrap text-destructive">
+      {run.status === 'failed' && run.error && (
+        <pre data-selectable className="mt-2 mb-2 max-h-32 overflow-auto rounded-[4px] bg-destructive/[0.05] px-2.5 py-1.5 font-mono text-xs leading-5 whitespace-pre-wrap text-destructive">
           {run.error}
         </pre>
       )}
+    </>
+  )
+}
+
+/** A build run of this session (its trials, or an image build), its steps updating as the server reports them; the log is on the Builds page. */
+export function BuildRunCard({ block }: { block: RunBlock }) {
+  const { run } = block
+  const title = `${run.kind === 'image' ? 'Building the machine' : 'Trial run'} · ${run.buildName}`
+  return (
+    <section role={run.status === 'failed' ? 'alert' : 'status'} aria-label={`${title}: ${RUN_STATE[run.status]}`} data-testid="build-run" data-status={run.status} className={cn(CARD, 'pb-1.5')}>
+      <Header icon={HammerIcon} title={title}>
+        <RunMeta run={run} />
+      </Header>
+      <RunSteps run={run} />
     </section>
   )
 }
@@ -133,7 +204,7 @@ function ScriptDiff({ script }: { script: NonNullable<DraftChanges['script']> })
         </span>
       </p>
       {/* A short window on the diff: it scrolls both ways, the Builds page has the whole thing. */}
-      <pre aria-label="setup script changes" data-selectable className="max-h-44 overflow-auto rounded-[4px] bg-foreground/[0.03] py-1.5 font-mono text-xs leading-5">
+      <pre aria-label="setup script changes" data-selectable className="max-h-44 overflow-auto rounded-[4px] border border-surface-line bg-foreground/[0.03] py-1.5 font-mono text-xs leading-5">
         {script.lines.map((l, i) => (
           <span
             key={i}
