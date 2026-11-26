@@ -43,12 +43,14 @@ function Automations() {
   const [workspace] = useAppWorkspace()
   // Only a team org runs automations: a personal one has no always-on server, and this Mac sleeps or goes offline.
   const place = useCloudPlace()
-  const blocked = !place?.resolving && !isTeamOrg(place?.org)
+  // Existing ones stay reachable so they can be paused or deleted (the server still runs what is enabled), but no new ones.
+  const existing = useAutomations()
+  const blocked = !place?.resolving && !isTeamOrg(place?.org) && existing !== undefined && (existing.length === 0 || automation === 'new')
   const navigate = useNavigate()
   useEffect(() => {
     if (blocked) void navigate({ to: '/dorks', replace: true })
   }, [blocked, navigate])
-  if (place?.resolving || blocked) return null
+  if (place?.resolving || blocked || (!isTeamOrg(place?.org) && existing === undefined)) return null
   if (automation === 'new') return <NewAutomation key={`${template ?? ''}:${workspace}`} template={workspace === 'chat' ? undefined : TEMPLATES.find((t) => t.id === template)} />
   if (automation) return <AutomationPage key={automation} id={automation} />
   return <AutomationList />
