@@ -522,7 +522,7 @@ const UserEntry = memo(function UserEntry({ block, imageUrl }: { block: Extract<
             </div>
           )}
           {text && (
-            <HoverActions className="flex w-fit max-w-[80%] flex-col items-end self-end" timeClassName="top-2" text={text} sentAt={block.at ? new Date(block.at) : undefined}>
+            <HoverActions className="flex w-fit max-w-[80%] flex-col items-end self-end" timeClassName="top-2 mr-1" text={text} sentAt={block.at ? new Date(block.at) : undefined}>
               {/* The wrapper takes the bubble's 80% cap, so it hugs the bubble and the time sits just left of it. */}
               <Bubble align="end" className="max-w-full">
                 {/* The composer's grey in light, white in dark (see packages/ui/README.md). `!` beats the bubble variant background. */}
