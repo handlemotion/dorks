@@ -71,7 +71,10 @@ should run is started again after 2 s, at most five times in a row within a minu
 
 ## Routing and the lifecycle
 
-The lifecycle machine (`packages/core/src/machine.ts`) does not know about locations. Each dork stores `location` (`dorks.location`,
+The lifecycle machine (`packages/core/src/machine.ts`) does not know about locations, with one exception in its driver: a local dork
+**never sleeps on idle** (`arm_sleep` is skipped for it, and a sleep timer armed before is ignored). Sleep exists to stop paying for an
+idle sandbox; on this computer it only made the next message wait for the bridge and the agent to start again. A local box still stops
+when its dork is archived or fails, and when the server quits; its bridge starts again on the next message or the next start. Each dork stores `location` (`dorks.location`,
 `cloud` by default for every existing row) and the server asks `app.getBox(location)` for its provider: box jobs
 (`lifecycle/jobs.ts`), bridge links (`http/bridgeLinks.ts`), previews and the desktop. `BOX_PROVIDER` (`boat` or `sim`) still picks
 the cloud provider only; a local dork uses the local provider under either. An orphaned box is routed by its id (`local-…`). A

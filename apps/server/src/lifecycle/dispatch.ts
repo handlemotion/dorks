@@ -188,7 +188,7 @@ function runEffect(app: App, dorkId: string, effect: Effect) {
       enqueue(app, dorkId, "interrupt");
       return;
     case "arm_sleep":
-      return setTimer(app, dorkId, "sleep", runtimeOf(app.db, dorkId).sleepMinutes * 60_000);
+      return armSleep(app, dorkId);
     case "cancel_sleep":
       return cancelTimer(app, dorkId, "sleep");
     case "arm_watchdog":
@@ -196,6 +196,13 @@ function runEffect(app: App, dorkId: string, effect: Effect) {
     case "cancel_watchdog":
       return cancelTimer(app, dorkId, "watchdog");
   }
+}
+
+/** Sleep saves an idle sandbox's cost. A local dork never sleeps on idle: keeping its bridge is free, and a wake only adds a restart (docs/local-dorks.md). */
+export const sleepsWhenIdle = (dork: Pick<DorkRow, "location"> | undefined) => dork?.location !== "local";
+
+function armSleep(app: App, dorkId: string) {
+  if (sleepsWhenIdle(getDork(app.db, dorkId))) setTimer(app, dorkId, "sleep", runtimeOf(app.db, dorkId).sleepMinutes * 60_000);
 }
 
 /** Launches a box job. A new box operation supersedes any pause, and control rows left by the previous run must not replay into this one. */

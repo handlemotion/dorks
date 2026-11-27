@@ -1,6 +1,6 @@
 import { errorEvent } from "@dorks/shared";
 import type { App } from "../app";
-import { getDork, runtimeOf } from "../data";
+import { getDork, runtimeOf, type DorkRow } from "../data";
 import { foldInbox } from "../services/notify";
 import { foldCrew } from "../services/crew";
 import { foldComments } from "../services/comments";
@@ -21,6 +21,7 @@ import {
   queued,
   schedulePauseRetry,
   setTimer,
+  sleepsWhenIdle,
 } from "./dispatch";
 
 /** A debounce window closed: everything buffered for the agent becomes one notification. */
@@ -29,6 +30,11 @@ const FOLDS: Record<string, (app: App, dorkId: string) => void> = {
   crew_notify: foldCrew, // reports and notes from the dork's crew (docs/crew.md)
   comments_notify: foldComments, // the owner's comments on a running preview (services/comments.ts)
 };
+
+/** The idle timer ran out. A local dork's, armed before local dorks stopped sleeping, does nothing. */
+function sleepDue(app: App, dork: DorkRow) {
+  if (sleepsWhenIdle(dork)) dispatch(app, dork.id, { t: "sleep_due" });
+}
 
 /** A user-visible timer fired (the scheduler already claimed its row). Runs in one transaction. */
 export function fireTimer(app: App, dorkId: string, name: string) {
@@ -41,7 +47,7 @@ export function fireTimer(app: App, dorkId: string, name: string) {
   const rt = runtimeOf(app.db, dorkId);
   switch (name) {
     case "sleep":
-      dispatch(app, dorkId, { t: "sleep_due" });
+      sleepDue(app, dork);
       break;
     case "watchdog":
       if (dork.state === "waking" && dork.boxId && !dork.archived) {
