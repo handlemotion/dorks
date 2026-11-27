@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect";
-import { cloudAccount } from "../../services/cloudAccount";
+import { cloudAccount, cloudProfile, MAX_PICTURE_BYTES } from "../../services/cloudAccount";
 import { body, looseBody, ok, service, serviceAsync } from "../route";
 import { buildExportFile, moveStatus, startMove } from "../../services/cloudMove";
 import { actorOf } from "../../services/team";
@@ -14,6 +14,15 @@ const exportRequest = z.object({ orgId: z.string().min(1).max(128).optional(), i
 const OrgName = Schema.Struct({ name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(80)) });
 const Token = Schema.String.check(Schema.isMinLength(8), Schema.isMaxLength(256), Schema.isPattern(/^[\w-]+$/));
 const Handoff = Schema.Struct({ code: Token, state: Token });
+const UserName = Schema.Struct({ name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(80)) });
+
+/** A picture upload's raw bytes and type; too large is refused before it is read. */
+const pictureBody = (c: Context) =>
+  Effect.gen(function* () {
+    if (Number(c.req.header("content-length") ?? 0) > MAX_PICTURE_BYTES) return yield* service(() => fail("invalid", "Pictures can be at most 2 MB"));
+    const bytes = new Uint8Array(yield* Effect.promise(() => c.req.arrayBuffer()));
+    return { bytes, type: (c.req.header("content-type") ?? "").split(";")[0]!.trim().toLowerCase() };
+  });
 
 // ---- the Dorks Cloud account (services/cloudAccount.ts, docs/mobile.md "Desktop: Dorks Cloud"): sign this server in, list the
 // account's places, and reach another server through the relay.
@@ -54,6 +63,55 @@ export const cloudRoutes: Routes = (api, app) => {
       ),
     ),
   );
+  // Settings › Account: the profile (name, picture) and the account's sessions, edited in the app (services/cloudAccount.ts cloudProfile).
+  api.get(
+    "/api/cloud/account",
+    on((c) => serviceAsync((a) => cloudProfile.view(a)).pipe(Effect.map((v) => c.json(v)))),
+  );
+  api.patch(
+    "/api/cloud/account",
+    on((c) =>
+      body(c, UserName, "Enter a name").pipe(
+        Effect.flatMap((b) => serviceAsync((a) => cloudProfile.rename(a, b.name.trim()))),
+        Effect.map((u) => c.json(u)),
+      ),
+    ),
+  );
+  api.put(
+    "/api/cloud/account/avatar",
+    on((c) =>
+      pictureBody(c).pipe(
+        Effect.flatMap((p) => serviceAsync((a) => cloudProfile.setAvatar(a, p.bytes, p.type))),
+        Effect.map((u) => c.json(u)),
+      ),
+    ),
+  );
+  api.delete(
+    "/api/cloud/account/avatar",
+    on((c) => serviceAsync((a) => cloudProfile.removeAvatar(a)).pipe(Effect.map((u) => c.json(u)))),
+  );
+  api.delete(
+    "/api/cloud/account/sessions",
+    on((c) => serviceAsync((a) => cloudProfile.signOutOthers(a)).pipe(Effect.map((v) => c.json(v)))),
+  );
+  api.delete(
+    "/api/cloud/account/sessions/:id",
+    on((c) => ok(c)(serviceAsync((a) => cloudProfile.signOutSession(a, c.req.param("id") as string)))),
+  );
+  // Settings › Organization: the org's logo, uploaded (owners and admins). Before the org forwarding below.
+  api.put(
+    "/api/cloud/orgs/:id/logo",
+    on((c) =>
+      pictureBody(c).pipe(
+        Effect.flatMap((p) => serviceAsync((a) => cloudProfile.setOrgLogo(a, c.req.param("id") as string, p.bytes, p.type))),
+        Effect.map((v) => c.json(v)),
+      ),
+    ),
+  );
+  api.delete(
+    "/api/cloud/orgs/:id/logo",
+    on((c) => serviceAsync((a) => cloudProfile.setOrgLogo(a, c.req.param("id") as string, null)).pipe(Effect.map((v) => c.json(v)))),
+  );
   // Team management: Better Auth's organization endpoints as the signed-in account (an allowlist in services/cloudAccount.ts).
   api.on(
     ["GET", "POST"],
@@ -83,7 +141,7 @@ export const cloudRoutes: Routes = (api, app) => {
     on((c) =>
       localOwner(c).pipe(
         Effect.flatMap(() => body(c, OrgId, "Choose the organization")),
-        Effect.flatMap((b) => service((a) => startMove(a, b.orgId))),
+        Effect.flatMap((b) => serviceAsync((a) => startMove(a, b.orgId))),
         Effect.map((v) => c.json(v)),
       ),
     ),

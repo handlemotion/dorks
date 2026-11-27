@@ -22,6 +22,8 @@ const effortsOf = (model: Json): Effort[] =>
     : [];
 /** `/name rest`: a skill the owner picked from the composer's `/` menu. */
 const SLASH = /^\/([\w.:-]{1,80})(?:\s+([\s\S]*))?$/;
+/** `/name` later in a message ("use the /writing skill"), also picked from the `/` menu. */
+const INLINE_SLASH = /(?:^|\s)\/([\w.:-]{1,80})(?=[\s.,;:!?)]|$)/g;
 /** Where the sign-in comes from, for the owner's next step: Dorks' own ChatGPT sign-in, or the Boat environment's. */
 const signInHelp = (own: boolean) =>
   own ? "Sign in with ChatGPT again in Settings (Codex), then send a message to retry." : "Connect ChatGPT in Boat Agents & Proxying, then send a message to retry.";
@@ -47,7 +49,7 @@ export interface CodexOptions {
   userMcp: Record<string, unknown>;
   /** Where skills are synced (the Claude config dir's `skills`): an extra skills root for Codex, so it loads the same ones. */
   skillsDir: string;
-  /** The standing instructions (final answer, skills, crew, computer, or a chat's prompt), as the thread's developer instructions. */
+  /** The standing instructions (final answer, skills, crew, computer), as the thread's developer instructions. */
   system: string;
   /** Dorks' own ChatGPT sign-in (configure's `codexAuth`): signs Codex in with this access token instead of the Boat environment's. */
   auth?: CodexAuth;
@@ -233,6 +235,7 @@ export class CodexAgent {
   private models = new Map<string, string[]>();
   /** Skills Codex loaded, by name: a `/name` message invokes one. */
   private skills = new Map<string, string>();
+  private skillsListed: Promise<void> = Promise.resolve();
   /** Calls already shown, so a started and a completed item never show one twice. */
   private shown = new Set<string>();
   /** Side threads (one-shot turns such as the title): their notifications never reach the transcript. */
@@ -354,7 +357,8 @@ export class CodexAgent {
       this.o.onRaw({ type: "system", subtype: "init", session_id: id, model: text(result.model) || selected.model });
       this.ready = true;
       this.o.onReady();
-      void this.listSkills();
+      // The first message may name a skill: its turn waits for the list (best effort, it never throws).
+      this.skillsListed = this.listSkills();
       void this.pump();
     } catch (e) {
       if ((e as Error).message !== "model unavailable") this.o.onIssue(`Codex could not use the ChatGPT sign-in. ${signInHelp(!!this.o.auth)}`);
@@ -601,7 +605,10 @@ export class CodexAgent {
     } else void this.pump();
   }
 
-  /** A message as Codex input: a `/skill` invokes that skill, and attached images go as images (Codex takes data URLs). */
+  /**
+   * A message as Codex input: a `/skill` invokes that skill (as the first word, or named later in the text, which stays as written),
+   * and attached images go as images (Codex takes data URLs).
+   */
   private async input(message: string): Promise<Json[]> {
     const slash = SLASH.exec(message.trim());
     const skill = slash ? this.skills.get(slash[1]!) : undefined;
@@ -609,6 +616,12 @@ export class CodexAgent {
       const rest = slash[2]?.trim() || `Use the ${slash[1]} skill.`;
       return [{ type: "skill", name: slash[1], path: skill }, ...(await this.input(rest))];
     }
+    const named = [...new Set([...message.matchAll(INLINE_SLASH)].map((m) => m[1]!))].filter((n) => this.skills.has(n));
+    const skills: Json[] = named.map((name) => ({ type: "skill", name, path: this.skills.get(name) }));
+    return [...skills, ...(await this.content(message))];
+  }
+
+  private async content(message: string): Promise<Json[]> {
     const content = await userContent(message, this.o.loadImage);
     if (typeof content === "string") return [{ type: "text", text: content, text_elements: [] }];
     return content.map((raw) => {
@@ -636,6 +649,7 @@ export class CodexAgent {
         this.child.kill();
         return;
       }
+      await this.skillsListed;
       const input = await this.input(this.current);
       if (!this.briefed) {
         // Its own input item ahead of the message, so a `/skill` message still reads as one.

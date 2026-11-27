@@ -34,11 +34,15 @@ export function resolveTarget(org: CloudOrg, thisMacId: string | null, machineId
   return { kind: 'choose', machines, home }
 }
 
+export const isPaidOrg = (org: CloudOrg) => org.plan === 'teams' || org.plan === 'cloud'
+
 /**
- * A Teams or Cloud org runs on the Worker (its `orgRuntime`), not on a server of its own; one that still has Macs runs on them
- * until it moves to the cloud. The personal org stays on this Mac.
+ * A paid org (Teams or Cloud, the personal workspace included) runs on the Worker (its `orgRuntime`), never on a Mac. The relay says
+ * where it runs now (`runtime`): `cloud` once it moved (a personal workspace keeps its Mac in it) or when it never had a Mac; `mac`
+ * while a Mac still serves it, until its move (AutoMove.tsx starts it). An older relay sends no `runtime`: a team with no Mac then.
+ * Dorks Local (free) stays on this Mac.
  */
-export const runsOnWorker = (org: CloudOrg) => !org.personal && (org.plan === 'teams' || org.plan === 'cloud') && !org.servers.some((s) => s.kind === 'mac')
+export const runsOnWorker = (org: CloudOrg) => isPaidOrg(org) && (org.runtime ? org.runtime === 'cloud' : !org.personal && !org.servers.some((s) => s.kind === 'mac'))
 
 /** The Macs an org can switch between inside it (this one first when it may), for the sidebar's Connect to menu. */
 export function machinesOf(org: CloudOrg, thisMacId: string | null): { home: boolean; machines: CloudServer[] } {

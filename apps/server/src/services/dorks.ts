@@ -61,6 +61,7 @@ function sessionPrsOf(app: App, dorkId: string): SessionPr[] {
       url: s.url,
       ...(s.title ? { title: s.title } : {}),
       state: s.state,
+      ...(s.state === "open" && s.mergeable === false ? { conflict: true as const } : {}),
       ...(ship ? { ship: { status: ship.status, stages: ship.stages.map(({ name, state, url }) => ({ name, state, ...(url ? { url } : {}) })) } } : {}),
     };
   });
@@ -127,7 +128,7 @@ function checkBuild(app: App, input: unknown, setup: boolean): string | null {
  * session or a worker, and a setup session is always code; its icon is one emoji.
  */
 function checkMode(input: { mode?: unknown; icon?: unknown }, setup: boolean, parent?: DorkRow): { mode: DorkMode; icon: string | null } {
-  if (input.mode !== undefined && input.mode !== null && !isDorkMode(input.mode)) fail("invalid", "mode must be chat, code or nerd");
+  if (input.mode !== undefined && input.mode !== null && !isDorkMode(input.mode)) fail("invalid", "mode must be code or nerd");
   const mode: DorkMode = isDorkMode(input.mode) ? input.mode : "code";
   if (mode === "nerd" && (setup || parent)) fail("invalid", "A nerd cannot be a setup session or a worker.");
   if (mode !== "code" && setup) fail("invalid", "A setup session is a code session.");
@@ -349,7 +350,7 @@ function archive(app: App, dork: DorkRow) {
 export function setMode(app: App, dorkId: string, mode: unknown) {
   app.db.tx(() => {
     const dork = owned(app, dorkId);
-    if (!isDorkMode(mode)) fail("invalid", "mode must be chat, code or nerd");
+    if (!isDorkMode(mode)) fail("invalid", "mode must be code or nerd");
     if (dork.archived) fail("archived", "dork is archived");
     if (dork.mode === mode) return;
     if (dork.parentId) fail("invalid", "A worker keeps the mode its coordinator gave it.");

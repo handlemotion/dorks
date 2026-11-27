@@ -665,4 +665,10 @@ export const MIGRATIONS: string[] = [
     created_at INTEGER NOT NULL
   );
   `,
+  `
+  -- Chat mode is retired (docs/modes.md): a session is code or nerd. A former chat stays where it is as a code session with no
+  -- repository; a chat automation becomes a code one, paused, because its triggers may name no repository yet.
+  UPDATE dorks SET mode = 'code' WHERE mode = 'chat';
+  UPDATE automations SET mode = 'code', enabled = 0 WHERE mode = 'chat';
+  `,
 ];

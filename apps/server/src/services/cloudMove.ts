@@ -19,6 +19,7 @@ import { getDork, type DorkRow } from "../data";
 import { dispatch } from "../lifecycle/dispatch";
 import { freeze, unfreeze } from "../lifecycle/freeze";
 import { allAutomations, updateAutomation } from "./automations";
+import { defaultBuildId, getBuild, varsOf } from "./builds";
 import { cloudAccount } from "./cloudAccount";
 import { open as openMcp, type McpServerRow } from "./mcpServers";
 import { readSettings } from "./settings";
@@ -112,14 +113,16 @@ function sessionOf(app: App, d: DorkRow): ExportSession {
     mode: d.mode,
     state: d.state,
     archived: d.archived,
-    boxId: d.boxId ?? null,
-    claudeSessionId: d.claudeSessionId ?? null,
-    codexThreadId: d.codexThreadId ?? null,
+    // A local session's "box" is a worktree on this Mac, and its agent's session lives there: the cloud starts it afresh.
+    boxId: d.location === "local" ? null : (d.boxId ?? null),
+    claudeSessionId: d.location === "local" ? null : (d.claudeSessionId ?? null),
+    codexThreadId: d.location === "local" ? null : (d.codexThreadId ?? null),
     model: d.model ?? null,
     effort: d.effort ?? null,
     fast: d.fast,
     codeMode: d.codeMode,
     buildId: d.buildId ?? null,
+    location: d.location,
     parentId: d.parentId ?? null,
     icon: d.icon ?? null,
     prUrl: d.prUrl ?? null,
@@ -192,7 +195,7 @@ export async function buildManifest(app: App, ctx: { orgId: string; importId: st
   const automations = allAutomations(app).map((a) => ({
     id: a.id,
     name: a.name,
-    mode: a.mode,
+    mode: "code" as const,
     enabled: a.enabled,
     triggers: a.triggers,
     instructions: a.instructions,
@@ -226,8 +229,40 @@ export async function buildManifest(app: App, ctx: { orgId: string; importId: st
     automations,
     sessions: sessionIds(app).map((id) => sessionOf(app, getDork(app.db, id)!)),
     images: imagesOf(app),
+    builds: await buildsOf(app, sealer),
+    defaultBuildId: defaultBuildId(app),
   };
   return exportManifest.parse(manifest); // what the cloud will check, checked here first
+}
+
+/** Builds with their variables (values sealed as `build-var|<build>|<name>`); their images stay in this Mac's Boat account. */
+async function buildsOf(app: App, sealer: Awaited<ReturnType<typeof sealForImport>>) {
+  const out = [];
+  for (const { id } of app.db.all<{ id: string }>("SELECT id FROM builds ORDER BY created_at")) {
+    const b = getBuild(app, id)!;
+    const vars = [];
+    for (const v of varsOf(app, id))
+      vars.push({
+        name: v.name,
+        secret: v.secret,
+        buildTime: v.buildTime,
+        value: v.valueEnc === null ? null : await sealer.seal(`build-var|${id}|${v.name}`, await decrypt(app.ring, v.valueEnc, `build-var|${id}|${v.name}`)),
+      });
+    out.push({
+      id,
+      name: b.name,
+      machineType: b.machineType,
+      setupScript: b.setupScript,
+      repos: b.repos,
+      services: b.services,
+      approved: b.approvedHash !== null && b.approvedHash === b.specHash,
+      hadImage: !!b.image,
+      vars,
+      createdAt: b.createdAt,
+      updatedAt: b.updatedAt,
+    });
+  }
+  return out;
 }
 
 /** The chats' images (dorks-image:<id> in the transcripts). Attachments never claimed by a message (no dork) stay behind. */
@@ -263,13 +298,21 @@ export async function buildExportFile(app: App, ctx: { orgId?: string; importId:
 
 // ---------------------------------------------------------------- the move
 
-/** Starts the move in the background; `moveStatus` follows it. */
-export function startMove(app: App, orgId: string): MoveStatus {
+/**
+ * Starts the move in the background; `moveStatus` follows it. `orgId` is the org this Mac serves (a team org, or the personal workspace
+ * on a paid plan: the cloud takes it over), or, from the personal workspace, a paid team the owner manages: everything is copied into
+ * it and this Mac stays the personal workspace's, with the moved sessions archived here.
+ */
+export async function startMove(app: App, orgId: string): Promise<MoveStatus> {
   const cur = moveStatus(app);
   if (RUNNING_PHASES.includes(cur.phase)) fail("conflict", "A move to the cloud is already running");
   if (cur.phase === "done" && cur.orgId === orgId) fail("conflict", "This organization already moved to the cloud");
   const org = serverOrg(app);
-  if (org && org !== orgId) fail("invalid", "This computer serves another organization");
+  if (org && org !== orgId) {
+    const { orgs } = await cloudAccount.places(app);
+    if (!orgs.find((o) => o.id === org)?.personal) fail("invalid", "This computer serves another organization");
+    if (!orgs.some((o) => o.id === orgId)) fail("not_found", "You are not in that organization");
+  }
   const awake = app.db.all<{ title: string; state: string }>("SELECT title, state FROM dorks WHERE deleting = 0").filter((d) => AWAKE.has(d.state));
   if (awake.length) fail("conflict", `${awake.length === 1 ? "A session is" : `${awake.length} sessions are`} still working. Let them finish or stop them, then move.`);
   freeze(app, MOVING); // before the pause and the snapshot, held until the move ends
@@ -310,22 +353,29 @@ async function runMove(app: App, orgId: string) {
  * `GET …/imports/:id` before anything is retried, since a second import would be refused once the org runs in the cloud.
  */
 async function settleCommit(app: App, orgId: string, importId: string) {
+  const finish = () => finishMove(app, orgId);
   const base = `/v1/orgs/${encodeURIComponent(orgId)}/imports/${encodeURIComponent(importId)}`;
   for (let attempt = 1; ; attempt++) {
     try {
       importCommitted.parse(await cloudCall(app, "POST", `${base}/commit`, {}));
-      return finish(app);
+      return finish();
     } catch (e) {
       const status = (await cloudCall(app, "GET", base).catch(() => null)) as { status?: string } | null;
-      if (status?.status === "committed") return finish(app);
+      if (status?.status === "committed") return finish();
       if (status?.status !== "open" || attempt >= 3) throw e; // the import is gone or the cloud keeps failing: the org stays here
     }
   }
 }
 
-/** The cloud runs the org now: this Mac's automations go off (so nothing runs twice) and the move is recorded as done. */
-function finish(app: App) {
+/**
+ * The cloud runs it now: this Mac's automations go off (so nothing runs twice) and the move is recorded as done. Copied into another
+ * org, the sessions stay here archived (only the flag: their sandboxes are the cloud's to resume now), so the personal workspace does
+ * not list them twice.
+ */
+function finishMove(app: App, orgId: string) {
   for (const a of allAutomations(app)) if (a.enabled) updateAutomation(app, a.id, { enabled: false });
+  const own = serverOrg(app);
+  if (own && own !== orgId) app.db.tx(() => void app.db.run("UPDATE dorks SET archived = 1 WHERE deleting = 0 AND archived = 0"));
   set(app, { phase: "done", finishedAt: app.now() });
 }
 

@@ -109,7 +109,7 @@ export interface Dork {
   buildId?: string | null;
   /** Where it runs (docs/local-dorks.md): a cloud sandbox, or the owner's computer. Absent on older servers: cloud. */
   location?: DorkLocation;
-  /** chat, code or nerd (docs/modes.md); a nerd plans and runs worker dorks instead of coding (docs/crew.md). Absent on older servers: code. */
+  /** code or nerd (docs/modes.md); a nerd plans and runs worker dorks instead of coding (docs/crew.md). Absent on older servers: code. */
   mode?: DorkMode;
   /** The coordinator that started this worker; null otherwise. Absent on older servers. */
   parentId?: string | null;
@@ -122,13 +122,13 @@ export interface Dork {
 }
 
 export interface CreateDorkInput {
-  /** owner/name; optional for a setup session and in chat and nerd mode. */
+  /** owner/name; optional for a setup session and in nerd mode. */
   repo?: string;
   /** The build to start from; null: the base machine; omitted: the default build, else the base machine. */
   buildId?: string | null;
   /** A machine-setup session for `buildId`: no repo needed, and the build needs no image yet. */
   setup?: boolean;
-  /** chat, code (default) or nerd (docs/modes.md). Only code needs a repo. */
+  /** code (default) or nerd (docs/modes.md). Only code needs a repo. */
   mode?: DorkMode;
   /** One emoji for a coordinator, shown in the sidebar. */
   icon?: string;
@@ -333,6 +333,11 @@ export interface CloudOrg {
   role: string | null;
   active: boolean;
   servers: CloudServer[];
+  /**
+   * Where a paid org runs (the relay's `GET /v1/orgs`): `cloud` once the Worker serves it (it moved, or never had a Mac), `mac` while a
+   * Mac still does. Absent from an older relay: the app then infers it from the org's servers.
+   */
+  runtime?: "cloud" | "mac";
 }
 
 /** A role in a Dorks Cloud organization; Better Auth may send a comma list, whose strongest counts. */
@@ -356,6 +361,23 @@ export interface CloudInvitation {
   organizationName?: string;
   inviterEmail?: string;
   expiresAt: string | number;
+}
+
+/** One signed-in session of the Dorks Cloud account (`GET /api/cloud/account`); `current` is this server's own. */
+export interface CloudSession {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  current: boolean;
+}
+
+/** Settings › Account: the account, read fresh, and where it is signed in (`GET /api/cloud/account`). */
+export interface CloudAccount {
+  user: CloudUser;
+  sessions: CloudSession[];
 }
 
 /** An organization with its members and invitations (`GET /api/cloud/auth/organization/get-full-organization`). */

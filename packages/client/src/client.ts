@@ -46,6 +46,7 @@ import type {
   CloudEntitlements,
   CloudMoveStatus,
   CloudStatus,
+  CloudAccount,
   CloudOrgAction,
   CloudOrgDetail,
   CloudInvitation,
@@ -213,6 +214,15 @@ export class DorksClient {
     if (!feed) return;
     if (pageHidden()) this.staleFeeds.add(dorkId);
     else feed.requestTail();
+  }
+
+  /** A cloud change, then everything cloud read again (also when it fails: the relay may have taken part of it). */
+  private async cloudThen<T>(f: () => Promise<T>): Promise<T> {
+    try {
+      return await f();
+    } finally {
+      this.invalidate("cloud");
+    }
   }
 
   private invalidate(prefix: string) {
@@ -419,6 +429,10 @@ export class DorksClient {
   cloudPlaces() {
     return this.query<CloudPlaces>("cloud:places", () => this.api.cloudPlaces());
   }
+  /** Settings › Account: the account read fresh from the cloud, and its sessions; refreshed with `cloud`. */
+  cloudAccount() {
+    return this.query<CloudAccount>("cloud:account", () => this.api.cloudAccount());
+  }
   /** An organization's members and invitations (team management). */
   cloudOrg(orgId: string) {
     return this.query<CloudOrgDetail>(`cloud:org:${orgId}`, () => this.api.cloudOrgDetail(orgId));
@@ -613,6 +627,8 @@ export class DorksClient {
       }
     },
     searchFiles: async (id: string, q: string) => (await this.api.searchFiles(id, q)).files,
+    /** A repository's files matching `q`, for a session not started yet. */
+    searchRepoFiles: async (repo: string, q: string) => (await this.api.searchRepoFiles(repo, q)).files,
     /** Where a shared screenshot (`dorks-image:<id>` in a message) loads from. The id is the capability: no token in the URL. */
     /** `width`: a smaller copy for showing it small (the server snaps it to a size it keeps; an older server sends the original). */
     imageUrl: (imageId: string, width?: number) => `${(this.cfg.imageBaseUrl ?? this.cfg.baseUrl).replace(/\/+$/, "")}/images/${encodeURIComponent(imageId)}${width ? `?w=${width}` : ""}`,
@@ -854,6 +870,13 @@ export class DorksClient {
       await this.api.cloudSignOut();
       this.invalidate("cloud");
     },
+    /** Profile edits (Settings › Account); everything cloud is read again after, so the switcher and attribution follow. */
+    cloudRename: (name: string) => this.cloudThen(() => this.api.cloudRename(name)),
+    cloudSetAvatar: (image: Blob) => this.cloudThen(() => this.api.cloudSetAvatar(image)),
+    cloudRemoveAvatar: () => this.cloudThen(() => this.api.cloudRemoveAvatar()),
+    cloudSignOutSession: (id: string) => this.cloudThen(() => this.api.cloudSignOutSession(id)),
+    cloudSignOutOthers: () => this.cloudThen(() => this.api.cloudSignOutOthers()),
+    cloudSetOrgLogo: (orgId: string, image: Blob | null) => this.cloudThen(() => this.api.cloudSetOrgLogo(orgId, image)),
     unpairPhone: async () => {
       await this.api.unpairPhone();
       this.invalidate("phone");

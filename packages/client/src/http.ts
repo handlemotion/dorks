@@ -50,6 +50,8 @@ import type {
   CloudEntitlements,
   CloudMoveStatus,
   CloudStatus,
+  CloudAccount,
+  CloudUser,
   InputAnswer,
   SettingsPatch,
   SnapshotStatus,
@@ -194,6 +196,8 @@ export function createApi(config: ApiConfig) {
     writeWorkspaceFile: (id: string, root: string, path: string, contents: string, sha?: string) =>
       request<{ sha: string; size: number }>("PUT", `${dork(id)}/workspace/file`, { root, path, contents, sha }),
     searchFiles: (id: string, q: string, limit = 50) => request<{ files: string[]; listed: boolean; truncated: boolean }>("GET", `${dork(id)}/files`, undefined, { q, limit }),
+    /** A repository's files before a session in it exists (the new-session composer's `@` menu). */
+    searchRepoFiles: (repo: string, q: string, limit = 50) => request<{ files: string[]; listed: boolean; truncated: boolean }>("GET", "/api/repo-files", undefined, { repo, q, limit }),
     listComments: (id: string) => request<CommentView[]>("GET", `${dork(id)}/comments`),
     addComment: (id: string, input: NewComment) => request<{ id: string }>("POST", `${dork(id)}/comments`, input),
     replyComment: (id: string, commentId: string, body: string) => request<{ id: string }>("POST", `${dork(id)}/comments/${encodeURIComponent(commentId)}/replies`, { body }),
@@ -225,6 +229,15 @@ export function createApi(config: ApiConfig) {
     cloudStartSignIn: () => request<{ url: string }>("POST", "/api/cloud/sign-in"),
     cloudFinishSignIn: (code: string, state: string) => request<CloudStatus>("POST", "/api/cloud/sign-in/finish", { code, state }),
     cloudSignOut: () => request<object>("DELETE", "/api/cloud/session"),
+    /** Settings › Account: the profile and sessions; the picture is a PNG, JPEG or WebP of at most 2 MB, cropped square by the cloud. */
+    cloudAccount: () => request<CloudAccount>("GET", "/api/cloud/account"),
+    cloudRename: (name: string) => request<CloudUser>("PATCH", "/api/cloud/account", { name }),
+    cloudSetAvatar: (image: Blob) => request<CloudUser>("PUT", "/api/cloud/account/avatar", image),
+    cloudRemoveAvatar: () => request<CloudUser>("DELETE", "/api/cloud/account/avatar"),
+    cloudSignOutSession: (id: string) => request<object>("DELETE", `/api/cloud/account/sessions/${encodeURIComponent(id)}`),
+    cloudSignOutOthers: () => request<{ signedOut: number }>("DELETE", "/api/cloud/account/sessions"),
+    /** An org's logo (owners and admins), same rules as the picture; null removes it. */
+    cloudSetOrgLogo: (orgId: string, image: Blob | null) => request<{ logo: string | null }>(image ? "PUT" : "DELETE", `/api/cloud/orgs/${encodeURIComponent(orgId)}/logo`, image ?? undefined),
     cloudPlaces: () => request<CloudPlaces>("GET", "/api/cloud/places"),
     /** An org's plan and its limits, from Dorks Cloud. */
     cloudEntitlements: (orgId: string) => request<CloudEntitlements>("GET", `/api/cloud/orgs/${encodeURIComponent(orgId)}/entitlements`),

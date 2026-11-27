@@ -165,7 +165,7 @@ function create(app: App, scope: Scope, a: Args): CrewResult {
   let id: string;
   if (scope.who === "coordinator") {
     if (mode === "nerd") fail("forbidden", "A coordinator starts workers only; it cannot start another coordinator.");
-    if (mode !== "chat" && !input.repo) fail("invalid", "`repo` is required: a code worker works in a repository (owner/name). Use mode chat for work without one.");
+    if (!input.repo) fail("invalid", "`repo` is required: a worker works in a repository (owner/name).");
     checkWorkerRoom(app, scope.self.id);
     // A worker starts from the coordinator's build unless told otherwise: the owner picked that machine for this crew. `null` is the
     // base machine (an omitted buildId would mean the default build).

@@ -10,8 +10,8 @@ import { mockAutomations } from "./mock-automations.ts";
 import { mockCloud, type MockCloudPlace, type MockCloudPlan, type MockOrgRuntime } from "./mock-cloud.ts";
 
 /** A new session's mode (docs/modes.md) from its body: `mode`, or the older `kind: "coordinator"` for a nerd; code by default. */
-const modeOf = (body: Record<string, unknown>): "chat" | "code" | "nerd" | undefined =>
-  body.mode === undefined || body.mode === null ? (body.kind === "coordinator" ? "nerd" : "code") : body.mode === "chat" || body.mode === "code" || body.mode === "nerd" ? body.mode : undefined;
+const modeOf = (body: Record<string, unknown>): "code" | "nerd" | undefined =>
+  body.mode === undefined || body.mode === null ? (body.kind === "coordinator" ? "nerd" : "code") : body.mode === "code" || body.mode === "nerd" ? body.mode : undefined;
 
 const SNAPSHOT_STEPS = [
   ["prepare", "Cleaning up earlier builds"],
@@ -194,6 +194,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         url: p.url,
         title: p.title,
         state: p.state,
+        ...(p.state === "open" && p.mergeableState === "dirty" ? { conflict: true as const } : {}),
         ...(ship ? { ship: { status: ship.status, stages: ship.stages.map(({ name, state, url }) => ({ name, state, url })) } } : {}),
       };
     });
@@ -686,6 +687,8 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         const pr = mockPullRequest(d.repo, number, list.length ? prompt.slice(0, 60) : d.title);
         const parent = list.at(-1);
         if (parent && /\bstack/i.test(prompt)) pr.baseRef = parent.headRef;
+        // "conflict" opens it with merge conflicts against its base.
+        if (/\bconflict/i.test(prompt)) Object.assign(pr, { mergeable: false, mergeableState: "dirty" });
         prs.set(dorkId, [...list, pr]);
         append(dorkId, { type: "pr_opened", url: pr.url, number });
         d.prUrl = pr.url;
@@ -804,7 +807,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
 
   const createDork = ({ body, res }: Ctx) => {
     const mode = modeOf(body);
-    if (!mode) return fail(res, "invalid", "mode must be chat, code or nerd");
+    if (!mode) return fail(res, "invalid", "mode must be code or nerd");
     const repo = str(body.repo)?.trim() ?? "";
     const message = str(body.message)?.trim();
     if (!(mode !== "code" && !repo) && !/^[\w.-]+\/[\w.-]+$/.test(repo)) return fail(res, "invalid", "repo must look like owner/name");
@@ -819,10 +822,10 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
 
   const automations = mockAutomations({
     broadcast: (m) => broadcast(m),
-    startSession: (repo, message, title, mode) => {
+    startSession: (repo, message, title) => {
       const blocked = cannotCreate("claude");
       if (blocked) return { error: blocked };
-      const id = addDork({ repo, message, title, mode, provider: "claude" });
+      const id = addDork({ repo, message, title, provider: "claude" });
       later(tick, () => startTurn(id, message));
       return { id, title };
     },
@@ -1009,8 +1012,8 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     [
       "POST mode",
       ({ body, res }, d) => {
-        const mode = body.mode === "chat" || body.mode === "code" || body.mode === "nerd" ? body.mode : undefined;
-        if (!mode) return fail(res, "invalid", "mode must be chat, code or nerd");
+        const mode = body.mode === "code" || body.mode === "nerd" ? body.mode : undefined;
+        if (!mode) return fail(res, "invalid", "mode must be code or nerd");
         if (d.archived) return fail(res, "archived", "This session is archived.");
         if (d.parentId && mode !== d.mode) return fail(res, "invalid", "A worker keeps the mode its coordinator gave it.");
         if (d.mode === "nerd" && mode !== "nerd" && [...dorks.values()].some((w) => w.parentId === d.id && !w.archived))
@@ -1437,6 +1440,14 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
               projects: ["api", "web", "worker"].map((slug) => ({ slug, name: slug, platform: slug === "web" ? "javascript-react" : "node" })),
             })
           : fail(res, "not_configured", "Connect Sentry in Settings first."),
+    ],
+    [
+      "GET /api/repo-files",
+      ({ url, res }) => {
+        const q = (url.searchParams.get("q") ?? "").toLowerCase();
+        const files = MOCK_FILES.filter((p) => p.toLowerCase().includes(q)).sort((a, b) => a.length - b.length);
+        json(res, 200, { files, listed: true, truncated: false });
+      },
     ],
     [
       "GET /api/github/repos",

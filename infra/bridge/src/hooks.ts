@@ -140,8 +140,6 @@ export interface HookDeps {
   inputs?: Pick<SecretInputs, "preToolUse" | "postToolUse">;
   /** Hold the final answer to the nerd's brevity budget (guidance.ts, `brevityReason`): a crew coordinator. */
   brevity?: () => boolean;
-  /** Coding autonomy is on for this session's mode (docs/modes.md): off for a chat, which ships nothing. Default: on. */
-  autonomy?: () => boolean;
   log: Log;
 }
 
@@ -197,8 +195,6 @@ export class HookService {
 
   // ------------------------------------------------------------------ Stop
   private async stop(input: HookInput): Promise<HookOutput> {
-    // A chat ships nothing as a pull request: there is no unshipped work to hold it back for.
-    if (this.d.autonomy?.() === false) return this.allow();
     // Claude Code is already continuing because an earlier Stop hook blocked: never block twice in a row.
     if (input.stop_hook_active === true) return this.allow();
     // A nerd's answer over its budget is sent back to be cut (once: the rewrite stops through stop_hook_active).
@@ -322,7 +318,6 @@ export class HookService {
 
   // ------------------------------------------------------------------ SessionStart
   private async sessionStart(): Promise<HookOutput> {
-    if (this.d.autonomy?.() === false) return null; // a chat: no PR subscriptions, no "ship it" rules
     const subs = await this.d.prs.list();
     this.d.log("hook session-start: described", subs?.length ?? "no", "subscriptions");
     return { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: sessionContext(subs, this.d.services?.() ?? []) } };

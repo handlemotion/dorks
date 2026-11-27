@@ -82,6 +82,14 @@ export function fireTimer(app: App, dorkId: string, name: string) {
  * An effect (box call, secret resolution) failed. The message must already be safe to show.
  * `gen` ties the failure to the box operation that produced it: a failure from a superseded operation is ignored.
  */
+/** A failed op's error line; the same failure again (a capped pause retry, a resend while Boat is unreachable) is not repeated. */
+function appendFailure(app: App, dorkId: string, message: string) {
+  const last = app.db.get<{ body: string }>("SELECT body FROM events WHERE dork_id = ? ORDER BY seq DESC LIMIT 1", dorkId);
+  const body = last ? (JSON.parse(last.body) as { type?: string; message?: string }) : null;
+  if (body?.type === "error" && body.message === message) return;
+  append(app, dorkId, errorEvent({ code: "failed", message }));
+}
+
 export function opFailed(app: App, dorkId: string, message: string, gen?: number) {
   const dork = getDork(app.db, dorkId);
   if (!dork || dork.deleting) return; // deleted while the effect ran: nothing left to fail
@@ -93,7 +101,7 @@ export function opFailed(app: App, dorkId: string, message: string, gen?: number
     patchRuntime(app, dorkId, { opGen: gen + 1, ...(rt.pause?.gen === gen ? { pause: undefined } : {}) });
     if (cancelled) return; // a message already took the pause back: the box is still up, so the dork stays as it is
   }
-  append(app, dorkId, errorEvent({ code: "failed", message }));
+  appendFailure(app, dorkId, message);
   dispatch(app, dorkId, { t: "op_failed" });
   // In `error` with a box and no pause under way (the pause that error triggers has itself failed): keep trying, capped.
   const after = getDork(app.db, dorkId);
@@ -109,7 +117,7 @@ export function boxGone(app: App, dorkId: string, boxId: string, message: string
   const dork = getDork(app.db, dorkId);
   if (!dork || dork.deleting || dork.boxId !== boxId) return;
   patchDork(app, dorkId, { boxId: undefined, claudeSessionId: undefined, codexThreadId: undefined, previews: undefined }); // hosted URLs died with the box
-  append(app, dorkId, errorEvent({ code: "failed", message }));
+  appendFailure(app, dorkId, message);
   dispatch(app, dorkId, { t: "op_failed" });
 }
 

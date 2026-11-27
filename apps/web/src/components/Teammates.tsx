@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import type { Me, Person } from '@dorks/client'
 import { usePresence, useOptionalDorksClient } from '@dorks/client/react'
-import { Avatar, AvatarFallback, AvatarGroup } from '@dorks/ui/avatar'
+import { Avatar, AvatarFallback, AvatarGroup, AvatarImage } from '@dorks/ui/avatar'
 import { Tip } from './Tip'
 import { isTeamOrg, useCloudPlace } from './CloudPlace'
 
@@ -42,6 +42,19 @@ export const initials = (name: string) =>
     .join('') || '?'
 
 /**
+ * People's pictures by user id: the members of the team org in use (their Dorks Cloud pictures, Settings › Account), and you. Messages
+ * and presence name people by id and name only, so the picture is looked up here and follows a change at once.
+ */
+export function usePictures(): (id: string) => string | null {
+  const place = useCloudPlace()
+  const org = place?.org && isTeamOrg(place.org) ? place.org : null
+  const store = org ? place!.home.cloudOrg(org.id) : null
+  const detail = useSyncExternalStore(store?.subscribe ?? noop, store ? () => store.getSnapshot().data : none, store ? () => store.getSnapshot().data : none)
+  const me = place?.cloud?.user
+  return (id) => (me && me.id === id ? me.image : (detail?.members.find((m) => m.userId === id)?.user.image ?? null))
+}
+
+/**
  * The name over a user message sent by someone else. A teammate's message carries `by`; on a team server, a message without one is
  * the local owner's.
  */
@@ -51,13 +64,20 @@ export function SenderName({ by }: { by?: Person }) {
   if (!team) return null
   const name = by ? (isSelf(by.id) ? null : by.name) : me?.kind === 'member' && me.serverOrg ? 'Owner' : null
   if (!name) return null
-  return <span className="px-1 text-xs text-muted-foreground">{name}</span>
+  return (
+    <span className="inline-flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
+      {by && <PersonAvatar person={by} size="xs" />}
+      {name}
+    </span>
+  )
 }
 
-/** A teammate's round initials, small, on the muted fill (no picture: the cloud token names people, it has no avatar). */
+/** A teammate's picture, round and small, or their initials on the muted fill while it loads or when they have none. */
 export function PersonAvatar({ person, size = 'sm' }: { person: Person; size?: 'sm' | 'xs' }) {
+  const picture = usePictures()(person.id)
   return (
     <Avatar size="sm" className={size === 'xs' ? 'size-4!' : undefined} aria-label={person.name}>
+      {picture && <AvatarImage src={picture} alt="" />}
       <AvatarFallback className={size === 'xs' ? 'text-[8px]!' : 'text-[10px]!'}>{initials(person.name)}</AvatarFallback>
     </Avatar>
   )

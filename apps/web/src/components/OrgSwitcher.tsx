@@ -31,14 +31,15 @@ const PERSONAL = 'personal'
 const planLabel = (plan: PlanId | null) => (plan ? PLAN_NAMES[plan].replace(/^Dorks /, '') : null)
 
 /**
- * An org's mark, 16px: the personal org is you (your GitHub avatar, round like the account menu's); a team is its logo, or its
+ * An org's mark, 16px: the personal org is you (your Dorks Cloud picture, else your GitHub avatar, round like the account menu's); a team is its logo, or its
  * initial, on a 4px square like GitHub owners.
  */
 export function OrgMark({ org, login, className }: { org: Pick<CloudOrg, 'name' | 'logo' | 'personal'> | null; login?: string | null; className?: string }) {
-  const [failed, setFailed] = useState(false)
-  if (!org || org.personal) return <UserAvatar login={login} className={className} />
+  const [failed, setFailed] = useState<string | null>(null)
+  const picture = useCloudPlace()?.cloud?.user?.image
+  if (!org || org.personal) return <UserAvatar login={login} src={picture} className={className} />
   const box = cn('size-4 shrink-0 overflow-hidden rounded-[4px]', className)
-  if (org.logo && !failed) return <img alt="" src={org.logo} width={16} height={16} className={box} onError={() => setFailed(true)} />
+  if (org.logo && failed !== org.logo) return <img alt="" src={org.logo} width={16} height={16} className={cn(box, 'object-cover')} onError={() => setFailed(org.logo)} />
   return (
     <span aria-hidden className={cn(box, 'grid place-items-center bg-foreground/10 text-[10px] leading-none text-muted-foreground')}>
       {org.name.trim().charAt(0).toUpperCase() || '·'}

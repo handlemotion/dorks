@@ -6,6 +6,7 @@ import { clearConnection, currentConnection, DEFAULT_SERVER, normalizeServerUrl,
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import { onOpenRoute, onRuntimeConfig, setKeepAwake } from '../lib/desktop'
 import type { CloudServer } from '@dorks/client'
+import { AutoMove } from './AutoMove'
 import { CloudPlaceProvider, orgName, useCloudPlace, type CloudPlace } from './CloudPlace'
 import { EmptyState } from './EmptyState'
 import { useCloudPlan } from './CloudPlanIndicator'
@@ -79,6 +80,7 @@ function Connected({ conn, onChange, onReplace, children }: { conn: Connection; 
         return (
           <DorksProvider key={remote?.id ?? (place.target.kind === 'cloud' ? `org:${place.target.org.id}` : 'home')} client={client}>
             <Probe conn={conn} remote={remote} onChange={onChange} onReplace={onReplace}>
+              <AutoMove place={place} />
               {children}
             </Probe>
           </DorksProvider>
