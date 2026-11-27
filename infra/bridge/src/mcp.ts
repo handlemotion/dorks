@@ -11,6 +11,7 @@ import type { ShownPreview } from "./previews";
 import type { ServiceStatus } from "./services";
 import { SKILLS, skillEntry, skillFileByUri } from "./mcp-skills";
 import { rpcCall } from "./rpc";
+import { describeAb, describeTelemetry, PlanError, runAb } from "./prodlike";
 
 // `dorks mcp`: the same agent surface as `dorks pr …`, as MCP tools (Model Context Protocol) so the agent calls them as typed tools
 // instead of shelling out. It is a stdio MCP server: Claude Code starts it from the bridge-written `mcp.json` (hooks.ts `claudeMcpConfig`,
@@ -256,6 +257,69 @@ const TOOLS: Tool[] = [
       const ref = prArg(args);
       const r = await rpcCall<{ text: string }>(sock, "ship", { action: "verify", ...ref, ok: args.ok, note: args.note });
       return r.text;
+    },
+  },
+  // ---- prod-like testing (cloud sessions on a Teams or Cloud plan): this box's own telemetry, and the A/B run behind the PR check.
+  {
+    name: "telemetry_query",
+    title: "Query this box's errors, spans and p95 (Sentry)",
+    description:
+      "Prod-like testing: read the telemetry your box's services send to Sentry. Services started in this box get SENTRY_DSN and " +
+      "SENTRY_ENVIRONMENT (this box's own environment) in their environment; an app with any Sentry SDK reports there by itself. You " +
+      "only ever see this box's events. kind errors: error groups; spans: operations (db queries, http calls) with count and p95; p95: " +
+      "per route (requests, p95 ms, failure rate, queries per request); usage: spans sent this hour against the box's budget. " +
+      "`half` reads one half of your last prodlike_run instead (base or head).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        kind: { type: "string", enum: ["errors", "spans", "p95", "usage"], description: "Default: errors." },
+        route: { type: "string", description: 'Optional: one route, as Sentry names it, e.g. "GET /customers/:id".' },
+        op: { type: "string", description: 'Optional, spans only: an operation, e.g. "db" or "http.client".' },
+        since: { type: "string", description: "Optional: how far back, like 15m, 1h (default) or 2d." },
+        half: { type: "string", enum: ["base", "head"], description: "Optional: a half of the last prodlike_run." },
+        limit: { type: "integer", minimum: 1, maximum: 50, description: "Rows, default 20." },
+      },
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: false },
+    async run(args, sock) {
+      return describeTelemetry(await rpcCall(sock, "telemetry", { kind: args.kind ?? "errors", ...args }, 30_000));
+    },
+  },
+  {
+    name: "prodlike_run",
+    title: "A/B the PR's base and head on this box (the prod-like check)",
+    description:
+      "Prod-like testing: run your PR's base commit and its head commit on this box, one after the other, against the same database " +
+      "branch, with the same load (the repository's .dorks/load scripts, GET and HEAD only unless the team allows writes), and compare " +
+      "new error groups, error rate, queries per request and p95 per route. The result is posted as the \"Dorks / prod-like\" check on " +
+      "the head commit and returned here. Needs .dorks/prodlike.json (the service to start, how to set it up, the load scripts); if it " +
+      "is missing, the error says what to write. Commit first: the run tests the committed HEAD. Takes a few minutes.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        rounds: { type: "integer", minimum: 1, maximum: 10, description: "Rounds per half (default from .dorks/prodlike.json, else 3). p95 fails only when slower in 3 or more." },
+        requests: { type: "integer", minimum: 10, maximum: 5000, description: "Requests per round (default 200; less when the span budget is short)." },
+        base: { type: "string", description: "Optional: the base ref (default: the merge base with origin's default branch)." },
+        dir: { type: "string", description: "Optional: the repository (default: the current directory)." },
+      },
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
+    async run(args, sock) {
+      try {
+        const r = await runAb({
+          dir: typeof args.dir === "string" ? args.dir : process.cwd(),
+          call: (op, a) => rpcCall(sock, op, a, 60_000),
+          baseRef: typeof args.base === "string" ? args.base : undefined,
+          rounds: typeof args.rounds === "number" ? args.rounds : undefined,
+          requests: typeof args.requests === "number" ? args.requests : undefined,
+        });
+        return describeAb(r);
+      } catch (e) {
+        if (e instanceof PlanError) throw new ToolError(e.message);
+        throw e;
+      }
     },
   },
   {

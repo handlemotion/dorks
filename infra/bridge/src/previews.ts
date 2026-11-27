@@ -58,6 +58,18 @@ export function previewMethods(
       if (p.action !== "verify") throw new RpcError("invalid", "unknown ship action");
       return callBackend(t, log, () => t.ship(p), true);
     },
+    // `telemetry`: the telemetry_query MCP tool. The server forces this box's own Sentry environment; this only forwards.
+    telemetry: async (params) => {
+      const p = (params ?? {}) as Record<string, unknown>;
+      if (!["errors", "spans", "p95", "usage"].includes(p.kind as string)) throw new RpcError("invalid", "kind must be errors, spans, p95 or usage");
+      return callBackend(t, log, () => t.telemetry(p), true);
+    },
+    // `prodlike`: the A/B run's calls (prodlike.ts). The server checks the run is this box's, compares and posts the check.
+    prodlike: async (params) => {
+      const p = (params ?? {}) as Record<string, unknown>;
+      if (!["start", "report", "get"].includes(p.action as string)) throw new RpcError("invalid", "unknown prodlike action");
+      return callBackend(t, log, () => t.prodlike(p), true);
+    },
     // `build`: the machine_* MCP tools. The server validates everything and scopes it to this dork's build; this only forwards.
     build: async (params) => {
       const p = (params ?? {}) as Record<string, unknown>;

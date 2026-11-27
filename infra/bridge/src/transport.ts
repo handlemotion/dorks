@@ -39,6 +39,10 @@ export interface Transport {
   comment(args: Record<string, unknown>): Promise<unknown>;
   /** The ship_verify MCP tool: the agent's check of a merged PR's live deployment (docs/shipping.md, "The agent"). */
   ship(args: Record<string, unknown>): Promise<unknown>;
+  /** The telemetry_query MCP tool: this box's own Sentry environment, read by the server with its token (dorks-cloud prodlike/traces.ts). */
+  telemetry(args: Record<string, unknown>): Promise<unknown>;
+  /** The prod-like A/B run (prodlike.ts): `action` start, report or get; the server compares and posts the PR check. */
+  prodlike(args: Record<string, unknown>): Promise<unknown>;
   /**
    * A current access token for the owner's OAuth MCP server `name` (docs/mcp.md, "OAuth"). `stale` is a token the server just
    * refused, so the backend refreshes even before it expires.
@@ -346,6 +350,8 @@ export class WsTransport implements Transport {
   crew = async (args: Record<string, unknown>) => this.rpc<unknown>("crew", args);
   comment = async (args: Record<string, unknown>) => this.rpc<unknown>("comment", args);
   ship = async (args: Record<string, unknown>) => this.rpc<unknown>("ship", args);
+  telemetry = async (args: Record<string, unknown>) => this.rpc<unknown>("telemetry", args);
+  prodlike = async (args: Record<string, unknown>) => this.rpc<unknown>("prodlike", args);
   shareImage = async (data: string, caption?: string) => this.rpc<{ id: string; width?: number; height?: number }>("share_image", { data, caption });
 
   subscribeSubscriptions(onList: (views: unknown) => void, onError: () => void) {
