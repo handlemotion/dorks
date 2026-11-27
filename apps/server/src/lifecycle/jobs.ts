@@ -276,7 +276,7 @@ function pick(app: App, owner: string, name: string, payload: any): Effect.Effec
   if (name === "box:retire") return boxRetire(app, owner);
   if (name.startsWith("orphan:")) return deleteOrphan(app, payload.boxId, payload.attempt);
   if (name.startsWith("stall:")) return stallComment(app, payload.subscriptionId, payload.runUrl, payload.attempt ?? 0, name, owner);
-  if (name === SNAPSHOT_JOB) return promise(() => runBuild(app, payload.attempt));
+  if (name === SNAPSHOT_JOB) return promise(() => runBuild(app, payload.attempt, payload.force === true));
   if (name.startsWith(RUN_JOB)) return promise(() => runBuildRun(app, name.slice(RUN_JOB.length), payload.attempt));
   if (name.startsWith(FORGET_JOB)) return promise(() => forgetImage(app, payload.image, payload.attempt ?? 0));
   if (name === "sweep") return sync(() => sweep(app));
