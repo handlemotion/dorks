@@ -3,7 +3,7 @@ import { Link, useLocation } from '@tanstack/react-router'
 import { BlocksIcon, BoxIcon, ChevronRightIcon, ClockFadingIcon, PlusIcon } from 'lucide-react'
 import type { DorkLocation, DorkState } from '@dorks/shared'
 import type { Usage } from '@dorks/client'
-import { useAutomations, useBuilds, useDorks, useGithubRepos, useUsage } from '@dorks/client/react'
+import { useAutomations, useBuilds, useDorks, useDorksClient, useGithubRepos, useUsage } from '@dorks/client/react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@dorks/ui/collapsible'
 import { FluidHoverHighlight } from '@dorks/ui/fluid-hover-highlight'
 import { Sidebar, useSidebar } from '@dorks/ui/sidebar'
@@ -11,7 +11,7 @@ import { toast } from 'sonner'
 import { useArchiveDork } from '../lib/archive'
 import { AccountMenu } from './AccountMenu'
 import { useDisconnect } from './ConnectionGate'
-import { ChatList, type Chat, type ChatPr, type ChatRoute, type PrState } from './ChatList'
+import { ChatList, ChatPrefetch, type Chat, type ChatPr, type ChatRoute, type PrState } from './ChatList'
 import { MachineRow, OrgSwitcher, StaticOrgSwitcher } from './OrgSwitcher'
 import { SIDEBAR_ROW, SIDEBAR_SECTION } from './sidebarChrome'
 import { HistoryButtons, TITLEBAR_AFTER_TOGGLE } from './WindowControls'
@@ -42,6 +42,7 @@ export function AppSidebar() {
   const github = useGithubRepos()
   const limits = useUsage()
   const archive = useArchiveDork()
+  const client = useDorksClient()
   const builds = useBuilds()
   // Newest first by creation, never by activity: rows stay where they are until the owner drags them (ChatList remembers that order).
   const chats: Chat[] = (dorks ?? [])
@@ -67,24 +68,26 @@ export function AppSidebar() {
   const existing = (useAutomations()?.length ?? 0) > 0
   const reviews = (builds ?? []).reduce((n, b) => n + b.drafts.filter((d) => d.status === 'submitted').length, 0)
   return (
-    <AppSidebarView
-      chats={chats}
-      accounts={github}
-      counts={{ '/builds': reviews }}
-      automations={team || existing}
-      onDisconnect={disconnect}
-      switcher={<OrgSwitcher login={github?.login} />}
-      machines={<MachineRow />}
-      limits={limits}
-      version={window.__DORKS__?.version}
-      usage={
-        <>
-          <CloudPlanIndicator />
-          <UpdatePrompt />
-        </>
-      }
-      onArchive={(id) => void archive(id).catch((e: unknown) => toast.error(e instanceof Error ? e.message : 'Could not archive the chat'))}
-    />
+    <ChatPrefetch.Provider value={client.prefetchDork.bind(client)}>
+      <AppSidebarView
+        chats={chats}
+        accounts={github}
+        counts={{ '/builds': reviews }}
+        automations={team || existing}
+        onDisconnect={disconnect}
+        switcher={<OrgSwitcher login={github?.login} />}
+        machines={<MachineRow />}
+        limits={limits}
+        version={window.__DORKS__?.version}
+        usage={
+          <>
+            <CloudPlanIndicator />
+            <UpdatePrompt />
+          </>
+        }
+        onArchive={(id) => void archive(id).catch((e: unknown) => toast.error(e instanceof Error ? e.message : 'Could not archive the chat'))}
+      />
+    </ChatPrefetch.Provider>
   )
 }
 

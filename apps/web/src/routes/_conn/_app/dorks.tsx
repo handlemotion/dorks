@@ -619,8 +619,10 @@ function Thread({ dorkId }: { dorkId: string }) {
                   prUrl={dork.prUrl}
                   detailsOpen={detailsOpen}
                   onDelete={async () => {
-                    await actions.deleteDork(dorkId)
+                    // Gone from the sidebar at once (optimistic); the page leaves without waiting for the box to be destroyed.
+                    const done = actions.deleteDork(dorkId)
                     await navigate({ to: '/dorks', search: {} })
+                    await done
                   }}
                 />
                 {!detailsOpen && <ShowDetailsButton onClick={() => setDetailsOpen(true)} />}

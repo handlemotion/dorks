@@ -4,7 +4,7 @@ import { move } from '@dnd-kit/helpers'
 import { Accessibility, defaultPreset, KeyboardSensor, PointerActivationConstraints, PointerSensor } from '@dnd-kit/dom'
 import { DragDropProvider, type DragEndEvent, type DragOverEvent, type DragStartEvent } from '@dnd-kit/react'
 import { isSortable, useSortable } from '@dnd-kit/react/sortable'
-import { useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { ArchiveIcon, ChevronDownIcon, ChevronUpIcon, GitCompareArrowsIcon, LoaderCircleIcon } from 'lucide-react'
 import { copyText, openContextMenu } from '../lib/contextMenu'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@dorks/ui/hover-card'
@@ -155,9 +155,40 @@ const ICON_LABEL: Record<DorkIconState, string> = { attention: 'Needs attention'
  * button at its edge (the PRs move left of it). A right click opens the row's menu (natively in the desktop app): Open, Copy link and,
  * with `onArchive`, Archive.
  */
+/**
+ * Starts loading a chat before it opens (the client's `prefetchDork`): its rows call it when the pointer rests on them or presses,
+ * so the chat opens with its transcript in hand. None outside the app (design demos).
+ */
+export const ChatPrefetch = createContext<((id: string) => void) | null>(null)
+
+/** How long the pointer rests on a row before its chat loads: moving across the list loads nothing. */
+const PREFETCH_REST_MS = 60
+
+/** Pointer and focus handlers that prefetch `id` on intent (rest, press, keyboard focus). */
+function usePrefetchIntent(id: string) {
+  const prefetch = useContext(ChatPrefetch)
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useEffect(() => () => clearTimeout(timer.current), [])
+  if (!prefetch) return {}
+  const now = () => {
+    clearTimeout(timer.current)
+    prefetch(id)
+  }
+  return {
+    onPointerEnter: () => {
+      clearTimeout(timer.current)
+      timer.current = setTimeout(now, PREFETCH_REST_MS)
+    },
+    onPointerLeave: () => clearTimeout(timer.current),
+    onPointerDown: now,
+    onFocus: now,
+  }
+}
+
 function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: number; to: ChatRoute; active: boolean; onArchive?: (id: string) => void }) {
   // `data` feeds announcements; the link is the handle so interactive-element filtering allows row drags.
   const { ref, handleRef, isDragging } = useSortable({ id: chat.id, index, data: chat })
+  const intent = usePrefetchIntent(chat.id)
   const router = useRouter()
   const iconState = dorkIconState(chat.state, { working: chat.working, attention: chat.attention, unread: chat.unread })
   const iconLabel = ICON_LABEL[iconState]
@@ -196,6 +227,7 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
         // Explicit, so dnd-kit's accessibility plugin does not turn the link into role="button" when the row is sortable.
         role="link"
         draggable={false}
+        {...intent}
         data-working={chat.working || undefined}
         title={starter ? `${chat.title} · started by ${starter.name}` : chat.title}
         className={`${SIDEBAR_ROW} ${pad}`}

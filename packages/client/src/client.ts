@@ -20,7 +20,7 @@ import { createApi, ApiError, type ApiConfig, type DesktopOptions, type NewComme
 import { connectLive, type LiveStatus } from "./live.ts";
 import { connectCloudLive, followSession, type CloudLiveConfig, type SessionCursor } from "./cloud-live.ts";
 import type { ReadGrant } from "./s2.ts";
-import { Query, type QueryOptions, type Store } from "./store.ts";
+import { Query, type Optimistic, type QueryOptions, type Store } from "./store.ts";
 import type {
   BuildInput,
   BuildVarInput,
@@ -75,6 +75,11 @@ export interface ConnectionState {
   unauthorized: boolean;
 }
 
+/** One cached read's optimistic change, by its key; `until`: kept until the server's data says this (see Query.optimistic). */
+type Apply = (data: never) => unknown;
+type Until = ((data: never) => boolean) | undefined;
+type Edit = [key: string, apply: Apply, until?: Until];
+
 const defaultRetry = (n: number) => Math.min(15_000, 1000 * 2 ** n);
 
 /** A read nothing has shown for this long is dropped (its data, its folded transcript), so a long-open app does not keep every chat ever visited. */
@@ -114,6 +119,10 @@ export class DorksClient {
   private readonly presenceListeners = new Set<() => void>();
   /** The dork this client shows, told to the server again after each reconnect. */
   private viewingDorkId: string | null = null;
+  /** A `hello` arrived since `start()`: later ones are reconnections. */
+  private greeted = false;
+  /** When `start()` opened the live stream. */
+  private startedAt = 0;
   /** Transcripts that advanced while the page was hidden: tailed once it shows again, not on every streamed token. */
   private readonly staleFeeds = new Set<string>();
   private readonly onVisibility = () => {
@@ -131,6 +140,8 @@ export class DorksClient {
   /** Opens the live stream. Safe to call again after `close()`. */
   start() {
     if (this.closeLive) return;
+    this.greeted = false;
+    this.startedAt = Date.now();
     if (typeof document !== "undefined") document.addEventListener("visibilitychange", this.onVisibility);
     const onStatus = (live: LiveStatus) => this.setConnection({ live, ...(live === "unauthorized" ? { unauthorized: true } : {}) });
     const onMessage = (m: LiveMessage) => this.onLive(m);
@@ -229,14 +240,83 @@ export class DorksClient {
     for (const [key, q] of this.queries) if (key === prefix || key.startsWith(`${prefix}:`)) q.invalidate();
   }
 
+  /**
+   * A write that shows at once: each read in `edits` (by key, when it is cached) shows its change now, the request runs, and then
+   * the change is confirmed (kept until fresh reads have it) or, when the server refuses it or `keep` says it did not happen, taken
+   * back. Either way the edited reads, and `refetch`, are read again.
+   */
+  private async optimistic<R>(edits: Edit[], run: () => Promise<R>, opts: { refetch?: string[]; keep?: (r: R) => boolean } = {}): Promise<R> {
+    const applied: Optimistic[] = [];
+    for (const [key, apply, until] of edits) {
+      const q = this.queries.get(key) as Query<unknown> | undefined;
+      if (q) applied.push(q.optimistic(apply as (d: unknown) => unknown, until as ((d: unknown) => boolean) | undefined));
+    }
+    try {
+      const r = await run();
+      for (const a of applied) opts.keep && !opts.keep(r) ? a.rollback() : a.settle();
+      return r;
+    } catch (e) {
+      for (const a of applied) a.rollback();
+      throw e;
+    } finally {
+      for (const [key] of edits) this.queries.get(key)?.invalidate();
+      for (const prefix of opts.refetch ?? []) this.invalidate(prefix);
+    }
+  }
+
+  /** The dork as the client last read it: its own read, else its row in a list. */
+  private cachedDork(id: string): Dork | undefined {
+    const own = this.queries.get(`dork:${id}`)?.data as Dork | null | undefined;
+    if (own) return own;
+    for (const key of ["dorks:false", "dorks:true"]) {
+      const row = (this.queries.get(key)?.data as Dork[] | undefined)?.find((d) => d.id === id);
+      if (row) return row;
+    }
+    return undefined;
+  }
+
+  /** Edits one dork wherever it is cached: its own read and its row in both lists. */
+  private dorkEdits(id: string, change: (d: Dork) => Dork, recorded?: (d: Dork) => boolean): Edit[] {
+    const list = (rows: Dork[]) => rows.map((d) => (d.id === id ? change(d) : d));
+    const own = (d: Dork | null) => d && change(d);
+    const inList = recorded && ((rows: Dork[]) => rows.every((d) => d.id !== id || recorded(d)));
+    const inOwn = recorded && ((d: Dork | null) => !d || recorded(d));
+    return [
+      ["dorks:false", list as Apply, inList as Until],
+      ["dorks:true", list as Apply, inList as Until],
+      [`dork:${id}`, own as Apply, inOwn as Until],
+    ];
+  }
+
+  /**
+   * Starts the reads a screen shows before it mounts (a chat about to open: its row, its newest page), so it opens with them in hand
+   * or in flight. A dork's own read starts from its row in the list.
+   */
+  prefetchDork(id: string) {
+    this.dork(id).prefetch();
+    this.events(id).prefetch();
+  }
+
+  /** The reads every screen of the app shows (the sidebar's), started together with the settings the connection gate waits for. */
+  prefetchApp() {
+    this.dorks(false).prefetch();
+    this.me().prefetch();
+  }
+
   private onLive(m: LiveMessage) {
     switch (m.t) {
-      case "hello":
+      case "hello": {
         if (!this.cfg.cloud) this.setPresence(new Map()); // a cloud team's presence has its own stream, which keeps it current
         void this.sendViewing();
-        for (const q of this.queries.values()) q.invalidate();
+        // Everything is read again, except, at the first hello, what was read since the stream opened: that is as new as the
+        // stream (a cloud feed reads from when it opened), and reading it twice on startup only queues the next screen's reads
+        // behind it (a browser opens 6 connections a host). DorksProvider opens the stream before anything subscribes.
+        const first = !this.greeted;
+        this.greeted = true;
+        for (const q of this.queries.values()) if (!(first && q.startedAt >= this.startedAt)) q.invalidate();
         for (const id of this.feeds.keys()) this.tailFeed(id);
         break;
+      }
       case "dorks":
         this.invalidate("dorks");
         this.invalidate("automation-runs"); // a run names its session, its title and state
@@ -337,7 +417,7 @@ export class DorksClient {
 
   /** `null` when the server says it does not exist. */
   dork(id: string) {
-    return this.query<Dork | null>(`dork:${id}`, async () => {
+    const q = this.query<Dork | null>(`dork:${id}`, async () => {
       try {
         return await this.api.getDork(id);
       } catch (e) {
@@ -345,6 +425,12 @@ export class DorksClient {
         throw e;
       }
     });
+    // Opened from the sidebar: show its row at once; the read fills in what a list row lacks (the queue, the commands).
+    if (q.data === undefined) {
+      const row = this.cachedDork(id);
+      if (row) q.seed(row);
+    }
+    return q;
   }
 
   settings() {
@@ -573,26 +659,45 @@ export class DorksClient {
       this.invalidate("dorks");
       return r;
     },
+    // Changes to a dork show at once (optimistic, taken back if the server refuses); the reads they touch are read again after.
     renameDork: async (id: string, title: string) => {
-      await this.api.renameDork(id, title);
-      this.invalidate("dorks");
-      this.invalidate(`dork:${id}`);
+      await this.optimistic(
+        this.dorkEdits(id, (d) => ({ ...d, title })),
+        () => this.api.renameDork(id, title),
+      );
     },
     deleteDork: async (id: string) => {
-      await this.api.deleteDork(id);
-      this.invalidate("dorks");
-      this.invalidate(`dork:${id}`);
+      const gone = (rows: Dork[]) => rows.filter((d) => d.id !== id);
+      await this.optimistic(
+        [
+          ["dorks:false", gone as Apply],
+          ["dorks:true", gone as Apply],
+        ],
+        () => this.api.deleteDork(id),
+        { refetch: [`dork:${id}`] },
+      );
       this.forget(id);
     },
     markRead: async (id: string) => {
-      await this.api.markRead(id);
-      this.invalidate("dorks");
-      this.invalidate(`dork:${id}`);
+      await this.optimistic(
+        this.dorkEdits(id, (d) => ({ ...d, unread: false })),
+        () => this.api.markRead(id),
+      );
     },
     archiveDork: async (id: string, archived: boolean) => {
-      await this.api.setArchived(id, archived);
-      this.invalidate("dorks");
-      this.invalidate(`dork:${id}`);
+      const row = this.cachedDork(id);
+      const moved = row && { ...row, archived };
+      const without = (rows: Dork[]) => rows.filter((d) => d.id !== id);
+      // Into the list it moves to, in the server's order (newest activity first).
+      const into = (rows: Dork[]) => (moved ? [...without(rows), moved].sort((a, b) => b.lastActivityAt - a.lastActivityAt) : rows);
+      await this.optimistic(
+        [
+          ["dorks:false", (archived ? without : into) as Apply],
+          ["dorks:true", (archived ? into : without) as Apply],
+          [`dork:${id}`, ((d: Dork | null) => d && { ...d, archived }) as Apply],
+        ],
+        () => this.api.setArchived(id, archived),
+      );
     },
     interrupt: async (id: string) => {
       await this.api.interrupt(id);
@@ -600,13 +705,14 @@ export class DorksClient {
     },
     /** Switches the session's mode (docs/modes.md); an awake agent restarts with it once its turn ends. */
     setMode: async (id: string, mode: DorkMode) => {
-      await this.api.setMode(id, mode);
-      this.invalidate(`dork:${id}`);
-      this.invalidate("dorks");
+      await this.optimistic(
+        this.dorkEdits(id, (d) => ({ ...d, mode })),
+        () => this.api.setMode(id, mode),
+      );
     },
     chooseModel: async (id: string, model: string | null, effort: string | null, fast = false) => {
-      await this.api.chooseModel(id, model, effort, fast);
-      this.invalidate(`dork:${id}`);
+      const chosen = (d: Dork): Dork => ({ ...d, model: model ?? undefined, effort: effort ?? undefined, fast });
+      await this.optimistic([[`dork:${id}`, ((d: Dork | null) => d && chosen(d)) as Apply]], () => this.api.chooseModel(id, model, effort, fast));
     },
     /** A fresh live-view URL of the dork's computer, absolute (the simulator answers with a path on the server). Minted per view. */
     desktopUrl: async (id: string, opts: DesktopOptions) => {
@@ -683,13 +789,25 @@ export class DorksClient {
     },
     /** Reads the pull request from GitHub again. */
     refreshPullRequest: (id: string) => this.invalidate(`pr:${id}`),
+    /**
+     * Shows the PR merged at once, in its panel and on the session's row (GitHub's own read of it takes a while); taken back when
+     * GitHub refuses, or when the merge only joined a merge queue.
+     */
     mergePullRequest: async (id: string, method: MergeMethod, sha?: string, url?: string) => {
-      try {
-        return await this.api.mergePullRequest(id, method, sha, url);
-      } finally {
-        this.invalidate(`pr:${id}`);
-        this.invalidate(`dork:${id}`);
-      }
+      const prKey = url ? `pr:${id}:${url}` : `pr:${id}`;
+      const prUrl = url ?? (this.queries.get(prKey)?.data as PullRequestView | null | undefined)?.url;
+      const merged = (pr: PullRequestView | null) => pr && { ...pr, state: "merged" as const, mergedAt: Date.now(), mergeable: null };
+      const rowMerged = (d: Dork): Dork => ({
+        ...d,
+        prState: !prUrl || d.prUrl === prUrl ? "merged" : d.prState,
+        prs: d.prs?.map((p) => (p.url === prUrl ? { ...p, state: "merged" as const, conflict: undefined } : p)),
+      });
+      // The row's PR state is the poller's, which looks right after the merge: shown merged until it has seen it.
+      const recorded = (d: Dork) => (d.prs?.find((p) => p.url === prUrl)?.state ?? d.prState) !== "open";
+      return this.optimistic([[prKey, merged as Apply], ...this.dorkEdits(id, rowMerged, recorded)], () => this.api.mergePullRequest(id, method, sha, url), {
+        refetch: [`pr:${id}`, `subs:${id}`],
+        keep: (r) => r.merged,
+      });
     },
     markPullRequestReady: async (id: string, url?: string) => {
       try {

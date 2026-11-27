@@ -123,6 +123,16 @@ export class EventsFeed implements Store<EventsState> {
     });
   }
 
+  /** Reads the newest page before anything shows the transcript (its chat is about to open), so it opens with it. */
+  prefetch() {
+    if (this.started || this.tailQueued) return;
+    this.tailQueued = true;
+    this.enqueue(async () => {
+      this.tailQueued = false;
+      if (!this.started) await this.tail();
+    });
+  }
+
   /** Events pushed by the live stream (rows as `GET /events` serves them): folded in turn with the reads, after any read in flight. */
   ingest(events: ClientEvent[]) {
     if (!events.length) return;

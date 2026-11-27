@@ -15,7 +15,8 @@ function neighborOf(id: string): string | undefined {
 
 /**
  * Archives (or restores) a chat. Archiving the chat that is open moves to the next one in the sidebar, or to a new session when it
- * was the only one, instead of leaving the page on an archived chat.
+ * was the only one, instead of leaving the page on an archived chat. The row leaves at once (the client's write is optimistic) and
+ * the page moves on without waiting for the server; a refusal puts the row back and rejects, for the caller to say so.
  */
 export function useArchiveDork() {
   const { actions } = useDorksClient()
@@ -25,8 +26,9 @@ export function useArchiveDork() {
   return useCallback(
     async (id: string, archived = true) => {
       const next = archived && id === openId ? neighborOf(id) : undefined
-      await actions.archiveDork(id, archived)
+      const done = actions.archiveDork(id, archived)
       if (archived && id === openId) await navigate({ to: '/dorks', search: next ? { dork: next } : {} })
+      await done
     },
     [actions, navigate, openId],
   )

@@ -1832,7 +1832,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     const automation = automations(method, path, body);
     if (automation) return "error" in automation ? fail(res, automation.error, automation.message) : json(res, automation.status, automation.body);
     const m =
-      /^\/api\/dorks\/([^/]+)(?:\/(local\/[^/]+|inputs\/[^/]+|messages|queue(?:\/[^/]+(?:\/send)?)?|interrupt|desktop|archive|mode|model|codex-model|events|files|workspace(?:\/tree|\/file)?|pr(?:\/merge|\/ready|\/update-branch)?|subscriptions(?:\/resume)?|comments(?:\/[^/]+(?:\/replies)?)?))?$/.exec(
+      /^\/api\/dorks\/([^/]+)(?:\/(local\/[^/]+|inputs\/[^/]+|messages|queue(?:\/[^/]+(?:\/send)?)?|interrupt|read|desktop|archive|mode|model|codex-model|events|files|workspace(?:\/tree|\/file)?|pr(?:\/merge|\/ready|\/update-branch)?|subscriptions(?:\/resume)?|comments(?:\/[^/]+(?:\/replies)?)?))?$/.exec(
         path,
       );
     if (m) return routeDork(c, m);
