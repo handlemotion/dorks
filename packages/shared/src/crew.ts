@@ -36,8 +36,7 @@ export const CREW_TOOLS: CrewToolDef[] = [
     name: "dork_create",
     title: "Start a dork",
     description:
-      "Start a new dork: an agent in its own cloud sandbox that works on `message`. In code mode (the default) it works on its own branch of `repo` and opens PRs; in chat mode it needs no repo " +
-      "and suits research, writing, analysis and fixing things on the user's computer. It runs in the background; " +
+      "Start a new dork: an agent in its own cloud sandbox that works on `message`. It works on its own branch of `repo` and opens PRs. It runs in the background; " +
       'a coordinator hears back automatically when the worker finishes a turn (a <dorks-event source="crew"> turn), anyone else can use dork_wait. ' +
       "Write `message` as a complete, self-contained task: the goal, the boundaries (which files or area it owns), what done looks like, how to verify it, and what to report back. " +
       "`model` is a Claude model alias such as opus or sonnet; `buildId` picks a machine setup from build_list (default: the owner's default build).",
@@ -45,11 +44,11 @@ export const CREW_TOOLS: CrewToolDef[] = [
       type: "object",
       properties: {
         message: { type: "string", description: "The task, as the dork's first message." },
-        repo: { type: "string", description: "owner/name on GitHub. Required in code mode; chat and nerd sessions have none." },
+        repo: { type: "string", description: "owner/name on GitHub. Required, except for a nerd, which has none." },
         mode: {
           type: "string",
-          enum: ["chat", "code", "nerd"],
-          description: "code (default): works in `repo` and ships PRs. chat: a general assistant with no repo. nerd (owner only): plans and runs other dorks.",
+          enum: ["code", "nerd"],
+          description: "code (default): works in `repo` and ships PRs. nerd (owner only): plans and runs other dorks.",
         },
         title: { type: "string", description: "A short name (default: one is generated from the message)." },
         buildId: { type: "string", description: "A build id from build_list." },

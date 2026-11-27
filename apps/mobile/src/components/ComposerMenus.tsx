@@ -48,12 +48,12 @@ export function ModelMenu({
   );
 }
 
-/** `""` is no repository: a plain chat (mode `chat`). */
+/** `""` is no repository: a nerd (mode `nerd`). */
 export function RepoMenu({ repos, value, onChange }: { repos: string[]; value: string; onChange: (repo: string) => void }) {
   return (
     <Menu label="Repository" systemImage="folder">
       <Picker selection={value} onSelectionChange={(r: string) => onChange(r)}>
-        <UIText modifiers={[tag("")]}>None</UIText>
+        <UIText modifiers={[tag("")]}>None (a nerd)</UIText>
         {repos.map((r) => (
           <UIText key={r} modifiers={[tag(r)]}>
             {r}

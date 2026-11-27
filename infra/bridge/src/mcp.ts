@@ -1,4 +1,4 @@
-import { CREW_WAIT_SLICE_MS, crewToolsFor, MAX_WAIT_SECONDS, MODES, renderCrew, type CrewResult, type CrewRole, type DorkMode, type PrRef, type SubscriptionView } from "@dorks/shared";
+import { CREW_WAIT_SLICE_MS, crewToolsFor, MAX_WAIT_SECONDS, renderCrew, type CrewResult, type CrewRole, type PrRef, type SubscriptionView } from "@dorks/shared";
 import { execFile } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -932,11 +932,7 @@ async function renderPage(url: string, args: Record<string, unknown>): Promise<B
 
 const byName = new Map(TOOLS.map((t) => [t.name, t]));
 
-/** Tools only for a mode with coding autonomy (docs/modes.md): a chat ships nothing as a pull request, so it is not offered the PR tools. */
-const AUTONOMY_TOOLS = new Set(["pr_subscribe", "pr_unsubscribe", "pr_list", "ship_verify"]);
-const modeTools = (mode: DorkMode) => (MODES[mode].autonomy ? TOOLS : TOOLS.filter((t) => !AUTONOMY_TOOLS.has(t.name)));
-
-type Crew = { role: CrewRole | null; mode: DorkMode };
+type Crew = { role: CrewRole | null };
 
 // ---------------------------------------------------------------- crew tools (docs/crew.md)
 // Listed only for a coordinator or worker dork (the bridge answers `crew.role` from its configure). The table and the result text are
@@ -995,15 +991,15 @@ export class McpServer {
   constructor(private env: NodeJS.ProcessEnv) {}
 
   /**
-   * The dork's crew role and mode, asked of the bridge once per MCP session (no role and code outside a box or on an older bridge). A
-   * mode switch restarts the agent, and with it this server.
+   * The dork's crew role, asked of the bridge once per MCP session (none outside a box or on an older bridge). A mode switch restarts
+   * the agent, and with it this server.
    */
   private crewInfo(): Promise<Crew> {
     const sock = socketOf(this.env);
-    const none: Crew = { role: null, mode: "code" };
+    const none: Crew = { role: null };
     this.crew ??= sock
       ? rpcCall<Partial<Crew>>(sock, "crew.role").then(
-          (r) => ({ role: r?.role ?? null, mode: r?.mode && r.mode in MODES ? r.mode : "code" }),
+          (r) => ({ role: r?.role ?? null }),
           () => none,
         )
       : Promise.resolve(none);
@@ -1060,8 +1056,8 @@ export class McpServer {
       case "ping":
         return { result: {} };
       case "tools/list": {
-        const { role, mode } = await this.crewInfo();
-        return { result: { tools: [...modeTools(mode).map(({ run: _run, ...t }) => t), ...crewTools(role)] }, cache: true };
+        const { role } = await this.crewInfo();
+        return { result: { tools: [...TOOLS.map(({ run: _run, ...t }) => t), ...crewTools(role)] }, cache: true };
       }
       case "tools/call":
         return { result: await this.call(params.name, params.arguments) };
@@ -1088,9 +1084,9 @@ export class McpServer {
   }
 
   private async call(name: unknown, args: unknown) {
-    const { role, mode } = await this.crewInfo();
+    const { role } = await this.crewInfo();
     const crew = typeof name === "string" && crewTools(role).some((t) => t.name === name);
-    const tool = typeof name === "string" && modeTools(mode).includes(byName.get(name)!) ? byName.get(name) : undefined;
+    const tool = typeof name === "string" ? byName.get(name) : undefined;
     const result = (out: string | Content[], isError = false) => ({ content: typeof out === "string" ? [{ type: "text", text: out }] : out, isError });
     if (!tool && !crew) return result(`Unknown tool "${String(name)}".`, true);
     const sock = socketOf(this.env);

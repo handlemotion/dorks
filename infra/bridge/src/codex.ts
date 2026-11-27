@@ -49,7 +49,7 @@ export interface CodexOptions {
   userMcp: Record<string, unknown>;
   /** Where skills are synced (the Claude config dir's `skills`): an extra skills root for Codex, so it loads the same ones. */
   skillsDir: string;
-  /** The standing instructions (final answer, skills, crew, computer, or a chat's prompt), as the thread's developer instructions. */
+  /** The standing instructions (final answer, skills, crew, computer), as the thread's developer instructions. */
   system: string;
   /** Dorks' own ChatGPT sign-in (configure's `codexAuth`): signs Codex in with this access token instead of the Boat environment's. */
   auth?: CodexAuth;

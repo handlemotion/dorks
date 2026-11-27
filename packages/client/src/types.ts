@@ -109,7 +109,7 @@ export interface Dork {
   buildId?: string | null;
   /** Where it runs (docs/local-dorks.md): a cloud sandbox, or the owner's computer. Absent on older servers: cloud. */
   location?: DorkLocation;
-  /** chat, code or nerd (docs/modes.md); a nerd plans and runs worker dorks instead of coding (docs/crew.md). Absent on older servers: code. */
+  /** code or nerd (docs/modes.md); a nerd plans and runs worker dorks instead of coding (docs/crew.md). Absent on older servers: code. */
   mode?: DorkMode;
   /** The coordinator that started this worker; null otherwise. Absent on older servers. */
   parentId?: string | null;
@@ -122,13 +122,13 @@ export interface Dork {
 }
 
 export interface CreateDorkInput {
-  /** owner/name; optional for a setup session and in chat and nerd mode. */
+  /** owner/name; optional for a setup session and in nerd mode. */
   repo?: string;
   /** The build to start from; null: the base machine; omitted: the default build, else the base machine. */
   buildId?: string | null;
   /** A machine-setup session for `buildId`: no repo needed, and the build needs no image yet. */
   setup?: boolean;
-  /** chat, code (default) or nerd (docs/modes.md). Only code needs a repo. */
+  /** code (default) or nerd (docs/modes.md). Only code needs a repo. */
   mode?: DorkMode;
   /** One emoji for a coordinator, shown in the sidebar. */
   icon?: string;
