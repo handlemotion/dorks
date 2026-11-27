@@ -125,6 +125,22 @@ describe("a successful build", () => {
     expect(await snapshotView(h.app)).toMatchObject({ state: "ready", snapshot: name, managed: true, stale: false });
   });
 
+  it("another install saving the same snapshot at the same time: the build takes theirs instead of failing", async () => {
+    const h = await ready();
+    const d = h.snapshotDriver;
+    const name = snapshotName(h.assets.current.bundleId);
+    // Both passed the check before either was saved; the other install's save wins and Boat answers ours with save_in_progress
+    // (the Boat driver swallows that 409), so our own save never shows up under the name.
+    d.saveSnapshot = async () => {
+      d.calls.push("save");
+      d.saved.set(name, { name, status: "ready", sourceSandboxId: "bx_other000" });
+    };
+    await startBuild(h.app);
+    await h.settle();
+    expect(await snapshotView(h.app)).toMatchObject({ state: "ready", snapshot: name, error: null });
+    expect(d.boxes.size).toBe(0);
+  });
+
   it("leaves a snapshot the user named by hand alone: not managed, never stale", async () => {
     const h = await ready();
     await startBuild(h.app);
@@ -285,6 +301,20 @@ describe("restarts", () => {
 
     await rebuildIfStale(h.app); // on it now: nothing more to do
     expect(hasTimer(h.app, "", "snapshot:build")).toBe(false);
+  });
+
+  it("a forced rebuild interrupted by a restart still rebuilds, instead of adopting the snapshot already saved", async () => {
+    const h = await ready();
+    const d = h.snapshotDriver;
+    await startBuild(h.app);
+    await h.settle(); // the shared snapshot is saved and ready
+    const saves = d.calls.filter((c) => c === "save").length;
+    await startBuild(h.app, { force: true });
+    h.app.db.run("DELETE FROM timers WHERE name = 'snapshot:build'"); // claimed, then the process died
+    recoverSnapshotBuild(h.app);
+    await h.settle();
+    expect(d.calls.filter((c) => c === "save").length).toBe(saves + 1);
+    expect((await snapshotView(h.app)).state).toBe("ready");
   });
 
   it("a stale job from an earlier attempt does nothing", async () => {

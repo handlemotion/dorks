@@ -64,6 +64,8 @@ interface BuildRow {
   ready_name: string | null;
   ready_bundle_id: string | null;
   ready_at: number | null;
+  /** The running build was asked to rebuild the snapshot (force): kept with the attempt, so a recovered job does too. */
+  forced: number;
 }
 
 const readBuild = (app: App) => app.db.get<BuildRow>("SELECT * FROM snapshot_build WHERE id = 1")!;
@@ -163,8 +165,13 @@ function queueBuild(app: App, opts: { force?: boolean; bundleId?: string }) {
     const current = inUse && !!opts.bundleId && row.ready_bundle_id === opts.bundleId && row.ready_name === snapshotName(opts.bundleId);
     if (!opts.force && row.status !== "failed" && current) return; // already up to date
     const attempt = row.attempt + 1;
-    update(app.db, "snapshot_build", { id: 1 }, { status: "running", step: STEPS[0].id, message: STEPS[0].label, error: null, attempt, startedAt: app.now(), finishedAt: null });
-    setTimer(app, "", SNAPSHOT_JOB, 0, { attempt, force: !!opts.force });
+    update(
+      app.db,
+      "snapshot_build",
+      { id: 1 },
+      { status: "running", step: STEPS[0].id, message: STEPS[0].label, error: null, attempt, startedAt: app.now(), finishedAt: null, forced: opts.force ? 1 : 0 },
+    );
+    setTimer(app, "", SNAPSHOT_JOB, 0, { attempt });
     touch(app, { t: "snapshot" });
     console.error(`snapshot build queued (attempt ${attempt})`);
   });
@@ -249,18 +256,19 @@ const tail = (s: string) => {
 /** A Promise from outside Effect (the app's seams), failing with what it rejects with. */
 const fromPromise = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e });
 
-/** The `snapshot:build` job (Promise edge for lifecycle/jobs.ts). `force` builds even when the shared snapshot is already saved. */
-export function runBuild(app: App, attempt: number, force = false): Promise<void> {
-  return Effect.runPromise(buildJob(app, attempt, force));
+/** The `snapshot:build` job (Promise edge for lifecycle/jobs.ts). */
+export function runBuild(app: App, attempt: number): Promise<void> {
+  return Effect.runPromise(buildJob(app, attempt));
 }
 
 /** One attempt of the build. Never fails: a failure is recorded on the build row, for the person watching. */
-export const buildJob = (app: App, attempt: number, force = false): Effect.Effect<void> =>
+export const buildJob = (app: App, attempt: number): Effect.Effect<void> =>
   Effect.suspend(() => {
     const first = readBuild(app);
     if (first.status !== "running" || first.attempt !== attempt) return Effect.void; // superseded or cancelled
     // The failure is recorded before the scope closes: the person sees it while the sandbox is still being deleted, as before.
-    return buildSteps(app, attempt, first, force).pipe(
+    // A forced build rebuilds even when the shared snapshot is already saved (read from the row: it survives a restart).
+    return buildSteps(app, attempt, first, first.forced === 1).pipe(
       Effect.catchCause((cause) => recordFailure(app, attempt, cause)),
       Effect.scoped,
     );
@@ -306,7 +314,7 @@ const buildSteps = Effect.fnUntraced(function* (app: App, attempt: number, first
 
   yield* progress(app, attempt, "save");
   yield* driver.saveSnapshot(sandboxId, name);
-  yield* waitSaved(app, driver, name, sandboxId);
+  yield* waitSaved(app, driver, name, sandboxId, force);
 
   yield* progress(app, attempt, "finish");
   yield* finishBuild(app, attempt, name, assets.bundleId, driver);
@@ -389,9 +397,12 @@ function recordFailure(app: App, attempt: number, cause: Cause.Cause<unknown>): 
   });
 }
 
-const waitSaved = Effect.fnUntraced(function* (app: App, driver: SnapshotOps, name: string, sandboxId: string) {
+const waitSaved = Effect.fnUntraced(function* (app: App, driver: SnapshotOps, name: string, sandboxId: string, force: boolean) {
   for (let i = 0; i < SAVE_POLLS; i++) {
     const info = yield* driver.getSnapshot(name);
+    // Another install on the account built the same installer at the same time and its save won (Boat answers ours with
+    // save_in_progress): the name holds the same image, so a build that was not forced is done. A forced one waits for its own.
+    if (!force && info?.status === "ready" && info.sourceSandboxId !== sandboxId) return;
     // Re-saving a name replaces the old artifact only once the new one is ready: trust the status of OUR save, not of the old one.
     if (info?.sourceSandboxId === sandboxId) {
       if (info.status === "ready") return;
