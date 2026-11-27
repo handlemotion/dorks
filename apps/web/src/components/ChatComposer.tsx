@@ -399,7 +399,8 @@ function modelMenuState(provider: AgentProvider, picker: ModelPicker | undefined
   // The trigger names the model the agent confirmed when it has, else the one chosen (or what the default resolves to).
   const active = models?.active?.model ? models.active : undefined
   const chosen = models && (modelName(choices, active?.model) ?? modelName(choices, models.model ?? DEFAULT))
-  const label = chosen || agentLabel || AGENT_NAMES[provider]
+  // "Claude Code" is the agent, not a model: once Claude's models are listed, an unresolved default reads as the default model.
+  const label = chosen || agentLabel || (provider === 'claude' && choices.length ? 'Default model' : AGENT_NAMES[provider])
   const effort = active ? active.effort : models?.effort
   const choice = choices.find((c) => c.model === (models?.model ?? DEFAULT))
   const efforts: string[] = choice?.efforts ?? []
