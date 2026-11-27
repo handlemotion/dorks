@@ -188,6 +188,20 @@ function onExit(app: App, boxId: string, proc: Proc, code: number | null, signal
   host.quickExits.set(boxId, quick);
   if (quick > MAX_QUICK_EXITS) {
     console.error("local: bridge keeps exiting; not starting it again until the next wake", boxId.slice(-6));
+    // Say so in the session now, instead of leaving it starting up until the watchdog gives up on it.
+    const dorkId = rowOf(app, boxId)?.dork_id;
+    if (dorkId)
+      void import("../lifecycle/lifecycle")
+        .then(({ opFailed }) =>
+          app.db.tx(() =>
+            opFailed(
+              app,
+              dorkId,
+              `The session stopped right after starting on this computer, several times in a row. Its log is ${join(boxDir(app, boxId), "bridge.log")}. Send a message to try again.`,
+            ),
+          ),
+        )
+        .catch((e) => console.error("local: could not record the failure", e instanceof Error ? e.message.slice(0, 200) : "unknown"));
     return;
   }
   setTimeout(() => {

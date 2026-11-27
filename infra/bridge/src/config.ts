@@ -117,11 +117,19 @@ export const CHILD_ENV_DENY = [/^BRIDGE_/, /^CLAUDE_RUN_AS$/, /^DORK_ID$/, /^DOR
  * survive the swap, but a socket bound before it does not: the path then names a copied, dead socket file and every connect is
  * refused, so git, `gh`, `dorks` and the hooks lose the bridge. `/run` (tmpfs) is outside the lazy mount; `/tmp` is the fallback.
  */
-export function runtimeSockDir(env: NodeJS.ProcessEnv = process.env): string {
+export function runtimeSockDir(env: NodeJS.ProcessEnv = process.env, tmp = tmpdir()): string {
   const uid = process.getuid?.() ?? -1;
   // One dir per dork: several bridges under one user (the local simulator with the real bridge) must not share a socket.
   const name = `dorks-bridge-${(env.DORK_ID ?? "").replace(/[^A-Za-z0-9-]/g, "").slice(0, 36) || "default"}`;
   if (uid === 0) return join("/run", name);
   if (env.XDG_RUNTIME_DIR && existsSync(env.XDG_RUNTIME_DIR)) return join(env.XDG_RUNTIME_DIR, name);
-  return join(tmpdir(), `${name}-${uid}`);
+  const dir = join(tmp, `${name}-${uid}`);
+  // macOS caps a socket path at 104 bytes, and its per-user TMPDIR (/var/folders/xx/…/T) is long enough that a local dork's socket
+  // would not fit: its bridge then dies on start. /tmp is short; RpcServer refuses a dir there it does not own.
+  return Buffer.byteLength(join(dir, SOCK_SUFFIX)) > MAX_SOCK_PATH ? join("/tmp", `${name}-${uid}`) : dir;
 }
+
+/** The longest socket path under the dir (bridge.ts: `cred/cred.sock` when the agent runs as another user). */
+const SOCK_SUFFIX = "cred/cred.sock";
+/** `sun_path` is 104 bytes on macOS and 108 on Linux, with the terminating NUL. */
+const MAX_SOCK_PATH = 103;
