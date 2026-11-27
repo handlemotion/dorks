@@ -304,15 +304,16 @@ export async function buildExportFile(app: App, ctx: { orgId?: string; importId:
  * it and this Mac stays the personal workspace's, with the moved sessions archived here.
  */
 export async function startMove(app: App, orgId: string): Promise<MoveStatus> {
-  const cur = moveStatus(app);
-  if (RUNNING_PHASES.includes(cur.phase)) fail("conflict", "A move to the cloud is already running");
-  if (cur.phase === "done" && cur.orgId === orgId) fail("conflict", "This organization already moved to the cloud");
   const org = serverOrg(app);
   if (org && org !== orgId) {
     const { orgs } = await cloudAccount.places(app);
     if (!orgs.find((o) => o.id === org)?.personal) fail("invalid", "This computer serves another organization");
     if (!orgs.some((o) => o.id === orgId)) fail("not_found", "You are not in that organization");
   }
+  // Checked after the lookup above, and with nothing awaited from here to `set`: two requests at once (two windows) cannot both start.
+  const cur = moveStatus(app);
+  if (RUNNING_PHASES.includes(cur.phase)) fail("conflict", "A move to the cloud is already running");
+  if (cur.phase === "done" && cur.orgId === orgId) fail("conflict", "This organization already moved to the cloud");
   const awake = app.db.all<{ title: string; state: string }>("SELECT title, state FROM dorks WHERE deleting = 0").filter((d) => AWAKE.has(d.state));
   if (awake.length) fail("conflict", `${awake.length === 1 ? "A session is" : `${awake.length} sessions are`} still working. Let them finish or stop them, then move.`);
   freeze(app, MOVING); // before the pause and the snapshot, held until the move ends
@@ -375,7 +376,16 @@ async function settleCommit(app: App, orgId: string, importId: string) {
 function finishMove(app: App, orgId: string) {
   for (const a of allAutomations(app)) if (a.enabled) updateAutomation(app, a.id, { enabled: false });
   const own = serverOrg(app);
-  if (own && own !== orgId) app.db.tx(() => void app.db.run("UPDATE dorks SET archived = 1 WHERE deleting = 0 AND archived = 0"));
+  const copied = !!own && own !== orgId;
+  app.db.tx(() => {
+    const ids = sessionIds(app);
+    // The cloud owns the moved sandboxes and agent sessions now (a Teams org resumes the same box): this Mac lets go of them, so deleting
+    // or waking the local copy can never destroy or touch the cloud's box. A local session's worktree stays this Mac's.
+    app.db.run("UPDATE dorks SET box_id = NULL, claude_session_id = NULL, codex_thread_id = NULL WHERE deleting = 0 AND location = 'cloud'");
+    if (copied) app.db.run("UPDATE dorks SET archived = 1 WHERE deleting = 0 AND archived = 0");
+    touch(app, { t: "dorks" });
+    for (const id of ids) touch(app, { t: "dork", dorkId: id });
+  });
   set(app, { phase: "done", finishedAt: app.now() });
 }
 
