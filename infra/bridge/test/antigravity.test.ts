@@ -59,12 +59,18 @@ async function setup(env: Record<string, string> = {}) {
   cleanup.push(bridge);
   await bridge.start();
   transport.emit([{ cid: "cfg1", frame: { t: "fetch_configure" } }]);
+  // The fake agent may be writing a line as this reads the file: a partial (or empty) line is skipped, the next poll sees it whole.
   const reports = () =>
     existsSync(report)
       ? readFileSync(report, "utf8")
-          .trim()
           .split("\n")
-          .map((l) => JSON.parse(l))
+          .flatMap((l) => {
+            try {
+              return [JSON.parse(l)];
+            } catch {
+              return [];
+            }
+          })
       : [];
   /** The streaming session's starts (not `agy models` or the title's `agy -p`). */
   const sessions = () => reports().filter((r) => r.args?.includes("--input-format"));
