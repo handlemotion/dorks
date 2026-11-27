@@ -120,6 +120,14 @@ describe("move to cloud", () => {
     expect(cloud.opened?.buildVars).toEqual({ "Web.NPM_TOKEN": "npm-secret-1" });
     // The personal workspace stays on this Mac; what moved is archived here so it is not listed twice.
     expect(h.app.db.all<{ archived: number }>("SELECT archived FROM dorks WHERE id IN (?, ?)", boat, local).map((r) => r.archived)).toEqual([1, 1]);
+    // The cloud owns the box now: deleting the archived copy here must not destroy it.
+    expect(h.app.db.get<{ box_id: string | null; claude_session_id: string | null }>("SELECT box_id, claude_session_id FROM dorks WHERE id = ?", boat)).toEqual({
+      box_id: null,
+      claude_session_id: null,
+    });
+    expect((await call("DELETE", `/api/dorks/${boat}`)).status).toBeLessThan(300);
+    await h.settle();
+    expect(h.box.calls).not.toContain("delete");
   });
 
   it("refuses to copy a team this Mac does not serve into another org", async () => {
