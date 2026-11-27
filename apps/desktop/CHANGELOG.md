@@ -1,5 +1,29 @@
 # @dorks/desktop
 
+## 0.16.0
+
+### Minor Changes
+
+- [#325](https://github.com/handlemotion/dorks/pull/325) [`82f3e02`](https://github.com/handlemotion/dorks/commit/82f3e029b996c1a831ca7f0f12b79f63f7deb290) Thanks [@handlemotion](https://github.com/handlemotion)! - Dorks Cloud orgs show their sandbox hours in the sidebar: hours used or trial hours left, a warning from 80%, and Subscribe or Manage plan in the browser when they run out.
+
+- [`0f8ee83`](https://github.com/handlemotion/dorks/commit/0f8ee83fc305f2016892b5cd5844832ad4ae25a1) Thanks [@handlemotion](https://github.com/handlemotion)! - Paid workspaces now always run in Dorks Cloud: a workspace this Mac still runs moves there on its own, with its chats, builds, automations and the rest. The free personal workspace can also be moved into a team, and a failing sandbox no longer repeats the same error line.
+
+- [#316](https://github.com/handlemotion/dorks/pull/316) [`f86b657`](https://github.com/handlemotion/dorks/commit/f86b6575b9196e8bda8ad4bf06b4b19383576758) Thanks [@handlemotion](https://github.com/handlemotion)! - Edit your Dorks Cloud profile in the app: Settings › Account sets your name and picture and lists where you are signed in, with Sign out for each; Settings › Organization uploads the team's logo. Pictures show in the org switcher, the account menu, on teammates' messages and in the member list.
+
+- [#324](https://github.com/handlemotion/dorks/pull/324) [`045dfff`](https://github.com/handlemotion/dorks/commit/045dffff5e0ed1e1751881ce02e0430bfc2316ef) Thanks [@handlemotion](https://github.com/handlemotion)! - Chat mode is gone: sessions are code or nerd, and the sidebar lists them without a workspace switcher. Existing chats stay as code sessions under Other, and chat automations are paused until their triggers name a repository.
+
+### Patch Changes
+
+- [#322](https://github.com/handlemotion/dorks/pull/322) [`57fe8db`](https://github.com/handlemotion/dorks/commit/57fe8db99b8b4d5a4ca8d97711d0e4dad0b94da1) Thanks [@handlemotion](https://github.com/handlemotion)! - The first message of a new session can mention the repository's files with `@` and name skills with `/` anywhere in the text, local sessions included.
+
+- [#320](https://github.com/handlemotion/dorks/pull/320) [`1ac381d`](https://github.com/handlemotion/dorks/commit/1ac381d675ac3135a4989e7fc745dbf408b834ce) Thanks [@handlemotion](https://github.com/handlemotion)! - The website's feature cards read more clearly, and the first card now covers cloud machines for agents together with team workspaces.
+
+- [#318](https://github.com/handlemotion/dorks/pull/318) [`af0aba1`](https://github.com/handlemotion/dorks/commit/af0aba10c4424e2e3b0ac7afc2ceef6827b01e35) Thanks [@handlemotion](https://github.com/handlemotion)! - A nerd's details now list every pull request its sessions opened, not only each worker's latest. The new session composer shows where it runs before the repository.
+
+- [#321](https://github.com/handlemotion/dorks/pull/321) [`54d7c4f`](https://github.com/handlemotion/dorks/commit/54d7c4fadc2491e173ede2be27e230786abef1e6) Thanks [@handlemotion](https://github.com/handlemotion)! - The sidebar lists a repository's local sessions in a section of their own, apart from its cloud ones, each marked with a Cloud or Laptop icon. A section's + starts the new session in the same place.
+
+- [#323](https://github.com/handlemotion/dorks/pull/323) [`681a130`](https://github.com/handlemotion/dorks/commit/681a130963ce5ad56d8b4b89280c459d41a9fed8) Thanks [@handlemotion](https://github.com/handlemotion)! - The sidebar marks a session's open pull request with a red conflict icon when it has merge conflicts, so a PR that can't merge no longer looks green.
+
 ## 0.15.0
 
 ### Minor Changes
