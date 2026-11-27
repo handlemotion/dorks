@@ -258,6 +258,8 @@ export type AbResult = { runId: string; verdict: string; title: string; summary:
 
 /** Spans one request is assumed to make, to size the load inside the box's span budget. */
 const SPANS_PER_REQUEST = 10;
+/** Idle time after a round before its service stops, so the Sentry SDK flushes (a SIGTERM can drop the last batch). */
+const FLUSH_MS = 2_500;
 
 export async function runAb(o: AbOptions): Promise<AbResult> {
   const log = o.log ?? (() => {});
@@ -302,6 +304,7 @@ export async function runAb(o: AbOptions): Promise<AbResult> {
           await runLoad(origin, scripts, { count: Math.min(10, perRound), concurrency: 1, writes }); // warm-up, not counted
           results[which].push(await runLoad(origin, scripts, { count: perRound, concurrency: plan.concurrency, writes }));
           log(`${which} round ${r + 1}/${rounds}: ${perRound} requests`);
+          await new Promise((res) => setTimeout(res, FLUSH_MS)); // the SDK sends its last spans before the service stops
         } finally {
           await stop(child);
         }
@@ -309,7 +312,7 @@ export async function runAb(o: AbOptions): Promise<AbResult> {
     }
     const report = (final: boolean) => o.call("prodlike", { action: "report", runId: start_.runId, base: { sha: baseSha, rounds: results.base }, head: { sha: headSha, rounds: results.head }, final });
     let r = await report(false);
-    for (const end = Date.now() + (o.reportWaitMs ?? 120_000); r.state === "ingesting" && Date.now() < end; ) {
+    for (const end = Date.now() + (o.reportWaitMs ?? 180_000); r.state === "ingesting" && Date.now() < end; ) {
       log(`waiting for Sentry: ${JSON.stringify(r.seen)} of ${JSON.stringify(r.sent)} requests seen`);
       await new Promise((res) => setTimeout(res, 5_000));
       r = await report(false);
