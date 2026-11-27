@@ -2,7 +2,7 @@
 // fake browser sign-in (`dorks://auth` with the mock's state and any code), the account's places (Macs, and organizations with the servers Dorks runs for them),
 // and `/api/cloud/servers/:id/api/*`, answered by a separate in-memory mock server per place, so switching really re-points the app.
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { CloudOrg, CloudServer, CloudStatus, CloudUser, Me } from "./types.ts";
+import type { CloudEntitlements, CloudOrg, CloudServer, CloudStatus, CloudUser, Me } from "./types.ts";
 import { mockTeams } from "./mock-teams.ts";
 
 export interface MockCloudPlace extends CloudServer {
@@ -51,7 +51,7 @@ const ORGS: MockOrg[] = [
     logo: "https://github.com/handlemotion.png?size=64",
     personal: false,
     plan: "cloud",
-    role: "admin",
+    role: "owner",
     servers: [
       {
         id: "hosted-handlemotion",
@@ -103,8 +103,33 @@ export interface MockOrgRuntime {
   seed?: MockCloudPlace["seed"];
 }
 
+/** The Cloud org's billing state in the mock (`MOCK_CLOUD_PLAN`): paid with hours left, at 85%, used up, on the trial, trial used up. */
+export const MOCK_CLOUD_PLANS = ["paid", "warn", "used_up", "trial", "trial_used"] as const;
+export type MockCloudPlan = (typeof MOCK_CLOUD_PLANS)[number];
+
+const DAY = 86_400_000;
+/** Dorks Cloud's entitlements for an org of the mock, as `GET /v1/orgs/:id/entitlements` answers them (PLAN_CONFIG's numbers). */
+export function mockEntitlements(plan: CloudOrg["plan"], cloud: MockCloudPlan = "paid"): CloudEntitlements {
+  const base = { memberLimit: 50, members: 3, overage: { enabled: false, capCents: 2000, spentCents: 0 }, trial: null };
+  if (plan === "teams") return { ...base, plan: "teams", orgRuntime: true, cloudCredit: false, includedMinutes: 0, usedMinutes: 0, periodEnd: Date.now() + 12 * DAY, maxConcurrentSandboxes: 0 };
+  if (plan !== "cloud")
+    return { ...base, plan: "local", memberLimit: 1, members: 1, orgRuntime: false, cloudCredit: false, includedMinutes: 0, usedMinutes: 0, periodEnd: null, maxConcurrentSandboxes: 0 };
+  const cloudOrg = { ...base, plan: "cloud" as const, orgRuntime: true, cloudCredit: true, maxConcurrentSandboxes: 3 };
+  if (cloud === "trial" || cloud === "trial_used") {
+    const usedMinutes = cloud === "trial" ? 210 : 600;
+    const trial = { kind: "cloud_hours" as const, minutes: 600, usedMinutes, minutesLeft: 600 - usedMinutes, fallbackPlan: "local" as const };
+    // Used up, the org is back on Local, and the trial stays visible with no minutes left.
+    if (cloud === "trial_used") return { ...base, plan: "local", orgRuntime: false, cloudCredit: false, includedMinutes: 0, usedMinutes: 0, periodEnd: null, maxConcurrentSandboxes: 0, trial };
+    return { ...cloudOrg, includedMinutes: trial.minutesLeft, usedMinutes, periodEnd: null, trial };
+  }
+  const usedMinutes = { paid: 2_520, warn: 10_200, used_up: 12_000 }[cloud];
+  return { ...cloudOrg, includedMinutes: 12_000, usedMinutes, periodEnd: Date.now() + 9 * DAY };
+}
+
 export function mockCloud(opts: {
   signedIn?: boolean;
+  /** The Cloud org's billing state (`MOCK_CLOUD_PLAN`); `PUT /api/cloud/orgs/:id/entitlements {scenario}` changes it while it runs. */
+  cloudPlan?: MockCloudPlan;
   orgRuntime?: MockOrgRuntime;
   json: Json;
   fail: (res: ServerResponse, code: string, message: string) => void;
@@ -126,6 +151,7 @@ export function mockCloud(opts: {
     ? { id: `runtime-${runtime.orgId}`, name: runtime.name ?? "Cloud team", kind: "hosted", online: true, lastSeenAt: null, seed: runtime.seed ?? [] }
     : null;
   const teams = mockTeams({ orgs, me: () => user, json, fail, readBody: opts.readBody });
+  let cloudPlan: MockCloudPlan = opts.cloudPlan ?? "paid";
   const view = (o: MockOrg): CloudOrg => ({
     ...o,
     role: teams.roleOf(o.id) ?? o.role,
@@ -220,6 +246,26 @@ export function mockCloud(opts: {
     return true;
   };
 
+  /** An org's entitlements (and, mock only, `PUT` to switch the Cloud org's state) and its Stripe pages; false for an unknown method. */
+  const billingRoute = async (req: IncomingMessage, res: ServerResponse, method: string, orgId: string, page: string): Promise<boolean> => {
+    const org = orgs.find((o) => o.id === orgId);
+    if (!user) fail(res, "not_configured", "Sign in to Dorks Cloud first.");
+    else if (!org) fail(res, "not_found", "No such organization");
+    else if (page === "entitlements" && method === "GET") json(res, 200, mockEntitlements(org.plan, cloudPlan));
+    else if (page === "entitlements" && method === "PUT") {
+      // Mock only: switch the Cloud org's billing state (screenshots, demos).
+      const body = await opts.readBody(req).catch(() => ({}) as Record<string, unknown>);
+      if (!(MOCK_CLOUD_PLANS as readonly unknown[]).includes(body.scenario)) fail(res, "invalid", `scenario is one of ${MOCK_CLOUD_PLANS.join(", ")}`);
+      else {
+        cloudPlan = body.scenario as MockCloudPlan;
+        json(res, 200, mockEntitlements(org.plan, cloudPlan));
+      }
+    } else if (method !== "POST") return false;
+    else if (teams.roleOf(org.id) !== "owner" && org.role !== "owner") fail(res, "forbidden", "Only the owner of this team can change its billing");
+    else json(res, 200, { url: `https://billing.stripe.com/mock/${page === "billing/portal" ? "portal" : "checkout"}?org=${org.id}` });
+    return true;
+  };
+
   /** The mock's sessions of the account (Settings › Account): this computer and a phone, until it is signed out. */
   let sessions = [
     { id: "mock-this", createdAt: "2026-11-01T09:00:00Z", updatedAt: new Date().toISOString(), expiresAt: "2026-12-31T00:00:00Z", ipAddress: null, userAgent: "Bun/1.3", current: true },
@@ -272,6 +318,9 @@ export function mockCloud(opts: {
       await forward(req, res, fwd[1]!, fwd[2]!.startsWith("images/") ? `api/${fwd[2]}` : fwd[2]!, search);
       return true;
     }
+    // The org's plan (Dorks Cloud's entitlements) and its Stripe pages, as the home server forwards them.
+    const billing = /^\/api\/cloud\/orgs\/([\w-]+)\/(entitlements|billing\/portal|billing\/checkout)$/.exec(path);
+    if (billing) return billingRoute(req, res, method, billing[1]!, billing[2]!);
     const team = /^\/api\/cloud\/auth\/organization\/([\w-]+)$/.exec(path);
     if (team) {
       await teams.route(req, res, method, team[1]!, search);

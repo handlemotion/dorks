@@ -47,6 +47,7 @@ import type {
   CloudOrgDetail,
   CloudInvitation,
   CloudPlaces,
+  CloudEntitlements,
   CloudMoveStatus,
   CloudStatus,
   CloudAccount,
@@ -238,6 +239,11 @@ export function createApi(config: ApiConfig) {
     /** An org's logo (owners and admins), same rules as the picture; null removes it. */
     cloudSetOrgLogo: (orgId: string, image: Blob | null) => request<{ logo: string | null }>(image ? "PUT" : "DELETE", `/api/cloud/orgs/${encodeURIComponent(orgId)}/logo`, image ?? undefined),
     cloudPlaces: () => request<CloudPlaces>("GET", "/api/cloud/places"),
+    /** An org's plan and its limits, from Dorks Cloud. */
+    cloudEntitlements: (orgId: string) => request<CloudEntitlements>("GET", `/api/cloud/orgs/${encodeURIComponent(orgId)}/entitlements`),
+    /** A Stripe page for the org, to open in the browser: the customer portal, or Checkout for a plan (owner only). */
+    cloudBillingPortal: (orgId: string) => request<{ url: string }>("POST", `/api/cloud/orgs/${encodeURIComponent(orgId)}/billing/portal`, {}),
+    cloudCheckout: (orgId: string, plan: "teams" | "cloud") => request<{ url: string }>("POST", `/api/cloud/orgs/${encodeURIComponent(orgId)}/billing/checkout`, { plan }),
     /** Move to cloud (docs/move-to-cloud.md): where it stands, and starting it for this Mac's team org. */
     cloudMove: () => request<CloudMoveStatus>("GET", "/api/cloud/move"),
     cloudStartMove: (orgId: string) => request<CloudMoveStatus>("POST", "/api/cloud/move", { orgId }),

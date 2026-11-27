@@ -18,6 +18,7 @@ import { HistoryButtons, TITLEBAR_AFTER_TOGGLE } from './WindowControls'
 import { useIsTeamOrg } from './CloudPlace'
 import { HERE, LOCATION_ICONS } from './LocationMenu'
 import { UpdatePrompt } from './UpdatePrompt'
+import { CloudPlanIndicator } from './CloudPlanIndicator'
 import { useRowHover } from './useRowHover'
 
 const PR_NUMBER = /\/pull\/(\d+)/
@@ -78,6 +79,7 @@ export function AppSidebar() {
       version={window.__DORKS__?.version}
       usage={
         <>
+          <CloudPlanIndicator />
           <UpdatePrompt />
         </>
       }

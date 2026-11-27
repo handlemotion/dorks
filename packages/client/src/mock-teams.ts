@@ -44,7 +44,7 @@ export function mockTeams(o: {
   const { json, fail } = o;
   const seats = new Map<string, Seat[]>([
     ["org-personal", [person(ME, "", "", "owner")]],
-    ["org-handlemotion", [person(ME, "", "", "admin"), RODRIGO("owner"), person("user-grace", "Grace Hopper", "grace@example.com", "member")]],
+    ["org-handlemotion", [person(ME, "", "", "owner"), RODRIGO("admin"), person("user-grace", "Grace Hopper", "grace@example.com", "member")]],
     ["org-friends", [RODRIGO("owner"), person(ME, "", "", "member")]],
   ]);
   const invites: CloudInvitation[] = [

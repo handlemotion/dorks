@@ -200,11 +200,13 @@ server belongs to one org: a member's Mac (normally in its owner's personal org)
 | `DELETE /api/cloud/session` | | `{}`: signed out (here and, best effort, on the relay) |
 | `GET /api/cloud/places` | | `{orgs: {id, name, slug, logo, personal, plan, role, active, servers: {id, name, kind, online, lastSeenAt}[]}[]}`, personal first (the relay's `GET /v1/orgs`; an older relay's `/v1/macs` grouped by org); `not_configured` when signed out or the session ended |
 | `POST /api/cloud/orgs` | `{name}` | the new org, owned by the account |
+| `GET /api/cloud/orgs/:id/entitlements` | | the org's plan and limits (the relay's `GET /v1/orgs/:id/entitlements`): `{plan, includedMinutes, usedMinutes, periodEnd, overage, maxConcurrentSandboxes, trial, ...}`; the sidebar's Dorks Cloud hours (`CloudPlanIndicator`) |
+| `POST /api/cloud/orgs/:id/billing/portal`, `.../billing/checkout` | `{}`, `{plan}` | `{url}`: Stripe's portal or Checkout for the org (the relay's `/v1/billing/orgs/:id/*`, owner only), opened in the browser |
 | `GET\|POST /api/cloud/auth/organization/:action` | Better Auth's | team management as the signed-in account: `get-full-organization`, `list-user-invitations`, `get-invitation`, `invite-member`, `cancel-invitation`, `accept-invitation`, `reject-invitation`, `update-member-role`, `remove-member`, `leave`, `update`, `delete` (nothing else); a refusal is an AppError (`limit` for `MEMBER_LIMIT_REACHED`) |
 | `* /api/cloud/servers/:id/api/*` | any | that server's UI API through the relay |
 | `GET /cloud/servers/:id/images/:imageId` | | that server's shared image (no owner token) |
 
-`pnpm dev:mock` has the same routes with a fake account (any email, any six digits; `MOCK_CLOUD=1` starts signed in), three orgs and
+`pnpm dev:mock` has the same routes with a fake account (any email, any six digits; `MOCK_CLOUD=1` starts signed in), three orgs (`MOCK_CLOUD_PLAN=paid|warn|used_up|trial|trial_used` sets the Cloud org's hours; `PUT /api/cloud/orgs/org-handlemotion/entitlements {scenario}` switches them live) and
 one in-memory mock server per remote server, so switching visibly changes the chats.
 
 ## Dorks Cloud

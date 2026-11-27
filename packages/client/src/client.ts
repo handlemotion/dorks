@@ -43,6 +43,7 @@ import type {
   LocalDecision,
   PhoneStatus,
   CloudPlaces,
+  CloudEntitlements,
   CloudMoveStatus,
   CloudStatus,
   CloudAccount,
@@ -450,6 +451,13 @@ export class DorksClient {
   /** Reads the account's places again (a Mac came online, a teammate added a server). */
   refreshCloudPlaces() {
     this.invalidate("cloud:places");
+  }
+  /** An org's plan and limits (Dorks Cloud's entitlements): sandbox hours, the Cloud trial, overage, sandboxes at once. */
+  cloudEntitlements(orgId: string) {
+    return this.query<CloudEntitlements>(`cloud-entitlements:${orgId}`, () => this.api.cloudEntitlements(orgId));
+  }
+  refreshCloudEntitlements() {
+    this.invalidate("cloud-entitlements");
   }
   mcpServers() {
     return this.query<McpServerView[]>("mcp-servers", () => this.api.listMcpServers());
