@@ -165,6 +165,23 @@ describe("S2Transport", () => {
     expect(notes).toEqual([req]);
   });
 
+  it("writes the Worker's build cards ({t: note}) to the transcript once, without handing them to the agent", async () => {
+    // A bridge that predates this skipped the command as unknown and acked it: machine_submit worked but no card reached the chat.
+    const { worker, bridge } = setup();
+    const card = { type: "build_draft", draftId: "d1", buildId: "b1", buildName: "Dorks", note: "Node 24 and pnpm", changes: {} };
+    await worker.open();
+    await worker.sendCommand("note-0001", { t: "note", events: [card] });
+    await worker.sendCommand("note-0001", { t: "note", events: [card] }); // the Worker derives the cid from the card: sent twice, one card
+    const a = bridge();
+    await a.t.connect();
+    await waitFor(async () => (await worker.transcript()).some((i) => i.kind === "note"), "the card in the transcript");
+    await worker.sendCommand("msg-0001", { t: "user_message", id: "msg-0001", text: "next" });
+    await waitFor(() => a.latest().length === 1, "the message after it delivered");
+    expect(a.latest().map((c) => c.frame.t)).toEqual(["user_message"]);
+    const notes = (await worker.transcript()).flatMap((i) => (i.kind === "note" ? JSON.parse(i.body) : []));
+    expect(notes).toEqual([card]);
+  });
+
   it("names the turn's final message and reports turn boundaries to the Worker", async () => {
     const { worker, bridge } = setup();
     const a = bridge();
