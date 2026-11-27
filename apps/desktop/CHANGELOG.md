@@ -1,5 +1,15 @@
 # @dorks/desktop
 
+## 0.19.0
+
+### Minor Changes
+
+- [#338](https://github.com/handlemotion/dorks/pull/338) [`a3b28df`](https://github.com/handlemotion/dorks/commit/a3b28dfd05d66d0868355d141bf068fad88ab8f7) Thanks [@handlemotion](https://github.com/handlemotion)! - When an agent shows a running preview, the chat now shows the page itself under "Opened a preview", with an Open button in the contrast of the page.
+
+### Patch Changes
+
+- [#340](https://github.com/handlemotion/dorks/pull/340) [`9fffca0`](https://github.com/handlemotion/dorks/commit/9fffca0a2ac66f9d88943fe41ff84ad0d7f838d9) Thanks [@handlemotion](https://github.com/handlemotion)! - Local sessions no longer go to sleep when idle, so a message reaches the agent at once instead of waiting for it to start again.
+
 ## 0.18.1
 
 ### Patch Changes
