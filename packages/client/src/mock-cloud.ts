@@ -235,6 +235,18 @@ export function mockCloud(opts: {
     res.end(Buffer.from(await up.arrayBuffer()));
   };
 
+  /** A route of the Worker-run org's UI API, on the real Worker (`/v1/orgs/:id/<rest>`), as the member. */
+  const worker = async (req: IncomingMessage, res: ServerResponse, rest: string, search: string) => {
+    const body = req.method === "GET" || req.method === "HEAD" ? undefined : await opts.readBody(req).catch(() => undefined);
+    const up = await fetch(`${runtime!.url}/v1/orgs/${encodeURIComponent(runtime!.orgId)}/${rest}${search}`, {
+      method: req.method,
+      headers: { authorization: `Bearer ${runtime!.token}`, ...(body !== undefined ? { "content-type": "application/json" } : {}) },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    res.writeHead(up.status, { "content-type": up.headers.get("content-type") ?? "application/json" });
+    res.end(await up.text());
+  };
+
   /** The Worker-run org's UI API (its own mock server) and realtime routes; false for any other path. */
   const orgRoute = async (req: IncomingMessage, res: ServerResponse, path: string, search: string) => {
     const image = req.method === "GET" ? /^\/cloud\/orgs\/([\w-]+)\/images\/([\w-]+)$/.exec(path) : null;
@@ -242,6 +254,8 @@ export function mockCloud(opts: {
     if (!org || !runtime || org[1] !== runtime.orgId) return false;
     if (!user) fail(res, "not_configured", "Sign in to Dorks Cloud first.");
     else if (org[3] === "realtime") await realtime(req, res, org[2]!.slice("realtime/".length));
+    // The Twin Engine's routes only the Worker has: to the real one, as the member (Settings › Twin Engine, live).
+    else if (/^api\/(prodlike|data-source)(\/|$)/.test(org[2]!)) await worker(req, res, org[2]!, search);
     else await forward(req, res, runtimePlace!.id, org[2]!, search);
     return true;
   };

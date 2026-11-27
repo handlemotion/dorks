@@ -665,7 +665,9 @@ const TOOLS: Tool[] = [
     annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: false },
     async run(args, sock) {
       const d = await rpcCall<MachineDraft & { twin?: { envVar: string; orm?: string; migrations?: string } | null }>(sock, "build", { action: "draft", draft: args });
-      const twin = d.twin ? `\n\nTwin Engine: ${d.twin.envVar}${d.twin.orm ? ` (${d.twin.orm})` : ""}${d.twin.migrations ? `, migrations: ${d.twin.migrations}` : ""}. Once approved, the owner gives production's read URL in a secure form.` : "";
+      const twin = d.twin
+        ? `\n\nTwin Engine: ${d.twin.envVar}${d.twin.orm ? ` (${d.twin.orm})` : ""}${d.twin.migrations ? `, migrations: ${d.twin.migrations}` : ""}. Once approved, the owner gives production's read URL in a secure form.`
+        : "";
       return `Draft saved.\n\n${describeDraft(d)}${twin}\n\nNext: machine_run with kind "trial" to check that it builds.`;
     },
   },

@@ -59,6 +59,9 @@ import type {
   GithubConnection,
   GithubRepos,
   SentryProjects,
+  TwinNeonProject,
+  TwinStrategy,
+  TwinView,
 } from "./types.ts";
 
 /** A new comment thread on a running preview: where it points and the preview's port. */
@@ -323,6 +326,19 @@ export function createApi(config: ApiConfig) {
     deleteAutomation: (id: string) => request<object>("DELETE", `/api/automations/${enc(id)}`),
     listAutomationRuns: (id: string) => request<AutomationRunView[]>("GET", `/api/automations/${enc(id)}/runs`),
     runAutomation: (id: string) => request<AutomationRunView>("POST", `/api/automations/${enc(id)}/runs`),
+    // the Twin Engine (dorks-cloud src/prodlike): Worker-run orgs only; elsewhere these answer 404
+    twin: () => request<TwinView>("GET", "/api/prodlike"),
+    twinConnect: (returnTo?: string) => request<{ url: string }>("POST", "/api/prodlike/neon/connect", { returnTo }),
+    twinApiKey: (apiKey: string) => request<TwinView>("PUT", "/api/prodlike/neon", { apiKey }),
+    twinProjects: () => request<{ projects: TwinNeonProject[] }>("GET", "/api/prodlike/neon/projects"),
+    twinSource: (body: { projectId: string; timezone?: string } | { url: string; timezone?: string }) => request<TwinView & { buildId: string }>("PUT", "/api/prodlike/source", body),
+    twinRules: (rules: { schema: string; table: string; column: string; strategy: TwinStrategy }[]) => request<TwinView & { buildId: string }>("PUT", "/api/prodlike/rules", { rules }),
+    twinRebuild: () => request<TwinView & { buildId: string }>("POST", "/api/prodlike/builds"),
+    twinRefresh: (enabled: boolean, timezone?: string) => request<TwinView>("PUT", "/api/prodlike/refresh", { enabled, timezone }),
+    twinRegions: () => request<{ regions: { id: string; name: string; default: boolean }[] }>("GET", "/api/prodlike/hosted/regions"),
+    twinHosted: (region: string) => request<TwinView>("PUT", "/api/prodlike/hosted", { region }),
+    twinHostedUrl: (url: string, timezone?: string) => request<TwinView & { buildId: string }>("PUT", "/api/prodlike/hosted/url", { url, timezone }),
+    twinDisconnect: () => request<object>("DELETE", "/api/prodlike"),
   };
 }
 

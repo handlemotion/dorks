@@ -567,3 +567,59 @@ export interface UsageCount {
   used: number;
   limit: number;
 }
+
+/**
+ * The Twin Engine's setup for a Worker-run org (dorks-cloud src/prodlike/setup.ts, `GET /api/prodlike`): a scrubbed copy of production
+ * that each session branches. Connect Neon (the owner's account) or hosted (Dorks runs a Neon project for the org).
+ */
+export type TwinStrategy = "keep" | "email" | "name" | "phone" | "address" | "ip" | "date" | "hash" | "redact" | "null";
+export interface TwinColumn {
+  schema: string;
+  table: string;
+  column: string;
+  type: string;
+  nullable: boolean;
+  strategy: TwinStrategy;
+  reason: string;
+  flagged: boolean;
+  approved: boolean;
+}
+export interface TwinBuild {
+  id: string;
+  state: "queued" | "running" | "ready" | "failed";
+  trigger: "setup" | "manual" | "automation";
+  branch: string | null;
+  stats: { tables: number; columns: number; masked: number; ms: number; warnings: string[] } | null;
+  error: string | null;
+  createdAt: number;
+  finishedAt: number | null;
+}
+export interface TwinView {
+  allowed: boolean;
+  plan: string;
+  mode: "connect" | "hosted" | null;
+  neon: { connected: boolean; method: "oauth" | "api_key" | null; oauthAvailable: boolean; connectedAt: number | null };
+  hosted: {
+    available: boolean;
+    region: string | null;
+    projectId: string | null;
+    awaitingUrl: { sessionId: string; requestId: string } | null;
+    usage: { computeHours: number; storageGbMonths: number; cents: number; since: number } | null;
+  };
+  twin: { envVar: string; orm?: string; migrations?: string; evidence?: string } | null;
+  source: { kind: "neon"; projectId: string; branchId: string; database: string } | { kind: "url"; projectId: string; database: string; url?: string } | null;
+  parent: { branchId: string; name: string; builtAt: number } | null;
+  builds: TwinBuild[];
+  rules: { columns: TwinColumn[]; masked: number; flagged: number; reviewedBy: string | null; reviewedAt: number | null; strategies: Record<TwinStrategy, string> } | null;
+  refresh: { automationId: string; enabled: boolean; nextRunAt: number | null; schedule: string } | null;
+  sessionsWithBranches: number;
+}
+export interface TwinNeonProject {
+  id: string;
+  name: string;
+  region: string | null;
+  orgId: string | null;
+  orgName: string | null;
+  createdAt: string | null;
+  copy: boolean;
+}

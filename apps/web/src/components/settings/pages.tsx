@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { BotIcon, CloudIcon, UsersIcon, LaptopIcon, LayersIcon, ListChecksIcon, MoonIcon, ShipIcon, SmartphoneIcon, SunMoonIcon, VariableIcon } from 'lucide-react'
+import { BotIcon, CloudIcon, CopyIcon, UsersIcon, LaptopIcon, LayersIcon, ListChecksIcon, MoonIcon, ShipIcon, SmartphoneIcon, SunMoonIcon, VariableIcon } from 'lucide-react'
 import type { Settings } from '@dorks/client'
 import githubDark from '@dorks/onboarding/assets/providers/github-dark.svg'
 import githubLight from '@dorks/onboarding/assets/providers/github-light.svg'
@@ -8,6 +8,7 @@ import { AgentsPage, AppearancePage, GithubPage } from './PersonalPages'
 import { ComputerPage } from './ComputerPage'
 import { PhonePage } from './PhonePage'
 import { CloudPage } from './CloudPage'
+import { TwinEnginePage } from './TwinEnginePage'
 import { TeamPage } from './TeamPage'
 import type { RemotePolicy } from './access'
 import { BoatPage, SentryPage, SessionsPage, SetupPage, SnapshotPage, VariablesPage } from './OrganizationPages'
@@ -16,7 +17,7 @@ import { SentryMark } from '../automations/TriggerEditor'
 // Every settings page, by the group it sits in in the settings sidebar. Personal: how the app looks and the accounts the agents act as.
 // Dorks Cloud: your account and the organization you work in. Server: what everyone on this server shares (the Boat account, its snapshot, how sessions behave, their variables).
 
-export const SETTINGS_PAGES = ['setup', 'appearance', 'agents', 'github', 'computer', 'phone', 'cloud', 'organization', 'boat', 'snapshot', 'sessions', 'variables', 'sentry'] as const
+export const SETTINGS_PAGES = ['setup', 'appearance', 'agents', 'github', 'computer', 'phone', 'cloud', 'organization', 'boat', 'snapshot', 'sessions', 'variables', 'sentry', 'twin'] as const
 export type SettingsPageId = (typeof SETTINGS_PAGES)[number]
 
 export const isSettingsPage = (page: string): page is SettingsPageId => (SETTINGS_PAGES as readonly string[]).includes(page)
@@ -58,6 +59,7 @@ export function organizationPages(): SettingsPageDef[] {
     { id: 'sessions', title: 'Sessions', icon: <MoonIcon />, body: (s) => <SessionsPage settings={s} />, remote: 'edit' },
     { id: 'variables', title: 'Shared variables', icon: <VariableIcon />, body: () => <VariablesPage />, remote: 'edit' },
     { id: 'sentry', title: 'Sentry', icon: <SentryMark className="size-3.5" />, body: (s) => <SentryPage settings={s} />, remote: 'edit' },
+    { id: 'twin', title: 'Twin Engine', icon: <CopyIcon />, body: () => <TwinEnginePage />, remote: 'edit' },
   ]
 }
 
