@@ -225,6 +225,14 @@ export class DorksClient {
     }
   }
 
+  /** The session's cached reads of a pull request it just merged (`url`, or its latest PR) show it merged. */
+  private markMerged(dorkId: string, url?: string) {
+    for (const [key, q] of this.queries) {
+      if (key !== `pr:${dorkId}` && !key.startsWith(`pr:${dorkId}:`)) continue;
+      (q as Query<PullRequestView | null>).patch((pr) => (pr && pr.state === "open" && (url ? pr.url === url : key === `pr:${dorkId}`) ? { ...pr, state: "merged", mergedAt: Date.now() } : pr));
+    }
+  }
+
   private invalidate(prefix: string) {
     for (const [key, q] of this.queries) if (key === prefix || key.startsWith(`${prefix}:`)) q.invalidate();
   }
@@ -685,7 +693,10 @@ export class DorksClient {
     refreshPullRequest: (id: string) => this.invalidate(`pr:${id}`),
     mergePullRequest: async (id: string, method: MergeMethod, sha?: string, url?: string) => {
       try {
-        return await this.api.mergePullRequest(id, method, sha, url);
+        const result = await this.api.mergePullRequest(id, method, sha, url);
+        // GitHub merged it: show that now, not after the PR's next read (a few seconds of a green merge button otherwise).
+        if (result.merged) this.markMerged(id, url);
+        return result;
       } finally {
         this.invalidate(`pr:${id}`);
         this.invalidate(`dork:${id}`);

@@ -64,6 +64,11 @@ export class Query<T> implements Store<QueryState<T>> {
     if (this.listeners.size > 0) void this.refresh();
   }
 
+  /** Changes the data in place, without a fetch (an answer that already says what the next read will show); nothing before the first read. */
+  patch(f: (data: T) => T) {
+    if (this.state.data !== undefined) this.set({ ...this.state, data: f(this.state.data) });
+  }
+
   private set(next: QueryState<T>) {
     this.state = next;
     for (const l of [...this.listeners]) l();
