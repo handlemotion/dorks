@@ -1,5 +1,15 @@
 # @dorks/desktop
 
+## 0.17.0
+
+### Minor Changes
+
+- [#330](https://github.com/handlemotion/dorks/pull/330) [`8914739`](https://github.com/handlemotion/dorks/commit/891473995ae804608eed5dfbfa2cbcd1187ad829) Thanks [@handlemotion](https://github.com/handlemotion)! - Dorks Free runs chats on your Mac only, and you can keep driving them from your phone while the Mac is on. Sandboxes come with Dorks Teams or Dorks Cloud, so free setup no longer asks for Boat. Every workspace is now labelled by its plan: Free, Teams or Cloud.
+
+### Patch Changes
+
+- [#328](https://github.com/handlemotion/dorks/pull/328) [`352590b`](https://github.com/handlemotion/dorks/commit/352590becf1900097ea4592a540d19606f68f484) Thanks [@handlemotion](https://github.com/handlemotion)! - Local sessions start on macOS again: they no longer hang on "starting up". A local session that keeps stopping right after it starts now says so in the chat.
+
 ## 0.16.0
 
 ### Minor Changes
