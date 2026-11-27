@@ -22,6 +22,7 @@ import { MessageScrollerItem } from '@dorks/ui/message-scroller'
 import { LocalRequestCard } from './LocalRequest'
 import { InputRequestCard } from './InputRequest'
 import { ShipCard } from './ShipCard'
+import { isPreviewShow, PreviewCard } from './PreviewCard'
 import { workedFor } from '../lib/duration'
 import { MarkdownCodeBlock } from './CodeBlockCard'
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from '@dorks/ui/trace'
@@ -373,6 +374,8 @@ function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => vo
       const tools = run.filter((t) => !OWN_ROW_TOOLS.test(t.name) && !hasCard(t))
       if (isTodoTool(block.name)) content.push(<TodoCard key={block.id} id={block.id} />)
       else if (tools.length) content.push(<ToolLine key={block.id} tools={tools} onOpen={onOpenSteps} />)
+      // A dev server the agent showed: the page itself under the line, with a button that opens it.
+      for (const t of run) if (isPreviewShow(t.name) && t.status === 'ok') content.push(<PreviewCard key={`${t.id}:preview`} input={t.input} />)
     } else if (block.kind === 'assistant') {
       // Assistant text is unbubbled markdown, as in the AI Elements chat pattern. No streaming caret: the markdown is a block, so it
       // fell on a line of its own, and the status line below already says the agent is working.

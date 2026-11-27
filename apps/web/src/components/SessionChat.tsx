@@ -8,6 +8,7 @@ import { AgentStatus } from './AgentStatus'
 import { AttentionPill, useAttention } from './AttentionPill'
 import { ChatMessages } from './ChatBlock'
 import { ShipPin } from './ShipCard'
+import { ShownPreviews } from './PreviewCard'
 import { ChatToc } from './ChatToc'
 import { UsageMenu } from './UsageMenu'
 import { useMentions } from './ComposerMenu'
@@ -243,6 +244,7 @@ export function SessionChat({
   compact,
   error: extraError,
   onOpenSteps,
+  onOpenPreview,
 }: {
   dork: DorkView
   compact?: boolean
@@ -253,6 +255,8 @@ export function SessionChat({
    * a dork's panel, a narrow window) they are plain text.
    */
   onOpenSteps?: (keys: string[]) => void
+  /** Opens a running preview (by URL) in Chat details; without it a preview card opens the page in a new tab. */
+  onOpenPreview?: (url: string) => void
 }) {
   const dorkId = dork.id
   const { actions } = useDorksClient()
@@ -297,6 +301,10 @@ export function SessionChat({
   const viewport = useRef<HTMLDivElement>(null)
   const attention = useAttention(viewport, needsAttention, blocks, shown, transcript.reveal)
   const keepPlace = useKeepPlace(viewport, transcript.from)
+  const previews = useMemo(
+    () => ({ servers: (dork.previews ?? []).map((p) => ({ name: p.title ?? `Port ${p.port}`, url: p.url, port: p.port })), onOpen: onOpenPreview }),
+    [dork.previews, onOpenPreview],
+  )
   const showOlder = () => {
     // A step from memory draws above at once; a fetch only adds to memory, drawing nothing.
     if (transcript.from > 0) keepPlace()
@@ -312,15 +320,17 @@ export function SessionChat({
               {transcript.hasOlder && <LoadOlder loading={loadingMore && transcript.from === 0} paused={!!eventsError} shown={shown.length} onLoad={showOlder} />}
               <LocalAccessProvider dorkId={dorkId} agent={agent}>
                 <ShipPin blocks={blocks} state={dork.state}>
-                  <ChatMessages
-                    blocks={shown}
-                    all={blocks}
-                    imageUrl={actions.imageUrl}
-                    agent={agent}
-                    onOpenSteps={onOpenSteps}
-                    onReply={canReply ? (quoted, draft) => setReply(draft ? { ...quoted, note: draft } : quoted) : undefined}
-                    onReplySend={canReply ? (quoted, answer) => run(() => send(withReply(quoted, answer))) : undefined}
-                  />
+                  <ShownPreviews.Provider value={previews}>
+                    <ChatMessages
+                      blocks={shown}
+                      all={blocks}
+                      imageUrl={actions.imageUrl}
+                      agent={agent}
+                      onOpenSteps={onOpenSteps}
+                      onReply={canReply ? (quoted, draft) => setReply(draft ? { ...quoted, note: draft } : quoted) : undefined}
+                      onReplySend={canReply ? (quoted, answer) => run(() => send(withReply(quoted, answer))) : undefined}
+                    />
+                  </ShownPreviews.Provider>
                 </ShipPin>
               </LocalAccessProvider>
               {eventsError && (
