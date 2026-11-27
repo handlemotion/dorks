@@ -3,6 +3,8 @@
 // stream. Both are read straight from s2 with read-only tokens the Worker issues (`<realtimeUrl>/live-token`,
 // `<realtimeUrl>/sessions/:id/read-token`). Feed records are the same `LiveMessage`s as `/api/live`; session records are the
 // transcript's `ClientEvent`s themselves, so an open chat gets payloads, not invalidations. REST is unchanged.
+// The desktop shell's CSP must allow these reads (`connect-src https://*.s2.dev` in apps/desktop/src-tauri/tauri.conf.json): without
+// it WebKit refuses every s2 fetch and a cloud workspace sits on "Reconnecting to the server…".
 import type { ClientEvent } from "@dorks/shared";
 import { checkTail, StreamReader, type ReadGrant } from "./s2.ts";
 import type { LiveStatus } from "./live.ts";
