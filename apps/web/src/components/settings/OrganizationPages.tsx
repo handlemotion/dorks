@@ -404,6 +404,7 @@ function SleepSection({ current }: { current: number }) {
       >
         <SettingsRow
           label="Sleep after idle"
+          description="Cloud sessions only. Local sessions stay awake until archived."
           htmlFor="sleep-minutes"
           control={
             <>
