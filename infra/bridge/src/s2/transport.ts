@@ -404,6 +404,8 @@ export class S2Transport implements Transport {
   crew = (args: Record<string, unknown>) => this.rpc<unknown>("crew", args);
   comment = (args: Record<string, unknown>) => this.rpc<unknown>("comment", args);
   ship = (args: Record<string, unknown>) => this.rpc<unknown>("ship", args);
+  telemetry = (args: Record<string, unknown>) => this.rpc<unknown>("telemetry", args);
+  prodlike = (args: Record<string, unknown>) => this.rpc<unknown>("prodlike", args);
   shareImage = (data: string, caption?: string) => this.rpc<{ id: string; width?: number; height?: number }>("share_image", { data, caption });
 
   subscribeSubscriptions(onList: (views: unknown) => void, onError: () => void) {

@@ -180,6 +180,12 @@ export class FakeTransport implements Transport {
   crew = async (args: Record<string, unknown>) => (this.crewCalls.push(args), { tool: "dork_send", id: "d1", delivery: "message" });
   comment = async (_args: Record<string, unknown>) => ({ text: "No open comments on the preview." });
   ship = async (_args: Record<string, unknown>) => ({ text: "Recorded." });
+  telemetryCalls: Record<string, unknown>[] = [];
+  telemetryResult: unknown = { kind: "errors", environment: "box-test", since: "1h", errors: [] };
+  telemetry = async (args: Record<string, unknown>) => (this.telemetryCalls.push(args), this.telemetryResult);
+  prodlikeCalls: Record<string, unknown>[] = [];
+  prodlikeResult: (args: Record<string, unknown>) => unknown = () => null;
+  prodlike = async (args: Record<string, unknown>) => (this.prodlikeCalls.push(args), this.prodlikeResult(args));
   unsubscribePr = async (ref: PrRef) => {
     this.prCalls.push({ op: "unsub", ref });
     if (this.prError) throw this.prError;

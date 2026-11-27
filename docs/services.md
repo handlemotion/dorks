@@ -85,3 +85,18 @@ Measured with the real Claude CLI and Haiku: a unit-test-only fix, a UI screensh
 a README edit were judged `needs_live_test`, `needs_live_test`, `verified` and `not_applicable`. In whole-stack sessions (real bridge, real
 Claude) the SessionStart line alone already had agents start the build's service or the server and curl the changed endpoint before
 stopping; the gate is the backstop.
+
+## Twin Engine: A/B on the box (cloud, Teams and above)
+
+The **Validation Engine** is the testing above: the agent starts the build's services and exercises its change before it stops. The
+**Twin Engine** (dorks-cloud docs/prod-like-testing.md) adds production's shape: a database branch of scrubbed production as
+`DATABASE_URL`, and per-box traces (`SENTRY_DSN`, `SENTRY_ENVIRONMENT=box-<session id>`, `SENTRY_TRACES_SAMPLE_RATE`,
+`TWIN_ENGINE_SPAN_BUDGET` from configure). On top of those, two agent tools in the bridge:
+
+- `telemetry_query` (`dorks telemetry`): this box's own errors, spans, per-route p95 and span usage, read by the server from Sentry under
+  the box's environment only.
+- `prodlike_run` (`dorks prodlike run`; `infra/bridge/src/prodlike.ts`): checks out the PR's base and head as worktrees, starts each
+  in turn on the same port, box and branch, replays the repository's load scripts, and reports both halves to the server. The server
+  compares them and posts the `Dorks / Twin Engine` check on the head commit. The repository describes the run in
+  `.dorks/prodlike.json` (`service`, `setup`, `seed`, `migrate`, `load`, `rounds`, `requests`, `concurrency`), and the load in
+  `.dorks/load/*.mjs` (a weighted request list or a function). Only GET and HEAD are sent unless the team allows writes.
