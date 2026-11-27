@@ -80,7 +80,7 @@ export function PreviewCard({ input }: { input?: Record<string, unknown> }) {
       aria-label={`Preview: ${server.name}`}
       data-testid="preview-card"
       data-page={light === undefined ? undefined : light ? 'light' : 'dark'}
-      className="relative my-1.5 aspect-[16/10] w-full max-w-md overflow-hidden rounded-[6px] border border-surface-line bg-white"
+      className="relative my-1.5 aspect-[16/10] w-full max-w-sm overflow-hidden rounded-[6px] border border-surface-line bg-white"
     >
       {/* The live page at 2.5× the card's width, scaled down, so it reads like a desktop window. It takes no pointer or focus. */}
       <iframe
