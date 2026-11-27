@@ -164,9 +164,20 @@ export function claudeArgs(o: {
   ];
 }
 
+/**
+ * How the CLI connects to MCP servers at start-up; the bridge's env or the owner's CLI env can override either. Measured with the
+ * owner's servers from Customize, a session's first turn started about 30 s after the CLI did, the time it waited on one server:
+ * - the CLI probes each http server with the newer protocol revision (`server/discover`, `subscriptions/listen`) and, when a server
+ *   leaves that unanswered, falls back to `initialize` only after a timeout of about 25 s. `legacy` goes straight to `initialize`.
+ * - with `--mcp-config` the first turn waits for every server to connect. A cap lets a slow server join the session once it is up
+ *   instead of holding the first answer; the `dorks` server (stdio, local) connects in well under it.
+ * With both, the first API call went out about 2.5 s after the CLI started.
+ */
+export const MCP_STARTUP_ENV = { MCP_PROTOCOL_NEGOTIATION: "legacy", CLAUDE_CODE_MCP_STARTUP_WAIT_MS: "5000" };
+
 /** Builds the child's env: the bridge's own env minus its identity, plus the user's CLI secrets and the token. */
 export function childEnv(base: NodeJS.ProcessEnv, cfgEnv: Record<string, string>, log?: Log, id?: Identity | null): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
+  const env: NodeJS.ProcessEnv = { ...MCP_STARTUP_ENV };
   for (const [k, v] of Object.entries(base)) if (!CHILD_ENV_DENY.some((re) => re.test(k))) env[k] = v;
   for (const [k, v] of Object.entries(cfgEnv)) {
     if (CHILD_ENV_DENY.some((re) => re.test(k))) log?.("ignoring configured env var with a reserved name:", k);

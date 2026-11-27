@@ -310,6 +310,30 @@ describe("OAuth MCP proxy", () => {
     }
   });
 
+  it("passes on the headers of a stream that opens with nothing to say yet (the CLI waits for them before its first turn)", async () => {
+    const upstream = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.flushHeaders(); // and nothing else: a `subscriptions/listen` with no change to report
+    });
+    await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", r));
+    const proxy = new McpOAuthProxy(
+      async () => ({ authorization: "Bearer t", expiresAt: null }),
+      () => {},
+    );
+    await proxy.start();
+    const ac = new AbortController();
+    try {
+      proxy.set(new Map([["omni", { url: `http://127.0.0.1:${(upstream.address() as AddressInfo).port}/mcp`, headers: {} }]]));
+      const res = await fetch(proxy.urlFor("omni"), { method: "POST", body: "{}", signal: AbortSignal.any([ac.signal, AbortSignal.timeout(2_000)]) });
+      expect(res.headers.get("content-type")).toBe("text/event-stream");
+    } finally {
+      ac.abort();
+      proxy.close();
+      upstream.closeAllConnections();
+      upstream.close();
+    }
+  });
+
   it("an OAuth server reaches the agent's config only as a reference to the proxy", () => {
     const { config, env } = userMcpServers([{ name: "omni", transport: "http", url: "https://omni.example/mcp", headers: { "x-key": "k" }, oauth: true }], () => "http://127.0.0.1:1/secret/omni");
     expect(config.omni).toEqual({ type: "http", url: "${DORKS_MCP_0_URL}" });
