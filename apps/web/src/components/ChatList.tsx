@@ -138,6 +138,13 @@ export function ChatList({
   )
 }
 
+/** Room for the PRs (and the conflict mark or the spinner) at the right edge, and for the archive button beside them on hover. Literal, for Tailwind. */
+function rowPad(hasPrs: boolean, marked: boolean, archivable: boolean) {
+  if (!hasPrs) return archivable ? 'group-hover/row:pr-8' : ''
+  if (marked) return archivable ? 'pr-16 group-hover/row:pr-[5.5rem]' : 'pr-16'
+  return archivable ? 'pr-12 group-hover/row:pr-[4.5rem]' : 'pr-12'
+}
+
 const ICON_LABEL: Record<DorkIconState, string> = { attention: 'Needs attention', working: 'Working…', unread: 'Unread', awake: 'Awake', error: 'Error', asleep: 'Asleep' }
 
 /**
@@ -160,18 +167,7 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
   const prs = chat.prs ?? []
   const shipping = prs.some((p) => p.ship?.status === 'watching')
   const conflict = prs.some((p) => p.state === 'open' && p.conflict)
-  // Room for the PRs (and the conflict mark or the spinner) at the right edge, and for the archive button beside them on hover. Literal, for Tailwind.
-  const pad = !prs.length
-    ? onArchive
-      ? 'group-hover/row:pr-8'
-      : ''
-    : shipping || conflict
-      ? onArchive
-        ? 'pr-16 group-hover/row:pr-[5.5rem]'
-        : 'pr-16'
-      : onArchive
-        ? 'pr-12 group-hover/row:pr-[4.5rem]'
-        : 'pr-12'
+  const pad = rowPad(prs.length > 0, shipping || conflict, !!onArchive)
   const link = () => {
     const { href } = router.buildLocation({ to, search: { dork: chat.id } })
     // `createHref` adds the history's own prefix (the `#` of hash routing).
