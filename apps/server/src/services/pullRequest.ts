@@ -212,7 +212,8 @@ export async function getPullRequest(app: App, dorkId: string, url?: unknown): P
   const allowed = { squash: r.allow_squash_merge, merge: r.allow_merge_commit, rebase: r.allow_rebase_merge };
   // Without the repository's settings (no admin read), offer all three; GitHub refuses a disallowed one with a clear message.
   const mergeMethods = MERGE_METHODS.filter((m) => repoInfo === null || allowed[m] !== false);
-  const merged = pr.merged === true || Boolean(pr.merged_at);
+  const mergedHere = pr.merged === true || pr.merged_at ? undefined : mergedHereAt(app, repo, number);
+  const merged = pr.merged === true || Boolean(pr.merged_at) || mergedHere !== undefined;
   const state = s(pr.mergeable_state) as MergeableState;
   return {
     repo,
@@ -227,7 +228,7 @@ export async function getPullRequest(app: App, dorkId: string, url?: unknown): P
     baseRef: s(obj(pr.base).ref),
     headSha,
     createdAt: t(pr.created_at) ?? 0,
-    mergedAt: t(pr.merged_at),
+    mergedAt: t(pr.merged_at) ?? mergedHere,
     closedAt: t(pr.closed_at),
     mergedBy: pr.merged_by ? person(pr.merged_by) : undefined,
     mergeable: typeof pr.mergeable === "boolean" ? pr.mergeable : null,
@@ -241,6 +242,24 @@ export async function getPullRequest(app: App, dorkId: string, url?: unknown): P
     comments: commentsOf(issueComments, reviews, reviewComments),
     ...(unavailable.size ? { unavailable: [...unavailable] } : {}),
   };
+}
+
+/**
+ * The pull requests this server just merged, and when. GitHub's PR read can still say "open" for a few seconds after its merge
+ * call answered; for that while, a read shows the merge instead of the green merge button again.
+ */
+const MERGED_FRESH_MS = 2 * 60_000;
+const justMerged = new WeakMap<App, Map<string, number>>();
+function noteMerged(app: App, repo: string, number: number) {
+  let m = justMerged.get(app);
+  if (!m) justMerged.set(app, (m = new Map()));
+  const now = Date.now();
+  for (const [k, at] of m) if (now - at > MERGED_FRESH_MS) m.delete(k);
+  m.set(`${repo}#${number}`, now);
+}
+function mergedHereAt(app: App, repo: string, number: number): number | undefined {
+  const at = justMerged.get(app)?.get(`${repo}#${number}`);
+  return at !== undefined && Date.now() - at <= MERGED_FRESH_MS ? at : undefined;
 }
 
 /** What a merge request came to: merged, or handed to GitHub (a merge queue, a stack still merging) for the poller to see land. */
@@ -266,6 +285,7 @@ export async function mergePullRequest(app: App, dorkId: string, method: unknown
   const r = await call(app, token, "PUT", `/repos/${repo}/pulls/${number}/merge`, { merge_method: method, ...(sha ? { sha } : {}) });
   const message = ghMessage(r.json);
   if (r.status === 200) {
+    noteMerged(app, repo, number);
     setTimer(app, "", "poll", 0); // the poller records the merge (and the transcript shows it) now, not at the next tick
     const merged = obj(r.json).sha;
     return { merged: true, sha: typeof merged === "string" ? merged : undefined };
@@ -302,6 +322,7 @@ async function mergeAsync(app: App, token: string, repo: string, number: number,
   }
   const status = s(result.status) || (r.status === 200 ? "merged" : "");
   if (status === "merged") {
+    noteMerged(app, repo, number);
     setTimer(app, "", "poll", 0);
     const merged = s(obj(result.details).sha);
     return { merged: true, sha: merged || undefined };

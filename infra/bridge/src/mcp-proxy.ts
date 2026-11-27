@@ -160,6 +160,9 @@ function relay(upstream: Response, res: ServerResponse) {
   });
   res.writeHead(upstream.status, out);
   if (!upstream.body) return void res.end();
+  // Send the headers now: Node holds them until the first body byte, and a stream that opens idle (Streamable HTTP's GET, or a
+  // `subscriptions/listen` with nothing to report yet) has none. Claude Code waits for them before its first turn (about 25 s).
+  res.flushHeaders();
   const stream = Readable.fromWeb(upstream.body as WebStream<Uint8Array>);
   stream.on("error", () => res.destroy());
   stream.pipe(res);
