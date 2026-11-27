@@ -1,5 +1,15 @@
 # @dorks/desktop
 
+## 0.18.0
+
+### Minor Changes
+
+- [#332](https://github.com/handlemotion/dorks/pull/332) [`b17bd6b`](https://github.com/handlemotion/dorks/commit/b17bd6bf9a6750a4831c341c924616c01cc80b22) Thanks [@handlemotion](https://github.com/handlemotion)! - Settings › Twin Engine, for teams on Dorks Teams or Dorks Cloud: sessions test against a scrubbed copy of production, each on a database branch of its own. Connect Neon and click your production project, or let Dorks host it in the region you pick; masking, the first copy and a nightly refresh are set up for you. Setup agents now propose the app's database in the machine draft.
+
+### Patch Changes
+
+- [#333](https://github.com/handlemotion/dorks/pull/333) [`33751d6`](https://github.com/handlemotion/dorks/commit/33751d60a4b18233234732ad099661d06275b61e) Thanks [@handlemotion](https://github.com/handlemotion)! - Teams and Cloud workspaces connect again in the desktop app instead of sitting on "Reconnecting to the server…".
+
 ## 0.17.0
 
 ### Minor Changes
