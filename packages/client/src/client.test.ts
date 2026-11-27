@@ -118,6 +118,25 @@ describe("events feed", () => {
     expect(earlier.every((b, n) => c.events(dork).getSnapshot().view.blocks[n] === b)).toBe(true);
   });
 
+  it("keeps following the open chat while WebKit reports the focused window hidden", async () => {
+    // The desktop shell's WebKit can go on saying `hidden` after its window shows again; the open chat froze until a reload (#229).
+    const g = globalThis as { document?: unknown };
+    const had = "document" in g;
+    const before = g.document;
+    g.document = { visibilityState: "hidden", hasFocus: () => true, addEventListener() {}, removeEventListener() {} };
+    try {
+      const dork = await createIdleDork();
+      const c = connect();
+      const feed = watch(c.events(dork));
+      await waitFor(() => !feed.getSnapshot().loading, "first page");
+      server.append(dork, { type: "assistant_delta", messageId: "m-h", text: "still live" });
+      await waitFor(() => feed.getSnapshot().view.blocks.some((b) => b.kind === "assistant" && b.text === "still live"), "followed while reported hidden", 1000);
+    } finally {
+      if (had) g.document = before;
+      else delete g.document;
+    }
+  });
+
   it("pages older history in on demand", async () => {
     const dork = await createIdleDork();
     for (let i = 0; i < 120; i++) server.append(dork, { type: "user_message", text: `m${i}` });

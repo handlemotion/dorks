@@ -88,8 +88,14 @@ const IDLE_MS = 5 * 60_000;
 const KEEP_IDLE_FEEDS = 3;
 const SWEEP_EVERY_MS = 60_000;
 
-/** The page is in a hidden window or tab (a desktop window closed to the menu bar). Never true outside a browser. */
-const pageHidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
+/**
+ * The page is in a hidden window or tab (a desktop window closed to the menu bar). Never true outside a browser, nor for a page that
+ * has focus: the desktop shell's WebKit can go on reporting `hidden` after its window shows again, and a chat the owner is looking
+ * at then froze until something else read it (#229).
+ */
+const pageHidden = () => typeof document !== "undefined" && document.visibilityState === "hidden" && !document.hasFocus();
+/** While the page reads as hidden, transcripts that advanced are still caught up this often: once a few seconds, not every token. */
+const HIDDEN_TAIL_MS = 5_000;
 
 /**
  * Everything the UI reads and writes, over loopback HTTP + the `/api/live` SSE stream (for a cloud org, s2 streams: cloud-live.ts). Framework-agnostic: each read is a
@@ -125,10 +131,15 @@ export class DorksClient {
   private startedAt = 0;
   /** Transcripts that advanced while the page was hidden: tailed once it shows again, not on every streamed token. */
   private readonly staleFeeds = new Set<string>();
-  private readonly onVisibility = () => {
-    if (pageHidden()) return;
+  private staleTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly flushStale = () => {
+    clearTimeout(this.staleTimer);
+    this.staleTimer = undefined;
     for (const id of this.staleFeeds) this.feeds.get(id)?.requestTail();
     this.staleFeeds.clear();
+  };
+  private readonly onVisibility = () => {
+    if (!pageHidden()) this.flushStale();
   };
 
   constructor(config: ClientConfig) {
@@ -143,6 +154,7 @@ export class DorksClient {
     this.greeted = false;
     this.startedAt = Date.now();
     if (typeof document !== "undefined") document.addEventListener("visibilitychange", this.onVisibility);
+    if (typeof window !== "undefined") window.addEventListener("focus", this.onVisibility);
     const onStatus = (live: LiveStatus) => {
       // A connection that failed before its first hello is retried from a later time: that hello must resync everything.
       if (live === "offline" || live === "unauthorized") this.greeted = true;
@@ -167,6 +179,9 @@ export class DorksClient {
 
   close() {
     if (typeof document !== "undefined") document.removeEventListener("visibilitychange", this.onVisibility);
+    if (typeof window !== "undefined") window.removeEventListener("focus", this.onVisibility);
+    clearTimeout(this.staleTimer);
+    this.staleTimer = undefined;
     this.closeLive?.();
     this.closeLive = undefined;
     this.beat = undefined;
@@ -223,12 +238,13 @@ export class DorksClient {
     for (const key of this.queries.keys()) if (key.split(":")[1] === dorkId) this.queries.delete(key);
   }
 
-  /** The live stream says a transcript advanced: catch up now, or once the page shows again. */
+  /** The live stream says a transcript advanced: catch up now, or, while the page is hidden, a few seconds later. */
   private tailFeed(dorkId: string) {
     const feed = this.feeds.get(dorkId);
     if (!feed) return;
-    if (pageHidden()) this.staleFeeds.add(dorkId);
-    else feed.requestTail();
+    if (!pageHidden()) return feed.requestTail();
+    this.staleFeeds.add(dorkId);
+    this.staleTimer ??= setTimeout(this.flushStale, HIDDEN_TAIL_MS);
   }
 
   /** A cloud change, then everything cloud read again (also when it fails: the relay may have taken part of it). */
