@@ -234,6 +234,8 @@ function toolAction(name: string): { verb: string; one: string; many: string } {
     case 'TaskCreate':
     case 'TaskUpdate':
       return { verb: 'updated', one: 'the plan', many: 'the plan' }
+    case 'mcp__dorks__preview_show':
+      return { verb: 'opened', one: 'a preview', many: 'previews' }
     default: {
       const tool = (mcp?.[1] ?? name).replace(/[_-]+/g, ' ')
       return { verb: 'used', one: tool, many: tool }

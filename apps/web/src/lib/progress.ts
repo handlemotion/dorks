@@ -188,6 +188,8 @@ export function toolStep(name: string, status: ProgressToolBlock['status']): { k
     case 'Task':
     case 'Agent':
       return pick('agent', 'Running an agent', 'Ran an agent', 'Agent failed')
+    case 'mcp__dorks__preview_show':
+      return pick('web', 'Opening a preview', 'Opened a preview', 'Failed to open a preview')
     case 'TodoWrite':
     case 'TaskCreate':
     case 'TaskUpdate':
