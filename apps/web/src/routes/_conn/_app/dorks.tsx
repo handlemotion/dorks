@@ -20,6 +20,7 @@ import { resolveSharedImages } from '../../../components/ChatBlock'
 import { CrewDetails } from '../../../components/CrewDetails'
 import { AGENT_NAMES, SessionChat } from '../../../components/SessionChat'
 import { ChatDetails } from '../../../components/ChatDetails'
+import { requestPreview } from '../../../components/PreviewCard'
 import { ChatSplit, ShowDetailsButton, useDetailsOpen, useWide } from '../../../components/chat-details/layout'
 import type { ChatDetailsData } from '../../../components/chat-details/types'
 import type { WorkspaceSource } from '../../../components/chat-details/Files'
@@ -638,6 +639,14 @@ function Thread({ dorkId }: { dorkId: string }) {
               wide && !crew
                 ? (keys) => {
                     progressStore.show(keys)
+                    setDetailsOpen(true)
+                  }
+                : undefined
+            }
+            onOpenPreview={
+              wide && !crew
+                ? (url) => {
+                    requestPreview(url)
                     setDetailsOpen(true)
                   }
                 : undefined

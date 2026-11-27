@@ -10,6 +10,7 @@ import { EmptyState } from './EmptyState'
 import { HERE } from './LocationMenu'
 import { ProgressPanel } from './ProgressPanel'
 import { useProgress } from '../lib/progress'
+import { usePreviewRequest } from './PreviewCard'
 import { PullRequestPanel, TAB_CLASS, type PrStackEntry, type PullRequestPanelData } from './PullRequestPanel'
 import { PrIcon, type PrStatusState } from './PrStatus'
 import { Artifacts } from './chat-details/Artifacts'
@@ -34,6 +35,8 @@ const Files = lazy(() => import('./chat-details/Files'))
  * replay an old reveal over the restored tabs, while a card that opens the panel still brings Progress up.
  */
 let handledReveal = 0
+/** The same for the thread's asks to open a preview (a preview card's open button). */
+let handledPreview = 0
 
 export function ChatDetails({
   data,
@@ -109,6 +112,14 @@ export function ChatDetails({
     open('artifacts')
     setPreview(s.url)
   })
+  const previewAsk = usePreviewRequest()
+  useEffect(() => {
+    if (previewAsk.n !== handledPreview && previewAsk.url) {
+      open('artifacts')
+      setPreview(previewAsk.url)
+    }
+    handledPreview = previewAsk.n
+  }, [previewAsk, open])
 
   const label = (key: TabKey): { icon: ReactNode; text: ReactNode; title: string } => {
     if (key.startsWith('new:')) return { icon: <SearchIcon />, text: 'New tab', title: 'New tab' }

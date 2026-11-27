@@ -10,6 +10,7 @@ import { AgentStatus } from '../components/AgentStatus'
 import { ChatMessages } from '../components/ChatBlock'
 import { ChatToc } from '../components/ChatToc'
 import { ChatDetails } from '../components/ChatDetails'
+import { requestPreview, ShownPreviews } from '../components/PreviewCard'
 import { ChatSplit, ShowDetailsButton, useDetailsOpen } from '../components/chat-details/layout'
 import type { ChatDetailsData } from '../components/chat-details/types'
 import type { WorkspaceSource } from '../components/chat-details/Files'
@@ -140,6 +141,7 @@ const demoBlocks: Block[] = [
   { kind: 'tool', id: 'tu2', name: 'TaskUpdate', summary: '1', status: 'ok', input: { taskId: '1', status: 'completed' }, preview: 'Updated task #1 status' },
   { kind: 'tool', id: 'tu3', name: 'TaskUpdate', summary: '2', status: 'ok', input: { taskId: '2', status: 'in_progress' }, preview: 'Updated task #2 status' },
   { kind: 'assistant', id: 'ab1', text: 'The bridge tests need Node 24 on the machine. I’ll try it in a fresh machine first.', streaming: false, at: Date.now() - 20 * 60_000 },
+  { kind: 'tool', id: 'ps1', name: 'mcp__dorks__preview_show', summary: '5173', status: 'ok', input: { port: 5173, title: 'Web app' }, preview: 'Showing Web app.' },
   { kind: 'tool', id: 'mr1', name: 'mcp__dorks__machine_run', summary: 'trial', status: 'ok', input: { kind: 'trial' }, preview: 'Started a trial run (run-1).' },
   { kind: 'tool', id: 'ms1', name: 'mcp__dorks__machine_submit', summary: '', status: 'ok', preview: 'Submitted.' },
   {
@@ -361,6 +363,7 @@ const details: ChatDetailsData = {
     {
       name: 'Web app',
       url: 'http://localhost:5173',
+      port: 5173,
       favicon: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#111"/><text x="8" y="11.5" font-family="system-ui" font-size="10" font-weight="500" fill="white" text-anchor="middle">A</text></svg>')}`,
       html: `<!doctype html><html><body style="margin:0;font:14px system-ui;color:#111">
 <header style="display:flex;gap:16px;align-items:center;padding:16px 24px;border-bottom:1px solid #eee"><strong style="font-weight:500">Acme</strong><a href="#" style="color:#666">Docs</a><a href="#" style="color:#666">Pricing</a><button style="margin-left:auto;padding:6px 12px;border:0;border-radius:6px;background:#111;color:#fff">Sign in</button></header>
@@ -603,6 +606,13 @@ export function Demo() {
     setText('')
     setShowNew(false)
   }
+  const demoPreviews = {
+    servers: details.previews ?? [],
+    onOpen: (url: string) => {
+      requestPreview(url)
+      setDetailsOpen(true)
+    },
+  }
   const stop = () => {
     setStopped(true)
     setBlocks((current) => [...current, { kind: 'notice', id: crypto.randomUUID(), level: 'info', text: 'Preview agent stopped.' }])
@@ -663,16 +673,18 @@ export function Demo() {
                 <MessageScroller>
                   <MessageScrollerViewport aria-label="Session transcript" className="[scrollbar-gutter:auto]! [scrollbar-width:none]! [&::-webkit-scrollbar]:hidden">
                     <MessageScrollerContent className="mx-auto w-full max-w-4xl gap-6 px-10 pt-6 pb-12" data-testid="transcript">
-                      <ChatMessages
-                        blocks={blocks}
-                        agent="Claude"
-                        onOpenSteps={openSteps}
-                        onReply={(quoted, draft) => {
-                          setReply(quoted)
-                          if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft))
-                        }}
-                        onReplySend={(quoted, answer) => send(withReply(quoted, answer))}
-                      />
+                      <ShownPreviews.Provider value={demoPreviews}>
+                        <ChatMessages
+                          blocks={blocks}
+                          agent="Claude"
+                          onOpenSteps={openSteps}
+                          onReply={(quoted, draft) => {
+                            setReply(quoted)
+                            if (draft) setText((t) => (t.trim() ? `${t}\n\n${draft}` : draft))
+                          }}
+                          onReplySend={(quoted, answer) => send(withReply(quoted, answer))}
+                        />
+                      </ShownPreviews.Provider>
                       <div>
                         <AgentStatus
                           state={stopped ? 'idle' : 'working'}

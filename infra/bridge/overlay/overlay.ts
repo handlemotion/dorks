@@ -5,7 +5,7 @@
 // the app draws every highlight, bubble and box over the frame from the positions posted here.
 //
 // Protocol (every message carries `dorks`: "overlay" from here, "host" from the app):
-//   overlay → host  {type: "ready", path}                 on load, and in answer to "hello"
+//   overlay → host  {type: "ready", path, bg}             on load, and in answer to "hello" (bg: the page's fill, a CSS color)
 //                   {type: "location", path}              the page's path changed (pushState, popstate, hashchange)
 //                   {type: "hover", box | null}           the element or text under the pointer while picking, in the frame's viewport
 //                   {type: "grab", snippet, anchor, box}  a picked element: React Grab's snippet (markup, component, source) and its anchor
@@ -115,6 +115,16 @@ async function anchorFor(el: Element) {
     ...(ctx?.lineNumber ? { line: ctx.lineNumber } : {}),
   };
   return { ctx, where };
+}
+
+/** The page's fill: the body's background, else the root's, else white (a transparent page shows the browser's white). */
+function fill() {
+  const doc = w.document;
+  for (const el of [doc.body, doc.documentElement]) {
+    const bg = el ? getComputedStyle(el).backgroundColor : "";
+    if (bg && bg !== "transparent" && !/^rgba\(.*,\s*0\)$/.test(bg)) return bg;
+  }
+  return "rgb(255, 255, 255)";
 }
 
 if (w.parent !== w && !w.__dorksOverlay) {
@@ -305,7 +315,7 @@ if (w.parent !== w && !w.__dorksOverlay) {
   w.addEventListener("message", (e: MessageEvent<HostMessage>) => {
     const d = e.data;
     if (e.source !== w.parent || !d || d.dorks !== "host") return;
-    if (d.type === "hello") post({ type: "ready", path: path() });
+    if (d.type === "hello") post({ type: "ready", path: path(), bg: fill() });
     else if (d.type === "pick") {
       if (d.on === true) start(d.mode === "text" ? "text" : "element");
       else stop();
@@ -320,5 +330,5 @@ if (w.parent !== w && !w.__dorksOverlay) {
       target?.scrollIntoView({ block: "center", behavior: "smooth" });
     }
   });
-  post({ type: "ready", path: path() });
+  post({ type: "ready", path: path(), bg: fill() });
 }
