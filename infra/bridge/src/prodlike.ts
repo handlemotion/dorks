@@ -110,7 +110,14 @@ export async function importLoad(file: string, writes: boolean): Promise<LoadScr
     if (!r || typeof r.path !== "string" || !r.path.startsWith("/")) throw new PlanError(`${file}: request ${i + 1} needs a path starting with /`);
     const method = typeof r.method === "string" ? r.method.toUpperCase() : "GET";
     if (!READ.has(method) && !writes) throw new PlanError(`${file}: ${method} ${r.path} is a write, and this team's load is read-only (GET and HEAD). An owner can allow writes in Settings.`);
-    return { method, path: r.path, route: typeof r.route === "string" ? r.route : undefined, weight: typeof r.weight === "number" && r.weight > 0 ? r.weight : 1, headers: r.headers as Record<string, string> | undefined, body: typeof r.body === "string" ? r.body : undefined };
+    return {
+      method,
+      path: r.path,
+      route: typeof r.route === "string" ? r.route : undefined,
+      weight: typeof r.weight === "number" && r.weight > 0 ? r.weight : 1,
+      headers: r.headers as Record<string, string> | undefined,
+      body: typeof r.body === "string" ? r.body : undefined,
+    };
   });
   return { file, requests };
 }
@@ -188,8 +195,9 @@ function sh(command: string, cwd: string, env: NodeJS.ProcessEnv, timeoutMs: num
     const timer = setTimeout(() => killGroup(child), timeoutMs);
     child.on("exit", (code) => {
       clearTimeout(timer);
-      if (code === 0) res();
-      else (log(tail), rej(new PlanError(`\`${command}\` in ${cwd} failed (exit ${code}):\n${tail.trim().split("\n").slice(-15).join("\n")}`)));
+      if (code === 0) return res();
+      log(tail);
+      rej(new PlanError(`\`${command}\` in ${cwd} failed (exit ${code}):\n${tail.trim().split("\n").slice(-15).join("\n")}`));
     });
   });
 }
@@ -261,6 +269,68 @@ const SPANS_PER_REQUEST = 10;
 /** Idle time after a round before its service stops, so the Sentry SDK flushes (a SIGTERM can drop the last batch). */
 const FLUSH_MS = 2_500;
 
+type Started = {
+  runId: string;
+  environments: { base: string; head: string } | null;
+  dsn: string | null;
+  sampleRate: number;
+  writes: boolean;
+  budget: { spans: number; budget: number; remaining: number } | null;
+};
+type Trees = { base: string; head: string };
+const LONG_MS = 10 * 60_000;
+
+/** Requests per round that fit what is left of the box's span budget this hour. */
+function sizeRounds(s: Started, rounds: number, wanted: number, log: (s: string) => void): number {
+  if (!s.budget || !(s.sampleRate > 0)) return wanted;
+  const fits = Math.floor((s.budget.remaining * 0.8) / (2 * rounds * SPANS_PER_REQUEST * s.sampleRate));
+  if (fits < wanted) log(`span budget: ${s.budget.remaining} of ${s.budget.budget} left this hour, so ${Math.max(fits, 0)} requests a round instead of ${wanted}`);
+  if (Math.min(wanted, fits) < 10) throw new PlanError(`This box's span budget is nearly used (${s.budget.spans} of ${s.budget.budget} in the last hour); run again later`);
+  return Math.min(wanted, fits);
+}
+
+/** Runs a plan's command if it has one. */
+async function step(command: string | undefined, label: string, cwd: string, env: NodeJS.ProcessEnv, log: (s: string) => void) {
+  if (!command) return;
+  log(`${label}: ${command}`);
+  await sh(command, cwd, env, LONG_MS, log);
+}
+
+/** One half's rounds: start its service, warm it up, run the load, let the SDK flush, stop. */
+async function runHalf(
+  p: Plan,
+  dir: string,
+  env: NodeJS.ProcessEnv,
+  scripts: LoadScript[],
+  o: { rounds: number; perRound: number; concurrency: number; writes: boolean; label: string; log: (s: string) => void },
+) {
+  const rounds: Record<string, RouteStats>[] = [];
+  const origin = `http://127.0.0.1:${p.service.port}`;
+  for (let r = 0; r < o.rounds; r++) {
+    const child = await start(p.service, dir, env, o.log);
+    try {
+      await runLoad(origin, scripts, { count: Math.min(10, o.perRound), concurrency: 1, writes: o.writes }); // warm-up, not counted
+      rounds.push(await runLoad(origin, scripts, { count: o.perRound, concurrency: o.concurrency, writes: o.writes }));
+      o.log(`${o.label} round ${r + 1}/${o.rounds}: ${o.perRound} requests`);
+      await new Promise((res) => setTimeout(res, FLUSH_MS)); // the SDK sends its last spans before the service stops
+    } finally {
+      await stop(child);
+    }
+  }
+  return rounds;
+}
+
+/** Reports until the server has Sentry's data for both halves (or the wait is over: then it compares with what it has). */
+async function reportUntilIngested(report: (final: boolean) => Promise<any>, waitMs: number, log: (s: string) => void) {
+  let r = await report(false);
+  for (const end = Date.now() + waitMs; r.state === "ingesting" && Date.now() < end;) {
+    log(`waiting for Sentry: ${JSON.stringify(r.seen)} of ${JSON.stringify(r.sent)} requests seen`);
+    await new Promise((res) => setTimeout(res, 5_000));
+    r = await report(false);
+  }
+  return r.state === "ingesting" ? report(true) : r;
+}
+
 export async function runAb(o: AbOptions): Promise<AbResult> {
   const log = o.log ?? (() => {});
   const env = o.env ?? process.env;
@@ -271,54 +341,33 @@ export async function runAb(o: AbOptions): Promise<AbResult> {
   const baseSha = await baseOf(dir, o.baseRef);
   if (baseSha === headSha) throw new PlanError("HEAD is its base: commit your change on a branch first (the run compares the PR's base with its head)");
   const dirty = (await git(dir, "status", "--porcelain", "--untracked-files=no")) !== "";
-  const start_ = await o.call("prodlike", { action: "start", baseSha, headSha });
-  const writes = start_.writes === true;
-  let perRound = o.requests ?? plan.requests;
-  if (start_.budget && start_.sampleRate > 0) {
-    const fits = Math.floor((start_.budget.remaining * 0.8) / (2 * rounds * SPANS_PER_REQUEST * start_.sampleRate));
-    if (fits < perRound) log(`span budget: ${start_.budget.remaining} of ${start_.budget.budget} left this hour, so ${Math.max(fits, 0)} requests a round instead of ${perRound}`);
-    perRound = Math.min(perRound, fits);
-    if (perRound < 10) throw new PlanError(`This box's span budget is nearly used (${start_.budget.spans} of ${start_.budget.budget} in the last hour); run again later`);
-  }
-  const root = join(tmpdir(), "dorks-prodlike", start_.runId);
+  const started = (await o.call("prodlike", { action: "start", baseSha, headSha })) as Started;
+  const writes = started.writes === true;
+  const perRound = sizeRounds(started, rounds, o.requests ?? plan.requests, log);
+  const root = join(tmpdir(), "dorks-prodlike", started.runId);
   mkdirSync(root, { recursive: true });
-  const trees = { base: join(root, "base"), head: join(root, "head") };
+  const trees: Trees = { base: join(root, "base"), head: join(root, "head") };
   try {
     await git(dir, "worktree", "add", "--detach", "--quiet", trees.base, baseSha);
     await git(dir, "worktree", "add", "--detach", "--quiet", trees.head, headSha);
     // The scripts come from head (this PR): its load and seed are what reviewers see. Base runs head's load too, so both get the same.
     const headPlan = readPlan(trees.head);
-    const scripts = await Promise.all(loadFiles(trees.head, headPlan.load).map((f) => importLoad(f, writes)));
     const basePlan = existsSync(join(trees.base, PLAN_FILE)) ? readPlan(trees.base) : headPlan;
-    for (const [which, p] of [["base", basePlan], ["head", headPlan]] as const) if (p.setup) (log(`${which}: ${p.setup}`), await sh(p.setup, trees[which], env, 10 * 60_000, log));
-    if (headPlan.seed) (log(`seed: ${headPlan.seed}`), await sh(headPlan.seed, trees.head, env, 10 * 60_000, log));
-    const results: Record<"base" | "head", Record<string, RouteStats>[]> = { base: [], head: [] };
-    for (const which of ["base", "head"] as const) {
-      const p = which === "base" ? basePlan : headPlan;
-      if (which === "head" && headPlan.migrate) (log(`head: ${headPlan.migrate}`), await sh(headPlan.migrate, trees.head, env, 10 * 60_000, log));
-      const halfEnv: NodeJS.ProcessEnv = { ...env, ...(start_.environments ? { SENTRY_ENVIRONMENT: start_.environments[which], SENTRY_DSN: start_.dsn, SENTRY_TRACES_SAMPLE_RATE: String(start_.sampleRate) } : {}) };
-      for (let r = 0; r < rounds; r++) {
-        const child = await start(p.service, trees[which], halfEnv, log);
-        try {
-          const origin = `http://127.0.0.1:${p.service.port}`;
-          await runLoad(origin, scripts, { count: Math.min(10, perRound), concurrency: 1, writes }); // warm-up, not counted
-          results[which].push(await runLoad(origin, scripts, { count: perRound, concurrency: plan.concurrency, writes }));
-          log(`${which} round ${r + 1}/${rounds}: ${perRound} requests`);
-          await new Promise((res) => setTimeout(res, FLUSH_MS)); // the SDK sends its last spans before the service stops
-        } finally {
-          await stop(child);
-        }
-      }
-    }
-    const report = (final: boolean) => o.call("prodlike", { action: "report", runId: start_.runId, base: { sha: baseSha, rounds: results.base }, head: { sha: headSha, rounds: results.head }, final });
-    let r = await report(false);
-    for (const end = Date.now() + (o.reportWaitMs ?? 180_000); r.state === "ingesting" && Date.now() < end; ) {
-      log(`waiting for Sentry: ${JSON.stringify(r.seen)} of ${JSON.stringify(r.sent)} requests seen`);
-      await new Promise((res) => setTimeout(res, 5_000));
-      r = await report(false);
-    }
-    if (r.state === "ingesting") r = await report(true);
-    return { runId: start_.runId, verdict: r.verdict, title: r.title, summary: r.summary, checkUrl: r.checkUrl ?? null, checkNote: r.checkNote ?? null, dirty };
+    const scripts = await Promise.all(loadFiles(trees.head, headPlan.load).map((f) => importLoad(f, writes)));
+    await step(basePlan.setup, "base", trees.base, env, log);
+    await step(headPlan.setup, "head", trees.head, env, log);
+    await step(headPlan.seed, "seed", trees.head, env, log);
+    const halfEnv = (which: "base" | "head"): NodeJS.ProcessEnv => ({
+      ...env,
+      ...(started.environments ? { SENTRY_ENVIRONMENT: started.environments[which], SENTRY_DSN: started.dsn ?? "", SENTRY_TRACES_SAMPLE_RATE: String(started.sampleRate) } : {}),
+    });
+    const common = { rounds, perRound, concurrency: plan.concurrency, writes, log };
+    const base = await runHalf(basePlan, trees.base, halfEnv("base"), scripts, { ...common, label: "base" });
+    await step(headPlan.migrate, "head", trees.head, env, log);
+    const head = await runHalf(headPlan, trees.head, halfEnv("head"), scripts, { ...common, label: "head" });
+    const report = (final: boolean) => o.call("prodlike", { action: "report", runId: started.runId, base: { sha: baseSha, rounds: base }, head: { sha: headSha, rounds: head }, final });
+    const r = await reportUntilIngested(report, o.reportWaitMs ?? 180_000, log);
+    return { runId: started.runId, verdict: r.verdict, title: r.title, summary: r.summary, checkUrl: r.checkUrl ?? null, checkNote: r.checkNote ?? null, dirty };
   } finally {
     for (const t of [trees.base, trees.head]) await git(dir, "worktree", "remove", "--force", t).catch(() => {});
     rmSync(root, { recursive: true, force: true });
@@ -345,7 +394,9 @@ export function describeTelemetry(r: any): string {
   if (r.kind === "errors")
     return r.errors.length ? [head, ...r.errors.map((e: any) => `- ${e.count}× ${e.title}${e.route ? ` (${e.route})` : ""}, issue ${e.issue}, last ${e.lastSeen}`)].join("\n") : `${head} no errors.`;
   if (r.kind === "spans")
-    return r.spans.length ? [head, ...r.spans.map((s: any) => `- ${s.op} ${String(s.description ?? "").slice(0, 120)}: ${s.count}×, p95 ${s.p95Ms} ms, avg ${s.avgMs} ms`)].join("\n") : `${head} no spans.`;
+    return r.spans.length
+      ? [head, ...r.spans.map((s: any) => `- ${s.op} ${String(s.description ?? "").slice(0, 120)}: ${s.count}×, p95 ${s.p95Ms} ms, avg ${s.avgMs} ms`)].join("\n")
+      : `${head} no spans.`;
   if (r.kind === "p95")
     return r.routes.length
       ? [head, ...r.routes.map((x: any) => `- ${x.route}: ${x.requests} requests, p95 ${x.p95Ms} ms, failure rate ${x.failureRate}, ${x.dbPerRequest ?? "?"} queries per request`)].join("\n")

@@ -118,7 +118,15 @@ async function runProdlike(group: string, verb: string | undefined, rest: string
       return 2;
     }
     const num = (k: string) => (flag(k) ? Number(flag(k)) : undefined);
-    const r = await runAb({ dir: process.cwd(), call: (op, a) => rpcCall(sock, op, a, 60_000), baseRef: flag("base"), rounds: num("rounds"), requests: num("requests"), log: (s) => io.err(`${s}\n`), env });
+    const r = await runAb({
+      dir: process.cwd(),
+      call: (op, a) => rpcCall(sock, op, a, 60_000),
+      baseRef: flag("base"),
+      rounds: num("rounds"),
+      requests: num("requests"),
+      log: (s) => io.err(`${s}\n`),
+      env,
+    });
     io.out(describeAb(r) + "\n");
     return r.verdict === "failure" ? 3 : 0;
   } catch (e) {

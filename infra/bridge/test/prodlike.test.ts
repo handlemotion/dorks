@@ -49,7 +49,13 @@ describe("prodlike plan and load scripts", () => {
       const stats = await runLoad(
         origin,
         [
-          { file: "a", requests: [{ method: "GET", path: "/a?x=1", weight: 3 }, { method: "GET", path: "/boom" }] },
+          {
+            file: "a",
+            requests: [
+              { method: "GET", path: "/a?x=1", weight: 3 },
+              { method: "GET", path: "/boom" },
+            ],
+          },
           { file: "f", fn: async (http) => void (await http.get("/items/7", { route: "/items/:id" })) },
         ],
         { count: 60, concurrency: 3, writes: false },
@@ -79,7 +85,8 @@ describe("prodlike A/B run", () => {
     const port = 20000 + Math.floor(Math.random() * 20000);
     plan(dir, { service: { command: "node server.mjs", port, ready: "/health" }, rounds: 2, requests: 20, concurrency: 2 });
     writeFileSync(join(dir, ".dorks/load/l.mjs"), 'export default [{ path: "/v" }];');
-    const server = (v: string) => `import { createServer } from "node:http"; createServer((q, s) => s.end(q.url === "/v" ? "${v}" + process.env.SENTRY_ENVIRONMENT : "ok")).listen(Number(process.env.PORT));`;
+    const server = (v: string) =>
+      `import { createServer } from "node:http"; createServer((q, s) => s.end(q.url === "/v" ? "${v}" + process.env.SENTRY_ENVIRONMENT : "ok")).listen(Number(process.env.PORT));`;
     writeFileSync(join(dir, "server.mjs"), server("base"));
     git("add", "-A");
     git("commit", "-qm", "base");
@@ -96,9 +103,25 @@ describe("prodlike A/B run", () => {
       reportWaitMs: 60_000,
       call: async (_op, a) => {
         calls.push(a);
-        if (a.action === "start") return { runId: "run-1", environments: { base: "box-x-base", head: "box-x-head" }, dsn: "https://k@o.ingest.sentry.io/1", sampleRate: 1, writes: false, budget: { spans: 0, budget: 20000, remaining: 20000 } };
+        if (a.action === "start")
+          return {
+            runId: "run-1",
+            environments: { base: "box-x-base", head: "box-x-head" },
+            dsn: "https://k@o.ingest.sentry.io/1",
+            sampleRate: 1,
+            writes: false,
+            budget: { spans: 0, budget: 20000, remaining: 20000 },
+          };
         if (++reports === 1) return { state: "ingesting", seen: { base: 1, head: 0 }, sent: { base: 40, head: 40 } };
-        return { runId: "run-1", state: "done", verdict: "success", title: "No regression on 1 route(s), 2 round(s)", summary: "| table |", checkUrl: "https://github.com/acme/api/runs/1", checkNote: null };
+        return {
+          runId: "run-1",
+          state: "done",
+          verdict: "success",
+          title: "No regression on 1 route(s), 2 round(s)",
+          summary: "| table |",
+          checkUrl: "https://github.com/acme/api/runs/1",
+          checkNote: null,
+        };
       },
     });
     expect(calls[0]).toEqual({ action: "start", baseSha: base, headSha: head });

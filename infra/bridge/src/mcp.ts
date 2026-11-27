@@ -292,7 +292,7 @@ const TOOLS: Tool[] = [
     description:
       "Twin Engine: run your PR's base commit and its head commit on this box, one after the other, against the same database " +
       "branch, with the same load (the repository's .dorks/load scripts, GET and HEAD only unless the team allows writes), and compare " +
-      "new error groups, error rate, queries per request and p95 per route. The result is posted as the \"Dorks / Twin Engine\" check on " +
+      'new error groups, error rate, queries per request and p95 per route. The result is posted as the "Dorks / Twin Engine" check on ' +
       "the head commit and returned here. Needs .dorks/prodlike.json (the service to start, how to set it up, the load scripts); if it " +
       "is missing, the error says what to write. Commit first: the run tests the committed HEAD. Takes a few minutes.",
     inputSchema: {
@@ -397,7 +397,7 @@ const TOOLS: Tool[] = [
       if (bytes.length > MAX_IMAGE_BYTES) throw new ToolError(`The image is ${(bytes.length / 1048576).toFixed(1)} MB; the limit is 8 MB. Crop it or use a smaller scale.`);
       const data = bytes.toString("base64");
       const shared = await rpcCall<{ id: string; width?: number; height?: number }>(sock, "image.share", { data, caption });
-      const alt = caption.replace(/[\[\]\n]/g, " ");
+      const alt = caption.replace(/[[\]\n]/g, " ");
       const size = shared.width && shared.height ? ` (${shared.width}x${shared.height})` : "";
       const notes: string[] = [];
       if (typeof args.path === "string") {
