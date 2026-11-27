@@ -24,9 +24,9 @@ const USAGE = `usage:
   dorks hook <event>       (run by Claude Code, not by hand) stop | post-tool-use | session-start
   dorks mcp                (run by Claude Code, not by hand) the same PR tools as an MCP server
   dorks telemetry [errors|spans|p95|usage] [--route R] [--op O] [--since 1h] [--half base|head] [--json]
-                           this box's own Sentry telemetry (prod-like testing)
+                           this box's own Sentry telemetry (Twin Engine)
   dorks prodlike run [--rounds N] [--requests N] [--base REF]
-                           A/B the PR's base and head on this box; posts the Dorks / prod-like check
+                           A/B the PR's base and head on this box; posts the Dorks / Twin Engine check
 <pr> is https://github.com/owner/name/pull/12 or owner/name#12`;
 
 /** The socket path for a client of the bridge's RPC, or null when this process is not inside a dork box. */

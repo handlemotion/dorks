@@ -259,12 +259,12 @@ const TOOLS: Tool[] = [
       return r.text;
     },
   },
-  // ---- prod-like testing (cloud sessions on a Teams or Cloud plan): this box's own telemetry, and the A/B run behind the PR check.
+  // ---- the Twin Engine, prod-like testing (cloud sessions on a Teams or Cloud plan): this box's own telemetry, and the A/B run behind the PR check.
   {
     name: "telemetry_query",
     title: "Query this box's errors, spans and p95 (Sentry)",
     description:
-      "Prod-like testing: read the telemetry your box's services send to Sentry. Services started in this box get SENTRY_DSN and " +
+      "Twin Engine: read the telemetry your box's services send to Sentry. Services started in this box get SENTRY_DSN and " +
       "SENTRY_ENVIRONMENT (this box's own environment) in their environment; an app with any Sentry SDK reports there by itself. You " +
       "only ever see this box's events. kind errors: error groups; spans: operations (db queries, http calls) with count and p95; p95: " +
       "per route (requests, p95 ms, failure rate, queries per request); usage: spans sent this hour against the box's budget. " +
@@ -288,11 +288,11 @@ const TOOLS: Tool[] = [
   },
   {
     name: "prodlike_run",
-    title: "A/B the PR's base and head on this box (the prod-like check)",
+    title: "A/B the PR's base and head on this box (the Twin Engine check)",
     description:
-      "Prod-like testing: run your PR's base commit and its head commit on this box, one after the other, against the same database " +
+      "Twin Engine: run your PR's base commit and its head commit on this box, one after the other, against the same database " +
       "branch, with the same load (the repository's .dorks/load scripts, GET and HEAD only unless the team allows writes), and compare " +
-      "new error groups, error rate, queries per request and p95 per route. The result is posted as the \"Dorks / prod-like\" check on " +
+      "new error groups, error rate, queries per request and p95 per route. The result is posted as the \"Dorks / Twin Engine\" check on " +
       "the head commit and returned here. Needs .dorks/prodlike.json (the service to start, how to set it up, the load scripts); if it " +
       "is missing, the error says what to write. Commit first: the run tests the committed HEAD. Takes a few minutes.",
     inputSchema: {

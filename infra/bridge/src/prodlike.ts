@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 // MCP tool and `dorks prodlike run`. It checks out the PR's base and head commits side by side (git worktrees), starts each one's
 // service in turn on the same box, against the same database branch (DATABASE_URL from configure), replays the repository's load
 // scripts against it, and measures every route itself. Each half reports to Sentry under its own environment (box-<id>-base,
-// box-<id>-head). The Worker reads Sentry for both halves, compares, and posts the `Dorks / prod-like` check on the head commit.
+// box-<id>-head). The Worker reads Sentry for both halves, compares, and posts the `Dorks / Twin Engine` check on the head commit.
 //
 // The repository says how, in .dorks/prodlike.json (reviewed in the PR like any code):
 //
@@ -327,8 +327,8 @@ export async function runAb(o: AbOptions): Promise<AbResult> {
 
 export function describeAb(r: AbResult): string {
   return [
-    `Prod-like A/B run ${r.runId}: ${r.verdict.toUpperCase()}, ${r.title}`,
-    r.checkUrl ? `Posted as the "Dorks / prod-like" check: ${r.checkUrl}` : `No check posted${r.checkNote ? `: ${r.checkNote}` : ""}`,
+    `Twin Engine A/B run ${r.runId}: ${r.verdict.toUpperCase()}, ${r.title}`,
+    r.checkUrl ? `Posted as the "Dorks / Twin Engine" check: ${r.checkUrl}` : `No check posted${r.checkNote ? `: ${r.checkNote}` : ""}`,
     r.dirty ? "Note: you have uncommitted changes. The run tested the committed HEAD, not them." : "",
     "",
     r.summary,
