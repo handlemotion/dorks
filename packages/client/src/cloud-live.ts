@@ -268,8 +268,9 @@ export function messageEvents(dorkId: string, seq: number, timestamp: number, bo
 }
 
 /**
- * Follows one session's `events` stream into the transcript. The first follow checks the stream's tail, then calls `ready` (the
- * transcript reads its newest page over REST), then reads from that tail, so nothing appended between the two is missed. Later
+ * Follows one session's `events` stream into the transcript. The first follow calls `ready` (the transcript reads its newest page over
+ * REST) while it checks the stream's tail, calls `ready` again once the tail is placed (the transcript reads what landed meanwhile),
+ * then reads from that tail, so nothing appended between them is missed. Later
  * follows resume after `cursor`. Events arrive in batches; an event read twice (REST and s2) is the same row, and the transcript
  * keeps one. Returns a function that stops it.
  */
@@ -306,8 +307,12 @@ export function followSession(
       retried = true;
       let first: ReadGrant | null = kept && kept.expiresAt - Date.now() > 60_000 ? kept : null;
       if (!cursor) {
+        // The newest page loads over REST while the stream is placed (a read grant, then its tail: two round trips), not after.
+        ready();
         first ??= await grant();
         cursor = { seq: (await checkTail(first, o.fetch)) - 1, bseq: 0 };
+        // Then one more REST read, after the tail was placed: it has whatever landed between the first page and the tail.
+        o.ready();
       }
       ready();
       const reader = new StreamReader({

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import { DorksProvider, useAutomations, useConnection, useDorks, useSettingsState } from '@dorks/client/react'
+import { DorksProvider, useAutomations, useConnection, useDorks, useDorksClient, useSettingsState } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
 import { Input } from '@dorks/ui/input'
 import { clearConnection, currentConnection, DEFAULT_SERVER, normalizeServerUrl, saveConnection, type Connection } from '../lib/connection'
@@ -183,6 +183,9 @@ function RemoteGate({ server, rejected }: { server: CloudServer; rejected: boole
 function Probe({ conn, remote, onChange, onReplace, children }: { conn: Connection; remote: CloudServer | null; onChange: () => void; onReplace: (c: Connection) => void; children: ReactNode }) {
   const settings = useSettingsState()
   const connection = useConnection()
+  const client = useDorksClient()
+  // The sidebar's reads start with the settings this gate waits for, not after them: one round trip less before the app shows.
+  useEffect(() => client.prefetchApp(), [client])
   const rejected = connection.unauthorized || settings.error?.code === 'forbidden'
   if (remote && (rejected || (settings.status === 'error' && !settings.data))) return <RemoteGate server={remote} rejected={rejected} />
   if (rejected) {
