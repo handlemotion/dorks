@@ -333,6 +333,11 @@ export interface CloudOrg {
   role: string | null;
   active: boolean;
   servers: CloudServer[];
+  /**
+   * Where a paid org runs (the relay's `GET /v1/orgs`): `cloud` once the Worker serves it (it moved, or never had a Mac), `mac` while a
+   * Mac still does. Absent from an older relay: the app then infers it from the org's servers.
+   */
+  runtime?: "cloud" | "mac";
 }
 
 /** A role in a Dorks Cloud organization; Better Auth may send a comma list, whose strongest counts. */

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { exportFile } from "@dorks/shared";
 import { uiApp } from "../src/http/ui";
 import { createAutomation, getAutomation, updateAutomation } from "../src/services/automations";
+import { createBuild, setBuildVar } from "../src/services/builds";
 import { moveStatus } from "../src/services/cloudMove";
 import { putMcpServer } from "../src/services/mcpServers";
 import { setSecret } from "../src/services/settings";
@@ -84,10 +85,48 @@ describe("move to cloud", () => {
     expect(file.mcpServers[0]).toMatchObject({ name: "linear", headerNames: ["Authorization"], oauth: false });
     expect(JSON.stringify(file)).not.toContain("s3cret-value"); // sealed, never in clear
     expect(JSON.stringify(file)).not.toContain("lin-456");
-    expect(cloud.opened).toEqual({ variables: { API_KEY: "s3cret-value" }, mcp: { linear: { headers: { Authorization: "Bearer lin-456" }, env: {}, url: "https://mcp.linear.app/mcp" } } });
+    expect(cloud.opened).toEqual({
+      variables: { API_KEY: "s3cret-value" },
+      buildVars: {},
+      mcp: { linear: { headers: { Authorization: "Bearer lin-456" }, env: {}, url: "https://mcp.linear.app/mcp" } },
+    });
     expect(getAutomation(h.app, auto)?.enabled).toBe(false); // the cloud runs it now
     expect(((await (await call("GET", "/api/cloud/places")).json()) as { orgs: { servers: unknown[] }[] }).orgs[1].servers).toEqual([]); // the org left this Mac
     expect((await call("POST", "/api/cloud/move", { orgId: ORG })).status).toBe(409);
+  });
+
+  it("copies the personal workspace into a paid team: builds with sealed variables, local sessions without their box, archived here after", async () => {
+    const { cloud, h, call } = setup();
+    update(h.app.db, "settings", { id: 1 }, { cloudOrgId: "personal-1" }); // this Mac serves the personal workspace
+    cloud.runtime = "cloud"; // the team already runs in the cloud: the copy merges into it
+    const boat = session(h, 3, (i) => `cloud ${i}`);
+    update(h.app.db, "dorks", { id: boat }, { boxId: "box_9", claudeSessionId: "cs_9" });
+    const local = session(h, 2, (i) => `local ${i}`);
+    update(h.app.db, "dorks", { id: local }, { location: "local", boxId: `local-${local}`, claudeSessionId: "cs_local" });
+    const build = createBuild(h.app, { name: "Web", setupScript: "pnpm i", repos: [{ repo: "octo/app" }] });
+    await setBuildVar(h.app, build, "NPM_TOKEN", { value: "npm-secret-1", secret: true, buildTime: true });
+    update(h.app.db, "dorks", { id: boat }, { buildId: build });
+    await signIn(call);
+
+    expect((await call("POST", "/api/cloud/move", { orgId: ORG })).status).toBe(200);
+    await until(() => ["done", "failed"].includes(moveStatus(h.app).phase));
+    const st = moveStatus(h.app);
+    expect(st).toMatchObject({ phase: "done", orgId: ORG, error: null });
+    const file = exportFile.parse(cloud.file(st.importId!));
+    expect(file.builds).toMatchObject([{ id: build, name: "Web", setupScript: "pnpm i", vars: [{ name: "NPM_TOKEN", secret: true, buildTime: true }] }]);
+    expect(file.sessions.find((s) => s.id === boat)).toMatchObject({ location: "cloud", boxId: "box_9", claudeSessionId: "cs_9", buildId: build });
+    expect(file.sessions.find((s) => s.id === local)).toMatchObject({ location: "local", boxId: null, claudeSessionId: null });
+    expect(JSON.stringify(file)).not.toContain("npm-secret-1");
+    expect(cloud.opened?.buildVars).toEqual({ "Web.NPM_TOKEN": "npm-secret-1" });
+    // The personal workspace stays on this Mac; what moved is archived here so it is not listed twice.
+    expect(h.app.db.all<{ archived: number }>("SELECT archived FROM dorks WHERE id IN (?, ?)", boat, local).map((r) => r.archived)).toEqual([1, 1]);
+  });
+
+  it("refuses to copy a team this Mac does not serve into another org", async () => {
+    const { h, call } = setup();
+    update(h.app.db, "settings", { id: 1 }, { cloudOrgId: "org_other" });
+    await signIn(call);
+    expect((await call("POST", "/api/cloud/move", { orgId: ORG })).status).toBe(400);
   });
 
   it("freezes this Mac while it moves: no message or automation run lands meanwhile", async () => {

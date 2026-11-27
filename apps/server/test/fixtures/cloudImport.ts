@@ -21,7 +21,7 @@ type Import = { id: string; orgId: string; privateJwk: Jwk; manifest?: ExportMan
 export class CloudImportStandIn {
   readonly imports = new Map<string, Import>();
   /** Opened secrets of the committed import: variables by name, MCP servers' sealed JSON by name. */
-  opened: { variables: Record<string, string>; mcp: Record<string, unknown> } | null = null;
+  opened: { variables: Record<string, string>; mcp: Record<string, unknown>; buildVars: Record<string, string> } | null = null;
   /** Stops the next events upload after storing half of it (a dropped connection), to exercise the resume. */
   dropNextPart = false;
   /** While set, events uploads wait for it (a move held mid-upload). */
@@ -42,6 +42,7 @@ export class CloudImportStandIn {
         plan: this.o.plan ?? "teams",
         role: this.o.role ?? "owner",
         // The commit takes the org off this Mac: with no Mac left, the app runs it on the Worker.
+        runtime: this.runtime,
         servers: this.runtime === "cloud" ? [] : [{ macId: this.o.macId, name: "Studio Mac", kind: "mac", online: true }],
       },
     ];
@@ -101,7 +102,6 @@ export class CloudImportStandIn {
   private async create(orgId: string, body: unknown) {
     const r = importCreate.safeParse(body);
     if (!r.success) return Response.json({ code: "invalid", message: r.error.message }, { status: 400 });
-    if (this.runtime === "cloud") return Response.json({ code: "conflict", message: "This organization already runs in the cloud" }, { status: 409 });
     const id = `imp_${this.imports.size + 1}`;
     const { key, privateJwk } = await newImportKey(`key-${id}`);
     this.imports.set(id, { id, orgId, privateJwk, events: new Map(), images: new Map(), committed: false });
@@ -164,7 +164,9 @@ export class CloudImportStandIn {
     for (const v of imp.manifest.variables) variables[v.name] = await open(`variable|${v.name}`, v.value);
     const mcp: Record<string, unknown> = {};
     for (const s of imp.manifest.mcpServers) mcp[s.name] = JSON.parse(await open(`mcp|${s.name}`, s.secrets));
-    this.opened = { variables, mcp };
+    const buildVars: Record<string, string> = {};
+    for (const b of imp.manifest.builds) for (const v of b.vars) if (v.value) buildVars[`${b.name}.${v.name}`] = await open(`build-var|${b.id}|${v.name}`, v.value);
+    this.opened = { variables, mcp, buildVars };
     imp.committed = true;
     this.runtime = "cloud";
     const events = imp.manifest.sessions.reduce((n, s) => n + s.events.count, 0);

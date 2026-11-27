@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useLocation } from '@tanstack/react-router'
 import { BlocksIcon, BoxIcon, ChevronRightIcon, ClockFadingIcon, PlusIcon } from 'lucide-react'
-import type { DorkState } from '@dorks/shared'
+import type { DorkLocation, DorkState } from '@dorks/shared'
 import type { Usage } from '@dorks/client'
 import { useAutomations, useBuilds, useDorks, useGithubRepos, useUsage } from '@dorks/client/react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@dorks/ui/collapsible'
@@ -16,6 +16,7 @@ import { MachineRow, OrgSwitcher, StaticOrgSwitcher } from './OrgSwitcher'
 import { SIDEBAR_ROW, SIDEBAR_SECTION } from './sidebarChrome'
 import { HistoryButtons, TITLEBAR_AFTER_TOGGLE } from './WindowControls'
 import { useIsTeamOrg } from './CloudPlace'
+import { HERE, LOCATION_ICONS } from './LocationMenu'
 import { UpdatePrompt } from './UpdatePrompt'
 import { useRowHover } from './useRowHover'
 
@@ -48,6 +49,7 @@ export function AppSidebar() {
       id: d.id,
       title: d.title,
       repo: d.repo,
+      location: d.location,
       working: MOVING.has(d.state),
       state: d.state,
       attention: d.needsAttention,
@@ -82,6 +84,36 @@ export function AppSidebar() {
       onArchive={(id) => void archive(id).catch((e: unknown) => toast.error(e instanceof Error ? e.message : 'Could not archive the chat'))}
     />
   )
+}
+
+/**
+ * The code sessions' sections (docs/local-dorks.md): one per repository and place, its sessions on this computer apart from its cloud
+ * ones, which run on a build. Alphabetical by repository name, a repository's cloud section before its local one, Other last. A cloud
+ * section keeps the repository as its key (folded state and row order remembered from before local sessions). Once any session runs
+ * locally (`placed`), every section says where its sessions run. A section is named by the repository alone (`dorks`), with its owner
+ * only when two owners share the name.
+ */
+function repoSections(sessions: Chat[]) {
+  const sections = new Map<string, { repo: string; location: DorkLocation; list: Chat[] }>()
+  for (const chat of sessions) {
+    const repo = chat.repo ?? ''
+    const location = chat.location ?? 'cloud'
+    const key = location === 'local' ? `local:${repo || 'other'}` : repo || 'other'
+    const section = sections.get(key) ?? { repo, location, list: [] }
+    section.list.push(chat)
+    sections.set(key, section)
+  }
+  const groups = [...sections].sort(
+    ([, a], [, b]) =>
+      (a.repo === '' ? 1 : 0) - (b.repo === '' ? 1 : 0) ||
+      nameOf(a.repo).localeCompare(nameOf(b.repo)) ||
+      a.repo.localeCompare(b.repo) ||
+      (a.location === 'local' ? 1 : 0) - (b.location === 'local' ? 1 : 0),
+  )
+  const placed = groups.some(([, g]) => g.location === 'local')
+  const names = [...new Set(groups.map(([, g]) => g.repo))].map(nameOf)
+  const label = (repo: string) => (!repo ? 'Other' : names.filter((n) => n === nameOf(repo)).length > 1 ? repo : nameOf(repo))
+  return { groups, placed, label }
 }
 
 const COLLAPSED_KEY = 'dorks.collapsed-repos'
@@ -122,7 +154,8 @@ const PAGES = [
 /**
  * The app's sidebar: a 48px title bar (traffic lights, the toggle, back and forward); the org switcher (where
  * you work), the Mac the org is connected to when it has several, New session and the app's pages, then the nerds, then the code
- * sessions, grouped by repository (a label per repository, alphabetical, that folds its section shut and remembers it),
+ * sessions, grouped by repository and where they run (a label per repository, alphabetical, its local sessions in a section of their
+ * own after its cloud one, each with a Cloud or Laptop icon once any session runs locally; a label folds its section shut and remembers it),
  * each group reorderable and remembering its order; the account menu (the owner's avatar) at the foot. Rows are 30px, 2px apart, with one hover fill springing between them; groups are 16px apart. It sits
  * flat on the app fill in a resizable panel (see AppFrame); on phones it is shadcn's sheet.
  */
@@ -174,15 +207,7 @@ export function AppSidebarView({
   // sidebar.
   const nerds = chats.filter((c) => c.mode === 'nerd' && !c.parentId)
   const sessions = chats.filter((c) => c.mode !== 'nerd' && !c.parentId)
-  const repos = new Map<string, Chat[]>()
-  for (const chat of sessions) {
-    const repo = chat.repo ?? ''
-    repos.set(repo, [...(repos.get(repo) ?? []), chat])
-  }
-  const groups = [...repos].sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : nameOf(a).localeCompare(nameOf(b)) || a.localeCompare(b)))
-  // A section is named by the repository alone (`dorks`), with its owner only when two owners share the name.
-  const names = groups.map(([repo]) => nameOf(repo))
-  const label = (repo: string) => (!repo ? 'Other' : names.filter((n) => n === nameOf(repo)).length > 1 ? repo : nameOf(repo))
+  const { groups, placed, label } = repoSections(sessions)
   const [collapsed, toggle] = useCollapsedRepos()
   const hover = useRowHover()
   const rowLink = (active: boolean) => ({ 'data-active': active || undefined, 'aria-current': active ? ('page' as const) : undefined, className: SIDEBAR_ROW })
@@ -226,16 +251,18 @@ export function AppSidebarView({
             <Group id="nerds" label="Nerds" add={{ search: { mode: 'nerd' }, label: 'New nerd' }} open={!collapsed.has('nerds')} onOpenChange={(next) => toggle('nerds', next)}>
               <ChatList chats={nerds} orderKey={`${orderKey}.nerds`} to={chatTo} activeId={activeId} onArchive={onArchive} />
             </Group>
-            {groups.map(([repo, list]) => {
-              const key = repo || 'other'
+            {groups.map(([key, { repo, location, list }]) => {
+              const local = location === 'local'
+              const where = local ? ` on ${HERE}` : placed ? ' in the cloud' : ''
               return (
                 <Group
                   key={key}
                   id={key}
                   label={label(repo)}
-                  title={repo || undefined}
-                  navLabel={repo || 'Other chats'}
-                  add={repo ? { search: { repo }, label: `New session in ${repo}` } : undefined}
+                  icon={placed ? LOCATION_ICONS[location] : undefined}
+                  title={repo ? `${repo}${where}` : undefined}
+                  navLabel={`${repo || 'Other chats'}${where}`}
+                  add={repo ? { search: { repo, ...(placed ? { location } : {}) }, label: `New session in ${repo}${where}` } : undefined}
                   open={!collapsed.has(key)}
                   onOpenChange={(next) => toggle(key, next)}
                 >
@@ -261,6 +288,7 @@ export function AppSidebarView({
 function Group({
   id,
   label,
+  icon: Icon,
   title,
   navLabel,
   add,
@@ -270,9 +298,11 @@ function Group({
 }: {
   id: string
   label: string
+  /** Where the section's sessions run, before its label: shown once some sessions run locally. */
+  icon?: (typeof LOCATION_ICONS)[DorkLocation]
   title?: string
   navLabel?: string
-  add?: { search: { repo?: string; mode?: 'nerd' }; label: string }
+  add?: { search: { repo?: string; location?: DorkLocation; mode?: 'nerd' }; label: string }
   open: boolean
   onOpenChange: (open: boolean) => void
   children: ReactNode
@@ -281,6 +311,7 @@ function Group({
     <Collapsible data-group={id} open={open} onOpenChange={onOpenChange} render={<nav aria-label={navLabel ?? label} className="flex shrink-0 flex-col gap-0.5" />}>
       <div className={`group/section ${SIDEBAR_SECTION} pr-1 pl-0`} title={title}>
         <CollapsibleTrigger className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-[6px] pl-2 text-left outline-none hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring">
+          {Icon && <Icon aria-hidden className="size-3 shrink-0" />}
           <span className="min-w-0 truncate">{label}</span>
           <ChevronRightIcon aria-hidden className={`size-3 shrink-0 transition-transform duration-150 motion-reduce:transition-none ${open ? 'rotate-90' : ''}`} />
         </CollapsibleTrigger>

@@ -268,7 +268,7 @@ export function SessionChat({
   const builds = useBuilds()
   const { live } = useConnection()
   const agent = AGENT_NAMES[dork.provider]
-  const mentions = useMentions(dork.provider, dorkId, dork.commands)
+  const mentions = useMentions(dork.provider, { dorkId }, dork.commands)
   const canReply = !dork.archived
   /** Sends the composer's text (and reply) one way or the other; puts both back if the server refuses. */
   const sendWith: SendWith = (deliver: (message: string) => Promise<unknown>) => (images: Parameters<typeof withImages>[1]) =>

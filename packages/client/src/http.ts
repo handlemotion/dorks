@@ -195,6 +195,8 @@ export function createApi(config: ApiConfig) {
     writeWorkspaceFile: (id: string, root: string, path: string, contents: string, sha?: string) =>
       request<{ sha: string; size: number }>("PUT", `${dork(id)}/workspace/file`, { root, path, contents, sha }),
     searchFiles: (id: string, q: string, limit = 50) => request<{ files: string[]; listed: boolean; truncated: boolean }>("GET", `${dork(id)}/files`, undefined, { q, limit }),
+    /** A repository's files before a session in it exists (the new-session composer's `@` menu). */
+    searchRepoFiles: (repo: string, q: string, limit = 50) => request<{ files: string[]; listed: boolean; truncated: boolean }>("GET", "/api/repo-files", undefined, { repo, q, limit }),
     listComments: (id: string) => request<CommentView[]>("GET", `${dork(id)}/comments`),
     addComment: (id: string, input: NewComment) => request<{ id: string }>("POST", `${dork(id)}/comments`, input),
     replyComment: (id: string, commentId: string, body: string) => request<{ id: string }>("POST", `${dork(id)}/comments/${encodeURIComponent(commentId)}/replies`, { body }),

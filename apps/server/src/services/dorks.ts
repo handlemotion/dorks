@@ -61,6 +61,7 @@ function sessionPrsOf(app: App, dorkId: string): SessionPr[] {
       url: s.url,
       ...(s.title ? { title: s.title } : {}),
       state: s.state,
+      ...(s.state === "open" && s.mergeable === false ? { conflict: true as const } : {}),
       ...(ship ? { ship: { status: ship.status, stages: ship.stages.map(({ name, state, url }) => ({ name, state, ...(url ? { url } : {}) })) } } : {}),
     };
   });
