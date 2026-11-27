@@ -1,4 +1,5 @@
 import { Effect, Schema } from "effect";
+import { defaultLocationOf } from "../../services/plan";
 import { MAX_IMAGE_BYTES, uploadImage } from "../../services/bridge";
 import {
   chooseCodexModel,
@@ -70,7 +71,8 @@ export const dorkRoutes: Routes = (api, app) => {
     on((c) =>
       Effect.gen(function* () {
         const b = yield* body(c, CreateDork);
-        const location = yield* service(() => locationOf(b.location));
+        // Unsaid, a session runs where this plan runs them: in a sandbox, or on this Mac on Dorks Free (services/plan.ts).
+        const location = yield* service((a) => (b.location === undefined || b.location === null || b.location === "" ? defaultLocationOf(a) : locationOf(b.location)));
         // A local session runs the owner's CLIs on this computer: only its owner, here, may start one (docs/local-dorks.md).
         if (location === "local") yield* serviceAsync((a) => assertLocalReady(a, actorOf(c), typeof b.provider === "string" ? b.provider : "claude"));
         const dorkId = yield* service((a) =>

@@ -419,6 +419,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     localAlwaysAllow: false,
     // The mock stands in for the owner's own server: local sessions are offered (docs/local-dorks.md).
     local: { available: true },
+    sandboxes: { available: true },
     defaultLocation: "cloud",
     sentry: { connected: false, org: null, url: null },
     claudeModels: MOCK_MODELS,

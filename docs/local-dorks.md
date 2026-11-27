@@ -81,9 +81,10 @@ coordinator's workers run where it does.
 
 Local dorks run code on the owner's computer, so:
 
-- Only the **local actor** (the owner token on loopback: the desktop app, or the dev web app on this computer) may create one, change
-  `defaultLocation`, or drive one. A relayed client (the iPhone app, a teammate through the cloud relay) gets `local.available: false`,
-  `defaultLocation: "cloud"`, and `forbidden` for `location: "local"`; it can **read** a local dork (list, transcript, files) but not
+- Only the **owner** may create one, change `defaultLocation`, or drive one: the local actor (the owner token on loopback: the desktop
+  app, or the dev web app on this computer), or the owner's own phone through the relay (the paired phone, or a relayed request whose
+  verified identity is the person who paired this computer, `isOwner`). That is Dorks Free's remote control. A teammate gets
+  `local.available: false` and `forbidden` for `location: "local"`; they can **read** a local dork (list, transcript, files) but not
   send or queue messages, comment on its previews, answer its input requests or write its files.
 - A server that runs in the cloud for an organization (`DORKS_ORG_ID`) never offers local; `DORKS_LOCAL=0` turns it off anywhere.
 - The iPhone app never offers Local; local dorks show there like any other, read-only. Their previews are `localhost` URLs, which only

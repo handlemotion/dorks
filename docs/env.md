@@ -15,6 +15,7 @@ All optional.
 | `BASE_SNAPSHOT_ID` | none | Default Boat base snapshot. The `baseSnapshotId` setting wins when set. |
 | `BOX_PROVIDER` | `boat` | The cloud provider: `boat`, or `sim` for the local simulator and tests. Local dorks always run on this computer ([local dorks](local-dorks.md)). |
 | `DORKS_LOCAL` | on | `0` turns local dorks off. A server with `DORKS_ORG_ID` never offers them. |
+| `DORKS_SANDBOXES_WITHOUT_PLAN` | off | `1` lets sessions run in sandboxes on Dorks Free, which otherwise runs chats on this Mac only ([cloud](cloud.md), "Plans"). For development (`pnpm dev` sets it unless given), the e2e and self-hosting. |
 | `DORKS_NODE_BIN` | `node` on the owner's login PATH | The Node.js (22 or later) local dorks' bridges run with. |
 | `DORKS_GIT_BASE_URL` | `https://github.com` | Where local dorks clone repositories from (`<base>/<owner>/<name>.git`); development points it at local remotes (`file://…`). |
 | `SIM_HOST_KEY` | none | Required when `BOX_PROVIDER=sim`; guards the `/sim/*` routes. |

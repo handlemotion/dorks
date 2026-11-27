@@ -32,7 +32,7 @@ const until = async (fn, what, ms = 30_000) => {
   }
 };
 
-const env = { ...process.env, DORKS_DATA_DIR: dataDir, DORKS_UI_PORT: "0", BOX_PROVIDER: "sim", SIM_HOST_KEY, SIM_BUILD_STEP_MS: "30", GH_TOKEN: GITHUB }; // GitHub: the token gh would use (lib/ghCli.ts)
+const env = { ...process.env, DORKS_DATA_DIR: dataDir, DORKS_UI_PORT: "0", BOX_PROVIDER: "sim", DORKS_SANDBOXES_WITHOUT_PLAN: "1", SIM_HOST_KEY, SIM_BUILD_STEP_MS: "30", GH_TOKEN: GITHUB }; // GitHub: the token gh would use (lib/ghCli.ts)
 const [cmd, ...args] = process.env.SERVER_BIN ? [process.env.SERVER_BIN] : ["bun", "run", join(here, "../src/main.ts")];
 const server = spawn(cmd, args, { env, stdio: ["ignore", "pipe", "pipe"] });
 server.stderr.on("data", (d) => logs.push(String(d)));

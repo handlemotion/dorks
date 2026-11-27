@@ -1,4 +1,5 @@
 import { Data, Effect } from "effect";
+import { sandboxes } from "../services/plan";
 import type { App } from "../app";
 import { BRIDGE_PORT, isBoxNotFound, type BoxProvider } from "@dorks/core/box";
 import type { DorkLocation } from "@dorks/shared";
@@ -101,8 +102,10 @@ const orOpFailed =
     job.pipe(Effect.catch((e) => settle(app, () => opFailed(app, dorkId, safe(e.cause, what), gen))));
 
 /** Why a box cannot be created right now, in words the user can act on; undefined when it can. */
-const createBlocker = (info: BoxInfo) => {
+const createBlocker = (app: App, info: BoxInfo) => {
   if (info.location === "local") return undefined; // this computer needs no snapshot or Boat environment
+  const can = sandboxes(app);
+  if (!can.available) return can.reason; // Dorks Free runs chats on this Mac only (services/plan.ts)
   if (!info.snapshotId) return "No base snapshot configured";
   if (info.requiresBoatEnvironment && !info.boatEnvironment) return "Set your Boat ChatGPT environment in Settings";
   return undefined;
@@ -118,7 +121,7 @@ const boxCreate = (app: App, dorkId: string, gen: number, replace?: string) =>
     }
     const info = yield* sync(() => boxInfo(app, dorkId));
     if (!info || info.deleting) return; // deleted before we started: do not create a box nobody will clean up
-    const blocker = createBlocker(info);
+    const blocker = createBlocker(app, info);
     if (blocker) return yield* settle(app, () => opFailed(app, dorkId, blocker, gen));
     // Only the bridge's identity goes in the create-time env; user secrets arrive over the bridge's configure call. The server
     // dials the bridge on BRIDGE_PORT once the box is up (http/bridgeLinks.ts).
@@ -155,6 +158,9 @@ const boxResume = (app: App, dorkId: string, gen: number) =>
     const info = yield* sync(() => boxInfo(app, dorkId));
     const boxId = info?.boxId;
     if (!boxId) return yield* new JobStepError({ cause: new Error("no box") });
+    // A sandbox chat made before the workspace was on Dorks Free keeps its transcript but does not wake (services/plan.ts).
+    const can = info.location === "cloud" ? sandboxes(app) : { available: true };
+    if (!can.available) return yield* settle(app, () => opFailed(app, dorkId, can.reason!, gen));
     // The provider no longer has this box (deleted out of band, retention expired). Forget the id so the machine's
     // `error` + !hasBox path recreates it from the snapshot on the next message, instead of failing resume forever.
     const gone = yield* onBox(app, info.location, (box) => box.resume(boxId)).pipe(

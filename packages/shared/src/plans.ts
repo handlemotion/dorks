@@ -17,11 +17,12 @@ export function planOf(raw: unknown): PlanId | null {
 }
 
 /** What a plan is called in the app. */
-export const PLAN_NAMES: Record<PlanId, string> = { local: "Dorks Local", teams: "Dorks Teams", cloud: "Dorks Cloud" };
+// `local` is the plan's id (it runs on your Mac); the plan is called Free. "Local" names where a chat runs, on any plan.
+export const PLAN_NAMES: Record<PlanId, string> = { local: "Dorks Free", teams: "Dorks Teams", cloud: "Dorks Cloud" };
 
 /** One line on what the org gets, for Settings › Organization. */
 export const PLAN_SUMMARIES: Record<PlanId, string> = {
-  local: "Free, on your own Mac.",
+  local: "Free: chats run on your Mac, and you can reach them from your phone while it is on.",
   teams: "One price for the organization, with your own Boat key: work together in real time, automations around the clock.",
   cloud: "Dorks Teams, with the sandboxes provided: no Boat key needed.",
 };

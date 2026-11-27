@@ -10,9 +10,11 @@ is simply an org with one member.
 
 | Plan (id) | Price | What it is |
 |---|---|---|
-| **Dorks Local** (`local`) | Free, no subscription | Your personal org on your own Mac(s), one person, through the relay. You bring your own Boat and Claude. It never runs in the cloud: upgrade it, or move it into a team, for that ([move to cloud](move-to-cloud.md)). |
+| **Dorks Free** (`local`) | Free, no subscription | Your personal workspace on your own Mac(s), one person. Chats run **locally only**, on the Mac (no sandboxes: a sandbox driven by a Mac stops with it), and you reach them from your phone through the relay while the Mac is on. You bring your own Claude or ChatGPT. To run in the cloud, upgrade it or move it into a team ([move to cloud](move-to-cloud.md)). |
 | **Dorks Teams** (`teams`) | $5/month per org | The org runs on the dorks-cloud Worker (`orgRuntime`): shared chats in real time (teammates open the same chats and send messages, and the agent knows who sent each one) and automations around the clock, where a Mac cannot wake at night. Members, invitations and roles (owner, admin, member). You bring your own Boat key and Claude. |
 | **Dorks Cloud** (`cloud`) | $29/month per org | Dorks Teams plus `cloudCredit`: Boat sandboxes on Dorks' own Boat account instead of your own key. |
+
+**Free is the plan, Local is the place.** "Local" names where a chat runs (on a Mac, as opposed to a sandbox); the plan is Dorks Free (its id stays `local`). The app labels each workspace by plan: Free, Teams, Cloud. Sandboxes are only for Teams and Cloud (`services/plan.ts`: a free workspace's server refuses to create or wake one; `DORKS_SANDBOXES_WITHOUT_PLAN=1` lifts that for development); a sandbox chat made before keeps its transcript and does not wake.
 
 A paid plan always runs on the dorks-cloud Worker, never on a Mac, and the personal workspace can take one too: upgrading it moves its
 sessions, builds and the rest to the cloud ([move to cloud](move-to-cloud.md)).

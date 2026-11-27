@@ -1,4 +1,5 @@
 import { isDorkMode, MAX_LIVE_WORKERS, MODES, type ClientEvent, type DorkLocation, type DorkMode, type SessionPr } from "@dorks/shared";
+import { defaultLocationOf, NO_SANDBOXES, sandboxes } from "./plan";
 import { fail, touch, type App } from "../app";
 import { dorkOf, dorkView, eventOf, getDork, isUnread, needsAttentionOf, prStateOf, queuedMessagesOf, type DorkRow, type DorkView, type Provider } from "../data";
 import { insert } from "../db";
@@ -103,8 +104,10 @@ function checkRepo(input: unknown, setup: boolean): string {
  * (docs/crew.md), so a local nerd's crew is local too. Builds are cloud machines: a local session works on this computer as it is.
  */
 function placeOf(app: App, input: { location?: DorkLocation; buildId?: unknown }, setup: boolean, parent?: DorkRow): { location: DorkLocation; buildId: string | null } {
-  const location: DorkLocation = parent?.location ?? input.location ?? "cloud";
+  const location: DorkLocation = parent?.location ?? input.location ?? defaultLocationOf(app);
   if (location === "local" && setup) fail("invalid", "A machine-setup session runs in the cloud.");
+  const can = sandboxes(app);
+  if (location === "cloud" && !can.available) fail("not_configured", can.reason ?? NO_SANDBOXES); // a plan to change, not a bad login
   return { location, buildId: location === "local" ? null : checkBuild(app, input.buildId, setup) };
 }
 
