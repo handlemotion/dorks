@@ -74,6 +74,8 @@ export interface Config {
   orgId?: string;
   /** `DORKS_LOCAL`: `0` turns local dorks off (docs/local-dorks.md); on by default where the server runs on the owner's computer. */
   localDorks?: boolean;
+  /** `DORKS_SANDBOXES_WITHOUT_PLAN`: `1` allows sandboxes on Dorks Free (services/plan.ts): development, the e2e, self-hosting. */
+  sandboxesWithoutPlan?: boolean;
   /** `DORKS_NODE_BIN`: the Node.js local bridges run with; else `node` on the owner's login PATH. */
   localNodeBin?: string;
   /** `DORKS_GIT_BASE_URL`: where local dorks clone repositories from (default https://github.com); development points it at local remotes. */

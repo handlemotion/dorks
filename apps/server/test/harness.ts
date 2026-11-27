@@ -26,6 +26,7 @@ export const testConfig = (over: Partial<Config> = {}): Config => ({
   uiOrigins: ["http://localhost:3000"],
   baseSnapshotId: "snap-1",
   localSkillRoots: [],
+  sandboxesWithoutPlan: true, // most tests run sandboxes; test/plan.test.ts turns it off
   ...over,
 });
 

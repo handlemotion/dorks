@@ -19,7 +19,7 @@ export const stepDone = (s: Settings): Record<StepId, boolean> => ({
 })
 
 /** What creating a session needs. Agent sign-in is checked per provider when one is chosen. */
-export const canCreate = (s: Settings) => s.boatKey && !!s.baseSnapshotId && s.github.configured
+export const canCreate = (s: Settings) => (isFree(s) ? canCreateLocal(s) : s.boatKey && !!s.baseSnapshotId && s.github.configured)
 
 /** What a local session needs (docs/local-dorks.md): this client may start one, and GitHub; no Boat and no snapshot. */
 export const canCreateLocal = (s: Settings) => !!s.local?.available && s.github.configured
@@ -32,6 +32,12 @@ export const canCreateLocal = (s: Settings) => !!s.local?.available && s.github.
 export type OnboardingStepId = 'intro' | 'boat' | 'agent' | 'github'
 
 export const ONBOARDING_STEPS: OnboardingStepId[] = ['intro', 'boat', 'agent', 'github']
+
+/** Dorks Free runs chats on this Mac (docs/cloud.md): no sandboxes, so nothing to ask about Boat. */
+export const isFree = (s: Settings) => s.sandboxes?.available === false
+
+/** The steps this workspace asks: Boat only where sessions can run in sandboxes. */
+export const onboardingSteps = (s: Settings): OnboardingStepId[] => (isFree(s) ? ONBOARDING_STEPS.filter((id) => id !== 'boat') : ONBOARDING_STEPS)
 
 /** Remembered in this browser/webview: the owner pressed Get started on the intro. */
 export const WELCOMED_KEY = 'dorks.welcomed'
@@ -53,8 +59,8 @@ export const onboardingDone = (s: Settings, welcomed: boolean): Record<Onboardin
 /** Every onboarding step is answered: the app opens. The snapshot may still be building. */
 export const onboarded = (s: Settings) => {
   const d = stepDone(s)
-  return d.boat && d.agents && d.github
+  return (isFree(s) || d.boat) && d.agents && d.github
 }
 
 /** Where a returning owner resumes: the first step that is not done, or null when there is nothing left to ask. */
-export const firstOnboardingStep = (s: Settings, welcomed: boolean): OnboardingStepId | null => ONBOARDING_STEPS.find((id) => !onboardingDone(s, welcomed)[id]) ?? null
+export const firstOnboardingStep = (s: Settings, welcomed: boolean): OnboardingStepId | null => onboardingSteps(s).find((id) => !onboardingDone(s, welcomed)[id]) ?? null

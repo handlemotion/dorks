@@ -29,5 +29,5 @@ export const str = (v: unknown) => v as string;
 export const id = (c: Context) => c.req.param("id") as string;
 export const name = (c: Context) => c.req.param("name") as string;
 
-/** A relayed client (the phone, a teammate) may read a local dork but not drive it (services/localDorks.ts). */
-export const drive = (c: Context) => service((a) => assertMayDrive(actorOf(c), owned(a, id(c))));
+/** Only its owner (here or from their phone) drives a local dork; a teammate may read it (services/localDorks.ts). */
+export const drive = (c: Context) => service((a) => assertMayDrive(a, actorOf(c), owned(a, id(c))));

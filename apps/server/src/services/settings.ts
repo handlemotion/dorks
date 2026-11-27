@@ -1,4 +1,5 @@
 import { commentPolicy as commentPolicySchema, DEFAULT_COMMENT_POLICY, isDorkLocation, type CommentPolicy, type DorkLocation, type LocalAvailability } from "@dorks/shared";
+import { sandboxes, serverPlan } from "./plan";
 import { knownAntigravityModels, knownCodexModels, knownModelChoices } from "./models";
 import { fail, OWNER, touch, type App } from "../app";
 import { aad, decrypt, encrypt } from "@dorks/core/crypto";
@@ -109,8 +110,11 @@ export function settingsView(app: App, local: LocalAvailability = { available: f
     claudeCodeMode: s.claudeCodeMode,
     localAlwaysAllow: s.localAlwaysAllow,
     local,
-    // A client that cannot start local dorks starts every session in the cloud, whatever the owner picked on their computer.
-    defaultLocation: local.available ? s.defaultLocation : "cloud",
+    // Whether sessions may run in sandboxes: Dorks Teams and Dorks Cloud; Dorks Free runs them on this Mac (services/plan.ts).
+    sandboxes: sandboxes(app),
+    plan: serverPlan(app),
+    // Where a new session starts: where the owner picked, among the places this client may start one.
+    defaultLocation: !sandboxes(app).available ? "local" : local.available ? s.defaultLocation : "cloud",
     sentry: { connected: !!(s.sentryTokenEnc && s.sentryOrg), org: s.sentryOrg ?? null, url: s.sentryUrl ?? null },
     boxProvider: app.cfg.boxProvider,
     claudeModels: knownModelChoices(app),

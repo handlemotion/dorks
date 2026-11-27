@@ -35,7 +35,7 @@ For a single value in an env var, use `doppler secrets get NAME --plain -p dorks
 Real Claude through the whole stack in a cloud container (verified): the container runs as root, so add an unprivileged user (`useradd -m dorkrun`), drop the session's own Claude variables from the server's env (`ANTHROPIC_BASE_URL`, `SESSION_INGRESS_URL`, every `CLAUDE_CODE_*`) so the bridge's child CLI only sees the token you saved, then:
 
 ```sh
-BRIDGE_IMPL=real CLAUDE_BIN="$(command -v claude)" CLAUDE_RUN_AS=dorkrun DORKS_E2E_ROOT=/tmp/de \
+BRIDGE_IMPL=real DORKS_SANDBOXES_WITHOUT_PLAN=1 CLAUDE_BIN="$(command -v claude)" CLAUDE_RUN_AS=dorkrun DORKS_E2E_ROOT=/tmp/de \
   DORKS_DATA_DIR=<temp dir> DORKS_UI_PORT=0 node scripts/dev.mjs --only server
 ```
 
@@ -44,7 +44,7 @@ Save the token as above, then drive it with `POST /api/dorks` and `GET /api/dork
 Real Boat sandboxes from a cloud session: the server dials out to each box's bridge through Boat's hosted port, so nothing needs a tunnel or an inbound port; an outbound WebSocket through the proxy is enough ([docs/architecture.md](docs/architecture.md), "Bridge protocol").
 
 ```sh
-GH_TOKEN=$(doppler secrets get GITHUB_TOKEN --plain -p dorks -c dev_live) \
+GH_TOKEN=$(doppler secrets get GITHUB_TOKEN --plain -p dorks -c dev_live) DORKS_SANDBOXES_WITHOUT_PLAN=1 \
   DORKS_UI_PORT=0 DORKS_OWNER_TOKEN=dev-owner-token DORKS_DATA_DIR=<temp dir> bun run apps/server/src/main.ts
 ```
 

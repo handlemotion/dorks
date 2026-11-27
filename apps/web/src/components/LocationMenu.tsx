@@ -10,6 +10,8 @@ import { InputGroupButton } from '@dorks/ui/input-group'
 export interface LocationChoice {
   value: DorkLocation
   onChange: (location: DorkLocation) => void
+  /** Why Cloud cannot be picked (Dorks Free runs chats on this Mac); undefined when it can. */
+  cloudBlocked?: string
 }
 
 /** "this Mac" in the desktop app; the dev web app may run elsewhere. */
@@ -44,10 +46,10 @@ export function LocationMenu({ choice, disabled }: { choice: LocationChoice; dis
           {(['cloud', 'local'] as const).map((l) => {
             const ItemIcon = LOCATION_ICONS[l]
             return (
-              <DropdownMenuRadioItem key={l} value={l}>
+              <DropdownMenuRadioItem key={l} value={l} disabled={l === 'cloud' && !!choice.cloudBlocked}>
                 <ItemIcon />
                 <span>{NAMES[l]}</span>
-                <span className="text-muted-foreground">{DETAILS[l]}</span>
+                <span className="text-muted-foreground">{l === 'cloud' && choice.cloudBlocked ? 'Needs Teams or Cloud' : DETAILS[l]}</span>
               </DropdownMenuRadioItem>
             )
           })}

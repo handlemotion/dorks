@@ -77,6 +77,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     siteUrl: env.DORKS_SITE_URL || DEFAULT_SITE_URL,
     orgId: env.DORKS_ORG_ID?.trim() || undefined,
     localDorks: env.DORKS_LOCAL !== "0",
+    // Sandboxes without a paid plan (services/plan.ts): development, the e2e, self-hosting.
+    sandboxesWithoutPlan: env.DORKS_SANDBOXES_WITHOUT_PLAN === "1",
     localNodeBin: env.DORKS_NODE_BIN || undefined,
     localGitBaseUrl: env.DORKS_GIT_BASE_URL?.replace(/\/+$/, "") || undefined,
   };

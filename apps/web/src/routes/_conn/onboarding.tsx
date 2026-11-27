@@ -5,7 +5,7 @@ import { BrandCircle } from '../../components/BrandCircle'
 import { Frame } from '../../components/onboarding/Frame'
 import { AgentSignIn, BoatKey, GitHub, Intro, type StepProps } from '../../components/onboarding/Steps'
 import { setWindowMode } from '../../lib/desktop'
-import { firstOnboardingStep, ONBOARDING_STEPS, onboarded, readWelcomed, type OnboardingStepId } from '../../lib/onboarding'
+import { firstOnboardingStep, onboardingSteps, onboarded, readWelcomed, type OnboardingStepId } from '../../lib/onboarding'
 
 export const Route = createFileRoute('/_conn/onboarding')({ component: Onboarding })
 
@@ -34,7 +34,7 @@ function Onboarding() {
   // Once the real settings arrive, open at the first unfinished step. Nothing unfinished (the owner reran setup from Settings):
   // open at Boat so each answer can be reviewed.
   useEffect(() => {
-    if (settings && step === null) setStep(firstOnboardingStep(settings, readWelcomed()) ?? 'boat')
+    if (settings && step === null) setStep(firstOnboardingStep(settings, readWelcomed()) ?? onboardingSteps(settings)[1]!)
   }, [settings, step])
   if (!settings || step === null) {
     return (
@@ -47,15 +47,16 @@ function Onboarding() {
     )
   }
 
-  const index = ONBOARDING_STEPS.indexOf(step)
+  const steps = onboardingSteps(settings)
+  const index = steps.indexOf(step)
   const next = () => {
-    const to = ONBOARDING_STEPS[index + 1]
+    const to = steps[index + 1]
     if (to) setStep(to)
     else setFinishing(true)
   }
   const View = VIEWS[step]
   return (
-    <Frame step={step} onBack={index > 0 ? () => setStep(ONBOARDING_STEPS[index - 1]!) : undefined}>
+    <Frame steps={steps} step={step} onBack={index > 0 ? () => setStep(steps[index - 1]!) : undefined}>
       <View settings={settings} onNext={next} />
     </Frame>
   )

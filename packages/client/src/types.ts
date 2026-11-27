@@ -179,8 +179,12 @@ export interface Settings {
   boxProvider?: string;
   /** Whether this client may start sessions on the server's computer (docs/local-dorks.md); never for a relayed client. Absent on older servers. */
   local?: LocalAvailability;
-  /** Where the new-session composer starts: its Cloud / Local choice, remembered. Always cloud when `local` is not available. */
+  /** Where the new-session composer starts: its Cloud / Local choice, remembered. Cloud when `local` is not available; local when `sandboxes` is not. */
   defaultLocation?: DorkLocation;
+  /** Whether sessions may run in sandboxes: Dorks Teams and Dorks Cloud; Dorks Free runs them on the Mac. Absent on older servers (allowed). */
+  sandboxes?: { available: boolean; reason?: string };
+  /** This workspace's plan (`local` is Dorks Free). Absent on older servers. */
+  plan?: PlanId;
   /** The models a Claude agent last reported (empty before any session started); what a new session can choose from. */
   claudeModels?: AgentModelChoice[];
   /** The build new sessions start on; null: the base snapshot. */

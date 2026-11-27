@@ -1,4 +1,5 @@
 import { planOf, type PlanId } from "@dorks/shared";
+import { rememberPlan } from "./plan";
 import { fail, OWNER, touch, type App } from "../app";
 import { aad, decrypt, encrypt } from "@dorks/core/crypto";
 import { update } from "../db";
@@ -300,6 +301,7 @@ export const cloudAccount = {
     if (fromMacs) res = await call(app, "/v1/macs", auth);
     if (!res.ok) await refused(res, "Dorks Cloud could not list your organizations");
     const orgs = fromMacs ? orgsFromMacs(await readJson(res)) : list(await readJson(res), orgOf);
+    rememberPlan(app, orgs);
     return { orgs: orgs.toSorted((a, b) => Number(b.personal) - Number(a.personal)) };
   },
 

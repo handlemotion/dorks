@@ -35,6 +35,8 @@ const env = {
   DORKS_DATA_DIR: process.env.DORKS_DATA_DIR || join(root, ".dev-data"),
   DORKS_OWNER_TOKEN: token,
   BOX_PROVIDER: "sim",
+  // Simulated sandboxes without a paid plan (services/plan.ts); DORKS_SANDBOXES_WITHOUT_PLAN=0 tries Dorks Free's local-only rule.
+  DORKS_SANDBOXES_WITHOUT_PLAN: process.env.DORKS_SANDBOXES_WITHOUT_PLAN ?? "1",
   SIM_HOST_KEY: simKey,
   ...(!onlyServer ? { DORKS_UI_ORIGINS: [process.env.DORKS_UI_ORIGINS || "http://localhost:3000,http://127.0.0.1:3000", `http://localhost:${webPort}`, `http://127.0.0.1:${webPort}`].join(",") } : {}),
 };

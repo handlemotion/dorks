@@ -137,7 +137,8 @@ export function OrgSwitcher({ login }: { login?: string | null }) {
 
 function OrgItem({ value, org, cloud, login }: { value: string; org: CloudOrg | null; cloud: CloudStatus | undefined; login?: string | null }) {
   // Signed out the row is already named Personal; signed in it is your name, marked Personal.
-  const trailing = !org ? null : org.personal ? 'Personal' : planLabel(org.plan)
+  // Every workspace shows its plan (Free, Teams, Cloud): what it costs and where it runs, not whose it is.
+  const trailing = !org ? null : planLabel(org.plan ?? 'local')
   return (
     <DropdownMenuRadioItem value={value} closeOnClick>
       <OrgMark org={org} login={login} />
