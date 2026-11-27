@@ -662,6 +662,8 @@ export class DorksClient {
   readonly actions = {
     createDork: async (input: CreateDorkInput) => {
       const r = await this.api.createDork(input);
+      // A cloud session's transcript has the first message only once the agent reads it, after the box starts: show it meanwhile.
+      if (this.cfg.cloud && typeof input.message === "string" && input.message.trim()) this.events(r.id).show(input.message);
       this.invalidate("dorks");
       return r;
     },

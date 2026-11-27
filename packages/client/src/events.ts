@@ -161,6 +161,12 @@ export class EventsFeed implements Store<EventsState> {
     });
   }
 
+  /** Shows a message the server already has but the transcript will not carry until the agent reads it (a cloud session's first one, still starting up). Its echo replaces it. */
+  show(text: string) {
+    this.pending.push({ id: `pending-${this.pendingCounter++}`, text });
+    this.publish();
+  }
+
   /** Sends a message and shows it at once; if the server refuses, the optimistic row is removed and the error is rethrown. */
   async send(text: string): Promise<void> {
     const entry = { id: `pending-${this.pendingCounter++}`, text };
