@@ -44,6 +44,8 @@ async function main() {
 }
 
 main().catch((e) => {
-  console.error("[bridge] fatal:", (e as { name?: string })?.name ?? "error"); // never the message: it may echo configuration
+  // Never the message: it may echo configuration. The name and an errno code (EINVAL, EADDRINUSE) are safe and say what went wrong.
+  const { name, code } = (e ?? {}) as { name?: string; code?: unknown };
+  console.error("[bridge] fatal:", name ?? "error", typeof code === "string" && /^E[A-Z]+$/.test(code) ? code : "");
   process.exit(1);
 });
