@@ -73,6 +73,8 @@ export class Query<T> implements Store<QueryState<T>> {
   /** When the last successful read landed; 0 when an invalidation arrived since (nobody watched then). */
   private fetchedAt = 0;
   private lastStart = 0;
+  /** The newest generation started before the last invalidation nobody watched: a read of it or older is not fresh. */
+  private staleGen = 0;
   /** When the last subscriber left (or the query was made); undefined while someone watches. The client drops long-idle queries. */
   idleSince: number | undefined = Date.now();
 
@@ -104,7 +106,11 @@ export class Query<T> implements Store<QueryState<T>> {
   /** Refetch now if anyone is watching; otherwise the next subscriber refetches. */
   invalidate() {
     if (this.listeners.size > 0) void this.refresh();
-    else this.fetchedAt = 0;
+    else {
+      // A prefetch still in flight may have been answered before this change: its answer must not count as fresh.
+      this.fetchedAt = 0;
+      this.staleGen = this.gen;
+    }
   }
 
   /** Starts the read now, before anything shows it (its screen is about to): the subscriber then finds it in flight or fresh. */
@@ -172,7 +178,7 @@ export class Query<T> implements Store<QueryState<T>> {
     try {
       const data = await this.fetcher();
       this.failures = 0;
-      this.fetchedAt = Date.now();
+      this.fetchedAt = gen > this.staleGen ? Date.now() : 0;
       // Changes the server had confirmed before this read started are in it now.
       this.patches = this.patches.filter((p) => !landed(p, gen, data));
       this.set({ status: "ready", data, error: undefined });

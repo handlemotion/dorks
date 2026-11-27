@@ -32,6 +32,17 @@ describe("optimistic writes", () => {
     expect(pending).toHaveLength(0);
   });
 
+  it("an invalidation during an unwatched prefetch is not lost to its answer", async () => {
+    const { q, answer, pending } = controlled();
+    q.prefetch();
+    q.invalidate(); // a live change while the prefetch is in flight, nobody watching yet
+    await answer(["old"]);
+    q.subscribe(() => {}); // the chat opens within the freshness window
+    expect(pending).toHaveLength(1); // still read again: the prefetch's answer predates the change
+    await answer(["new"]);
+    expect(q.getSnapshot().data).toEqual(["new"]);
+  });
+
   it("are taken back when the server refuses them", async () => {
     const { q, answer } = controlled();
     q.subscribe(() => {});

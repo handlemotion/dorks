@@ -143,7 +143,11 @@ export class DorksClient {
     this.greeted = false;
     this.startedAt = Date.now();
     if (typeof document !== "undefined") document.addEventListener("visibilitychange", this.onVisibility);
-    const onStatus = (live: LiveStatus) => this.setConnection({ live, ...(live === "unauthorized" ? { unauthorized: true } : {}) });
+    const onStatus = (live: LiveStatus) => {
+      // A connection that failed before its first hello is retried from a later time: that hello must resync everything.
+      if (live === "offline" || live === "unauthorized") this.greeted = true;
+      this.setConnection({ live, ...(live === "unauthorized" ? { unauthorized: true } : {}) });
+    };
     const onMessage = (m: LiveMessage) => this.onLive(m);
     if (this.cfg.cloud) {
       const live = connectCloudLive({
@@ -308,10 +312,12 @@ export class DorksClient {
       case "hello": {
         if (!this.cfg.cloud) this.setPresence(new Map()); // a cloud team's presence has its own stream, which keeps it current
         void this.sendViewing();
-        // Everything is read again, except, at the first hello, what was read since the stream opened: that is as new as the
-        // stream (a cloud feed reads from when it opened), and reading it twice on startup only queues the next screen's reads
-        // behind it (a browser opens 6 connections a host). DorksProvider opens the stream before anything subscribes.
-        const first = !this.greeted;
+        // Everything is read again, except, for a cloud org, at the first hello of the first connection, what was read since the
+        // stream opened: the org feed reads from the time `start()` made its reader, so it has every change after those reads
+        // began, and reading them twice on startup only queues the next screen's reads behind them (a browser opens 6
+        // connections a host). `/api/live` replays nothing from before its request reached the server, so it always resyncs.
+        // DorksProvider opens the stream before anything subscribes.
+        const first = !this.greeted && !!this.cfg.cloud;
         this.greeted = true;
         for (const q of this.queries.values()) if (!(first && q.startedAt >= this.startedAt)) q.invalidate();
         for (const id of this.feeds.keys()) this.tailFeed(id);
