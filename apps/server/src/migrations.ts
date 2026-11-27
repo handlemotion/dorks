@@ -671,4 +671,9 @@ export const MIGRATIONS: string[] = [
   UPDATE dorks SET mode = 'code' WHERE mode = 'chat';
   UPDATE automations SET mode = 'code', enabled = 0 WHERE mode = 'chat';
   `,
+  `
+  -- The base snapshot is shared by installer (services/snapshot.ts): a build that was asked to rebuild it (force) says so here, so a
+  -- build recovered after a restart still rebuilds instead of adopting the snapshot already saved under that name.
+  ALTER TABLE snapshot_build ADD COLUMN forced INTEGER NOT NULL DEFAULT 0;
+  `,
 ];

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import type { Change } from "../src/app";
 import { BoatError } from "@dorks/core/boat";
 import { readSettings, updateSettings } from "../src/services/settings";
-import { buildLabel, rebuildIfStale, recoverSnapshotBuild, runBuild, snapshotName, snapshotView, startBuild } from "../src/services/snapshot";
+import { buildLabel, legacySnapshotName, rebuildIfStale, recoverSnapshotBuild, runBuild, snapshotName, snapshotView, startBuild } from "../src/services/snapshot";
 import { hasTimer } from "../src/lifecycle/dispatch";
 import { harness, testAssets, type Harness } from "./harness";
 
@@ -59,8 +59,8 @@ describe("a successful build", () => {
     await startBuild(h.app);
     await h.settle();
 
-    const name = snapshotName(h.app);
-    expect(name).toMatch(/^dorks-base-[0-9a-f]{8}$/);
+    const name = snapshotName(h.assets.current.bundleId);
+    expect(name).toMatch(/^dorks-base-[0-9a-f]{12}$/);
     expect(Buffer.from(d.files.get("/home/user/dorks-bridge.mjs")!, "base64").toString()).toBe("bridge-v1");
     expect(d.files.get("/home/user/boat-install.sh")).toBe("installer-v1");
     expect(d.commands[0]).toContain(h.assets.current.bridgeSha256); // the upload is checked before anything runs
@@ -103,13 +103,42 @@ describe("a successful build", () => {
   it("ignores the old artifact while a re-save is still running, and waits for its own", async () => {
     const h = await ready();
     const d = h.snapshotDriver;
-    const name = snapshotName(h.app);
+    const name = snapshotName(h.assets.current.bundleId);
     d.saved.set(name, { name, status: "ready", sourceSandboxId: "bx_old00000" }); // a previous build's snapshot
     d.savingPolls = 3;
-    await startBuild(h.app);
+    await startBuild(h.app, { force: true }); // forced: a ready one under the name is rebuilt, not used as is
     await h.settle();
     expect(d.calls.filter((c) => c === "getSnapshot").length).toBe(4); // 3 x saving, then ready
     expect(await snapshotView(h.app)).toMatchObject({ state: "ready" });
+  });
+
+  it("uses the installer's snapshot another install already saved: no build sandbox, no save", async () => {
+    const h = await ready();
+    const d = h.snapshotDriver;
+    const name = snapshotName(h.assets.current.bundleId);
+    d.saved.set(name, { name, status: "ready", sourceSandboxId: "bx_other000" }); // saved by another install on this Boat account
+    await startBuild(h.app);
+    await h.settle();
+    expect(d.calls).not.toContain("create");
+    expect(d.calls).not.toContain("save");
+    expect(readSettings(h.app).baseSnapshotId).toBe(name);
+    expect(await snapshotView(h.app)).toMatchObject({ state: "ready", snapshot: name, managed: true, stale: false });
+  });
+
+  it("another install saving the same snapshot at the same time: the build takes theirs instead of failing", async () => {
+    const h = await ready();
+    const d = h.snapshotDriver;
+    const name = snapshotName(h.assets.current.bundleId);
+    // Both passed the check before either was saved; the other install's save wins and Boat answers ours with save_in_progress
+    // (the Boat driver swallows that 409), so our own save never shows up under the name.
+    d.saveSnapshot = async () => {
+      d.calls.push("save");
+      d.saved.set(name, { name, status: "ready", sourceSandboxId: "bx_other000" });
+    };
+    await startBuild(h.app);
+    await h.settle();
+    expect(await snapshotView(h.app)).toMatchObject({ state: "ready", snapshot: name, error: null });
+    expect(d.boxes.size).toBe(0);
   });
 
   it("leaves a snapshot the user named by hand alone: not managed, never stale", async () => {
@@ -252,6 +281,40 @@ describe("restarts", () => {
     expect(buildRow(h).attempt).toBe(attempt + 1);
     await h.settle();
     expect(await snapshotView(h.app)).toMatchObject({ state: "ready", stale: false, builtBundleId: h.assets.current.bundleId });
+  });
+
+  it("an install on its old per-install snapshot moves to the shared one on start and deletes the old one", async () => {
+    const h = await ready();
+    const d = h.snapshotDriver;
+    const legacy = legacySnapshotName(h.app);
+    const shared = snapshotName(h.assets.current.bundleId);
+    d.saved.set(legacy, { name: legacy, status: "ready", sourceSandboxId: "bx_old00000" });
+    d.saved.set(shared, { name: shared, status: "ready", sourceSandboxId: "bx_other000" });
+    h.app.db.run("UPDATE snapshot_build SET ready_name = ?, ready_bundle_id = ?, ready_at = 1 WHERE id = 1", legacy, h.assets.current.bundleId);
+    await updateSettings(h.app, { baseSnapshotId: legacy });
+
+    await rebuildIfStale(h.app);
+    await h.settle();
+    expect(readSettings(h.app).baseSnapshotId).toBe(shared);
+    expect(d.deletedSnapshots).toEqual([legacy]);
+    expect(d.calls).not.toContain("create"); // the shared one was already there
+
+    await rebuildIfStale(h.app); // on it now: nothing more to do
+    expect(hasTimer(h.app, "", "snapshot:build")).toBe(false);
+  });
+
+  it("a forced rebuild interrupted by a restart still rebuilds, instead of adopting the snapshot already saved", async () => {
+    const h = await ready();
+    const d = h.snapshotDriver;
+    await startBuild(h.app);
+    await h.settle(); // the shared snapshot is saved and ready
+    const saves = d.calls.filter((c) => c === "save").length;
+    await startBuild(h.app, { force: true });
+    h.app.db.run("DELETE FROM timers WHERE name = 'snapshot:build'"); // claimed, then the process died
+    recoverSnapshotBuild(h.app);
+    await h.settle();
+    expect(d.calls.filter((c) => c === "save").length).toBe(saves + 1);
+    expect((await snapshotView(h.app)).state).toBe("ready");
   });
 
   it("a stale job from an earlier attempt does nothing", async () => {

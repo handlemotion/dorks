@@ -15,8 +15,12 @@ import { boatKey, readSettings } from "./settings";
 //   create a build sandbox (no account credentials, lifetime-limited) -> wait ready -> upload the bridge bundle and installer
 //   (checked by sha256) -> run the installer -> save a snapshot -> point `baseSnapshotId` at it -> delete the build sandbox.
 //
-// The snapshot name is per installation (`dorks-base-<8 hex of the instance id>`), so two installs on one Boat account never replace
-// each other's image; rebuilding saves the same name again, which Boat replaces atomically (a failed save keeps the last good one).
+// The snapshot is shared by every install on the Boat account that carries the same installer: its name is the installer's hash
+// (`dorks-base-<12 hex>`), and an install whose snapshot is already there and ready uses it without building (no sandbox, no save).
+// So a second Mac, or a throwaway dev or test server, costs nothing and adds no saved snapshot. Saved snapshots are billed per day
+// past the plan's allowance, so one per install was a cost that grew with every server started against the account.
+// A forced rebuild saves the same name again, which Boat replaces atomically (a failed save keeps the last good one). An install
+// that still uses its old per-install snapshot (`legacySnapshotName`) moves to the shared one on start and deletes the old one.
 // The job is one row in `timers`, claimed at-most-once like every job; a crash leaves the row `running`, and `recoverSnapshotBuild`
 // re-queues it on the next start with a new attempt number. Every attempt first deletes any build sandbox it finds (the one it
 // recorded, and any carrying this install's build label), so a crash never leaves a billing sandbox behind.
@@ -60,12 +64,20 @@ interface BuildRow {
   ready_name: string | null;
   ready_bundle_id: string | null;
   ready_at: number | null;
+  /** The running build was asked to rebuild the snapshot (force): kept with the attempt, so a recovered job does too. */
+  forced: number;
 }
 
 const readBuild = (app: App) => app.db.get<BuildRow>("SELECT * FROM snapshot_build WHERE id = 1")!;
 
-/** Stable per installation; lowercase letters, digits and dashes, as Boat requires. */
-export const snapshotName = (app: App) =>
+/** The shared name for an installer (its `bundleId`): lowercase letters, digits and dashes, as Boat requires. */
+export const snapshotName = (bundleId: string) =>
+  `dorks-base-${bundleId
+    .replace(/[^a-z0-9]/gi, "")
+    .toLowerCase()
+    .slice(0, 12)}`;
+/** The per-install name used before snapshots were shared (8 hex of the instance id). */
+export const legacySnapshotName = (app: App) =>
   `dorks-base-${instanceId(app)
     .replace(/[^a-z0-9]/gi, "")
     .toLowerCase()
@@ -150,9 +162,15 @@ function queueBuild(app: App, opts: { force?: boolean; bundleId?: string }) {
     const row = readBuild(app);
     if (row.status === "running") return;
     const inUse = !!row.ready_name && readSettings(app).baseSnapshotId === row.ready_name;
-    if (!opts.force && row.status !== "failed" && inUse && row.ready_bundle_id === opts.bundleId) return; // already up to date
+    const current = inUse && !!opts.bundleId && row.ready_bundle_id === opts.bundleId && row.ready_name === snapshotName(opts.bundleId);
+    if (!opts.force && row.status !== "failed" && current) return; // already up to date
     const attempt = row.attempt + 1;
-    update(app.db, "snapshot_build", { id: 1 }, { status: "running", step: STEPS[0].id, message: STEPS[0].label, error: null, attempt, startedAt: app.now(), finishedAt: null });
+    update(
+      app.db,
+      "snapshot_build",
+      { id: 1 },
+      { status: "running", step: STEPS[0].id, message: STEPS[0].label, error: null, attempt, startedAt: app.now(), finishedAt: null, forced: opts.force ? 1 : 0 },
+    );
     setTimer(app, "", SNAPSHOT_JOB, 0, { attempt });
     touch(app, { t: "snapshot" });
     console.error(`snapshot build queued (attempt ${attempt})`);
@@ -183,8 +201,15 @@ export async function rebuildIfStale(app: App): Promise<void> {
     const s = readSettings(app);
     if (!s.boatKeyEnc) return;
     const view = await snapshotView(app);
-    if (!view.stale || view.state !== "ready" || !view.currentBundleId) return;
-    console.error(`base snapshot is stale (installer ${view.builtBundleId}, app has ${view.currentBundleId}): rebuilding`);
+    if (view.state !== "ready" || !view.currentBundleId) return;
+    // Still on its own per-install snapshot: move to the shared one (used as is when another install already saved it).
+    const unshared = view.managed && view.snapshot !== snapshotName(view.currentBundleId);
+    if (!view.stale && !unshared) return;
+    console.error(
+      view.stale
+        ? `base snapshot is stale (installer ${view.builtBundleId}, app has ${view.currentBundleId}): rebuilding`
+        : `base snapshot ${view.snapshot} is per install: moving to the shared ${snapshotName(view.currentBundleId)}`,
+    );
     queueBuild(app, { bundleId: view.currentBundleId });
   } catch (e) {
     console.error("stale snapshot check failed", e instanceof Error ? e.message.slice(0, 200) : "unknown");
@@ -242,20 +267,33 @@ export const buildJob = (app: App, attempt: number): Effect.Effect<void> =>
     const first = readBuild(app);
     if (first.status !== "running" || first.attempt !== attempt) return Effect.void; // superseded or cancelled
     // The failure is recorded before the scope closes: the person sees it while the sandbox is still being deleted, as before.
-    return buildSteps(app, attempt, first).pipe(
+    // A forced build rebuilds even when the shared snapshot is already saved (read from the row: it survives a restart).
+    return buildSteps(app, attempt, first, first.forced === 1).pipe(
       Effect.catchCause((cause) => recordFailure(app, attempt, cause)),
       Effect.scoped,
     );
   });
 
-const buildSteps = Effect.fnUntraced(function* (app: App, attempt: number, first: BuildRow) {
+const buildSteps = Effect.fnUntraced(function* (app: App, attempt: number, first: BuildRow, force: boolean) {
   const label = buildLabel(app);
-  const name = snapshotName(app);
   const driver = snapshotOps(yield* fromPromise(() => app.getSnapshotDriver()));
   const assets = yield* fromPromise(() => app.snapshotAssets());
+  const name = snapshotName(assets.bundleId);
 
   yield* progress(app, attempt, "prepare");
   yield* removeBuildSandboxes(app, driver, label, first.build_sandbox_id);
+
+  // Another install on this Boat account (or this one, earlier) already saved this installer's snapshot: use it as is.
+  if (!force) {
+    const saved = yield* driver.getSnapshot(name).pipe(Effect.catch(() => Effect.succeed(null)));
+    if (saved?.status === "ready") {
+      yield* progress(app, attempt, "finish");
+      const previous = yield* finishBuild(app, attempt, name, assets.bundleId, driver);
+      console.error(`base snapshot ${name} is already on the Boat account: using it`);
+      if (previous !== name) rebuildImages(app);
+      return;
+    }
+  }
 
   yield* progress(app, attempt, "create");
   const sandboxId = yield* buildSandbox(app, driver, label, attempt);
@@ -276,10 +314,10 @@ const buildSteps = Effect.fnUntraced(function* (app: App, attempt: number, first
 
   yield* progress(app, attempt, "save");
   yield* driver.saveSnapshot(sandboxId, name);
-  yield* waitSaved(app, driver, name, sandboxId);
+  yield* waitSaved(app, driver, name, sandboxId, force);
 
   yield* progress(app, attempt, "finish");
-  yield* finishBuild(app, attempt, name, assets.bundleId);
+  yield* finishBuild(app, attempt, name, assets.bundleId, driver);
   console.error(`snapshot build ready: ${name}`);
   rebuildImages(app);
 });
@@ -313,11 +351,17 @@ const buildSandbox = (app: App, driver: SnapshotOps, label: string, attempt: num
     (id) => removeBuildSandbox(app, driver, id),
   );
 
-const finishBuild = (app: App, attempt: number, name: string, bundleId: string) =>
+/**
+ * Points the app at `name`. Answers the snapshot it used before. If that was this install's old per-install snapshot, it is deleted
+ * (best effort): nothing else uses it, and Boat bills saved snapshots past the plan's allowance.
+ */
+const finishBuild = (app: App, attempt: number, name: string, bundleId: string, driver: SnapshotOps) =>
   Effect.suspend(() => {
+    const before = { name: null as string | null };
     const current = app.db.tx(() => {
       const row = readBuild(app);
       if (row.attempt !== attempt) return false;
+      before.name = readSettings(app).baseSnapshotId ?? null;
       const now = app.now();
       update(app.db, "snapshot_build", { id: 1 }, { status: "idle", step: null, message: null, error: null, finishedAt: now, readyName: name, readyBundleId: bundleId, readyAt: now });
       update(app.db, "settings", { id: 1 }, { baseSnapshotId: name });
@@ -325,7 +369,15 @@ const finishBuild = (app: App, attempt: number, name: string, bundleId: string) 
       touch(app, { t: "snapshot" });
       return true;
     });
-    return current ? Effect.void : Effect.fail(new Superseded());
+    if (!current) return Effect.fail(new Superseded());
+    const previous = before.name;
+    const legacy = legacySnapshotName(app);
+    if (previous !== legacy || legacy === name) return Effect.succeed(previous);
+    return driver.deleteSnapshot(legacy).pipe(
+      Effect.tap(() => Effect.sync(() => console.error(`deleted the per-install base snapshot ${legacy}`))),
+      Effect.catch((e) => Effect.sync(() => console.error(`could not delete ${legacy}`, e instanceof Error ? e.message.slice(0, 200) : "unknown"))),
+      Effect.as(previous),
+    );
   });
 
 /** Marks the attempt failed with a message for the person watching, unless it was superseded or interrupted. */
@@ -345,9 +397,12 @@ function recordFailure(app: App, attempt: number, cause: Cause.Cause<unknown>): 
   });
 }
 
-const waitSaved = Effect.fnUntraced(function* (app: App, driver: SnapshotOps, name: string, sandboxId: string) {
+const waitSaved = Effect.fnUntraced(function* (app: App, driver: SnapshotOps, name: string, sandboxId: string, force: boolean) {
   for (let i = 0; i < SAVE_POLLS; i++) {
     const info = yield* driver.getSnapshot(name);
+    // Another install on the account built the same installer at the same time and its save won (Boat answers ours with
+    // save_in_progress): the name holds the same image, so a build that was not forced is done. A forced one waits for its own.
+    if (!force && info?.status === "ready" && info.sourceSandboxId !== sandboxId) return;
     // Re-saving a name replaces the old artifact only once the new one is ready: trust the status of OUR save, not of the old one.
     if (info?.sourceSandboxId === sandboxId) {
       if (info.status === "ready") return;

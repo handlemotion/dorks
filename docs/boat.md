@@ -27,15 +27,15 @@ Which `boat`: the one on `PATH` (or `~/.ascii/bin`, where Boat's installer puts 
 
 Each dork starts from a [saved snapshot](https://docs.boat.dev/snapshots/templates) in your Boat account. It holds the bridge and the tools the agent needs but **no credentials and no per-dork environment**. Boat's image already has Node, git and Claude Code. `infra/snapshot/boat-install.sh` adds the Codex CLI, the bridge (as `dorks-bridge`, with `dorks` and the `gh` shim as symlinks), a pinned `gh` and `gh stack`. It checks versions and download checksums before it exits. Details and the bump procedure: [infra/snapshot/README.md](../infra/snapshot/README.md).
 
-Snapshots belong to one Boat account, so every install builds its own. Saving your Boat key starts the build in the background when no base snapshot is set yet (and retries one that failed), and the app shows its progress; no session can be created until it is ready. You can also start or rerun it in Settings, under Base snapshot. The app:
+Snapshots belong to one Boat account, so the first install on an account builds one and every later install on it uses that one. Saving your Boat key starts the build in the background when no base snapshot is set yet (and retries one that failed), and the app shows its progress; no session can be created until it is ready. You can also start or rerun it in Settings, under Base snapshot. The app:
 
 1. creates a temporary build sandbox with none of your account's credentials and a 2 hour lifetime as a safety net,
 2. uploads the bridge bundle that ships inside the app plus the installer, and checks the bundle's sha256,
 3. runs the installer (about a minute),
-4. saves the snapshot as `dorks-base-<8 hex>` (a name unique to this install, so two installs on one Boat account never replace each other's image) and sets it as your base snapshot,
+4. saves the snapshot as `dorks-base-<12 hex of the installer>` and sets it as your base snapshot. The name is shared: another install on the same Boat account (a second Mac, a dev or test server) finds it ready and uses it without building, so it adds no sandbox and no saved snapshot (Boat bills saved snapshots past the plan's allowance). An install still on its old per-install `dorks-base-<8 hex>` moves to the shared one on its next start and deletes the old one,
 5. deletes the build sandbox, also when something fails. If Boat refuses the delete, the app keeps retrying in the background, and a build interrupted by a crash or restart is cleaned up and run again on the next start.
 
-Progress shows step by step, and a failure shows its reason with a **Retry** button. A failed rebuild leaves your current snapshot in use. The build adds one [saved snapshot](https://docs.boat.dev/snapshots/templates#saved-snapshot-pricing) to your account: Boat includes 10 per $20 of plan, and each one above that costs $0.056 a day from the wallet (a free trial cannot save snapshots at all, and an empty wallet fails the save with 402 `credit_required`).
+Progress shows step by step, and a failure shows its reason with a **Retry** button. A failed rebuild leaves your current snapshot in use. A build adds one [saved snapshot](https://docs.boat.dev/snapshots/templates#saved-snapshot-pricing) to your account: Boat includes 10 per $20 of plan, and each one above that costs $0.056 a day from the wallet (a free trial cannot save snapshots at all, and an empty wallet fails the save with 402 `credit_required`).
 
 When an app update ships a newer bridge, Settings shows "An update is available" for the snapshot: click **Update snapshot**. New dorks use the new image, existing ones keep their disk. The installer is x86_64 only, which is what every Boat sandbox is ([base image](https://docs.boat.dev/machines/tools)).
 
