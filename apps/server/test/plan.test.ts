@@ -35,6 +35,10 @@ describe("Dorks Free", () => {
 
     rememberPlan(h.app, [{ id: "personal-1", plan: "cloud" }]); // upgraded
     expect(sandboxes(h.app).available).toBe(true);
+    expect(h.app.db.get("SELECT 1 AS x FROM meta WHERE key = 'cloud_plan'")).toBeTruthy();
+    update(h.app.db, "settings", { id: 1 }, { cloudOrgId: null }); // unpaired: the paid plan was that org's, not this Mac's
+    expect(sandboxes(h.app).available).toBe(false);
+    update(h.app.db, "settings", { id: 1 }, { cloudOrgId: "personal-1" });
     expect(codeOf(() => createDork(h.app, { repo: "octo/app", message: "hi", location: "cloud" }))).toBe("onboarding_incomplete"); // only Boat setup is missing now
   });
 

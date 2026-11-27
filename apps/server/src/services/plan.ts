@@ -1,5 +1,5 @@
 import { planOf, type PlanId } from "@dorks/shared";
-import type { App } from "../app";
+import { touch, type App } from "../app";
 
 // The plan of this server's workspace (docs/cloud.md, "Plans"), and what it allows. Dorks Free (`local`) runs chats on this Mac only:
 // no sandboxes, since a sandbox driven by a Mac stops with the Mac, which defeats the point of having one. Sandboxes are Dorks Teams'
@@ -8,19 +8,44 @@ import type { App } from "../app";
 
 const META = "cloud_plan";
 
-/** This workspace's plan: what the cloud last said about this server's org, else Dorks Free (signed out, or not paired yet). */
-export function serverPlan(app: App): PlanId {
-  if (app.cfg.orgId) return "teams";
+const ownOrg = (app: App) => app.db.get<{ cloud_org_id: string | null }>("SELECT cloud_org_id FROM settings WHERE id = 1")?.cloud_org_id ?? null;
+
+/** The plan the cloud last named, with the org it named it for. */
+function cached(app: App): { org: string; plan: PlanId } | null {
   const r = app.db.get<{ value: string }>("SELECT value FROM meta WHERE key = ?", META);
-  return planOf(r?.value) ?? "local";
+  try {
+    const v = r ? (JSON.parse(r.value) as { org?: unknown; plan?: unknown }) : null;
+    const plan = planOf(v?.plan);
+    return v && typeof v.org === "string" && plan ? { org: v.org, plan } : null;
+  } catch {
+    return null;
+  }
 }
 
-/** Called with the account's orgs whenever they are read (`GET /api/cloud/places`): keeps this server's plan current. */
+/**
+ * This workspace's plan: what the cloud last said about the org this server serves now, else Dorks Free (signed out, unpaired, or a
+ * plan cached for an org it no longer serves).
+ */
+export function serverPlan(app: App): PlanId {
+  if (app.cfg.orgId) return "teams";
+  const own = ownOrg(app);
+  const c = cached(app);
+  return own && c?.org === own ? c.plan : "local";
+}
+
+/**
+ * Called with the account's orgs whenever they are read (`GET /api/cloud/places`): keeps this server's plan current. Its own org
+ * missing from them (left, deleted) is Free. A change tells clients to read the settings again (where sandboxes are offered).
+ */
 export function rememberPlan(app: App, orgs: { id: string; plan: PlanId | null }[]) {
-  const own = app.db.get<{ cloud_org_id: string | null }>("SELECT cloud_org_id FROM settings WHERE id = 1")?.cloud_org_id;
-  const org = own ? orgs.find((o) => o.id === own) : undefined;
-  if (!org) return;
-  app.db.run("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", META, org.plan ?? "local");
+  const own = ownOrg(app);
+  if (!own) return;
+  const before = serverPlan(app);
+  const plan = orgs.find((o) => o.id === own)?.plan ?? "local";
+  app.db.tx(() => {
+    app.db.run("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", META, JSON.stringify({ org: own, plan }));
+    if (plan !== before) touch(app, { t: "settings" });
+  });
 }
 
 export const NO_SANDBOXES = "Sandboxes need Dorks Teams or Dorks Cloud. On Dorks Free, chats run on this Mac.";
