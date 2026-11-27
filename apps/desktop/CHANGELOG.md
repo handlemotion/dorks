@@ -1,5 +1,13 @@
 # @dorks/desktop
 
+## 0.18.1
+
+### Patch Changes
+
+- [#337](https://github.com/handlemotion/dorks/pull/337) [`a578fdc`](https://github.com/handlemotion/dorks/commit/a578fdc083a1281dc72d8722a905094369b1a012) Thanks [@handlemotion](https://github.com/handlemotion)! - Archiving, restoring, renaming and merging now show at once instead of waiting for the server, and the app, chats and cloud transcripts open faster.
+
+- [#335](https://github.com/handlemotion/dorks/pull/335) [`5985a8b`](https://github.com/handlemotion/dorks/commit/5985a8bd948ddf9ebb6ff4c611d0de46d4a1c874) Thanks [@handlemotion](https://github.com/handlemotion)! - Claude sessions start answering in a few seconds instead of about half a minute when you have MCP servers connected, and a pull request shows as merged as soon as you merge it instead of keeping its green merge button for several seconds.
+
 ## 0.18.0
 
 ### Minor Changes
