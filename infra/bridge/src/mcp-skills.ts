@@ -38,6 +38,10 @@ does not hit it too. The owner approves every change; nothing changes until they
   step the repository's docs (README, CONTRIBUTING, AGENTS.md) list is missing.
 - A dev server or backing service you needed to test is not in the build's services, or its command, directory or port is wrong.
 - The project needs an environment variable the build lacks (a secret only by its name; the owner types the value in).
+- The app uses Postgres (an ORM config such as \`prisma/schema.prisma\` or \`drizzle.config.*\`, \`DATABASE_URL\` in \`.env.example\`, a migrations
+  folder) and the build has no \`twin\` yet: add \`twin\` to the draft (the variable, the ORM, the migrate command, the files you read) so
+  sessions test against a scrubbed copy of production, the Twin Engine. Never a URL or a password: the owner gives production's read
+  URL in a secure form once they approve.
 
 Do not propose one-off experiments, anything specific to your branch or task, personal preferences, or a bigger machine unless the
 work clearly cannot run on this one. When in doubt, mention it in your final answer instead.

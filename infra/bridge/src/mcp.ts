@@ -645,13 +645,28 @@ const TOOLS: Tool[] = [
             additionalProperties: false,
           },
         },
+        twin: {
+          type: "object",
+          description:
+            "Twin Engine (dorks-cloud only): the app's Postgres database, so sessions test against a scrubbed copy of production on a branch of their own. " +
+            "Give what the app reads and runs; never a URL or a password (the owner gives production's read URL in a secure form after approving).",
+          properties: {
+            envVar: { type: "string", description: "The variable the app reads its database URL from, e.g. DATABASE_URL." },
+            orm: { type: "string", description: "What talks to the database, e.g. prisma, drizzle, typeorm, knex, rails, django, sqlalchemy, pg." },
+            migrations: { type: "string", description: "The command that applies migrations, e.g. `npx prisma migrate deploy`." },
+            evidence: { type: "string", description: "The files you read it from, shown to the owner, e.g. prisma/schema.prisma, .env.example." },
+          },
+          required: ["envVar"],
+          additionalProperties: false,
+        },
       },
       additionalProperties: false,
     },
     annotations: { readOnlyHint: false, idempotentHint: true, destructiveHint: false, openWorldHint: false },
     async run(args, sock) {
-      const d = await rpcCall<MachineDraft>(sock, "build", { action: "draft", draft: args });
-      return `Draft saved.\n\n${describeDraft(d)}\n\nNext: machine_run with kind "trial" to check that it builds.`;
+      const d = await rpcCall<MachineDraft & { twin?: { envVar: string; orm?: string; migrations?: string } | null }>(sock, "build", { action: "draft", draft: args });
+      const twin = d.twin ? `\n\nTwin Engine: ${d.twin.envVar}${d.twin.orm ? ` (${d.twin.orm})` : ""}${d.twin.migrations ? `, migrations: ${d.twin.migrations}` : ""}. Once approved, the owner gives production's read URL in a secure form.` : "";
+      return `Draft saved.\n\n${describeDraft(d)}${twin}\n\nNext: machine_run with kind "trial" to check that it builds.`;
     },
   },
   {
