@@ -1,5 +1,13 @@
 # @dorks/desktop
 
+## 0.19.1
+
+### Patch Changes
+
+- [#345](https://github.com/handlemotion/dorks/pull/345) [`2b03695`](https://github.com/handlemotion/dorks/commit/2b036958ce13ed72899cdbf82f79303888e09e16) Thanks [@handlemotion](https://github.com/handlemotion)! - An open chat follows the agent live again in the desktop app: it no longer froze on "waiting for your next message" and then showed the whole answer at once when the window was wrongly reported as hidden.
+
+- [#344](https://github.com/handlemotion/dorks/pull/344) [`4b8637e`](https://github.com/handlemotion/dorks/commit/4b8637eda9b8e6897da91bafce7603714f91707a) Thanks [@handlemotion](https://github.com/handlemotion)! - Every Dorks install on a Boat account now shares one base snapshot per installer version instead of saving its own, so extra installs and dev servers no longer fill the account with billed saved snapshots. An install on its old per-install snapshot switches on its next start and deletes the old one.
+
 ## 0.19.0
 
 ### Minor Changes
