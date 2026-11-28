@@ -142,7 +142,7 @@ export function stepDone(p: Progress): Record<StepId, boolean> {
     plan: isPaid(p.org?.plan),
     invite: passed.has("invite") || p.invitations.length > 0,
     // Dorks Cloud brings its own sandboxes; the step only says so once.
-    boat: passed.has("boat") || has("BOAT_API_KEY"),
+    boat: passed.has("boat") || has("BOAT_OAUTH") || has("BOAT_API_KEY"),
     agents: passed.has("agents") || has("CLAUDE_CODE_OAUTH_TOKEN"),
   };
 }
@@ -189,6 +189,18 @@ export async function connectGithub(orgId: string) {
   const { url } = await cloud<{ url: string }>(`/v1/orgs/${orgId}/github/install`, { body: { returnTo: u.href } });
   if (!url) throw new Error("Dorks Cloud did not answer with a GitHub link");
   window.location.assign(url);
+}
+
+/**
+ * Dorks Teams: Boat's sign-in (Sign in with Boat, OAuth) for the org's own account. Boat's consent page comes back through the relay
+ * to this page with ?boat=connected, cancelled or error. A relay without Boat's OAuth app answers 503 not_configured: paste a key.
+ */
+export async function connectBoat(orgId: string) {
+  const u = new URL(window.location.href);
+  for (const k of ["boat", "github", "account", "checkout", "trial"]) u.searchParams.delete(k);
+  const { boatSignIn } = await cloud<{ boatSignIn: { url?: string } | null }>(`/v1/orgs/${orgId}/api/boat/sign-in`, { body: { returnTo: u.href } });
+  if (!boatSignIn?.url) throw new Error("Dorks Cloud did not answer with a Boat link");
+  window.location.assign(boatSignIn.url);
 }
 
 export const setSecret = (orgId: string, name: string, value: string) => cloud(`/v1/orgs/${orgId}/runtime/secrets/${name}`, { method: "PUT", body: { value } });

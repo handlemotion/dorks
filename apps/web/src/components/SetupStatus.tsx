@@ -139,7 +139,7 @@ function boatStep(signIn: BoatSignIn | null | undefined): Step {
         trailing: signIn.url ? <OpenLink url={signIn.url} /> : undefined,
       }
     case 'signed_out':
-      return { ...step, state: 'todo', detail: 'Sign in with GitHub in your browser.', trailing: <BoatSignInButton label="Sign in" /> }
+      return { ...step, state: 'todo', detail: 'Sign in to Boat in your browser.', trailing: <BoatSignInButton label="Sign in" /> }
     case 'failed':
       return { ...step, state: 'failed', detail: signIn.error, trailing: <BoatSignInButton label="Try again" /> }
     default:

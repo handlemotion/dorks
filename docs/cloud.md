@@ -11,7 +11,7 @@ is simply an org with one member.
 | Plan (id) | Price | What it is |
 |---|---|---|
 | **Dorks Free** (`local`) | Free, no subscription | Your personal workspace on your own Mac(s), one person. Chats run **locally only**, on the Mac (no sandboxes: a sandbox driven by a Mac stops with it), and you reach them from your phone through the relay while the Mac is on. You bring your own Claude or ChatGPT. To run in the cloud, upgrade it or move it into a team ([move to cloud](move-to-cloud.md)). |
-| **Dorks Teams** (`teams`) | $5/month per org | The org runs on the dorks-cloud Worker (`orgRuntime`): shared chats in real time (teammates open the same chats and send messages, and the agent knows who sent each one) and automations around the clock, where a Mac cannot wake at night. Members, invitations and roles (owner, admin, member). You bring your own Boat key and Claude. |
+| **Dorks Teams** (`teams`) | $5/month per org | The org runs on the dorks-cloud Worker (`orgRuntime`): shared chats in real time (teammates open the same chats and send messages, and the agent knows who sent each one) and automations around the clock, where a Mac cannot wake at night. Members, invitations and roles (owner, admin, member). You connect your own Boat account (Sign in with Boat; an API key is the fallback) and bring your own Claude. |
 | **Dorks Cloud** (`cloud`) | $29/month per org | Dorks Teams plus `cloudCredit`: Boat sandboxes on Dorks' own Boat account instead of your own key. |
 
 **Free is the plan, Local is the place.** "Local" names where a chat runs (on a Mac, as opposed to a sandbox); the plan is Dorks Free (its id stays `local`). The app labels each workspace by plan: Free, Teams, Cloud. Sandboxes are only for Teams and Cloud (`services/plan.ts`: a free workspace's server refuses to create or wake one; `DORKS_SANDBOXES_WITHOUT_PLAN=1` lifts that for development); a sandbox chat made before keeps its transcript and does not wake.
@@ -22,6 +22,12 @@ sessions, builds and the rest to the cloud ([move to cloud](move-to-cloud.md)).
 The cloud named these `free` and `collab` before (dorks-cloud#20 renamed them, with `hostedServer` becoming `orgRuntime`). `apps/server`
 and the app still read `free` as `local` and `collab` as `teams` (`planOf` in `packages/shared/src/plans.ts`), in identity tokens and
 `GET /v1/orgs` alike, so a cloud on either side of the rename works.
+
+**Connecting Boat on Teams.** An owner or admin connects the team's own Boat account with Boat's OAuth ("Sign in with Boat",
+[docs.boat.dev/oauth-apps](https://docs.boat.dev/oauth-apps)), from the site's onboarding (Connect Boat) or the app's setup checklist
+(Sign in), both through the Worker's `POST /v1/orgs/:orgId/api/boat/sign-in`. The Worker keeps the tokens (the org secret
+`BOAT_OAUTH`), refreshes them one at a time per org, and revokes them on disconnect; a pasted API key (`BOAT_API_KEY`) still works
+as the fallback. The details live in dorks-cloud's `docs/org-runtime.md` ("Connect Boat").
 
 **Pricing** (the numbers live in one `PLAN_CONFIG` in dorks-cloud's `src/entitlements.ts`):
 

@@ -13,6 +13,8 @@ import { authClient } from "#/lib/cloud";
 import {
   appHandoffLink,
   appHandoffState,
+  CloudError,
+  connectBoat,
   connectGithub,
   fetchPlans,
   fetchTrials,
@@ -85,6 +87,13 @@ function Flow({ params, email }: { params: URLSearchParams; email: string }) {
         url.searchParams.delete("account");
         history.replaceState(null, "", url);
         if (params.get("github") !== "connected") notify("GitHub didn’t connect. Try again, or skip this step.");
+      }
+      // Back from Boat's sign-in: connected, the step is done (BOAT_OAUTH is an org secret now).
+      if (params.get("boat")) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("boat");
+        history.replaceState(null, "", url);
+        if (params.get("boat") === "error") notify("Boat didn’t connect. Try again, or use an API key.");
       }
       // Back from Stripe: the plan turns paid once the webhook (Teams) or the trial's return (Cloud) lands.
       if ((params.get("checkout") || params.get("trial")) && p.org) {
@@ -388,10 +397,10 @@ function Invite({ progress, onNext, onSkip }: StepProps) {
 
 function Boat({ progress, onNext, onSkip }: StepProps) {
   const org = progress.org!;
-  const saved = progress.secrets.includes("BOAT_API_KEY");
-  const [key, setKey] = useState("");
-  const [boatOrg, setBoatOrg] = useState("");
-  const [askOrg, setAskOrg] = useState(progress.secrets.includes("BOAT_ORG"));
+  const signedIn = progress.secrets.includes("BOAT_OAUTH");
+  const keySaved = progress.secrets.includes("BOAT_API_KEY");
+  // The fallback: a pasted API key, for a relay without Boat's sign-in, or someone who prefers one.
+  const [useKey, setUseKey] = useState(keySaved && !signedIn);
   const { run, pending } = usePending();
   if (org.plan === "cloud")
     return (
@@ -411,6 +420,60 @@ function Boat({ progress, onNext, onSkip }: StepProps) {
         <Actions onClick={() => onSkip()}>Continue</Actions>
       </>
     );
+  if (useKey) return <BoatKey progress={progress} onNext={onNext} onSkip={onSkip} onBack={signedIn ? undefined : () => setUseKey(false)} />;
+  if (signedIn)
+    return (
+      <>
+        <Body>
+          <Heading title="Boat is connected">Your team’s sandboxes run in your own Boat account. Disconnect any time in Boat’s OAuth apps.</Heading>
+          <List>
+            <li className="flex h-12 items-center justify-between px-4">
+              <span>Boat</span>
+              <span className="flex items-center gap-1.5">
+                <CheckIcon className="size-3.5" aria-hidden />
+                Connected
+              </span>
+            </li>
+          </List>
+        </Body>
+        <Actions onClick={() => void onNext()}>Continue</Actions>
+      </>
+    );
+  return (
+    <>
+      <Body>
+        <Heading title="Connect Boat">Dorks Teams runs your sandboxes in your own Boat account. Sign in to Boat and choose what Dorks can use.</Heading>
+      </Body>
+      <Actions
+        disabled={pending}
+        onClick={() =>
+          void run(async () => {
+            try {
+              await connectBoat(org.id);
+            } catch (e) {
+              if (!(e instanceof CloudError && e.code === "not_configured")) throw e;
+              notify("Boat sign-in isn’t available yet. Paste an API key instead.");
+              setUseKey(true);
+            }
+          })
+        }
+      >
+        {pending ? "Opening Boat…" : "Connect Boat"}
+      </Actions>
+      <Skip onClick={() => setUseKey(true)}>Use an API key instead</Skip>
+      {!keySaved && <Skip onClick={() => onSkip()}>Skip for now</Skip>}
+    </>
+  );
+}
+
+/** Boat's API key, pasted: the way to connect Boat before its sign-in, and the fallback after. */
+function BoatKey({ progress, onNext, onSkip, onBack }: StepProps & { onBack?: () => void }) {
+  const org = progress.org!;
+  const saved = progress.secrets.includes("BOAT_API_KEY");
+  const [key, setKey] = useState("");
+  const [boatOrg, setBoatOrg] = useState("");
+  const [askOrg, setAskOrg] = useState(progress.secrets.includes("BOAT_ORG"));
+  const { run, pending } = usePending();
   return (
     <StepForm
       onSubmit={() => {
@@ -423,7 +486,7 @@ function Boat({ progress, onNext, onSkip }: StepProps) {
       }}
     >
       <Body>
-        <Heading title="Connect Boat">
+        <Heading title="Add a Boat API key">
           Dorks Teams runs your sandboxes in your own Boat account. The key is stored encrypted for {org.name}. <A href="https://boat.dev/dashboard?tab=api-keys">Get a key</A>
         </Heading>
         <div className="flex flex-col gap-3">
@@ -448,7 +511,7 @@ function Boat({ progress, onNext, onSkip }: StepProps) {
       <Actions type="submit" disabled={pending}>
         {pending ? "Saving…" : "Continue"}
       </Actions>
-      {!saved && <Skip onClick={() => onSkip()}>Skip for now</Skip>}
+      {onBack ? <Skip onClick={onBack}>Sign in to Boat instead</Skip> : !saved && <Skip onClick={() => onSkip()}>Skip for now</Skip>}
     </StepForm>
   );
 }
