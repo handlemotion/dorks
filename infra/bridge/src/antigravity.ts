@@ -405,7 +405,11 @@ export class AntigravityAgent {
   }
 
   private authIssue() {
-    this.o.onIssue(`Antigravity is not signed in. Save your Antigravity sign-in as the shared secret ${ANTIGRAVITY_TOKEN_VAR} (or a Gemini API key as GEMINI_API_KEY), then send a message to retry.`);
+    this.o.onIssue(
+      this.o.local
+        ? "Antigravity is not signed in on this computer. Run `agy` in a terminal and sign in with Google, then send a message to retry."
+        : `Antigravity is not signed in. Save your Antigravity sign-in as the shared secret ${ANTIGRAVITY_TOKEN_VAR} (or a Gemini API key as GEMINI_API_KEY), then send a message to retry.`,
+    );
   }
 
   private async pump() {
