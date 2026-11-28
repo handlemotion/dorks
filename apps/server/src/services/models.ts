@@ -1,4 +1,4 @@
-import { agentModelChoice, modelValue, type AgentModelChoice } from "@dorks/shared";
+import { agentModelChoice, claudeModelChoices, KNOWN_CLAUDE_MODELS, modelValue, type AgentModelChoice } from "@dorks/shared";
 import { z } from "zod";
 import { fail, touch, type App } from "../app";
 import type { DorkRow } from "../data";
@@ -71,26 +71,15 @@ export function refreshAntigravityModels(app: App, force = false): Promise<void>
   return running;
 }
 
-/**
- * Before any agent has reported its list, the CLI's own stable aliases, so the first session can already pick a model. The
- * efforts are left out (the default only) until the real list arrives and replaces this one.
- */
-const FALLBACK_CHOICES: AgentModelChoice[] = [
-  { model: "default", name: "Default", efforts: [] },
-  { model: "opus", name: "Opus", efforts: [] },
-  { model: "sonnet", name: "Sonnet", efforts: [] },
-  { model: "haiku", name: "Haiku", efforts: [] },
-];
-
-/** The last model list a Claude agent reported, or the CLI's aliases before any did. */
+/** The last model list a Claude agent reported, or the known current models before any did (`KNOWN_CLAUDE_MODELS`). */
 export function knownModelChoices(app: App): AgentModelChoice[] {
   const raw = app.db.get<{ value: string }>("SELECT value FROM meta WHERE key = ?", CACHE_KEY)?.value;
-  if (!raw) return FALLBACK_CHOICES;
+  if (!raw) return KNOWN_CLAUDE_MODELS;
   try {
     const parsed = z.array(agentModelChoice).safeParse(JSON.parse(raw));
-    return parsed.success && parsed.data.length ? parsed.data : FALLBACK_CHOICES;
+    return claudeModelChoices(parsed.success ? parsed.data : []);
   } catch {
-    return FALLBACK_CHOICES;
+    return KNOWN_CLAUDE_MODELS;
   }
 }
 
