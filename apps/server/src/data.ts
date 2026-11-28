@@ -187,13 +187,14 @@ export const prStateOf = (db: Db, d: DorkRow): "open" | "merged" | "closed" | un
     : undefined;
 
 /**
- * True when the dork is waiting on the owner: a pending computer-access or secure-input request, or a submitted build draft awaiting
+ * True when the dork is waiting on the owner: a pending computer-access, secure-input or merge request, or a submitted build draft awaiting
  * approval. A failed ship is not one: the agent is woken with `ship_failed` and handles it (docs/shipping.md).
  */
 export const needsAttentionOf = (db: Db, dorkId: string): boolean =>
   Boolean(
     db.get<{ one: number }>("SELECT 1 AS one FROM local_requests WHERE dork_id = ? AND status = 'pending' LIMIT 1", dorkId) ??
     db.get<{ one: number }>("SELECT 1 AS one FROM input_requests WHERE dork_id = ? AND status = 'pending' LIMIT 1", dorkId) ??
+    db.get<{ one: number }>("SELECT 1 AS one FROM merge_requests WHERE dork_id = ? AND status = 'pending' LIMIT 1", dorkId) ??
     db.get<{ one: number }>("SELECT 1 AS one FROM build_drafts WHERE dork_id = ? AND status = 'submitted' LIMIT 1", dorkId),
   );
 

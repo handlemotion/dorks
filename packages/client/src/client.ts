@@ -41,6 +41,7 @@ import type {
   SentryProjects,
   LocalAccess,
   LocalDecision,
+  MergeAnswer,
   PhoneStatus,
   CloudPlaces,
   CloudEntitlements,
@@ -964,6 +965,8 @@ export class DorksClient {
     answerInput: async (dorkId: string, requestId: string, a: InputAnswer) => {
       await this.api.answerInput(dorkId, requestId, a);
     },
+    /** The owner's answer to an agent's request to merge. The transcript shows the outcome. */
+    decideMerge: async (dorkId: string, requestId: string, a: MergeAnswer) => this.api.decideMerge(dorkId, requestId, a),
     decideLocal: async (dorkId: string, requestId: string, d: LocalDecision) => {
       await this.api.decideLocal(dorkId, requestId, d);
       this.invalidate("local-access");

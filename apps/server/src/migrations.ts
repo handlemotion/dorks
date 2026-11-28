@@ -676,4 +676,23 @@ export const MIGRATIONS: string[] = [
   -- build recovered after a restart still rebuilds instead of adopting the snapshot already saved under that name.
   ALTER TABLE snapshot_build ADD COLUMN forced INTEGER NOT NULL DEFAULT 0;
   `,
+  `
+  -- Asking to merge (services/mergeRequests.ts, docs/autonomy.md "Asking to merge"): the agent asks the owner to merge one of its PRs.
+  -- \`sha\` is the head it asked about: the owner's Merge merges that commit and nothing pushed after it.
+  CREATE TABLE merge_requests (
+    id TEXT PRIMARY KEY,
+    dork_id TEXT NOT NULL REFERENCES dorks (id) ON DELETE CASCADE,
+    repo TEXT NOT NULL,
+    number INTEGER NOT NULL,
+    url TEXT NOT NULL,
+    title TEXT NOT NULL,
+    sha TEXT NOT NULL,
+    note TEXT,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'merging', 'merged', 'queued', 'declined', 'failed', 'replaced')),
+    reason TEXT,
+    decided_at INTEGER,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX merge_requests_dork ON merge_requests (dork_id, status);
+  `,
 ];

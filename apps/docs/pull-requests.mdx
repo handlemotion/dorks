@@ -11,7 +11,7 @@ A session doesn't stop at "task done". It opens pull requests, subscribes to the
 - **A review or comment** from someone your comment policy allows (everyone by default, or an allowlist of logins, bots included).
 - **A merge conflict** or a stacked PR whose base moved: it rebases and fixes it.
 
-When a PR is green and approved, the agent posts a short standby note and goes to sleep. **It never merges.** You merge from the PR tab (squash, merge or rebase, pinned to the commit you reviewed), or on GitHub.
+When a PR is ready, the agent asks you to merge it: a card in the chat with the PR, a short note and **Merge** / **Not now**. Merge merges the commit the agent asked about, never a later push. Your answer goes back to the agent, so it carries on: it follows the merge to production, or fixes what GitHub refused and asks again. **It never merges by itself.** You can also merge from the PR tab (squash, merge or rebase, pinned to the commit you reviewed), or on GitHub.
 
 ## Shipping
 

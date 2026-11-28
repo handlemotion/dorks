@@ -40,6 +40,7 @@ import type {
   Settings,
   LocalAccess,
   LocalDecision,
+  MergeAnswer,
   PhonePairing,
   PhoneStatus,
   CloudOrg,
@@ -217,6 +218,9 @@ export function createApi(config: ApiConfig) {
     /** Merges the base branch into the PR's branch (GitHub's "Update branch"). */
     updatePullRequestBranch: (id: string, sha?: string, url?: string) => request<object>("POST", `${dork(id)}/pr/update-branch`, { sha, url }),
     getSettings: () => request<Settings>("GET", "/api/settings"),
+    /** Answers the agent's request to merge: Merge merges the commit it asked about. Says how it ended (`failed` carries GitHub's reason). */
+    decideMerge: (id: string, requestId: string, a: MergeAnswer) =>
+      request<{ status: "merged" | "queued" | "declined" | "failed"; reason?: string }>("POST", `${dork(id)}/merge-requests/${enc(requestId)}`, a),
     decideLocal: (id: string, requestId: string, d: LocalDecision) => request<object>("POST", `${dork(id)}/local/${enc(requestId)}`, d),
     /** Sends the values the owner typed (or a dismissal). The answer never echoes them. */
     answerInput: (id: string, requestId: string, a: InputAnswer) => request<object>("POST", `${dork(id)}/inputs/${enc(requestId)}`, a),

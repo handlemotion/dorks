@@ -293,7 +293,13 @@ export function SessionChat({
   const current = dork.state === 'working' ? currentStep(view.blocks) : {}
   const needsAttention =
     Boolean(dork.needsAttention) ||
-    view.blocks.some((b) => (b.kind === 'local' && b.status === 'pending') || (b.kind === 'input' && b.status === 'pending') || (b.kind === 'build' && b.approved === null))
+    view.blocks.some(
+      (b) =>
+        (b.kind === 'local' && b.status === 'pending') ||
+        (b.kind === 'input' && b.status === 'pending') ||
+        (b.kind === 'merge' && b.status === 'pending') ||
+        (b.kind === 'build' && b.approved === null),
+    )
   const { blocks, problem } = splitProblem(view.blocks, dork.state)
   const transcript = useTranscriptWindow(blocks, canLoadMore, loadMore)
   const shown = useMemo(() => (transcript.from > 0 ? blocks.slice(transcript.from) : blocks), [blocks, transcript.from])

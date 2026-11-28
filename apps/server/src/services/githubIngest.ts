@@ -2,6 +2,7 @@ import { CI_FIX_MAX_ATTEMPTS, DEFAULT_COMMENT_POLICY, type CommentPolicy, type N
 import type { App } from "../app";
 import { append, setTimer } from "../lifecycle/dispatch";
 import { MAX_SUMMARY_CHARS } from "@dorks/core/notifyRender";
+import { settleMergeRequests } from "./mergeRequests";
 import { enqueueNotification } from "./notify";
 import { startShip } from "./ships";
 import { endSubscription, getSub, resetCiAttempts, updateSubscription, type Subscription } from "./subscriptions";
@@ -129,6 +130,7 @@ function onClosed({ app, sub, env, notify }: Ingest, event: EventOf<"pr_closed">
   updateSubscription(app, sub.id, { state: how });
   if (event.merged) append(app, sub.dorkId, { type: "pr_merged", url: sub.url, number: sub.number });
   endSubscription(app, getSub(app, sub.id)!, how);
+  settleMergeRequests(app, sub.dorkId, sub.repo, sub.number, event.merged);
   if (event.merged && event.mergeSha) startShip(app, getSub(app, sub.id)!, event.mergeSha, event.mergedAt);
   const own = !!env.ownLogin && event.sender.login.toLowerCase() === env.ownLogin.toLowerCase();
   if (!own) notify("closed", `${event.merged ? "Merged" : "Closed"} by ${event.sender.login}.`);

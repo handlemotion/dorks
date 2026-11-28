@@ -20,6 +20,7 @@ import { TaskSnapshots, TodoCard } from './TodoCard'
 import { hookLine } from '../lib/hooks'
 import { MessageScrollerItem } from '@dorks/ui/message-scroller'
 import { LocalRequestCard } from './LocalRequest'
+import { MergeRequestCard } from './MergeRequest'
 import { InputRequestCard } from './InputRequest'
 import { ShipCard } from './ShipCard'
 import { isPreviewShow, PreviewCard } from './PreviewCard'
@@ -357,7 +358,7 @@ function toolRun(blocks: AgentBlock[], start: number): ToolBlock[] {
  * The dorks tools whose call already has its own row in the thread (the request on the owner's computer, the secure input form):
  * their tool line would say the same thing again ("Used local run"). They stay in Progress.
  */
-const OWN_ROW_TOOLS = /^mcp__dorks__(local_run|local_read|local_wait|input_request|input_wait)$/
+const OWN_ROW_TOOLS = /^mcp__dorks__(local_run|local_read|local_wait|input_request|input_wait|pr_merge_request)$/
 
 /** Machine calls whose card says it (`BuildDraftCard`): hidden from the tool line once they worked and the card is there. */
 const CARD_TOOLS: Record<string, AgentBlock['kind']> = { mcp__dorks__machine_submit: 'build' }
@@ -397,6 +398,13 @@ function agentContent(blocks: AgentBlock[], onOpenSteps?: (keys: string[]) => vo
       content.push(
         <Waiting key={block.id} id={block.id}>
           <LocalRequestCard block={block} />
+        </Waiting>,
+      )
+    } else if (block.kind === 'merge') {
+      // The agent asked the owner to merge one of its PRs: Merge / Not now while it waits, then one line.
+      content.push(
+        <Waiting key={block.id} id={block.id}>
+          <MergeRequestCard block={block} />
         </Waiting>,
       )
     } else if (block.kind === 'input') {

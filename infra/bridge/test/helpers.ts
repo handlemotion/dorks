@@ -174,6 +174,7 @@ export class FakeTransport implements Transport {
   shareImage = async (_data: string) => ({ id: "0".repeat(32) });
   getImage = async (_id: string) => null;
   local = async (_args: Record<string, unknown>) => ({ requestId: "r1", status: "pending" });
+  merge = async (_args: Record<string, unknown>) => ({ requestId: "m1", status: "pending" });
   inputValues: Record<string, string> = {};
   input = async (args: Record<string, unknown>) => (args.action === "values" ? { values: this.inputValues } : { requestId: "i1", status: "pending" });
   crewCalls: Record<string, unknown>[] = [];

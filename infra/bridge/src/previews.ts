@@ -82,6 +82,12 @@ export function previewMethods(
       if (p.action !== "request" && p.action !== "wait") throw new RpcError("invalid", "unknown local action");
       return callBackend(t, log, () => t.local(p), true);
     },
+    // `merge`: the pr_merge_request MCP tool. The owner decides in the app; the server checks the PR and merges only on their Merge.
+    merge: async (params) => {
+      const p = (params ?? {}) as Record<string, unknown>;
+      if (p.action !== "request") throw new RpcError("invalid", "unknown merge action");
+      return callBackend(t, log, () => t.merge(p), true);
+    },
     // `image.share`: a screenshot from the `screenshot_share` MCP tool, already read and checked in the agent's process.
     "image.share": async (params) => {
       const p = (params ?? {}) as { data?: unknown; caption?: unknown };

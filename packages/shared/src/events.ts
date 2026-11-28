@@ -83,6 +83,26 @@ export const clientEvent = z.discriminatedUnion("type", [
   z.object({ ...base, type: z.literal("build_decision"), draftId: z.string(), buildId: z.string().nullable(), buildName: z.string(), approved: z.boolean(), reason: z.string().optional() }),
   // A build run this session started, or the image build its approved draft set off: appended again as it moves, one card in the chat.
   z.object({ ...base, type: z.literal("build_run"), run: chatRun }),
+  // Asking to merge (docs/autonomy.md, "Asking to merge"): the agent asked the owner to merge one of its PRs at `sha`, and how it ended.
+  z.object({
+    ...base,
+    type: z.literal("merge_request"),
+    requestId: z.string(),
+    repo: z.string(),
+    number: z.number(),
+    url: z.string(),
+    title: z.string(),
+    sha: z.string(),
+    note: z.string().optional(),
+  }),
+  z.object({
+    ...base,
+    type: z.literal("merge_decision"),
+    requestId: z.string(),
+    status: z.enum(["merged", "queued", "declined", "failed", "replaced"]),
+    method: z.enum(["squash", "merge", "rebase"]).optional(),
+    reason: z.string().optional(),
+  }),
   // Local access (docs/local-access.md): the agent asked to run a command or read a file on the owner's own computer, the owner's
   // answer (asked once per session, or covered by an earlier answer), and what came back.
   z.object({

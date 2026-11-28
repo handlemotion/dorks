@@ -34,7 +34,8 @@ const INSTRUCTIONS: Record<NotifyKind, string> = {
   conflict: "The PR no longer merges cleanly. Rebase onto (or merge) the base branch, resolve the conflicts, validate locally, then push; use `git push --force-with-lease` if you rebased.",
   base_changed:
     "The PR's base branch changed (for example a stack parent was merged). Rebase onto (or merge) the new base, validate locally, then push; use `git push --force-with-lease` if you rebased.",
-  ready: "CI is green and the PR is approved. Post a short comment on the PR saying you are on standby, then stop. Do not merge it.",
+  ready:
+    "CI is green and the PR is approved. Ask the user to merge it with the `pr_merge_request` tool (a Merge / Not now card in their chat), unless you already asked for this commit, then stop; their answer arrives as your next turn. Never merge it yourself.",
   closed: "The PR was closed or merged and your subscription to it has ended. Leave it alone.",
   deployed:
     "The merged PR is live. Verify the change you made, not just that the site loads: open the live URL above and exercise exactly what the PR changed (a browser or Playwright for pages, curl for endpoints; a test login from a secure input if it needs one). Do not change production data and do not deploy. Then report with the `ship_verify` tool: the `pr` you checked, `ok`, and a one or two sentence `note` of what you checked and saw. If it does not work, report it failed and open a fix-forward PR (or a revert PR when the fix is not obvious).",

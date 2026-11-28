@@ -103,14 +103,14 @@ interface Ctx {
 }
 
 /**
- * Like apps/server's `needsAttentionOf`, read from the session's events: a request for the owner's computer or a secure input not
+ * Like apps/server's `needsAttentionOf`, read from the session's events: a request for the owner's computer, a secure input or a merge not
  * answered yet. A failed ship is left to the agent.
  */
 const needsAttention = (events: ClientEvent[]): boolean => {
   const open = new Set<string>();
   for (const e of events as (ClientEvent & { requestId?: string })[]) {
-    if ((e.type === "local_request" || e.type === "input_request") && e.requestId) open.add(e.requestId);
-    else if ((e.type === "local_decision" || e.type === "input_response") && e.requestId) open.delete(e.requestId);
+    if ((e.type === "local_request" || e.type === "input_request" || e.type === "merge_request") && e.requestId) open.add(e.requestId);
+    else if ((e.type === "local_decision" || e.type === "input_response" || e.type === "merge_decision") && e.requestId) open.delete(e.requestId);
   }
   return open.size > 0;
 };
@@ -395,6 +395,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   const localAllowed = new Map<string, number>();
   const inputWaiting = new Map<string, { dorkId: string; names: string[]; answer: (names: string[] | null) => void }>();
   const localWaiting = new Map<string, { dorkId: string; answer: (allowed: "session" | "always" | null) => void }>();
+  const mergeWaiting = new Map<string, string>(); // request id -> dork id
   const live = new Set<ServerResponse>();
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const settings: Settings = {
@@ -588,6 +589,26 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     });
   };
 
+  /** The fake agent's `pr_merge_request` (docs/autonomy.md, "Asking to merge"): a Merge / Not now card, answered by `decideMerge`. */
+  const askMerge = (dorkId: string) => {
+    const requestId = `merge-${randomUUID().slice(0, 8)}`;
+    const toolId = `tool-${requestId}`;
+    const note = "Fixes the flaky login test. CI is green and I checked the login page against the dev server.";
+    append(dorkId, { type: "tool_use", toolId, name: "mcp__dorks__pr_merge_request", summary: "octocat/hello-world#1", input: { pr: "octocat/hello-world#1", note } });
+    append(dorkId, {
+      type: "merge_request",
+      requestId,
+      repo: "octocat/hello-world",
+      number: 1,
+      url: "https://github.com/octocat/hello-world/pull/1",
+      title: "Fix the flaky login test",
+      sha: "3f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39",
+      note,
+    });
+    append(dorkId, { type: "tool_result", toolId, ok: true, preview: "Asked the user to merge octocat/hello-world#1." });
+    mergeWaiting.set(requestId, dorkId);
+  };
+
   /**
    * The fake agent's `input_request` (docs/secure-inputs.md): a login form, or one API token; `then` continues the turn once the owner
    * answered.
@@ -630,7 +651,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
 
   /**
    * The fake agent: a turn of tool calls and a streamed answer, ending idle. A prompt that mentions "computer" first asks to use it;
-   * one that mentions "login" or "token" first asks for one (a secure input).
+   * one that mentions "login" or "token" first asks for one (a secure input); one that mentions "merge" asks to merge its PR at the end.
    */
   const runTurn = (dorkId: string, prompt: string, localDone = false): void => {
     const d = dorks.get(dorkId);
@@ -648,6 +669,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       );
       return;
     }
+    if (/\bmerge\b/i.test(prompt)) later(tick * 6, () => askMerge(dorkId));
     const alive = () => dorks.get(dorkId)?.state === "working";
     const tool = `tool-${randomUUID().slice(0, 8)}`;
     const msg = `msg-${randomUUID().slice(0, 8)}`;
@@ -1173,6 +1195,8 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     const sub = m[2] ?? "";
     const local = /^local\/([^/]+)$/.exec(sub);
     if (local && c.method === "POST") return decideLocal(c, d, decodeURIComponent(local[1]!));
+    const merge = /^merge-requests\/([^/]+)$/.exec(sub);
+    if (merge && c.method === "POST") return decideMerge(c, d, decodeURIComponent(merge[1]!));
     const input = /^inputs\/([^/]+)$/.exec(sub);
     if (input && c.method === "POST") return answerInput(c, d, decodeURIComponent(input[1]!));
     const queued = /^queue\/([^/]+)(\/send)?$/.exec(sub);
@@ -1285,6 +1309,16 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       waiting.answer(names);
     }
     return json(res, 200, {});
+  };
+
+  /** `POST /api/dorks/:id/merge-requests/:requestId`: Merge or Not now. The mock always merges cleanly. */
+  const decideMerge = ({ body, res }: Ctx, d: MockDork, requestId: string) => {
+    if (mergeWaiting.get(requestId) !== d.id) return fail(res, "conflict", "This request was already answered.");
+    if (typeof body.merge !== "boolean") return fail(res, "invalid", "merge must be true or false");
+    mergeWaiting.delete(requestId);
+    const status = body.merge ? "merged" : "declined";
+    append(d.id, { type: "merge_decision", requestId, status, ...(body.merge ? { method: "squash" as const } : {}) });
+    return json(res, 200, { status });
   };
 
   /** `POST /api/dorks/:id/local/:requestId`: the owner's answer to a session's first request to use the computer. */
@@ -1832,7 +1866,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     const automation = automations(method, path, body);
     if (automation) return "error" in automation ? fail(res, automation.error, automation.message) : json(res, automation.status, automation.body);
     const m =
-      /^\/api\/dorks\/([^/]+)(?:\/(local\/[^/]+|inputs\/[^/]+|messages|queue(?:\/[^/]+(?:\/send)?)?|interrupt|read|desktop|archive|mode|model|codex-model|events|files|workspace(?:\/tree|\/file)?|pr(?:\/merge|\/ready|\/update-branch)?|subscriptions(?:\/resume)?|comments(?:\/[^/]+(?:\/replies)?)?))?$/.exec(
+      /^\/api\/dorks\/([^/]+)(?:\/(local\/[^/]+|inputs\/[^/]+|merge-requests\/[^/]+|messages|queue(?:\/[^/]+(?:\/send)?)?|interrupt|read|desktop|archive|mode|model|codex-model|events|files|workspace(?:\/tree|\/file)?|pr(?:\/merge|\/ready|\/update-branch)?|subscriptions(?:\/resume)?|comments(?:\/[^/]+(?:\/replies)?)?))?$/.exec(
         path,
       );
     if (m) return routeDork(c, m);

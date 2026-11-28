@@ -111,6 +111,32 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: "pr_merge_request",
+    title: "Ask the user to merge a pull request",
+    description:
+      "Ask the user to merge one of your pull requests: they get a Merge / Not now card in this chat. Use it as soon as a PR is ready (CI green, " +
+      "review comments addressed, approved if the repo needs a review), instead of stopping and waiting. Merge merges the commit the PR is at now, " +
+      "so push everything first; asking again after a push replaces the earlier card. Their answer arrives as your next turn: then carry on " +
+      "(a merge is followed to production and wakes you with deployed or ship_failed; if GitHub refused, fix what it names and ask again). " +
+      "Never merge a pull request yourself (gh pr merge, the API): this is the only way a merge happens.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pr: PR_PARAM,
+        note: { type: "string", description: "One or two sentences for the user: what the PR does and why it is ready (checks you ran, what you verified)." },
+      },
+      required: ["pr", "note"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true },
+    async run(args, sock) {
+      const ref = prArg(args);
+      if (typeof args.note !== "string" || !args.note.trim()) throw new ToolError("`note` must tell the user what the PR does and why it is ready.");
+      await rpcCall(sock, "merge", { action: "request", url: `https://github.com/${ref.repo}/pull/${ref.number}`, note: args.note });
+      return `Asked the user to merge ${prLabel(ref)}. Their answer arrives as your next turn; do not poll for it. Carry on with other work, or stop if there is none.`;
+    },
+  },
+  {
     name: "preview_show",
     title: "Show a dev server to the user",
     description:
@@ -1046,7 +1072,7 @@ const err = (id: Id, code: number, message: string) => ({ jsonrpc: "2.0", id, er
 
 /** What the agent reads about this server before it loads any tool: `instructions` in both eras. */
 const INSTRUCTIONS =
-  "Tools for the pull requests you work on in this box, and for showing the user your work. `gh pr create` subscribes you automatically; subscribed PRs wake you with <dorks-event> turns when CI, reviews, comments or conflicts need you. " +
+  "Tools for the pull requests you work on in this box, and for showing the user your work. `gh pr create` subscribes you automatically; subscribed PRs wake you with <dorks-event> turns when CI, reviews, comments or conflicts need you. When a PR is ready, ask the user to merge it with pr_merge_request; never merge one yourself. " +
   "When you need a login, a one-time code or any secret, ask with input_request and use it as {{secret:NAME}} without reading it. " +
   "When you start a web server the user should see, call preview_show with its port. When you change anything visual, verify it with screenshot_share and put the image it returns in your final answer. " +
   'The user\'s comments on a running preview arrive as <dorks-event source="preview"> turns: answer them with comment_reply or comment_resolve. ' +

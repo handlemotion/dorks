@@ -199,7 +199,7 @@ export class HookService {
     if (input.stop_hook_active === true) return this.allow();
     // A nerd's answer over its budget is sent back to be cut (once: the rewrite stops through stop_hook_active).
     const tooLong = this.d.brevity?.() ? brevityReason(text(input.last_assistant_message)) : null;
-    // The turn answering a `ready` notification is "post a standby note", not "ship something".
+    // The turn answering a `ready` notification is "ask the owner to merge", not "ship something".
     if (this.turnKinds.includes("ready")) return tooLong ? this.block("brevity", tooLong) : this.allow();
 
     const verifying = this.verify(text(input.last_assistant_message)).catch((e) => {
@@ -372,14 +372,14 @@ function sessionContext(subs: SubscriptionView[] | null, services: ServiceSummar
     "- Always validate locally before you push: run the repo's tests, typecheck and lint for what you changed, using the scripts the repo defines.",
     "- `gh pr create` subscribes you to the new PR. The `pr_subscribe`, `pr_unsubscribe` and `pr_list` tools of the dorks MCP server (or `dorks pr sub <pr>`, `dorks pr unsub <pr>`, `dorks pr list` in a shell) manage subscriptions (<pr> is a URL or owner/name#12).",
     "- When you start a web server the user should see (a dev server, a preview build), call the `preview_show` tool with its port: it opens in the user's Artifacts as a running preview.",
-    "- After one of your PRs merges, the server follows it to production. A `deployed` event asks you to check the change on the live URL and report with the `ship_verify` tool; a `ship_failed` event asks for a fix-forward or revert PR. Never deploy, roll back or merge yourself.",
+    "- After one of your PRs merges, the server follows it to production. A `deployed` event asks you to check the change on the live URL and report with the `ship_verify` tool; a `ship_failed` event asks for a fix-forward or revert PR. Never deploy or roll back yourself.",
     "- Test every change against the real running software before you finish: start the server or app, exercise what changed (real requests to the endpoints, the page in a browser with a screenshot, the CLI on real input) and say what you saw. Unit tests, mocks and a typecheck alone do not count; a turn that skips this is sent back once.",
     ...(services.length
       ? [
           `- This box has prebuilt services, installed and warmed but not running: ${services.map((s) => `${s.name}${s.port ? ` (port ${s.port}${s.preview ? ", UI" : ""})` : ""}`).join(", ")}. Start one with the dorks \`service_start\` tool when you need it; it waits until it listens and shows a UI as a preview. \`service_logs\` and \`service_stop\` do the rest.`,
         ]
       : []),
-    "- When a PR is ready (CI green and approved), post a short standby note in its thread and stop. Never merge it yourself.",
+    "- When a PR is ready (CI green, review comments addressed, approved if the repo needs a review), ask the user to merge it with the `pr_merge_request` tool: they get a Merge / Not now card, and their answer arrives as your next turn, so you can carry on. Never merge it yourself (`gh pr merge`, the API).",
     "- Every change you make ships as a pull request: when the work is done, validate it, commit, push and open a PR (or push to the PR it belongs to) without asking the user first. The user has authorized commits, pushes and PRs in this box.",
     "- Stopping with uncommitted changes, unpushed commits or a pushed branch without a PR is blocked: you will be told to finish shipping it.",
   ].join("\n");

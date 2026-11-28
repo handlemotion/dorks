@@ -262,6 +262,30 @@ function mergedHereAt(app: App, repo: string, number: number): number | undefine
   return at !== undefined && Date.now() - at <= MERGED_FRESH_MS ? at : undefined;
 }
 
+/** The head of one of the session's PRs, as the agent asks to merge it (services/mergeRequests.ts). */
+export async function pullHead(app: App, dorkId: string, url: string) {
+  const { repo, number } = prRef(app, dorkId, url);
+  const token = await tokenOf(app);
+  const pr = obj(await get(app, token, `/repos/${repo}/pulls/${number}`));
+  return {
+    repo,
+    number,
+    title: s(pr.title),
+    sha: s(obj(pr.head).sha),
+    merged: pr.merged === true || !!pr.merged_at,
+    closed: pr.state === "closed",
+    draft: pr.draft === true,
+  };
+}
+
+/** The merge method the owner's Merge uses: the first of squash, merge, rebase the repository allows (squash when it cannot be read). */
+export async function defaultMergeMethod(app: App, repo: string): Promise<MergeMethod> {
+  const token = await tokenOf(app);
+  const r = obj(await get(app, token, `/repos/${repo}`).catch(() => null));
+  const allowed = { squash: r.allow_squash_merge, merge: r.allow_merge_commit, rebase: r.allow_rebase_merge };
+  return MERGE_METHODS.find((m) => allowed[m] !== false) ?? "squash";
+}
+
 /** What a merge request came to: merged, or handed to GitHub (a merge queue, a stack still merging) for the poller to see land. */
 export type MergeResult = { merged: true; sha?: string } | { merged: false; queued: true };
 
