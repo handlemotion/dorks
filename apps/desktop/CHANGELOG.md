@@ -1,5 +1,15 @@
 # @dorks/desktop
 
+## 0.21.1
+
+### Patch Changes
+
+- [#368](https://github.com/handlemotion/dorks/pull/368) [`c77f5c6`](https://github.com/handlemotion/dorks/commit/c77f5c63820143b45f84efbf71cdfeb76276ee2e) Thanks [@dorks-agents](https://github.com/apps/dorks-agents)! - A Dorks Teams workspace opens faster: the app reconnects to the organization you used last without waiting on Dorks Cloud first. A request the connection never answers no longer leaves a list or chat stuck loading; it is retried after 30 seconds.
+
+- [#367](https://github.com/handlemotion/dorks/pull/367) [`cbef827`](https://github.com/handlemotion/dorks/commit/cbef8278cf165ae1fd11b875dbfcd487981862fd) Thanks [@handlemotion](https://github.com/handlemotion)! - When you tell an agent in the chat to merge a pull request, it merges it instead of sending you a Merge / Not now card first.
+
+- [#366](https://github.com/handlemotion/dorks/pull/366) [`6853497`](https://github.com/handlemotion/dorks/commit/68534974732bd3a02591aff94f4ae82e4d877604) Thanks [@handlemotion](https://github.com/handlemotion)! - The merged-PR push guard no longer blocks the fix it asks for (switching to a new branch and pushing it in one command), and the late-push notice only fires for commits added on top of the merged work that are in no PR.
+
 ## 0.21.0
 
 ### Minor Changes
