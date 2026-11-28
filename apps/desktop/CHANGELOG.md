@@ -1,5 +1,25 @@
 # @dorks/desktop
 
+## 0.20.0
+
+### Minor Changes
+
+- [#352](https://github.com/handlemotion/dorks/pull/352) [`b174ba5`](https://github.com/handlemotion/dorks/commit/b174ba5f5f4f17d4f0d9d910e66f58f3f15ae865) Thanks [@handlemotion](https://github.com/handlemotion)! - When a pull request is ready, the agent now asks you to merge it with a Merge / Not now card in the chat, then carries on with your answer instead of stopping at a standby note.
+
+### Patch Changes
+
+- [#356](https://github.com/handlemotion/dorks/pull/356) [`c286e32`](https://github.com/handlemotion/dorks/commit/c286e32ea78957f2df5cabea0209f61df75fc7f3) Thanks [@handlemotion](https://github.com/handlemotion)! - Dorks Teams connects your Boat account with Sign in with Boat instead of a pasted API key; a key still works as a fallback.
+
+- [#354](https://github.com/handlemotion/dorks/pull/354) [`f12ed7a`](https://github.com/handlemotion/dorks/commit/f12ed7a3070c219abb4a1d9220fa0a95212976d0) Thanks [@handlemotion](https://github.com/handlemotion)! - Dorks Cloud chats stay live: a read that goes quiet reconnects within seconds (also after sleep or a network change), your first message shows while the dork starts, the sidebar follows each session's state, and answers stream without waiting on the server between chunks.
+
+- [#351](https://github.com/handlemotion/dorks/pull/351) [`9655213`](https://github.com/handlemotion/dorks/commit/96552133e911d6cd9c8d16142518991c8db531a3) Thanks [@handlemotion](https://github.com/handlemotion)! - The model picker no longer shows "Claude Code" as if it were a model; an unresolved default now reads "Default model".
+
+- [#355](https://github.com/handlemotion/dorks/pull/355) [`9020c64`](https://github.com/handlemotion/dorks/commit/9020c64735a28d39d936c9ad3dabf9c8eaabd24e) Thanks [@handlemotion](https://github.com/handlemotion)! - An open chat follows the agent live from its first second: it no longer sat on "starting up" and then showed half a minute of work at once, and a running turn streams into the chat without the app reading the transcript again for every word.
+
+- [#353](https://github.com/handlemotion/dorks/pull/353) [`2132749`](https://github.com/handlemotion/dorks/commit/21327493e492793731062cdc0ded4ca1a00c9704) Thanks [@handlemotion](https://github.com/handlemotion)! - Your Merge / Not now answer now reaches the agent at the end of its current turn instead of being folded into it, and a merge interrupted by a restart can be answered again.
+
+- [#347](https://github.com/handlemotion/dorks/pull/347) [`cb38c0f`](https://github.com/handlemotion/dorks/commit/cb38c0fae56fd1417473dc9cf6ee609e27df3771) Thanks [@handlemotion](https://github.com/handlemotion)! - Merging a pull request now shows a spinner on Confirm merge until GitHub has merged it, instead of flipping to Merged the moment you click.
+
 ## 0.19.1
 
 ### Patch Changes
