@@ -7,6 +7,7 @@ import { isSortable, useSortable } from '@dnd-kit/react/sortable'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { ArchiveIcon, ChevronDownIcon, ChevronUpIcon, GitCompareArrowsIcon, LoaderCircleIcon } from 'lucide-react'
 import { copyText, openContextMenu } from '../lib/contextMenu'
+import { useChatSharing } from '../lib/share'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@dorks/ui/hover-card'
 import { useStoredOrder } from '../lib/storedOrder'
 import { Tip } from './Tip'
@@ -48,6 +49,8 @@ export type Chat = {
   parentId?: string | null
   /** The teammate who started it, on a team server (docs/cloud.md). */
   createdBy?: Person
+  /** Dorks Cloud: the team sees it; false, only who started it. */
+  shared?: boolean
 }
 
 type RoutesByPath = RegisteredRouter['routesByPath']
@@ -193,6 +196,7 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
   const iconState = dorkIconState(chat.state, { working: chat.working, attention: chat.attention, unread: chat.unread })
   const iconLabel = ICON_LABEL[iconState]
   const { team, isSelf } = useTeamView()
+  const sharing = useChatSharing()(chat)
   // Someone else started it (a teammate, docs/cloud.md): their initials end the title.
   const starter = team && chat.createdBy && !isSelf(chat.createdBy.id) ? chat.createdBy : undefined
   const prs = chat.prs ?? []
@@ -211,6 +215,7 @@ function ChatItem({ chat, index, to, active, onArchive }: { chat: Chat; index: n
         openContextMenu(e, [
           { label: 'Open', onSelect: () => void router.navigate({ to, search: { dork: chat.id } }) },
           { label: 'Copy link', onSelect: () => copyText(link(), 'Link copied') },
+          ...(sharing ? (['separator', { label: sharing.label, onSelect: sharing.toggle }] as const) : []),
           ...(onArchive ? (['separator', { label: 'Archive', onSelect: () => onArchive(chat.id) }] as const) : []),
         ])
       }
