@@ -13,7 +13,7 @@ import {
   personalWorkspaceName,
 } from '@dorks/client'
 import { useStoreValue } from '@dorks/client/react'
-import { cloudOrgClientConfig, remoteClientConfig, resolveTarget, usePlaceChoice, type Target } from '../lib/place'
+import { cloudOrgClientConfig, rememberedOrg, rememberOrg, remoteClientConfig, resolveTarget, usePlaceChoice, type Target } from '../lib/place'
 
 /**
  * Dorks Cloud places (docs/mobile.md, "Desktop: Dorks Cloud"): the account's orgs, read from the home server (the one the app was
@@ -59,6 +59,16 @@ const idle: Store<QueryState<CloudPlaces>> = { getSnapshot: () => IDLE, subscrib
 /** How often the places are read again while signed in: a Mac comes online, a teammate adds a server. */
 const PLACES_POLL_MS = 30_000
 
+/**
+ * The org in use when signed in: the one picked, else the personal one (also when the picked one is gone: you left it, it was
+ * deleted). Before the places are read, the picked org as they listed it last time (`remembered`).
+ */
+function pickOrg(orgId: string | null, orgs: CloudOrg[] | undefined, remembered: CloudOrg | null, personal: CloudOrg | null): CloudOrg | null {
+  if (!orgId) return personal
+  if (!orgs) return remembered ?? personal
+  return orgs.find((o) => o.id === orgId) ?? personal
+}
+
 /** Resolves the place for `home` and hands its server's client to `children`. */
 export function CloudPlaceProvider({ conn, children }: { conn: { serverUrl: string; token: string }; children: (client: DorksClient, place: CloudPlace) => ReactNode }) {
   const home = useMemo(() => createClient({ baseUrl: conn.serverUrl, token: conn.token }), [conn.serverUrl, conn.token])
@@ -76,10 +86,16 @@ export function CloudPlaceProvider({ conn, children }: { conn: { serverUrl: stri
 
   const orgs = placesState.data?.orgs
   const personal = orgs?.find((o) => o.personal) ?? null
-  // Signed in, the org is the one picked, else the personal one (also when the picked one is gone: you left it, it was deleted).
-  const org = signedIn ? ((choice.orgId ? orgs?.find((o) => o.id === choice.orgId) : undefined) ?? personal) : null
+  // Until the places are read (a round trip to Dorks Cloud), the org picked last time, as they listed it then: the app connects to
+  // it at once. Signed out after all, or the org gone, the app moves when the cloud status or the places say so.
+  const remembered = useMemo(() => (orgs ? null : rememberedOrg(conn.serverUrl, choice.orgId, thisMacId)), [orgs, conn.serverUrl, choice.orgId, thisMacId])
+  const cloudLoading = cloudState.status === 'loading' && !cloud
+  const org = signedIn || (cloudLoading && remembered) ? pickOrg(choice.orgId, orgs, remembered, personal) : null
+  useEffect(() => {
+    if (org && orgs) rememberOrg(conn.serverUrl, org)
+  }, [org, orgs, conn.serverUrl])
   // An older server has no /api/cloud: it answers an error, and the app stays on it.
-  const resolving = !!choice.orgId && ((cloudState.status === 'loading' && !cloud) || (signedIn && !orgs && placesState.status === 'loading'))
+  const resolving = !!choice.orgId && !remembered && (cloudLoading || (signedIn && !orgs && placesState.status === 'loading'))
   const target: Target = org ? resolveTarget(org, thisMacId, choice.machineId) : { kind: 'home' }
   const remoteId = target.kind === 'remote' ? target.server.id : null
   const cloudOrg = cloudOrgOf(target)

@@ -127,9 +127,17 @@ async function s2Error(res: Response, what: string) {
   return new S2Error(res.status, code, `s2 ${what}: ${res.status} ${code}`);
 }
 
+/** A signal that aborts after `ms`, without `AbortSignal.timeout` (React Native's AbortController has none). */
+export function timeoutSignal(ms: number): AbortSignal {
+  const c = new AbortController();
+  setTimeout(() => c.abort(), ms);
+  return c.signal;
+}
+
 /** The stream's next seq_num (check-tail; the read token allows it). */
 export async function checkTail(grant: ReadGrant, f: typeof fetch = fetch): Promise<number> {
-  const res = await f(`${grant.url}/tail`, { headers: authHeaders(grant) });
+  // Bounded like a read's dial: a check that never answers would keep the transcript's stream from opening at all.
+  const res = await f(`${grant.url}/tail`, { headers: authHeaders(grant), signal: timeoutSignal(15_000) });
   if (!res.ok) throw await s2Error(res, "check-tail");
   return ((await res.json()) as { tail: { seq_num: number } }).tail.seq_num;
 }

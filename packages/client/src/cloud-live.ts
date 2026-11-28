@@ -6,7 +6,7 @@
 // The desktop shell's CSP must allow these reads (`connect-src https://*.s2.dev` in apps/desktop/src-tauri/tauri.conf.json): without
 // it WebKit refuses every s2 fetch and a cloud workspace sits on "Reconnecting to the server…".
 import type { ClientEvent } from "@dorks/shared";
-import { checkTail, StreamReader, type ReadGrant } from "./s2.ts";
+import { checkTail, StreamReader, timeoutSignal, type ReadGrant } from "./s2.ts";
 import type { LiveStatus } from "./live.ts";
 import type { LiveMessage, Person } from "./types.ts";
 
@@ -38,9 +38,13 @@ class GrantError extends Error {
   }
 }
 
+/** A token route that has not answered in this long is given up and asked again (a stalled relay would hold the stream forever). */
+const GRANT_TIMEOUT_MS = 15_000;
+
 async function post<T>(o: Common, path: string): Promise<T> {
   const f = o.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
-  const res = await f(`${o.cloud.realtimeUrl.replace(/\/+$/, "")}${path}`, { method: "POST", headers: { authorization: `Bearer ${o.token}`, "content-type": "application/json" }, body: "{}" });
+  const signal = timeoutSignal(GRANT_TIMEOUT_MS);
+  const res = await f(`${o.cloud.realtimeUrl.replace(/\/+$/, "")}${path}`, { method: "POST", headers: { authorization: `Bearer ${o.token}`, "content-type": "application/json" }, body: "{}", signal });
   if (!res.ok) throw new GrantError(res.status);
   return (await res.json()) as T;
 }
