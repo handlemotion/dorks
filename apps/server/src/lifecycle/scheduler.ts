@@ -6,6 +6,7 @@ import { fireTimer } from "./lifecycle";
 import { recoverSnapshotBuild } from "../services/snapshot";
 import { recoverBuildRuns } from "../services/buildRuns";
 import { recoverLocal } from "../services/local";
+import { recoverMergeRequests } from "../services/mergeRequests";
 import { recoverAutomations } from "../services/automations";
 import { pollable } from "../services/subscriptions";
 import { AppEnv } from "../http/route";
@@ -70,6 +71,7 @@ export class Scheduler implements SchedulerLike {
     recoverBuildRuns(app); // likewise for build runs (docs/builds.md)
     recoverAutomations(app); // schedules, and the repository watcher (docs/automations.md)
     recoverLocal(app); // a command that was running on the owner's computer is reported as lost (docs/local-access.md)
+    recoverMergeRequests(app); // a merge a restart interrupted can be answered again (docs/autonomy.md, "Asking to merge")
     void recoverMove(app); // a move to the cloud cut off mid-commit asks the cloud whether it committed (docs/move-to-cloud.md)
     void autoConnectBoat(app); // a Boat key from the Boat CLI's login, when none is saved (services/boatSignIn.ts)
     void autoConnectGithub(app); // likewise GitHub, from the GitHub CLI's
