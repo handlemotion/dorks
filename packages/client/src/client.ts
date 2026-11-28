@@ -359,22 +359,25 @@ export class DorksClient {
     this.me().prefetch();
   }
 
+  private onHello() {
+    if (!this.cfg.cloud) this.setPresence(new Map()); // a cloud team's presence has its own stream, which keeps it current
+    void this.sendViewing();
+    // Everything is read again, except, for a cloud org, at the first hello of the first connection, what was read since the
+    // stream opened: the org feed reads from the time `start()` made its reader, so it has every change after those reads
+    // began, and reading them twice on startup only queues the next screen's reads behind them (a browser opens 6
+    // connections a host). `/api/live` replays nothing from before its request reached the server, so it always resyncs.
+    // DorksProvider opens the stream before anything subscribes.
+    const first = !this.greeted && !!this.cfg.cloud;
+    this.greeted = true;
+    for (const q of this.queries.values()) if (!(first && q.startedAt >= this.startedAt)) q.invalidate();
+    for (const id of this.feeds.keys()) this.tailFeed(id);
+  }
+
   private onLive(m: LiveMessage) {
     switch (m.t) {
-      case "hello": {
-        if (!this.cfg.cloud) this.setPresence(new Map()); // a cloud team's presence has its own stream, which keeps it current
-        void this.sendViewing();
-        // Everything is read again, except, for a cloud org, at the first hello of the first connection, what was read since the
-        // stream opened: the org feed reads from the time `start()` made its reader, so it has every change after those reads
-        // began, and reading them twice on startup only queues the next screen's reads behind them (a browser opens 6
-        // connections a host). `/api/live` replays nothing from before its request reached the server, so it always resyncs.
-        // DorksProvider opens the stream before anything subscribes.
-        const first = !this.greeted && !!this.cfg.cloud;
-        this.greeted = true;
-        for (const q of this.queries.values()) if (!(first && q.startedAt >= this.startedAt)) q.invalidate();
-        for (const id of this.feeds.keys()) this.tailFeed(id);
+      case "hello":
+        this.onHello();
         break;
-      }
       case "dorks":
         this.invalidate("dorks");
         this.invalidate("automation-runs"); // a run names its session, its title and state
@@ -423,8 +426,8 @@ export class DorksClient {
         break;
       case "presence": {
         const next = new Map(this.presence);
-        if (m.viewers.length) next.set(m.dorkId, m.viewers);
-        else next.delete(m.dorkId);
+        next.set(m.dorkId, m.viewers);
+        if (!m.viewers.length) next.delete(m.dorkId);
         this.setPresence(next);
         break;
       }
