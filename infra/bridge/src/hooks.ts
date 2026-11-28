@@ -150,8 +150,11 @@ type HookOutput = Record<string, unknown> | null;
 
 const CREATES_PRS = /\bgh\b[^;&|\n]*\b(?:pr\s+create|stack\s+submit)\b/;
 const ENDS_PRS = /\bgh\b[^;&|\n]*\bpr\s+(?:merge|close)\b/;
-/** What gh prints on success: "✓ Closed pull request owner/name#12 (title)", "✓ Squashed and merged pull request owner/name#12 (title)". `--auto` prints something else. */
-const ENDED = /\b(?:closed|merged) pull request ([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)#(\d{1,9})\b/gi;
+/**
+ * What gh prints on a successful close: "✓ Closed pull request owner/name#12 (title)". A merge ("✓ Squashed and merged pull request
+ * …") keeps its subscription: the server's poller ingests the merge, which ends the subscription and starts following the ship.
+ */
+const ENDED = /\bclosed pull request ([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)#(\d{1,9})\b/gi;
 const MAX_LISTED = 8;
 const MAX_TITLE = 120;
 
