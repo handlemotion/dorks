@@ -52,7 +52,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   const prompt = typeof m.message.content === "string" ? m.message.content : m.message.content.map((b) => b.text).join("");
   if (report) appendFileSync(report, JSON.stringify({ prompt }) + "\n");
   step_update({ state: "DONE", step_type: "user_input" });
-  if (process.env.FAKE_AGY_WAIT && !/\bagain\b/.test(prompt)) return void (waiting = true); // a long turn, until SIGINT
+  // The user's text ends the prompt (a first turn starts with the standing instructions, which can say "again" too).
+  if (process.env.FAKE_AGY_WAIT && !/\bagain\s*$/.test(prompt)) return void (waiting = true); // a long turn, until SIGINT
   // A call is announced before the model has written its parameters, then runs, then ends: one step index throughout.
   const call = step++;
   const tool = (s) => send({ event: "step_update", step_update: { conversation_id: conversation, step_index: call, step_type: "tool", tool_name: "run_command", ...s } });
