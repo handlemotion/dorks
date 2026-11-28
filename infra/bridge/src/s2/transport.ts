@@ -358,6 +358,7 @@ export class S2Transport implements Transport {
   getImage = (id: string) => this.rpc<{ mime: string; data: string } | null>("get_image", { id });
   build = (args: Record<string, unknown>) => this.rpc<unknown>("build", args);
   local = (args: Record<string, unknown>) => this.rpc<unknown>("local", args);
+  merge = (args: Record<string, unknown>) => this.rpc<unknown>("merge", args);
   /**
    * Secure inputs: in a cloud org only the bridge writes the transcript, so the Worker hands back the client event a request or its
    * answer adds (`input_request`, `input_response`) and the bridge appends it as a note before answering the agent. Several waits

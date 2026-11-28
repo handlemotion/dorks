@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vite-plus/test";
 import { uiApp } from "../src/http/ui";
 import { githubToken, updateSettings } from "../src/services/settings";
+import { mergeOp } from "../src/services/mergeRequests";
 import { bridgeSecret } from "@dorks/core/bridgeAuth";
 import { fakeFetch, harness, type Harness } from "./harness";
 
@@ -701,6 +702,41 @@ describe("a dork's life through the API", () => {
     // A PR it follows (any case of the repo) is read.
     await a.get(`/api/dorks/${id}/pr?url=${encodeURIComponent("https://github.com/Octo/Hello/pull/9")}`);
     expect(fetched).toContain("/repos/octo/hello/pulls/9");
+  });
+
+  it("asking to merge: Merge merges the commit the agent asked about, once, and the agent hears how it ended", async () => {
+    const { a, h, id } = await dork();
+    await a.post(`/api/dorks/${id}/subscriptions`, { repo: "octo/hello", number: 9 });
+    const url = "https://github.com/octo/hello/pull/9";
+    let head = "a".repeat(40);
+    const merges: unknown[] = [];
+    h.app.fetch = (async (u: string, init?: RequestInit) => {
+      const path = new URL(u).pathname;
+      if (path === "/repos/octo/hello/pulls/9") return Response.json({ title: "Fix it", state: "open", merged: false, head: { sha: head } });
+      if (path === "/repos/octo/hello") return Response.json({ allow_squash_merge: false, allow_merge_commit: true, allow_rebase_merge: true });
+      if (path === "/repos/octo/hello/pulls/9/merge" && init?.method === "PUT") {
+        merges.push(JSON.parse(String(init.body)));
+        return Response.json({ merged: true, sha: "c".repeat(40) });
+      }
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch;
+    const requestId = ((await mergeOp(h.app, id, { action: "request", url, note: "CI is green." })) as { requestId: string }).requestId;
+    expect((await a.get(`/api/dorks/${id}`)).json.needsAttention).toBe(true);
+    // A push after the card appeared: Merge still merges the commit the agent asked about, and GitHub refuses it if the head moved.
+    head = "b".repeat(40);
+    const first = await a.post(`/api/dorks/${id}/merge-requests/${requestId}`, { merge: true });
+    expect(first.json.status).toBe("failed");
+    expect(merges).toEqual([]);
+    // Asking again pins the new head; Merge uses the repo's first allowed method; a second answer is refused.
+    const again = ((await mergeOp(h.app, id, { action: "request", url, note: "Rebased." })) as { requestId: string }).requestId;
+    expect((await a.post(`/api/dorks/${id}/merge-requests/${again}`, { merge: true })).json.status).toBe("merged");
+    expect(merges).toEqual([{ merge_method: "merge", sha: head }]);
+    expect((await a.post(`/api/dorks/${id}/merge-requests/${again}`, { merge: true })).json.error.code).toBe("conflict");
+    expect(merges).toHaveLength(1);
+    expect((await a.get(`/api/dorks/${id}`)).json.needsAttention).toBeFalsy();
+    const told = h.app.db.all<{ text: string }>("SELECT text FROM commands WHERE dork_id = ? AND kind = 'user_message'", id).map((c) => c.text);
+    expect(told.some((t) => t.includes("did not merge"))).toBe(true);
+    expect(told.some((t) => t.includes("is merged (merge)"))).toBe(true);
   });
 
   it("a generated title replaces the first-message placeholder, never a name the user typed", async () => {

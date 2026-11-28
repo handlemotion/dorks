@@ -451,6 +451,8 @@ export interface LocalAccess {
 
 /** The owner's answer to a session's first request: `session` allows this session, `always` every session (`localAlwaysAllow`). */
 export type LocalDecision = { decision: "session" | "always" | "deny" };
+/** The owner's answer to the agent's request to merge: Merge (`true`) or Not now. */
+export type MergeAnswer = { merge: boolean };
 
 /** The owner's answer to an agent's secure-input request (docs/secure-inputs.md): the values, or a dismissal. */
 export type InputAnswer = { values: Record<string, string> } | { dismiss: true };

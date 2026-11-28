@@ -8,7 +8,10 @@ import { ATTENTION_COLOR } from './DorkIcon'
  * submitted machine change (the server's `needsAttentionOf`).
  */
 export function attentionBlock(blocks: Block[]): Block | undefined {
-  return blocks.find((b) => (b.kind === 'local' && b.status === 'pending') || (b.kind === 'input' && b.status === 'pending') || (b.kind === 'build' && b.approved === null))
+  return blocks.find(
+    (b) =>
+      (b.kind === 'local' && b.status === 'pending') || (b.kind === 'input' && b.status === 'pending') || (b.kind === 'merge' && b.status === 'pending') || (b.kind === 'build' && b.approved === null),
+  )
 }
 
 /** The card drawn for a block (`data-block-id`, see `Waiting` in ChatBlock), once it is drawn. */

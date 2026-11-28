@@ -12,12 +12,23 @@ Claude Code stays stock. Autonomy is built from the bridge, plus hooks, a `gh` s
 | 2 | **Comment authors:** a `commentPolicy` setting (`packages/shared/src/autonomy.ts`): `all` (the default) or an `allowlist` of GitHub logins (bots by login, for example `coderabbitai[bot]`). The token's owner always passes. The agent comments as the token's owner too, so a comment or review by that login counts as the agent's (and is dropped) when GitHub stamped it while a dork subscribed to the PR was mid-turn, or within 15 s after; written while every such dork was idle or asleep, it is the owner's and wakes the dork. An owner comment made mid-turn is dropped: say it in the chat instead. |
 | 3 | **Identity:** the dork comments and pushes as your GitHub CLI login ([GitHub](github.md)). |
 | 4 | **Subscriptions:** several dorks may subscribe to one PR. A dork auto-subscribes to PRs it creates. The user can subscribe it to any other PR. At most 50 live subscriptions per dork. |
-| 5 | **After green and approved:** the agent posts a short "on standby" note in the thread and goes idle (then sleeps). It never auto-merges. |
+| 5 | **When a PR is ready, the agent asks to merge** with the `pr_merge_request` tool: a Merge / Not now card in the chat, and the owner's answer is its next turn, so it carries on. Merge merges the commit it asked about. It never merges by itself (see "Asking to merge"). |
 | 6 | **Workflows:** the token needs workflow write access, so the agent may fix CI configuration. |
 | 7 | **CI fixes: at most `CI_FIX_MAX_ATTEMPTS = 2` in a row per PR.** A third consecutive failure stalls the subscription: no more CI notifications, one transcript event, and one PR comment (posted with the token) saying a human is needed. The counter resets on green CI, a person's comment that passes the policy, a user message to the dork, or a manual resubscribe. |
 | 8 | **Validate locally before pushing.** The Stop hook and every CI-failure notification tell the agent to reproduce the failure and run the repo's checks locally before it pushes. |
 | 9 | **Merge conflicts and restacks are fixed autonomously.** |
 | 10 | **Test against running software.** A Claude turn that changed code is judged by Haiku from its tool calls; one that was not exercised against the running program (only unit tests, mocks or a typecheck) is sent back once with what to start and exercise ([services](services.md), "Live verification"). |
+
+## Asking to merge
+
+A ready PR should not end in a standby note the owner has to notice. The agent calls `pr_merge_request { pr, note }` (MCP, bridge op `merge`, `services/mergeRequests.ts`) as soon as a PR is ready: CI green, comments addressed, approved when the repo needs it. The server checks the PR is one the session opened or follows and is open and not a draft, stores the head commit, and appends a `merge_request` event: a card with the PR, the agent's note, **Merge** and **Not now**. The dork needs attention until it is answered. Asking again for the same PR (after a push) replaces the waiting card.
+
+- **Merge** (`POST /api/dorks/:id/merge-requests/:requestId {merge: true}`) merges with the repository's first allowed method (squash, merge, rebase), pinned to the stored commit, through the same path as the PR tab. The request is claimed first, so it merges once.
+- **Not now** (`{merge: false}`) declines.
+- Either way a `merge_decision` event updates the card and the outcome is the agent's next turn: merged (the ship follows and wakes it with `deployed` or `ship_failed`), declined (leave it open, do not ask again unless something changes), or failed with GitHub's reason (fix it, push, ask again).
+- A PR merged or closed another way (on GitHub, from the PR tab) settles a card still waiting for it.
+
+The agent never merges itself (`gh pr merge`, the API): the card is the only way.
 
 ## Why the bridge is the channel
 
@@ -112,7 +123,7 @@ Rendering is done by the server: one `<dorks-event>` envelope per notification, 
 - CI failure: "fetch the failing logs with `gh run view --log-failed`, reproduce locally, fix, run the checks locally, then push. This is attempt n of 2."
 - Review comments: "address each comment, reply to it with `gh`, validate locally, push."
 - Conflict: "rebase or merge the base, resolve, validate locally, push (force-with-lease for rebases)."
-- Ready: "post a short standby note; do not merge."
+- Ready: "ask the owner to merge with `pr_merge_request`; never merge yourself."
 
 ### Bridge (`infra/bridge`)
 

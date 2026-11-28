@@ -31,6 +31,7 @@ export interface Transport {
   build(args: Record<string, unknown>): Promise<unknown>;
   /** Local access (docs/local-access.md): `action` request asks to run a command or read a file on the owner's computer, wait waits for the answer. */
   local(args: Record<string, unknown>): Promise<unknown>;
+  merge(args: Record<string, unknown>): Promise<unknown>;
   /** Secure inputs (docs/secure-inputs.md): `action` request asks the owner for values, wait waits for the answer, values fetches them. */
   input(args: Record<string, unknown>): Promise<unknown>;
   /** Crew tools (docs/crew.md): `{tool, args}` from a coordinator's or worker's MCP server, scoped by the server to this dork's crew. */
@@ -346,6 +347,7 @@ export class WsTransport implements Transport {
 
   build = async (args: Record<string, unknown>) => this.rpc<unknown>("build", args);
   local = async (args: Record<string, unknown>) => this.rpc<unknown>("local", args);
+  merge = async (args: Record<string, unknown>) => this.rpc<unknown>("merge", args);
   input = async (args: Record<string, unknown>) => this.rpc<unknown>("input", args);
   crew = async (args: Record<string, unknown>) => this.rpc<unknown>("crew", args);
   comment = async (args: Record<string, unknown>) => this.rpc<unknown>("comment", args);

@@ -58,6 +58,22 @@ export type Block =
     }
   /** A build run of this session (docs/builds.md): kept at the place of its first event and updated in place, like a ship. */
   | { kind: "buildRun"; id: string; run: ChatRun; at: number }
+  /** The agent asked the owner to merge one of its PRs (docs/autonomy.md, "Asking to merge"). `status` is `pending` until answered. */
+  | {
+      kind: "merge";
+      id: string;
+      requestId: string;
+      repo: string;
+      number: number;
+      url: string;
+      title: string;
+      sha: string;
+      note?: string;
+      status: "pending" | "merged" | "queued" | "declined" | "failed" | "replaced";
+      method?: "squash" | "merge" | "rebase";
+      reason?: string;
+      at: number;
+    }
   /**
    * The agent asked to use the owner's computer (docs/local-access.md). `status` moves from `pending` to `denied` or `expired`, or to
    * `allowed` and then `done` / `failed` once the command ran or the file was read.
@@ -206,6 +222,14 @@ const HANDLERS: Handlers = {
     }
     if (i >= 0) v.blocks[i] = { ...(v.blocks[i] as Extract<Block, { kind: "build" }>), approved: e.approved, reason: e.reason };
     else notice(v, e, "info", `${e.approved ? "Approved" : "Rejected"} the machine draft for ${e.buildName}${e.reason ? `: ${e.reason}` : ""}`);
+  },
+  merge_request(v, e) {
+    v.blocks.push({ kind: "merge", id: `m${e.seq}`, requestId: e.requestId, repo: e.repo, number: e.number, url: e.url, title: e.title, sha: e.sha, note: e.note, status: "pending", at: e.ts });
+  },
+  merge_decision(v, e) {
+    const i = v.blocks.findIndex((b) => b.kind === "merge" && b.requestId === e.requestId);
+    if (i < 0) return;
+    v.blocks[i] = { ...(v.blocks[i] as Extract<Block, { kind: "merge" }>), status: e.status, method: e.method, reason: e.reason };
   },
   local_request(v, e) {
     v.blocks.push({ kind: "local", id: `l${e.seq}`, requestId: e.requestId, request: e.kind, command: e.command, cwd: e.cwd, path: e.path, reason: e.reason, status: "pending", at: e.ts });
