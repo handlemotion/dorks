@@ -1,5 +1,13 @@
 # @dorks/desktop
 
+## 0.20.1
+
+### Patch Changes
+
+- [#359](https://github.com/handlemotion/dorks/pull/359) [`e7e8e34`](https://github.com/handlemotion/dorks/commit/e7e8e340c8e768685402189bdd64cf458ad9b3df) Thanks [@handlemotion](https://github.com/handlemotion)! - Settings › Boat on a Dorks Teams workspace has Sign in with Boat: connect or disconnect your Boat account there, with the API key as a fallback.
+
+- [#361](https://github.com/handlemotion/dorks/pull/361) [`0d0bc36`](https://github.com/handlemotion/dorks/commit/0d0bc360dfb55b11a5009331c377b507a74677e2) Thanks [@dorks-agents](https://github.com/apps/dorks-agents)! - The model menu always names a real model (Claude Opus 5.5, or the GPT model when only ChatGPT is connected) with its effort picker, in a cloud organization too; no more "Default model". The organization switcher shows your own picture for your personal workspace while an organization is open, and the organization's GitHub avatar when it has no logo.
+
 ## 0.20.0
 
 ### Minor Changes
