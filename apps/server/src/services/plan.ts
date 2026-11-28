@@ -2,8 +2,8 @@ import { planOf, type PlanId } from "@dorks/shared";
 import { touch, type App } from "../app";
 
 // The plan of this server's workspace (docs/cloud.md, "Plans"), and what it allows. Dorks Free (`local`) runs chats on this Mac only:
-// no sandboxes, since a sandbox driven by a Mac stops with the Mac, which defeats the point of having one. Sandboxes are Dorks Teams'
-// and Dorks Cloud's, whose workspaces run in the cloud. A server Dorks runs for an org (`DORKS_ORG_ID`) is always a paid one.
+// no sandboxes, since a sandbox driven by a Mac stops with the Mac, which defeats the point of having one. Sandboxes are Dorks Teams',
+// whose workspaces run in the cloud (the retired Dorks Cloud plan reads as Teams, `planOf`). A server Dorks runs for an org (`DORKS_ORG_ID`) is always a paid one.
 // `DORKS_SANDBOXES_WITHOUT_PLAN=1` lifts the rule for development, the e2e and self-hosting.
 
 const META = "cloud_plan";
@@ -48,7 +48,7 @@ export function rememberPlan(app: App, orgs: { id: string; plan: PlanId | null }
   });
 }
 
-export const NO_SANDBOXES = "Sandboxes need Dorks Teams or Dorks Cloud. On Dorks Free, chats run on this Mac.";
+export const NO_SANDBOXES = "Sandboxes need Dorks Teams. On Dorks Free, chats run on this Mac.";
 
 /** Where a session runs when nobody said: a sandbox, or this Mac on Dorks Free. */
 export const defaultLocationOf = (app: App): "cloud" | "local" => (sandboxes(app).available ? "cloud" : "local");

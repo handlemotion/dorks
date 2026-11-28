@@ -9,7 +9,7 @@ import { isPaidOrg, runsOnWorker } from '../../lib/place'
 import { orgName, type CloudPlace } from '../CloudPlace'
 import { SettingsGroup, SettingsRow, SettingsSection, SettingsSelectRow, SettingsStatus, SettingsValueRow } from './kit'
 
-// Settings › Organization › Where it runs (docs/move-to-cloud.md). A paid workspace (Teams or Cloud, the personal one included) that
+// Settings › Organization › Where it runs (docs/move-to-cloud.md). A paid workspace (Teams, the personal one included) that
 // this Mac still serves moves to Dorks Cloud: this Mac pauses its sessions and uploads them with their transcripts, builds,
 // automations, MCP servers, skills, shared variables and settings, and the cloud takes it over (AutoMove.tsx starts it on its own; this
 // is where it is retried). The free personal workspace can instead be moved into a paid team the owner manages: everything is copied

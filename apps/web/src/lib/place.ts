@@ -6,7 +6,7 @@ import type { CloudOrg, CloudServer } from '@dorks/client'
  * it runs on. The switcher picks the org; the server behind it is resolved here, never listed in the switcher:
  *
  * - an org with a hosted server: that server, through the relay;
- * - a Teams or Cloud org with no Mac in it: the org runtime (the dorks-cloud Worker), its live updates read from s2;
+ * - a Teams org with no Mac in it: the org runtime (the dorks-cloud Worker), its live updates read from s2;
  * - the personal org (or a team this Mac belongs to): this Mac, the local server, unless another of its Macs was picked inside it;
  * - a team with one Mac and no hosted server: that Mac, through the relay;
  * - otherwise (several Macs, or none): the org asks which to connect to.
@@ -34,10 +34,10 @@ export function resolveTarget(org: CloudOrg, thisMacId: string | null, machineId
   return { kind: 'choose', machines, home }
 }
 
-export const isPaidOrg = (org: CloudOrg) => org.plan === 'teams' || org.plan === 'cloud'
+export const isPaidOrg = (org: CloudOrg) => org.plan === 'teams'
 
 /**
- * A paid org (Teams or Cloud, the personal workspace included) runs on the Worker (its `orgRuntime`), never on a Mac. The relay says
+ * A paid org (Dorks Teams, the personal workspace included) runs on the Worker (its `orgRuntime`), never on a Mac. The relay says
  * where it runs now (`runtime`): `cloud` once it moved (a personal workspace keeps its Mac in it) or when it never had a Mac; `mac`
  * while a Mac still serves it, until its move (AutoMove.tsx starts it). An older relay sends no `runtime`: a team with no Mac then.
  * Dorks Local (free) stays on this Mac.

@@ -248,9 +248,10 @@ export function createApi(config: ApiConfig) {
     cloudPlaces: () => request<CloudPlaces>("GET", "/api/cloud/places"),
     /** An org's plan and its limits, from Dorks Cloud. */
     cloudEntitlements: (orgId: string) => request<CloudEntitlements>("GET", `/api/cloud/orgs/${encodeURIComponent(orgId)}/entitlements`),
-    /** A Stripe page for the org, to open in the browser: the customer portal, or Checkout for a plan (owner only). */
+    /** A Stripe page for the org, to open in the browser: the customer portal, or Checkout for Dorks Teams, monthly or yearly (owner only). */
     cloudBillingPortal: (orgId: string) => request<{ url: string }>("POST", `/api/cloud/orgs/${encodeURIComponent(orgId)}/billing/portal`, {}),
-    cloudCheckout: (orgId: string, plan: "teams" | "cloud") => request<{ url: string }>("POST", `/api/cloud/orgs/${encodeURIComponent(orgId)}/billing/checkout`, { plan }),
+    cloudCheckout: (orgId: string, opts: { annual?: boolean } = {}) =>
+      request<{ url: string }>("POST", `/api/cloud/orgs/${encodeURIComponent(orgId)}/billing/checkout`, { plan: "teams", ...(opts.annual ? { annual: true } : {}) }),
     /** Move to cloud (docs/move-to-cloud.md): where it stands, and starting it for this Mac's team org. */
     cloudMove: () => request<CloudMoveStatus>("GET", "/api/cloud/move"),
     cloudStartMove: (orgId: string) => request<CloudMoveStatus>("POST", "/api/cloud/move", { orgId }),

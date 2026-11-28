@@ -25,7 +25,7 @@ All optional.
 | `DORKS_CLOUD_URL` | `https://api.dorks.build` | The cloud relay the iPhone app reaches this server through ([mobile](mobile.md)). Empty turns the phone link off. |
 | `DORKS_SITE_URL` | `https://dorks.build` | The website the app opens to sign in to Dorks Cloud; it hands the sign-in back with a `dorks://auth` link ([mobile](mobile.md)). |
 | `DORKS_CLOUD_JWKS_URL` | `<DORKS_CLOUD_URL>/api/auth/jwks` | The cloud's keys for teammates' identity tokens ([cloud](cloud.md)). Tokens must also name `DORKS_CLOUD_URL` as `iss` and `aud`. |
-| `DORKS_ORG_ID` | the org the cloud reports for this server's pairing | The dorks-cloud organization this server belongs to; the server Dorks runs for a Teams or Cloud org is started with it. Relayed tokens for any other org are refused. |
+| `DORKS_ORG_ID` | the org the cloud reports for this server's pairing | The dorks-cloud organization this server belongs to; the server Dorks runs for a Teams org is started with it. Relayed tokens for any other org are refused. |
 | `GH_TOKEN`, then `GITHUB_TOKEN` | none (the GitHub CLI's login) | Secret. Overrides the GitHub CLI's login, the way `gh` itself resolves them, for development and the e2e. GitHub must still be connected (`githubConnected`). The desktop app never passes them. See [GitHub](github.md). |
 
 `secrets.json` holds three keys, generated on first run: `bridgeSecretKey` (the per-dork bridge secret is `HMAC-SHA256(bridgeSecretKey, "bridge|" + dorkId)`), `encryptionKey` (AES-GCM, 32 bytes, base64) and `ownerToken`. Back it up together with `dorks.db`: without `encryptionKey` the stored tokens cannot be decrypted.

@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import type { TwinBuild, TwinColumn, TwinNeonProject, TwinStrategy, TwinView } from '@dorks/client'
+import type { ProdlikeAllowance, TwinBuild, TwinColumn, ProdlikeMeter, TwinNeonProject, TwinStrategy, TwinView } from '@dorks/client'
 import { ApiError } from '@dorks/client'
 import { useDorksClient } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
+import { Progress } from '@dorks/ui/progress'
 import { Switch } from '@dorks/ui/switch'
 import { isDesktop, openExternal } from '../../lib/desktop'
 import { usePending } from '../../lib/pending'
-import { SettingsGroup, SettingsGroupFooter, SettingsInputRow, SettingsRow, SettingsSection, SettingsSections, SettingsSelectRow, SettingsStatus, SettingsValueRow } from './kit'
+import { SettingsGroup, SettingsGroupBody, SettingsGroupFooter, SettingsInputRow, SettingsRow, SettingsSection, SettingsSections, SettingsSelectRow, SettingsStatus, SettingsValueRow } from './kit'
 
 // Settings › Twin Engine (dorks-cloud src/prodlike): sessions test against a scrubbed copy of production, each on a database branch of
 // its own. Two ways in, each a click or two: Connect Neon (the team's own Neon account; pick production), or hosted (Dorks runs a Neon
-// project for the team; the setup agent finds the database, the owner gives a read-only URL once in a secure form). Teams plans and up.
+// project for the team; the setup agent finds the database, the owner gives a read-only URL once in a secure form). Dorks Teams, with a
+// monthly allowance (spans and errors, and hosted data): past a limit that part pauses until the 1st, nothing is billed extra.
 
 const tz = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 const when = (ms: number | null | undefined) => (ms ? new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Never')
@@ -72,6 +74,7 @@ function TwinBody({ view, act, pending, error, awaiting }: { view: TwinView; err
         {view.source && <Status view={view} act={act} pending={pending} />}
         <SettingsStatus error={error} />
       </SettingsSection>
+      {view.allowance && <Allowance allowance={view.allowance} />}
       {view.source && view.rules && <Rules view={view} act={act} pending={pending} />}
       {(view.neon.connected || view.mode === 'hosted') && <Disconnect hosted={view.mode === 'hosted'} act={act} pending={pending} />}
     </SettingsSections>
@@ -101,13 +104,59 @@ function Disconnect({ hosted, act, pending }: { hosted: boolean } & Act) {
 
 type Act = { act: (fn: () => Promise<unknown>) => void; pending: boolean }
 
+/** The 1st of next month, UTC (when the allowance resets): `Dec 1`. */
+const resetDay = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })
+const count = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 })
+
+/** This month's allowance: each part used of its limit, and what is paused past one. */
+function Allowance({ allowance: a }: { allowance: ProdlikeAllowance }) {
+  const paused = [a.paused.traces, a.paused.data].filter((p): p is string => !!p)
+  return (
+    <SettingsSection title="This month" description={`Included with Dorks Teams. Resets ${resetDay(a.resetsAt)}. Usage is read every hour.`}>
+      <SettingsGroup label="allowance">
+        {paused.map((p) => (
+          <SettingsGroupBody key={p} role="alert" className="text-amber-700 dark:text-amber-400">
+            {p}
+          </SettingsGroupBody>
+        ))}
+        <Meter label="Spans" meter={a.spans} />
+        <Meter label="Error events" meter={a.errors} />
+        {a.hosted && <Meter label="Hosted data" meter={a.hosted.storageGb} unit="GB" />}
+        {a.hosted && <Meter label="Compute hours" meter={a.hosted.computeCuHours} />}
+      </SettingsGroup>
+    </SettingsSection>
+  )
+}
+
+/** One part of the allowance: used of limit, and a thin bar (red once it is used up). */
+function Meter({ label, meter, unit }: { label: string; meter: ProdlikeMeter; unit?: string }) {
+  const share = meter.limit > 0 ? Math.min(1, Math.max(0, meter.used / meter.limit)) : 0
+  const value = `${count.format(meter.used)} of ${count.format(meter.limit)}${unit ? ` ${unit}` : ''}`
+  return (
+    <SettingsRow
+      label={label}
+      className="pe-4"
+      control={
+        <div className="flex w-full flex-col gap-1.5 @md:w-48 @md:items-end">
+          <span className="text-sm tabular-nums">{value}</span>
+          <Progress
+            value={Math.round(share * 100)}
+            aria-label={`${label} used`}
+            className={`w-full [&_[data-slot=progress-track]]:h-1 ${share >= 1 ? '[&_[data-slot=progress-indicator]]:bg-destructive' : '[&_[data-slot=progress-indicator]]:bg-brand'}`}
+          />
+        </div>
+      }
+    />
+  )
+}
+
 function UpgradePrompt() {
   return (
     <SettingsSections>
       <SettingsSection title="Twin Engine" description="Sessions test against a scrubbed copy of production, each on a database branch of its own.">
         <SettingsGroup label="upgrade">
           <SettingsRow
-            label="Comes with Dorks Teams and Dorks Cloud"
+            label="Comes with Dorks Teams"
             description="Upgrade the organization to set it up. Until then, sessions test with the Validation Engine on their own servers."
             control={
               <Button size="sm" render={<Link to="/settings/$page" params={{ page: 'organization' }} />}>
@@ -334,7 +383,7 @@ function Refresh({ view, act, pending }: { view: TwinView } & Act) {
           control={<Switch aria-label="refresh nightly" checked={view.refresh.enabled} disabled={pending} onCheckedChange={(on) => act(() => api.twinRefresh(on, tz()))} />}
         />
       )}
-      {view.hosted.usage && <SettingsValueRow label="This month" value={`${view.hosted.usage.computeHours} compute h · $${(view.hosted.usage.cents / 100).toFixed(2)}`} />}
+      {view.hosted.usage && !view.allowance && <SettingsValueRow label="This month" value={`${view.hosted.usage.computeHours} compute h · $${(view.hosted.usage.cents / 100).toFixed(2)}`} />}
       <SettingsGroupFooter
         action={
           <Button type="button" size="sm" variant="outline" disabled={pending || busy} onClick={() => act(() => api.twinRebuild())}>

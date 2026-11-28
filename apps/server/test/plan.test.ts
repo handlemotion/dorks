@@ -31,9 +31,9 @@ describe("Dorks Free", () => {
     h.sendMessage(old);
     await h.settle();
     expect(h.box.calls).not.toContain("resume");
-    expect(JSON.stringify(h.events(old).map((e) => e.body))).toContain("Sandboxes need Dorks Teams or Dorks Cloud");
+    expect(JSON.stringify(h.events(old).map((e) => e.body))).toContain("Sandboxes need Dorks Teams");
 
-    rememberPlan(h.app, [{ id: "personal-1", plan: "cloud" }]); // upgraded
+    rememberPlan(h.app, [{ id: "personal-1", plan: "teams" }]); // upgraded
     expect(sandboxes(h.app).available).toBe(true);
     expect(h.app.db.get("SELECT 1 AS x FROM meta WHERE key = 'cloud_plan'")).toBeTruthy();
     update(h.app.db, "settings", { id: 1 }, { cloudOrgId: null }); // unpaired: the paid plan was that org's, not this Mac's

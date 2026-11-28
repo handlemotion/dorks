@@ -4,7 +4,7 @@ import { authClient, CLOUD_URL } from "#/lib/cloud";
  * Dorks Cloud onboarding (/onboarding): the steps, what the relay says about each, and the desktop handoff at the end. Every answer
  * is saved to the relay as it is given (the org through Better Auth's organization API, keys as org secrets), so a reload or another
  * browser resumes at the first step still open. The only things kept in this browser are the steps the visitor passed without
- * saving anything (skipped, or read the included-sandboxes note), per org.
+ * saving anything (skipped), per org.
  */
 export type StepId = "workspace" | "github" | "plan" | "invite" | "boat" | "agents";
 
@@ -15,8 +15,9 @@ export type StepId = "workspace" | "github" | "plan" | "invite" | "boat" | "agen
  */
 export const STEPS: readonly StepId[] = ["workspace", "github", "plan", "invite", "boat", "agents"];
 
-export type Plan = "local" | "teams" | "cloud";
-export const isPaid = (plan: Plan | undefined) => plan === "teams" || plan === "cloud";
+/** The org's plan; the cloud reads an old `cloud` subscription (the retired Dorks Cloud plan) as `teams`. */
+export type Plan = "local" | "teams";
+export const isPaid = (plan: Plan | undefined) => plan === "teams";
 
 export interface Org {
   id: string;
@@ -108,7 +109,8 @@ const passedSteps = (orgId: string) => new Set(read().passed?.[orgId] ?? []);
  * from the relay.
  */
 export async function loadProgress(): Promise<Progress> {
-  const orgs = await cloud<Org[]>("/v1/orgs");
+  // An older cloud may still name the retired Dorks Cloud plan: it reads as Teams.
+  const orgs = (await cloud<Org[]>("/v1/orgs")).map((o) => ({ ...o, plan: (o.plan as string) === "cloud" ? ("teams" as const) : o.plan }));
   const teams = orgs.filter((o) => !o.personal);
   const saved = read().orgId;
   // Only a team the visitor owns: a member cannot pay for it, invite to it or set its keys.
@@ -141,7 +143,6 @@ export function stepDone(p: Progress): Record<StepId, boolean> {
     github: passed.has("github") || !p.github.configured || p.github.installations.length > 0,
     plan: isPaid(p.org?.plan),
     invite: passed.has("invite") || p.invitations.length > 0,
-    // Dorks Cloud brings its own sandboxes; the step only says so once.
     boat: passed.has("boat") || has("BOAT_OAUTH") || has("BOAT_API_KEY"),
     agents: passed.has("agents") || has("CLAUDE_CODE_OAUTH_TOKEN"),
   };
@@ -185,7 +186,7 @@ export async function saveWorkspace(name: string, existing: Org | null): Promise
  */
 export async function connectGithub(orgId: string) {
   const u = new URL(window.location.href);
-  for (const k of ["github", "account", "checkout", "trial"]) u.searchParams.delete(k);
+  for (const k of ["github", "account", "checkout"]) u.searchParams.delete(k);
   const { url } = await cloud<{ url: string }>(`/v1/orgs/${orgId}/github/install`, { body: { returnTo: u.href } });
   if (!url) throw new Error("Dorks Cloud did not answer with a GitHub link");
   window.location.assign(url);
@@ -210,63 +211,50 @@ export async function invite(orgId: string, email: string) {
   if (r.error) throw new Error(r.error.message || `Could not invite ${email}`);
 }
 
+/** The paid plan (`GET /v1/billing/plans`): one flat price per org, monthly or yearly. */
+export interface PlanInfo {
+  name: string;
+  monthlyCents: number;
+  yearlyCents: number;
+  memberLimit: number;
+}
 export interface Plans {
-  plans: Record<Plan, { name: string; monthlyCents: number; includedMinutes: number; maxConcurrentSandboxes: number }>;
+  currency: string;
+  plans: Record<Plan, PlanInfo>;
 }
 export const fetchPlans = () => cloud<Plans>("/v1/billing/plans");
 
-export type PaidPlan = "teams" | "cloud";
-
-export interface TrialOffer {
-  eligible: boolean;
-  /** Why not, when not eligible: trial_used or subscribed. */
-  code?: string;
-  message?: string;
+/** Whether the org may still start Dorks Teams' trial (14 days, card required; once per org, account and card). */
+export interface Trials {
+  teams: { kind: "teams_days"; days: number; eligible: boolean; /** Why not: trial_used or subscribed. */ code?: string; message?: string };
 }
-export type Trials = Record<PaidPlan, TrialOffer>;
-
-/** Which trials the visitor may start for this org (each kind once per org, account and card). */
 export const fetchTrials = (orgId: string) => cloud<Trials>(`/v1/billing/orgs/${orgId}/trials`);
 
 /** This page again, for Stripe to come back to: the rest of the query (app, state) kept, an earlier result dropped. */
 const back = (result?: string) => {
   const u = new URL(window.location.href);
   u.searchParams.delete("checkout");
-  u.searchParams.delete("trial");
   if (result) u.searchParams.set("checkout", result);
   return u.href;
 };
 
 /**
- * Stripe Checkout for the plan's trial (both take a card and charge nothing up front), or, with trial false, a plain subscription.
- * - Dorks Cloud's trial (10 sandbox hours, no time limit) is POST /cloud-trial: Checkout in setup mode, which comes back to this
- *   page with ?trial=started, or ?trial=<code> when the trial was refused.
- * - Dorks Teams' trial (14 days) and every subscription are POST /checkout, which comes back with ?checkout=success.
- * Both come back with ?checkout=cancel when the visitor leaves Checkout.
+ * Stripe Checkout for Dorks Teams, monthly or yearly: with its 14-day trial (a card, nothing charged up front), or, with trial false,
+ * a plain subscription. It comes back with ?checkout=success, or ?checkout=cancel when the visitor leaves Checkout.
  */
-export async function startCheckout(orgId: string, plan: PaidPlan, trial = true) {
-  const { url } =
-    plan === "cloud" && trial
-      ? await cloud<{ url: string }>(`/v1/billing/orgs/${orgId}/cloud-trial`, { body: { successUrl: back(), cancelUrl: back("cancel") } })
-      : await cloud<{ url: string }>(`/v1/billing/orgs/${orgId}/checkout`, {
-          body: { plan, ...(trial ? { trial: true } : {}), successUrl: back("success"), cancelUrl: back("cancel") },
-        });
+export async function startCheckout(orgId: string, opts: { annual: boolean; trial: boolean }) {
+  const { url } = await cloud<{ url: string }>(`/v1/billing/orgs/${orgId}/checkout`, {
+    body: { plan: "teams", ...(opts.annual ? { annual: true } : {}), ...(opts.trial ? { trial: true } : {}), successUrl: back("success"), cancelUrl: back("cancel") },
+  });
   if (!url) throw new Error("Dorks Cloud did not answer with a Checkout link");
   window.location.assign(url);
-}
-
-/** What ?trial=<code> means when the Cloud trial was refused on the way back from Checkout. */
-export function trialRefusal(code: string): string {
-  if (code === "trial_used") return "Your Dorks Cloud trial could not start: this organization, account or card has already had one. Subscribe to continue.";
-  if (code === "subscribed") return "Your Dorks Cloud trial could not start: this organization already has a subscription. Change its plan in Settings.";
-  return "Your Dorks Cloud trial could not start: the card was not saved. Try again.";
 }
 
 /** After Checkout: the webhook lands a moment later, so wait (up to ~30 s) for the org's plan to turn paid. */
 export async function waitForPlan(orgId: string): Promise<Plan> {
   for (let i = 0; i < 15; i++) {
-    const { plan } = await cloud<{ plan: Plan }>(`/v1/orgs/${orgId}/entitlements`);
-    if (isPaid(plan)) return plan;
+    const { plan } = await cloud<{ plan: string }>(`/v1/orgs/${orgId}/entitlements`);
+    if (plan === "teams" || plan === "cloud") return "teams";
     await new Promise((r) => setTimeout(r, 2000));
   }
   return "local";

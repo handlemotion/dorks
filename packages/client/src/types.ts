@@ -187,7 +187,7 @@ export interface Settings {
   local?: LocalAvailability;
   /** Where the new-session composer starts: its Cloud / Local choice, remembered. Cloud when `local` is not available; local when `sandboxes` is not. */
   defaultLocation?: DorkLocation;
-  /** Whether sessions may run in sandboxes: Dorks Teams and Dorks Cloud; Dorks Free runs them on the Mac. Absent on older servers (allowed). */
+  /** Whether sessions may run in sandboxes: Dorks Teams; Dorks Free runs them on the Mac. Absent on older servers (allowed). */
   sandboxes?: { available: boolean; reason?: string };
   /** This workspace's plan (`local` is Dorks Free). Absent on older servers. */
   plan?: PlanId;
@@ -420,26 +420,39 @@ export interface CloudPlaces {
   orgs: CloudOrg[];
 }
 
-/** A Dorks Cloud trial (dorks-cloud src/entitlements.ts): Teams for some days, or Cloud for some sandbox minutes in all. */
-export type CloudTrial = { kind: "teams_days"; endsAt: number | null } | { kind: "cloud_hours"; minutes: number; usedMinutes: number; minutesLeft: number; fallbackPlan: "local" | "teams" };
+/** A Dorks Teams trial (dorks-cloud src/entitlements.ts): 14 days, card required, on the org's first checkout. */
+export type CloudTrial = { kind: "teams_days"; endsAt: number | null };
+
+/** The monthly allowance for production-like testing on Dorks Teams: spans and error events sent to Dorks' Sentry, and hosted data (Dorks' Neon). */
+export interface ProdlikeLimits {
+  spans: number;
+  errors: number;
+  hostedStorageGb: number;
+  hostedComputeCuHours: number;
+}
 
 /**
- * `GET /api/cloud/orgs/:id/entitlements`: what the org's plan allows, from Dorks Cloud. On the Cloud trial `includedMinutes` is the
- * trial's minutes left; `periodEnd` (epoch ms) is null without a subscription; overage is opt-in, never past `capCents`.
+ * `GET /api/cloud/orgs/:id/entitlements`: what the org's plan allows, from Dorks Cloud. `periodEnd` (epoch ms) is null without a
+ * subscription; `prodlike` is the monthly allowance for production-like testing (zeros on Dorks Free).
  */
 export interface CloudEntitlements {
   plan: PlanId;
   memberLimit: number;
   members: number;
   orgRuntime: boolean;
-  /** Sandboxes on Dorks' Boat account (Cloud); Teams brings its own Boat key. */
-  cloudCredit: boolean;
-  includedMinutes: number;
-  usedMinutes: number;
   periodEnd: number | null;
-  overage: { enabled: boolean; capCents: number; spentCents: number };
-  maxConcurrentSandboxes: number;
   trial: CloudTrial | null;
+  prodlike: ProdlikeLimits;
+  /** @deprecated The retired Dorks Cloud plan's; always off (false, 0) for older apps. */
+  cloudCredit?: boolean;
+  /** @deprecated Always 0. */
+  includedMinutes?: number;
+  /** @deprecated Always 0. */
+  usedMinutes?: number;
+  /** @deprecated Always off. */
+  overage?: { enabled: boolean; capCents: number; spentCents: number };
+  /** @deprecated Always 0. */
+  maxConcurrentSandboxes?: number;
 }
 
 export interface PhonePairing {
@@ -622,6 +635,28 @@ export interface TwinView {
   rules: { columns: TwinColumn[]; masked: number; flagged: number; reviewedBy: string | null; reviewedAt: number | null; strategies: Record<TwinStrategy, string> } | null;
   refresh: { automationId: string; enabled: boolean; nextRunAt: number | null; schedule: string } | null;
   sessionsWithBranches: number;
+  /** This month's allowance (Dorks Teams); absent from older clouds. */
+  allowance?: ProdlikeAllowance;
+}
+
+/** Used of the limit, this month. */
+export interface ProdlikeMeter {
+  used: number;
+  limit: number;
+}
+
+/**
+ * The production-like testing allowance this month (UTC), on the setup and traces views: spans and error events sent to Dorks' Sentry, and,
+ * when Dorks hosts the org's Neon data, its storage and compute. Read hourly, so it lags up to an hour. Past a limit that part pauses
+ * until `resetsAt`; `paused` says what is paused, as sentences to show as they are.
+ */
+export interface ProdlikeAllowance {
+  since: number;
+  resetsAt: number;
+  spans: ProdlikeMeter;
+  errors: ProdlikeMeter;
+  hosted: { storageGb: ProdlikeMeter; computeCuHours: ProdlikeMeter } | null;
+  paused: { traces: string | null; data: string | null };
 }
 export interface TwinNeonProject {
   id: string;
