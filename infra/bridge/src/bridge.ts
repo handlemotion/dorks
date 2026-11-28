@@ -496,7 +496,12 @@ export class Bridge {
 
   private async syncSkills(provider: string, env: NodeJS.ProcessEnv, skills: readonly SkillRef[] = []) {
     // Every agent reads this one directory: Claude Code's own, Codex's extra skills root, OpenCode's and Antigravity's skills folders.
-    await syncSkills({ stateDir: this.cfg.stateDir, configDir: configDirOf(env), runAs: this.runAs, fetch: (n) => this.t.skill(n), log: this.log }, skills);
+    await syncSkills({ stateDir: this.cfg.stateDir, configDir: this.skillsParent(env), runAs: this.runAs, fetch: (n) => this.t.skill(n), log: this.log }, skills);
+  }
+
+  /** The folder that holds `skills/`: the agent's Claude config dir in a sandbox, a folder of its own for a local dork (config.ts). */
+  private skillsParent(env: NodeJS.ProcessEnv) {
+    return this.cfg.skillsRoot ? join(this.cfg.skillsRoot, ".claude") : configDirOf(env);
   }
 
   /** The OAuth servers go behind the proxy; their saved headers stay out of the agent's env, but not out of the redactor. */
@@ -622,7 +627,8 @@ export class Bridge {
             mcpCommand: this.self,
             sock: this.rpc.sockPath,
             userMcp: this.userMcp,
-            skillsDir: join(configDirOf(env), "skills"),
+            skillsDir: join(this.skillsParent(env), "skills"),
+            local: !!this.cfg.local,
             system: agentSystem(this.role, !!this.cfg.local),
             onModels: (models) => this.pipeline.control({ t: "agent_models", models: models.map((m) => ({ ...m, efforts: [] })), effort: null }, true),
             onIssue,
@@ -638,7 +644,7 @@ export class Bridge {
               mcpCommand: this.self,
               sock: this.rpc.sockPath,
               userMcp: this.userMcp,
-              skillsDir: join(configDirOf(env), "skills"),
+              skillsDir: join(this.skillsParent(env), "skills"),
               stateDir: this.cfg.stateDir,
               system: agentSystem(this.role, !!this.cfg.local),
               onModels: (models) =>
@@ -662,7 +668,8 @@ export class Bridge {
                 mcpCommand: this.self,
                 sock: this.rpc.sockPath,
                 userMcp: this.userMcp,
-                skillsDir: join(configDirOf(env), "skills"),
+                skillsDir: join(this.skillsParent(env), "skills"),
+                local: !!this.cfg.local,
                 system: agentSystem(this.role, !!this.cfg.local),
                 onModels: (models, effort) => this.pipeline.control({ t: "agent_models", models, effort }, true),
                 onUnavailable: (models) => this.pipeline.control({ t: "codex_models", models }, true),
@@ -680,7 +687,13 @@ export class Bridge {
                 bin: this.cfg.claudeBin,
                 permissionMode: this.cfg.permissionMode,
                 // A local dork has no sandbox desktop, and its own words about where it runs (guidance.ts, LOCAL_GUIDANCE).
-                extraArgs: [...(this.cfg.local ? [] : computerArgs()), ...crewArgs(this.role), ...(this.cfg.local ? ["--append-system-prompt", LOCAL_GUIDANCE] : []), ...this.cfg.claudeExtraArgs],
+                extraArgs: [
+                  ...(this.cfg.local ? [] : computerArgs()),
+                  ...crewArgs(this.role),
+                  ...(this.cfg.local ? ["--append-system-prompt", LOCAL_GUIDANCE] : []),
+                  ...(this.cfg.skillsRoot ? ["--add-dir", this.cfg.skillsRoot] : []),
+                  ...this.cfg.claudeExtraArgs,
+                ],
                 model: this.claudeModel.model,
                 effort: this.claudeModel.effort,
                 onCommands: (commands) => this.pipeline.control({ t: "agent_commands", commands }, true),

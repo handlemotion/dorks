@@ -20,6 +20,11 @@ export interface Config {
   workerUrl: string | null;
   /** `DORKS_LOCAL_BOX=1`: a local dork's bridge, run by the owner's server on their own computer (docs/local-dorks.md). */
   local: boolean;
+  /**
+   * `DORKS_SKILLS_ROOT`: a local dork's skills folder (`<root>/.claude/skills`), given to Claude with `--add-dir`, so Claude keeps the
+   * owner's own config dir (and login). Unset in a sandbox: the skills go in the agent's Claude config dir.
+   */
+  skillsRoot: string | null;
   claudeBin: string;
   /** Appended to the claude argv (space separated). Escape hatch, e.g. `--model sonnet`. */
   claudeExtraArgs: string[];
@@ -80,6 +85,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     bridgeSecret,
     ...transportOf(env),
     local: env.DORKS_LOCAL_BOX === "1",
+    skillsRoot: env.DORKS_SKILLS_ROOT || null,
     claudeBin: env.CLAUDE_BIN || "claude",
     claudeExtraArgs: (env.DORKS_CLAUDE_ARGS ?? "").split(/\s+/).filter(Boolean),
     permissionMode: env.DORKS_PERMISSION_MODE || "bypassPermissions",

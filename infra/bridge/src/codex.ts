@@ -25,8 +25,12 @@ const SLASH = /^\/([\w.:-]{1,80})(?:\s+([\s\S]*))?$/;
 /** `/name` later in a message ("use the /writing skill"), also picked from the `/` menu. */
 const INLINE_SLASH = /(?:^|\s)\/([\w.:-]{1,80})(?=[\s.,;:!?)]|$)/g;
 /** Where the sign-in comes from, for the owner's next step: Dorks' own ChatGPT sign-in, or the Boat environment's. */
-const signInHelp = (own: boolean) =>
-  own ? "Sign in with ChatGPT again in Settings (Codex), then send a message to retry." : "Connect ChatGPT in Boat Agents & Proxying, then send a message to retry.";
+const signInHelp = (own: boolean, local?: boolean) =>
+  local
+    ? "Run `codex login` on this computer and sign in with ChatGPT, then send a message to retry."
+    : own
+      ? "Sign in with ChatGPT again in Settings (Codex), then send a message to retry."
+      : "Connect ChatGPT in Boat Agents & Proxying, then send a message to retry.";
 
 /** An access token from Dorks' own ChatGPT sign-in, never its refresh token. */
 export interface CodexAuth {
@@ -49,6 +53,8 @@ export interface CodexOptions {
   userMcp: Record<string, unknown>;
   /** Where skills are synced (the Claude config dir's `skills`): an extra skills root for Codex, so it loads the same ones. */
   skillsDir: string;
+  /** A local dork: Codex uses the CLI's own login on this computer (`codex login`), so a missing one is fixed there. */
+  local?: boolean;
   /** The standing instructions (final answer, skills, crew, computer), as the thread's developer instructions. */
   system: string;
   /** Dorks' own ChatGPT sign-in (configure's `codexAuth`): signs Codex in with this access token instead of the Boat environment's. */
@@ -282,7 +288,7 @@ export class CodexAgent {
     });
     this.child.on("close", (code) => this.finish(code));
     void this.open().catch(() => {
-      this.o.onIssue(`Codex is not signed in to ChatGPT. ${signInHelp(!!this.o.auth)}`);
+      this.o.onIssue(`Codex is not signed in to ChatGPT. ${signInHelp(!!this.o.auth, this.o.local)}`);
       this.child.kill();
     });
   }
@@ -361,7 +367,7 @@ export class CodexAgent {
       this.skillsListed = this.listSkills();
       void this.pump();
     } catch (e) {
-      if ((e as Error).message !== "model unavailable") this.o.onIssue(`Codex could not use the ChatGPT sign-in. ${signInHelp(!!this.o.auth)}`);
+      if ((e as Error).message !== "model unavailable") this.o.onIssue(`Codex could not use the ChatGPT sign-in. ${signInHelp(!!this.o.auth, this.o.local)}`);
       this.child.kill();
     }
   }
@@ -452,7 +458,7 @@ export class CodexAgent {
     switch (method) {
       case "account/updated":
         if (this.ready && p.authMode !== "chatgpt" && p.authMode !== "chatgptAuthTokens") {
-          this.o.onIssue(`Codex lost its ChatGPT sign-in. ${signInHelp(!!this.o.auth)}`);
+          this.o.onIssue(`Codex lost its ChatGPT sign-in. ${signInHelp(!!this.o.auth, this.o.local)}`);
           this.child.kill();
         }
         return;
@@ -645,7 +651,7 @@ export class CodexAgent {
     try {
       const account = await this.request("account/read", { refreshToken: false });
       if (obj(account.account).type !== "chatgpt") {
-        this.o.onIssue(`Codex lost its ChatGPT sign-in. ${signInHelp(!!this.o.auth)}`);
+        this.o.onIssue(`Codex lost its ChatGPT sign-in. ${signInHelp(!!this.o.auth, this.o.local)}`);
         this.child.kill();
         return;
       }
