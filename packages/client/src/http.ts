@@ -92,6 +92,15 @@ export class ApiError extends Error {
 }
 
 const NETWORK: AppError = { code: "failed", message: "Cannot reach the dorks server. Is it running?" };
+const TIMED_OUT: AppError = { code: "timeout", message: "The server took too long to answer." };
+
+/**
+ * How long a read (GET) may take, answer included, before it is given up as failed and retried. Without it, a request that never
+ * answers (a socket a sleeping laptop left half-open, a stalled relay) froze whatever waited on it: a read in flight holds back every
+ * refresh of the same data. The server bounds its own slowest reads (a sandbox's files, GitHub) at 20 s. Writes are never cut short:
+ * one may still land after the app gave up on it.
+ */
+export const READ_TIMEOUT_MS = 30_000;
 
 function errorFromStatus(status: number): AppError {
   if (status === 401) return { code: "forbidden", message: "The owner token was rejected." };
@@ -105,6 +114,8 @@ export interface ApiConfig {
   /** Owner bearer token. */
   token: string;
   fetch?: typeof fetch;
+  /** See `READ_TIMEOUT_MS`. */
+  readTimeoutMs?: number;
 }
 
 export type Api = ReturnType<typeof createApi>;
@@ -120,7 +131,10 @@ export function createApi(config: ApiConfig) {
           .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
           .join("&")
       : "";
+    const abort = method === "GET" ? new AbortController() : undefined;
+    const timer = abort && setTimeout(() => abort.abort(), config.readTimeoutMs ?? READ_TIMEOUT_MS);
     let res: Response;
+    let text: string;
     try {
       res = await doFetch(`${base}${path}${qs ? `?${qs}` : ""}`, {
         method,
@@ -129,11 +143,14 @@ export function createApi(config: ApiConfig) {
           ...(body instanceof Blob ? { "content-type": body.type || "application/octet-stream" } : body !== undefined ? { "content-type": "application/json" } : {}),
         },
         body: body instanceof Blob ? body : body !== undefined ? JSON.stringify(body) : undefined,
+        signal: abort?.signal,
       });
+      text = await res.text();
     } catch {
-      throw new ApiError(0, NETWORK);
+      throw new ApiError(0, abort?.signal.aborted ? TIMED_OUT : NETWORK);
+    } finally {
+      clearTimeout(timer);
     }
-    const text = await res.text();
     let json: unknown;
     try {
       json = text ? JSON.parse(text) : {};

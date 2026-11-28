@@ -97,6 +97,34 @@ export function usePlaceChoice(home: string): [PlaceChoice, (c: PlaceChoice) => 
   return [choice, (c) => savePlace(home, c)]
 }
 
+const ORG_KEY = 'dorks.placeOrg'
+
+/**
+ * The org picked last time, as the places last listed it, so the next start connects to it at once instead of after a round trip
+ * to Dorks Cloud for the places. Only a place that does not hang on which Macs are online now is kept: the org runtime (Worker),
+ * or this Mac. The places read again right after, and the app follows whatever they say.
+ */
+export function rememberedOrg(home: string, orgId: string | null, thisMacId: string | null): CloudOrg | null {
+  if (!orgId) return null
+  try {
+    const v = JSON.parse(localStorage.getItem(ORG_KEY) ?? 'null') as { home?: string; org?: CloudOrg } | null
+    const org = v?.home === home && v.org?.id === orgId ? v.org : null
+    const kind = org && resolveTarget(org, thisMacId).kind
+    return kind === 'cloud' || kind === 'home' ? org : null
+  } catch {
+    return null
+  }
+}
+
+export function rememberOrg(home: string, org: CloudOrg) {
+  try {
+    const raw = JSON.stringify({ home, org })
+    if (localStorage.getItem(ORG_KEY) !== raw) localStorage.setItem(ORG_KEY, raw)
+  } catch {
+    // Not remembered: the next start waits for the places.
+  }
+}
+
 /** The UI API of another server, through the home server's `/api/cloud/servers/:id` (which adds the Dorks Cloud session). */
 export function remoteClientConfig(home: { serverUrl: string; token: string }, serverId: string) {
   const id = encodeURIComponent(serverId)
