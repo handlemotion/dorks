@@ -77,6 +77,9 @@ export class S2Error extends Error {
 
 const enc = encodeURIComponent;
 
+/** How long one s2 call may take, beyond a long poll's `wait`. */
+const REQUEST_TIMEOUT_MS = 30_000;
+
 export class S2 {
   readonly cfg: S2Config;
   constructor(cfg: S2Config) {
@@ -105,8 +108,12 @@ export class S2 {
 
   async request<T>(url: string, init: RequestInit = {}): Promise<T> {
     const f = this.cfg.fetch ?? fetch;
+    // A half-open connection must not hold an append or the command tail for minutes: every call gets a deadline (a long poll's
+    // own `wait` plus margin, passed in by the caller), on top of the caller's stop signal.
+    const deadline = AbortSignal.timeout(REQUEST_TIMEOUT_MS + (Number(new URL(url).searchParams.get("wait")) || 0) * 1000);
     const res = await f(url, {
       ...init,
+      signal: init.signal ? AbortSignal.any([init.signal, deadline]) : deadline,
       headers: {
         authorization: `Bearer ${this.cfg.token}`,
         "content-type": "application/json",

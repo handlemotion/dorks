@@ -30,6 +30,8 @@ const RPC_TIMEOUT_MS = 60_000;
 const RENEW_BEFORE_MS = 5 * 60_000;
 const CALL_CODES = new Set(["invalid", "not_found", "conflict"]);
 const STATE_BATCH = 100;
+/** How long a preview may wait for company before it goes to the Worker alone. */
+const PREVIEW_FLUSH_MS = 1000;
 /** How long (in 1 s tries) an input call waits for a writer to come back before it fails; the event stays pending either way. */
 const INPUT_NOTE_ATTEMPTS = 60;
 
@@ -286,7 +288,10 @@ export class S2Transport implements Transport {
     }
     for (const b of lines) this.normalized.delete(b);
     this.stateQueue.push(...state.map((s) => s.frame));
-    await this.flushState();
+    // A streaming answer adds a preview with every chunk: waiting on the Worker for each would hold the next chunk's append back by
+    // a round trip. Previews alone go with the next push that has other state, the heartbeat, or a flush a moment later.
+    if (this.stateQueue.some((f) => f.t !== "preview")) await this.flushState();
+    else if (this.stateQueue.length) this.flushPreviewSoon();
     return { ok: true };
   };
 
@@ -334,6 +339,16 @@ export class S2Transport implements Transport {
       await this.worker("state", { frames: batch.filter((f, i) => f.t !== "preview" || i === lastPreview) });
       this.stateQueue.splice(0, batch.length);
     }
+  }
+
+  private previewTimer: ReturnType<typeof setTimeout> | null = null;
+  private flushPreviewSoon() {
+    if (this.previewTimer) return;
+    this.previewTimer = setTimeout(() => {
+      this.previewTimer = null;
+      if (!this.closed) this.flushState().catch(() => {}); // what failed stays queued for the next push or heartbeat
+    }, PREVIEW_FLUSH_MS);
+    this.previewTimer.unref?.();
   }
 
   heartbeat = () => this.flushState(true);
@@ -434,5 +449,7 @@ export class S2Transport implements Transport {
     this.stopTail();
     if (this.renewTimer) clearTimeout(this.renewTimer);
     this.renewTimer = null;
+    if (this.previewTimer) clearTimeout(this.previewTimer);
+    this.previewTimer = null;
   };
 }

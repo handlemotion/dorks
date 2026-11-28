@@ -19,6 +19,7 @@ import { EventsFeed } from "./events.ts";
 import { createApi, ApiError, type ApiConfig, type DesktopOptions, type NewComment } from "./http.ts";
 import { connectLive, type LiveStatus } from "./live.ts";
 import { connectCloudLive, followSession, type CloudLiveConfig, type SessionCursor } from "./cloud-live.ts";
+import { reconnectAll } from "./s2.ts";
 import type { ReadGrant } from "./s2.ts";
 import { Query, type Optimistic, type QueryOptions, type Store } from "./store.ts";
 import type {
@@ -138,8 +139,20 @@ export class DorksClient {
     for (const id of this.staleFeeds) this.feeds.get(id)?.requestTail();
     this.staleFeeds.clear();
   };
+  private hiddenAt = 0;
   private readonly onVisibility = () => {
-    if (!pageHidden()) this.flushStale();
+    if (pageHidden()) {
+      this.hiddenAt ||= Date.now();
+      return;
+    }
+    // A cloud org's s2 reads may have died while the app was in the background (a sleeping laptop, a network change) without
+    // knowing it yet: open them again at once instead of waiting for their idle check.
+    if (this.cfg.cloud && this.hiddenAt && Date.now() - this.hiddenAt > 10_000) reconnectAll();
+    this.hiddenAt = 0;
+    this.flushStale();
+  };
+  private readonly onOnline = () => {
+    if (this.cfg.cloud) reconnectAll();
   };
 
   constructor(config: ClientConfig) {
@@ -155,6 +168,7 @@ export class DorksClient {
     this.startedAt = Date.now();
     if (typeof document !== "undefined") document.addEventListener("visibilitychange", this.onVisibility);
     if (typeof window !== "undefined") window.addEventListener("focus", this.onVisibility);
+    if (typeof window !== "undefined") window.addEventListener("online", this.onOnline);
     const onStatus = (live: LiveStatus) => {
       // A connection that failed before its first hello is retried from a later time: that hello must resync everything.
       if (live === "offline" || live === "unauthorized") this.greeted = true;
@@ -180,6 +194,7 @@ export class DorksClient {
   close() {
     if (typeof document !== "undefined") document.removeEventListener("visibilitychange", this.onVisibility);
     if (typeof window !== "undefined") window.removeEventListener("focus", this.onVisibility);
+    if (typeof window !== "undefined") window.removeEventListener("online", this.onOnline);
     clearTimeout(this.staleTimer);
     this.staleTimer = undefined;
     this.closeLive?.();
@@ -345,6 +360,8 @@ export class DorksClient {
         break;
       case "dork":
         this.invalidate(`dork:${m.dorkId}`);
+        // The org runtime (a cloud org) only says which session changed: its row in the lists moved too (state, preview, title).
+        if (this.cfg.cloud) this.invalidateListsSoon();
         break;
       case "events":
         this.tailFeed(m.dorkId);
@@ -394,6 +411,15 @@ export class DorksClient {
         this.invalidate("automation-runs");
         break;
     }
+  }
+
+  private listsTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The session lists read again once for a burst of cloud session changes (a turn sends several), at most every 750 ms. */
+  private invalidateListsSoon() {
+    this.listsTimer ??= setTimeout(() => {
+      this.listsTimer = undefined;
+      this.invalidate("dorks");
+    }, 750);
   }
 
   private setPresence(next: Map<string, Person[]>) {
@@ -678,6 +704,9 @@ export class DorksClient {
   readonly actions = {
     createDork: async (input: CreateDorkInput) => {
       const r = await this.api.createDork(input);
+      // A cloud session's transcript holds the first message only once its agent reads it, after the box starts: show it meanwhile
+      // (the transcript's own row replaces it).
+      if (this.cfg.cloud && typeof input.message === "string" && input.message.trim()) this.events(r.id).show(input.message);
       this.invalidate("dorks");
       return r;
     },
