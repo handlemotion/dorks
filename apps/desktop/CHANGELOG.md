@@ -1,5 +1,17 @@
 # @dorks/desktop
 
+## 0.21.0
+
+### Minor Changes
+
+- [#362](https://github.com/handlemotion/dorks/pull/362) [`426f7af`](https://github.com/handlemotion/dorks/commit/426f7af48190d74f7554b06edefd801cbb141242) Thanks [@handlemotion](https://github.com/handlemotion)! - Dorks has one paid plan: Dorks Teams at $10 a month or $96 a year per organization, with production-like checks on every PR included. The Dorks Cloud plan is retired.
+
+### Patch Changes
+
+- [#364](https://github.com/handlemotion/dorks/pull/364) [`f6325a0`](https://github.com/handlemotion/dorks/commit/f6325a07bf34134d2a9e44243fc16ca483247b0c) Thanks [@handlemotion](https://github.com/handlemotion)! - Settings › Organization has a Manage billing button for the owner of a paid organization: change the payment method, see invoices, switch between monthly and yearly, or cancel.
+
+- [#365](https://github.com/handlemotion/dorks/pull/365) [`ed673f1`](https://github.com/handlemotion/dorks/commit/ed673f1f3782973573e21bd9f67f98cd88db1add) Thanks [@handlemotion](https://github.com/handlemotion)! - Agents are stopped before they push to the branch of a PR that already merged (or closed), and told to open a new PR from main instead; a push that still lands there is reported to the agent once.
+
 ## 0.20.1
 
 ### Patch Changes
