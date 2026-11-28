@@ -24,6 +24,8 @@ const SNAPSHOT_STEPS = [
 ] as const;
 
 export interface MockOptions {
+  /** A Dorks Teams org's Settings › Boat: Sign in with Boat (OAuth) offered and not yet connected. */
+  boatOAuth?: boolean;
   port?: number;
   host?: string;
   /** Owner bearer token. */
@@ -411,6 +413,7 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
     boatKey: !!opts.configured,
     github: opts.configured ? { configured: true, login: "octocat" } : { configured: false },
     boatSignIn: opts.configured ? null : { state: "signed_out" },
+    boatOAuth: opts.boatOAuth ? { available: true, connected: false, keySaved: false } : null,
     boatOrg: null,
     boatEnvironment: opts.configured ? "dorks-codex" : null,
     baseSnapshotId: opts.configured ? "dorks-base-20260101" : null,
@@ -1433,6 +1436,14 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       },
     ],
     [
+      "DELETE /api/boat/sign-in",
+      ({ res }) => {
+        if (settings.boatOAuth) Object.assign(settings, { boatKey: false, boatOAuth: { available: true, connected: false, keySaved: false } });
+        broadcast({ t: "settings" });
+        return json(res, 200, {});
+      },
+    ],
+    [
       "DELETE /api/codex/sign-in",
       ({ res }) => {
         Object.assign(settings, { codexAccount: null, codexSignIn: { state: "signed_out" } });
@@ -1444,6 +1455,16 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
       // Like apps/server's Boat CLI sign-in: the browser sign-in "finishes" a few seconds after its link is handed out.
       "POST /api/boat/sign-in",
       ({ res }) => {
+        if (settings.boatOAuth) {
+          // Like the Worker's Sign in with Boat: Boat's consent page, then its callback a few seconds later.
+          const t = setTimeout(() => {
+            timers.delete(t);
+            Object.assign(settings, { boatKey: true, boatOAuth: { available: true, connected: true, keySaved: false } });
+            broadcast({ t: "settings" });
+          }, 3000);
+          timers.add(t);
+          return json(res, 200, { boatSignIn: { state: "signing_in", url: "https://boat.dev/api/boat/oauth2/authorize?mock=1" } });
+        }
         if (settings.boatKey) return json(res, 200, { boatSignIn: null });
         settings.boatSignIn = { state: "signing_in", url: "https://boat.dev/sign-in?mock=1", userCode: "MOCK-CODE", expiresAt: new Date(Date.now() + 600_000).toISOString() };
         broadcast({ t: "settings" });

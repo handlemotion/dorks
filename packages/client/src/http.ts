@@ -267,6 +267,8 @@ export function createApi(config: ApiConfig) {
     checkBoat: (input: { boatKey?: string; boatOrg?: string }) => request<BoatCheck>("POST", "/api/boat/check", input),
     /** Connects Boat with the Boat CLI: at once when it is signed in, else returns the browser sign-in link to open. */
     signInBoat: () => request<{ boatSignIn: BoatSignIn | null }>("POST", "/api/boat/sign-in", {}),
+    /** A Dorks Teams org: disconnects Sign in with Boat (revokes Dorks' grant at Boat); a pasted key stays. */
+    signOutBoat: () => request<object>("DELETE", "/api/boat/sign-in"),
     signInAntigravity: () => request<{ antigravitySignIn: AntigravitySignIn | null }>("POST", "/api/antigravity/sign-in", {}),
     finishAntigravitySignIn: (url: string) => request<{ antigravitySignIn: AntigravitySignIn | null }>("POST", "/api/antigravity/sign-in/finish", { url }),
     signInCodex: () => request<{ codexSignIn: CodexSignIn | null }>("POST", "/api/codex/sign-in", {}),

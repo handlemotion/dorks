@@ -9,6 +9,7 @@ import { Textarea } from '@dorks/ui/textarea'
 import { EmptyState } from '../EmptyState'
 import { HERE } from '../LocationMenu'
 import { saveBoat } from '../../lib/boat'
+import { openExternal } from '../../lib/desktop'
 import { STEPS, stepDone } from '../../lib/onboarding'
 import { usePending } from '../../lib/pending'
 import { StepProgress } from '../StepProgress'
@@ -65,9 +66,12 @@ export function BoatPage({ settings }: { settings: Settings }) {
   const [org, setOrg] = useState(settings.boatOrg ?? '')
   const [saved, setSaved] = useState(false)
   const { run, pending, error } = usePending()
+  const oauth = settings.boatOAuth
+  const keySaved = oauth ? (oauth.keySaved ?? (settings.boatKey && !oauth.connected)) : settings.boatKey
   return (
     <SettingsSections>
-      <SettingsSection title="Account">
+      {oauth && <BoatSignInSection oauth={oauth} />}
+      <SettingsSection title={oauth ? 'API key' : 'Account'} description={oauth ? 'Instead of signing in, or as a fallback.' : undefined}>
         <SettingsGroup
           label="boat account"
           onSubmit={() => {
@@ -82,11 +86,11 @@ export function BoatPage({ settings }: { settings: Settings }) {
           <SettingsInputRow
             id="boat-key"
             label="API key"
-            description={settings.boatKey ? 'Saved' : 'Not set'}
+            description={keySaved ? 'Saved' : 'Not set'}
             aria-label="boat api key"
             type="password"
             autoComplete="off"
-            placeholder={settings.boatKey ? 'Replace the key' : 'boat_…'}
+            placeholder={keySaved ? 'Replace the key' : 'boat_…'}
             value={key}
             onChange={(e) => setKey(e.target.value)}
           />
@@ -102,7 +106,7 @@ export function BoatPage({ settings }: { settings: Settings }) {
           />
           <SettingsGroupFooter
             action={
-              <Button type="submit" size="sm" disabled={pending || (!key && !settings.boatKey)}>
+              <Button type="submit" size="sm" disabled={pending || (!key && !keySaved)}>
                 {pending ? 'Saving…' : 'Save'}
               </Button>
             }
@@ -113,6 +117,67 @@ export function BoatPage({ settings }: { settings: Settings }) {
         <SettingsStatus saved={saved} error={error} />
       </SettingsSection>
     </SettingsSections>
+  )
+}
+
+/**
+ * A Dorks Teams org's Sign in with Boat (Boat's OAuth, through the Worker): Connect opens Boat's consent page in the browser, and the
+ * Worker's callback updates the settings live. Disconnect revokes Dorks' grant at Boat; a saved key below stays.
+ */
+function BoatSignInSection({ oauth }: { oauth: NonNullable<Settings['boatOAuth']> }) {
+  const { actions } = useDorksClient()
+  const [waiting, setWaiting] = useState(false)
+  const { run, pending, error } = usePending()
+  const connect = () =>
+    void run(async () => {
+      const state = await actions.signInBoat()
+      if (state?.url) {
+        openExternal(state.url)
+        setWaiting(true)
+      }
+    })
+  const description = oauth.connected
+    ? 'Sessions run in your Boat account. You can also disconnect Dorks in Boat’s OAuth apps.'
+    : waiting
+      ? 'Finish signing in in your browser.'
+      : oauth.available
+        ? 'Sign in to Boat and choose what Dorks can use. No key to copy.'
+        : 'Not available on this server yet. Add an API key below.'
+  return (
+    <SettingsSection title="Sign in with Boat">
+      <SettingsGroup label="sign in with boat">
+        <SettingsRow
+          label="Boat account"
+          description={description}
+          control={
+            oauth.connected ? (
+              <>
+                <span className={`text-sm ${SETTINGS_TONE.success}`}>Connected</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={pending}
+                  onClick={() =>
+                    void run(async () => {
+                      setWaiting(false)
+                      await actions.signOutBoat()
+                    })
+                  }
+                >
+                  {pending ? 'Disconnecting…' : 'Disconnect'}
+                </Button>
+              </>
+            ) : (
+              <Button type="button" size="sm" disabled={pending || !oauth.available} onClick={connect}>
+                {pending ? 'Opening…' : waiting ? 'Open again' : 'Connect'}
+              </Button>
+            )
+          }
+        />
+      </SettingsGroup>
+      <SettingsStatus error={error} />
+    </SettingsSection>
   )
 }
 
