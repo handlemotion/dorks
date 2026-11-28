@@ -133,7 +133,9 @@ function onClosed({ app, sub, env, notify }: Ingest, event: EventOf<"pr_closed">
   settleMergeRequests(app, sub.dorkId, sub.repo, sub.number, event.merged);
   if (event.merged && event.mergeSha) startShip(app, getSub(app, sub.id)!, event.mergeSha, event.mergedAt);
   const own = !!env.ownLogin && event.sender.login.toLowerCase() === env.ownLogin.toLowerCase();
-  if (!own) notify("closed", `${event.merged ? "Merged" : "Closed"} by ${event.sender.login}.`);
+  const branch = sub.headRef ? ` (${sub.headRef})` : "";
+  const base = sub.baseRef ?? "main";
+  if (!own) notify("closed", event.merged ? `Merged by ${event.sender.login}. Don't push to this branch${branch} again; follow-ups go in a new PR from ${base}.` : `Closed by ${event.sender.login}.`);
 }
 
 function onSynchronize({ app, sub }: Ingest, event: EventOf<"pr_synchronize">) {

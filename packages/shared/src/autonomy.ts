@@ -52,6 +52,7 @@ export const notifyKind = z.enum([
   "closed", // closed or merged: the subscription ended
   "deployed", // a merged PR's ship reached a live deployment: verify the change there and report with ship_verify (docs/shipping.md)
   "ship_failed", // a merged PR's ship failed (the base's build, a migration, a deploy): diagnose and open a fix-forward or revert PR
+  "pushed_after_merge", // commits landed on a merged PR's branch after the merge: they are in no PR; move them to a new PR from the base
 ]);
 export type NotifyKind = z.infer<typeof notifyKind>;
 

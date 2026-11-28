@@ -56,6 +56,7 @@ function phrases({ number, items }: Section): string[] {
   }
   const comments = of('comment')
   if (comments.length) out.push(`Got ${comments.length === 1 ? 'a comment' : `${comments.length} comments`} from ${names(unique(comments.map((c) => loginOf(c.summary))))} on ${pr}`)
+  if (of('pushed_after_merge').length) out.push(`Commits were pushed to ${pr} after it merged`)
   if (of('ship_failed').length) out.push(`${pr} failed to ship`)
   if (of('deployed').length) out.push(`${pr} is live; checking it there`)
   if (of('ready').length) out.push(`${pr} is green and approved`)
@@ -67,6 +68,7 @@ function phrases({ number, items }: Section): string[] {
 const NOTIFY_ICONS: [string, LucideIcon][] = [
   ['ship_failed', CircleXIcon],
   ['ci_failed', CircleXIcon],
+  ['pushed_after_merge', TriangleAlertIcon],
   ['conflict', TriangleAlertIcon],
   ['closed', GitMergeIcon],
   ['review', MessageSquareDiffIcon],

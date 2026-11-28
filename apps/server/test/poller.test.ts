@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { append } from "../src/lifecycle/dispatch";
 import { AGENT_COMMENT_GRACE_MS } from "../src/services/githubIngest";
 import { listDorks } from "../src/services/dorks";
-import { ENDED_STATE_MS, pollOnce, POLL_MS } from "../src/services/poller";
+import { ENDED_STATE_MS, MERGED_BRANCH_MS, pollOnce, POLL_MS } from "../src/services/poller";
 import { updateSettings } from "../src/services/settings";
 import * as subs from "../src/services/subscriptions";
 import { fakeFetch, harness, NOW } from "./harness";
@@ -36,6 +36,8 @@ function github() {
     reviewComments: [] as Comment[],
     suites: {} as Record<string, { id: number; status: string; conclusion: string | null; latest_check_runs_count: number }[]>,
     closedBy: null as null | { login: string; type: string },
+    /** The PR's branch as GitHub has it now; null: deleted. */
+    branchSha: "aaa1111" as string | null,
     missing: false,
     rateLimitedUntil: 0,
     unauthorized: false,
@@ -62,6 +64,7 @@ function github() {
     if (p === "/repos/octo/hello/pulls/7/reviews") return conditional(url, init, state.reviews);
     if (p === "/repos/octo/hello/issues/7/comments") return conditional(url, init, after(state.issueComments));
     if (p === "/repos/octo/hello/pulls/7/comments") return conditional(url, init, after(state.reviewComments));
+    if (p === "/repos/octo/hello/branches/agent%2Fx") return state.branchSha ? conditional(url, init, { commit: { sha: state.branchSha } }) : new Response("{}", { status: 404 });
     const m = /^\/repos\/octo\/hello\/commits\/([^/]+)\/check-suites$/.exec(p);
     if (m) return conditional(url, init, { check_suites: state.suites[m[1]] ?? [] });
     return new Response("{}", { status: 404 });
@@ -226,7 +229,18 @@ describe("poller", () => {
     expect(s.sub()).toMatchObject({ status: "ended", state: "merged" });
     expect(s.h.events(s.id).map((e) => e.body.type)).toContain("pr_merged");
     expect(s.inbox().map((r) => r.kind)).toEqual(["closed"]);
-    expect(await pollOnce(s.h.app)).toBeNull(); // nothing left to watch
+    expect(s.inbox()[0]!.summary).toContain("Don't push to this branch (agent/x) again");
+    // Only the merged branch is still read, for a push that came too late. One lands: the agent is told once.
+    expect(await pollOnce(s.h.app)).toBe(MERGED_BRANCH_MS);
+    s.gh.state.branchSha = "bbb2222";
+    s.h.clock.t += MERGED_BRANCH_MS;
+    await pollOnce(s.h.app);
+    expect(s.inbox().map((r) => r.kind)).toEqual(["closed", "pushed_after_merge"]);
+    expect(s.inbox()[1]!.summary).toContain("bbb2222");
+    s.gh.state.branchSha = "ccc3333";
+    s.h.clock.t += MERGED_BRANCH_MS;
+    expect(await pollOnce(s.h.app)).toBeNull(); // warned once: nothing left to watch
+    expect(s.inbox()).toHaveLength(2);
   });
 
   it("a plain close names who closed it, and the agent's own close does not wake it", async () => {

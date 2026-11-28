@@ -71,7 +71,7 @@ export interface CodexOptions {
   /** The done gate (hook.stop): a reason to keep going, sent as the next turn, or null. `continued`: this turn was such a continuation. */
   onTurnFinished: (sessionId: string, turn: { lastMessage: string; continued: boolean }) => Promise<string | null>;
   /** A finished shell command (hook.postToolUse): subscribes the PRs it opened, drops the ones it merged or closed. */
-  onShell: (command: string, output: string) => void;
+  onShell: (command: string, output: string, cwd?: string) => void;
   /** The autonomy briefing (hook.sessionStart), prepended to the first turn after a start, a resume or a compaction. */
   sessionContext: () => Promise<string | null>;
   onExit: (info: { code: number | null; stderrTail: string; resumeMissing: boolean; pending: string[] }) => void;
@@ -562,7 +562,7 @@ export class CodexAgent {
       this.shown.add(`${call.id}:done`);
       this.o.onRaw({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: call.id, is_error: failed, content }] } });
     }
-    if (item.type === "commandExecution" && !failed) this.o.onShell(text(item.command), text(item.aggregatedOutput));
+    if (item.type === "commandExecution" && !failed) this.o.onShell(text(item.command), text(item.aggregatedOutput), text(item.cwd) || undefined);
   }
 
   /** Each plan update as one finished to-do call, so the thread keeps one card with the latest list. */

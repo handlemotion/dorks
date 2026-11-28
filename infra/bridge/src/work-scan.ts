@@ -15,7 +15,11 @@ export type FindingKind =
   | "pr_ended"; // commits were pushed to a branch whose pull request is already merged or closed
 
 /** What GitHub says about pull requests for a pushed branch. */
-export type BranchPrStatus = { state: "open" } | { state: "merged" | "closed"; number: number; headSha: string | null } | { state: "none" };
+export type BranchPrStatus =
+  | { state: "open" }
+  /** `url`, `base` (the branch it went into) and `at` (ISO, when it merged or closed): when GitHub says. */
+  | { state: "merged" | "closed"; number: number; headSha: string | null; url?: string; base?: string; at?: string }
+  | { state: "none" };
 
 export interface Finding {
   kind: FindingKind;

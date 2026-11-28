@@ -600,9 +600,18 @@ export class Bridge {
     };
     // Claude Code runs these as hooks; the other agents' finished tool calls arrive on their event streams, so the bridge calls them itself.
     // Hooks fail open and log their own errors.
+    // A push to the branch of a PR that already merged or closed is told to the agent at once (mid-turn, it steers): these agents
+    // have no hook that runs before a command (push-guard.ts).
+    const followShell = (command: string, output: string, cwd?: string) => {
+      void this.hooks.methods["hook.postToolUse"]({ tool_name: "Bash", tool_input: { command }, tool_response: { stdout: output } });
+      void this.hooks
+        .afterShell(command, cwd || dir)
+        .then((warning) => (warning && this.agent === agent ? agent.sendUserMessage(warning) : undefined))
+        .catch(() => this.log("could not tell the agent about its push to an ended PR"));
+    };
     const onShell = (command: string, output: string) => {
       this.hooks.activity.shell(command);
-      void this.hooks.methods["hook.postToolUse"]({ tool_name: "Bash", tool_input: { command }, tool_response: { stdout: output } });
+      followShell(command, output);
     };
     const onIssue = (message: string) => this.pipeline.control({ t: "codex_issue", message: message.slice(0, 1000) }, true);
     const agent: AnyAgent =
@@ -662,7 +671,7 @@ export class Bridge {
                 onReady,
                 onTurnFinished: (sessionId, turn) => stopReason(sessionId, { stop_hook_active: turn.continued, last_assistant_message: turn.lastMessage }),
                 // Its tool calls reach the verify gate from the stream (onRaw): only the PR follow-up is left to run here.
-                onShell: (command, output) => void this.hooks.methods["hook.postToolUse"]({ tool_name: "Bash", tool_input: { command }, tool_response: { stdout: output } }),
+                onShell: followShell,
                 sessionContext,
               })
             : new Agent({

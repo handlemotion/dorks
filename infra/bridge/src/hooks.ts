@@ -11,6 +11,7 @@ import type { RpcMethods } from "./rpc";
 import type { Identity } from "./runas";
 import { changedFiles, judgePrompt, parseVerdict, TurnActivity, verifyReason, workState, type ServiceSummary, type WorkState } from "./verify";
 import { scanWork, type BranchPrStatus, type Finding } from "./work-scan";
+import { PushGuard } from "./push-guard";
 import type { SecretInputs } from "./inputs";
 
 // The bridge's side of the Claude Code hooks (docs/autonomy.md). Claude runs `dorks hook <event>` (hook-cli.ts), which forwards the hook's
@@ -18,6 +19,7 @@ import type { SecretInputs } from "./inputs";
 //   Stop          the "done" gates: a code change not tested against running software (verify.ts, judged by a small model), and
 //                 uncommitted or unpushed work, or a pushed branch without a PR; each blocks the stop once
 //   PreToolUse    fills in secure inputs: a `{{secret:NAME}}` in a tool's input becomes the owner's value (inputs.ts)
+//                 (for Bash, also blocks a `git push` to the branch of a PR that already merged or closed: push-guard.ts)
 //   PostToolUse   redacts secure inputs from every tool's output (inputs.ts); for Bash, also backs up the gh shim: subscribes to PRs
 //                 `gh pr create` printed, unsubscribes from ones `gh pr merge|close` ended
 //   SessionStart  re-injects the subscribed PRs and how autonomy works after a start, resume or compaction
@@ -129,7 +131,7 @@ export interface HookDeps {
   runAs: Identity | null;
   prs: Pick<PrSubscriptions, "list" | "subscribe" | "unsubscribe">;
   /** Pull request status for a pushed branch (see pr-lookup.ts); null when unknown. */
-  prStatus: (repo: string, branch: string) => Promise<BranchPrStatus | null>;
+  prStatus: (repo: string, branch: string, timeoutMs?: number) => Promise<BranchPrStatus | null>;
   /** The build's services and their state (services.ts), for the SessionStart context and the verify gate. */
   services?: () => ServiceSummary[];
   /** One answer from a small model (Haiku for Claude), for the verify gate; null or a rejection when none can be had. */
@@ -163,7 +165,11 @@ export class HookService {
   /** The working trees when that turn ended: what tells this turn's changes apart. Null until taken, or when it could not be. */
   private baseline: Promise<WorkState | null> | null = null;
 
-  constructor(private d: HookDeps) {}
+  private pushGuard: PushGuard;
+
+  constructor(private d: HookDeps) {
+    this.pushGuard = new PushGuard({ env: d.env, runAs: d.runAs, prStatus: d.prStatus, log: d.log });
+  }
 
   /** A turn ended and stays ended (or the agent just started): what comes next is judged against the trees as they are now. */
   turnBoundary() {
@@ -173,7 +179,7 @@ export class HookService {
 
   readonly methods: RpcMethods = {
     "hook.stop": (p) => this.run("stop", () => this.stop(asInput(p))),
-    "hook.preToolUse": (p) => this.run("pre-tool-use", async () => (await this.d.inputs?.preToolUse(asInput(p))) ?? null),
+    "hook.preToolUse": (p) => this.run("pre-tool-use", () => this.preToolUse(asInput(p))),
     "hook.postToolUse": (p) => this.run("post-tool-use", () => this.postToolUse(asInput(p))),
     "hook.sessionStart": (p) => this.run("session-start", () => this.sessionStart()),
   };
@@ -287,6 +293,41 @@ export class HookService {
     } catch {
       this.d.log("hook stop: could not save the raised conditions"); // in the worst case the next wake raises them once more
     }
+  }
+
+  // ------------------------------------------------------------------ PreToolUse
+  private async preToolUse(input: HookInput): Promise<HookOutput> {
+    const command = input.tool_name === "Bash" ? text(asInput(input.tool_input).command) : "";
+    const cwd = text(input.cwd) || this.d.workDir;
+    // The guard fails open on its own: a bug in it must not cost the secure inputs their fill-in.
+    const [filled, push] = await Promise.all([
+      this.d.inputs?.preToolUse(input) ?? null,
+      command
+        ? this.pushGuard.check(command, cwd).catch((e) => {
+            this.d.log("hook pre-tool-use: push guard failed:", errTag(e));
+            return null;
+          })
+        : null,
+    ]);
+    const pre = (out: Record<string, unknown>) => ({ hookSpecificOutput: { hookEventName: "PreToolUse", ...out } });
+    if (push?.action === "block") return pre({ permissionDecision: "deny", permissionDecisionReason: push.reason });
+    if (push?.action === "warn") {
+      const spec = asInput(asInput(filled).hookSpecificOutput);
+      if (spec.permissionDecision === "deny") return filled;
+      return pre({ ...spec, hookEventName: "PreToolUse", additionalContext: push.message });
+    }
+    return filled ?? null;
+  }
+
+  /**
+   * For agents with no pre-run hook (Codex, OpenCode, Antigravity), right after a shell command finished: when it pushed to the branch
+   * of a PR that already merged or closed, what to tell the agent now. Never throws.
+   */
+  async afterShell(command: string, cwd = this.d.workDir): Promise<string | null> {
+    return this.pushGuard.afterPush(command, cwd).catch((e) => {
+      this.d.log("push guard (after push) failed:", errTag(e));
+      return null;
+    });
   }
 
   // ------------------------------------------------------------------ PostToolUse
