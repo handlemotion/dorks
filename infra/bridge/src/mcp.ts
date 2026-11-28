@@ -114,11 +114,12 @@ const TOOLS: Tool[] = [
     name: "pr_merge_request",
     title: "Ask the user to merge a pull request",
     description:
-      "Ask the user to merge one of your pull requests: they get a Merge / Not now card in this chat. Use it as soon as a PR is ready (CI green, " +
+      "Ask the user to merge one of your pull requests: they get a Merge / Not now card in this chat, and their Merge merges it (the server does the merge: never merge it yourself after a Merge). Use it as soon as a PR is ready (CI green, " +
       "review comments addressed, approved if the repo needs a review), instead of stopping and waiting. Merge merges the commit the PR is at now, " +
       "so push everything first; asking again after a push replaces the earlier card. Their answer arrives as your next turn: then carry on " +
       "(a merge is followed to production and wakes you with deployed or ship_failed; if GitHub refused, fix what it names and ask again). " +
-      "Never merge a pull request yourself (gh pr merge, the API): this is the only way a merge happens.",
+      "Only for a PR the user has not already told you to merge: when they tell you in the chat to merge one, merge it yourself with `gh pr merge` instead of asking. " +
+      "Never merge a pull request they have not told you to merge (gh pr merge, the API).",
     inputSchema: {
       type: "object",
       properties: {
@@ -1072,7 +1073,7 @@ const err = (id: Id, code: number, message: string) => ({ jsonrpc: "2.0", id, er
 
 /** What the agent reads about this server before it loads any tool: `instructions` in both eras. */
 const INSTRUCTIONS =
-  "Tools for the pull requests you work on in this box, and for showing the user your work. `gh pr create` subscribes you automatically; subscribed PRs wake you with <dorks-event> turns when CI, reviews, comments or conflicts need you. When a PR is ready, ask the user to merge it with pr_merge_request; never merge one yourself. " +
+  "Tools for the pull requests you work on in this box, and for showing the user your work. `gh pr create` subscribes you automatically; subscribed PRs wake you with <dorks-event> turns when CI, reviews, comments or conflicts need you. When a PR is ready, ask the user to merge it with pr_merge_request; merge one yourself (`gh pr merge`) only when the user told you to in the chat. " +
   "When you need a login, a one-time code or any secret, ask with input_request and use it as {{secret:NAME}} without reading it. " +
   "When you start a web server the user should see, call preview_show with its port. When you change anything visual, verify it with screenshot_share and put the image it returns in your final answer. " +
   'The user\'s comments on a running preview arrive as <dorks-event source="preview"> turns: answer them with comment_reply or comment_resolve. ' +

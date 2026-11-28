@@ -150,8 +150,11 @@ type HookOutput = Record<string, unknown> | null;
 
 const CREATES_PRS = /\bgh\b[^;&|\n]*\b(?:pr\s+create|stack\s+submit)\b/;
 const ENDS_PRS = /\bgh\b[^;&|\n]*\bpr\s+(?:merge|close)\b/;
-/** What gh prints on success: "✓ Closed pull request owner/name#12 (title)", "✓ Squashed and merged pull request owner/name#12 (title)". `--auto` prints something else. */
-const ENDED = /\b(?:closed|merged) pull request ([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)#(\d{1,9})\b/gi;
+/**
+ * What gh prints on a successful close: "✓ Closed pull request owner/name#12 (title)". A merge ("✓ Squashed and merged pull request
+ * …") keeps its subscription: the server's poller ingests the merge, which ends the subscription and starts following the ship.
+ */
+const ENDED = /\bclosed pull request ([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)#(\d{1,9})\b/gi;
 const MAX_LISTED = 8;
 const MAX_TITLE = 120;
 
@@ -420,7 +423,8 @@ function sessionContext(subs: SubscriptionView[] | null, services: ServiceSummar
           `- This box has prebuilt services, installed and warmed but not running: ${services.map((s) => `${s.name}${s.port ? ` (port ${s.port}${s.preview ? ", UI" : ""})` : ""}`).join(", ")}. Start one with the dorks \`service_start\` tool when you need it; it waits until it listens and shows a UI as a preview. \`service_logs\` and \`service_stop\` do the rest.`,
         ]
       : []),
-    "- When a PR is ready (CI green, review comments addressed, approved if the repo needs a review), ask the user to merge it with the `pr_merge_request` tool: they get a Merge / Not now card, and their answer arrives as your next turn, so you can carry on. Never merge it yourself (`gh pr merge`, the API).",
+    '- When the user tells you in this chat to merge a PR ("merge the release PR"), that is their approval: merge it yourself with `gh pr merge` (the repo\'s allowed method) once it can merge, and say so. Do not ask again with a card.',
+    "- Otherwise, when a PR you need merged to continue or finish your work is ready (CI green, review comments addressed, approved if the repo needs a review), ask the user to merge it with the `pr_merge_request` tool: they get a Merge / Not now card, and their Merge merges it (the server merges it then; you never merge it after a Merge). The outcome arrives as your next turn, so you can carry on. Never merge a PR the user has not told you to merge.",
     "- Every change you make ships as a pull request: when the work is done, validate it, commit, push and open a PR (or push to the PR it belongs to) without asking the user first. The user has authorized commits, pushes and PRs in this box.",
     "- Stopping with uncommitted changes, unpushed commits or a pushed branch without a PR is blocked: you will be told to finish shipping it.",
   ].join("\n");

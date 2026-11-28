@@ -388,12 +388,12 @@ describe("PostToolUse", () => {
     expect(s.prCalls).toEqual([]);
   });
 
-  it("unsubscribes from a PR that `gh pr merge` or `gh pr close` ended", async () => {
+  it("unsubscribes from a PR `gh pr close` closed, and keeps one `gh pr merge` merged so the poller follows its ship", async () => {
     const s = service(tmp("w-"), { subs: [fakeView({ repo: "acme/demo", number: 12 }), fakeView({ repo: "acme/demo", number: 13 }), fakeView({ repo: "acme/demo", number: 14 })] });
-    expect(await s.post("gh pr merge 12 --squash --delete-branch", bash("", "✓ Squashed and merged pull request Acme/Demo#12 (Fix login)\n✓ Deleted branch dork/x\n"))).toBeNull();
-    await s.post("gh pr close 13 --comment 'superseded'", bash("", "✓ Closed pull request acme/demo#13 (Old)\n"));
+    expect(await s.post("gh pr merge 12 --squash --delete-branch", bash("", "✓ Squashed and merged pull request acme/demo#12 (Fix login)\n✓ Deleted branch dork/x\n"))).toBeNull();
+    await s.post("gh pr close 13 --comment 'superseded'", bash("", "✓ Closed pull request Acme/Demo#13 (Old)\n"));
     await s.post("gh pr merge 14 --rebase", bash("✓ Rebased and merged pull request acme/demo#14 (X)\n"));
-    expect(s.prCalls).toEqual(["unsub Acme/Demo#12", "unsub acme/demo#13", "unsub acme/demo#14"]); // #12 was printed with other casing and still matched the lowercase subscription
+    expect(s.prCalls).toEqual(["unsub Acme/Demo#13"]); // #13 was printed with other casing and still matched the lowercase subscription
   });
 
   it("does not unsubscribe when the merge is only queued, was not subscribed, or the text is not from a merge or close", async () => {
