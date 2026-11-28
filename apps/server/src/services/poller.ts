@@ -4,9 +4,11 @@ import {
   getCached,
   GhBranch,
   GhComments,
+  GhCompare,
   GhIssue,
   GhIssueEvents,
   GhPr,
+  GhPrList,
   GhReviews,
   GhSuites,
   GhViewer,
@@ -367,12 +369,32 @@ const pollEndedState = (app: App, token: string, sub: Subscription): Effect.Effe
   );
 };
 
-/** When each merged PR's branch was last read, with its ETag. In memory, like `endedReads`. */
-const branchReads = new WeakMap<App, Map<number, { at: number; etag?: string }>>();
+/**
+ * When each merged PR's branch was last read, with its ETag and the head it showed. `covered`: that head was a late push an open PR
+ * covered, so it is asked about again on every read (a 304 says the branch did not move, not that the PR is still open). In memory.
+ */
+const branchReads = new WeakMap<App, Map<number, { at: number; etag?: string; sha?: string; covered?: boolean }>>();
 
 /**
- * Detects commits pushed to a merged PR's branch after the merge (a push the bridge's guard did not see): they are in no PR and never
- * reach the base. Tells the agent once (`pushed_after_merge`), so it moves them to a new PR. A deleted branch is fine: nothing to say.
+ * What a merged PR's branch, now at `sha`, is: `late` (commits on top of the merged head, in no PR: warn), `covered` (on top, but a
+ * new open PR comes from the branch: ask again later, that PR may close unmerged) or `fine` (recreated from the base, rewritten).
+ */
+const latePush = (gh: GithubClient, sub: Subscription, merged: NonNullable<PollState["merged"]>, sha: string): Effect.Effect<"late" | "covered" | "fine", GithubError> =>
+  Effect.gen(function* () {
+    // A branch recreated from the base (or rewritten) is not the merged work plus more: only "ahead" is.
+    const cmp = yield* getCached(gh, GhCompare, `/repos/${sub.repo}/compare/${merged.headSha}...${sha}`);
+    if (cmp.status !== 200 || cmp.json.status !== "ahead") return "fine";
+    // Already on its way in through a new PR from the same branch: nothing is lost.
+    const owner = sub.repo.split("/")[0]!;
+    const open = yield* getCached(gh, GhPrList, `/repos/${sub.repo}/pulls?state=open&head=${encodeURIComponent(`${owner}:${merged.headRef}`)}&per_page=5`);
+    if (open.status !== 200) return "fine";
+    return open.json.length ? "covered" : "late";
+  });
+
+/**
+ * Detects commits pushed on top of a merged PR's branch after the merge (a push the bridge's guard did not see): they are in no PR and
+ * never reach the base. Tells the agent once (`pushed_after_merge`), so it moves them to a new PR. A deleted branch, one recreated
+ * from the base, or one with a new open PR is fine: nothing to say.
  */
 const pollMergedBranch = (app: App, token: string, sub: Subscription): Effect.Effect<number | undefined> => {
   const merged = sub.poll?.merged;
@@ -381,26 +403,31 @@ const pollMergedBranch = (app: App, token: string, sub: Subscription): Effect.Ef
   if (!reads) branchReads.set(app, (reads = new Map()));
   const last = reads.get(sub.id);
   if (last && app.now() - last.at < MERGED_BRANCH_MS) return Effect.succeed(undefined);
+  const gh = clientOf(app, token);
   const path = `/repos/${sub.repo}/branches/${encodeURIComponent(merged.headRef)}`;
-  return getCached(clientOf(app, token), GhBranch, path, last?.etag).pipe(
-    Effect.map((r) => {
-      reads.set(sub.id, { at: app.now(), etag: r.status === 200 ? r.etag : last?.etag });
-      if (r.status !== 200 || r.json.commit.sha === merged.headSha) return undefined;
-      const sha = r.json.commit.sha;
-      app.db.tx(() => {
-        const cur = getSub(app, sub.id);
-        if (!cur?.poll?.merged || cur.poll.merged.warned) return;
-        savePollState(app, sub.id, { ...cur.poll, merged: { ...cur.poll.merged, warned: sha } });
-        enqueueNotification(
-          app,
-          sub.dorkId,
-          sub.id,
-          "pushed_after_merge",
-          `${merged.headRef} is now at ${sha.slice(0, 7)}, pushed after this PR merged (its head was ${merged.headSha.slice(0, 7)}). Those commits are in no PR and will not reach ${sub.baseRef ?? "the base branch"}.`,
-        );
-      });
-      return undefined;
-    }),
+  return Effect.gen(function* () {
+    const r = yield* getCached(gh, GhBranch, path, last?.etag);
+    const sha = r.status === 200 ? r.json.commit.sha : last?.sha;
+    const etag = r.status === 200 ? r.etag : last?.etag;
+    reads.set(sub.id, { at: app.now(), etag, sha });
+    if (!sha || sha === merged.headSha || (r.status !== 200 && !last?.covered)) return undefined;
+    const verdict = yield* latePush(gh, sub, merged, sha);
+    if (verdict === "covered") reads.set(sub.id, { at: app.now(), etag, sha, covered: true });
+    if (verdict !== "late") return undefined;
+    app.db.tx(() => {
+      const cur = getSub(app, sub.id);
+      if (!cur?.poll?.merged || cur.poll.merged.warned) return;
+      savePollState(app, sub.id, { ...cur.poll, merged: { ...cur.poll.merged, warned: sha } });
+      enqueueNotification(
+        app,
+        sub.dorkId,
+        sub.id,
+        "pushed_after_merge",
+        `${merged.headRef} is now at ${sha.slice(0, 7)}, pushed after this PR merged (its head was ${merged.headSha.slice(0, 7)}). Those commits are in no PR and will not reach ${sub.baseRef ?? "the base branch"}.`,
+      );
+    });
+    return undefined;
+  }).pipe(
     Effect.catch((e) =>
       Effect.sync(() => {
         reads.set(sub.id, { at: app.now(), etag: last?.etag });

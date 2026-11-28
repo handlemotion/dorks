@@ -216,6 +216,7 @@ export const GhDeploymentStatuses = Schema.Array(Schema.Struct({ state: Schema.S
 
 /** `ahead` or `identical`: the head of the comparison contains its base. */
 export const GhCompare = Schema.Struct({ status: Schema.String });
+export const GhPrList = Schema.Array(Schema.Struct({ number: Schema.Number }));
 export const GhBranch = Schema.Struct({ commit: Schema.Struct({ sha: Schema.String }) });
 
 /** Check-suite conclusions → what CI means for the PR. `cancelled` (usually superseded by a newer run), `action_required` and `stale` say nothing about the code. */

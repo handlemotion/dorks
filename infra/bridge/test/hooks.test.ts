@@ -484,7 +484,7 @@ describe("push guard", () => {
     const merged: BranchPrStatus = { state: "merged", number: 7, headSha: prHead, url: "https://github.com/acme/demo/pull/7", base: "main", at: "2026-11-27T14:03:00Z" };
     const guard = (status: BranchPrStatus | null) => {
       const asked: string[] = [];
-      const h = service(w.work, { prStatus: async (repo, branch) => (asked.push(`${repo} ${branch}`), status) });
+      const h = service(w.work, { prStatus: async (repo, branch) => (asked.push(`${repo} ${branch}`), branch === "feat" ? status : { state: "none" }) });
       const pre = (command: string) => h.svc.methods["hook.preToolUse"]!({ tool_name: "Bash", tool_input: { command }, cwd: w.dir }) as Promise<any>;
       return { asked, pre, after: (command: string) => h.svc.afterShell(command, w.dir) };
     };
@@ -506,6 +506,18 @@ describe("push guard", () => {
     w.git("checkout", "-q", "-b", "other", "origin/main");
     w.commit("c.txt");
     expect(await guard(merged).pre("git push origin other:feat")).toBeNull();
+
+    // A branch switch earlier in the same command: HEAD now says nothing about what is pushed, so only a named branch is checked.
+    w.git("checkout", "-q", "feat");
+    const asked = guard(merged);
+    expect(await asked.pre("git switch -c followup && git push -u origin HEAD")).toBeNull(); // the recovery the block asks for
+    expect(await asked.pre("pnpm test 2>&1 && git checkout -b followup2 && git push -u origin followup2")).toBeNull();
+    expect(asked.asked).toEqual(["acme/demo followup2"]);
+    expect((await guard(merged).pre("pnpm test 2>&1 && git push")).hookSpecificOutput.permissionDecision).toBe("deny"); // still blocked
+    expect((await guard(merged).pre("git switch -c x && git push origin HEAD:feat")).hookSpecificOutput.permissionDecision).toBe("deny");
+    // A nested shell's `cd` stays in it: the push runs in this repo. A branch it may have switched still counts.
+    expect((await guard(merged).pre("bash -c 'cd /tmp && git status' && git push origin HEAD")).hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(await guard(merged).pre("bash -c 'cd /tmp && git switch -c y' && git push origin HEAD")).toBeNull();
 
     const unknown = await guard(null).pre("git push origin HEAD:feat");
     expect(unknown.hookSpecificOutput.permissionDecision).toBeUndefined();
