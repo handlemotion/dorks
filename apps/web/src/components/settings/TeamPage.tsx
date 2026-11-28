@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { ChevronDownIcon } from 'lucide-react'
-import type { CloudMember, CloudOrg, CloudOrgDetail } from '@dorks/client'
+import { ApiError, type CloudMember, type CloudOrg, type CloudOrgDetail } from '@dorks/client'
 import { useStoreValue } from '@dorks/client/react'
 import { PLAN_NAMES, PLAN_SUMMARIES } from '@dorks/shared'
 import { Button } from '@dorks/ui/button'
@@ -29,7 +29,7 @@ import { isAdminRole } from './access'
 import { moveTargets, MoveIntoTeam, showsWhereItRuns, WhereItRuns } from './MoveToCloud'
 import { PictureRow } from './PictureRow'
 import { PersonAvatar } from '../Teammates'
-import { SettingsGroup, SettingsGroupFooter, SettingsInputRow, SettingsRow, SettingsSection, SettingsSections, SettingsSelectRow, SettingsStatus } from './kit'
+import { SettingsButtonRow, SettingsGroup, SettingsGroupFooter, SettingsInputRow, SettingsRow, SettingsSection, SettingsSections, SettingsSelectRow, SettingsStatus } from './kit'
 
 // Settings › Organization: the Dorks Cloud org you work in now (the sidebar switcher's), through Better Auth's organization endpoints
 // on the relay (the local server forwards them with your session). Everyone sees the members; admins invite, change roles, remove and
@@ -74,6 +74,7 @@ function Team({ place, org }: { place: CloudPlace; org: CloudOrg }) {
   return (
     <SettingsSections>
       <About place={place} org={org} owner={role === 'owner'} />
+      {role === 'owner' && org.plan === 'teams' && <Billing place={place} org={org} />}
       {/* Members, roles, invitations and leaving are team things (isTeamOrg): a personal org has only you. */}
       {!isTeamOrg(org) && <Personal />}
       {showsWhereItRuns(org, serverOrg) && <WhereItRuns place={place} org={org} admin={admin} />}
@@ -131,6 +132,40 @@ function About({ place, org, owner }: { place: CloudPlace; org: CloudOrg; owner:
         />
       </SettingsGroup>
       <SettingsStatus saved={saved} error={error} />
+    </SettingsSection>
+  )
+}
+
+/**
+ * The owner's way to Stripe's customer portal for a paid org: payment method, invoices, switching monthly and yearly, cancelling. A
+ * subscription to the retired Dorks Cloud plan reads as Teams and is managed here too.
+ */
+function Billing({ place, org }: { place: CloudPlace; org: CloudOrg }) {
+  const { run, pending, error } = usePending()
+  const open = () =>
+    void run(async () => {
+      try {
+        openExternal((await place.home.api.cloudBillingPortal(org.id)).url)
+      } catch (e) {
+        // Dorks Cloud's billing codes are not the app's, so its answer can read as a bare status: say it plainly.
+        const status = e instanceof ApiError ? e.status : 0
+        if (status === 403) throw new Error("Only the organization's owner can change its billing.")
+        if (status === 503) throw new Error('Billing is not available right now. Try again later.')
+        throw e
+      }
+    })
+  return (
+    <SettingsSection title="Billing">
+      <SettingsGroup>
+        <SettingsButtonRow
+          label="Plan and payment"
+          description="Change the payment method, see invoices, switch between monthly and yearly, or cancel."
+          actionLabel={pending ? 'Opening…' : 'Manage billing'}
+          onAction={open}
+          disabled={pending}
+        />
+      </SettingsGroup>
+      <SettingsStatus error={error} />
     </SettingsSection>
   )
 }
