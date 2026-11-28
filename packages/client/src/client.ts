@@ -812,8 +812,9 @@ export class DorksClient {
     /** Reads the pull request from GitHub again. */
     refreshPullRequest: (id: string) => this.invalidate(`pr:${id}`),
     /**
-     * Shows the PR merged at once, in its panel and on the session's row (GitHub's own read of it takes a while); taken back when
-     * GitHub refuses, or when the merge only joined a merge queue.
+     * Merges, and once GitHub says it merged shows the PR merged in its panel and on the session's row (GitHub's own read of it
+     * lags). Not before: the confirm button spins while GitHub merges, so a click does not read as merged before anything happened.
+     * A refusal, or a merge that only joined a merge queue, changes nothing shown.
      */
     mergePullRequest: async (id: string, method: MergeMethod, sha?: string, url?: string) => {
       const prKey = url ? `pr:${id}:${url}` : `pr:${id}`;
@@ -826,10 +827,16 @@ export class DorksClient {
       });
       // The row's PR state is the poller's, which looks right after the merge: shown merged until it has seen it.
       const recorded = (d: Dork) => (d.prs?.find((p) => p.url === prUrl)?.state ?? d.prState) !== "open";
-      return this.optimistic([[prKey, merged as Apply], ...this.dorkEdits(id, rowMerged, recorded)], () => this.api.mergePullRequest(id, method, sha, url), {
-        refetch: [`pr:${id}`, `subs:${id}`],
-        keep: (r) => r.merged,
+      const refetch = [`pr:${id}`, `subs:${id}`];
+      const r = await this.api.mergePullRequest(id, method, sha, url).catch((e: unknown) => {
+        for (const key of refetch) this.invalidate(key);
+        throw e;
       });
+      if (!r.merged) {
+        for (const key of refetch) this.invalidate(key);
+        return r;
+      }
+      return this.optimistic([[prKey, merged as Apply], ...this.dorkEdits(id, rowMerged, recorded)], async () => r, { refetch });
     },
     markPullRequestReady: async (id: string, url?: string) => {
       try {
