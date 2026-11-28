@@ -61,6 +61,48 @@ it("reads a session's events across dropped connections: each once, in order, re
   expect(starts).toEqual([0, 4, 8, 12, 16, 20, 24]); // each reconnect resumes right after the last record read
 });
 
+it("opens a read again when it goes silent (no record, no ping), resuming after the last record", async () => {
+  const enc = new TextEncoder();
+  const starts: number[] = [];
+  // The first connection delivers one record and then hangs forever (a half-open connection); the second delivers the next one.
+  const fake = (async (url: string, init?: RequestInit) => {
+    const from = Number(/seq_num=(\d+)/.exec(url)![1]);
+    starts.push(from);
+    const body = new ReadableStream<Uint8Array>({
+      start: (c) => {
+        c.enqueue(
+          enc.encode(
+            `event: batch\ndata: ${JSON.stringify({
+              records: [
+                {
+                  seq_num: from,
+                  timestamp: 0,
+                  headers: [
+                    ["k", "ev"],
+                    ["b", String(from + 1)],
+                    ["c", "0"],
+                  ],
+                  body: `e${from}`,
+                },
+              ],
+            })}\n\n`,
+          ),
+        );
+        init?.signal?.addEventListener("abort", () => c.error(new DOMException("aborted", "AbortError")));
+      },
+    });
+    return new Response(body, { status: 200 });
+  }) as typeof fetch;
+  const reader = new StreamReader({ fetch: fake, idleMs: 50, grant: async () => ({ token: "t", url: "https://b.s2.dev/v1/streams/s/records", expiresAt: Date.now() + 600_000 }) });
+  const got: string[] = [];
+  for await (const item of reader.items()) {
+    got.push(item.body);
+    if (got.length === 2) break;
+  }
+  expect(got).toEqual(["e0", "e1"]);
+  expect(starts).toEqual([0, 1]);
+});
+
 it("never lets a reader resume past an event whose parts are still arriving", () => {
   const a = new Assembler();
   a.push({

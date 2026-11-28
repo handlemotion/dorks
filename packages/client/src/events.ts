@@ -161,6 +161,16 @@ export class EventsFeed implements Store<EventsState> {
     });
   }
 
+  /**
+   * Shows a message the server already has but the transcript will carry only once the agent reads it (a cloud session's first
+   * message, while its box starts). The transcript's own row replaces it.
+   */
+  show(text: string) {
+    if (this.pending.some((p) => p.text === text)) return;
+    this.pending.push({ id: `pending-${this.pendingCounter++}`, text });
+    this.publish();
+  }
+
   /** Sends a message and shows it at once; if the server refuses, the optimistic row is removed and the error is rethrown. */
   async send(text: string): Promise<void> {
     const entry = { id: `pending-${this.pendingCounter++}`, text };
@@ -230,7 +240,7 @@ export class EventsFeed implements Store<EventsState> {
       this.bySeq.set(e.seq, e);
       this.oldest = Math.min(this.oldest, e.seq);
       if (e.type === "user_message" && !known) {
-        const i = this.pending.findIndex((p) => p.text === e.text);
+        const i = this.pending.findIndex((p) => p.text.trim() === e.text.trim());
         if (i >= 0) this.pending.splice(i, 1); // the server has it now: the confirmed row replaces the optimistic one
       }
       if (e.seq > this.folded.lastSeq) {

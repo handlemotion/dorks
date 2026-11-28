@@ -109,6 +109,8 @@ export interface ReaderOptions {
   raw?: boolean;
   /** For a first connection without `afterSeq`: start at this timestamp (ms). */
   fromTimestamp?: number;
+  /** A read that hears nothing (no record, no ping) this long is opened again. Default 45 s. */
+  idleMs?: number;
   /** Each time a read is open (the first, and after every reconnect). */
   onConnect?: () => void;
   fetch?: typeof fetch;
@@ -130,6 +132,23 @@ export async function checkTail(grant: ReadGrant, f: typeof fetch = fetch): Prom
   const res = await f(`${grant.url}/tail`, { headers: authHeaders(grant) });
   if (!res.ok) throw await s2Error(res, "check-tail");
   return ((await res.json()) as { tail: { seq_num: number } }).tail.seq_num;
+}
+
+/**
+ * s2 sends a `ping` on every open SSE read while nothing else comes: a read that hears nothing at all for this long is dead (a
+ * network change, a laptop that slept, a proxy that dropped it without closing) and is opened again from the last seq_num.
+ */
+const IDLE_MS = 45_000;
+
+/** Open readers, so a network change can reconnect them all at once (`reconnectAll`). */
+const open = new Set<StreamReader>();
+
+/**
+ * Drops every open read so each reconnects now from where it was: call it when the network comes back or the app becomes visible
+ * again, when a read may be dead without knowing it yet.
+ */
+export function reconnectAll() {
+  for (const r of open) r.dropConnection();
 }
 
 /** Follows one stream over SSE (`items()`), resuming from the last seq_num after any disconnect. */
@@ -166,6 +185,15 @@ export class StreamReader {
     const refreshBefore = this.opts.refreshBeforeMs ?? 30_000;
     const maxConn = this.opts.maxConnectionMs ?? 10 * 60_000;
     let grant: ReadGrant | null = null;
+    open.add(this);
+    try {
+      yield* this.loop(f, refreshBefore, maxConn, grant, signal);
+    } finally {
+      open.delete(this);
+    }
+  }
+
+  private async *loop(f: typeof fetch, refreshBefore: number, maxConn: number, grant: ReadGrant | null, signal?: AbortSignal): AsyncGenerator<SessionItem | RawItem> {
     while (!signal?.aborted) {
       if (!grant || grant.expiresAt - Date.now() < refreshBefore) {
         grant = await this.opts.grant();
@@ -207,10 +235,21 @@ export class StreamReader {
     this.stats.connections++;
     this.failures = 0;
     this.opts.onConnect?.();
-    for await (const ev of sse(res.body)) {
-      if (signal.aborted) return;
-      if (ev.event === "error") throw new Error(`s2 read session error: ${ev.data}`);
-      if (ev.event === "batch") yield* this.records((JSON.parse(ev.data) as ReadBatch).records);
+    let idle: ReturnType<typeof setTimeout> | undefined;
+    const alive = () => {
+      clearTimeout(idle);
+      idle = setTimeout(() => this.dropConnection(), this.opts.idleMs ?? IDLE_MS);
+    };
+    alive();
+    try {
+      for await (const ev of sse(res.body)) {
+        if (signal.aborted) return;
+        alive();
+        if (ev.event === "error") throw new Error(`s2 read session error: ${ev.data}`);
+        if (ev.event === "batch") yield* this.records((JSON.parse(ev.data) as ReadBatch).records);
+      }
+    } finally {
+      clearTimeout(idle);
     }
   }
 
