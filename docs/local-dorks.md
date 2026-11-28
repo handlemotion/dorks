@@ -14,8 +14,13 @@ starts, and fixed for its life.
 - The menu says it once: local agents run **unsandboxed, as the owner**. The agent is told the same (`LOCAL_GUIDANCE`,
   `infra/bridge/src/guidance.ts`) and asked to stay inside its worktree.
 - A local session needs GitHub and the agent's CLI on this computer, plus Node.js 22 or later (the bridge is a Node script). It needs no
-  Boat key and no base snapshot, so it can start before Boat is set up. Claude still runs with the Claude token saved in Dorks (the
-  same `configure` path as a sandbox), not the CLI's own login.
+  Boat key and no base snapshot, so it can start before Boat is set up.
+- **Each agent signs in with its own CLI's login on this computer**, never with Dorks' sign-ins: Claude Code with its own login (run
+  `claude` and `/login` once; its config dir is the owner's `~/.claude`, or `CLAUDE_CONFIG_DIR` when the server was started with one),
+  Codex with `codex login` (`~/.codex`), Antigravity with agy's own Google sign-in (its keyring or token file). `configure` carries no
+  Claude token, no ChatGPT access token and no Antigravity token for a local dork, and starting one does not need them
+  (`missingForSession`, `agentSecrets`). Shared secrets still reach it as environment variables. The CLI's own settings, hooks and
+  plugins apply too, and Claude's transcripts are in `~/.claude/projects`, so `claude --resume` in the worktree finds them.
 - A local chat shows a laptop mark and its repository in the composer's bar; its Computer tab says it has no screen of its own.
 
 ## Checkouts: one clone per repository, one worktree per dork
@@ -27,7 +32,7 @@ local/
   repos/<owner>/<name>.git          one bare clone per repository (from GitHub; fetched before every use)
   boxes/<dork id>/
     work/<owner>/<name>             the dork's git worktree, on its own branch (agent/xxxxxxxx)
-    state/  claude/  bin/            the bridge's state, CLAUDE_CONFIG_DIR (sessions, skills), the dorks and gh shims
+    state/  skills/  bin/            the bridge's state, Dorks' skills (skills/.claude/skills), the dorks and gh shims
     gitconfig                        GIT_CONFIG_GLOBAL for the dork: the owner's user.name/email, the bridge's credential helper
     bridge.log
   bridge/dorks-bridge-<sha>.mjs     the bridge bundle this server carries
@@ -41,7 +46,8 @@ local/
   the pause removes the worktree; a dork that already sleeps gets a `box:retire` job that does the same.
 - **Unarchive** changes nothing on disk; the next message wakes the dork and the worktree is added again: from the clone's branch
   (fast-forwarded to the pushed branch when that is ahead), else from the pushed branch, else from the default branch. The agent resumes
-  its session (transcripts live in the box's `claude/`, at the same worktree path).
+  its session (Claude's transcripts are in the owner's `~/.claude/projects`, at the same worktree path; a box made before agents used
+  their own login has its old `claude/projects` copied there once, without overwriting).
 - **Delete** stops the bridge, removes the worktree and the dork's branch in the clone (never on GitHub), and the box directory. Clones
   stay for the next dork on that repository.
 
@@ -65,8 +71,10 @@ The bridge is the real one (`infra/bridge`), run with the owner's Node.js as a c
 `DORKS_LOCAL_BOX=1` and `DORKS_PARENT_PID` (it exits within 2 s of the server going away, so nothing is left running after the app
 quits). Its environment is what a box gives a bridge plus this computer's PATH: the owner's login-shell PATH (read once; a Finder-launched
 app has a minimal one) and the usual install directories, with `bin/` (`dorks` and `gh` shims, as in a sandbox) first. `HOME` is the
-owner's, so CLIs find their own installs; `CLAUDE_CONFIG_DIR` and `GIT_CONFIG_GLOBAL` are the box's, so Dorks never writes to
-`~/.claude` or `~/.gitconfig`. The bridge secret goes in a 0400 file it unlinks on read. A bridge that exits by itself while its box
+owner's, so CLIs find their own installs and logins; `GIT_CONFIG_GLOBAL` is the box's, so Dorks never writes to `~/.gitconfig`.
+`DORKS_SKILLS_ROOT` is the box's `skills/`: the bridge syncs Dorks' skills into `skills/.claude/skills`, gives Claude that folder with
+`--add-dir` (Claude loads an added directory's `.claude/skills`), and points Codex, OpenCode and Antigravity at the same folder, so
+Dorks' skills stay out of `~/.claude/skills`. The bridge secret goes in a 0400 file it unlinks on read. A bridge that exits by itself while its box
 should run is started again after 2 s, at most five times in a row within a minute.
 
 ## Routing and the lifecycle
@@ -95,7 +103,8 @@ Local dorks run code on the owner's computer, so:
 
 ## Not supported locally (yet)
 
-- Builds and machine-setup sessions (they are cloud images); Codex's Boat ChatGPT environment (a local Codex uses the CLI's own login,
-  untested); the Computer tab; "Move to cloud" for a local dork.
+- Builds and machine-setup sessions (they are cloud images); the Computer tab; "Move to cloud" for a local dork.
+- Antigravity still writes Dorks' settings, MCP servers and always-on rule into the owner's `~/.gemini` (it has no config dir of its
+  own to point elsewhere); only the sign-in is left alone.
 - Uncommitted work does not survive an archive; committed work does.
 - The onboarding checklist still asks for Boat even if the owner only wants local sessions.

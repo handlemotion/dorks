@@ -102,9 +102,9 @@ function useSteps(settings: Settings, snap: SnapshotStatus | undefined): Step[] 
   const cloudGithub = useCloudGithub()
   const d = stepDone(settings)
   const snapBusy = snap?.state === 'building' || snap?.state === 'failed'
-  // Dorks Free runs chats on this Mac: no Boat and no snapshot to set up, only an agent and GitHub.
+  // Dorks Free runs chats on this Mac, where each agent uses its CLI's own login: only GitHub to set up.
   const free = settings.sandboxes?.available === false
-  if ((free || (d.boat && d.snapshot && !snapBusy)) && d.agents && d.github) return null
+  if (free ? d.github : d.boat && d.snapshot && !snapBusy && d.agents && d.github) return null
 
   const buildButton = (label: string) => (
     <Button size="sm" variant="outline" disabled={build.pending || !snap?.canBuild} onClick={() => void build.run(async () => void (await actions.buildSnapshot()))}>
@@ -116,7 +116,7 @@ function useSteps(settings: Settings, snap: SnapshotStatus | undefined): Step[] 
 
   const agents: Step = d.agents ? { id: 'agents', title: 'Connect an agent', state: 'done' } : { id: 'agents', title: 'Connect an agent', state: 'todo', body: <AgentForms settings={settings} /> }
   const github: Step = d.github ? { id: 'github', title: 'Connect GitHub', state: 'done' } : cloudGithub ? cloudGithubStep(cloudGithub) : githubStep(settings)
-  if (free) return [agents, github]
+  if (free) return [github]
   return [d.boat ? { id: 'boat', title: 'Connect Boat', state: 'done' } : boatStep(settings.boatSignIn), agents, github, snapshot]
 }
 

@@ -510,8 +510,10 @@ const agentSecrets = Effect.fnUntraced(function* (
   dork: DorkRow,
 ): Effect.fn.Return<{ gh: string; env: Record<string, string>; mcpServers: McpServerConfig[]; codexAuth: CodexAuth | null }, OnboardingIncomplete> {
   const sim = app.cfg.boxProvider === "sim";
-  const claude = dork.provider === "claude" ? yield* Effect.promise(() => claudeToken(app)) : undefined;
-  if (dork.provider === "claude" && !claude) return yield* new OnboardingIncomplete({ message: "Claude token not set" });
+  // A local dork's agent signs in with its own CLI's login on this computer (docs/local-dorks.md): none of Dorks' agent sign-ins go to it.
+  const viaDorks = dork.location !== "local";
+  const claude = viaDorks && dork.provider === "claude" ? yield* Effect.promise(() => claudeToken(app)) : undefined;
+  if (viaDorks && dork.provider === "claude" && !claude) return yield* new OnboardingIncomplete({ message: "Claude token not set" });
   const gh = (yield* Effect.promise(() => githubToken(app))) ?? (sim ? "sim-github-token" : undefined);
   if (!gh) return yield* new OnboardingIncomplete({ message: "GitHub is not connected, or the GitHub CLI is signed out" });
   const secrets = yield* Effect.promise(() => cliSecrets(app));
@@ -520,10 +522,10 @@ const agentSecrets = Effect.fnUntraced(function* (
   const buildVars = buildId ? yield* Effect.promise(() => buildVarValues(app, buildId)) : {};
   const mcpServers = yield* Effect.promise(() => mcpServerConfigs(app));
   // Antigravity's Google sign-in (services/antigravitySignIn.ts); a shared secret of the same name still works and wins.
-  const agy = dork.provider === "antigravity" && !secrets.ANTIGRAVITY_OAUTH_TOKEN ? yield* Effect.promise(() => antigravityToken(app)) : undefined;
+  const agy = viaDorks && dork.provider === "antigravity" && !secrets.ANTIGRAVITY_OAUTH_TOKEN ? yield* Effect.promise(() => antigravityToken(app)) : undefined;
   // Codex with Dorks' own ChatGPT sign-in (services/codexSignIn.ts): a current access token, never the refresh token. Without one, the
   // sandbox signs in through the Boat environment (lifecycle/jobs.ts).
-  const codexAuth = dork.provider === "codex" ? yield* Effect.promise(() => app.codexCli.tokens().catch(() => null)) : null;
+  const codexAuth = viaDorks && dork.provider === "codex" ? yield* Effect.promise(() => app.codexCli.tokens().catch(() => null)) : null;
   return { gh, env: { ...secrets, ...buildVars, ...(claude ? { CLAUDE_CODE_OAUTH_TOKEN: claude } : {}), ...(agy ? { ANTIGRAVITY_OAUTH_TOKEN: agy } : {}) }, mcpServers, codexAuth };
 });
 

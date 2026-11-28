@@ -333,7 +333,8 @@ function NewDork({
     pickProvider(p)
   }
   const { run, pending, error } = usePending()
-  const agent = agentGate(provider, claudeReady, codexReady, antigravityReady)
+  // A local session's agent uses its CLI's own login on this computer, so none of Dorks' sign-ins gate it.
+  const agent = local ? { missing: false, notice: false } : agentGate(provider, claudeReady, codexReady, antigravityReady)
   const mode = newSessionMode(initialRepo, initialMode)
   // Only a code session starts in its repository, so only its `@` menu has files to offer.
   const mentions = useMentions(provider, { repo: mode === 'code' ? repo || undefined : undefined })

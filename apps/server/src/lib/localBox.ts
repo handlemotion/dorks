@@ -1,5 +1,5 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { closeSync, cpSync, existsSync, mkdirSync, openSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer, type AddressInfo } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -95,7 +95,7 @@ async function writeGitConfig(file: string) {
 /** The box's directories and, for a code session, its worktree. */
 async function prepare(app: App, boxId: string, dork: DorkRow) {
   const dir = boxDir(app, boxId);
-  for (const d of ["work", "state", "claude", "bin"]) mkdirSync(join(dir, d), { recursive: true, mode: 0o700 });
+  for (const d of ["work", "state", "skills", "bin"]) mkdirSync(join(dir, d), { recursive: true, mode: 0o700 });
   await writeGitConfig(join(dir, "gitconfig"));
   if (dork.repo) await ensureWorktree(checkoutOf(app, boxId, dork), await gitAuth(app));
 }
@@ -123,7 +123,26 @@ function linkShims(binDir: string, bundle: string) {
   }
 }
 
-const PASS = ["USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "TMPDIR", "XDG_RUNTIME_DIR", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE"];
+/** The owner's Claude Code config dir: where its own login, settings and session transcripts live. */
+const ownerClaudeDir = () => process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
+
+/**
+ * Boxes made before local agents used their own CLI login kept Claude's transcripts in the box (`claude/`). They move once into the
+ * owner's config dir, at the same project path (the worktree's), so those sessions still resume. Nothing there is overwritten.
+ */
+function moveOldTranscripts(dir: string) {
+  const old = join(dir, "claude");
+  if (!existsSync(old)) return;
+  try {
+    if (existsSync(join(old, "projects"))) cpSync(join(old, "projects"), join(ownerClaudeDir(), "projects"), { recursive: true, force: false, errorOnExist: false });
+    rmSync(old, { recursive: true, force: true });
+  } catch (e) {
+    console.error("local box: could not move old Claude transcripts", (e as Error).message);
+  }
+}
+
+// CLAUDE_CONFIG_DIR passes through: when the owner set one, their Claude login lives there.
+const PASS = ["CLAUDE_CONFIG_DIR", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "TMPDIR", "XDG_RUNTIME_DIR", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE"];
 
 /** What the bridge runs with: only what a box would give it, plus this computer's PATH and CLIs. No server keys. */
 async function bridgeEnv(app: App, boxId: string, row: BoxRow, dork: DorkRow, secretFile: string) {
@@ -142,7 +161,9 @@ async function bridgeEnv(app: App, boxId: string, row: BoxRow, dork: DorkRow, se
     DORKS_GIT_BASE_URL: app.cfg.localGitBaseUrl ?? "https://github.com",
     DORKS_STATE_DIR: join(dir, "state"),
     DORKS_WORKDIR: join(dir, "work"),
-    CLAUDE_CONFIG_DIR: join(dir, "claude"),
+    // The agents run with their own CLI logins and config (HOME is the owner's, no CLAUDE_CONFIG_DIR of the box's): Dorks' skills go
+    // in a folder of the box that each agent is pointed at, so they stay out of the owner's ~/.claude.
+    DORKS_SKILLS_ROOT: join(dir, "skills"),
     DORKS_PARENT_PID: String(process.pid),
     DORKS_LOCAL_BOX: "1",
     ...(tools.gh ? { DORKS_REAL_GH: tools.gh } : {}),
@@ -165,6 +186,7 @@ async function ensureRunning(app: App, boxId: string) {
   const secretFile = join(dir, "bridge.secret");
   rmSync(secretFile, { force: true });
   writeFileSync(secretFile, await bridgeSecret(app.cfg.bridgeSecretKey, dork.id), { mode: 0o400 });
+  moveOldTranscripts(dir);
   const { node, env } = await bridgeEnv(app, boxId, row, dork, secretFile);
   if (host.procs.has(boxId)) return;
   const log = openSync(join(dir, "bridge.log"), "a", 0o600);

@@ -31,6 +31,8 @@ export interface AntigravityOptions {
   userMcp: Record<string, unknown>;
   /** Where skills are synced (the Claude config dir's `skills`), so agy loads the same ones. */
   skillsDir: string;
+  /** A local dork (docs/local-dorks.md): agy uses the owner's own sign-in on this computer (keyring or token file), never one of ours. */
+  local?: boolean;
   /** The standing instructions (final answer, skills, crew, computer), as an always-on rule. */
   system: string;
   bin?: string;
@@ -192,7 +194,7 @@ export class AntigravityAgent {
     this.ensureDir(cli);
     this.ensureDir(join(config, "rules"));
     const env = this.o.env;
-    const token = env[ANTIGRAVITY_TOKEN_VAR]?.trim();
+    const token = this.o.local ? undefined : env[ANTIGRAVITY_TOKEN_VAR]?.trim();
     // The subscription: agy keeps its sign-in in this file when no keyring is reachable (a sandbox has none).
     if (token) this.writeOwned(join(cli, "antigravity-oauth-token"), decodeToken(token), 0o600);
     const settingsFile = join(cli, "settings.json");
@@ -205,9 +207,11 @@ export class AntigravityAgent {
       showFeedbackSurvey: false,
       trustedWorkspaces: [...new Set([...(Array.isArray(settings.trustedWorkspaces) ? settings.trustedWorkspaces.map(text) : []), this.o.cwd])],
     });
-    // A Gemini API key instead of the subscription: agy only uses it with this provider set.
-    if (!token && env.GEMINI_API_KEY) settings.modelProvider = "gemini";
-    else delete settings.modelProvider;
+    // A Gemini API key instead of the subscription: agy only uses it with this provider set. Locally, the owner's own choice stays.
+    if (!this.o.local) {
+      if (!token && env.GEMINI_API_KEY) settings.modelProvider = "gemini";
+      else delete settings.modelProvider;
+    }
     this.writeOwned(settingsFile, JSON.stringify(settings, null, 2) + "\n", 0o600);
     // MCP: the dorks server and the owner's, beside whatever the box already registered. Values are real (agy has no references), so 0600.
     const mcpFile = join(config, "mcp_config.json");
@@ -239,8 +243,9 @@ export class AntigravityAgent {
     const env: NodeJS.ProcessEnv = { ...this.o.env };
     delete env[ANTIGRAVITY_TOKEN_VAR]; // written to the token file; the agent's shell has no use for it
     delete env.CLAUDE_CODE_OAUTH_TOKEN;
-    // No keyring in a sandbox: an unreachable bus makes agy use its token file at once instead of trying one.
-    env.DBUS_SESSION_BUS_ADDRESS = "unix:path=/nonexistent/dorks-no-keyring";
+    // No keyring in a sandbox: an unreachable bus makes agy use its token file at once instead of trying one. On the owner's computer
+    // the keyring may hold their own sign-in.
+    if (!this.o.local) env.DBUS_SESSION_BUS_ADDRESS = "unix:path=/nonexistent/dorks-no-keyring";
     return env;
   }
 
@@ -400,7 +405,11 @@ export class AntigravityAgent {
   }
 
   private authIssue() {
-    this.o.onIssue(`Antigravity is not signed in. Save your Antigravity sign-in as the shared secret ${ANTIGRAVITY_TOKEN_VAR} (or a Gemini API key as GEMINI_API_KEY), then send a message to retry.`);
+    this.o.onIssue(
+      this.o.local
+        ? "Antigravity is not signed in on this computer. Run `agy` in a terminal and sign in with Google, then send a message to retry."
+        : `Antigravity is not signed in. Save your Antigravity sign-in as the shared secret ${ANTIGRAVITY_TOKEN_VAR} (or a Gemini API key as GEMINI_API_KEY), then send a message to retry.`,
+    );
   }
 
   private async pump() {

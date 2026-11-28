@@ -36,8 +36,11 @@ export const ONBOARDING_STEPS: OnboardingStepId[] = ['intro', 'boat', 'agent', '
 /** Dorks Free runs chats on this Mac (docs/cloud.md): no sandboxes, so nothing to ask about Boat. */
 export const isFree = (s: Settings) => s.sandboxes?.available === false
 
-/** The steps this workspace asks: Boat only where sessions can run in sandboxes. */
-export const onboardingSteps = (s: Settings): OnboardingStepId[] => (isFree(s) ? ONBOARDING_STEPS.filter((id) => id !== 'boat') : ONBOARDING_STEPS)
+/**
+ * The steps this workspace asks: Boat and an agent sign-in only where sessions can run in sandboxes. On this Mac each agent uses its
+ * CLI's own login (docs/local-dorks.md), so there is nothing to sign in to in Dorks.
+ */
+export const onboardingSteps = (s: Settings): OnboardingStepId[] => (isFree(s) ? ONBOARDING_STEPS.filter((id) => id !== 'boat' && id !== 'agent') : ONBOARDING_STEPS)
 
 /** Remembered in this browser/webview: the owner pressed Get started on the intro. */
 export const WELCOMED_KEY = 'dorks.welcomed'
@@ -59,7 +62,7 @@ export const onboardingDone = (s: Settings, welcomed: boolean): Record<Onboardin
 /** Every onboarding step is answered: the app opens. The snapshot may still be building. */
 export const onboarded = (s: Settings) => {
   const d = stepDone(s)
-  return (isFree(s) || d.boat) && d.agents && d.github
+  return (isFree(s) || (d.boat && d.agents)) && d.github
 }
 
 /** Where a returning owner resumes: the first step that is not done, or null when there is nothing left to ask. */
