@@ -52,7 +52,7 @@ it('resolves an org to its hosted server, this Mac, its one Mac, or asks', () =>
   expect(resolveTarget(org([mac('r', false)]), null)).toMatchObject({ kind: 'choose', home: false })
   expect(resolveTarget(org([mac('r'), mac('s')]), null)).toMatchObject({ kind: 'choose', machines: [mac('r'), mac('s')] })
   expect(resolveTarget(org([]), null)).toEqual({ kind: 'choose', machines: [], home: false })
-  // A Teams or Cloud org without Macs runs on the Worker; one that still has a Mac stays on it until it moves.
+  // A Teams org without Macs runs on the Worker; one that still has a Mac stays on it until it moves.
   expect(resolveTarget({ ...org([]), plan: 'teams' }, null)).toMatchObject({ kind: 'cloud' })
-  expect(resolveTarget({ ...org([mac('r')]), plan: 'cloud' }, null)).toEqual({ kind: 'remote', server: mac('r') })
+  expect(resolveTarget({ ...org([mac('r')]), plan: 'teams' }, null)).toEqual({ kind: 'remote', server: mac('r') })
 })

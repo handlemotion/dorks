@@ -1,6 +1,6 @@
 # Move to cloud
 
-A paid workspace (Dorks Teams or Dorks Cloud) runs on the cloud runtime (handlemotion/dorks-cloud `docs/org-runtime.md`), never on a
+A paid workspace (Dorks Teams) runs on the cloud runtime (handlemotion/dorks-cloud `docs/org-runtime.md`), never on a
 Mac. Dorks Local (free) is the personal workspace on the owner's Mac. What a Mac holds moves to the cloud in one of two ways:
 
 - **Take-over**: a paid org this Mac still serves (a team paired before it paid, or the personal workspace once it upgrades) moves as

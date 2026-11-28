@@ -110,7 +110,7 @@ export function settingsView(app: App, local: LocalAvailability = { available: f
     claudeCodeMode: s.claudeCodeMode,
     localAlwaysAllow: s.localAlwaysAllow,
     local,
-    // Whether sessions may run in sandboxes: Dorks Teams and Dorks Cloud; Dorks Free runs them on this Mac (services/plan.ts).
+    // Whether sessions may run in sandboxes: Dorks Teams; Dorks Free runs them on this Mac (services/plan.ts).
     sandboxes: sandboxes(app),
     plan: serverPlan(app),
     // Where a new session starts: where the owner picked, among the places this client may start one.

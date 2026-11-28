@@ -27,9 +27,7 @@ import {
   setSecret,
   startCheckout,
   STEPS,
-  trialRefusal,
   waitForPlan,
-  type PaidPlan,
   type Plans,
   type Progress,
   type StepId,
@@ -65,12 +63,7 @@ type View = StepId | "done";
 function Flow({ params, email }: { params: URLSearchParams; email: string }) {
   const [progress, setProgress] = useState<Progress>();
   const [view, setView] = useState<View>();
-  const [confirming, setConfirming] = useState(params.get("checkout") === "success" || params.get("trial") === "started");
-  // Back from the Cloud trial's Checkout with ?trial=<code>: why it did not start, shown on the plan step.
-  const [refused] = useState(() => {
-    const trial = params.get("trial");
-    return trial && trial !== "started" ? trialRefusal(trial) : "";
-  });
+  const [confirming, setConfirming] = useState(params.get("checkout") === "success");
   const [failed, setFailed] = useState("");
   const refresh = async () => {
     const p = await loadProgress();
@@ -95,13 +88,12 @@ function Flow({ params, email }: { params: URLSearchParams; email: string }) {
         history.replaceState(null, "", url);
         if (params.get("boat") === "error") notify("Boat didn’t connect. Try again, or use an API key.");
       }
-      // Back from Stripe: the plan turns paid once the webhook (Teams) or the trial's return (Cloud) lands.
-      if ((params.get("checkout") || params.get("trial")) && p.org) {
+      // Back from Stripe: the plan turns paid once the webhook lands.
+      if (params.get("checkout") && p.org) {
         const url = new URL(window.location.href);
         url.searchParams.delete("checkout");
-        url.searchParams.delete("trial");
         history.replaceState(null, "", url);
-        if ((params.get("checkout") === "success" || params.get("trial") === "started") && !isPaid(p.org.plan)) {
+        if (params.get("checkout") === "success" && !isPaid(p.org.plan)) {
           await waitForPlan(p.org.id);
           p = await refresh();
         }
@@ -141,7 +133,7 @@ function Flow({ params, email }: { params: URLSearchParams; email: string }) {
     >
       {view === "workspace" && <Workspace {...props} />}
       {view === "github" && <ConnectGithubStep {...props} connect={connectGithub} />}
-      {view === "plan" && <PlanStep {...props} refused={refused} />}
+      {view === "plan" && <PlanStep {...props} />}
       {view === "invite" && <Invite {...props} />}
       {view === "boat" && <Boat {...props} />}
       {view === "agents" && <Agents {...props} />}
@@ -186,60 +178,43 @@ function Workspace({ progress, onNext, onSkip }: StepProps) {
 
 // ---- 2. Plan ------------------------------------------------------------------------------------------------------------------
 
-const PLAN_COPY: Record<"teams" | "cloud", { trial: string; after: (price: string) => string; points: string[] }> = {
-  teams: {
-    trial: "14-day free trial",
-    after: (price) => `Free for 14 days, then ${price}/month.`,
-    points: ["Shared chats and automations", "Up to 50 people", "Sandboxes on your own Boat key"],
-  },
-  cloud: {
-    trial: "Free for 10 sandbox hours",
-    after: (price) => `No charge until you’ve used 10 sandbox hours, then ${price}/month.`,
-    points: ["Everything in Teams", "200 sandbox hours a month, 3 at once", "No Boat account needed"],
-  },
-};
+/** What Dorks Teams includes, in short. */
+const TEAMS_POINTS = ["Shared chats and automations around the clock", "Production-like checks on every PR", "Your own Boat and AI accounts", "Up to 50 members, one price"];
 
 const dollars = (cents: number) => `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}`;
 
-function PlanStep({ progress, onNext, onSkip, refused }: StepProps & { refused: string }) {
+function PlanStep({ progress, onNext, onSkip }: StepProps) {
   const org = progress.org!;
-  const current = org.plan;
   const [plans, setPlans] = useState<Plans>();
   const [trials, setTrials] = useState<Trials>();
-  const [choice, setChoice] = useState<PaidPlan>(current === "teams" ? "teams" : "cloud");
+  const [annual, setAnnual] = useState(false);
   // A refused call stays on the page (the toast alone is easy to miss): the relay's own message.
-  const [error, setError] = useState(refused);
+  const [error, setError] = useState("");
   const { run, pending } = usePending();
   const cancelled = useRef(new URLSearchParams(window.location.search).get("checkout") === "cancel");
   useEffect(() => {
     fetchPlans().then(setPlans, () => setPlans(undefined));
-    fetchTrials(org.id).then(
-      (t) => {
-        setTrials(t);
-        // Only the trials this org and account may still start; the choice moves to one that is offered.
-        setChoice((c) => (t[c].eligible ? c : (planOffer(t).offered[0] ?? c)));
-      },
-      (e: Error) => setError(e.message),
-    );
-    if (cancelled.current) notify("Checkout was cancelled. Pick a plan to start your trial.");
+    fetchTrials(org.id).then(setTrials, (e: Error) => setError(e.message));
+    if (cancelled.current) notify("Checkout was cancelled. Start your trial when you’re ready.");
   }, [org.id]);
-  if (isPaid(current))
+  if (isPaid(org.plan))
     return (
       <>
         <Body>
-          <Heading title={`${org.name} is on ${plans?.plans[current].name ?? (current === "cloud" ? "Dorks Cloud" : "Dorks Teams")}`}>Change plans or billing any time in Settings.</Heading>
+          <Heading title={`${org.name} is on ${plans?.plans.teams.name ?? "Dorks Teams"}`}>Change plans or billing any time in Settings.</Heading>
         </Body>
         <Actions onClick={() => void onNext()}>Continue</Actions>
       </>
     );
-  const { offered, anyTrial } = planOffer(trials);
+  const offer = teamsOffer(plans, trials, annual);
+  const { trial, days, price, per } = offer;
   return (
     <StepForm
       onSubmit={() =>
         void run(async () => {
           setError("");
           try {
-            await startCheckout(org.id, choice, anyTrial);
+            await startCheckout(org.id, { annual, trial });
           } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
             throw e;
@@ -248,13 +223,15 @@ function PlanStep({ progress, onNext, onSkip, refused }: StepProps & { refused: 
       }
     >
       <Body>
-        <PlanHeading org={org.name} trials={trials} offered={offered.length} anyTrial={anyTrial} />
-        <div role="radiogroup" aria-label="plan" className={cn("grid gap-3", offered.length > 1 && "grid-cols-2")}>
-          {offered.map((id) => (
-            <PlanCard key={id} id={id} plans={plans} selected={choice === id} trial={anyTrial} onSelect={() => setChoice(id)} />
-          ))}
-        </div>
-        {anyTrial && <p className="text-center text-xs text-muted-foreground">{PLAN_COPY[choice].after(priceOf(plans, choice))}</p>}
+        {trial ? (
+          <Heading title="Start your free trial">
+            {days} days of Dorks Teams for {org.name}. It takes a card and charges nothing today. Cancel any time.
+          </Heading>
+        ) : (
+          <Heading title="Subscribe to Dorks Teams">{trials?.teams.message ?? `One price for ${org.name}, monthly or yearly.`}</Heading>
+        )}
+        <TeamsCard offer={offer} annual={annual} onAnnual={setAnnual} />
+        {trial && <p className="text-center text-xs text-muted-foreground">{`Free for ${days} days, then ${price}/${per}.`}</p>}
         {error && (
           <p role="alert" className="text-center text-sm text-destructive">
             {error}
@@ -262,57 +239,44 @@ function PlanStep({ progress, onNext, onSkip, refused }: StepProps & { refused: 
         )}
       </Body>
       <Actions type="submit" disabled={pending || !trials}>
-        {pending ? "Opening Checkout…" : anyTrial ? "Start free trial" : "Subscribe"}
+        {pending ? "Opening Checkout…" : trial ? "Start free trial" : "Subscribe"}
       </Actions>
       <Skip onClick={() => onSkip("done")}>Not now</Skip>
     </StepForm>
   );
 }
 
-/** The plans whose trial may still start; with none left, both plans, to subscribe without a trial. */
-function planOffer(trials: Trials | undefined): { offered: readonly PaidPlan[]; anyTrial: boolean } {
-  const both = ["teams", "cloud"] as const;
-  const eligible = both.filter((id) => trials?.[id].eligible);
-  if (trials && eligible.length === 0) return { offered: both, anyTrial: false };
-  return { offered: trials ? eligible : both, anyTrial: true };
+type Offer = ReturnType<typeof teamsOffer>;
+
+/** What the plan step offers: the trial until the relay says it is used (or the org subscribed before), and the price per period. */
+function teamsOffer(plans: Plans | undefined, trials: Trials | undefined, annual: boolean) {
+  const teams = plans?.plans.teams;
+  return {
+    name: teams?.name ?? "Dorks Teams",
+    trial: trials ? trials.teams.eligible : true,
+    days: trials?.teams.days ?? 14,
+    price: dollars(annual ? (teams?.yearlyCents ?? 9600) : (teams?.monthlyCents ?? 1000)),
+    per: annual ? "year" : "month",
+  };
 }
 
-function PlanHeading({ org, trials, offered, anyTrial }: { org: string; trials?: Trials; offered: number; anyTrial: boolean }) {
-  if (!anyTrial) return <Heading title="Pick a plan">{trials?.cloud.message ?? trials?.teams.message ?? `Pick a plan for ${org}.`}</Heading>;
+/** Dorks Teams: its price for the period picked, the trial while one is on offer, and what it includes. */
+function TeamsCard({ offer, annual, onAnnual }: { offer: Offer; annual: boolean; onAnnual: (annual: boolean) => void }) {
   return (
-    <Heading title="Start your free trial">
-      Pick a plan for {org}. {offered > 1 ? "Both take a card and charge" : "It takes a card and charges"} nothing today. Cancel any time.
-    </Heading>
-  );
-}
-
-/** One plan to pick, as a radio card; its trial badge only while a trial is on offer. */
-function PlanCard({ id, plans, selected, trial, onSelect }: { id: PaidPlan; plans?: Plans; selected: boolean; trial: boolean; onSelect: () => void }) {
-  const plan = plans?.plans[id];
-  const copy = PLAN_COPY[id];
-  return (
-    <Card
-      role="radio"
-      aria-checked={selected}
-      tabIndex={0}
-      onClick={() => onSelect()}
-      onKeyDown={(e) => (e.key === " " || e.key === "Enter") && (e.preventDefault(), onSelect())}
-      className={cn("flex cursor-pointer flex-col gap-4 p-4 outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/30", selected && "border-brand dark:border-brand")}
-    >
-      <div className="flex items-start justify-between gap-2">
+    <Card className="flex flex-col gap-4 p-4">
+      <div className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <span className="font-medium">{plan?.name ?? (id === "teams" ? "Dorks Teams" : "Dorks Cloud")}</span>
+          <span className="font-medium">{offer.name}</span>
           <span className="text-muted-foreground">
-            <span className="text-foreground">{priceOf(plans, id)}</span>/month
+            <span className="text-foreground">{offer.price}</span>/{offer.per}
+            {annual && " · 2 months free"}
           </span>
         </div>
-        <span aria-hidden className={cn("flex size-4 shrink-0 items-center justify-center rounded-full border", selected ? "border-brand bg-brand text-brand-foreground" : "border-foreground/20")}>
-          {selected && <CheckIcon className="size-3" strokeWidth={3} />}
-        </span>
+        <Billing annual={annual} onChange={onAnnual} />
       </div>
-      {trial && <span className="w-fit rounded-full bg-brand/10 px-2 py-0.5 text-xs text-brand">{copy.trial}</span>}
+      {offer.trial && <span className="w-fit rounded-full bg-brand/10 px-2 py-0.5 text-xs text-brand">{offer.days}-day free trial</span>}
       <ul className="flex flex-col gap-2 text-muted-foreground">
-        {copy.points.map((p) => (
+        {TEAMS_POINTS.map((p) => (
           <li key={p} className="flex gap-2">
             <CheckIcon className="mt-px size-3.5 shrink-0 text-foreground" aria-hidden />
             {p}
@@ -323,7 +287,29 @@ function PlanCard({ id, plans, selected, trial, onSelect }: { id: PaidPlan; plan
   );
 }
 
-const priceOf = (plans: Plans | undefined, id: PaidPlan) => (plans ? dollars(plans.plans[id].monthlyCents) : id === "teams" ? "$5" : "$29");
+/** Monthly or yearly billing, as a two-way switch. */
+function Billing({ annual, onChange }: { annual: boolean; onChange: (annual: boolean) => void }) {
+  const option = (yearly: boolean, label: string) => (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={annual === yearly}
+      onClick={() => onChange(yearly)}
+      className={cn(
+        "rounded-[5px] px-2.5 py-1 text-xs outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/30",
+        annual === yearly ? "bg-background text-foreground" : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div role="radiogroup" aria-label="billing" className="flex shrink-0 gap-0.5 rounded-[6px] bg-foreground/[0.06] p-0.5">
+      {option(false, "Monthly")}
+      {option(true, "Yearly")}
+    </div>
+  );
+}
 
 // ---- 3. Invite ----------------------------------------------------------------------------------------------------------------
 
@@ -402,24 +388,6 @@ function Boat({ progress, onNext, onSkip }: StepProps) {
   // The fallback: a pasted API key, for a relay without Boat's sign-in, or someone who prefers one.
   const [useKey, setUseKey] = useState(keySaved && !signedIn);
   const { run, pending } = usePending();
-  if (org.plan === "cloud")
-    return (
-      <>
-        <Body>
-          <Heading title="Sandboxes are included">Dorks Cloud runs your team’s sandboxes on Dorks’ own Boat account. There’s nothing to connect.</Heading>
-          <List>
-            <li className="flex h-12 items-center justify-between px-4">
-              <span>Dorks Cloud sandboxes</span>
-              <span className="flex items-center gap-1.5">
-                <CheckIcon className="size-3.5" aria-hidden />
-                Included
-              </span>
-            </li>
-          </List>
-        </Body>
-        <Actions onClick={() => onSkip()}>Continue</Actions>
-      </>
-    );
   if (useKey) return <BoatKey progress={progress} onNext={onNext} onSkip={onSkip} onBack={signedIn ? undefined : () => setUseKey(false)} />;
   if (signedIn)
     return (

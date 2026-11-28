@@ -396,8 +396,8 @@ function useNewSessionLocation(preset?: DorkLocation) {
   const { actions } = useDorksClient()
   const [picked, setPicked] = useState<DorkLocation>()
   if (!settings?.local?.available) return undefined
-  // Dorks Free runs chats on this Mac only (docs/cloud.md): Cloud shows, but needs Teams or Cloud.
-  const cloudBlocked = settings.sandboxes?.available === false ? (settings.sandboxes.reason ?? 'Sandboxes need Dorks Teams or Dorks Cloud.') : undefined
+  // Dorks Free runs chats on this Mac only (docs/cloud.md): Cloud shows, but needs Teams.
+  const cloudBlocked = settings.sandboxes?.available === false ? (settings.sandboxes.reason ?? 'Sandboxes need Dorks Teams.') : undefined
   return {
     cloudBlocked,
     value: cloudBlocked ? 'local' : (picked ?? preset ?? settings.defaultLocation ?? 'cloud'),

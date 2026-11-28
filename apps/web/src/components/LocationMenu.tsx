@@ -49,7 +49,7 @@ export function LocationMenu({ choice, disabled }: { choice: LocationChoice; dis
               <DropdownMenuRadioItem key={l} value={l} disabled={l === 'cloud' && !!choice.cloudBlocked}>
                 <ItemIcon />
                 <span>{NAMES[l]}</span>
-                <span className="text-muted-foreground">{l === 'cloud' && choice.cloudBlocked ? 'Needs Teams or Cloud' : DETAILS[l]}</span>
+                <span className="text-muted-foreground">{l === 'cloud' && choice.cloudBlocked ? 'Needs Teams' : DETAILS[l]}</span>
               </DropdownMenuRadioItem>
             )
           })}

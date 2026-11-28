@@ -65,7 +65,7 @@ export interface ClientConfig extends ApiConfig {
   /** Where shared images load from (`<imageBaseUrl>/images/:id`); default `baseUrl`. Another server reached through this one serves them elsewhere. */
   imageBaseUrl?: string;
   /**
-   * A Dorks Cloud org (Teams or Cloud plan) served by the Worker: live updates come from s2 (cloud-live.ts) instead of `/api/live`,
+   * A Dorks Cloud org (Teams plan) served by the Worker: live updates come from s2 (cloud-live.ts) instead of `/api/live`,
    * and an open transcript receives its events from its session's stream. REST is the same.
    */
   cloud?: CloudLiveConfig;
@@ -589,7 +589,7 @@ export class DorksClient {
   cloud() {
     return this.query<CloudStatus>("cloud", () => this.api.cloud());
   }
-  /** The account's organizations and servers (its Macs, and the servers Dorks runs for its Teams and Cloud orgs); refreshed with `cloud`. */
+  /** The account's organizations and servers (its Macs, and the servers Dorks runs for its Teams orgs); refreshed with `cloud`. */
   cloudPlaces() {
     return this.query<CloudPlaces>("cloud:places", () => this.api.cloudPlaces());
   }
@@ -616,7 +616,7 @@ export class DorksClient {
   refreshCloudPlaces() {
     this.invalidate("cloud:places");
   }
-  /** An org's plan and limits (Dorks Cloud's entitlements): sandbox hours, the Cloud trial, overage, sandboxes at once. */
+  /** An org's plan and limits (Dorks Cloud's entitlements): members, the Teams trial, the production-like testing allowance. */
   cloudEntitlements(orgId: string) {
     return this.query<CloudEntitlements>(`cloud-entitlements:${orgId}`, () => this.api.cloudEntitlements(orgId));
   }

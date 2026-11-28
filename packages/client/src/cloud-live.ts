@@ -1,4 +1,4 @@
-// Live updates for a Dorks Cloud org (Teams or Cloud plan), which no server holds a stream open for: the org runtime publishes
+// Live updates for a Dorks Cloud org (Teams plan), which no server holds a stream open for: the org runtime publishes
 // invalidations to the org's `live/feed` stream on s2, and each session's bridge appends its events to the session's `events`
 // stream. Both are read straight from s2 with read-only tokens the Worker issues (`<realtimeUrl>/live-token`,
 // `<realtimeUrl>/sessions/:id/read-token`). Feed records are the same `LiveMessage`s as `/api/live`; session records are the

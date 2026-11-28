@@ -86,7 +86,7 @@ a README edit were judged `needs_live_test`, `needs_live_test`, `verified` and `
 Claude) the SessionStart line alone already had agents start the build's service or the server and curl the changed endpoint before
 stopping; the gate is the backstop.
 
-## Twin Engine: A/B on the box (cloud, Teams and above)
+## Twin Engine: A/B on the box (Dorks Teams)
 
 The **Validation Engine** is the testing above: the agent starts the build's services and exercises its change before it stops. The
 **Twin Engine** (dorks-cloud docs/prod-like-testing.md) adds production's shape: a database branch of scrubbed production as
@@ -100,3 +100,7 @@ The **Validation Engine** is the testing above: the agent starts the build's ser
   compares them and posts the `Dorks / Twin Engine` check on the head commit. The repository describes the run in
   `.dorks/prodlike.json` (`service`, `setup`, `seed`, `migrate`, `load`, `rounds`, `requests`, `concurrency`), and the load in
   `.dorks/load/*.mjs` (a weighted request list or a function). Only GET and HEAD are sent unless the team allows writes.
+
+Dorks Teams includes a monthly allowance for these prod-like checks ([cloud](cloud.md), "Plans"): 1,000,000 spans and 1,000 error
+events sent to Dorks' Sentry, and, when Dorks hosts the org's Neon data, 2 GB and 20 compute hours. Past a limit that part pauses
+until the 1st of next month (UTC), and nothing is billed extra; the setup and traces views carry the month's usage as `allowance`.

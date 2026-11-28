@@ -24,7 +24,7 @@ and agents never connect to the phone: the phone reads and writes the Mac's UI A
   only when the person it is for may make it: their `x-dorks-actor` token is checked against the cloud's keys and their role
   ([cloud](cloud.md)). A compromised relay can do no more than a signed-in member could.
 - **Servers belong to orgs.** A Mac pairs into an organization (the user's personal one by default); every member of it sees the
-  Mac in `GET /v1/macs` and reaches it through the relay. The server Dorks runs for a Teams or Cloud org (its `orgRuntime`) is one more entry, `kind: "hosted"`. Plans,
+  Mac in `GET /v1/macs` and reaches it through the relay. The server Dorks runs for a Teams org (its `orgRuntime`) is one more entry, `kind: "hosted"`. Plans,
   roles and identity: [cloud](cloud.md).
 - **Separate private repository** for the cloud service (`handlemotion/dorks-cloud`): it holds accounts and deploy config, while
   this repository is public. The protocol between the Mac and the relay is specified here, so either side can change against it.
@@ -105,7 +105,7 @@ socket (hibernatable WebSockets) and multiplexes phone requests over it.
 | `/api/auth/*` | | Better Auth (Apple ID token, Google OAuth, email code (`emailOTP`), `bearer`, `expo`, `organization` and `jwt` plugins) |
 | `GET /api/auth/jwks` | none | The keys identity tokens are signed with (EdDSA, Ed25519) |
 | `GET /api/auth/token` | session | An identity token for the session's active org |
-| `/api/auth/organization/*` | session | Teams: `create`, `invite-member`, `accept-invitation` (only the invited address), `update-member-role`, `remove-member`, `leave`, `set-active`, `delete`, `list-members`. Members plus open invitations up to the plan's `memberLimit` (`403 MEMBER_LIMIT_REACHED`; a fair-use cap on Teams and Cloud) |
+| `/api/auth/organization/*` | session | Teams: `create`, `invite-member`, `accept-invitation` (only the invited address), `update-member-role`, `remove-member`, `leave`, `set-active`, `delete`, `list-members`. Members plus open invitations up to the plan's `memberLimit` (`403 MEMBER_LIMIT_REACHED`; a fair-use cap on Teams) |
 | `GET /v1/orgs` | session | `{id, name, slug, logo, personal, role, active, plan}[]`: my orgs |
 | `GET /v1/orgs/:orgId/entitlements` | session, member | The org's plan ([cloud](cloud.md), "Plans") |
 | `GET /v1/sign-in-methods` | none | `{google, apple, email}`: which sign-in methods are configured |
@@ -160,7 +160,7 @@ Expo SDK 58, Expo Router, iOS 26+ look (Liquid Glass through native components),
 
 The desktop (and the web UI) works in Dorks Cloud **organizations** ([dorks-cloud](https://github.com/handlemotion/dorks-cloud), teams):
 every account has a personal org, made at sign-up, and can create or join others to share chats with friends or colleagues. Every
-server belongs to one org: a member's Mac (normally in its owner's personal org) or, on Dorks Teams and Dorks Cloud, the server Dorks runs for the org (`orgRuntime`).
+server belongs to one org: a member's Mac (normally in its owner's personal org) or, on Dorks Teams, the server Dorks runs for the org (`orgRuntime`).
 
 - **Sign-in** happens in the browser, started from Settings › Account or the sidebar switcher's *Sign in to Dorks Cloud*; the app
   has no sign-in form. The local server makes a one-time `state` (in memory, 30 minutes) and the app opens
@@ -200,19 +200,19 @@ server belongs to one org: a member's Mac (normally in its owner's personal org)
 | `DELETE /api/cloud/session` | | `{}`: signed out (here and, best effort, on the relay) |
 | `GET /api/cloud/places` | | `{orgs: {id, name, slug, logo, personal, plan, role, active, servers: {id, name, kind, online, lastSeenAt}[]}[]}`, personal first (the relay's `GET /v1/orgs`; an older relay's `/v1/macs` grouped by org); `not_configured` when signed out or the session ended |
 | `POST /api/cloud/orgs` | `{name}` | the new org, owned by the account |
-| `GET /api/cloud/orgs/:id/entitlements` | | the org's plan and limits (the relay's `GET /v1/orgs/:id/entitlements`): `{plan, includedMinutes, usedMinutes, periodEnd, overage, maxConcurrentSandboxes, trial, ...}`; the sidebar's Dorks Cloud hours (`CloudPlanIndicator`) |
-| `POST /api/cloud/orgs/:id/billing/portal`, `.../billing/checkout` | `{}`, `{plan}` | `{url}`: Stripe's portal or Checkout for the org (the relay's `/v1/billing/orgs/:id/*`, owner only), opened in the browser |
+| `GET /api/cloud/orgs/:id/entitlements` | | the org's plan and limits (the relay's `GET /v1/orgs/:id/entitlements`): `{plan, memberLimit, members, orgRuntime, periodEnd, trial, prodlike}` ([cloud](cloud.md), "Plans") |
+| `POST /api/cloud/orgs/:id/billing/portal`, `.../billing/checkout` | `{}`, `{plan: "teams", annual?}` | `{url}`: Stripe's portal or Checkout for the org (the relay's `/v1/billing/orgs/:id/*`, owner only), opened in the browser |
 | `GET\|POST /api/cloud/auth/organization/:action` | Better Auth's | team management as the signed-in account: `get-full-organization`, `list-user-invitations`, `get-invitation`, `invite-member`, `cancel-invitation`, `accept-invitation`, `reject-invitation`, `update-member-role`, `remove-member`, `leave`, `update`, `delete` (nothing else); a refusal is an AppError (`limit` for `MEMBER_LIMIT_REACHED`) |
 | `* /api/cloud/servers/:id/api/*` | any | that server's UI API through the relay |
 | `GET /cloud/servers/:id/images/:imageId` | | that server's shared image (no owner token) |
 
-`pnpm dev:mock` has the same routes with a fake account (any email, any six digits; `MOCK_CLOUD=1` starts signed in), three orgs (`MOCK_CLOUD_PLAN=paid|warn|used_up|trial|trial_used` sets the Cloud org's hours; `PUT /api/cloud/orgs/org-handlemotion/entitlements {scenario}` switches them live) and
+`pnpm dev:mock` has the same routes with a fake account (any email, any six digits; `MOCK_CLOUD=1` starts signed in), three orgs (`MOCK_PRODLIKE=ok|near|paused` sets this month's production-like testing usage on the Teams orgs' servers) and
 one in-memory mock server per remote server, so switching visibly changes the chats.
 
 ## Dorks Cloud
 
-Plans (Dorks Local, Dorks Teams, Dorks Cloud), teams and roles, identity tokens and what a team server does
-with them: [cloud](cloud.md). The server Dorks runs for a Teams or Cloud org is the same `apps/server`, dialing the relay like a Mac;
+Plans (Dorks Free, Dorks Teams), teams and roles, identity tokens and what a team server does
+with them: [cloud](cloud.md). The server Dorks runs for a Teams org is the same `apps/server`, dialing the relay like a Mac;
 the phone cannot tell them apart beyond `kind`.
 
 ## Not in v1

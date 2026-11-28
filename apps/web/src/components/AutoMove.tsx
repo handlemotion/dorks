@@ -4,7 +4,7 @@ import { useStoreValue } from '@dorks/client/react'
 import { isPaidOrg, runsOnWorker } from '../lib/place'
 import { orgName, type CloudPlace } from './CloudPlace'
 
-// A paid workspace (Dorks Teams or Dorks Cloud) runs in the cloud, never on a Mac (docs/move-to-cloud.md). One that this Mac still
+// A paid workspace (Dorks Teams) runs in the cloud, never on a Mac (docs/move-to-cloud.md). One that this Mac still
 // serves (a team paired before it paid, or the personal workspace that just upgraded) moves on its own the first time its owner or an
 // admin opens it here: the sessions pause and upload with their chats, builds, automations and the rest, then the app follows it to the
 // cloud. A move that fails (a session still working, the network) is not retried in a loop: Settings › Organization offers it again.

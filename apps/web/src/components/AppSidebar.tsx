@@ -18,7 +18,6 @@ import { HistoryButtons, TITLEBAR_AFTER_TOGGLE } from './WindowControls'
 import { useIsTeamOrg } from './CloudPlace'
 import { HERE, LOCATION_ICONS } from './LocationMenu'
 import { UpdatePrompt } from './UpdatePrompt'
-import { CloudPlanIndicator } from './CloudPlanIndicator'
 import { useRowHover } from './useRowHover'
 
 const PR_NUMBER = /\/pull\/(\d+)/
@@ -80,12 +79,7 @@ export function AppSidebar() {
         machines={<MachineRow />}
         limits={limits}
         version={window.__DORKS__?.version}
-        usage={
-          <>
-            <CloudPlanIndicator />
-            <UpdatePrompt />
-          </>
-        }
+        usage={<UpdatePrompt />}
         onArchive={(id) => void archive(id).catch((e: unknown) => toast.error(e instanceof Error ? e.message : 'Could not archive the chat'))}
       />
     </ChatPrefetch.Provider>

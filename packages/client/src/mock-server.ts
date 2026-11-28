@@ -5,9 +5,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { AgentModelChoice, ClientEvent, CommentAnchor, CommentView, LocalSkill, McpServerView, PullRequestView, ShipStage, ShipView, SkillCandidate, SkillView } from "@dorks/shared";
-import type { Dork, Me, PhoneStatus, Settings, SnapshotStatus } from "./types.ts";
+import type { Dork, Me, PhoneStatus, Settings, SnapshotStatus, TwinView } from "./types.ts";
 import { mockAutomations } from "./mock-automations.ts";
-import { mockCloud, type MockCloudPlace, type MockCloudPlan, type MockOrgRuntime } from "./mock-cloud.ts";
+import { mockCloud, mockProdlikeAllowance, type MockCloudPlace, type MockOrgRuntime, type MockProdlikeUsage } from "./mock-cloud.ts";
 
 /** A new session's mode (docs/modes.md) from its body: `mode`, or the older `kind: "coordinator"` for a nerd; code by default. */
 const modeOf = (body: Record<string, unknown>): "code" | "nerd" | undefined =>
@@ -38,8 +38,8 @@ export interface MockOptions {
   me?: Partial<Me>;
   /** Start signed in to the fake Dorks Cloud (mock-cloud.ts). */
   cloudSignedIn?: boolean;
-  /** The fake Dorks Cloud org's billing state (mock-cloud.ts). */
-  cloudPlan?: MockCloudPlan;
+  /** Production-like testing's usage this month on a Teams org's server (mock-cloud.ts). */
+  prodlikeUsage?: MockProdlikeUsage;
   /** Chats to start with, each running the fake agent's first turn (another place's server, mock-cloud.ts). */
   seed?: MockCloudPlace["seed"];
   /** A team the Worker runs, live from real s2 (mock-cloud.ts). */
@@ -1617,6 +1617,8 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
         return json(res, 200, { installed: pick.map((s) => s.name) });
       },
     ],
+    // Production-like testing (dorks-cloud src/prodlike), only on a Teams org's server: a hosted copy, built, with this month's allowance.
+    ["GET /api/prodlike/data", ({ res }) => (opts.me?.plan === "teams" ? json(res, 200, mockProdlike(opts.prodlikeUsage)) : fail(res, "not_found", "Production-like testing is not on this server."))],
     // The phone link (docs/mobile.md): a pairing the fake phone claims after 8 s.
     ["GET /api/phone", ({ res }) => json(res, 200, phone)],
     ["GET /api/me", ({ res }) => json(res, 200, { kind: "local", id: null, name: null, email: null, role: "owner", org: null, plan: null, serverOrg: null, ...opts.me } satisfies Me)],
@@ -1855,14 +1857,14 @@ export async function startMockServer(opts: MockOptions = {}): Promise<MockServe
   // Dorks Cloud (docs/mobile.md, "Desktop: Dorks Cloud"): its places are other mock servers, started the first time they are reached.
   const cloud = mockCloud({
     signedIn: opts.cloudSignedIn,
-    cloudPlan: opts.cloudPlan,
+    prodlikeUsage: opts.prodlikeUsage,
     orgRuntime: opts.orgRuntime,
     json,
     fail,
     readBody,
     broadcast,
     thisMac: () => ({ id: phone.macId, name: phone.name }),
-    startChild: (seed, me) => startMockServer({ configured: true, tick, seed, me }),
+    startChild: (seed, me, prodlikeUsage) => startMockServer({ configured: true, tick, seed, me, prodlikeUsage }),
   });
   const route = async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", "http://mock");
@@ -1989,5 +1991,36 @@ function mockPullRequest(repo: string, number: number, title: string): PullReque
       },
       { id: "r1", kind: "review", author: { login: "octocat" }, body: "", reviewState: "APPROVED", url: `https://github.com/${repo}/pull/${number}#pullrequestreview-1`, createdAt: now - 5 * 60_000 },
     ],
+  };
+}
+
+/** A Teams org's production-like testing setup in the mock: hosted by Dorks, its scrubbed copy built, refreshed nightly. */
+function mockProdlike(usage?: MockProdlikeUsage): TwinView {
+  const built = Date.now() - 5 * 3_600_000;
+  return {
+    allowed: true,
+    plan: "teams",
+    mode: "hosted",
+    neon: { connected: false, method: null, oauthAvailable: true, connectedAt: null },
+    hosted: { available: true, region: "aws-us-east-2", projectId: "mock-neon", awaitingUrl: null, usage: null },
+    twin: { envVar: "DATABASE_URL", orm: "drizzle" },
+    source: { kind: "url", projectId: "mock-neon", database: "app" },
+    parent: { branchId: "br-mock", name: "scrubbed", builtAt: built },
+    builds: [
+      {
+        id: "b1",
+        state: "ready",
+        trigger: "setup",
+        branch: "scrubbed",
+        stats: { tables: 18, columns: 164, masked: 11, ms: 41_200, warnings: [] },
+        error: null,
+        createdAt: built - 41_200,
+        finishedAt: built,
+      },
+    ],
+    rules: null,
+    refresh: { automationId: "a1", enabled: true, nextRunAt: Date.now() + 9 * 3_600_000, schedule: "Every night at 3:00" },
+    sessionsWithBranches: 2,
+    allowance: mockProdlikeAllowance(usage, true),
   };
 }
