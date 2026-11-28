@@ -383,9 +383,7 @@ export class DorksClient {
         this.invalidate("automation-runs"); // a run names its session, its title and state
         break;
       case "dork":
-        this.invalidate(`dork:${m.dorkId}`);
-        // The org runtime (a cloud org) only says which session changed: its row in the lists moved too (state, preview, title).
-        if (this.cfg.cloud) this.invalidateListsSoon();
+        this.dorkChanged(m.dorkId);
         break;
       case "events":
         // The rows themselves when the server sent them: folded in at once, no read (and nothing for the connection limit to queue).
@@ -437,6 +435,12 @@ export class DorksClient {
         this.invalidate("automation-runs");
         break;
     }
+  }
+
+  private dorkChanged(dorkId: string) {
+    this.invalidate(`dork:${dorkId}`);
+    // The org runtime (a cloud org) only says which session changed: its row in the lists moved too (state, preview, title).
+    if (this.cfg.cloud) this.invalidateListsSoon();
   }
 
   private listsTimer: ReturnType<typeof setTimeout> | undefined;
