@@ -17,6 +17,7 @@ import { Logo } from './onboarding/List'
 import { OwnerAvatar, ownerOf, REPO_ITEM } from './RepoAvatar'
 import { EnvironmentPicker, type EnvironmentChoice } from './EnvironmentPicker'
 import { HERE, LocationMenu, type LocationChoice } from './LocationMenu'
+import { VisibilityMenu, type VisibilityChoice } from './VisibilityMenu'
 import { MODE_HINTS, type ModeChoice } from './ModeMenu'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@dorks/ui/input-group'
 import { Tip } from './Tip'
@@ -821,6 +822,7 @@ export function Composer({
   build,
   environment,
   location,
+  visibility,
   local,
   mode,
   placeholder,
@@ -860,6 +862,8 @@ export function Composer({
   environment?: EnvironmentChoice
   /** The new session form's Cloud / Local choice (docs/local-dorks.md), when this client may start local sessions. */
   location?: LocationChoice
+  /** The new session form's Private / Team choice, in a team on Dorks Cloud. */
+  visibility?: VisibilityChoice
   /** An existing session that runs on this computer: the bar says so instead of naming a build. */
   local?: boolean
   /** The session's mode (docs/modes.md), set by the workspace: only code asks for a repository. */
@@ -1067,6 +1071,7 @@ export function Composer({
         <div className="flex items-center gap-2 px-[9px] pt-2 text-[13px] [--control-radius:6px]">
           {location && <LocationMenu choice={location} disabled={locked} />}
           <RepositoryControl repo={repo} build={build} environment={environment} disabled={locked} hidden={showRepo === false} needsRepo={needsRepo} local={local} />
+          {visibility && <VisibilityMenu choice={visibility} disabled={locked} />}
           <ModelMenu
             provider={provider}
             setProvider={setProvider}

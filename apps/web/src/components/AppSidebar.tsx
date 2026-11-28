@@ -59,6 +59,7 @@ export function AppSidebar() {
       mode: d.mode,
       parentId: d.parentId,
       createdBy: d.createdBy,
+      shared: d.shared,
     }))
   // Agents' changes waiting for the owner: a count beside Builds, so a proposal is found from anywhere.
   // Automations are a team's: a personal org has no server that is always on to run them (this Mac sleeps, goes offline).

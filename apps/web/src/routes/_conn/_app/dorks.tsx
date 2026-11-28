@@ -41,6 +41,7 @@ import { usePending } from '../../../lib/pending'
 import { useDraft, useDraftSetter } from '../../../lib/draft'
 import { useArchiveDork } from '../../../lib/archive'
 import { THUMB_WIDTH } from '../../../lib/images'
+import { useChatSharing, useNewChatSharing } from '../../../lib/share'
 
 // The selected dork lives in the `dork` search param (not local state) so the sidebar can highlight it and the URL is shareable.
 export const Route = createFileRoute('/_conn/_app/dorks')({
@@ -338,6 +339,9 @@ function NewDork({
   // Only a code session starts in its repository, so only its `@` menu has files to offer.
   const mentions = useMentions(provider, { repo: mode === 'code' ? repo || undefined : undefined })
   const picker = newSessionPicker(provider, settings, choice, setChoice)
+  // In a team on Dorks Cloud a chat is yours alone until you share it; this picks it for the new one.
+  const canShare = useNewChatSharing()
+  const [shared, setShared] = useState(false)
   return (
     <div className="[&>div]:max-w-none">
       {agent.notice && <AgentNotice provider={provider} />}
@@ -347,6 +351,7 @@ function NewDork({
         // Builds are cloud machines (docs/builds.md): a local session picks only its repository.
         environment={{ builds: local ? [] : built, repositories, value: local ? { buildId: null, repo } : env, onChange: setPicked }}
         location={location}
+        visibility={canShare ? { shared, onChange: setShared } : undefined}
         mode={{ value: mode }}
         provider={provider}
         setProvider={setProvider}
@@ -373,6 +378,7 @@ function NewDork({
                   // build (the server's fallback when buildId is omitted, a build without repositories included).
                   ...(mode === 'code' ? { repo: repo.trim(), buildId: local ? null : buildId } : {}),
                   ...(local ? { location: 'local' as const } : {}),
+                  ...(canShare && shared ? { shared: true } : {}),
                   message: withImages(message, images),
                   provider,
                   ...startChoice(provider, picker),
@@ -554,6 +560,7 @@ function CodexModelForm({ dork }: { dork: DorkView }) {
 
 function Thread({ dorkId }: { dorkId: string }) {
   const { actions } = useDorksClient()
+  const sharing = useChatSharing()
   const navigate = useNavigate()
   const dork = useDork(dorkId)
   const { view, loading } = useDorkEvents(dorkId)
@@ -620,6 +627,7 @@ function Thread({ dorkId }: { dorkId: string }) {
                 <ChatMenu
                   prUrl={dork.prUrl}
                   detailsOpen={detailsOpen}
+                  sharing={sharing(dork)}
                   onDelete={async () => {
                     // Gone from the sidebar at once (optimistic); the page leaves without waiting for the box to be destroyed.
                     const done = actions.deleteDork(dorkId)

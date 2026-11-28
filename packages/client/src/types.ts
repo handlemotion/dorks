@@ -117,6 +117,8 @@ export interface Dork {
   icon?: string;
   /** The teammate who started it on a team server (docs/cloud.md); absent for the local owner, automations and older servers. */
   createdBy?: Person;
+  /** In a Teams org on Dorks Cloud: the team sees it, or (false) only `createdBy` does until they share it. Absent elsewhere. */
+  shared?: boolean;
   lastActivityAt: number;
   createdAt: number;
 }
@@ -142,6 +144,8 @@ export interface CreateDorkInput {
   fast?: boolean;
   /** cloud (default) or local: on the owner's computer, only when `Settings.local.available` (docs/local-dorks.md). */
   location?: DorkLocation;
+  /** Dorks Cloud only: share it with the team from the start; omitted, it is private to you until you share it. */
+  shared?: boolean;
 }
 
 /** Plain values and booleans only: the server never returns a secret. */

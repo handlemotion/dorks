@@ -180,6 +180,7 @@ export function createApi(config: ApiConfig) {
     getDork: (id: string) => request<Dork>("GET", dork(id)),
     createDork: (input: CreateDorkInput) => request<{ id: string }>("POST", "/api/dorks", input),
     renameDork: (id: string, title: string) => request<object>("PATCH", dork(id), { title }),
+    shareDork: (id: string, shared: boolean) => request<object>("PATCH", dork(id), { shared }),
     deleteDork: (id: string) => request<object>("DELETE", dork(id)),
     sendMessage: (id: string, text: string) => request<object>("POST", `${dork(id)}/messages`, { text }),
     /** Queues a message for when the current turn ends; sent at once (`queued: false`) when no turn is running. */

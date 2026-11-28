@@ -747,6 +747,13 @@ export class DorksClient {
         () => this.api.renameDork(id, title),
       );
     },
+    /** Dorks Cloud: shares the chat with the team, or makes it private to who started it again. */
+    shareDork: async (id: string, shared: boolean) => {
+      await this.optimistic(
+        this.dorkEdits(id, (d) => ({ ...d, shared })),
+        () => this.api.shareDork(id, shared),
+      );
+    },
     deleteDork: async (id: string) => {
       const gone = (rows: Dork[]) => rows.filter((d) => d.id !== id);
       await this.optimistic(
