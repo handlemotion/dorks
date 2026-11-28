@@ -2,6 +2,8 @@ name: Close external pull requests
 
 # The project does not take outside pull requests (CONTRIBUTING.md). This runs on the base repo's workflow definition and never
 # checks out or runs code from the pull request, so it is safe with pull_request_target.
+# A pull request whose branch lives in this repository is not external: only someone with write access can push one. That covers
+# the dorks-agents GitHub app, whose pull requests GitHub reports with author_association NONE.
 on:
   pull_request_target:
     types: [opened, reopened]
@@ -11,7 +13,7 @@ permissions:
 
 jobs:
   close:
-    if: ${{ !contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association) }}
+    if: ${{ github.event.pull_request.head.repo.full_name != github.repository && !contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
