@@ -35,7 +35,7 @@ const INSTRUCTIONS: Record<NotifyKind, string> = {
   base_changed:
     "The PR's base branch changed (for example a stack parent was merged). Rebase onto (or merge) the new base, validate locally, then push; use `git push --force-with-lease` if you rebased.",
   ready:
-    "CI is green and the PR is approved. Ask the user to merge it with the `pr_merge_request` tool (a Merge / Not now card in their chat), unless you already asked for this commit, then stop; their answer arrives as your next turn. Never merge it yourself.",
+    "CI is green and the PR is approved. Ask the user to merge it with the `pr_merge_request` tool (a Merge / Not now card in their chat), unless you already asked for this commit, then stop; their Merge merges it (you never merge after it), and the outcome arrives as your next turn. If the user already told you in the chat to merge it, merge it yourself with `gh pr merge` instead; otherwise never merge it yourself.",
   closed:
     "The PR was closed or merged and your subscription to it has ended. Merged: don't push to this branch again; follow-ups go in a new PR from main (a new branch from `origin/main`). Closed: leave it alone.",
   deployed:

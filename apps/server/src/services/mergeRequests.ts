@@ -8,7 +8,8 @@ import { defaultMergeMethod, mergePullRequest, pullHead } from "./pullRequest";
 // Asking to merge (docs/autonomy.md, "Asking to merge"): when one of its PRs is ready, the agent asks the owner with the
 // `pr_merge_request` tool instead of stopping. The owner sees a card in the chat (Merge / Not now); Merge merges the head the agent
 // asked about, pinned to that commit, so nothing pushed after the card appeared is merged unseen. The answer reaches the agent as its
-// next turn, so it carries on (follows the ship, fixes what GitHub refused, or leaves the PR alone). The agent never merges itself.
+// next turn, so it carries on (follows the ship, fixes what GitHub refused, or leaves the PR alone). The agent merges itself only a PR
+// the owner told it to merge in the chat.
 
 export const MAX_NOTE_CHARS = 500;
 

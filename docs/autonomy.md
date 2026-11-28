@@ -12,7 +12,7 @@ Claude Code stays stock. Autonomy is built from the bridge, plus hooks, a `gh` s
 | 2 | **Comment authors:** a `commentPolicy` setting (`packages/shared/src/autonomy.ts`): `all` (the default) or an `allowlist` of GitHub logins (bots by login, for example `coderabbitai[bot]`). The token's owner always passes. The agent comments as the token's owner too, so a comment or review by that login counts as the agent's (and is dropped) when GitHub stamped it while a dork subscribed to the PR was mid-turn, or within 15 s after; written while every such dork was idle or asleep, it is the owner's and wakes the dork. An owner comment made mid-turn is dropped: say it in the chat instead. |
 | 3 | **Identity:** the dork comments and pushes as your GitHub CLI login ([GitHub](github.md)). |
 | 4 | **Subscriptions:** several dorks may subscribe to one PR. A dork auto-subscribes to PRs it creates. The user can subscribe it to any other PR. At most 50 live subscriptions per dork. |
-| 5 | **When a PR is ready, the agent asks to merge** with the `pr_merge_request` tool: a Merge / Not now card in the chat, and the owner's answer is its next turn, so it carries on. Merge merges the commit it asked about. It never merges by itself (see "Asking to merge"). |
+| 5 | **When a PR is ready, the agent asks to merge** with the `pr_merge_request` tool: a Merge / Not now card in the chat, and the owner's answer is its next turn, so it carries on. Merge merges the commit it asked about. When the owner told it in the chat to merge a PR, it merges it itself instead (see "Asking to merge"). |
 | 6 | **Workflows:** the token needs workflow write access, so the agent may fix CI configuration. |
 | 7 | **CI fixes: at most `CI_FIX_MAX_ATTEMPTS = 2` in a row per PR.** A third consecutive failure stalls the subscription: no more CI notifications, one transcript event, and one PR comment (posted with the token) saying a human is needed. The counter resets on green CI, a person's comment that passes the policy, a user message to the dork, or a manual resubscribe. |
 | 8 | **Validate locally before pushing.** The Stop hook and every CI-failure notification tell the agent to reproduce the failure and run the repo's checks locally before it pushes. |
@@ -29,7 +29,7 @@ A ready PR should not end in a standby note the owner has to notice. The agent c
 - The outcome is delivered as a `notify` command, so it waits for the turn boundary instead of landing mid-turn as a side note.
 - A PR merged or closed another way (on GitHub, from the PR tab) settles a card still waiting for it. A merge a restart interrupted is answerable again; a Merge on a PR that is already merged reads as merged.
 
-The agent never merges itself (`gh pr merge`, the API): the card is the only way.
+The card is for PRs the agent needs merged without having been told to. When the owner says in the chat to merge a PR ("merge the release PR"), that is the approval: the agent merges it itself with `gh pr merge` once it can merge, without a card. It never merges a PR the owner has not told it to merge.
 
 ## Why the bridge is the channel
 
@@ -124,7 +124,7 @@ Rendering is done by the server: one `<dorks-event>` envelope per notification, 
 - CI failure: "fetch the failing logs with `gh run view --log-failed`, reproduce locally, fix, run the checks locally, then push. This is attempt n of 2."
 - Review comments: "address each comment, reply to it with `gh`, validate locally, push."
 - Conflict: "rebase or merge the base, resolve, validate locally, push (force-with-lease for rebases)."
-- Ready: "ask the owner to merge with `pr_merge_request`; never merge yourself."
+- Ready: "ask the owner to merge with `pr_merge_request`, unless they already told you to merge it: then merge it yourself."
 
 ### Bridge (`infra/bridge`)
 
