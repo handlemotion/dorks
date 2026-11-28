@@ -369,19 +369,26 @@ const pollEndedState = (app: App, token: string, sub: Subscription): Effect.Effe
   );
 };
 
-/** When each merged PR's branch was last read, with its ETag. In memory, like `endedReads`. */
-const branchReads = new WeakMap<App, Map<number, { at: number; etag?: string }>>();
+/**
+ * When each merged PR's branch was last read, with its ETag and the head it showed. `covered`: that head was a late push an open PR
+ * covered, so it is asked about again on every read (a 304 says the branch did not move, not that the PR is still open). In memory.
+ */
+const branchReads = new WeakMap<App, Map<number, { at: number; etag?: string; sha?: string; covered?: boolean }>>();
 
-/** Whether a merged PR's branch, now at `sha`, has commits on top of the merged head and no new open PR: a late push to warn about. */
-const latePush = (gh: GithubClient, sub: Subscription, merged: NonNullable<PollState["merged"]>, sha: string): Effect.Effect<boolean, GithubError> =>
+/**
+ * What a merged PR's branch, now at `sha`, is: `late` (commits on top of the merged head, in no PR: warn), `covered` (on top, but a
+ * new open PR comes from the branch: ask again later, that PR may close unmerged) or `fine` (recreated from the base, rewritten).
+ */
+const latePush = (gh: GithubClient, sub: Subscription, merged: NonNullable<PollState["merged"]>, sha: string): Effect.Effect<"late" | "covered" | "fine", GithubError> =>
   Effect.gen(function* () {
     // A branch recreated from the base (or rewritten) is not the merged work plus more: only "ahead" is.
     const cmp = yield* getCached(gh, GhCompare, `/repos/${sub.repo}/compare/${merged.headSha}...${sha}`);
-    if (cmp.status !== 200 || cmp.json.status !== "ahead") return false;
+    if (cmp.status !== 200 || cmp.json.status !== "ahead") return "fine";
     // Already on its way in through a new PR from the same branch: nothing is lost.
     const owner = sub.repo.split("/")[0]!;
     const open = yield* getCached(gh, GhPrList, `/repos/${sub.repo}/pulls?state=open&head=${encodeURIComponent(`${owner}:${merged.headRef}`)}&per_page=5`);
-    return open.status === 200 && open.json.length === 0;
+    if (open.status !== 200) return "fine";
+    return open.json.length ? "covered" : "late";
   });
 
 /**
@@ -400,10 +407,13 @@ const pollMergedBranch = (app: App, token: string, sub: Subscription): Effect.Ef
   const path = `/repos/${sub.repo}/branches/${encodeURIComponent(merged.headRef)}`;
   return Effect.gen(function* () {
     const r = yield* getCached(gh, GhBranch, path, last?.etag);
-    reads.set(sub.id, { at: app.now(), etag: r.status === 200 ? r.etag : last?.etag });
-    if (r.status !== 200 || r.json.commit.sha === merged.headSha) return undefined;
-    const sha = r.json.commit.sha;
-    if (!(yield* latePush(gh, sub, merged, sha))) return undefined;
+    const sha = r.status === 200 ? r.json.commit.sha : last?.sha;
+    const etag = r.status === 200 ? r.etag : last?.etag;
+    reads.set(sub.id, { at: app.now(), etag, sha });
+    if (!sha || sha === merged.headSha || (r.status !== 200 && !last?.covered)) return undefined;
+    const verdict = yield* latePush(gh, sub, merged, sha);
+    if (verdict === "covered") reads.set(sub.id, { at: app.now(), etag, sha, covered: true });
+    if (verdict !== "late") return undefined;
     app.db.tx(() => {
       const cur = getSub(app, sub.id);
       if (!cur?.poll?.merged || cur.poll.merged.warned) return;

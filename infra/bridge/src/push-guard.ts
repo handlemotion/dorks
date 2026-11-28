@@ -162,8 +162,11 @@ export function findPushes(command: string, cwd: string, ran = false): PushCall[
       const [cmd = "", arg] = w;
       if (SHELLS.test(cmd)) {
         const c = w.findIndex((x) => /^-[a-z]*c[a-z]*$/.test(x));
+        // A child shell's `cd` stays in the child; a branch it may have switched (`moved`) is the repo's, so that carries over.
+        const dir = state.dir;
         if (c !== -1 && w[c + 1]) walk(w[c + 1]!);
         else state.moved = true; // a script file: unknown
+        state.dir = dir;
       } else if (cmd === "cd") {
         if (arg && arg !== "-") state.dir = resolve(state.dir, arg);
       } else if (/(?:^|\/)git$/.test(cmd) && w[gitSub(w, state.dir).i] === "push") {

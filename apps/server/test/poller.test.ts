@@ -257,13 +257,11 @@ describe("poller", () => {
     // Commits on top, but already in a new open PR from the branch: nothing is lost.
     s.gh.state.openFromBranch = [{ number: 8 }];
     expect(await late("ddd4444")).toEqual(["closed"]);
-    // Commits on top and in no PR: the agent is told once.
+    expect(await late("ddd4444")).toEqual(["closed"]); // the branch did not move (304) and the PR is still open
+    // That PR closes unmerged and the branch stays where it was: those commits are in no PR now, and the agent is told once.
     s.gh.state.openFromBranch = [];
-    s.gh.state.branchSha = "bbb2222";
-    s.h.clock.t += MERGED_BRANCH_MS;
-    await pollOnce(s.h.app);
-    expect(s.inbox().map((r) => r.kind)).toEqual(["closed", "pushed_after_merge"]);
-    expect(s.inbox()[1]!.summary).toContain("bbb2222");
+    expect(await late("ddd4444")).toEqual(["closed", "pushed_after_merge"]);
+    expect(s.inbox()[1]!.summary).toContain("ddd4444");
     s.gh.state.branchSha = "ccc3333";
     s.h.clock.t += MERGED_BRANCH_MS;
     expect(await pollOnce(s.h.app)).toBeNull(); // warned once: nothing left to watch

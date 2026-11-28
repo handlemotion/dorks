@@ -515,6 +515,9 @@ describe("push guard", () => {
     expect(asked.asked).toEqual(["acme/demo followup2"]);
     expect((await guard(merged).pre("pnpm test 2>&1 && git push")).hookSpecificOutput.permissionDecision).toBe("deny"); // still blocked
     expect((await guard(merged).pre("git switch -c x && git push origin HEAD:feat")).hookSpecificOutput.permissionDecision).toBe("deny");
+    // A nested shell's `cd` stays in it: the push runs in this repo. A branch it may have switched still counts.
+    expect((await guard(merged).pre("bash -c 'cd /tmp && git status' && git push origin HEAD")).hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(await guard(merged).pre("bash -c 'cd /tmp && git switch -c y' && git push origin HEAD")).toBeNull();
 
     const unknown = await guard(null).pre("git push origin HEAD:feat");
     expect(unknown.hookSpecificOutput.permissionDecision).toBeUndefined();
