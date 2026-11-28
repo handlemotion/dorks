@@ -972,6 +972,14 @@ export class DorksClient {
         this.invalidate("settings");
       }
     },
+    /** Disconnects a Dorks Teams org's Sign in with Boat. */
+    signOutBoat: async () => {
+      try {
+        await this.api.signOutBoat();
+      } finally {
+        this.invalidate("settings");
+      }
+    },
     /** Starts "Prepare Boat". Resolves with the status right after it started; follow progress with `snapshot()` / `useSnapshot()`. */
     buildSnapshot: async (force = false) => {
       try {

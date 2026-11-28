@@ -166,6 +166,12 @@ export interface Settings {
   github: { configured: boolean; login?: string | null; problem?: string };
   /** Connecting Boat with the Boat CLI's login while no key is saved; null once one is, or with simulated sandboxes. Absent on older servers. */
   boatSignIn?: BoatSignIn | null;
+  /**
+   * A Dorks Teams org on the Worker: Sign in with Boat (Boat's OAuth, the Worker's `/api/boat/sign-in`). `available` when the Worker
+   * has Boat's OAuth app, `connected` once the team signed in, `keySaved` when a pasted key is saved too (`boatKey` is either one).
+   * Absent elsewhere (a local server, Dorks Cloud, older Workers).
+   */
+  boatOAuth?: { available: boolean; connected: boolean; keySaved?: boolean } | null;
   boatOrg: string | null;
   boatEnvironment: string | null;
   baseSnapshotId: string | null;
