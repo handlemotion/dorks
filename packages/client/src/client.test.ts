@@ -63,6 +63,23 @@ describe("live stream", () => {
   });
 });
 
+describe("live stream holders", () => {
+  it("stays open while anyone holds it: one holder letting go never closes it under another", async () => {
+    client = createClient({ baseUrl: server.url, token: server.token, pageSize: 40, retryDelay: () => 20 });
+    const c = client;
+    const place = c.start(); // the cloud place, watching the home server while it resolves
+    const screen = c.start(); // the screen's DorksProvider, mounted before the place lets go
+    place();
+    place(); // a second release of the same hold changes nothing
+    const dorks = watch(c.dorks(false));
+    await waitFor(() => c.connectionStore.getSnapshot().live === "live" && dorks.getSnapshot().status === "ready", "live");
+    const { id } = await c.api.createDork({ repo: "acme/demo", message: "x" }); // only the stream can tell the list about it
+    await waitFor(() => dorks.getSnapshot().data?.some((d) => d.id === id), "listed through the live stream");
+    screen();
+    expect(c.connectionStore.getSnapshot().live).toBe("connecting"); // closed with the last holder, and says so
+  });
+});
+
 describe("events feed", () => {
   const settled = (c: DorksClient, id: string) =>
     waitFor(() => {

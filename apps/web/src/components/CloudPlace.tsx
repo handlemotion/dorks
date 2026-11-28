@@ -89,11 +89,9 @@ export function CloudPlaceProvider({ conn, children }: { conn: { serverUrl: stri
   // The home server's live stream is what tells the app its cloud session changed (signed out, expired: `{t: "settings"}`). While
   // the app shows another server, or asks which Mac to connect to, no DorksProvider runs it, so it runs here.
   const homeShown = target.kind === 'home' && !resolving
-  useEffect(() => {
-    if (homeShown) return
-    home.start()
-    return () => home.close()
-  }, [home, homeShown])
+  // It holds the stream rather than opening and closing it: when the app comes back to the home server, its DorksProvider holds the
+  // same stream, and letting go here must not close it under the screen (which then froze on whatever it last read).
+  useEffect(() => (homeShown ? undefined : home.start()), [home, homeShown])
 
   const place: CloudPlace = {
     home,
