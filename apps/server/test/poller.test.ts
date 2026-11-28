@@ -38,6 +38,10 @@ function github() {
     closedBy: null as null | { login: string; type: string },
     /** The PR's branch as GitHub has it now; null: deleted. */
     branchSha: "aaa1111" as string | null,
+    /** compare/aaa1111...<sha> -> its status; "ahead" when not listed. */
+    compare: {} as Record<string, string>,
+    /** Open PRs from the branch (`pulls?state=open&head=…`). */
+    openFromBranch: [] as { number: number }[],
     missing: false,
     rateLimitedUntil: 0,
     unauthorized: false,
@@ -48,6 +52,14 @@ function github() {
     const sent = new Headers(init?.headers).get("if-none-match");
     if (sent === tag) return new Response(null, { status: 304, headers: { etag: tag } });
     return new Response(JSON.stringify(body), { status: 200, headers: { etag: tag, "content-type": "application/json" } });
+  };
+  // After a merge: the branch, how it compares to the merged head, and open PRs from it.
+  const branchRoutes = (p: string, url: URL, init: RequestInit | undefined): Response | undefined => {
+    const cmp = /^\/repos\/octo\/hello\/compare\/aaa1111\.\.\.(\w+)$/.exec(p);
+    if (cmp) return conditional(url, init, { status: state.compare[cmp[1]!] ?? "ahead" });
+    if (p === "/repos/octo/hello/pulls" && url.searchParams.get("head") === "octo:agent/x" && url.searchParams.get("state") === "open") return conditional(url, init, state.openFromBranch);
+    if (p === "/repos/octo/hello/branches/agent%2Fx") return state.branchSha ? conditional(url, init, { commit: { sha: state.branchSha } }) : new Response("{}", { status: 404 });
+    return undefined;
   };
   const f = fakeFetch((url, init) => {
     const auth = new Headers(init?.headers).get("authorization");
@@ -64,7 +76,8 @@ function github() {
     if (p === "/repos/octo/hello/pulls/7/reviews") return conditional(url, init, state.reviews);
     if (p === "/repos/octo/hello/issues/7/comments") return conditional(url, init, after(state.issueComments));
     if (p === "/repos/octo/hello/pulls/7/comments") return conditional(url, init, after(state.reviewComments));
-    if (p === "/repos/octo/hello/branches/agent%2Fx") return state.branchSha ? conditional(url, init, { commit: { sha: state.branchSha } }) : new Response("{}", { status: 404 });
+    const branch = branchRoutes(p, url, init);
+    if (branch) return branch;
     const m = /^\/repos\/octo\/hello\/commits\/([^/]+)\/check-suites$/.exec(p);
     if (m) return conditional(url, init, { check_suites: state.suites[m[1]] ?? [] });
     return new Response("{}", { status: 404 });
@@ -230,8 +243,22 @@ describe("poller", () => {
     expect(s.h.events(s.id).map((e) => e.body.type)).toContain("pr_merged");
     expect(s.inbox().map((r) => r.kind)).toEqual(["closed"]);
     expect(s.inbox()[0]!.summary).toContain("Don't push to this branch (agent/x) again");
-    // Only the merged branch is still read, for a push that came too late. One lands: the agent is told once.
+    // Only the merged branch is still read, for a push that came too late.
     expect(await pollOnce(s.h.app)).toBe(MERGED_BRANCH_MS);
+    const late = async (sha: string) => {
+      s.gh.state.branchSha = sha;
+      s.h.clock.t += MERGED_BRANCH_MS;
+      await pollOnce(s.h.app);
+      return s.inbox().map((r) => r.kind);
+    };
+    // Recreated from the base (not the merged work plus more): not a late push.
+    s.gh.state.compare.eee5555 = "diverged";
+    expect(await late("eee5555")).toEqual(["closed"]);
+    // Commits on top, but already in a new open PR from the branch: nothing is lost.
+    s.gh.state.openFromBranch = [{ number: 8 }];
+    expect(await late("ddd4444")).toEqual(["closed"]);
+    // Commits on top and in no PR: the agent is told once.
+    s.gh.state.openFromBranch = [];
     s.gh.state.branchSha = "bbb2222";
     s.h.clock.t += MERGED_BRANCH_MS;
     await pollOnce(s.h.app);

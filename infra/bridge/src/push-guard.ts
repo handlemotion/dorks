@@ -79,7 +79,7 @@ export function shellSegments(command: string): string[][] {
     } else if (c === "\\" && i + 1 < command.length) {
       word += command[++i];
       inWord = true;
-    } else if (c === ";" || c === "\n" || c === "&" || c === "|" || c === "(" || c === ")") endSegment();
+    } else if (c === ";" || c === "\n" || c === "|" || c === "(" || c === ")" || (c === "&" && !/[<>]/.test(command[i - 1] ?? "") && command[i + 1] !== ">")) endSegment();
     else if (c === " " || c === "\t") endWord();
     else {
       word += c;
@@ -90,17 +90,35 @@ export function shellSegments(command: string): string[][] {
   return segments;
 }
 
-/** A `git push` found in a command: the directory it runs in and its arguments after `push`. */
+/**
+ * A `git push` found in a command: the directory it runs in and its arguments after `push`. `moved`: something earlier in the same
+ * command may have changed the checked-out branch (`git switch -c`, `checkout`, `branch -m`, a script the guard cannot read), so
+ * what HEAD is now says nothing about what the push will send.
+ */
 export interface PushCall {
   dir: string;
   args: string[];
+  moved: boolean;
 }
 
 const SHELLS = /^(?:\/\S*\/)?(?:ba|z|da)?sh$/;
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+/** git subcommands that never change which branch is checked out (`branch` only without a rename or copy). Any other may. */
+const GIT_STAYS = new Set(
+  "add commit status diff log show fetch push pull merge cherry-pick revert restore rm mv stash tag config remote rev-parse rev-list describe ls-files ls-remote blame grep notes shortlog cat-file merge-base for-each-ref show-ref apply clean gc fsck branch range-diff format-patch help version".split(
+    " ",
+  ),
+);
+const BRANCH_MOVES = /^-(?:[a-zA-Z]*[mMcC][a-zA-Z]*|-move|-copy)$/;
+/** Commands that leave git alone. Anything not listed (a script, `make`) may switch branches as far as the guard can tell. */
+const LEAVES_GIT = new Set(
+  "pnpm npm yarn bun npx bunx node deno vp tsc vitest jest pytest python python3 cargo go echo printf cat ls grep rg sed awk head tail wc true false test [ sleep pwd mkdir touch cp mv rm chmod export set".split(
+    " ",
+  ),
+);
 
-/** The `push` call of one `git …` command's words, with `-C` applied to `dir`; null when it is another subcommand. */
-function gitPush(w: string[], dir: string): PushCall | null {
+/** Index of the git subcommand in one `git …` command's words, with `-C` applied to `dir`. */
+function gitSub(w: string[], dir: string): { i: number; dir: string } {
   let i = 1;
   let gitDir = dir;
   while (i < w.length && w[i]!.startsWith("-")) {
@@ -109,7 +127,19 @@ function gitPush(w: string[], dir: string): PushCall | null {
     if (opt === "-C" && w[i + 1]) gitDir = resolve(gitDir, w[i + 1]!);
     i += valued ? 2 : 1;
   }
-  return w[i] === "push" ? { dir: gitDir, args: w.slice(i + 1) } : null;
+  return { i, dir: gitDir };
+}
+
+/** Whether one simple command (not a push, a `cd` or a nested shell) may change the checked-out branch. */
+function mayMoveHead(w: string[], dir: string): boolean {
+  const [cmd = ""] = w;
+  if (/(?:^|\/)git$/.test(cmd)) {
+    const { i } = gitSub(w, dir);
+    const sub = w[i] ?? "";
+    return !GIT_STAYS.has(sub) || (sub === "branch" && w.slice(i + 1).some((x) => BRANCH_MOVES.test(x)));
+  }
+  if (cmd === "gh") return w[1] === "pr" && w[2] === "checkout";
+  return !LEAVES_GIT.has(cmd);
 }
 
 /** The words of a simple command without what only prefixes it (`FOO=1`, `env`, `command`, `exec`). */
@@ -119,23 +149,30 @@ function bare(seg: string[]): string[] {
   return w;
 }
 
-/** Every `git push` in a shell command, following `cd`, `git -C` and `bash -c '…'` (how Codex reports its commands). */
-export function findPushes(command: string, cwd: string): PushCall[] {
+/**
+ * Every `git push` in a shell command, following `cd`, `git -C` and `bash -c '…'` (how Codex reports its commands). `ran`: the
+ * command already ran (after the fact), so HEAD is what it pushed and nothing counts as `moved`.
+ */
+export function findPushes(command: string, cwd: string, ran = false): PushCall[] {
   if (!/\bpush\b/.test(command)) return [];
   const out: PushCall[] = [];
-  let dir = cwd;
-  for (const w of shellSegments(command).map(bare)) {
-    const [cmd = "", arg] = w;
-    if (SHELLS.test(cmd)) {
-      const c = w.findIndex((x) => /^-[a-z]*c[a-z]*$/.test(x));
-      if (c !== -1 && w[c + 1]) out.push(...findPushes(w[c + 1]!, dir));
-    } else if (cmd === "cd") {
-      if (arg && arg !== "-") dir = resolve(dir, arg);
-    } else if (/(?:^|\/)git$/.test(cmd)) {
-      const push = gitPush(w, dir);
-      if (push) out.push(push);
+  const state = { dir: cwd, moved: false };
+  const walk = (cmdline: string) => {
+    for (const w of shellSegments(cmdline).map(bare)) {
+      const [cmd = "", arg] = w;
+      if (SHELLS.test(cmd)) {
+        const c = w.findIndex((x) => /^-[a-z]*c[a-z]*$/.test(x));
+        if (c !== -1 && w[c + 1]) walk(w[c + 1]!);
+        else state.moved = true; // a script file: unknown
+      } else if (cmd === "cd") {
+        if (arg && arg !== "-") state.dir = resolve(state.dir, arg);
+      } else if (/(?:^|\/)git$/.test(cmd) && w[gitSub(w, state.dir).i] === "push") {
+        const { i, dir } = gitSub(w, state.dir);
+        out.push({ dir, args: w.slice(i + 1), moved: !ran && state.moved });
+      } else if (mayMoveHead(w, state.dir)) state.moved = true;
     }
-  }
+  };
+  walk(command);
   return out;
 }
 
@@ -172,7 +209,11 @@ export function refspec(raw: string, current: string | null): { src: string; dst
   return src && dst ? { src, dst } : null;
 }
 
-/** The branches one `git push` writes, read from the repo it runs in. Anything unclear is left out: the guard never guesses. */
+/**
+ * The branches one `git push` writes, read from the repo it runs in. Anything unclear is left out: the guard never guesses. After a
+ * possible branch change earlier in the command (`moved`), only an explicitly named destination branch is checked, and what HEAD
+ * points to now is not taken for what is pushed.
+ */
 export async function pushTargets(call: PushCall, env: NodeJS.ProcessEnv, runAs: Identity | null): Promise<PushTarget[]> {
   const parsed = pushArgs(call.args);
   if (!parsed) return [];
@@ -181,7 +222,8 @@ export async function pushTargets(call: PushCall, env: NodeJS.ProcessEnv, runAs:
     const r = await runGit(["--no-optional-locks", ...args], call.dir, genv, runAs, GIT_TIMEOUT_MS);
     return r.code === 0 ? r.stdout.trim() || null : null;
   };
-  const current = await git("symbolic-ref", "--short", "-q", "HEAD");
+  const now = await git("symbolic-ref", "--short", "-q", "HEAD");
+  const current = call.moved ? null : now;
   const remote = parsed.remote ?? (current ? await git("config", "--get", `branch.${current}.remote`) : null) ?? "origin";
   const repo = repoFromUrl(/[:/]/.test(remote) ? remote : await git("remote", "get-url", remote));
   if (!repo) return [];
@@ -200,7 +242,11 @@ export async function pushTargets(call: PushCall, env: NodeJS.ProcessEnv, runAs:
   // The default branch itself is no PR's head (fork PRs from a `main` are filtered out by the lookup anyway).
   const head = (await git("symbolic-ref", "--short", "-q", `refs/remotes/${remote}/HEAD`))?.slice(remote.length + 1);
   const defaults = new Set([head ?? "main", "main", "master"]);
-  return Promise.all(pairs.filter((p) => !defaults.has(p.dst)).map(async (p) => ({ dir: call.dir, repo, branch: p.dst, sha: await git("rev-parse", "--verify", "-q", `${p.src}^{commit}`) })));
+  return Promise.all(
+    pairs
+      .filter((p) => !defaults.has(p.dst))
+      .map(async (p) => ({ dir: call.dir, repo, branch: p.dst, sha: call.moved && /^(?:HEAD|@)(?:$|[~^@])/.test(p.src) ? null : await git("rev-parse", "--verify", "-q", `${p.src}^{commit}`) })),
+  );
 }
 
 // ---------------------------------------------------------------- the guard
@@ -222,8 +268,8 @@ export class PushGuard {
    * Before a command runs: block it when it pushes to an ended PR's branch, warn when that cannot be told. Null when it pushes nothing.
    * Several pushes in one command: the first block wins, else the first warning.
    */
-  async check(command: string, cwd: string): Promise<PushVerdict | null> {
-    const targets = (await Promise.all(findPushes(command, cwd).map((c) => pushTargets(c, this.d.env, this.d.runAs)))).flat();
+  async check(command: string, cwd: string, ran = false): Promise<PushVerdict | null> {
+    const targets = (await Promise.all(findPushes(command, cwd, ran).map((c) => pushTargets(c, this.d.env, this.d.runAs)))).flat();
     if (!targets.length) return null;
     const verdicts = await Promise.all(targets.map(async (t) => this.verdict(t)));
     return verdicts.find((v) => v.action === "block") ?? verdicts.find((v) => v.action === "warn") ?? { action: "allow" };
@@ -231,7 +277,7 @@ export class PushGuard {
 
   /** After a push already ran (agents without a pre-run hook): what to tell the agent at once, or null. */
   async afterPush(command: string, cwd: string): Promise<string | null> {
-    const v = await this.check(command, cwd);
+    const v = await this.check(command, cwd, true);
     if (v?.action !== "block") return null;
     this.d.log("push guard: a push landed on an ended PR's branch");
     return `Dorks: your last \`git push\` already ran, but ${v.reason.replace("this push", "that push").replace("your commit", "the commits you pushed")} Don't push to that branch again.`;
