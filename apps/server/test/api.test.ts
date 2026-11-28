@@ -733,7 +733,7 @@ describe("a dork's life through the API", () => {
 });
 
 describe("live stream", () => {
-  it("announces changes as invalidations and coalesces transcript growth", async () => {
+  it("announces changes, pushes the transcript rows that changed, and coalesces transcript growth", async () => {
     const { a, h } = await onboarded();
     const res = await a.app.request("/api/live", { headers: { Authorization: `Bearer ${TOKEN}` } });
     expect(res.status).toBe(200);
@@ -741,7 +741,7 @@ describe("live stream", () => {
     const reader = res.body!.getReader();
     const dec = new TextDecoder();
     let buf = "";
-    const messages: { t: string; dorkId?: string; seq?: number }[] = [];
+    const messages: { t: string; dorkId?: string; seq?: number; events?: { seq: number; type: string; text?: string }[] }[] = [];
     const pump = (async () => {
       for (;;) {
         const { value, done } = await reader.read();
@@ -768,7 +768,13 @@ describe("live stream", () => {
     for (let i = 0; i < 20; i++) await a.post(`/api/dorks/${id}/messages`, { text: `burst ${i}` });
     await until(() => messages.some((m) => m.t === "events"));
     await new Promise((r) => setTimeout(r, 120));
-    expect(messages.filter((m) => m.t === "events" && m.dorkId === id).length).toBeLessThan(5); // one per 50 ms window, not one per event
+    const frames = messages.filter((m) => m.t === "events" && m.dorkId === id);
+    expect(frames.length).toBeLessThan(5); // one per 50 ms window, not one per event
+    // Each coalesced frame carries its rows from the first one any change in it wrote: together, every message, in order, no gaps.
+    const pushed = new Map(frames.flatMap((f) => f.events ?? []).map((e) => [e.seq, e]));
+    const sent = [...pushed.values()].filter((e) => e.type === "user_message").map((e) => e.text);
+    expect(sent).toEqual(Array.from({ length: 20 }, (_, i) => `burst ${i}`));
+    for (const f of frames) expect(f.events!.map((e) => e.seq)).toEqual(f.events!.map((_, i) => f.events![0].seq + i));
     await updateSettings(h.app, { sleepMinutes: 9 });
     await until(() => messages.some((m) => m.t === "settings"));
     await a.post(`/api/dorks/${id}/subscriptions`, { repo: "o/r", number: 1 });

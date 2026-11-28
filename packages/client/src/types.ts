@@ -496,7 +496,8 @@ export type LiveMessage =
   | { t: "hello"; now: number }
   | { t: "dorks" }
   | { t: "dork"; dorkId: string }
-  | { t: "events"; dorkId: string; seq: number }
+  /** The transcript advanced to `seq`. `events`: the rows that changed, from the first one on (a local server sends them when they fit); without them, read the tail. */
+  | { t: "events"; dorkId: string; seq: number; events?: ClientEvent[] }
   | { t: "subscriptions"; dorkId: string }
   | { t: "comments"; dorkId: string }
   | { t: "settings" }

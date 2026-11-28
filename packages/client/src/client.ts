@@ -100,7 +100,7 @@ const HIDDEN_TAIL_MS = 5_000;
 /**
  * Everything the UI reads and writes, over loopback HTTP + the `/api/live` SSE stream (for a cloud org, s2 streams: cloud-live.ts). Framework-agnostic: each read is a
  * `Store` (the `useSyncExternalStore` contract), so React hooks in ./react.tsx are thin and other UIs can use it directly.
- * Live messages are only invalidations; the data always comes from a plain HTTP read.
+ * Live messages are invalidations, read again over HTTP, except a local server's transcript rows, which an open chat folds in as they come.
  */
 export class DorksClient {
   readonly api;
@@ -127,6 +127,8 @@ export class DorksClient {
   private viewingDorkId: string | null = null;
   /** A `hello` arrived since `start()`: later ones are reconnections. */
   private greeted = false;
+  /** How many `start()` calls hold the live stream open. */
+  private holders = 0;
   /** When `start()` opened the live stream. */
   private startedAt = 0;
   /** Transcripts that advanced while the page was hidden: tailed once it shows again, not on every streamed token. */
@@ -148,8 +150,23 @@ export class DorksClient {
     this.qopts = { retryDelay: config.retryDelay ?? defaultRetry, onUnauthorized: () => this.setConnection({ unauthorized: true }) };
   }
 
-  /** Opens the live stream. Safe to call again after `close()`. */
-  start() {
+  /**
+   * Holds the live stream open: it opens with the first holder and closes when the last one lets go (the returned function, safe to
+   * call twice). Several parts of an app may need the same client's stream (the provider of the screen it shows, the cloud place
+   * that watches the home server's session): none of them can close it under another.
+   */
+  start(): () => void {
+    this.holders++;
+    this.open();
+    let held = true;
+    return () => {
+      if (!held) return;
+      held = false;
+      if (--this.holders === 0) this.close();
+    };
+  }
+
+  private open() {
     if (this.closeLive) return;
     this.greeted = false;
     this.startedAt = Date.now();
@@ -177,7 +194,10 @@ export class DorksClient {
     } else this.closeLive = connectLive({ baseUrl: this.cfg.baseUrl, token: this.cfg.token, client: this.clientId, fetch: this.cfg.fetch, backoff: this.cfg.retryDelay, onStatus, onMessage });
   }
 
+  /** Closes the live stream now, whoever holds it (the app is going away). */
   close() {
+    this.holders = 0;
+    if (this.closeLive) this.setConnection({ live: "connecting" }); // no stream: never claim to be live
     if (typeof document !== "undefined") document.removeEventListener("visibilitychange", this.onVisibility);
     if (typeof window !== "undefined") window.removeEventListener("focus", this.onVisibility);
     clearTimeout(this.staleTimer);
@@ -347,7 +367,9 @@ export class DorksClient {
         this.invalidate(`dork:${m.dorkId}`);
         break;
       case "events":
-        this.tailFeed(m.dorkId);
+        // The rows themselves when the server sent them: folded in at once, no read (and nothing for the connection limit to queue).
+        if (m.events) this.feeds.get(m.dorkId)?.push(m.events);
+        else this.tailFeed(m.dorkId);
         break;
       case "comments":
         this.invalidate(`comments:${m.dorkId}`);

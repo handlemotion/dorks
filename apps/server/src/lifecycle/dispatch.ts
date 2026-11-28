@@ -39,17 +39,20 @@ export function append(app: App, dorkId: string, ...bodies: ClientEventBody[]): 
   const tailRow = db.get<{ seq: number; ts: number; body: string }>("SELECT seq, ts, body FROM events WHERE dork_id = ? ORDER BY seq DESC LIMIT 1", dorkId);
   let tail = tailRow ? { seq: tailRow.seq, body: JSON.parse(tailRow.body) as ClientEventBody } : undefined;
   let seq = tail?.seq ?? 0;
+  let from: number | undefined; // the first row this call wrote, so live clients get exactly the rows that changed
   const ts = app.now();
   for (const body of bodies) {
     if (tail && body.type === "assistant_delta" && tail.body.type === "assistant_delta" && tail.body.messageId === body.messageId) {
       tail = { seq: tail.seq, body: { ...tail.body, text: tail.body.text + body.text } };
       db.run("UPDATE events SET body = ?, ts = ? WHERE dork_id = ? AND seq = ?", JSON.stringify(tail.body), ts, dorkId, tail.seq);
+      from ??= tail.seq;
       continue;
     }
     db.run("INSERT INTO events (dork_id, seq, ts, body) VALUES (?, ?, ?, ?)", dorkId, ++seq, ts, JSON.stringify(body));
+    from ??= seq;
     tail = { seq, body };
   }
-  if (bodies.length) touch(app, { t: "events", dorkId, seq });
+  if (from !== undefined) touch(app, { t: "events", dorkId, seq, from });
   for (const body of bodies) crewObserve(app, dorkId, body); // a worker's turn end becomes a report to its coordinator (docs/crew.md)
   return seq;
 }

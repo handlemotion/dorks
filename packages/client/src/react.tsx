@@ -35,14 +35,12 @@ import type {
 const Ctx = createContext<DorksClient | null>(null);
 
 /**
- * Opens the live stream while mounted. The client is created by the app (it owns the URL and token). A layout effect, so the stream
- * opens before the first reads start (stores subscribe in passive effects): its `hello` then knows they are as new as it.
+ * Holds the live stream open while mounted (`DorksClient.start`: others may hold the same client's stream too, and only the last to
+ * let go closes it). The client is created by the app (it owns the URL and token). A layout effect, so the stream opens before the
+ * first reads start (stores subscribe in passive effects): its `hello` then knows they are as new as it.
  */
 export function DorksProvider({ client, children }: { client: DorksClient; children: ReactNode }) {
-  useLayoutEffect(() => {
-    client.start();
-    return () => client.close();
-  }, [client]);
+  useLayoutEffect(() => client.start(), [client]);
   return <Ctx.Provider value={client}>{children}</Ctx.Provider>;
 }
 

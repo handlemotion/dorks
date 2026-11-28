@@ -153,14 +153,14 @@ IDs are UUID strings. Times are epoch milliseconds.
 
 ### Live updates: `GET /api/live` (Server-Sent Events)
 
-One stream per client. Messages are `data: <json>\n\n`; a `: ping` comment every 20 s keeps proxies open. They are **invalidations**, not payloads: refetch the thing named.
+One stream per client. Messages are `data: <json>\n\n`; a `: ping` comment every 20 s keeps proxies open. They are **invalidations** (refetch the thing named), except a transcript's, which carries its rows. A client drops a stream that stays silent for 45 s (no message, no ping) and dials again; the `hello` that follows resyncs it.
 
 | Message | Meaning |
 |---|---|
 | `{"t":"hello","now":<ms>}` | sent on connect; refetch everything you show |
 | `{"t":"dorks"}` | the dork list changed (rows, order or archive state) |
 | `{"t":"dork","dorkId"}` | one dork's row changed |
-| `{"t":"events","dorkId","seq"}` | the transcript tail is now `seq`; refetch `events?after=<your last seq - 1>` (coalesced to at most one message per 50 ms per dork) |
+| `{"t":"events","dorkId","seq","events"?}` | the transcript tail is now `seq` (coalesced to at most one message per 50 ms per dork). `events` are the rows that changed, from the first one any change in the window wrote (a grown message or a new row) to the tail, as `GET events?after=` serves them: fold them in when they continue what you hold, else (and when `events` is absent: over 200 rows or 256 KB) refetch `events?after=<your last seq - 1>` |
 | `{"t":"subscriptions","dorkId"}` | PR subscriptions changed |
 | `{"t":"settings"}` | settings or secret names changed |
 | `{"t":"snapshot"}` | the base-snapshot build changed (a step, a result); refetch `GET /api/snapshot` |
@@ -168,7 +168,7 @@ One stream per client. Messages are `data: <json>\n\n`; a `: ping` comment every
 | `{"t":"build","buildId"}` | one build, its runs, drafts or a run's log changed; refetch it, its runs and an open log |
 | `{"t":"automations"}` | an automation, its runs or a watched repository changed; refetch the automations and run histories you show |
 
-`packages/client` wraps this (`useDorks`, `useDork`, `useDorkEvents`, `useSettings`), replacing `@dorks/convex/client` and `convex/react`.
+`packages/client` wraps this (`useDorks`, `useDork`, `useDorkEvents`, `useSettings`), replacing `@dorks/convex/client` and `convex/react`. An open chat folds the pushed rows in as they arrive, so a running turn costs it no reads (a browser allows 6 connections a host, and a read per streamed token queued behind slower ones). `DorksClient.start()` holds the stream and returns its release: it stays open while anything holds it (the screen's `DorksProvider`, the cloud place watching the home server while it resolves), so one part of the app letting go never closes it under another.
 
 **Writes show at once.** A change to a dork (archive and restore, rename, delete, mark read, mode, model) and a PR merge are optimistic: the client patches the reads it has cached (the lists, the dork, the PR), sends the request, then reads them again. A patch is applied over every read that lands while it is pending, so a read the server answered before the write cannot put the old row back, and it is dropped once a read that started after the server confirmed it lands (a merge's row: once the poller has recorded it). A refused write takes its patch back and rejects, for the UI to say why. Reads also start before their screen: the app's first reads go out with the settings the connection gate waits for, a chat's row and newest page load when the pointer rests on its sidebar row, and a chat opened from the sidebar shows its row while its own read is in flight. A read less than 2 s old is not fetched again for a new subscriber, and the first `hello` of a stream does not refetch what was read since it opened.
 

@@ -12,9 +12,17 @@ export interface LiveOptions {
   onStatus: (s: LiveStatus) => void;
   /** Reconnect delay in ms for the nth consecutive failure (0-based). Default: 500ms doubling up to 10s. */
   backoff?: (attempt: number) => number;
+  /** How long a connected stream may stay silent before it is dropped and dialed again (default `LIVE_SILENT_MS`). */
+  silentMs?: number;
 }
 
 const defaultBackoff = (n: number) => Math.min(10_000, 500 * 2 ** n);
+
+/**
+ * The server pings an idle stream every 20 s (`/api/live`), so one silent for this long is dead even if no error says so (a socket
+ * a sleeping Mac or a webview left half-open): it is dropped and dialed again, and the `hello` that follows resyncs what was missed.
+ */
+export const LIVE_SILENT_MS = 45_000;
 
 /** Splits an SSE byte stream into `data:` payloads. Comment lines (`: ping`) are ignored. */
 export function createSseParser(onData: (data: string) => void): (chunk: string) => void {
@@ -52,6 +60,18 @@ export function connectLive(opts: LiveOptions): () => void {
   let abort: AbortController | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let attempt = 0;
+  let heard = 0;
+  const silentMs = opts.silentMs ?? LIVE_SILENT_MS;
+  // Checked on a timer, not per read: a dead stream never returns from its read.
+  const watchdog = setInterval(
+    () => {
+      if (heard && Date.now() - heard > silentMs) {
+        heard = 0;
+        abort?.abort(); // the read throws, and run() dials again
+      }
+    },
+    Math.min(5_000, silentMs / 3),
+  );
 
   const retry = () => {
     if (stopped) return;
@@ -63,6 +83,7 @@ export function connectLive(opts: LiveOptions): () => void {
     if (stopped) return;
     abort = new AbortController();
     opts.onStatus("connecting");
+    heard = Date.now(); // a dial that never answers is dropped like a silent stream
     try {
       const res = await doFetch(`${base}/api/live${opts.client ? `?client=${encodeURIComponent(opts.client)}` : ""}`, {
         headers: { authorization: `Bearer ${opts.token}`, accept: "text/event-stream" },
@@ -73,6 +94,7 @@ export function connectLive(opts: LiveOptions): () => void {
         return; // a wrong token never fixes itself; the app has to ask for a new one
       }
       if (!res.ok || !res.body) return retry();
+      heard = Date.now();
       const parse = createSseParser((d) => {
         let m: LiveMessage;
         try {
@@ -91,10 +113,13 @@ export function connectLive(opts: LiveOptions): () => void {
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
+        heard = Date.now();
         parse(decoder.decode(value, { stream: true }));
       }
+      heard = 0;
       retry();
     } catch {
+      heard = 0;
       retry();
     }
   }
@@ -102,6 +127,7 @@ export function connectLive(opts: LiveOptions): () => void {
   void run();
   return () => {
     stopped = true;
+    clearInterval(watchdog);
     if (timer) clearTimeout(timer);
     abort?.abort();
   };

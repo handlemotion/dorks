@@ -14,7 +14,8 @@ import type { JwksVerifier } from "./core/jwt";
 export type Change =
   | { t: "dorks" }
   | { t: "dork"; dorkId: string }
-  | { t: "events"; dorkId: string; seq: number }
+  /** The transcript changed from `from` (the first row written: a grown tail or a new one) to `seq`, its newest row. */
+  | { t: "events"; dorkId: string; seq: number; from: number }
   | { t: "subscriptions"; dorkId: string }
   | { t: "comments"; dorkId: string }
   | { t: "settings" }

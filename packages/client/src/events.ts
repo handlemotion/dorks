@@ -142,6 +142,22 @@ export class EventsFeed implements Store<EventsState> {
     });
   }
 
+  /**
+   * Rows the local server pushed with its live message (from the first one that changed on). Folded in turn with the reads when they
+   * continue what the feed holds; before the first page, or after a gap (a row this feed never saw), it reads the tail instead.
+   */
+  push(events: ClientEvent[]) {
+    if (this.listeners.size === 0) return; // nobody shows it: the next subscriber reads the tail
+    if (!events.length) return this.requestTail();
+    this.enqueue(async () => {
+      const first = Math.min(...events.map((e) => e.seq));
+      if (!this.started || first > this.folded.lastSeq + 1) return void (await this.tail());
+      this.upsert(events);
+      this.error = undefined;
+      this.publish();
+    });
+  }
+
   loadMore() {
     if (!this.started || !this.hasMore || this.loadingMore) return;
     this.loadingMore = true;
