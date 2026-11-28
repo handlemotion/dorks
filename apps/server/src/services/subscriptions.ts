@@ -24,6 +24,11 @@ export interface PollState {
   checksSha?: string;
   /** Check suite id -> the outcome already reported for it. */
   seen?: Record<string, "pass" | "fail">;
+  /**
+   * A merged PR's branch as it was at the merge (same-repo heads only). Its branch is watched for a while for pushes that came too
+   * late (`mergedBranches`); `warned`: the commit the agent was told about, once.
+   */
+  merged?: { at: number; headRef: string; headSha: string; warned?: string };
 }
 
 export interface Subscription {
@@ -144,6 +149,20 @@ export const endedOpen = (app: App): Subscription[] =>
       `SELECT s.* FROM pr_subscriptions s JOIN dorks d ON d.id = s.dork_id
      WHERE s.status = 'ended' AND s.state = 'open' AND s.source = 'auto' AND s.last_event_at > ? AND d.deleting = 0 AND d.archived = 0 ORDER BY s.id`,
       app.now() - FOLLOW_ENDED_MS,
+    )
+    .map(subOf);
+
+/** How long after a merge its branch is watched for commits pushed to it too late (`pollMergedBranch` in poller.ts). */
+export const MERGED_BRANCH_WATCH_MS = 2 * 60 * 60_000;
+
+/** Merged PRs whose branch is still watched: merged less than `MERGED_BRANCH_WATCH_MS` ago, nobody warned yet, the dork is live. */
+export const mergedBranches = (app: App): Subscription[] =>
+  app.db
+    .all(
+      `SELECT s.* FROM pr_subscriptions s JOIN dorks d ON d.id = s.dork_id
+     WHERE s.status = 'ended' AND s.state = 'merged' AND json_extract(s.poll, '$.merged.at') > ? AND json_extract(s.poll, '$.merged.warned') IS NULL
+       AND d.deleting = 0 AND d.archived = 0 ORDER BY s.id`,
+      app.now() - MERGED_BRANCH_WATCH_MS,
     )
     .map(subOf);
 

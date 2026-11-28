@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import type { ShipView } from "@dorks/shared";
 import { dorkView } from "../src/data";
 import { needsAttentionOf } from "../src/data";
-import { pollOnce, POLL_MS } from "../src/services/poller";
+import { MERGED_BRANCH_MS, pollOnce, POLL_MS } from "../src/services/poller";
 import { updateSettings } from "../src/services/settings";
 import { SHIP_VERIFY_MS } from "@dorks/shared";
 import { SHIP_MAX_MS, SHIP_QUIET_MS, SHIP_SETTLE_MS, SHIP_SLOW_MS, shipOp } from "../src/services/ships";
@@ -180,7 +180,7 @@ describe("ships", () => {
     await s.tick(SHIP_SETTLE_MS);
     expect(s.card()).toMatchObject({ status: "shipped" });
     expect(s.card()!.endedAt).toBeDefined();
-    expect(await pollOnce(s.h.app)).toBeNull(); // nothing is left to watch
+    expect(await pollOnce(s.h.app)).toBe(MERGED_BRANCH_MS); // the ship is done: only the merged branch is still read, for late pushes
   });
 
   it("a failure shows at once, is left to the agent (not the owner), and a re-run can still pass; a merge that starts nothing ends quiet", async () => {

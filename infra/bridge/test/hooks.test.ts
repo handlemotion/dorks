@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 import { HookService, writeClaudeSettings, type HookDeps } from "../src/hooks";
 import { prLookup } from "../src/pr-lookup";
-import { findRepos } from "../src/work-scan";
+import { findRepos, type BranchPrStatus } from "../src/work-scan";
 import { fakeView, makeRemote, tmp } from "./helpers";
 
 // A clone of a local bare remote under a fresh workdir, laid out as the bridge does: <work>/<owner>/<name>.
@@ -471,6 +471,45 @@ describe("PR lookup through gh", () => {
     expect(await lookup(fakeGh("{}").gh)("acme/demo", "b")).toBeNull();
     expect(await lookup(fakeGh("[]").gh, null)("acme/demo", "b")).toBeNull();
     expect(await lookup("/nonexistent/gh")("acme/demo", "b")).toBeNull();
+  });
+});
+
+describe("push guard", () => {
+  it("blocks a git push to a merged PR's branch, lets an open one through, and warns when GitHub cannot be asked", async () => {
+    const w = checkout();
+    w.git("checkout", "-q", "-b", "feat");
+    w.commit("a.txt");
+    const prHead = w.git("rev-parse", "HEAD");
+    w.commit("b.txt", "follow-up after the merge");
+    const merged: BranchPrStatus = { state: "merged", number: 7, headSha: prHead, url: "https://github.com/acme/demo/pull/7", base: "main", at: "2026-11-27T14:03:00Z" };
+    const guard = (status: BranchPrStatus | null) => {
+      const asked: string[] = [];
+      const h = service(w.work, { prStatus: async (repo, branch) => (asked.push(`${repo} ${branch}`), status) });
+      const pre = (command: string) => h.svc.methods["hook.preToolUse"]!({ tool_name: "Bash", tool_input: { command }, cwd: w.dir }) as Promise<any>;
+      return { asked, pre, after: (command: string) => h.svc.afterShell(command, w.dir) };
+    };
+
+    const m = guard(merged);
+    expect(await m.pre("pnpm test")).toBeNull(); // not a push: GitHub is not asked
+    const blocked = await m.pre("git add -A && git commit -qm wip; git push -u origin feat");
+    expect(blocked.hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(blocked.hookSpecificOutput.permissionDecisionReason).toBe(
+      "PR #7 (https://github.com/acme/demo/pull/7) was already merged at 2026-11-27 14:03 UTC; this push to feat would not reach main. Create a branch from origin/main, cherry-pick your commit, and open a new PR.",
+    );
+    // Codex reports its commands wrapped in a shell, and only after they ran: the agent is told at once instead.
+    expect(await m.after(`/bin/bash -lc 'cd ${w.dir} && git push origin HEAD'`)).toContain("PR #7");
+    expect(m.asked).toEqual(["acme/demo feat"]); // one lookup, cached for the second push
+
+    expect(await guard({ state: "open" }).pre("git push origin feat")).toBeNull();
+    expect(await guard({ state: "open" }).after("git push origin feat")).toBeNull();
+    // A new branch that only reuses the name of an old merged one (the PR's head is not in it) is not that PR's.
+    w.git("checkout", "-q", "-b", "other", "origin/main");
+    w.commit("c.txt");
+    expect(await guard(merged).pre("git push origin other:feat")).toBeNull();
+
+    const unknown = await guard(null).pre("git push origin HEAD:feat");
+    expect(unknown.hookSpecificOutput.permissionDecision).toBeUndefined();
+    expect(unknown.hookSpecificOutput.additionalContext).toContain("could not check GitHub");
   });
 });
 

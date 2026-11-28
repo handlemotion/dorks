@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import type { App } from "../app";
 import {
   getCached,
+  GhBranch,
   GhComments,
   GhIssue,
   GhIssueEvents,
@@ -21,7 +22,8 @@ import { githubToken, readSettings } from "./settings";
 import { update } from "../db";
 import { ingestEnv, ingestEvent, type Actor, type PrEvent } from "./githubIngest";
 import { applyShip, getShip, observeShip, openShips, shipDue, type Ship } from "./ships";
-import { endedOpen, endSubscription, getSub, pollable, savePollState, updateSubscription, type PollState, type Subscription } from "./subscriptions";
+import { enqueueNotification } from "./notify";
+import { endedOpen, endSubscription, getSub, mergedBranches, pollable, savePollState, updateSubscription, type PollState, type Subscription } from "./subscriptions";
 import { append } from "../lifecycle/dispatch";
 
 // PR autonomy without webhooks: read each subscribed PR with conditional requests (a 304 is free against the rate limit), turn
@@ -33,6 +35,8 @@ export const POLL_MS = 10_000;
 export const POLL_AUTH_FAILED_MS = 5 * 60_000;
 /** A PR whose watch ended while it was open (`endedOpen`) is read this often, for its state alone. */
 export const ENDED_STATE_MS = 60_000;
+/** A merged PR's branch is read this often while it is watched for late pushes (`pollMergedBranch`). */
+export const MERGED_BRANCH_MS = 30_000;
 const NOT_VISIBLE = "PR not found or not accessible to your GitHub token";
 
 const actor = (u: GhUser | null | undefined): Actor => ({ login: u?.login ?? "ghost", bot: u?.type === "Bot" });
@@ -133,6 +137,9 @@ const observePr = (look: Look): Effect.Effect<PrLook, GithubError> =>
           ? { mergeSha: pr.merge_commit_sha, mergedAt: time(pr.merged_at) }
           : {}),
       });
+      // Watch the branch for a while: a push to it now reaches no PR (`pollMergedBranch`). A fork's branch is not ours to read.
+      if (state === "merged" && (pr.head.repo?.full_name ?? sub.repo).toLowerCase() === sub.repo.toLowerCase())
+        poll.merged = { at: time(pr.merged_at) ?? look.app.now(), headRef: pr.head.ref, headSha: pr.head.sha };
       return { done: { events, baseline, poll } };
     } else {
       yield* observePrChanges(look, pr);
@@ -360,33 +367,89 @@ const pollEndedState = (app: App, token: string, sub: Subscription): Effect.Effe
   );
 };
 
+/** When each merged PR's branch was last read, with its ETag. In memory, like `endedReads`. */
+const branchReads = new WeakMap<App, Map<number, { at: number; etag?: string }>>();
+
+/**
+ * Detects commits pushed to a merged PR's branch after the merge (a push the bridge's guard did not see): they are in no PR and never
+ * reach the base. Tells the agent once (`pushed_after_merge`), so it moves them to a new PR. A deleted branch is fine: nothing to say.
+ */
+const pollMergedBranch = (app: App, token: string, sub: Subscription): Effect.Effect<number | undefined> => {
+  const merged = sub.poll?.merged;
+  if (!merged) return Effect.succeed(undefined);
+  let reads = branchReads.get(app);
+  if (!reads) branchReads.set(app, (reads = new Map()));
+  const last = reads.get(sub.id);
+  if (last && app.now() - last.at < MERGED_BRANCH_MS) return Effect.succeed(undefined);
+  const path = `/repos/${sub.repo}/branches/${encodeURIComponent(merged.headRef)}`;
+  return getCached(clientOf(app, token), GhBranch, path, last?.etag).pipe(
+    Effect.map((r) => {
+      reads.set(sub.id, { at: app.now(), etag: r.status === 200 ? r.etag : last?.etag });
+      if (r.status !== 200 || r.json.commit.sha === merged.headSha) return undefined;
+      const sha = r.json.commit.sha;
+      app.db.tx(() => {
+        const cur = getSub(app, sub.id);
+        if (!cur?.poll?.merged || cur.poll.merged.warned) return;
+        savePollState(app, sub.id, { ...cur.poll, merged: { ...cur.poll.merged, warned: sha } });
+        enqueueNotification(
+          app,
+          sub.dorkId,
+          sub.id,
+          "pushed_after_merge",
+          `${merged.headRef} is now at ${sha.slice(0, 7)}, pushed after this PR merged (its head was ${merged.headSha.slice(0, 7)}). Those commits are in no PR and will not reach ${sub.baseRef ?? "the base branch"}.`,
+        );
+      });
+      return undefined;
+    }),
+    Effect.catch((e) =>
+      Effect.sync(() => {
+        reads.set(sub.id, { at: app.now(), etag: last?.etag });
+        return e.reason === "not_visible" ? undefined : stopFor(app, sub, e); // 404: the branch was deleted at the merge
+      }),
+    ),
+    Effect.catchDefect(() =>
+      Effect.sync(() => {
+        console.error("merged branch poll failed", sub.repo, sub.number, "unexpected");
+        return undefined;
+      }),
+    ),
+  );
+};
+
+/** Polls each item in order; the first that says to stop the whole pass (a rate limit, a bad token) ends it with its delay. */
+const firstStop = <T>(items: readonly T[], poll: (x: T) => Effect.Effect<number | undefined>): Effect.Effect<number | undefined> =>
+  Effect.gen(function* () {
+    for (const x of items) {
+      const stop = yield* poll(x);
+      if (stop !== undefined) return stop;
+    }
+    return undefined;
+  });
+
 /** One pass over every subscription and ship that needs watching. Answers when to look again, or null when nothing needs polling. */
 export const pollOnceEffect = (app: App): Effect.Effect<number | null> =>
   Effect.gen(function* () {
     const subs = pollable(app);
     const ships = openShips(app);
     const ended = endedOpen(app);
-    if (!subs.length && !ships.length && !ended.length) return null;
+    const merged = mergedBranches(app);
+    if (!subs.length && !ships.length && !ended.length && !merged.length) return null;
     const token = yield* Effect.promise(() => githubToken(app));
     if (!token) return POLL_MS * 2; // subscriptions wait for a token to be set
     yield* ensureLogin(app, token);
-    for (const s of subs) {
-      const sub = getSub(app, s.id);
-      if (!sub || sub.status === "ended") continue;
-      const stop = yield* pollSub(app, token, sub);
-      if (stop !== undefined) return stop;
-    }
-    for (const s of ships) {
-      const ship = getShip(app, s.id);
-      if (!ship || ship.endedAt !== undefined || !shipDue(ship, app.now())) continue;
-      const stop = yield* pollShip(app, token, ship);
-      if (stop !== undefined) return stop;
-    }
-    for (const sub of ended) {
-      const stop = yield* pollEndedState(app, token, sub);
-      if (stop !== undefined) return stop;
-    }
-    return subs.length || ships.length ? POLL_MS : ENDED_STATE_MS;
+    const stop =
+      (yield* firstStop(subs, (s) => {
+        const sub = getSub(app, s.id);
+        return !sub || sub.status === "ended" ? Effect.succeed(undefined) : pollSub(app, token, sub);
+      })) ??
+      (yield* firstStop(ships, (s) => {
+        const ship = getShip(app, s.id);
+        return !ship || ship.endedAt !== undefined || !shipDue(ship, app.now()) ? Effect.succeed(undefined) : pollShip(app, token, ship);
+      })) ??
+      (yield* firstStop(ended, (sub) => pollEndedState(app, token, sub))) ??
+      (yield* firstStop(merged, (sub) => pollMergedBranch(app, token, sub)));
+    if (stop !== undefined) return stop;
+    return subs.length || ships.length ? POLL_MS : merged.length ? MERGED_BRANCH_MS : ENDED_STATE_MS;
   });
 
 /** The Promise form, for the poll job (lifecycle/jobs.ts). */

@@ -129,7 +129,7 @@ export async function decideMerge(app: App, dorkId: string, requestId: string, m
       dorkId,
       r,
       out.merged
-        ? `The owner approved: ${ref(r)} is merged (${method}). The server follows it to production and wakes you with a \`deployed\` or \`ship_failed\` event. Carry on with any other work you were asked to do; otherwise stop.`
+        ? `The owner approved: ${ref(r)} is merged (${method}). Don't push to its branch again: follow-ups go in a new PR from the base branch. The server follows it to production and wakes you with a \`deployed\` or \`ship_failed\` event. Carry on with any other work you were asked to do; otherwise stop.`
         : `The owner approved: ${ref(r)} was handed to GitHub to merge (a merge queue or a stack). You will hear when it lands. Carry on with any other work you were asked to do; otherwise stop.`,
     );
     return { status };

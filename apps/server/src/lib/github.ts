@@ -111,7 +111,7 @@ export const GhPr = Schema.Struct({
   merged: Schema.optional(Schema.NullOr(Schema.Boolean)),
   mergeable: Schema.NullOr(Schema.Boolean),
   merged_by: Actor,
-  head: Schema.Struct({ ref: Schema.String, sha: Schema.String }),
+  head: Schema.Struct({ ref: Schema.String, sha: Schema.String, repo: Schema.optional(Schema.NullOr(Schema.Struct({ full_name: Schema.String }))) }),
   base: Schema.Struct({ ref: Schema.String, sha: Schema.String, repo: Schema.optional(Schema.NullOr(Schema.Struct({ default_branch: Schema.optional(Schema.String) }))) }),
   merge_commit_sha: Schema.optional(Schema.NullOr(Schema.String)),
   merged_at: Schema.optional(Schema.NullOr(Schema.String)),
@@ -216,6 +216,7 @@ export const GhDeploymentStatuses = Schema.Array(Schema.Struct({ state: Schema.S
 
 /** `ahead` or `identical`: the head of the comparison contains its base. */
 export const GhCompare = Schema.Struct({ status: Schema.String });
+export const GhBranch = Schema.Struct({ commit: Schema.Struct({ sha: Schema.String }) });
 
 /** Check-suite conclusions → what CI means for the PR. `cancelled` (usually superseded by a newer run), `action_required` and `stale` say nothing about the code. */
 export function suiteOutcome(conclusion: string | null): "pass" | "fail" | null {
