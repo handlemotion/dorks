@@ -26,7 +26,8 @@ A ready PR should not end in a standby note the owner has to notice. The agent c
 - **Merge** (`POST /api/dorks/:id/merge-requests/:requestId {merge: true}`) merges with the repository's first allowed method (squash, merge, rebase), pinned to the stored commit, through the same path as the PR tab. The request is claimed first, so it merges once.
 - **Not now** (`{merge: false}`) declines.
 - Either way a `merge_decision` event updates the card and the outcome is the agent's next turn: merged (the ship follows and wakes it with `deployed` or `ship_failed`), declined (leave it open, do not ask again unless something changes), or failed with GitHub's reason (fix it, push, ask again).
-- A PR merged or closed another way (on GitHub, from the PR tab) settles a card still waiting for it.
+- The outcome is delivered as a `notify` command, so it waits for the turn boundary instead of landing mid-turn as a side note.
+- A PR merged or closed another way (on GitHub, from the PR tab) settles a card still waiting for it. A merge a restart interrupted is answerable again; a Merge on a PR that is already merged reads as merged.
 
 The agent never merges itself (`gh pr merge`, the API): the card is the only way.
 

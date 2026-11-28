@@ -2,7 +2,7 @@ import type { MergeMethod } from "@dorks/shared";
 import { AppFail, fail, touch, type App } from "../app";
 import { getDork } from "../data";
 import { insert, update } from "../db";
-import { append, dispatch, enqueue } from "../lifecycle/dispatch";
+import { append, dispatch, userMessagePending } from "../lifecycle/dispatch";
 import { defaultMergeMethod, mergePullRequest, pullHead } from "./pullRequest";
 
 // Asking to merge (docs/autonomy.md, "Asking to merge"): when one of its PRs is ready, the agent asks the owner with the
@@ -45,12 +45,26 @@ function settle(app: App, r: RequestRow, status: Exclude<Status, "pending" | "me
   changed(app, r.dork_id);
 }
 
-/** The owner's answer, as the agent's next turn. */
-function tell(app: App, dorkId: string, text: string) {
+/**
+ * The owner's answer, as the agent's next turn: a `notify` command, so it is held while a turn runs and released at the turn boundary
+ * (as PR notifications are) instead of being folded into the running turn as a side note the agent may skip.
+ */
+function tell(app: App, dorkId: string, r: Pick<RequestRow, "repo" | "number">, text: string) {
   const dork = getDork(app.db, dorkId);
   if (!dork || dork.deleting) return;
-  enqueue(app, dorkId, "user_message", `<dorks-event>${text}</dorks-event>`);
-  dispatch(app, dorkId, { t: "user_message" });
+  const released = dork.state !== "working" && !userMessagePending(app, dorkId);
+  const prs = [{ repo: r.repo, number: r.number }];
+  insert(app.db, "commands", { dorkId, kind: "notify", cid: app.uuid(), text: `<dorks-event source="merge" prs="${ref(r)}">${text}</dorks-event>`, meta: { kinds: [], prs }, released, acked: false });
+  touch(app, { t: "commands", dorkId });
+  dispatch(app, dorkId, { t: "notify" });
+}
+
+/**
+ * After a restart: a request claimed for merging when the server stopped is answerable again (its card never left pending). If the
+ * merge did land, the poller settles it as merged, and a second Merge is read as merged too.
+ */
+export function recoverMergeRequests(app: App) {
+  app.db.run("UPDATE merge_requests SET status = 'pending' WHERE status = 'merging'");
 }
 
 /** The bridge op `merge`: the agent asks the owner to merge one of the PRs this session opened or follows. */
@@ -101,7 +115,7 @@ export async function decideMerge(app: App, dorkId: string, requestId: string, m
   });
   if (!r) {
     const d = row(app, requestId)!;
-    tell(app, dorkId, `The owner chose not to merge ${ref(d)} for now. Leave it open, and do not ask again unless something changes or they ask you to.`);
+    tell(app, dorkId, d, `The owner chose not to merge ${ref(d)} for now. Leave it open, and do not ask again unless something changes or they ask you to.`);
     return { status: "declined" };
   }
   let method: MergeMethod | undefined;
@@ -113,6 +127,7 @@ export async function decideMerge(app: App, dorkId: string, requestId: string, m
     tell(
       app,
       dorkId,
+      r,
       out.merged
         ? `The owner approved: ${ref(r)} is merged (${method}). The server follows it to production and wakes you with a \`deployed\` or \`ship_failed\` event. Carry on with any other work you were asked to do; otherwise stop.`
         : `The owner approved: ${ref(r)} was handed to GitHub to merge (a merge queue or a stack). You will hear when it lands. Carry on with any other work you were asked to do; otherwise stop.`,
@@ -120,10 +135,16 @@ export async function decideMerge(app: App, dorkId: string, requestId: string, m
     return { status };
   } catch (e) {
     const reason = errorText(e);
+    // Merged already (on GitHub, or by an earlier Merge a restart interrupted): that is the outcome the owner asked for.
+    if (e instanceof AppFail && /already merged/i.test(reason)) {
+      app.db.tx(() => settle(app, r, "merged"));
+      return { status: "merged" };
+    }
     app.db.tx(() => settle(app, r, "failed", { ...(method ? { method } : {}), reason }));
     tell(
       app,
       dorkId,
+      r,
       `The owner approved merging ${ref(r)}, but it did not merge: ${reason} Fix what that names (pull in the base, resolve conflicts, get CI green, address the review), push, and ask again with pr_merge_request. Never merge it yourself.`,
     );
     return { status: "failed", reason };

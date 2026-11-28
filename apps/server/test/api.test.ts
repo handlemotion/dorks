@@ -734,7 +734,7 @@ describe("a dork's life through the API", () => {
     expect((await a.post(`/api/dorks/${id}/merge-requests/${again}`, { merge: true })).json.error.code).toBe("conflict");
     expect(merges).toHaveLength(1);
     expect((await a.get(`/api/dorks/${id}`)).json.needsAttention).toBeFalsy();
-    const told = h.app.db.all<{ text: string }>("SELECT text FROM commands WHERE dork_id = ? AND kind = 'user_message'", id).map((c) => c.text);
+    const told = h.app.db.all<{ text: string }>("SELECT text FROM commands WHERE dork_id = ? AND kind = 'notify'", id).map((c) => c.text);
     expect(told.some((t) => t.includes("did not merge"))).toBe(true);
     expect(told.some((t) => t.includes("is merged (merge)"))).toBe(true);
   });
