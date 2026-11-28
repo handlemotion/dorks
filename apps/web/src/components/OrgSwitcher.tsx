@@ -21,7 +21,8 @@ import { startCloudSignIn } from '../lib/cloudSignIn'
 import { machinesOf } from '../lib/place'
 import { usePending } from '../lib/pending'
 import { UserAvatar } from './AccountMenu'
-import { orgName, useCloudPlace, useCloudInvitations } from './CloudPlace'
+import { OwnerAvatar } from './RepoAvatar'
+import { orgName, useCloudPlace, useCloudInvitations, useHomeGithubLogin } from './CloudPlace'
 import { cn } from './onboarding/Frame'
 import { SIDEBAR_ROW } from './sidebarChrome'
 
@@ -34,12 +35,24 @@ const planLabel = (plan: PlanId | null) => (plan ? PLAN_NAMES[plan].replace(/^Do
  * An org's mark, 16px: the personal org is you (your Dorks Cloud picture, else your GitHub avatar, round like the account menu's); a team is its logo, or its
  * initial, on a 4px square like GitHub owners.
  */
-export function OrgMark({ org, login, className }: { org: Pick<CloudOrg, 'name' | 'logo' | 'personal'> | null; login?: string | null; className?: string }) {
+export function OrgMark({
+  org,
+  login,
+  owner,
+  className,
+}: {
+  org: Pick<CloudOrg, 'name' | 'logo' | 'personal'> | null
+  login?: string | null
+  /** A team without a logo of its own: the GitHub account its Dorks GitHub App is installed on, whose avatar stands in. */
+  owner?: string | null
+  className?: string
+}) {
   const [failed, setFailed] = useState<string | null>(null)
   const picture = useCloudPlace()?.cloud?.user?.image
   if (!org || org.personal) return <UserAvatar login={login} src={picture} className={className} />
   const box = cn('size-4 shrink-0 overflow-hidden rounded-[4px]', className)
   if (org.logo && failed !== org.logo) return <img alt="" src={org.logo} width={16} height={16} className={cn(box, 'object-cover')} onError={() => setFailed(org.logo)} />
+  if (owner) return <OwnerAvatar owner={owner} className={className} />
   return (
     <span aria-hidden className={cn(box, 'grid place-items-center bg-foreground/10 text-[10px] leading-none text-muted-foreground')}>
       {org.name.trim().charAt(0).toUpperCase() || '·'}
@@ -62,8 +75,10 @@ export function StaticOrgSwitcher({ login }: { login?: string | null }) {
  * Create organization; signed out, Personal and Sign in to Dorks Cloud. Picking an org points the whole app at the server behind it
  * (CloudPlace.tsx); which server that is, is decided inside the org, never listed here.
  */
-export function OrgSwitcher({ login }: { login?: string | null }) {
+export function OrgSwitcher({ login: shownLogin, owner }: { login?: string | null; owner?: string | null }) {
   const place = useCloudPlace()
+  // The personal workspace is you: your login from this computer, not the login of the org's server that is shown.
+  const login = useHomeGithubLogin() ?? shownLogin
   const navigate = useNavigate()
   const [creating, setCreating] = useState(false)
   const invitations = useCloudInvitations()
@@ -82,7 +97,7 @@ export function OrgSwitcher({ login }: { login?: string | null }) {
     <>
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger aria-label={`Switch organization, currently ${name}`} className={`${SIDEBAR_ROW} min-w-0 flex-1 text-foreground aria-expanded:bg-foreground/[0.05]`}>
-          <OrgMark org={current} login={login} className="-mx-px" />
+          <OrgMark org={current} login={login} owner={owner} className="-mx-px" />
           <span className="min-w-0 truncate">{name}</span>
           <ChevronDownIcon aria-hidden className="text-muted-foreground" />
         </DropdownMenuTrigger>
@@ -93,7 +108,7 @@ export function OrgSwitcher({ login }: { login?: string | null }) {
             <DropdownMenuRadioGroup value={current?.id ?? PERSONAL} onValueChange={(v) => pick(v as string)}>
               <OrgItem value={personal?.id ?? PERSONAL} org={personal} cloud={cloud} login={login} />
               {teams.map((t) => (
-                <OrgItem key={t.id} value={t.id} org={t} cloud={cloud} login={login} />
+                <OrgItem key={t.id} value={t.id} org={t} cloud={cloud} login={login} owner={t.id === current?.id ? owner : null} />
               ))}
             </DropdownMenuRadioGroup>
           </DropdownMenuGroup>
@@ -135,13 +150,13 @@ export function OrgSwitcher({ login }: { login?: string | null }) {
   )
 }
 
-function OrgItem({ value, org, cloud, login }: { value: string; org: CloudOrg | null; cloud: CloudStatus | undefined; login?: string | null }) {
+function OrgItem({ value, org, cloud, login, owner }: { value: string; org: CloudOrg | null; cloud: CloudStatus | undefined; login?: string | null; owner?: string | null }) {
   // Signed out the row is already named Personal; signed in it is your name, marked Personal.
   // Every workspace shows its plan (Free, Teams, Cloud): what it costs and where it runs, not whose it is.
   const trailing = !org ? null : planLabel(org.plan ?? 'local')
   return (
     <DropdownMenuRadioItem value={value} closeOnClick>
-      <OrgMark org={org} login={login} />
+      <OrgMark org={org} login={login} owner={owner} />
       <span className="min-w-0 flex-1 truncate">{orgName(org, cloud)}</span>
       {trailing && <span className="shrink-0 text-xs text-muted-foreground">{trailing}</span>}
     </DropdownMenuRadioItem>

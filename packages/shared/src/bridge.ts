@@ -45,6 +45,22 @@ export function modelLabel(choice: Pick<AgentModelChoice, "model" | "name" | "re
   return versionedName(choice.resolved) ?? versionedName(choice.model) ?? choice.name;
 }
 
+/**
+ * Claude's current models by their stable aliases, for before any Claude agent has reported the account's own list (a first session,
+ * or a cloud org, whose server keeps none): the composer names a real model and offers its efforts from the start, never "Default".
+ * The list the CLI reports replaces this as soon as one arrives.
+ */
+const CLAUDE_EFFORTS: EffortLevel[] = ["low", "medium", "high", "xhigh", "max"];
+export const KNOWN_CLAUDE_MODELS: AgentModelChoice[] = [
+  { model: "opus", name: "Opus 5.5", resolved: "claude-opus-5-5", efforts: CLAUDE_EFFORTS, fast: true },
+  { model: "fable", name: "Fable 5.2", resolved: "claude-fable-5-2", efforts: CLAUDE_EFFORTS, fast: true },
+  { model: "sonnet", name: "Sonnet 5.5", resolved: "claude-sonnet-5-5", efforts: CLAUDE_EFFORTS },
+  { model: "haiku", name: "Haiku 5.5", resolved: "claude-haiku-5-5", efforts: CLAUDE_EFFORTS },
+];
+
+/** The Claude models to offer: the agent's reported list when it has given one with efforts, else the known ones. */
+export const claudeModelChoices = (reported: readonly AgentModelChoice[] | null | undefined): AgentModelChoice[] => (reported?.some((c) => c.efforts.length) ? [...reported] : KNOWN_CLAUDE_MODELS);
+
 /** DO -> bridge (inside the box). */
 export const toBridge = z.discriminatedUnion("t", [
   // `afterBridgeSeq` is the last `event.bseq` the DO has stored. The bridge MUST number new events from

@@ -8,6 +8,7 @@ import {
   type CloudStatus,
   type DorksClient,
   type QueryState,
+  type Settings,
   type Store,
   personalWorkspaceName,
 } from '@dorks/client'
@@ -116,6 +117,18 @@ export function useCloudInvitations(): CloudInvitation[] {
   const place = useCloudPlace()
   const state = useStoreValue(place?.cloud?.user ? place.home.cloudInvitations() : noInvites)
   return (state.data ?? []).filter((i) => i.status === 'pending')
+}
+
+const NO_SETTINGS: QueryState<Settings> = { status: 'ready', data: undefined, error: undefined }
+const noSettings: Store<QueryState<Settings>> = { getSnapshot: () => NO_SETTINGS, subscribe: () => () => {} }
+
+/**
+ * Your own GitHub login, from the home server (this computer's GitHub CLI), whatever org is shown: an org's server answers with the
+ * org's GitHub connection, never yours, so the personal workspace's picture would go blank there.
+ */
+export function useHomeGithubLogin(): string | null | undefined {
+  const place = useCloudPlace()
+  return useStoreValue(place ? place.home.settings() : noSettings).data?.github.login
 }
 
 /**

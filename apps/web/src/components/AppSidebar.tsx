@@ -75,7 +75,8 @@ export function AppSidebar() {
         counts={{ '/builds': reviews }}
         automations={team || existing}
         onDisconnect={disconnect}
-        switcher={<OrgSwitcher login={github?.login} />}
+        // In a team, the org's server answers with the GitHub accounts its Dorks GitHub App is installed on: the first stands in for a missing logo.
+        switcher={<OrgSwitcher login={github?.login} owner={team ? github?.orgs[0] : null} />}
         machines={<MachineRow />}
         limits={limits}
         version={window.__DORKS__?.version}

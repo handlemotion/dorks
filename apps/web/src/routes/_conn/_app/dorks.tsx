@@ -2,7 +2,7 @@ import { CatchBoundary, createFileRoute, Link, useNavigate, useRouterState } fro
 import { ImageCommentsProvider } from '../../../components/ImageComments'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { DesktopOptions } from '@dorks/client'
-import { isDorkLocation, isDorkMode, type Block, type DorkLocation, type DorkMode } from '@dorks/shared'
+import { claudeModelChoices, isDorkLocation, isDorkMode, type Block, type DorkLocation, type DorkMode } from '@dorks/shared'
 import { ChevronDownIcon, ChevronRightIcon, InfoIcon, MessageSquareIcon } from 'lucide-react'
 import type { Settings } from '@dorks/client'
 import { useBuilds, useDork, useDorkEvents, useDorks, useDorksClient, useGithubRepos, usePullRequest, useSettings, useSubscriptions, useWorkspaceRoots, useWorkspaceTree } from '@dorks/client/react'
@@ -227,7 +227,8 @@ type Choice = { model?: string; effort?: string; fast?: boolean }
  */
 function newSessionPicker(provider: AgentProvider, settings: ReturnType<typeof useSettings>, choice: Choice, setChoice: (c: Choice) => void): ModelPicker | undefined {
   if (provider === 'claude') {
-    const choices = settings?.claudeModels ?? []
+    // Before Claude has reported the account's models (a first session, a cloud org), its known current ones: a real model and its efforts.
+    const choices = claudeModelChoices(settings?.claudeModels)
     const model = choice.model ?? preferredModel(choices)
     const efforts = choices.find((c) => c.model === (model ?? 'default'))?.efforts ?? []
     const effort = choice.effort && efforts.includes(choice.effort as never) ? choice.effort : claudeStartingEffort(choices, model)
@@ -354,7 +355,7 @@ function NewDork({
         disabled={(local ? !localReady : disabled) || agent.missing}
         error={error}
         picker={picker}
-        catalog={{ claude: settings?.claudeModels, antigravity: settings?.antigravityModels, codex: settings?.codexModels }}
+        catalog={{ claude: claudeModelChoices(settings?.claudeModels), antigravity: settings?.antigravityModels, codex: settings?.codexModels }}
         upload={actions.uploadImage}
         draftKey="new"
         usage={<UsageMenu provider={provider} />}

@@ -399,8 +399,9 @@ function modelMenuState(provider: AgentProvider, picker: ModelPicker | undefined
   // The trigger names the model the agent confirmed when it has, else the one chosen (or what the default resolves to).
   const active = models?.active?.model ? models.active : undefined
   const chosen = models && (modelName(choices, active?.model) ?? modelName(choices, models.model ?? DEFAULT))
-  // "Claude Code" is the agent, not a model: until Claude confirms what it runs (or its list resolves the default), the trigger says so.
-  const label = chosen || agentLabel || (provider === 'claude' ? 'Default model' : AGENT_NAMES[provider])
+  // Always a model, never the agent ("Claude Code") or "Default model": what the agent runs, else what was chosen, else the model the
+  // agent starts on (the short list's first of that agent).
+  const label = chosen || agentLabel || startingModelName(provider)
   const effort = active ? active.effort : models?.effort
   const choice = choices.find((c) => c.model === (models?.model ?? DEFAULT))
   const efforts: string[] = choice?.efforts ?? []
@@ -415,7 +416,7 @@ type ModelEntry = { key: string; provider: AgentProvider; model?: string; name: 
 
 /**
  * The menu's short list, in this order: the owner's pick across the agents. Everything else (older Claude models, every Antigravity and
- * OpenCode model the agent reported, the ChatGPT plan's Codex models, each agent's default) is one search away. Two Codex models are
+ * OpenCode model the agent reported, the ChatGPT plan's Codex models) is one search away. Two Codex models are
  * named here for a first session, before any Codex session has listed the plan's; one the plan cannot use pauses the session and asks
  * for another.
  */
@@ -429,6 +430,9 @@ const CURATED: ModelEntry[] = [
   { key: 'claude:sonnet', provider: 'claude', model: 'sonnet', name: 'Sonnet 5.5' },
   { key: 'codex:gpt-6.2-astra', provider: 'codex', model: 'gpt-6.2-astra', name: 'GPT Astra 6.2' },
 ]
+
+/** The model a session of `provider` starts on when none is named, by name: the short list's first of that agent. */
+const startingModelName = (provider: AgentProvider) => CURATED.find((e) => e.provider === provider)?.name ?? AGENT_NAMES[provider]
 
 /**
  * Switches to a model from the menu. Every model starts at its own effort (the owner's last pick for it, or the recommended one),
@@ -491,16 +495,15 @@ function splitDetail(name: string): { name: string; detail?: string } {
   return m ? { name: m[1]!, detail: m[2] } : { name }
 }
 
-/** What the search finds beyond the short list: the models each agent reported (the session's own, and the lists known ahead), and each agent's own default. */
+/** What the search finds beyond the short list: the models each agent reported (the session's own, and the lists known ahead). */
 function searchableModels(catalog: Partial<Record<AgentProvider, AgentModelChoice[]>>, short: ModelEntry[]): ModelEntry[] {
   const reported = (Object.entries(catalog) as [AgentProvider, AgentModelChoice[] | undefined][]).flatMap(([provider, choices]) =>
     (choices ?? [])
       .filter((c) => c.model !== DEFAULT)
       .map((c): ModelEntry => ({ key: `${provider}:${c.model}`, provider, model: c.model, ...(provider === 'claude' ? { name: modelLabel(c) } : splitDetail(c.name || c.model)) })),
   )
-  const defaults = (Object.keys(AGENT_NAMES) as AgentProvider[]).map((p): ModelEntry => ({ key: `${p}:`, provider: p, name: AGENT_NAMES[p], detail: 'Default model' }))
   const seen = new Set(short.map((e) => e.key))
-  return [...short, ...reported.filter((e) => !seen.has(e.key)), ...defaults]
+  return [...short, ...reported.filter((e) => !seen.has(e.key))]
 }
 
 /**
@@ -525,7 +528,7 @@ function menuEntries(o: {
 
 /**
  * A running session's own models: every one its agent reported, each with the effort it starts at in grey (Antigravity's is in its
- * name), then the agent's default. Before the agent has reported any, the short list's models of that agent.
+ * name). Before the agent has reported any, the short list's models of that agent.
  */
 function ownModels(provider: AgentProvider, choices: AgentModelChoice[], short: ModelEntry[], catalog: Partial<Record<AgentProvider, AgentModelChoice[]>>): ModelEntry[] {
   const reported = choices.filter((c) => c.model !== DEFAULT)
@@ -537,7 +540,7 @@ function ownModels(provider: AgentProvider, choices: AgentModelChoice[], short: 
     const effort = provider === 'codex' ? startingEffort('codex', c.model, c.efforts.length ? [...c.efforts] : CODEX_EFFORTS) : effortFor(base, all)
     return effort ? { ...base, detail: effortName(effort) } : base
   })
-  return [...entries, { key: `${provider}:`, provider, name: AGENT_NAMES[provider], detail: 'Default model' }]
+  return entries
 }
 
 /** What the agent itself reported, so the trigger is never only what was asked for. */

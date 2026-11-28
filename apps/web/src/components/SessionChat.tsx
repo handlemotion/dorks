@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type RefObject } from 'react'
 import type { Block } from '@dorks/shared'
-import type { AgentModelChoice } from '@dorks/shared'
+import { claudeModelChoices, type AgentModelChoice } from '@dorks/shared'
 import { useBuilds, useConnection, useDork, useDorkEvents, useDorksClient, useSettings } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
 import { MessageScroller, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport } from '@dorks/ui/message-scroller'
@@ -132,7 +132,8 @@ export function claudePicker(dork: DorkView, fallback: AgentModelChoice[] | unde
       onChange,
     }
   return {
-    choices: dork.modelChoices ?? (dork.provider === 'claude' ? fallback : undefined) ?? [],
+    // Claude: the session's own list, else the account's, else its known current models (a cloud session reports none before it runs).
+    choices: dork.provider === 'claude' ? claudeModelChoices(dork.modelChoices?.length ? dork.modelChoices : fallback) : (dork.modelChoices ?? []),
     model: dork.model,
     effort: dork.effort,
     fast: dork.fast,

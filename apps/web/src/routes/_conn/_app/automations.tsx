@@ -3,7 +3,7 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { ChevronDownIcon, ChevronRightIcon, ClockIcon, EllipsisIcon, ExternalLinkIcon, HandIcon, PlayIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from 'cn'
-import { modelLabel } from '@dorks/shared'
+import { claudeModelChoices, modelLabel } from '@dorks/shared'
 import type { AutomationInput, AutomationRunView, AutomationTrigger, AutomationView, BuildView } from '@dorks/client'
 import { useAutomation, useAutomationRuns, useAutomations, useBuilds, useDorksClient, useGithubRepos, useSettings } from '@dorks/client/react'
 import { Button } from '@dorks/ui/button'
@@ -234,11 +234,13 @@ const MENU_BUTTON = 'h-7 gap-1 px-2 text-[13px] font-normal text-muted-foregroun
 
 const EFFORTS: Record<string, string> = { none: 'None', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max' }
 
-/** Claude's model and effort for the sessions it starts: one the agent reported, or the default a new session gets. */
+/** Claude's model and effort for the sessions it starts: one the agent reported (or a known current one); none set starts on Opus. */
 function ModelMenu({ model, effort, onChange, disabled }: { model: string | null; effort: string | null; onChange: (model: string | null, effort: string | null) => void; disabled?: boolean }) {
-  const choices = useSettings()?.claudeModels ?? []
-  const choice = choices.find((c) => c.model === model)
-  const name = choice ? modelLabel(choice) : model ? model : 'Default model'
+  const choices = claudeModelChoices(useSettings()?.claudeModels).filter((c) => c.model !== 'default')
+  // A session with no model named starts on Opus (POST /api/dorks): that is the model shown and checked.
+  const shown = model ?? 'opus'
+  const choice = choices.find((c) => c.model === shown)
+  const name = choice ? modelLabel(choice) : shown
   return (
     <DropdownMenu>
       <DropdownMenuTrigger render={<Button type="button" size="sm" variant="ghost" className={MENU_BUTTON} disabled={disabled} aria-label="Model" />}>
@@ -249,15 +251,12 @@ function ModelMenu({ model, effort, onChange, disabled }: { model: string | null
       <DropdownMenuContent className="min-w-48">
         <DropdownMenuGroup>
           <DropdownMenuLabel>Model</DropdownMenuLabel>
-          <DropdownMenuRadioGroup value={model ?? ''} onValueChange={(v) => onChange(v || null, null)}>
-            <DropdownMenuRadioItem value="">Default</DropdownMenuRadioItem>
-            {choices
-              .filter((c) => c.model !== 'default')
-              .map((c) => (
-                <DropdownMenuRadioItem key={c.model} value={c.model}>
-                  {modelLabel(c)}
-                </DropdownMenuRadioItem>
-              ))}
+          <DropdownMenuRadioGroup value={shown} onValueChange={(v) => onChange(v as string, null)}>
+            {choices.map((c) => (
+              <DropdownMenuRadioItem key={c.model} value={c.model}>
+                {modelLabel(c)}
+              </DropdownMenuRadioItem>
+            ))}
           </DropdownMenuRadioGroup>
         </DropdownMenuGroup>
         {!!choice?.efforts.length && (
